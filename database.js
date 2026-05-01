@@ -27,6 +27,12 @@ function nextId(table) {
   return _idCounters[table]++;
 }
 
+// ── Write queue — prevents race conditions from concurrent fire-and-forget writes ──
+let _writeQueue = Promise.resolve();
+function queueWrite() {
+  _writeQueue = _writeQueue.then(() => _db.write()).catch(err => console.error('[DB write error]', err));
+}
+
 // ── Low-level helpers (mimic better-sqlite3 API) ──────────────────────────────
 const db = {
   get data() { return _db ? _db.data : null; },
@@ -38,7 +44,7 @@ const db = {
     const id = nextId(table);
     const newRow = { id, ...row, created_at: new Date().toISOString() };
     _db.data[table].push(newRow);
-    _db.write(); // fire-and-forget sync to disk
+    queueWrite(); // serialised async write
     return { lastInsertRowid: id, row: newRow };
   },
 
@@ -59,13 +65,13 @@ const db = {
     _db.data[table].forEach(row => {
       if (filterFn(row)) Object.assign(row, typeof patch === 'function' ? patch(row) : patch);
     });
-    _db.write();
+    queueWrite();
   },
 
   // Delete rows matching filter
   delete(table, filterFn) {
     _db.data[table] = _db.data[table].filter(r => !filterFn(r));
-    _db.write();
+    queueWrite();
   },
 
   // Upsert (for user_settings)
@@ -76,7 +82,7 @@ const db = {
     } else {
       _db.data[table].push({ id: nextId(table), [keyField]: keyVal, ...patch, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
     }
-    _db.write();
+    queueWrite();
   },
 };
 

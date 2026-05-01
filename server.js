@@ -11,6 +11,12 @@ const { db, initDB, seedUserData } = require('./database');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
+
+// ── STARTUP GUARDS ────────────────────────────────────────────────────────────
+if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+  console.error('FATAL: SESSION_SECRET environment variable must be set in production.');
+  process.exit(1);
+}
 console.log('Starting on port:', PORT);
 
 app.use(helmet({
@@ -18,7 +24,10 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
   frameguard: { action: 'deny' },
 }));
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGIN || (process.env.NODE_ENV === 'production' ? false : true),
+  credentials: true,
+}));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false }));
 app.set('trust proxy', 1); // Required for Railway/Heroku
@@ -279,6 +288,19 @@ app.delete('/api/personal-transactions/:id', requireAuth, (req, res) => {
   db.delete('personal_transactions', r => r.id === parseInt(req.params.id));
   res.json({ ok: true });
 });
+app.put('/api/personal-transactions/:id', requireAuth, (req, res) => {
+  const row = ownedBy('personal_transactions', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  const patch = {};
+  const b = req.body || {};
+  if (b.description != null) patch.description = b.description.trim().slice(0, 300);
+  if (b.category != null)    patch.category    = b.category;
+  if (b.amount != null)      patch.amount      = parseFloat(b.amount) || 0;
+  if (b.tx_type != null)     patch.tx_type     = b.tx_type;
+  if (b.tx_date != null)     patch.tx_date     = b.tx_date;
+  db.update('personal_transactions', r => r.id === row.id, patch);
+  res.json(db.get('personal_transactions', r => r.id === row.id));
+});
 
 // ── GOALS ─────────────────────────────────────────────────────────────────────
 app.get('/api/goals', requireAuth, (req, res) => {
@@ -377,6 +399,15 @@ app.use(express.static(path.join(__dirname, 'public'), { etag: true, maxAge: '1h
 app.get('*', (req, res) => {
   // Any unknown route → landing page
   res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+
+// ── GLOBAL ERROR HANDLER ──────────────────────────────────────────────────────
+// Must be defined after all routes. Catches any unhandled errors and returns
+// a safe JSON response without exposing stack traces to clients.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  console.error('[Unhandled Error]', err);
+  res.status(500).json({ error: 'An unexpected error occurred. Please try again.' });
 });
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────

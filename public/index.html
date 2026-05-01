@@ -199,6 +199,14 @@ body{font-family:var(--font);background:transparent;font-size:13px;letter-spacin
   .topbar{padding:.6rem 1.1rem}
   .nav-item{padding:5px 1rem}
   .brand{padding:.9rem 1rem .8rem}
+  /* iPad touch target improvement */
+  .nav-item{min-height:40px}
+  .btn{min-height:34px}
+  .mob-hamburger{display:flex}
+  .sidebar{position:fixed;top:0;left:-100%;width:min(var(--sidebar-w),75vw);height:100%;z-index:300;transition:left .25s cubic-bezier(.4,0,.2,1);border-radius:0 var(--radius-xl) var(--radius-xl) 0;border-right:1px solid var(--bd2)}
+  .sidebar.open{left:0}
+  .sidebar-overlay.open{display:block}
+  .app{grid-template-columns:1fr}
 }
 
 /* ══════════════════════════════════════════════
@@ -338,9 +346,91 @@ body{font-family:var(--font);background:transparent;font-size:13px;letter-spacin
   .metrics-grid{grid-template-columns:repeat(4,1fr)}
   body{font-size:11pt}
 }
+
+/* ══════════════════════════════════════════════
+   iPAD / LARGE TABLET (1025px – 1199px)
+   ══════════════════════════════════════════════ */
+@media(min-width:1025px) and (max-width:1199px){
+  :root{--sidebar-w:210px}
+  .content{padding:1.1rem 1.4rem}
+  .metrics-grid{grid-template-columns:repeat(3,1fr)}
+  .mc-val{font-size:28px}
+  .canvas-wrap{height:165px}
+}
+
+/* ══════════════════════════════════════════════
+   MAC / LARGE DESKTOP (≥1440px)
+   Optimised for MacBook Pro 14" / 16" and iMac
+   ══════════════════════════════════════════════ */
+@media(min-width:1440px){
+  :root{--sidebar-w:256px}
+  .content{padding:1.6rem 2.2rem;max-height:calc(100svh - 58px)}
+  .topbar{padding:.9rem 2.2rem}
+  .metrics-grid{gap:16px}
+  .metrics-grid-3{gap:16px}
+  .mc{padding:1rem 1.25rem}
+  .mc-val{font-size:40px}
+  .card{padding:1.2rem 1.5rem}
+  .card-title{font-size:15px}
+  .canvas-wrap{height:210px}
+  .brand{padding:1.25rem 1.4rem 1.1rem}
+  .brand-name{font-size:18px}
+  .nav-item{font-size:13px;padding:7px 1.4rem}
+}
+
+/* ══════════════════════════════════════════════
+   ULTRAWIDE / 4K (≥2000px)
+   ══════════════════════════════════════════════ */
+@media(min-width:2000px){
+  :root{--sidebar-w:300px}
+  .app{max-width:1920px;margin:0 auto}
+  body{font-size:15px}
+  .mc-val{font-size:46px}
+  .canvas-wrap{height:260px}
+}
+
+/* ══════════════════════════════════════════════
+   macOS RETINA DISPLAY (Mac Retina, 2×)
+   ══════════════════════════════════════════════ */
+@media(-webkit-min-device-pixel-ratio:2),(min-resolution:192dpi){
+  .app{border-width:.5px}
+  *::-webkit-scrollbar{width:4px;height:4px}
+  *::-webkit-scrollbar-thumb{background:var(--bd2)}
+}
+
+/* ══════════════════════════════════════════════
+   iPAD SPLIT VIEW / SLIDE OVER (~400-500px, non-phone)
+   ══════════════════════════════════════════════ */
+@media(min-width:401px) and (max-width:600px){
+  .metrics-grid{grid-template-columns:repeat(2,1fr);gap:8px}
+  .two-col{grid-template-columns:1fr}
+  .canvas-wrap{height:145px}
+  .content{padding:.9rem 1rem}
+}
+
+/* ══════════════════════════════════════════════
+   REDUCED MOTION (accessibility)
+   ══════════════════════════════════════════════ */
+@media(prefers-reduced-motion:reduce){
+  *,.sidebar,.ai-panel,.notif-panel,.ob-modal,.modal{
+    animation-duration:.01ms!important;
+    transition-duration:.01ms!important;
+  }
+}
+
+/* ══════════════════════════════════════════════
+   DARK MODE SYSTEM PREFERENCE (already dark by default,
+   but preserve OS-level contrast adjustments)
+   ══════════════════════════════════════════════ */
+@media(prefers-contrast:more){
+  :root{
+    --bd:#4a3e28;--bd2:#5a4c32;
+    --t2:#c0aa82;--t3:#a08a60
+  }
+}
 /* ── MOBILE BOTTOM NAV ───────────────────────── */
 .mob-bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:60px;background:var(--bg1);border-top:1px solid var(--bd);z-index:400;align-items:stretch;justify-content:space-around;padding:0 4px;padding-bottom:env(safe-area-inset-bottom)}
-.mob-nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex:1;cursor:pointer;padding:6px 4px;border-radius:var(--radius);transition:all .13s;color:var(--t3);border:none;background:none;font-family:var(--font)}
+.mob-nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex:1;cursor:pointer;padding:6px 4px;border-radius:var(--radius);transition:all .13s;color:#8a7a62;border:none;background:none;font-family:var(--font)}
 .mob-nav-item:active{background:var(--bg2);transform:scale(.93)}
 .mob-nav-item.active{color:var(--acc)}
 .mob-nav-item svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
@@ -7843,12 +7933,16 @@ function renderBudget(){
 requestAnimationFrame(renderBudget);
 
 // ── 5. MRR CHART ────────────────────────────────────────────────────────────
+let mrrChartInst=null;
 function renderMRRChart(){
   const canvas=document.getElementById('mrrChart');
   if(!canvas||typeof Chart==='undefined')return;
+  const existing=Chart.getChart(canvas);
+  if(existing){existing.destroy();}
+  if(mrrChartInst){mrrChartInst.destroy();mrrChartInst=null;}
   const labels=['May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr'];
   const data=[28400,29800,31200,31900,33100,34200,35800,36400,37100,37900,38400,39100];
-  new Chart(canvas,{
+  mrrChartInst=new Chart(canvas,{
     type:'line',
     data:{labels,datasets:[{
       label:'MRR',data,

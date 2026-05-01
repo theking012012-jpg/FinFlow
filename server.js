@@ -24,6 +24,41 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
   frameguard: { action: 'deny' },
 }));
+
+// ── GZIP COMPRESSION ─────────────────────────────────────────────────────────
+// Compress all text responses (HTML, JS, CSS, JSON) — typically 60-80% smaller
+app.use((req, res, next) => {
+  const acceptEncoding = req.headers['accept-encoding'] || '';
+  if (!acceptEncoding.includes('gzip')) return next();
+
+  const _send = res.send.bind(res);
+  res.send = function(body) {
+    const contentType = res.getHeader('Content-Type') || '';
+    const isText = /html|javascript|css|json|text/.test(contentType);
+    if (!isText || !body || body.length < 1024) return _send(body);
+
+    const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
+    zlib.gzip(buf, { level: 6 }, (err, compressed) => {
+      if (err) return _send(body);
+      res.setHeader('Content-Encoding', 'gzip');
+      res.setHeader('Content-Length', compressed.length);
+      res.removeHeader('Transfer-Encoding');
+      _send(compressed);
+    });
+  };
+  next();
+});
+
+// ── SECURITY HEADERS (set via HTTP, not meta tags) ───────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
 app.use(cors({
   origin: process.env.ALLOWED_ORIGIN || (process.env.NODE_ENV === 'production' ? false : true),
   credentials: true,

@@ -3476,6 +3476,8 @@ function doLogin(){
   document.getElementById('login-screen').style.display = 'none';
   injectRoleBadge(r);
   notify(`Signed in as ${ROLES[r].label}`);
+  // Load dashboard charts now that app is visible
+  setTimeout(()=>showPage('dashboard', null), 100);
 }
 
 function applyRole(role){

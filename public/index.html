@@ -151,7 +151,8 @@ input,select,textarea,button{touch-action:manipulation}
   --purple:#5a4880;--purple-bg:#f0eef8;--purple-bd:#c8bce8;
   --teal:#2a7870;--teal-bg:#e4f4f2;
 }
-body{font-family:var(--font);background:transparent;font-size:13px;letter-spacing:.01em;-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:none}
+body{font-family:var(--font);background:transparent;font-size:13px;letter-spacing:.01em;-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:none;overflow-x:hidden}
+html{overflow-x:hidden}
 .app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:min(740px,100svh);border:1px solid var(--bd);border-radius:var(--radius-xl);overflow:hidden;background:var(--bg0);box-shadow:var(--shadow-lg);position:relative}
 .app::after{content:'';position:absolute;inset:0;background:var(--grain);pointer-events:none;z-index:9999;border-radius:var(--radius-xl)}
 /* SIDEBAR */
@@ -163,13 +164,13 @@ body{font-family:var(--font);background:transparent;font-size:13px;letter-spacin
 .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:299;backdrop-filter:blur(2px)}
 /* ── RESPONSIVE BREAKPOINTS ───────────────────── */
 @media(max-width:768px){
-  .app{grid-template-columns:1fr;min-height:100svh;border-radius:0;border:none}
+  .app{grid-template-columns:1fr;min-height:100svh;border-radius:0;border:none;max-width:100vw;overflow-x:hidden}
   .sidebar{position:fixed;top:0;left:-100%;width:min(var(--sidebar-w),85vw);height:100%;z-index:300;transition:left .25s cubic-bezier(.4,0,.2,1);border-radius:0 var(--radius-xl) var(--radius-xl) 0;border-right:1px solid var(--bd2)}
   .sidebar.open{left:0}
   .sidebar-overlay.open{display:block}
   .mob-hamburger{display:flex}
   .topbar{padding:.6rem 1rem}
-  .content{padding:1rem;max-height:calc(100svh - 52px - 60px);padding-bottom:70px}
+  .content{padding:1rem;max-height:calc(100svh - 52px - 60px);padding-bottom:70px;overflow-x:hidden}
   .metrics-grid{grid-template-columns:repeat(2,1fr)}
   .metrics-grid-3{grid-template-columns:repeat(2,1fr)}
   .two-col{grid-template-columns:1fr}
@@ -1932,6 +1933,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         .conn-filter-btn{padding:5px 11px;font-size:11.5px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg2);color:var(--t2);cursor:pointer;white-space:nowrap;font-family:var(--font);transition:all .13s}
         .conn-filter-btn:hover,.conn-filter-btn.active{background:var(--bg3);color:var(--t1);border-color:var(--acc)}
         .conn-stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem}
+        @media(max-width:768px){.conn-stats-row{grid-template-columns:repeat(2,1fr)}}
         .conn-stat{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius);padding:.75rem 1rem;position:relative;overflow:hidden}
         .conn-stat::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--acc);opacity:.4}
         .conn-stat:nth-child(2)::before{background:var(--green)}

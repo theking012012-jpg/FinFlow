@@ -2,11 +2,11 @@
 const express      = require('express');
 const session      = require('express-session');
 const bcrypt       = require('bcryptjs');
+const compression  = require('compression');
 const helmet       = require('helmet');
 const cors         = require('cors');
 const rateLimit    = require('express-rate-limit');
 const path         = require('path');
-const zlib         = require('zlib');
 const { db, initDB, seedUserData } = require('./database');
 
 const app  = express();
@@ -19,37 +19,16 @@ if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
 }
 console.log('Starting on port:', PORT);
 
+// ── GZIP COMPRESSION (must be first) ─────────────────────────────────────────
+app.use(compression({ level: 6 }));
+
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
   frameguard: { action: 'deny' },
 }));
 
-// ── GZIP COMPRESSION ─────────────────────────────────────────────────────────
-// Compress all text responses (HTML, JS, CSS, JSON) — typically 60-80% smaller
-app.use((req, res, next) => {
-  const acceptEncoding = req.headers['accept-encoding'] || '';
-  if (!acceptEncoding.includes('gzip')) return next();
-
-  const _send = res.send.bind(res);
-  res.send = function(body) {
-    const contentType = res.getHeader('Content-Type') || '';
-    const isText = /html|javascript|css|json|text/.test(contentType);
-    if (!isText || !body || body.length < 1024) return _send(body);
-
-    const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
-    zlib.gzip(buf, { level: 6 }, (err, compressed) => {
-      if (err) return _send(body);
-      res.setHeader('Content-Encoding', 'gzip');
-      res.setHeader('Content-Length', compressed.length);
-      res.removeHeader('Transfer-Encoding');
-      _send(compressed);
-    });
-  };
-  next();
-});
-
-// ── SECURITY HEADERS (set via HTTP, not meta tags) ───────────────────────────
+// ── HTTP SECURITY HEADERS ─────────────────────────────────────────────────────
 app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');

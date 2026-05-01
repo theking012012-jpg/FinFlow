@@ -12,8 +12,18 @@
 <meta name="description" content="FinFlow — all-in-one financial management for small business. Invoicing, expenses, payroll, investments and AI-powered insights in one place.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
-<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"></noscript>
+<!-- Core UI fonts — load async so they don't block render -->
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap"></noscript>
+<!-- JetBrains Mono (monospace/numbers) — deferred, non-critical -->
+<script>
+window.addEventListener('load',function(){
+  var l=document.createElement('link');
+  l.rel='stylesheet';
+  l.href='https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap';
+  document.head.appendChild(l);
+});
+</script>
 <script src="/finflow-api.js"></script>
 </head>
 <body>
@@ -2955,7 +2965,22 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" onerror="console.warn('Chart.js failed to load — charts will be skipped.')"></script>
+<!-- Chart.js loaded on demand when first chart page is visited -->
+<script>
+window._chartJsLoaded=false;
+window._chartJsCallbacks=[];
+function loadChartJs(cb){
+  if(window._chartJsLoaded){if(cb)cb();return;}
+  if(cb)window._chartJsCallbacks.push(cb);
+  if(document.getElementById('chartjs-script'))return;
+  const s=document.createElement('script');
+  s.id='chartjs-script';
+  s.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js';
+  s.onload=()=>{window._chartJsLoaded=true;window._chartJsCallbacks.forEach(fn=>fn());window._chartJsCallbacks=[];};
+  s.onerror=()=>console.warn('Chart.js failed to load — charts will be skipped.');
+  document.head.appendChild(s);
+}
+</script>
 <script>
 // ════════════════════════════════════════════
 // sendPrompt STUB — replaced by host when embedded
@@ -5577,6 +5602,7 @@ function toggleTheme(){
 function chartDefaults(){return{tc:darkMode?'#9e8e73':'#6b5c42',gc:darkMode?'rgba(201,168,76,0.06)':'rgba(0,0,0,0.05)'}}
 
 function buildCharts(){
+  loadChartJs(()=>{
   if(typeof Chart==='undefined'){console.warn('Chart.js not loaded — charts skipped');return;}
   const{tc,gc}=chartDefaults();
   const _oc=document.getElementById('overviewChart');
@@ -5617,9 +5643,11 @@ function buildCharts(){
       }
     }
   });
+  });// end loadChartJs
 }
 
 function buildCashChart(){
+  loadChartJs(()=>{
   if(typeof Chart==='undefined'){console.warn('Chart.js not loaded — cash chart skipped');return;}
   const{tc,gc}=chartDefaults();
   const _cc=document.getElementById('cashChart');
@@ -5664,6 +5692,7 @@ function buildCashChart(){
       }
     }
   });
+  });// end loadChartJs
 }
 
 function updateCharts(d=getPeriodData()){
@@ -7935,6 +7964,7 @@ requestAnimationFrame(renderBudget);
 // ── 5. MRR CHART ────────────────────────────────────────────────────────────
 let mrrChartInst=null;
 function renderMRRChart(){
+  loadChartJs(()=>{
   const canvas=document.getElementById('mrrChart');
   if(!canvas||typeof Chart==='undefined')return;
   const existing=Chart.getChart(canvas);
@@ -7953,6 +7983,7 @@ function renderMRRChart(){
       scales:{x:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10}}},
               y:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10},callback:v=>'$'+(v/1000).toFixed(0)+'K'}}}}
   });
+  });// end loadChartJs
 }
 document.addEventListener('DOMContentLoaded',()=>{ requestAnimationFrame(renderMRRChart); });
 requestAnimationFrame(renderMRRChart);

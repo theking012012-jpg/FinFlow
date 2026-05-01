@@ -11,6 +11,7 @@ const { db, initDB, seedUserData } = require('./database');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
+console.log('Starting on port:', PORT);
 
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -20,11 +21,16 @@ app.use(helmet({
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false }));
+app.set('trust proxy', 1); // Required for Railway/Heroku
 app.use(session({
   secret: process.env.SESSION_SECRET || 'finflow-dev-secret-change-in-production',
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, secure: false, maxAge: 7 * 24 * 60 * 60 * 1000 },
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  },
 }));
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30 });
@@ -350,7 +356,24 @@ app.put('/api/settings', requireAuth, (req, res) => {
 // ── STATIC / SPA ──────────────────────────────────────────────────────────────
 
 
-app.use(express.static(path.join(__dirname, 'public'), { etag: true, maxAge: '1h', setHeaders: function(res, filePath) { if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache'); } }, { etag: true, lastModified: true, maxAge: '1h', setHeaders: (res, path) => { if (path.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache'); } }));
+
+// ── PAGE ROUTES ───────────────────────────────────────────────────────────────
+// Landing page at root
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+
+// App at /app
+app.get('/app', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Sitemap
+app.get('/sitemap.xml', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'sitemap.xml'));
+});
+
+app.use(express.static(path.join(__dirname, 'public'), { etag: true, maxAge: '1h', setHeaders: function(res, filePath) { if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache'); } }));
 app.get('*', (req, res) => {
   // Any unknown route → landing page
   res.sendFile(path.join(__dirname, 'public', 'landing.html'));

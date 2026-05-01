@@ -4302,6 +4302,7 @@ function showPage(id, el){
   if(id==='reports')renderReports();
   if(id==='documents')renderDocuments();
   if(id==='templates')renderTemplates();
+  if(id==='dashboard'){loadChartJs(()=>{buildCharts();buildCashChart();updateCharts();renderMRRChart();});}
   // Trigger bar animations on the new page
   setTimeout(()=>animateBarsOnPage(page),80);
   // Animate metric counters
@@ -7987,7 +7988,7 @@ function renderMRRChart(){
   });
   });// end loadChartJs
 }
-document.addEventListener('DOMContentLoaded',()=>{ requestAnimationFrame(renderMRRChart); });
+document.addEventListener('DOMContentLoaded',()=>{ loadChartJs(()=>{ requestAnimationFrame(renderMRRChart); }); });
 requestAnimationFrame(renderMRRChart);
 
 // ── 6. PLAID BANKING ────────────────────────────────────────────────────────

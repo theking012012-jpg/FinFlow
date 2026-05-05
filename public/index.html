@@ -150,7 +150,7 @@ input,select,textarea,button{touch-action:manipulation}
 }
 body{font-family:var(--font);background:transparent;font-size:13px;letter-spacing:.01em;-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:none;overflow-x:hidden}
 html{overflow-x:hidden}
-.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100svh;height:100svh;border:1px solid var(--bd);border-radius:var(--radius-xl);overflow:hidden;background:var(--bg0);box-shadow:var(--shadow-lg);position:relative}
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100svh;height:100svh;overflow:hidden;background:var(--bg0);position:relative}
 .app::after{content:'';position:absolute;inset:0;background:var(--grain);pointer-events:none;z-index:9999;border-radius:var(--radius-xl)}
 /* SIDEBAR */
 .sidebar{background:var(--bg1);border-right:1px solid var(--bd);display:flex;flex-direction:column;overflow-y:auto;height:100%}
@@ -580,7 +580,7 @@ textarea.finput{resize:vertical;min-height:72px;line-height:1.5}
 .nav-group-arrow.open{transform:rotate(180deg)}
 .nav-group{overflow:hidden;max-height:0;transition:max-height .3s ease}.nav-group.open{max-height:600px}
 .nav-group-inner{opacity:1;transform:none}
-.nav-group.open{max-height:600px}
+
 /* Promote sidebar to its own compositing layer to prevent layout thrashing */
 .sidebar{will-change:transform}
 .nav-sub{padding-left:2rem!important}
@@ -6728,8 +6728,7 @@ if(typeof renderLockHistory==='function')renderLockHistory();
 if(typeof renderReports==='function')renderReports();
 if(typeof renderDocuments==='function')renderDocuments();
 if(typeof renderTemplates==='function')renderTemplates();
-// Open Sales group by default
-toggleGroup('sales');
+// Sales group starts closed - user clicks to open
 // Set default month nav label
 document.getElementById('month-nav-label').textContent=MONTH_FULL[currentMonthIdx];
 // Trigger animations on the initial active page

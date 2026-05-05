@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"/c/Users/theki/OneDrive/Desktop/finflow-FINAL7 \\(4\\)\" && grep -n \"db\\\\.\" server.js | grep -v \"db\\\\.all\\\\|db\\\\.get\\\\|db\\\\.insert\\\\|db\\\\.update\\\\|db\\\\.delete\\\\|db\\\\.upsert\\\\|db\\\\.write\\\\|db\\\\.data\\\\|initDB\\\\|//\\\\|_db\")",
+      "Read(//c/c/Users/theki/OneDrive/Desktop/finflow-FINAL7 \\(4\\)/**)",
+      "Bash(git push *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}

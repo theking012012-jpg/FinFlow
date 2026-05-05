@@ -6186,7 +6186,20 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     <div class="row total"><span>TOTAL</span><span style="color:${acc}">$${total.toLocaleString()}</span></div>
     <div style="text-align:center;margin-top:16px;font-size:10px;color:#aaa">Thank you for your business</div>
     ${poweredByHTML}
-    </body></html>`;
+    
+<script>
+window.toggleGroup=function(name){
+  var grp=document.getElementById('nav-group-'+name);
+  var arr=document.getElementById('arr-'+name);
+  var hdr=document.getElementById('grp-'+name);
+  if(!grp)return;
+  var isOpen=grp.classList.contains('open');
+  grp.classList.toggle('open');
+  if(arr)arr.classList.toggle('open');
+  if(hdr){hdr.classList.toggle('active');hdr.setAttribute('aria-expanded',String(!isOpen));}
+};
+</script>
+</body></html>`;
   }
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8">

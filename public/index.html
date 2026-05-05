@@ -153,7 +153,7 @@ html{overflow-x:hidden}
 .app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100svh;height:100svh;overflow:hidden;background:var(--bg0);position:relative}
 .app::after{content:'';position:absolute;inset:0;background:var(--grain);pointer-events:none;z-index:9999;border-radius:var(--radius-xl)}
 /* SIDEBAR */
-.sidebar{background:var(--bg1);border-right:1px solid var(--bd);display:flex;flex-direction:column;overflow-y:auto;height:100%}
+.sidebar{background:var(--bg1);border-right:1px solid var(--bd);display:flex;flex-direction:column;overflow-y:auto;height:100%;overflow-x:visible}
 /* ── MOBILE HAMBURGER ─────────────────────────── */
 .mob-hamburger{display:none;align-items:center;justify-content:center;width:32px;height:32px;border-radius:var(--radius);border:1px solid var(--bd2);background:var(--bg2);cursor:pointer;flex-shrink:0;color:var(--t2);transition:all .13s}
 .mob-hamburger:hover{background:var(--bg3);color:var(--t1)}

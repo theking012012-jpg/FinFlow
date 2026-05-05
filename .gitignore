@@ -1,0 +1,4 @@
+node_modules/
+.env
+finflow.db
+*.db

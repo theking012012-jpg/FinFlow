@@ -579,8 +579,8 @@ textarea.finput{resize:vertical;min-height:72px;line-height:1.5}
 .nav-group-arrow{width:10px;height:10px;margin-left:auto;flex-shrink:0;transition:transform .15s cubic-bezier(.4,0,.2,1);stroke:currentColor}
 .nav-group-arrow.open{transform:rotate(180deg)}
 .nav-group{overflow:hidden;max-height:0;transition:max-height .3s ease}.nav-group.open{max-height:600px}
-.nav-group-inner{opacity:0;transform:translateY(-6px);transition:opacity .15s ease,transform .15s ease}
-.nav-group.open .nav-group-inner{opacity:1;transform:translateY(0)}
+.nav-group-inner{opacity:1;transform:none}
+.nav-group.open{max-height:600px}
 /* Promote sidebar to its own compositing layer to prevent layout thrashing */
 .sidebar{will-change:transform}
 .nav-sub{padding-left:2rem!important}

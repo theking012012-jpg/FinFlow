@@ -578,7 +578,7 @@ textarea.finput{resize:vertical;min-height:72px;line-height:1.5}
 .nav-group-header .nav-icon{width:14px;height:14px;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
 .nav-group-arrow{width:10px;height:10px;margin-left:auto;flex-shrink:0;transition:transform .15s cubic-bezier(.4,0,.2,1);stroke:currentColor}
 .nav-group-arrow.open{transform:rotate(180deg)}
-.nav-group{overflow:hidden;height:0;will-change:height;transition:height .22s cubic-bezier(.4,0,.2,1)}
+.nav-group{overflow:hidden;max-height:0;transition:max-height .28s cubic-bezier(.4,0,.2,1)}.nav-group.open{max-height:400px}
 .nav-group-inner{opacity:0;transform:translateY(-6px);transition:opacity .15s ease,transform .15s ease}
 .nav-group.open .nav-group-inner{opacity:1;transform:translateY(0)}
 /* Promote sidebar to its own compositing layer to prevent layout thrashing */
@@ -5755,25 +5755,10 @@ function toggleGroup(name){
   const arr=document.getElementById('arr-'+name);
   const hdr=document.getElementById('grp-'+name);
   if(!grp)return;
-  const inner=grp.querySelector('.nav-group-inner');
   const opening=!grp.classList.contains('open');
-  if(opening){
-    grp.classList.add('open');
-    grp.style.height=grp.scrollHeight+'px';
-    // After transition ends, set to auto so it doesn't clip if content changes
-    grp.addEventListener('transitionend',()=>{if(grp.classList.contains('open'))grp.style.height='auto';},{once:true});
-    if(arr)arr.classList.add('open');
-    if(hdr){hdr.classList.add('active');hdr.setAttribute('aria-expanded','true');}
-  } else {
-    // Lock height before removing auto, so transition works
-    grp.style.height=grp.scrollHeight+'px';
-    requestAnimationFrame(()=>{
-      grp.style.height='0';
-      grp.classList.remove('open');
-      if(arr)arr.classList.remove('open');
-      if(hdr){hdr.classList.remove('active');hdr.setAttribute('aria-expanded','false');}
-    });
-  }
+  grp.classList.toggle('open',opening);
+  if(arr)arr.classList.toggle('open',opening);
+  if(hdr){hdr.classList.toggle('active',opening);hdr.setAttribute('aria-expanded',opening?'true':'false');}
 }
 
 // ════════════════════════════════════════════

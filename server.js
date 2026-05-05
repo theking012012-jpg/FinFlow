@@ -598,7 +598,7 @@ app.delete('/api/recurring-invoices/:id', requireAuth, (req, res) => {
 
 // ── SALES RECEIPTS ────────────────────────────────────────────────────────────
 app.get('/api/sales-receipts', requireAuth, (req, res) => {
-  res.json(db.find('sales_receipts', r => r.user_id === req.session.userId));
+  res.json(db.all('sales_receipts', r => r.user_id === req.session.userId));
 });
 app.post('/api/sales-receipts', requireAuth, (req, res) => {
   const r = db.insert('sales_receipts', { ...req.body, user_id: req.session.userId, created_at: new Date().toISOString() });
@@ -615,7 +615,7 @@ app.delete('/api/sales-receipts/:id', requireAuth, (req, res) => {
 
 // ── PAYMENTS RECEIVED ─────────────────────────────────────────────────────────
 app.get('/api/payments-received', requireAuth, (req, res) => {
-  res.json(db.find('payments_received', r => r.user_id === req.session.userId));
+  res.json(db.all('payments_received', r => r.user_id === req.session.userId));
 });
 app.post('/api/payments-received', requireAuth, (req, res) => {
   const r = db.insert('payments_received', { ...req.body, user_id: req.session.userId, created_at: new Date().toISOString() });
@@ -632,7 +632,7 @@ app.delete('/api/payments-received/:id', requireAuth, (req, res) => {
 
 // ── CREDIT NOTES ──────────────────────────────────────────────────────────────
 app.get('/api/credit-notes', requireAuth, (req, res) => {
-  res.json(db.find('credit_notes', r => r.user_id === req.session.userId));
+  res.json(db.all('credit_notes', r => r.user_id === req.session.userId));
 });
 app.post('/api/credit-notes', requireAuth, (req, res) => {
   const r = db.insert('credit_notes', { ...req.body, user_id: req.session.userId, created_at: new Date().toISOString() });
@@ -649,7 +649,7 @@ app.delete('/api/credit-notes/:id', requireAuth, (req, res) => {
 
 // ── PAYMENTS MADE ─────────────────────────────────────────────────────────────
 app.get('/api/payments-made', requireAuth, (req, res) => {
-  res.json(db.find('payments_made', r => r.user_id === req.session.userId));
+  res.json(db.all('payments_made', r => r.user_id === req.session.userId));
 });
 app.post('/api/payments-made', requireAuth, (req, res) => {
   const r = db.insert('payments_made', { ...req.body, user_id: req.session.userId, created_at: new Date().toISOString() });
@@ -666,7 +666,7 @@ app.delete('/api/payments-made/:id', requireAuth, (req, res) => {
 
 // ── VENDOR CREDITS ────────────────────────────────────────────────────────────
 app.get('/api/vendor-credits', requireAuth, (req, res) => {
-  res.json(db.find('vendor_credits', r => r.user_id === req.session.userId));
+  res.json(db.all('vendor_credits', r => r.user_id === req.session.userId));
 });
 app.post('/api/vendor-credits', requireAuth, (req, res) => {
   const r = db.insert('vendor_credits', { ...req.body, user_id: req.session.userId, created_at: new Date().toISOString() });
@@ -688,10 +688,10 @@ app.post('/api/ai', requireAuth, async (req, res) => {
     if (!message) return res.status(400).json({ error: 'No message provided' });
 
     // Build business context from the user's data
-    const invoices = db.find('invoices', r => r.user_id === req.session.userId);
-    const expenses = db.find('expenses', r => r.user_id === req.session.userId);
-    const customers = db.find('customers', r => r.user_id === req.session.userId);
-    const settings = db.find('settings', r => r.user_id === req.session.userId)[0] || {};
+    const invoices = db.all('invoices', r => r.user_id === req.session.userId);
+    const expenses = db.all('expenses', r => r.user_id === req.session.userId);
+    const customers = db.all('customers', r => r.user_id === req.session.userId);
+    const settings = db.all('user_settings', r => r.user_id === req.session.userId)[0] || {};
 
     const totalRevenue = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
     const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0);

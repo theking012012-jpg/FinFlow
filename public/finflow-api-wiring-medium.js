@@ -311,7 +311,7 @@
             cost:  r.cost,
             low:   !!r.low_stock,
           }));
-          window.inventory = [...mapped, ...window.inventory.filter(i => !i._dbId)];
+          window.inventory = [...mapped, ...(window.inventory || []).filter(i => !i._dbId)];
           if (typeof renderInventory === 'function') renderInventory();
         }
       } catch (e) {
@@ -409,6 +409,7 @@
 
     // Patch renderInventory to show delete button
     window.renderInventory = function () {
+      if (!window.inventory) window.inventory = [];
       const lowCount = window.inventory.filter(i => i.low).length;
       const badge2 = document.getElementById('badge-inv2');
       if (badge2) {

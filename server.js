@@ -902,28 +902,54 @@ app.delete('/api/team/:id', requireAuth, wrap(async (req, res) => {
 }));
 
 // ── AI CHAT ───────────────────────────────────────────────────────────────────
+// Words that signal a complex query requiring Sonnet; everything else uses Haiku.
+const COMPLEX_QUERY_RE = /\b(analyze|recommend|explain|forecast|compare|predict|strategy|insight|report|why)\b|how should/i;
+
 app.post('/api/ai', requireAuth, async (req, res) => {
   try {
     const { message, history = [] } = req.body;
     if (!message) return res.status(400).json({ error: 'No message provided' });
 
-    const uid = req.session.userId;
-    const invoices  = await db.all('invoices',  r => r.user_id === uid);
-    const expenses  = await db.all('expenses',  r => r.user_id === uid);
-    const customers = await db.all('customers', r => r.user_id === uid);
-    const settings  = await db.get('user_settings', r => r.user_id === uid) || {};
+    const uid         = req.session.userId;
+    const questionKey = message.trim().toLowerCase();
+
+    // Check cache first — identical question for same user within 24 h
+    const cached = await pool.query(
+      `SELECT answer, model FROM ai_cache
+       WHERE user_id = $1 AND question = $2 AND created_at > NOW() - INTERVAL '24 hours'
+       ORDER BY created_at DESC LIMIT 1`,
+      [uid, questionKey]
+    );
+    if (cached.rows.length > 0) {
+      const { answer, model } = cached.rows[0];
+      return res.json({ reply: answer, model, cached: true });
+    }
+
+    // Gather financial context in parallel
+    const [invoices, expenses, customers, settings] = await Promise.all([
+      db.all('invoices',  r => r.user_id === uid),
+      db.all('expenses',  r => r.user_id === uid),
+      db.all('customers', r => r.user_id === uid),
+      db.get('user_settings', r => r.user_id === uid),
+    ]);
+    const cfg = settings || {};
 
     const totalRevenue  = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
     const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0);
 
-    const systemPrompt = `You are FinFlow AI, a sharp financial assistant embedded in the FinFlow accounting platform.
-Business: ${settings.company_name || 'This business'}
+    const model = COMPLEX_QUERY_RE.test(message)
+      ? 'claude-sonnet-4-5-20250514'
+      : 'claude-haiku-4-5-20251001';
+
+    const systemPrompt = `You are FinFlow's AI assistant. You ONLY answer questions about the user's financial data provided in this context. You have no knowledge of external events, news, or general information. If asked something outside the user's FinFlow data, respond with: I can only help with your FinFlow financial data. Always be concise and specific to the numbers provided.
+
+Business: ${cfg.company_name || 'This business'}
 Revenue (paid invoices): $${totalRevenue.toLocaleString()}
 Total Expenses: $${totalExpenses.toLocaleString()}
+Net Profit: $${(totalRevenue - totalExpenses).toLocaleString()}
 Customers: ${customers.length}
 Open Invoices: ${invoices.filter(i => i.status !== 'paid').length}
-
-Be concise, practical, and specific to this business's actual numbers. Format currency with $ signs. Keep replies under 200 words unless asked for detail.`;
+Overdue Invoices: ${invoices.filter(i => i.status === 'overdue').length}`;
 
     const messages = [
       ...history.slice(-10).map(m => ({ role: m.role, content: m.content })),
@@ -937,7 +963,7 @@ Be concise, practical, and specific to this business's actual numbers. Format cu
         'anthropic-version': '2023-06-01',
         'content-type': 'application/json'
       },
-      body: JSON.stringify({ model: 'claude-opus-4-5', max_tokens: 1024, system: systemPrompt, messages })
+      body: JSON.stringify({ model, max_tokens: 1024, system: systemPrompt, messages })
     });
 
     if (!response.ok) {
@@ -947,12 +973,30 @@ Be concise, practical, and specific to this business's actual numbers. Format cu
     }
 
     const data = await response.json();
-    res.json({ reply: data.content?.[0]?.text || 'No response from AI.' });
+    const reply = data.content?.[0]?.text || 'No response from AI.';
+
+    // Persist to cache (fire-and-forget — don't let a cache write failure block the response)
+    pool.query(
+      `INSERT INTO ai_cache (user_id, question, answer, model) VALUES ($1, $2, $3, $4)`,
+      [uid, questionKey, reply, model]
+    ).catch(e => console.error('[AI cache write]', e.message));
+
+    res.json({ reply, model, cached: false });
   } catch (err) {
     console.error('AI route error:', err);
     res.status(500).json({ error: 'AI service error. Check server logs.' });
   }
 });
+
+app.get('/api/ai/cache', requireAuth, wrap(async (req, res) => {
+  const result = await pool.query(
+    `SELECT id, question, answer, model, created_at
+     FROM ai_cache WHERE user_id = $1
+     ORDER BY created_at DESC LIMIT 50`,
+    [req.session.userId]
+  );
+  res.json(result.rows);
+}));
 
 // ── STATIC / SPA ──────────────────────────────────────────────────────────────
 app.get('/app', (req, res) => {

@@ -75,6 +75,21 @@ async function initDB() {
       CREATE INDEX IF NOT EXISTS idx_session_expire ON session(expire)
     `);
 
+    // AI response cache — keyed by user_id + normalised question, TTL enforced in queries
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ai_cache (
+        id         SERIAL PRIMARY KEY,
+        user_id    INTEGER NOT NULL,
+        question   TEXT NOT NULL,
+        answer     TEXT NOT NULL,
+        model      VARCHAR(100) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_ai_cache_user_created ON ai_cache(user_id, created_at)
+    `);
+
     await client.query('COMMIT');
     console.log('[DB] PostgreSQL schema ready');
   } catch (err) {

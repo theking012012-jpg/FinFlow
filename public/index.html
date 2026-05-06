@@ -2868,6 +2868,27 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="edit-inv-modal">
+  <div class="modal">
+    <div class="modal-header"><div><div class="modal-title">Edit inventory item</div><div class="modal-sub">Update product details and stock levels</div></div><button class="modal-close" onclick="closeModal('edit-inv-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="field-wrap"><label class="field-label">Product name *</label><input class="finput" id="edit-inv-name" placeholder="e.g. USB-C Hub"></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label">Units in stock</label><input class="finput" id="edit-inv-units" type="number" min="0" placeholder="0"></div><div class="field-wrap"><label class="field-label">Unit cost ($)</label><input class="finput" id="edit-inv-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
+    <div class="field-wrap"><label class="field-label">Reorder level (max units)</label><input class="finput" id="edit-inv-max" type="number" min="1" placeholder="200"></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('edit-inv-modal')">Cancel</button><button class="btn btn-primary" onclick="saveEditInv()">Save changes</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="item-modal">
+  <div class="modal">
+    <div class="modal-header"><div><div class="modal-title" id="item-modal-title">New Item</div><div class="modal-sub">Add or edit a product or service in your catalog</div></div><button class="modal-close" onclick="closeModal('item-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label">Name *</label><input class="finput" id="item-name" placeholder="e.g. Web Development"></div><div class="field-wrap"><label class="field-label">SKU</label><input class="finput" id="item-sku" placeholder="SVC-001"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label">Type</label><select class="finput" id="item-type"><option value="Product">Product</option><option value="Service">Service</option></select></div><div class="field-wrap"><label class="field-label">Status</label><select class="finput" id="item-status"><option value="Active">Active</option><option value="Low Stock">Low Stock</option><option value="Inactive">Inactive</option></select></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label">Price ($)</label><input class="finput" id="item-price" type="number" min="0" step="0.01" placeholder="0.00"></div><div class="field-wrap"><label class="field-label">Unit</label><input class="finput" id="item-unit" placeholder="each / hr / mo"></div></div>
+    <div class="field-wrap"><label class="field-label">Stock (leave blank for services)</label><input class="finput" id="item-stock" type="number" min="0" placeholder="—"></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('item-modal')">Cancel</button><button class="btn btn-primary" onclick="saveItem()">Save</button></div>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="spending-modal">
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Edit monthly spending</div><div class="modal-sub">Adjust your personal spending categories</div></div><button class="modal-close" onclick="closeModal('spending-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>

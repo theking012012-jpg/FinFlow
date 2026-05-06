@@ -12,7 +12,7 @@ const DB_PATH = path.join(__dirname, 'finflow.db.json');
 let _db = null;
 
 async function initDB() {
-  const defaultData = { users: [], entities: [], invoices: [], expenses: [], customers: [], inventory: [], payroll: [], personal_transactions: [], goals: [], holdings: [], user_settings: [], password_resets: [], quotes: [], bills: [], vendors: [], recurring_bills: [], recurring_invoices: [], sales_receipts: [], payments_received: [], credit_notes: [], payments_made: [], vendor_credits: [] };
+  const defaultData = { users: [], entities: [], invoices: [], expenses: [], customers: [], inventory: [], payroll: [], personal_transactions: [], goals: [], holdings: [], user_settings: [], password_resets: [], quotes: [], bills: [], vendors: [], recurring_bills: [], recurring_invoices: [], sales_receipts: [], payments_received: [], credit_notes: [], payments_made: [], vendor_credits: [], items: [] };
   _db = await JSONFilePreset(DB_PATH, defaultData);
   return _db;
 }
@@ -261,6 +261,20 @@ function seedUserData(userId) {
     { vendor: 'Adobe',              num: 'VC-0002', amount: 480,  date: 'Mar 30', status: 'Applied', reason: 'Subscription downgrade' },
     { vendor: 'AWS',                num: 'VC-0001', amount: 520,  date: 'Mar 12', status: 'Applied', reason: 'Credit for outage' },
   ].forEach(r => db.insert('vendor_credits', { user_id: userId, entity_id: entityId, ...r }));
+
+  // Items (product & service catalog)
+  [
+    { name: 'Web Development Services', type: 'Service', price: 150,  unit: 'hr',      stock: null, status: 'Active',    sku: 'SVC-001' },
+    { name: 'UI/UX Design',             type: 'Service', price: 120,  unit: 'hr',      stock: null, status: 'Active',    sku: 'SVC-002' },
+    { name: 'SEO Monthly Retainer',     type: 'Service', price: 2400, unit: 'mo',      stock: null, status: 'Active',    sku: 'SVC-003' },
+    { name: 'Laptop Stand Pro',         type: 'Product', price: 89,   unit: 'each',    stock: 34,   status: 'Active',    sku: 'PRD-001' },
+    { name: 'Webcam 4K Ultra',          type: 'Product', price: 199,  unit: 'each',    stock: 9,    status: 'Low Stock', sku: 'PRD-002' },
+    { name: 'Ergonomic Mouse',          type: 'Product', price: 64,   unit: 'each',    stock: 4,    status: 'Low Stock', sku: 'PRD-003' },
+    { name: 'USB-C Hub 7-in-1',         type: 'Product', price: 45,   unit: 'each',    stock: 82,   status: 'Active',    sku: 'PRD-004' },
+    { name: 'Mechanical Keyboard',      type: 'Product', price: 149,  unit: 'each',    stock: 28,   status: 'Active',    sku: 'PRD-005' },
+    { name: 'Annual Support Plan',      type: 'Service', price: 1800, unit: 'yr',      stock: null, status: 'Active',    sku: 'SVC-004' },
+    { name: 'Cloud Hosting Setup',      type: 'Service', price: 500,  unit: 'project', stock: null, status: 'Active',    sku: 'SVC-005' },
+  ].forEach(r => db.insert('items', { user_id: userId, entity_id: entityId, ...r }));
 
   // Settings
   db.upsert('user_settings', 'user_id', userId, { dark_mode: 1, currency: 'USD', show_cents: 0, notif_email: 1, notif_inv: 1, notif_pay: 1 });

@@ -340,6 +340,47 @@ app.delete('/api/inventory/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── ITEMS (product & service catalog) ────────────────────────────────────────
+app.get('/api/items', requireAuth, (req, res) => {
+  res.json(db.all('items', r => r.user_id === req.session.userId, (a, b) => a.id - b.id));
+});
+app.post('/api/items', requireAuth, (req, res) => {
+  const b = req.body || {};
+  if (!b.name) return res.status(400).json({ error: 'name required.' });
+  const { row } = db.insert('items', {
+    user_id:   req.session.userId,
+    entity_id: b.entity_id || null,
+    name:      b.name.trim().slice(0, 200),
+    type:      b.type   || 'Product',
+    price:     parseFloat(b.price) || 0,
+    unit:      (b.unit  || 'each').slice(0, 50),
+    stock:     b.stock  != null ? parseInt(b.stock) : null,
+    status:    b.status || 'Active',
+    sku:       (b.sku   || '').slice(0, 50),
+  });
+  res.status(201).json(row);
+});
+app.put('/api/items/:id', requireAuth, (req, res) => {
+  const row = ownedBy('items', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  const b = req.body || {};
+  const patch = {};
+  if (b.name   != null) patch.name   = b.name.trim().slice(0, 200);
+  if (b.type   != null) patch.type   = b.type;
+  if (b.price  != null) patch.price  = parseFloat(b.price);
+  if (b.unit   != null) patch.unit   = b.unit.slice(0, 50);
+  if ('stock'  in b)    patch.stock  = b.stock != null ? parseInt(b.stock) : null;
+  if (b.status != null) patch.status = b.status;
+  if (b.sku    != null) patch.sku    = b.sku.slice(0, 50);
+  db.update('items', r => r.id === row.id, patch);
+  res.json(db.get('items', r => r.id === row.id));
+});
+app.delete('/api/items/:id', requireAuth, (req, res) => {
+  if (!ownedBy('items', req.params.id, req.session.userId)) return res.status(404).json({ error: 'Not found.' });
+  db.delete('items', r => r.id === parseInt(req.params.id));
+  res.json({ ok: true });
+});
+
 // ── PAYROLL ───────────────────────────────────────────────────────────────────
 app.get('/api/payroll', requireAuth, (req, res) => {
   res.json(db.all('payroll', r => r.user_id === req.session.userId, (a,b) => b.is_owner - a.is_owner || a.id - b.id));

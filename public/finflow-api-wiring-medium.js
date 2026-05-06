@@ -468,6 +468,7 @@
           <span style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${S(val)}</span>
           <span class="table-actions">
             <button class="btn btn-ghost btn-sm" onclick="restockItem(${idx})">Restock</button>
+            ${item._dbId ? `<button class="btn btn-ghost btn-sm" onclick="openEditInvModal(${item._dbId})">Edit</button>` : ''}
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7"
               onclick="deleteInventoryItem(${idx})">✕</button>
           </span>
@@ -569,7 +570,193 @@
       }
     };
 
-    console.log('[FinFlow API Wiring — Medium] ✅ Invoices, Expenses, Inventory, Payroll patched');
+    // ════════════════════════════════════════════
+    // INVENTORY EDIT
+    // ════════════════════════════════════════════
+
+    let _editInvDbId = null;
+
+    window.openEditInvModal = function (dbId) {
+      const item = (window.inventory || []).find(i => i._dbId === dbId);
+      if (!item) return;
+      _editInvDbId = dbId;
+      document.getElementById('edit-inv-name').value  = item.name  || '';
+      document.getElementById('edit-inv-units').value = item.units != null ? item.units : '';
+      document.getElementById('edit-inv-cost').value  = item.cost  != null ? item.cost  : '';
+      document.getElementById('edit-inv-max').value   = item.max   != null ? item.max   : 200;
+      openModal('edit-inv-modal');
+    };
+
+    window.saveEditInv = async function () {
+      const item = (window.inventory || []).find(i => i._dbId === _editInvDbId);
+      if (!item) { closeModal('edit-inv-modal'); return; }
+      const name = document.getElementById('edit-inv-name')?.value?.trim();
+      if (!name) { notify('Name is required', true); return; }
+      const units = Math.max(0, parseInt(document.getElementById('edit-inv-units')?.value) || 0);
+      const cost  = parseFloat(document.getElementById('edit-inv-cost')?.value)  || 0;
+      const max   = Math.max(1, parseInt(document.getElementById('edit-inv-max')?.value)   || 200);
+      try {
+        await api('PUT', `/api/inventory/${item._dbId}`, { name, units, cost, max_units: max });
+        item.name  = name;
+        item.units = units;
+        item.cost  = cost;
+        item.max   = max;
+        item.low   = units < max * 0.1;
+        closeModal('edit-inv-modal');
+        if (typeof renderInventory === 'function') renderInventory();
+        notify(`${esc(name)} updated ✦`);
+      } catch (e) {
+        notify('Could not save — ' + e.message, true);
+      }
+    };
+
+    // ════════════════════════════════════════════
+    // 5. ITEMS PAGE
+    // ════════════════════════════════════════════
+
+    async function loadItemsFromDB() {
+      try {
+        const rows = await api('GET', '/api/items');
+        if (rows && rows.length > 0) {
+          window.itemsData = rows.map(r => ({
+            _dbId:  r.id,
+            name:   r.name,
+            type:   r.type,
+            price:  r.price,
+            unit:   r.unit,
+            stock:  r.stock,
+            status: r.status,
+            sku:    r.sku || '',
+          }));
+          if (typeof renderItems === 'function') renderItems();
+        }
+      } catch (e) {
+        // ignore — page will show hardcoded seed data
+      }
+    }
+    loadItemsFromDB();
+
+    function renderItemRow(i) {
+      return `<div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
+        <span style="font-weight:500">${esc(i.name)}<br><span style="font-size:11px;color:var(--t3)">${esc(i.sku || '')}</span></span>
+        <span><span class="badge ${i.type === 'Service' ? 'b-blue' : 'b-purple'}">${esc(i.type)}</span></span>
+        <span style="font-family:var(--font-mono)">$${i.price}<span style="font-size:10px;color:var(--t3)">/${esc(i.unit || '')}</span></span>
+        <span style="color:var(--t2)">${i.stock != null ? i.stock + ' units' : '—'}</span>
+        <span><span class="badge ${i.status === 'Active' ? 'b-green' : i.status === 'Low Stock' ? 'b-amber' : 'b-red'}">${esc(i.status || '')}</span></span>
+        <div class="table-actions">
+          <button class="btn btn-ghost btn-sm" onclick="openEditItemModal(${i._dbId})">Edit</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteItem(${i._dbId})">✕</button>
+        </div>
+      </div>`;
+    }
+
+    window.renderItems = function (filter) {
+      if (filter === undefined) filter = window.itemsFilter || 'all';
+      window.itemsFilter = filter;
+      const data = window.itemsData || (typeof itemsData !== 'undefined' ? itemsData : []);
+      const list = document.getElementById('items-list');
+      if (!list) return;
+      const filtered = data.filter(i => filter === 'all' || (i.type || '').toLowerCase() === filter);
+      list.innerHTML = filtered.length
+        ? filtered.map(i => renderItemRow(i)).join('')
+        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No items found</div>';
+    };
+
+    window.filterItems = function (f) { window.renderItems(f); };
+
+    window.filterItemsBySearch = function (v) {
+      const data = window.itemsData || (typeof itemsData !== 'undefined' ? itemsData : []);
+      const list = document.getElementById('items-list');
+      if (!list) return;
+      const q = v.toLowerCase();
+      const filtered = data.filter(i =>
+        i.name.toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q)
+      );
+      list.innerHTML = filtered.length
+        ? filtered.map(i => renderItemRow(i)).join('')
+        : '<div style="padding:2rem;text-align:center;color:var(--t3)">No items found</div>';
+    };
+
+    let _itemModalMode = 'new';
+    let _editItemDbId  = null;
+
+    window.openNewItemModal = function () {
+      _itemModalMode = 'new';
+      _editItemDbId  = null;
+      document.getElementById('item-modal-title').textContent = 'New Item';
+      ['item-name', 'item-sku', 'item-price', 'item-unit', 'item-stock'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      const typeEl = document.getElementById('item-type');
+      if (typeEl) typeEl.value = 'Product';
+      const unitEl = document.getElementById('item-unit');
+      if (unitEl) unitEl.value = 'each';
+      const statusEl = document.getElementById('item-status');
+      if (statusEl) statusEl.value = 'Active';
+      openModal('item-modal');
+    };
+
+    window.openEditItemModal = function (dbId) {
+      const data = window.itemsData || [];
+      const item = data.find(i => i._dbId === dbId);
+      if (!item) return;
+      _itemModalMode = 'edit';
+      _editItemDbId  = dbId;
+      document.getElementById('item-modal-title').textContent = 'Edit Item';
+      document.getElementById('item-name').value   = item.name   || '';
+      document.getElementById('item-type').value   = item.type   || 'Product';
+      document.getElementById('item-price').value  = item.price  != null ? item.price  : '';
+      document.getElementById('item-unit').value   = item.unit   || 'each';
+      document.getElementById('item-stock').value  = item.stock  != null ? item.stock  : '';
+      document.getElementById('item-status').value = item.status || 'Active';
+      document.getElementById('item-sku').value    = item.sku    || '';
+      openModal('item-modal');
+    };
+
+    window.saveItem = async function () {
+      const name = document.getElementById('item-name')?.value?.trim();
+      if (!name) { notify('Name is required', true); return; }
+      const type   = document.getElementById('item-type')?.value   || 'Product';
+      const price  = parseFloat(document.getElementById('item-price')?.value)  || 0;
+      const unit   = document.getElementById('item-unit')?.value?.trim() || 'each';
+      const stockEl = document.getElementById('item-stock');
+      const stock  = stockEl?.value !== '' && stockEl?.value != null ? parseInt(stockEl.value) : null;
+      const status = document.getElementById('item-status')?.value  || 'Active';
+      const sku    = document.getElementById('item-sku')?.value?.trim() || '';
+      try {
+        if (_itemModalMode === 'edit' && _editItemDbId != null) {
+          await api('PUT', `/api/items/${_editItemDbId}`, { name, type, price, unit, stock, status, sku });
+          const item = (window.itemsData || []).find(i => i._dbId === _editItemDbId);
+          if (item) Object.assign(item, { name, type, price, unit, stock, status, sku });
+        } else {
+          const saved = await api('POST', '/api/items', { name, type, price, unit, stock, status, sku });
+          if (!window.itemsData) window.itemsData = [];
+          window.itemsData.unshift({ _dbId: saved.id, name, type, price, unit, stock, status, sku });
+        }
+        closeModal('item-modal');
+        if (typeof renderItems === 'function') renderItems();
+        notify(`${esc(name)} saved ✦`);
+      } catch (e) {
+        notify('Could not save item — ' + e.message, true);
+      }
+    };
+
+    window.deleteItem = async function (dbId) {
+      const item = (window.itemsData || []).find(i => i._dbId === dbId);
+      if (!item) return;
+      if (!confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
+      try {
+        await api('DELETE', `/api/items/${dbId}`);
+        window.itemsData = (window.itemsData || []).filter(i => i._dbId !== dbId);
+        if (typeof renderItems === 'function') renderItems();
+        notify('Item deleted');
+      } catch (e) {
+        notify('Could not delete item — ' + e.message, true);
+      }
+    };
+
+    console.log('[FinFlow API Wiring — Medium] ✅ Invoices, Expenses, Inventory, Payroll, Items patched');
   });
 
 })();

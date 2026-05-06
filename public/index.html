@@ -1834,17 +1834,15 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 
       <!-- API CONNECTIONS -->
       <div class="page" id="page-connections">
-        <!-- CONNECTIONS HUB STYLES -->
         <style>
         .conn-hub-topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:10px}
         .conn-hub-topbar p{font-size:12.5px;color:var(--t2);margin-top:2px}
         .conn-hub-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
         .conn-search-wrap{position:relative}
         .conn-search-wrap svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);width:13px;height:13px;stroke:var(--t3);fill:none;stroke-width:2;stroke-linecap:round}
-        #conn-search{padding:6px 10px 6px 28px;font-size:12px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg2);color:var(--t1);font-family:var(--font);width:200px;outline:none;transition:border-color .13s}
+        #conn-search{padding:6px 10px 6px 28px;font-size:12px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg2);color:var(--t1);font-family:var(--font);width:220px;outline:none;transition:border-color .13s}
         #conn-search:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-glow)}
-        .conn-filter-btn{padding:5px 11px;font-size:11.5px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg2);color:var(--t2);cursor:pointer;white-space:nowrap;font-family:var(--font);transition:all .13s}
-        .conn-filter-btn:hover,.conn-filter-btn.active{background:var(--bg3);color:var(--t1);border-color:var(--acc)}
+        .conn-results-ct{font-size:11.5px;color:var(--t3);margin-bottom:.85rem}
         .conn-stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem}
         .conn-stat{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius);padding:.75rem 1rem;position:relative;overflow:hidden}
         .conn-stat::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--acc);opacity:.4}
@@ -1852,189 +1850,212 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         .conn-stat-label{font-size:9.5px;color:var(--t2);text-transform:uppercase;letter-spacing:.12em;font-weight:500;margin-bottom:4px}
         .conn-stat-val{font-size:22px;font-weight:300;color:var(--t1);font-family:var(--font-display);font-style:italic;line-height:1}
         .conn-stat-sub{font-size:11px;color:var(--t3);margin-top:3px}
+        .conn-cat-pills{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:1.1rem}
+        .conn-cat-pill{padding:4px 10px;font-size:11px;border:1px solid var(--bd2);border-radius:20px;background:var(--bg2);color:var(--t2);cursor:pointer;white-space:nowrap;font-family:var(--font);transition:all .13s;line-height:1.4}
+        .conn-cat-pill:hover{border-color:var(--acc);color:var(--t1)}
+        .conn-cat-pill.active{background:var(--acc-bg);color:var(--acc);border-color:var(--acc2)}
         .conn-section{margin-bottom:1.5rem}
         .conn-section-hdr{display:flex;align-items:center;gap:8px;margin-bottom:.75rem;padding-bottom:7px;border-bottom:1px solid var(--bd)}
-        .conn-section-icon{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+        .conn-section-icon{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
         .conn-section-title{font-size:13px;font-weight:500;color:var(--t1);font-family:var(--font)}
         .conn-section-ct{font-size:11px;color:var(--t3);margin-left:auto}
-        .conn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:8px}
+        .conn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
         .conn-card{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-lg);padding:12px 14px;display:flex;flex-direction:column;gap:8px;transition:border-color .13s;position:relative;cursor:default}
         .conn-card:hover{border-color:var(--bd2)}
         .conn-card.is-connected{border-color:var(--green-bd)}
-        .conn-card-top{display:flex;align-items:center;gap:9px}
-        .conn-card-logo{width:34px;height:34px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;border:1px solid var(--bd);background:var(--bg2)}
-        .conn-card-name{font-size:12.5px;font-weight:500;color:var(--t1);line-height:1.25}
-        .conn-card-desc{font-size:11px;color:var(--t2);line-height:1.35;margin-top:1px}
-        .conn-card-footer{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
-        .conn-regions{display:flex;gap:3px;flex-wrap:wrap}
-        .conn-rtag{font-size:9.5px;padding:2px 6px;border-radius:20px;font-weight:500;white-space:nowrap}
-        .rt-global{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
-        .rt-us{background:var(--acc-bg);color:var(--acc);border:1px solid var(--acc2)}
-        .rt-eu{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-bd)}
-        .rt-latam{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd)}
-        .rt-apac{background:var(--teal-bg);color:var(--teal);border:1px solid #1e3320}
-        .rt-uk{background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)}
-        .rt-ca{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd)}
-        .rt-mena{background:var(--bg4);color:var(--t2);border:1px solid var(--bd2)}
+        .conn-card-top{display:flex;align-items:flex-start;gap:9px}
+        .conn-card-logo{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0;border:1px solid transparent;font-family:var(--font-display)}
+        .conn-card-name{font-size:12px;font-weight:600;color:var(--t1);line-height:1.25;margin-bottom:3px}
+        .conn-cat-badge{font-size:9.5px;padding:2px 6px;border-radius:20px;font-weight:500;white-space:nowrap;display:inline-block;line-height:1.5}
+        .conn-card-desc{font-size:11px;color:var(--t2);line-height:1.4;flex:1}
+        .conn-card-footer{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-top:auto}
+        .conn-connected-badge{font-size:9.5px;color:var(--green);background:var(--green-bg);border:1px solid var(--green-bd);padding:2px 7px;border-radius:20px;font-weight:500;white-space:nowrap}
         .conn-toggle-btn{font-size:10.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--bd2);cursor:pointer;font-weight:500;font-family:var(--font);transition:all .13s;white-space:nowrap}
         .conn-toggle-btn.disconn{background:var(--bg2);color:var(--t2)}
-        .conn-toggle-btn.conn{background:var(--green-bg);color:var(--green);border-color:var(--green-bd)}
+        .conn-toggle-btn.conn{background:var(--red-bg);color:var(--red);border-color:var(--red-bd)}
         .conn-toggle-btn:hover{opacity:.75}
         .conn-dot{width:6px;height:6px;border-radius:50%;background:var(--green);position:absolute;top:10px;right:10px;box-shadow:0 0 0 0 rgba(125,184,125,.4);animation:connPulse 2.5s ease infinite}
-        .conn-empty{text-align:center;padding:2rem;color:var(--t3);font-size:13px;grid-column:1/-1}
+        .conn-empty{text-align:center;padding:2rem;color:var(--t3);font-size:13px}
         </style>
 
         <div class="conn-hub-topbar">
           <div>
-            <p>Connect the tools you already use — payments, banking, payroll, e-commerce, and more.</p>
+            <p>Connect the tools you already use — payments, banking, accounting, payroll, and 15 more categories.</p>
           </div>
           <div class="conn-hub-controls">
             <div class="conn-search-wrap">
               <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <input type="text" id="conn-search" placeholder="Search integrations…" oninput="connFilterAll()">
             </div>
-            <button class="conn-filter-btn active" onclick="connSetFilter('all',this)">All</button>
-            <button class="conn-filter-btn" onclick="connSetFilter('connected',this)">Connected</button>
-            <button class="conn-filter-btn" onclick="connSetFilter('available',this)">Available</button>
           </div>
         </div>
 
         <div class="conn-stats-row">
-          <div class="conn-stat"><div class="conn-stat-label">Total integrations</div><div class="conn-stat-val" id="cs-total">42</div><div class="conn-stat-sub">across 8 categories</div></div>
+          <div class="conn-stat"><div class="conn-stat-label">Total integrations</div><div class="conn-stat-val" id="cs-total">485</div><div class="conn-stat-sub">across 19 categories</div></div>
           <div class="conn-stat"><div class="conn-stat-label">Connected</div><div class="conn-stat-val" id="cs-connected" style="color:var(--green)">0</div><div class="conn-stat-sub">active right now</div></div>
+          <div class="conn-stat"><div class="conn-stat-label">Categories</div><div class="conn-stat-val">19</div><div class="conn-stat-sub">from payments to crypto</div></div>
           <div class="conn-stat"><div class="conn-stat-label">Regions covered</div><div class="conn-stat-val">6+</div><div class="conn-stat-sub">global coverage</div></div>
-          <div class="conn-stat"><div class="conn-stat-label">Syncing live</div><div class="conn-stat-val" id="cs-syncing">0</div><div class="conn-stat-sub">data connections</div></div>
         </div>
 
+        <div class="conn-cat-pills" id="conn-cat-pills"></div>
+        <div class="conn-results-ct" id="conn-results-ct"></div>
         <div id="conn-catalog"></div>
 
         <script>
         (function(){
           const INTEGRATIONS=[
-            {cat:'payments',name:'Stripe',desc:'Card payments, subscriptions & payouts',logo:'💳',regions:['Global'],connected:true},
-            {cat:'payments',name:'PayPal',desc:'Consumer wallets & merchant payments',logo:'🅿',regions:['Global']},
-            {cat:'payments',name:'Square',desc:'POS & online payments suite',logo:'⬛',regions:['US','CA','UK']},
-            {cat:'payments',name:'Adyen',desc:'Enterprise payment processing',logo:'🔷',regions:['Global']},
-            {cat:'payments',name:'Flutterwave',desc:'Africa & emerging markets',logo:'🦋',regions:['LATAM','MENA']},
-            {cat:'payments',name:'Wise',desc:'Multi-currency transfers & accounts',logo:'💚',regions:['Global'],connected:true},
-            {cat:'payments',name:'Mollie',desc:'European payment gateway',logo:'🌀',regions:['EU']},
-            {cat:'payments',name:'Razorpay',desc:'India-first payment suite',logo:'⚡',regions:['APAC']},
-            {cat:'banking',name:'Plaid',desc:'Bank account linking & data feeds',logo:'🏦',regions:['US','CA','EU','UK'],connected:true},
-            {cat:'banking',name:'TrueLayer',desc:'Open banking & account feeds',logo:'🔗',regions:['UK','EU']},
-            {cat:'banking',name:'MX',desc:'Financial data aggregation',logo:'📊',regions:['US','CA']},
-            {cat:'banking',name:'Mono',desc:'African bank account access',logo:'🌍',regions:['LATAM']},
-            {cat:'banking',name:'Finverse',desc:'APAC open banking',logo:'🔄',regions:['APAC']},
-            {cat:'banking',name:'Salt Edge',desc:'Global bank connections (5000+)',logo:'🌐',regions:['Global']},
-            {cat:'payroll',name:'Gusto',desc:'US payroll, benefits & HR',logo:'👥',regions:['US']},
-            {cat:'payroll',name:'ADP',desc:'Enterprise payroll & workforce',logo:'🏢',regions:['US','CA','EU']},
-            {cat:'payroll',name:'Rippling',desc:'Global payroll & HRIS',logo:'🌊',regions:['Global']},
-            {cat:'payroll',name:'Deel',desc:'Contractor & EOR global payroll',logo:'🌎',regions:['Global'],connected:true},
-            {cat:'payroll',name:'Remote',desc:'Global employment platform',logo:'📡',regions:['Global']},
-            {cat:'payroll',name:'Xero Payroll',desc:'Integrated payroll for Xero users',logo:'✖',regions:['UK','AU','CA']},
-            {cat:'ecommerce',name:'Shopify',desc:'E-commerce orders & revenue sync',logo:'🛍',regions:['Global'],connected:true},
-            {cat:'ecommerce',name:'WooCommerce',desc:'WordPress store integration',logo:'🛒',regions:['Global']},
-            {cat:'ecommerce',name:'Amazon Seller',desc:'Marketplace revenue & fees',logo:'📦',regions:['Global']},
-            {cat:'ecommerce',name:'Etsy',desc:'Handmade & vintage marketplace',logo:'🧶',regions:['Global']},
-            {cat:'ecommerce',name:'BigCommerce',desc:'Enterprise commerce platform',logo:'🔶',regions:['Global']},
-            {cat:'pos',name:'Clover',desc:'Restaurant & retail point of sale',logo:'🍀',regions:['US','CA','UK']},
-            {cat:'pos',name:'Toast',desc:'Restaurant POS & management',logo:'🍞',regions:['US','CA','UK']},
-            {cat:'pos',name:'Lightspeed',desc:'Retail & hospitality POS',logo:'⚡',regions:['US','CA','EU','APAC']},
-            {cat:'pos',name:'Vend',desc:'Cloud retail POS',logo:'🏪',regions:['Global']},
-            {cat:'crm',name:'Salesforce',desc:'CRM deals, pipeline & revenue',logo:'☁',regions:['Global']},
-            {cat:'crm',name:'HubSpot',desc:'Marketing, sales & service hub',logo:'🟠',regions:['Global'],connected:true},
-            {cat:'crm',name:'Pipedrive',desc:'Sales pipeline & activity',logo:'🔵',regions:['Global']},
-            {cat:'crm',name:'Zoho CRM',desc:'All-in-one sales platform',logo:'🦓',regions:['Global']},
-            {cat:'tax',name:'TaxJar',desc:'US sales tax automation',logo:'🏷',regions:['US']},
-            {cat:'tax',name:'Avalara',desc:'Global tax compliance & filing',logo:'🔢',regions:['Global']},
-            {cat:'tax',name:'Vertex',desc:'Enterprise tax engine',logo:'📐',regions:['US','EU']},
-            {cat:'tax',name:'Taxdoo',desc:'E-commerce VAT compliance',logo:'🇪🇺',regions:['EU']},
-            {cat:'tax',name:'Dext',desc:'Receipt capture & expense data',logo:'📄',regions:['UK','AU','CA','US']},
-            {cat:'comms',name:'Slack',desc:'Alerts, reports & approval flows',logo:'💬',regions:['Global'],connected:true},
-            {cat:'comms',name:'Gmail',desc:'Invoice & receipt email parsing',logo:'📧',regions:['Global']},
-            {cat:'comms',name:'Microsoft Teams',desc:'Notifications & finance bot',logo:'🟣',regions:['Global']},
-            {cat:'comms',name:'Twilio',desc:'SMS alerts & payment reminders',logo:'🔴',regions:['Global']},
+            {name:"Stripe",cat:"Payments",desc:"Online payment processing"},{name:"PayPal",cat:"Payments",desc:"Global payment platform"},{name:"Square",cat:"Payments",desc:"Point of sale & payments"},{name:"WiPay",cat:"Payments",desc:"Caribbean payment processor"},{name:"Braintree",cat:"Payments",desc:"PayPal-owned payment gateway"},{name:"Authorize.net",cat:"Payments",desc:"Payment gateway for merchants"},{name:"Razorpay",cat:"Payments",desc:"India's leading payment gateway"},{name:"Flutterwave",cat:"Payments",desc:"Africa's payment infrastructure"},{name:"Paystack",cat:"Payments",desc:"Modern payments for Africa"},{name:"Mollie",cat:"Payments",desc:"European payment solutions"},{name:"Klarna",cat:"Payments",desc:"Buy now pay later"},{name:"Afterpay",cat:"Payments",desc:"Installment payments"},{name:"GoCardless",cat:"Payments",desc:"Direct bank payment collection"},{name:"Paddle",cat:"Payments",desc:"SaaS payment platform"},{name:"Lemon Squeezy",cat:"Payments",desc:"Merchant of record platform"},{name:"Adyen",cat:"Payments",desc:"Global payments platform"},{name:"Worldpay",cat:"Payments",desc:"Global payment processing"},{name:"2Checkout",cat:"Payments",desc:"Global payment platform"},{name:"Skrill",cat:"Payments",desc:"Digital wallet & payments"},{name:"Neteller",cat:"Payments",desc:"Online money transfer"},{name:"Payoneer",cat:"Payments",desc:"Global payment platform"},{name:"Wise",cat:"Payments",desc:"International money transfers"},{name:"Revolut",cat:"Payments",desc:"Financial super app"},{name:"Cash App",cat:"Payments",desc:"Mobile payment service"},{name:"Venmo",cat:"Payments",desc:"Mobile payment service"},{name:"Zelle",cat:"Payments",desc:"Digital payments network"},{name:"Apple Pay",cat:"Payments",desc:"Mobile payment service"},{name:"Google Pay",cat:"Payments",desc:"Digital wallet platform"},{name:"Samsung Pay",cat:"Payments",desc:"Mobile payment service"},{name:"Alipay",cat:"Payments",desc:"China's payment platform"},{name:"WeChat Pay",cat:"Payments",desc:"Chinese digital wallet"},{name:"Paytm",cat:"Payments",desc:"India's digital payments"},{name:"PhonePe",cat:"Payments",desc:"India UPI payments"},{name:"M-Pesa",cat:"Payments",desc:"Africa mobile money"},{name:"Checkout.com",cat:"Payments",desc:"Payment infrastructure"},{name:"Nuvei",cat:"Payments",desc:"Global payment technology"},{name:"Paysafe",cat:"Payments",desc:"Payment solutions"},{name:"Cybersource",cat:"Payments",desc:"Payment management platform"},{name:"Heartland",cat:"Payments",desc:"Payment processing solutions"},{name:"Helcim",cat:"Payments",desc:"Transparent payment processing"},
+            {name:"Plaid",cat:"Banking",desc:"Bank account connectivity"},{name:"Yodlee",cat:"Banking",desc:"Financial data aggregation"},{name:"TrueLayer",cat:"Banking",desc:"Open banking platform"},{name:"Nordigen",cat:"Banking",desc:"Free open banking API"},{name:"Salt Edge",cat:"Banking",desc:"Open banking compliance"},{name:"Mono",cat:"Banking",desc:"African open banking"},{name:"Okra",cat:"Banking",desc:"Nigerian banking API"},{name:"Stitch",cat:"Banking",desc:"African payment infrastructure"},{name:"MX",cat:"Banking",desc:"Financial data platform"},{name:"Finicity",cat:"Banking",desc:"Financial data services"},{name:"Akoya",cat:"Banking",desc:"Data access network"},{name:"Belvo",cat:"Banking",desc:"Latin America open banking"},{name:"Nessie",cat:"Banking",desc:"Capital One API"},{name:"Flinks",cat:"Banking",desc:"Canadian open banking"},{name:"Inverite",cat:"Banking",desc:"Canadian bank verification"},{name:"Teller",cat:"Banking",desc:"US banking API"},{name:"Lean",cat:"Banking",desc:"MENA open banking"},{name:"Dapi",cat:"Banking",desc:"Middle East banking API"},{name:"Tarabut",cat:"Banking",desc:"MENA open banking platform"},{name:"Yapily",cat:"Banking",desc:"European open banking"},{name:"Bud",cat:"Banking",desc:"Financial data intelligence"},{name:"Codat",cat:"Banking",desc:"Business financial data"},{name:"Railsbank",cat:"Banking",desc:"Banking as a service"},{name:"Synapse",cat:"Banking",desc:"Banking infrastructure"},{name:"Unit",cat:"Banking",desc:"Embedded banking"},{name:"Column",cat:"Banking",desc:"Nationally chartered bank API"},{name:"Treasury Prime",cat:"Banking",desc:"Banking as a service"},{name:"Increase",cat:"Banking",desc:"Banking API platform"},{name:"Modern Treasury",cat:"Banking",desc:"Payment operations"},{name:"Sandbox Banking",cat:"Banking",desc:"Core banking integration"},
+            {name:"QuickBooks",cat:"Accounting",desc:"Small business accounting"},{name:"Xero",cat:"Accounting",desc:"Cloud accounting software"},{name:"FreshBooks",cat:"Accounting",desc:"Invoicing and accounting"},{name:"Wave",cat:"Accounting",desc:"Free accounting software"},{name:"Sage",cat:"Accounting",desc:"Business management software"},{name:"MYOB",cat:"Accounting",desc:"Australian accounting software"},{name:"Zoho Books",cat:"Accounting",desc:"Online accounting software"},{name:"NetSuite",cat:"Accounting",desc:"Cloud ERP platform"},{name:"SAP",cat:"Accounting",desc:"Enterprise resource planning"},{name:"Oracle Financials",cat:"Accounting",desc:"Enterprise financial management"},{name:"Microsoft Dynamics",cat:"Accounting",desc:"Business applications"},{name:"Kashoo",cat:"Accounting",desc:"Simple cloud accounting"},{name:"KashFlow",cat:"Accounting",desc:"UK accounting software"},{name:"Clearbooks",cat:"Accounting",desc:"Online accounting"},{name:"Pandle",cat:"Accounting",desc:"Cloud bookkeeping"},{name:"Bokio",cat:"Accounting",desc:"Smart accounting"},{name:"Holded",cat:"Accounting",desc:"Business management"},{name:"Odoo",cat:"Accounting",desc:"Open source ERP"},{name:"Acumatica",cat:"Accounting",desc:"Cloud ERP"},{name:"Epicor",cat:"Accounting",desc:"Industry-specific ERP"},{name:"Infor",cat:"Accounting",desc:"Enterprise software"},{name:"Workday",cat:"Accounting",desc:"Finance and HR platform"},{name:"Certinia",cat:"Accounting",desc:"Cloud ERP for Salesforce"},{name:"Sage Intacct",cat:"Accounting",desc:"Cloud financial management"},{name:"Blackbaud",cat:"Accounting",desc:"Nonprofit financial management"},
+            {name:"Salesforce",cat:"CRM",desc:"World's #1 CRM"},{name:"HubSpot",cat:"CRM",desc:"Inbound marketing CRM"},{name:"Pipedrive",cat:"CRM",desc:"Sales-focused CRM"},{name:"Zoho CRM",cat:"CRM",desc:"Complete CRM suite"},{name:"Monday.com",cat:"CRM",desc:"Work OS platform"},{name:"Notion",cat:"CRM",desc:"All-in-one workspace"},{name:"Airtable",cat:"CRM",desc:"Flexible database platform"},{name:"Freshsales",cat:"CRM",desc:"AI-powered CRM"},{name:"Insightly",cat:"CRM",desc:"CRM and project management"},{name:"Copper",cat:"CRM",desc:"Google Workspace CRM"},{name:"Close",cat:"CRM",desc:"Inside sales CRM"},{name:"Streak",cat:"CRM",desc:"CRM for Gmail"},{name:"Nimble",cat:"CRM",desc:"Social sales CRM"},{name:"Capsule",cat:"CRM",desc:"Simple online CRM"},{name:"Agile CRM",cat:"CRM",desc:"All-in-one CRM"},{name:"SugarCRM",cat:"CRM",desc:"Customer experience platform"},{name:"Microsoft Dynamics CRM",cat:"CRM",desc:"Microsoft CRM solution"},{name:"Oracle CRM",cat:"CRM",desc:"Enterprise CRM"},{name:"Keap",cat:"CRM",desc:"CRM and automation"},{name:"ActiveCampaign",cat:"CRM",desc:"Customer experience automation"},{name:"Intercom",cat:"CRM",desc:"Customer messaging platform"},{name:"Zendesk",cat:"CRM",desc:"Customer service CRM"},{name:"Freshdesk",cat:"CRM",desc:"Customer support software"},{name:"Help Scout",cat:"CRM",desc:"Customer service platform"},{name:"Drift",cat:"CRM",desc:"Conversational marketing"},{name:"Gainsight",cat:"CRM",desc:"Customer success platform"},{name:"Totango",cat:"CRM",desc:"Customer success software"},{name:"ChurnZero",cat:"CRM",desc:"Customer success platform"},{name:"Vitally",cat:"CRM",desc:"Customer success platform"},{name:"Planhat",cat:"CRM",desc:"Customer platform"},
+            {name:"Shopify",cat:"E-Commerce",desc:"E-commerce platform"},{name:"WooCommerce",cat:"E-Commerce",desc:"WordPress e-commerce"},{name:"BigCommerce",cat:"E-Commerce",desc:"Enterprise e-commerce"},{name:"Etsy",cat:"E-Commerce",desc:"Handmade marketplace"},{name:"Amazon",cat:"E-Commerce",desc:"World's largest marketplace"},{name:"eBay",cat:"E-Commerce",desc:"Online auction marketplace"},{name:"Wix",cat:"E-Commerce",desc:"Website builder with store"},{name:"Squarespace",cat:"E-Commerce",desc:"Website and store builder"},{name:"Magento",cat:"E-Commerce",desc:"Open source e-commerce"},{name:"PrestaShop",cat:"E-Commerce",desc:"Open source shopping cart"},{name:"OpenCart",cat:"E-Commerce",desc:"Open source e-commerce"},{name:"Volusion",cat:"E-Commerce",desc:"E-commerce platform"},{name:"3dcart",cat:"E-Commerce",desc:"Shopping cart software"},{name:"Ecwid",cat:"E-Commerce",desc:"E-commerce for any site"},{name:"Sellfy",cat:"E-Commerce",desc:"Digital products store"},{name:"Gumroad",cat:"E-Commerce",desc:"Creator commerce platform"},{name:"Podia",cat:"E-Commerce",desc:"Digital storefront"},{name:"Teachable",cat:"E-Commerce",desc:"Online course platform"},{name:"Thinkific",cat:"E-Commerce",desc:"Online course platform"},{name:"Kajabi",cat:"E-Commerce",desc:"Knowledge commerce platform"},{name:"Walmart",cat:"E-Commerce",desc:"Retail marketplace"},{name:"Target",cat:"E-Commerce",desc:"Retail marketplace"},{name:"Wish",cat:"E-Commerce",desc:"Mobile commerce platform"},{name:"AliExpress",cat:"E-Commerce",desc:"Global retail marketplace"},{name:"Alibaba",cat:"E-Commerce",desc:"B2B marketplace"},{name:"Rakuten",cat:"E-Commerce",desc:"Japanese e-commerce"},{name:"Flipkart",cat:"E-Commerce",desc:"Indian e-commerce"},{name:"Lazada",cat:"E-Commerce",desc:"Southeast Asia e-commerce"},{name:"Shopee",cat:"E-Commerce",desc:"Southeast Asia marketplace"},{name:"Jumia",cat:"E-Commerce",desc:"Africa e-commerce"},{name:"Konga",cat:"E-Commerce",desc:"Nigerian e-commerce"},{name:"Takealot",cat:"E-Commerce",desc:"South Africa e-commerce"},{name:"Noon",cat:"E-Commerce",desc:"Middle East marketplace"},{name:"Poshmark",cat:"E-Commerce",desc:"Fashion marketplace"},{name:"Depop",cat:"E-Commerce",desc:"Fashion resale platform"},
+            {name:"Gusto",cat:"Payroll",desc:"Modern payroll platform"},{name:"ADP",cat:"Payroll",desc:"HR and payroll solutions"},{name:"Paychex",cat:"Payroll",desc:"Payroll and HR services"},{name:"Rippling",cat:"Payroll",desc:"HR and IT platform"},{name:"Deel",cat:"Payroll",desc:"Global payroll platform"},{name:"Remote",cat:"Payroll",desc:"Global HR platform"},{name:"Oyster",cat:"Payroll",desc:"Global employment platform"},{name:"Papaya Global",cat:"Payroll",desc:"Global payroll automation"},{name:"Velocity Global",cat:"Payroll",desc:"Global expansion platform"},{name:"Multiplier",cat:"Payroll",desc:"Global employment"},{name:"Bamboo HR",cat:"Payroll",desc:"HR software"},{name:"Workday HCM",cat:"Payroll",desc:"HR and payroll"},{name:"UKG",cat:"Payroll",desc:"Workforce management"},{name:"Paylocity",cat:"Payroll",desc:"Payroll and HR software"},{name:"Paycom",cat:"Payroll",desc:"HR and payroll technology"},{name:"Ceridian",cat:"Payroll",desc:"Human capital management"},{name:"TriNet",cat:"Payroll",desc:"HR solutions for SMBs"},{name:"Justworks",cat:"Payroll",desc:"PEO platform"},{name:"Zenefits",cat:"Payroll",desc:"HR platform"},{name:"Namely",cat:"Payroll",desc:"HR software"},{name:"Lattice",cat:"Payroll",desc:"People management platform"},{name:"15Five",cat:"Payroll",desc:"Performance management"},{name:"Personio",cat:"Payroll",desc:"European HR platform"},{name:"HiBob",cat:"Payroll",desc:"Modern HR platform"},{name:"Factorial",cat:"Payroll",desc:"HR software for SMBs"},
+            {name:"TaxJar",cat:"Tax",desc:"Sales tax automation"},{name:"Avalara",cat:"Tax",desc:"Tax compliance automation"},{name:"TurboTax",cat:"Tax",desc:"Tax preparation software"},{name:"H&R Block",cat:"Tax",desc:"Tax services"},{name:"Taxfix",cat:"Tax",desc:"Mobile tax filing"},{name:"Vertex",cat:"Tax",desc:"Tax technology solutions"},{name:"Thomson Reuters ONESOURCE",cat:"Tax",desc:"Tax management"},{name:"CCH Axcess",cat:"Tax",desc:"Tax software"},{name:"Drake Tax",cat:"Tax",desc:"Professional tax software"},{name:"ProConnect",cat:"Tax",desc:"Intuit tax software"},{name:"Lacerte",cat:"Tax",desc:"Professional tax software"},{name:"UltraTax",cat:"Tax",desc:"Tax preparation software"},{name:"Wolters Kluwer",cat:"Tax",desc:"Tax and accounting software"},{name:"Bloomberg Tax",cat:"Tax",desc:"Tax research platform"},{name:"Ryan",cat:"Tax",desc:"Tax services"},{name:"Sovos",cat:"Tax",desc:"Global tax compliance"},{name:"Koinly",cat:"Tax",desc:"Crypto tax software"},{name:"CoinTracker",cat:"Tax",desc:"Crypto tax and portfolio"},{name:"TokenTax",cat:"Tax",desc:"Crypto tax software"},{name:"TaxBit",cat:"Tax",desc:"Crypto tax automation"},
+            {name:"FedEx",cat:"Shipping",desc:"Express delivery services"},{name:"UPS",cat:"Shipping",desc:"Package delivery services"},{name:"DHL",cat:"Shipping",desc:"International shipping"},{name:"USPS",cat:"Shipping",desc:"US postal service"},{name:"ShipStation",cat:"Shipping",desc:"Shipping software"},{name:"EasyPost",cat:"Shipping",desc:"Shipping API"},{name:"Shippo",cat:"Shipping",desc:"Multi-carrier shipping"},{name:"ShipBob",cat:"Shipping",desc:"Fulfillment platform"},{name:"Easyship",cat:"Shipping",desc:"Global shipping platform"},{name:"Stamps.com",cat:"Shipping",desc:"Online postage"},{name:"Pirateship",cat:"Shipping",desc:"Discounted shipping"},{name:"Sendle",cat:"Shipping",desc:"Small business shipping"},{name:"Australia Post",cat:"Shipping",desc:"Australian postal service"},{name:"Royal Mail",cat:"Shipping",desc:"UK postal service"},{name:"Canada Post",cat:"Shipping",desc:"Canadian postal service"},{name:"LaPoste",cat:"Shipping",desc:"French postal service"},{name:"Deutsche Post",cat:"Shipping",desc:"German postal service"},{name:"AfterShip",cat:"Shipping",desc:"Shipment tracking"},{name:"Route",cat:"Shipping",desc:"Package protection"},{name:"Narvar",cat:"Shipping",desc:"Post-purchase platform"},{name:"Flexport",cat:"Shipping",desc:"Freight platform"},{name:"Freightos",cat:"Shipping",desc:"Freight marketplace"},{name:"Convoy",cat:"Shipping",desc:"Digital freight network"},{name:"Transfix",cat:"Shipping",desc:"Freight technology"},{name:"project44",cat:"Shipping",desc:"Supply chain visibility"},{name:"FourKites",cat:"Shipping",desc:"Real-time supply chain"},{name:"Samsara",cat:"Shipping",desc:"Fleet management"},{name:"Onfleet",cat:"Shipping",desc:"Last-mile delivery"},{name:"Bringg",cat:"Shipping",desc:"Delivery orchestration"},{name:"Shippit",cat:"Shipping",desc:"Multi-carrier shipping"},
+            {name:"Slack",cat:"Communication",desc:"Team messaging platform"},{name:"Microsoft Teams",cat:"Communication",desc:"Business communication"},{name:"Gmail",cat:"Communication",desc:"Google email service"},{name:"Outlook",cat:"Communication",desc:"Microsoft email client"},{name:"Twilio",cat:"Communication",desc:"Cloud communications platform"},{name:"SendGrid",cat:"Communication",desc:"Email delivery service"},{name:"Mailchimp",cat:"Communication",desc:"Email marketing platform"},{name:"Klaviyo",cat:"Communication",desc:"E-commerce email platform"},{name:"Postmark",cat:"Communication",desc:"Transactional email"},{name:"Mailgun",cat:"Communication",desc:"Email API service"},{name:"Amazon SES",cat:"Communication",desc:"Cloud email service"},{name:"SparkPost",cat:"Communication",desc:"Email delivery service"},{name:"Constant Contact",cat:"Communication",desc:"Email marketing"},{name:"Campaign Monitor",cat:"Communication",desc:"Email marketing platform"},{name:"ActiveCampaign",cat:"Communication",desc:"Email automation"},{name:"ConvertKit",cat:"Communication",desc:"Creator email marketing"},{name:"Drip",cat:"Communication",desc:"E-commerce CRM"},{name:"GetResponse",cat:"Communication",desc:"Email marketing platform"},{name:"AWeber",cat:"Communication",desc:"Email marketing service"},{name:"Moosend",cat:"Communication",desc:"Email marketing automation"},{name:"Brevo",cat:"Communication",desc:"All-in-one marketing"},{name:"Zoom",cat:"Communication",desc:"Video conferencing"},{name:"Google Meet",cat:"Communication",desc:"Video meetings"},{name:"Webex",cat:"Communication",desc:"Enterprise video"},{name:"Discord",cat:"Communication",desc:"Community platform"},{name:"WhatsApp Business",cat:"Communication",desc:"Business messaging"},{name:"Telegram",cat:"Communication",desc:"Messaging platform"},{name:"Vonage",cat:"Communication",desc:"Communications APIs"},{name:"Bandwidth",cat:"Communication",desc:"Communications platform"},{name:"Plivo",cat:"Communication",desc:"Cloud communications"},{name:"MessageBird",cat:"Communication",desc:"Omnichannel platform"},{name:"Sinch",cat:"Communication",desc:"Customer communications"},{name:"Intercom",cat:"Communication",desc:"Customer messaging"},{name:"Drift",cat:"Communication",desc:"Conversational platform"},{name:"Freshchat",cat:"Communication",desc:"Customer messaging"},
+            {name:"Google Drive",cat:"Storage",desc:"Cloud file storage"},{name:"Dropbox",cat:"Storage",desc:"Cloud storage platform"},{name:"OneDrive",cat:"Storage",desc:"Microsoft cloud storage"},{name:"Box",cat:"Storage",desc:"Enterprise cloud storage"},{name:"AWS S3",cat:"Storage",desc:"Amazon cloud storage"},{name:"Google Cloud Storage",cat:"Storage",desc:"Object storage service"},{name:"Azure Blob Storage",cat:"Storage",desc:"Microsoft cloud storage"},{name:"Backblaze B2",cat:"Storage",desc:"Cloud object storage"},{name:"Wasabi",cat:"Storage",desc:"Hot cloud storage"},{name:"Cloudflare R2",cat:"Storage",desc:"Zero egress cloud storage"},{name:"DigitalOcean Spaces",cat:"Storage",desc:"Object storage"},{name:"Linode Object Storage",cat:"Storage",desc:"S3-compatible storage"},{name:"iCloud Drive",cat:"Storage",desc:"Apple cloud storage"},{name:"pCloud",cat:"Storage",desc:"Secure cloud storage"},{name:"MEGA",cat:"Storage",desc:"Encrypted cloud storage"},{name:"Nextcloud",cat:"Storage",desc:"Self-hosted cloud"},{name:"SharePoint",cat:"Storage",desc:"Microsoft document storage"},{name:"Confluence",cat:"Storage",desc:"Team workspace"},{name:"Notion",cat:"Storage",desc:"Connected workspace"},{name:"Coda",cat:"Storage",desc:"All-in-one doc platform"},
+            {name:"Google Analytics",cat:"Analytics",desc:"Web analytics service"},{name:"Mixpanel",cat:"Analytics",desc:"Product analytics"},{name:"Amplitude",cat:"Analytics",desc:"Digital analytics platform"},{name:"Segment",cat:"Analytics",desc:"Customer data platform"},{name:"Heap",cat:"Analytics",desc:"Digital insights platform"},{name:"FullStory",cat:"Analytics",desc:"Digital experience analytics"},{name:"Hotjar",cat:"Analytics",desc:"Behavior analytics"},{name:"Tableau",cat:"Analytics",desc:"Business intelligence"},{name:"Power BI",cat:"Analytics",desc:"Microsoft analytics"},{name:"Looker",cat:"Analytics",desc:"Business intelligence"},{name:"Metabase",cat:"Analytics",desc:"Open source analytics"},{name:"Grafana",cat:"Analytics",desc:"Observability platform"},{name:"Datadog",cat:"Analytics",desc:"Monitoring platform"},{name:"New Relic",cat:"Analytics",desc:"Observability platform"},{name:"Splunk",cat:"Analytics",desc:"Data platform"},{name:"Domo",cat:"Analytics",desc:"Business intelligence"},{name:"Sisense",cat:"Analytics",desc:"Analytics platform"},{name:"Klipfolio",cat:"Analytics",desc:"Dashboard platform"},{name:"Geckoboard",cat:"Analytics",desc:"KPI dashboard"},{name:"Chartio",cat:"Analytics",desc:"Cloud analytics"},{name:"Mode",cat:"Analytics",desc:"Analytics platform"},{name:"Fivetran",cat:"Analytics",desc:"Data pipeline"},{name:"Stitch",cat:"Analytics",desc:"Data pipeline"},{name:"dbt",cat:"Analytics",desc:"Data transformation"},{name:"Snowflake",cat:"Analytics",desc:"Cloud data platform"},
+            {name:"Asana",cat:"Project Mgmt",desc:"Work management platform"},{name:"Trello",cat:"Project Mgmt",desc:"Visual project boards"},{name:"Jira",cat:"Project Mgmt",desc:"Issue tracking software"},{name:"Linear",cat:"Project Mgmt",desc:"Issue tracking for teams"},{name:"ClickUp",cat:"Project Mgmt",desc:"All-in-one productivity"},{name:"Basecamp",cat:"Project Mgmt",desc:"Project management tool"},{name:"Teamwork",cat:"Project Mgmt",desc:"Project management software"},{name:"Wrike",cat:"Project Mgmt",desc:"Work management platform"},{name:"Smartsheet",cat:"Project Mgmt",desc:"Work execution platform"},{name:"Microsoft Project",cat:"Project Mgmt",desc:"Project management software"},{name:"Zoho Projects",cat:"Project Mgmt",desc:"Project management"},{name:"ProofHub",cat:"Project Mgmt",desc:"Project management tool"},{name:"Hive",cat:"Project Mgmt",desc:"Project management platform"},{name:"Podio",cat:"Project Mgmt",desc:"Work platform"},{name:"Redbooth",cat:"Project Mgmt",desc:"Team collaboration"},{name:"Mavenlink",cat:"Project Mgmt",desc:"Professional services"},{name:"Harvest",cat:"Project Mgmt",desc:"Time tracking tool"},{name:"Toggl",cat:"Project Mgmt",desc:"Time tracking software"},{name:"Clockify",cat:"Project Mgmt",desc:"Free time tracker"},{name:"Hubstaff",cat:"Project Mgmt",desc:"Time tracking and workforce"},{name:"Time Doctor",cat:"Project Mgmt",desc:"Time tracking software"},{name:"Everhour",cat:"Project Mgmt",desc:"Time tracking"},{name:"Paymo",cat:"Project Mgmt",desc:"Project management"},{name:"Productive",cat:"Project Mgmt",desc:"Agency management"},{name:"Float",cat:"Project Mgmt",desc:"Resource planning"},
+            {name:"GitHub",cat:"Developer",desc:"Code hosting platform"},{name:"GitLab",cat:"Developer",desc:"DevOps platform"},{name:"Bitbucket",cat:"Developer",desc:"Git code hosting"},{name:"AWS",cat:"Developer",desc:"Amazon cloud services"},{name:"Google Cloud",cat:"Developer",desc:"Google cloud platform"},{name:"Azure",cat:"Developer",desc:"Microsoft cloud"},{name:"Heroku",cat:"Developer",desc:"Cloud application platform"},{name:"Vercel",cat:"Developer",desc:"Frontend deployment"},{name:"Netlify",cat:"Developer",desc:"Web development platform"},{name:"Cloudflare",cat:"Developer",desc:"Web infrastructure"},{name:"Fastly",cat:"Developer",desc:"Edge cloud platform"},{name:"Akamai",cat:"Developer",desc:"Cloud and security"},{name:"PagerDuty",cat:"Developer",desc:"Digital operations"},{name:"OpsGenie",cat:"Developer",desc:"Incident management"},{name:"StatusPage",cat:"Developer",desc:"Status page service"},{name:"Sentry",cat:"Developer",desc:"Error tracking"},{name:"Rollbar",cat:"Developer",desc:"Error monitoring"},{name:"Bugsnag",cat:"Developer",desc:"Error monitoring"},{name:"LaunchDarkly",cat:"Developer",desc:"Feature flags"},{name:"Split.io",cat:"Developer",desc:"Feature delivery"},{name:"Zapier",cat:"Developer",desc:"Automation platform"},{name:"Make",cat:"Developer",desc:"Automation platform"},{name:"n8n",cat:"Developer",desc:"Workflow automation"},{name:"Workato",cat:"Developer",desc:"Enterprise automation"},{name:"Tray.io",cat:"Developer",desc:"Integration platform"},{name:"Mulesoft",cat:"Developer",desc:"Integration platform"},{name:"Boomi",cat:"Developer",desc:"Cloud integration"},{name:"Informatica",cat:"Developer",desc:"Data management"},{name:"Talend",cat:"Developer",desc:"Data integration"},{name:"Fivetran",cat:"Developer",desc:"Automated data movement"},
+            {name:"Google Ads",cat:"Marketing",desc:"Online advertising platform"},{name:"Facebook Ads",cat:"Marketing",desc:"Social media advertising"},{name:"LinkedIn Ads",cat:"Marketing",desc:"B2B advertising platform"},{name:"Twitter Ads",cat:"Marketing",desc:"Social media advertising"},{name:"TikTok Ads",cat:"Marketing",desc:"Short video advertising"},{name:"Snapchat Ads",cat:"Marketing",desc:"Mobile advertising"},{name:"Pinterest Ads",cat:"Marketing",desc:"Visual advertising"},{name:"HubSpot Marketing",cat:"Marketing",desc:"Inbound marketing"},{name:"Marketo",cat:"Marketing",desc:"Marketing automation"},{name:"Pardot",cat:"Marketing",desc:"B2B marketing automation"},{name:"Eloqua",cat:"Marketing",desc:"Marketing automation"},{name:"Hootsuite",cat:"Marketing",desc:"Social media management"},{name:"Buffer",cat:"Marketing",desc:"Social media scheduling"},{name:"Sprout Social",cat:"Marketing",desc:"Social media management"},{name:"Later",cat:"Marketing",desc:"Social media scheduler"},{name:"SEMrush",cat:"Marketing",desc:"SEO and marketing tools"},{name:"Ahrefs",cat:"Marketing",desc:"SEO tools"},{name:"Moz",cat:"Marketing",desc:"SEO software"},{name:"BuzzSumo",cat:"Marketing",desc:"Content research"},{name:"SimilarWeb",cat:"Marketing",desc:"Digital intelligence"},{name:"Unbounce",cat:"Marketing",desc:"Landing page builder"},{name:"Instapage",cat:"Marketing",desc:"Landing page platform"},{name:"Leadpages",cat:"Marketing",desc:"Landing page software"},{name:"OptinMonster",cat:"Marketing",desc:"Lead generation"},{name:"Typeform",cat:"Marketing",desc:"Online forms"},{name:"SurveyMonkey",cat:"Marketing",desc:"Survey platform"},{name:"Qualtrics",cat:"Marketing",desc:"Experience management"},{name:"Hotjar",cat:"Marketing",desc:"Behavior analytics"},{name:"Crazy Egg",cat:"Marketing",desc:"Website optimization"},{name:"VWO",cat:"Marketing",desc:"A/B testing platform"},
+            {name:"Workday",cat:"HR",desc:"HR and finance platform"},{name:"SAP SuccessFactors",cat:"HR",desc:"HR suite"},{name:"Oracle HCM",cat:"HR",desc:"Human capital management"},{name:"BambooHR",cat:"HR",desc:"HR software"},{name:"Greenhouse",cat:"HR",desc:"Recruiting software"},{name:"Lever",cat:"HR",desc:"Talent acquisition"},{name:"Workable",cat:"HR",desc:"Recruiting software"},{name:"JazzHR",cat:"HR",desc:"Recruiting software"},{name:"iCIMS",cat:"HR",desc:"Talent cloud"},{name:"Taleo",cat:"HR",desc:"Oracle recruiting"},{name:"LinkedIn Recruiter",cat:"HR",desc:"Talent acquisition"},{name:"Indeed",cat:"HR",desc:"Job search platform"},{name:"Glassdoor",cat:"HR",desc:"Jobs and company reviews"},{name:"ZipRecruiter",cat:"HR",desc:"Job marketplace"},{name:"Culture Amp",cat:"HR",desc:"Employee feedback"},{name:"Glint",cat:"HR",desc:"Employee engagement"},{name:"Peakon",cat:"HR",desc:"Employee success"},{name:"Leapsome",cat:"HR",desc:"People enablement"},{name:"Bonusly",cat:"HR",desc:"Employee recognition"},{name:"Workhuman",cat:"HR",desc:"Human recognition platform"},
+            {name:"DocuSign",cat:"Legal",desc:"Electronic signature"},{name:"Adobe Sign",cat:"Legal",desc:"E-signature solution"},{name:"HelloSign",cat:"Legal",desc:"Electronic signatures"},{name:"PandaDoc",cat:"Legal",desc:"Document automation"},{name:"Ironclad",cat:"Legal",desc:"Contract lifecycle management"},{name:"Concord",cat:"Legal",desc:"Contract management"},{name:"ContractSafe",cat:"Legal",desc:"Contract management"},{name:"Clio",cat:"Legal",desc:"Legal practice management"},{name:"MyCase",cat:"Legal",desc:"Legal case management"},{name:"PracticePanther",cat:"Legal",desc:"Legal software"},{name:"LegalZoom",cat:"Legal",desc:"Legal services"},{name:"Clerky",cat:"Legal",desc:"Legal paperwork"},{name:"Stripe Atlas",cat:"Legal",desc:"Company incorporation"},{name:"Firstbase",cat:"Legal",desc:"Business formation"},{name:"Doola",cat:"Legal",desc:"Business formation"},
+            {name:"Hiscox",cat:"Insurance",desc:"Small business insurance"},{name:"Next Insurance",cat:"Insurance",desc:"Digital business insurance"},{name:"Thimble",cat:"Insurance",desc:"On-demand business insurance"},{name:"Embroker",cat:"Insurance",desc:"Business insurance platform"},{name:"Vouch",cat:"Insurance",desc:"Startup insurance"},{name:"Pie Insurance",cat:"Insurance",desc:"Workers compensation"},{name:"Coterie",cat:"Insurance",desc:"Small business insurance"},{name:"Openly",cat:"Insurance",desc:"Home insurance"},{name:"Hippo",cat:"Insurance",desc:"Home insurance"},{name:"Lemonade",cat:"Insurance",desc:"Insurance platform"},{name:"Root",cat:"Insurance",desc:"Car insurance"},{name:"Metromile",cat:"Insurance",desc:"Pay-per-mile insurance"},{name:"Clearcover",cat:"Insurance",desc:"Car insurance"},{name:"Oscar Health",cat:"Insurance",desc:"Health insurance"},{name:"Collective Health",cat:"Insurance",desc:"Employee health benefits"},
+            {name:"Zillow",cat:"Real Estate",desc:"Real estate marketplace"},{name:"Realtor.com",cat:"Real Estate",desc:"Real estate listings"},{name:"Redfin",cat:"Real Estate",desc:"Real estate brokerage"},{name:"CoStar",cat:"Real Estate",desc:"Commercial real estate"},{name:"LoopNet",cat:"Real Estate",desc:"Commercial property"},{name:"Buildout",cat:"Real Estate",desc:"Commercial RE marketing"},{name:"Yardi",cat:"Real Estate",desc:"Real estate software"},{name:"AppFolio",cat:"Real Estate",desc:"Property management"},{name:"Buildium",cat:"Real Estate",desc:"Property management"},{name:"Rent Manager",cat:"Real Estate",desc:"Property management"},{name:"Propertyware",cat:"Real Estate",desc:"Property management"},{name:"TenantCloud",cat:"Real Estate",desc:"Rental management"},{name:"DoorLoop",cat:"Real Estate",desc:"Property management"},{name:"Stessa",cat:"Real Estate",desc:"Rental property finance"},{name:"Roofstock",cat:"Real Estate",desc:"Real estate investing"},
+            {name:"Coinbase",cat:"Crypto",desc:"Cryptocurrency exchange"},{name:"Binance",cat:"Crypto",desc:"Crypto trading platform"},{name:"Kraken",cat:"Crypto",desc:"Cryptocurrency exchange"},{name:"Gemini",cat:"Crypto",desc:"Crypto exchange"},{name:"FTX",cat:"Crypto",desc:"Crypto derivatives"},{name:"Crypto.com",cat:"Crypto",desc:"Crypto platform"},{name:"BitPay",cat:"Crypto",desc:"Crypto payment processor"},{name:"Coinbase Commerce",cat:"Crypto",desc:"Crypto payments"},{name:"NOWPayments",cat:"Crypto",desc:"Crypto payment gateway"},{name:"CoinGate",cat:"Crypto",desc:"Crypto payments"},{name:"OpenNode",cat:"Crypto",desc:"Bitcoin payments"},{name:"Strike",cat:"Crypto",desc:"Bitcoin payments"},{name:"Alchemy",cat:"Crypto",desc:"Web3 developer platform"},{name:"Infura",cat:"Crypto",desc:"Ethereum API"},{name:"Moralis",cat:"Crypto",desc:"Web3 development"},{name:"Chainlink",cat:"Crypto",desc:"Blockchain oracle"},{name:"The Graph",cat:"Crypto",desc:"Blockchain indexing"},{name:"Ankr",cat:"Crypto",desc:"Web3 infrastructure"},{name:"QuickNode",cat:"Crypto",desc:"Blockchain node provider"},{name:"Nansen",cat:"Crypto",desc:"Crypto analytics"}
           ];
-          const CATS=[
-            {id:'payments',label:'Payments',icon:'💳',bg:'var(--green-bg)'},
-            {id:'banking',label:'Banking feeds',icon:'🏦',bg:'var(--acc-bg)'},
-            {id:'payroll',label:'Payroll',icon:'👥',bg:'var(--purple-bg)'},
-            {id:'ecommerce',label:'E-commerce',icon:'🛍',bg:'var(--amber-bg)'},
-            {id:'pos',label:'Point of sale',icon:'🖥',bg:'var(--teal-bg)'},
-            {id:'crm',label:'CRM',icon:'🤝',bg:'var(--red-bg)'},
-            {id:'tax',label:'Tax & compliance',icon:'📋',bg:'var(--amber-bg)'},
-            {id:'comms',label:'Communication',icon:'💬',bg:'var(--bg4)'},
-          ];
-          const RTAG={Global:'rt-global',US:'rt-us',EU:'rt-eu',LATAM:'rt-latam',APAC:'rt-apac',UK:'rt-uk',CA:'rt-ca',MENA:'rt-mena',AU:'rt-apac'};
-          let connStates={};
-          INTEGRATIONS.forEach(i=>{connStates[i.name]=!!i.connected;});
-          let connFilter='all';
+
+          const CAT_COLOR={
+            'Payments':'#4ade80','Banking':'#f59e0b','Accounting':'#818cf8',
+            'CRM':'#f97316','E-Commerce':'#fb923c','Payroll':'#a78bfa',
+            'Tax':'#f87171','Shipping':'#2dd4bf','Communication':'#60a5fa',
+            'Storage':'#94a3b8','Analytics':'#c084fc','Project Mgmt':'#fdba74',
+            'Developer':'#38bdf8','Marketing':'#f472b6','HR':'#34d399',
+            'Legal':'#818cf8','Insurance':'#6ee7b7','Real Estate':'#fbbf24','Crypto':'#fb923c'
+          };
+
+          function loadStates(){try{return JSON.parse(localStorage.getItem('ff_integrations')||'{}')}catch(e){return{}}}
+          function saveStates(s){try{localStorage.setItem('ff_integrations',JSON.stringify(s))}catch(e){}}
+
+          let connStates=loadStates();
+          let activeFilter=null;
           let connSearch='';
 
-          window.connSetFilter=function(f,btn){
-            connFilter=f;
-            document.querySelectorAll('.conn-filter-btn').forEach(b=>b.classList.remove('active'));
-            btn.classList.add('active');
-            connRenderAll();
-          };
-          window.connFilterAll=function(){
-            connSearch=document.getElementById('conn-search').value.toLowerCase();
-            connRenderAll();
-          };
-          window.connToggle=function(name){
-            connStates[name]=!connStates[name];
-            connUpdateStats();
-            connRenderAll();
-            notify(connStates[name]?name+' connected':name+' disconnected');
-          };
+          const CATS=[...new Set(INTEGRATIONS.map(i=>i.cat))];
 
-          function connUpdateStats(){
-            const cnt=Object.values(connStates).filter(Boolean).length;
-            const el1=document.getElementById('cs-connected');
-            const el2=document.getElementById('cs-syncing');
-            if(el1)el1.textContent=cnt;
-            if(el2)el2.textContent=cnt;
+          function buildPills(){
+            const c=document.getElementById('conn-cat-pills');
+            if(!c)return;
+            c.innerHTML='';
+            const allBtn=document.createElement('button');
+            allBtn.className='conn-cat-pill'+(activeFilter===null?' active':'');
+            allBtn.textContent='All ('+INTEGRATIONS.length+')';
+            allBtn.onclick=function(){activeFilter=null;buildPills();render();};
+            c.appendChild(allBtn);
+            CATS.forEach(function(cat){
+              const cnt=INTEGRATIONS.filter(function(i){return i.cat===cat;}).length;
+              const btn=document.createElement('button');
+              btn.className='conn-cat-pill'+(activeFilter===cat?' active':'');
+              btn.textContent=cat+' ('+cnt+')';
+              btn.onclick=function(){activeFilter=activeFilter===cat?null:cat;buildPills();render();};
+              c.appendChild(btn);
+            });
           }
 
-          window.connRenderAll=function(){
-            const catalog=document.getElementById('conn-catalog');
+          function getFiltered(){
+            return INTEGRATIONS.filter(function(i){
+              var ms=!connSearch||i.name.toLowerCase().indexOf(connSearch)>-1||i.desc.toLowerCase().indexOf(connSearch)>-1;
+              var mc=activeFilter===null||i.cat===activeFilter;
+              return ms&&mc;
+            });
+          }
+
+          function render(){
+            var filtered=getFiltered();
+            var ct=document.getElementById('conn-results-ct');
+            var catalog=document.getElementById('conn-catalog');
+            if(ct)ct.textContent=filtered.length+' integration'+(filtered.length!==1?'s':'');
             if(!catalog)return;
             catalog.innerHTML='';
-            let total=0;
-            CATS.forEach(cat=>{
-              let items=INTEGRATIONS.filter(i=>i.cat===cat.id);
-              if(connSearch)items=items.filter(i=>i.name.toLowerCase().includes(connSearch)||i.desc.toLowerCase().includes(connSearch)||i.regions.some(r=>r.toLowerCase().includes(connSearch)));
-              if(connFilter==='connected')items=items.filter(i=>connStates[i.name]);
-              if(connFilter==='available')items=items.filter(i=>!connStates[i.name]);
-              if(!items.length)return;
-              total+=items.length;
-              const sec=document.createElement('div');
+            if(!filtered.length){
+              catalog.innerHTML='<div class="conn-empty">No integrations match your search.</div>';
+              updateStats();
+              return;
+            }
+            var grouped={};
+            CATS.forEach(function(cat){
+              var items=filtered.filter(function(i){return i.cat===cat;});
+              if(items.length)grouped[cat]=items;
+            });
+            Object.keys(grouped).forEach(function(cat){
+              var items=grouped[cat];
+              var col=CAT_COLOR[cat]||'#888';
+              var sec=document.createElement('div');
               sec.className='conn-section';
-              sec.innerHTML='<div class="conn-section-hdr"><div class="conn-section-icon" style="background:'+cat.bg+'">'+cat.icon+'</div><span class="conn-section-title">'+cat.label+'</span><span class="conn-section-ct">'+items.length+' integration'+(items.length>1?'s':'')+'</span></div><div class="conn-grid" id="cg-'+cat.id+'"></div>';
+              sec.innerHTML='<div class="conn-section-hdr">'
+                +'<div class="conn-section-icon" style="background:'+col+'22;color:'+col+'">'+cat.charAt(0)+'</div>'
+                +'<span class="conn-section-title">'+cat+'</span>'
+                +'<span class="conn-section-ct">'+items.length+' integration'+(items.length!==1?'s':'')+'</span>'
+                +'</div><div class="conn-grid"></div>';
               catalog.appendChild(sec);
-              const grid=sec.querySelector('.conn-grid');
-              items.forEach(item=>{
-                const on=connStates[item.name];
-                const card=document.createElement('div');
+              var grid=sec.querySelector('.conn-grid');
+              items.forEach(function(item){
+                var on=!!connStates[item.name];
+                var col2=CAT_COLOR[item.cat]||'#888';
+                var idx=INTEGRATIONS.indexOf(item);
+                var card=document.createElement('div');
                 card.className='conn-card'+(on?' is-connected':'');
                 card.innerHTML=(on?'<div class="conn-dot"></div>':'')
-                  +'<div class="conn-card-top"><div class="conn-card-logo">'+item.logo+'</div><div><div class="conn-card-name">'+item.name+'</div><div class="conn-card-desc">'+item.desc+'</div></div></div>'
-                  +'<div class="conn-card-footer"><div class="conn-regions">'+item.regions.map(r=>'<span class="conn-rtag '+(RTAG[r]||'rt-global')+'">'+r+'</span>').join('')+'</div>'
-                  +'<button class="conn-toggle-btn '+(on?'conn':'disconn')+'" onclick="connToggle(\''+item.name+'\')">'+(on?'Connected':'Connect')+'</button></div>';
+                  +'<div class="conn-card-top">'
+                  +'<div class="conn-card-logo" style="background:'+col2+'22;color:'+col2+';border-color:'+col2+'33">'+item.name.charAt(0)+'</div>'
+                  +'<div><div class="conn-card-name">'+item.name+'</div>'
+                  +'<span class="conn-cat-badge" style="background:'+col2+'22;color:'+col2+'">'+item.cat+'</span>'
+                  +'</div></div>'
+                  +'<div class="conn-card-desc">'+item.desc+'</div>'
+                  +'<div class="conn-card-footer">'
+                  +(on?'<span class="conn-connected-badge">&#10003; Connected</span>':'<span></span>')
+                  +'<button class="conn-toggle-btn '+(on?'conn':'disconn')+'" onclick="connToggle('+idx+')">'+(on?'Disconnect':'Connect')+'</button>'
+                  +'</div>';
                 grid.appendChild(card);
               });
             });
-            if(!total){
-              catalog.innerHTML='<div class="conn-empty">No integrations match your search</div>';
-            }
-            connUpdateStats();
+            updateStats();
+          }
+
+          function updateStats(){
+            var cnt=Object.keys(connStates).filter(function(k){return connStates[k];}).length;
+            var el=document.getElementById('cs-connected');
+            if(el)el.textContent=cnt;
+            var el2=document.getElementById('cs-total');
+            if(el2)el2.textContent=INTEGRATIONS.length;
+          }
+
+          window.connToggle=function(idx){
+            var item=INTEGRATIONS[idx];
+            if(!item)return;
+            var name=item.name;
+            connStates[name]=!connStates[name];
+            if(!connStates[name])delete connStates[name];
+            saveStates(connStates);
+            render();
+            buildPills();
+            if(typeof notify==='function')notify(connStates[name]?name+' connected':name+' disconnected');
           };
 
-          // Init
-          connRenderAll();
-          connUpdateStats();
+          window.connFilterAll=function(){
+            connSearch=document.getElementById('conn-search').value.toLowerCase();
+            render();
+          };
+
+          window.connRenderAll=render;
+          window.connUpdateStats=updateStats;
+
+          buildPills();
+          render();
         })();
         </script>
       </div>
+
 
       <!-- PERSONAL -->
       <div class="page" id="page-personal">
@@ -7257,14 +7278,6 @@ if(connPage){
   const hubTop = connPage.querySelector('.conn-hub-topbar');
   if(hubTop) hubTop.parentNode.insertBefore(mpBanner, hubTop.nextSibling);
 
-  // Patch total stat
-  const patchConnStat = () => {
-    const totalEl = document.getElementById('cs-total');
-    if(totalEl){ totalEl.textContent = '750+'; const sub = totalEl.closest('.conn-stat')?.querySelector('.conn-stat-sub'); if(sub) sub.textContent = 'via marketplace'; }
-  };
-  const origCUS = window.connUpdateStats;
-  window.connUpdateStats = function(){ if(origCUS) origCUS(); patchConnStat(); };
-  requestAnimationFrame(patchConnStat);
 }
 
 // ── 5. PATCH showPage for new pages ─────────────────────────────────────

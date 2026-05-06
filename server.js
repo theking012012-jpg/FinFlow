@@ -938,7 +938,7 @@ app.post('/api/ai', requireAuth, async (req, res) => {
     const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0);
 
     const model = COMPLEX_QUERY_RE.test(message)
-      ? 'claude-sonnet-4-5-20250514'
+      ? 'claude-sonnet-4-20250514'
       : 'claude-haiku-4-5-20251001';
 
     // Instructions are static across all users — cache them at the system level.
@@ -968,7 +968,7 @@ Overdue Invoices: ${invoices.filter(i => i.status === 'overdue').length}`;
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'x-api-key':        process.env.ANTHROPIC_API_KEY || '',
+        'x-api-key':        process.env.ANTHROPIC_API_KEY?.trim(),
         'anthropic-version': '2023-06-01',
         'anthropic-beta':    'prompt-caching-2024-07-31',
         'content-type':      'application/json',
@@ -1043,12 +1043,12 @@ If you cannot read a field clearly, use null. Do not invent data.`;
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'x-api-key':        process.env.ANTHROPIC_API_KEY || '',
+        'x-api-key':        process.env.ANTHROPIC_API_KEY?.trim(),
         'anthropic-version': '2023-06-01',
         'content-type':      'application/json',
       },
       body: JSON.stringify({
-        model:      'claude-sonnet-4-5-20250514',
+        model:      'claude-sonnet-4-20250514',
         max_tokens: 500,
         messages:   [{ role: 'user', content: [contentBlock, { type: 'text', text: prompt }] }],
       }),

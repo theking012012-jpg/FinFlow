@@ -393,5 +393,3 @@ async function seedUserData(userId) {
 }
 
 module.exports = { db, initDB, seedUserData, pool };
-
-

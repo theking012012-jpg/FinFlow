@@ -553,8 +553,14 @@ app.post('/api/quotes', requireAuth, (req, res) => {
 app.put('/api/quotes/:id', requireAuth, (req, res) => {
   const row = db.get('quotes', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
   if (!row) return res.status(404).json({ error: 'not found' });
-  const { client, amount, expiry_date, status, notes } = req.body;
-  db.update('quotes', r => r.id === Number(req.params.id), { client, amount: Number(amount), expiry_date, status, notes });
+  const patch = {};
+  const b = req.body || {};
+  if (b.client      != null) patch.client      = b.client;
+  if (b.amount      != null) patch.amount      = Number(b.amount);
+  if (b.expiry_date != null) patch.expiry_date = b.expiry_date;
+  if (b.status      != null) patch.status      = b.status;
+  if (b.notes       != null) patch.notes       = b.notes;
+  db.update('quotes', r => r.id === Number(req.params.id), patch);
   res.json({ ok: true });
 });
 app.delete('/api/quotes/:id', requireAuth, (req, res) => {
@@ -600,8 +606,14 @@ app.post('/api/bills', requireAuth, (req, res) => {
 app.put('/api/bills/:id', requireAuth, (req, res) => {
   const row = db.get('bills', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
   if (!row) return res.status(404).json({ error: 'not found' });
-  const { vendor, amount, due_date, status, notes } = req.body;
-  db.update('bills', r => r.id === Number(req.params.id), { vendor, amount: Number(amount), due_date, status, notes });
+  const patch = {};
+  const b = req.body || {};
+  if (b.vendor   != null) patch.vendor   = b.vendor;
+  if (b.amount   != null) patch.amount   = Number(b.amount);
+  if (b.due_date != null) patch.due_date = b.due_date;
+  if (b.status   != null) patch.status   = b.status;
+  if (b.notes    != null) patch.notes    = b.notes;
+  db.update('bills', r => r.id === Number(req.params.id), patch);
   res.json({ ok: true });
 });
 app.delete('/api/bills/:id', requireAuth, (req, res) => {
@@ -738,6 +750,63 @@ app.put('/api/vendor-credits/:id', requireAuth, (req, res) => {
 app.delete('/api/vendor-credits/:id', requireAuth, (req, res) => {
   db.delete('vendor_credits', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
   res.json({ ok: true });
+});
+
+// ── TIMESHEET ─────────────────────────────────────────────────────────────────
+app.get('/api/timesheet', requireAuth, (req, res) => {
+  res.json(db.all('timesheet', r => r.user_id === req.session.userId, (a, b) => b.id - a.id));
+});
+app.post('/api/timesheet', requireAuth, (req, res) => {
+  const { employee, project = '', date, hours, billable = 'Yes', rate = 0 } = req.body || {};
+  if (!employee || hours == null) return res.status(400).json({ error: 'employee and hours required' });
+  const { row } = db.insert('timesheet', {
+    user_id:  req.session.userId,
+    employee: employee.trim().slice(0, 100),
+    project:  project.trim().slice(0, 200),
+    date:     date || new Date().toISOString().slice(0, 10),
+    hours:    parseFloat(hours) || 0,
+    billable: billable === 'Yes' ? 'Yes' : 'No',
+    rate:     parseFloat(rate) || 0,
+  });
+  res.status(201).json(row);
+});
+app.put('/api/timesheet/:id', requireAuth, (req, res) => {
+  const row = ownedBy('timesheet', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  const b = req.body || {};
+  const patch = {};
+  if (b.employee != null) patch.employee = b.employee;
+  if (b.project  != null) patch.project  = b.project;
+  if (b.date     != null) patch.date     = b.date;
+  if (b.hours    != null) patch.hours    = parseFloat(b.hours);
+  if (b.billable != null) patch.billable = b.billable;
+  if (b.rate     != null) patch.rate     = parseFloat(b.rate);
+  db.update('timesheet', r => r.id === row.id, patch);
+  res.json(db.get('timesheet', r => r.id === row.id));
+});
+app.delete('/api/timesheet/:id', requireAuth, (req, res) => {
+  if (!ownedBy('timesheet', req.params.id, req.session.userId)) return res.status(404).json({ error: 'Not found.' });
+  db.delete('timesheet', r => r.id === parseInt(req.params.id));
+  res.json({ ok: true });
+});
+
+// ── TEAM ──────────────────────────────────────────────────────────────────────
+app.get('/api/team', requireAuth, (req, res) => {
+  const uid  = req.session.userId;
+  const user = db.get('users', u => u.id === uid);
+  const pay  = db.all('payroll', r => r.user_id === uid);
+  const members = [
+    { id: 0, name: user?.name || user?.email || 'You', email: user?.email || '', role: 'owner', emp_type: 'Owner', lastSeen: 'Now' },
+    ...pay.map(p => ({
+      id:       p.id,
+      name:     `${p.fname} ${p.lname}`.trim(),
+      email:    `${p.fname.toLowerCase()}.${p.lname.toLowerCase()}@company.com`,
+      role:     p.is_owner ? 'owner' : (p.emp_type === 'Contractor' ? 'viewer' : 'accountant'),
+      emp_type: p.emp_type,
+      lastSeen: 'Recently',
+    })),
+  ];
+  res.json(members);
 });
 
 // ── AI CHAT ───────────────────────────────────────────────────────────────────

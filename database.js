@@ -12,7 +12,7 @@ const DB_PATH = path.join(__dirname, 'finflow.db.json');
 let _db = null;
 
 async function initDB() {
-  const defaultData = { users: [], entities: [], invoices: [], expenses: [], customers: [], inventory: [], payroll: [], personal_transactions: [], goals: [], holdings: [], user_settings: [], password_resets: [], quotes: [], bills: [], vendors: [], recurring_bills: [], recurring_invoices: [], sales_receipts: [], payments_received: [], credit_notes: [], payments_made: [], vendor_credits: [], items: [] };
+  const defaultData = { users: [], entities: [], invoices: [], expenses: [], customers: [], inventory: [], payroll: [], personal_transactions: [], goals: [], holdings: [], user_settings: [], password_resets: [], quotes: [], bills: [], vendors: [], recurring_bills: [], recurring_invoices: [], sales_receipts: [], payments_received: [], credit_notes: [], payments_made: [], vendor_credits: [], items: [], timesheet: [] };
   _db = await JSONFilePreset(DB_PATH, defaultData);
 
   // Ensure every expected table exists — lowdb reads the file as-is and does NOT
@@ -302,6 +302,17 @@ function seedUserData(userId) {
     { name: 'Annual Support Plan',      type: 'Service', price: 1800, unit: 'yr',      stock: null, status: 'Active',    sku: 'SVC-004' },
     { name: 'Cloud Hosting Setup',      type: 'Service', price: 500,  unit: 'project', stock: null, status: 'Active',    sku: 'SVC-005' },
   ].forEach(r => db.insert('items', { user_id: userId, entity_id: entityId, ...r }));
+
+  // Timesheet
+  [
+    { employee: 'Jordan Mills',  project: 'RetailCo Portal',   date: '2026-04-28', hours: 6.5, billable: 'Yes', rate: 120 },
+    { employee: 'Sofia Arenas',  project: 'TechStart Rebrand', date: '2026-04-28', hours: 4,   billable: 'Yes', rate: 100 },
+    { employee: 'Raj Kapoor',    project: 'Sales Calls',       date: '2026-04-27', hours: 8,   billable: 'No',  rate: 0   },
+    { employee: 'Jordan Mills',  project: 'NovaCorp API',      date: '2026-04-26', hours: 7,   billable: 'Yes', rate: 120 },
+    { employee: 'Leila Torres',  project: 'Marketing Campaign',date: '2026-04-25', hours: 5,   billable: 'No',  rate: 0   },
+    { employee: 'Ben Nwosu',     project: 'Backend Infra',     date: '2026-04-25', hours: 8,   billable: 'Yes', rate: 95  },
+    { employee: 'Sofia Arenas',  project: 'BlueSky Redesign',  date: '2026-04-24', hours: 6,   billable: 'Yes', rate: 100 },
+  ].forEach(r => db.insert('timesheet', { user_id: userId, ...r }));
 
   // Settings
   db.upsert('user_settings', 'user_id', userId, { dark_mode: 1, currency: 'USD', show_cents: 0, notif_email: 1, notif_inv: 1, notif_pay: 1 });

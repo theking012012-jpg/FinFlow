@@ -2265,7 +2265,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Quotes</div><button class="btn btn-primary btn-sm" onclick="openNewQuoteModal()">+ New Quote</button></div>
-          <div style="display:grid;grid-template-columns:1fr 100px 80px 80px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Client</span><span>Quote #</span><span>Amount</span><span>Expiry</span><span>Status</span></div>
+          <div style="display:grid;grid-template-columns:1fr 100px 80px 80px 70px 50px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Client</span><span>Quote #</span><span>Amount</span><span>Expiry</span><span>Status</span><span></span></div>
           <div id="quotes-list"></div>
         </div>
       </div>
@@ -9369,6 +9369,8 @@ setTimeout(()=>{
 <script src="/finflow-api-wiring-final.js"></script>
 <script src="/finflow-api-wiring-stubs.js"></script>
 <script src="/finflow-api-wiring-final5.js"></script>
+<script src="/finflow-api-wiring-pages.js"></script>
+<script src="/finflow-api-wiring-extra.js"></script>
 
 <!-- ══ QUOTE MODAL ══════════════════════════════════════════════════ -->
 <div class="modal-overlay hidden" id="quote-modal">

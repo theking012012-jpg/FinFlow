@@ -175,7 +175,7 @@
                    data-amount="${esc(S(inv.amount))}">Remind ↗</button>`
               : ''}
             ${inv.status === 'paid'
-              ? `<button class="btn btn-ghost btn-sm">View</button>`
+              ? `<button class="btn btn-ghost btn-sm" onclick="viewInvoice(${idx})">View</button>`
               : ''}
             ${inv.status === 'pending'
               ? `<button class="btn btn-ghost btn-sm" onclick="markInvoicePaid(${idx})">Mark paid</button>`

@@ -84,30 +84,48 @@ function safeUser(u) {
 }
 
 // ── AUTH ──────────────────────────────────────────────────────────────────────
-app.post('/api/auth/register', authLimiter, (req, res) => {
-  const { email, password, name } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
-  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email address.' });
+app.post('/api/auth/register', authLimiter, async (req, res) => {
+  try {
+    const { email, password, name } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
+    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email address.' });
 
-  const existing = db.get('users', u => u.email.toLowerCase() === email.toLowerCase());
-  if (existing) return res.status(409).json({ error: 'An account with this email already exists.' });
+    const existing = db.get('users', u => u.email.toLowerCase() === email.toLowerCase());
+    if (existing) return res.status(409).json({ error: 'An account with this email already exists.' });
 
-  const hash = bcrypt.hashSync(password, 12);
-  const { lastInsertRowid: userId } = db.insert('users', { email: email.toLowerCase(), password: hash, name: (name || '').trim().slice(0, 100), plan: 'Pro', role: 'owner' });
-  seedUserData(userId);
-  req.session.userId = userId;
-  const user = db.get('users', u => u.id === userId);
-  res.status(201).json({ user: safeUser(user) });
+    const hash = bcrypt.hashSync(password, 12);
+    const { lastInsertRowid: userId } = db.insert('users', { email: email.toLowerCase(), password: hash, name: (name || '').trim().slice(0, 100), plan: 'Pro', role: 'owner' });
+
+    try {
+      seedUserData(userId);
+    } catch (seedErr) {
+      // Log but don't block — the account was created; seed data is non-critical
+      console.error('[Register] seedUserData failed for userId', userId, seedErr);
+    }
+
+    req.session.userId = userId;
+    const user = db.get('users', u => u.id === userId);
+    console.log('[Register] New user created:', email);
+    res.status(201).json({ user: safeUser(user) });
+  } catch (err) {
+    console.error('[Register] Unexpected error:', err);
+    res.status(500).json({ error: 'Registration failed. Please try again.' });
+  }
 });
 
-app.post('/api/auth/login', authLimiter, (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
-  const user = db.get('users', u => u.email.toLowerCase() === email.toLowerCase());
-  if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Invalid email or password.' });
-  req.session.userId = user.id;
-  res.json({ user: safeUser(user) });
+app.post('/api/auth/login', authLimiter, async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
+    const user = db.get('users', u => u.email.toLowerCase() === email.toLowerCase());
+    if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Invalid email or password.' });
+    req.session.userId = user.id;
+    res.json({ user: safeUser(user) });
+  } catch (err) {
+    console.error('[Login] Unexpected error:', err);
+    res.status(500).json({ error: 'Login failed. Please try again.' });
+  }
 });
 
 app.post('/api/auth/logout', (req, res) => { req.session.destroy(() => res.json({ ok: true })); });

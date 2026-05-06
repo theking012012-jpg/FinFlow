@@ -14,6 +14,19 @@ let _db = null;
 async function initDB() {
   const defaultData = { users: [], entities: [], invoices: [], expenses: [], customers: [], inventory: [], payroll: [], personal_transactions: [], goals: [], holdings: [], user_settings: [], password_resets: [], quotes: [], bills: [], vendors: [], recurring_bills: [], recurring_invoices: [], sales_receipts: [], payments_received: [], credit_notes: [], payments_made: [], vendor_credits: [], items: [] };
   _db = await JSONFilePreset(DB_PATH, defaultData);
+
+  // Ensure every expected table exists — lowdb reads the file as-is and does NOT
+  // merge defaultData, so tables added after the first deploy are missing on existing DBs.
+  let needsWrite = false;
+  for (const table of Object.keys(defaultData)) {
+    if (!Array.isArray(_db.data[table])) {
+      console.log(`[DB] Adding missing table: ${table}`);
+      _db.data[table] = [];
+      needsWrite = true;
+    }
+  }
+  if (needsWrite) await _db.write();
+
   return _db;
 }
 
@@ -21,7 +34,7 @@ async function initDB() {
 let _idCounters = {};
 function nextId(table) {
   if (!_idCounters[table]) {
-    const rows = _db.data[table];
+    const rows = Array.isArray(_db.data[table]) ? _db.data[table] : [];
     _idCounters[table] = rows.length ? Math.max(...rows.map(r => r.id || 0)) + 1 : 1;
   }
   return _idCounters[table]++;
@@ -33,6 +46,14 @@ function queueWrite() {
   _writeQueue = _writeQueue.then(() => _db.write()).catch(err => console.error('[DB write error]', err));
 }
 
+// ── Ensure a table array exists (guard for tables added after initial deploy) ──
+function ensureTable(table) {
+  if (!Array.isArray(_db.data[table])) {
+    console.warn(`[DB] Auto-creating missing table: ${table}`);
+    _db.data[table] = [];
+  }
+}
+
 // ── Low-level helpers (mimic better-sqlite3 API) ──────────────────────────────
 const db = {
   get data() { return _db ? _db.data : null; },
@@ -41,27 +62,31 @@ const db = {
 
   // Insert a row, return { lastInsertRowid }
   insert(table, row) {
+    ensureTable(table);
     const id = nextId(table);
     const newRow = { id, ...row, created_at: new Date().toISOString() };
     _db.data[table].push(newRow);
-    queueWrite(); // serialised async write
+    queueWrite();
     return { lastInsertRowid: id, row: newRow };
   },
 
   // Get one row by filter fn
   get(table, filterFn) {
+    if (!Array.isArray(_db.data[table])) return null;
     return _db.data[table].find(filterFn) || null;
   },
 
   // Get all rows matching filter fn
   all(table, filterFn, sortFn) {
-    let rows = filterFn ? _db.data[table].filter(filterFn) : [..._db.data[table]];
+    const src = Array.isArray(_db.data[table]) ? _db.data[table] : [];
+    let rows = filterFn ? src.filter(filterFn) : [...src];
     if (sortFn) rows.sort(sortFn);
     return rows;
   },
 
   // Update rows matching filter, apply patch object or fn
   update(table, filterFn, patch) {
+    if (!Array.isArray(_db.data[table])) return;
     _db.data[table].forEach(row => {
       if (filterFn(row)) Object.assign(row, typeof patch === 'function' ? patch(row) : patch);
     });
@@ -70,12 +95,14 @@ const db = {
 
   // Delete rows matching filter
   delete(table, filterFn) {
+    if (!Array.isArray(_db.data[table])) return;
     _db.data[table] = _db.data[table].filter(r => !filterFn(r));
     queueWrite();
   },
 
   // Upsert (for user_settings)
   upsert(table, keyField, keyVal, patch) {
+    ensureTable(table);
     const existing = _db.data[table].find(r => r[keyField] === keyVal);
     if (existing) {
       Object.assign(existing, patch, { updated_at: new Date().toISOString() });

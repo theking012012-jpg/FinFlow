@@ -941,9 +941,12 @@ app.post('/api/ai', requireAuth, async (req, res) => {
       ? 'claude-sonnet-4-5-20250514'
       : 'claude-haiku-4-5-20251001';
 
-    const systemPrompt = `You are FinFlow's AI assistant. You ONLY answer questions about the user's financial data provided in this context. You have no knowledge of external events, news, or general information. If asked something outside the user's FinFlow data, respond with: I can only help with your FinFlow financial data. Always be concise and specific to the numbers provided.
+    // Instructions are static across all users — cache them at the system level.
+    const systemInstruction = `You are FinFlow's AI assistant. You ONLY answer questions about the user's financial data provided in this context. You have no knowledge of external events, news, or general information. If asked something outside the user's FinFlow data, respond with: I can only help with your FinFlow financial data. Always be concise and specific to the numbers provided.`;
 
-Business: ${cfg.company_name || 'This business'}
+    // Per-user context changes between users but not between rapid follow-up questions
+    // from the same user — cache it as the first user content block.
+    const contextText = `Business: ${cfg.company_name || 'This business'}
 Revenue (paid invoices): $${totalRevenue.toLocaleString()}
 Total Expenses: $${totalExpenses.toLocaleString()}
 Net Profit: $${(totalRevenue - totalExpenses).toLocaleString()}
@@ -953,17 +956,31 @@ Overdue Invoices: ${invoices.filter(i => i.status === 'overdue').length}`;
 
     const messages = [
       ...history.slice(-10).map(m => ({ role: m.role, content: m.content })),
-      { role: 'user', content: message }
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: contextText, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: message },
+        ],
+      },
     ];
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+        'x-api-key':        process.env.ANTHROPIC_API_KEY || '',
         'anthropic-version': '2023-06-01',
-        'content-type': 'application/json'
+        'anthropic-beta':    'prompt-caching-2024-07-31',
+        'content-type':      'application/json',
       },
-      body: JSON.stringify({ model, max_tokens: 1024, system: systemPrompt, messages })
+      body: JSON.stringify({
+        model,
+        max_tokens: 1024,
+        system: [
+          { type: 'text', text: systemInstruction, cache_control: { type: 'ephemeral' } },
+        ],
+        messages,
+      }),
     });
 
     if (!response.ok) {

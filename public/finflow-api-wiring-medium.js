@@ -298,9 +298,13 @@
     // ════════════════════════════════════════════
 
     // Boot: load saved inventory
+    let _inventoryFetched = false;
+
     async function loadInventoryFromDB() {
       try {
         const rows = await api('GET', '/api/inventory');
+        _inventoryFetched = true;
+        console.log('[Inventory] API returned', rows ? rows.length : 0, 'rows');
         if (rows && rows.length > 0) {
           const mapped = rows.map(r => ({
             _dbId: r.id,
@@ -315,7 +319,7 @@
           if (typeof renderInventory === 'function') renderInventory();
         }
       } catch (e) {
-        // Ignore
+        console.warn('[Inventory] loadInventoryFromDB failed:', e.message);
       }
     }
     loadInventoryFromDB();
@@ -447,6 +451,10 @@
 
     // Patch renderInventory to show delete button
     window.renderInventory = function () {
+      // If DB data hasn't been fetched yet (e.g. user wasn't authed at boot), fetch now
+      if (!_inventoryFetched) {
+        loadInventoryFromDB(); // async — will re-render when data arrives
+      }
       if (!window.inventory) window.inventory = [];
       const lowCount = window.inventory.filter(i => i.low).length;
       const badge2 = document.getElementById('badge-inv2');
@@ -614,9 +622,13 @@
     // 5. ITEMS PAGE
     // ════════════════════════════════════════════
 
+    let _itemsFetched = false;
+
     async function loadItemsFromDB() {
       try {
         const rows = await api('GET', '/api/items');
+        _itemsFetched = true;
+        console.log('[Items] API returned', rows ? rows.length : 0, 'rows');
         if (rows && rows.length > 0) {
           window.itemsData = rows.map(r => ({
             _dbId:  r.id,
@@ -631,7 +643,7 @@
           if (typeof renderItems === 'function') renderItems();
         }
       } catch (e) {
-        // ignore — page will show hardcoded seed data
+        console.warn('[Items] loadItemsFromDB failed:', e.message);
       }
     }
     loadItemsFromDB();
@@ -653,9 +665,17 @@
     window.renderItems = function (filter) {
       if (filter === undefined) filter = window.itemsFilter || 'all';
       window.itemsFilter = filter;
-      const data = window.itemsData || (typeof itemsData !== 'undefined' ? itemsData : []);
       const list = document.getElementById('items-list');
       if (!list) return;
+
+      // If DB data hasn't been fetched yet, kick off a load and show a loading state
+      if (!_itemsFetched) {
+        loadItemsFromDB(); // async — will call renderItems() again when data arrives
+        list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--t3)">Loading…</div>';
+        return;
+      }
+
+      const data = window.itemsData || [];
       const filtered = data.filter(i => filter === 'all' || (i.type || '').toLowerCase() === filter);
       list.innerHTML = filtered.length
         ? filtered.map(i => renderItemRow(i)).join('')
@@ -665,7 +685,7 @@
     window.filterItems = function (f) { window.renderItems(f); };
 
     window.filterItemsBySearch = function (v) {
-      const data = window.itemsData || (typeof itemsData !== 'undefined' ? itemsData : []);
+      const data = window.itemsData || [];
       const list = document.getElementById('items-list');
       if (!list) return;
       const q = v.toLowerCase();

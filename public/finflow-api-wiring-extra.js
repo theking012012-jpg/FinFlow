@@ -602,19 +602,12 @@
     const type   = document.getElementById('h-type')?.value || 'Stock';
     if (!ticker || !shares) { tip('Ticker and shares are required', true); return; }
     try {
-      const row = await api('POST', '/api/holdings', {
+      await api('POST', '/api/holdings', {
         ticker, name, asset_type: type, shares, cost_per: cost, price, dividend: div,
       });
-      const colors = ['#c9a84c', '#5aaa9e', '#9e8fbf', '#7db87d', '#d4964a', '#c46a5a', '#5a4e3a'];
-      const mapped = {
-        _dbId: row.id, id: row.id, ticker: row.ticker, name: row.name,
-        type: row.asset_type, shares: row.shares, cost: row.cost_per,
-        price: row.price, div: row.dividend, color: row.color || colors[holdings.length % colors.length],
-      };
-      if (typeof holdings !== 'undefined') holdings.push(mapped);
       if (typeof closeModal === 'function') closeModal('holding-modal');
-      if (typeof renderInvestments === 'function') renderInvestments();
       tip(`${e(ticker)} added to portfolio`);
+      await loadHoldingsFromDB();
     } catch (err) { tip('Could not save holding — ' + err.message, true); }
   };
 

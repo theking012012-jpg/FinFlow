@@ -320,6 +320,21 @@
     }
     loadInventoryFromDB();
 
+    function nextSku() {
+      const nums = (window.inventory || [])
+        .map(i => parseInt((i.sku || '').replace(/\D/g, ''), 10))
+        .filter(n => !isNaN(n));
+      const max = nums.length ? Math.max(...nums) : 1047;
+      return '#' + String(max + 1).padStart(4, '0');
+    }
+
+    // Patch openProductModal to pre-fill SKU with next available number
+    window.openProductModal = function () {
+      const skuEl = document.getElementById('prod-sku');
+      if (skuEl) skuEl.value = nextSku();
+      openModal('product-modal');
+    };
+
     // Patch saveProduct (add new inventory item)
     window.saveProduct = async function () {
       const name = (typeof sanitizeText === 'function')
@@ -335,7 +350,7 @@
       const cost     = costRaw !== null ? costRaw : 0;
       const thresh   = Math.max(0, parseInt(document.getElementById('prod-thresh')?.value) || 20);
       const skuInput = document.getElementById('prod-sku')?.value?.trim();
-      const sku      = skuInput || ('#' + String(1048 + window.inventory.length).padStart(4, '0'));
+      const sku      = skuInput || nextSku();
       const max      = Math.max(units * 2, 100);
 
       try {
@@ -365,8 +380,9 @@
       }
     };
 
-    // Tracks which inventory index is being restocked
-    let _restockIdx = -1;
+    // Tracks the _dbId (or index for local-only items) of the item being restocked
+    let _restockDbId = null;
+    let _restockLocalIdx = -1;
 
     // Patch restockItem to open modal instead of prompt()
     window.restockItem = async function (idx) {
@@ -374,8 +390,9 @@
         await loadInventoryFromDB();
       }
       if (!window.inventory || idx < 0 || idx >= window.inventory.length) return;
-      _restockIdx = idx;
       const item = window.inventory[idx];
+      _restockDbId = item._dbId || null;
+      _restockLocalIdx = item._dbId ? -1 : idx;
       const titleEl = document.getElementById('restock-modal-title');
       if (titleEl) titleEl.textContent = `Restock ${item.name}`;
       const qtyEl = document.getElementById('restock-qty');
@@ -384,18 +401,18 @@
     };
 
     window.saveRestock = async function () {
-      const idx = _restockIdx;
-      if (!window.inventory || idx < 0 || idx >= window.inventory.length) {
-        closeModal('restock-modal');
-        return;
-      }
+      // Find item by _dbId (stable) rather than by index (shifts on array changes)
+      const item = _restockDbId != null
+        ? (window.inventory || []).find(i => i._dbId === _restockDbId)
+        : (window.inventory || [])[_restockLocalIdx];
+      if (!item) { closeModal('restock-modal'); return; }
+
       const qtyRaw = parseInt(document.getElementById('restock-qty')?.value);
       if (!qtyRaw || isNaN(qtyRaw) || qtyRaw <= 0) {
         notify('Enter a valid quantity', true);
         return;
       }
       const qty = Math.min(qtyRaw, 100000);
-      const item = window.inventory[idx];
       try {
         if (item._dbId) {
           const newUnits = item.units + qty;

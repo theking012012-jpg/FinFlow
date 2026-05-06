@@ -153,7 +153,7 @@ html{overflow-x:hidden}
 .app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100svh;height:100svh;overflow:hidden;background:var(--bg0);position:relative}
 .app::after{content:'';position:absolute;inset:0;background:var(--grain);pointer-events:none;z-index:9999;border-radius:var(--radius-xl)}
 /* SIDEBAR */
-.sidebar{background:var(--bg1);border-right:1px solid var(--bd);display:flex;flex-direction:column;overflow-y:auto;height:100%;overflow-x:visible}
+.sidebar{background:var(--bg1);border-right:1px solid var(--bd);display:flex;flex-direction:column;overflow-y:auto;height:100%}
 /* ── MOBILE HAMBURGER ─────────────────────────── */
 .mob-hamburger{display:none;align-items:center;justify-content:center;width:32px;height:32px;border-radius:var(--radius);border:1px solid var(--bd2);background:var(--bg2);cursor:pointer;flex-shrink:0;color:var(--t2);transition:all .13s}
 .mob-hamburger:hover{background:var(--bg3);color:var(--t1)}
@@ -578,8 +578,8 @@ textarea.finput{resize:vertical;min-height:72px;line-height:1.5}
 .nav-group-header .nav-icon{width:14px;height:14px;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
 .nav-group-arrow{width:10px;height:10px;margin-left:auto;flex-shrink:0;transition:transform .15s cubic-bezier(.4,0,.2,1);stroke:currentColor}
 .nav-group-arrow.open{transform:rotate(180deg)}
-.nav-group{overflow:hidden;height:0;transition:height .3s ease}.nav-group.open{height:auto}
-.nav-group-inner{opacity:1;transform:none}
+.nav-group{display:none}.nav-group.open{display:block}
+.nav-group-inner{display:block}
 
 /* Promote sidebar to its own compositing layer to prevent layout thrashing */
 .sidebar{will-change:transform}
@@ -5751,16 +5751,26 @@ ${ownerLine}Personal savings rate: ${document.getElementById('pers-savings').tex
 // NAV GROUPS (collapsible)
 // ════════════════════════════════════════════
 window.toggleGroup = function(name) {
-  const grp = document.getElementById('nav-group-' + name);
-  const arr = document.getElementById('arr-' + name);
-  const hdr = document.getElementById('grp-' + name);
+  var grp = document.getElementById('nav-group-' + name);
+  var arr = document.getElementById('arr-' + name);
+  var hdr = document.getElementById('grp-' + name);
   if (!grp) return;
-  const isOpen = grp.classList.contains('open');
-  grp.classList.toggle('open');
-  if (arr) arr.classList.toggle('open');
-  if (hdr) {
-    hdr.classList.toggle('active');
-    hdr.setAttribute('aria-expanded', String(!isOpen));
+  var isOpen = grp.classList.contains('open');
+  if (!isOpen) {
+    grp.classList.add('open');
+    grp.style.height = '';
+    if (arr) arr.classList.add('open');
+    if (hdr) { hdr.classList.add('active'); hdr.setAttribute('aria-expanded', 'true'); }
+    // Scroll sidebar to show the header of the opened group
+    setTimeout(function(){
+      var hdrEl = document.getElementById('grp-' + name);
+      if (hdrEl) hdrEl.scrollIntoView({behavior:'smooth', block:'start'});
+    }, 50);
+  } else {
+    grp.classList.remove('open');
+    grp.style.height = '';
+    if (arr) arr.classList.remove('open');
+    if (hdr) { hdr.classList.remove('active'); hdr.setAttribute('aria-expanded', 'false'); }
   }
 };
 

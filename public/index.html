@@ -2860,6 +2860,14 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
   </div>
 </div>
 
+<div class="modal-overlay hidden" id="restock-modal">
+  <div class="modal">
+    <div class="modal-header"><div><div class="modal-title" id="restock-modal-title">Restock</div><div class="modal-sub">Add units to current stock</div></div><button class="modal-close" onclick="closeModal('restock-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div class="field-wrap"><label class="field-label">Units to add</label><input class="finput" id="restock-qty" type="number" placeholder="50" min="1"></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('restock-modal')">Cancel</button><button class="btn btn-primary" onclick="saveRestock()">Save</button></div>
+  </div>
+</div>
+
 <div class="modal-overlay hidden" id="spending-modal">
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Edit monthly spending</div><div class="modal-sub">Adjust your personal spending categories</div></div><button class="modal-close" onclick="closeModal('spending-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>

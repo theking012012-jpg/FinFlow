@@ -365,17 +365,37 @@
       }
     };
 
-    // Patch restockItem to also persist
+    // Tracks which inventory index is being restocked
+    let _restockIdx = -1;
+
+    // Patch restockItem to open modal instead of prompt()
     window.restockItem = async function (idx) {
       if (!window.inventory || !Array.isArray(window.inventory)) {
         await loadInventoryFromDB();
       }
       if (!window.inventory || idx < 0 || idx >= window.inventory.length) return;
-      const qtyRaw = parseInt(prompt('Restock — how many units to add?', 50));
-      if (!qtyRaw || isNaN(qtyRaw) || qtyRaw <= 0) return;
+      _restockIdx = idx;
+      const item = window.inventory[idx];
+      const titleEl = document.getElementById('restock-modal-title');
+      if (titleEl) titleEl.textContent = `Restock ${item.name}`;
+      const qtyEl = document.getElementById('restock-qty');
+      if (qtyEl) { qtyEl.value = ''; }
+      openModal('restock-modal');
+    };
+
+    window.saveRestock = async function () {
+      const idx = _restockIdx;
+      if (!window.inventory || idx < 0 || idx >= window.inventory.length) {
+        closeModal('restock-modal');
+        return;
+      }
+      const qtyRaw = parseInt(document.getElementById('restock-qty')?.value);
+      if (!qtyRaw || isNaN(qtyRaw) || qtyRaw <= 0) {
+        notify('Enter a valid quantity', true);
+        return;
+      }
       const qty = Math.min(qtyRaw, 100000);
       const item = window.inventory[idx];
-
       try {
         if (item._dbId) {
           const newUnits = item.units + qty;
@@ -385,6 +405,7 @@
           item.units += qty;
         }
         item.low = item.units < item.max * 0.1;
+        closeModal('restock-modal');
         if (typeof renderInventory === 'function') renderInventory();
         notify(`+${qty} units added to ${esc(item.name)} ✦`);
       } catch (e) {

@@ -367,7 +367,10 @@
 
     // Patch restockItem to also persist
     window.restockItem = async function (idx) {
-      if (idx < 0 || idx >= window.inventory.length) return;
+      if (!window.inventory || !Array.isArray(window.inventory)) {
+        await loadInventoryFromDB();
+      }
+      if (!window.inventory || idx < 0 || idx >= window.inventory.length) return;
       const qtyRaw = parseInt(prompt('Restock — how many units to add?', 50));
       if (!qtyRaw || isNaN(qtyRaw) || qtyRaw <= 0) return;
       const qty = Math.min(qtyRaw, 100000);
@@ -375,10 +378,13 @@
 
       try {
         if (item._dbId) {
-          await api('POST', `/api/inventory/${item._dbId}/restock`, { qty });
+          const newUnits = item.units + qty;
+          await api('PUT', `/api/inventory/${item._dbId}`, { units: newUnits });
+          item.units = newUnits;
+        } else {
+          item.units += qty;
         }
-        item.units += qty;
-        item.low    = item.units < item.max * 0.1;
+        item.low = item.units < item.max * 0.1;
         if (typeof renderInventory === 'function') renderInventory();
         notify(`+${qty} units added to ${esc(item.name)} ✦`);
       } catch (e) {

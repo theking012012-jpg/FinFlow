@@ -1617,17 +1617,23 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">Upcoming income</div><div class="card-sub">Dividends &amp; distributions</div></div>
-            <div style="display:flex;flex-direction:column;gap:8px">
-              ${[
-                {name:'VTI dividend',date:'Jun 28',amt:'$855'},
-                {name:'BND coupon',date:'Jul 2',amt:'$2,453'},
-                {name:'REIT distribution',date:'Jul 15',amt:'$2,229'},
-                {name:'MSFT dividend',date:'Sep 12',amt:'$312'},
-              ].map(i=>`
+            <div style="display:flex;flex-direction:column;gap:8px" id="upcoming-income-list">
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-                  <div><div style="color:var(--t1);font-weight:500">${i.name}</div><div style="font-size:11px;color:var(--t3)">${i.date}</div></div>
-                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">${i.amt}</div>
-                </div>`).join('')}
+                  <div><div style="color:var(--t1);font-weight:500">VTI dividend</div><div style="font-size:11px;color:var(--t3)">Jun 28</div></div>
+                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">$855</div>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+                  <div><div style="color:var(--t1);font-weight:500">BND coupon</div><div style="font-size:11px;color:var(--t3)">Jul 2</div></div>
+                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">$2,453</div>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+                  <div><div style="color:var(--t1);font-weight:500">REIT distribution</div><div style="font-size:11px;color:var(--t3)">Jul 15</div></div>
+                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">$2,229</div>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+                  <div><div style="color:var(--t1);font-weight:500">MSFT dividend</div><div style="font-size:11px;color:var(--t3)">Sep 12</div></div>
+                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">$312</div>
+                </div>
               <div style="padding-top:6px;font-size:11.5px;color:var(--t2);display:flex;justify-content:space-between">
                 <span>Next 90 days</span><span style="color:var(--teal);font-weight:600">$5,849</span>
               </div>

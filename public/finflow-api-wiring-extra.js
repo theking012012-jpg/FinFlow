@@ -344,11 +344,341 @@
   };
 
   // ══════════════════════════════════════════════════════
+  // 7. PROJECTS — wire to /api/projects
+  // ══════════════════════════════════════════════════════
+  let _projects = [], _projectsFetched = false;
+
+  async function loadProjects() {
+    try {
+      _projects = await api('GET', '/api/projects');
+      _projectsFetched = true;
+      renderProjectsList();
+    } catch (err) { console.warn('[Projects]', err.message); }
+  }
+
+  function renderProjectsList() {
+    const l = document.getElementById('projects-list');
+    if (!l) return;
+    if (!_projects.length) {
+      l.innerHTML = '<div style="padding:16px 0;color:var(--t3);font-size:13px">No projects yet. Click + New Project to add one.</div>';
+      return;
+    }
+    const colorMap = { 'In Progress': 'b-blue', 'Completed': 'b-green', 'On Hold': 'b-amber' };
+    l.innerHTML = _projects.map(p => {
+      const billed = p.billed || 0;
+      const budget = p.budget || 0;
+      const pct    = budget > 0 ? Math.min(100, Math.round((billed / budget) * 100)) : 0;
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--bd)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div>
+            <div style="font-size:13px;font-weight:500;color:var(--t1)">${e(p.name)}</div>
+            <div style="font-size:11px;color:var(--t3)">${e(p.client || '—')} · ${e(p.hours || 0)}h logged</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="text-align:right">
+              <div style="font-size:11px;color:var(--t3)">Billed / Budget</div>
+              <div style="font-size:12px;font-weight:600;font-family:var(--font-mono)">$${billed.toLocaleString()} / $${budget.toLocaleString()}</div>
+            </div>
+            <span class="badge ${colorMap[p.status] || 'b-blue'}">${e(p.status)}</span>
+            <button class="btn btn-ghost btn-sm" onclick="deleteProject(${p.id})" style="color:var(--red);padding:2px 6px" title="Delete">✕</button>
+          </div>
+        </div>
+        <div class="bar-track" style="height:4px"><div class="bar-fill" style="width:${pct}%;background:${p.status === 'Completed' ? 'var(--green)' : 'var(--acc)'}"></div></div>
+      </div>`;
+    }).join('');
+  }
+
+  window.openNewProjectModal = function () {
+    let modal = document.getElementById('proj-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'proj-modal';
+      modal.className = 'modal-overlay hidden';
+      modal.innerHTML = `<div class="modal">
+        <div class="modal-header">
+          <div class="modal-title">New Project</div>
+          <button class="modal-close" onclick="document.getElementById('proj-modal').classList.add('hidden')">
+            <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
+          </button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+          <div><label class="flabel">Project Name *</label><input id="proj-name" class="finput" placeholder="e.g. RetailCo Portal v2"></div>
+          <div><label class="flabel">Client</label><input id="proj-client" class="finput" placeholder="Client name"></div>
+          <div><label class="flabel">Budget ($)</label><input id="proj-budget" class="finput" type="number" min="0" placeholder="0"></div>
+          <div><label class="flabel">Status</label>
+            <select id="proj-status" class="finput">
+              <option value="In Progress">In Progress</option>
+              <option value="On Hold">On Hold</option>
+              <option value="Completed">Completed</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('proj-modal').classList.add('hidden')">Cancel</button>
+          <button class="btn btn-primary btn-sm" onclick="saveProject()">Save Project</button>
+        </div>
+      </div>`;
+      document.body.appendChild(modal);
+    }
+    ['proj-name', 'proj-client', 'proj-budget'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    document.getElementById('proj-status').value = 'In Progress';
+    modal.classList.remove('hidden');
+  };
+
+  window.saveProject = async function () {
+    const name = (document.getElementById('proj-name')?.value || '').trim();
+    if (!name) { tip('Project name is required', true); return; }
+    const body = {
+      name,
+      client: (document.getElementById('proj-client')?.value || '').trim(),
+      budget: parseFloat(document.getElementById('proj-budget')?.value) || 0,
+      status: document.getElementById('proj-status')?.value || 'In Progress',
+    };
+    try {
+      const row = await api('POST', '/api/projects', body);
+      _projects.unshift(row);
+      renderProjectsList();
+      document.getElementById('proj-modal').classList.add('hidden');
+      tip(`Project "${e(row.name)}" created`);
+    } catch (err) { tip('Could not save — ' + err.message, true); }
+  };
+
+  window.deleteProject = async function (id) {
+    if (!confirm('Delete this project?')) return;
+    try {
+      await api('DELETE', `/api/projects/${id}`);
+      _projects = _projects.filter(p => p.id !== id);
+      renderProjectsList();
+      tip('Project deleted');
+    } catch (err) { tip('Could not delete — ' + err.message, true); }
+  };
+
+  const _origRenderProjects = typeof renderProjects === 'function' ? renderProjects : null;
+  window.renderProjects = function () {
+    if (_projectsFetched) { renderProjectsList(); return; }
+    if (_origRenderProjects) _origRenderProjects();
+    loadProjects();
+  };
+
+  // ══════════════════════════════════════════════════════
+  // 8. REPORTS GENERATE — real summary modal
+  // ══════════════════════════════════════════════════════
+  window.generateReport = async function (name) {
+    let modal = document.getElementById('report-gen-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'report-gen-modal';
+      modal.className = 'modal-overlay hidden';
+      modal.innerHTML = `<div class="modal" style="max-width:480px">
+        <div class="modal-header">
+          <div>
+            <div class="modal-title" id="rpt-title"></div>
+            <div class="modal-sub" id="rpt-sub"></div>
+          </div>
+          <button class="modal-close" onclick="document.getElementById('report-gen-modal').classList.add('hidden')">
+            <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
+          </button>
+        </div>
+        <div id="rpt-body" style="margin-top:12px;font-size:13px;color:var(--t2)">Loading…</div>
+        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('report-gen-modal').classList.add('hidden')">Close</button>
+          <button class="btn btn-primary btn-sm" onclick="window.print()">Print ↗</button>
+        </div>
+      </div>`;
+      document.body.appendChild(modal);
+    }
+    document.getElementById('rpt-title').textContent = name;
+    document.getElementById('rpt-sub').textContent = 'Generated ' + new Date().toLocaleDateString();
+    document.getElementById('rpt-body').innerHTML = '<div style="color:var(--t3)">Loading data…</div>';
+    modal.classList.remove('hidden');
+
+    try {
+      const [invoices, expenses] = await Promise.all([api('GET', '/api/invoices'), api('GET', '/api/expenses')]);
+      const paid      = invoices.filter(i => i.status === 'paid');
+      const revenue   = paid.reduce((s, i) => s + (i.amount || 0), 0);
+      const expTotal  = expenses.reduce((s, ex) => s + (ex.amount || 0), 0);
+      const profit    = revenue - expTotal;
+      const outstanding = invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
+      const catTotals = {};
+      expenses.forEach(ex => { catTotals[ex.category] = (catTotals[ex.category] || 0) + (ex.amount || 0); });
+      const catRows = Object.entries(catTotals).sort((a, b) => b[1] - a[1])
+        .map(([cat, amt]) => `<tr><td style="padding:3px 0;color:var(--t2)">${e(cat)}</td><td style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${money(amt)}</td></tr>`).join('');
+
+      document.getElementById('rpt-body').innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+          <div style="background:var(--bg2);border-radius:6px;padding:10px">
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Revenue</div>
+            <div style="font-size:16px;font-weight:600;color:var(--green)">${money(revenue)}</div>
+            <div style="font-size:10px;color:var(--t3)">${paid.length} paid invoice${paid.length !== 1 ? 's' : ''}</div>
+          </div>
+          <div style="background:var(--bg2);border-radius:6px;padding:10px">
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Expenses</div>
+            <div style="font-size:16px;font-weight:600;color:var(--red)">${money(expTotal)}</div>
+            <div style="font-size:10px;color:var(--t3)">${expenses.length} expense${expenses.length !== 1 ? 's' : ''}</div>
+          </div>
+          <div style="background:var(--bg2);border-radius:6px;padding:10px">
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Net Profit</div>
+            <div style="font-size:16px;font-weight:600;color:${profit >= 0 ? 'var(--green)' : 'var(--red)'}">${money(profit)}</div>
+          </div>
+          <div style="background:var(--bg2);border-radius:6px;padding:10px">
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Outstanding</div>
+            <div style="font-size:16px;font-weight:600;color:var(--amber)">${money(outstanding)}</div>
+          </div>
+        </div>
+        ${catRows ? `<div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Expense Breakdown</div>
+        <table style="width:100%;border-collapse:collapse">${catRows}</table>` : ''}`;
+    } catch (err) {
+      document.getElementById('rpt-body').textContent = 'Could not load data: ' + err.message;
+    }
+  };
+
+  // ══════════════════════════════════════════════════════
+  // 9. BUDGET TARGETS — editable modal + /api/budget-targets
+  // ══════════════════════════════════════════════════════
+  const DEFAULT_TARGETS = {
+    Rent: 50000, Software: 15000, Meals: 5000, Travel: 12000,
+    Salaries: 180000, Marketing: 25000, Equipment: 8000, Other: 20000,
+  };
+
+  window.openBudgetTargetsModal = async function () {
+    let modal = document.getElementById('budget-targets-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'budget-targets-modal';
+      modal.className = 'modal-overlay hidden';
+      modal.innerHTML = `<div class="modal" style="max-width:400px">
+        <div class="modal-header">
+          <div class="modal-title">Edit Budget Targets</div>
+          <button class="modal-close" onclick="document.getElementById('budget-targets-modal').classList.add('hidden')">
+            <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
+          </button>
+        </div>
+        <div id="bt-rows" style="margin-top:10px;display:flex;flex-direction:column;gap:8px">Loading…</div>
+        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('budget-targets-modal').classList.add('hidden')">Cancel</button>
+          <button class="btn btn-primary btn-sm" onclick="saveBudgetTargets()">Save Targets</button>
+        </div>
+      </div>`;
+      document.body.appendChild(modal);
+    }
+    modal.classList.remove('hidden');
+    let targets = { ...DEFAULT_TARGETS };
+    try {
+      const saved = await api('GET', '/api/budget-targets');
+      if (saved && typeof saved === 'object') targets = { ...targets, ...saved };
+    } catch (err) { /* use defaults */ }
+    document.getElementById('bt-rows').innerHTML = Object.entries(targets).map(([cat, val]) =>
+      `<div style="display:flex;align-items:center;gap:8px">
+        <label style="width:90px;font-size:12px;color:var(--t2)">${e(cat)}</label>
+        <input id="bt-${e(cat)}" class="finput" type="number" min="0" value="${val}" style="flex:1">
+      </div>`
+    ).join('');
+  };
+
+  window.saveBudgetTargets = async function () {
+    const targets = {};
+    Object.keys(DEFAULT_TARGETS).forEach(cat => {
+      const el = document.getElementById('bt-' + cat);
+      if (el) targets[cat] = parseFloat(el.value) || 0;
+    });
+    try {
+      await api('PUT', '/api/budget-targets', targets);
+      document.getElementById('budget-targets-modal').classList.add('hidden');
+      tip('Budget targets saved');
+      if (typeof window.renderBudget === 'function') window.renderBudget();
+    } catch (err) { tip('Could not save — ' + err.message, true); }
+  };
+
+  // ══════════════════════════════════════════════════════
+  // 10. ADD HOLDING — override saveHolding to POST /api/holdings
+  // ══════════════════════════════════════════════════════
+  window.saveHolding = async function () {
+    const ticker = (document.getElementById('h-ticker')?.value || '').trim().toUpperCase();
+    const name   = (document.getElementById('h-name')?.value || '').trim() || ticker;
+    const shares = parseFloat(document.getElementById('h-shares')?.value) || 0;
+    const cost   = parseFloat(document.getElementById('h-cost')?.value) || 0;
+    const price  = parseFloat(document.getElementById('h-price')?.value) || cost;
+    const div    = parseFloat(document.getElementById('h-div')?.value) || 0;
+    const type   = document.getElementById('h-type')?.value || 'Stock';
+    if (!ticker || !shares) { tip('Ticker and shares are required', true); return; }
+    try {
+      const row = await api('POST', '/api/holdings', {
+        ticker, name, asset_type: type, shares, cost_per: cost, price, dividend: div,
+      });
+      const colors = ['#c9a84c', '#5aaa9e', '#9e8fbf', '#7db87d', '#d4964a', '#c46a5a', '#5a4e3a'];
+      const mapped = {
+        _dbId: row.id, id: row.id, ticker: row.ticker, name: row.name,
+        type: row.asset_type, shares: row.shares, cost: row.cost_per,
+        price: row.price, div: row.dividend, color: row.color || colors[holdings.length % colors.length],
+      };
+      if (typeof holdings !== 'undefined') holdings.push(mapped);
+      if (typeof closeModal === 'function') closeModal('holding-modal');
+      if (typeof renderInvestments === 'function') renderInvestments();
+      tip(`${e(ticker)} added to portfolio`);
+    } catch (err) { tip('Could not save holding — ' + err.message, true); }
+  };
+
+  // ══════════════════════════════════════════════════════
+  // 11. TEAM INVITE — modal + POST /api/team
+  // ══════════════════════════════════════════════════════
+  window.openInviteModal = function () {
+    let modal = document.getElementById('invite-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'invite-modal';
+      modal.className = 'modal-overlay hidden';
+      modal.innerHTML = `<div class="modal" style="max-width:360px">
+        <div class="modal-header">
+          <div class="modal-title">Invite Team Member</div>
+          <button class="modal-close" onclick="document.getElementById('invite-modal').classList.add('hidden')">
+            <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
+          </button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+          <div><label class="flabel">Name *</label><input id="inv-name" class="finput" placeholder="Full name"></div>
+          <div><label class="flabel">Email *</label><input id="inv-email" class="finput" type="email" placeholder="email@company.com"></div>
+          <div><label class="flabel">Role</label>
+            <select id="inv-role" class="finput">
+              <option value="admin">Admin</option>
+              <option value="accountant">Accountant</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('invite-modal').classList.add('hidden')">Cancel</button>
+          <button class="btn btn-primary btn-sm" onclick="sendInvite()">Send Invite</button>
+        </div>
+      </div>`;
+      document.body.appendChild(modal);
+    }
+    ['inv-name', 'inv-email'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    const roleEl = document.getElementById('inv-role');
+    if (roleEl) roleEl.value = 'accountant';
+    modal.classList.remove('hidden');
+  };
+
+  window.sendInvite = async function () {
+    const name  = (document.getElementById('inv-name')?.value || '').trim();
+    const email = (document.getElementById('inv-email')?.value || '').trim();
+    const role  = document.getElementById('inv-role')?.value || 'viewer';
+    if (!name || !email) { tip('Name and email are required', true); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { tip('Invalid email address', true); return; }
+    try {
+      await api('POST', '/api/team', { name, email, role });
+      document.getElementById('invite-modal').classList.add('hidden');
+      tip(`Invite sent to ${e(email)}`);
+      if (typeof window.renderTeam === 'function') window.renderTeam();
+    } catch (err) { tip('Could not invite — ' + err.message, true); }
+  };
+
+  // ══════════════════════════════════════════════════════
   // BOOT
   // ══════════════════════════════════════════════════════
   window.addEventListener('DOMContentLoaded', function () {
     loadTimesheet();
     loadHoldingsFromDB();
+    loadProjects();
 
     // Re-load when navigating to these pages via showPage
     const _orig = window.showPage;
@@ -360,9 +690,13 @@
           else { renderTimesheetList(); updateTimesheetMetrics(); }
         }
         if (id === 'investments') loadHoldingsFromDB();
+        if (id === 'projects') {
+          if (!_projectsFetched) loadProjects();
+          else renderProjectsList();
+        }
       };
     }
   });
 
-  console.log('[FinFlow Extra Wiring] ✅ Invoice View, Timesheet, Reports, Budget, Investments, Team');
+  console.log('[FinFlow Extra Wiring] ✅ Invoice View, Timesheet, Reports, Budget, Investments, Team, Projects, Generate Report, Budget Targets, Add Holding, Invite Member');
 })();

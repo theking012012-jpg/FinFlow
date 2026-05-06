@@ -12,7 +12,7 @@ const DB_PATH = path.join(__dirname, 'finflow.db.json');
 let _db = null;
 
 async function initDB() {
-  const defaultData = { users: [], entities: [], invoices: [], expenses: [], customers: [], inventory: [], payroll: [], personal_transactions: [], goals: [], holdings: [], user_settings: [], password_resets: [], quotes: [], bills: [], vendors: [], recurring_bills: [], recurring_invoices: [], sales_receipts: [], payments_received: [], credit_notes: [], payments_made: [], vendor_credits: [], items: [], timesheet: [] };
+  const defaultData = { users: [], entities: [], invoices: [], expenses: [], customers: [], inventory: [], payroll: [], personal_transactions: [], goals: [], holdings: [], user_settings: [], password_resets: [], quotes: [], bills: [], vendors: [], recurring_bills: [], recurring_invoices: [], sales_receipts: [], payments_received: [], credit_notes: [], payments_made: [], vendor_credits: [], items: [], timesheet: [], projects: [], team_members: [], budget_targets: [] };
   _db = await JSONFilePreset(DB_PATH, defaultData);
 
   // Ensure every expected table exists — lowdb reads the file as-is and does NOT
@@ -313,6 +313,16 @@ function seedUserData(userId) {
     { employee: 'Ben Nwosu',     project: 'Backend Infra',     date: '2026-04-25', hours: 8,   billable: 'Yes', rate: 95  },
     { employee: 'Sofia Arenas',  project: 'BlueSky Redesign',  date: '2026-04-24', hours: 6,   billable: 'Yes', rate: 100 },
   ].forEach(r => db.insert('timesheet', { user_id: userId, ...r }));
+
+  // Projects
+  [
+    { name: 'RetailCo Portal v2',    client: 'RetailCo Ltd',    budget: 32000, billed: 12800, hours: 128, status: 'In Progress', progress: 40 },
+    { name: 'TechStart Rebrand',     client: 'TechStart Inc',   budget: 18000, billed: 18000, hours: 180, status: 'Completed',   progress: 100 },
+    { name: 'Nova Analytics Dashboard', client: 'NovaCorp',     budget: 22000, billed: 8800,  hours: 88,  status: 'In Progress', progress: 40 },
+    { name: 'GreenLeaf SEO Audit',   client: 'GreenLeaf Ltd',   budget: 4800,  billed: 4800,  hours: 40,  status: 'Completed',   progress: 100 },
+    { name: 'Mango & Co CRM',        client: 'Mango & Co',      budget: 9600,  billed: 2400,  hours: 24,  status: 'In Progress', progress: 25 },
+    { name: 'Internal Dashboard v2', client: 'Internal',        budget: 0,     billed: 0,     hours: 48,  status: 'On Hold',     progress: 60 },
+  ].forEach(r => db.insert('projects', { user_id: userId, entity_id: entityId, ...r }));
 
   // Settings
   db.upsert('user_settings', 'user_id', userId, { dark_mode: 1, currency: 'USD', show_cents: 0, notif_email: 1, notif_inv: 1, notif_pay: 1 });

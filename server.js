@@ -484,6 +484,47 @@ app.delete('/api/goals/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── PROJECTS ──────────────────────────────────────────────────────────────────
+app.get('/api/projects', requireAuth, (req, res) => {
+  res.json(db.all('projects', r => r.user_id === req.session.userId, (a, b) => b.id - a.id));
+});
+app.post('/api/projects', requireAuth, (req, res) => {
+  const { name, client = '', budget = 0, status = 'In Progress' } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'name required.' });
+  const validStatuses = ['In Progress', 'Completed', 'On Hold'];
+  const { row } = db.insert('projects', {
+    user_id:  req.session.userId,
+    name:     name.trim().slice(0, 200),
+    client:   client.trim().slice(0, 200),
+    budget:   parseFloat(budget) || 0,
+    billed:   0,
+    hours:    0,
+    status:   validStatuses.includes(status) ? status : 'In Progress',
+    progress: 0,
+  });
+  res.status(201).json(row);
+});
+app.put('/api/projects/:id', requireAuth, (req, res) => {
+  const row = ownedBy('projects', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  const patch = {};
+  const b = req.body || {};
+  if (b.name     != null) patch.name     = b.name.trim().slice(0, 200);
+  if (b.client   != null) patch.client   = b.client.trim().slice(0, 200);
+  if (b.budget   != null) patch.budget   = parseFloat(b.budget) || 0;
+  if (b.billed   != null) patch.billed   = parseFloat(b.billed) || 0;
+  if (b.hours    != null) patch.hours    = parseFloat(b.hours) || 0;
+  if (b.status   != null) patch.status   = b.status;
+  if (b.progress != null) patch.progress = parseInt(b.progress);
+  db.update('projects', r => r.id === row.id, patch);
+  res.json(db.get('projects', r => r.id === row.id));
+});
+app.delete('/api/projects/:id', requireAuth, (req, res) => {
+  if (!ownedBy('projects', req.params.id, req.session.userId)) return res.status(404).json({ error: 'Not found.' });
+  db.delete('projects', r => r.id === parseInt(req.params.id));
+  res.json({ ok: true });
+});
+
 // ── HOLDINGS ──────────────────────────────────────────────────────────────────
 app.get('/api/holdings', requireAuth, (req, res) => {
   res.json(db.all('holdings', r => r.user_id === req.session.userId, (a,b) => a.id - b.id));
@@ -507,6 +548,17 @@ app.put('/api/holdings/:id', requireAuth, (req, res) => {
 app.delete('/api/holdings/:id', requireAuth, (req, res) => {
   if (!ownedBy('holdings', req.params.id, req.session.userId)) return res.status(404).json({ error: 'Not found.' });
   db.delete('holdings', r => r.id === parseInt(req.params.id));
+  res.json({ ok: true });
+});
+
+// ── BUDGET TARGETS ────────────────────────────────────────────────────────────
+app.get('/api/budget-targets', requireAuth, (req, res) => {
+  const row = db.get('budget_targets', r => r.user_id === req.session.userId);
+  res.json(row ? row.targets : {});
+});
+app.put('/api/budget-targets', requireAuth, (req, res) => {
+  const targets = req.body || {};
+  db.upsert('budget_targets', 'user_id', req.session.userId, { targets });
   res.json({ ok: true });
 });
 
@@ -795,18 +847,54 @@ app.get('/api/team', requireAuth, (req, res) => {
   const uid  = req.session.userId;
   const user = db.get('users', u => u.id === uid);
   const pay  = db.all('payroll', r => r.user_id === uid);
+  const invited = db.all('team_members', r => r.user_id === uid);
   const members = [
-    { id: 0, name: user?.name || user?.email || 'You', email: user?.email || '', role: 'owner', emp_type: 'Owner', lastSeen: 'Now' },
+    { id: 'u0', name: user?.name || user?.email || 'You', email: user?.email || '', role: 'owner', emp_type: 'Owner', lastSeen: 'Now' },
     ...pay.map(p => ({
-      id:       p.id,
+      id:       `p${p.id}`,
       name:     `${p.fname} ${p.lname}`.trim(),
       email:    `${p.fname.toLowerCase()}.${p.lname.toLowerCase()}@company.com`,
       role:     p.is_owner ? 'owner' : (p.emp_type === 'Contractor' ? 'viewer' : 'accountant'),
       emp_type: p.emp_type,
       lastSeen: 'Recently',
     })),
+    ...invited.map(m => ({
+      id:       `tm${m.id}`,
+      _tmId:    m.id,
+      name:     m.name,
+      email:    m.email,
+      role:     m.role,
+      emp_type: 'Invited',
+      lastSeen: 'Invited',
+    })),
   ];
   res.json(members);
+});
+app.post('/api/team', requireAuth, (req, res) => {
+  const { name, email, role = 'viewer' } = req.body || {};
+  if (!name || !email) return res.status(400).json({ error: 'name and email required.' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email.' });
+  const validRoles = ['admin', 'accountant', 'viewer'];
+  const { row } = db.insert('team_members', {
+    user_id: req.session.userId,
+    name:    name.trim().slice(0, 100),
+    email:   email.toLowerCase().slice(0, 200),
+    role:    validRoles.includes(role) ? role : 'viewer',
+  });
+  res.status(201).json(row);
+});
+app.put('/api/team/:id', requireAuth, (req, res) => {
+  const row = ownedBy('team_members', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  const { role } = req.body || {};
+  const validRoles = ['admin', 'accountant', 'viewer'];
+  if (role && validRoles.includes(role)) db.update('team_members', r => r.id === row.id, { role });
+  res.json(db.get('team_members', r => r.id === row.id));
+});
+app.delete('/api/team/:id', requireAuth, (req, res) => {
+  if (!ownedBy('team_members', req.params.id, req.session.userId)) return res.status(404).json({ error: 'Not found.' });
+  db.delete('team_members', r => r.id === parseInt(req.params.id));
+  res.json({ ok: true });
 });
 
 // ── AI CHAT ───────────────────────────────────────────────────────────────────

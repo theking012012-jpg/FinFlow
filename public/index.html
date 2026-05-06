@@ -1276,7 +1276,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="card">
           <div class="card-header">
             <div class="card-title">Budget vs actuals</div>
-            <button class="btn btn-ghost btn-sm" onclick="notify('Edit budget targets')">Edit targets</button>
+            <button class="btn btn-ghost btn-sm" onclick="openBudgetTargetsModal()">Edit targets</button>
           </div>
           <div style="display:grid;grid-template-columns:100px 1fr 95px 55px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
             <span>Category</span><span>Progress</span><span style="text-align:right">Actual / Budget</span><span style="text-align:right">Var</span>
@@ -1374,7 +1374,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="card" style="margin-bottom:0">
             <div class="card-header">
               <div class="card-title">Team members</div>
-              <button class="btn btn-primary btn-sm" onclick="notify('Invite modal opening…')">+ Invite</button>
+              <button class="btn btn-primary btn-sm" onclick="openInviteModal()">+ Invite</button>
             </div>
             <div id="team-list"></div>
           </div>
@@ -6073,7 +6073,7 @@ function renderReports(){
         <span style="font-size:18px">${r.icon}</span>
         <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${r.name}</div><div style="font-size:11px;color:var(--t3)">${r.desc}</div></div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="notify('Generating: ${r.name}')">Generate ↗</button>
+      <button class="btn btn-ghost btn-sm" onclick="generateReport('${r.name}')">Generate ↗</button>
     </div>`).join('');
   const t=document.getElementById('tax-reports-list');if(!t)return;
   t.innerHTML=taxReportsData.map(r=>`
@@ -6082,7 +6082,7 @@ function renderReports(){
         <span style="font-size:18px">${r.icon}</span>
         <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${r.name}</div><div style="font-size:11px;color:var(--t3)">${r.desc}</div></div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="notify('Generating: ${r.name}')">Generate ↗</button>
+      <button class="btn btn-ghost btn-sm" onclick="generateReport('${r.name}')">Generate ↗</button>
     </div>`).join('');
 }
 

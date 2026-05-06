@@ -50,7 +50,7 @@ app.use(cors({
   origin: process.env.ALLOWED_ORIGIN || (process.env.NODE_ENV === 'production' ? false : true),
   credentials: true,
 }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '10mb' })); // 10 mb covers base64-encoded receipt images
 app.use(express.urlencoded({ extended: false }));
 app.set('trust proxy', 1);
 app.use(session({
@@ -1014,6 +1014,64 @@ app.get('/api/ai/cache', requireAuth, wrap(async (req, res) => {
   );
   res.json(result.rows);
 }));
+
+// ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
+// Accepts a base64-encoded image or PDF and returns structured expense data.
+app.post('/api/ai/scan', requireAuth, async (req, res) => {
+  try {
+    const { base64, mediaType, isPDF } = req.body || {};
+    if (!base64 || !mediaType) return res.status(400).json({ error: 'base64 and mediaType are required.' });
+
+    const contentBlock = isPDF
+      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
+      : { type: 'image',    source: { type: 'base64', media_type: mediaType,           data: base64 } };
+
+    const prompt = `You are a financial data extraction assistant. Analyze this receipt, bill, or invoice and extract the following fields. Respond ONLY with a valid JSON object — no markdown, no explanation.
+
+{
+  "vendor": "business name on the receipt",
+  "amount": "total amount as a number string e.g. 142.50",
+  "currency": "3-letter currency code e.g. USD",
+  "date": "date in format MMM DD, YYYY",
+  "category": "one of: Software, Marketing, Travel, Meals, Office, Equipment, Rent, Utilities, Professional Services, Other",
+  "tax_deductible": true or false,
+  "notes": "one short sentence describing what this expense is for"
+}
+
+If you cannot read a field clearly, use null. Do not invent data.`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key':        process.env.ANTHROPIC_API_KEY || '',
+        'anthropic-version': '2023-06-01',
+        'content-type':      'application/json',
+      },
+      body: JSON.stringify({
+        model:      'claude-sonnet-4-5-20250514',
+        max_tokens: 500,
+        messages:   [{ role: 'user', content: [contentBlock, { type: 'text', text: prompt }] }],
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.error('Anthropic scan error:', err);
+      return res.status(502).json({ error: 'AI service unavailable.' });
+    }
+
+    const data = await response.json();
+    if (data.error) throw new Error(data.error.message);
+
+    const raw     = data.content?.map(b => b.text || '').join('').trim();
+    const cleaned = raw.replace(/```json|```/g, '').trim();
+    const extracted = JSON.parse(cleaned);
+    res.json(extracted);
+  } catch (err) {
+    console.error('Scan route error:', err);
+    res.status(500).json({ error: 'Could not parse receipt. Try a clearer image.' });
+  }
+});
 
 // ── STATIC / SPA ──────────────────────────────────────────────────────────────
 app.get('/app', (req, res) => {

@@ -733,7 +733,7 @@ async function boot() {
   try {
     const res = await fetch('/api/accountants/me', { credentials: 'include' });
     if (!res.ok) {
-      window.location.href = '/join';
+      window.location.href = '/accountant-login';
       return;
     }
     accountant = await res.json();
@@ -742,7 +742,7 @@ async function boot() {
     loadEarnings();
     loadPendingRequests();
   } catch (e) {
-    window.location.href = '/join';
+    window.location.href = '/accountant-login';
   }
 }
 
@@ -1021,7 +1021,7 @@ async function viewBooks(userId) {
 // ── LOGOUT ────────────────────────────────────────────────────────────────────
 async function logout() {
   await fetch('/api/accountants/logout', { method: 'POST', credentials: 'include' });
-  window.location.href = '/join';
+  window.location.href = '/accountant-login';
 }
 
 // ── NAV ───────────────────────────────────────────────────────────────────────

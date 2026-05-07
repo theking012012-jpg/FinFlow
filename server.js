@@ -21,6 +21,19 @@ try {
   console.warn('[Resend] Package not installed — email will be skipped.');
 }
 
+// ── STRIPE ────────────────────────────────────────────────────────────────────
+let stripe = null;
+try {
+  if (process.env.STRIPE_SECRET_KEY) {
+    stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    console.log('[Stripe] Initialized');
+  } else {
+    console.warn('[Stripe] STRIPE_SECRET_KEY not set — billing features disabled.');
+  }
+} catch (e) {
+  console.warn('[Stripe] Package not installed — run: npm install stripe');
+}
+
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
@@ -1440,7 +1453,51 @@ app.get('/api/ai/cache', requireAuth, wrap(async (req, res) => {
 
 // ── ACCOUNTANT MARKETPLACE ROUTES ────────────────────────────────────────────
 const registerAccountantRoutes = require('./accountant-routes');
-registerAccountantRoutes(app, pool, authLimiter, apiLimiter);
+registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient);
+
+// ── STRIPE WEBHOOK ────────────────────────────────────────────────────────────
+// Must be before express.json() middleware — needs raw body
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!stripe) return res.status(400).json({ error: 'Stripe not configured.' });
+  const sig = req.headers['stripe-signature'];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error('[Stripe Webhook] Signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  const userId = event.data.object?.metadata?.userId;
+
+  if (event.type === 'checkout.session.completed') {
+    // Service payment completed — record commission
+    const session = event.data.object;
+    const accountantId = session.metadata?.accountantId;
+    const billedCents = session.amount_total;
+    const commissionCents = Math.round(billedCents * 0.04);
+    if (accountantId) {
+      await pool.query(`
+        INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, status, period_month)
+        VALUES ($1, $2, 'service_commission', $3, $4, 'pending', date_trunc('month', NOW()))
+      `, [accountantId, session.metadata?.clientUserId || null, commissionCents, session.metadata?.description || 'Service commission']);
+      console.log(`[Stripe] Commission recorded: $${(commissionCents/100).toFixed(2)} for accountant ${accountantId}`);
+    }
+  }
+
+  if (event.type === 'account.updated') {
+    // Stripe Connect onboarding completed
+    const account = event.data.object;
+    if (account.details_submitted) {
+      await pool.query(
+        `UPDATE accountants SET stripe_account_id = $1, stripe_onboarded = true WHERE stripe_account_id = $1`,
+        [account.id]
+      );
+    }
+  }
+
+  res.json({ received: true });
+});
 
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.
@@ -1512,6 +1569,9 @@ app.get('/join', (req, res) => {
 });
 app.get('/accountant', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accountant-dashboard.html'));
+});
+app.get('/accountant-login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'accountant-login.html'));
 });
 app.get('/sitemap.xml', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'sitemap.xml'));

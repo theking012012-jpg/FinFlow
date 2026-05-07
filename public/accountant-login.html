@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FinFlow — Accountant Sign In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e0c; --bg2: #141410; --card: #1a1a15;
+    --gold: #c9a84c; --gold-light: #e8cc7a; --gold-dim: #8a6f2e;
+    --text: #f0ead6; --text2: #9a9278; --text3: #5a5540;
+    --border: #2a2820; --border2: #3a3828;
+    --green: #4a9c6d; --red: #c45c5c; --red-bg: #1f0d0d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'DM Sans', sans-serif; font-weight: 300;
+    min-height: 100vh; display: flex; flex-direction: column;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0; opacity: 0.4;
+  }
+  nav {
+    position: relative; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 40px; border-bottom: 1px solid var(--border);
+  }
+  .nav-brand { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: var(--gold); letter-spacing: 0.05em; text-decoration: none; }
+  .nav-sub { font-size: 11px; color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; }
+  .nav-right { display: flex; align-items: center; gap: 16px; }
+  .nav-link { font-size: 13px; color: var(--text2); text-decoration: none; transition: color 0.2s; }
+  .nav-link:hover { color: var(--gold); }
+
+  .page {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 60px 24px; position: relative; z-index: 1;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 40px; width: 400px; max-width: 100%;
+  }
+  .card-title { font-family: 'Cormorant Garamond', serif; font-size: 28px; font-weight: 400; color: var(--text); margin-bottom: 6px; }
+  .card-sub { font-size: 13px; color: var(--text2); margin-bottom: 28px; line-height: 1.5; }
+
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; letter-spacing: 0.03em; }
+  input {
+    width: 100%; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 11px 14px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 300;
+    color: var(--text); outline: none; transition: border-color 0.2s;
+  }
+  input:focus { border-color: var(--gold-dim); }
+  input::placeholder { color: var(--text3); }
+
+  .btn-primary {
+    width: 100%; background: var(--gold); border: none; border-radius: 8px;
+    padding: 13px; font-family: 'DM Sans', sans-serif; font-size: 14px;
+    font-weight: 500; color: var(--bg); cursor: pointer; transition: all 0.2s; margin-top: 8px;
+  }
+  .btn-primary:hover { background: var(--gold-light); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .error { font-size: 12px; color: var(--red); background: var(--red-bg); border: 1px solid rgba(196,92,92,0.3); border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; display: none; }
+  .error.show { display: block; }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+
+  .footer-links { display: flex; flex-direction: column; gap: 10px; text-align: center; }
+  .footer-links a { font-size: 12px; color: var(--text3); text-decoration: none; transition: color 0.2s; }
+  .footer-links a span { color: var(--gold-dim); }
+  .footer-links a:hover span { color: var(--gold); }
+
+  .split { display: flex; align-items: center; gap: 10px; margin: 20px 0; }
+  .split-line { flex: 1; border-top: 1px solid var(--border); }
+  .split-text { font-size: 11px; color: var(--text3); }
+</style>
+</head>
+<body>
+
+<nav>
+  <div>
+    <a href="/" class="nav-brand">FinFlow</a>
+    <div class="nav-sub">Accountant Portal</div>
+  </div>
+  <div class="nav-right">
+    <a href="/app" class="nav-link">Are you a client? <span style="color:var(--gold-dim)">Sign up →</span></a>
+  </div>
+</nav>
+
+<div class="page">
+  <div class="card">
+    <div class="card-title">Welcome back</div>
+    <div class="card-sub">Sign in to your FinFlow accountant dashboard</div>
+
+    <div class="error" id="error-msg"></div>
+
+    <div class="form-group">
+      <label>Email address</label>
+      <input type="email" id="email" placeholder="you@yourfirm.com" autocomplete="email" onkeydown="if(event.key==='Enter')login()">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="password" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
+    </div>
+
+    <button class="btn-primary" id="login-btn" onclick="login()">Sign in →</button>
+
+    <div class="split">
+      <div class="split-line"></div>
+      <div class="split-text">or</div>
+      <div class="split-line"></div>
+    </div>
+
+    <hr class="divider" style="margin:0 0 20px">
+
+    <div class="footer-links">
+      <a href="/join">New to FinFlow? <span>Register as an accountant →</span></a>
+      <a href="/app">Are you a client? <span>Sign up here →</span></a>
+    </div>
+  </div>
+</div>
+
+<script>
+async function login() {
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('error-msg');
+
+  if (!email || !password) { showError('Please enter your email and password.'); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
+  err.classList.remove('show');
+
+  try {
+    const res = await fetch('/api/accountants/login', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (data.error) { showError(data.error); return; }
+    window.location.href = '/accountant';
+  } catch(e) {
+    showError('Could not connect. Please try again.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign in →';
+  }
+}
+
+function showError(msg) {
+  const err = document.getElementById('error-msg');
+  err.textContent = msg;
+  err.classList.add('show');
+}
+</script>
+</body>
+</html>

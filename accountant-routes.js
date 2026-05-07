@@ -66,6 +66,11 @@
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 
+/** Wraps async route handlers so thrown errors go to Express error handler */
+const wrap = fn => async (req, res, next) => {
+  try { await fn(req, res, next); } catch (e) { next(e); }
+};
+
 /** Generate a unique referral code: first 3 letters of name + random 6 chars */
 function generateReferralCode(firstName, lastName) {
   const prefix = (firstName.slice(0, 2) + lastName.slice(0, 1)).toLowerCase().replace(/[^a-z]/g, 'x');
@@ -492,6 +497,11 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
   // ── 12. MONTHLY REFERRAL PAYOUT CRON ──────────────────────────────────────
   // Call this via a cron job on the 1st of each month (or a Betterstack scheduled job).
   // POST /api/accountants/run-monthly-payouts  (protected by CRON_SECRET header)
+  //
+  // GOLDEN RULE: Commission only pays on ACTIVE, PAYING clients.
+  // If a client has cancelled their subscription, their $10/month stops immediately.
+  // We check Stripe subscription status (stored in users.data.subscriptionStatus)
+  // before creating any payout record. No active subscription = no commission.
   app.post('/api/accountants/run-monthly-payouts', wrap(async (req, res) => {
     const secret = req.headers['x-cron-secret'];
     if (!secret || secret !== process.env.CRON_SECRET) {
@@ -500,17 +510,27 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
 
     const client = await pool.connect();
     try {
-      // Find all active client relationships that still have referral months remaining
+      // Find all active client relationships that still have referral months remaining.
+      // Join to users table to check live subscription status — only pay if subscribed.
       const rows = await client.query(`
-        SELECT ac.accountant_id, ac.user_id, ac.referral_month, ac.referral_months_total
+        SELECT ac.accountant_id, ac.user_id, ac.referral_month, ac.referral_months_total,
+               u.data->>'subscriptionStatus' AS sub_status,
+               u.data->>'plan'               AS plan
         FROM accountant_clients ac
+        JOIN users u ON u.id = ac.user_id
         WHERE ac.status = 'active'
           AND ac.referral_month < ac.referral_months_total
+          AND u.data->>'subscriptionStatus' IN ('active', 'trialing')
       `);
+      // Clients whose subscriptionStatus is 'canceled', 'past_due', 'unpaid', or missing
+      // are excluded from the query above — no commission is created for them this month.
 
       let payoutsCreated = 0;
+      let payoutsSkipped = 0;
+
       for (const row of rows.rows) {
         const nextMonth = row.referral_month + 1;
+
         await client.query(`
           INSERT INTO accountant_earnings
             (accountant_id, client_id, type, amount_cents, description, period_month)
@@ -529,10 +549,56 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
         payoutsCreated++;
       }
 
-      return res.json({ success: true, payoutsCreated });
+      // Also count how many eligible relationships were skipped due to inactive subscription
+      const skippedResult = await client.query(`
+        SELECT COUNT(*) FROM accountant_clients ac
+        JOIN users u ON u.id = ac.user_id
+        WHERE ac.status = 'active'
+          AND ac.referral_month < ac.referral_months_total
+          AND u.data->>'subscriptionStatus' NOT IN ('active', 'trialing')
+      `);
+      payoutsSkipped = parseInt(skippedResult.rows[0].count) || 0;
+
+      return res.json({ success: true, payoutsCreated, payoutsSkipped });
     } finally {
       client.release();
     }
+  }));
+
+
+  // ── 12b. SUSPEND CLIENT COMMISSION (call from Stripe webhook on cancellation) ─
+  // When a client cancels their subscription, call this immediately.
+  // Their $10/month commission stops — accountant is only paid for active clients.
+  // If the client resubscribes later, reactivate-client re-links them.
+  app.post('/api/accountants/suspend-client', wrap(async (req, res) => {
+    const { userId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId required.' });
+
+    await pool.query(`
+      UPDATE accountant_clients
+      SET status = 'suspended'
+      WHERE user_id = $1 AND status = 'active'
+    `, [userId]);
+
+    return res.json({ success: true, message: 'Client commission suspended. No further payouts until client reactivates.' });
+  }));
+
+
+  // ── 12c. REACTIVATE CLIENT COMMISSION (call from Stripe when client resubscribes) ─
+  app.post('/api/accountants/reactivate-client', wrap(async (req, res) => {
+    const { userId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId required.' });
+
+    // Only reactivate if referral months still remain — no extension for cancelled period
+    await pool.query(`
+      UPDATE accountant_clients
+      SET status = 'active'
+      WHERE user_id = $1
+        AND status = 'suspended'
+        AND referral_month < referral_months_total
+    `, [userId]);
+
+    return res.json({ success: true });
   }));
 
 
@@ -586,8 +652,15 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
 // 4. In your user registration handler, detect ?ref= query param and call:
 //    POST /api/accountants/link-client  with { referralCode, userId }
 //
-// 5. In your Stripe webhook, when subscription.status = 'active', call:
-//    POST /api/accountants/activate-client  with { userId }
+// 5. In your Stripe webhook handler, wire up these three events:
+//    subscription.status = 'active'    → POST /api/accountants/activate-client    { userId }
+//    subscription.status = 'canceled'  → POST /api/accountants/suspend-client     { userId }
+//    subscription.status = 'active'    → POST /api/accountants/reactivate-client  { userId }
+//      (reactivate fires when a previously cancelled client resubscribes)
+//
+//    GOLDEN RULE: Commission only pays on active, paying clients.
+//    A client who cancels stops earning their accountant $10/month immediately.
+//    The cron also double-checks subscription status before every payout.
 //
 // 6. Set env var:  CRON_SECRET=your-secret-here
 //    Schedule:     POST /api/accountants/run-monthly-payouts on the 1st of each month

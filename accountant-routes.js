@@ -633,6 +633,12 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
     return res.json({ success: true, status: newStatus });
   }));
 
+
+  // ── ACCOUNTANT LOGOUT ─────────────────────────────────────────────────────
+  app.post('/api/accountants/logout', (req, res) => {
+    req.session.destroy(() => res.json({ ok: true }));
+  });
+
 }; // end registerAccountantRoutes
 
 

@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FinFlow — Accountant Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e0c;
+    --bg2: #141410;
+    --card: #1a1a15;
+    --card2: #1f1f18;
+    --gold: #c9a84c;
+    --gold-light: #e8cc7a;
+    --gold-dim: #8a6f2e;
+    --text: #f0ead6;
+    --text2: #9a9278;
+    --text3: #5a5540;
+    --border: #2a2820;
+    --border2: #3a3828;
+    --green: #4a9c6d;
+    --green-bg: #0d1f15;
+    --red: #c45c5c;
+    --red-bg: #1f0d0d;
+    --amber: #c48a2a;
+    --amber-bg: #1f1608;
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0; opacity: 0.4;
+  }
+
+  /* NAV */
+  nav {
+    position: relative; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .nav-left { display: flex; align-items: center; gap: 24px; }
+  .nav-brand { font-family: 'Cormorant Garamond', serif; font-size: 20px; font-weight: 600; color: var(--gold); letter-spacing: 0.05em; }
+  .nav-role { font-size: 11px; color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; }
+  .nav-right { display: flex; align-items: center; gap: 16px; }
+  .nav-name { font-size: 13px; color: var(--text2); }
+  .nav-badge { font-size: 11px; background: rgba(201,168,76,0.1); color: var(--gold); border: 1px solid var(--gold-dim); border-radius: 4px; padding: 3px 8px; }
+  .nav-logout { font-size: 12px; color: var(--text3); text-decoration: none; cursor: pointer; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; transition: all 0.2s; background: none; font-family: 'DM Sans', sans-serif; }
+  .nav-logout:hover { color: var(--red); border-color: var(--red); }
+
+  /* LAYOUT */
+  .layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: calc(100vh - 57px);
+    position: relative; z-index: 1;
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    background: var(--bg2);
+  }
+  .sidebar-section { margin-bottom: 8px; }
+  .sidebar-label { font-size: 10px; color: var(--text3); letter-spacing: 0.12em; text-transform: uppercase; padding: 0 20px; margin-bottom: 6px; }
+  .sidebar-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 20px; cursor: pointer;
+    font-size: 13px; color: var(--text2);
+    transition: all 0.15s; border-left: 2px solid transparent;
+  }
+  .sidebar-item:hover { color: var(--text); background: rgba(255,255,255,0.02); }
+  .sidebar-item.active { color: var(--gold); border-left-color: var(--gold); background: rgba(201,168,76,0.05); }
+  .sidebar-icon { width: 16px; height: 16px; opacity: 0.6; flex-shrink: 0; }
+  .sidebar-item.active .sidebar-icon { opacity: 1; }
+
+  .sidebar-divider { border: none; border-top: 1px solid var(--border); margin: 12px 20px; }
+
+  .tier-widget {
+    margin: 16px 16px 0;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px;
+  }
+  .tier-widget-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+  .tier-widget-name { font-family: 'Cormorant Garamond', serif; font-size: 18px; color: var(--gold-light); margin-bottom: 4px; }
+  .tier-progress-track { height: 4px; background: var(--border); border-radius: 2px; margin: 8px 0 6px; }
+  .tier-progress-fill { height: 100%; background: var(--gold); border-radius: 2px; transition: width 0.6s ease; }
+  .tier-progress-label { font-size: 11px; color: var(--text3); }
+  .tier-progress-label span { color: var(--text2); }
+
+  /* MAIN */
+  .main { padding: 28px 32px; overflow-y: auto; }
+
+  /* PAGE SECTIONS */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* PAGE HEADER */
+  .page-header { margin-bottom: 24px; }
+  .page-header h1 { font-family: 'Cormorant Garamond', serif; font-size: 32px; font-weight: 300; color: var(--text); }
+  .page-header p { font-size: 13px; color: var(--text2); margin-top: 4px; }
+
+  /* STAT GRID */
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px;
+    position: relative; overflow: hidden;
+  }
+  .stat-card::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; background: var(--border);
+  }
+  .stat-card.gold::before { background: var(--gold); }
+  .stat-card.green::before { background: var(--green); }
+  .stat-card.amber::before { background: var(--amber); }
+  .stat-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+  .stat-value { font-family: 'Cormorant Garamond', serif; font-size: 28px; font-weight: 600; color: var(--text); line-height: 1; }
+  .stat-card.gold .stat-value { color: var(--gold-light); }
+  .stat-card.green .stat-value { color: var(--green); }
+  .stat-sub { font-size: 11px; color: var(--text3); margin-top: 6px; }
+
+  /* SECTION TITLE */
+  .section-title {
+    font-size: 13px; color: var(--text2); text-transform: uppercase;
+    letter-spacing: 0.08em; margin-bottom: 14px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .section-title a { font-size: 12px; color: var(--gold-dim); text-decoration: none; text-transform: none; letter-spacing: 0; cursor: pointer; }
+  .section-title a:hover { color: var(--gold); }
+
+  /* TABLE */
+  .table-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; margin-bottom: 24px;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 400; padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); background: var(--bg2); }
+  td { font-size: 13px; color: var(--text2); padding: 13px 16px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.015); }
+  td.primary { color: var(--text); font-weight: 500; }
+  td.gold { color: var(--gold-light); font-family: 'Cormorant Garamond', serif; font-size: 15px; }
+  td.green { color: var(--green); }
+  td.amber { color: var(--amber); }
+  td.red { color: var(--red); }
+
+  /* BADGES */
+  .badge {
+    display: inline-block; font-size: 10px; padding: 3px 8px;
+    border-radius: 4px; letter-spacing: 0.04em; font-weight: 400;
+  }
+  .badge-green { background: var(--green-bg); color: var(--green); border: 1px solid rgba(74,156,109,0.3); }
+  .badge-amber { background: var(--amber-bg); color: var(--amber); border: 1px solid rgba(196,138,42,0.3); }
+  .badge-red { background: var(--red-bg); color: var(--red); border: 1px solid rgba(196,92,92,0.3); }
+  .badge-gold { background: rgba(201,168,76,0.1); color: var(--gold); border: 1px solid rgba(201,168,76,0.3); }
+
+  /* DEADLINE ITEM */
+  .deadline-list { display: flex; flex-direction: column; gap: 10px; }
+  .deadline-item {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .deadline-item.urgent { border-color: rgba(196,92,92,0.3); background: rgba(196,92,92,0.04); }
+  .deadline-item.soon { border-color: rgba(196,138,42,0.3); }
+  .deadline-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .deadline-dot.urgent { background: var(--red); }
+  .deadline-dot.soon { background: var(--amber); }
+  .deadline-dot.ok { background: var(--green); }
+  .deadline-info { flex: 1; }
+  .deadline-client { font-size: 13px; color: var(--text); font-weight: 500; }
+  .deadline-type { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .deadline-date { font-size: 12px; color: var(--text3); text-align: right; }
+  .deadline-days { font-size: 11px; margin-top: 2px; }
+  .deadline-days.urgent { color: var(--red); }
+  .deadline-days.soon { color: var(--amber); }
+
+  /* INVITE FORM */
+  .invite-box {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; margin-bottom: 24px;
+  }
+  .invite-box h3 { font-family: 'Cormorant Garamond', serif; font-size: 20px; font-weight: 400; color: var(--text); margin-bottom: 4px; }
+  .invite-box p { font-size: 13px; color: var(--text2); margin-bottom: 16px; }
+  .invite-row { display: flex; gap: 10px; }
+  .invite-row input {
+    flex: 1; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 300;
+    color: var(--text); outline: none; transition: border-color 0.2s;
+  }
+  .invite-row input:focus { border-color: var(--gold-dim); }
+  .invite-row input::placeholder { color: var(--text3); }
+
+  /* REFERRAL LINK BOX */
+  .ref-box {
+    background: linear-gradient(135deg, var(--card2), var(--card));
+    border: 1px solid var(--border2); border-radius: var(--radius);
+    padding: 16px 20px; margin-bottom: 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .ref-icon { width: 36px; height: 36px; background: rgba(201,168,76,0.1); border: 1px solid var(--gold-dim); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+  .ref-info { flex: 1; }
+  .ref-info h4 { font-size: 13px; color: var(--text); font-weight: 500; margin-bottom: 4px; }
+  .ref-url { font-size: 12px; color: var(--gold-dim); font-family: monospace; }
+
+  /* BUTTONS */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 400; cursor: pointer; transition: all 0.2s; border: none; }
+  .btn-gold { background: var(--gold); color: var(--bg); }
+  .btn-gold:hover { background: var(--gold-light); }
+  .btn-outline { background: transparent; border: 1px solid var(--border2); color: var(--text2); }
+  .btn-outline:hover { border-color: var(--gold-dim); color: var(--gold); }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-danger { background: transparent; border: 1px solid var(--border); color: var(--text3); }
+  .btn-danger:hover { border-color: var(--red); color: var(--red); }
+
+  /* EARNINGS GRID */
+  .earnings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+  /* EMPTY STATE */
+  .empty-state { text-align: center; padding: 48px 24px; color: var(--text3); }
+  .empty-state p { font-size: 13px; margin-top: 8px; }
+
+  /* LOADING */
+  .loading-row td { text-align: center; color: var(--text3); padding: 32px; font-size: 13px; }
+
+  /* TOAST */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; z-index: 100;
+    background: var(--card2); border: 1px solid var(--border2);
+    border-radius: 10px; padding: 12px 20px;
+    font-size: 13px; color: var(--text);
+    transform: translateY(80px); opacity: 0;
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { border-color: rgba(74,156,109,0.4); }
+  .toast.error { border-color: rgba(196,92,92,0.4); }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+    display: none; align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--card); border: 1px solid var(--border2);
+    border-radius: 16px; padding: 28px; width: 420px; max-width: 90vw;
+  }
+  .modal h3 { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 400; margin-bottom: 4px; }
+  .modal p { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
+  .modal-form-group { margin-bottom: 14px; }
+  .modal-form-group label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+  .modal-form-group input, .modal-form-group select {
+    width: 100%; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 300;
+    color: var(--text); outline: none; transition: border-color 0.2s; appearance: none;
+  }
+  .modal-form-group input:focus, .modal-form-group select:focus { border-color: var(--gold-dim); }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+  /* PROFILE PAGE */
+  .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .profile-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+  .profile-card h3 { font-size: 13px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+  .profile-field { margin-bottom: 14px; }
+  .profile-field label { display: block; font-size: 11px; color: var(--text3); margin-bottom: 4px; }
+  .profile-field input, .profile-field textarea, .profile-field select {
+    width: 100%; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 300;
+    color: var(--text); outline: none; transition: border-color 0.2s; appearance: none;
+  }
+  .profile-field input:focus, .profile-field textarea:focus { border-color: var(--gold-dim); }
+  .profile-field textarea { resize: vertical; min-height: 80px; }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .stat-grid { grid-template-columns: 1fr 1fr; }
+    .earnings-grid { grid-template-columns: 1fr; }
+    .profile-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-left">
+    <div class="nav-brand">FinFlow</div>
+    <div class="nav-role">Accountant Portal</div>
+  </div>
+  <div class="nav-right">
+    <span class="nav-name" id="nav-name">—</span>
+    <span class="nav-badge" id="nav-badge">Pending</span>
+    <button class="nav-logout" onclick="logout()">Sign out</button>
+  </div>
+</nav>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Overview</div>
+      <div class="sidebar-item active" onclick="showPage('dashboard')">
+        <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+        Dashboard
+      </div>
+      <div class="sidebar-item" onclick="showPage('deadlines')">
+        <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.5V8l2.5 2.5"/></svg>
+        Deadlines
+      </div>
+    </div>
+    <hr class="sidebar-divider">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Clients</div>
+      <div class="sidebar-item" onclick="showPage('clients')">
+        <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5h0"/><circle cx="12" cy="10" r="3"/><path d="M12 8.5V10l1 1"/></svg>
+        My Clients
+      </div>
+      <div class="sidebar-item" onclick="showPage('invite')">
+        <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="6" r="2.5"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/><path d="M11 3h4M13 1v4"/></svg>
+        Invite Client
+      </div>
+    </div>
+    <hr class="sidebar-divider">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Earnings</div>
+      <div class="sidebar-item" onclick="showPage('earnings')">
+        <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="4" width="14" height="9" rx="1.5"/><path d="M5 4V3a2 2 0 014 0v1"/><circle cx="8" cy="8.5" r="1.5"/></svg>
+        Earnings
+      </div>
+    </div>
+    <hr class="sidebar-divider">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Account</div>
+      <div class="sidebar-item" onclick="showPage('profile')">
+        <svg class="sidebar-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/></svg>
+        My Profile
+      </div>
+    </div>
+
+    <!-- TIER WIDGET -->
+    <div class="tier-widget">
+      <div class="tier-widget-label">Referral tier</div>
+      <div class="tier-widget-name" id="tier-name">Starter</div>
+      <div class="tier-progress-track">
+        <div class="tier-progress-fill" id="tier-bar" style="width:0%"></div>
+      </div>
+      <div class="tier-progress-label" id="tier-label">Loading...</div>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="main">
+
+    <!-- DASHBOARD PAGE -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-header">
+        <h1>Good morning, <span id="first-name">—</span></h1>
+        <p id="status-line">Loading your dashboard...</p>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card gold">
+          <div class="stat-label">MTD Earnings</div>
+          <div class="stat-value" id="stat-mtd">—</div>
+          <div class="stat-sub">Referral + service commissions</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-label">Active Clients</div>
+          <div class="stat-value" id="stat-clients">—</div>
+          <div class="stat-sub">Paying subscribers</div>
+        </div>
+        <div class="stat-card amber">
+          <div class="stat-label">Upcoming Deadlines</div>
+          <div class="stat-value" id="stat-deadlines">—</div>
+          <div class="stat-sub">Next 30 days</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pending Clients</div>
+          <div class="stat-value" id="stat-pending">—</div>
+          <div class="stat-sub">Invited, not yet subscribed</div>
+        </div>
+      </div>
+
+      <div class="section-title">
+        Recent Clients
+        <a onclick="showPage('clients')">View all →</a>
+      </div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Plan</th>
+              <th>Status</th>
+              <th>Referral months</th>
+              <th>Joined</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="dashboard-clients-tbody">
+            <tr class="loading-row"><td colspan="6">Loading clients...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-title">
+        Upcoming Deadlines
+        <a onclick="showPage('deadlines')">View all →</a>
+      </div>
+      <div class="deadline-list" id="dashboard-deadlines">
+        <div style="color:var(--text3);font-size:13px;padding:16px 0;">Loading deadlines...</div>
+      </div>
+    </div>
+
+    <!-- CLIENTS PAGE -->
+    <div class="page" id="page-clients">
+      <div class="page-header">
+        <h1>My Clients</h1>
+        <p>All clients linked to your accountant profile</p>
+      </div>
+      <div class="ref-box">
+        <div class="ref-icon">🔗</div>
+        <div class="ref-info">
+          <h4>Your referral link</h4>
+          <div class="ref-url" id="referral-url">Loading...</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="copyRef()">Copy link</button>
+      </div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Email</th>
+              <th>Plan</th>
+              <th>Status</th>
+              <th>Commission months</th>
+              <th>Access</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="clients-tbody">
+            <tr class="loading-row"><td colspan="7">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- INVITE PAGE -->
+    <div class="page" id="page-invite">
+      <div class="page-header">
+        <h1>Invite a Client</h1>
+        <p>Send your referral link directly — they sign up, you earn commissions</p>
+      </div>
+      <div class="invite-box">
+        <h3>Send invite by email</h3>
+        <p>Enter your client's email and we'll send them a personalised invite with your referral link attached.</p>
+        <div class="invite-row">
+          <input type="email" id="invite-email" placeholder="client@example.com">
+          <input type="text" id="invite-name" placeholder="Client name (optional)" style="max-width:200px">
+          <button class="btn btn-gold" onclick="sendInvite()">Send invite →</button>
+        </div>
+      </div>
+
+      <div class="ref-box">
+        <div class="ref-icon">🔗</div>
+        <div class="ref-info">
+          <h4>Or share your referral link directly</h4>
+          <div class="ref-url" id="referral-url-2">Loading...</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="copyRef()">Copy link</button>
+      </div>
+
+      <div class="section-title">Tier Progress</div>
+      <div class="table-card" style="margin-bottom:0">
+        <table>
+          <thead>
+            <tr><th>Tier</th><th>Clients needed</th><th>Commission duration</th><th>Max per client</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="primary">Starter</td>
+              <td>1 – 50</td>
+              <td>1 month</td>
+              <td class="gold">$10</td>
+              <td><span class="badge badge-green" id="tier-starter-badge">—</span></td>
+            </tr>
+            <tr>
+              <td class="primary">Growth</td>
+              <td>50 – 500</td>
+              <td>3 months</td>
+              <td class="gold">$30</td>
+              <td><span class="badge badge-amber" id="tier-growth-badge">—</span></td>
+            </tr>
+            <tr>
+              <td class="primary">Elite</td>
+              <td>500+</td>
+              <td>12 months</td>
+              <td class="gold">$120</td>
+              <td><span class="badge" id="tier-elite-badge">—</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- DEADLINES PAGE -->
+    <div class="page" id="page-deadlines">
+      <div class="page-header">
+        <h1>Filing Deadlines</h1>
+        <p>Upcoming tax and filing obligations across all your clients</p>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:20px;">
+        <button class="btn btn-outline btn-sm" onclick="openDeadlineModal()">+ Add deadline</button>
+      </div>
+      <div class="deadline-list" id="all-deadlines">
+        <div style="color:var(--text3);font-size:13px;padding:16px 0;">Loading deadlines...</div>
+      </div>
+    </div>
+
+    <!-- EARNINGS PAGE -->
+    <div class="page" id="page-earnings">
+      <div class="page-header">
+        <h1>Earnings</h1>
+        <p>Your referral commissions and service fees</p>
+      </div>
+      <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
+        <div class="stat-card gold">
+          <div class="stat-label">Total Earned</div>
+          <div class="stat-value" id="earn-total">—</div>
+          <div class="stat-sub">All time</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-label">This Month</div>
+          <div class="stat-value" id="earn-mtd">—</div>
+          <div class="stat-sub">Current period</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pending Payout</div>
+          <div class="stat-value" id="earn-pending">—</div>
+          <div class="stat-sub">Next payment: 1st of month</div>
+        </div>
+      </div>
+      <div class="section-title">Earnings History</div>
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Type</th><th>Description</th><th>Amount</th><th>Status</th></tr>
+          </thead>
+          <tbody id="earnings-tbody">
+            <tr class="loading-row"><td colspan="5">Loading earnings...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PROFILE PAGE -->
+    <div class="page" id="page-profile">
+      <div class="page-header">
+        <h1>My Profile</h1>
+        <p>Your public listing on the FinFlow professional directory</p>
+      </div>
+      <div class="profile-grid">
+        <div class="profile-card">
+          <h3>Personal Details</h3>
+          <div class="profile-field"><label>First name</label><input type="text" id="pf-fname"></div>
+          <div class="profile-field"><label>Last name</label><input type="text" id="pf-lname"></div>
+          <div class="profile-field"><label>Email</label><input type="email" id="pf-email" disabled style="opacity:0.5"></div>
+          <div class="profile-field"><label>Firm / Practice</label><input type="text" id="pf-firm"></div>
+        </div>
+        <div class="profile-card">
+          <h3>Professional Info</h3>
+          <div class="profile-field"><label>Country</label><input type="text" id="pf-country"></div>
+          <div class="profile-field"><label>Specialisation</label><input type="text" id="pf-spec"></div>
+          <div class="profile-field"><label>Experience</label><input type="text" id="pf-exp"></div>
+          <div class="profile-field"><label>Bio</label><textarea id="pf-bio" rows="4"></textarea></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+        <div style="font-size:12px;color:var(--text3)">Verification status: <span id="pf-status" style="color:var(--amber)">—</span></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- DEADLINE MODAL -->
+<div class="modal-overlay" id="deadline-modal">
+  <div class="modal">
+    <h3>Add Filing Deadline</h3>
+    <p>Track an upcoming tax or filing obligation for a client</p>
+    <div class="modal-form-group">
+      <label>Client name</label>
+      <input type="text" id="dl-client" placeholder="e.g. Acme Corp">
+    </div>
+    <div class="modal-form-group">
+      <label>Filing type</label>
+      <select id="dl-type">
+        <option>Corporation Tax Return</option>
+        <option>VAT Return</option>
+        <option>Personal Tax Return</option>
+        <option>Payroll Filing</option>
+        <option>Annual Return</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <div class="modal-form-group">
+      <label>Due date</label>
+      <input type="date" id="dl-date">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeDeadlineModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="saveDeadline()">Save deadline</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let accountant = null;
+let clients = [];
+let earnings = [];
+let deadlines = JSON.parse(localStorage.getItem('ff_deadlines') || '[]');
+
+const APP_URL = window.location.origin;
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+async function boot() {
+  try {
+    const res = await fetch('/api/accountants/me', { credentials: 'include' });
+    if (!res.ok) {
+      window.location.href = '/join';
+      return;
+    }
+    accountant = await res.json();
+    initUI();
+    loadClients();
+    loadEarnings();
+  } catch (e) {
+    window.location.href = '/join';
+  }
+}
+
+function initUI() {
+  const name = `${accountant.first_name} ${accountant.last_name}`;
+  document.getElementById('nav-name').textContent = name;
+  document.getElementById('first-name').textContent = accountant.first_name;
+
+  const statusMap = { verified: '✓ Verified', pending: 'Pending review', rejected: 'Rejected', suspended: 'Suspended' };
+  const badgeEl = document.getElementById('nav-badge');
+  badgeEl.textContent = statusMap[accountant.status] || accountant.status;
+  if (accountant.status === 'verified') { badgeEl.style.color = 'var(--green)'; badgeEl.style.borderColor = 'rgba(74,156,109,0.4)'; badgeEl.style.background = 'var(--green-bg)'; }
+
+  document.getElementById('pf-status').textContent = statusMap[accountant.status] || accountant.status;
+  if (accountant.status === 'verified') document.getElementById('pf-status').style.color = 'var(--green)';
+
+  // Referral link
+  const refUrl = `${APP_URL}/register?ref=${accountant.referral_code}`;
+  document.getElementById('referral-url').textContent = refUrl;
+  document.getElementById('referral-url-2').textContent = refUrl;
+
+  // Profile fields
+  document.getElementById('pf-fname').value = accountant.first_name || '';
+  document.getElementById('pf-lname').value = accountant.last_name || '';
+  document.getElementById('pf-email').value = accountant.email || '';
+  document.getElementById('pf-firm').value = accountant.firm || '';
+  document.getElementById('pf-country').value = accountant.country || '';
+  document.getElementById('pf-spec').value = accountant.specialisation || '';
+  document.getElementById('pf-exp').value = accountant.experience || '';
+  document.getElementById('pf-bio').value = accountant.bio || '';
+
+  // Status line
+  document.getElementById('status-line').textContent = accountant.status === 'verified'
+    ? `Verified ${accountant.firm ? '· ' + accountant.firm : ''} · ${accountant.specialisation || ''}`
+    : 'Your profile is pending verification — you\'ll be notified within 1–2 business days.';
+
+  renderDeadlines();
+}
+
+// ── CLIENTS ───────────────────────────────────────────────────────────────────
+async function loadClients() {
+  try {
+    const res = await fetch('/api/accountants/clients', { credentials: 'include' });
+    clients = await res.json();
+    renderClients();
+    updateStats();
+    updateTierWidget();
+  } catch (e) {
+    document.getElementById('dashboard-clients-tbody').innerHTML = '<tr class="loading-row"><td colspan="6">Could not load clients.</td></tr>';
+  }
+}
+
+function renderClients() {
+  const active = clients.filter(c => c.status === 'active');
+  const rows = clients.length === 0
+    ? '<tr class="loading-row"><td colspan="7">No clients yet. <a style="color:var(--gold);cursor:pointer" onclick="showPage(\'invite\')">Invite your first client →</a></td></tr>'
+    : clients.map(c => `
+      <tr>
+        <td class="primary">${c.client_name || 'Unknown'}</td>
+        <td>${c.client_email || '—'}</td>
+        <td><span class="badge badge-gold">${c.client_plan || 'trial'}</span></td>
+        <td><span class="badge ${c.status === 'active' ? 'badge-green' : c.status === 'pending' ? 'badge-amber' : 'badge-red'}">${c.status}</span></td>
+        <td>${c.referral_month}/${c.referral_months_total} months</td>
+        <td>${c.access_level}</td>
+        <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.user_id})">View books</button></td>
+      </tr>`).join('');
+
+  document.getElementById('clients-tbody').innerHTML = rows;
+
+  // Dashboard preview (first 5)
+  const dashRows = clients.slice(0, 5).map(c => `
+    <tr>
+      <td class="primary">${c.client_name || 'Unknown'}</td>
+      <td><span class="badge badge-gold">${c.client_plan || 'trial'}</span></td>
+      <td><span class="badge ${c.status === 'active' ? 'badge-green' : 'badge-amber'}">${c.status}</span></td>
+      <td>${c.referral_month}/${c.referral_months_total} months</td>
+      <td>${c.activated_at ? new Date(c.activated_at).toLocaleDateString() : '—'}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.user_id})">View books</button></td>
+    </tr>`).join('') || '<tr class="loading-row"><td colspan="6">No clients yet.</td></tr>';
+  document.getElementById('dashboard-clients-tbody').innerHTML = dashRows;
+}
+
+function updateStats() {
+  const active = clients.filter(c => c.status === 'active').length;
+  const pending = clients.filter(c => c.status === 'pending').length;
+  document.getElementById('stat-clients').textContent = active;
+  document.getElementById('stat-pending').textContent = pending;
+}
+
+function updateTierWidget() {
+  const active = clients.filter(c => c.status === 'active').length;
+  let tierName, progress, label, nextMilestone;
+
+  if (active >= 500) {
+    tierName = 'Elite'; progress = 100;
+    label = `${active} active clients — maximum tier`;
+    document.getElementById('tier-elite-badge').textContent = 'Current';
+    document.getElementById('tier-elite-badge').className = 'badge badge-green';
+    document.getElementById('tier-growth-badge').textContent = '✓ Achieved';
+    document.getElementById('tier-starter-badge').textContent = '✓ Achieved';
+  } else if (active >= 50) {
+    tierName = 'Growth'; progress = ((active - 50) / 450) * 100;
+    label = `${active} clients · ${500 - active} to Elite`;
+    document.getElementById('tier-growth-badge').textContent = 'Current';
+    document.getElementById('tier-growth-badge').className = 'badge badge-green';
+    document.getElementById('tier-starter-badge').textContent = '✓ Achieved';
+    document.getElementById('tier-elite-badge').textContent = `${500 - active} to go`;
+    document.getElementById('tier-elite-badge').className = 'badge';
+  } else {
+    tierName = 'Starter'; progress = (active / 50) * 100;
+    label = `${active} clients · ${50 - active} to Growth`;
+    document.getElementById('tier-starter-badge').textContent = 'Current';
+    document.getElementById('tier-starter-badge').className = 'badge badge-green';
+    document.getElementById('tier-growth-badge').textContent = `${50 - active} to go`;
+    document.getElementById('tier-elite-badge').textContent = '500 clients';
+    document.getElementById('tier-elite-badge').className = 'badge';
+  }
+
+  document.getElementById('tier-name').textContent = tierName;
+  document.getElementById('tier-bar').style.width = Math.min(progress, 100) + '%';
+  document.getElementById('tier-label').innerHTML = `<span>${label}</span>`;
+}
+
+// ── EARNINGS ──────────────────────────────────────────────────────────────────
+async function loadEarnings() {
+  try {
+    const res = await fetch('/api/accountants/earnings', { credentials: 'include' });
+    const data = await res.json();
+    earnings = data.earnings || [];
+
+    const total = data.totalFormatted || '$0.00';
+    const mtd = '$' + (earnings.filter(e => {
+      const d = new Date(e.period_month);
+      const now = new Date();
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }).reduce((s, e) => s + e.amount_cents, 0) / 100).toFixed(2);
+
+    const pending = '$' + (earnings.filter(e => e.status === 'pending').reduce((s, e) => s + e.amount_cents, 0) / 100).toFixed(2);
+
+    document.getElementById('stat-mtd').textContent = mtd;
+    document.getElementById('earn-total').textContent = total;
+    document.getElementById('earn-mtd').textContent = mtd;
+    document.getElementById('earn-pending').textContent = pending;
+
+    const rows = earnings.length === 0
+      ? '<tr class="loading-row"><td colspan="5">No earnings yet. Invite clients to start earning.</td></tr>'
+      : earnings.map(e => `
+        <tr>
+          <td>${e.period_month ? new Date(e.period_month).toLocaleDateString('en-US', {month:'short',year:'numeric'}) : '—'}</td>
+          <td><span class="badge ${e.type === 'referral' ? 'badge-gold' : 'badge-green'}">${e.type === 'referral' ? 'Referral' : 'Service'}</span></td>
+          <td>${e.description || '—'}</td>
+          <td class="gold">$${(e.amount_cents / 100).toFixed(2)}</td>
+          <td><span class="badge ${e.status === 'paid' ? 'badge-green' : 'badge-amber'}">${e.status}</span></td>
+        </tr>`).join('');
+
+    document.getElementById('earnings-tbody').innerHTML = rows;
+  } catch (e) {
+    document.getElementById('earnings-tbody').innerHTML = '<tr class="loading-row"><td colspan="5">Could not load earnings.</td></tr>';
+  }
+}
+
+// ── DEADLINES ─────────────────────────────────────────────────────────────────
+function renderDeadlines() {
+  const today = new Date();
+  const sorted = [...deadlines].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const upcoming = sorted.filter(d => new Date(d.date) >= today);
+  const count = upcoming.length;
+  document.getElementById('stat-deadlines').textContent = count;
+
+  const html = upcoming.length === 0
+    ? '<div style="color:var(--text3);font-size:13px;padding:16px 0;text-align:center;">No upcoming deadlines. <a style="color:var(--gold);cursor:pointer" onclick="openDeadlineModal()">Add one →</a></div>'
+    : upcoming.slice(0, 5).map(d => {
+        const due = new Date(d.date);
+        const diff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+        const urgency = diff <= 7 ? 'urgent' : diff <= 21 ? 'soon' : 'ok';
+        const daysLabel = diff === 0 ? 'Due today' : diff < 0 ? `${Math.abs(diff)} days overdue` : `${diff} days left`;
+        return `
+          <div class="deadline-item ${urgency}">
+            <div class="deadline-dot ${urgency}"></div>
+            <div class="deadline-info">
+              <div class="deadline-client">${d.client}</div>
+              <div class="deadline-type">${d.type}</div>
+            </div>
+            <div class="deadline-date">
+              <div>${due.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})}</div>
+              <div class="deadline-days ${urgency}">${daysLabel}</div>
+            </div>
+          </div>`;
+      }).join('');
+
+  document.getElementById('dashboard-deadlines').innerHTML = html;
+  document.getElementById('all-deadlines').innerHTML = upcoming.length === 0
+    ? '<div style="color:var(--text3);font-size:13px;padding:16px 0;text-align:center;">No deadlines yet.</div>'
+    : upcoming.map(d => {
+        const due = new Date(d.date);
+        const diff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+        const urgency = diff <= 7 ? 'urgent' : diff <= 21 ? 'soon' : 'ok';
+        const daysLabel = diff === 0 ? 'Due today' : diff < 0 ? `${Math.abs(diff)} days overdue` : `${diff} days left`;
+        return `
+          <div class="deadline-item ${urgency}">
+            <div class="deadline-dot ${urgency}"></div>
+            <div class="deadline-info">
+              <div class="deadline-client">${d.client}</div>
+              <div class="deadline-type">${d.type}</div>
+            </div>
+            <div class="deadline-date">
+              <div>${due.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})}</div>
+              <div class="deadline-days ${urgency}">${daysLabel}</div>
+            </div>
+          </div>`;
+      }).join('');
+}
+
+function openDeadlineModal() { document.getElementById('deadline-modal').classList.add('open'); }
+function closeDeadlineModal() { document.getElementById('deadline-modal').classList.remove('open'); }
+function saveDeadline() {
+  const client = document.getElementById('dl-client').value.trim();
+  const type = document.getElementById('dl-type').value;
+  const date = document.getElementById('dl-date').value;
+  if (!client || !date) { toast('Please fill in all fields', 'error'); return; }
+  deadlines.push({ client, type, date, id: Date.now() });
+  localStorage.setItem('ff_deadlines', JSON.stringify(deadlines));
+  closeDeadlineModal();
+  renderDeadlines();
+  toast('Deadline added', 'success');
+  document.getElementById('dl-client').value = '';
+  document.getElementById('dl-date').value = '';
+}
+
+// ── INVITE ────────────────────────────────────────────────────────────────────
+async function sendInvite() {
+  const email = document.getElementById('invite-email').value.trim();
+  const name = document.getElementById('invite-name').value.trim();
+  if (!email) { toast('Please enter a client email', 'error'); return; }
+  try {
+    const res = await fetch('/api/accountants/invite', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name }),
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    toast(`Invitation sent to ${email}`, 'success');
+    document.getElementById('invite-email').value = '';
+    document.getElementById('invite-name').value = '';
+  } catch (e) {
+    toast('Could not send invite. Try again.', 'error');
+  }
+}
+
+function copyRef() {
+  const url = `${APP_URL}/register?ref=${accountant?.referral_code}`;
+  navigator.clipboard.writeText(url).then(() => toast('Referral link copied!', 'success'));
+}
+
+// ── VIEW BOOKS ────────────────────────────────────────────────────────────────
+async function viewBooks(userId) {
+  try {
+    const res = await fetch(`/api/accountants/clients/${userId}/books`, { credentials: 'include' });
+    if (!res.ok) { toast('No access to this client\'s books', 'error'); return; }
+    const data = await res.json();
+    toast(`${data.summary.totalIncome} income · ${data.summary.totalExpenses} expenses`, 'success');
+  } catch (e) {
+    toast('Could not load client books', 'error');
+  }
+}
+
+// ── LOGOUT ────────────────────────────────────────────────────────────────────
+async function logout() {
+  await fetch('/api/accountants/logout', { method: 'POST', credentials: 'include' });
+  window.location.href = '/join';
+}
+
+// ── NAV ───────────────────────────────────────────────────────────────────────
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item').forEach(s => s.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelector(`[onclick="showPage('${name}')"]`)?.classList.add('active');
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (type ? ' ' + type : '');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+boot();
+</script>
+</body>
+</html>

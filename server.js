@@ -1510,6 +1510,9 @@ app.get('/reset-password.html', (req, res) => {
 app.get('/join', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accountant-register.html'));
 });
+app.get('/accountant', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'accountant-dashboard.html'));
+});
 app.get('/sitemap.xml', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'sitemap.xml'));
 });

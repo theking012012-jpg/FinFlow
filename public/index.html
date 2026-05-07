@@ -4662,6 +4662,7 @@ function renderCashflow(){updateCashflow()}
 // INVOICES
 // ════════════════════════════════════════════
 function updateInvoices(d=getPeriodData()){
+  if(!userInvoices) userInvoices=[];
   const totalBilled=d.months===1?userInvoices.reduce((a,i)=>a+i.amount,0):userInvoices.reduce((a,i)=>a+i.amount,0)*d.months;
   const collected=userInvoices.filter(i=>i.status==='paid').reduce((a,i)=>a+i.amount,0)*(d.months===1?1:d.months);
   const outstanding=userInvoices.filter(i=>i.status!=='paid').reduce((a,i)=>a+i.amount,0);
@@ -4681,6 +4682,7 @@ function updateInvoices(d=getPeriodData()){
 }
 function renderInvoices(){
   updateInvoices();
+  if(!userInvoices) userInvoices=[];
   const badgeCls={'paid':'b-green','pending':'b-amber','overdue':'b-red'};
   document.getElementById('invoice-list').innerHTML=userInvoices.map((inv,idx)=>`
     <div class="table-row inv-cols">
@@ -4754,6 +4756,7 @@ function updateExpenses(d=getPeriodData()){
 }
 function renderExpenses(){
   updateExpenses();
+  if(!bizExpenses) bizExpenses=[];
   document.getElementById('expense-list').innerHTML=bizExpenses.slice(0,6).map(e=>`
     <div class="tx-row">
       <div><div class="tx-name">${esc(e.desc)}</div><div class="tx-cat">${esc(e.cat)} · ${esc(e.date)}${e.ded!=='no'?' · '+(e.ded==='half'?'50%':'100%')+' deductible':''}</div></div>
@@ -4782,6 +4785,7 @@ function saveExpense(){
 // INVENTORY
 // ════════════════════════════════════════════
 function renderInventory(){
+  if(!inventory) inventory=[];
   const lowCount=inventory.filter(i=>i.low).length;
   document.getElementById('badge-inv2').textContent=lowCount;
   document.getElementById('badge-inv2').style.display=lowCount>0?'':'none';
@@ -4818,7 +4822,8 @@ function saveProduct(){
   const costRaw=validateAmount(document.getElementById('prod-cost').value);
   const cost=costRaw!==null?costRaw:0;
   const thresh=Math.max(0,parseInt(document.getElementById('prod-thresh').value)||20);
-  const sku='#'+String(1048+inventory.length).padStart(4,'0');
+  const sku='#'+String(1048+(inventory||[]).length).padStart(4,'0');
+  if(!inventory) inventory=[];
   inventory.push({sku,name,units,max:Math.max(units*2,100),cost,low:units<thresh});
   closeModal('product-modal');
   renderInventory();
@@ -5976,7 +5981,7 @@ async function exportPDF(){
     const prompt = sanitizeForAPI(`Write an executive financial report for ${d.label}:
 Revenue: ${S(d.rev)} | Expenses: ${S(d.exp)} | Net profit: ${S(d.profit)} (${Math.round(d.profit/d.rev*100)}% margin)
 Annual run rate: ${S(sum(REV,0,12))} revenue | ${S(sum(PROFIT,0,12))} profit | YoY growth ~38%
-Top client: RetailCo | Payroll: ${payrollEmployees.length+(ownerPayroll?1:0)} staff
+Top client: RetailCo | Payroll: ${(payrollEmployees||[]).length+(ownerPayroll?1:0)} staff
 ${ownerLine}Personal savings rate: ${document.getElementById('pers-savings').textContent} | Net worth: ${document.getElementById('pers-nw').textContent}
 4 tight paragraphs: Executive Summary, Financial Performance, Risks & Opportunities, Outlook. Data-driven and executive-level.`, 3000);
     const res = await fetch('/api/ai', {

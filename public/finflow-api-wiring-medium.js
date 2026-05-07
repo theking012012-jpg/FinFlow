@@ -104,6 +104,7 @@
           notes,
         });
 
+        if (!window.userInvoices) window.userInvoices = [];
         window.userInvoices.unshift({
           _dbId:    saved.id,
           client,
@@ -239,6 +240,7 @@
           expense_date: new Date().toISOString().slice(0, 10),
         });
 
+        if (!window.bizExpenses) window.bizExpenses = [];
         window.bizExpenses.unshift({
           _dbId:  saved.id,
           desc,

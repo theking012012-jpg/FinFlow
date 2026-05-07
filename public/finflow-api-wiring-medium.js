@@ -69,6 +69,7 @@
             color:  r.status === 'overdue' ? 'var(--red)' : 'var(--t2)',
           }));
           // Prepend user-created invoices before seed data
+          if (!window.userInvoices) window.userInvoices = [];
           window.userInvoices = [...mapped, ...window.userInvoices.filter(i => !i._dbId)];
           if (typeof renderInvoices === 'function') renderInvoices();
         }
@@ -207,6 +208,7 @@
                       ? new Date(r.expense_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                       : 'Today',
           }));
+          if (!window.bizExpenses) window.bizExpenses = [];
           window.bizExpenses = [...mapped, ...window.bizExpenses.filter(e => !e._dbId)];
           if (typeof renderExpenses === 'function') renderExpenses();
         }
@@ -368,6 +370,7 @@
           cost,
         });
 
+        if (!window.inventory) window.inventory = [];
         window.inventory.push({
           _dbId: saved.id,
           sku,

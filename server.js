@@ -97,7 +97,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const hash = bcrypt.hashSync(password, 12);
     const { lastInsertRowid: userId } = await db.insert('users', {
       email: email.toLowerCase(), password: hash,
-      name: (name || '').trim().slice(0, 100), plan: 'trial', trial_ends: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner',
+      name: (name || '').trim().slice(0, 100), plan: 'pro', trial_ends: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner',
     });
 
     seedUserData(userId).catch(e => console.error('[Register] seedUserData failed for userId', userId, e));

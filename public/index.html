@@ -1112,7 +1112,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     <div class="nav-item nav-item--clients" onclick="showPage('portal',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="10" rx="1.2"/><line x1="5" y1="3" x2="5" y2="13"/><line x1="1" y1="8" x2="5" y2="8"/></svg>Client portal</div>
     <div class="sidebar-footer">
       <div class="user-avatar" id="sb-user-avatar">JD</div>
-      <div class="user-info"><div class="user-name" id="sb-user-name">John Doe</div><div class="user-plan">Pro plan</div></div>
+      <div class="user-info"><div class="user-name" id="sb-user-name">John Doe</div><div class="user-plan" id="sb-user-plan">Pro plan</div></div>
       <span id="api-key-indicator" title="FinFlow AI is ready" style="font-size:10px;color:var(--green);white-space:nowrap;padding:3px 7px;border-radius:10px;border:1px solid var(--bd2);background:var(--bg2)">AI ✓</span>
       <button class="btn-icon" onclick="showPage('settings',null)" title="Settings"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M12.9 3.1l-1.4 1.4M4.5 11.5l-1.4 1.4"/></svg></button>
     </div>
@@ -3536,6 +3536,7 @@ const ROLES = {
                nav:['dashboard','banking','invoices','expenses','bills','customers','vendors','payroll']},
 };
 let currentRole = 'owner';
+let currentUserPlan = 'pro';
 
 function showLoginForm(){
   document.getElementById('login-form-panel').style.display='';
@@ -3574,6 +3575,11 @@ async function doLogin(){
     applyRole(r);
     document.getElementById('login-screen').style.display='none';
     injectRoleBadge(r);
+    if(data.user?.plan){
+      currentUserPlan = data.user.plan;
+      const planEl = document.getElementById('sb-user-plan');
+      if(planEl) planEl.textContent = data.user.plan.charAt(0).toUpperCase()+data.user.plan.slice(1)+' plan';
+    }
     notify('Welcome back' + (data.user?.name ? ', '+data.user.name : '') + ' ✴');
     if(typeof bootFinFlowAPI === 'function') bootFinFlowAPI();
   }catch(e){
@@ -3602,6 +3608,11 @@ async function doRegister(){
     applyRole(r);
     document.getElementById('login-screen').style.display='none';
     injectRoleBadge(r);
+    if(data.user?.plan){
+      currentUserPlan = data.user.plan;
+      const planEl = document.getElementById('sb-user-plan');
+      if(planEl) planEl.textContent = data.user.plan.charAt(0).toUpperCase()+data.user.plan.slice(1)+' plan';
+    }
     notify('Account created ✴ Welcome to FinFlow!');
     if(typeof bootFinFlowAPI === 'function') bootFinFlowAPI();
   }catch(e){
@@ -4724,6 +4735,10 @@ function saveInvoice(){
   const amountRaw=validateAmount(document.getElementById('inv-amount').value);
   if(!client){notify('Client name is required',true);return;}
   if(amountRaw===null||amountRaw<=0){notify('A valid positive amount is required',true);return;}
+  if(currentUserPlan==='pro'&&(userInvoices||[]).length>=50){
+    if(typeof showUpgradeModal==='function') showUpgradeModal('invoice_limit');
+    return;
+  }
   const amount=amountRaw;
   const due=document.getElementById('inv-due').value;
   const status=document.getElementById('inv-status').value;
@@ -5765,6 +5780,10 @@ async function saveSettings(){
 }
 
 function openAddEntityModal(){
+  if(currentUserPlan==='pro'&&typeof ENTITIES!=='undefined'&&ENTITIES.length>=1){
+    if(typeof showUpgradeModal==='function') showUpgradeModal('entity');
+    return;
+  }
   document.getElementById('ne-name').value='';
   document.getElementById('ne-currency').value='USD';
   document.getElementById('ne-color').value='#c9a84c';
@@ -7801,13 +7820,19 @@ function toggleAIPanel(){
   document.getElementById('ai-panel').classList.toggle('open');
 }
 
+let _aiQueryCount = 0;
 window.sendAIQuery = async function(text){
   if(!text||!text.trim())return;
   text = sanitizeForAPI(text, 2000);
+  if(currentUserPlan==='pro'&&_aiQueryCount>=50){
+    if(typeof showUpgradeModal==='function') showUpgradeModal('ai_limit');
+    return;
+  }
   if(!apiRateLimit()){
     notify('Too many AI requests — please wait a moment before trying again.',true);
     return;
   }
+  if(currentUserPlan==='pro') _aiQueryCount++;
   const input=document.getElementById('ai-input');
   input.value='';
   document.getElementById('ai-suggestions').style.display='none';
@@ -7992,6 +8017,10 @@ document.addEventListener('keydown',function(e){
 // Patch showPage for new pages
 const _sp8=window.showPage;
 window.showPage=function(id,el){
+  if(currentUserPlan==='pro'&&(id==='mrr'||id==='banking')){
+    if(typeof showUpgradeModal==='function') showUpgradeModal(id==='mrr'?'mrr':'banking');
+    return;
+  }
   _sp8(id,el);
   const extras={budget:'Budget',mrr:'MRR / SaaS',banking:'Banking',entities:'Entities',team:'Team & Roles',audit:'Audit Trail'};
   if(extras[id])document.getElementById('pageTitle').textContent=extras[id];
@@ -8026,6 +8055,48 @@ async function startTrial(plan) {
     notify('Checkout unavailable — please try again.');
   }
 }
+</script>
+
+<!-- ── UPGRADE MODAL + PLAN GATING ──────────────────────────────────────────── -->
+<script>
+(function(){
+
+const FEATURE_INFO = {
+  mrr:           { title: 'MRR / SaaS Dashboard',    perks: ['MRR, churn & expansion tracking','Revenue cohort analysis','SaaS growth metrics'] },
+  banking:       { title: 'Live Bank Sync',           perks: ['Connect any bank via Plaid','Automatic transaction import','Real-time balance sync'] },
+  scanner:       { title: 'AI Receipt Scanner',       perks: ['Claude Vision extracts vendor, amount & date','Supports photos and PDFs','Auto-categorise in one tap'] },
+  ai_limit:      { title: 'Unlimited AI Queries',     perks: ['No monthly cap — ask anything','Full financial analysis access','Priority AI processing'] },
+  invoice_limit: { title: 'Unlimited Invoices',       perks: ['No 50/month cap','Unlimited recurring profiles','Priority invoice delivery'] },
+  entity:        { title: 'Multiple Entities',        perks: ['Up to 5 separate ledgers','Consolidated multi-entity P&L','Independent chart of accounts per entity'] },
+};
+
+window.showUpgradeModal = function(feature) {
+  const info = FEATURE_INFO[feature] || { title: 'Business Plan Feature', perks: ['Unlock all Business features'] };
+  const existing = document.getElementById('upgrade-modal-overlay');
+  if(existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'upgrade-modal-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem';
+  overlay.innerHTML =
+    '<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);padding:2rem;max-width:380px;width:100%;box-shadow:0 32px 80px rgba(0,0,0,.5)">' +
+      '<div style="text-align:center;margin-bottom:1.5rem">' +
+        '<div style="width:52px;height:52px;background:var(--acc-bg);border:1px solid var(--acc);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:22px">&#10022;</div>' +
+        '<div style="font-size:11px;color:var(--acc);font-weight:600;text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px">Business Plan</div>' +
+        '<div style="font-size:20px;font-family:var(--font-display);font-style:italic;color:var(--t1);font-weight:600;line-height:1.2">' + info.title + '</div>' +
+        '<div style="font-size:12.5px;color:var(--t3);margin-top:6px">requires the Business plan</div>' +
+      '</div>' +
+      '<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1.5rem">' +
+        '<div style="font-size:10.5px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">What you unlock</div>' +
+        info.perks.map(function(p){ return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12.5px;color:var(--t1)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round"><polyline points="2,8 6,12 14,4"/></svg>'+p+'</div>'; }).join('') +
+      '</div>' +
+      '<button class="btn btn-primary" style="width:100%;justify-content:center;font-size:13px;padding:10px" onclick="document.getElementById(\'upgrade-modal-overlay\').remove();showPage(\'pricing\',null)">Upgrade to Business →</button>' +
+      '<button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:8px;font-size:12px" onclick="document.getElementById(\'upgrade-modal-overlay\').remove()">Maybe later</button>' +
+    '</div>';
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+};
+
+})();
 </script>
 
 <!-- AI runs through /api/ai on the server — no client-side key needed -->
@@ -8366,28 +8437,30 @@ requestAnimationFrame(()=>{if(window.CMD_ITEMS)CMD_ITEMS.push(..._extraCmds);});
 const PRO_FEATURES=[
   {text:'1 business entity',ok:true},
   {text:'Up to 3 team members',ok:true},
-  {text:'Invoicing & quotes',ok:true},
-  {text:'Expense tracking + receipt scanner',ok:true},
-  {text:'Bank sync via Plaid',ok:true},
+  {text:'Invoicing & quotes (up to 50/month)',ok:true},
+  {text:'Expense tracking',ok:true},
   {text:'Stripe live feed',ok:true},
-  {text:'50 AI queries / month',ok:true},
   {text:'Budget vs actuals',ok:true},
+  {text:'50 AI queries / month',ok:true},
   {text:'Multi-currency',ok:true},
-  {text:'Multi-entity accounting',ok:false},
-  {text:'RBAC & team roles',ok:false},
-  {text:'Audit trail',ok:false},
+  {text:'Bank sync via Plaid',ok:false},
+  {text:'AI receipt & invoice scanner',ok:false},
   {text:'MRR / SaaS dashboard',ok:false},
+  {text:'Multi-entity accounting',ok:false},
+  {text:'Full RBAC — 4 role tiers',ok:false},
   {text:'Unlimited AI queries',ok:false},
 ];
 
 const BIZ_FEATURES=[
   {text:'Up to 5 entities (separate ledgers)',ok:true},
   {text:'Up to 15 team members',ok:true},
+  {text:'Everything in Pro (unlimited invoices)',ok:true},
+  {text:'MRR / SaaS dashboard',ok:true},
+  {text:'Bank sync via Plaid',ok:true},
+  {text:'AI receipt & invoice scanner',ok:true},
+  {text:'Unlimited AI queries',ok:true},
   {text:'Full RBAC — 4 role tiers',ok:true},
   {text:'7-year audit trail',ok:true},
-  {text:'MRR / SaaS dashboard',ok:true},
-  {text:'Unlimited Claude AI queries',ok:true},
-  {text:'AI receipt & invoice scanner',ok:true},
   {text:'Consolidated multi-entity P&L',ok:true},
   {text:'Budget variance tracking',ok:true},
   {text:'Priority email support',ok:true},
@@ -8407,16 +8480,17 @@ const ENT_FEATURES=[
 ];
 
 const COMPARE_ROWS=[
-  {feature:'Starting price',ff:'$79/mo',qb:'$35/mo',xero:'$29/mo',fb:'$19/mo',ffWins:false},
-  {feature:'Business tier price',ff:'$199/mo',qb:'$275/mo',xero:'$90/mo',fb:'$60/mo',ffWins:true},
-  {feature:'Native AI assistant',ff:'✓ Claude',qb:'Limited',xero:'✗',fb:'✗',ffWins:true},
-  {feature:'Multi-entity (same plan)',ff:'✓',qb:'✗ Extra sub',xero:'✗ Extra org',fb:'✗',ffWins:true},
-  {feature:'Receipt scanner (AI)',ff:'✓',qb:'Basic OCR',xero:'Basic OCR',fb:'✗',ffWins:true},
-  {feature:'Live bank feed',ff:'✓ Plaid',qb:'✓',xero:'✓',fb:'Limited',ffWins:false},
-  {feature:'Audit trail',ff:'✓ 7 years',qb:'✓',xero:'✓',fb:'✗',ffWins:false},
+  {feature:'Pro plan price',ff:'$79/mo',qb:'$35/mo',xero:'$29/mo',fb:'$19/mo',ffWins:false},
+  {feature:'Business plan price',ff:'$199/mo',qb:'$275/mo',xero:'$90/mo',fb:'$60/mo',ffWins:true},
+  {feature:'Native AI assistant',ff:'✓ Claude (Business)',qb:'Limited',xero:'✗',fb:'✗',ffWins:true},
+  {feature:'Multi-entity (same plan)',ff:'✓ Business',qb:'✗ Extra sub',xero:'✗ Extra org',fb:'✗',ffWins:true},
+  {feature:'AI receipt scanner',ff:'✓ Business',qb:'Basic OCR',xero:'Basic OCR',fb:'✗',ffWins:true},
+  {feature:'Live bank sync (Plaid)',ff:'✓ Business',qb:'✓',xero:'✓',fb:'Limited',ffWins:false},
+  {feature:'7-year audit trail',ff:'✓ Business',qb:'✓',xero:'✓',fb:'✗',ffWins:false},
+  {feature:'MRR / SaaS dashboard',ff:'✓ Business',qb:'✗',xero:'✗',fb:'✗',ffWins:true},
+  {feature:'Budget variance tracking',ff:'✓ Pro & Business',qb:'Add-on',xero:'Limited',fb:'✗',ffWins:true},
   {feature:'Command palette',ff:'✓',qb:'✗',xero:'✗',fb:'✗',ffWins:true},
-  {feature:'MRR / SaaS dashboard',ff:'✓',qb:'✗',xero:'✗',fb:'✗',ffWins:true},
-  {feature:'Design quality',ff:'★★★★★',qb:'★★★',xero:'★★★',fb:'★★★★',ffWins:true},
+  {feature:'Annual discount',ff:'20% off',qb:'10% off',xero:'10% off',fb:'10% off',ffWins:true},
   {feature:'Free trial',ff:'14 days',qb:'30 days',xero:'30 days',fb:'30 days',ffWins:false},
 ];
 
@@ -8639,6 +8713,7 @@ function renderScanResult(d){
 
 window.handleScannerFile=function(file){
   if(!file)return;
+  if(currentUserPlan==='pro'){ if(typeof showUpgradeModal==='function') showUpgradeModal('scanner'); return; }
   document.getElementById('scanner-drop').classList.remove('drag-over');
   scanFile(file);
 };
@@ -8646,6 +8721,7 @@ window.handleScannerFile=function(file){
 window.handleScannerDrop=function(e){
   e.preventDefault();
   document.getElementById('scanner-drop').classList.remove('drag-over');
+  if(currentUserPlan==='pro'){ if(typeof showUpgradeModal==='function') showUpgradeModal('scanner'); return; }
   const file=e.dataTransfer.files[0];
   if(file)scanFile(file);
 };

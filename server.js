@@ -103,6 +103,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     seedUserData(userId).catch(e => console.error('[Register] seedUserData failed for userId', userId, e));
 
     req.session.userId = userId;
+    req.session.userRole = 'owner';
     const user = await db.get('users', u => u.id === userId);
     console.log('[Register] New user created:', email);
     res.status(201).json({ user: safeUser(user) });
@@ -119,6 +120,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     const user = await db.get('users', u => u.email.toLowerCase() === email.toLowerCase());
     if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Invalid email or password.' });
     req.session.userId = user.id;
+    req.session.userRole = user.role || 'owner';
     res.json({ user: safeUser(user) });
   } catch (err) {
     console.error('[Login] Unexpected error:', err);
@@ -207,6 +209,25 @@ app.get('/api/auth/me', requireAuth, wrap(async (req, res) => {
 
 app.use('/api', apiLimiter);
 
+// ── ENTITY + RBAC MIDDLEWARE ──────────────────────────────────────────────────
+// Sets req.entityId from session so routes can scope data to the active entity.
+app.use('/api', (req, res, next) => {
+  req.entityId = req.session.entityId || null;
+  next();
+});
+
+// Role-based access: viewer=read-only, accountant=no DELETE, admin/owner=all.
+app.use('/api', (req, res, next) => {
+  if (!req.session.userId) return next(); // unauthenticated — let requireAuth handle it
+  if (req.path.startsWith('/auth/')) return next(); // auth routes are exempt
+  const role = req.session.userRole || 'owner';
+  if (req.method === 'DELETE' && !['admin', 'owner'].includes(role))
+    return res.status(403).json({ error: 'Only admin or owner can delete records.' });
+  if (['POST', 'PUT', 'PATCH'].includes(req.method) && role === 'viewer')
+    return res.status(403).json({ error: 'Viewer role is read-only.' });
+  next();
+});
+
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 async function ownedBy(table, id, userId) {
   return db.get(table, r => r.id === parseInt(id) && r.user_id === userId);
@@ -216,6 +237,38 @@ async function ownedBy(table, id, userId) {
 async function activeEntity(userId) {
   const rows = await db.all('entities', e => e.user_id === userId && e.is_active);
   return rows[0] || null;
+}
+
+// Build a filter function scoped to user (and optionally entity)
+function userFilter(userId, entityId) {
+  if (entityId) return r => r.user_id === userId && (r.entity_id === entityId || r.entity_id == null);
+  return r => r.user_id === userId;
+}
+
+// ── AUDIT LOG HELPER ──────────────────────────────────────────────────────────
+async function logAudit(req, action, tableName, recordId, oldData, newData) {
+  try {
+    await db.insert('audit_log', {
+      user_id:    req.session.userId,
+      entity_id:  req.entityId || null,
+      action,
+      table_name: tableName,
+      record_id:  recordId || null,
+      old_data:   oldData ? JSON.stringify(oldData) : null,
+      new_data:   newData ? JSON.stringify(newData) : null,
+      ip:         req.ip || null,
+    });
+  } catch (e) {
+    console.error('[Audit] log failed:', e.message);
+  }
+}
+
+// ── LOCK HELPER ───────────────────────────────────────────────────────────────
+async function isLocked(userId, date) {
+  if (!date) return false;
+  const s = await db.get('lock_settings', r => r.user_id === userId && r.enabled);
+  if (!s || !s.lock_date) return false;
+  return date <= s.lock_date;
 }
 
 // ── ENTITIES ──────────────────────────────────────────────────────────────────
@@ -242,24 +295,30 @@ app.delete('/api/entities/:id', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/entities/:id/activate', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
+  const eid = parseInt(req.params.id);
   await db.update('entities', r => r.user_id === uid, { is_active: 0 });
-  await db.update('entities', r => r.id === parseInt(req.params.id) && r.user_id === uid, { is_active: 1 });
+  await db.update('entities', r => r.id === eid && r.user_id === uid, { is_active: 1 });
+  req.session.entityId = eid;
   res.json({ ok: true });
 }));
 
 // ── INVOICES ──────────────────────────────────────────────────────────────────
 app.get('/api/invoices', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('invoices', r => r.user_id === req.session.userId, (a,b) => b.id - a.id));
+  res.json(await db.all('invoices', userFilter(req.session.userId, req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, due_date, status = 'pending', notes = '', entity_id } = req.body || {};
   if (!client || amount == null) return res.status(400).json({ error: 'client and amount required.' });
-  const { row } = await db.insert('invoices', { user_id: req.session.userId, entity_id: entity_id||null, client: client.trim().slice(0,200), amount: parseFloat(amount)||0, due_date: due_date||null, status, notes: notes.slice(0,500) });
+  const eid = entity_id || req.entityId || null;
+  if (await isLocked(req.session.userId, due_date)) return res.status(403).json({ error: 'Period is locked.' });
+  const { row } = await db.insert('invoices', { user_id: req.session.userId, entity_id: eid, client: client.trim().slice(0,200), amount: parseFloat(amount)||0, due_date: due_date||null, status, notes: notes.slice(0,500) });
+  logAudit(req, 'CREATE', 'invoices', row.id, null, row);
   res.status(201).json(row);
 }));
 app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('invoices', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
+  if (await isLocked(req.session.userId, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
   const { client, amount, due_date, status, notes } = req.body || {};
   if (client != null) patch.client = client;
@@ -268,27 +327,37 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   if (status != null) patch.status = status;
   if (notes != null) patch.notes = notes;
   await db.update('invoices', r => r.id === row.id, patch);
-  res.json(await db.get('invoices', r => r.id === row.id));
+  const updated = await db.get('invoices', r => r.id === row.id);
+  logAudit(req, 'UPDATE', 'invoices', row.id, row, updated);
+  res.json(updated);
 }));
 app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('invoices', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  const row = await ownedBy('invoices', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  if (await isLocked(req.session.userId, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.delete('invoices', r => r.id === parseInt(req.params.id));
+  logAudit(req, 'DELETE', 'invoices', row.id, row, null);
   res.json({ ok: true });
 }));
 
 // ── EXPENSES ──────────────────────────────────────────────────────────────────
 app.get('/api/expenses', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('expenses', r => r.user_id === req.session.userId, (a,b) => b.id - a.id));
+  res.json(await db.all('expenses', userFilter(req.session.userId, req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   const { description, category = 'Other', amount, deductible = 'no', expense_date, entity_id } = req.body || {};
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
-  const { row } = await db.insert('expenses', { user_id: req.session.userId, entity_id: entity_id||null, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: expense_date || new Date().toISOString().slice(0,10) });
+  const eid = entity_id || req.entityId || null;
+  const edate = expense_date || new Date().toISOString().slice(0,10);
+  if (await isLocked(req.session.userId, edate)) return res.status(403).json({ error: 'Period is locked.' });
+  const { row } = await db.insert('expenses', { user_id: req.session.userId, entity_id: eid, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: edate });
+  logAudit(req, 'CREATE', 'expenses', row.id, null, row);
   res.status(201).json(row);
 }));
 app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('expenses', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
+  if (await isLocked(req.session.userId, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
   const b = req.body || {};
   if (b.description != null) patch.description = b.description;
@@ -297,17 +366,22 @@ app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   if (b.deductible != null) patch.deductible = b.deductible;
   if (b.expense_date != null) patch.expense_date = b.expense_date;
   await db.update('expenses', r => r.id === row.id, patch);
-  res.json(await db.get('expenses', r => r.id === row.id));
+  const updated = await db.get('expenses', r => r.id === row.id);
+  logAudit(req, 'UPDATE', 'expenses', row.id, row, updated);
+  res.json(updated);
 }));
 app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('expenses', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  const row = await ownedBy('expenses', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  if (await isLocked(req.session.userId, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.delete('expenses', r => r.id === parseInt(req.params.id));
+  logAudit(req, 'DELETE', 'expenses', row.id, row, null);
   res.json({ ok: true });
 }));
 
 // ── CUSTOMERS ─────────────────────────────────────────────────────────────────
 app.get('/api/customers', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('customers', r => r.user_id === req.session.userId, (a,b) => b.revenue - a.revenue));
+  res.json(await db.all('customers', userFilter(req.session.userId, req.entityId), (a,b) => b.revenue - a.revenue));
 }));
 app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -332,7 +406,7 @@ app.delete('/api/customers/:id', requireAuth, wrap(async (req, res) => {
 
 // ── INVENTORY ─────────────────────────────────────────────────────────────────
 app.get('/api/inventory', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('inventory', r => r.user_id === req.session.userId, (a,b) => a.id - b.id));
+  res.json(await db.all('inventory', userFilter(req.session.userId, req.entityId), (a,b) => a.id - b.id));
 }));
 app.post('/api/inventory', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -410,7 +484,7 @@ app.delete('/api/items/:id', requireAuth, wrap(async (req, res) => {
 
 // ── PAYROLL ───────────────────────────────────────────────────────────────────
 app.get('/api/payroll', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('payroll', r => r.user_id === req.session.userId, (a,b) => b.is_owner - a.is_owner || a.id - b.id));
+  res.json(await db.all('payroll', userFilter(req.session.userId, req.entityId), (a,b) => b.is_owner - a.is_owner || a.id - b.id));
 }));
 app.post('/api/payroll', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -578,15 +652,270 @@ app.get('/api/settings', requireAuth, wrap(async (req, res) => {
 app.put('/api/settings', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
-  if (b.dark_mode != null)   patch.dark_mode   = b.dark_mode ? 1 : 0;
-  if (b.currency != null)    patch.currency     = b.currency;
-  if (b.show_cents != null)  patch.show_cents   = b.show_cents ? 1 : 0;
-  if (b.notif_email != null) patch.notif_email  = b.notif_email ? 1 : 0;
-  if (b.notif_inv != null)   patch.notif_inv    = b.notif_inv ? 1 : 0;
-  if (b.notif_pay != null)   patch.notif_pay    = b.notif_pay ? 1 : 0;
+  if (b.dark_mode      != null) patch.dark_mode      = b.dark_mode ? 1 : 0;
+  if (b.currency       != null) patch.currency        = b.currency;
+  if (b.show_cents     != null) patch.show_cents      = b.show_cents ? 1 : 0;
+  if (b.notif_email    != null) patch.notif_email     = b.notif_email ? 1 : 0;
+  if (b.notif_inv      != null) patch.notif_inv       = b.notif_inv ? 1 : 0;
+  if (b.notif_pay      != null) patch.notif_pay       = b.notif_pay ? 1 : 0;
+  // Onboarding fields
+  if (b.business_name  != null) patch.business_name   = b.business_name.slice(0,200);
+  if (b.business_type  != null) patch.business_type   = b.business_type;
+  if (b.num_employees  != null) patch.num_employees   = b.num_employees;
+  if (b.onboarding_done!= null) patch.onboarding_done = b.onboarding_done ? 1 : 0;
   await db.upsert('user_settings', 'user_id', req.session.userId, patch);
   if (b.name) await db.update('users', u => u.id === req.session.userId, { name: b.name.trim().slice(0,100) });
+  if (b.business_name) {
+    // Also update the active entity name if user is updating business name
+    const uid = req.session.userId;
+    const ent = await activeEntity(uid);
+    if (ent) await db.update('entities', e => e.id === ent.id, { name: b.business_name.slice(0,100) });
+  }
   res.json({ ok: true });
+}));
+
+// ── AUTH — CHANGE PASSWORD ────────────────────────────────────────────────────
+app.put('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'currentPassword and newPassword required.' });
+  if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+  const user = await db.get('users', u => u.id === req.session.userId);
+  if (!user || !bcrypt.compareSync(currentPassword, user.password)) return res.status(401).json({ error: 'Current password is incorrect.' });
+  const hash = bcrypt.hashSync(newPassword, 12);
+  await db.update('users', u => u.id === req.session.userId, { password: hash });
+  logAudit(req, 'CHANGE_PASSWORD', 'users', req.session.userId, null, null);
+  res.json({ ok: true });
+}));
+
+// ── AUTH — DELETE ACCOUNT ─────────────────────────────────────────────────────
+app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const { password } = req.body || {};
+  if (!password) return res.status(400).json({ error: 'Password required to confirm deletion.' });
+  const user = await db.get('users', u => u.id === uid);
+  if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Incorrect password.' });
+  // Delete from all tables by user_id
+  const allTables = [
+    'invoices','expenses','customers','inventory','payroll','personal_transactions',
+    'goals','holdings','user_settings','password_resets','quotes','bills','vendors',
+    'recurring_bills','recurring_invoices','sales_receipts','payments_received',
+    'credit_notes','payments_made','vendor_credits','items','timesheet','projects',
+    'team_members','budget_targets','entities','journals','chart_of_accounts',
+    'lock_settings','audit_log','documents','templates','autocat_rules',
+  ];
+  for (const t of allTables) {
+    await db.delete(t, r => r.user_id === uid).catch(() => {});
+  }
+  await pool.query('DELETE FROM ai_cache WHERE user_id=$1', [uid]).catch(() => {});
+  await db.delete('users', u => u.id === uid);
+  req.session.destroy(() => {});
+  res.json({ ok: true });
+}));
+
+// ── LOCK SETTINGS ─────────────────────────────────────────────────────────────
+app.get('/api/lock-settings', requireAuth, wrap(async (req, res) => {
+  const s = await db.get('lock_settings', r => r.user_id === req.session.userId);
+  res.json(s || { enabled: 0, lock_date: null });
+}));
+app.post('/api/lock-settings', requireAuth, wrap(async (req, res) => {
+  const { enabled, lock_date, password } = req.body || {};
+  const uid = req.session.userId;
+  const patch = { enabled: enabled ? 1 : 0, lock_date: lock_date || null };
+  if (password) patch.password_hash = bcrypt.hashSync(password, 10);
+  await db.upsert('lock_settings', 'user_id', uid, patch);
+  logAudit(req, enabled ? 'LOCK_ENABLED' : 'LOCK_DISABLED', 'lock_settings', null, null, patch);
+  res.json({ ok: true });
+}));
+
+// ── MANUAL JOURNALS ───────────────────────────────────────────────────────────
+app.get('/api/journals', requireAuth, wrap(async (req, res) => {
+  res.json(await db.all('journals', userFilter(req.session.userId, req.entityId), (a,b) => b.id - a.id));
+}));
+app.post('/api/journals', requireAuth, wrap(async (req, res) => {
+  const { date, description, lines = [], status = 'Draft' } = req.body || {};
+  if (!description || !lines.length) return res.status(400).json({ error: 'description and lines required.' });
+  const totalDebit  = lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0);
+  const totalCredit = lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
+  if (Math.abs(totalDebit - totalCredit) > 0.01) return res.status(400).json({ error: 'Journal does not balance — debits must equal credits.' });
+  if (await isLocked(req.session.userId, date)) return res.status(403).json({ error: 'Period is locked.' });
+  const num = 'JE-' + String(Date.now()).slice(-4);
+  const { row } = await db.insert('journals', {
+    user_id: req.session.userId, entity_id: req.entityId || null,
+    date: date || new Date().toISOString().slice(0,10),
+    description: description.trim().slice(0,500), ref: num,
+    debit: totalDebit, credit: totalCredit, lines: JSON.stringify(lines), status,
+  });
+  logAudit(req, 'CREATE', 'journals', row.id, null, row);
+  res.status(201).json(row);
+}));
+app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
+  const row = await ownedBy('journals', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  const b = req.body || {};
+  const patch = {};
+  if (b.description != null) patch.description = b.description;
+  if (b.status      != null) patch.status      = b.status;
+  if (b.date        != null) patch.date        = b.date;
+  await db.update('journals', r => r.id === row.id, patch);
+  res.json(await db.get('journals', r => r.id === row.id));
+}));
+app.delete('/api/journals/:id', requireAuth, wrap(async (req, res) => {
+  if (!(await ownedBy('journals', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  await db.delete('journals', r => r.id === parseInt(req.params.id));
+  res.json({ ok: true });
+}));
+
+// ── CHART OF ACCOUNTS ─────────────────────────────────────────────────────────
+app.get('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
+  res.json(await db.all('chart_of_accounts', userFilter(req.session.userId, req.entityId), (a,b) => a.code.localeCompare(b.code)));
+}));
+app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
+  const { code, name, category, nature = 'Debit', balance = 0 } = req.body || {};
+  if (!code || !name || !category) return res.status(400).json({ error: 'code, name and category required.' });
+  const validCats = ['Assets','Liabilities','Equity','Revenue','Expenses'];
+  if (!validCats.includes(category)) return res.status(400).json({ error: 'Invalid category.' });
+  const { row } = await db.insert('chart_of_accounts', {
+    user_id: req.session.userId, entity_id: req.entityId || null,
+    code: code.trim().slice(0,20), name: name.trim().slice(0,200),
+    category, nature, balance: parseFloat(balance) || 0,
+  });
+  res.status(201).json(row);
+}));
+app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
+  const row = await ownedBy('chart_of_accounts', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  const b = req.body || {};
+  const patch = {};
+  if (b.name     != null) patch.name     = b.name.trim().slice(0,200);
+  if (b.balance  != null) patch.balance  = parseFloat(b.balance);
+  if (b.category != null) patch.category = b.category;
+  if (b.nature   != null) patch.nature   = b.nature;
+  await db.update('chart_of_accounts', r => r.id === row.id, patch);
+  res.json(await db.get('chart_of_accounts', r => r.id === row.id));
+}));
+app.delete('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
+  if (!(await ownedBy('chart_of_accounts', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  await db.delete('chart_of_accounts', r => r.id === parseInt(req.params.id));
+  res.json({ ok: true });
+}));
+
+// ── AUDIT LOG ─────────────────────────────────────────────────────────────────
+app.get('/api/audit-log', requireAuth, wrap(async (req, res) => {
+  const { page = 1, limit = 50, type } = req.query;
+  let rows = await db.all('audit_log', r => r.user_id === req.session.userId, (a,b) => b.id - a.id);
+  if (type && type !== 'all') rows = rows.filter(r => r.table_name === type);
+  const start = (parseInt(page) - 1) * parseInt(limit);
+  res.json({ total: rows.length, rows: rows.slice(start, start + parseInt(limit)) });
+}));
+
+// ── DOCUMENTS ─────────────────────────────────────────────────────────────────
+const MAX_DOC_SIZE = 5 * 1024 * 1024; // 5MB in bytes before base64 (~3.75MB actual)
+app.get('/api/documents', requireAuth, wrap(async (req, res) => {
+  const rows = await db.all('documents', r => r.user_id === req.session.userId, (a,b) => b.id - a.id);
+  // Strip file_data from list responses to keep payload small
+  res.json(rows.map(({ file_data, ...meta }) => meta));
+}));
+app.post('/api/documents', requireAuth, wrap(async (req, res) => {
+  const { name, type = 'other', file_data, media_type = 'application/octet-stream' } = req.body || {};
+  if (!name || !file_data) return res.status(400).json({ error: 'name and file_data required.' });
+  const bytes = Math.ceil(file_data.length * 0.75); // approximate decoded size
+  if (bytes > MAX_DOC_SIZE) return res.status(413).json({ error: 'File too large. Maximum size is 5 MB.' });
+  const { row } = await db.insert('documents', {
+    user_id: req.session.userId,
+    name: name.slice(0,255), type, media_type,
+    size: bytes, file_data, uploaded_at: new Date().toISOString(),
+  });
+  const { file_data: _fd, ...meta } = row;
+  logAudit(req, 'UPLOAD', 'documents', row.id, null, meta);
+  res.status(201).json(meta);
+}));
+app.get('/api/documents/:id/download', requireAuth, wrap(async (req, res) => {
+  const row = await ownedBy('documents', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  const buf = Buffer.from(row.file_data, 'base64');
+  res.setHeader('Content-Type', row.media_type || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${row.name}"`);
+  res.send(buf);
+}));
+app.delete('/api/documents/:id', requireAuth, wrap(async (req, res) => {
+  if (!(await ownedBy('documents', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  await db.delete('documents', r => r.id === parseInt(req.params.id));
+  res.json({ ok: true });
+}));
+
+// ── TEMPLATES ─────────────────────────────────────────────────────────────────
+app.get('/api/templates', requireAuth, wrap(async (req, res) => {
+  res.json(await db.all('templates', r => r.user_id === req.session.userId, (a,b) => a.id - b.id));
+}));
+app.post('/api/templates', requireAuth, wrap(async (req, res) => {
+  const { name, type = 'invoice', preview = '', is_default = 0, accent_color = '#c9a84c' } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'name required.' });
+  const { row } = await db.insert('templates', { user_id: req.session.userId, name: name.slice(0,200), type, preview, is_default: is_default ? 1 : 0, accent_color });
+  res.status(201).json(row);
+}));
+app.put('/api/templates/:id', requireAuth, wrap(async (req, res) => {
+  const row = await ownedBy('templates', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  const b = req.body || {};
+  const patch = {};
+  if (b.name         != null) patch.name         = b.name.slice(0,200);
+  if (b.preview      != null) patch.preview      = b.preview;
+  if (b.is_default   != null) patch.is_default   = b.is_default ? 1 : 0;
+  if (b.accent_color != null) patch.accent_color = b.accent_color;
+  await db.update('templates', r => r.id === row.id, patch);
+  res.json(await db.get('templates', r => r.id === row.id));
+}));
+app.delete('/api/templates/:id', requireAuth, wrap(async (req, res) => {
+  if (!(await ownedBy('templates', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  await db.delete('templates', r => r.id === parseInt(req.params.id));
+  res.json({ ok: true });
+}));
+
+// ── AUTO-CATEGORISE ───────────────────────────────────────────────────────────
+app.get('/api/autocat-rules', requireAuth, wrap(async (req, res) => {
+  res.json(await db.all('autocat_rules', r => r.user_id === req.session.userId, (a,b) => a.id - b.id));
+}));
+app.post('/api/autocat-rules', requireAuth, wrap(async (req, res) => {
+  const { keyword, match_type = 'description', category, enabled = 1 } = req.body || {};
+  if (!keyword || !category) return res.status(400).json({ error: 'keyword and category required.' });
+  const { row } = await db.insert('autocat_rules', { user_id: req.session.userId, keyword: keyword.toLowerCase().slice(0,100), match_type, category, enabled: enabled ? 1 : 0 });
+  res.status(201).json(row);
+}));
+app.put('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
+  const row = await ownedBy('autocat_rules', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  const b = req.body || {};
+  const patch = {};
+  if (b.keyword    != null) patch.keyword    = b.keyword.toLowerCase().slice(0,100);
+  if (b.category   != null) patch.category   = b.category;
+  if (b.match_type != null) patch.match_type = b.match_type;
+  if (b.enabled    != null) patch.enabled    = b.enabled ? 1 : 0;
+  await db.update('autocat_rules', r => r.id === row.id, patch);
+  res.json(await db.get('autocat_rules', r => r.id === row.id));
+}));
+app.delete('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
+  if (!(await ownedBy('autocat_rules', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  await db.delete('autocat_rules', r => r.id === parseInt(req.params.id));
+  res.json({ ok: true });
+}));
+app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const rules = await db.all('autocat_rules', r => r.user_id === uid && r.enabled);
+  const expenses = await db.all('expenses', r => r.user_id === uid && (!r.category || r.category === 'Other'));
+  let updated = 0;
+  for (const exp of expenses) {
+    for (const rule of rules) {
+      const haystack = rule.match_type === 'vendor'
+        ? (exp.description || '').toLowerCase()
+        : (exp.description || '').toLowerCase();
+      if (haystack.includes(rule.keyword)) {
+        await db.update('expenses', r => r.id === exp.id, { category: rule.category });
+        updated++;
+        break;
+      }
+    }
+  }
+  res.json({ ok: true, updated });
 }));
 
 // ── PAGE ROUTES ───────────────────────────────────────────────────────────────
@@ -626,7 +955,7 @@ app.delete('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
 
 // ── VENDORS ───────────────────────────────────────────────────────────────────
 app.get('/api/vendors', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('vendors', r => r.user_id === req.session.userId, (a,b) => a.name.localeCompare(b.name)));
+  res.json(await db.all('vendors', userFilter(req.session.userId, req.entityId), (a,b) => a.name.localeCompare(b.name)));
 }));
 app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const { name, contact, category, owing = 0, ytd_paid = 0, status = 'active' } = req.body;
@@ -649,7 +978,7 @@ app.delete('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
 
 // ── BILLS ─────────────────────────────────────────────────────────────────────
 app.get('/api/bills', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('bills', r => r.user_id === req.session.userId, (a,b) => b.id - a.id));
+  res.json(await db.all('bills', userFilter(req.session.userId, req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, due_date, status = 'unpaid', notes = '' } = req.body;
@@ -1098,12 +1427,64 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'An unexpected error occurred. Please try again.' });
 });
 
+// ── RECURRING SCHEDULER ───────────────────────────────────────────────────────
+function nextRunDate(currentDate, frequency) {
+  const d = new Date(currentDate);
+  if (isNaN(d.getTime())) return null;
+  switch (frequency) {
+    case 'Weekly':    d.setDate(d.getDate() + 7);    break;
+    case 'Monthly':   d.setMonth(d.getMonth() + 1);  break;
+    case 'Quarterly': d.setMonth(d.getMonth() + 3);  break;
+    case 'Yearly':    d.setFullYear(d.getFullYear() + 1); break;
+    default:          d.setMonth(d.getMonth() + 1);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+async function runRecurringScheduler() {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Recurring invoices
+    const recInvoices = await db.all('recurring_invoices', r => r.status === 'active' && r.next_run && r.next_run <= today);
+    for (const r of recInvoices) {
+      await db.insert('invoices', {
+        user_id: r.user_id, entity_id: r.entity_id || null,
+        client: r.client, amount: r.amount, due_date: r.next_run,
+        status: 'pending', notes: `Auto-generated from recurring schedule`,
+      });
+      await db.update('recurring_invoices', x => x.id === r.id, { next_run: nextRunDate(r.next_run, r.frequency) });
+    }
+
+    // Recurring bills
+    const recBills = await db.all('recurring_bills', r => r.status === 'active' && r.next_run && r.next_run <= today);
+    for (const r of recBills) {
+      const num = 'BILL-' + String(Date.now()).slice(-4);
+      await db.insert('bills', {
+        user_id: r.user_id, entity_id: r.entity_id || null,
+        vendor: r.vendor, num, amount: r.amount, due_date: r.next_run,
+        status: 'unpaid', notes: `Auto-generated from recurring schedule`,
+      });
+      await db.update('recurring_bills', x => x.id === r.id, { next_run: nextRunDate(r.next_run, r.frequency) });
+    }
+
+    if (recInvoices.length + recBills.length > 0) {
+      console.log(`[Scheduler] Created ${recInvoices.length} invoices, ${recBills.length} bills`);
+    }
+  } catch (e) {
+    console.error('[Scheduler] Error:', e.message);
+  }
+}
+
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 initDB().then(() => {
   app.listen(PORT, () => {
     console.log(`\n  ✦ FinFlow backend running → http://localhost:${PORT}`);
     console.log(`  ✦ Point Lighthouse at:    http://localhost:${PORT}\n`);
   });
+  // Run scheduler on boot, then every hour
+  runRecurringScheduler();
+  setInterval(runRecurringScheduler, 60 * 60 * 1000);
 }).catch(err => {
   console.error('Failed to init database:', err);
   process.exit(1);

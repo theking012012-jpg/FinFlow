@@ -1335,7 +1335,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="card">
           <div class="card-header">
             <div><div class="card-title">Your entities</div><div class="card-sub">Each has a fully separate chart of accounts &amp; ledger</div></div>
-            <button class="btn btn-primary btn-sm" onclick="notify('Add entity wizard opening…')">+ Add entity</button>
+            <button class="btn btn-primary btn-sm" onclick="openAddEntityModal()">+ Add entity</button>
           </div>
           <div id="entity-list"></div>
         </div>
@@ -1590,22 +1590,51 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <span></span><span>Asset</span><span style="text-align:right">Type</span><span style="text-align:right">Value</span><span style="text-align:right">Cost</span><span style="text-align:right">Gain/Loss</span><span style="text-align:right">Income</span>
           </div>
           <div id="biz-inv-holdings-list">
-            ${[
-              {sym:'VTI',name:'Vanguard Total Market ETF',type:'ETF',val:'$342,000',cost:'$295,000',gl:'+$47,000',glPos:true,inc:'$3,420'},
-              {sym:'BND',name:'Vanguard Total Bond ETF',type:'Bond ETF',val:'$218,000',cost:'$210,000',gl:'+$8,000',glPos:true,inc:'$9,810'},
-              {sym:'MSFT',name:'Microsoft Corp',type:'Stock',val:'$156,400',cost:'$98,000',gl:'+$58,400',glPos:true,inc:'$1,248'},
-              {sym:'RE',name:'Commercial Property REIT',type:'Real Estate',val:'$148,600',cost:'$130,000',gl:'+$18,600',glPos:true,inc:'$8,916'},
-              {sym:'SGOV',name:'iShares 0-3 Mo Treasury',type:'T-Bill',val:'$92,000',cost:'$92,000',gl:'$0',glPos:false,inc:'$4,600'},
-            ].map(h=>`
-              <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-                <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">${h.sym.slice(0,3)}</div>
-                <div><div style="font-weight:500;color:var(--t1)">${h.sym}</div><div style="font-size:11px;color:var(--t3)">${h.name}</div></div>
-                <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">${h.type}</span></div>
-                <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${h.val}</div>
-                <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">${h.cost}</div>
-                <div style="text-align:right;font-family:var(--font-mono);color:${h.glPos?'var(--green)':'var(--t2)'}">${h.gl}</div>
-                <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">${h.inc}</div>
-              </div>`).join('')}
+            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">VTI</div>
+              <div><div style="font-weight:500;color:var(--t1)">VTI</div><div style="font-size:11px;color:var(--t3)">Vanguard Total Market ETF</div></div>
+              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">ETF</span></div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$342,000</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$295,000</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+$47,000</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$3,420</div>
+            </div>
+            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">BND</div>
+              <div><div style="font-weight:500;color:var(--t1)">BND</div><div style="font-size:11px;color:var(--t3)">Vanguard Total Bond ETF</div></div>
+              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">Bond ETF</span></div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$218,000</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$210,000</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+$8,000</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$9,810</div>
+            </div>
+            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">MSF</div>
+              <div><div style="font-weight:500;color:var(--t1)">MSFT</div><div style="font-size:11px;color:var(--t3)">Microsoft Corp</div></div>
+              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">Stock</span></div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$156,400</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$98,000</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+$58,400</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$1,248</div>
+            </div>
+            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">RE</div>
+              <div><div style="font-weight:500;color:var(--t1)">RE</div><div style="font-size:11px;color:var(--t3)">Commercial Property REIT</div></div>
+              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">Real Estate</span></div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$148,600</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$130,000</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+$18,600</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$8,916</div>
+            </div>
+            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">SGO</div>
+              <div><div style="font-weight:500;color:var(--t1)">SGOV</div><div style="font-size:11px;color:var(--t3)">iShares 0-3 Mo Treasury</div></div>
+              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">T-Bill</span></div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$92,000</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$92,000</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$0</div>
+              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$4,600</div>
+            </div>
           </div>
         </div>
         <div class="two-col">
@@ -1642,24 +1671,18 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
       </div>
 
-      <!-- PLAID BANKING PAGE -->
+      <!-- BANKING PAGE — COMING SOON -->
       <div class="page" id="page-banking">
-        <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total balance</div><div class="mc-val" id="plaid-total">$284,320</div><div class="mc-change up">Across 3 accounts</div></div>
-          <div class="mc"><div class="mc-label">Checking</div><div class="mc-val">$142,800</div><div class="mc-change neutral">Chase Business</div></div>
-          <div class="mc"><div class="mc-label">Savings</div><div class="mc-val">$98,500</div><div class="mc-change up">4.8% APY</div></div>
-          <div class="mc"><div class="mc-label">Last synced</div><div class="mc-val" style="font-size:18px">now</div><div class="mc-change up dot dot-green" style="display:flex;align-items:center;gap:4px">Live</div></div>
-        </div>
-        <div class="card">
-          <div class="card-header">
-            <div><div class="card-title">Connected accounts</div><div class="card-sub" style="color:var(--amber)">Demo mode — real Plaid integration requires a server-side token exchange</div></div>
-            <button class="btn btn-ghost btn-sm" onclick="plaidConnect()">+ Add account</button>
+        <div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem">
+          <div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">🏦</div>
+          <div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Bank Sync — Coming Soon</div>
+          <div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Real-time bank feed powered by Plaid will sync transactions from 12,000+ institutions, auto-categorise them, and import your balances automatically.</div>
+          <div style="display:flex;flex-direction:column;gap:8px;text-align:left;margin-bottom:1.5rem">
+            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--green)">✓</span> 12,000+ bank & credit union support</div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--green)">✓</span> Automatic transaction categorisation</div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--green)">✓</span> Live balance sync every 15 minutes</div>
           </div>
-          <div id="plaid-accounts"></div>
-        </div>
-        <div class="card" style="margin-bottom:0">
-          <div class="card-header"><div class="card-title">Recent bank transactions</div><span style="font-size:11px;color:var(--green);display:flex;align-items:center;gap:4px"><span class="dot dot-green"></span>Auto-categorized</span></div>
-          <div id="plaid-txns"></div>
+          <span class="badge b-amber" style="font-size:11px;padding:4px 12px">Plaid integration — requires PLAID_CLIENT_ID + PLAID_SECRET env vars</span>
         </div>
       </div>
 
@@ -2650,9 +2673,55 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <div class="field-wrap"><label class="field-label">Savings rate target (%)</label><input class="finput" id="s-savings-target" value="40" type="number" min="0" max="100" oninput="refreshPersonal()"></div>
             </div>
             <button class="btn btn-primary" style="width:100%;justify-content:center;padding:9px" onclick="saveSettings()">Save all settings</button>
+            <div class="settings-section" style="margin-top:1rem">
+              <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="8" rx="1.2"/><path d="M5 7V5a3 3 0 016 0v2"/><circle cx="8" cy="11" r="1"/></svg>Change password</div>
+              <div class="field-wrap"><label class="field-label">Current password</label><input class="finput" type="password" id="s-cur-pw" placeholder="Enter current password"></div>
+              <div class="field-wrap"><label class="field-label">New password</label><input class="finput" type="password" id="s-new-pw" placeholder="At least 6 characters"></div>
+              <button class="btn btn-ghost" style="margin-top:.5rem" onclick="changePassword()">Update password</button>
+            </div>
+            <div class="settings-section" style="margin-top:1rem;border-color:var(--red-bd)">
+              <div class="settings-title" style="color:var(--red)"><svg viewBox="0 0 16 16"><polyline points="2,4 14,4"/><path d="M5 4V2h6v2"/><rect x="3" y="4" width="10" height="10" rx="1"/></svg>Danger zone</div>
+              <div style="font-size:12px;color:var(--t3);margin-bottom:.75rem">Permanently delete your account and all associated data. This action cannot be undone.</div>
+              <button class="btn" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)" onclick="openDeleteAccountModal()">Delete my account</button>
+            </div>
           </div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DELETE ACCOUNT MODAL ══ -->
+<div class="modal-overlay hidden" id="delete-account-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <div><div class="modal-title" style="color:var(--red)">Delete Account</div><div class="modal-sub">This is permanent and cannot be undone</div></div>
+      <button class="modal-close" onclick="closeModal('delete-account-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+    </div>
+    <div style="font-size:13px;color:var(--t2);margin-bottom:1rem;line-height:1.6">All your data — invoices, expenses, customers, payroll, investments and settings — will be permanently deleted. Enter your password to confirm.</div>
+    <div class="field-wrap"><label class="field-label">Confirm password</label><input class="finput" type="password" id="del-acct-pw" placeholder="Enter your password"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('delete-account-modal')">Cancel</button>
+      <button class="btn" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)" onclick="confirmDeleteAccount()">Delete permanently</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ADD ENTITY MODAL ══ -->
+<div class="modal-overlay hidden" id="add-entity-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <div><div class="modal-title">Add Entity</div><div class="modal-sub">Each entity has its own separate ledger</div></div>
+      <button class="modal-close" onclick="closeModal('add-entity-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+    </div>
+    <div class="field-wrap"><label class="field-label">Entity name</label><input class="finput" id="ne-name" placeholder="e.g. FinScale Ltd."></div>
+    <div class="field-group">
+      <div class="field-wrap"><label class="field-label">Currency</label><select class="finput" id="ne-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="TTD">TTD (TT$)</option><option value="CAD">CAD (C$)</option></select></div>
+      <div class="field-wrap"><label class="field-label">Colour</label><input class="finput" type="color" id="ne-color" value="#c9a84c" style="height:36px;padding:3px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('add-entity-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNewEntity()">Create entity</button>
     </div>
   </div>
 </div>
@@ -3925,45 +3994,72 @@ const _origRenderJournals = renderJournals;
 // PATCH renderCOA to use live balances
 // ════════════════════════════════════════════
 
-function renderCOALive(){
+async function renderCOALive(){
   const l=document.getElementById('coa-list');if(!l)return;
-  const balances = computeCoaBalances();
-  l.innerHTML=coaData.map(section=>`
-    <div style="margin-bottom:1rem">
-      <div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${section.type}</div>
-      ${section.accounts.map(a=>{
-        const liveBalance = balances[a.code] ?? a.balance;
-        const changed = liveBalance !== a.balance;
-        return `
+  try{
+    const res=await fetch('/api/chart-of-accounts');
+    if(!res.ok)throw new Error();
+    const accounts=await res.json();
+    const grouped={};
+    accounts.forEach(a=>{if(!grouped[a.type])grouped[a.type]=[];grouped[a.type].push(a);});
+    l.innerHTML=Object.entries(grouped).map(([type,accs])=>`
+      <div style="margin-bottom:1rem">
+        <div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${type}</div>
+        ${accs.map(a=>`
         <div style="display:grid;grid-template-columns:60px 1fr 90px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-          <span style="color:var(--t3);font-family:var(--font-mono)">${a.code}</span>
-          <span style="color:var(--t1)">${a.name}</span>
-          <span style="font-family:var(--font-mono);text-align:right;color:${changed?'var(--acc)':'var(--t1)'};font-weight:${changed?600:400}">
-            $${liveBalance.toLocaleString()}
-            ${changed?`<span style="font-size:10px;color:var(--acc);margin-left:3px">●</span>`:''}
-          </span>
-          <span style="color:var(--t3);text-align:right">${a.nature}</span>
-        </div>`;
-      }).join('')}
-    </div>`).join('');
+          <span style="color:var(--t3);font-family:var(--font-mono)">${a.code||''}</span>
+          <span style="color:var(--t1)">${a.name||''}</span>
+          <span style="font-family:var(--font-mono);text-align:right;color:var(--t1)">$${(a.balance||0).toLocaleString()}</span>
+          <span style="color:var(--t3);text-align:right">${a.nature||''}</span>
+        </div>`).join('')}
+      </div>`).join('');
+  }catch(e){
+    const balances=computeCoaBalances();
+    l.innerHTML=coaData.map(section=>`
+      <div style="margin-bottom:1rem">
+        <div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${section.type}</div>
+        ${section.accounts.map(a=>{
+          const liveBalance=balances[a.code]??a.balance;
+          const changed=liveBalance!==a.balance;
+          return `<div style="display:grid;grid-template-columns:60px 1fr 90px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+            <span style="color:var(--t3);font-family:var(--font-mono)">${a.code}</span>
+            <span style="color:var(--t1)">${a.name}</span>
+            <span style="font-family:var(--font-mono);text-align:right;color:${changed?'var(--acc)':'var(--t1)'};font-weight:${changed?600:400}">$${liveBalance.toLocaleString()}${changed?'<span style="font-size:10px;color:var(--acc);margin-left:3px">●</span>':''}</span>
+            <span style="color:var(--t3);text-align:right">${a.nature}</span>
+          </div>`;
+        }).join('')}
+      </div>`).join('');
+  }
 }
 
-function renderJournalsLive(){
+async function renderJournalsLive(){
   const l=document.getElementById('journals-list');if(!l)return;
-  // Merge static + live entries (live first)
-  const allEntries = [
-    ...journalEntries,
-    ...journalsData.map(j=>({...j, lines:null}))
-  ];
-  l.innerHTML=allEntries.map(j=>`
-    <div class="table-row" style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
-      <span style="color:var(--t3)">${j.date}</span>
-      <span style="font-weight:500">${j.notes}</span>
-      <span style="color:var(--t3)">${j.ref}</span>
-      <span style="font-family:var(--font-mono);color:var(--red)">$${j.debit.toLocaleString()}</span>
-      <span style="font-family:var(--font-mono);color:var(--green)">$${j.credit.toLocaleString()}</span>
-      <span><span class="badge ${j.status==='Posted'?'b-green':'b-amber'}">${j.status}</span></span>
-    </div>`).join('');
+  l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
+  try{
+    const res=await fetch('/api/journals');
+    if(!res.ok)throw new Error();
+    const journals=await res.json();
+    if(!journals.length){l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No journal entries yet.</div>';return;}
+    l.innerHTML=journals.map(j=>`
+      <div class="table-row" style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
+        <span style="color:var(--t3)">${j.date||''}</span>
+        <span style="font-weight:500">${j.notes||j.description||''}</span>
+        <span style="color:var(--t3)">${j.ref||''}</span>
+        <span style="font-family:var(--font-mono);color:var(--red)">$${(j.debit||0).toLocaleString()}</span>
+        <span style="font-family:var(--font-mono);color:var(--green)">$${(j.credit||0).toLocaleString()}</span>
+        <span><span class="badge ${(j.status||'Draft')==='Posted'?'b-green':'b-amber'}">${j.status||'Draft'}</span></span>
+      </div>`).join('');
+  }catch(e){
+    const allEntries=[...journalEntries,...journalsData.map(j=>({...j,lines:null}))];
+    l.innerHTML=allEntries.map(j=>`
+      <div class="table-row" style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
+        <span style="color:var(--t3)">${j.date}</span><span style="font-weight:500">${j.notes}</span>
+        <span style="color:var(--t3)">${j.ref}</span>
+        <span style="font-family:var(--font-mono);color:var(--red)">$${j.debit.toLocaleString()}</span>
+        <span style="font-family:var(--font-mono);color:var(--green)">$${j.credit.toLocaleString()}</span>
+        <span><span class="badge ${j.status==='Posted'?'b-green':'b-amber'}">${j.status}</span></span>
+      </div>`).join('');
+  }
 }
 
 // Override the static render functions with live ones
@@ -5647,8 +5743,71 @@ function updateCurrency(){
 function toggleCompact(){
   document.getElementById('sidebar').classList.toggle('compact',document.getElementById('s-compact').checked);
 }
-function saveSettings(){
-  notify('Settings saved successfully ✦');
+async function saveSettings(){
+  const b = {
+    name:       (document.getElementById('s-user-name')||{}).value,
+    currency:   (document.getElementById('s-currency')||{}).value,
+    dark_mode:  document.getElementById('s-dark')?.checked ? 1 : 0,
+    show_cents: document.getElementById('s-cents')?.checked ? 1 : 0,
+    notif_email:document.getElementById('s-email-alerts')?.checked ? 1 : 0,
+  };
+  try {
+    await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(b) });
+    notify('Settings saved ✦');
+  } catch(e) { notify('Failed to save settings'); }
+}
+
+function openAddEntityModal(){
+  document.getElementById('ne-name').value='';
+  document.getElementById('ne-currency').value='USD';
+  document.getElementById('ne-color').value='#c9a84c';
+  document.getElementById('add-entity-modal').classList.remove('hidden');
+}
+
+async function saveNewEntity(){
+  const name = document.getElementById('ne-name').value.trim();
+  if(!name){ notify('Entity name is required'); return; }
+  const currency = document.getElementById('ne-currency').value;
+  const color = document.getElementById('ne-color').value;
+  try {
+    const res = await fetch('/api/entities', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({name, currency, color}) });
+    if(!res.ok) throw new Error((await res.json()).error);
+    closeModal('add-entity-modal');
+    if(typeof loadEntities==='function') loadEntities();
+    notify('Entity "'+esc(name)+'" created ✦');
+  } catch(e){ notify('Error: '+(e.message||'Failed to create entity')); }
+}
+
+async function changePassword(){
+  const cur = document.getElementById('s-cur-pw')?.value;
+  const nw  = document.getElementById('s-new-pw')?.value;
+  if(!cur||!nw){ notify('Both fields required'); return; }
+  try {
+    const res = await fetch('/api/auth/change-password', { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({currentPassword:cur, newPassword:nw}) });
+    const d = await res.json();
+    if(!res.ok) throw new Error(d.error);
+    document.getElementById('s-cur-pw').value='';
+    document.getElementById('s-new-pw').value='';
+    notify('Password updated ✦');
+  } catch(e){ notify('Error: '+(e.message||'Failed')); }
+}
+
+function openDeleteAccountModal(){
+  document.getElementById('del-acct-pw').value='';
+  document.getElementById('delete-account-modal').classList.remove('hidden');
+}
+
+async function confirmDeleteAccount(){
+  const pw = document.getElementById('del-acct-pw')?.value;
+  if(!pw){ notify('Password required'); return; }
+  try {
+    const res = await fetch('/api/auth/account', { method:'DELETE', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({password:pw}) });
+    const d = await res.json();
+    if(!res.ok) throw new Error(d.error);
+    closeModal('delete-account-modal');
+    notify('Account deleted. Redirecting…');
+    setTimeout(()=>{ window.location.href='/'; }, 1500);
+  } catch(e){ notify('Error: '+(e.message||'Failed to delete account')); }
 }
 function connectAPI(platform){document.getElementById(platform+'-modal-inline').style.display='block'}
 function saveConnection(platform){
@@ -6087,13 +6246,29 @@ const lockHistory=[
   {action:'Lock removed',date:'Mar 1',by:'John Doe',detail:'Lock removed to correct a journal entry'},
   {action:'Lock set',date:'Jan 31',by:'John Doe',detail:'Transactions locked before Dec 31, 2025'},
 ];
-function renderLockHistory(){
+async function renderLockHistory(){
   const l=document.getElementById('lock-history');if(!l)return;
-  l.innerHTML=lockHistory.map(h=>`
-    <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-      <div><span style="font-weight:500;color:var(--t1)">${h.action}</span> — <span style="color:var(--t2)">${h.detail}</span></div>
-      <div style="text-align:right;color:var(--t3)">${h.date} · ${h.by}</div>
-    </div>`).join('');
+  try {
+    const res=await fetch('/api/lock-settings',{credentials:'include'});
+    if(!res.ok){l.innerHTML='';return;}
+    const s=await res.json();
+    if(s.enabled&&s.lock_date){
+      document.getElementById('lock-enabled').checked=true;
+      document.getElementById('lock-config').style.display='block';
+      document.getElementById('lock-status-display').style.display='block';
+      document.getElementById('lock-date').value=s.lock_date;
+      document.getElementById('lock-date-display').textContent=new Date(s.lock_date+' 00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+    }
+    // Show audit log entries related to lock
+    const auditRes=await fetch('/api/audit-log?type=lock_settings&limit=10',{credentials:'include'});
+    if(!auditRes.ok){l.innerHTML='';return;}
+    const {rows}=await auditRes.json();
+    l.innerHTML=rows.length?rows.map(h=>`
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+        <div><span style="font-weight:500;color:var(--t1)">${esc(h.action)}</span></div>
+        <div style="text-align:right;color:var(--t3)">${new Date(h.created_at).toLocaleDateString()}</div>
+      </div>`).join(''):'<div style="padding:1rem;color:var(--t3);font-size:13px">No lock history yet</div>';
+  } catch(e){l.innerHTML='';}
 }
 function toggleLocking(){
   const enabled=document.getElementById('lock-enabled').checked;
@@ -6104,10 +6279,16 @@ function toggleLocking(){
     document.getElementById('lock-date-display').textContent=new Date(d).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   }
 }
-function saveLockSettings(){
+async function saveLockSettings(){
   const d=document.getElementById('lock-date').value;
-  document.getElementById('lock-date-display').textContent=new Date(d).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-  notify('Lock settings saved');
+  const pw=document.getElementById('lock-password').value;
+  const enabled=document.getElementById('lock-enabled').checked;
+  try {
+    await fetch('/api/lock-settings',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({enabled,lock_date:d,password:pw||undefined})});
+    if(enabled&&d) document.getElementById('lock-date-display').textContent=new Date(d+' 00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+    notify('Lock settings saved ✦');
+    renderLockHistory();
+  } catch(e){ notify('Failed to save lock settings'); }
 }
 
 // ════════════════════════════════════════════
@@ -6129,15 +6310,29 @@ const taxReportsData=[
   {name:'1099 / W-2 Summary',desc:'Contractor and employee forms',icon:'📄'},
   {name:'Tax-Deductible Expenses',desc:'All deductible business costs',icon:'✅'},
 ];
-function renderReports(){
+async function renderReports(){
   const l=document.getElementById('reports-list');if(!l)return;
+  // Fetch real totals for report summary
+  let revenue=0,expenses=0,invoiceCount=0;
+  try {
+    const [invRes,expRes]=await Promise.all([
+      fetch('/api/invoices',{credentials:'include'}),
+      fetch('/api/expenses',{credentials:'include'}),
+    ]);
+    if(invRes.ok){const inv=await invRes.json();revenue=inv.filter(i=>i.status==='paid').reduce((s,i)=>s+(i.amount||0),0);invoiceCount=inv.length;}
+    if(expRes.ok){const exp=await expRes.json();expenses=exp.reduce((s,e)=>s+(e.amount||0),0);}
+  } catch(e){}
+  const profit=revenue-expenses;
+  // Update stat cards
+  const mc1=document.querySelector('#page-reports .mc-val');
+  if(mc1)mc1.textContent=(reportsData.length+taxReportsData.length);
   l.innerHTML=reportsData.map(r=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:18px">${r.icon}</span>
         <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${r.name}</div><div style="font-size:11px;color:var(--t3)">${r.desc}</div></div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="generateReport('${r.name}')">Generate ↗</button>
+      <button class="btn btn-ghost btn-sm" onclick="generateReport('${r.name}',${revenue},${expenses},${profit})">Generate ↗</button>
     </div>`).join('');
   const t=document.getElementById('tax-reports-list');if(!t)return;
   t.innerHTML=taxReportsData.map(r=>`
@@ -6146,8 +6341,32 @@ function renderReports(){
         <span style="font-size:18px">${r.icon}</span>
         <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${r.name}</div><div style="font-size:11px;color:var(--t3)">${r.desc}</div></div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="generateReport('${r.name}')">Generate ↗</button>
+      <button class="btn btn-ghost btn-sm" onclick="generateReport('${r.name}',${revenue},${expenses},${profit})">Generate ↗</button>
     </div>`).join('');
+}
+
+function generateReport(name,revenue,expenses,profit){
+  const fmt=n=>'$'+(n||0).toLocaleString();
+  const content = name==='Profit & Loss Statement'
+    ? `<div style="margin-bottom:1rem"><div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:6px;margin-bottom:8px">Income</div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--t2)">Revenue (paid invoices)</span><span style="color:var(--green);font-family:var(--font-mono)">${fmt(revenue)}</span></div>
+       </div>
+       <div style="margin-bottom:1rem"><div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:6px;margin-bottom:8px">Expenses</div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--t2)">Total expenses</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(expenses)}</span></div>
+       </div>
+       <div style="padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:600"><span>Net Profit</span><span style="color:${profit>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt(profit)}</span></div>`
+    : `<div style="padding:1rem;text-align:center;color:var(--t2);font-size:13px">Generating ${esc(name)}…<br><span style="font-size:11px;color:var(--t3);margin-top:6px;display:block">Full report generation coming soon.</span></div>`;
+
+  const overlay=document.createElement('div');
+  overlay.className='modal-overlay';
+  overlay.style.zIndex='1100';
+  overlay.innerHTML=`<div class="modal" style="max-width:500px">
+    <div class="modal-header"><div><div class="modal-title">${esc(name)}</div><div class="modal-sub">Generated ${new Date().toLocaleDateString()}</div></div>
+    <button class="modal-close" onclick="this.closest('.modal-overlay').remove()"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <div>${content}</div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Close</button><button class="btn btn-primary" onclick="notify('Export as PDF coming soon ✦')">Export PDF</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
 }
 
 // ════════════════════════════════════════════
@@ -6162,23 +6381,78 @@ const documentsData=[
   {name:'Payroll_Apr2026_Summary.xlsx',type:'report',size:'64 KB',date:'Apr 25',linked:'Payroll'},
 ];
 let docsFilter='all';
-function renderDocuments(){
+let _docsCache=[];
+async function renderDocuments(){
   const l=document.getElementById('documents-list');if(!l)return;
-  const filtered=docsFilter==='all'?documentsData:documentsData.filter(d=>d.type===docsFilter);
+  l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
+  try{
+    const res=await fetch('/api/documents');
+    if(!res.ok)throw new Error();
+    _docsCache=await res.json();
+  }catch(e){_docsCache=[];}
+  const filtered=docsFilter==='all'?_docsCache:_docsCache.filter(d=>d.type===docsFilter);
+  if(!filtered.length){l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No documents yet. Click Upload to add your first file.</div>';return;}
   l.innerHTML=filtered.map(d=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;gap:10px">
-        <div style="width:32px;height:32px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:14px">${d.name.endsWith('.pdf')?'📄':'📊'}</div>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${d.name}</div><div style="font-size:11px;color:var(--t3)">${d.size} · ${d.date} · Linked: ${d.linked}</div></div>
+        <div style="width:32px;height:32px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:14px">${(d.name||'').endsWith('.pdf')?'📄':'📊'}</div>
+        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${d.name||''}</div><div style="font-size:11px;color:var(--t3)">${d.size||''} · ${d.uploaded_at?d.uploaded_at.slice(0,10):''} · ${d.type||''}</div></div>
       </div>
       <div style="display:flex;gap:6px">
-        <span class="badge b-blue">${d.type}</span>
-        <button class="btn btn-ghost btn-sm" onclick="notify('Download: ${d.name}')">↓</button>
+        <span class="badge b-blue">${d.type||'file'}</span>
+        <button class="btn btn-ghost btn-sm" onclick="downloadDoc(${d.id})" title="Download">↓</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteDoc(${d.id})" title="Delete">✕</button>
       </div>
     </div>`).join('');
 }
 function filterDocs(f){docsFilter=f;renderDocuments();}
-function openUploadModal(){notify('Upload document modal');}
+async function downloadDoc(id){window.open('/api/documents/'+id+'/download','_blank');}
+async function deleteDoc(id){
+  if(!confirm('Delete this document?'))return;
+  const res=await fetch('/api/documents/'+id,{method:'DELETE'});
+  if(res.ok)renderDocuments();else notify('Delete failed');
+}
+function openUploadModal(){
+  let m=document.getElementById('doc-upload-modal');
+  if(!m){
+    m=document.createElement('div');
+    m.id='doc-upload-modal';
+    m.className='modal-overlay';
+    m.innerHTML=`<div class="modal" style="width:420px">
+      <div class="modal-header"><span class="modal-title">Upload Document</span><button class="modal-close" onclick="closeModal('doc-upload-modal')">✕</button></div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+        <div><label class="field-label">File (max 5 MB)</label><input type="file" id="doc-file-input" class="finput" accept=".pdf,.png,.jpg,.jpeg,.xlsx,.csv,.docx"></div>
+        <div><label class="field-label">Document type</label>
+          <select id="doc-type-input" class="finput"><option>invoice</option><option>receipt</option><option>contract</option><option>quote</option><option>report</option><option>other</option></select></div>
+        <div><label class="field-label">Notes (optional)</label><input id="doc-notes-input" class="finput" placeholder="e.g. Linked to INV-0042"></div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('doc-upload-modal')">Cancel</button><button class="btn btn-primary" onclick="uploadDocument()">Upload</button></div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  const fi=document.getElementById('doc-file-input');if(fi)fi.value='';
+  const ni=document.getElementById('doc-notes-input');if(ni)ni.value='';
+  m.style.display='flex';
+}
+async function uploadDocument(){
+  const fileInput=document.getElementById('doc-file-input');
+  if(!fileInput||!fileInput.files.length){notify('Please select a file');return;}
+  const file=fileInput.files[0];
+  if(file.size>5*1024*1024){notify('File must be under 5 MB');return;}
+  const reader=new FileReader();
+  reader.onload=async function(e){
+    const b64=e.target.result.split(',')[1];
+    try{
+      const res=await fetch('/api/documents',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:file.name,type:document.getElementById('doc-type-input').value,
+          size:Math.round(file.size/1024)+' KB',notes:document.getElementById('doc-notes-input').value,
+          file_data:b64,media_type:file.type})});
+      if(!res.ok){const d=await res.json();notify(d.error||'Upload failed');return;}
+      closeModal('doc-upload-modal');renderDocuments();notify('Document uploaded ✦');
+    }catch(e){notify('Upload failed');}
+  };
+  reader.readAsDataURL(file);
+}
 
 // ════════════════════════════════════════════
 // ════════════════════════════════════════════
@@ -7015,77 +7289,7 @@ if(connectionsItem){
 const advisorPage = document.createElement('div');
 advisorPage.className = 'page';
 advisorPage.id = 'page-advisors';
-advisorPage.innerHTML = `
-<style>
-.advisor-card{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-lg);padding:1rem 1.25rem;display:flex;align-items:flex-start;gap:14px;transition:border-color .15s,box-shadow .15s;cursor:pointer;margin-bottom:8px}
-.advisor-card:hover{border-color:var(--acc);box-shadow:0 4px 24px rgba(0,0,0,.35)}
-.adv-avatar{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0;border:2px solid var(--acc2)}
-.adv-name{font-size:14px;font-weight:600;color:var(--t1);font-family:var(--font-display);letter-spacing:.02em}
-.adv-firm{font-size:12px;color:var(--t2);margin-top:2px}
-.adv-tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
-.adv-tag{font-size:10px;padding:2px 7px;border-radius:20px;font-weight:500;border:1px solid var(--bd2);color:var(--t2)}
-.adv-stars{color:var(--acc);font-size:12px;letter-spacing:2px}
-.cert-stat{background:linear-gradient(135deg,var(--acc-bg),rgba(30,24,8,.4));border:1px solid var(--acc2);border-radius:var(--radius-lg);padding:1rem;text-align:center;cursor:pointer;transition:all .15s}
-.cert-stat:hover{border-color:var(--acc);transform:translateY(-2px)}
-.cert-number{font-size:36px;font-weight:300;font-family:var(--font-display);color:var(--acc-light);font-style:italic;line-height:1}
-</style>
-
-<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:1.25rem">
-  <div style="font-size:12px;color:var(--t2)">Connect with certified FinFlow advisors — accountants and bookkeepers who know the platform.</div>
-  <button class="btn btn-primary" onclick="openAdvisorCertModal()">Become a certified advisor ↗</button>
-</div>
-
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem">
-  <div class="cert-stat"><div class="cert-number">2,840</div><div style="font-size:11px;color:var(--t2);margin-top:4px">Certified advisors</div></div>
-  <div class="cert-stat"><div class="cert-number">48</div><div style="font-size:11px;color:var(--t2);margin-top:4px">Countries covered</div></div>
-  <div class="cert-stat"><div class="cert-number">12k+</div><div style="font-size:11px;color:var(--t2);margin-top:4px">Client businesses</div></div>
-  <div class="cert-stat"><div class="cert-number">4.8★</div><div style="font-size:11px;color:var(--t2);margin-top:4px">Average rating</div></div>
-</div>
-
-<div class="card">
-  <div class="card-header">
-    <div class="card-title">Find an Advisor</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
-      <select class="finput" aria-label="Filter by specialty" id="adv-filter-specialty" onchange="renderAdvisors()" style="font-size:12px;padding:4px 8px;min-width:130px">
-        <option value="">All specialties</option>
-        <option>Tax &amp; Filing</option><option>Bookkeeping</option><option>Payroll</option>
-        <option>CFO Services</option><option>E-commerce</option><option>Startups</option>
-      </select>
-      <select class="finput" aria-label="Filter by region" id="adv-filter-region" onchange="renderAdvisors()" style="font-size:12px;padding:4px 8px;min-width:120px">
-        <option value="">All regions</option>
-        <option>North America</option><option>Europe</option><option>Caribbean</option>
-        <option>Asia-Pacific</option><option>Latin America</option>
-      </select>
-    </div>
-  </div>
-  <div class="search-bar"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4.5"/><line x1="10" y1="10" x2="14" y2="14"/></svg><input type="text" placeholder="Search by name, firm or location…" id="adv-search" oninput="renderAdvisors()"></div>
-  <div id="adv-list"></div>
-</div>
-
-<div class="modal-overlay hidden" id="adv-cert-modal">
-  <div class="modal">
-    <div class="modal-header">
-      <div><div class="modal-title">Become a Certified Advisor</div><div class="modal-sub">Join the FinFlow Partner Network</div></div>
-      <button class="modal-close" onclick="closeModal('adv-cert-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
-    </div>
-    <div style="background:var(--green-bg);border:1px solid var(--green-bd);border-radius:var(--radius);padding:.85rem;font-size:12.5px;color:var(--t1);margin-bottom:.85rem">
-      ✦ Listed in advisor directory · Client referrals · Co-marketing · Priority API access
-    </div>
-    <div class="field-wrap"><label class="field-label">Full name</label><input class="finput" placeholder="Jane Smith, CPA"></div>
-    <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Firm name</label><input class="finput" placeholder="Smith &amp; Associates"></div>
-      <div class="field-wrap"><label class="field-label">Country</label><input class="finput" placeholder="United States"></div>
-    </div>
-    <div class="field-wrap"><label class="field-label">Specialty</label>
-      <select class="finput"><option>Tax &amp; Filing</option><option>Bookkeeping</option><option>Payroll</option><option>CFO Services</option><option>E-commerce</option><option>Startups</option></select>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('adv-cert-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitAdvisorApp()">Apply for certification →</button>
-    </div>
-  </div>
-</div>
-`;
+advisorPage.innerHTML = '<div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem"><div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#128101;</div><div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Advisor Network &#8212; Coming Soon</div><div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Connect with certified FinFlow accountants and financial advisors who can review your books, file taxes, and help you scale.</div><span class='badge b-amber' style='font-size:11px;padding:4px 12px'>In development</span></div>';
 document.querySelector('.content')?.appendChild(advisorPage);
 
 const ADVISORS = [
@@ -7145,85 +7349,7 @@ if(reportsItem){
 const taxPage = document.createElement('div');
 taxPage.className = 'page';
 taxPage.id = 'page-tax-filing';
-taxPage.innerHTML = `
-<style>
-.tax-jurisdiction{padding:8px 12px;border-radius:var(--radius);border:1px solid var(--bd2);cursor:pointer;transition:all .13s;display:flex;align-items:center;gap:10px;margin-bottom:6px;background:var(--bg2)}
-.tax-jurisdiction:hover,.tax-jurisdiction.selected{border-color:var(--acc);background:var(--acc-bg)}
-.tax-step{display:flex;align-items:center;gap:10px;padding:.75rem .9rem;border-radius:var(--radius);margin-bottom:6px;background:var(--bg2);border:1px solid var(--bd);transition:all .13s}
-.tax-step-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
-.tax-step.done .tax-step-num{background:var(--green);color:#0e0b08}
-.tax-step.active .tax-step-num{background:var(--acc);color:#0e0b08;box-shadow:0 0 12px var(--acc-glow)}
-.tax-step.pending .tax-step-num{background:var(--bg4);color:var(--t3);border:1px solid var(--bd2)}
-</style>
-
-<div class="metrics-grid">
-  <div class="mc"><div class="mc-label">Tax liability (est.)</div><div class="mc-val" style="color:var(--amber)" id="tax-liability">—</div><div class="mc-change neutral">Full year est. @ 25%</div></div>
-  <div class="mc"><div class="mc-label">Tax paid YTD</div><div class="mc-val" style="color:var(--green)" id="tax-paid-ytd">—</div><div class="mc-change up" id="tax-paid-sub">3 quarters</div></div>
-  <div class="mc"><div class="mc-label">Amount due</div><div class="mc-val" style="color:var(--red)" id="tax-due">—</div><div class="mc-change dn">Q4 estimate</div></div>
-  <div class="mc"><div class="mc-label">Next deadline</div><div class="mc-val">Jun 15</div><div class="mc-change neutral">Q2 2026 est.</div></div>
-</div>
-
-<div class="two-col">
-  <div class="card" style="margin-bottom:0">
-    <div class="card-header"><div class="card-title">Jurisdictions</div><span class="badge b-blue">Direct Submission</span></div>
-    <div class="tax-jurisdiction selected" onclick="selectJurisdiction(this,'US Federal')">
-      <span style="font-size:18px">🇺🇸</span>
-      <div><div style="font-size:13px;font-weight:600;color:var(--t1)">US Federal Income Tax</div><div style="font-size:11px;color:var(--t3)">IRS · Form 1120 · e-file direct</div></div>
-      <span class="badge b-amber" style="margin-left:auto">Q4 Due</span>
-    </div>
-    <div class="tax-jurisdiction" onclick="selectJurisdiction(this,'CA State')">
-      <span style="font-size:18px">🌟</span>
-      <div><div style="font-size:13px;font-weight:600;color:var(--t1)">California State Tax</div><div style="font-size:11px;color:var(--t3)">FTB · Form 100 · e-file direct</div></div>
-      <span class="badge b-green" style="margin-left:auto">Filed</span>
-    </div>
-    <div class="tax-jurisdiction" onclick="selectJurisdiction(this,'Sales Tax')">
-      <span style="font-size:18px">🧾</span>
-      <div><div style="font-size:13px;font-weight:600;color:var(--t1)">US Sales Tax (Avalara)</div><div style="font-size:11px;color:var(--t3)">Auto-calculated · 12 states nexus</div></div>
-      <span class="badge b-green" style="margin-left:auto">Auto</span>
-    </div>
-    <div class="tax-jurisdiction" onclick="selectJurisdiction(this,'TT VAT')">
-      <span style="font-size:18px">🇹🇹</span>
-      <div><div style="font-size:13px;font-weight:600;color:var(--t1)">Trinidad &amp; Tobago VAT</div><div style="font-size:11px;color:var(--t3)">BIR · 12.5% VAT · e-file</div></div>
-      <span class="badge b-amber" style="margin-left:auto">Due May 31</span>
-    </div>
-    <div class="tax-jurisdiction" onclick="selectJurisdiction(this,'UK VAT')">
-      <span style="font-size:18px">🇬🇧</span>
-      <div><div style="font-size:13px;font-weight:600;color:var(--t1)">UK VAT (MTD)</div><div style="font-size:11px;color:var(--t3)">HMRC · Making Tax Digital</div></div>
-      <span class="badge b-purple" style="margin-left:auto">Not linked</span>
-    </div>
-    <button class="btn btn-ghost btn-sm" style="margin-top:.5rem;width:100%;justify-content:center" onclick="notify('Add jurisdiction modal')">+ Add jurisdiction</button>
-  </div>
-
-  <div style="display:flex;flex-direction:column;gap:12px">
-    <div class="card" style="margin-bottom:0">
-      <div class="card-header">
-        <div class="card-title">Filing Steps</div>
-        <span id="tax-jurisdiction-title" style="font-size:12px;color:var(--acc)">US Federal</span>
-      </div>
-      <div id="tax-steps-list">
-        <div class="tax-step done"><div class="tax-step-num">✓</div><div><div style="font-size:13px;font-weight:500;color:var(--t1)">Review income &amp; deductions</div><div style="font-size:11px;color:var(--t3)">Revenue: $469,200 · Deductible: $231,450</div></div></div>
-        <div class="tax-step done"><div class="tax-step-num">✓</div><div><div style="font-size:13px;font-weight:500;color:var(--t1)">Confirm payroll data</div><div style="font-size:11px;color:var(--t3)">5 employees · W-2s generated</div></div></div>
-        <div class="tax-step active"><div class="tax-step-num">3</div><div><div style="font-size:13px;font-weight:500;color:var(--t1)">Calculate liability</div><div style="font-size:11px;color:var(--acc)">$59,730 federal · $14,930 Q4 balance due</div></div><button class="btn btn-ghost btn-sm" style="margin-left:auto;flex-shrink:0" onclick="notify('Recalculating… ✦')">Recalc</button></div>
-        <div class="tax-step pending"><div class="tax-step-num">4</div><div><div style="font-size:13px;font-weight:500;color:var(--t1)">Review &amp; eSign</div><div style="font-size:11px;color:var(--t3)">Sign with your IRS PIN</div></div></div>
-        <div class="tax-step pending"><div class="tax-step-num">5</div><div><div style="font-size:13px;font-weight:500;color:var(--t1)">Submit to IRS</div><div style="font-size:11px;color:var(--t3)">Direct e-file · Confirmation within 48h</div></div></div>
-      </div>
-      <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:1rem" onclick="startTaxFiling()">Continue filing →</button>
-    </div>
-    <div class="card" style="margin-bottom:0">
-      <div class="card-header"><div class="card-title">Deductible Expenses</div></div>
-      <div class="bar-row"><span class="bar-label">Salaries</span><div class="bar-track"><div class="bar-fill" id="tax-bar-sal" style="width:68%;background:var(--green)"></div></div><span class="bar-val" id="tax-val-sal">—</span></div>
-      <div class="bar-row"><span class="bar-label">Rent</span><div class="bar-track"><div class="bar-fill" id="tax-bar-rent" style="width:20%;background:#7db87d99"></div></div><span class="bar-val" id="tax-val-rent">—</span></div>
-      <div class="bar-row"><span class="bar-label">Software</span><div class="bar-track"><div class="bar-fill" id="tax-bar-sw" style="width:5%;background:#7db87d66"></div></div><span class="bar-val" id="tax-val-sw">—</span></div>
-      <div class="bar-row"><span class="bar-label">Marketing</span><div class="bar-track"><div class="bar-fill" id="tax-bar-mkt" style="width:7%;background:#7db87d44"></div></div><span class="bar-val" id="tax-val-mkt">—</span></div>
-      <div style="padding-top:8px;margin-top:4px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12.5px">
-        <span style="color:var(--t2)">Total deductible</span>
-        <span style="color:var(--green);font-weight:700;font-family:var(--font-mono)" id="tax-total-deductible">—</span>
-      </div>
-      <div style="font-size:11.5px;color:var(--t3);margin-top:6px">Est. tax saving at 25%: <strong style="color:var(--green)" id="tax-saving">—</strong></div>
-    </div>
-  </div>
-</div>
-`;
+taxPage.innerHTML = '<div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem"><div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#127963;</div><div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Tax Filing &#8212; Coming Soon</div><div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Direct e-file to IRS, HMRC, and other tax authorities. Auto-calculate quarterly estimates, generate W-2s and 1099s, and file in minutes.</div><span class='badge b-amber' style='font-size:11px;padding:4px 12px'>Requires tax API integration</span></div>';
 document.querySelector('.content')?.appendChild(taxPage);
 
 window.selectJurisdiction = function(el, name){
@@ -7552,17 +7678,24 @@ window.obNext = function(){
   }
 };
 
-function finishOnboarding(){
+async function finishOnboarding(){
+  const bizName=(document.getElementById('ob-biz-name')?.value||'').trim();
+  const currency=document.getElementById('ob-currency')?.value||'USD';
+  if(bizName||bizType||currency){
+    try{
+      await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({business_name:bizName,business_type:bizType||'',currency,onboarding_done:1})});
+    }catch(e){}
+  }
   sessionStorage.setItem('ff_onboarded','1');
-  const o = document.getElementById('ob-overlay');
-  o.style.opacity='0'; o.style.transition='opacity .25s ease';
+  const o=document.getElementById('ob-overlay');
+  o.style.opacity='0';o.style.transition='opacity .25s ease';
   setTimeout(()=>o.remove(),260);
-  // Auto-login as owner so the app is accessible immediately after onboarding
-  if(typeof doLogin === 'function'){
+  if(typeof doLogin==='function'){
     doLogin();
-  } else {
-    const ls = document.getElementById('login-screen');
-    if(ls) ls.style.display='none';
+  }else{
+    const ls=document.getElementById('login-screen');
+    if(ls)ls.style.display='none';
   }
   notify('Welcome to FinFlow Pro! Your workspace is ready ✦');
 }
@@ -8139,21 +8272,41 @@ const ICON_SVG={
 
 let auditFilter='all';
 window.filterAudit=function(val){auditFilter=val;renderAudit();};
-window.renderAudit=function(){
+window.renderAudit=async function(){
   const el=document.getElementById('audit-list');
   if(!el)return;
-  const filtered=auditFilter==='all'?AUDIT_EVENTS:AUDIT_EVENTS.filter(e=>e.type===auditFilter);
-  el.innerHTML=filtered.map(e=>`
-    <div class="audit-row">
-      <div class="audit-icon" style="background:${e.color}22;color:${e.color}">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ICON_SVG[e.icon]||''}</svg>
-      </div>
-      <div style="flex:1;min-width:0">
-        <div><span class="audit-user">${e.user}</span> <span class="audit-action">${e.action}</span> <span class="audit-target">${e.target}</span></div>
-        <div class="audit-time">${e.time}</div>
-        <div class="audit-diff">${e.diff}</div>
-      </div>
-    </div>`).join('');
+  el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
+  try{
+    const params=auditFilter!=='all'?'?type='+encodeURIComponent(auditFilter):'';
+    const res=await fetch('/api/audit-log'+params);
+    if(!res.ok)throw new Error();
+    const data=await res.json();
+    const entries=Array.isArray(data)?data:(data.rows||data.entries||[]);
+    if(!entries.length){el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No audit events yet.</div>';return;}
+    el.innerHTML=entries.map(e=>`
+      <div class="audit-row">
+        <div class="audit-icon" style="background:var(--acc-bg);color:var(--acc)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><polyline points="8,5 8,8 10,10"/></svg>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div><span class="audit-user">You</span> <span class="audit-action">${e.action||''}</span> <span class="audit-target">${e.table_name||''}${e.record_id?' #'+e.record_id:''}</span></div>
+          <div class="audit-time">${e.created_at?new Date(e.created_at).toLocaleString():''}</div>
+        </div>
+      </div>`).join('');
+  }catch(err){
+    const filtered=auditFilter==='all'?AUDIT_EVENTS:AUDIT_EVENTS.filter(e=>e.type===auditFilter);
+    el.innerHTML=filtered.map(e=>`
+      <div class="audit-row">
+        <div class="audit-icon" style="background:${e.color}22;color:${e.color}">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ICON_SVG[e.icon]||''}</svg>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div><span class="audit-user">${e.user}</span> <span class="audit-action">${e.action}</span> <span class="audit-target">${e.target}</span></div>
+          <div class="audit-time">${e.time}</div>
+          <div class="audit-diff">${e.diff}</div>
+        </div>
+      </div>`).join('');
+  }
 };
 
 // ── SWIPE HINT (show once on mobile) ────────────────────────────────────────
@@ -8609,6 +8762,7 @@ window.resetScanner=function(){
         <div class="card-header">
           <div><div class="card-title">Transactions awaiting categorisation</div><div class="card-sub">Claude has suggested categories — approve or override each one</div></div>
           <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="runAutocatRules()">▶ Run rules</button>
             <button class="btn btn-primary btn-sm" onclick="approveAllAutocat()">✓ Approve all</button>
             <button class="btn btn-ghost btn-sm" onclick="getAutocatAI()">✦ Re-analyse with AI</button>
           </div>
@@ -8621,7 +8775,7 @@ window.resetScanner=function(){
       <div class="card" style="margin-bottom:0">
         <div class="card-header"><div class="card-title">Categorisation rules</div><div class="card-sub">Auto-approve future transactions matching these patterns</div></div>
         <div id="autocat-rules-list"></div>
-        <button class="btn btn-ghost btn-sm" style="margin-top:.75rem" onclick="notify('Rule builder opening… ✦')">+ Add custom rule</button>
+        <button class="btn btn-ghost btn-sm" style="margin-top:.75rem" onclick="openAddRuleModal()">+ Add custom rule</button>
       </div>`;
     content.appendChild(autocatPage);
 
@@ -8630,54 +8784,16 @@ window.resetScanner=function(){
     portalPage.className = 'page';
     portalPage.id = 'page-portal';
     portalPage.innerHTML = `
-      <div class="metrics-grid-3">
-        <div class="mc"><div class="mc-label">Active portals</div><div class="mc-val">3</div><div class="mc-change neutral">Shared clients</div></div>
-        <div class="mc"><div class="mc-label">Invoices paid online</div><div class="mc-val" style="color:var(--green)">$31,200</div><div class="mc-change up">This month</div></div>
-        <div class="mc"><div class="mc-label">Avg payment time</div><div class="mc-val">2.4d</div><div class="mc-change up">vs 8.1d without portal</div></div>
-      </div>
-      <div class="two-col">
-        <div class="card" style="margin-bottom:0">
-          <div class="card-header">
-            <div><div class="card-title">Client portals</div><div class="card-sub">Each client gets a private branded link</div></div>
-            <button class="btn btn-primary btn-sm" onclick="createPortal()">+ New portal</button>
-          </div>
-          <div id="portal-list"></div>
+      <div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem">
+        <div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#128279;</div>
+        <div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Client Portal &#8212; Coming Soon</div>
+        <div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Give each client a branded self-service portal where they can view invoices, make payments via Stripe, and access documents you share with them.</div>
+        <div style="display:flex;flex-direction:column;gap:8px;text-align:left;margin-bottom:1.5rem">
+          <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--green)">&#10003;</span> Branded portal per client with unique link</div>
+          <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--green)">&#10003;</span> Online Stripe payments from the portal</div>
+          <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--green)">&#10003;</span> Shared documents and invoice history</div>
         </div>
-        <div class="card" style="margin-bottom:0">
-          <div class="card-header"><div class="card-title">Portal preview</div><div class="card-sub">What your client sees</div></div>
-          <div class="portal-preview">
-            <div class="portal-preview-bar">
-              <div class="portal-preview-dot" style="background:#c46a5a"></div>
-              <div class="portal-preview-dot" style="background:#d4964a"></div>
-              <div class="portal-preview-dot" style="background:#7db87d"></div>
-              <div style="flex:1;height:16px;background:var(--bg3);border-radius:3px;margin:0 10px;display:flex;align-items:center;padding:0 8px"><span style="font-size:9px;color:var(--t3);font-family:var(--font-mono)">portal.finflow.io/client/techcorp-x7k2</span></div>
-            </div>
-            <div style="padding:1rem;background:var(--bg2)">
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem">
-                <div style="width:28px;height:28px;border-radius:6px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:flex;align-items:center;justify-content:center"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#0e0b08" stroke-width="1.8" stroke-linecap="round"><polyline points="1,11 5,6 8,9 11,4 15,7"/></svg></div>
-                <span style="font-family:var(--font-display);font-style:italic;font-size:16px;color:var(--acc-light)">FinFlow</span>
-                <span style="font-size:11px;color:var(--t3);margin-left:4px">· TechCorp portal</span>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:1rem">
-                <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:var(--radius);padding:.65rem;text-align:center"><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px">Outstanding</div><div style="font-size:18px;font-family:var(--font-display);font-style:italic;color:var(--amber)">$18,500</div></div>
-                <div style="background:var(--bg3);border:1px solid var(--bd);border-radius:var(--radius);padding:.65rem;text-align:center"><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px">Paid YTD</div><div style="font-size:18px;font-family:var(--font-display);font-style:italic;color:var(--green)">$74,000</div></div>
-              </div>
-              <div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Open invoices</div>
-              <div class="portal-inv-row"><span>INV-1042 · Apr 2026</span><span style="font-family:var(--font-mono);color:var(--amber)">$18,500</span><button class="portal-pay-btn">Pay now</button></div>
-              <div class="portal-inv-row" style="border-bottom:none"><span style="color:var(--t3)">INV-1038 · Mar 2026</span><span style="font-family:var(--font-mono);color:var(--green)">$14,200 ✓</span><span style="font-size:11px;color:var(--green)">Paid</span></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="card" style="margin-bottom:0">
-        <div class="card-header"><div class="card-title">Portal settings</div></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
-          <div class="field-wrap"><label class="field-label">Portal brand name</label><input class="finput" value="FinFlow Inc." placeholder="Your business name"></div>
-          <div class="field-wrap"><label class="field-label">Brand colour</label><input class="finput" value="#c8a44a" placeholder="#c8a44a" style="font-family:var(--font-mono)"></div>
-          <div class="field-wrap"><label class="field-label">Payment methods</label><select class="finput"><option>Stripe (card)</option><option>Bank transfer</option><option>Both</option></select></div>
-          <div class="field-wrap"><label class="field-label">Auto-send reminder</label><select class="finput"><option>3 days before due</option><option>7 days before due</option><option>On due date</option><option>Disabled</option></select></div>
-        </div>
-        <button class="btn btn-primary btn-sm" style="margin-top:.75rem" onclick="notify('Portal settings saved ✦')">Save settings</button>
+        <span class="badge b-amber" style="font-size:11px;padding:4px 12px">Requires Stripe + custom auth</span>
       </div>`;
     content.appendChild(portalPage);
   }
@@ -8877,7 +8993,7 @@ const AUTOCAT_RULES = [
 
 function confColor(c){ return c>=95?'var(--green)':c>=80?'var(--amber)':'var(--red)'; }
 
-function renderAutocat(){
+async function renderAutocat(){
   const list = document.getElementById('autocat-list');
   if(!list) return;
   const pending = AUTOCAT_TXNS.filter(t=>!t.approved);
@@ -8908,14 +9024,71 @@ function renderAutocat(){
     </div>`).join('') || '<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">All transactions categorised ✓</div>';
 
   const rulesList = document.getElementById('autocat-rules-list');
-  if(rulesList) rulesList.innerHTML = AUTOCAT_RULES.map(r=>`
-    <div style="display:flex;align-items:center;gap:10px;padding:.5rem 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-      <span style="font-family:var(--font-mono);color:var(--t1);flex:1">${r.pattern}</span>
-      <span style="color:var(--t2)">→ ${r.cat}</span>
-      <label class="toggle" style="transform:scale(.75)"><input type="checkbox"${r.auto?' checked':''} onchange="this.checked=${!r.auto}"><div class="toggle-track"></div><div class="toggle-thumb"></div></label>
-      <span style="font-size:11px;color:var(--t3)">${r.auto?'Auto-approve':'Review'}</span>
-    </div>`).join('');
+  if(rulesList){
+    try{
+      const res=await fetch('/api/autocat-rules');
+      const apiRules=res.ok?await res.json():[];
+      const rules=apiRules.length?apiRules:AUTOCAT_RULES;
+      rulesList.innerHTML=rules.map(r=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:.5rem 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+          <span style="font-family:var(--font-mono);color:var(--t1);flex:1">${r.keyword||r.pattern||''}</span>
+          <span style="color:var(--t2)">→ ${r.category||r.cat||''}</span>
+          <span style="font-size:11px;color:var(--t3)">${(r.enabled||r.auto)?'Auto-approve':'Review'}</span>
+          ${r.id?`<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteAutocatRule(${r.id})">✕</button>`:''}
+        </div>`).join('');
+    }catch(e){
+      rulesList.innerHTML=AUTOCAT_RULES.map(r=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:.5rem 0;border-bottom:1px solid var(--bd);font-size:12.5px">
+          <span style="font-family:var(--font-mono);color:var(--t1);flex:1">${r.pattern}</span>
+          <span style="color:var(--t2)">→ ${r.cat}</span>
+          <span style="font-size:11px;color:var(--t3)">${r.auto?'Auto-approve':'Review'}</span>
+        </div>`).join('');
+    }
+  }
 }
+window.deleteAutocatRule=async function(id){
+  if(!confirm('Delete this rule?'))return;
+  const res=await fetch('/api/autocat-rules/'+id,{method:'DELETE'});
+  if(res.ok)renderAutocat();else notify('Delete failed');
+};
+window.runAutocatRules=async function(){
+  try{
+    const res=await fetch('/api/autocat-rules/run',{method:'POST'});
+    const data=await res.json();
+    notify('Auto-categorised '+(data.updated||0)+' expenses ✦');
+  }catch(e){notify('Run failed');}
+};
+window.openAddRuleModal=function(){
+  let m=document.getElementById('add-rule-modal');
+  if(!m){
+    m=document.createElement('div');m.id='add-rule-modal';m.className='modal-overlay';
+    m.innerHTML=`<div class="modal" style="width:380px">
+      <div class="modal-header"><span class="modal-title">Add Categorisation Rule</span><button class="modal-close" onclick="closeModal('add-rule-modal')">✕</button></div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+        <div><label class="field-label">Keyword / Pattern</label><input id="rule-keyword" class="finput" placeholder="e.g. GOOGLE *"></div>
+        <div><label class="field-label">Category</label>
+          <select id="rule-category" class="finput">${['Software & SaaS','Travel','Meals & Entertainment','Office Supplies','Salaries','Marketing','Professional Services','Other'].map(c=>`<option>${c}</option>`).join('')}</select></div>
+        <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="rule-auto" checked><label for="rule-auto" style="font-size:13px;color:var(--t2)">Auto-approve matching transactions</label></div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('add-rule-modal')">Cancel</button><button class="btn btn-primary" onclick="saveAutocatRule()">Save Rule</button></div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  document.getElementById('rule-keyword').value='';
+  m.style.display='flex';
+};
+window.saveAutocatRule=async function(){
+  const keyword=document.getElementById('rule-keyword').value.trim();
+  const category=document.getElementById('rule-category').value;
+  const enabled=document.getElementById('rule-auto').checked?1:0;
+  if(!keyword){notify('Enter a keyword');return;}
+  try{
+    const res=await fetch('/api/autocat-rules',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({keyword,category,enabled})});
+    if(!res.ok){const d=await res.json();notify(d.error||'Save failed');return;}
+    closeModal('add-rule-modal');renderAutocat();notify('Rule saved ✦');
+  }catch(e){notify('Save failed');}
+};
 
 window.approveCat = function(id){
   const t = AUTOCAT_TXNS.find(x=>x.id===id);

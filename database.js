@@ -38,6 +38,8 @@ const TABLES = [
   'recurring_invoices', 'sales_receipts', 'payments_received', 'credit_notes',
   'payments_made', 'vendor_credits', 'items', 'timesheet', 'projects',
   'team_members', 'budget_targets',
+  'journals', 'chart_of_accounts', 'lock_settings', 'audit_log',
+  'documents', 'templates', 'autocat_rules',
 ];
 
 async function initDB() {
@@ -390,6 +392,45 @@ async function seedUserData(userId) {
   ]) await db.insert('projects', { user_id: userId, entity_id: entityId, ...r });
 
   await db.upsert('user_settings', 'user_id', userId, { dark_mode: 1, currency: 'USD', show_cents: 0, notif_email: 1, notif_inv: 1, notif_pay: 1 });
+
+  // Chart of accounts seed
+  for (const r of [
+    { code: '1010', name: 'Checking Account',         category: 'Assets',      nature: 'Debit',  balance: 98420 },
+    { code: '1020', name: 'Savings Account',           category: 'Assets',      nature: 'Debit',  balance: 38200 },
+    { code: '1100', name: 'Accounts Receivable',       category: 'Assets',      nature: 'Debit',  balance: 9150  },
+    { code: '1200', name: 'Inventory',                 category: 'Assets',      nature: 'Debit',  balance: 34200 },
+    { code: '1500', name: 'Equipment',                 category: 'Assets',      nature: 'Debit',  balance: 28000 },
+    { code: '2000', name: 'Accounts Payable',          category: 'Liabilities', nature: 'Credit', balance: 14200 },
+    { code: '2100', name: 'Credit Card',               category: 'Liabilities', nature: 'Credit', balance: 4800  },
+    { code: '2200', name: 'Tax Payable',               category: 'Liabilities', nature: 'Credit', balance: 19200 },
+    { code: '3000', name: "Owner's Equity",            category: 'Equity',      nature: 'Credit', balance: 186200 },
+    { code: '3100', name: 'Retained Earnings',         category: 'Equity',      nature: 'Credit', balance: 238950 },
+    { code: '4000', name: 'Service Revenue',           category: 'Revenue',     nature: 'Credit', balance: 469200 },
+    { code: '4100', name: 'Product Sales',             category: 'Revenue',     nature: 'Credit', balance: 0     },
+    { code: '5000', name: 'Salaries & Wages',          category: 'Expenses',    nature: 'Debit',  balance: 157200 },
+    { code: '5100', name: 'Rent',                      category: 'Expenses',    nature: 'Debit',  balance: 45600 },
+    { code: '5200', name: 'Software Subscriptions',    category: 'Expenses',    nature: 'Debit',  balance: 12000 },
+    { code: '5300', name: 'Marketing',                 category: 'Expenses',    nature: 'Debit',  balance: 15450 },
+  ]) await db.insert('chart_of_accounts', { user_id: userId, entity_id: entityId, ...r });
+
+  // Invoice & email template seeds
+  for (const r of [
+    { name: 'Classic Professional', type: 'invoice', preview: 'Clean two-column layout',   is_default: 1, accent_color: '#c8a44a' },
+    { name: 'Modern Minimal',       type: 'invoice', preview: 'Bold header, clean lines',  is_default: 0, accent_color: '#5aaa9e' },
+    { name: 'Compact Receipt',      type: 'invoice', preview: 'Single page receipt format', is_default: 0, accent_color: '#9e8fbf' },
+    { name: 'Invoice Reminder (7 days)', type: 'email', preview: 'Auto — 7 days after due',  is_default: 0, accent_color: '' },
+    { name: 'Payment Received',          type: 'email', preview: 'Auto — on payment',         is_default: 0, accent_color: '' },
+  ]) await db.insert('templates', { user_id: userId, ...r });
+
+  // Auto-categorise rules seed
+  for (const r of [
+    { keyword: 'aws',       match_type: 'vendor',      category: 'Software',    enabled: 1 },
+    { keyword: 'google',    match_type: 'vendor',      category: 'Software',    enabled: 1 },
+    { keyword: 'stripe',    match_type: 'vendor',      category: 'Payments',    enabled: 1 },
+    { keyword: 'flight',    match_type: 'description', category: 'Travel',      enabled: 1 },
+    { keyword: 'uber',      match_type: 'description', category: 'Travel',      enabled: 1 },
+    { keyword: 'lunch',     match_type: 'description', category: 'Meals',       enabled: 1 },
+  ]) await db.insert('autocat_rules', { user_id: userId, ...r });
 }
 
 module.exports = { db, initDB, seedUserData, pool };

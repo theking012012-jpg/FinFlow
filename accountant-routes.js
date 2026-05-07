@@ -139,7 +139,7 @@ async function lookupMembership(body, membershipNumber) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLimiter) {
+module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient) {
 
   // ── 1. REGISTER AS ACCOUNTANT ─────────────────────────────────────────────
   app.post('/api/accountants/register', authLimiter, wrap(async (req, res) => {
@@ -639,10 +639,71 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
     req.session.destroy(() => res.json({ ok: true }));
   });
 
+  // ── SUBMIT REVIEW (only after completed FinFlow payment) ─────────────────
+  app.post('/api/accountants/review', wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const { accountantId, rating, comment } = req.body || {};
+    if (!accountantId || !rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'Invalid review data.' });
+
+    // Only allow review if client has a completed payment to this accountant
+    const paymentCheck = await pool.query(`
+      SELECT id FROM accountant_earnings
+      WHERE accountant_id = $1 AND client_id = $2 AND type = 'service_commission' AND status = 'pending'
+      LIMIT 1
+    `, [accountantId, req.session.userId]);
+    if (!paymentCheck.rows[0]) {
+      return res.status(403).json({ error: 'You can only review an accountant after completing a FinFlow payment with them.' });
+    }
+
+    // Upsert review (one per client per accountant)
+    await pool.query(`
+      INSERT INTO accountant_reviews (accountant_id, client_id, rating, comment, created_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT (accountant_id, client_id) DO UPDATE SET rating = $3, comment = $4, created_at = NOW()
+    `, [accountantId, req.session.userId, rating, (comment || '').trim().slice(0, 500)]);
+
+    // Recalculate average rating
+    await pool.query(`
+      UPDATE accountants SET
+        avg_rating = (SELECT AVG(rating) FROM accountant_reviews WHERE accountant_id = $1),
+        review_count = (SELECT COUNT(*) FROM accountant_reviews WHERE accountant_id = $1)
+      WHERE id = $1
+    `, [accountantId]);
+
+    return res.json({ success: true });
+  }));
+
+  // ── GET REVIEWS FOR AN ACCOUNTANT ────────────────────────────────────────
+  app.get('/api/accountants/:id/reviews', wrap(async (req, res) => {
+    const result = await pool.query(`
+      SELECT r.rating, r.comment, r.created_at,
+             u.data->>'name' AS client_name
+      FROM accountant_reviews r
+      JOIN users u ON u.id = r.client_id
+      WHERE r.accountant_id = $1
+      ORDER BY r.created_at DESC LIMIT 20
+    `, [req.params.id]);
+    return res.json(result.rows);
+  }));
+
+  // ── REPORT ACCOUNTANT ─────────────────────────────────────────────────────
+  app.post('/api/accountants/report', wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const { accountantId, reason } = req.body || {};
+    if (!accountantId || !reason) return res.status(400).json({ error: 'Missing fields.' });
+
+    await pool.query(`
+      INSERT INTO accountant_reports (accountant_id, reporter_id, reason, created_at)
+      VALUES ($1, $2, $3, NOW())
+    `, [accountantId, req.session.userId, reason.trim().slice(0, 1000)]);
+
+    return res.json({ success: true });
+  }));
+
   // ── PUBLIC DIRECTORY — verified accountants only ───────────────────────────
   app.get('/api/accountants/directory', wrap(async (req, res) => {
     const { country, specialisation } = req.query;
-    let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience FROM accountants WHERE status = 'verified'`;
+    let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience, avg_rating, review_count FROM accountants WHERE status = 'verified'`;
     const params = [];
     if (country) { params.push(country); query += ` AND country = $${params.length}`; }
     if (specialisation) { params.push(specialisation); query += ` AND specialisation = $${params.length}`; }

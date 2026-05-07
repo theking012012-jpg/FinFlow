@@ -97,6 +97,8 @@ async function initDB() {
         verification_method VARCHAR(30),
         verification_data   JSONB DEFAULT '{}',
         verified_at         TIMESTAMPTZ,
+        stripe_account_id   VARCHAR(100),
+        stripe_onboarded    BOOLEAN DEFAULT FALSE,
         created_at          TIMESTAMPTZ DEFAULT NOW(),
         updated_at          TIMESTAMPTZ DEFAULT NOW()
       )
@@ -136,6 +138,33 @@ async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_earnings_accountant ON accountant_earnings(accountant_id)`);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accountant_reviews (
+        id            SERIAL PRIMARY KEY,
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id),
+        client_id     INTEGER NOT NULL,
+        rating        INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+        comment       TEXT,
+        created_at    TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(accountant_id, client_id)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_reviews_accountant ON accountant_reviews(accountant_id)`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accountant_reports (
+        id            SERIAL PRIMARY KEY,
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id),
+        reporter_id   INTEGER NOT NULL,
+        reason        TEXT NOT NULL,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // Add rating columns to accountants if not exists
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS avg_rating NUMERIC(3,2) DEFAULT 0`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS review_count INTEGER DEFAULT 0`);
+
     // ── END ACCOUNTANT MARKETPLACE TABLES ──────────────────────────────────────
 
     // AI response cache — keyed by user_id + normalised question, TTL enforced in queries

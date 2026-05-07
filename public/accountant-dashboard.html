@@ -408,6 +408,12 @@
         </div>
       </div>
 
+      <!-- PENDING REQUESTS -->
+      <div id="pending-requests-section" style="display:none;margin-bottom:24px">
+        <div class="section-title" style="color:var(--amber)">⚠ Pending Access Requests</div>
+        <div id="pending-requests-list" style="display:flex;flex-direction:column;gap:10px"></div>
+      </div>
+
       <div class="section-title">
         Recent Clients
         <a onclick="showPage('clients')">View all →</a>
@@ -444,6 +450,9 @@
       <div class="page-header">
         <h1>My Clients</h1>
         <p>All clients linked to your accountant profile</p>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+        <button class="btn btn-gold" onclick="openBillModal()">+ Bill a client</button>
       </div>
       <div class="ref-box">
         <div class="ref-icon">🔗</div>
@@ -642,6 +651,71 @@
   </div>
 </div>
 
+<!-- STRIPE CONNECT BANNER (shown when not connected) -->
+<div id="stripe-banner" style="display:none;position:fixed;top:57px;left:0;right:0;z-index:20;background:linear-gradient(90deg,#1a1508,#241e08);border-bottom:1px solid rgba(201,168,76,0.3);padding:10px 32px;display:flex;align-items:center;gap:16px">
+  <span style="font-size:13px;color:var(--amber)">⚠ Connect your Stripe account to start billing clients and receiving payments.</span>
+  <button class="btn btn-gold btn-sm" onclick="connectStripe()" style="margin-left:auto">Connect Stripe →</button>
+  <button style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1" onclick="document.getElementById('stripe-banner').style.display='none'">×</button>
+</div>
+
+<!-- BILL CLIENT MODAL -->
+<div class="modal-overlay" id="bill-modal">
+  <div class="modal">
+    <h3>Bill a Client</h3>
+    <p>FinFlow processes the payment and transfers 96% to your connected Stripe account. You set the rate.</p>
+    <div class="modal-form-group">
+      <label>Client</label>
+      <select id="bill-client-select" class="finput" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text);outline:none;appearance:none">
+        <option value="">Select client...</option>
+      </select>
+    </div>
+    <div class="modal-form-group">
+      <label>Service description</label>
+      <input type="text" id="bill-description" placeholder="e.g. Tax filing — FY 2025, Monthly bookkeeping">
+    </div>
+    <div class="modal-form-group">
+      <label>Amount (USD) — minimum $50</label>
+      <input type="number" id="bill-amount" placeholder="500" min="50" step="1">
+    </div>
+    <div id="bill-breakdown" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-top:4px;font-size:12px;color:var(--text2)">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Client pays</span><span id="bill-total" style="color:var(--text)">—</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>FinFlow fee (4%)</span><span id="bill-fee" style="color:var(--amber)">—</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:500"><span>You receive</span><span id="bill-receive" style="color:var(--green)">—</span></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="document.getElementById('bill-modal').classList.remove('open')">Cancel</button>
+      <button class="btn btn-gold" onclick="submitBill()">Send payment link →</button>
+    </div>
+  </div>
+</div>
+
+<!-- BOOKS MODAL -->
+<div class="modal-overlay" id="books-modal">
+  <div class="modal" style="width:560px;max-width:95vw">
+    <h3 id="books-modal-title">Client Books</h3>
+    <p id="books-modal-sub" style="margin-bottom:16px">Financial summary</p>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">Total Income</div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:22px;color:var(--green)" id="books-income">—</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">Total Expenses</div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:22px;color:var(--red)" id="books-expenses">—</div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">Net Profit</div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:22px;color:var(--gold-light)" id="books-profit">—</div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">Recent Invoices</div>
+    <div id="books-invoices" style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:16px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="document.getElementById('books-modal').classList.remove('open')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -666,6 +740,7 @@ async function boot() {
     initUI();
     loadClients();
     loadEarnings();
+    loadPendingRequests();
   } catch (e) {
     window.location.href = '/join';
   }
@@ -677,6 +752,13 @@ function initUI() {
   document.getElementById('first-name').textContent = accountant.first_name;
 
   const statusMap = { verified: '✓ Verified', pending: 'Pending review', rejected: 'Rejected', suspended: 'Suspended' };
+  const avgRating = parseFloat(accountant.avg_rating) || 0;
+  if (avgRating >= 4.5) {
+    const ppBadge = document.createElement('span');
+    ppBadge.style.cssText = 'font-size:11px;background:rgba(201,168,76,0.15);color:var(--gold);border:1px solid rgba(201,168,76,0.4);border-radius:4px;padding:3px 8px;margin-left:8px';
+    ppBadge.textContent = '★ Preferred Partner';
+    document.getElementById('nav-name').insertAdjacentElement('afterend', ppBadge);
+  }
   const badgeEl = document.getElementById('nav-badge');
   badgeEl.textContent = statusMap[accountant.status] || accountant.status;
   if (accountant.status === 'verified') { badgeEl.style.color = 'var(--green)'; badgeEl.style.borderColor = 'rgba(74,156,109,0.4)'; badgeEl.style.background = 'var(--green-bg)'; }
@@ -732,7 +814,7 @@ function renderClients() {
         <td><span class="badge ${c.status === 'active' ? 'badge-green' : c.status === 'pending' ? 'badge-amber' : 'badge-red'}">${c.status}</span></td>
         <td>${c.referral_month}/${c.referral_months_total} months</td>
         <td>${c.access_level}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.user_id})">View books</button></td>
+        <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.user_id},'${(c.client_name||'').replace(/'/g,'')}')" >View books</button></td>
       </tr>`).join('');
 
   document.getElementById('clients-tbody').innerHTML = rows;
@@ -958,8 +1040,92 @@ function toast(msg, type = '') {
   setTimeout(() => el.classList.remove('show'), 3000);
 }
 
+// ── STRIPE CONNECT ───────────────────────────────────────────────────────────
+async function checkStripeStatus() {
+  try {
+    const res = await fetch('/api/accountants/stripe-status', { credentials: 'include' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const banner = document.getElementById('stripe-banner');
+    if (!data.onboarded && banner) banner.style.display = 'flex';
+  } catch(e) {}
+}
+
+async function connectStripe() {
+  try {
+    const res = await fetch('/api/accountants/stripe-connect', {
+      method: 'POST', credentials: 'include',
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    window.location.href = data.url;
+  } catch(e) {
+    toast('Could not connect Stripe. Try again.', 'error');
+  }
+}
+
+// ── BILL CLIENT ───────────────────────────────────────────────────────────────
+function openBillModal() {
+  // Populate client dropdown
+  const sel = document.getElementById('bill-client-select');
+  const activeClients = clients.filter(c => c.status === 'active');
+  if (!activeClients.length) { toast('No active clients to bill', 'error'); return; }
+  sel.innerHTML = '<option value="">Select client...</option>' +
+    activeClients.map(c => `<option value="${c.user_id}">${c.client_name || 'Unknown'}</option>`).join('');
+  document.getElementById('bill-breakdown').style.display = 'none';
+  document.getElementById('bill-amount').value = '';
+  document.getElementById('bill-description').value = '';
+  document.getElementById('bill-modal').classList.add('open');
+}
+
+document.addEventListener('input', function(e) {
+  if (e.target.id === 'bill-amount') {
+    const amt = parseFloat(e.target.value) || 0;
+    if (amt >= 50) {
+      const fee = (amt * 0.04).toFixed(2);
+      const receive = (amt * 0.96).toFixed(2);
+      document.getElementById('bill-total').textContent = '$' + amt.toFixed(2);
+      document.getElementById('bill-fee').textContent = '$' + fee;
+      document.getElementById('bill-receive').textContent = '$' + receive;
+      document.getElementById('bill-breakdown').style.display = 'block';
+    } else {
+      document.getElementById('bill-breakdown').style.display = 'none';
+    }
+  }
+});
+
+async function submitBill() {
+  const clientUserId = document.getElementById('bill-client-select').value;
+  const description = document.getElementById('bill-description').value.trim();
+  const amount = parseFloat(document.getElementById('bill-amount').value);
+
+  if (!clientUserId) { toast('Please select a client', 'error'); return; }
+  if (!description) { toast('Please enter a service description', 'error'); return; }
+  if (!amount || amount < 50) { toast('Minimum bill is $50', 'error'); return; }
+
+  const amountCents = Math.round(amount * 100);
+
+  try {
+    const res = await fetch('/api/accountants/bill-client', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientUserId, description, amountCents }),
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    document.getElementById('bill-modal').classList.remove('open');
+    toast('Payment link created — client will receive an email ✓', 'success');
+    // Open the Stripe checkout in a new tab
+    if (data.url) window.open(data.url, '_blank');
+  } catch(e) {
+    toast('Could not create payment link', 'error');
+  }
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────────
 boot();
+// Check Stripe status after boot
+setTimeout(checkStripeStatus, 1000);
 </script>
 </body>
 </html>

@@ -102,6 +102,30 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 
     seedUserData(userId).catch(e => console.error('[Register] seedUserData failed for userId', userId, e));
 
+    // If user signed up via an accountant referral link (?ref=CODE), link them now
+    const refCode = req.body.referralCode || req.query.ref;
+    if (refCode) {
+      pool.query(
+        `SELECT id FROM accountants WHERE referral_code = $1 AND status = 'verified'`,
+        [refCode]
+      ).then(async result => {
+        if (!result.rows[0]) return;
+        const accountantId = result.rows[0].id;
+        const countResult = await pool.query(
+          `SELECT COUNT(*) FROM accountant_clients WHERE accountant_id = $1 AND status = 'active'`,
+          [accountantId]
+        );
+        const count = parseInt(countResult.rows[0].count) || 0;
+        const months = count >= 500 ? 12 : count >= 50 ? 3 : 1;
+        await pool.query(`
+          INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total)
+          VALUES ($1, $2, 'pending', $3)
+          ON CONFLICT (accountant_id, user_id) DO NOTHING
+        `, [accountantId, userId, months]);
+        console.log(`[Referral] User ${userId} linked to accountant ${accountantId} (${months} months)`);
+      }).catch(e => console.error('[Referral] Link failed:', e.message));
+    }
+
     req.session.userId = userId;
     req.session.userRole = 'owner';
     const user = await db.get('users', u => u.id === userId);
@@ -1414,6 +1438,10 @@ app.get('/api/ai/cache', requireAuth, wrap(async (req, res) => {
   res.json(result.rows);
 }));
 
+// ── ACCOUNTANT MARKETPLACE ROUTES ────────────────────────────────────────────
+const registerAccountantRoutes = require('./accountant-routes');
+registerAccountantRoutes(app, pool, authLimiter, apiLimiter);
+
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.
 app.post('/api/ai/scan', requireAuth, async (req, res) => {
@@ -1478,6 +1506,9 @@ app.get('/app', (req, res) => {
 });
 app.get('/reset-password.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
+});
+app.get('/join', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'accountant-register.html'));
 });
 app.get('/sitemap.xml', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'sitemap.xml'));

@@ -77,6 +77,67 @@ async function initDB() {
       CREATE INDEX IF NOT EXISTS idx_session_expire ON session(expire)
     `);
 
+    // ── ACCOUNTANT MARKETPLACE TABLES ──────────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accountants (
+        id                  SERIAL PRIMARY KEY,
+        user_id             INTEGER UNIQUE,
+        email               VARCHAR(255) UNIQUE NOT NULL,
+        password_hash       VARCHAR(255) NOT NULL,
+        first_name          VARCHAR(100) NOT NULL,
+        last_name           VARCHAR(100) NOT NULL,
+        firm                VARCHAR(200),
+        country             VARCHAR(100),
+        specialisation      VARCHAR(100),
+        bio                 TEXT,
+        experience          VARCHAR(50),
+        referral_code       VARCHAR(50) UNIQUE NOT NULL,
+        referred_by         INTEGER REFERENCES accountants(id),
+        status              VARCHAR(30) DEFAULT 'pending',
+        verification_method VARCHAR(30),
+        verification_data   JSONB DEFAULT '{}',
+        verified_at         TIMESTAMPTZ,
+        created_at          TIMESTAMPTZ DEFAULT NOW(),
+        updated_at          TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_accountants_email    ON accountants(email)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_accountants_referral ON accountants(referral_code)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_accountants_status   ON accountants(status)`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accountant_clients (
+        id                    SERIAL PRIMARY KEY,
+        accountant_id         INTEGER NOT NULL REFERENCES accountants(id),
+        user_id               INTEGER NOT NULL,
+        status                VARCHAR(30) DEFAULT 'active',
+        access_level          VARCHAR(30) DEFAULT 'view',
+        referral_month        INTEGER DEFAULT 0,
+        referral_months_total INTEGER DEFAULT 1,
+        invited_at            TIMESTAMPTZ DEFAULT NOW(),
+        activated_at          TIMESTAMPTZ,
+        UNIQUE(accountant_id, user_id)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_clients_accountant ON accountant_clients(accountant_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_clients_user       ON accountant_clients(user_id)`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accountant_earnings (
+        id            SERIAL PRIMARY KEY,
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id),
+        client_id     INTEGER,
+        type          VARCHAR(30) NOT NULL,
+        amount_cents  INTEGER NOT NULL,
+        description   TEXT,
+        status        VARCHAR(20) DEFAULT 'pending',
+        period_month  DATE,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_earnings_accountant ON accountant_earnings(accountant_id)`);
+    // ── END ACCOUNTANT MARKETPLACE TABLES ──────────────────────────────────────
+
     // AI response cache — keyed by user_id + normalised question, TTL enforced in queries
     await client.query(`
       CREATE TABLE IF NOT EXISTS ai_cache (

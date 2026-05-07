@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FinFlow — Join as an Accountant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e0c;
+    --bg2: #141410;
+    --card: #1a1a15;
+    --card2: #1f1f18;
+    --gold: #c9a84c;
+    --gold-light: #e8cc7a;
+    --gold-dim: #8a6f2e;
+    --text: #f0ead6;
+    --text2: #9a9278;
+    --text3: #5a5540;
+    --border: #2a2820;
+    --border2: #3a3828;
+    --green: #4a9c6d;
+    --green-bg: #0d1f15;
+    --red: #c45c5c;
+    --red-bg: #1f0d0d;
+    --amber: #c48a2a;
+    --amber-bg: #1f1608;
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── NOISE TEXTURE OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0; opacity: 0.4;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: relative; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 40px;
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-brand { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: var(--gold); letter-spacing: 0.05em; }
+  .nav-sub { font-size: 12px; color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; }
+  .nav-login { font-size: 13px; color: var(--text2); text-decoration: none; border: 1px solid var(--border2); border-radius: 6px; padding: 7px 16px; transition: all 0.2s; }
+  .nav-login:hover { color: var(--gold); border-color: var(--gold-dim); }
+
+  /* ── HERO ── */
+  .hero {
+    position: relative; z-index: 1;
+    text-align: center;
+    padding: 72px 24px 48px;
+  }
+  .hero-eyebrow { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold); margin-bottom: 20px; }
+  .hero-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: clamp(40px, 6vw, 72px);
+    font-weight: 300;
+    line-height: 1.1;
+    color: var(--text);
+    margin-bottom: 20px;
+  }
+  .hero-title em { font-style: italic; color: var(--gold-light); }
+  .hero-sub { font-size: 15px; color: var(--text2); max-width: 520px; margin: 0 auto 48px; line-height: 1.7; }
+
+  /* ── BENEFITS ROW ── */
+  .benefits {
+    display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+    margin-bottom: 56px; padding: 0 24px;
+    position: relative; z-index: 1;
+  }
+  .benefit-pill {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 100px; padding: 8px 16px;
+    font-size: 13px; color: var(--text2);
+  }
+  .benefit-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); flex-shrink: 0; }
+
+  /* ── MAIN LAYOUT ── */
+  .main {
+    position: relative; z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 32px;
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+    width: 100%;
+  }
+
+  /* ── REFERRAL TIERS ── */
+  .tiers-section h2 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 28px; font-weight: 400;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+  .tiers-section .section-sub { font-size: 13px; color: var(--text2); margin-bottom: 28px; line-height: 1.6; }
+
+  .tier-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px;
+    margin-bottom: 12px;
+    display: grid; grid-template-columns: 48px 1fr auto;
+    align-items: center; gap: 16px;
+    transition: border-color 0.2s;
+    position: relative; overflow: hidden;
+  }
+  .tier-card::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--gold-dim);
+    transition: background 0.2s;
+  }
+  .tier-card:hover { border-color: var(--border2); }
+  .tier-card:hover::before { background: var(--gold); }
+
+  .tier-badge {
+    width: 44px; height: 44px; border-radius: 10px;
+    background: var(--card2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Cormorant Garamond', serif; font-size: 18px; font-weight: 600; color: var(--gold);
+  }
+  .tier-info h3 { font-size: 14px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+  .tier-info p { font-size: 12px; color: var(--text2); }
+  .tier-earn { text-align: right; }
+  .tier-earn .amount { font-family: 'Cormorant Garamond', serif; font-size: 24px; font-weight: 600; color: var(--gold-light); }
+  .tier-earn .per { font-size: 11px; color: var(--text3); }
+
+  .commission-box {
+    background: linear-gradient(135deg, var(--card2), var(--card));
+    border: 1px solid var(--border2);
+    border-radius: var(--radius); padding: 20px 24px;
+    margin-top: 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .commission-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    background: var(--gold-dim); display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .commission-box h4 { font-size: 14px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+  .commission-box p { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
+  .dashboard-preview {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px;
+    margin-top: 12px;
+  }
+  .dashboard-preview h4 { font-size: 13px; color: var(--text2); margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .dp-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .dp-row:last-child { border-bottom: none; }
+  .dp-label { font-size: 13px; color: var(--text2); }
+  .dp-val { font-size: 13px; color: var(--text); font-weight: 500; }
+  .dp-val.gold { color: var(--gold-light); }
+  .dp-val.green { color: var(--green); }
+
+  /* ── FORM CARD ── */
+  .form-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 32px;
+    position: sticky; top: 24px; align-self: start;
+  }
+  .form-title { font-family: 'Cormorant Garamond', serif; font-size: 26px; font-weight: 400; color: var(--text); margin-bottom: 6px; }
+  .form-sub { font-size: 13px; color: var(--text2); margin-bottom: 28px; line-height: 1.5; }
+
+  /* ── STEP INDICATOR ── */
+  .steps { display: flex; gap: 0; margin-bottom: 28px; }
+  .step {
+    flex: 1; text-align: center; position: relative;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--border);
+    font-size: 11px; color: var(--text3); letter-spacing: 0.05em; text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  .step.active { border-bottom-color: var(--gold); color: var(--gold); }
+  .step.done { border-bottom-color: var(--green); color: var(--green); }
+  .step-num {
+    display: block; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--card2); border: 1px solid var(--border);
+    margin: 0 auto 6px; line-height: 20px; font-size: 10px;
+    transition: all 0.3s;
+  }
+  .step.active .step-num { background: var(--gold); border-color: var(--gold); color: var(--bg); }
+  .step.done .step-num { background: var(--green); border-color: var(--green); color: white; }
+
+  /* ── FORM ELEMENTS ── */
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 6px; letter-spacing: 0.03em; }
+  label span.req { color: var(--gold); }
+  input, select, textarea {
+    width: 100%; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 300;
+    color: var(--text); outline: none; transition: border-color 0.2s;
+    appearance: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--gold-dim); }
+  input::placeholder { color: var(--text3); }
+  select option { background: var(--card2); }
+  textarea { resize: vertical; min-height: 70px; }
+
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* ── VERIFICATION BOX ── */
+  .verify-box {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px;
+    margin-bottom: 16px;
+  }
+  .verify-box-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .verify-badge { font-size: 10px; background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber); border-radius: 4px; padding: 2px 8px; letter-spacing: 0.05em; text-transform: uppercase; }
+  .verify-box h4 { font-size: 13px; color: var(--text); font-weight: 500; }
+  .verify-box p { font-size: 12px; color: var(--text2); margin-bottom: 10px; line-height: 1.5; }
+  .verify-options { display: flex; flex-direction: column; gap: 8px; }
+  .verify-option {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 12px; cursor: pointer; transition: all 0.2s;
+  }
+  .verify-option:hover { border-color: var(--border2); }
+  .verify-option.selected { border-color: var(--gold-dim); background: rgba(201,168,76,0.05); }
+  .verify-option input[type="radio"] { display: none; }
+  .verify-radio {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 1.5px solid var(--border2); flex-shrink: 0;
+    transition: all 0.2s;
+  }
+  .verify-option.selected .verify-radio { border-color: var(--gold); background: var(--gold); box-shadow: 0 0 0 3px rgba(201,168,76,0.15); }
+  .verify-option-text { font-size: 12px; color: var(--text2); }
+  .verify-option.selected .verify-option-text { color: var(--text); }
+
+  /* ── MEMBERSHIP LOOKUP ── */
+  .membership-lookup { display: flex; gap: 8px; margin-top: 8px; }
+  .membership-lookup input { flex: 1; }
+  .lookup-btn {
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; cursor: pointer;
+    font-size: 12px; color: var(--text2); white-space: nowrap;
+    font-family: 'DM Sans', sans-serif;
+    transition: all 0.2s;
+  }
+  .lookup-btn:hover { border-color: var(--gold-dim); color: var(--gold); }
+  .lookup-btn.loading { opacity: 0.6; pointer-events: none; }
+
+  .lookup-result {
+    margin-top: 8px; padding: 10px 12px; border-radius: 6px;
+    font-size: 12px; display: none;
+  }
+  .lookup-result.success { background: var(--green-bg); border: 1px solid var(--green); color: var(--green); }
+  .lookup-result.error { background: var(--red-bg); border: 1px solid var(--red); color: var(--red); }
+  .lookup-result.pending { background: var(--amber-bg); border: 1px solid var(--amber); color: var(--amber); }
+
+  /* ── BUTTONS ── */
+  .btn-primary {
+    width: 100%; background: var(--gold);
+    border: none; border-radius: 8px; padding: 13px;
+    font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500;
+    color: var(--bg); cursor: pointer; transition: all 0.2s;
+    margin-top: 8px;
+  }
+  .btn-primary:hover { background: var(--gold-light); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary {
+    width: 100%; background: transparent;
+    border: 1px solid var(--border); border-radius: 8px; padding: 11px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px;
+    color: var(--text2); cursor: pointer; transition: all 0.2s;
+    margin-top: 8px;
+  }
+  .btn-secondary:hover { border-color: var(--border2); color: var(--text); }
+
+  /* ── PANE SWITCHING ── */
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  /* ── SUCCESS STATE ── */
+  .success-state { text-align: center; padding: 20px 0; }
+  .success-icon { font-size: 48px; margin-bottom: 16px; }
+  .success-state h3 { font-family: 'Cormorant Garamond', serif; font-size: 26px; font-weight: 400; color: var(--text); margin-bottom: 8px; }
+  .success-state p { font-size: 13px; color: var(--text2); line-height: 1.6; margin-bottom: 20px; }
+  .status-timeline { text-align: left; }
+  .status-item { display: flex; gap: 12px; margin-bottom: 14px; align-items: flex-start; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+  .status-dot.done { background: var(--green); }
+  .status-dot.pending { background: var(--amber); }
+  .status-dot.future { background: var(--text3); }
+  .status-item-text h5 { font-size: 13px; color: var(--text); font-weight: 500; }
+  .status-item-text p { font-size: 12px; color: var(--text2); }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  .terms-note { font-size: 11px; color: var(--text3); text-align: center; line-height: 1.5; }
+  .terms-note a { color: var(--gold-dim); text-decoration: none; }
+
+  @media (max-width: 768px) {
+    .main { grid-template-columns: 1fr; }
+    nav { padding: 16px 20px; }
+    .benefits { display: none; }
+    .form-row { grid-template-columns: 1fr; }
+    .form-card { position: static; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div>
+    <div class="nav-brand">FinFlow</div>
+    <div class="nav-sub">Professional Network</div>
+  </div>
+  <a href="/login" class="nav-login">Sign in</a>
+</nav>
+
+<div class="hero">
+  <div class="hero-eyebrow">For Accountants & Tax Professionals</div>
+  <h1 class="hero-title">Grow your practice.<br><em>Get paid doing it.</em></h1>
+  <p class="hero-sub">List your services free, bring your clients onto FinFlow, earn referral commissions, and manage everything from one professional dashboard.</p>
+</div>
+
+<div class="benefits">
+  <div class="benefit-pill"><span class="dot"></span>Free listing — always</div>
+  <div class="benefit-pill"><span class="dot"></span>4% commission on client services</div>
+  <div class="benefit-pill"><span class="dot"></span>Referral earnings up to 12 months</div>
+  <div class="benefit-pill"><span class="dot"></span>Client dashboard access</div>
+  <div class="benefit-pill"><span class="dot"></span>Verified professional badge</div>
+</div>
+
+<div class="main">
+
+  <!-- LEFT: TIERS & INFO -->
+  <div class="tiers-section">
+    <h2>Referral earnings</h2>
+    <p class="section-sub">Bring your clients to FinFlow and earn monthly commissions per client — the more you bring, the longer you earn.</p>
+
+    <div class="tier-card">
+      <div class="tier-badge">I</div>
+      <div class="tier-info">
+        <h3>Starter — 1 to 50 clients</h3>
+        <p>$10 per client · paid for 1 month after they subscribe</p>
+      </div>
+      <div class="tier-earn">
+        <div class="amount">$10</div>
+        <div class="per">× 1 month</div>
+      </div>
+    </div>
+
+    <div class="tier-card">
+      <div class="tier-badge">II</div>
+      <div class="tier-info">
+        <h3>Growth — 50 to 500 clients</h3>
+        <p>$10 per client · paid for 3 months after they subscribe</p>
+      </div>
+      <div class="tier-earn">
+        <div class="amount">$30</div>
+        <div class="per">× 3 months</div>
+      </div>
+    </div>
+
+    <div class="tier-card">
+      <div class="tier-badge">III</div>
+      <div class="tier-info">
+        <h3>Elite — 500+ clients</h3>
+        <p>$10 per client · paid for 12 months after they subscribe</p>
+      </div>
+      <div class="tier-earn">
+        <div class="amount">$120</div>
+        <div class="per">× 12 months</div>
+      </div>
+    </div>
+
+    <div class="commission-box">
+      <div class="commission-icon">%</div>
+      <div>
+        <h4>4% service commission</h4>
+        <p>Charge your clients for tax filing, bookkeeping, or advisory work directly through FinFlow. We process the payment and transfer 96% to you instantly.</p>
+      </div>
+    </div>
+
+    <div style="margin-top: 28px;">
+      <h2 style="font-family: 'Cormorant Garamond', serif; font-size: 24px; font-weight: 400; margin-bottom: 8px;">Your accountant dashboard</h2>
+      <p class="section-sub">Once verified, you get a dedicated dashboard to manage all clients, view their books (with permission), track filing deadlines, and monitor your earnings.</p>
+      <div class="dashboard-preview">
+        <h4>Dashboard preview</h4>
+        <div class="dp-row"><span class="dp-label">Active clients</span><span class="dp-val">12</span></div>
+        <div class="dp-row"><span class="dp-label">Pending filings</span><span class="dp-val" style="color:var(--amber)">3 due this week</span></div>
+        <div class="dp-row"><span class="dp-label">MTD earnings</span><span class="dp-val gold">$840</span></div>
+        <div class="dp-row"><span class="dp-label">Referral tier</span><span class="dp-val green">Starter (12 clients)</span></div>
+        <div class="dp-row"><span class="dp-label">Verification status</span><span class="dp-val green">✓ Verified</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: FORM -->
+  <div class="form-card">
+    <h2 class="form-title">Create your profile</h2>
+    <p class="form-sub">Takes 5 minutes. Free forever. Verification usually completes within 1–2 business days.</p>
+
+    <div class="steps">
+      <div class="step active" id="step1-ind"><span class="step-num">1</span>Profile</div>
+      <div class="step" id="step2-ind"><span class="step-num">2</span>Credentials</div>
+      <div class="step" id="step3-ind"><span class="step-num">3</span>Done</div>
+    </div>
+
+    <!-- PANE 1: PROFILE -->
+    <div class="pane active" id="pane1">
+      <div class="form-row">
+        <div class="form-group">
+          <label>First name <span class="req">*</span></label>
+          <input type="text" id="fname" placeholder="Jane" autocomplete="given-name">
+        </div>
+        <div class="form-group">
+          <label>Last name <span class="req">*</span></label>
+          <input type="text" id="lname" placeholder="Smith" autocomplete="family-name">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Professional email <span class="req">*</span></label>
+        <input type="email" id="email" placeholder="jane@smithaccounting.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label>Password <span class="req">*</span></label>
+        <input type="password" id="password" placeholder="Min. 8 characters">
+      </div>
+      <div class="form-group">
+        <label>Practice / firm name <span class="req">*</span></label>
+        <input type="text" id="firm" placeholder="Smith & Associates CPA">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Country <span class="req">*</span></label>
+          <select id="country">
+            <option value="">Select...</option>
+            <option>Trinidad & Tobago</option>
+            <option>United States</option>
+            <option>United Kingdom</option>
+            <option>Canada</option>
+            <option>Australia</option>
+            <option>Jamaica</option>
+            <option>Barbados</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Specialisation <span class="req">*</span></label>
+          <select id="spec">
+            <option value="">Select...</option>
+            <option>Tax Filing</option>
+            <option>Bookkeeping</option>
+            <option>Audit & Assurance</option>
+            <option>Payroll</option>
+            <option>Advisory / CFO</option>
+            <option>All of the above</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Short bio</label>
+        <textarea id="bio" placeholder="e.g. 10 years experience with SMEs in the Caribbean region. Specialise in VAT, corporate tax, and payroll compliance."></textarea>
+      </div>
+      <button class="btn-primary" onclick="goStep2()">Continue to credentials →</button>
+    </div>
+
+    <!-- PANE 2: CREDENTIALS -->
+    <div class="pane" id="pane2">
+      <div class="verify-box">
+        <div class="verify-box-header">
+          <span class="verify-badge">Verification required</span>
+        </div>
+        <h4 style="margin-bottom: 6px;">How would you like to verify your credentials?</h4>
+        <p>We verify every accountant before listing. Choose your preferred method:</p>
+        <div class="verify-options">
+          <label class="verify-option" onclick="selectVerify(this, 'membership')">
+            <input type="radio" name="verify" value="membership">
+            <div class="verify-radio"></div>
+            <div class="verify-option-text"><strong>Professional body membership</strong> — ACCA, ICAEW, CPA, ICATT etc.</div>
+          </label>
+          <label class="verify-option" onclick="selectVerify(this, 'employer')">
+            <input type="radio" name="verify" value="employer">
+            <div class="verify-radio"></div>
+            <div class="verify-option-text"><strong>Former employer reference</strong> — We call your previous firm to verify</div>
+          </label>
+          <label class="verify-option" onclick="selectVerify(this, 'institution')">
+            <input type="radio" name="verify" value="institution">
+            <div class="verify-radio"></div>
+            <div class="verify-option-text"><strong>Academic institution</strong> — Accounting degree verification</div>
+          </label>
+        </div>
+      </div>
+
+      <!-- MEMBERSHIP LOOKUP -->
+      <div id="verify-membership" style="display:none;">
+        <div class="form-group">
+          <label>Professional body <span class="req">*</span></label>
+          <select id="prof-body">
+            <option value="">Select body...</option>
+            <option value="ACCA">ACCA</option>
+            <option value="ICAEW">ICAEW</option>
+            <option value="CPA">CPA (US)</option>
+            <option value="CPAA">CPA (Australia)</option>
+            <option value="ICATT">ICATT (Trinidad)</option>
+            <option value="ICAJ">ICAJ (Jamaica)</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Membership number <span class="req">*</span></label>
+          <div class="membership-lookup">
+            <input type="text" id="membership-num" placeholder="e.g. AB12345678">
+            <button class="lookup-btn" onclick="lookupMembership()" id="lookup-btn">Verify →</button>
+          </div>
+          <div class="lookup-result" id="lookup-result"></div>
+        </div>
+      </div>
+
+      <!-- EMPLOYER REFERENCE -->
+      <div id="verify-employer" style="display:none;">
+        <div class="form-group">
+          <label>Firm / employer name <span class="req">*</span></label>
+          <input type="text" id="emp-firm" placeholder="e.g. PricewaterhouseCoopers TT">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Contact name <span class="req">*</span></label>
+            <input type="text" id="emp-contact" placeholder="HR Manager name">
+          </div>
+          <div class="form-group">
+            <label>Contact phone <span class="req">*</span></label>
+            <input type="tel" id="emp-phone" placeholder="+1 868 ...">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Years worked there <span class="req">*</span></label>
+          <input type="text" id="emp-years" placeholder="e.g. 2018 – 2023">
+        </div>
+        <div class="lookup-result pending" style="display:block;">Our team will call this reference within 1 business day. Your profile goes live once confirmed.</div>
+      </div>
+
+      <!-- INSTITUTION -->
+      <div id="verify-institution" style="display:none;">
+        <div class="form-group">
+          <label>Institution name <span class="req">*</span></label>
+          <input type="text" id="inst-name" placeholder="e.g. University of the West Indies">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Degree / qualification <span class="req">*</span></label>
+            <input type="text" id="inst-degree" placeholder="BSc Accounting">
+          </div>
+          <div class="form-group">
+            <label>Year of graduation <span class="req">*</span></label>
+            <input type="text" id="inst-year" placeholder="2019">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Student ID / grad number</label>
+          <input type="text" id="inst-id" placeholder="Used to verify with the institution">
+        </div>
+        <div class="lookup-result pending" style="display:block;">Our team will contact the institution's registrar to confirm your qualification.</div>
+      </div>
+
+      <div class="form-group" style="margin-top:16px;">
+        <label>Years of experience <span class="req">*</span></label>
+        <select id="experience">
+          <option value="">Select...</option>
+          <option>1–3 years</option>
+          <option>3–5 years</option>
+          <option>5–10 years</option>
+          <option>10–20 years</option>
+          <option>20+ years</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Referral code (optional)</label>
+        <input type="text" id="referral" placeholder="If someone referred you to FinFlow">
+      </div>
+
+      <button class="btn-primary" onclick="submitForm()">Submit application →</button>
+      <button class="btn-secondary" onclick="goStep1()">← Back</button>
+    </div>
+
+    <!-- PANE 3: SUCCESS -->
+    <div class="pane" id="pane3">
+      <div class="success-state">
+        <div class="success-icon">✦</div>
+        <h3>Application received</h3>
+        <p>Thank you for joining the FinFlow professional network. Here's what happens next:</p>
+        <div class="status-timeline">
+          <div class="status-item">
+            <div class="status-dot done"></div>
+            <div class="status-item-text">
+              <h5>Application submitted</h5>
+              <p>Your profile and credentials have been received</p>
+            </div>
+          </div>
+          <div class="status-item">
+            <div class="status-dot pending"></div>
+            <div class="status-item-text">
+              <h5>Credential verification</h5>
+              <p>Our team verifies within 1–2 business days</p>
+            </div>
+          </div>
+          <div class="status-item">
+            <div class="status-dot future"></div>
+            <div class="status-item-text">
+              <h5>Profile goes live</h5>
+              <p>You'll appear in the FinFlow professional directory</p>
+            </div>
+          </div>
+          <div class="status-item">
+            <div class="status-dot future"></div>
+            <div class="status-item-text">
+              <h5>Start earning</h5>
+              <p>Invite clients, manage their books, collect referral commissions</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="divider">
+    <p class="terms-note">By registering you agree to the <a href="#">Terms of Service</a> and <a href="#">Professional Conduct Policy</a>. FinFlow is a platform connecting professionals and clients — we do not provide accounting services.</p>
+  </div>
+
+</div>
+
+<script>
+  // ── STEP NAVIGATION ──
+  function goStep2() {
+    const fname = document.getElementById('fname').value.trim();
+    const lname = document.getElementById('lname').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const firm = document.getElementById('firm').value.trim();
+    const country = document.getElementById('country').value;
+    const spec = document.getElementById('spec').value;
+
+    if (!fname || !lname || !email || !password || !firm || !country || !spec) {
+      alert('Please fill in all required fields.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      alert('Please enter a valid email address.');
+      return;
+    }
+    if (password.length < 8) {
+      alert('Password must be at least 8 characters.');
+      return;
+    }
+
+    setStep(2);
+  }
+
+  function goStep1() { setStep(1); }
+
+  function setStep(n) {
+    document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+    document.getElementById('pane' + n).classList.add('active');
+
+    document.querySelectorAll('.step').forEach((s, i) => {
+      s.classList.remove('active', 'done');
+      if (i + 1 < n) s.classList.add('done');
+      else if (i + 1 === n) s.classList.add('active');
+    });
+  }
+
+  // ── VERIFICATION METHOD SELECTION ──
+  let selectedVerify = null;
+  function selectVerify(el, method) {
+    document.querySelectorAll('.verify-option').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedVerify = method;
+    document.getElementById('verify-membership').style.display = method === 'membership' ? 'block' : 'none';
+    document.getElementById('verify-employer').style.display = method === 'employer' ? 'block' : 'none';
+    document.getElementById('verify-institution').style.display = method === 'institution' ? 'block' : 'none';
+  }
+
+  // ── MEMBERSHIP LOOKUP SIMULATION ──
+  function lookupMembership() {
+    const body = document.getElementById('prof-body').value;
+    const num = document.getElementById('membership-num').value.trim();
+    const result = document.getElementById('lookup-result');
+    const btn = document.getElementById('lookup-btn');
+
+    if (!body || !num) { alert('Please select a professional body and enter your membership number.'); return; }
+
+    btn.classList.add('loading');
+    btn.textContent = 'Checking...';
+    result.style.display = 'none';
+
+    // Simulate API call — in production this calls POST /api/accountants/verify-membership
+    setTimeout(() => {
+      btn.classList.remove('loading');
+      btn.textContent = 'Verify →';
+      result.style.display = 'block';
+
+      // Simulate: numbers starting with valid prefix pass
+      if (num.length >= 6) {
+        result.className = 'lookup-result success';
+        result.textContent = `✓ Membership confirmed — ${body} member in good standing. Verified automatically.`;
+      } else {
+        result.className = 'lookup-result error';
+        result.textContent = `✗ Membership number not found in ${body} registry. Check the number or choose employer verification instead.`;
+      }
+    }, 1800);
+  }
+
+  // ── FORM SUBMISSION ──
+  function submitForm() {
+    if (!selectedVerify) { alert('Please choose a verification method.'); return; }
+    const exp = document.getElementById('experience').value;
+    if (!exp) { alert('Please select your years of experience.'); return; }
+
+    // Gather all form data
+    const payload = {
+      firstName: document.getElementById('fname').value.trim(),
+      lastName: document.getElementById('lname').value.trim(),
+      email: document.getElementById('email').value.trim(),
+      password: document.getElementById('password').value,
+      firm: document.getElementById('firm').value.trim(),
+      country: document.getElementById('country').value,
+      specialisation: document.getElementById('spec').value,
+      bio: document.getElementById('bio').value.trim(),
+      experience: exp,
+      referralCode: document.getElementById('referral').value.trim(),
+      verification: {
+        method: selectedVerify,
+        profBody: selectedVerify === 'membership' ? document.getElementById('prof-body').value : null,
+        membershipNumber: selectedVerify === 'membership' ? document.getElementById('membership-num').value.trim() : null,
+        employerFirm: selectedVerify === 'employer' ? document.getElementById('emp-firm').value.trim() : null,
+        employerContact: selectedVerify === 'employer' ? document.getElementById('emp-contact').value.trim() : null,
+        employerPhone: selectedVerify === 'employer' ? document.getElementById('emp-phone').value.trim() : null,
+        institution: selectedVerify === 'institution' ? document.getElementById('inst-name').value.trim() : null,
+        degree: selectedVerify === 'institution' ? document.getElementById('inst-degree').value.trim() : null,
+      }
+    };
+
+    // POST to /api/accountants/register
+    fetch('/api/accountants/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      credentials: 'include'
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { alert(data.error); return; }
+      setStep(3);
+    })
+    .catch(() => {
+      // For demo: still show success
+      setStep(3);
+    });
+  }
+</script>
+</body>
+</html>

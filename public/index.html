@@ -9937,7 +9937,7 @@ async function loadDirectory() {
   loadMyAccountant();
 }
 
-function filterAccountants() {
+window.filterAccountants = function() {
   const q = (document.getElementById('acc-search')?.value || '').toLowerCase();
   const country = document.getElementById('acc-filter-country')?.value || '';
   const spec = document.getElementById('acc-filter-spec')?.value || '';
@@ -10020,7 +10020,7 @@ function renderLinkedAccountant() {
   if (access) access.style.display = 'block';
 }
 
-async function requestAccountant(accountantId, name) {
+window.requestAccountant = async function(accountantId, name) {
   try {
     const res = await fetch('/api/accountants/request-access', {
       method: 'POST', credentials: 'include',
@@ -10028,20 +10028,25 @@ async function requestAccountant(accountantId, name) {
       body: JSON.stringify({ accountantId }),
     });
     const data = await res.json();
-    if (data.error) { if(typeof notify==='function') notify('Error: ' + data.error); return; }
-    if(typeof notify==='function') notify(`Access request sent to ${name} ✓`);
+    if (data.error) {
+      if(typeof notify==='function') notify('⚠ ' + data.error);
+      else alert(data.error);
+      return;
+    }
+    if(typeof notify==='function') notify(`✓ ${name} linked to your account`);
+    else alert('Accountant linked successfully!');
     showPage('my-accountant', null);
-    loadMyAccountant();
+    setTimeout(loadMyAccountant, 300);
   } catch(e) {
-    if(typeof notify==='function') notify('Could not send request. Try again.');
+    if(typeof notify==='function') notify('Could not send request — are you logged in?');
   }
 }
 
-function updateAccPermission(type, val) {
+window.updateAccPermission = function(type, val) {
   if(typeof notify==='function') notify(`${type === 'view' ? 'View' : 'Filing'} access ${val ? 'granted' : 'revoked'}`);
 }
 
-function revokeAccountant() {
+window.revokeAccountant = function() {
   if (!confirm('Are you sure you want to revoke this accountant\'s access?')) return;
   linkedAccountant = null;
   const content = document.getElementById('my-acc-content');

@@ -54,7 +54,7 @@ app.use(express.json({ limit: '10mb' })); // 10 mb covers base64-encoded receipt
 app.use(express.urlencoded({ extended: false }));
 app.set('trust proxy', 1);
 app.use(session({
-  store: new pgSession({ pool, tableName: 'session', createTableIfMissing: false }),
+  store: new pgSession({ pool, tableName: 'session', createTableIfMissing: true }),
   secret: process.env.SESSION_SECRET || 'finflow-dev-secret-change-in-production',
   resave: false,
   saveUninitialized: false,
@@ -75,7 +75,7 @@ function requireAuth(req, res, next) {
 
 function safeUser(u) {
   if (!u) return null;
-  return { id: u.id, email: u.email, name: u.name || '', plan: u.plan || 'Pro', role: u.role || 'owner' };
+  return { id: u.id, email: u.email, name: u.name || '', plan: u.plan || 'trial', trial_ends: u.trial_ends || null, role: u.role || 'owner' };
 }
 
 // Wraps async route handlers so any thrown error is forwarded to Express error handler
@@ -906,7 +906,7 @@ app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
   for (const exp of expenses) {
     for (const rule of rules) {
       const haystack = rule.match_type === 'vendor'
-        ? (exp.description || '').toLowerCase()
+        ? (exp.vendor || exp.description || '').toLowerCase()
         : (exp.description || '').toLowerCase();
       if (haystack.includes(rule.keyword)) {
         await db.update('expenses', r => r.id === exp.id, { category: rule.category });
@@ -1057,11 +1057,27 @@ app.get('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   res.json(await db.all('sales_receipts', r => r.user_id === req.session.userId));
 }));
 app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
-  const { row } = await db.insert('sales_receipts', { ...req.body, user_id: req.session.userId });
+  const { customer, num, amount, date, method = 'Card' } = req.body || {};
+  if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
+  const { row } = await db.insert('sales_receipts', {
+    user_id: req.session.userId,
+    customer: String(customer).trim().slice(0, 200),
+    num: String(num || 'SR-' + String(Date.now()).slice(-4)).slice(0, 30),
+    amount: parseFloat(amount) || 0,
+    date: date || new Date().toISOString().slice(0, 10),
+    method: String(method).slice(0, 50),
+  });
   res.json(row);
 }));
 app.put('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
-  await db.update('sales_receipts', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, req.body);
+  const b = req.body || {};
+  const patch = {};
+  if (b.customer != null) patch.customer = String(b.customer).trim().slice(0, 200);
+  if (b.amount   != null) patch.amount   = parseFloat(b.amount) || 0;
+  if (b.date     != null) patch.date     = b.date;
+  if (b.method   != null) patch.method   = String(b.method).slice(0, 50);
+  if (b.num      != null) patch.num      = String(b.num).slice(0, 30);
+  await db.update('sales_receipts', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, patch);
   res.json({ ok: true });
 }));
 app.delete('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
@@ -1074,11 +1090,27 @@ app.get('/api/payments-received', requireAuth, wrap(async (req, res) => {
   res.json(await db.all('payments_received', r => r.user_id === req.session.userId));
 }));
 app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
-  const { row } = await db.insert('payments_received', { ...req.body, user_id: req.session.userId });
+  const { customer, invoice_ref, amount, date, method = 'Bank Transfer' } = req.body || {};
+  if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
+  const { row } = await db.insert('payments_received', {
+    user_id: req.session.userId,
+    customer: String(customer).trim().slice(0, 200),
+    invoice_ref: String(invoice_ref || '').slice(0, 50),
+    amount: parseFloat(amount) || 0,
+    date: date || new Date().toISOString().slice(0, 10),
+    method: String(method).slice(0, 50),
+  });
   res.json(row);
 }));
 app.put('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
-  await db.update('payments_received', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, req.body);
+  const b = req.body || {};
+  const patch = {};
+  if (b.customer     != null) patch.customer     = String(b.customer).trim().slice(0, 200);
+  if (b.invoice_ref  != null) patch.invoice_ref  = String(b.invoice_ref).slice(0, 50);
+  if (b.amount       != null) patch.amount       = parseFloat(b.amount) || 0;
+  if (b.date         != null) patch.date         = b.date;
+  if (b.method       != null) patch.method       = String(b.method).slice(0, 50);
+  await db.update('payments_received', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, patch);
   res.json({ ok: true });
 }));
 app.delete('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
@@ -1091,11 +1123,30 @@ app.get('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   res.json(await db.all('credit_notes', r => r.user_id === req.session.userId));
 }));
 app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
-  const { row } = await db.insert('credit_notes', { ...req.body, user_id: req.session.userId });
+  const { customer, num, amount, date, status = 'Open', reason = '' } = req.body || {};
+  if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
+  const validStatuses = ['Open', 'Applied', 'Void'];
+  const { row } = await db.insert('credit_notes', {
+    user_id: req.session.userId,
+    customer: String(customer).trim().slice(0, 200),
+    num: String(num || 'CN-' + String(Date.now()).slice(-4)).slice(0, 30),
+    amount: parseFloat(amount) || 0,
+    date: date || new Date().toISOString().slice(0, 10),
+    status: validStatuses.includes(status) ? status : 'Open',
+    reason: String(reason).slice(0, 300),
+  });
   res.json(row);
 }));
 app.put('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
-  await db.update('credit_notes', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, req.body);
+  const b = req.body || {};
+  const patch = {};
+  const validStatuses = ['Open', 'Applied', 'Void'];
+  if (b.customer != null) patch.customer = String(b.customer).trim().slice(0, 200);
+  if (b.amount   != null) patch.amount   = parseFloat(b.amount) || 0;
+  if (b.date     != null) patch.date     = b.date;
+  if (b.status   != null) patch.status   = validStatuses.includes(b.status) ? b.status : 'Open';
+  if (b.reason   != null) patch.reason   = String(b.reason).slice(0, 300);
+  await db.update('credit_notes', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, patch);
   res.json({ ok: true });
 }));
 app.delete('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
@@ -1125,11 +1176,30 @@ app.get('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   res.json(await db.all('vendor_credits', r => r.user_id === req.session.userId));
 }));
 app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
-  const { row } = await db.insert('vendor_credits', { ...req.body, user_id: req.session.userId });
+  const { vendor, num, amount, date, status = 'Open', reason = '' } = req.body || {};
+  if (!vendor || amount == null) return res.status(400).json({ error: 'vendor and amount required.' });
+  const validStatuses = ['Open', 'Applied', 'Void'];
+  const { row } = await db.insert('vendor_credits', {
+    user_id: req.session.userId,
+    vendor: String(vendor).trim().slice(0, 200),
+    num: String(num || 'VC-' + String(Date.now()).slice(-4)).slice(0, 30),
+    amount: parseFloat(amount) || 0,
+    date: date || new Date().toISOString().slice(0, 10),
+    status: validStatuses.includes(status) ? status : 'Open',
+    reason: String(reason).slice(0, 300),
+  });
   res.json(row);
 }));
 app.put('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
-  await db.update('vendor_credits', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, req.body);
+  const b = req.body || {};
+  const patch = {};
+  const validStatuses = ['Open', 'Applied', 'Void'];
+  if (b.vendor  != null) patch.vendor  = String(b.vendor).trim().slice(0, 200);
+  if (b.amount  != null) patch.amount  = parseFloat(b.amount) || 0;
+  if (b.date    != null) patch.date    = b.date;
+  if (b.status  != null) patch.status  = validStatuses.includes(b.status) ? b.status : 'Open';
+  if (b.reason  != null) patch.reason  = String(b.reason).slice(0, 300);
+  await db.update('vendor_credits', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, patch);
   res.json({ ok: true });
 }));
 app.delete('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {

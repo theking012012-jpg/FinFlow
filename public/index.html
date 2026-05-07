@@ -2230,11 +2230,11 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="card" style="margin-bottom:0;position:relative">
             <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:.75rem">Pro</div>
             <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:4px">
-              <span style="font-size:36px;font-weight:300;font-family:var(--font-display);font-style:italic;color:var(--t1)" id="price-pro">$59</span>
+              <span style="font-size:36px;font-weight:300;font-family:var(--font-display);font-style:italic;color:var(--t1)" id="price-pro">$79</span>
               <span style="font-size:13px;color:var(--t3)">/mo</span>
             </div>
             <div style="font-size:11.5px;color:var(--t3);margin-bottom:1.25rem" id="price-pro-sub">Billed monthly</div>
-            <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px" onclick="notify('Starting Pro trial — no card required ✦')">Start free trial</button>
+            <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px" onclick="startTrial('pro')">Start free trial</button>
             <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">What's included</div>
             <div id="pro-features"></div>
           </div>
@@ -2248,7 +2248,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <span style="font-size:13px;color:var(--t3)">/mo</span>
             </div>
             <div style="font-size:11.5px;color:var(--t3);margin-bottom:1.25rem" id="price-biz-sub">Billed monthly</div>
-            <button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px" onclick="notify('Starting Business trial — no card required ✦')">Start free trial</button>
+            <button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px" onclick="startTrial('business')">Start free trial</button>
             <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">Everything in Pro, plus</div>
             <div id="biz-features"></div>
           </div>
@@ -7998,6 +7998,27 @@ window.showPage=function(id,el){
 };
 </script>
 
+
+// ── TRIAL / CHECKOUT ──────────────────────────────────────────────────────────
+async function startTrial(plan) {
+  try {
+    notify('Redirecting to checkout… ✦');
+    const res = await fetch('/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan }),
+    });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      notify('Checkout unavailable — please try again.');
+    }
+  } catch (e) {
+    notify('Checkout unavailable — please try again.');
+  }
+}
+
 <!-- AI runs through /api/ai on the server — no client-side key needed -->
 <script>
 // No-op stubs so any legacy call-sites don't throw
@@ -8377,7 +8398,7 @@ const ENT_FEATURES=[
 ];
 
 const COMPARE_ROWS=[
-  {feature:'Starting price',ff:'$59/mo',qb:'$35/mo',xero:'$29/mo',fb:'$19/mo',ffWins:false},
+  {feature:'Starting price',ff:'$79/mo',qb:'$35/mo',xero:'$29/mo',fb:'$19/mo',ffWins:false},
   {feature:'Business tier price',ff:'$199/mo',qb:'$275/mo',xero:'$90/mo',fb:'$60/mo',ffWins:true},
   {feature:'Native AI assistant',ff:'✓ Claude',qb:'Limited',xero:'✗',fb:'✗',ffWins:true},
   {feature:'Multi-entity (same plan)',ff:'✓',qb:'✗ Extra sub',xero:'✗ Extra org',fb:'✗',ffWins:true},
@@ -8403,15 +8424,15 @@ let isAnnual=false;
 
 window.toggleBilling=function(){
   isAnnual=!isAnnual;
-  const pro=isAnnual?Math.round(59*.8):59;
-  const biz=isAnnual?Math.round(199*.8):199;
+  const pro=isAnnual?63:79;
+  const biz=isAnnual?159:199;
   const proEl=document.getElementById('price-pro');
   const bizEl=document.getElementById('price-biz');
   const proSub=document.getElementById('price-pro-sub');
   const bizSub=document.getElementById('price-biz-sub');
   if(proEl)proEl.textContent='$'+pro;
   if(bizEl)bizEl.textContent='$'+biz;
-  if(proSub)proSub.textContent=isAnnual?`$${pro*12}/yr · save $${(59-pro)*12}`:'Billed monthly';
+  if(proSub)proSub.textContent=isAnnual?`$${pro*12}/yr · save $${(79-pro)*12}`:'Billed monthly';
   if(bizSub)bizSub.textContent=isAnnual?`$${biz*12}/yr · save $${(199-biz)*12}`:'Billed monthly';
 };
 

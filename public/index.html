@@ -4726,6 +4726,7 @@ function saveInvoice(){
   const due=document.getElementById('inv-due').value;
   const status=document.getElementById('inv-status').value;
   const dueStr=due?new Date(due).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'TBD';
+  if(!userInvoices) userInvoices = [];
   userInvoices.push({client,amount,due:dueStr,color:status==='overdue'?'var(--red)':'var(--t2)',status});
   closeModal('invoice-modal');
   renderInvoices();
@@ -4770,6 +4771,7 @@ function saveExpense(){
   if(!desc){notify('Description is required',true);return;}
   if(amountRaw===null||amountRaw<=0){notify('A valid positive amount is required',true);return;}
   const amount=amountRaw;
+  if(!bizExpenses) bizExpenses = [];
   bizExpenses.unshift({desc,cat:document.getElementById('bexp-cat').value,amount,ded:document.getElementById('bexp-ded').value,date:'Today'});
   closeModal('expense-modal');
   renderExpenses();

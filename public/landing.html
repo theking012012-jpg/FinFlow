@@ -430,12 +430,22 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
       <div class="sec-label reveal" style="text-align:center">Pricing</div>
       <h2 class="sec-h2 reveal d1" style="text-align:center">Simple. Honest.<br><em>No surprises.</em></h2>
       <p class="sec-sub reveal d2" style="margin:0 auto;text-align:center">14-day free trial on every plan. No credit card required.</p>
+      <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:1.25rem">
+        <span style="font-size:13px;color:var(--t2)" id="lbl-mo">Monthly</span>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
+          <input type="checkbox" id="landing-billing-toggle" style="opacity:0;width:0;height:0" onchange="toggleLandingBilling()">
+          <span style="position:absolute;inset:0;background:var(--bd2);border-radius:100px;transition:.3s" id="toggle-track"></span>
+          <span style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:.3s" id="toggle-thumb"></span>
+        </label>
+        <span style="font-size:13px;color:var(--t2)">Annual</span>
+        <span style="font-size:11px;font-weight:600;color:#27500A;background:#EAF3DE;padding:2px 8px;border-radius:100px">Save 20%</span>
+      </div>
     </div>
     <div class="p-grid">
       <div class="p-card reveal">
         <div class="p-tier">Pro</div>
-        <div class="p-amt"><sup>$</sup>59</div>
-        <div class="p-period">per month</div>
+        <div class="p-amt"><sup>$</sup><span id="land-price-pro">79</span></div>
+        <div class="p-period" id="land-period-pro">per month</div>
         <a href="/app" class="p-cta p-cta-g" style="text-decoration:none;display:block;text-align:center">Start free trial</a>
         <div class="p-feats">
           <div class="p-feat"><span class="p-check">✓</span>1 business entity</div>
@@ -454,8 +464,8 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
       <div class="p-card hot reveal d1">
         <div class="p-badge">MOST POPULAR</div>
         <div class="p-tier" style="color:var(--acc);margin-top:.75rem">Business</div>
-        <div class="p-amt" style="color:var(--acc-light)"><sup style="color:var(--t2)">$</sup>199</div>
-        <div class="p-period">per month</div>
+        <div class="p-amt" style="color:var(--acc-light)"><sup style="color:var(--t2)">$</sup><span id="land-price-biz">199</span></div>
+        <div class="p-period" id="land-period-biz">per month</div>
         <a href="/app" class="p-cta p-cta-p" style="text-decoration:none;display:block;text-align:center">Start free trial</a>
         <div class="p-feats">
           <div class="p-feat"><span class="p-check">✓</span>Up to 5 entities (separate ledgers)</div>
@@ -548,6 +558,27 @@ setTimeout(()=>{
   if(t)t.style.display='flex';
   setTimeout(()=>{if(t)t.style.display='none';if(a)a.style.display='block';},2400);
 },3500);
+</script>
+
+<script>
+var landingAnnual = false;
+function toggleLandingBilling() {
+  landingAnnual = !landingAnnual;
+  var pro = landingAnnual ? 63 : 79;
+  var biz = landingAnnual ? 159 : 199;
+  var track = document.getElementById('toggle-track');
+  var thumb = document.getElementById('toggle-thumb');
+  if (track) track.style.background = landingAnnual ? 'var(--acc)' : 'var(--bd2)';
+  if (thumb) thumb.style.left = landingAnnual ? '23px' : '3px';
+  var proEl = document.getElementById('land-price-pro');
+  var bizEl = document.getElementById('land-price-biz');
+  var proPer = document.getElementById('land-period-pro');
+  var bizPer = document.getElementById('land-period-biz');
+  if (proEl) proEl.textContent = pro;
+  if (bizEl) bizEl.textContent = biz;
+  if (proPer) proPer.textContent = landingAnnual ? '$' + (pro*12) + '/yr · save $192' : 'per month';
+  if (bizPer) bizPer.textContent = landingAnnual ? '$' + (biz*12) + '/yr · save $480' : 'per month';
+}
 </script>
 </body>
 </html>

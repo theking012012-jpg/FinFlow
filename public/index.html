@@ -2214,7 +2214,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <!-- Billing toggle -->
           <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:1rem">
             <span id="bill-monthly-label" style="font-size:12.5px;font-weight:500;color:var(--t1)">Monthly</span>
-            <label class="toggle" onclick="toggleBilling()">
+            <label class="toggle" onclick="setTimeout(toggleBilling,0)">
               <input type="checkbox" id="billing-toggle">
               <div class="toggle-track"></div>
               <div class="toggle-thumb"></div>
@@ -8423,7 +8423,8 @@ const FAQ=[
 let isAnnual=false;
 
 window.toggleBilling=function(){
-  isAnnual=!isAnnual;
+  const cb=document.getElementById('billing-toggle');
+  isAnnual=cb?cb.checked:!isAnnual;
   const pro=isAnnual?63:79;
   const biz=isAnnual?159:199;
   const proEl=document.getElementById('price-pro');

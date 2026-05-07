@@ -97,7 +97,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const hash = bcrypt.hashSync(password, 12);
     const { lastInsertRowid: userId } = await db.insert('users', {
       email: email.toLowerCase(), password: hash,
-      name: (name || '').trim().slice(0, 100), plan: 'Pro', role: 'owner',
+      name: (name || '').trim().slice(0, 100), plan: 'trial', trial_ends: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner',
     });
 
     seedUserData(userId).catch(e => console.error('[Register] seedUserData failed for userId', userId, e));
@@ -1267,7 +1267,7 @@ app.post('/api/ai', requireAuth, async (req, res) => {
     const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0);
 
     const model = COMPLEX_QUERY_RE.test(message)
-      ? 'claude-sonnet-4-5-20250514'
+      ? 'claude-sonnet-4-20250514'
       : 'claude-haiku-4-5-20251001';
 
     // Instructions are static across all users — cache them at the system level.
@@ -1297,7 +1297,7 @@ Overdue Invoices: ${invoices.filter(i => i.status === 'overdue').length}`;
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'x-api-key':        process.env.ANTHROPIC_API_KEY || '',
+        'x-api-key':        process.env.ANTHROPIC_API_KEY?.trim(),
         'anthropic-version': '2023-06-01',
         'anthropic-beta':    'prompt-caching-2024-07-31',
         'content-type':      'application/json',
@@ -1372,12 +1372,12 @@ If you cannot read a field clearly, use null. Do not invent data.`;
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'x-api-key':        process.env.ANTHROPIC_API_KEY || '',
+        'x-api-key':        process.env.ANTHROPIC_API_KEY?.trim(),
         'anthropic-version': '2023-06-01',
         'content-type':      'application/json',
       },
       body: JSON.stringify({
-        model:      'claude-sonnet-4-5-20250514',
+        model:      'claude-sonnet-4-20250514',
         max_tokens: 500,
         messages:   [{ role: 'user', content: [contentBlock, { type: 'text', text: prompt }] }],
       }),

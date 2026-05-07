@@ -639,6 +639,51 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
     req.session.destroy(() => res.json({ ok: true }));
   });
 
+  // ── PUBLIC DIRECTORY — verified accountants only ───────────────────────────
+  app.get('/api/accountants/directory', wrap(async (req, res) => {
+    const { country, specialisation } = req.query;
+    let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience FROM accountants WHERE status = 'verified'`;
+    const params = [];
+    if (country) { params.push(country); query += ` AND country = $${params.length}`; }
+    if (specialisation) { params.push(specialisation); query += ` AND specialisation = $${params.length}`; }
+    query += ' ORDER BY verified_at ASC';
+    const result = await pool.query(query, params);
+    return res.json(result.rows);
+  }));
+
+  // ── CLIENT: GET MY LINKED ACCOUNTANT ──────────────────────────────────────
+  app.get('/api/accountants/my-accountant', wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const result = await pool.query(`
+      SELECT a.id, a.first_name, a.last_name, a.firm, a.country, a.specialisation, a.experience, a.bio,
+             ac.status, ac.access_level
+      FROM accountant_clients ac
+      JOIN accountants a ON a.id = ac.accountant_id
+      WHERE ac.user_id = $1 AND ac.status = 'active'
+      LIMIT 1
+    `, [req.session.userId]);
+    if (!result.rows[0]) return res.status(404).json({ error: 'No accountant linked.' });
+    return res.json(result.rows[0]);
+  }));
+
+  // ── CLIENT: REQUEST ACCESS FROM AN ACCOUNTANT ─────────────────────────────
+  app.post('/api/accountants/request-access', wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const { accountantId } = req.body || {};
+    if (!accountantId) return res.status(400).json({ error: 'accountantId required.' });
+
+    const acc = await pool.query(`SELECT id, status FROM accountants WHERE id = $1`, [accountantId]);
+    if (!acc.rows[0] || acc.rows[0].status !== 'verified') return res.status(404).json({ error: 'Accountant not found.' });
+
+    await pool.query(`
+      INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total)
+      VALUES ($1, $2, 'active', 0)
+      ON CONFLICT (accountant_id, user_id) DO UPDATE SET status = 'active'
+    `, [accountantId, req.session.userId]);
+
+    return res.json({ success: true });
+  }));
+
 }; // end registerAccountantRoutes
 
 

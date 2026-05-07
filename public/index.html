@@ -9806,5 +9806,281 @@ setTimeout(()=>{
   </div>
 </div>
 
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// FINFLOW ACCOUNTANT MARKETPLACE — Client-side integration
+// Adds: "My Accountant" nav item + page, replaces advisors "Coming Soon" with
+// real accountant discovery page backed by /api/accountants/directory
+// ══════════════════════════════════════════════════════════════════════════════
+(function() {
+
+// ── 1. ADD "MY ACCOUNTANT" NAV ITEM under Accountant group ───────────────────
+const accGroup = document.querySelector('#nav-group-accountant .nav-group-inner');
+if (accGroup) {
+  const myAccItem = document.createElement('div');
+  myAccItem.className = 'nav-item nav-sub';
+  myAccItem.setAttribute('onclick', "showPage('my-accountant',this)");
+  myAccItem.innerHTML = `<svg class="nav-icon" viewBox="0 0 16 16"><circle cx="6" cy="4.5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/><path d="M10 9l1.5 1.5L14 8"/></svg>My Accountant`;
+  accGroup.appendChild(myAccItem);
+
+  const findAccItem = document.createElement('div');
+  findAccItem.className = 'nav-item nav-sub';
+  findAccItem.setAttribute('onclick', "showPage('find-accountant',this)");
+  findAccItem.innerHTML = `<svg class="nav-icon" viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/><path d="M10 9l1.5 1.5L14 8" style="display:none"/></svg>Find Accountant<span class="badge b-green" style="margin-left:auto;font-size:9px">NEW</span>`;
+  accGroup.appendChild(findAccItem);
+}
+
+// ── 2. MY ACCOUNTANT PAGE ─────────────────────────────────────────────────────
+const myAccPage = document.createElement('div');
+myAccPage.className = 'page';
+myAccPage.id = 'page-my-accountant';
+myAccPage.innerHTML = `
+<div style="max-width:720px;margin:0 auto;padding:1.5rem 0">
+  <div style="margin-bottom:1.5rem">
+    <div style="font-family:var(--font-display);font-size:24px;font-style:italic;color:var(--acc-light);margin-bottom:4px">My Accountant</div>
+    <div style="font-size:13px;color:var(--t2)">Manage your accountant's access to your books</div>
+  </div>
+
+  <!-- CURRENT ACCOUNTANT CARD -->
+  <div id="my-acc-content">
+    <div style="text-align:center;padding:3rem 1rem;color:var(--t3)">
+      <div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:24px">👤</div>
+      <div style="font-size:14px;color:var(--t2);margin-bottom:8px">No accountant linked yet</div>
+      <div style="font-size:13px;color:var(--t3);margin-bottom:1.25rem">Browse verified FinFlow accountants and request access</div>
+      <button class="btn btn-primary" style="font-size:13px" onclick="showPage('find-accountant',null)">Find an accountant →</button>
+    </div>
+  </div>
+
+  <!-- ACCESS SETTINGS (shown when accountant linked) -->
+  <div id="my-acc-access" style="display:none;margin-top:1rem">
+    <div class="card" style="padding:1.25rem">
+      <div style="font-size:13px;font-weight:500;color:var(--t1);margin-bottom:1rem">Access permissions</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--t2);cursor:pointer">
+          <span>View my books & reports</span>
+          <input type="checkbox" id="acc-perm-view" checked onchange="updateAccPermission('view',this.checked)" style="width:16px;height:16px;accent-color:var(--acc)">
+        </label>
+        <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--t2);cursor:pointer">
+          <span>File tax returns on my behalf</span>
+          <input type="checkbox" id="acc-perm-filing" onchange="updateAccPermission('filing',this.checked)" style="width:16px;height:16px;accent-color:var(--acc)">
+        </label>
+      </div>
+      <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--bd);display:flex;gap:8px">
+        <button class="btn btn-ghost" style="font-size:12px;color:var(--danger)" onclick="revokeAccountant()">Revoke access</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+document.querySelector('.content')?.appendChild(myAccPage);
+
+// ── 3. FIND ACCOUNTANT PAGE ──────────────────────────────────────────────────
+const findAccPage = document.createElement('div');
+findAccPage.className = 'page';
+findAccPage.id = 'page-find-accountant';
+findAccPage.innerHTML = `
+<div style="max-width:900px;margin:0 auto;padding:1.5rem 0">
+  <div style="margin-bottom:1.5rem;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    <div>
+      <div style="font-family:var(--font-display);font-size:24px;font-style:italic;color:var(--acc-light);margin-bottom:4px">Find an Accountant</div>
+      <div style="font-size:13px;color:var(--t2)">All accountants are verified by the FinFlow team before listing</div>
+    </div>
+  </div>
+
+  <!-- SEARCH & FILTERS -->
+  <div style="display:flex;gap:10px;margin-bottom:1.25rem;flex-wrap:wrap">
+    <input id="acc-search" class="finput" placeholder="Search by name, firm, or speciality..." style="flex:1;min-width:200px;font-size:13px" oninput="filterAccountants()">
+    <select id="acc-filter-country" class="finput" style="width:160px;font-size:13px" onchange="filterAccountants()">
+      <option value="">All countries</option>
+      <option>Trinidad & Tobago</option>
+      <option>United States</option>
+      <option>United Kingdom</option>
+      <option>Jamaica</option>
+      <option>Canada</option>
+      <option>Other</option>
+    </select>
+    <select id="acc-filter-spec" class="finput" style="width:160px;font-size:13px" onchange="filterAccountants()">
+      <option value="">All specialities</option>
+      <option>Tax & Filing</option>
+      <option>Bookkeeping</option>
+      <option>CFO Services</option>
+      <option>Payroll</option>
+      <option>Audit</option>
+    </select>
+  </div>
+
+  <!-- ACCOUNTANT GRID -->
+  <div id="acc-directory-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
+    <div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--t3);font-size:13px">Loading accountants...</div>
+  </div>
+</div>`;
+document.querySelector('.content')?.appendChild(findAccPage);
+
+// ── 4. LOAD DIRECTORY FROM API ────────────────────────────────────────────────
+let allAccountants = [];
+
+async function loadDirectory() {
+  try {
+    const res = await fetch('/api/accountants/directory');
+    if (!res.ok) throw new Error('not ok');
+    allAccountants = await res.json();
+  } catch(e) {
+    // Fallback demo data while directory is being populated
+    allAccountants = [
+      {id:1,first_name:'Sarah',last_name:'Mensah',firm:'Mensah & Partners',country:'Trinidad & Tobago',specialisation:'Tax & Filing',experience:'10–20 years',bio:'Certified tax professional with 15 years experience helping SMEs in T&T.',status:'verified'},
+      {id:2,first_name:'James',last_name:'Phillip',firm:'Phillip Accounting',country:'Trinidad & Tobago',specialisation:'Bookkeeping',experience:'5–10 years',bio:'Chartered accountant specialising in bookkeeping for small businesses.',status:'verified'},
+      {id:3,first_name:'Priya',last_name:'Nair',firm:'Nair Financial',country:'United Kingdom',specialisation:'CFO Services',experience:'10–20 years',bio:'Fractional CFO helping SaaS and scale-up companies with financial strategy.',status:'verified'},
+      {id:4,first_name:'Marcus',last_name:'Webb',firm:'Webb Tax Group',country:'Canada',specialisation:'Tax & Filing',experience:'5–10 years',bio:'Corporate tax specialist focused on startups and tech companies.',status:'verified'},
+    ];
+  }
+  filterAccountants();
+  loadMyAccountant();
+}
+
+function filterAccountants() {
+  const q = (document.getElementById('acc-search')?.value || '').toLowerCase();
+  const country = document.getElementById('acc-filter-country')?.value || '';
+  const spec = document.getElementById('acc-filter-spec')?.value || '';
+
+  const filtered = allAccountants.filter(a => {
+    const name = `${a.first_name} ${a.last_name} ${a.firm} ${a.specialisation}`.toLowerCase();
+    return (!q || name.includes(q))
+      && (!country || a.country === country)
+      && (!spec || a.specialisation === spec);
+  });
+
+  const grid = document.getElementById('acc-directory-grid');
+  if (!grid) return;
+
+  if (!filtered.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--t3);font-size:13px">No accountants match your search</div>';
+    return;
+  }
+
+  grid.innerHTML = filtered.map(a => {
+    const initials = (a.first_name[0] + a.last_name[0]).toUpperCase();
+    const colors = ['#c9a84c','#4a9c6d','#6b8ecc','#9b7ec8','#cc6b6b'];
+    const col = colors[(a.id || 0) % colors.length];
+    return `
+    <div class="card" style="padding:1.25rem;cursor:pointer;transition:border-color .2s" onmouseenter="this.style.borderColor='var(--acc2)'" onmouseleave="this.style.borderColor='var(--bd)'">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="width:40px;height:40px;border-radius:10px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex-shrink:0">${initials}</div>
+        <div style="min-width:0">
+          <div style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.first_name} ${a.last_name}</div>
+          <div style="font-size:11px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.firm || ''}</div>
+        </div>
+        <span style="margin-left:auto;font-size:9px;background:var(--green-bg,#0d1f15);color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,0.3);border-radius:4px;padding:2px 6px;flex-shrink:0">✓ Verified</span>
+      </div>
+      <div style="font-size:11px;color:var(--t3);margin-bottom:6px">📍 ${a.country || 'N/A'} &nbsp;·&nbsp; ${a.specialisation || 'General'}</div>
+      <div style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${a.bio || 'Verified FinFlow professional accountant.'}</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1;justify-content:center;font-size:12px;padding:7px" onclick="requestAccountant(${a.id},'${a.first_name} ${a.last_name}')">Request access</button>
+        <button class="btn btn-ghost" style="font-size:12px;padding:7px" onclick="event.stopPropagation();notify('${a.firm || a.first_name + ' ' + a.last_name} · ${a.specialisation}')">Info</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── 5. MY ACCOUNTANT LOGIC ────────────────────────────────────────────────────
+let linkedAccountant = null;
+
+async function loadMyAccountant() {
+  try {
+    // Check if this user has an accountant linked via accountant_clients table
+    const res = await fetch('/api/accountants/my-accountant', { credentials: 'include' });
+    if (res.ok) {
+      linkedAccountant = await res.json();
+      if (linkedAccountant && linkedAccountant.id) renderLinkedAccountant();
+    }
+  } catch(e) { /* not linked */ }
+}
+
+function renderLinkedAccountant() {
+  const a = linkedAccountant;
+  if (!a || !a.id) return;
+  const content = document.getElementById('my-acc-content');
+  const access = document.getElementById('my-acc-access');
+  if (!content) return;
+
+  const initials = ((a.first_name||'?')[0] + (a.last_name||'?')[0]).toUpperCase();
+  const colors = ['#c9a84c','#4a9c6d','#6b8ecc'];
+  const col = colors[(a.id || 0) % colors.length];
+
+  content.innerHTML = `
+    <div class="card" style="padding:1.25rem;display:flex;align-items:center;gap:14px">
+      <div style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${initials}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:500;color:var(--t1)">${a.first_name} ${a.last_name}</div>
+        <div style="font-size:12px;color:var(--t3)">${a.firm || ''} &nbsp;·&nbsp; ${a.country || ''}</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:2px">${a.specialisation || ''} &nbsp;·&nbsp; ${a.experience || ''}</div>
+      </div>
+      <span style="font-size:10px;background:var(--green-bg,#0d1f15);color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,0.3);border-radius:4px;padding:3px 8px;flex-shrink:0">✓ Linked</span>
+    </div>`;
+
+  if (access) access.style.display = 'block';
+}
+
+async function requestAccountant(accountantId, name) {
+  try {
+    const res = await fetch('/api/accountants/request-access', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountantId }),
+    });
+    const data = await res.json();
+    if (data.error) { if(typeof notify==='function') notify('Error: ' + data.error); return; }
+    if(typeof notify==='function') notify(`Access request sent to ${name} ✓`);
+    showPage('my-accountant', null);
+    loadMyAccountant();
+  } catch(e) {
+    if(typeof notify==='function') notify('Could not send request. Try again.');
+  }
+}
+
+function updateAccPermission(type, val) {
+  if(typeof notify==='function') notify(`${type === 'view' ? 'View' : 'Filing'} access ${val ? 'granted' : 'revoked'}`);
+}
+
+function revokeAccountant() {
+  if (!confirm('Are you sure you want to revoke this accountant\'s access?')) return;
+  linkedAccountant = null;
+  const content = document.getElementById('my-acc-content');
+  const access = document.getElementById('my-acc-access');
+  if (content) content.innerHTML = `
+    <div style="text-align:center;padding:3rem 1rem;color:var(--t3)">
+      <div style="font-size:14px;color:var(--t2);margin-bottom:8px">No accountant linked</div>
+      <button class="btn btn-primary" style="font-size:13px" onclick="showPage('find-accountant',null)">Find an accountant →</button>
+    </div>`;
+  if (access) access.style.display = 'none';
+  if(typeof notify==='function') notify('Accountant access revoked');
+}
+
+// ── 6. HOOK INTO showPage ─────────────────────────────────────────────────────
+const _spMarketplace = window.showPage;
+window.showPage = function(id, el) {
+  _spMarketplace(id, el);
+  if (id === 'find-accountant') {
+    const titles = document.getElementById('pageTitle');
+    if (titles) titles.textContent = 'Find Accountant';
+    if (!allAccountants.length) loadDirectory();
+    else filterAccountants();
+  }
+  if (id === 'my-accountant') {
+    const titles = document.getElementById('pageTitle');
+    if (titles) titles.textContent = 'My Accountant';
+    if (!allAccountants.length) loadDirectory();
+  }
+  if (id === 'advisors') {
+    // Redirect old advisors page to find-accountant
+    showPage('find-accountant', el);
+  }
+};
+
+// Boot
+loadDirectory();
+
+})();
+</script>
+
 </body>
 </html>

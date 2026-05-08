@@ -259,6 +259,9 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
     if (!match) return res.status(401).json({ error: 'Invalid credentials.' });
 
     req.session.accountantId = acc.id;
+    await new Promise((resolve, reject) => {
+      req.session.save(err => err ? reject(err) : resolve());
+    });
     return res.json({
       id: acc.id,
       firstName: acc.first_name,

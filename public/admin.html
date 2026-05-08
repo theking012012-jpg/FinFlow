@@ -687,8 +687,9 @@ function openReview(accountant) {
 
 async function doModalAction(action) {
   const notes = document.getElementById('modal-notes').value;
+  const id = currentModal.id;
   closeModal();
-  await verifyAction(currentModal.id, action, notes);
+  await verifyAction(id, action, notes);
 }
 
 function closeModal() {

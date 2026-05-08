@@ -3518,7 +3518,7 @@ function patchSFormatter(){
   const origS = window.S;
   if(!origS) return;
   window.S = function(n){
-    const converted = typeof fxConvert === 'function' ? fxConvert(n) : n;
+    const converted = fxConvert(n);
     // Use CURRENCIES symbol instead of currencySymbol so it stays in sync
     const sym = CURRENCIES[activeCurrency]?.symbol || '$';
     const abs = Math.abs(converted);
@@ -9816,7 +9816,7 @@ setTimeout(()=>{
 // Adds: "My Accountant" nav item + page, replaces advisors "Coming Soon" with
 // real accountant discovery page backed by /api/accountants/directory
 // ══════════════════════════════════════════════════════════════════════════════
-document.addEventListener("DOMContentLoaded", function() {
+window.addEventListener("load", function() {
 (function() {
 
 // ── 1. ADD "MY ACCOUNTANT" NAV ITEM under Accountant group ───────────────────
@@ -10145,7 +10145,7 @@ window.showPage = function(id, el) {
 loadDirectory();
 
 })();
-}); // end DOMContentLoaded
+}); // end load listener
 </script>
 
 </body>

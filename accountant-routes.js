@@ -204,6 +204,14 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
 
       const accountantId = result.rows[0].id;
 
+      // Save credentials extracted from CV
+      if (req.body.credentials || req.body.memberships) {
+        await client.query(
+          `UPDATE accountants SET credentials = $1, memberships = $2 WHERE id = $3`,
+          [req.body.credentials || '', req.body.memberships || '', accountantId]
+        ).catch(e => console.error('[Register] Credentials save failed:', e.message));
+      }
+
       // If membership verification — attempt auto-lookup
       if (verification.method === 'membership' && verification.profBody && verification.membershipNumber) {
         const lookup = await lookupMembership(verification.profBody, verification.membershipNumber);
@@ -346,7 +354,8 @@ If you cannot find a field, use null. Be concise.`;
     const result = await pool.query(
       `SELECT id, first_name, last_name, email, firm, country, specialisation,
               bio, experience, referral_code, status, verified_at, created_at,
-              hourly_rate, packages, pricing_note, has_pricing, avg_rating
+              hourly_rate, packages, pricing_note, has_pricing, avg_rating,
+              credentials, memberships
        FROM accountants WHERE id = $1`,
       [req.session.accountantId]
     );
@@ -777,7 +786,7 @@ If you cannot find a field, use null. Be concise.`;
   // ── PUBLIC DIRECTORY — verified accountants only ───────────────────────────
   app.get('/api/accountants/directory', wrap(async (req, res) => {
     const { country, specialisation } = req.query;
-    let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience, avg_rating, review_count FROM accountants WHERE status = 'verified'`;
+    let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience, avg_rating, review_count, credentials, memberships, hourly_rate, packages, has_pricing FROM accountants WHERE status = 'verified'`;
     const params = [];
     if (country) { params.push(country); query += ` AND country = $${params.length}`; }
     if (specialisation) { params.push(specialisation); query += ` AND specialisation = $${params.length}`; }

@@ -577,6 +577,10 @@ async function loadPending() {
       document.getElementById('pending-tbody').innerHTML = '<tr><td colspan="7" class="empty">No pending applications 🎉</td></tr>';
       return;
     }
+    // Store pending accountants for modal access
+    window._pendingAccountants = {};
+    data.forEach(a => { window._pendingAccountants[a.id] = a; });
+
     document.getElementById('pending-tbody').innerHTML = data.map(a => `
       <tr>
         <td class="primary">${a.first_name} ${a.last_name}</td>
@@ -586,7 +590,7 @@ async function loadPending() {
         <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.credentials || a.memberships || '—'}</td>
         <td>${new Date(a.created_at).toLocaleDateString()}</td>
         <td>
-          <button class="action-btn approve" onclick="openReview(${JSON.stringify(a).replace(/"/g,'&quot;')})">Review</button>
+          <button class="action-btn approve" onclick="openReviewById(${a.id})">Review</button>
         </td>
       </tr>`).join('');
   } catch(e) { console.error('Pending error', e); }
@@ -648,6 +652,12 @@ async function togglePreferred(id, enable) {
 }
 
 // ── REVIEW MODAL ──────────────────────────────────────────────────────────────
+function openReviewById(id) {
+  const accountant = (window._pendingAccountants || {})[id];
+  if (!accountant) { toast('Could not load application data', 'error'); return; }
+  openReview(accountant);
+}
+
 function openReview(accountant) {
   currentModal = accountant;
   document.getElementById('modal-title').textContent = `${accountant.first_name} ${accountant.last_name}`;

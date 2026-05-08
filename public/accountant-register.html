@@ -316,6 +316,18 @@
   .pkg-remove { background:none; border:1px solid var(--border); border-radius:6px; color:var(--text3); cursor:pointer; width:28px; height:34px; font-size:16px; transition:all .2s; }
   .pkg-remove:hover { border-color:var(--red); color:var(--red); }
 
+  /* RESUME UPLOAD */
+  .resume-box { border: 1.5px dashed var(--border2); border-radius: 10px; padding: 18px; text-align: center; cursor: pointer; transition: all .2s; margin-bottom: 16px; background: var(--bg2); position: relative; }
+  .resume-box:hover { border-color: var(--gold-dim); }
+  .resume-box input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .resume-status { display: none; padding: 10px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 12px; }
+  .resume-status.loading { display: block; background: var(--amber-bg); border: 1px solid var(--amber); color: var(--amber); }
+  .resume-status.success { display: block; background: var(--green-bg); border: 1px solid var(--green); color: var(--green); }
+  .resume-status.error { display: block; background: var(--red-bg); border: 1px solid var(--red); color: var(--red); }
+  .resume-divider { display: flex; align-items: center; gap: 10px; margin: 14px 0; }
+  .resume-divider-line { flex: 1; border-top: 1px solid var(--border); }
+  .resume-divider-text { font-size: 11px; color: var(--text3); }
+
   @media (max-width: 768px) {
     .main { grid-template-columns: 1fr; }
     nav { padding: 16px 20px; }
@@ -431,6 +443,20 @@
 
     <!-- PANE 1: PROFILE -->
     <div class="pane active" id="pane1">
+      <!-- RESUME UPLOAD -->
+      <div class="resume-box" id="resume-drop-zone">
+        <input type="file" id="resume-file" accept=".pdf,.doc,.docx" onchange="handleResumeUpload(this.files[0])">
+        <div style="font-size:22px;margin-bottom:6px">📄</div>
+        <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:3px">Upload your CV / Resume</div>
+        <div style="font-size:12px;color:var(--text3)">AI will auto-fill your profile · PDF or Word · optional</div>
+      </div>
+      <div class="resume-status" id="resume-status"></div>
+      <div class="resume-divider">
+        <div class="resume-divider-line"></div>
+        <div class="resume-divider-text">or fill in manually below</div>
+        <div class="resume-divider-line"></div>
+      </div>
+
       <div class="form-row">
         <div class="form-group">
           <label>First name <span class="req">*</span></label>
@@ -689,6 +715,95 @@
 </div>
 
 <script>
+  // ── RESUME UPLOAD ──────────────────────────────────────────────────────────
+  window._resumeCredentials = '';
+  window._resumeMemberships = '';
+
+  async function handleResumeUpload(file) {
+    if (!file) return;
+    const status = document.getElementById('resume-status');
+    const zone = document.getElementById('resume-drop-zone');
+    status.className = 'resume-status loading';
+    status.textContent = '✦ AI is reading your CV — filling in your profile...';
+    zone.style.opacity = '0.5';
+    zone.style.pointerEvents = 'none';
+
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = () => res(reader.result.split(',')[1]);
+        reader.onerror = () => rej(new Error('Read failed'));
+        reader.readAsDataURL(file);
+      });
+
+      const response = await fetch('/api/accountants/extract-resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base64,
+          mediaType: file.type,
+          isPDF: file.type === 'application/pdf',
+          isWord: file.name.endsWith('.docx') || file.name.endsWith('.doc'),
+          fileName: file.name
+        }),
+      });
+
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+
+      if (data.firstName) document.getElementById('fname').value = data.firstName;
+      if (data.lastName) document.getElementById('lname').value = data.lastName;
+      if (data.firm) document.getElementById('firm').value = data.firm;
+      if (data.bio) document.getElementById('bio').value = data.bio;
+
+      if (data.country) {
+        const sel = document.getElementById('country');
+        for (let o of sel.options) {
+          if (o.value && o.value.toLowerCase().includes(data.country.toLowerCase())) { sel.value = o.value; break; }
+        }
+      }
+      if (data.specialisation) {
+        const sel = document.getElementById('spec');
+        for (let o of sel.options) {
+          if (o.value && o.value.toLowerCase().includes(data.specialisation.toLowerCase())) { sel.value = o.value; break; }
+        }
+      }
+      if (data.experience) {
+        const sel = document.getElementById('experience');
+        if (sel) {
+          for (let o of sel.options) {
+            if (o.value && o.value.startsWith(data.experience.split('-')[0])) { sel.value = o.value; break; }
+          }
+        }
+      }
+
+      window._resumeCredentials = data.credentials || '';
+      window._resumeMemberships = data.memberships || '';
+
+      status.className = 'resume-status success';
+      status.textContent = '✓ Profile filled from your CV — review and edit below';
+    } catch(e) {
+      status.className = 'resume-status error';
+      status.textContent = '✗ Could not read CV — please fill in manually';
+    } finally {
+      zone.style.opacity = '1';
+      zone.style.pointerEvents = 'auto';
+    }
+  }
+
+  // Drag and drop
+  document.addEventListener('DOMContentLoaded', function() {
+    const dz = document.getElementById('resume-drop-zone');
+    if (!dz) return;
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.style.borderColor = 'var(--gold)'; });
+    dz.addEventListener('dragleave', () => { dz.style.borderColor = ''; });
+    dz.addEventListener('drop', e => {
+      e.preventDefault();
+      dz.style.borderColor = '';
+      if (e.dataTransfer.files[0]) handleResumeUpload(e.dataTransfer.files[0]);
+    });
+  });
+
   // ── STEP NAVIGATION ──
   function goStep2() {
     const fname = document.getElementById('fname').value.trim();
@@ -839,6 +954,8 @@
       bio: document.getElementById('bio').value.trim(),
       experience: exp,
       referralCode: document.getElementById('referral').value.trim(),
+      credentials: window._resumeCredentials || '',
+      memberships: window._resumeMemberships || '',
       ...collectPricing(),
       verification: {
         method: selectedVerify,

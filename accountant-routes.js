@@ -235,6 +235,73 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
   }));
 
 
+  // ── RESUME / CV EXTRACTION ───────────────────────────────────────────────────
+  app.post('/api/accountants/extract-resume', apiLimiter, wrap(async (req, res) => {
+    const { base64, mediaType, isPDF, isWord, fileName } = req.body || {};
+    if (!base64) return res.status(400).json({ error: 'No file data received.' });
+
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+    if (!ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI service not configured.' });
+
+    const prompt = `You are a professional CV/resume parser. Extract information from this CV/resume and respond ONLY with a valid JSON object — no markdown, no explanation, no backticks.
+
+{
+  "firstName": "first name only",
+  "lastName": "last name only",
+  "firm": "current or most recent employer/firm name",
+  "country": "country of residence or work",
+  "specialisation": "one of: Tax Filing, Bookkeeping, Audit & Assurance, Payroll, Advisory / CFO, All of the above",
+  "experience": "one of: 1-3, 3-5, 5-10, 10-20, 20+",
+  "bio": "2-3 sentence professional summary in first person",
+  "credentials": "comma-separated qualifications e.g. ACCA, CPA, ACA, MBA",
+  "memberships": "comma-separated professional body memberships",
+  "previousFirms": "comma-separated previous employers (max 3)"
+}
+
+If you cannot find a field, use null. Be concise.`;
+
+    try {
+      let contentBlock;
+      if (isPDF) {
+        contentBlock = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } };
+      } else {
+        const decoded = Buffer.from(base64, 'base64').toString('utf-8').replace(/[^\x20-\x7E\x09\x0A\x0D]/g, ' ').trim();
+
+        contentBlock = { type: 'text', text: 'CV/Resume content:\n\n' + decoded.slice(0, 8000) };
+      }
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': ANTHROPIC_API_KEY.trim(),
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 800,
+          messages: [{ role: 'user', content: [contentBlock, { type: 'text', text: prompt }] }],
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        console.error('[Resume Extract] Anthropic error:', err);
+        return res.status(502).json({ error: 'AI service unavailable.' });
+      }
+
+      const data = await response.json();
+      const raw = data.content?.map(b => b.text || '').join('').trim();
+      const cleaned = raw.replace(/```json|```/g, '').trim();
+      const extracted = JSON.parse(cleaned);
+      return res.json(extracted);
+
+    } catch(e) {
+      console.error('[Resume Extract] Error:', e.message);
+      return res.status(500).json({ error: 'Could not parse CV. Please fill in manually.' });
+    }
+  }));
+
   // ── 2. MEMBERSHIP LOOKUP (called from frontend verify button) ─────────────
   app.post('/api/accountants/verify-membership', authLimiter, wrap(async (req, res) => {
     const { profBody, membershipNumber } = req.body || {};

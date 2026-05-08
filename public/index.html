@@ -2840,6 +2840,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     <div style="text-align:center;margin-top:1rem;font-size:11px;color:var(--t3)">
       Already have an account? <a href="#" style="color:var(--acc);text-decoration:none" onclick="showLoginForm();return false">Sign in →</a>
     </div>
+    <div style="text-align:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--bd);font-size:11px;color:var(--t3)">
+      Are you an accountant? <a href="/join" style="color:var(--acc);text-decoration:none">Register your practice →</a>
+    </div>
   </div>
 
   <!-- FORGOT PASSWORD FORM -->
@@ -9867,7 +9870,7 @@ myAccPage.innerHTML = `
         </label>
       </div>
       <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--bd);display:flex;gap:8px">
-        <button class="btn btn-ghost" style="font-size:12px" onclick="leaveReview(linkedAccountant?.id)">★ Leave a review</button>
+        <button class="btn btn-ghost" style="font-size:12px" onclick="leaveReview(${a.id})">★ Leave a review</button>
         <button class="btn btn-ghost" style="font-size:12px;color:var(--danger)" onclick="revokeAccountant()">Revoke access</button>
       </div>
     </div>
@@ -9983,8 +9986,16 @@ window.filterAccountants = function() {
         <span style="font-size:11px;color:var(--t3)">${rating > 0 ? rating.toFixed(1) + ' · ' + reviewCount + ' review' + (reviewCount !== 1 ? 's' : '') : 'No reviews yet'}</span>
       </div>
       <div style="font-size:11px;color:var(--t3);margin-bottom:6px">📍 ${a.country || 'N/A'} &nbsp;·&nbsp; ${a.specialisation || 'General'}</div>
-      <div style="font-size:11px;margin-bottom:8px"><span style="background:rgba(74,156,109,0.1);color:#4a9c6d;border:1px solid rgba(74,156,109,0.25);border-radius:4px;padding:2px 7px;font-size:10px">🛡 FinFlow Protected Payments</span></div>
-      <div style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${a.bio || 'Verified FinFlow professional accountant.'}</div>
+      <div style="font-size:11px;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px">
+        <span style="background:rgba(74,156,109,0.1);color:#4a9c6d;border:1px solid rgba(74,156,109,0.25);border-radius:4px;padding:2px 7px;font-size:10px">🛡 FinFlow Protected</span>
+        ${a.memberships ? a.memberships.split(',').slice(0,2).map(m => `<span style="background:rgba(201,168,76,0.08);color:var(--acc);border:1px solid rgba(201,168,76,0.2);border-radius:4px;padding:2px 7px;font-size:10px">${m.trim()}</span>`).join('') : ''}
+      </div>
+      ${a.credentials ? `<div style="font-size:11px;color:var(--t3);margin-bottom:6px">🎓 ${a.credentials}</div>` : ''}
+      <div style="font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${a.bio || 'Verified FinFlow professional accountant.'}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">
+        ${a.hourly_rate ? `<span style="font-size:13px;color:var(--acc-light,#e4c97a);font-weight:500">From $${parseFloat(a.hourly_rate).toFixed(0)}/hr</span>` : a.packages && a.packages.length ? `<span style="font-size:13px;color:var(--acc-light,#e4c97a);font-weight:500">From $${Math.min(...(typeof a.packages==='string'?JSON.parse(a.packages):a.packages).map(p=>p.price)).toFixed(0)}</span>` : '<span style="font-size:12px;color:var(--t3,#5a5040)">Rates on request</span>'}
+        ${a.has_pricing ? '<span style="font-size:10px;background:rgba(200,164,74,0.08);color:var(--acc,#c8a44a);border:1px solid rgba(200,164,74,0.25);border-radius:4px;padding:2px 7px">💰 Transparent Pricing</span>' : ''}
+      </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary" style="flex:1;justify-content:center;font-size:12px;padding:7px" onclick="requestAccountant(${a.id},'${a.first_name} ${a.last_name}')">Request access</button>
         <button class="btn btn-ghost" style="font-size:12px;padding:7px;color:var(--t3)" onclick="event.stopPropagation();reportAccountant(${a.id},'${a.first_name} ${a.last_name}')" title="Report">⚑</button>
@@ -10091,6 +10102,7 @@ Describe the issue (e.g. "Asked me to pay outside FinFlow"):`);
 
 // ── 5c. LEAVE REVIEW (shown in My Accountant page after payment) ─────────────
 window.leaveReview = function(accountantId) {
+  if (!accountantId) { if(typeof notify==='function') notify('No accountant linked'); return; }
   const rating = prompt('Rate your accountant (1–5 stars):');
   const r = parseInt(rating);
   if (!r || r < 1 || r > 5) { if(typeof notify==='function') notify('Please enter a rating between 1 and 5'); return; }

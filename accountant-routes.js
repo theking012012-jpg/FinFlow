@@ -31,6 +31,9 @@
 //   CREATE INDEX IF NOT EXISTS idx_accountants_referral ON accountants(referral_code);
 //   CREATE INDEX IF NOT EXISTS idx_accountants_status ON accountants(status);
 //
+//   -- Pricing columns (added via ALTER TABLE in database.js initDB)
+//   -- hourly_rate NUMERIC(10,2), packages JSONB, pricing_note TEXT, has_pricing BOOLEAN
+//
 //   -- Links FinFlow user accounts to their accountant
 //   CREATE TABLE IF NOT EXISTS accountant_clients (
 //     id               SERIAL PRIMARY KEY,
@@ -272,7 +275,8 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
   app.get('/api/accountants/me', requireAccountant, wrap(async (req, res) => {
     const result = await pool.query(
       `SELECT id, first_name, last_name, email, firm, country, specialisation,
-              bio, experience, referral_code, status, verified_at, created_at
+              bio, experience, referral_code, status, verified_at, created_at,
+              hourly_rate, packages, pricing_note, has_pricing, avg_rating
        FROM accountants WHERE id = $1`,
       [req.session.accountantId]
     );

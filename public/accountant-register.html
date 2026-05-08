@@ -310,6 +310,12 @@
   .terms-note { font-size: 11px; color: var(--text3); text-align: center; line-height: 1.5; }
   .terms-note a { color: var(--gold-dim); text-decoration: none; }
 
+  /* PACKAGE ROW */
+  .package-row { display:grid; grid-template-columns:1fr 100px 28px; gap:8px; align-items:center; }
+  .package-row input { font-size:12px; }
+  .pkg-remove { background:none; border:1px solid var(--border); border-radius:6px; color:var(--text3); cursor:pointer; width:28px; height:34px; font-size:16px; transition:all .2s; }
+  .pkg-remove:hover { border-color:var(--red); color:var(--red); }
+
   @media (max-width: 768px) {
     .main { grid-template-columns: 1fr; }
     nav { padding: 16px 20px; }
@@ -419,7 +425,8 @@
     <div class="steps">
       <div class="step active" id="step1-ind"><span class="step-num">1</span>Profile</div>
       <div class="step" id="step2-ind"><span class="step-num">2</span>Credentials</div>
-      <div class="step" id="step3-ind"><span class="step-num">3</span>Done</div>
+      <div class="step" id="step3-ind"><span class="step-num">3</span>Pricing</div>
+      <div class="step" id="step4-ind"><span class="step-num">4</span>Done</div>
     </div>
 
     <!-- PANE 1: PROFILE -->
@@ -596,12 +603,48 @@
         <input type="text" id="referral" placeholder="If someone referred you to FinFlow">
       </div>
 
-      <button class="btn-primary" onclick="submitForm()">Submit application →</button>
+      <button class="btn-primary" onclick="goStep3()">Continue to pricing →</button>
       <button class="btn-secondary" onclick="goStep1()">← Back</button>
     </div>
 
-    <!-- PANE 3: SUCCESS -->
+    <!-- PANE 3: PRICING -->
     <div class="pane" id="pane3">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:20px;line-height:1.6;">
+        List your rates upfront so clients know what to expect. This is optional but accountants with listed prices earn a
+        <span style="color:var(--gold);font-weight:500">Transparent Pricing</span> badge and get more client requests.
+      </div>
+
+      <div class="form-group">
+        <label>Hourly rate (USD)</label>
+        <div style="position:relative">
+          <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:13px">$</span>
+          <input type="number" id="rate-hourly" placeholder="e.g. 75" min="0" style="padding-left:28px">
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Leave blank if you prefer to quote per project</div>
+      </div>
+
+      <div class="form-group">
+        <label>Service packages</label>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Add up to 4 fixed-price services clients can select when requesting you</div>
+        <div id="packages-list" style="display:flex;flex-direction:column;gap:8px"></div>
+        <button type="button" class="btn-secondary" id="add-package-btn" onclick="addPackage()" style="margin-top:8px;padding:8px 14px;font-size:12px;width:auto">+ Add service package</button>
+      </div>
+
+      <div class="form-group">
+        <label>Pricing note (optional)</label>
+        <textarea id="pricing-note" placeholder="e.g. Rates vary by complexity. Free 15-min consultation available." style="min-height:60px"></textarea>
+      </div>
+
+      <div style="background:rgba(201,168,76,0.06);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:var(--text2)">
+        <span style="color:var(--gold)">✦ Transparent Pricing badge</span> — Filling in at least one rate or package earns you this badge on your directory listing. Clients trust transparent accountants 3× more.
+      </div>
+
+      <button class="btn-primary" onclick="submitForm()">Submit application →</button>
+      <button class="btn-secondary" onclick="goStep2Pricing()">← Back</button>
+    </div>
+
+    <!-- PANE 4: SUCCESS -->
+    <div class="pane" id="pane4">
       <div class="success-state">
         <div class="success-icon">✦</div>
         <h3>Application received</h3>
@@ -685,6 +728,59 @@
     });
   }
 
+  function goStep3() {
+    // Validate step 2 first
+    if (!selectedVerify) { alert('Please choose a verification method.'); return; }
+    const exp = document.getElementById('experience').value;
+    if (!exp) { alert('Please select your years of experience.'); return; }
+    setStep(3);
+  }
+
+  function goStep2Pricing() { setStep(2); }
+
+  // ── PACKAGE MANAGEMENT ──
+  let packageCount = 0;
+
+  function addPackage() {
+    if (packageCount >= 4) { alert('Maximum 4 packages allowed.'); return; }
+    packageCount++;
+    const id = packageCount;
+    const div = document.createElement('div');
+    div.className = 'package-row';
+    div.id = 'pkg-' + id;
+    div.innerHTML = `
+      <input type="text" placeholder="e.g. Personal tax return" id="pkg-name-${id}" style="font-size:12px">
+      <div style="position:relative">
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:12px">$</span>
+        <input type="number" placeholder="200" id="pkg-price-${id}" min="0" style="padding-left:22px;font-size:12px">
+      </div>
+      <button type="button" class="pkg-remove" onclick="removePackage(${id})">×</button>
+    `;
+    document.getElementById('packages-list').appendChild(div);
+    if (packageCount >= 4) document.getElementById('add-package-btn').style.display = 'none';
+  }
+
+  function removePackage(id) {
+    const el = document.getElementById('pkg-' + id);
+    if (el) el.remove();
+    packageCount--;
+    document.getElementById('add-package-btn').style.display = '';
+  }
+
+  function collectPricing() {
+    const hourly = parseFloat(document.getElementById('rate-hourly').value) || null;
+    const note = document.getElementById('pricing-note').value.trim();
+    const packages = [];
+    for (let i = 1; i <= 4; i++) {
+      const nameEl = document.getElementById('pkg-name-' + i);
+      const priceEl = document.getElementById('pkg-price-' + i);
+      if (nameEl && priceEl && nameEl.value.trim() && priceEl.value) {
+        packages.push({ name: nameEl.value.trim(), price: parseFloat(priceEl.value) });
+      }
+    }
+    return { hourlyRate: hourly, packages, pricingNote: note };
+  }
+
   // ── VERIFICATION METHOD SELECTION ──
   let selectedVerify = null;
   function selectVerify(el, method) {
@@ -728,7 +824,6 @@
 
   // ── FORM SUBMISSION ──
   function submitForm() {
-    if (!selectedVerify) { alert('Please choose a verification method.'); return; }
     const exp = document.getElementById('experience').value;
     if (!exp) { alert('Please select your years of experience.'); return; }
 
@@ -744,6 +839,7 @@
       bio: document.getElementById('bio').value.trim(),
       experience: exp,
       referralCode: document.getElementById('referral').value.trim(),
+      ...collectPricing(),
       verification: {
         method: selectedVerify,
         profBody: selectedVerify === 'membership' ? document.getElementById('prof-body').value : null,
@@ -766,11 +862,11 @@
     .then(r => r.json())
     .then(data => {
       if (data.error) { alert(data.error); return; }
-      setStep(3);
+      setStep(4);
     })
     .catch(() => {
       // For demo: still show success
-      setStep(3);
+      setStep(4);
     });
   }
 </script>

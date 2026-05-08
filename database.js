@@ -163,6 +163,26 @@ async function initDB() {
 
     // Add rating columns to accountants if not exists
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS avg_rating NUMERIC(3,2) DEFAULT 0`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS stripe_account_id VARCHAR(100)`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS stripe_onboarded BOOLEAN DEFAULT FALSE`);
+
+    // Admin activity log
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS admin_log (
+        id          SERIAL PRIMARY KEY,
+        action      VARCHAR(100) NOT NULL,
+        target_type VARCHAR(50),
+        target_id   INTEGER,
+        notes       TEXT,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS credentials TEXT DEFAULT ''`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS hourly_rate NUMERIC(10,2)`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS packages JSONB DEFAULT '[]'`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS pricing_note TEXT DEFAULT ''`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS has_pricing BOOLEAN DEFAULT FALSE`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS memberships TEXT DEFAULT ''`);
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS review_count INTEGER DEFAULT 0`);
 
     // ── END ACCOUNTANT MARKETPLACE TABLES ──────────────────────────────────────

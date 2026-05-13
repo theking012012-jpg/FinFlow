@@ -1722,6 +1722,31 @@ app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── TEMP DEV RESET (remove after use) ────────────────────────────────────────
+app.post('/api/dev/wipe-and-create', async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'email and password required' });
+    // Wipe all tables
+    const tables = ['invoices','expenses','entities','customers','inventory','payroll','journals','lock_settings',
+      'accountant_clients','personal_transactions','user_settings','quotes','bills','vendors','recurring_invoices',
+      'recurring_bills','sales_receipts','payments_received','payments_made','credit_notes','timesheet','projects',
+      'team_members','budget_targets','holdings'];
+    for (const t of tables) {
+      try { await pool.query(`DELETE FROM ${t}`); } catch(e) {}
+    }
+    await pool.query('DELETE FROM users');
+    // Create fresh user
+    const bcrypt = require('bcryptjs');
+    const hash = await bcrypt.hash(password, 10);
+    const r = await pool.query(
+      `INSERT INTO users (data) VALUES ($1::jsonb) RETURNING id`,
+      [JSON.stringify({ email, password: hash, name: name||email, plan:'pro', role:'owner', created_at: new Date().toISOString() })]
+    );
+    res.json({ ok: true, userId: r.rows[0].id, message: 'All data wiped, fresh user created' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 initDB().then(() => {
   app.listen(PORT, () => {

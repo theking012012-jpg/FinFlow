@@ -398,11 +398,14 @@ If you cannot find a field, use null. Be concise.`;
     if (!access.rows[0]) return res.status(403).json({ error: 'No access to this client.' });
 
     // Fetch client's financial summary
-    const [invoices, expenses, entities] = await Promise.all([
-      pool.query(`SELECT data FROM invoices WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
-      pool.query(`SELECT data FROM expenses WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+    const [invoices, expenses, entities, settings] = await Promise.all([
+      pool.query(`SELECT entity_id, data FROM invoices WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+      pool.query(`SELECT entity_id, data FROM expenses WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT id, data->>'name' AS name FROM entities WHERE user_id = $1`, [userId]),
+      pool.query(`SELECT data FROM users WHERE id = $1 LIMIT 1`, [userId]),
     ]);
+
+    const taxRate = parseFloat(settings.rows[0]?.data?.tax_rate || 0);
 
     // Calculate basic summary — data is stored as JSONB
     const totalIncome = invoices.rows.reduce((sum, r) => sum + (parseFloat(r.data?.amount) || 0), 0);
@@ -410,14 +413,15 @@ If you cannot find a field, use null. Be concise.`;
 
     return res.json({
       accessLevel: access.rows[0].access_level,
+      taxRate,
       summary: {
         totalIncome: totalIncome.toFixed(2),
         totalExpenses: totalExpenses.toFixed(2),
         netProfit: (totalIncome - totalExpenses).toFixed(2),
       },
       entities: entities.rows,
-      allInvoices: invoices.rows.map(r => r.data),
-      allExpenses: expenses.rows.map(r => r.data),
+      allInvoices: invoices.rows.map(r => ({ ...r.data, entity_id: r.entity_id })),
+      allExpenses: expenses.rows.map(r => ({ ...r.data, entity_id: r.entity_id })),
       // keep legacy keys for backwards compat
       recentInvoices: invoices.rows.map(r => r.data).slice(0, 10),
       recentExpenses: expenses.rows.map(r => r.data).slice(0, 10),

@@ -1295,8 +1295,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- MRR / SAAS PAGE -->
       <div class="page" id="page-mrr">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">MRR</div><div class="mc-val" style="color:var(--acc)">$39,100</div><div class="mc-change up">▲ 8.2% MoM</div></div>
-          <div class="mc"><div class="mc-label">ARR</div><div class="mc-val">$469K</div><div class="mc-change up">Annualized</div></div>
+          <div class="mc"><div class="mc-label">MRR</div><div class="mc-val" id="mrr-val" style="color:var(--acc)">$39,100</div><div class="mc-change up">▲ 8.2% MoM</div></div>
+          <div class="mc"><div class="mc-label">ARR</div><div class="mc-val" id="arr-val">$469K</div><div class="mc-change up">Annualized</div></div>
           <div class="mc"><div class="mc-label">Churn rate</div><div class="mc-val" style="color:var(--green)">1.8%</div><div class="mc-change up">Below 2% target</div></div>
           <div class="mc"><div class="mc-label">LTV : CAC</div><div class="mc-val">4.2x</div><div class="mc-change up">Healthy ratio</div></div>
         </div>
@@ -3586,6 +3586,7 @@ async function doLogin(){
     notify('Welcome back' + (data.user?.name ? ', '+data.user.name : '') + ' ✴');
     if(typeof bootFinFlowAPI === 'function') bootFinFlowAPI();
     loadEntitiesFromDB();
+  loadBankingFromDB();
   }catch(e){
     if(errEl) errEl.textContent='Network error — is the server running?';
   }finally{
@@ -3620,6 +3621,7 @@ async function doRegister(){
     notify('Account created ✴ Welcome to FinFlow!');
     if(typeof bootFinFlowAPI === 'function') bootFinFlowAPI();
     loadEntitiesFromDB();
+  loadBankingFromDB();
   }catch(e){
     if(errEl) errEl.textContent='Network error — is the server running?';
   }finally{
@@ -4347,6 +4349,8 @@ async function loadEntityData(idx){
     if(typeof renderPayroll==='function')   renderPayroll();
     if(typeof updateDashboard==='function') updateDashboard();
 
+    // Also refresh banking for this entity
+    if(typeof loadBankingFromDB==='function') loadBankingFromDB();
     console.log('[Entity] Loaded real data — invoices:'+invoices.length+' expenses:'+expenses.length);
   } catch(e){ console.warn('[Entity] loadEntityData failed:', e.message); }
 }
@@ -6180,14 +6184,33 @@ const bankAccounts=[
   {name:'Business Savings',bank:'Chase Business',balance:38200,type:'Savings',last4:'9201',updated:'Today'},
   {name:'Stripe Balance',bank:'Stripe',balance:5730,type:'Payment Processor',last4:'—',updated:'2h ago'},
 ];
-const bankTxns=[
-  {desc:'RetailCo Payment',amount:12800,type:'credit',date:'Apr 28',cat:'Revenue'},
-  {desc:'AWS Infrastructure',amount:-6200,type:'debit',date:'Apr 27',cat:'Software'},
-  {desc:'TechStart Ltd payment',amount:9600,type:'credit',date:'Apr 26',cat:'Revenue'},
-  {desc:'Office Rent — Apr',amount:-3800,type:'debit',date:'Apr 25',cat:'Rent'},
-  {desc:'Payroll run',amount:-21400,type:'debit',date:'Apr 25',cat:'Payroll'},
-  {desc:'Mango & Co payment',amount:4800,type:'credit',date:'Apr 24',cat:'Revenue'},
-];
+let bankTxns=[];
+
+async function loadBankingFromDB(){
+  try {
+    const res = await fetch('/api/banking',{credentials:'include'});
+    if(!res.ok) return;
+    const rows = await res.json();
+    bankTxns = rows.map(r=>({
+      _dbId: r.id,
+      desc: r.description,
+      amount: Math.abs(r.amount),
+      type: r.type==='credit'?'credit':'debit',
+      date: r.date ? new Date(r.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'Today',
+      cat: r.category||'Other',
+    }));
+    if(typeof renderBanking==='function') renderBanking();
+  } catch(e){ console.warn('[Banking] Load failed:',e.message); }
+}
+
+async function saveBankTxn(desc, amount, type, cat){
+  try {
+    const res = await fetch('/api/banking',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({desc, amount, type, cat, date:new Date().toISOString().slice(0,10)})});
+    if(!res.ok) throw new Error('Save failed');
+    await loadBankingFromDB();
+  } catch(e){ if(typeof notify==='function') notify('Error saving transaction'); }
+}
 function renderBanking(){
   const al=document.getElementById('bank-accounts-list');
   if(al)al.innerHTML=bankAccounts.map(a=>`
@@ -8015,6 +8038,30 @@ function renderBudget(){
 requestAnimationFrame(renderBudget);
 
 // ── 5. MRR CHART ────────────────────────────────────────────────────────────
+// ── MRR: wire to real data from recurring invoices ──────────────────
+async function loadMRRData(){
+  try {
+    // Calculate MRR from real recurring invoices
+    const res = await fetch('/api/recurring-invoices',{credentials:'include'});
+    if(!res.ok) return;
+    const rows = await res.json();
+    const monthlyTotal = rows.filter(r=>r.status==='active').reduce((s,r)=>{
+      const amt = parseFloat(r.amount)||0;
+      if(r.frequency==='monthly') return s+amt;
+      if(r.frequency==='quarterly') return s+(amt/3);
+      if(r.frequency==='annually') return s+(amt/12);
+      return s+amt;
+    },0);
+    const arr = monthlyTotal*12;
+    // Update MRR metric cards
+    const els = {
+      'mrr-val': '$'+Math.round(monthlyTotal).toLocaleString(),
+      'arr-val': '$'+Math.round(arr/1000)+'K',
+    };
+    Object.entries(els).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.textContent=val; });
+  } catch(e){ console.warn('[MRR] Load failed:',e.message); }
+}
+
 let mrrChartInst=null;
 function renderMRRChart(){
   const canvas=document.getElementById('mrrChart');
@@ -8107,8 +8154,8 @@ window.showPage=function(id,el){
   if(extras[id])document.getElementById('pageTitle').textContent=extras[id];
   const _rAF=window.requestAnimationFrame||setTimeout;
   if(id==='budget')  _rAF(renderBudget);
-  if(id==='mrr')     _rAF(renderMRRChart);
-  if(id==='banking') _rAF(renderPlaid);
+  if(id==='mrr'){ _rAF(renderMRRChart); loadMRRData(); }
+  if(id==='banking'){ _rAF(renderPlaid); loadBankingFromDB(); }
   if(id==='entities')_rAF(renderEntities);
   if(id==='team')    _rAF(renderTeam);
   if(id==='audit')   _rAF(renderAudit);

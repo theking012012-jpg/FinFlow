@@ -1665,6 +1665,44 @@ async function runRecurringScheduler() {
   }
 }
 
+// ── BANKING TRANSACTIONS ──────────────────────────────────────────────────────
+app.get('/api/banking', requireAuth, wrap(async (req, res) => {
+  res.json(await db.all('personal_transactions', r => r.user_id === req.session.userId && r.source === 'banking', (a, b) => new Date(b.date) - new Date(a.date)));
+}));
+app.post('/api/banking', requireAuth, wrap(async (req, res) => {
+  const { desc, amount, type, date, cat } = req.body || {};
+  if (!desc || amount == null) return res.status(400).json({ error: 'desc and amount required.' });
+  const { row } = await db.insert('personal_transactions', {
+    user_id: req.session.userId,
+    entity_id: req.entityId || null,
+    description: desc, amount: parseFloat(amount) || 0,
+    type: type || 'debit', date: date || new Date().toISOString().slice(0, 10),
+    category: cat || 'Other', source: 'banking',
+  });
+  res.status(201).json(row);
+}));
+app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
+  if (!(await ownedBy('personal_transactions', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  await db.delete('personal_transactions', r => r.id === parseInt(req.params.id));
+  res.json({ ok: true });
+}));
+
+// ── MRR / SAAS ────────────────────────────────────────────────────────────────
+app.get('/api/mrr', requireAuth, wrap(async (req, res) => {
+  const rows = await db.all('user_settings', r => r.user_id === req.session.userId && r.key === 'mrr_data');
+  res.json(rows[0]?.value ? JSON.parse(rows[0].value) : { subscribers: [], plans: [] });
+}));
+app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
+  const existing = await db.get('user_settings', r => r.user_id === req.session.userId && r.key === 'mrr_data');
+  const data = JSON.stringify(req.body || {});
+  if (existing) {
+    await db.update('user_settings', r => r.id === existing.id, { value: data });
+  } else {
+    await db.insert('user_settings', { user_id: req.session.userId, key: 'mrr_data', value: data });
+  }
+  res.json({ ok: true });
+}));
+
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 initDB().then(() => {
   app.listen(PORT, () => {

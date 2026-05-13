@@ -740,10 +740,14 @@ async function boot() {
     initUI();
     loadClients();
     loadEarnings();
-    loadPendingRequests();
   } catch (e) {
+    console.error('Boot error:', e);
     window.location.href = '/accountant-login';
   }
+}
+
+async function loadPendingRequests() {
+  // placeholder — no endpoint yet
 }
 
 function initUI() {

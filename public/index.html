@@ -1009,7 +1009,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <div class="brand-logo" id="biz-logo"><svg viewBox="0 0 16 16"><polyline points="1,11 5,6 8,9 11,4 15,7"/><line x1="1" y1="14" x2="15" y2="14"/></svg></div>
       <div class="brand-text" style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:4px">
-          <div class="brand-name" id="sb-brand-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px">FinFlow Inc.</div>
+          <div class="brand-name" id="sb-brand-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px">My Business</div>
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--t3)" stroke-width="1.5" stroke-linecap="round" style="flex-shrink:0"><polyline points="2,3 5,7 8,3"/></svg>
         </div>
         <div class="brand-badge" id="biz-currency-badge">USD · Pro</div>
@@ -3515,7 +3515,7 @@ function patchSFormatter(){
   const origS = window.S;
   if(!origS) return;
   window.S = function(n){
-    const converted = fxConvert(n);
+    const converted = typeof fxConvert === 'function' ? fxConvert(n) : (parseFloat(n)||0);
     // Use CURRENCIES symbol instead of currencySymbol so it stays in sync
     const sym = CURRENCIES[activeCurrency]?.symbol || '$';
     const abs = Math.abs(converted);
@@ -4209,11 +4209,11 @@ async function loadEntityData(idx){
       fetch('/api/inventory',  {credentials:'include'}),
       fetch('/api/payroll',    {credentials:'include'}),
     ]);
-    const invoices   = invRes.ok   ? await invRes.json()   : [];
-    const expenses   = expRes.ok   ? await expRes.json()   : [];
-    const custs      = custRes.ok  ? await custRes.json()  : [];
-    const invt       = invtRes.ok  ? await invtRes.json()  : [];
-    const payroll    = payRes.ok   ? await payRes.json()   : [];
+    const invoices   = invRes.ok   ? (await invRes.json()  || []) : [];
+    const expenses   = expRes.ok   ? (await expRes.json()  || []) : [];
+    const custs      = custRes.ok  ? (await custRes.json() || []) : [];
+    const invt       = invtRes.ok  ? (await invtRes.json() || []) : [];
+    const payroll    = payRes.ok   ? (await payRes.json()  || []) : [];
 
     // Replace userInvoices
     userInvoices = invoices.map(r=>({

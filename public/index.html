@@ -4116,8 +4116,23 @@ function initEnhancements(){
     applyRole(savedRole);
     document.getElementById('login-screen').style.display = 'none';
     injectRoleBadge(savedRole);
-    // Load real entities from DB
     if(typeof loadEntitiesFromDB === 'function') loadEntitiesFromDB();
+    loadBankingFromDB();
+  } else {
+    // Check server session — auto-login if session still valid
+    fetch('/api/me', {credentials:'include'}).then(async r => {
+      if (r.ok) {
+        const data = await r.json();
+        // Session is valid, boot as owner
+        currentRole = 'owner';
+        applyRole('owner');
+        sessionStorage.setItem('ff_role', 'owner');
+        document.getElementById('login-screen').style.display = 'none';
+        injectRoleBadge('owner');
+        if(typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
+        loadBankingFromDB();
+      }
+    }).catch(()=>{});
   }
 }
 

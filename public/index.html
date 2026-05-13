@@ -4564,7 +4564,7 @@ function updateDashboard(d=getPeriodData()){
     document.getElementById('d-outstanding').textContent=S(_outstanding);
     const _odEl = document.getElementById('d-outstanding-chg');
     if(_odEl){ _odEl.textContent = _overdue.length ? _overdue.length+' overdue · '+S(_overdueAmt) : 'All invoices paid'; _odEl.className = _overdue.length ? 'mc-change dn' : 'mc-change up'; }
-    document.getElementById('d-outstanding-chg').textContent='Apr 2026 · 2 overdue $3,800';
+    // d-outstanding-chg handled above
     document.getElementById('d-outstanding-chg').className='mc-change dn';
   }
   // Expense bars
@@ -4582,8 +4582,7 @@ function updateDashboard(d=getPeriodData()){
     // Real transactions from DB
     ...((window.userInvoices||[]).slice(0,3).map(i=>({name:i.client, cat:'Revenue · '+i.status, amt:i.amount, type:'income'}))),
     ...((window.bizExpenses||[]).slice(0,2).map(e=>({name:e.desc, cat:'Expense · '+e.cat, amt:e.amount, type:'expense'}))),
-    {name:'Annual payroll',            cat:'Expense · Salaries',    amt:sum(EXP_SAL,0,12),      type:'expense'},
-    {name:'Office rent (×12)',         cat:'Expense · Fixed',       amt:EXP_RENT[0]*12,          type:'expense'},
+    ...((window.bizExpenses||[]).slice(0,2).map(e=>({name:e.desc||e.description, cat:'Expense · '+(e.cat||e.category||'Other'), amt:parseFloat(e.amount)||0, type:'expense'}))),
     {name:'Stripe product sales',      cat:'Revenue',               amt:sum(SRC_STRIPE,0,12),    type:'income'},
   ]:currentPeriod==='quarter'?[
     {name:'RetailCo — Q4 invoices',    cat:'Revenue',           amt:SRC_RETAILCO[9]+SRC_RETAILCO[10]+SRC_RETAILCO[11],type:'income'},

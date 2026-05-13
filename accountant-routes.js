@@ -373,8 +373,8 @@ If you cannot find a field, use null. Be concise.`;
              u.data->>'email'      AS client_email,
              u.data->>'plan'       AS client_plan,
              u.data->>'last_login' AS last_login,
-             (SELECT MAX(created_at) FROM invoices WHERE user_id = ac.user_id) AS last_invoice,
-             (SELECT MAX(created_at) FROM expenses WHERE user_id = ac.user_id) AS last_expense
+             (SELECT MAX(i.created_at) FROM invoices i WHERE i.user_id = ac.user_id) AS last_invoice,
+             (SELECT MAX(e.created_at) FROM expenses e WHERE e.user_id = ac.user_id) AS last_expense
       FROM accountant_clients ac
       JOIN users u ON u.id = ac.user_id
       WHERE ac.accountant_id = $1

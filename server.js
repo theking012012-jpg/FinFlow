@@ -204,7 +204,10 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     req.session.userId = user.id;
     req.session.userRole = user.role || 'owner';
     // Track last login time
-    await pool.query(`UPDATE users SET data = data || '{"last_login":"${new Date().toISOString()}"}' WHERE id = $1`, [user.id]);
+    await pool.query(
+      `UPDATE users SET data = data || jsonb_build_object('last_login', $1::text) WHERE id = $2`,
+      [new Date().toISOString(), user.id]
+    );
     res.json({ user: safeUser(user) });
   } catch (err) {
     console.error('[Login] Unexpected error:', err);

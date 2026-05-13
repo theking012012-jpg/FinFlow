@@ -4123,18 +4123,41 @@ function initEnhancements(){
     fetch('/api/me', {credentials:'include'}).then(async r => {
       if (r.ok) {
         const data = await r.json();
-        // Session is valid, boot as owner
         currentRole = 'owner';
         applyRole('owner');
         sessionStorage.setItem('ff_role', 'owner');
         document.getElementById('login-screen').style.display = 'none';
         injectRoleBadge('owner');
         if(typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
-        loadBankingFromDB();
+        if(typeof loadBankingFromDB === 'function') loadBankingFromDB();
       }
     }).catch(()=>{});
   }
 }
+
+// ── AUTO SESSION CHECK ON LOAD ──────────────────────────────────────────────
+// Fire immediately when page loads to restore session without waiting for user action
+document.addEventListener('DOMContentLoaded', function() {
+  // Small delay to let all scripts initialize
+  setTimeout(function() {
+    const role = sessionStorage.getItem('ff_role');
+    if (!role) {
+      // No session storage — check server session
+      fetch('/api/me', {credentials:'include'}).then(async r => {
+        if (r.ok) {
+          currentRole = 'owner';
+          applyRole('owner');
+          sessionStorage.setItem('ff_role', 'owner');
+          const ls = document.getElementById('login-screen');
+          if (ls) ls.style.display = 'none';
+          if(typeof injectRoleBadge === 'function') injectRoleBadge('owner');
+          if(typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
+          if(typeof loadBankingFromDB === 'function') loadBankingFromDB();
+        }
+      }).catch(()=>{});
+    }
+  }, 500);
+});
 
 // ════════════════════════════════════════════
 // PATCH saveCustomer / saveInvoice / etc to persist

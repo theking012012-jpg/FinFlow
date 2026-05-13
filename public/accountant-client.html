@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FinFlow — Client Workspace</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <style>
+    :root {
+      --bg:        #0e0e0c;
+      --bg2:       #141410;
+      --card:      #1a1a15;
+      --card2:     #1f1f18;
+      --gold:      #c9a84c;
+      --gold-light:#e8cc7a;
+      --gold-dim:  #8a6f2e;
+      --text:      #f0ead6;
+      --text2:     #9a9278;
+      --text3:     #5a5540;
+      --border:    #2a2820;
+      --border2:   #3a3828;
+      --green:     #4a9c6d;
+      --green-bg:  #0d1f15;
+      --red:       #c45c5c;
+      --red-bg:    #1f0d0d;
+      --amber:     #c48a2a;
+      --amber-bg:  #1f1608;
+      --sidebar-w: 220px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-weight:300;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+
+    /* TOP BAR */
+    .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:56px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;z-index:20;}
+    .topbar-left{display:flex;align-items:center;gap:20px;}
+    .topbar-brand{font-family:'Cormorant Garamond',serif;font-size:20px;color:var(--gold);letter-spacing:.05em;font-weight:400;}
+    .topbar-sep{width:1px;height:20px;background:var(--border2);}
+    .client-selector{display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--card);transition:all .15s;}
+    .client-selector:hover{border-color:var(--gold-dim);}
+    .client-avatar{width:28px;height:28px;border-radius:50%;background:rgba(201,168,76,.15);border:1px solid var(--gold-dim);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--gold);font-weight:500;}
+    .client-name{font-size:13px;color:var(--text);font-weight:400;}
+    .client-entity{font-size:11px;color:var(--text3);}
+    .topbar-right{display:flex;align-items:center;gap:12px;}
+    .period-tabs{display:flex;gap:4px;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:3px;}
+    .ptab{font-size:11px;padding:4px 12px;border-radius:4px;cursor:pointer;color:var(--text3);transition:all .15s;}
+    .ptab.active{background:rgba(201,168,76,.12);color:var(--gold);}
+    .topbar-btn{display:flex;align-items:center;gap:5px;font-size:12px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text2);cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;}
+    .topbar-btn:hover{border-color:var(--border2);color:var(--text);}
+    .topbar-btn.primary{background:rgba(201,168,76,.12);border-color:var(--gold-dim);color:var(--gold);}
+    .topbar-btn.primary:hover{background:rgba(201,168,76,.2);}
+    .back-btn{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text3);cursor:pointer;text-decoration:none;transition:color .15s;}
+    .back-btn:hover{color:var(--text2);}
+
+    /* LAYOUT */
+    .workspace{display:flex;flex:1;overflow:hidden;}
+
+    /* SIDEBAR */
+    .sidebar{width:var(--sidebar-w);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+    .sidebar-client{padding:16px 16px 12px;border-bottom:1px solid var(--border);}
+    .sc-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;}
+    .sc-name{font-family:'Cormorant Garamond',serif;font-size:16px;color:var(--text);font-weight:300;margin-bottom:2px;}
+    .sc-meta{font-size:11px;color:var(--text3);margin-bottom:8px;}
+    .sc-access{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:3px 8px;border-radius:3px;background:var(--green-bg);color:var(--green);border:1px solid rgba(74,156,109,.2);}
+
+    /* ENTITY TABS */
+    .entity-section{padding:12px 16px;border-bottom:1px solid var(--border);}
+    .entity-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px;}
+    .entity-list{display:flex;flex-direction:column;gap:3px;}
+    .entity-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:5px;cursor:pointer;font-size:12px;color:var(--text3);transition:all .15s;border:1px solid transparent;}
+    .entity-item:hover{background:rgba(255,255,255,.02);color:var(--text2);}
+    .entity-item.active{background:rgba(201,168,76,.06);color:var(--gold);border-color:rgba(201,168,76,.15);}
+    .entity-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+
+    /* NAV */
+    .sidebar-nav{flex:1;padding:10px 0;}
+    .nav-section-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;padding:12px 20px 5px;margin-top:4px;}
+    .nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;font-size:12.5px;color:var(--text3);cursor:pointer;border-left:2px solid transparent;transition:all .15s;}
+    .nav-item:hover{color:var(--text2);background:rgba(255,255,255,.02);}
+    .nav-item.active{color:var(--gold);border-left-color:var(--gold);background:rgba(201,168,76,.04);}
+    .nav-item i{font-size:15px;width:16px;text-align:center;}
+
+    /* MAIN CONTENT */
+    .main{flex:1;overflow-y:auto;background:var(--bg);}
+    .page-section{display:none;padding:24px;}
+    .page-section.active{display:block;}
+
+    /* PAGE HEADER */
+    .page-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
+    .page-title{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:300;color:var(--text);}
+    .page-subtitle{font-size:12px;color:var(--text3);margin-top:3px;}
+    .page-actions{display:flex;gap:8px;}
+
+    /* METRIC CARDS */
+    .metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;}
+    .metric-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;}
+    .mc-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px;}
+    .mc-value{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:300;margin-bottom:4px;}
+    .mc-value.green{color:var(--green);}
+    .mc-value.red{color:var(--red);}
+    .mc-value.gold{color:var(--gold);}
+    .mc-sub{font-size:11px;color:var(--text3);}
+
+    /* STATUS ROW */
+    .status-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;}
+    .status-pill{padding:10px 16px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;}
+    .sp-paid{background:var(--green-bg);border:1px solid rgba(74,156,109,.2);}
+    .sp-pending{background:var(--amber-bg);border:1px solid rgba(196,138,42,.2);}
+    .sp-overdue{background:var(--red-bg);border:1px solid rgba(196,92,92,.2);}
+    .sp-label{font-size:12px;}
+    .sp-paid .sp-label{color:var(--green);}
+    .sp-pending .sp-label{color:var(--amber);}
+    .sp-overdue .sp-label{color:var(--red);}
+    .sp-value{font-size:13px;font-weight:500;}
+    .sp-paid .sp-value{color:var(--green);}
+    .sp-pending .sp-value{color:var(--amber);}
+    .sp-overdue .sp-value{color:var(--red);}
+
+    /* TWO COL */
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+    .three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px;}
+
+    /* CARDS */
+    .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:16px;}
+    .card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+    .card-title{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;}
+    .card-action{font-size:11px;color:var(--gold);cursor:pointer;padding:4px 10px;border-radius:4px;border:1px solid var(--gold-dim);background:rgba(201,168,76,.06);transition:all .15s;}
+    .card-action:hover{background:rgba(201,168,76,.12);}
+
+    /* ALERT */
+    .alert-overdue{background:var(--red-bg);border:1px solid rgba(196,92,92,.3);border-radius:8px;padding:10px 16px;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--red);margin-bottom:16px;}
+
+    /* TABLES */
+    .data-table{width:100%;border-collapse:collapse;}
+    .data-table th{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);}
+    .data-table td{padding:10px 12px;font-size:12.5px;color:var(--text2);border-bottom:1px solid rgba(42,40,32,.5);}
+    .data-table tr:last-child td{border-bottom:none;}
+    .data-table tr:hover td{background:rgba(255,255,255,.015);}
+    .data-table .primary{color:var(--text);}
+    .data-table .amount{font-weight:500;font-family:'DM Sans',sans-serif;}
+    .data-table .amount.income{color:var(--green);}
+    .data-table .amount.expense{color:var(--red);}
+
+    /* BADGES */
+    .badge{font-size:10px;padding:2px 8px;border-radius:3px;font-weight:400;display:inline-block;}
+    .badge-green{background:var(--green-bg);color:var(--green);border:1px solid rgba(74,156,109,.2);}
+    .badge-red{background:var(--red-bg);color:var(--red);border:1px solid rgba(196,92,92,.2);}
+    .badge-amber{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(196,138,42,.2);}
+
+    /* P&L */
+    .pl-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(42,40,32,.5);font-size:13px;}
+    .pl-row:last-child{border:none;padding-top:12px;margin-top:4px;}
+    .pl-label{color:var(--text2);}
+    .pl-total{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:300;}
+
+    /* CATEGORY BARS */
+    .cat-row{margin-bottom:12px;}
+    .cat-meta{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;}
+    .cat-label{color:var(--text2);}
+    .cat-amount{color:var(--text3);}
+    .bar-track{height:4px;background:var(--border);border-radius:2px;overflow:hidden;}
+    .bar-fill{height:100%;border-radius:2px;transition:width .4s;}
+
+    /* NOTES */
+    .notes-textarea{width:100%;min-height:100px;resize:vertical;background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:13px;color:var(--text);font-family:'DM Sans',sans-serif;font-weight:300;outline:none;transition:border-color .15s;}
+    .notes-textarea:focus{border-color:var(--gold-dim);}
+
+    /* FLAG BUTTON */
+    .flag-btn{font-size:10px;padding:3px 8px;border-radius:3px;border:1px solid var(--border);background:none;color:var(--text3);cursor:pointer;transition:all .15s;}
+    .flag-btn:hover{border-color:var(--amber);color:var(--amber);}
+
+    /* TAX BREAKDOWN */
+    .tax-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;}
+    .tax-card{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:14px;}
+    .tax-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;}
+    .tax-value{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:300;}
+
+    /* BALANCE SHEET */
+    .bs-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+    .bs-section{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:16px;}
+    .bs-section-title{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px;font-weight:600;}
+    .bs-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(42,40,32,.5);font-size:13px;}
+    .bs-row:last-child{border:none;font-weight:500;color:var(--text);padding-top:10px;}
+    .bs-label{color:var(--text2);}
+
+    /* JOURNAL */
+    .journal-form{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:16px;display:none;}
+    .journal-form.open{display:block;}
+    .jnl-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+    .jnl-input{width:100%;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:8px 10px;font-size:12.5px;font-family:'DM Sans',sans-serif;outline:none;}
+    .jnl-input:focus{border-color:var(--gold-dim);}
+    .jnl-lines-hdr{display:grid;grid-template-columns:2fr 1fr 1fr 36px;gap:8px;font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;padding:0 4px;margin-bottom:6px;}
+    .jnl-line{display:grid;grid-template-columns:2fr 1fr 1fr 36px;gap:8px;margin-bottom:6px;}
+    .jnl-remove{background:none;border:1px solid var(--border);color:var(--text3);border-radius:4px;cursor:pointer;font-size:14px;transition:all .15s;}
+    .jnl-remove:hover{border-color:var(--red);color:var(--red);}
+
+    /* PERIOD LOCKING */
+    .period-row{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--card2);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:12.5px;}
+    .lock-btn{font-size:11px;padding:4px 12px;border-radius:4px;border:1px solid var(--border);background:none;color:var(--text3);cursor:pointer;transition:all .15s;}
+    .lock-btn:hover{border-color:var(--amber);color:var(--amber);}
+    .lock-btn.locked{border-color:rgba(196,138,42,.3);color:var(--amber);background:var(--amber-bg);cursor:default;}
+
+    /* PAYROLL */
+    .payroll-summary{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--card2);border:1px solid var(--border);border-radius:8px;margin-top:12px;font-size:13px;}
+
+    /* CUSTOMERS */
+    .customer-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(42,40,32,.5);font-size:12.5px;}
+    .customer-row:last-child{border:none;}
+    .customer-avatar{width:32px;height:32px;border-radius:50%;background:rgba(201,168,76,.1);border:1px solid var(--gold-dim);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--gold);font-weight:500;flex-shrink:0;}
+
+    /* SCROLLBAR */
+    ::-webkit-scrollbar{width:4px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+    /* LOADING */
+    .loading{display:flex;align-items:center;justify-content:center;height:200px;color:var(--text3);font-size:13px;}
+    .empty{text-align:center;padding:40px;color:var(--text3);font-size:13px;}
+
+    /* SECTION BADGE */
+    .section-count{font-size:10px;background:rgba(201,168,76,.1);color:var(--gold);border-radius:10px;padding:1px 7px;margin-left:6px;}
+
+    /* RESPONSIVE */
+    @media(max-width:900px){
+      .metrics-grid{grid-template-columns:repeat(2,1fr);}
+      .two-col{grid-template-columns:1fr;}
+      .tax-grid{grid-template-columns:1fr 1fr;}
+    }
+  </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="topbar-brand">FinFlow</span>
+    <div class="topbar-sep"></div>
+    <a class="back-btn" href="/accountant">
+      <i class="ti ti-arrow-left" style="font-size:13px"></i>
+      Back to clients
+    </a>
+    <div class="topbar-sep"></div>
+    <div class="client-selector" id="client-selector-btn">
+      <div class="client-avatar" id="topbar-avatar">?</div>
+      <div>
+        <div class="client-name" id="topbar-client-name">Loading…</div>
+        <div class="client-entity" id="topbar-entity-name">All entities</div>
+      </div>
+      <i class="ti ti-chevron-down" style="font-size:12px;color:var(--text3);margin-left:4px"></i>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="period-tabs">
+      <div class="ptab active" data-period="year" onclick="setPeriod(this)">Year</div>
+      <div class="ptab" data-period="quarter" onclick="setPeriod(this)">Quarter</div>
+      <div class="ptab" data-period="month" onclick="setPeriod(this)">Month</div>
+      <div class="ptab" data-period="all" onclick="setPeriod(this)">All time</div>
+    </div>
+    <button class="topbar-btn" onclick="refreshData()"><i class="ti ti-refresh"></i> Refresh</button>
+    <button class="topbar-btn" onclick="exportCSV()"><i class="ti ti-download"></i> Export</button>
+    <button class="topbar-btn primary" onclick="toggleJournalForm()"><i class="ti ti-plus"></i> Journal Entry</button>
+  </div>
+</div>
+
+<!-- WORKSPACE -->
+<div class="workspace">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-client">
+      <div class="sc-label">Client workspace</div>
+      <div class="sc-name" id="sb-client-name">Loading…</div>
+      <div class="sc-meta" id="sb-client-meta">—</div>
+      <div class="sc-access" id="sb-access-badge">
+        <i class="ti ti-shield-check" style="font-size:11px"></i>
+        <span>View access</span>
+      </div>
+    </div>
+
+    <div class="entity-section">
+      <div class="entity-label">Entities</div>
+      <div class="entity-list" id="entity-list">
+        <div class="entity-item active" data-entity="all" onclick="switchEntity('all',this)">
+          <div class="entity-dot" style="background:var(--gold)"></div>
+          All entities
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-nav">
+      <div class="nav-section-label">Overview</div>
+      <div class="nav-item active" onclick="showSection('dashboard',this)"><i class="ti ti-layout-dashboard"></i>Dashboard</div>
+
+      <div class="nav-section-label">Money In</div>
+      <div class="nav-item" onclick="showSection('invoices',this)"><i class="ti ti-file-invoice"></i>Invoices<span class="section-count" id="inv-count">0</span></div>
+      <div class="nav-item" onclick="showSection('customers',this)"><i class="ti ti-users"></i>Customers</div>
+
+      <div class="nav-section-label">Money Out</div>
+      <div class="nav-item" onclick="showSection('expenses',this)"><i class="ti ti-receipt"></i>Expenses<span class="section-count" id="exp-count">0</span></div>
+      <div class="nav-item" onclick="showSection('payroll',this)"><i class="ti ti-users-group"></i>Payroll</div>
+
+      <div class="nav-section-label">Accounting</div>
+      <div class="nav-item" onclick="showSection('pnl',this)"><i class="ti ti-chart-bar"></i>P&L Statement</div>
+      <div class="nav-item" onclick="showSection('balance',this)"><i class="ti ti-scale"></i>Balance Sheet</div>
+      <div class="nav-item" onclick="showSection('journals',this)"><i class="ti ti-book"></i>Journals</div>
+      <div class="nav-item" onclick="showSection('tax',this)"><i class="ti ti-calculator"></i>Tax Summary</div>
+
+      <div class="nav-section-label">Accountant</div>
+      <div class="nav-item" onclick="showSection('notes',this)"><i class="ti ti-notes"></i>My Notes</div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- ── DASHBOARD ────────────────────────────── -->
+    <div class="page-section active" id="section-dashboard">
+      <div class="page-hdr">
+        <div>
+          <div class="page-title" id="dash-title">Dashboard</div>
+          <div class="page-subtitle" id="dash-subtitle">Full year overview</div>
+        </div>
+      </div>
+
+      <div id="overdue-banner" class="alert-overdue" style="display:none">
+        <i class="ti ti-alert-triangle"></i>
+        <span id="overdue-text"></span>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="mc-label">Total Revenue</div>
+          <div class="mc-value green" id="d-revenue">—</div>
+          <div class="mc-sub">Paid invoices</div>
+        </div>
+        <div class="metric-card">
+          <div class="mc-label">Total Expenses</div>
+          <div class="mc-value red" id="d-expenses">—</div>
+          <div class="mc-sub">All recorded expenses</div>
+        </div>
+        <div class="metric-card">
+          <div class="mc-label">Net Profit</div>
+          <div class="mc-value gold" id="d-profit">—</div>
+          <div class="mc-sub" id="d-margin">—</div>
+        </div>
+        <div class="metric-card">
+          <div class="mc-label">Outstanding</div>
+          <div class="mc-value" id="d-outstanding">—</div>
+          <div class="mc-sub">Unpaid invoices</div>
+        </div>
+      </div>
+
+      <div class="status-row">
+        <div class="status-pill sp-paid">
+          <span class="sp-label">Paid</span>
+          <span class="sp-value" id="s-paid">—</span>
+        </div>
+        <div class="status-pill sp-pending">
+          <span class="sp-label">Pending</span>
+          <span class="sp-value" id="s-pending">—</span>
+        </div>
+        <div class="status-pill sp-overdue">
+          <span class="sp-label">Overdue</span>
+          <span class="sp-value" id="s-overdue">—</span>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-hdr">
+            <div class="card-title">Recent Invoices</div>
+            <div class="card-action" onclick="showSection('invoices',null)">View all</div>
+          </div>
+          <table class="data-table">
+            <thead><tr><th>Client</th><th>Due Date</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+            <tbody id="dash-invoices"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-hdr">
+            <div class="card-title">Expenses by Category</div>
+          </div>
+          <div id="dash-categories"></div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-hdr">
+            <div class="card-title">Recent Expenses</div>
+            <div class="card-action" onclick="showSection('expenses',null)">View all</div>
+          </div>
+          <table class="data-table">
+            <thead><tr><th>Description</th><th>Category</th><th>Amount</th><th>Deductible</th><th></th></tr></thead>
+            <tbody id="dash-expenses"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-hdr">
+            <div class="card-title">P&L Summary</div>
+          </div>
+          <div id="dash-pl"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── INVOICES ────────────────────────────── -->
+    <div class="page-section" id="section-invoices">
+      <div class="page-hdr">
+        <div>
+          <div class="page-title">Invoices</div>
+          <div class="page-subtitle" id="inv-subtitle">—</div>
+        </div>
+      </div>
+      <div class="metrics-grid" style="grid-template-columns:repeat(4,1fr)">
+        <div class="metric-card"><div class="mc-label">Total Billed</div><div class="mc-value" id="inv-total">—</div></div>
+        <div class="metric-card"><div class="mc-label">Collected</div><div class="mc-value green" id="inv-collected">—</div></div>
+        <div class="metric-card"><div class="mc-label">Outstanding</div><div class="mc-value gold" id="inv-outstanding">—</div><div class="mc-sub" id="inv-out-count">—</div></div>
+        <div class="metric-card"><div class="mc-label">Overdue</div><div class="mc-value red" id="inv-overdue">—</div><div class="mc-sub" id="inv-ov-count">—</div></div>
+      </div>
+      <div class="card">
+        <table class="data-table">
+          <thead><tr><th>Client</th><th>Due Date</th><th>Amount</th><th>Status</th><th>Flag</th></tr></thead>
+          <tbody id="all-invoices"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── EXPENSES ────────────────────────────── -->
+    <div class="page-section" id="section-expenses">
+      <div class="page-hdr">
+        <div>
+          <div class="page-title">Expenses</div>
+          <div class="page-subtitle" id="exp-subtitle">—</div>
+        </div>
+      </div>
+      <div class="metrics-grid" style="grid-template-columns:repeat(3,1fr)">
+        <div class="metric-card"><div class="mc-label">Total Expenses</div><div class="mc-value red" id="exp-total">—</div></div>
+        <div class="metric-card"><div class="mc-label">Fully Deductible</div><div class="mc-value green" id="exp-ded">—</div></div>
+        <div class="metric-card"><div class="mc-label">Largest Category</div><div class="mc-value" id="exp-top-cat" style="font-size:18px">—</div></div>
+      </div>
+      <div class="card">
+        <table class="data-table">
+          <thead><tr><th>Description</th><th>Category</th><th>Date</th><th>Amount</th><th>Deductible</th><th>Flag</th></tr></thead>
+          <tbody id="all-expenses"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── CUSTOMERS ────────────────────────────── -->
+    <div class="page-section" id="section-customers">
+      <div class="page-hdr">
+        <div><div class="page-title">Customers</div></div>
+      </div>
+      <div class="card" id="customers-list"></div>
+    </div>
+
+    <!-- ── PAYROLL ────────────────────────────── -->
+    <div class="page-section" id="section-payroll">
+      <div class="page-hdr">
+        <div><div class="page-title">Payroll</div></div>
+      </div>
+      <div class="card">
+        <table class="data-table">
+          <thead><tr><th>Employee</th><th>Role</th><th>Type</th><th>Gross Pay</th><th>Tax Rate</th><th>Net Pay</th></tr></thead>
+          <tbody id="payroll-list"></tbody>
+        </table>
+        <div class="payroll-summary" id="payroll-summary" style="display:none">
+          <span style="color:var(--text2)">Total payroll obligation</span>
+          <span class="mc-value red" id="payroll-total" style="font-size:18px">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── P&L ────────────────────────────── -->
+    <div class="page-section" id="section-pnl">
+      <div class="page-hdr">
+        <div><div class="page-title">Profit & Loss Statement</div></div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-hdr"><div class="card-title">Income Statement</div></div>
+          <div id="pnl-statement"></div>
+        </div>
+        <div class="card">
+          <div class="card-hdr"><div class="card-title">Expenses by Category</div></div>
+          <div id="pnl-categories"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── BALANCE SHEET ────────────────────────────── -->
+    <div class="page-section" id="section-balance">
+      <div class="page-hdr">
+        <div><div class="page-title">Balance Sheet</div></div>
+      </div>
+      <div class="bs-grid">
+        <div class="bs-section">
+          <div class="bs-section-title">Assets</div>
+          <div class="bs-row"><span class="bs-label">Accounts Receivable</span><span id="bs-ar" class="green" style="color:var(--green)">—</span></div>
+          <div class="bs-row"><span>Total Assets</span><span id="bs-assets" style="color:var(--green)">—</span></div>
+        </div>
+        <div class="bs-section">
+          <div class="bs-section-title">Liabilities</div>
+          <div class="bs-row"><span class="bs-label">Accounts Payable</span><span id="bs-ap" style="color:var(--red)">—</span></div>
+          <div class="bs-row"><span class="bs-label">Payroll Obligations</span><span id="bs-payroll" style="color:var(--red)">—</span></div>
+          <div class="bs-row"><span>Total Liabilities</span><span id="bs-liabilities" style="color:var(--red)">—</span></div>
+        </div>
+      </div>
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center">
+        <span style="color:var(--text2);font-size:14px">Net Equity</span>
+        <span class="mc-value gold" id="bs-equity">—</span>
+      </div>
+    </div>
+
+    <!-- ── JOURNALS ────────────────────────────── -->
+    <div class="page-section" id="section-journals">
+      <div class="page-hdr">
+        <div><div class="page-title">Journal Entries</div></div>
+        <div class="page-actions">
+          <button class="topbar-btn primary" onclick="toggleJournalForm()"><i class="ti ti-plus"></i> New Entry</button>
+        </div>
+      </div>
+
+      <div class="journal-form" id="journal-form">
+        <div class="card-hdr"><div class="card-title">New Journal Entry</div></div>
+        <div class="jnl-grid">
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:5px">Date</div>
+            <input type="date" id="jnl-date" class="jnl-input">
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:5px">Description</div>
+            <input type="text" id="jnl-desc" class="jnl-input" placeholder="e.g. Depreciation adjustment">
+          </div>
+        </div>
+        <div class="jnl-lines-hdr"><span>Account</span><span>Debit</span><span>Credit</span><span></span></div>
+        <div id="jnl-lines">
+          <div class="jnl-line">
+            <input type="text" class="jnl-input" placeholder="Account name">
+            <input type="number" class="jnl-input" placeholder="0.00">
+            <input type="number" class="jnl-input" placeholder="0.00">
+            <button class="jnl-remove" onclick="removeJournalLine(this)">×</button>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:12px">
+          <button class="topbar-btn" onclick="addJournalLine()"><i class="ti ti-plus"></i> Add line</button>
+          <div style="display:flex;gap:8px">
+            <button class="topbar-btn" onclick="toggleJournalForm()">Cancel</button>
+            <button class="topbar-btn primary" onclick="submitJournal()">Post Entry</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div id="journals-list"><div class="loading">Loading journal entries…</div></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-hdr"><div class="card-title">Period Locking</div></div>
+        <div id="periods-list"></div>
+      </div>
+    </div>
+
+    <!-- ── TAX ────────────────────────────── -->
+    <div class="page-section" id="section-tax">
+      <div class="page-hdr">
+        <div><div class="page-title">Tax Summary</div></div>
+      </div>
+      <div class="tax-grid">
+        <div class="tax-card">
+          <div class="tax-label">Est. Tax Liability</div>
+          <div class="tax-value red" id="tax-liability" style="color:var(--red)">—</div>
+        </div>
+        <div class="tax-card">
+          <div class="tax-label">Deductible Expenses</div>
+          <div class="tax-value green" id="tax-deductible" style="color:var(--green)">—</div>
+        </div>
+        <div class="tax-card">
+          <div class="tax-label">Taxable Income</div>
+          <div class="tax-value gold" id="tax-taxable" style="color:var(--gold)">—</div>
+        </div>
+      </div>
+      <div class="card" id="tax-breakdown"></div>
+    </div>
+
+    <!-- ── NOTES ────────────────────────────── -->
+    <div class="page-section" id="section-notes">
+      <div class="page-hdr">
+        <div>
+          <div class="page-title">Accountant Notes</div>
+          <div class="page-subtitle">Private — not visible to client</div>
+        </div>
+      </div>
+      <div class="card">
+        <textarea class="notes-textarea" id="notes-content" placeholder="Add private notes about this client's books…"></textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:12px">
+          <button class="topbar-btn primary" onclick="saveNotes()"><i class="ti ti-device-floppy"></i> Save Note</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /workspace -->
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────────────────
+let _data = null;
+let _userId = null;
+let _clientName = '';
+let _activeEntity = 'all';
+let _period = 'year';
+const BAR_COLORS = ['#c9a84c','#4a9c6d','#5aaa9e','#c45c5c','#7a6fa0','#8fbfaa','#c48a2a'];
+
+// ── INIT ───────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  const params = new URLSearchParams(location.search);
+  _userId = params.get('client');
+  _clientName = decodeURIComponent(params.get('name') || 'Client');
+  if (!_userId) { location.href = '/accountant'; return; }
+  setClientInfo();
+  await loadData();
+});
+
+function setClientInfo() {
+  const initials = _clientName.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('topbar-avatar').textContent = initials;
+  document.getElementById('topbar-client-name').textContent = _clientName;
+  document.getElementById('sb-client-name').textContent = _clientName;
+  document.getElementById('dash-title').textContent = _clientName + "'s Dashboard";
+}
+
+async function loadData() {
+  try {
+    const res = await fetch(`/api/accountants/clients/${_userId}/books`, {credentials:'include'});
+    if (!res.ok) { if(res.status===403){location.href='/accountant';}return; }
+    _data = await res.json();
+    document.getElementById('sb-client-meta').textContent = (_data.allInvoices?.length||0) + ' invoices · ' + (_data.allExpenses?.length||0) + ' expenses';
+    if (_data.accessLevel) {
+      document.getElementById('sb-access-badge').innerHTML = `<i class="ti ti-shield-check" style="font-size:11px"></i> ${_data.accessLevel} access`;
+    }
+    buildEntityTabs();
+    renderAll();
+    loadNotes();
+  } catch(e) { console.error('Load failed:', e); }
+}
+
+async function refreshData() { await loadData(); }
+
+// ── ENTITIES ───────────────────────────────────────────────────────────────
+function buildEntityTabs() {
+  const list = document.getElementById('entity-list');
+  const entities = _data.entities || [];
+  list.innerHTML = `<div class="entity-item active" data-entity="all" onclick="switchEntity('all',this)"><div class="entity-dot" style="background:var(--gold)"></div>All entities</div>`;
+  entities.forEach((e, i) => {
+    const color = BAR_COLORS[i % BAR_COLORS.length];
+    list.innerHTML += `<div class="entity-item" data-entity="${e.id}" onclick="switchEntity('${e.id}',this)"><div class="entity-dot" style="background:${color}"></div>${e.name}</div>`;
+  });
+  document.getElementById('topbar-entity-name').textContent = 'All entities';
+}
+
+function switchEntity(id, el) {
+  _activeEntity = id;
+  document.querySelectorAll('.entity-item').forEach(i=>i.classList.remove('active'));
+  if (el) el.classList.add('active');
+  const name = el?.textContent?.trim() || 'All entities';
+  document.getElementById('topbar-entity-name').textContent = name;
+  renderAll();
+}
+
+// ── PERIOD ─────────────────────────────────────────────────────────────────
+function setPeriod(el) {
+  document.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  _period = el.dataset.period;
+  renderAll();
+}
+
+// ── FILTER ─────────────────────────────────────────────────────────────────
+function getFiltered() {
+  if (!_data) return { invoices:[], expenses:[] };
+  let invs = _data.allInvoices || [];
+  let exps = _data.allExpenses || [];
+  if (_activeEntity !== 'all') {
+    invs = invs.filter(i => String(i.entity_id) === String(_activeEntity));
+    exps = exps.filter(e => String(e.entity_id) === String(_activeEntity));
+  }
+  const now = new Date();
+  const filterDate = d => {
+    if (!d || _period === 'all') return true;
+    const pd = new Date(d); if(isNaN(pd)) return true;
+    if (_period === 'year') return pd.getFullYear() === now.getFullYear();
+    if (_period === 'quarter') {
+      const q = Math.floor(now.getMonth()/3)*3;
+      return pd.getFullYear()===now.getFullYear() && pd.getMonth()>=q && pd.getMonth()<q+3;
+    }
+    if (_period === 'month') return pd.getMonth()===now.getMonth() && pd.getFullYear()===now.getFullYear();
+    return true;
+  };
+  return {
+    invoices: invs.filter(i=>filterDate(i.due_date)),
+    expenses: exps.filter(e=>filterDate(e.expense_date)),
+  };
+}
+
+// ── FORMAT ─────────────────────────────────────────────────────────────────
+function fmt(n) {
+  return '$' + (parseFloat(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  const pd = new Date(d); if(isNaN(pd)) return d;
+  return pd.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+}
+
+// ── RENDER ALL ─────────────────────────────────────────────────────────────
+function renderAll() {
+  const { invoices, expenses } = getFiltered();
+  renderDashboard(invoices, expenses);
+  renderInvoicesPage(invoices);
+  renderExpensesPage(expenses);
+  renderPnL(invoices, expenses);
+  renderBalanceSheet();
+  renderPayroll();
+  renderCustomers();
+  renderJournals();
+  renderTax(invoices, expenses);
+}
+
+// ── DASHBOARD ──────────────────────────────────────────────────────────────
+function renderDashboard(invoices, expenses) {
+  const paid     = invoices.filter(i=>i.status==='paid');
+  const pending  = invoices.filter(i=>i.status==='pending');
+  const overdue  = invoices.filter(i=>i.status==='overdue');
+  const revenue  = paid.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const totalExp = expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  const profit   = revenue - totalExp;
+  const outstanding = invoices.filter(i=>i.status!=='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+
+  set('d-revenue', fmt(revenue));
+  set('d-expenses', fmt(totalExp));
+  set('d-profit', fmt(profit));
+  set('d-outstanding', fmt(outstanding));
+  set('d-margin', profit ? ((profit/Math.max(revenue,1)*100).toFixed(1)+'% margin') : '0% margin');
+  set('s-paid', paid.length+' · '+fmt(paid.reduce((s,i)=>s+(parseFloat(i.amount)||0),0)));
+  set('s-pending', pending.length+' · '+fmt(pending.reduce((s,i)=>s+(parseFloat(i.amount)||0),0)));
+  set('s-overdue', overdue.length+' · '+fmt(overdue.reduce((s,i)=>s+(parseFloat(i.amount)||0),0)));
+  set('inv-count', invoices.length);
+  set('exp-count', expenses.length);
+
+  const banner = document.getElementById('overdue-banner');
+  if (overdue.length) {
+    banner.style.display='flex';
+    set('overdue-text', `${overdue.length} overdue invoice${overdue.length>1?'s':''} totalling ${fmt(overdue.reduce((s,i)=>s+(parseFloat(i.amount)||0),0))} — follow up required`);
+  } else { banner.style.display='none'; }
+
+  // Recent invoices (5)
+  const invEl = document.getElementById('dash-invoices');
+  invEl.innerHTML = invoices.slice(0,5).map((inv,i)=>`
+    <tr>
+      <td class="primary">${esc(inv.client||'—')}</td>
+      <td>${fmtDate(inv.due_date)}</td>
+      <td class="amount income">${fmt(inv.amount)}</td>
+      <td><span class="badge ${inv.status==='paid'?'badge-green':inv.status==='overdue'?'badge-red':'badge-amber'}">${inv.status}</span></td>
+      <td><button class="flag-btn" onclick="flagTxn('invoice','${esc(inv.client||'')}')">⚑</button></td>
+    </tr>`).join('') || `<tr><td colspan="5" class="empty">No invoices for this period</td></tr>`;
+
+  // Category bars
+  const cats = {};
+  expenses.forEach(e=>{const c=e.category||'Other';cats[c]=(cats[c]||0)+(parseFloat(e.amount)||0);});
+  const sorted = Object.entries(cats).sort((a,b)=>b[1]-a[1]);
+  const maxC = sorted[0]?.[1]||1;
+  document.getElementById('dash-categories').innerHTML = sorted.length ? sorted.slice(0,6).map(([c,a],i)=>`
+    <div class="cat-row">
+      <div class="cat-meta"><span class="cat-label">${esc(c)}</span><span class="cat-amount">${fmt(a)}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(a/maxC*100).toFixed(1)}%;background:${BAR_COLORS[i%BAR_COLORS.length]}"></div></div>
+    </div>`).join('') : '<div class="empty">No expenses</div>';
+
+  // Recent expenses (5)
+  const expEl = document.getElementById('dash-expenses');
+  expEl.innerHTML = expenses.slice(0,5).map(e=>`
+    <tr>
+      <td class="primary">${esc(e.description||'—')}</td>
+      <td>${esc(e.category||'—')}</td>
+      <td class="amount expense">${fmt(e.amount)}</td>
+      <td>${e.deductible==='yes'?'<span class="badge badge-green">✓ Full</span>':e.deductible==='half'?'<span class="badge badge-amber">½</span>':'—'}</td>
+      <td><button class="flag-btn" onclick="flagTxn('expense','${esc(e.description||'')}')">⚑</button></td>
+    </tr>`).join('') || `<tr><td colspan="5" class="empty">No expenses for this period</td></tr>`;
+
+  // P&L summary
+  document.getElementById('dash-pl').innerHTML = `
+    <div class="pl-row"><span class="pl-label">Gross Revenue</span><span style="color:var(--green)">${fmt(revenue)}</span></div>
+    <div class="pl-row"><span class="pl-label">Total Expenses</span><span style="color:var(--red)">${fmt(totalExp)}</span></div>
+    <div class="pl-row"><span>Net Profit</span><span class="pl-total ${profit>=0?'gold':''}" style="color:${profit>=0?'var(--gold)':'var(--red)'}">${fmt(profit)}</span></div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px">Profit margin · ${revenue?(profit/revenue*100).toFixed(1):0}%</div>`;
+}
+
+// ── INVOICES PAGE ──────────────────────────────────────────────────────────
+function renderInvoicesPage(invoices) {
+  const paid = invoices.filter(i=>i.status==='paid');
+  const outstanding = invoices.filter(i=>i.status!=='paid');
+  const overdue = invoices.filter(i=>i.status==='overdue');
+  const totalBilled = invoices.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const totalPaid = paid.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const totalOut = outstanding.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const totalOv = overdue.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  set('inv-total', fmt(totalBilled));
+  set('inv-collected', fmt(totalPaid));
+  set('inv-outstanding', fmt(totalOut));
+  set('inv-out-count', outstanding.length+' invoices');
+  set('inv-overdue', fmt(totalOv));
+  set('inv-ov-count', overdue.length+' invoices');
+  set('inv-subtitle', invoices.length+' invoices · '+fmt(totalBilled)+' total');
+  document.getElementById('all-invoices').innerHTML = invoices.map((inv,i)=>`
+    <tr>
+      <td class="primary">${esc(inv.client||'—')}</td>
+      <td>${fmtDate(inv.due_date)}</td>
+      <td class="amount income">${fmt(inv.amount)}</td>
+      <td><span class="badge ${inv.status==='paid'?'badge-green':inv.status==='overdue'?'badge-red':'badge-amber'}">${inv.status}</span></td>
+      <td><button class="flag-btn" onclick="flagTxn('invoice','${esc(inv.client||'')}')">⚑</button></td>
+    </tr>`).join('') || `<tr><td colspan="5" class="empty">No invoices for this period</td></tr>`;
+}
+
+// ── EXPENSES PAGE ──────────────────────────────────────────────────────────
+function renderExpensesPage(expenses) {
+  const total = expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  const ded = expenses.filter(e=>e.deductible==='yes').reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  const cats = {};
+  expenses.forEach(e=>{const c=e.category||'Other';cats[c]=(cats[c]||0)+(parseFloat(e.amount)||0);});
+  const top = Object.entries(cats).sort((a,b)=>b[1]-a[1])[0];
+  set('exp-total', fmt(total));
+  set('exp-ded', fmt(ded));
+  set('exp-top-cat', top?top[0]:'—');
+  set('exp-subtitle', expenses.length+' expenses · '+fmt(total)+' total');
+  document.getElementById('all-expenses').innerHTML = expenses.map(e=>`
+    <tr>
+      <td class="primary">${esc(e.description||'—')}</td>
+      <td>${esc(e.category||'—')}</td>
+      <td>${fmtDate(e.expense_date)}</td>
+      <td class="amount expense">${fmt(e.amount)}</td>
+      <td>${e.deductible==='yes'?'<span class="badge badge-green">✓ Full</span>':e.deductible==='half'?'<span class="badge badge-amber">½ deductible</span>':'—'}</td>
+      <td><button class="flag-btn" onclick="flagTxn('expense','${esc(e.description||'')}')">⚑</button></td>
+    </tr>`).join('') || `<tr><td colspan="6" class="empty">No expenses for this period</td></tr>`;
+}
+
+// ── P&L PAGE ───────────────────────────────────────────────────────────────
+function renderPnL(invoices, expenses) {
+  const revenue = invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const totalExp = expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  const profit = revenue - totalExp;
+  const cats = {};
+  expenses.forEach(e=>{const c=e.category||'Other';cats[c]=(cats[c]||0)+(parseFloat(e.amount)||0);});
+  const sorted = Object.entries(cats).sort((a,b)=>b[1]-a[1]);
+  const maxC = sorted[0]?.[1]||1;
+  document.getElementById('pnl-statement').innerHTML = `
+    <div class="pl-row"><span class="pl-label">Gross Revenue</span><span style="color:var(--green)">${fmt(revenue)}</span></div>
+    <div class="pl-row"><span class="pl-label">Total Expenses</span><span style="color:var(--red)">${fmt(totalExp)}</span></div>
+    <div class="pl-row"><span>Net Profit</span><span class="pl-total" style="color:${profit>=0?'var(--gold)':'var(--red)'}">${fmt(profit)}</span></div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px">Profit margin · ${revenue?(profit/revenue*100).toFixed(1):0}%</div>`;
+  document.getElementById('pnl-categories').innerHTML = sorted.map(([c,a],i)=>`
+    <div class="cat-row">
+      <div class="cat-meta"><span class="cat-label">${esc(c)}</span><span class="cat-amount">${fmt(a)}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(a/maxC*100).toFixed(1)}%;background:${BAR_COLORS[i%BAR_COLORS.length]}"></div></div>
+    </div>`).join('') || '<div class="empty">No expenses</div>';
+}
+
+// ── BALANCE SHEET ──────────────────────────────────────────────────────────
+function renderBalanceSheet() {
+  if (!_data?.balanceSheet) return;
+  const bs = _data.balanceSheet;
+  const ar = parseFloat(bs.accountsReceivable)||0;
+  const ap = parseFloat(bs.accountsPayable)||0;
+  const pr = parseFloat(bs.totalPayroll)||0;
+  const assets = ar;
+  const liabs = ap+pr;
+  const equity = assets-liabs;
+  set('bs-ar', fmt(ar));
+  set('bs-assets', fmt(assets));
+  set('bs-ap', fmt(ap));
+  set('bs-payroll', fmt(pr));
+  set('bs-liabilities', fmt(liabs));
+  set('bs-equity', fmt(equity));
+}
+
+// ── PAYROLL ────────────────────────────────────────────────────────────────
+function renderPayroll() {
+  const payroll = _data?.allPayroll || [];
+  const list = document.getElementById('payroll-list');
+  if (!payroll.length) { list.innerHTML = `<tr><td colspan="6" class="empty">No payroll records</td></tr>`; return; }
+  const total = payroll.reduce((s,p)=>s+(parseFloat(p.gross)||0),0);
+  list.innerHTML = payroll.map(p=>{
+    const gross = parseFloat(p.gross)||0;
+    const rate = parseFloat(p.tax_rate)||0;
+    const net = Math.round(gross*(1-rate/100));
+    return `<tr>
+      <td class="primary">${esc((p.fname||'')+' '+(p.lname||''))}</td>
+      <td>${esc(p.role||'—')}</td>
+      <td>${esc(p.emp_type||'Full-time')}</td>
+      <td class="amount">${fmt(gross)}</td>
+      <td style="color:var(--text3)">${rate}%</td>
+      <td class="amount income">${fmt(net)}</td>
+    </tr>`;}).join('');
+  document.getElementById('payroll-summary').style.display='flex';
+  set('payroll-total', fmt(total));
+}
+
+// ── CUSTOMERS ──────────────────────────────────────────────────────────────
+function renderCustomers() {
+  const customers = _data?.allCustomers || [];
+  const el = document.getElementById('customers-list');
+  if (!customers.length) { el.innerHTML = '<div class="empty">No customers found</div>'; return; }
+  el.innerHTML = `<div class="card-hdr"><div class="card-title">Customers · ${customers.length}</div></div>` +
+    customers.map(c=>{
+      const initials = (c.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+      return `<div class="customer-row">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="customer-avatar">${initials}</div>
+          <div>
+            <div style="font-size:13px;color:var(--text)">${esc(c.name||'—')}</div>
+            <div style="font-size:11px;color:var(--text3)">${esc(c.email||c.company||'')}</div>
+          </div>
+        </div>
+        <div class="amount income">${fmt(c.revenue||0)}</div>
+      </div>`;}).join('');
+}
+
+// ── JOURNALS ───────────────────────────────────────────────────────────────
+function renderJournals() {
+  const journals = _data?.allJournals || [];
+  const el = document.getElementById('journals-list');
+  el.innerHTML = journals.length ? journals.map(j=>`
+    <div style="padding:12px;background:var(--card2);border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:13px;color:var(--text);font-weight:400">${esc(j.description||'Journal Entry')}</span>
+        <span style="font-size:11px;color:var(--text3)">${fmtDate(j.date)}</span>
+      </div>
+      ${j.posted_by?`<div style="font-size:11px;color:var(--amber)">Posted by ${esc(j.posted_by.replace('accountant:','Accountant #'))}</div>`:''}
+    </div>`).join('') : '<div class="empty">No journal entries yet. Use the button above to post one.</div>';
+
+  // Period locking
+  const now = new Date();
+  const periods = [];
+  for (let i=0;i<6;i++) {
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    periods.push(d.toLocaleString('en-US',{month:'long',year:'numeric'}));
+  }
+  document.getElementById('periods-list').innerHTML = periods.map(p=>`
+    <div class="period-row">
+      <span style="color:var(--text2)">${p}</span>
+      <button class="lock-btn" onclick="lockPeriod('${p}',this)">🔓 Lock Period</button>
+    </div>`).join('');
+}
+
+// ── TAX ────────────────────────────────────────────────────────────────────
+function renderTax(invoices, expenses) {
+  const revenue = invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const dedFull = expenses.filter(e=>e.deductible==='yes').reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  const dedHalf = expenses.filter(e=>e.deductible==='half').reduce((s,e)=>s+(parseFloat(e.amount)||0)*0.5,0);
+  const totalDed = dedFull+dedHalf;
+  const taxable = Math.max(0, revenue-totalDed);
+  const rate = parseFloat(_data?.taxRate)||0;
+  const liability = rate ? taxable*(rate/100) : 0;
+  set('tax-liability', rate ? fmt(liability) : 'Rate not set');
+  set('tax-deductible', fmt(totalDed));
+  set('tax-taxable', fmt(taxable));
+  document.getElementById('tax-breakdown').innerHTML = `
+    <div class="card-hdr"><div class="card-title">Tax Calculation Breakdown</div></div>
+    <div class="pl-row"><span class="pl-label">Gross Revenue</span><span>${fmt(revenue)}</span></div>
+    <div class="pl-row"><span class="pl-label">Fully deductible expenses</span><span style="color:var(--green)">− ${fmt(dedFull)}</span></div>
+    <div class="pl-row"><span class="pl-label">50% deductible expenses</span><span style="color:var(--green)">− ${fmt(dedHalf)}</span></div>
+    <div class="pl-row"><span class="pl-label">Taxable Income</span><span style="color:var(--amber);font-weight:500">${fmt(taxable)}</span></div>
+    ${rate ? `<div class="pl-row"><span class="pl-label">Tax rate (${rate}%)</span><span style="color:var(--red);font-weight:500">${fmt(liability)}</span></div>` : '<div style="font-size:11px;color:var(--text3);padding:8px 0">Client has not set a tax rate in their settings.</div>'}`;
+}
+
+// ── NOTES ──────────────────────────────────────────────────────────────────
+async function loadNotes() {
+  const key = `books_note_${_userId}`;
+  const saved = localStorage.getItem(key);
+  if (saved) document.getElementById('notes-content').value = saved;
+}
+
+async function saveNotes() {
+  const note = document.getElementById('notes-content').value;
+  localStorage.setItem(`books_note_${_userId}`, note);
+  try {
+    await fetch(`/api/accountants/clients/${_userId}/notes`, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({note}),
+    });
+  } catch(e){}
+  showToast('Note saved');
+}
+
+// ── JOURNAL FORM ───────────────────────────────────────────────────────────
+function toggleJournalForm() {
+  const f = document.getElementById('journal-form');
+  f.classList.toggle('open');
+  if (f.classList.contains('open')) {
+    const d = document.getElementById('jnl-date');
+    if (!d.value) d.value = new Date().toISOString().slice(0,10);
+    showSection('journals', null);
+  }
+}
+
+function addJournalLine() {
+  const lines = document.getElementById('jnl-lines');
+  const row = document.createElement('div');
+  row.className = 'jnl-line';
+  row.innerHTML = `
+    <input type="text" class="jnl-input" placeholder="Account name">
+    <input type="number" class="jnl-input" placeholder="0.00">
+    <input type="number" class="jnl-input" placeholder="0.00">
+    <button class="jnl-remove" onclick="removeJournalLine(this)">×</button>`;
+  lines.appendChild(row);
+}
+
+function removeJournalLine(btn) {
+  const rows = document.querySelectorAll('.jnl-line');
+  if (rows.length > 1) btn.closest('.jnl-line').remove();
+}
+
+async function submitJournal() {
+  const date = document.getElementById('jnl-date').value;
+  const description = document.getElementById('jnl-desc').value.trim();
+  if (!description) { showToast('Add a description', 'error'); return; }
+  const lines = [];
+  document.querySelectorAll('.jnl-line').forEach(row=>{
+    const inputs = row.querySelectorAll('input');
+    const account = inputs[0].value.trim();
+    const debit = parseFloat(inputs[1].value)||0;
+    const credit = parseFloat(inputs[2].value)||0;
+    if (account) lines.push({account, debit, credit});
+  });
+  if (!lines.length) { showToast('Add at least one line', 'error'); return; }
+  try {
+    const res = await fetch(`/api/accountants/clients/${_userId}/journal`, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({date, description, lines}),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+    toggleJournalForm();
+    showToast('Journal entry posted');
+    await loadData();
+  } catch(e) { showToast('Error: '+e.message, 'error'); }
+}
+
+// ── PERIOD LOCKING ─────────────────────────────────────────────────────────
+async function lockPeriod(period, btn) {
+  try {
+    await fetch(`/api/accountants/clients/${_userId}/lock`, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({period, locked:true}),
+    });
+    btn.textContent = '🔒 Locked';
+    btn.classList.add('locked');
+    btn.disabled = true;
+    showToast(`${period} locked`);
+  } catch(e) { showToast('Could not lock period', 'error'); }
+}
+
+// ── FLAG ───────────────────────────────────────────────────────────────────
+async function flagTxn(type, ref) {
+  const message = prompt(`Flag this ${type} for follow-up?\nAdd a note (optional):`);
+  if (message === null) return;
+  try {
+    await fetch(`/api/accountants/clients/${_userId}/flag`, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({type, ref, message: message||ref}),
+    });
+    showToast(`${type} flagged`);
+  } catch(e) { showToast('Could not flag', 'error'); }
+}
+
+// ── EXPORT ─────────────────────────────────────────────────────────────────
+function exportCSV() {
+  if (!_data) return;
+  const { invoices, expenses } = getFiltered();
+  const rows = [
+    ['Type','Description/Client','Category','Amount','Status/Date','Deductible'],
+    ...invoices.map(i=>['Invoice',i.client||'','',(i.amount||0),i.status||'','']),
+    ...expenses.map(e=>['Expense',e.description||'',e.category||'',(e.amount||0),e.expense_date||'',e.deductible||'']),
+  ];
+  const csv = rows.map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = `${_clientName.replace(/\s+/g,'_')}_books.csv`;
+  a.click();
+}
+
+// ── NAVIGATION ─────────────────────────────────────────────────────────────
+function showSection(name, el) {
+  document.querySelectorAll('.page-section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const sec = document.getElementById('section-'+name);
+  if (sec) sec.classList.add('active');
+  if (el) el.classList.add('active');
+  else {
+    document.querySelectorAll('.nav-item').forEach(n=>{
+      if (n.getAttribute('onclick')?.includes("'"+name+"'")) n.classList.add('active');
+    });
+  }
+}
+
+// ── UTILS ──────────────────────────────────────────────────────────────────
+function set(id, val) { const el=document.getElementById(id); if(el) el.textContent=val; }
+function esc(s) { return String(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function showToast(msg, type='') {
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:24px;right:24px;background:${type==='error'?'#2a0d0d':'#1a1a10'};color:${type==='error'?'#c45c5c':'#c9a84c'};border:1px solid ${type==='error'?'rgba(196,92,92,.3)':'rgba(201,168,76,.3)'};border-radius:8px;padding:10px 18px;font-size:13px;z-index:9999;font-family:'DM Sans',sans-serif;`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 3000);
+}
+</script>
+</body>
+</html>

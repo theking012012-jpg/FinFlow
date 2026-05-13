@@ -397,31 +397,92 @@ If you cannot find a field, use null. Be concise.`;
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access to this client.' });
 
-    // Fetch client's financial summary
-    const [invoices, expenses, entities, settings] = await Promise.all([
+    // Fetch all client data
+    const [invoices, expenses, entities, settings, payroll, journals, customers, bills] = await Promise.all([
       pool.query(`SELECT entity_id, data FROM invoices WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT entity_id, data FROM expenses WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
-      pool.query(`SELECT id, data->>'name' AS name FROM entities WHERE user_id = $1`, [userId]),
+      pool.query(`SELECT id, data->>'name' AS name FROM entities WHERE user_id = $1 ORDER BY id`, [userId]),
       pool.query(`SELECT data FROM users WHERE id = $1 LIMIT 1`, [userId]),
+      pool.query(`SELECT data FROM payroll WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+      pool.query(`SELECT data FROM journals WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
+      pool.query(`SELECT data FROM customers WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+      pool.query(`SELECT data FROM bills WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
     ]);
 
     const taxRate = parseFloat(settings.rows[0]?.data?.tax_rate || 0);
-
-    // Calculate basic summary — data is stored as JSONB
-    const totalIncome = invoices.rows.reduce((sum, r) => sum + (parseFloat(r.data?.amount) || 0), 0);
+    const totalIncome   = invoices.rows.reduce((sum, r) => sum + (parseFloat(r.data?.amount) || 0), 0);
     const totalExpenses = expenses.rows.reduce((sum, r) => sum + (parseFloat(r.data?.amount) || 0), 0);
+    const totalPayroll  = payroll.rows.reduce((sum, r) => sum + (parseFloat(r.data?.gross) || 0), 0);
+
+    // Balance sheet components
+    const outstanding = invoices.rows
+      .filter(r => r.data?.status !== 'paid')
+      .reduce((s, r) => s + (parseFloat(r.data?.amount) || 0), 0);
+    const unpaidBills = bills.rows
+      .filter(r => r.data?.status === 'unpaid')
+      .reduce((s, r) => s + (parseFloat(r.data?.amount) || 0), 0);
 
     return res.json({
       accessLevel: access.rows[0].access_level,
       taxRate,
       summary: {
-        totalIncome: totalIncome.toFixed(2),
+        totalIncome:   totalIncome.toFixed(2),
         totalExpenses: totalExpenses.toFixed(2),
-        netProfit: (totalIncome - totalExpenses).toFixed(2),
+        netProfit:     (totalIncome - totalExpenses).toFixed(2),
       },
-      entities: entities.rows,
+      entities:    entities.rows,
       allInvoices: invoices.rows.map(r => ({ ...r.data, entity_id: r.entity_id })),
       allExpenses: expenses.rows.map(r => ({ ...r.data, entity_id: r.entity_id })),
+      allPayroll:  payroll.rows.map(r => r.data),
+      allJournals: journals.rows.map(r => r.data),
+      allCustomers: customers.rows.map(r => r.data),
+      balanceSheet: {
+        accountsReceivable: outstanding.toFixed(2),
+        accountsPayable:    unpaidBills.toFixed(2),
+        totalPayroll:       totalPayroll.toFixed(2),
+      },
+      recentInvoices: invoices.rows.map(r => r.data).slice(0, 10),
+      recentExpenses: expenses.rows.map(r => r.data).slice(0, 10),
+    });
+  }));
+
+  // ── ADD JOURNAL ENTRY ON BEHALF OF CLIENT ────────────────────────────────
+  app.post('/api/accountants/clients/:userId/journal', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    const { date, description, lines } = req.body || {};
+    const access = await pool.query(
+      `SELECT access_level FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    if (access.rows[0].access_level === 'view') return res.status(403).json({ error: 'View-only access.' });
+    const { row } = await db.insert('journals', {
+      user_id: parseInt(userId),
+      description: (description || '').slice(0, 500),
+      date: date || new Date().toISOString().slice(0, 10),
+      lines: JSON.stringify(lines || []),
+      posted_by: `accountant:${req.session.accountantId}`,
+    });
+    res.status(201).json(row);
+  }));
+
+  // ── LOCK/UNLOCK PERIOD ───────────────────────────────────────────────────
+  app.post('/api/accountants/clients/:userId/lock', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    const { period, locked } = req.body || {};
+    const access = await pool.query(
+      `SELECT access_level FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    const existing = await db.get('lock_settings', r => r.user_id === parseInt(userId) && r.period === period);
+    if (existing) {
+      await db.update('lock_settings', r => r.id === existing.id, { locked: locked ? 1 : 0, locked_by: `accountant:${req.session.accountantId}` });
+    } else {
+      await db.insert('lock_settings', { user_id: parseInt(userId), period, locked: locked ? 1 : 0, locked_by: `accountant:${req.session.accountantId}` });
+    }
+    res.json({ ok: true });
+  }));
       // keep legacy keys for backwards compat
       recentInvoices: invoices.rows.map(r => r.data).slice(0, 10),
       recentExpenses: expenses.rows.map(r => r.data).slice(0, 10),

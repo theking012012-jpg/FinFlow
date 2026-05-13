@@ -783,6 +783,18 @@
       <div id="books-expenses-list" style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
     </div>
 
+    <!-- Section Tabs -->
+    <div id="books-section-tabs" style="display:flex;gap:6px;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:12px;flex-wrap:wrap">
+      <button onclick="switchBooksSection('overview')" id="bst-overview" style="padding:6px 14px;border-radius:6px;font-size:12px;border:1px solid var(--gold);background:rgba(201,168,76,0.1);color:var(--gold);cursor:pointer">Overview</button>
+      <button onclick="switchBooksSection('payroll')" id="bst-payroll" style="padding:6px 14px;border-radius:6px;font-size:12px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer">Payroll</button>
+      <button onclick="switchBooksSection('balance')" id="bst-balance" style="padding:6px 14px;border-radius:6px;font-size:12px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer">Balance Sheet</button>
+      <button onclick="switchBooksSection('journals')" id="bst-journals" style="padding:6px 14px;border-radius:6px;font-size:12px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer">Journals</button>
+      <button onclick="switchBooksSection('customers')" id="bst-customers" style="padding:6px 14px;border-radius:6px;font-size:12px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer">Customers</button>
+    </div>
+
+    <!-- OVERVIEW SECTION -->
+    <div id="books-section-overview">
+
     <!-- Tax Summary -->
     <div style="margin-bottom:20px">
       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">Tax Summary</div>
@@ -812,6 +824,108 @@
       <div style="display:flex;justify-content:flex-end;margin-top:8px">
         <button onclick="saveBooksNotes()" id="books-notes-btn" style="background:var(--gold-dim);border:none;color:var(--bg);font-size:12px;border-radius:6px;padding:6px 16px;cursor:pointer;font-family:'DM Sans',sans-serif">Save Note</button>
       </div>
+    </div>
+
+    </div><!-- end overview section -->
+
+    <!-- PAYROLL SECTION -->
+    <div id="books-section-payroll" style="display:none">
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px">Payroll</div>
+      <div id="books-payroll-list" style="display:flex;flex-direction:column;gap:6px;max-height:400px;overflow-y:auto"></div>
+      <div id="books-payroll-summary" style="margin-top:14px;padding:12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:13px"></div>
+    </div>
+
+    <!-- BALANCE SHEET SECTION -->
+    <div id="books-section-balance" style="display:none">
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px">Balance Sheet</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:10px;font-weight:600">ASSETS</div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+            <span style="color:var(--text2)">Accounts Receivable</span>
+            <span id="bs-ar" style="color:var(--green);font-weight:600">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;font-weight:600">
+            <span style="color:var(--text)">Total Assets</span>
+            <span id="bs-total-assets" style="color:var(--green)">—</span>
+          </div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:10px;font-weight:600">LIABILITIES</div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+            <span style="color:var(--text2)">Accounts Payable</span>
+            <span id="bs-ap" style="color:var(--red);font-weight:600">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+            <span style="color:var(--text2)">Payroll Obligations</span>
+            <span id="bs-payroll-ob" style="color:var(--red);font-weight:600">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;font-weight:600">
+            <span style="color:var(--text)">Total Liabilities</span>
+            <span id="bs-total-liabilities" style="color:var(--red)">—</span>
+          </div>
+        </div>
+      </div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px">
+        <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:600">
+          <span style="color:var(--text)">Net Equity</span>
+          <span id="bs-equity" style="color:var(--gold)">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- JOURNALS SECTION -->
+    <div id="books-section-journals" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em">Journal Entries</div>
+        <button onclick="openAddJournalModal()" style="background:var(--gold-dim);border:none;color:var(--bg);font-size:12px;border-radius:6px;padding:6px 12px;cursor:pointer">+ Add Entry</button>
+      </div>
+      <div id="books-journals-list" style="display:flex;flex-direction:column;gap:6px;max-height:400px;overflow-y:auto"></div>
+
+      <!-- Add Journal Modal -->
+      <div id="add-journal-modal" style="display:none;margin-top:16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px">
+        <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:12px">New Journal Entry</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:11px;color:var(--text3)">Date</label>
+            <input type="date" id="jnl-date" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:13px;margin-top:4px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text3)">Description</label>
+            <input type="text" id="jnl-desc" placeholder="e.g. Depreciation adjustment" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:13px;margin-top:4px">
+          </div>
+        </div>
+        <div id="jnl-lines" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;font-size:11px;color:var(--text3);padding:0 4px">
+            <span>Account</span><span>Debit</span><span>Credit</span><span></span>
+          </div>
+          <div class="jnl-line-row" style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px">
+            <input type="text" placeholder="Account name" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:12px">
+            <input type="number" placeholder="0.00" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:12px">
+            <input type="number" placeholder="0.00" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:12px">
+            <button onclick="removeJournalLine(this)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px">×</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:space-between">
+          <button onclick="addJournalLine()" style="background:none;border:1px solid var(--border);color:var(--text2);font-size:12px;border-radius:6px;padding:5px 10px;cursor:pointer">+ Add line</button>
+          <div style="display:flex;gap:8px">
+            <button onclick="document.getElementById('add-journal-modal').style.display='none'" style="background:none;border:1px solid var(--border);color:var(--text2);font-size:12px;border-radius:6px;padding:5px 12px;cursor:pointer">Cancel</button>
+            <button onclick="submitJournalEntry()" style="background:var(--gold-dim);border:none;color:var(--bg);font-size:12px;border-radius:6px;padding:5px 14px;cursor:pointer">Post Entry</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Period Locking -->
+      <div style="margin-top:16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px">Period Locking</div>
+        <div style="display:flex;flex-direction:column;gap:8px" id="books-periods-list"></div>
+      </div>
+    </div>
+
+    <!-- CUSTOMERS SECTION -->
+    <div id="books-section-customers" style="display:none">
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px">Customers</div>
+      <div id="books-customers-list" style="display:flex;flex-direction:column;gap:6px;max-height:400px;overflow-y:auto"></div>
     </div>
 
   </div>
@@ -1127,6 +1241,168 @@ function copyRef() {
 }
 
 // ── VIEW BOOKS ────────────────────────────────────────────────────────────────
+// ── BOOKS SECTION SWITCHING ──────────────────────────────────────────────────
+const BOOKS_SECTIONS = ['overview','payroll','balance','journals','customers'];
+function switchBooksSection(name) {
+  BOOKS_SECTIONS.forEach(s => {
+    const el = document.getElementById('books-section-' + s);
+    const btn = document.getElementById('bst-' + s);
+    if (el) el.style.display = s === name ? 'block' : 'none';
+    if (btn) {
+      btn.style.border = s === name ? '1px solid var(--gold)' : '1px solid var(--border)';
+      btn.style.background = s === name ? 'rgba(201,168,76,0.1)' : 'var(--bg2)';
+      btn.style.color = s === name ? 'var(--gold)' : 'var(--text2)';
+    }
+  });
+  if (name === 'payroll')   renderBooksPayroll();
+  if (name === 'balance')   renderBooksBalance();
+  if (name === 'journals')  renderBooksJournals();
+  if (name === 'customers') renderBooksCustomers();
+}
+
+function renderBooksPayroll() {
+  if (!_booksData?.allPayroll) return;
+  const el = document.getElementById('books-payroll-list');
+  const payroll = _booksData.allPayroll;
+  if (!payroll.length) { el.innerHTML = '<div style="color:var(--text3);font-size:13px">No payroll records.</div>'; return; }
+  const totalGross = payroll.reduce((s,p) => s + (parseFloat(p.gross)||0), 0);
+  el.innerHTML = payroll.map(p => `
+    <div style="display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:13px">
+      <span style="color:var(--text)">${p.fname||''} ${p.lname||''} <span style="color:var(--text3);font-size:11px">${p.role||''}</span></span>
+      <span style="color:var(--text3);font-size:11px">${p.emp_type||'Full-time'}</span>
+      <span style="color:var(--text);font-weight:600">${fmt(p.gross)}</span>
+    </div>`).join('');
+  document.getElementById('books-payroll-summary').innerHTML = `
+    <div style="display:flex;justify-content:space-between">
+      <span style="color:var(--text2)">${payroll.length} employee${payroll.length!==1?'s':''}</span>
+      <span style="font-weight:600;color:var(--text)">Total: ${fmt(totalGross)}</span>
+    </div>`;
+}
+
+function renderBooksBalance() {
+  if (!_booksData?.balanceSheet) return;
+  const bs = _booksData.balanceSheet;
+  const ar = parseFloat(bs.accountsReceivable)||0;
+  const ap = parseFloat(bs.accountsPayable)||0;
+  const pr = parseFloat(bs.totalPayroll)||0;
+  const totalAssets = ar;
+  const totalLiab = ap + pr;
+  const equity = totalAssets - totalLiab;
+  document.getElementById('bs-ar').textContent = fmt(ar);
+  document.getElementById('bs-total-assets').textContent = fmt(totalAssets);
+  document.getElementById('bs-ap').textContent = fmt(ap);
+  document.getElementById('bs-payroll-ob').textContent = fmt(pr);
+  document.getElementById('bs-total-liabilities').textContent = fmt(totalLiab);
+  document.getElementById('bs-equity').textContent = fmt(equity);
+}
+
+function renderBooksJournals() {
+  if (!_booksData) return;
+  const el = document.getElementById('books-journals-list');
+  const journals = _booksData.allJournals || [];
+  if (!journals.length) { el.innerHTML = '<div style="color:var(--text3);font-size:13px">No journal entries.</div>'; return; }
+  el.innerHTML = journals.map(j => `
+    <div style="padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:13px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span style="color:var(--text);font-weight:500">${j.description||'Journal Entry'}</span>
+        <span style="color:var(--text3);font-size:11px">${j.date||''}</span>
+      </div>
+      ${j.posted_by ? `<div style="font-size:11px;color:var(--amber)">Posted by ${j.posted_by.replace('accountant:','Accountant #')}</div>` : ''}
+    </div>`).join('');
+
+  // Render period locking
+  const periods = [];
+  const now = new Date();
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    periods.push(d.toLocaleString('en-US', {month:'long', year:'numeric'}));
+  }
+  document.getElementById('books-periods-list').innerHTML = periods.map(p => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:13px">
+      <span style="color:var(--text2)">${p}</span>
+      <button onclick="lockPeriod('${p}', this)" style="background:none;border:1px solid var(--border);color:var(--text3);font-size:11px;border-radius:4px;padding:3px 10px;cursor:pointer">🔓 Lock</button>
+    </div>`).join('');
+}
+
+function renderBooksCustomers() {
+  const el = document.getElementById('books-customers-list');
+  const customers = _booksData?.allCustomers || [];
+  if (!customers.length) { el.innerHTML = '<div style="color:var(--text3);font-size:13px">No customers.</div>'; return; }
+  el.innerHTML = customers.map(c => `
+    <div style="display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:13px">
+      <span style="color:var(--text)">${c.name||'—'} ${c.company ? '<span style="color:var(--text3);font-size:11px">· '+c.company+'</span>' : ''}</span>
+      <span style="color:var(--text3);font-size:11px">${c.email||''}</span>
+      <span style="color:var(--green);font-weight:600">${fmt(c.revenue||0)}</span>
+    </div>`).join('');
+}
+
+function openAddJournalModal() {
+  const m = document.getElementById('add-journal-modal');
+  m.style.display = m.style.display === 'none' ? 'block' : 'none';
+  const d = document.getElementById('jnl-date');
+  if (d && !d.value) d.value = new Date().toISOString().slice(0,10);
+}
+
+function addJournalLine() {
+  const container = document.getElementById('jnl-lines');
+  const row = document.createElement('div');
+  row.className = 'jnl-line-row';
+  row.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px';
+  row.innerHTML = `
+    <input type="text" placeholder="Account name" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:12px">
+    <input type="number" placeholder="0.00" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:12px">
+    <input type="number" placeholder="0.00" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:12px">
+    <button onclick="removeJournalLine(this)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px">×</button>`;
+  container.appendChild(row);
+}
+
+function removeJournalLine(btn) {
+  const rows = document.querySelectorAll('.jnl-line-row');
+  if (rows.length > 1) btn.closest('.jnl-line-row').remove();
+}
+
+async function submitJournalEntry() {
+  const date = document.getElementById('jnl-date').value;
+  const description = document.getElementById('jnl-desc').value.trim();
+  if (!description) { toast('Please add a description', 'error'); return; }
+  const lines = [];
+  document.querySelectorAll('.jnl-line-row').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const account = inputs[0].value.trim();
+    const debit = parseFloat(inputs[1].value)||0;
+    const credit = parseFloat(inputs[2].value)||0;
+    if (account) lines.push({ account, debit, credit });
+  });
+  if (!lines.length) { toast('Add at least one line', 'error'); return; }
+  try {
+    const res = await fetch(`/api/accountants/clients/${_booksUserId}/journal`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date, description, lines }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+    document.getElementById('add-journal-modal').style.display = 'none';
+    toast('Journal entry posted ✓', 'success');
+    await viewBooks(_booksUserId, _booksClientName);
+    switchBooksSection('journals');
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function lockPeriod(period, btn) {
+  try {
+    await fetch(`/api/accountants/clients/${_booksUserId}/lock`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ period, locked: true }),
+    });
+    btn.textContent = '🔒 Locked';
+    btn.style.color = 'var(--amber)';
+    btn.style.borderColor = 'var(--amber)';
+    btn.disabled = true;
+    toast(`${period} locked`, 'success');
+  } catch(e) { toast('Could not lock period', 'error'); }
+}
+
 // ── CLIENT BOOKS ─────────────────────────────────────────────────────────────
 let _booksData = null;
 let _booksClientName = '';
@@ -1136,27 +1412,9 @@ let _booksActiveEntity = 'all';
 const fmt = v => '$' + parseFloat(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 async function viewBooks(userId, clientName) {
-  _booksUserId = userId;
-  _booksClientName = clientName || 'Client';
-  _booksActiveEntity = 'all';
-  try {
-    const res = await fetch(`/api/accountants/clients/${userId}/books`, { credentials: 'include' });
-    if (!res.ok) { toast('No access to this client\'s books', 'error'); return; }
-    _booksData = await res.json();
-
-    // Load saved note
-    const noteKey = `books_note_${userId}`;
-    document.getElementById('books-notes').value = localStorage.getItem(noteKey) || '';
-
-    document.getElementById('books-modal-title').textContent = `${_booksClientName}'s Books`;
-    document.getElementById('books-modal-sub').textContent = `Access level: ${_booksData.accessLevel || 'view'}`;
-    document.getElementById('books-period').value = 'all';
-    renderEntityTabs();
-    renderBooks(_booksData.allInvoices, _booksData.allExpenses);
-    document.getElementById('books-modal').classList.add('open');
-  } catch (e) {
-    toast('Could not load client books', 'error');
-  }
+  // Open the full-screen client workspace
+  const name = encodeURIComponent(clientName || 'Client');
+  window.open(`/accountant-client.html?client=${userId}&name=${name}`, '_blank');
 }
 
 function renderEntityTabs() {

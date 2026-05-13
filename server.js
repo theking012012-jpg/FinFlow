@@ -298,8 +298,27 @@ app.use('/api', apiLimiter);
 
 // ── ENTITY + RBAC MIDDLEWARE ──────────────────────────────────────────────────
 // Sets req.entityId from session so routes can scope data to the active entity.
-app.use('/api', (req, res, next) => {
-  req.entityId = req.session.entityId || null;
+app.use('/api', async (req, res, next) => {
+  if (req.session.entityId) {
+    req.entityId = req.session.entityId;
+    return next();
+  }
+  if (req.session.userId) {
+    try {
+      const r = await pool.query(
+        `SELECT id FROM entities WHERE user_id = $1 ORDER BY (CASE WHEN (data->>'is_active')::int = 1 THEN 0 ELSE 1 END), id ASC LIMIT 1`,
+        [req.session.userId]
+      );
+      if (r.rows[0]) {
+        req.session.entityId = r.rows[0].id;
+        req.entityId = r.rows[0].id;
+      } else {
+        req.entityId = null;
+      }
+    } catch (e) { req.entityId = null; }
+  } else {
+    req.entityId = null;
+  }
   next();
 });
 

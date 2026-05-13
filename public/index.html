@@ -3410,11 +3410,8 @@ function setCurrency(code){
 const BIZ_COLORS = ['var(--acc)','var(--purple)','var(--teal)','var(--amber)','var(--green)','var(--red)'];
 const BIZ_ICONS  = ['📊','🏗','💻','🛒','🍽','🏥','🏠','📦'];
 
-let businesses = lsLoad('businesses', [
-  {id:'biz-1',name:'FinFlow Inc.',      industry:'Technology',         currency:'USD',displayCurrency:'USD',fiscal:12,color:BIZ_COLORS[0],icon:'📊',isDefault:true},
-  {id:'biz-2',name:'Seaside Consulting',industry:'Consulting / Services',currency:'TTD',displayCurrency:'TTD',fiscal:12,color:BIZ_COLORS[1],icon:'💻',isDefault:false},
-]);
-let activeBizId = lsLoad('activeBizId','biz-1') || 'biz-1';
+let businesses = []; // loaded from DB entities
+let activeBizId = null;
 
 function toggleBizMenu(e){
   e.stopPropagation();
@@ -3422,6 +3419,17 @@ function toggleBizMenu(e){
   const isOpen = m.style.display !== 'none';
   closeAllDropdowns();
   if(!isOpen){ buildBizMenu(); m.style.display='block'; }
+}
+
+function renderBusinessSwitcher(){
+  // Update the brand header with active business
+  const active = businesses.find(b=>b.active) || businesses[0];
+  if(!active) return;
+  activeBizId = active.id;
+  const nameEl = document.getElementById('sb-brand-name');
+  const badgeEl = document.getElementById('biz-currency-badge');
+  if(nameEl) nameEl.textContent = active.name;
+  if(badgeEl) badgeEl.textContent = active.currency + ' · Pro';
 }
 
 function buildBizMenu(){
@@ -3444,30 +3452,19 @@ function buildBizMenu(){
 
 function switchBusiness(id){
   activeBizId = id;
-  lsSave('activeBizId', id);
   const biz = businesses.find(b=>b.id===id);
   if(!biz) return;
   document.getElementById('biz-menu').style.display='none';
   // Update UI
   document.getElementById('sb-brand-name').textContent = biz.name;
-  document.getElementById('biz-currency-badge').textContent = `${biz.currency} · Pro`;
-  document.getElementById('biz-logo').style.background = biz.color.replace('var(--','').replace(')','');
-  // Switch display currency to this biz default
-  setCurrency(biz.displayCurrency || biz.currency);
-  // Sync entity data if this matches an ENTITIES entry
-  const entityIdx = ENTITIES.findIndex(e=>e.name===biz.name || e.currency===biz.currency);
-  if(entityIdx >= 0 && entityIdx !== activeEntityIdx){
-    ENTITIES.forEach((e,i)=>e.active=i===entityIdx);
-    loadEntityData(entityIdx);
-    updateDashboard();
-    if(typeof renderPayroll==='function')   renderPayroll();
-    if(typeof renderCustomers==='function') renderCustomers();
-    if(typeof renderExpenses==='function')  renderExpenses();
-    if(typeof renderInventory==='function') renderInventory();
-    if(typeof renderInvoices==='function')  renderInvoices();
+  document.getElementById('biz-currency-badge').textContent = biz.currency + ' · Pro';
+  // Switch display currency
+  if(typeof setCurrency==='function') setCurrency(biz.displayCurrency || biz.currency);
+  // Switch entity via DB - use _dbId
+  const entityIdx = biz._dbId ? ENTITIES.findIndex(e=>e._dbId===biz._dbId) : ENTITIES.findIndex(e=>e.name===biz.name);
+  if(entityIdx >= 0){
+    window.switchEntity(entityIdx);
   }
-  notify(`Switched to ${biz.icon} ${biz.name}`);
-  flashTopbar(biz.color);
 }
 
 function flashTopbar(color){
@@ -4137,148 +4134,21 @@ const MONTH_FULL = ['May 2025','Jun 2025','Jul 2025','Aug 2025','Sep 2025','Oct 
 // expenses, payroll, customers & inventory
 // ══════════════════════════════════════════════════════════════
 const ENTITY_DATA = {
-  // ── 0: FinFlow Inc. (USD) — SaaS product company ────────────
-  0: {
-    REV:  [28400,31200,33800,35600,34100,38900,38200,41500,35800,42100,43000,48320],
-    EXP:  [16800,17200,17600,18100,18400,18900,19100,22400,18200,20800,21200,21850],
-    invoices: [
-      {client:'RetailCo Ltd',    amount:8400,  due:'Apr 30',color:'var(--t2)',status:'pending'},
-      {client:'TechStart Inc',   amount:5000,  due:'May 5', color:'var(--t2)',status:'paid'},
-      {client:'NovaCorp',        amount:12000, due:'May 15',color:'var(--t2)',status:'paid'},
-      {client:'Sapphire Media',  amount:4800,  due:'May 20',color:'var(--t2)',status:'paid'},
-      {client:'Mango & Co',      amount:2200,  due:'Apr 10',color:'var(--red)',status:'overdue'},
-      {client:'BlueSky Agency',  amount:1600,  due:'Apr 14',color:'var(--red)',status:'overdue'},
-      {client:'Freelance — Dev', amount:3200,  due:'May 12',color:'var(--t2)',status:'pending'},
-    ],
-    expenses: [
-      {desc:'Office rent — April',   cat:'Rent',     amount:3900, ded:'yes',  date:'Apr 1'},
-      {desc:'Google Workspace',      cat:'Software', amount:420,  ded:'yes',  date:'Apr 2'},
-      {desc:'AWS Cloud services',    cat:'Software', amount:622,  ded:'yes',  date:'Apr 5'},
-      {desc:'Team lunch',            cat:'Meals',    amount:285,  ded:'half', date:'Apr 10'},
-      {desc:'Flight — client visit', cat:'Travel',   amount:680,  ded:'yes',  date:'Apr 14'},
-      {desc:'Freelancer — UI dev',   cat:'Salaries', amount:1200, ded:'yes',  date:'Apr 18'},
-      {desc:'Mailchimp marketing',   cat:'Marketing',amount:149,  ded:'yes',  date:'Apr 20'},
-    ],
-    payroll: [
-      {id:1,fname:'Jordan',lname:'Mills',  initials:'JM',avClass:'av-blue',  role:'Dev Lead',  type:'Full-time',  gross:5200,taxRate:20},
-      {id:2,fname:'Sofia', lname:'Arenas', initials:'SA',avClass:'av-purple',role:'Designer',  type:'Full-time',  gross:3800,taxRate:20},
-      {id:3,fname:'Raj',   lname:'Kapoor', initials:'RK',avClass:'av-green', role:'Sales',     type:'Full-time',  gross:3500,taxRate:20},
-      {id:4,fname:'Leila', lname:'Torres', initials:'LT',avClass:'av-amber', role:'Marketing', type:'Part-time',  gross:2100,taxRate:20},
-      {id:5,fname:'Ben',   lname:'Nwosu',  initials:'BN',avClass:'av-teal',  role:'Backend',   type:'Contractor', gross:1132,taxRate:0},
-    ],
-    customers: [
-      {id:1,fname:'Emma',  lname:'Richardson',company:'RetailCo Ltd',   industry:'Retail',    email:'emma@retailco.com',  phone:'+1 555-0101',revenue:218400,status:'active',  notes:'Top client. Renewal June 2026.'},
-      {id:2,fname:'Marcus',lname:'Chen',      company:'TechStart Inc',  industry:'Technology',email:'marcus@techstart.io',phone:'+1 555-0202',revenue:149400,status:'active',  notes:'Fast-growing startup.'},
-      {id:3,fname:'Priya', lname:'Kapoor',    company:'NovaCorp',       industry:'Finance',   email:'priya@novacorp.com', phone:'+1 555-0303',revenue:144000,status:'active',  notes:'Always pays on time.'},
-      {id:4,fname:'James', lname:'Okafor',    company:'Mango & Co',     industry:'Retail',    email:'james@mango.co',     phone:'+1 555-0404',revenue:26400, status:'active',  notes:'Overdue Apr invoice.'},
-      {id:5,fname:'Aria',  lname:'Santos',    company:'BlueSky Agency', industry:'Media',     email:'aria@bluesky.agency',phone:'+1 555-0505',revenue:19200, status:'active',  notes:'Overdue since Apr 14.'},
-    ],
-    inventory: [
-      {sku:'#1042',name:'Wireless Headset Pro', units:142,max:200,cost:60, low:false},
-      {sku:'#1043',name:'USB-C Hub 8-in-1',     units:88, max:200,cost:50, low:false},
-      {sku:'#1044',name:'Mechanical Keyboard',  units:31, max:200,cost:100,low:false},
-      {sku:'#1045',name:'Webcam 4K Ultra',      units:9,  max:200,cost:80, low:true},
-      {sku:'#1046',name:'Laptop Stand Alu.',    units:67, max:200,cost:40, low:false},
-      {sku:'#1047',name:'Ergonomic Mouse',      units:4,  max:200,cost:60, low:true},
-    ],
-    srcNames:['RetailCo','TechStart','Stripe','Consulting'],
-    srcPct:[.378,.249,.189,.135],
-  },
-
-  // ── 1: FinScale Ltd. (GBP) — UK accounting consultancy ──────
-  1: {
-    REV:  [14200,13800,15600,14900,16200,17100,15800,18400,19200,17600,20100,21500],
-    EXP:  [9100, 9400, 9800, 9200, 10100,10400,9800, 11200,10800,10500,11400,11900],
-    invoices: [
-      {client:'Hargreaves & Sons', amount:6200, due:'Apr 28',color:'var(--t2)', status:'pending'},
-      {client:'Bristol Digital',   amount:4100, due:'May 3', color:'var(--t2)', status:'paid'},
-      {client:'Redstone Corp',     amount:9800, due:'May 10',color:'var(--t2)', status:'paid'},
-      {client:'Pennine Advisory',  amount:2400, due:'Apr 8', color:'var(--red)',status:'overdue'},
-      {client:'Leeds Marketing Co',amount:1800, due:'May 18',color:'var(--t2)', status:'pending'},
-    ],
-    expenses: [
-      {desc:'London office rent',    cat:'Rent',     amount:4200, ded:'yes',  date:'Apr 1'},
-      {desc:'Xero subscription',     cat:'Software', amount:230,  ded:'yes',  date:'Apr 2'},
-      {desc:'HMRC VAT payment',      cat:'Other',    amount:3800, ded:'yes',  date:'Apr 7'},
-      {desc:'Client dinner — London',cat:'Meals',    amount:420,  ded:'half', date:'Apr 11'},
-      {desc:'Eurostar — Brussels',   cat:'Travel',   amount:310,  ded:'yes',  date:'Apr 16'},
-      {desc:'Legal — contract review',cat:'Other',   amount:900,  ded:'yes',  date:'Apr 20'},
-    ],
-    payroll: [
-      {id:1,fname:'Chloe',  lname:'Bennett', initials:'CB',avClass:'av-blue',  role:'Senior Accountant',type:'Full-time', gross:4800,taxRate:22},
-      {id:2,fname:'Oliver', lname:'Walsh',   initials:'OW',avClass:'av-purple',role:'Tax Advisor',      type:'Full-time', gross:4200,taxRate:22},
-      {id:3,fname:'Amara',  lname:'Osei',    initials:'AO',avClass:'av-green', role:'Bookkeeper',       type:'Part-time', gross:2100,taxRate:20},
-    ],
-    customers: [
-      {id:1,fname:'Alistair',lname:'Hargreaves',company:'Hargreaves & Sons',  industry:'Manufacturing', email:'alistair@harg.co.uk',  phone:'+44 20 7946 0101',revenue:74400,status:'active',  notes:'30-year family business. Retainer client.'},
-      {id:2,fname:'Niamh',   lname:'O\'Brien', company:'Bristol Digital',     industry:'Technology',    email:'niamh@bristoldig.co.uk',phone:'+44 117 496 0202',revenue:49200,status:'active',  notes:'Rapid growth — potential upsell.'},
-      {id:3,fname:'Duncan',  lname:'Fraser',   company:'Redstone Corp',       industry:'Property',      email:'duncan@redstone.co.uk', phone:'+44 20 7946 0303',revenue:117600,status:'active', notes:'High value. Annual accounts + VAT.'},
-      {id:4,fname:'Saoirse', lname:'Murphy',   company:'Pennine Advisory',    industry:'Finance',       email:'saoirse@pennine.co.uk', phone:'+44 113 496 0404',revenue:28800,status:'active',  notes:'Overdue Apr invoice.'},
-    ],
-    inventory: [
-      {sku:'#UK-01',name:'Audit Software Licence', units:12, max:20, cost:480, low:false},
-      {sku:'#UK-02',name:'Secure Filing Cabinet',  units:3,  max:10, cost:220, low:true},
-      {sku:'#UK-03',name:'Reference Manual 2026',  units:28, max:50, cost:45,  low:false},
-    ],
-    srcNames:['Hargreaves','Bristol Dig.','Redstone','Pennine'],
-    srcPct:[.34,.27,.22,.17],
-  },
-
-  // ── 2: FinPay TTD (TTD) — TT payments processing ────────────
-  2: {
-    REV:  [9200, 10100,9800, 11200,10600,12100,11400,13200,12800,11900,14200,15300],
-    EXP:  [6800, 7200, 7100, 7800, 7400, 8100, 7900, 8800, 8600, 8200, 9100, 9600],
-    invoices: [
-      {client:'First Citizens Bank TT', amount:42000,due:'Apr 25',color:'var(--t2)', status:'pending'},
-      {client:'TSTT',                   amount:28500,due:'May 1', color:'var(--t2)', status:'paid'},
-      {client:'Guardian Life',          amount:61000,due:'May 12',color:'var(--t2)', status:'paid'},
-      {client:'Republic Bank TT',       amount:19500,due:'Apr 12',color:'var(--red)',status:'overdue'},
-      {client:'Massy Group',            amount:34000,due:'May 20',color:'var(--t2)', status:'pending'},
-    ],
-    expenses: [
-      {desc:'POS-of-Spain office rent', cat:'Rent',     amount:18000,ded:'yes',  date:'Apr 1'},
-      {desc:'Digicel connectivity',     cat:'Software', amount:2400, ded:'yes',  date:'Apr 3'},
-      {desc:'Payment processing fees',  cat:'Other',    amount:8400, ded:'yes',  date:'Apr 7'},
-      {desc:'Compliance audit',         cat:'Other',    amount:12000,ded:'yes',  date:'Apr 15'},
-      {desc:'Staff training workshop',  cat:'Meals',    amount:4800, ded:'half', date:'Apr 18'},
-      {desc:'LINX membership',          cat:'Other',    amount:6000, ded:'yes',  date:'Apr 22'},
-    ],
-    payroll: [
-      {id:1,fname:'Kezia',   lname:'Thomas',   initials:'KT',avClass:'av-blue',  role:'Operations Lead',type:'Full-time', gross:14000,taxRate:25},
-      {id:2,fname:'Devraj',  lname:'Ramkissoon',initials:'DR',avClass:'av-amber', role:'Dev Engineer',  type:'Full-time', gross:12000,taxRate:25},
-      {id:3,fname:'Shaniqua',lname:'Pierre',   initials:'SP',avClass:'av-green', role:'Compliance',    type:'Full-time', gross:10500,taxRate:25},
-      {id:4,fname:'Carlos',  lname:'Hernandez',initials:'CH',avClass:'av-purple',role:'Sales',         type:'Part-time', gross:6800, taxRate:20},
-    ],
-    customers: [
-      {id:1,fname:'Nigel',  lname:'Boodoo',  company:'First Citizens Bank TT',industry:'Banking',   email:'nboodoo@fcbtt.com',     phone:'+1 868-620-0101',revenue:504000,status:'active',  notes:'Anchor client. POS network rollout.'},
-      {id:2,fname:'Tricia', lname:'Phillip', company:'TSTT',                  industry:'Telecoms',  email:'tphillip@tstt.net.tt',  phone:'+1 868-620-0202',revenue:342000,status:'active',  notes:'Multi-year contract.'},
-      {id:3,fname:'Dwayne', lname:'Julien',  company:'Guardian Life',         industry:'Insurance', email:'djulien@guardian.co.tt', phone:'+1 868-620-0303',revenue:732000,status:'active',  notes:'Premium client — handle with care.'},
-      {id:4,fname:'Rhonda', lname:'Maraj',   company:'Republic Bank TT',      industry:'Banking',   email:'rmaraj@republicbanktt.com',phone:'+1 868-620-0404',revenue:234000,status:'active',notes:'Overdue Apr invoice — escalate.'},
-      {id:5,fname:'André',  lname:'Cummings',company:'Massy Group',           industry:'Retail',    email:'acummings@massy.com',    phone:'+1 868-620-0505',revenue:408000,status:'active',  notes:'New client Q1 2026.'},
-    ],
-    inventory: [
-      {sku:'#TT-01',name:'POS Terminal Gen3',      units:84, max:200,cost:1800,low:false},
-      {sku:'#TT-02',name:'Receipt Printer TT',     units:42, max:100,cost:420, low:false},
-      {sku:'#TT-03',name:'PIN Pad Secure',         units:11, max:100,cost:650, low:true},
-      {sku:'#TT-04',name:'QR Payment Stand',       units:63, max:150,cost:280, low:false},
-      {sku:'#TT-05',name:'Thermal Paper Roll (50)',units:8,  max:100,cost:85,  low:true},
-    ],
-    srcNames:['FCB TT','TSTT','Guardian','Republic'],
-    srcPct:[.38,.27,.22,.13],
-  }
+  0: { REV: new Array(12).fill(0), EXP: new Array(12).fill(0), invoices: [], expenses: [], inventory: [], customers: [], payroll: [], srcPct:[0.25,0.2,0.3,0.25] },
+  1: { REV: new Array(12).fill(0), EXP: new Array(12).fill(0), invoices: [], expenses: [], inventory: [], customers: [], payroll: [], srcPct:[0.25,0.2,0.3,0.25] },
+  2: { REV: new Array(12).fill(0), EXP: new Array(12).fill(0), invoices: [], expenses: [], inventory: [], customers: [], payroll: [], srcPct:[0.25,0.2,0.3,0.25] },
 };
-
 // Active entity index (mirrors ENTITIES active flag)
 let activeEntityIdx = 0;
 
 // Live data pointers — these get swapped on entity switch
-let REV  = ENTITY_DATA[0].REV;
-let EXP  = ENTITY_DATA[0].EXP;
-let PROFIT = REV.map((r,i)=>r-EXP[i]);
-const EXP_SAL  = EXP.map(e=>Math.round(e*.72));
-const EXP_RENT = EXP.map(()=>3900);
-const EXP_SW   = EXP.map(e=>Math.round(e*.065));
-const EXP_MKT  = EXP.map(e=>Math.round(e*.04));
+let REV    = new Array(12).fill(0);
+let EXP    = new Array(12).fill(0);
+let PROFIT = new Array(12).fill(0);
+const EXP_SAL  = new Array(12).fill(0);
+const EXP_RENT = new Array(12).fill(0);
+const EXP_SW   = new Array(12).fill(0);
+const EXP_MKT  = new Array(12).fill(0);
 let SRC_RETAILCO  = REV.map(r=>Math.round(r*ENTITY_DATA[0].srcPct[0]));
 let SRC_TECHSTART = REV.map(r=>Math.round(r*ENTITY_DATA[0].srcPct[1]));
 let SRC_STRIPE    = REV.map(r=>Math.round(r*ENTITY_DATA[0].srcPct[2]));
@@ -4341,6 +4211,27 @@ async function loadEntityData(idx){
     window._realInvoices = invoices;
     window._realExpenses = expenses;
 
+    // Rebuild monthly chart arrays from real data
+    const now = new Date();
+    const monthlyRev = new Array(12).fill(0);
+    const monthlyExp = new Array(12).fill(0);
+    invoices.forEach(inv => {
+      if(inv.status !== 'paid') return;
+      const d = inv.due_date ? new Date(inv.due_date) : null;
+      if(!d) return;
+      const mIdx = (d.getFullYear() - now.getFullYear()) * 12 + d.getMonth() - (now.getMonth() - 11);
+      if(mIdx >= 0 && mIdx < 12) monthlyRev[mIdx] += parseFloat(inv.amount)||0;
+    });
+    expenses.forEach(exp => {
+      const d = exp.expense_date ? new Date(exp.expense_date) : null;
+      if(!d) return;
+      const mIdx = (d.getFullYear() - now.getFullYear()) * 12 + d.getMonth() - (now.getMonth() - 11);
+      if(mIdx >= 0 && mIdx < 12) monthlyExp[mIdx] += parseFloat(exp.amount)||0;
+    });
+    REV.splice(0,12,...monthlyRev);
+    EXP.splice(0,12,...monthlyExp);
+    for(let i=0;i<12;i++) PROFIT[i] = REV[i]-EXP[i];
+
     // Re-render all pages
     if(typeof renderInvoices==='function')  renderInvoices();
     if(typeof renderExpenses==='function')  renderExpenses();
@@ -4348,6 +4239,7 @@ async function loadEntityData(idx){
     if(typeof renderInventory==='function') renderInventory();
     if(typeof renderPayroll==='function')   renderPayroll();
     if(typeof updateDashboard==='function') updateDashboard();
+    if(typeof buildCharts==='function')     buildCharts();
 
     // Also refresh banking for this entity
     if(typeof loadBankingFromDB==='function') loadBankingFromDB();
@@ -8273,8 +8165,9 @@ async function loadEntitiesFromDB(){
     const res = await fetch('/api/entities', {credentials:'include'});
     if(!res.ok) return;
     const rows = await res.json();
-    // Sort by id so order is always consistent
+    // Sort by id — consistent order always
     rows.sort((a,b) => a.id - b.id);
+
     ENTITIES.length = 0;
     rows.forEach(e => ENTITIES.push({
       _dbId:    e.id,
@@ -8285,12 +8178,28 @@ async function loadEntitiesFromDB(){
       active:   e.is_active == 1 || e.is_active === true,
       data:     {rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0},
     }));
-    // If none active, make first one active
-    if(ENTITIES.length && !ENTITIES.some(e=>e.active)){
-      ENTITIES[0].active = true;
+
+    // If none active, activate first one
+    if(ENTITIES.length && !ENTITIES.some(e=>e.active)) ENTITIES[0].active = true;
+
+    // Sync businesses sidebar with real entities
+    if(typeof businesses !== 'undefined'){
+      businesses.length = 0;
+      ENTITIES.forEach(e => businesses.push({
+        id: 'biz-'+e._dbId,
+        _dbId: e._dbId,
+        name: e.name,
+        industry: e.tag || 'Business',
+        currency: e.currency || 'USD',
+        color: e.color || '#c9a84c',
+        active: e.active,
+      }));
     }
+
     renderEntities();
-    // Update sidebar brand to active entity
+    if(typeof renderBusinessSwitcher === 'function') renderBusinessSwitcher();
+
+    // Update sidebar brand
     const active = ENTITIES.find(e=>e.active);
     if(active){
       const nameEl = document.getElementById('sb-brand-name');
@@ -8298,12 +8207,14 @@ async function loadEntitiesFromDB(){
       if(nameEl) nameEl.textContent = active.name;
       if(badgeEl) badgeEl.textContent = active.currency + ' · Pro';
     }
-    // Activate the active entity in session FIRST, then load data
+
+    // Activate in session FIRST, then load data
     const activeIdx = ENTITIES.findIndex(e=>e.active);
     if(activeIdx >= 0){
       const act = ENTITIES[activeIdx];
       if(act._dbId){
-        await fetch('/api/entities/'+act._dbId+'/activate',{method:'POST',credentials:'include'});
+        const r = await fetch('/api/entities/'+act._dbId+'/activate',{method:'POST',credentials:'include'});
+        if(!r.ok) console.warn('[Entities] Activate failed');
       }
       await loadEntityData(activeIdx);
     }

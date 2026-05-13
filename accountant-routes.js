@@ -483,11 +483,6 @@ If you cannot find a field, use null. Be concise.`;
     }
     res.json({ ok: true });
   }));
-      // keep legacy keys for backwards compat
-      recentInvoices: invoices.rows.map(r => r.data).slice(0, 10),
-      recentExpenses: expenses.rows.map(r => r.data).slice(0, 10),
-    });
-  }));
 
 
   // ── 7. SAVE ACCOUNTANT NOTES ON CLIENT ───────────────────────────────────

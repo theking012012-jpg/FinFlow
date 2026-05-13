@@ -4726,10 +4726,11 @@ function renderCashflow(){updateCashflow()}
 // ════════════════════════════════════════════
 function updateInvoices(d=getPeriodData()){
   if(!userInvoices) userInvoices=[];
-  const totalBilled=d.months===1?userInvoices.reduce((a,i)=>a+i.amount,0):userInvoices.reduce((a,i)=>a+i.amount,0)*d.months;
-  const collected=userInvoices.filter(i=>i.status==='paid').reduce((a,i)=>a+i.amount,0)*(d.months===1?1:d.months);
-  const outstanding=userInvoices.filter(i=>i.status!=='paid').reduce((a,i)=>a+i.amount,0);
-  const overdue=userInvoices.filter(i=>i.status==='overdue').reduce((a,i)=>a+i.amount,0);
+  // Use actual totals from real data, no multiplier
+  const totalBilled=userInvoices.reduce((a,i)=>a+(parseFloat(i.amount)||0),0);
+  const collected=userInvoices.filter(i=>i.status==='paid').reduce((a,i)=>a+(parseFloat(i.amount)||0),0);
+  const outstanding=userInvoices.filter(i=>i.status!=='paid').reduce((a,i)=>a+(parseFloat(i.amount)||0),0);
+  const overdue=userInvoices.filter(i=>i.status==='overdue').reduce((a,i)=>a+(parseFloat(i.amount)||0),0);
   const pctCollected=totalBilled>0?Math.round(collected/totalBilled*100):0;
   document.getElementById('inv-billed').textContent=S(totalBilled);
   document.getElementById('inv-billed-lbl').textContent=d.label;
@@ -4806,6 +4807,28 @@ function saveInvoice(){
 // EXPENSES
 // ════════════════════════════════════════════
 function updateExpenses(d=getPeriodData()){
+  // Use real bizExpenses if available
+  const realExp = window.bizExpenses || [];
+  if(realExp.length > 0){
+    const total = realExp.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+    const ded   = realExp.filter(e=>e.ded==='yes').reduce((s,e)=>s+(parseFloat(e.amount)||0),0)
+                + realExp.filter(e=>e.ded==='half').reduce((s,e)=>s+(parseFloat(e.amount)||0)*0.5,0);
+    const cats  = {};
+    realExp.forEach(e=>{ cats[e.cat]=(cats[e.cat]||0)+(parseFloat(e.amount)||0); });
+    const sorted = Object.entries(cats).sort((a,b)=>b[1]-a[1]);
+    document.getElementById('ex-total').textContent=S(total);
+    document.getElementById('ex-biz').textContent=S(total);
+    document.getElementById('ex-biz-pct').textContent='Business expenses';
+    document.getElementById('ex-biz-pct').className='mc-change neutral';
+    document.getElementById('ex-ded').textContent=S(ded);
+    const taxSaving=Math.round(ded*.25);
+    document.getElementById('ex-ded-save').textContent='Saving ~'+S(taxSaving)+' tax';
+    document.getElementById('ex-ded-save').className='mc-change up';
+    // Category bars
+    const catEls=[['ex-sal','Salaries'],['ex-rent','Rent'],['ex-sw2','Software'],['ex-other','Other']];
+    sorted.slice(0,4).forEach(([cat,amt],i)=>{ const el=document.getElementById(catEls[i]?.[0]); if(el) el.textContent=S(amt); });
+    return;
+  }
   document.getElementById('ex-total').textContent=S(d.exp);
   document.getElementById('ex-biz').textContent=S(Math.round(d.exp*.85));
   document.getElementById('ex-biz-pct').textContent='85% of total';
@@ -8213,14 +8236,16 @@ async function loadEntitiesFromDB(){
     // If none active, make first one active
     if(ENTITIES.length && !ENTITIES.some(e=>e.active)) ENTITIES[0].active = true;
     renderEntities();
-    // Activate the active entity in session
-    const active = ENTITIES.find(e=>e.active);
-    if(active?._dbId){
-      await fetch('/api/entities/'+active._dbId+'/activate',{method:'POST',credentials:'include'});
-    }
-    // Load its data
+    // Activate the active entity in session FIRST, then load data
     const activeIdx = ENTITIES.findIndex(e=>e.active);
-    if(activeIdx >= 0) await loadEntityData(activeIdx);
+    if(activeIdx >= 0){
+      const active = ENTITIES[activeIdx];
+      if(active._dbId){
+        // Must await activate so session entityId is set before data fetch
+        await fetch('/api/entities/'+active._dbId+'/activate',{method:'POST',credentials:'include'});
+      }
+      await loadEntityData(activeIdx);
+    }
   } catch(e){ console.warn('[Entities] Boot load failed:', e.message); }
 }
 

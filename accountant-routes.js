@@ -396,8 +396,8 @@ If you cannot find a field, use null. Be concise.`;
 
     // Fetch client's financial summary
     const [invoices, expenses, entities] = await Promise.all([
-      pool.query(`SELECT data FROM invoices WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20`, [userId]),
-      pool.query(`SELECT data FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20`, [userId]),
+      pool.query(`SELECT data FROM invoices WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+      pool.query(`SELECT data FROM expenses WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT id, data->>'name' AS name FROM entities WHERE user_id = $1`, [userId]),
     ]);
 
@@ -413,6 +413,9 @@ If you cannot find a field, use null. Be concise.`;
         netProfit: (totalIncome - totalExpenses).toFixed(2),
       },
       entities: entities.rows,
+      allInvoices: invoices.rows.map(r => r.data),
+      allExpenses: expenses.rows.map(r => r.data),
+      // keep legacy keys for backwards compat
       recentInvoices: invoices.rows.map(r => r.data).slice(0, 10),
       recentExpenses: expenses.rows.map(r => r.data).slice(0, 10),
     });

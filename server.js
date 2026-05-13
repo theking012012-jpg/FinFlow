@@ -203,6 +203,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Invalid email or password.' });
     req.session.userId = user.id;
     req.session.userRole = user.role || 'owner';
+    // Track last login time
+    await pool.query(`UPDATE users SET data = data || '{"last_login":"${new Date().toISOString()}"}' WHERE id = $1`, [user.id]);
     res.json({ user: safeUser(user) });
   } catch (err) {
     console.error('[Login] Unexpected error:', err);

@@ -882,18 +882,33 @@ async function loadClients() {
 }
 
 function renderClients() {
-  const active = clients.filter(c => c.status === 'active');
+  const now = new Date();
+
+  function activityBadge(c) {
+    const lastLogin = c.last_login ? new Date(c.last_login) : null;
+    const lastInv = c.last_invoice ? new Date(c.last_invoice) : null;
+    const lastExp = c.last_expense ? new Date(c.last_expense) : null;
+    const dates = [lastLogin, lastInv, lastExp].filter(Boolean);
+    const ref = dates.length ? new Date(Math.max(...dates)) : null;
+    if (!ref) return `<span style="font-size:11px;color:var(--text3)">Never active</span>`;
+    const days = Math.floor((now - ref) / 86400000);
+    if (days <= 1)  return `<span style="font-size:11px;color:var(--green)">&#9679; Active today</span>`;
+    if (days <= 7)  return `<span style="font-size:11px;color:var(--green)">&#9679; ${days}d ago</span>`;
+    if (days <= 30) return `<span style="font-size:11px;color:var(--amber)">&#9679; ${days}d ago</span>`;
+    return `<span style="font-size:11px;color:var(--red)">&#9679; ${days}d ago &mdash; ghost?</span>`;
+  }
+
   const rows = clients.length === 0
-    ? '<tr class="loading-row"><td colspan="7">No clients yet. <a style="color:var(--gold);cursor:pointer" onclick="showPage(\'invite\')">Invite your first client →</a></td></tr>'
+    ? '<tr class="loading-row"><td colspan="8">No clients yet. <a style="color:var(--gold);cursor:pointer" onclick="showPage(\'invite\')">Invite your first client &rarr;</a></td></tr>'
     : clients.map(c => `
       <tr>
         <td class="primary">${c.client_name || 'Unknown'}</td>
-        <td>${c.client_email || '—'}</td>
+        <td style="font-size:12px;color:var(--text3)">${c.client_email || '&mdash;'}</td>
         <td><span class="badge badge-gold">${c.client_plan || 'trial'}</span></td>
         <td><span class="badge ${c.status === 'active' ? 'badge-green' : c.status === 'pending' ? 'badge-amber' : 'badge-red'}">${c.status}</span></td>
+        <td>${activityBadge(c)}</td>
         <td>${c.referral_month}/${c.referral_months_total} months</td>
-        <td>${c.access_level}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.user_id},'${(c.client_name||'').replace(/'/g,'')}')" >View books</button></td>
+        <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.user_id},'${(c.client_name||'').replace(/'/g,'')}')">View books</button></td>
       </tr>`).join('');
 
   document.getElementById('clients-tbody').innerHTML = rows;
@@ -904,9 +919,9 @@ function renderClients() {
       <td class="primary">${c.client_name || 'Unknown'}</td>
       <td><span class="badge badge-gold">${c.client_plan || 'trial'}</span></td>
       <td><span class="badge ${c.status === 'active' ? 'badge-green' : 'badge-amber'}">${c.status}</span></td>
-      <td>${c.referral_month}/${c.referral_months_total} months</td>
-      <td>${c.activated_at ? new Date(c.activated_at).toLocaleDateString() : '—'}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.user_id})">View books</button></td>
+      <td>${activityBadge(c)}</td>
+      <td>${c.activated_at ? new Date(c.activated_at).toLocaleDateString() : '&mdash;'}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.user_id},'${(c.client_name||'').replace(/'/g,'')}')">View books</button></td>
     </tr>`).join('') || '<tr class="loading-row"><td colspan="6">No clients yet.</td></tr>';
   document.getElementById('dashboard-clients-tbody').innerHTML = dashRows;
 }
@@ -1206,29 +1221,53 @@ function renderBooks(invoices, expenses) {
 
   // Invoices list
   const invEl = document.getElementById('books-invoices');
-  invEl.innerHTML = invoices.length ? invoices.map(inv => `
-    <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:12px;align-items:center;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:13px">
+  invEl.innerHTML = invoices.length ? invoices.map((inv, i) => `
+    <div style="display:grid;grid-template-columns:1fr auto auto auto auto;gap:10px;align-items:center;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:13px">
       <span style="color:var(--text)">${inv.client || '—'}</span>
       <span style="color:var(--text3);font-size:11px">${inv.due_date || ''}</span>
       <span style="color:var(--green);font-weight:600">${fmt(inv.amount)}</span>
       <span class="badge ${inv.status === 'paid' ? 'badge-green' : inv.status === 'overdue' ? 'badge-red' : 'badge-amber'}">${inv.status}</span>
+      <button onclick="flagTransaction('invoice','inv-${i}','${(inv.client||'').replace(/'/g,'')}')" title="Flag for follow-up" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text3);font-size:11px;padding:2px 6px;cursor:pointer">⚑</button>
     </div>`).join('') : '<div style="color:var(--text3);font-size:13px;padding:8px 0">No invoices for this period.</div>';
 
   // Expenses list
   const expEl = document.getElementById('books-expenses-list');
-  expEl.innerHTML = expenses.length ? expenses.map(exp => `
-    <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:12px;align-items:center;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:13px">
+  expEl.innerHTML = expenses.length ? expenses.map((exp, i) => `
+    <div style="display:grid;grid-template-columns:1fr auto auto auto auto;gap:10px;align-items:center;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:13px">
       <span style="color:var(--text)">${exp.description || '—'}</span>
       <span style="color:var(--text3);font-size:11px">${exp.category || ''}</span>
       <span style="color:var(--text3);font-size:11px">${exp.deductible === 'yes' ? '✓ deductible' : exp.deductible === 'half' ? '½ deductible' : ''}</span>
       <span style="color:var(--red);font-weight:600">${fmt(exp.amount)}</span>
+      <button onclick="flagTransaction('expense','exp-${i}','${(exp.description||'').replace(/'/g,'')}')" title="Flag for follow-up" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text3);font-size:11px;padding:2px 6px;cursor:pointer">⚑</button>
     </div>`).join('') : '<div style="color:var(--text3);font-size:13px;padding:8px 0">No expenses for this period.</div>';
 }
 
-function saveBooksNotes() {
+async function saveBooksNotes() {
   const note = document.getElementById('books-notes').value;
   localStorage.setItem(`books_note_${_booksUserId}`, note);
+  try {
+    await fetch(`/api/accountants/clients/${_booksUserId}/notes`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note }),
+    });
+  } catch(e) {}
   toast('Note saved', 'success');
+}
+
+async function flagTransaction(type, ref, description) {
+  const message = prompt(`Flag this ${type} for follow-up?\nAdd a note (optional):`);
+  if (message === null) return; // cancelled
+  try {
+    await fetch(`/api/accountants/clients/${_booksUserId}/flag`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, ref, message: message || description }),
+    });
+    toast(`${type} flagged for follow-up`, 'success');
+  } catch(e) {
+    toast('Could not flag transaction', 'error');
+  }
 }
 
 function exportClientBooks() {

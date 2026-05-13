@@ -314,6 +314,10 @@ const db = {
 
 // ── SEED HELPERS (identical logic to lowDB version) ───────────────────────────
 async function seedUserData(userId) {
+  // Guard: don't seed if user already has data
+  const existing = await pool.query(`SELECT id FROM invoices WHERE user_id = $1 LIMIT 1`, [userId]);
+  if (existing.rows.length > 0) return;
+
   const { lastInsertRowid: entityId } = await db.insert('entities', { user_id: userId, name: 'FinFlow Inc.', currency: 'USD', color: '#c9a84c', is_active: 1, sort_order: 0 });
 
   for (const r of [

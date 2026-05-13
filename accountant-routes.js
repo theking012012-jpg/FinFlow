@@ -369,9 +369,12 @@ If you cannot find a field, use null. Be concise.`;
     const result = await pool.query(`
       SELECT ac.id, ac.user_id, ac.status, ac.access_level, ac.activated_at,
              ac.referral_month, ac.referral_months_total,
-             u.data->>'name'  AS client_name,
-             u.data->>'email' AS client_email,
-             u.data->>'plan'  AS client_plan
+             u.data->>'name'       AS client_name,
+             u.data->>'email'      AS client_email,
+             u.data->>'plan'       AS client_plan,
+             u.data->>'last_login' AS last_login,
+             (SELECT MAX(created_at) FROM invoices WHERE user_id = ac.user_id) AS last_invoice,
+             (SELECT MAX(created_at) FROM expenses WHERE user_id = ac.user_id) AS last_expense
       FROM accountant_clients ac
       JOIN users u ON u.id = ac.user_id
       WHERE ac.accountant_id = $1
@@ -422,7 +425,46 @@ If you cannot find a field, use null. Be concise.`;
   }));
 
 
-  // ── 7. INVITE CLIENT ──────────────────────────────────────────────────────
+  // ── 7. SAVE ACCOUNTANT NOTES ON CLIENT ───────────────────────────────────
+  app.post('/api/accountants/clients/:userId/notes', requireAccountant, apiLimiter, wrap(async (req, res) => {
+    const { userId } = req.params;
+    const { note } = req.body || {};
+    // Verify access
+    const access = await pool.query(
+      `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    await pool.query(
+      `UPDATE accountant_clients SET access_level = access_level WHERE accountant_id = $1 AND user_id = $2`,
+      [req.session.accountantId, userId]
+    );
+    // Store note in accountant_reports table
+    await pool.query(`
+      INSERT INTO accountant_reports (accountant_id, client_id, type, content, created_at)
+      VALUES ($1, $2, 'note', $3, NOW())
+      ON CONFLICT DO NOTHING
+    `, [req.session.accountantId, userId, (note || '').slice(0, 2000)]);
+    res.json({ ok: true });
+  }));
+
+  // ── 8. FLAG A TRANSACTION ─────────────────────────────────────────────────
+  app.post('/api/accountants/clients/:userId/flag', requireAccountant, apiLimiter, wrap(async (req, res) => {
+    const { userId } = req.params;
+    const { type, ref, message } = req.body || {};
+    const access = await pool.query(
+      `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    await pool.query(`
+      INSERT INTO accountant_reports (accountant_id, client_id, type, content, created_at)
+      VALUES ($1, $2, 'flag', $3, NOW())
+    `, [req.session.accountantId, userId, JSON.stringify({ type, ref, message })]);
+    res.json({ ok: true });
+  }));
+
+  // ── 9. INVITE CLIENT ──────────────────────────────────────────────────────
   app.post('/api/accountants/invite', requireAccountant, apiLimiter, wrap(async (req, res) => {
     const { email, name } = req.body || {};
     if (!email) return res.status(400).json({ error: 'Client email required.' });

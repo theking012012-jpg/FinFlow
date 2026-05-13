@@ -1163,11 +1163,17 @@ function renderEntityTabs() {
   const entities = _booksData.entities || [];
   if (entities.length <= 1) { tabs.style.display = 'none'; return; }
   tabs.style.display = 'flex';
-  const tabStyle = (active) => `cursor:pointer;padding:6px 14px;border-radius:6px;font-size:12px;border:1px solid ${active ? 'var(--gold)' : 'var(--border)'};background:${active ? 'rgba(201,168,76,0.1)' : 'var(--bg2)'};color:${active ? 'var(--gold)' : 'var(--text2)'}`;
-  tabs.innerHTML = [
-    \`<button style="\${tabStyle(_booksActiveEntity === 'all')}" onclick="switchEntityTab('all')">All Entities</button>\`,
-    ...entities.map(e => \`<button style="\${tabStyle(_booksActiveEntity == e.id)}" onclick="switchEntityTab(\${e.id})">\${e.name || 'Entity'}</button>\`)
-  ].join('');
+  tabs.innerHTML = '';
+  function makeTab(label, entityId) {
+    const active = _booksActiveEntity == entityId;
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    btn.style.cssText = 'cursor:pointer;padding:6px 14px;border-radius:6px;font-size:12px;border:1px solid ' + (active ? 'var(--gold)' : 'var(--border)') + ';background:' + (active ? 'rgba(201,168,76,0.1)' : 'var(--bg2)') + ';color:' + (active ? 'var(--gold)' : 'var(--text2)');
+    btn.onclick = function() { switchEntityTab(entityId); };
+    tabs.appendChild(btn);
+  }
+  makeTab('All Entities', 'all');
+  entities.forEach(function(e) { makeTab(e.name || 'Entity', e.id); });
 }
 
 function switchEntityTab(entityId) {

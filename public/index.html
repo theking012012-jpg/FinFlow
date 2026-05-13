@@ -4557,7 +4557,13 @@ function updateDashboard(d=getPeriodData()){
   set('d-profit-chg',pc.txt,pc.cls);
   // Outstanding — show month vs year context
   if(currentPeriod==='year'){
-    document.getElementById('d-outstanding').textContent=S(9150);
+    // Outstanding from real invoices
+    const _outstanding = (window.userInvoices||[]).filter(i=>i.status!=='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+    const _overdue = (window.userInvoices||[]).filter(i=>i.status==='overdue');
+    const _overdueAmt = _overdue.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+    document.getElementById('d-outstanding').textContent=S(_outstanding);
+    const _odEl = document.getElementById('d-outstanding-chg');
+    if(_odEl){ _odEl.textContent = _overdue.length ? _overdue.length+' overdue · '+S(_overdueAmt) : 'All invoices paid'; _odEl.className = _overdue.length ? 'mc-change dn' : 'mc-change up'; }
     document.getElementById('d-outstanding-chg').textContent='Apr 2026 · 2 overdue $3,800';
     document.getElementById('d-outstanding-chg').className='mc-change dn';
   }
@@ -4573,8 +4579,9 @@ function updateDashboard(d=getPeriodData()){
   document.getElementById('exp-mkt-bar').style.width=Math.round(d.mkt/d.exp*100)+'%';
   // Business transactions (period-contextual)
   const txns=currentPeriod==='year'?[
-    {name:'RetailCo — Annual contract',cat:'Revenue · Largest client',amt:sum(SRC_RETAILCO,0,12),type:'income'},
-    {name:'TechStart Inc — Retainer',  cat:'Revenue · Monthly SaaS',amt:sum(SRC_TECHSTART,0,12),type:'income'},
+    // Real transactions from DB
+    ...((window.userInvoices||[]).slice(0,3).map(i=>({name:i.client, cat:'Revenue · '+i.status, amt:i.amount, type:'income'}))),
+    ...((window.bizExpenses||[]).slice(0,2).map(e=>({name:e.desc, cat:'Expense · '+e.cat, amt:e.amount, type:'expense'}))),
     {name:'Annual payroll',            cat:'Expense · Salaries',    amt:sum(EXP_SAL,0,12),      type:'expense'},
     {name:'Office rent (×12)',         cat:'Expense · Fixed',       amt:EXP_RENT[0]*12,          type:'expense'},
     {name:'Stripe product sales',      cat:'Revenue',               amt:sum(SRC_STRIPE,0,12),    type:'income'},

@@ -401,9 +401,9 @@ If you cannot find a field, use null. Be concise.`;
       pool.query(`SELECT id, data->>'name' AS name FROM entities WHERE user_id = $1`, [userId]),
     ]);
 
-    // Calculate basic summary
-    const totalIncome = invoices.rows.reduce((sum, r) => sum + (parseFloat(r.data.total) || 0), 0);
-    const totalExpenses = expenses.rows.reduce((sum, r) => sum + (parseFloat(r.data.amount) || 0), 0);
+    // Calculate basic summary — data is stored as JSONB
+    const totalIncome = invoices.rows.reduce((sum, r) => sum + (parseFloat(r.data?.amount) || 0), 0);
+    const totalExpenses = expenses.rows.reduce((sum, r) => sum + (parseFloat(r.data?.amount) || 0), 0);
 
     return res.json({
       accessLevel: access.rows[0].access_level,

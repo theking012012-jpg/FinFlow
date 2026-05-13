@@ -1011,12 +1011,60 @@ function copyRef() {
 }
 
 // ── VIEW BOOKS ────────────────────────────────────────────────────────────────
-async function viewBooks(userId) {
+async function viewBooks(userId, clientName) {
   try {
     const res = await fetch(`/api/accountants/clients/${userId}/books`, { credentials: 'include' });
     if (!res.ok) { toast('No access to this client\'s books', 'error'); return; }
     const data = await res.json();
-    toast(`${data.summary.totalIncome} income · ${data.summary.totalExpenses} expenses`, 'success');
+    const { summary, recentInvoices, recentExpenses } = data;
+
+    // Header
+    document.getElementById('books-modal-title').textContent = clientName ? `${clientName}'s Books` : 'Client Books';
+    document.getElementById('books-modal-sub').textContent = `Access level: ${data.accessLevel || 'read'}`;
+
+    // Summary cards
+    const fmt = v => '$' + parseFloat(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    document.getElementById('books-income').textContent   = fmt(summary.totalIncome);
+    document.getElementById('books-expenses').textContent = fmt(summary.totalExpenses);
+    document.getElementById('books-profit').textContent   = fmt(summary.netProfit);
+
+    // Recent invoices
+    const invEl = document.getElementById('books-invoices');
+    if (recentInvoices.length) {
+      invEl.innerHTML = recentInvoices.map(inv => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:13px">
+          <span style="color:var(--text1)">${inv.client || '—'}</span>
+          <span style="color:var(--text3);font-size:11px">${inv.due_date || ''}</span>
+          <span style="color:var(--green);font-weight:600">${fmt(inv.amount)}</span>
+          <span class="badge ${inv.status === 'paid' ? 'badge-green' : inv.status === 'overdue' ? 'badge-red' : 'badge-amber'}">${inv.status}</span>
+        </div>`).join('');
+    } else {
+      invEl.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0">No invoices found.</div>';
+    }
+
+    // Recent expenses section — add if not already there
+    let expSection = document.getElementById('books-expenses-section');
+    if (!expSection) {
+      expSection = document.createElement('div');
+      expSection.id = 'books-expenses-section';
+      expSection.innerHTML = `
+        <div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;margin-top:16px">Recent Expenses</div>
+        <div id="books-expenses-list" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:16px"></div>`;
+      document.getElementById('books-invoices').insertAdjacentElement('afterend', expSection);
+    }
+    const expEl = document.getElementById('books-expenses-list');
+    if (recentExpenses.length) {
+      expEl.innerHTML = recentExpenses.map(exp => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;font-size:13px">
+          <span style="color:var(--text1)">${exp.description || '—'}</span>
+          <span style="color:var(--text3);font-size:11px">${exp.category || ''}</span>
+          <span style="color:var(--red);font-weight:600">${fmt(exp.amount)}</span>
+        </div>`).join('');
+    } else {
+      expEl.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0">No expenses found.</div>';
+    }
+
+    document.getElementById('books-modal').classList.add('open');
   } catch (e) {
     toast('Could not load client books', 'error');
   }

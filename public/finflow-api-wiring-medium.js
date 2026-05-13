@@ -53,6 +53,11 @@
     // Boot: load all saved invoices from DB
     async function loadInvoicesFromDB() {
       try {
+        // Activate the current entity in session first
+        const _activeEnt = (window.ENTITIES || []).find(e => e.active);
+        if (_activeEnt?._dbId) {
+          try { await api('POST', `/api/entities/${_activeEnt._dbId}/activate`); } catch(e) {}
+        }
         const rows = await api('GET', '/api/invoices');
         if (rows && rows.length > 0) {
           // Map DB shape → frontend shape, prepend to seed data or replace
@@ -97,12 +102,17 @@
       const dueStr = due ? new Date(due).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'TBD';
 
       try {
+        // Get active entity_id from ENTITIES array
+        const _activeEnt = (window.ENTITIES || []).find(e => e.active);
+        const _entityId = _activeEnt?._dbId || null;
+
         const saved = await api('POST', '/api/invoices', {
           client,
           amount:   amountRaw,
           due_date: due || null,
           status,
           notes,
+          entity_id: _entityId,
         });
 
         if (!window.userInvoices) window.userInvoices = [];
@@ -234,12 +244,16 @@
       const ded = document.getElementById('bexp-ded')?.value  || 'no';
 
       try {
+        const _activeEnt2 = (window.ENTITIES || []).find(e => e.active);
+        const _entityId2 = _activeEnt2?._dbId || null;
+
         const saved = await api('POST', '/api/expenses', {
           description: desc,
           category:    cat,
           amount:      amountRaw,
           deductible:  ded,
           expense_date: new Date().toISOString().slice(0, 10),
+          entity_id: _entityId2,
         });
 
         if (!window.bizExpenses) window.bizExpenses = [];

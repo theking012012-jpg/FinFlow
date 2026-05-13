@@ -3585,6 +3585,7 @@ async function doLogin(){
     }
     notify('Welcome back' + (data.user?.name ? ', '+data.user.name : '') + ' ✴');
     if(typeof bootFinFlowAPI === 'function') bootFinFlowAPI();
+    loadEntitiesFromDB();
   }catch(e){
     if(errEl) errEl.textContent='Network error — is the server running?';
   }finally{
@@ -3618,6 +3619,7 @@ async function doRegister(){
     }
     notify('Account created ✴ Welcome to FinFlow!');
     if(typeof bootFinFlowAPI === 'function') bootFinFlowAPI();
+    loadEntitiesFromDB();
   }catch(e){
     if(errEl) errEl.textContent='Network error — is the server running?';
   }finally{
@@ -4115,6 +4117,8 @@ function initEnhancements(){
     applyRole(savedRole);
     document.getElementById('login-screen').style.display = 'none';
     injectRoleBadge(savedRole);
+    // Load real entities from DB
+    if(typeof loadEntitiesFromDB === 'function') loadEntitiesFromDB();
   }
 }
 
@@ -4279,27 +4283,72 @@ let SRC_STRIPE    = REV.map(r=>Math.round(r*ENTITY_DATA[0].srcPct[2]));
 let SRC_CONSULT   = REV.map(r=>Math.round(r*ENTITY_DATA[0].srcPct[3]));
 
 // Load entity data into live pointers
-function loadEntityData(idx){
-  const d = ENTITY_DATA[idx];
-  if(!d) return;
+async function loadEntityData(idx){
   activeEntityIdx = idx;
-  REV = d.REV;
-  EXP = d.EXP;
-  // Reassign PROFIT
-  for(let i=0;i<12;i++) PROFIT[i] = REV[i]-EXP[i];
-  PROFIT.length = 12;
-  SRC_RETAILCO  = REV.map(r=>Math.round(r*d.srcPct[0]));
-  SRC_TECHSTART = REV.map(r=>Math.round(r*d.srcPct[1]));
-  SRC_STRIPE    = REV.map(r=>Math.round(r*d.srcPct[2]));
-  SRC_CONSULT   = REV.map(r=>Math.round(r*d.srcPct[3]));
-  // Swap live operational data
-  userInvoices = [...d.invoices];
-  bizExpenses  = [...d.expenses];
-  payrollEmployees = d.payroll.map(e=>({...e}));
-  customers    = d.customers.map(c=>({...c}));
-  inventory    = d.inventory.map(i=>({...i}));
-  // ownerPayroll for active entity
-  ownerPayroll = ownerPayrollByEntity[idx] || null;
+  // Zero out chart data immediately so stale data doesn't show
+  const z = new Array(12).fill(0);
+  if(typeof REV !== 'undefined') REV.splice(0,12,...z);
+  if(typeof EXP !== 'undefined') EXP.splice(0,12,...z);
+  if(typeof PROFIT !== 'undefined') PROFIT.splice(0,12,...z);
+
+  try {
+    const [invRes, expRes, custRes, invtRes, payRes] = await Promise.all([
+      fetch('/api/invoices',   {credentials:'include'}),
+      fetch('/api/expenses',   {credentials:'include'}),
+      fetch('/api/customers',  {credentials:'include'}),
+      fetch('/api/inventory',  {credentials:'include'}),
+      fetch('/api/payroll',    {credentials:'include'}),
+    ]);
+    const invoices   = invRes.ok   ? await invRes.json()   : [];
+    const expenses   = expRes.ok   ? await expRes.json()   : [];
+    const custs      = custRes.ok  ? await custRes.json()  : [];
+    const invt       = invtRes.ok  ? await invtRes.json()  : [];
+    const payroll    = payRes.ok   ? await payRes.json()   : [];
+
+    // Replace userInvoices
+    userInvoices = invoices.map(r=>({
+      _dbId:r.id, client:r.client, amount:r.amount,
+      due: r.due_date ? new Date(r.due_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'TBD',
+      due_date:r.due_date, status:r.status, notes:r.notes||'',
+      color: r.status==='overdue'?'var(--red)':'var(--t2)',
+    }));
+
+    // Replace bizExpenses
+    bizExpenses = expenses.map(r=>({
+      _dbId:r.id, desc:r.description, cat:r.category,
+      amount:r.amount, ded:r.deductible,
+      date: r.expense_date ? new Date(r.expense_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'Today',
+    }));
+
+    // Replace customers
+    customers = custs.map(c=>({...c, _dbId:c.id}));
+
+    // Replace inventory
+    inventory = invt.map(r=>({_dbId:r.id, sku:r.sku, name:r.name, units:r.units, max:r.max_units||200, cost:r.cost, low:!!r.low_stock}));
+
+    // Update payroll
+    if(payroll.length) {
+      payrollEmployees = payroll.filter(r=>!r.is_owner).map(r=>({
+        _dbId:r.id, fname:r.fname, lname:r.lname, role:r.role||'', type:r.emp_type||'Full-time',
+        gross:r.gross, taxRate:r.tax_rate, net:Math.round(r.gross*(1-r.tax_rate/100)),
+        initials:(r.fname[0]+(r.lname||'')[0]||'').toUpperCase(), avClass:r.av_class||'av-blue', isOwner:false,
+      }));
+    }
+
+    // Store globally for dashboard wiring
+    window._realInvoices = invoices;
+    window._realExpenses = expenses;
+
+    // Re-render all pages
+    if(typeof renderInvoices==='function')  renderInvoices();
+    if(typeof renderExpenses==='function')  renderExpenses();
+    if(typeof renderCustomers==='function') renderCustomers();
+    if(typeof renderInventory==='function') renderInventory();
+    if(typeof renderPayroll==='function')   renderPayroll();
+    if(typeof updateDashboard==='function') updateDashboard();
+
+    console.log('[Entity] Loaded real data — invoices:'+invoices.length+' expenses:'+expenses.length);
+  } catch(e){ console.warn('[Entity] loadEntityData failed:', e.message); }
 }
 
 const INVOICES_BASE = ENTITY_DATA[0].invoices;
@@ -5796,13 +5845,16 @@ function openAddEntityModal(){
 async function saveNewEntity(){
   const name = document.getElementById('ne-name').value.trim();
   if(!name){ notify('Entity name is required'); return; }
-  const currency = document.getElementById('ne-currency').value;
-  const color = document.getElementById('ne-color').value;
+  const currency = document.getElementById('ne-currency').value || 'USD';
+  const color = document.getElementById('ne-color').value || '#c9a84c';
   try {
     const res = await fetch('/api/entities', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({name, currency, color}) });
     if(!res.ok) throw new Error((await res.json()).error);
+    const saved = await res.json();
     closeModal('add-entity-modal');
-    if(typeof loadEntities==='function') loadEntities();
+    // Add to ENTITIES array immediately
+    ENTITIES.push({ _dbId: saved.id, name, tag:'Entity', color, currency, active:false, data:{rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0} });
+    renderEntities();
     notify('Entity "'+esc(name)+'" created ✦');
   } catch(e){ notify('Error: '+(e.message||'Failed to create entity')); }
 }
@@ -8140,14 +8192,37 @@ window.mobNavActive=function(id){
 // ── MULTI-ENTITY DATA & RENDERER ────────────────────────────────────────────
 // Raw entity data in native currencies (USD, GBP, TTD)
 window.ENTITIES=window.ENTITIES||[];
-const ENTITIES=window.ENTITIES=[
-  {name:'FinFlow Inc.',tag:'Parent',color:'#c9a84c',currency:'USD',active:true,
-   data:{rev:469200,cogs:112000,grossProfit:357200,opex:119400,netProfit:237800}},
-  {name:'FinScale Ltd.',tag:'Subsidiary',color:'#9e8fbf',currency:'GBP',active:false,
-   data:{rev:218400,cogs:98200,grossProfit:120200,opex:65600,netProfit:54600}},
-  {name:'FinPay TTD',tag:'Subsidiary',color:'#5aaa9e',currency:'TTD',active:false,
-   data:{rev:133800,cogs:74400,grossProfit:59400,opex:39600,netProfit:19800}},
-];
+const ENTITIES=window.ENTITIES=[];
+
+// ── Load real entities from API on boot ──────────────────────────
+async function loadEntitiesFromDB(){
+  try {
+    const res = await fetch('/api/entities', {credentials:'include'});
+    if(!res.ok) return;
+    const rows = await res.json();
+    ENTITIES.length = 0;
+    rows.forEach((e,i) => ENTITIES.push({
+      _dbId:    e.id,
+      name:     e.name,
+      tag:      'Entity',
+      color:    e.color || '#c9a84c',
+      currency: e.currency || 'USD',
+      active:   !!e.is_active,
+      data:     {rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0},
+    }));
+    // If none active, make first one active
+    if(ENTITIES.length && !ENTITIES.some(e=>e.active)) ENTITIES[0].active = true;
+    renderEntities();
+    // Activate the active entity in session
+    const active = ENTITIES.find(e=>e.active);
+    if(active?._dbId){
+      await fetch('/api/entities/'+active._dbId+'/activate',{method:'POST',credentials:'include'});
+    }
+    // Load its data
+    const activeIdx = ENTITIES.findIndex(e=>e.active);
+    if(activeIdx >= 0) await loadEntityData(activeIdx);
+  } catch(e){ console.warn('[Entities] Boot load failed:', e.message); }
+}
 
 // window.CURRENCIES is already set from the full CURRENCIES const above.
 
@@ -8252,31 +8327,29 @@ window.renderEntities=function(){
   renderConsolPL();
 };
 
-window.switchEntity=function(idx){
+window.switchEntity=async function(idx){
   ENTITIES.forEach((e,i)=>e.active=i===idx);
   const e=ENTITIES[idx];
+  if(!e) return;
 
-  // Load this entity's data into all live arrays
-  loadEntityData(idx);
-
-  // Update sidebar brand
+  // Update sidebar brand immediately
   const nameEl=document.getElementById('sb-brand-name');
   const badgeEl=document.getElementById('biz-currency-badge');
   if(nameEl)nameEl.textContent=e.name;
   if(badgeEl)badgeEl.textContent=`${e.currency} · Pro`;
 
+  // Activate in session
+  if(e._dbId){
+    try { await fetch('/api/entities/'+e._dbId+'/activate',{method:'POST',credentials:'include'}); } catch(err){}
+  }
+
   // Refresh entity list UI
   renderEntities();
 
-  // Refresh all pages that show entity-specific data
-  updateDashboard();
-  if(typeof renderPayroll==='function')    renderPayroll();
-  if(typeof renderCustomers==='function')  renderCustomers();
-  if(typeof renderExpenses==='function')   renderExpenses();
-  if(typeof renderInventory==='function')  renderInventory();
-  if(typeof renderInvoices==='function')   renderInvoices();
+  // Load real data for this entity
+  await loadEntityData(idx);
 
-  notify(`Switched to ${e.name} — ${e.currency} data loaded ✦`);
+  notify(`Switched to ${e.name} ✦`);
 };
 
 // Populate the "More…" dropdowns with all CURRENCIES keys

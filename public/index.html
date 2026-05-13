@@ -4351,21 +4351,21 @@ async function loadEntityData(idx){
   } catch(e){ console.warn('[Entity] loadEntityData failed:', e.message); }
 }
 
-const INVOICES_BASE = ENTITY_DATA[0].invoices;
+const INVOICES_BASE = []; // populated from DB via loadEntityData
 
-// Invoice data (static — April 2026)
-let bizExpenses = [...ENTITY_DATA[0].expenses];
+// Start with empty arrays — loadEntityData fills these from the real API
+let bizExpenses = [];
 // Inventory
-let inventory = [...ENTITY_DATA[0].inventory];
+let inventory = [];
 // Customers
-let customers = [...ENTITY_DATA[0].customers];
+let customers = [];
 let nextCustId = 10;
 const AVATAR_COLORS = ['av-blue','av-green','av-purple','av-amber','av-red','av-teal'];
 // Payroll
-let payrollEmployees = [...ENTITY_DATA[0].payroll];
-let ownerPayrollByEntity = {}; // keyed by entity index e.g. {0:{...}, 1:{...}, 2:{...}}
-let ownerPayroll = null; // kept for backward compat with renderPayroll
-let activeOwnerEntityIdx = 0; // which entity tab is open in modal
+let payrollEmployees = [];
+let ownerPayrollByEntity = {};
+let ownerPayroll = null;
+let activeOwnerEntityIdx = 0;
 // Personal
 let spending = [
   {label:'Rent / mortgage',amount:1800,color:'var(--acc)'},
@@ -4393,8 +4393,8 @@ let persTransactions = [
 ];
 let basePersonalIncome = 6800;
 let baseNetWorth = 84500;
-// User invoices (added by user)
-let userInvoices = [...INVOICES_BASE];
+// User invoices — populated from DB via loadEntityData
+let userInvoices = [];
 let nextInvId = 100;
 // Period state
 let darkMode = true;
@@ -5870,15 +5870,18 @@ async function saveNewEntity(){
   if(!name){ notify('Entity name is required'); return; }
   const currency = document.getElementById('ne-currency').value || 'USD';
   const color = document.getElementById('ne-color').value || '#c9a84c';
+  const tag = ENTITIES.length === 0 ? 'Parent' : 'Subsidiary';
   try {
-    const res = await fetch('/api/entities', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({name, currency, color}) });
+    const res = await fetch('/api/entities', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({name, currency, color, tag, sort_order: ENTITIES.length}) });
     if(!res.ok) throw new Error((await res.json()).error);
     const saved = await res.json();
+    // Clear the form
+    document.getElementById('ne-name').value = '';
     closeModal('add-entity-modal');
-    // Add to ENTITIES array immediately
-    ENTITIES.push({ _dbId: saved.id, name, tag:'Entity', color, currency, active:false, data:{rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0} });
+    // Add to ENTITIES array
+    ENTITIES.push({ _dbId: saved.id, name, tag, color, currency, active:false, data:{rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0} });
     renderEntities();
-    notify('Entity "'+esc(name)+'" created ✦');
+    notify('Entity "'+esc(name)+'" created — switch to it to add data ✦');
   } catch(e){ notify('Error: '+(e.message||'Failed to create entity')); }
 }
 
@@ -8223,26 +8226,37 @@ async function loadEntitiesFromDB(){
     const res = await fetch('/api/entities', {credentials:'include'});
     if(!res.ok) return;
     const rows = await res.json();
+    // Sort by id so order is always consistent
+    rows.sort((a,b) => a.id - b.id);
     ENTITIES.length = 0;
-    rows.forEach((e,i) => ENTITIES.push({
+    rows.forEach(e => ENTITIES.push({
       _dbId:    e.id,
       name:     e.name,
-      tag:      'Entity',
+      tag:      e.tag || 'Entity',
       color:    e.color || '#c9a84c',
       currency: e.currency || 'USD',
-      active:   !!e.is_active,
+      active:   e.is_active == 1 || e.is_active === true,
       data:     {rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0},
     }));
     // If none active, make first one active
-    if(ENTITIES.length && !ENTITIES.some(e=>e.active)) ENTITIES[0].active = true;
+    if(ENTITIES.length && !ENTITIES.some(e=>e.active)){
+      ENTITIES[0].active = true;
+    }
     renderEntities();
+    // Update sidebar brand to active entity
+    const active = ENTITIES.find(e=>e.active);
+    if(active){
+      const nameEl = document.getElementById('sb-brand-name');
+      const badgeEl = document.getElementById('biz-currency-badge');
+      if(nameEl) nameEl.textContent = active.name;
+      if(badgeEl) badgeEl.textContent = active.currency + ' · Pro';
+    }
     // Activate the active entity in session FIRST, then load data
     const activeIdx = ENTITIES.findIndex(e=>e.active);
     if(activeIdx >= 0){
-      const active = ENTITIES[activeIdx];
-      if(active._dbId){
-        // Must await activate so session entityId is set before data fetch
-        await fetch('/api/entities/'+active._dbId+'/activate',{method:'POST',credentials:'include'});
+      const act = ENTITIES[activeIdx];
+      if(act._dbId){
+        await fetch('/api/entities/'+act._dbId+'/activate',{method:'POST',credentials:'include'});
       }
       await loadEntityData(activeIdx);
     }
@@ -8360,21 +8374,21 @@ window.switchEntity=async function(idx){
   // Update sidebar brand immediately
   const nameEl=document.getElementById('sb-brand-name');
   const badgeEl=document.getElementById('biz-currency-badge');
-  if(nameEl)nameEl.textContent=e.name;
-  if(badgeEl)badgeEl.textContent=`${e.currency} · Pro`;
-
-  // Activate in session
-  if(e._dbId){
-    try { await fetch('/api/entities/'+e._dbId+'/activate',{method:'POST',credentials:'include'}); } catch(err){}
-  }
+  if(nameEl) nameEl.textContent=e.name;
+  if(badgeEl) badgeEl.textContent=e.currency+' · Pro';
 
   // Refresh entity list UI
   renderEntities();
 
+  // Activate in session FIRST - must await before data fetch
+  if(e._dbId){
+    try { await fetch('/api/entities/'+e._dbId+'/activate',{method:'POST',credentials:'include'}); } catch(err){}
+  }
+
   // Load real data for this entity
   await loadEntityData(idx);
 
-  notify(`Switched to ${e.name} ✦`);
+  notify('Switched to '+e.name+' ✦');
 };
 
 // Populate the "More…" dropdowns with all CURRENCIES keys

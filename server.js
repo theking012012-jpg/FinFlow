@@ -347,7 +347,7 @@ async function activeEntity(userId) {
 
 // Build a filter function scoped to user (and optionally entity)
 function userFilter(userId, entityId) {
-  if (entityId) return r => r.user_id === userId && (r.entity_id === entityId || r.entity_id == null);
+  if (entityId) return r => r.user_id === userId && r.entity_id === entityId;
   return r => r.user_id === userId;
 }
 

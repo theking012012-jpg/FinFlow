@@ -44,6 +44,7 @@
 
   // ── Build 12-month arrays (last 12 months) from flat rows ────────
   function buildMonthlyArrays(invoices, expenses) {
+    window._buildMonthlyArrays = buildMonthlyArrays; // expose globally
     const now = new Date();
     // Build array of last 12 month labels and start dates
     const months = [];
@@ -414,6 +415,117 @@
 
     // Load real entities on boot
     loadRealEntities();
+  });
+
+})();
+
+// ════════════════════════════════════════════════════════════════════
+// LOAD ENTITY DATA OVERRIDE
+// Replaces hardcoded loadEntityData() with real API calls.
+// This prevents copying hardcoded invoices/expenses when switching.
+// ════════════════════════════════════════════════════════════════════
+
+(function () {
+  'use strict';
+
+  async function api(method, path) {
+    const res = await fetch(path, { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || res.status); }
+    return res.json();
+  }
+
+  window.addEventListener('DOMContentLoaded', function () {
+
+    // Override loadEntityData to use real API data instead of hardcoded arrays
+    window.loadEntityData = async function (idx) {
+      const entity = window.ENTITIES[idx];
+      if (!entity) return;
+
+      // Activate entity in session first
+      if (entity._dbId) {
+        try {
+          await api('POST', `/api/entities/${entity._dbId}/activate`);
+        } catch (e) {
+          console.warn('[Entity Wiring] Could not activate entity:', e.message);
+        }
+      }
+
+      try {
+        // Load real data for this entity from API
+        const [invoices, expenses, customers, inventory, payroll] = await Promise.all([
+          api('GET', '/api/invoices'),
+          api('GET', '/api/expenses'),
+          api('GET', '/api/customers'),
+          api('GET', '/api/inventory'),
+          api('GET', '/api/payroll'),
+        ]);
+
+        // Clear and replace userInvoices
+        if (Array.isArray(window.userInvoices)) window.userInvoices.length = 0;
+        else window.userInvoices = [];
+        (invoices || []).forEach(r => window.userInvoices.push({
+          _dbId: r.id, client: r.client, amount: r.amount,
+          due: r.due_date ? new Date(r.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'TBD',
+          due_date: r.due_date, status: r.status, notes: r.notes || '',
+          color: r.status === 'overdue' ? 'var(--red)' : 'var(--t2)',
+        }));
+
+        // Clear and replace bizExpenses
+        if (Array.isArray(window.bizExpenses)) window.bizExpenses.length = 0;
+        else window.bizExpenses = [];
+        (expenses || []).forEach(r => window.bizExpenses.push({
+          _dbId: r.id, desc: r.description, cat: r.category,
+          amount: r.amount, ded: r.deductible,
+          date: r.expense_date ? new Date(r.expense_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Today',
+        }));
+
+        // Clear and replace customers
+        if (Array.isArray(window.customers)) window.customers.length = 0;
+        else window.customers = [];
+        (customers || []).forEach(r => window.customers.push({ ...r, _dbId: r.id }));
+
+        // Clear and replace inventory
+        if (Array.isArray(window.inventory)) window.inventory.length = 0;
+        else window.inventory = [];
+        (inventory || []).forEach(r => window.inventory.push({
+          _dbId: r.id, sku: r.sku, name: r.name,
+          units: r.units, max: r.max_units || 200, cost: r.cost, low: !!r.low_stock,
+        }));
+
+        // Update real data globals for dashboard
+        window._realInvoices = invoices || [];
+        window._realExpenses = expenses || [];
+
+        // Zero out hardcoded chart data for this entity (real data will come from dashboard wiring)
+        const empty12 = new Array(12).fill(0);
+        if (typeof window.REV !== 'undefined') window.REV.splice(0, 12, ...empty12);
+        if (typeof window.EXP !== 'undefined') window.EXP.splice(0, 12, ...empty12);
+
+        // Re-render all pages
+        if (typeof renderInvoices === 'function') renderInvoices();
+        if (typeof renderExpenses === 'function') renderExpenses();
+        if (typeof renderCustomers === 'function') renderCustomers();
+        if (typeof renderInventory === 'function') renderInventory();
+        if (typeof updateDashboard === 'function') updateDashboard();
+
+        // Rebuild chart with real data
+        const { months, revByMonth, expByMonth } = window._buildMonthlyArrays
+          ? window._buildMonthlyArrays(window._realInvoices, window._realExpenses)
+          : { months: [], revByMonth: empty12, expByMonth: empty12 };
+
+        if (window.charts && window.charts.overview) {
+          window.charts.overview.data.labels = months;
+          window.charts.overview.data.datasets[0].data = revByMonth;
+          window.charts.overview.data.datasets[1].data = expByMonth;
+          window.charts.overview.update('none');
+        }
+
+        console.log('[Entity Wiring] Loaded real data for', entity.name, '— invoices:', invoices.length, 'expenses:', expenses.length);
+      } catch (e) {
+        console.warn('[Entity Wiring] Could not load entity data:', e.message);
+      }
+    };
+
   });
 
 })();

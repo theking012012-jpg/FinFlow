@@ -1722,6 +1722,20 @@ app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── TEMP DEV SETUP (remove after use) ────────────────────────────────────────
+app.post('/api/dev/setup', async (req, res) => {
+  try {
+    // Verify accountant and link to client
+    await pool.query(`UPDATE accountants SET status='verified', verified_at=NOW() WHERE id=7`);
+    await pool.query(`
+      INSERT INTO accountant_clients (accountant_id, user_id, status, access_level)
+      VALUES (7, 3, 'active', 'edit')
+      ON CONFLICT DO NOTHING
+    `);
+    res.json({ ok: true, message: 'Accountant verified and linked to client' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── TEMP DEV RESET (remove after use) ────────────────────────────────────────
 app.post('/api/dev/wipe-and-create', async (req, res) => {
   try {

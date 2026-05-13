@@ -4578,25 +4578,12 @@ function updateDashboard(d=getPeriodData()){
   document.getElementById('exp-sw-bar').style.width=Math.round(d.sw/d.exp*100)+'%';
   document.getElementById('exp-mkt-bar').style.width=Math.round(d.mkt/d.exp*100)+'%';
   // Business transactions (period-contextual)
-  const txns=currentPeriod==='year'?[
-    // Real transactions from DB
-    ...((window.userInvoices||[]).slice(0,3).map(i=>({name:i.client, cat:'Revenue · '+i.status, amt:i.amount, type:'income'}))),
-    ...((window.bizExpenses||[]).slice(0,2).map(e=>({name:e.desc, cat:'Expense · '+e.cat, amt:e.amount, type:'expense'}))),
-    ...((window.bizExpenses||[]).slice(0,2).map(e=>({name:e.desc||e.description, cat:'Expense · '+(e.cat||e.category||'Other'), amt:parseFloat(e.amount)||0, type:'expense'}))),
-    {name:'Stripe product sales',      cat:'Revenue',               amt:sum(SRC_STRIPE,0,12),    type:'income'},
-  ]:currentPeriod==='quarter'?[
-    {name:'RetailCo — Q4 invoices',    cat:'Revenue',           amt:SRC_RETAILCO[9]+SRC_RETAILCO[10]+SRC_RETAILCO[11],type:'income'},
-    {name:'TechStart — Q4 retainer',  cat:'Revenue',           amt:SRC_TECHSTART[9]+SRC_TECHSTART[10]+SRC_TECHSTART[11],type:'income'},
-    {name:'Payroll Q4 (3 months)',     cat:'Expense · Salaries',amt:sum(EXP_SAL,9,12),type:'expense'},
-    {name:'AWS Cloud — Q4',           cat:'Expense · Software', amt:sum(EXP_SW,9,12),type:'expense'},
-    {name:'Stripe payouts — Q4',      cat:'Revenue',            amt:sum(SRC_STRIPE,9,12),type:'income'},
-  ]:[
-    {name:'Stripe payout',            cat:'Revenue',            amt:8400, type:'income'},
-    {name:'RetailCo — Invoice #042',  cat:'Revenue',            amt:12000,type:'income'},
-    {name:'AWS invoice',              cat:'Cloud infra',        amt:622,  type:'expense'},
-    {name:'Freelancer — UI',          cat:'Contractor',         amt:1200, type:'expense'},
-    {name:'Office supplies',          cat:'Ops',                amt:186,  type:'expense'},
+  // Build real transactions from DB data
+  const _allTxns = [
+    ...((window.userInvoices||[]).slice(0,5).map(i=>({name:i.client, cat:'Revenue · '+i.status, amt:parseFloat(i.amount)||0, type:'income'}))),
+    ...((window.bizExpenses||[]).slice(0,5).map(e=>({name:e.desc||e.description, cat:'Expense · '+(e.cat||e.category||'Other'), amt:parseFloat(e.amount)||0, type:'expense'}))),
   ];
+  const txns = _allTxns
   document.getElementById('d-txns').innerHTML=txns.map(t=>`
     <div class="tx-row">
       <div class="tx-left">

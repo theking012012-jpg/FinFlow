@@ -4271,13 +4271,14 @@ async function loadEntityData(idx){
     for(let i=0;i<12;i++) PROFIT[i] = REV[i]-EXP[i];
 
     // Re-render all pages
-    if(typeof renderInvoices==='function')  renderInvoices();
-    if(typeof renderExpenses==='function')  renderExpenses();
-    if(typeof renderCustomers==='function') renderCustomers();
-    if(typeof renderInventory==='function') renderInventory();
-    if(typeof renderPayroll==='function')   renderPayroll();
-    if(typeof updateDashboard==='function') updateDashboard();
-    if(typeof buildCharts==='function')     buildCharts();
+    const _safeRender = (fn) => { try { if(typeof fn==='function') fn(); } catch(e) { console.warn('render error:', e.message); } };
+    _safeRender(renderInvoices);
+    _safeRender(renderExpenses);
+    _safeRender(renderCustomers);
+    _safeRender(renderInventory);
+    _safeRender(renderPayroll);
+    _safeRender(updateDashboard);
+    _safeRender(buildCharts);
 
     // Also refresh banking for this entity
     if(typeof loadBankingFromDB==='function') loadBankingFromDB();
@@ -4851,9 +4852,9 @@ function saveProduct(){
 // PAYROLL
 // ════════════════════════════════════════════
 function renderPayroll(){
-  const allEmps=ownerPayroll?[{...ownerPayroll,isOwner:true},...payrollEmployees]:payrollEmployees;
-  const totalGross=allEmps.reduce((a,e)=>a+e.gross,0);
-  const totalTax=allEmps.reduce((a,e)=>a+Math.round(e.gross*e.taxRate/100),0);
+  const allEmps=ownerPayroll?[{...ownerPayroll,isOwner:true},...(payrollEmployees||[])]:( payrollEmployees||[]);
+  const totalGross=allEmps.reduce((a,e)=>a+(parseFloat(e.gross)||0),0);
+  const totalTax=allEmps.reduce((a,e)=>a+Math.round((parseFloat(e.gross)||0)*(parseFloat(e.taxRate)||0)/100),0);
   document.getElementById('pr-total').textContent=S(totalGross);
   document.getElementById('pr-headcount').textContent=allEmps.length+' employee'+(allEmps.length!==1?'s':'');
   document.getElementById('pr-tax').textContent=S(totalTax);

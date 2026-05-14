@@ -3719,21 +3719,8 @@ function persistAfter(origFn){
   };
 }
 
-function persistAll(){
-  lsSave('customers',   customers);
-  lsSave('invoices',    invoices);
-  lsSave('expenses',    bizExpenses);
-  lsSave('inventory',   inventory);
-  lsSave('journalEntries', journalEntries);
-}
-
-function loadPersistedData(){
-  const c  = lsLoad('customers',  null); if(c)  customers   = c;
-  const i  = lsLoad('invoices',   null); if(i)  invoices    = i;
-  const e  = lsLoad('expenses',   null); if(e)  bizExpenses = e;
-  const iv = lsLoad('inventory',  null); if(iv) inventory   = iv;
-  const je = lsLoad('journalEntries', null); if(je) journalEntries = je;
-}
+function persistAll(){}      // no-op — data lives in PostgreSQL
+function loadPersistedData(){} // no-op — data loaded via API
 
 // ── DATA SAFETY: first-use banner + CSV export ────────────────────────────
 (function initDataSafety(){
@@ -3993,7 +3980,6 @@ function saveJournalEntry(status){
     lines,
   };
   journalEntries.unshift(entry);
-  persistAll();
   renderJournals();
   renderCOA(); // refresh balances
   closeModal('journal-entry-modal');
@@ -7201,21 +7187,7 @@ setTimeout(()=>{
   ro.observe(wrap);
 })();
 
-// ── PATCH SAVE FUNCTIONS TO PERSIST ──────────────────────────────────────
-(function(){
-  // Wrap any function that mutates core data arrays
-  const toPatch = ['saveCustomer','saveInvoice','saveProduct','saveExpense',
-                   'saveOwnerPayroll','saveGoal','saveTransaction','saveSpending'];
-  toPatch.forEach(name=>{
-    if(typeof window[name]==='function'){
-      const orig = window[name];
-      window[name] = function(){
-        orig.apply(this, arguments);
-        persistAll();
-      };
-    }
-  });
-})();
+// ── PATCH SAVE FUNCTIONS TO PERSIST (removed — data persisted via API) ───
 
 // ── INIT ENHANCEMENTS (login, persistence, reconciliation) ──────────────
 initEnhancements();

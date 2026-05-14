@@ -10249,6 +10249,19 @@ loadDirectory();
 
 })();
 }); // end load listener
+
+// ── FINAL ENTITY BOOT (runs after ALL wiring files) ─────────────────────────
+window.addEventListener('load', function() {
+  setTimeout(async function() {
+    try {
+      const r = await fetch('/api/me', {credentials:'include'});
+      if (!r.ok) return;
+      if (typeof loadEntitiesFromDB === 'function') {
+        await loadEntitiesFromDB();
+      }
+    } catch(e) {}
+  }, 1000);
+});
 </script>
 
 </body>

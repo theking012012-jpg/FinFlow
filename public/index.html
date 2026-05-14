@@ -2624,7 +2624,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div>
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="2" y="4" width="12" height="10" rx="1.2"/><path d="M5 4V3a3 3 0 016 0v1"/></svg>Business profile</div>
-              <div class="field-wrap"><label class="field-label">Business name</label><input class="finput" id="s-biz-name" value="FinFlow Inc." oninput="updateBrandName()"></div>
+              <div class="field-wrap"><label class="field-label">Business name</label><input class="finput" id="s-biz-name" value="" oninput="updateBrandName()"></div>
               <div class="field-group">
                 <div class="field-wrap"><label class="field-label">Industry</label><select class="finput" id="s-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option></select></div>
                 <div class="field-wrap"><label class="field-label">Currency</label><select class="finput" id="s-currency" onchange="updateCurrency()"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="TTD">TTD (TT$)</option><option value="CAD">CAD (C$)</option><option value="AUD">AUD (A$)</option></select></div>
@@ -7586,7 +7586,7 @@ overlay.innerHTML = `
     <div class="ob-step active" id="ob-s1">
       <div class="ob-field">
         <label class="ob-label">Business name</label>
-        <input class="ob-input" id="ob-biz-name" placeholder="e.g. Acme Ltd." value="FinFlow Inc.">
+        <input class="ob-input" id="ob-biz-name" placeholder="e.g. Acme Ltd." value="">
       </div>
       <div class="ob-field">
         <label class="ob-label">Your name</label>

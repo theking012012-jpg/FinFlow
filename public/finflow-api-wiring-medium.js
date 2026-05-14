@@ -587,14 +587,15 @@
           });
         } else {
           const saved = await api('POST', '/api/payroll', {
-            fname:    op.fname,
-            lname:    op.lname,
-            role:     op.role     || 'CEO / Founder',
-            emp_type: op.type     || 'owner',
-            gross:    op.gross,
-            tax_rate: op.taxRate,
-            av_class: op.avClass  || 'av-blue',
-            is_owner: true,
+            fname:     op.fname,
+            lname:     op.lname,
+            role:      op.role     || 'CEO / Founder',
+            emp_type:  op.type     || 'owner',
+            gross:     op.gross,
+            tax_rate:  op.taxRate,
+            av_class:  op.avClass  || 'av-blue',
+            is_owner:  true,
+            entity_id: window.activeEntityId || null,
           });
           window.ownerPayroll._dbId = saved.id;
         }

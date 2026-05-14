@@ -168,7 +168,6 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       name: (name || '').trim().slice(0, 100), plan: 'pro', trial_ends: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner',
     });
 
-    seedUserData(userId).catch(e => console.error('[Register] seedUserData failed for userId', userId, e));
 
     // If user signed up via an accountant referral link (?ref=CODE), link them now
     const refCode = req.body.referralCode || req.query.ref;

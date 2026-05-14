@@ -170,6 +170,7 @@
       closeModalById('quote-modal');
       renderQuotesList();
       updateQuoteMetrics();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not save quote — ' + e.message, true); }
   };
 
@@ -180,6 +181,7 @@
       _quotes = _quotes.filter(x => x.id !== id);
       renderQuotesList(); updateQuoteMetrics();
       showNotify('Quote deleted');
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not delete — ' + e.message, true); }
   };
 
@@ -290,6 +292,7 @@
       }
       closeModalById('vendor-modal');
       renderVendorsList(); updateVendorMetrics();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not save vendor — ' + e.message, true); }
   };
 
@@ -300,6 +303,7 @@
       _vendors = _vendors.filter(x => x.id !== id);
       renderVendorsList(); updateVendorMetrics();
       showNotify('Vendor removed');
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not delete — ' + e.message, true); }
   };
 
@@ -368,6 +372,7 @@
       renderBillsList(); updateBillMetrics();
       renderVendorsList(); updateVendorMetrics();
       showNotify('Bill marked as paid ✦');
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not update — ' + e.message, true); }
   };
 
@@ -419,6 +424,7 @@
       }
       closeModalById('bill-modal');
       renderBillsList(); updateBillMetrics();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not save bill — ' + e.message, true); }
   };
 
@@ -429,6 +435,7 @@
       _bills = _bills.filter(x => x.id !== id);
       renderBillsList(); updateBillMetrics();
       showNotify('Bill deleted');
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not delete — ' + e.message, true); }
   };
 
@@ -526,6 +533,7 @@
       }
       closeModalById('recurring-bill-modal');
       renderRecurringBillsList(); updateRecurringBillMetrics();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not save — ' + e.message, true); }
   };
 
@@ -536,6 +544,7 @@
       _recurringBills = _recurringBills.filter(x => x.id !== id);
       renderRecurringBillsList(); updateRecurringBillMetrics();
       showNotify('Profile removed');
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not delete — ' + e.message, true); }
   };
 
@@ -624,6 +633,7 @@
       }
       closeModalById('recurring-inv-modal');
       renderRecurringInvoicesList();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not save — ' + e.message, true); }
   };
 
@@ -634,6 +644,7 @@
       _recurringInvoices = _recurringInvoices.filter(x => x.id !== id);
       renderRecurringInvoicesList();
       showNotify('Profile removed');
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not delete — ' + e.message, true); }
   };
 

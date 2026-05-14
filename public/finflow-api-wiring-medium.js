@@ -403,6 +403,7 @@
         closeModal('product-modal');
         if (typeof renderInventory === 'function') renderInventory();
         notify(`${name} added to inventory ✦`);
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not add product — ' + e.message, true);
       }
@@ -453,6 +454,7 @@
         closeModal('restock-modal');
         if (typeof renderInventory === 'function') renderInventory();
         notify(`+${qty} units added to ${esc(item.name)} ✦`);
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not restock — ' + e.message, true);
       }
@@ -468,6 +470,7 @@
         window.inventory.splice(idx, 1);
         if (typeof renderInventory === 'function') renderInventory();
         notify('Item removed from inventory');
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not delete item — ' + e.message, true);
       }
@@ -597,6 +600,7 @@
         }
         // Re-render already done by original — just notify persistence
         console.log('[FinFlow] Owner payroll persisted to DB ✦');
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Payroll saved locally but could not sync to server — ' + e.message, true);
       }
@@ -637,6 +641,7 @@
         closeModal('edit-inv-modal');
         if (typeof renderInventory === 'function') renderInventory();
         notify(`${esc(name)} updated ✦`);
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save — ' + e.message, true);
       }
@@ -781,6 +786,7 @@
         closeModal('item-modal');
         if (typeof renderItems === 'function') renderItems();
         notify(`${esc(name)} saved ✦`);
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save item — ' + e.message, true);
       }
@@ -795,6 +801,7 @@
         window.itemsData = (window.itemsData || []).filter(i => i._dbId !== dbId);
         if (typeof renderItems === 'function') renderItems();
         notify('Item deleted');
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not delete item — ' + e.message, true);
       }

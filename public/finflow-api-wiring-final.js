@@ -242,6 +242,7 @@
         else if (typeof renderPortfolio === 'function') renderPortfolio();
         notify('Holding updated ✦');
         document.getElementById('holding-edit-id').value = '';
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not update holding — ' + e.message, true);
       }
@@ -260,6 +261,7 @@
         if (typeof renderHoldings === 'function') renderHoldings();
         else if (typeof renderPortfolio === 'function') renderPortfolio();
         notify('Holding removed');
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not remove holding — ' + e.message, true);
       }

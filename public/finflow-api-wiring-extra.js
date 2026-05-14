@@ -186,6 +186,7 @@
       renderTimesheetList();
       updateTimesheetMetrics();
       tip('Time entry saved ✦');
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (err) { tip('Could not save — ' + err.message, true); }
   };
 
@@ -197,6 +198,7 @@
       renderTimesheetList();
       updateTimesheetMetrics();
       tip('Entry deleted');
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (err) { tip('Could not delete — ' + err.message, true); }
   };
 
@@ -440,6 +442,7 @@
       renderProjectsList();
       document.getElementById('proj-modal').classList.add('hidden');
       tip(`Project "${e(row.name)}" created`);
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (err) { tip('Could not save — ' + err.message, true); }
   };
 
@@ -450,6 +453,7 @@
       _projects = _projects.filter(p => p.id !== id);
       renderProjectsList();
       tip('Project deleted');
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (err) { tip('Could not delete — ' + err.message, true); }
   };
 
@@ -586,6 +590,7 @@
       document.getElementById('budget-targets-modal').classList.add('hidden');
       tip('Budget targets saved');
       if (typeof window.renderBudget === 'function') window.renderBudget();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (err) { tip('Could not save — ' + err.message, true); }
   };
 
@@ -608,6 +613,7 @@
       if (typeof closeModal === 'function') closeModal('holding-modal');
       tip(`${e(ticker)} added to portfolio`);
       await loadHoldingsFromDB();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (err) { tip('Could not save holding — ' + err.message, true); }
   };
 
@@ -662,6 +668,7 @@
       document.getElementById('invite-modal').classList.add('hidden');
       tip(`Invite sent to ${e(email)}`);
       if (typeof window.renderTeam === 'function') window.renderTeam();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (err) { tip('Could not invite — ' + err.message, true); }
   };
 

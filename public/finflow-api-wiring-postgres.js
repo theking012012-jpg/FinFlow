@@ -221,32 +221,4 @@
     }, 600);
   });
 
-  // ── 7. Global mutation interceptor — auto-refresh dashboard ─────────
-  // Wraps window.fetch so ANY successful POST/PUT/DELETE to /api/* triggers
-  // a debounced refreshFinancials(). This covers every save/edit/delete in
-  // every wiring file — present and future — with a single hook.
-  // Debounce (200 ms) collapses rapid successive mutations into one refresh.
-  (function () {
-    let _timer;
-    const _orig = window.fetch;
-    window.fetch = async function (url, init) {
-      const resp = await _orig.apply(this, arguments);
-      const method = ((init && init.method) || 'GET').toUpperCase();
-      if (
-        resp.ok &&
-        method !== 'GET' &&
-        typeof url === 'string' &&
-        url.startsWith('/api/')
-      ) {
-        console.log('[FinFlow interceptor] caught', method, url, '→ scheduling refresh');
-        clearTimeout(_timer);
-        _timer = setTimeout(function () {
-          console.log('[FinFlow interceptor] firing refreshFinancials');
-          if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
-        }, 200);
-      }
-      return resp;
-    };
-  })();
-
   console.log('[FinFlow] Postgres wiring active — localStorage persistence neutralised.');

@@ -192,15 +192,9 @@
     const titleEl = document.getElementById('inv-table-title');
     if (titleEl) titleEl.textContent = 'Invoices — ' + (period.label || 'All time');
 
-    // Update "N invoices" count subtitles (these have no IDs in the HTML)
-    const metricsGrid = document.querySelector('#page-invoices .metrics-grid');
-    if (metricsGrid) {
-      const cards = metricsGrid.querySelectorAll('.mc');
-      const outChg  = cards[2] && cards[2].querySelector('.mc-change');
-      const overChg = cards[3] && cards[3].querySelector('.mc-change');
-      if (outChg)  outChg.textContent  = outCount     + ' invoice' + (outCount     !== 1 ? 's' : '');
-      if (overChg) overChg.textContent = overdueCount + ' invoice' + (overdueCount !== 1 ? 's' : '');
-    }
+    // Update "N invoices" count subtitles (id="inv-out-cnt" / "inv-over-cnt")
+    set('inv-out-cnt',  outCount     + ' invoice' + (outCount     !== 1 ? 's' : ''));
+    set('inv-over-cnt', overdueCount + ' invoice' + (overdueCount !== 1 ? 's' : ''));
 
     // Navigation badge
     const badge = document.getElementById('badge-inv');

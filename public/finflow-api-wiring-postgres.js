@@ -153,10 +153,15 @@
       if (typeof window.renderInvoices === 'function') window.renderInvoices();
       if (typeof window.renderExpenses === 'function') window.renderExpenses();
 
-      // Re-render dashboard KPIs, expense bars, transaction list, invoice stats
-      // updateDashboard is patched to read _realInvoices/_realExpenses, so this
-      // will show the freshly-fetched data without a page reload.
-      if (typeof window.updateDashboard === 'function') window.updateDashboard();
+      // Refresh dashboard KPIs directly via the private update functions in
+      // dashboard wiring. This bypasses the updateDashboard patch (which only
+      // exists after bootDashboardWiring has run) so it always works.
+      if (typeof window._refreshDashboardUI === 'function') {
+        window._refreshDashboardUI();
+      } else if (typeof window.updateDashboard === 'function') {
+        window.updateDashboard();
+      }
+      console.log('[FinFlow] refreshFinancials ✅ — invoices:', (invoices || []).length, 'expenses:', (expenses || []).length);
     } catch (err) {
       console.warn('[FinFlow] refreshFinancials failed:', err.message);
     }
@@ -233,8 +238,10 @@
         typeof url === 'string' &&
         url.startsWith('/api/')
       ) {
+        console.log('[FinFlow interceptor] caught', method, url, '→ scheduling refresh');
         clearTimeout(_timer);
         _timer = setTimeout(function () {
+          console.log('[FinFlow interceptor] firing refreshFinancials');
           if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
         }, 200);
       }

@@ -293,6 +293,22 @@
   // Expose it so loadEntityData can call it after entities are loaded
   window._bootDashboardWiring = bootDashboardWiring;
 
+  // Direct UI refresh — called by refreshFinancials() after it updates
+  // _realInvoices/_realExpenses. Bypasses the updateDashboard patch so it
+  // works even if bootDashboardWiring hasn't run yet.
+  window._refreshDashboardUI = function () {
+    const invs = window._realInvoices;
+    const exps = window._realExpenses;
+    if (!invs || !exps) return;
+    const period = window.currentPeriod || 'year';
+    const { months, revByMonth, expByMonth } = buildMonthlyArrays(invs, exps);
+    updateOverviewChart(revByMonth, expByMonth, months);
+    updateKPIs(invs, exps, period);
+    updateExpenseBars(exps);
+    updateTransactions(invs, exps);
+    updateInvoiceStats(invs);
+  };
+
 })();
 
 // ── ENTITY BOOT (runs after ALL scripts) ────────────────────────────────────

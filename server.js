@@ -37,7 +37,7 @@ try {
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+if (require.main === module && process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
   console.error('FATAL: SESSION_SECRET environment variable must be set in production.');
   process.exit(1);
 }

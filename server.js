@@ -24,14 +24,12 @@ try {
 // ── STRIPE ────────────────────────────────────────────────────────────────────
 let stripe = null;
 try {
-  if (process.env.STRIPE_SECRET_KEY) {
-    stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-    console.log('[Stripe] Initialized');
-  } else {
-    console.warn('[Stripe] STRIPE_SECRET_KEY not set — billing features disabled.');
-  }
+  // eslint-disable-next-line import/no-extraneous-dependencies
+  stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
+  if (stripe) console.log('[Stripe] Initialized');
+  else console.warn('[Stripe] STRIPE_SECRET_KEY not set — billing features disabled.');
 } catch (e) {
-  console.warn('[Stripe] Package not installed — run: npm install stripe');
+  console.warn('[Stripe] Not available:', e.message);
 }
 
 const app  = express();

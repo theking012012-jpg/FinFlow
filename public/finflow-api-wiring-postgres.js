@@ -162,7 +162,52 @@
     }
   };
 
-  // ── 5. Update data-safety banner to reflect cloud storage ─────────
+  // ── 5. Patch updateInvoices to read from API data ────────────────
+  // index.html declares `let userInvoices = []` which is NOT window.userInvoices —
+  // so the original updateInvoices() always reads an empty/stale closure binding.
+  // We replace it with a version that reads from window._realInvoices (API source
+  // of truth) and also updates the count subtitles which have no IDs in the HTML.
+  window.updateInvoices = function (d) {
+    const invs = window._realInvoices || window.userInvoices;
+    if (!invs) return;
+    const money  = n => typeof S === 'function' ? S(n) : '$' + (parseFloat(n) || 0).toLocaleString();
+    const set    = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    const period = d || (typeof getPeriodData === 'function' ? getPeriodData() : { label: 'All time' });
+
+    const totalBilled  = invs.reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
+    const collected    = invs.filter(i => i.status === 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
+    const outstanding  = invs.filter(i => i.status !== 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
+    const overdue      = invs.filter(i => i.status === 'overdue').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
+    const overdueCount = invs.filter(i => i.status === 'overdue').length;
+    const outCount     = invs.filter(i => i.status !== 'paid').length;
+    const pctCollected = totalBilled > 0 ? Math.round(collected / totalBilled * 100) : 0;
+
+    set('inv-billed',     money(totalBilled));
+    set('inv-paid',       money(collected));
+    set('inv-paid-pct',   pctCollected + '% collected');
+    set('inv-out',        money(outstanding));
+    set('inv-over',       money(overdue));
+    const lblEl = document.getElementById('inv-billed-lbl');
+    if (lblEl) { lblEl.textContent = period.label || 'All time'; lblEl.className = 'mc-change neutral'; }
+    const titleEl = document.getElementById('inv-table-title');
+    if (titleEl) titleEl.textContent = 'Invoices — ' + (period.label || 'All time');
+
+    // Update "N invoices" count subtitles (these have no IDs in the HTML)
+    const metricsGrid = document.querySelector('#page-invoices .metrics-grid');
+    if (metricsGrid) {
+      const cards = metricsGrid.querySelectorAll('.mc');
+      const outChg  = cards[2] && cards[2].querySelector('.mc-change');
+      const overChg = cards[3] && cards[3].querySelector('.mc-change');
+      if (outChg)  outChg.textContent  = outCount     + ' invoice' + (outCount     !== 1 ? 's' : '');
+      if (overChg) overChg.textContent = overdueCount + ' invoice' + (overdueCount !== 1 ? 's' : '');
+    }
+
+    // Navigation badge
+    const badge = document.getElementById('badge-inv');
+    if (badge) { badge.textContent = overdueCount; badge.style.display = overdueCount > 0 ? '' : 'none'; }
+  };
+
+  // ── 6. Update data-safety banner to reflect cloud storage ─────────
   window.addEventListener('DOMContentLoaded', function () {
     // Small delay so the banner has been injected into the DOM first
     setTimeout(function () {

@@ -4193,7 +4193,10 @@ let SRC_STRIPE    = REV.map(r=>Math.round(r*ENTITY_DATA[0].srcPct[2]));
 let SRC_CONSULT   = REV.map(r=>Math.round(r*ENTITY_DATA[0].srcPct[3]));
 
 // Load entity data into live pointers
+let _loadEntityDataRunning = false;
 async function loadEntityData(idx){
+  if (_loadEntityDataRunning) { console.warn('[Entity] loadEntityData already running, skipping'); return; }
+  _loadEntityDataRunning = true;
   activeEntityIdx = idx;
   // Zero out chart data immediately so stale data doesn't show
   const z = new Array(12).fill(0);
@@ -4202,12 +4205,15 @@ async function loadEntityData(idx){
   if(typeof PROFIT !== 'undefined') PROFIT.splice(0,12,...z);
 
   try {
+    // Pass entity_id explicitly — don't rely on session
+    const _eid = entity?._dbId || ENTITIES[idx]?._dbId;
+    const _eq = _eid ? '?entity_id='+_eid : '';
     const [invRes, expRes, custRes, invtRes, payRes] = await Promise.all([
-      fetch('/api/invoices',   {credentials:'include'}),
-      fetch('/api/expenses',   {credentials:'include'}),
-      fetch('/api/customers',  {credentials:'include'}),
-      fetch('/api/inventory',  {credentials:'include'}),
-      fetch('/api/payroll',    {credentials:'include'}),
+      fetch('/api/invoices'+_eq,   {credentials:'include'}),
+      fetch('/api/expenses'+_eq,   {credentials:'include'}),
+      fetch('/api/customers'+_eq,  {credentials:'include'}),
+      fetch('/api/inventory'+_eq,  {credentials:'include'}),
+      fetch('/api/payroll'+_eq,    {credentials:'include'}),
     ]);
     const invoices   = invRes.ok   ? (await invRes.json()  || []) : [];
     const expenses   = expRes.ok   ? (await expRes.json()  || []) : [];
@@ -4283,7 +4289,7 @@ async function loadEntityData(idx){
     // Also refresh banking for this entity
     if(typeof loadBankingFromDB==='function') loadBankingFromDB();
     console.log('[Entity] Loaded real data — invoices:'+invoices.length+' expenses:'+expenses.length);
-  } catch(e){ console.warn('[Entity] loadEntityData failed:', e.message); }
+  } catch(e){ console.warn('[Entity] loadEntityData failed:', e.message); } finally { _loadEntityDataRunning = false; }
 }
 
 const INVOICES_BASE = []; // populated from DB via loadEntityData
@@ -5679,6 +5685,7 @@ function setBar(barId,score,valId){
 // CUSTOMERS
 // ════════════════════════════════════════════
 function renderCustomers(filter=''){
+  if(!customers) customers=[];
   const q=filter.toLowerCase();
   const filtered=customers.filter(c=>(c.fname+' '+c.lname+' '+c.company+' '+c.email).toLowerCase().includes(q));
   document.getElementById('cust-total').textContent=customers.length;
@@ -5877,6 +5884,11 @@ function chartDefaults(){return{tc:darkMode?'#9e8e73':'#6b5c42',gc:darkMode?'rgb
 
 function buildCharts(){
   if(typeof Chart==='undefined'){console.warn('Chart.js not loaded — charts skipped');return;}
+  // Destroy existing charts to prevent canvas reuse error
+  if(window.charts){
+    Object.values(window.charts).forEach(c=>{try{if(c&&typeof c.destroy==='function')c.destroy();}catch(e){}});
+    window.charts={};
+  }
   const{tc,gc}=chartDefaults();
   const _oc=document.getElementById('overviewChart');
   if(!_oc)return;
@@ -10254,18 +10266,7 @@ loadDirectory();
 })();
 }); // end load listener
 
-// ── FINAL ENTITY BOOT (runs after ALL wiring files) ─────────────────────────
-window.addEventListener('load', function() {
-  setTimeout(async function() {
-    try {
-      const r = await fetch('/api/me', {credentials:'include'});
-      if (!r.ok) return;
-      if (typeof loadEntitiesFromDB === 'function') {
-        await loadEntitiesFromDB();
-      }
-    } catch(e) {}
-  }, 1000);
-});
+
 </script>
 
 </body>

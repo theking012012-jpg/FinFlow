@@ -299,6 +299,13 @@ app.use('/api', apiLimiter);
 // ── ENTITY + RBAC MIDDLEWARE ──────────────────────────────────────────────────
 // Sets req.entityId from session so routes can scope data to the active entity.
 app.use('/api', async (req, res, next) => {
+  // Allow explicit entity_id override from query param or body - this is the source of truth
+  const explicitEntityId = req.query.entity_id || req.body?.entity_id;
+  if (explicitEntityId) {
+    req.entityId = parseInt(explicitEntityId);
+    req.session.entityId = req.entityId;
+    return next();
+  }
   if (req.session.entityId) {
     req.entityId = req.session.entityId;
     return next();

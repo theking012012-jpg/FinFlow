@@ -292,3 +292,20 @@
   });
 
 })();
+
+// ── ENTITY BOOT (runs after ALL scripts) ────────────────────────────────────
+(function() {
+  // Only run once on initial page load, never on entity switch
+  let _booted = false;
+  window.addEventListener('DOMContentLoaded', function() {
+    setTimeout(async function() {
+      if (_booted) return;
+      _booted = true;
+      try {
+        const r = await fetch('/api/me', {credentials:'include'});
+        if (!r.ok) return;
+        if (typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
+      } catch(e) {}
+    }, 600);
+  });
+})();

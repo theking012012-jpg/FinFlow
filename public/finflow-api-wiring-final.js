@@ -122,6 +122,7 @@
         if (typeof renderExpenses === 'function') renderExpenses();
         notify('Expense updated ✦');
         document.getElementById('expense-edit-id').value = '';
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not update expense — ' + e.message, true);
       }

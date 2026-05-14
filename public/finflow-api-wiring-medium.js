@@ -130,6 +130,7 @@
         closeModal('invoice-modal');
         if (typeof renderInvoices === 'function') renderInvoices();
         notify(`Invoice created for ${client} ✦`);
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save invoice — ' + e.message, true);
       }
@@ -147,6 +148,7 @@
         window.userInvoices[idx].color  = 'var(--t2)';
         if (typeof renderInvoices === 'function') renderInvoices();
         notify('Invoice marked as paid ✦');
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not update invoice — ' + e.message, true);
       }
@@ -162,6 +164,7 @@
         window.userInvoices.splice(idx, 1);
         if (typeof renderInvoices === 'function') renderInvoices();
         notify('Invoice deleted');
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not delete invoice — ' + e.message, true);
       }
@@ -269,6 +272,7 @@
         closeModal('expense-modal');
         if (typeof renderExpenses === 'function') renderExpenses();
         notify('Expense logged ✦');
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not log expense — ' + e.message, true);
       }
@@ -284,6 +288,7 @@
         window.bizExpenses.splice(idx, 1);
         if (typeof renderExpenses === 'function') renderExpenses();
         notify('Expense deleted');
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not delete expense — ' + e.message, true);
       }

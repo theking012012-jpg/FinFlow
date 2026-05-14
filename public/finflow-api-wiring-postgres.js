@@ -104,7 +104,65 @@
     }
   };
 
-  // ── 4. Update data-safety banner to reflect cloud storage ─────────
+  // ── 4. Live refresh helper ───────────────────────────────────────────
+  // Called after any create/edit/delete so the dashboard and lists
+  // immediately reflect the authoritative API state without a page reload.
+  window.refreshFinancials = async function () {
+    try {
+      const activeEntity = (window.ENTITIES || []).find(e => e.active);
+      const eid = activeEntity?._dbId;
+      const eq  = eid ? '?entity_id=' + eid : '';
+
+      const [invoices, expenses] = await Promise.all([
+        api('GET', '/api/invoices' + eq),
+        api('GET', '/api/expenses' + eq),
+      ]);
+
+      // Update userInvoices — used by renderInvoices() and legacy updateDashboard()
+      window.userInvoices = (invoices || []).map(r => ({
+        _dbId:    r.id,
+        client:   r.client,
+        amount:   r.amount,
+        due:      r.due_date
+          ? new Date(r.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          : 'TBD',
+        due_date: r.due_date,
+        status:   r.status,
+        notes:    r.notes || '',
+        color:    r.status === 'overdue' ? 'var(--red)' : 'var(--t2)',
+      }));
+
+      // Update bizExpenses — used by renderExpenses() and legacy updateDashboard()
+      window.bizExpenses = (expenses || []).map(r => ({
+        _dbId:  r.id,
+        desc:   r.description,
+        cat:    r.category,
+        amount: r.amount,
+        ded:    r.deductible,
+        date:   r.expense_date
+          ? new Date(r.expense_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          : 'Today',
+      }));
+
+      // Update _realInvoices/_realExpenses — used by the patched updateDashboard()
+      // (finflow-api-wiring-dashboard.js overwrites updateDashboard to read these)
+      window._realInvoices = invoices || [];
+      window._realExpenses = expenses || [];
+
+      // Re-render invoice + expense lists
+      if (typeof window.renderInvoices === 'function') window.renderInvoices();
+      if (typeof window.renderExpenses === 'function') window.renderExpenses();
+
+      // Re-render dashboard KPIs, expense bars, transaction list, invoice stats
+      // updateDashboard is patched to read _realInvoices/_realExpenses, so this
+      // will show the freshly-fetched data without a page reload.
+      if (typeof window.updateDashboard === 'function') window.updateDashboard();
+    } catch (err) {
+      console.warn('[FinFlow] refreshFinancials failed:', err.message);
+    }
+  };
+
+  // ── 5. Update data-safety banner to reflect cloud storage ─────────
   window.addEventListener('DOMContentLoaded', function () {
     // Small delay so the banner has been injected into the DOM first
     setTimeout(function () {

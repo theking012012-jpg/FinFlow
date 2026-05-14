@@ -4116,8 +4116,8 @@ function initEnhancements(){
     applyRole(savedRole);
     document.getElementById('login-screen').style.display = 'none';
     injectRoleBadge(savedRole);
-    if(typeof loadEntitiesFromDB === 'function') loadEntitiesFromDB();
-    loadBankingFromDB();
+    if(typeof loadEntitiesFromDB === 'function') setTimeout(()=>loadEntitiesFromDB(), 800);
+    setTimeout(()=>{ if(typeof loadBankingFromDB==='function') loadBankingFromDB(); }, 900);
   } else {
     // Check server session — auto-login if session still valid
     fetch('/api/me', {credentials:'include'}).then(async r => {

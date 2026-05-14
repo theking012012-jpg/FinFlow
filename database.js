@@ -15,7 +15,7 @@ const { Pool } = require('pg');
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  max: 20,
+  max: 3,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
 });
@@ -46,6 +46,15 @@ async function initDB() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Serialize concurrent cold-start inits — prevents deadlocks on Vercel
+    const { rows: _lockRows } = await client.query(
+      'SELECT pg_try_advisory_xact_lock(20240101) AS ok'
+    );
+    if (!_lockRows[0].ok) {
+      // Another instance holds the lock and is already initialising the schema
+      await client.query('COMMIT');
+      return pool;
+    }
 
     for (const table of TABLES) {
       await client.query(`
@@ -205,7 +214,12 @@ async function initDB() {
     await client.query('COMMIT');
     console.log('[DB] PostgreSQL schema ready');
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
+    // 40P01 = deadlock_detected, 55P03 = lock_not_available
+    if (err.code === '40P01' || err.code === '55P03') {
+      console.warn('[DB] initDB: lock contention from concurrent cold start — schema already initialising');
+      return pool;
+    }
     throw err;
   } finally {
     client.release();

@@ -8,8 +8,18 @@ const cors         = require('cors');
 const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
+const { Pool }  = require('pg');
 const { db, initDB, seedUserData, pool } = require('./database');
 const pgSession = require('connect-pg-simple')(session);
+
+// Dedicated small pool for the session store so it cannot starve the main pool
+const sessionPool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  max: 2,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 3000,
+});
 
 let resendClient = null;
 try {
@@ -121,7 +131,7 @@ app.use(express.json({ limit: '10mb' })); // 10 mb covers base64-encoded receipt
 app.use(express.urlencoded({ extended: false }));
 app.set('trust proxy', 1);
 app.use(session({
-  store: new pgSession({ pool, tableName: 'session', createTableIfMissing: true }),
+  store: new pgSession({ pool: sessionPool, tableName: 'session', createTableIfMissing: true }),
   secret: process.env.SESSION_SECRET || 'finflow-dev-secret-change-in-production',
   resave: false,
   saveUninitialized: false,

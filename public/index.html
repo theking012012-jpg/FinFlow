@@ -4588,8 +4588,6 @@ function updateDashboard(d=getPeriodData()){
     document.getElementById('d-outstanding').textContent=S(_outstanding);
     const _odEl = document.getElementById('d-outstanding-chg');
     if(_odEl){ _odEl.textContent = _overdue.length ? _overdue.length+' overdue · '+S(_overdueAmt) : 'All invoices paid'; _odEl.className = _overdue.length ? 'mc-change dn' : 'mc-change up'; }
-    // d-outstanding-chg handled above
-    document.getElementById('d-outstanding-chg').className='mc-change dn';
   }
   // Expense bars
   const maxE=d.sal;
@@ -5636,7 +5634,7 @@ function updateAI(d=getPeriodData()){
     `Full year revenue: ${S(d.rev)} — a 38% annualised growth rate vs the prior year.`,
     `Best month: April 2026 at ${S(REV[11])}. Weakest: May 2025 at ${S(REV[0])}. Strong scaling trend.`,
     `Net profit margin: ${margin}%. Annual profit: ${S(d.profit)}. Business is highly profitable.`,
-    `2 invoices overdue — $3,800. Mango & Co pays within 7 days of a reminder historically.`,
+
     `Payroll-to-revenue: ${Math.round(d.sal/d.rev*100)}% — healthy. Industry avg for your size is 35–40%.`,
     `Webcam 4K Ultra (9 units) and Ergonomic Mouse (4 units) are critically low on stock.`,
   ]:currentPeriod==='quarter'?[
@@ -5644,7 +5642,7 @@ function updateAI(d=getPeriodData()){
     `Monthly average profit in Q4: ${S(Math.round(d.profit/3))} — up from ${S(Math.round(sum(PROFIT,6,9)/3))} in Q3.`,
     `RetailCo remains your top client at ${S(d.srcRC)} this quarter (${Math.round(d.srcRC/d.rev*100)}% of revenue).`,
     `Payroll cost Q4: ${S(d.sal)} — at ${Math.round(d.sal/d.rev*100)}% of revenue, below industry average.`,
-    `2 overdue invoices worth $3,800. Resolving these would push Q4 collection rate to 100%.`,
+
     `90-day forecast: ${S(PROFIT[9]+PROFIT[10]+PROFIT[11]+28000+30200+32100)} net positive across Q4 + 3 forecast months.`,
   ]:[
     `${MONTH_FULL[currentMonthIdx]} revenue: ${S(d.rev)} — ${margin}% profit margin.`,
@@ -8370,10 +8368,16 @@ window.switchEntity=async function(idx){
   // Refresh entity list UI
   renderEntities();
 
-  // Activate in session FIRST - must await before data fetch
+  // MUST activate in session and wait for response before loading data
   if(e._dbId){
-    try { await fetch('/api/entities/'+e._dbId+'/activate',{method:'POST',credentials:'include'}); } catch(err){}
+    try {
+      const r = await fetch('/api/entities/'+e._dbId+'/activate',{method:'POST',credentials:'include'});
+      if(!r.ok) console.warn('[Entity] Activate failed:', await r.text());
+    } catch(err){ console.warn('[Entity] Activate error:', err.message); }
   }
+
+  // Small pause to ensure session is committed server-side
+  await new Promise(res => setTimeout(res, 100));
 
   // Load real data for this entity
   await loadEntityData(idx);
@@ -9018,7 +9022,7 @@ window.resetScanner=function(){
 // NOTIFICATION CENTRE
 // ══════════════════════════════════════════════════════════════════
 const NOTIFS = [
-  {id:1,unread:true,type:'warning',title:'Invoice overdue',sub:'INV-1038 · Mango & Co · $3,800 — 14 days overdue',time:'2 min ago',action:()=>showPage('invoices',null),icon:'<path d="M8 3v5M8 11v1"/><circle cx="8" cy="8" r="6.5"/>'},
+  
   {id:2,unread:true,type:'danger',title:'Cash runway alert',sub:'At current burn rate, runway drops below 6 months in 8 months',time:'18 min ago',action:()=>showPage('scenario',null),icon:'<polyline points="1,12 5,7 8.5,9.5 12,4 15,6"/>'},
   {id:3,unread:true,type:'success',title:'Payment received',sub:'TechCorp paid INV-1042 · $18,500 · via Stripe',time:'1h ago',action:()=>showPage('invoices',null),icon:'<polyline points="2,8 6,12 14,4"/>'},
   {id:4,unread:true,type:'warning',title:'Budget overrun',sub:'Travel expenses exceeded budget by $2,800 this month',time:'3h ago',action:()=>showPage('budget',null),icon:'<rect x="1" y="10" width="3" height="5" rx="1"/><rect x="6" y="6" width="3" height="9" rx="1"/><rect x="11" y="2" width="3" height="13" rx="1"/>'},

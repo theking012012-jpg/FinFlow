@@ -293,6 +293,12 @@ app.get('/api/auth/me', requireAuth, wrap(async (req, res) => {
   if (!user) return res.status(401).json({ error: 'Session expired.' });
   res.json({ user: safeUser(user) });
 }));
+// Alias used by frontend for session checks
+app.get('/api/me', requireAuth, wrap(async (req, res) => {
+  const user = await db.get('users', u => u.id === req.session.userId);
+  if (!user) return res.status(401).json({ error: 'Session expired.' });
+  res.json({ user: safeUser(user) });
+}));
 
 app.use('/api', apiLimiter);
 

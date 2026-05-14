@@ -4206,8 +4206,11 @@ async function loadEntityData(idx){
 
   try {
     // Pass entity_id explicitly — don't rely on session
-    const _eid = entity?._dbId || ENTITIES[idx]?._dbId;
-    const _eq = _eid ? '?entity_id='+_eid : '';
+    const _entityObj = ENTITIES[idx] || ENTITIES.find(e=>e.active);
+    const _eid = _entityObj?._dbId;
+    if (!_eid) { console.warn('[Entity] No _dbId found for idx', idx); _loadEntityDataRunning = false; return; }
+    const _eq = '?entity_id='+_eid;
+    console.log('[Entity] Loading data for entity_id='+_eid+' ('+_entityObj?.name+')');
     const [invRes, expRes, custRes, invtRes, payRes] = await Promise.all([
       fetch('/api/invoices'+_eq,   {credentials:'include'}),
       fetch('/api/expenses'+_eq,   {credentials:'include'}),

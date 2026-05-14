@@ -245,9 +245,13 @@
   // ── Main boot: load data and wire everything ─────────────────────
   async function bootDashboardWiring() {
     try {
+      // Get active entity_id to filter correctly
+      const activeEntity = (window.ENTITIES || []).find(e => e.active);
+      const eid = activeEntity?._dbId;
+      const eq = eid ? '?entity_id=' + eid : '';
       const [invoices, expenses] = await Promise.all([
-        api('GET', '/api/invoices'),
-        api('GET', '/api/expenses'),
+        api('GET', '/api/invoices' + eq),
+        api('GET', '/api/expenses' + eq),
       ]);
 
       // Store globally so period switching can re-use
@@ -288,7 +292,7 @@
   // Run after DOM + all other wiring scripts have loaded
   window.addEventListener('DOMContentLoaded', function () {
     // Small delay to let Chart.js and other wiring scripts initialize first
-    setTimeout(bootDashboardWiring, 500);
+    setTimeout(bootDashboardWiring, 1500);
   });
 
 })();

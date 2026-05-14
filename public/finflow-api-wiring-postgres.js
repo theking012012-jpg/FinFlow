@@ -216,7 +216,7 @@
       if (span) {
         span.innerHTML =
           'Your data is <strong style="color:#f2e8d5">securely stored in the cloud</strong> ' +
-          '— backed by PostgreSQL on Railway. It\'s safe across all browsers and devices.';
+          '— backed by PostgreSQL on Supabase. It\'s safe across all browsers and devices.';
       }
     }, 600);
   });

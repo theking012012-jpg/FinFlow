@@ -3394,7 +3394,7 @@ function setCurrency(code){
   // Update per-business default currency display
   const biz = businesses.find(b=>b.id===activeBizId);
   if(biz) biz.displayCurrency = code;
-  lsSave('businesses', businesses);
+  // display-currency preference is in-memory only; entities are persisted via API
   document.getElementById('currency-menu').style.display='none';
   // Also sync personal finance display currency
   if(typeof setPersCurrency === 'function') setPersCurrency(code);
@@ -3494,7 +3494,7 @@ function addBusiness(){
   const newBiz = {id,name,industry,currency,displayCurrency:currency,fiscal,
                   color:BIZ_COLORS[colorIdx],icon:BIZ_ICONS[iconIdx],isDefault:false};
   businesses.push(newBiz);
-  lsSave('businesses', businesses);
+  // lsSave removed — window.addBusiness is overridden by postgres wiring to POST /api/entities
   closeModal('add-biz-modal');
   switchBusiness(id);
 }
@@ -3733,7 +3733,7 @@ function loadPersistedData(){} // no-op — data loaded via API
       banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9000;background:#1e1808;border-top:1px solid #c9a84c;padding:.7rem 1.2rem;display:flex;align-items:center;gap:12px;font-size:12.5px;color:#e4c97a';
       banner.innerHTML = `
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#c9a84c" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="5" x2="8" y2="8.5"/><circle cx="8" cy="11" r=".6" fill="#c9a84c"/></svg>
-        <span style="flex:1;color:#9e8e73">Your data is stored in <strong style="color:#f2e8d5">this browser only</strong> — clearing browser data or switching browsers will erase it. Export a backup regularly.</span>
+        <span style="flex:1;color:#9e8e73">Your data is <strong style="color:#f2e8d5">securely stored in the cloud</strong> — backed by PostgreSQL on Supabase. It's safe across all browsers and devices.</span>
         <button onclick="exportAllCSV()" style="background:rgba(201,168,76,.15);border:1px solid #c9a84c;color:#e4c97a;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:11.5px;font-family:inherit;white-space:nowrap">⬇ Export backup</button>
         <button onclick="document.getElementById('data-safety-banner').remove();localStorage.setItem('${SEEN_KEY}','1')" style="background:none;border:none;color:#5a4e3a;cursor:pointer;font-size:16px;line-height:1;padding:0 4px">×</button>
       `;

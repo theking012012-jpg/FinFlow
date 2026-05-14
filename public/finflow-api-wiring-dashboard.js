@@ -289,11 +289,9 @@
     }
   }
 
-  // Run after DOM + all other wiring scripts have loaded
-  window.addEventListener('DOMContentLoaded', function () {
-    // Small delay to let Chart.js and other wiring scripts initialize first
-    setTimeout(bootDashboardWiring, 1500);
-  });
+  // bootDashboardWiring is now called by loadEntityData — no separate boot needed
+  // Expose it so loadEntityData can call it after entities are loaded
+  window._bootDashboardWiring = bootDashboardWiring;
 
 })();
 

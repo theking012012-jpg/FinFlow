@@ -4254,9 +4254,9 @@ async function loadEntityData(idx){
       }));
     }
 
-    // Store globally for dashboard wiring
-    window._realInvoices = invoices;
-    window._realExpenses = expenses;
+    // Store globally for dashboard wiring — MUST update before calling updateDashboard
+    window._realInvoices = invoices || [];
+    window._realExpenses = expenses || [];
 
     // Rebuild monthly chart arrays from real data
     const now = new Date();
@@ -4289,6 +4289,10 @@ async function loadEntityData(idx){
     _safeRender(updateDashboard);
     _safeRender(buildCharts);
 
+    // Refresh dashboard wiring KPIs with correct entity data
+    if(typeof window._bootDashboardWiring==='function') {
+      try { await window._bootDashboardWiring(); } catch(e) {}
+    }
     // Also refresh banking for this entity
     if(typeof loadBankingFromDB==='function') loadBankingFromDB();
     console.log('[Entity] Loaded real data — invoices:'+invoices.length+' expenses:'+expenses.length);

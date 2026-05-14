@@ -1782,14 +1782,18 @@ app.post('/api/dev/wipe-and-create', async (req, res) => {
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 initDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`\n  ✦ FinFlow backend running → http://localhost:${PORT}`);
-    console.log(`  ✦ Point Lighthouse at:    http://localhost:${PORT}\n`);
-  });
-  // Run scheduler on boot, then every hour
-  runRecurringScheduler();
-  setInterval(runRecurringScheduler, 60 * 60 * 1000);
+  if (require.main === module) {
+    app.listen(PORT, () => {
+      console.log(`\n  ✦ FinFlow backend running → http://localhost:${PORT}`);
+      console.log(`  ✦ Point Lighthouse at:    http://localhost:${PORT}\n`);
+    });
+    // Run scheduler on boot, then every hour
+    runRecurringScheduler();
+    setInterval(runRecurringScheduler, 60 * 60 * 1000);
+  }
 }).catch(err => {
   console.error('Failed to init database:', err);
-  process.exit(1);
+  if (require.main === module) process.exit(1);
 });
+
+module.exports = app;

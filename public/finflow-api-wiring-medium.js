@@ -209,7 +209,8 @@
     // Boot: load saved expenses
     async function loadExpensesFromDB() {
       try {
-        const rows = await api('GET', '/api/expenses');
+        const _expEid = (window.ENTITIES || []).find(e => e.active)?._dbId;
+        const rows = await api('GET', '/api/expenses' + (_expEid ? '?entity_id=' + _expEid : ''));
         if (rows && rows.length > 0) {
           const mapped = rows.map(r => ({
             _dbId:  r.id,
@@ -325,7 +326,8 @@
 
     async function loadInventoryFromDB() {
       try {
-        const rows = await api('GET', '/api/inventory');
+        const _invEid = (window.ENTITIES || []).find(e => e.active)?._dbId;
+        const rows = await api('GET', '/api/inventory' + (_invEid ? '?entity_id=' + _invEid : ''));
         _inventoryFetched = true;
         console.log('[Inventory] API returned', rows ? rows.length : 0, 'rows');
         if (rows && rows.length > 0) {
@@ -381,12 +383,14 @@
       const max      = Math.max(units * 2, 100);
 
       try {
+        const _saveProdEnt = (window.ENTITIES || []).find(e => e.active);
         const saved = await api('POST', '/api/inventory', {
           sku,
           name,
           units,
           max_units: max,
           cost,
+          entity_id: _saveProdEnt?._dbId || null,
         });
 
         if (!window.inventory) window.inventory = [];
@@ -519,7 +523,8 @@
     // Boot: load saved payroll from DB
     async function loadPayrollFromDB() {
       try {
-        const rows = await api('GET', '/api/payroll');
+        const _payEid = (window.ENTITIES || []).find(e => e.active)?._dbId;
+        const rows = await api('GET', '/api/payroll' + (_payEid ? '?entity_id=' + _payEid : ''));
         if (!rows || rows.length === 0) return;
 
         rows.forEach(r => {
@@ -820,6 +825,99 @@
         notify('Could not delete item — ' + e.message, true);
       }
     };
+
+    // ════════════════════════════════════════════
+    // EMPLOYEE PAYROLL — save + delete wiring
+    // ════════════════════════════════════════════
+    async function persistEmployee(emp, entityDbId) {
+      const saved = await api('POST', '/api/payroll', {
+        fname:     emp.fname    || '',
+        lname:     emp.lname    || '',
+        role:      emp.role     || '',
+        emp_type:  emp.type     || 'Full-time',
+        gross:     emp.gross    || 0,
+        tax_rate:  emp.taxRate  || 0,
+        av_class:  emp.avClass  || 'av-blue',
+        is_owner:  false,
+        entity_id: entityDbId || null,
+      });
+      return saved.id;
+    }
+
+    // Intercept common employee-save function names (one will match index.html)
+    ['addEmployee', 'saveEmployee', 'savePayrollEmployee', 'saveStaff'].forEach(function(fnName) {
+      const _origEmpFn = window[fnName];
+      if (typeof _origEmpFn !== 'function') return;
+      window[fnName] = async function() {
+        if (typeof _origEmpFn === 'function') _origEmpFn.apply(this, arguments);
+        // After original runs, persist any employee without a _dbId
+        const _empEnt = (window.ENTITIES || []).find(e => e.active);
+        const _empEid = _empEnt?._dbId || null;
+        const unsaved = (window.payrollEmployees || []).filter(function(e) { return !e._dbId; });
+        for (const emp of unsaved) {
+          try {
+            emp._dbId = await persistEmployee(emp, _empEid);
+          } catch (err) {
+            console.warn('[Payroll] Could not persist employee:', err.message);
+          }
+        }
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+      };
+    });
+
+    // Intercept employee delete to also remove from DB
+    const _origDeleteEmp = window.deleteEmployee;
+    if (typeof _origDeleteEmp === 'function') {
+      window.deleteEmployee = async function(idx) {
+        const emp = (window.payrollEmployees || [])[idx];
+        if (typeof _origDeleteEmp === 'function') _origDeleteEmp.apply(this, arguments);
+        if (emp?._dbId) {
+          try { await api('DELETE', '/api/payroll/' + emp._dbId); } catch (err) {
+            console.warn('[Payroll] Could not delete employee from DB:', err.message);
+          }
+        }
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+      };
+    }
+
+    // ════════════════════════════════════════════
+    // PAGE-LEVEL RELOAD — reload on navigation + entity switch
+    // ════════════════════════════════════════════
+
+    // Expose load functions globally so entity switch handler can call them
+    window._loadInvoicesFromDB  = loadInvoicesFromDB;
+    window._loadExpensesFromDB  = loadExpensesFromDB;
+    window._loadInventoryFromDB = loadInventoryFromDB;
+    window._loadPayrollFromDB   = loadPayrollFromDB;
+
+    // Reload entity-scoped data when user navigates to a page
+    const _medOrigShowPage = window.showPage;
+    if (typeof _medOrigShowPage === 'function') {
+      window.showPage = function(id, navEl) {
+        _medOrigShowPage(id, navEl);
+        if (id === 'invoices')  loadInvoicesFromDB();
+        if (id === 'expenses')  loadExpensesFromDB();
+        if (id === 'inventory') loadInventoryFromDB();
+        if (id === 'payroll')   loadPayrollFromDB();
+      };
+    }
+
+    // Wrap loadEntitiesFromDB so entity-switch triggers a full data reload
+    const _origLoadEntitiesDB = window.loadEntitiesFromDB;
+    if (typeof _origLoadEntitiesDB === 'function') {
+      window.loadEntitiesFromDB = async function() {
+        const result = await _origLoadEntitiesDB.apply(this, arguments);
+        // Re-fetch all entity-scoped data for the newly active entity
+        await Promise.all([
+          loadInvoicesFromDB(),
+          loadExpensesFromDB(),
+          loadInventoryFromDB(),
+          loadPayrollFromDB(),
+        ]);
+        if (typeof window._loadCustomersFromDB === 'function') window._loadCustomersFromDB();
+        return result;
+      };
+    }
 
     console.log('[FinFlow API Wiring — Medium] ✅ Invoices, Expenses, Inventory, Payroll, Items patched');
   });

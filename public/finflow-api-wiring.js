@@ -42,7 +42,7 @@
 
   // ── Wait for DOM + existing scripts to finish ──────────────────────
   // We patch after DOMContentLoaded so all original functions exist.
-  window.addEventListener('DOMContentLoaded', function () {
+  (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
 
     // ════════════════════════════════════════════
     // 1. SETTINGS — load on boot + save
@@ -152,7 +152,6 @@
         closeModal('goal-modal');
         if (typeof renderPersonal === 'function') renderPersonal();
         notify('Goal added ✦');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save goal — ' + e.message, true);
       }
@@ -168,7 +167,6 @@
         window.goals.splice(idx, 1);
         if (typeof renderPersonal === 'function') renderPersonal();
         notify('Goal deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not delete goal — ' + e.message, true);
       }
@@ -225,7 +223,6 @@
         closeModal('transaction-modal');
         if (typeof renderPersonal === 'function') renderPersonal();
         notify('Transaction added ✦');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save transaction — ' + e.message, true);
       }
@@ -263,7 +260,6 @@
         closeModal('holding-modal');
         if (typeof renderInvestments === 'function') renderInvestments();
         notify(`${ticker} added to portfolio ✦`);
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save holding — ' + e.message, true);
       }
@@ -291,16 +287,14 @@
         ? validateAmount(document.getElementById('cust-revenue-val')?.value)
         : parseFloat(document.getElementById('cust-revenue-val')?.value) || 0;
 
-      const _custEnt = (window.ENTITIES || []).find(e => e.active);
       const data = {
         fname, lname, email,
-        company:   (typeof sanitizeText === 'function') ? sanitizeText(document.getElementById('cust-company')?.value, 200)  : document.getElementById('cust-company')?.value?.trim(),
-        industry:  document.getElementById('cust-industry')?.value,
-        phone:     (typeof sanitizePhone === 'function')  ? sanitizePhone(document.getElementById('cust-phone')?.value)       : document.getElementById('cust-phone')?.value?.trim(),
-        revenue:   revRaw !== null ? revRaw : 0,
-        status:    document.getElementById('cust-status')?.value,
-        notes:     (typeof sanitizeText === 'function') ? sanitizeText(document.getElementById('cust-notes')?.value, 1000) : document.getElementById('cust-notes')?.value?.trim(),
-        entity_id: _custEnt?._dbId || null,
+        company:  (typeof sanitizeText === 'function') ? sanitizeText(document.getElementById('cust-company')?.value, 200)  : document.getElementById('cust-company')?.value?.trim(),
+        industry: document.getElementById('cust-industry')?.value,
+        phone:    (typeof sanitizePhone === 'function')  ? sanitizePhone(document.getElementById('cust-phone')?.value)       : document.getElementById('cust-phone')?.value?.trim(),
+        revenue:  revRaw !== null ? revRaw : 0,
+        status:   document.getElementById('cust-status')?.value,
+        notes:    (typeof sanitizeText === 'function') ? sanitizeText(document.getElementById('cust-notes')?.value, 1000) : document.getElementById('cust-notes')?.value?.trim(),
       };
 
       const editId = document.getElementById('cust-edit-id')?.value;
@@ -324,7 +318,6 @@
         closeModal('customer-modal');
         const search = document.getElementById('cust-search')?.value;
         if (typeof renderCustomers === 'function') renderCustomers(search);
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save customer — ' + e.message, true);
       }
@@ -344,50 +337,12 @@
         closeModal('customer-modal');
         if (typeof renderCustomers === 'function') renderCustomers();
         notify('Customer deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not delete customer — ' + e.message, true);
       }
     };
 
-    // ════════════════════════════════════════════
-    // 6. CUSTOMERS — load on boot + showPage hook
-    // ════════════════════════════════════════════
-    async function loadCustomersFromDB() {
-      try {
-        const _custEid = (window.ENTITIES || []).find(e => e.active)?._dbId;
-        const rows = await api('GET', '/api/customers' + (_custEid ? '?entity_id=' + _custEid : ''));
-        if (rows && rows.length > 0) {
-          const maxDbId = rows.reduce((m, r) => Math.max(m, r.id), 0);
-          window.nextCustId = Math.max(window.nextCustId || 1, maxDbId + 1);
-          window.customers = rows.map(r => ({
-            _dbId: r.id, id: r.id,
-            fname: r.fname || '', lname: r.lname || '',
-            email: r.email || '', company: r.company || '',
-            industry: r.industry || '', phone: r.phone || '',
-            revenue: r.revenue || 0, status: r.status || 'active',
-            notes: r.notes || '',
-          }));
-          const search = document.getElementById('cust-search')?.value;
-          if (typeof renderCustomers === 'function') renderCustomers(search);
-        }
-      } catch (e) {
-        // Not logged in or no customers — ignore
-      }
-    }
-    loadCustomersFromDB();
-    window._loadCustomersFromDB = loadCustomersFromDB;
-
-    // Reload customers when navigating to the customers page
-    const _custOrigShowPage = window.showPage;
-    if (typeof _custOrigShowPage === 'function') {
-      window.showPage = function (id, navEl) {
-        _custOrigShowPage(id, navEl);
-        if (id === 'customers') loadCustomersFromDB();
-      };
-    }
-
     console.log('[FinFlow API Wiring] ✅ All easy patches applied');
-  });
+  })()
 
 })();

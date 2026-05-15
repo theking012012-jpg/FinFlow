@@ -42,7 +42,7 @@
     }
   };
 
-  window.addEventListener('DOMContentLoaded', async function () {
+  (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
 
     // ── Auto-restore session ────────────────────────────────────────
     try {
@@ -356,6 +356,6 @@
     }, 600);
 
     console.log('[FinFlow Final Wiring] ✅ Session restore, expense edit, holdings edit/delete patched');
-  });
+  })()
 
 })();

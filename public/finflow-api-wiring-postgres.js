@@ -74,7 +74,6 @@
       if (typeof window.renderCOA      === 'function') window.renderCOA();
       if (typeof window.closeModal     === 'function') window.closeModal('journal-entry-modal');
       tip('Journal entry ' + status.toLowerCase());
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) {
       tip('Could not save journal entry — ' + e.message, true);
     }
@@ -114,12 +113,16 @@
       const eid = activeEntity?._dbId;
       const eq  = eid ? '?entity_id=' + eid : '';
 
-      const [invoices, expenses] = await Promise.all([
-        api('GET', '/api/invoices' + eq),
-        api('GET', '/api/expenses' + eq),
+      // Fetch everything in parallel — not just invoices/expenses
+      const [invoices, expenses, customers, inventory, payroll] = await Promise.all([
+        api('GET', '/api/invoices'  + eq),
+        api('GET', '/api/expenses'  + eq),
+        api('GET', '/api/customers' + eq),
+        api('GET', '/api/inventory' + eq),
+        api('GET', '/api/payroll'   + eq),
       ]);
 
-      // Update userInvoices — used by renderInvoices() and legacy updateDashboard()
+      // ── Invoices ──────────────────────────────────────────────────
       window.userInvoices = (invoices || []).map(r => ({
         _dbId:    r.id,
         client:   r.client,
@@ -132,8 +135,9 @@
         notes:    r.notes || '',
         color:    r.status === 'overdue' ? 'var(--red)' : 'var(--t2)',
       }));
+      window._realInvoices = invoices || [];
 
-      // Update bizExpenses — used by renderExpenses() and legacy updateDashboard()
+      // ── Expenses ──────────────────────────────────────────────────
       window.bizExpenses = (expenses || []).map(r => ({
         _dbId:  r.id,
         desc:   r.description,
@@ -144,25 +148,89 @@
           ? new Date(r.expense_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
           : 'Today',
       }));
-
-      // Update _realInvoices/_realExpenses — used by the patched updateDashboard()
-      // (finflow-api-wiring-dashboard.js overwrites updateDashboard to read these)
-      window._realInvoices = invoices || [];
       window._realExpenses = expenses || [];
 
-      // Re-render invoice + expense lists
+      // ── Customers ─────────────────────────────────────────────────
+      if (customers) {
+        window.bizCustomers = customers.map(r => ({
+          _dbId:   r.id,
+          name:    r.name,
+          email:   r.email   || '',
+          phone:   r.phone   || '',
+          address: r.address || '',
+          notes:   r.notes   || '',
+        }));
+        if (typeof window.renderCustomers === 'function') window.renderCustomers();
+      }
+
+      // ── Inventory ─────────────────────────────────────────────────
+      if (inventory) {
+        window.inventoryItems = inventory.map(r => ({
+          _dbId:    r.id,
+          name:     r.name,
+          sku:      r.sku      || '',
+          price:    r.price,
+          units:    r.units,
+          category: r.category || '',
+          reorder:  r.reorder_point || 0,
+        }));
+        if (typeof window.renderInventory === 'function') window.renderInventory();
+      }
+
+      // ── Payroll ───────────────────────────────────────────────────
+      if (payroll) {
+        window.payrollEmployees = payroll.filter(r => !r.is_owner).map(r => ({
+          _dbId:   r.id,
+          fname:   r.fname,
+          lname:   r.lname,
+          role:    r.role,
+          type:    r.emp_type,
+          gross:   r.gross,
+          taxRate: r.tax_rate,
+          avClass: r.av_class || 'av-blue',
+        }));
+        const ownerRow = payroll.find(r => r.is_owner);
+        if (ownerRow) {
+          window.ownerPayroll = {
+            _dbId:   ownerRow.id,
+            fname:   ownerRow.fname,
+            lname:   ownerRow.lname,
+            role:    ownerRow.role,
+            type:    ownerRow.emp_type,
+            gross:   ownerRow.gross,
+            taxRate: ownerRow.tax_rate,
+            avClass: ownerRow.av_class || 'av-blue',
+          };
+        }
+        if (typeof window.renderPayroll === 'function') window.renderPayroll();
+      }
+
+      // ── Rebuild top clients from real paid invoices ───────────────
+      const _clientTotals = {};
+      (invoices || []).filter(i => i.status === 'paid').forEach(i => {
+        const c = i.client || 'Other';
+        _clientTotals[c] = (_clientTotals[c] || 0) + (parseFloat(i.amount) || 0);
+      });
+      window._topClients = Object.entries(_clientTotals)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([label, total]) => ({ label, total }));
+
+      // ── Re-render lists ───────────────────────────────────────────
       if (typeof window.renderInvoices === 'function') window.renderInvoices();
       if (typeof window.renderExpenses === 'function') window.renderExpenses();
 
-      // Refresh dashboard KPIs directly via the private update functions in
-      // dashboard wiring. This bypasses the updateDashboard patch (which only
-      // exists after bootDashboardWiring has run) so it always works.
+      // ── Refresh all dashboard KPIs and charts ─────────────────────
       if (typeof window._refreshDashboardUI === 'function') {
         window._refreshDashboardUI();
       } else if (typeof window.updateDashboard === 'function') {
         window.updateDashboard();
       }
-      console.log('[FinFlow] refreshFinancials ✅ — invoices:', (invoices || []).length, 'expenses:', (expenses || []).length);
+      if (typeof window.buildCharts === 'function') window.buildCharts();
+
+      console.log('[FinFlow] refreshFinancials ✅ — invoices:', (invoices||[]).length,
+        'expenses:', (expenses||[]).length, 'customers:', (customers||[]).length,
+        'inventory:', (inventory||[]).length, 'payroll:', (payroll||[]).length);
     } catch (err) {
       console.warn('[FinFlow] refreshFinancials failed:', err.message);
     }
@@ -208,7 +276,7 @@
   };
 
   // ── 6. Update data-safety banner to reflect cloud storage ─────────
-  window.addEventListener('DOMContentLoaded', function () {
+  (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
     // Small delay so the banner has been injected into the DOM first
     setTimeout(function () {
       const banner = document.getElementById('data-safety-banner');
@@ -220,7 +288,6 @@
           '— backed by PostgreSQL on Supabase. It\'s safe across all browsers and devices.';
       }
     }, 600);
-  });
+  })()
 
   console.log('[FinFlow] Postgres wiring active — localStorage persistence neutralised.');
-});

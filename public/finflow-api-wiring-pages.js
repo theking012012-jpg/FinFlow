@@ -19,7 +19,7 @@
   const todayStr = () => new Date().toISOString().slice(0, 10);
   const uid4 = () => String(Date.now()).slice(-4);
 
-  window.addEventListener('DOMContentLoaded', function () {
+  (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
 
     // ════════════════════════════════════════════
     // QUOTES
@@ -782,5 +782,5 @@
     };
 
     console.log('[FinFlow API Wiring — Pages] ✅ Quotes, Receipts, Payments Received, Recurring Invoices, Credit Notes, Vendors, Bills, Payments Made, Recurring Bills, Vendor Credits wired');
-  });
+  })()
 })();

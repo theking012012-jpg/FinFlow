@@ -404,7 +404,7 @@
           </button>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
-          <div><label class="flabel">Project Name *</label><input id="proj-name" class="finput" placeholder="e.g. Website Redesign v2"></div>
+          <div><label class="flabel">Project Name *</label><input id="proj-name" class="finput" placeholder="e.g. RetailCo Portal v2"></div>
           <div><label class="flabel">Client</label><input id="proj-client" class="finput" placeholder="Client name"></div>
           <div><label class="flabel">Budget ($)</label><input id="proj-budget" class="finput" type="number" min="0" placeholder="0"></div>
           <div><label class="flabel">Status</label>
@@ -675,7 +675,7 @@
   // ══════════════════════════════════════════════════════
   // BOOT
   // ══════════════════════════════════════════════════════
-  window.addEventListener('DOMContentLoaded', function () {
+  (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
     loadTimesheet();
     loadHoldingsFromDB();
     loadProjects();
@@ -696,7 +696,7 @@
         }
       };
     }
-  });
+  })()
 
   console.log('[FinFlow Extra Wiring] ✅ Invoice View, Timesheet, Reports, Budget, Investments, Team, Projects, Generate Report, Budget Targets, Add Holding, Invite Member');
 })();

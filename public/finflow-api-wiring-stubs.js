@@ -663,7 +663,7 @@
   };
 
   // Also load if page is already active on boot (e.g. deep link)
-  window.addEventListener('DOMContentLoaded', function () {
+  (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
     // Give other wiring scripts a tick to set up first
     setTimeout(() => {
       // If already on one of these pages, load data now
@@ -674,7 +674,7 @@
         window.showPage && window.showPage(id, null);
       }
     }, 800);
-  });
+  })()
 
   console.log('[FinFlow Stubs Wiring] ✅ Quotes, Bills, Vendors, Recurring Bills, Recurring Invoices — all wired to real API');
 

@@ -315,7 +315,7 @@
 (function() {
   // Only run once on initial page load, never on entity switch
   let _booted = false;
-  window.addEventListener('DOMContentLoaded', function() {
+  (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
     setTimeout(async function() {
       if (_booted) return;
       _booted = true;
@@ -325,5 +325,5 @@
         if (typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
       } catch(e) {}
     }, 600);
-  });
+  })()
 })();

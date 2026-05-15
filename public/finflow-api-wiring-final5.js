@@ -43,7 +43,7 @@ function renderReceipts(){
           <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteReceipt(${r.id})">Del</button>
         </span>
       </div>`).join('');
-  });
+  })()
 }
 
 function openNewReceiptModal(){
@@ -85,7 +85,6 @@ async function saveReceipt(){
     else   { await apiFetch('/api/sales-receipts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
     closeModal('modal-receipt');
     renderReceipts();
-    if(typeof window.refreshFinancials==='function') window.refreshFinancials();
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
@@ -93,7 +92,6 @@ async function deleteReceipt(id){
   if(!confirm('Delete this receipt?')) return;
   await apiFetch('/api/sales-receipts/'+id,{method:'DELETE'});
   renderReceipts();
-  if(typeof window.refreshFinancials==='function') window.refreshFinancials();
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -165,7 +163,6 @@ async function savePaymentReceived(){
     else   { await apiFetch('/api/payments-received',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
     closeModal('modal-payment-received');
     renderPaymentsReceived();
-    if(typeof window.refreshFinancials==='function') window.refreshFinancials();
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
@@ -173,7 +170,6 @@ async function deletePaymentReceived(id){
   if(!confirm('Delete this payment?')) return;
   await apiFetch('/api/payments-received/'+id,{method:'DELETE'});
   renderPaymentsReceived();
-  if(typeof window.refreshFinancials==='function') window.refreshFinancials();
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -244,7 +240,6 @@ async function saveCreditNote(){
     else   { await apiFetch('/api/credit-notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
     closeModal('modal-credit-note');
     renderCreditNotes();
-    if(typeof window.refreshFinancials==='function') window.refreshFinancials();
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
@@ -252,7 +247,6 @@ async function deleteCreditNote(id){
   if(!confirm('Delete this credit note?')) return;
   await apiFetch('/api/credit-notes/'+id,{method:'DELETE'});
   renderCreditNotes();
-  if(typeof window.refreshFinancials==='function') window.refreshFinancials();
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -323,7 +317,6 @@ async function savePaymentMade(){
     else   { await apiFetch('/api/payments-made',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
     closeModal('modal-payment-made');
     renderPaymentsMade();
-    if(typeof window.refreshFinancials==='function') window.refreshFinancials();
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
@@ -331,7 +324,6 @@ async function deletePaymentMade(id){
   if(!confirm('Delete this payment?')) return;
   await apiFetch('/api/payments-made/'+id,{method:'DELETE'});
   renderPaymentsMade();
-  if(typeof window.refreshFinancials==='function') window.refreshFinancials();
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -402,7 +394,6 @@ async function saveVendorCredit(){
     else   { await apiFetch('/api/vendor-credits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
     closeModal('modal-vendor-credit');
     renderVendorCredits();
-    if(typeof window.refreshFinancials==='function') window.refreshFinancials();
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
@@ -410,7 +401,6 @@ async function deleteVendorCredit(id){
   if(!confirm('Delete this vendor credit?')) return;
   await apiFetch('/api/vendor-credits/'+id,{method:'DELETE'});
   renderVendorCredits();
-  if(typeof window.refreshFinancials==='function') window.refreshFinancials();
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -479,7 +469,7 @@ function clearAIChat(){
 }
 
 // Hook up AI send button and enter key
-document.addEventListener('DOMContentLoaded', ()=>{
+(function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
   const sendBtn = document.getElementById('ai-send-btn');
   if(sendBtn) sendBtn.addEventListener('click', sendAIMessage);
   const inp = document.getElementById('ai-input');

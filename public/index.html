@@ -5329,20 +5329,12 @@ function saveTransaction(){
 // ════════════════════════════════════════════
 // INVESTMENTS
 // ════════════════════════════════════════════
-let holdings=[
-  {ticker:'MSFT',name:'Microsoft Corp',type:'Stock',shares:25,cost:290,price:415,div:3.00,color:'#5aaa9e'},
-  {ticker:'AAPL',name:'Apple Inc',type:'Stock',shares:30,cost:148,price:171,div:0.96,color:'#c9a84c'},
-  {ticker:'VTI',name:'Vanguard Total Market ETF',type:'ETF',shares:40,cost:195,price:241,div:3.60,color:'#9e8fbf'},
-  {ticker:'BRK.B',name:'Berkshire Hathaway B',type:'Stock',shares:15,cost:298,price:408,div:0,color:'#7db87d'},
-  {ticker:'GOOGL',name:'Alphabet Inc',type:'Stock',shares:8,cost:110,price:165,div:0,color:'#d4964a'},
-  {ticker:'BND',name:'Vanguard Bond ETF',type:'Bond',shares:50,cost:73,price:72,div:3.40,color:'#c46a5a'},
-  {ticker:'CASH',name:'Money Market / Cash',type:'Cash',shares:1,cost:5000,price:5000,div:220,color:'#5a4e3a'},
-];
+let holdings=[];
 const INV_PERIOD_DATA={
-  '1m':{portPts:[100,101.2,100.8,102.1,103.4,102.9,104.2,105.1,104.8,106.3,107.0,106.5,107.8,108.2,108.9,110.1,109.7,110.5,111.2,110.8,112.1,113.0,112.4,113.8,114.2,115.0,114.8,116.1,115.7,116.9,117.4],sp500:[100,101.0,100.5,101.8,102.9,102.3,103.5,104.2,103.9,105.0,105.8,105.2,106.1,106.8,107.3,108.2,107.8,108.9,109.5,109.1,110.2,111.0,110.5,111.6,112.0,112.8,112.4,113.5,113.0,113.8,114.2]},
-  '3m':{portPts:[100,101.8,103.2,102.4,104.8,106.1,105.3,107.5,108.9,108.1,110.4,111.8,110.9,113.2,114.5,113.6,115.9,117.2,116.3,118.6,119.9,119.0,121.3,122.6,121.8,123.1,122.4,124.7,125.9,125.1,117.4],sp500:[100,101.5,102.8,102.0,104.1,105.3,104.6,106.7,107.9,107.2,109.2,110.5,109.8,111.8,113.0,112.4,114.2,115.5,114.8,116.8,118.0,117.4,119.3,120.5,119.9,121.0,120.4,122.3,123.5,122.9,114.2]},
-  'ytd':{portPts:[100,102.1,104.5,103.8,106.2,108.4,107.6,110.1,112.3,111.5,113.9,116.2,115.3,117.8,120.1,119.2,121.7,123.9,123.1,125.6,127.9,127.0,129.4,131.7,130.9,133.3,132.4,134.8,137.1,136.2,117.4],sp500:[100,101.8,103.9,103.2,105.4,107.4,106.7,108.9,110.9,110.3,112.3,114.2,113.5,115.4,117.4,116.7,118.6,120.6,119.9,121.8,123.8,123.2,125.0,127.0,126.3,128.2,127.6,129.5,131.5,130.8,114.2]},
-  '1y':{portPts:[100,103.2,97.4,105.8,110.2,108.4,115.6,112.1,118.9,122.4,119.8,127.2,124.6,131.1,128.5,135.9,133.2,140.6,138.0,145.4,142.7,150.1,147.5,154.9,152.2,159.6,157.0,164.4,161.7,169.1,117.4],sp500:[100,102.8,96.4,104.5,108.7,106.9,113.8,110.4,116.9,120.1,117.6,124.8,122.2,128.5,125.9,132.3,129.7,136.2,133.6,140.1,137.4,143.9,141.3,147.8,145.1,151.6,148.9,155.4,152.7,159.2,114.2]}
+  '1m':{portPts:[],sp500:[]},
+  '3m':{portPts:[],sp500:[]},
+  'ytd':{portPts:[],sp500:[]},
+  '1y':{portPts:[],sp500:[]}
 };
 let invPeriod='1m';
 let invPerfChart=null;
@@ -5413,6 +5405,7 @@ function renderInvestments(){
 function buildInvDonut(hs,totalValue){
   const canvas=document.getElementById('invDonut');
   if(!canvas||typeof Chart==='undefined')return;
+  if(!hs.length){if(invDonutChart){invDonutChart.destroy();invDonutChart=null;}const leg=document.getElementById('inv-legend');if(leg)leg.innerHTML='';return;}
   const ctx=canvas.getContext('2d');
   const vals=hs.map(h=>h.price*h.shares);
   const colors=hs.map(h=>h.color||'#c9a84c');
@@ -5441,10 +5434,15 @@ function buildInvPerfChart(period){
   if(!canvas||typeof Chart==='undefined')return;
   const{portPts,sp500}=INV_PERIOD_DATA[period];
   const n=portPts.length;
+  const retEl=document.getElementById('inv-perf-return');
+  if(n<2){
+    if(retEl)retEl.textContent='Add holdings to see performance';
+    if(invPerfChart){invPerfChart.destroy();invPerfChart=null;}
+    return;
+  }
   const labels=Array.from({length:n},(_,i)=>i===0?'Start':i===n-1?'Now':'');
   const portReturn=((portPts[n-1]-100)).toFixed(1);
   const spReturn=((sp500[n-1]-100)).toFixed(1);
-  const retEl=document.getElementById('inv-perf-return');
   if(retEl)retEl.textContent=`Portfolio +${portReturn}% vs S&P +${spReturn}%`;
   const{tc,gc}=chartDefaults();
   if(invPerfChart){invPerfChart.destroy();}
@@ -5476,13 +5474,19 @@ function setInvPeriod(p,btn){
 }
 
 function updateInvAI(totalValue,totalGain,gainPct,totalDiv){
-  const top=holdings.slice().sort((a,b)=>b.price*b.shares-a.price*a.shares).slice(0,2);
-  const topPct=top.reduce((s,h)=>s+h.price*h.shares,0)/totalValue*100;
-  const yieldPct=(totalDiv/totalValue*100).toFixed(1);
   const i1=document.getElementById('inv-ai-1');
   const i2=document.getElementById('inv-ai-2');
   const i3=document.getElementById('inv-ai-3');
-  if(i1)i1.textContent=`Your portfolio is up ${gainPct}% (${gainPct>11.1?'outperforming':'underperforming'} the S&P 500 by ${Math.abs(gainPct-11.1).toFixed(1)} percentage points YTD). Total unrealised gain: ${gainPct>0?'+':''}$${Math.round(totalGain).toLocaleString()}.`;
+  if(!holdings.length){
+    if(i1)i1.textContent='Add holdings to your portfolio to see AI-powered analysis and insights.';
+    if(i2)i2.textContent='';
+    if(i3)i3.textContent='';
+    return;
+  }
+  const top=holdings.slice().sort((a,b)=>b.price*b.shares-a.price*a.shares).slice(0,2);
+  const topPct=totalValue>0?top.reduce((s,h)=>s+h.price*h.shares,0)/totalValue*100:0;
+  const yieldPct=totalValue>0?(totalDiv/totalValue*100).toFixed(1):'0.0';
+  if(i1)i1.textContent=`Your portfolio is up ${gainPct}% (${Number(gainPct)>11.1?'outperforming':'underperforming'} the S&P 500 by ${Math.abs(gainPct-11.1).toFixed(1)} percentage points YTD). Total unrealised gain: ${gainPct>0?'+':''}$${Math.round(totalGain).toLocaleString()}.`;
   if(i2)i2.textContent=`${top.map(h=>h.ticker).join(' & ')} together represent ${topPct.toFixed(0)}% of portfolio value — consider diversifying if concentration risk concerns you.`;
   if(i3)i3.textContent=`Dividend income of $${Math.round(totalDiv).toLocaleString()}/yr adds a ${yieldPct}% yield. This contributes to your personal finance surplus and reduces effective volatility exposure.`;
 }

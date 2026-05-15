@@ -565,42 +565,55 @@
     }
     loadPayrollFromDB();
 
-    // Patch saveOwnerPayroll to persist
+    // Patch saveOwnerPayroll to persist per-entity to DB
     const _origSaveOwnerPayroll = window.saveOwnerPayroll;
     window.saveOwnerPayroll = async function () {
       // Run the original in-memory save first
       if (typeof _origSaveOwnerPayroll === 'function') _origSaveOwnerPayroll();
 
-      // Now persist to DB
-      if (!window.ownerPayroll) return;
-      const op = window.ownerPayroll;
+      // Persist every entity's owner payroll to DB, each scoped to its entity_id
+      const byEntity = window.ownerPayrollByEntity || {};
+      const ENTITIES = window.ENTITIES || [];
+
       try {
-        if (op._dbId) {
-          await api('PUT', `/api/payroll/${op._dbId}`, {
-            fname:    op.fname,
-            lname:    op.lname,
-            role:     op.role,
-            emp_type: op.type,
-            gross:    op.gross,
-            tax_rate: op.taxRate,
-            av_class: op.avClass || 'av-blue',
-          });
-        } else {
-          const saved = await api('POST', '/api/payroll', {
-            fname:     op.fname,
-            lname:     op.lname,
-            role:      op.role     || 'CEO / Founder',
-            emp_type:  op.type     || 'owner',
-            gross:     op.gross,
-            tax_rate:  op.taxRate,
-            av_class:  op.avClass  || 'av-blue',
-            is_owner:  true,
-            entity_id: window.activeEntityId || null,
-          });
-          window.ownerPayroll._dbId = saved.id;
+        for (const [idxStr, op] of Object.entries(byEntity)) {
+          const idx = parseInt(idxStr);
+          const entity = ENTITIES[idx];
+          const entityDbId = entity?._dbId || null;
+
+          if (op._dbId) {
+            // Update existing record
+            await api('PUT', `/api/payroll/${op._dbId}`, {
+              fname:     op.fname,
+              lname:     op.lname,
+              role:      op.role,
+              emp_type:  op.type,
+              gross:     op.gross,
+              tax_rate:  op.taxRate,
+              av_class:  op.avClass || 'av-blue',
+              entity_id: entityDbId,
+            });
+          } else {
+            // Create new record scoped to this entity
+            const saved = await api('POST', '/api/payroll', {
+              fname:     op.fname,
+              lname:     op.lname,
+              role:      op.role     || 'CEO / Founder',
+              emp_type:  op.type     || 'owner',
+              gross:     op.gross,
+              tax_rate:  op.taxRate,
+              av_class:  op.avClass  || 'av-blue',
+              is_owner:  true,
+              entity_id: entityDbId,
+            });
+            // Store DB id back so next save does a PUT
+            byEntity[idxStr]._dbId = saved.id;
+            if (window.ownerPayroll && !window.ownerPayroll._dbId) {
+              window.ownerPayroll._dbId = saved.id;
+            }
+          }
         }
-        // Re-render already done by original — just notify persistence
-        console.log('[FinFlow] Owner payroll persisted to DB ✦');
+        console.log('[FinFlow] Owner payroll persisted per-entity ✦');
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Payroll saved locally but could not sync to server — ' + e.message, true);

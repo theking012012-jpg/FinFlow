@@ -981,7 +981,7 @@ async function loadNotes() {
 
 async function saveNotes() {
   const note = document.getElementById('notes-content').value;
-  localStorage.setItem(`books_note_${_userId}`, note);
+  _booksNote = note; // in-memory only
   try {
     await fetch(`/api/accountants/clients/${_userId}/notes`, {
       method:'POST', credentials:'include',

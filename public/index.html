@@ -1112,7 +1112,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     <div class="nav-item nav-item--clients" onclick="showPage('portal',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="10" rx="1.2"/><line x1="5" y1="3" x2="5" y2="13"/><line x1="1" y1="8" x2="5" y2="8"/></svg>Client portal</div>
     <div class="sidebar-footer">
       <div class="user-avatar" id="sb-user-avatar">JD</div>
-      <div class="user-info"><div class="user-name" id="sb-user-name">John Doe</div><div class="user-plan" id="sb-user-plan">Pro plan</div></div>
+      <div class="user-info"><div class="user-name" id="sb-user-name">My Account</div><div class="user-plan" id="sb-user-plan">Pro plan</div></div>
       <span id="api-key-indicator" title="FinFlow AI is ready" style="font-size:10px;color:var(--green);white-space:nowrap;padding:3px 7px;border-radius:10px;border:1px solid var(--bd2);background:var(--bg2)">AI ✓</span>
       <button class="btn-icon" onclick="showPage('settings',null)" title="Settings"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M12.9 3.1l-1.4 1.4M4.5 11.5l-1.4 1.4"/></svg></button>
     </div>
@@ -2639,7 +2639,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="3"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/></svg>Your profile</div>
               <div class="field-group">
-                <div class="field-wrap"><label class="field-label">Your name</label><input class="finput" id="s-user-name" value="John Doe" oninput="updateUserName()"></div>
+                <div class="field-wrap"><label class="field-label">Your name</label><input class="finput" id="s-user-name" value="" placeholder="Your name" oninput="updateUserName()"></div>
                 <div class="field-wrap"><label class="field-label">Initials</label><input class="finput" id="s-user-initials" value="JD" maxlength="2" oninput="updateUserAvatar()"></div>
               </div>
               <div class="field-wrap"><label class="field-label">Email</label><input class="finput" id="s-email" placeholder="you@company.com" type="email"></div>
@@ -3796,7 +3796,7 @@ window.exportAllCSV = function(){
 // ════════════════════════════════════════════
 // ③ BANK RECONCILIATION ENGINE
 // ════════════════════════════════════════════
-let reconState = lsLoad('reconState', {clearedIds: [], lastReconDate: null, lastReconBal: null});
+let reconState = {clearedIds: [], lastReconDate: null, lastReconBal: null};
 
 function openReconcileModal(){
   // Build transaction list
@@ -3854,7 +3854,7 @@ function finishReconciliation(){
   reconState.clearedIds = checked.map(cb => parseInt(cb.dataset.idx));
   reconState.lastReconDate = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   reconState.lastReconBal = document.getElementById('recon-stmt-bal').value;
-  lsSave('reconState', reconState);
+  // reconState stored in-memory only — no localStorage
   closeModal('reconcile-modal');
   notify('Reconciliation complete — Main Checking ✓');
 }
@@ -3862,7 +3862,7 @@ function finishReconciliation(){
 // ════════════════════════════════════════════
 // ④ DOUBLE-ENTRY JOURNAL WITH LIVE COA
 // ════════════════════════════════════════════
-let journalEntries = lsLoad('journalEntries', []);
+let journalEntries = []; // loaded from API by renderJournalsLive()
 const COA_ACCOUNTS = [
   {code:'1010',name:'Checking Account',    type:'Asset'},
   {code:'1020',name:'Savings Account',     type:'Asset'},
@@ -4173,10 +4173,13 @@ const EXP_SAL  = new Array(12).fill(0);
 const EXP_RENT = new Array(12).fill(0);
 const EXP_SW   = new Array(12).fill(0);
 const EXP_MKT  = new Array(12).fill(0);
-let SRC_RETAILCO  = REV.map(r=>Math.round(r*ENTITY_DATA[0].srcPct[0]));
-let SRC_TECHSTART = REV.map(r=>Math.round(r*ENTITY_DATA[0].srcPct[1]));
-let SRC_STRIPE    = REV.map(r=>Math.round(r*ENTITY_DATA[0].srcPct[2]));
-let SRC_CONSULT   = REV.map(r=>Math.round(r*ENTITY_DATA[0].srcPct[3]));
+// Revenue source arrays - populated from real invoice data grouped by client
+let SRC_RETAILCO  = new Array(12).fill(0);
+let SRC_TECHSTART = new Array(12).fill(0);
+let SRC_STRIPE    = new Array(12).fill(0);
+let SRC_CONSULT   = new Array(12).fill(0);
+// Top clients derived from real invoices - set by loadEntityData()
+let _topClients = []; // [{label, monthly, total}]
 
 // Load entity data into live pointers
 let _loadEntityDataRunning = false;
@@ -4281,7 +4284,19 @@ async function loadEntityData(idx){
     }
     // Also refresh banking for this entity
     if(typeof loadBankingFromDB==='function') loadBankingFromDB();
-    console.log('[Entity] Loaded real data — invoices:'+invoices.length+' expenses:'+expenses.length);
+
+    // Build _topClients from real paid invoices grouped by client name
+    const _clientTotals = {};
+    invoices.filter(i=>i.status==='paid').forEach(i=>{
+      const c = i.client||'Other';
+      _clientTotals[c] = (_clientTotals[c]||0) + (parseFloat(i.amount)||0);
+    });
+    _topClients = Object.entries(_clientTotals)
+      .sort((a,b)=>b[1]-a[1])
+      .slice(0,4)
+      .map(([label,total])=>({label,total}));
+
+    console.log('[Entity] Loaded real data — invoices:'+invoices.length+' expenses:'+expenses.length+' top clients:'+_topClients.length);
   } catch(e){ console.warn('[Entity] loadEntityData failed:', e.message); } finally { _loadEntityDataRunning = false; }
 }
 
@@ -4396,7 +4411,7 @@ function getPeriodData(){
       prevRev:REV[p],prevExp:EXP[p],prevProfit:PROFIT[p],
       labels:[MONTHS[i]],revArr:[REV[i]],expArr:[EXP[i]],
       sal:EXP_SAL[i],rent:EXP_RENT[i],sw:EXP_SW[i],mkt:EXP_MKT[i],
-      srcRC:SRC_RETAILCO[i],srcTS:SRC_TECHSTART[i],srcST:SRC_STRIPE[i],srcCO:SRC_CONSULT[i],
+      srcRC:0,srcTS:0,srcST:0,srcCO:0,
       months:1, label:MONTH_FULL[i]
     };
   } else if(currentPeriod==='quarter'){
@@ -4406,7 +4421,7 @@ function getPeriodData(){
       prevRev:sum(REV,ps,pe),prevExp:sum(EXP,ps,pe),prevProfit:sum(PROFIT,ps,pe),
       labels:MONTHS.slice(s,e),revArr:REV.slice(s,e),expArr:EXP.slice(s,e),
       sal:sum(EXP_SAL,s,e),rent:EXP_RENT[0]*3,sw:sum(EXP_SW,s,e),mkt:sum(EXP_MKT,s,e),
-      srcRC:sum(SRC_RETAILCO,s,e),srcTS:sum(SRC_TECHSTART,s,e),srcST:sum(SRC_STRIPE,s,e),srcCO:sum(SRC_CONSULT,s,e),
+      srcRC:0,srcTS:0,srcST:0,srcCO:0,
       months:3, label:'Q4 · Feb–Apr 2026'
     };
   } else {
@@ -4415,7 +4430,7 @@ function getPeriodData(){
       prevRev:null,prevExp:null,prevProfit:null,
       labels:MONTHS,revArr:REV,expArr:EXP,
       sal:sum(EXP_SAL,0,12),rent:EXP_RENT[0]*12,sw:sum(EXP_SW,0,12),mkt:sum(EXP_MKT,0,12),
-      srcRC:sum(SRC_RETAILCO,0,12),srcTS:sum(SRC_TECHSTART,0,12),srcST:sum(SRC_STRIPE,0,12),srcCO:sum(SRC_CONSULT,0,12),
+      srcRC:0,srcTS:0,srcST:0,srcCO:0,
       months:12, label:'Full Year · May 2025 – Apr 2026'
     };
   }
@@ -4633,13 +4648,13 @@ function updateCashflow(d=getPeriodData()){
   const runway=Math.round(d.rev/d.exp*d.months*1.2);
   document.getElementById('cf-runway').textContent=Math.round(runway/d.months*10)/10+' months';
   // Income sources bars
-  const maxSrc=d.srcRC;
-  document.getElementById('cf-sources').innerHTML=[
-    {label:'RetailCo',   val:d.srcRC,  pct:Math.round(d.srcRC/d.rev*100),  col:'var(--green)'},
-    {label:'TechStart',  val:d.srcTS,  pct:Math.round(d.srcTS/d.rev*100),  col:'#7db87d'},
-    {label:'Stripe sales',val:d.srcST, pct:Math.round(d.srcST/d.rev*100),  col:'#7db87d99'},
-    {label:'Consulting', val:d.srcCO,  pct:Math.round(d.srcCO/d.rev*100),  col:'#7db87d66'},
-  ].map(s=>`<div class="bar-row"><span class="bar-label">${s.label}</span><div class="bar-track"><div class="bar-fill" style="width:${s.pct}%;background:${s.col}"></div></div><span class="bar-val">${S(s.val)}</span></div>`).join('');
+  // Income sources — built from real invoice data grouped by client
+  const _src_colors = ['var(--green)','#7db87d','#7db87d99','#7db87d66'];
+  const _srcList = _topClients.length ? _topClients.slice(0,4) : [];
+  const _maxSrc = _srcList.length ? _srcList[0].total : 1;
+  document.getElementById('cf-sources').innerHTML = _srcList.length
+    ? _srcList.map((s,i)=>{const pct=d.rev>0?Math.round(s.total/d.rev*100):0;return`<div class="bar-row"><span class="bar-label">${s.label}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${_src_colors[i]||'var(--green)'}"></div></div><span class="bar-val">${S(s.total)}</span></div>`;}).join('')
+    : '<div style="color:var(--t3);font-size:12px;padding:8px 0">No revenue data yet</div>';
   // Change indicators
   const ic=chg(d.rev,d.prevRev);const ec=chg(d.exp,d.prevExp,true);
   set('cf-in-chg',ic.txt,ic.cls);set('cf-out-chg',ec.txt,ec.cls);
@@ -5639,7 +5654,7 @@ function updateAI(d=getPeriodData()){
   ]:currentPeriod==='quarter'?[
     `Q4 revenue: ${S(d.rev)} — your strongest quarter. Net profit: ${S(d.profit)} (${margin}% margin).`,
     `Monthly average profit in Q4: ${S(Math.round(d.profit/3))} — up from ${S(Math.round(sum(PROFIT,6,9)/3))} in Q3.`,
-    `RetailCo remains your top client at ${S(d.srcRC)} this quarter (${Math.round(d.srcRC/d.rev*100)}% of revenue).`,
+    _topClients.length ? `Top client this quarter: ${_topClients[0].label} at ${S(_topClients[0].total)} (${d.rev>0?Math.round(_topClients[0].total/d.rev*100):0}% of revenue).` : `Add invoices to see client revenue breakdown.`,
     `Payroll cost Q4: ${S(d.sal)} — at ${Math.round(d.sal/d.rev*100)}% of revenue, below industry average.`,
 
     `90-day forecast: ${S(PROFIT[9]+PROFIT[10]+PROFIT[11]+28000+30200+32100)} net positive across Q4 + 3 forecast months.`,
@@ -5647,7 +5662,7 @@ function updateAI(d=getPeriodData()){
     `${MONTH_FULL[currentMonthIdx]} revenue: ${S(d.rev)} — ${margin}% profit margin.`,
     `Expenses this month: ${S(d.exp)}. Largest cost: salaries at ${S(d.sal)} (${Math.round(d.sal/d.exp*100)}%).`,
     `Net profit: ${S(d.profit)} — ${currentMonthIdx>0?`${pct(d.profit,PROFIT[currentMonthIdx-1])>0?'up':'down'} ${Math.abs(pct(d.profit,PROFIT[currentMonthIdx-1]))}% vs last month`:'first month on record'}.`,
-    `Top client this month: RetailCo at ${S(d.srcRC)} (${Math.round(d.srcRC/d.rev*100)}% of revenue).`,
+    _topClients.length ? `Top client this month: ${_topClients[0].label} at ${S(_topClients[0].total)} (${d.rev>0?Math.round(_topClients[0].total/d.rev*100):0}% of revenue).` : `Add invoices to track client revenue.`,
     `Tax withheld on payroll: ${S(Math.round(d.exp*.16))}. Estimated quarterly tax liability: ${S(Math.round(d.profit*.25))}.`,
     `Inventory alert: 2 products below reorder threshold. Restock before end of month.`,
   ];
@@ -6012,7 +6027,7 @@ async function exportPDF(){
     const prompt = sanitizeForAPI(`Write an executive financial report for ${d.label}:
 Revenue: ${S(d.rev)} | Expenses: ${S(d.exp)} | Net profit: ${S(d.profit)} (${Math.round(d.profit/d.rev*100)}% margin)
 Annual run rate: ${S(sum(REV,0,12))} revenue | ${S(sum(PROFIT,0,12))} profit | YoY growth ~38%
-Top client: RetailCo | Payroll: ${(payrollEmployees||[]).length+(ownerPayroll?1:0)} staff
+Top client: ${_topClients.length?_topClients[0].label:"N/A"} | Payroll: ${(payrollEmployees||[]).length+(ownerPayroll?1:0)} staff
 ${ownerLine}Personal savings rate: ${document.getElementById('pers-savings').textContent} | Net worth: ${document.getElementById('pers-nw').textContent}
 4 tight paragraphs: Executive Summary, Financial Performance, Risks & Opportunities, Outlook. Data-driven and executive-level.`, 3000);
     const res = await fetch('/api/ai', {
@@ -6173,15 +6188,7 @@ function openAddTxnModal(){notify('Add manual transaction');}
 // ════════════════════════════════════════════
 // PROJECTS PAGE
 // ════════════════════════════════════════════
-const projectsData=[
-  {name:'RetailCo Platform Rebuild',client:'RetailCo',budget:48000,billed:38400,hours:256,status:'In Progress',progress:80},
-  {name:'TechStart Mobile App',client:'TechStart Ltd',budget:28000,billed:19600,hours:196,status:'In Progress',progress:70},
-  {name:'BlueWave Brand Identity',client:'BlueWave Agency',budget:14000,billed:14000,hours:112,status:'Completed',progress:100},
-  {name:'Nova Analytics Dashboard',client:'Nova Systems',budget:22000,billed:8800,hours:88,status:'In Progress',progress:40},
-  {name:'GreenLeaf SEO Audit',client:'GreenLeaf Ltd',budget:4800,billed:4800,hours:40,status:'Completed',progress:100},
-  {name:'Mango & Co CRM',client:'Mango & Co',budget:9600,billed:2400,hours:24,status:'In Progress',progress:25},
-  {name:'Internal Dashboard v2',client:'Internal',budget:0,billed:0,hours:48,status:'In Progress',progress:60},
-];
+const projectsData=[]; // populated from API by finflow-api-wiring-extra.js
 function renderProjects(){
   const l=document.getElementById('projects-list');if(!l)return;
   l.innerHTML=projectsData.map(p=>`
@@ -6201,14 +6208,7 @@ function openNewProjectModal(){notify('New project modal');}
 // ════════════════════════════════════════════
 // TIMESHEET PAGE
 // ════════════════════════════════════════════
-const timesheetData=[
-  {employee:'Sarah K.',project:'RetailCo Platform',date:'Apr 28',hours:8,billable:8,rate:150},
-  {employee:'Mike R.',project:'TechStart Mobile',date:'Apr 28',hours:7.5,billable:7.5,rate:120},
-  {employee:'John Doe',project:'Nova Dashboard',date:'Apr 28',hours:6,billable:4,rate:150},
-  {employee:'Lisa T.',project:'Internal v2',date:'Apr 27',hours:8,billable:0,rate:95},
-  {employee:'Sarah K.',project:'RetailCo Platform',date:'Apr 27',hours:8,billable:8,rate:150},
-  {employee:'Mike R.',project:'BlueWave Brand',date:'Apr 26',hours:8,billable:8,rate:120},
-];
+const timesheetData=[]; // populated from API by finflow-api-wiring-extra.js
 function renderTimesheet(){
   const l=document.getElementById('timesheet-list');if(!l)return;
   l.innerHTML=timesheetData.map(t=>`
@@ -6226,14 +6226,7 @@ function openLogTimeModal(){notify('Log time entry');}
 // ════════════════════════════════════════════
 // MANUAL JOURNALS PAGE
 // ════════════════════════════════════════════
-const journalsData=[
-  {date:'Apr 28',notes:'Depreciation — equipment',ref:'JE-0042',debit:1200,credit:1200,status:'Posted'},
-  {date:'Apr 26',notes:'Prepaid insurance adjustment',ref:'JE-0041',debit:840,credit:840,status:'Posted'},
-  {date:'Apr 24',notes:'Accrued revenue — RetailCo',ref:'JE-0040',debit:12800,credit:12800,status:'Posted'},
-  {date:'Apr 20',notes:'Inventory write-down',ref:'JE-0039',debit:420,credit:420,status:'Posted'},
-  {date:'Apr 18',notes:'Payroll accrual',ref:'JE-0038',debit:21400,credit:21400,status:'Draft'},
-  {date:'Apr 15',notes:'VAT adjustment',ref:'JE-0037',debit:3200,credit:3200,status:'Draft'},
-];
+const journalsData=[]; // populated from API by renderJournalsLive()
 function renderJournals(){
   const l=document.getElementById('journals-list');if(!l)return;
   l.innerHTML=journalsData.map(j=>`
@@ -6298,11 +6291,7 @@ function openNewAccountModal(){notify('New account modal');}
 // ════════════════════════════════════════════
 // TRANSACTION LOCKING PAGE
 // ════════════════════════════════════════════
-const lockHistory=[
-  {action:'Lock set',date:'Apr 28',by:'John Doe',detail:'Transactions locked before Mar 31, 2026'},
-  {action:'Lock removed',date:'Mar 1',by:'John Doe',detail:'Lock removed to correct a journal entry'},
-  {action:'Lock set',date:'Jan 31',by:'John Doe',detail:'Transactions locked before Dec 31, 2025'},
-];
+const lockHistory=[]; // lock history loaded from /api/lock-settings
 async function renderLockHistory(){
   const l=document.getElementById('lock-history');if(!l)return;
   try {
@@ -6429,14 +6418,7 @@ function generateReport(name,revenue,expenses,profit){
 // ════════════════════════════════════════════
 // DOCUMENTS PAGE
 // ════════════════════════════════════════════
-const documentsData=[
-  {name:'RetailCo_Invoice_Apr2026.pdf',type:'invoice',size:'142 KB',date:'Apr 28',linked:'INV-2026-009'},
-  {name:'AWS_Receipt_Apr2026.pdf',type:'receipt',size:'88 KB',date:'Apr 27',linked:'BILL-0042'},
-  {name:'OfficeRent_Agreement_2026.pdf',type:'contract',size:'1.2 MB',date:'Jan 1',linked:'—'},
-  {name:'TechStart_Proposal_Apr2026.pdf',type:'quote',size:'284 KB',date:'Apr 22',linked:'QT-0041'},
-  {name:'BlueWave_SignedContract.pdf',type:'contract',size:'448 KB',date:'Apr 15',linked:'PRJ-003'},
-  {name:'Payroll_Apr2026_Summary.xlsx',type:'report',size:'64 KB',date:'Apr 25',linked:'Payroll'},
-];
+const documentsData=[]; // not used — renderDocuments() fetches from /api/documents
 let docsFilter='all';
 let _docsCache=[];
 async function renderDocuments(){
@@ -6574,7 +6556,7 @@ function renderTemplates(){
 function buildInvoiceHTML(templateId, logoDataURL, settings){
   const t = invTemplatesData.find(x=>x.id===templateId) || invTemplatesData[0];
   const acc = settings.accentColor || t.accentColor;
-  const bizName = document.getElementById('s-biz-name')?.value || 'FinFlow Inc.';
+  const bizName = document.getElementById('s-biz-name')?.value || '';
   const bizEmail = document.getElementById('s-email')?.value || 'hello@finflow.io';
   const poweredBy = settings.poweredBy !== false;
   const logoHTML = logoDataURL
@@ -8452,7 +8434,7 @@ const AUDIT_EVENTS=[
   {user:'Alex Johnson',avatar:'AJ',color:'#c9a84c',action:'Updated invoice',target:'INV-1042 · TechCorp',time:'2 min ago',type:'invoice',diff:'Amount: $17,500 → $18,500',icon:'receipt'},
   {user:'Sarah Chen',avatar:'SC',color:'#9e8fbf',action:'Added expense',target:'AWS Cloud · $3,420',time:'18 min ago',type:'payment',diff:'Category: Software · Auto-approved',icon:'dollar'},
   {user:'Marcus Reid',avatar:'MR',color:'#5aaa9e',action:'Ran payroll',target:'Apr 2026 · 5 employees',time:'1h ago',type:'payment',diff:'Total disbursed: $32,800',icon:'users'},
-  {user:'Sarah Chen',avatar:'SC',color:'#9e8fbf',action:'Invited user',target:'cfo@acmecorp.com',time:'2h ago',type:'user',diff:'Role: Viewer · Entity: FinFlow Inc.',icon:'user'},
+  
   {user:'Alex Johnson',avatar:'AJ',color:'#c9a84c',action:'Changed settings',target:'Currency → TTD added',time:'3h ago',type:'settings',diff:'Multi-currency enabled for FinPay TTD',icon:'settings'},
   {user:'Priya Nair',avatar:'PN',color:'#7db87d',action:'Marked invoice paid',target:'INV-1041 · Globex LLC',time:'Yesterday',type:'invoice',diff:'$12,200 received · Bank: Chase ••4821',icon:'check'},
   {user:'Marcus Reid',avatar:'MR',color:'#5aaa9e',action:'Created customer',target:'NovaTech Solutions',time:'Yesterday',type:'user',diff:'CRM entry created · Contact: James Park',icon:'user'},
@@ -9635,7 +9617,7 @@ setTimeout(()=>{
       <button class="modal-close" onclick="document.getElementById('quote-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Client *</label><input class="finput" id="quote-client" placeholder="e.g. RetailCo Ltd"></div>
+      <div class="field-wrap"><label class="field-label">Client *</label><input class="finput" id="quote-client" placeholder="e.g. Acme Corp"></div>
       <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="quote-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
@@ -9750,7 +9732,7 @@ setTimeout(()=>{
       <button class="modal-close" onclick="document.getElementById('recurring-inv-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Client *</label><input class="finput" id="ri-client" placeholder="e.g. RetailCo Ltd"></div>
+      <div class="field-wrap"><label class="field-label">Client *</label><input class="finput" id="ri-client" placeholder="e.g. Acme Corp"></div>
       <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="ri-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
@@ -9808,7 +9790,7 @@ setTimeout(()=>{
     </div>
     <input type="hidden" id="pr-id">
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Customer *</label><input class="finput" id="pr-customer" placeholder="e.g. RetailCo"></div>
+      <div class="field-wrap"><label class="field-label">Customer *</label><input class="finput" id="pr-customer" placeholder="e.g. Acme Corp"></div>
       <div class="field-wrap"><label class="field-label">Invoice Ref</label><input class="finput" id="pr-invoice-ref" placeholder="e.g. INV-2026-010"></div>
     </div>
     <div class="field-group">

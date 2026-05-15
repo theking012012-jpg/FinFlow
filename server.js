@@ -8,18 +8,8 @@ const cors         = require('cors');
 const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
-const { Pool }  = require('pg');
-const { db, initDB, seedUserData, pool } = require('./database');
+const { db, initDB, pool } = require('./database');
 const pgSession = require('connect-pg-simple')(session);
-
-// Dedicated small pool for the session store so it cannot starve the main pool
-const sessionPool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  max: 2,
-  idleTimeoutMillis: 10000,
-  connectionTimeoutMillis: 3000,
-});
 
 let resendClient = null;
 try {
@@ -87,7 +77,6 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   const userId = event.data.object?.metadata?.userId;
 
   if (event.type === 'checkout.session.completed') {
-    // Service payment completed — record commission
     const session = event.data.object;
     const accountantId = session.metadata?.accountantId;
     const billedCents = session.amount_total;
@@ -99,10 +88,33 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       `, [accountantId, session.metadata?.clientUserId || null, commissionCents, session.metadata?.description || 'Service commission']);
       console.log(`[Stripe] Commission recorded: $${(commissionCents/100).toFixed(2)} for accountant ${accountantId}`);
     }
+
+    // Upgrade user plan when they pay for a subscription
+    const planUpgrade = session.metadata?.plan; // 'pro' or 'business'
+    const upgradeUserId = session.metadata?.userId;
+    if (upgradeUserId && planUpgrade) {
+      await pool.query(
+        `UPDATE users SET data = data || jsonb_build_object('plan', $1::text, 'trial_ends', null::text) WHERE id = $2`,
+        [planUpgrade, upgradeUserId]
+      );
+      console.log(`[Stripe] User ${upgradeUserId} upgraded to plan: ${planUpgrade}`);
+    }
+  }
+
+  if (event.type === 'customer.subscription.deleted') {
+    // Downgrade user back to trial/free when subscription cancelled
+    const sub = event.data.object;
+    const cancelUserId = sub.metadata?.userId;
+    if (cancelUserId) {
+      await pool.query(
+        `UPDATE users SET data = data || jsonb_build_object('plan', 'trial'::text) WHERE id = $1`,
+        [cancelUserId]
+      );
+      console.log(`[Stripe] User ${cancelUserId} subscription cancelled — plan set to trial`);
+    }
   }
 
   if (event.type === 'account.updated') {
-    // Stripe Connect onboarding completed
     const account = event.data.object;
     if (account.details_submitted) {
       await pool.query(
@@ -131,7 +143,7 @@ app.use(express.json({ limit: '10mb' })); // 10 mb covers base64-encoded receipt
 app.use(express.urlencoded({ extended: false }));
 app.set('trust proxy', 1);
 app.use(session({
-  store: new pgSession({ pool: sessionPool, tableName: 'session', createTableIfMissing: true }),
+  store: new pgSession({ pool, tableName: 'session', createTableIfMissing: true }),
   secret: process.env.SESSION_SECRET || 'finflow-dev-secret-change-in-production',
   resave: false,
   saveUninitialized: false,
@@ -149,6 +161,28 @@ const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 200 });
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorised — please log in.' });
   next();
+}
+
+// Checks trial expiry — attaches req.userPlan for downstream use
+async function checkPlan(req, res, next) {
+  try {
+    const user = await pool.query(`SELECT data FROM users WHERE id = $1`, [req.session.userId]);
+    if (!user.rows[0]) return res.status(401).json({ error: 'User not found.' });
+    const u = user.rows[0].data;
+    const plan = u.plan || 'trial';
+    const trialEnds = u.trial_ends ? new Date(u.trial_ends) : null;
+
+    if (plan === 'trial' && trialEnds && trialEnds < new Date()) {
+      return res.status(402).json({
+        error: 'Your free trial has ended. Please upgrade to continue.',
+        code: 'TRIAL_EXPIRED',
+      });
+    }
+    req.userPlan = plan;
+    next();
+  } catch (e) {
+    next(e);
+  }
 }
 
 function safeUser(u) {
@@ -178,6 +212,15 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       name: (name || '').trim().slice(0, 100), plan: 'pro', trial_ends: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner',
     });
 
+    // Create default entity so the app has something to scope data to
+    await db.insert('entities', {
+      user_id: userId,
+      name: 'My Business',
+      currency: 'USD',
+      color: '#c9a84c',
+      is_active: 1,
+      sort_order: 0,
+    });
 
     // If user signed up via an accountant referral link (?ref=CODE), link them now
     const refCode = req.body.referralCode || req.query.ref;
@@ -320,6 +363,14 @@ app.get('/api/me', requireAuth, wrap(async (req, res) => {
 }));
 
 app.use('/api', apiLimiter);
+
+// Trial / plan enforcement — applies to all /api routes except auth and stripe webhook
+app.use('/api', (req, res, next) => {
+  const open = ['/api/auth/', '/api/stripe/'];
+  if (open.some(p => req.path.startsWith(p.replace('/api', '')))) return next();
+  if (!req.session?.userId) return next(); // requireAuth handles this
+  checkPlan(req, res, next);
+});
 
 // ── ENTITY + RBAC MIDDLEWARE ──────────────────────────────────────────────────
 // Sets req.entityId from session so routes can scope data to the active entity.
@@ -1749,45 +1800,6 @@ app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
   }
   res.json({ ok: true });
 }));
-
-// ── TEMP DEV SETUP (remove after use) ────────────────────────────────────────
-app.post('/api/dev/setup', async (req, res) => {
-  try {
-    // Verify accountant and link to client
-    await pool.query(`UPDATE accountants SET status='verified', verified_at=NOW() WHERE id=7`);
-    await pool.query(`
-      INSERT INTO accountant_clients (accountant_id, user_id, status, access_level)
-      VALUES (7, 3, 'active', 'edit')
-      ON CONFLICT DO NOTHING
-    `);
-    res.json({ ok: true, message: 'Accountant verified and linked to client' });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── TEMP DEV RESET (remove after use) ────────────────────────────────────────
-app.post('/api/dev/wipe-and-create', async (req, res) => {
-  try {
-    const { email, password, name } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'email and password required' });
-    // Wipe all tables
-    const tables = ['invoices','expenses','entities','customers','inventory','payroll','journals','lock_settings',
-      'accountant_clients','personal_transactions','user_settings','quotes','bills','vendors','recurring_invoices',
-      'recurring_bills','sales_receipts','payments_received','payments_made','credit_notes','timesheet','projects',
-      'team_members','budget_targets','holdings'];
-    for (const t of tables) {
-      try { await pool.query(`DELETE FROM ${t}`); } catch(e) {}
-    }
-    await pool.query('DELETE FROM users');
-    // Create fresh user
-    const bcrypt = require('bcryptjs');
-    const hash = await bcrypt.hash(password, 10);
-    const r = await pool.query(
-      `INSERT INTO users (data) VALUES ($1::jsonb) RETURNING id`,
-      [JSON.stringify({ email, password: hash, name: name||email, plan:'pro', role:'owner', created_at: new Date().toISOString() })]
-    );
-    res.json({ ok: true, userId: r.rows[0].id, message: 'All data wiped, fresh user created' });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 initDB().then(() => {

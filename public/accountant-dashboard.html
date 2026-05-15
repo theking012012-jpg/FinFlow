@@ -1206,7 +1206,7 @@ function saveDeadline() {
   const date = document.getElementById('dl-date').value;
   if (!client || !date) { toast('Please fill in all fields', 'error'); return; }
   deadlines.push({ client, type, date, id: Date.now() });
-  localStorage.setItem('ff_deadlines', JSON.stringify(deadlines));
+  _ffDeadlines = deadlines; // in-memory only
   closeDeadlineModal();
   renderDeadlines();
   toast('Deadline added', 'success');
@@ -1581,7 +1581,7 @@ function renderBooks(invoices, expenses) {
 
 async function saveBooksNotes() {
   const note = document.getElementById('books-notes').value;
-  localStorage.setItem(`books_note_${_booksUserId}`, note);
+  _booksNote = note; // in-memory only
   try {
     await fetch(`/api/accountants/clients/${_booksUserId}/notes`, {
       method: 'POST', credentials: 'include',

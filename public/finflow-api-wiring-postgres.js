@@ -222,3 +222,4 @@
   });
 
   console.log('[FinFlow] Postgres wiring active — localStorage persistence neutralised.');
+});

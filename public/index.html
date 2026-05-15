@@ -1357,7 +1357,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr repeat(3,80px) 90px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
-            <span>Line</span><span style="text-align:right">FinFlow</span><span style="text-align:right">FinScale</span><span style="text-align:right">FinPay</span><span style="text-align:right">Consolidated</span>
+            <span>Line</span><span style="text-align:right" id="consol-col1">Entity 1</span><span style="text-align:right" id="consol-col2">Entity 2</span><span style="text-align:right" id="consol-col3">Entity 3</span><span style="text-align:right">Consolidated</span>
           </div>
           <div id="consol-pl"></div>
         </div>
@@ -1366,9 +1366,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- TEAM & ROLES PAGE -->
       <div class="page" id="page-team">
         <div class="metrics-grid-3">
-          <div class="mc"><div class="mc-label">Team members</div><div class="mc-val">8</div><div class="mc-change neutral">Active users</div></div>
+          <div class="mc"><div class="mc-label">Team members</div><div class="mc-val" id="team-count">0</div><div class="mc-change neutral">Active users</div></div>
           <div class="mc"><div class="mc-label">Roles</div><div class="mc-val">4</div><div class="mc-change neutral">Owner · Admin · Accountant · Viewer</div></div>
-          <div class="mc"><div class="mc-label">Pending invites</div><div class="mc-val">2</div><div class="mc-change neutral">Awaiting acceptance</div></div>
+          <div class="mc"><div class="mc-label">Pending invites</div><div class="mc-val" id="team-pending-count">0</div><div class="mc-change neutral">Awaiting acceptance</div></div>
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
@@ -2709,7 +2709,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <div><div class="modal-title">Add Entity</div><div class="modal-sub">Each entity has its own separate ledger</div></div>
       <button class="modal-close" onclick="closeModal('add-entity-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
-    <div class="field-wrap"><label class="field-label">Entity name</label><input class="finput" id="ne-name" placeholder="e.g. FinScale Ltd."></div>
+    <div class="field-wrap"><label class="field-label">Entity name</label><input class="finput" id="ne-name" placeholder="e.g. My Business Ltd."></div>
     <div class="field-group">
       <div class="field-wrap"><label class="field-label">Currency</label><select class="finput" id="ne-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="TTD">TTD (TT$)</option><option value="CAD">CAD (C$)</option></select></div>
       <div class="field-wrap"><label class="field-label">Colour</label><input class="finput" type="color" id="ne-color" value="#c9a84c" style="height:36px;padding:3px"></div>
@@ -5940,8 +5940,8 @@ function buildCashChart(){
   if(!_cc)return;
   const ctx=_cc.getContext('2d');
   if(!ctx)return;
-  const FORECAST_REV=[51200,54000,57800];
-  const FORECAST_EXP=[22400,23100,23800];
+  const FORECAST_REV=[0,0,0];
+  const FORECAST_EXP=[0,0,0];
   const labels=[...MONTHS,'May \'26*','Jun \'26*','Jul \'26*'];
   const actual=[...PROFIT,null,null,null];
   const forecast=[...PROFIT.map(()=>null),PROFIT[11],FORECAST_REV[0]-FORECAST_EXP[0],FORECAST_REV[1]-FORECAST_EXP[1],FORECAST_REV[2]-FORECAST_EXP[2]];
@@ -6586,7 +6586,7 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     </style></head><body>
     <div class="hdr">${logoHTML}<div style="margin-top:8px;font-size:10px;color:#888">${bizEmail}</div>
     <div style="margin-top:8px;font-size:11px;font-weight:700">RECEIPT #INV-1042</div>
-    <div style="font-size:10px;color:#888">April 28, 2026 · TechCorp Inc.</div></div>
+    <div style="font-size:10px;color:#888">Sample Preview</div></div>
     ${items.map(i=>`<div class="row"><span>${i.desc}</span><span>$${i.total.toLocaleString()}</span></div>`).join('')}
     <div class="row" style="color:#888;margin-top:4px"><span>Subtotal</span><span>$${subtotal.toLocaleString()}</span></div>
     <div class="row" style="color:#888"><span>Tax (12.5%)</span><span>$${tax.toLocaleString()}</span></div>
@@ -6620,8 +6620,8 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     </div>
     <div>
       <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Bill to</div>
-      <div style="font-weight:600;font-size:14px">TechCorp Inc.</div>
-      <div style="color:#888;font-size:12px;margin-top:4px">accounts@techcorp.io<br>San Francisco, CA 94102</div>
+      <div style="font-weight:600;font-size:14px">Sample Client</div>
+      <div style="color:#888;font-size:12px;margin-top:4px">client@example.com<br>City, State</div>
     </div>
   </div>
   <table>
@@ -7308,16 +7308,7 @@ advisorPage.id = 'page-advisors';
 advisorPage.innerHTML = '<div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem"><div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#128101;</div><div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Advisor Network &#8212; Coming Soon</div><div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Connect with certified FinFlow accountants and financial advisors who can review your books, file taxes, and help you scale.</div><span class="badge b-amber" style="font-size:11px;padding:4px 12px">In development</span></div>';
 document.querySelector('.content')?.appendChild(advisorPage);
 
-const ADVISORS = [
-  {name:'Sarah Mensah, CPA',firm:'Mensah & Partners',location:'New York, US',region:'North America',specialty:'Tax & Filing',rating:5,clients:42,avatar:'SM',avClass:'av-green',tags:['Tax','IRS e-file','S-Corp'],verified:true},
-  {name:"Liam O'Connor",firm:'BluePeak Accounting',location:'Dublin, IE',region:'Europe',specialty:'Bookkeeping',rating:5,clients:38,avatar:'LO',avClass:'av-blue',tags:['VAT','Bookkeeping','SaaS'],verified:true},
-  {name:'Priya Nair, ACA',firm:'Nair Financial',location:'London, UK',region:'Europe',specialty:'CFO Services',rating:5,clients:27,avatar:'PN',avClass:'av-purple',tags:['CFO','Fractional','Scale-up'],verified:true},
-  {name:'Marcus Webb',firm:'Webb Tax Group',location:'Toronto, CA',region:'North America',specialty:'Tax & Filing',rating:4,clients:55,avatar:'MW',avClass:'av-amber',tags:['Tax','T2','Startups'],verified:true},
-  {name:'Diana Torres',firm:'Caribbean Bookkeeping Co.',location:'Port of Spain, TT',region:'Caribbean',specialty:'Bookkeeping',rating:5,clients:31,avatar:'DT',avClass:'av-teal',tags:['TT Business','VAT','Payroll'],verified:true},
-  {name:'Kevin Park, CPA',firm:'Park & Cho Advisory',location:'Seoul, KR',region:'Asia-Pacific',specialty:'E-commerce',rating:4,clients:62,avatar:'KP',avClass:'av-red',tags:['E-commerce','Shopify','Import'],verified:true},
-  {name:'Ana Lima',firm:'Lima Contabilidade',location:'São Paulo, BR',region:'Latin America',specialty:'Payroll',rating:4,clients:29,avatar:'AL',avClass:'av-green',tags:['Brazil','eSocial','Payroll'],verified:false},
-  {name:'Tom Blackwell',firm:'Blackwell CFO',location:'Sydney, AU',region:'Asia-Pacific',specialty:'CFO Services',rating:5,clients:18,avatar:'TB',avClass:'av-blue',tags:['Fractional CFO','SaaS','Board Reports'],verified:true},
-];
+const ADVISORS = [];
 
 window.renderAdvisors = function(){
   const q = (document.getElementById('adv-search')?.value||'').toLowerCase();
@@ -7563,7 +7554,7 @@ overlay.innerHTML = `
       </div>
       <div class="ob-field">
         <label class="ob-label">Your name</label>
-        <input class="ob-input" id="ob-user-name" placeholder="e.g. Alex Johnson" value="Alex Johnson">
+        <input class="ob-input" id="ob-user-name" placeholder="e.g. Alex Johnson" value="">
       </div>
       <div class="ob-field">
         <label class="ob-label">Primary currency</label>
@@ -8334,14 +8325,7 @@ window.switchEntity=async function(idx){
 })();
 
 // ── TEAM & RBAC ─────────────────────────────────────────────────────────────
-const TEAM=[
-  {name:'Alex Johnson',email:'alex@finflow.io',role:'owner',avatar:'AJ',color:'#c9a84c',lastSeen:'Now'},
-  {name:'Sarah Chen',email:'sarah@finflow.io',role:'admin',avatar:'SC',color:'#9e8fbf',lastSeen:'5m ago'},
-  {name:'Marcus Reid',email:'marcus@finflow.io',role:'accountant',avatar:'MR',color:'#5aaa9e',lastSeen:'1h ago'},
-  {name:'Priya Nair',email:'priya@finflow.io',role:'accountant',avatar:'PN',color:'#7db87d',lastSeen:'Today'},
-  {name:'Tom Williams',email:'tom@finflow.io',role:'viewer',avatar:'TW',color:'#888',lastSeen:'Yesterday'},
-  {name:'Invited user',email:'cfo@acmecorp.com',role:'viewer',avatar:'?',color:'#5a4e3a',lastSeen:'Pending'},
-];
+const TEAM=[];
 const ROLE_LABELS={owner:'Owner',admin:'Admin',accountant:'Accountant',viewer:'Viewer'};
 const ROLE_CLASSES={owner:'role-owner',admin:'role-admin',accountant:'role-accountant',viewer:'role-viewer'};
 const PERMS=[
@@ -9898,13 +9882,7 @@ async function loadDirectory() {
     if (!res.ok) throw new Error('not ok');
     allAccountants = await res.json();
   } catch(e) {
-    // Fallback demo data while directory is being populated
-    allAccountants = [
-      {id:1,first_name:'Sarah',last_name:'Mensah',firm:'Mensah & Partners',country:'Trinidad & Tobago',specialisation:'Tax & Filing',experience:'10–20 years',bio:'Certified tax professional with 15 years experience helping SMEs in T&T.',status:'verified'},
-      {id:2,first_name:'James',last_name:'Phillip',firm:'Phillip Accounting',country:'Trinidad & Tobago',specialisation:'Bookkeeping',experience:'5–10 years',bio:'Chartered accountant specialising in bookkeeping for small businesses.',status:'verified'},
-      {id:3,first_name:'Priya',last_name:'Nair',firm:'Nair Financial',country:'United Kingdom',specialisation:'CFO Services',experience:'10–20 years',bio:'Fractional CFO helping SaaS and scale-up companies with financial strategy.',status:'verified'},
-      {id:4,first_name:'Marcus',last_name:'Webb',firm:'Webb Tax Group',country:'Canada',specialisation:'Tax & Filing',experience:'5–10 years',bio:'Corporate tax specialist focused on startups and tech companies.',status:'verified'},
-    ];
+    allAccountants = [];
   }
   filterAccountants();
   loadMyAccountant();

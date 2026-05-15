@@ -74,6 +74,7 @@
       if (typeof window.renderCOA      === 'function') window.renderCOA();
       if (typeof window.closeModal     === 'function') window.closeModal('journal-entry-modal');
       tip('Journal entry ' + status.toLowerCase());
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) {
       tip('Could not save journal entry — ' + e.message, true);
     }

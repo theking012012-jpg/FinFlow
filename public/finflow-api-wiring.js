@@ -152,6 +152,7 @@
         closeModal('goal-modal');
         if (typeof renderPersonal === 'function') renderPersonal();
         notify('Goal added ✦');
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save goal — ' + e.message, true);
       }
@@ -167,6 +168,7 @@
         window.goals.splice(idx, 1);
         if (typeof renderPersonal === 'function') renderPersonal();
         notify('Goal deleted');
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not delete goal — ' + e.message, true);
       }
@@ -223,6 +225,7 @@
         closeModal('transaction-modal');
         if (typeof renderPersonal === 'function') renderPersonal();
         notify('Transaction added ✦');
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save transaction — ' + e.message, true);
       }
@@ -260,6 +263,7 @@
         closeModal('holding-modal');
         if (typeof renderInvestments === 'function') renderInvestments();
         notify(`${ticker} added to portfolio ✦`);
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save holding — ' + e.message, true);
       }
@@ -318,6 +322,7 @@
         closeModal('customer-modal');
         const search = document.getElementById('cust-search')?.value;
         if (typeof renderCustomers === 'function') renderCustomers(search);
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save customer — ' + e.message, true);
       }
@@ -337,6 +342,7 @@
         closeModal('customer-modal');
         if (typeof renderCustomers === 'function') renderCustomers();
         notify('Customer deleted');
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not delete customer — ' + e.message, true);
       }

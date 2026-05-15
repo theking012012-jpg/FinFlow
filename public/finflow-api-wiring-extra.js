@@ -680,6 +680,11 @@
     loadHoldingsFromDB();
     loadProjects();
 
+    // Expose so entity-switch and external callers can reload
+    window._loadTimesheetFromDB  = loadTimesheet;
+    window._loadHoldingsFromDB   = loadHoldingsFromDB;
+    window._loadProjectsFromDB   = loadProjects;
+
     // Re-load when navigating to these pages via showPage
     const _orig = window.showPage;
     if (typeof _orig === 'function') {

@@ -58,7 +58,7 @@
         if (_activeEnt?._dbId) {
           try { await api('POST', `/api/entities/${_activeEnt._dbId}/activate`); } catch(e) {}
         }
-        const rows = await api('GET', '/api/invoices');
+        const rows = await api('GET', '/api/invoices' + (_activeEnt?._dbId ? '?entity_id=' + _activeEnt._dbId : ''));
         if (rows && rows.length > 0) {
           // Map DB shape → frontend shape, prepend to seed data or replace
           const mapped = rows.map(r => ({
@@ -209,7 +209,8 @@
     // Boot: load saved expenses
     async function loadExpensesFromDB() {
       try {
-        const rows = await api('GET', '/api/expenses');
+        const _eidExp = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
+        const rows = await api('GET', '/api/expenses' + (_eidExp ? '?entity_id=' + _eidExp : ''));
         if (rows && rows.length > 0) {
           const mapped = rows.map(r => ({
             _dbId:  r.id,
@@ -325,7 +326,8 @@
 
     async function loadInventoryFromDB() {
       try {
-        const rows = await api('GET', '/api/inventory');
+        const _eidInv = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
+        const rows = await api('GET', '/api/inventory' + (_eidInv ? '?entity_id=' + _eidInv : ''));
         _inventoryFetched = true;
         console.log('[Inventory] API returned', rows ? rows.length : 0, 'rows');
         if (rows && rows.length > 0) {
@@ -381,12 +383,14 @@
       const max      = Math.max(units * 2, 100);
 
       try {
+        const _eidProd = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
         const saved = await api('POST', '/api/inventory', {
           sku,
           name,
           units,
           max_units: max,
           cost,
+          entity_id: _eidProd,
         });
 
         if (!window.inventory) window.inventory = [];
@@ -519,7 +523,8 @@
     // Boot: load saved payroll from DB
     async function loadPayrollFromDB() {
       try {
-        const rows = await api('GET', '/api/payroll');
+        const _eidPay = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
+        const rows = await api('GET', '/api/payroll' + (_eidPay ? '?entity_id=' + _eidPay : ''));
         if (!rows || rows.length === 0) return;
 
         rows.forEach(r => {
@@ -820,6 +825,26 @@
         notify('Could not delete item — ' + e.message, true);
       }
     };
+
+    // ── Expose load functions so entity-switch and showPage can reload ─
+    window._loadInvoicesFromDB  = loadInvoicesFromDB;
+    window._loadExpensesFromDB  = loadExpensesFromDB;
+    window._loadInventoryFromDB = loadInventoryFromDB;
+    window._loadPayrollFromDB   = loadPayrollFromDB;
+    window._loadItemsFromDB     = loadItemsFromDB;
+
+    // ── showPage hooks: reload when navigating to entity-scoped pages ─
+    const _medOrig = window.showPage;
+    if (typeof _medOrig === 'function') {
+      window.showPage = function (id, navEl) {
+        _medOrig(id, navEl);
+        if (id === 'invoices')   loadInvoicesFromDB();
+        if (id === 'expenses')   loadExpensesFromDB();
+        if (id === 'inventory')  loadInventoryFromDB();
+        if (id === 'payroll')    loadPayrollFromDB();
+        if (id === 'items')      loadItemsFromDB();
+      };
+    }
 
     console.log('[FinFlow API Wiring — Medium] ✅ Invoices, Expenses, Inventory, Payroll, Items patched');
   })()

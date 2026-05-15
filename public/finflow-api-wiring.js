@@ -173,6 +173,31 @@
     };
 
     // ════════════════════════════════════════════
+    // 2b. GOALS — load on boot
+    // ════════════════════════════════════════════
+    async function loadGoalsFromDB() {
+      try {
+        const rows = await api('GET', '/api/goals');
+        if (rows && rows.length > 0) {
+          if (!window.goals) window.goals = [];
+          window.goals.length = 0;
+          rows.forEach(g => window.goals.push({
+            _dbId:   g.id,
+            name:    g.name,
+            current: g.current_val,
+            target:  g.target_val,
+            monthly: g.monthly_contrib,
+            color:   g.color || 'var(--acc)',
+          }));
+          if (typeof renderPersonal === 'function') renderPersonal();
+        }
+      } catch (e) {
+        // Not logged in yet or no goals — fine
+      }
+    }
+    loadGoalsFromDB();
+
+    // ════════════════════════════════════════════
     // 3. PERSONAL TRANSACTIONS — load on boot + save
     // ════════════════════════════════════════════
     async function loadPersonalTransactionsFromDB() {
@@ -341,6 +366,22 @@
         notify('Could not delete customer — ' + e.message, true);
       }
     };
+
+    // ── Expose load functions for entity-switch and external callers ─
+    window._loadGoalsFromDB                = loadGoalsFromDB;
+    window._loadPersonalTransactionsFromDB = loadPersonalTransactionsFromDB;
+
+    // ── showPage hook: reload personal data when user visits that page ─
+    const _wiringOrig = window.showPage;
+    if (typeof _wiringOrig === 'function') {
+      window.showPage = function (id, navEl) {
+        _wiringOrig(id, navEl);
+        if (id === 'personal') {
+          loadGoalsFromDB();
+          loadPersonalTransactionsFromDB();
+        }
+      };
+    }
 
     console.log('[FinFlow API Wiring] ✅ All easy patches applied');
   })()

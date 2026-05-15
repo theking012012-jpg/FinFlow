@@ -1789,7 +1789,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="inv-item-row" style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>SKU</span><span>Product</span><span>In stock</span><span>Level</span><span>Value</span><span></span></div>
           <div id="inventory-list"><!-- rendered --></div>
         </div>
-        <button class="btn btn-ghost" onclick="sendPrompt('Which inventory items should I reorder this week? I have 9 Webcam 4K Ultras and 4 Ergonomic Mice left in stock.')">Get AI reorder recommendations ↗</button>
+        <button class="btn btn-ghost" onclick="sendPrompt('Which inventory items should I reorder this week based on my current stock levels?')">Get AI reorder recommendations ↗</button>
       </div>
 
       <!-- API CONNECTIONS -->
@@ -2119,14 +2119,14 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('What are my biggest financial risks for the next quarter?')" style="text-align:left;font-size:12px;justify-content:flex-start">Biggest risks next quarter ↗</button>
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('How can I reduce business expenses without cutting headcount or salary?')" style="text-align:left;font-size:12px;justify-content:flex-start">Reduce expenses without cuts ↗</button>
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('Generate a full annual financial health report with recommendations for May 2025 - April 2026')" style="text-align:left;font-size:12px;justify-content:flex-start">Generate annual health report ↗</button>
-              <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('Should I hire another developer given $469,200 annual revenue and 14-month runway?')" style="text-align:left;font-size:12px;justify-content:flex-start">Should I hire another developer? ↗</button>
+              <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('Should I hire another developer given my current annual revenue and runway?')" style="text-align:left;font-size:12px;justify-content:flex-start">Should I hire another developer? ↗</button>
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('What is my optimal salary as a business owner given current revenue and expenses?')" style="text-align:left;font-size:12px;justify-content:flex-start">What salary should I pay myself? ↗</button>
             </div>
           </div>
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">Financial health score</div></div>
             <div style="text-align:center;padding:.75rem 0 1rem"><div id="health-score" style="font-size:52px;font-weight:400;font-family:var(--font-display);background:linear-gradient(135deg,var(--acc),var(--acc-light));-webkit-background-clip:text;-webkit-text-fill-color:transparent">0</div><div style="font-size:12px;color:var(--t2);letter-spacing:.06em;text-transform:uppercase" id="health-label">out of 100</div></div>
-            <div class="bar-row"><span class="bar-label">Cash flow</span><div class="bar-track"><div class="bar-fill" id="hs-cf" style="width:91%;background:var(--green)"></div></div><span class="bar-val" id="hs-cf-v">91/100</span></div>
+            <div class="bar-row"><span class="bar-label">Cash flow</span><div class="bar-track"><div class="bar-fill" id="hs-cf" style="width:0%;background:var(--green)"></div></div><span class="bar-val" id="hs-cf-v">0/100</span></div>
             <div class="bar-row"><span class="bar-label">Profitability</span><div class="bar-track"><div class="bar-fill" id="hs-pr" style="width:0%;background:var(--green)"></div></div><span class="bar-val" id="hs-pr-v">0/100</span></div>
             <div class="bar-row"><span class="bar-label">Receivables</span><div class="bar-track"><div class="bar-fill" id="hs-rec" style="width:0%;background:var(--amber)"></div></div><span class="bar-val" id="hs-rec-v">0/100</span></div>
             <div class="bar-row"><span class="bar-label">Growth</span><div class="bar-track"><div class="bar-fill" id="hs-gr" style="width:0%;background:var(--green)"></div></div><span class="bar-val" id="hs-gr-v">0/100</span></div>
@@ -2599,8 +2599,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><path d="M2 2h12v12H2z"/><path d="M2 6h12M6 6v8"/></svg>Personal finance targets</div>
               <div class="field-group">
-                <div class="field-wrap"><label class="field-label">Income target ($/mo)</label><input class="finput" id="s-inc-target" value="6800" type="number"></div>
-                <div class="field-wrap"><label class="field-label">Monthly budget ($)</label><input class="finput" id="s-budget" value="3200" type="number"></div>
+                <div class="field-wrap"><label class="field-label">Income target ($/mo)</label><input class="finput" id="s-inc-target" value="0" type="number"></div>
+                <div class="field-wrap"><label class="field-label">Monthly budget ($)</label><input class="finput" id="s-budget" value="0" type="number"></div>
               </div>
               <div class="field-wrap"><label class="field-label">Savings rate target (%)</label><input class="finput" id="s-savings-target" value="40" type="number" min="0" max="100" oninput="refreshPersonal()"></div>
             </div>
@@ -4248,32 +4248,11 @@ let ownerPayrollByEntity = {};
 let ownerPayroll = null;
 let activeOwnerEntityIdx = 0;
 // Personal
-let spending = [
-  {label:'Rent / mortgage',amount:1800,color:'var(--acc)'},
-  {label:'Groceries',      amount:580, color:'#c9a84c99'},
-  {label:'Subscriptions',  amount:310, color:'#c9a84c66'},
-  {label:'Dining out',     amount:240, color:'#c9a84c44'},
-  {label:'Transport',      amount:150, color:'#c9a84c22'},
-];
-let goals = [
-  {name:'Emergency fund',      current:12000,target:15000,monthly:500, color:'var(--green)'},
-  {name:'House deposit',       current:28000,target:60000,monthly:1500,color:'var(--acc)'},
-  {name:'Investment portfolio',current:44500,target:50000,monthly:1800,color:'var(--acc-light)'},
-];
-let persTransactions = [
-  {desc:'Salary — April',       cat:'Income',        amount:6800,type:'income', date:'Apr 30'},
-  {desc:'Rent payment',         cat:'Rent/Mortgage', amount:1800,type:'expense',date:'Apr 1'},
-  {desc:'Supermarket run',      cat:'Groceries',     amount:182, type:'expense',date:'Apr 8'},
-  {desc:'Netflix & Spotify',    cat:'Subscriptions', amount:42,  type:'expense',date:'Apr 3'},
-  {desc:'Dinner with client',   cat:'Dining out',    amount:95,  type:'expense',date:'Apr 12'},
-  {desc:'Fuel',                 cat:'Transport',     amount:60,  type:'expense',date:'Apr 15'},
-  {desc:'Dividend income',      cat:'Income',        amount:320, type:'income', date:'Apr 20'},
-  {desc:'Gym membership',       cat:'Subscriptions', amount:45,  type:'expense',date:'Apr 5'},
-  {desc:'Uber rides',           cat:'Transport',     amount:38,  type:'expense',date:'Apr 22'},
-  {desc:'Grocery — bulk shop',  cat:'Groceries',     amount:210, type:'expense',date:'Apr 28'},
-];
-let basePersonalIncome = 6800;
-let baseNetWorth = 84500;
+let spending = [];
+let goals = [];
+let persTransactions = [];
+let basePersonalIncome = 0;
+let baseNetWorth = 0;
 // User invoices — populated from DB via loadEntityData
 let userInvoices = [];
 let nextInvId = 100;
@@ -5067,7 +5046,7 @@ function removeOwnerFromPayroll(){
 function syncAllPayrollsToPersonal(){
   const entries = Object.entries(ownerPayrollByEntity);
   const totalUSD = calcTotalOwnerNetUSD();
-  basePersonalIncome = entries.length > 0 ? Math.round(totalUSD) : 6800;
+  basePersonalIncome = entries.length > 0 ? Math.round(totalUSD) : 0;
 
   // Replace salary transactions with one per entity
   persTransactions = persTransactions.filter(t=>!(t.cat==='Income' && t.desc.startsWith('Salary —')));
@@ -5141,7 +5120,7 @@ function syncAllPayrollsToPersonal(){
     : entries.length === 1 ? (entries[0][1]?.entityName||'Entity') : 'Not on payroll';
   if(linkNet) linkNet.textContent = _dispCurPayroll.symbol + totalDisp.toLocaleString() + '/mo';
 
-  baseNetWorth = Math.round(84500 + (Math.max(0, basePersonalIncome - spending.reduce((a,s)=>a+s.amount,0))*2));
+  baseNetWorth = Math.round(Math.max(0, basePersonalIncome - spending.reduce((a,s)=>a+s.amount,0))*2);
   renderPersonal();
 }
 // openOwnerModal — all call sites now route to the full multi-entity modal
@@ -5577,36 +5556,33 @@ function updateAI(d=getPeriodData()){
   document.getElementById('ai-period-label').textContent=d.label;
   const margin=Math.round(d.profit/d.rev*100);
   const insights=currentPeriod==='year'?[
-    `Full year revenue: ${S(d.rev)} — a 38% annualised growth rate vs the prior year.`,
-    `Best month: April 2026 at ${S(REV[11])}. Weakest: May 2025 at ${S(REV[0])}. Strong scaling trend.`,
-    `Net profit margin: ${margin}%. Annual profit: ${S(d.profit)}. Business is highly profitable.`,
-
-    `Payroll-to-revenue: ${Math.round(d.sal/d.rev*100)}% — healthy. Industry avg for your size is 35–40%.`,
-    `Webcam 4K Ultra (9 units) and Ergonomic Mouse (4 units) are critically low on stock.`,
+    `Full year revenue: ${S(d.rev)}. Net profit margin: ${margin}%. Annual profit: ${S(d.profit)}.`,
+    d.rev>0?`Best month: ${MONTH_FULL[REV.indexOf(Math.max(...REV))]} at ${S(Math.max(...REV))}. Weakest: ${MONTH_FULL[REV.indexOf(Math.min(...REV))]} at ${S(Math.min(...REV))}.`:`Add invoices to see monthly revenue breakdown.`,
+    d.sal>0&&d.rev>0?`Payroll-to-revenue: ${Math.round(d.sal/d.rev*100)}% — industry avg for your size is 35–40%.`:`Add payroll data to see salary-to-revenue ratio.`,
+    _topClients.length ? `Top client this year: ${_topClients[0].label} at ${S(_topClients[0].total)} (${d.rev>0?Math.round(_topClients[0].total/d.rev*100):0}% of revenue).` : `Add invoices to see client revenue breakdown.`,
+    inventory.filter(i=>(i.stock||0)<=(i.reorder||0)&&(i.reorder||0)>0).length>0?`Inventory alert: ${inventory.filter(i=>(i.stock||0)<=(i.reorder||0)&&(i.reorder||0)>0).length} product(s) at or below reorder threshold.`:`All inventory levels are within normal range.`,
   ]:currentPeriod==='quarter'?[
-    `Q4 revenue: ${S(d.rev)} — your strongest quarter. Net profit: ${S(d.profit)} (${margin}% margin).`,
+    `Q4 revenue: ${S(d.rev)} — net profit: ${S(d.profit)} (${margin}% margin).`,
     `Monthly average profit in Q4: ${S(Math.round(d.profit/3))} — up from ${S(Math.round(sum(PROFIT,6,9)/3))} in Q3.`,
     _topClients.length ? `Top client this quarter: ${_topClients[0].label} at ${S(_topClients[0].total)} (${d.rev>0?Math.round(_topClients[0].total/d.rev*100):0}% of revenue).` : `Add invoices to see client revenue breakdown.`,
-    `Payroll cost Q4: ${S(d.sal)} — at ${Math.round(d.sal/d.rev*100)}% of revenue, below industry average.`,
-
-    `90-day forecast: ${S(PROFIT[9]+PROFIT[10]+PROFIT[11]+28000+30200+32100)} net positive across Q4 + 3 forecast months.`,
+    d.sal>0&&d.rev>0?`Payroll cost Q4: ${S(d.sal)} — at ${Math.round(d.sal/d.rev*100)}% of revenue.`:`Add payroll data to see salary-to-revenue ratio.`,
+    `90-day forecast: ${S(PROFIT[9]+PROFIT[10]+PROFIT[11])} net across Q4.`,
   ]:[
     `${MONTH_FULL[currentMonthIdx]} revenue: ${S(d.rev)} — ${margin}% profit margin.`,
-    `Expenses this month: ${S(d.exp)}. Largest cost: salaries at ${S(d.sal)} (${Math.round(d.sal/d.exp*100)}%).`,
+    d.exp>0?`Expenses this month: ${S(d.exp)}. Largest cost: salaries at ${S(d.sal)} (${d.exp>0?Math.round(d.sal/d.exp*100):0}%).`:`No expenses recorded this month.`,
     `Net profit: ${S(d.profit)} — ${currentMonthIdx>0?`${pct(d.profit,PROFIT[currentMonthIdx-1])>0?'up':'down'} ${Math.abs(pct(d.profit,PROFIT[currentMonthIdx-1]))}% vs last month`:'first month on record'}.`,
     _topClients.length ? `Top client this month: ${_topClients[0].label} at ${S(_topClients[0].total)} (${d.rev>0?Math.round(_topClients[0].total/d.rev*100):0}% of revenue).` : `Add invoices to track client revenue.`,
-    `Tax withheld on payroll: ${S(Math.round(d.exp*.16))}. Estimated quarterly tax liability: ${S(Math.round(d.profit*.25))}.`,
-    `Inventory alert: 2 products below reorder threshold. Restock before end of month.`,
+    d.profit>0?`Estimated quarterly tax liability: ${S(Math.round(d.profit*.25))}.`:`No profit recorded — no tax liability estimate.`,
   ];
   document.getElementById('ai-insights-list').innerHTML=insights.map(t=>`<div class="ai-insight">${esc(t)}</div>`).join('');
   document.getElementById('ai-period-label').textContent=d.label;
 }
-function updateHealthScore(savingsRate=52,income=6800,surplus=3560){
+function updateHealthScore(savingsRate=0,income=0,surplus=0){
   const d=getPeriodData();
   const profitMargin=Math.round(d.profit/d.rev*100);
   const cfScore=Math.min(100,Math.round(60+profitMargin*.8));
   const prScore=Math.min(100,Math.round(55+profitMargin));
-  const recScore=Math.max(40,100-Math.round(9150/d.rev*100*5));
+  const recScore=d.rev>0?Math.max(0,100-Math.round((userInvoices.filter(i=>i.status==='overdue').reduce((a,i)=>a+(i.amount||0),0)/d.rev)*100*5)):0;
   const grScore=Math.min(100,Math.round(70+Math.max(0,REV[11]-REV[0])/REV[0]*50));
   const overall=Math.round((cfScore+prScore+recScore+grScore)/4);
   const el=document.getElementById('health-score');
@@ -6014,18 +5990,7 @@ window.toggleGroup = function(name) {
 // ════════════════════════════════════════════
 // ITEMS PAGE
 // ════════════════════════════════════════════
-const itemsData=[
-  {name:'Web Development Services',type:'Service',price:150,unit:'hr',stock:null,status:'Active',sku:'SVC-001'},
-  {name:'UI/UX Design',type:'Service',price:120,unit:'hr',stock:null,status:'Active',sku:'SVC-002'},
-  {name:'SEO Monthly Retainer',type:'Service',price:2400,unit:'mo',stock:null,status:'Active',sku:'SVC-003'},
-  {name:'Laptop Stand Pro',type:'Product',price:89,unit:'each',stock:34,status:'Active',sku:'PRD-001'},
-  {name:'Webcam 4K Ultra',type:'Product',price:199,unit:'each',stock:9,status:'Low Stock',sku:'PRD-002'},
-  {name:'Ergonomic Mouse',type:'Product',price:64,unit:'each',stock:4,status:'Low Stock',sku:'PRD-003'},
-  {name:'USB-C Hub 7-in-1',type:'Product',price:45,unit:'each',stock:82,status:'Active',sku:'PRD-004'},
-  {name:'Mechanical Keyboard',type:'Product',price:149,unit:'each',stock:28,status:'Active',sku:'PRD-005'},
-  {name:'Annual Support Plan',type:'Service',price:1800,unit:'yr',stock:null,status:'Active',sku:'SVC-004'},
-  {name:'Cloud Hosting Setup',type:'Service',price:500,unit:'project',stock:null,status:'Active',sku:'SVC-005'},
-];
+const itemsData=[];
 let itemsFilter='all';
 function renderItems(filter=itemsFilter){
   itemsFilter=filter;
@@ -7317,8 +7282,8 @@ function calcAndRenderTax(){
   const annualRev   = typeof sum==='function' && typeof REV!=='undefined'  ? sum(REV,0,12)      : 0;
   const annualSal   = typeof sum==='function' && typeof EXP_SAL!=='undefined' ? sum(EXP_SAL,0,12) : 0;
   const annualRent  = typeof EXP_RENT!=='undefined' ? (EXP_RENT[0]||0)*12  : 0;
-  const annualSW    = typeof sum==='function' && typeof EXP_SW!=='undefined'  ? sum(EXP_SW,0,12)  : 12000;
-  const annualMkt   = typeof sum==='function' && typeof EXP_MKT!=='undefined' ? sum(EXP_MKT,0,12) : 15450;
+  const annualSW    = typeof sum==='function' && typeof EXP_SW!=='undefined'  ? sum(EXP_SW,0,12)  : 0;
+  const annualMkt   = typeof sum==='function' && typeof EXP_MKT!=='undefined' ? sum(EXP_MKT,0,12) : 0;
 
   const totalDeductible = annualSal + annualRent + annualSW + annualMkt;
   const taxableIncome   = Math.max(0, annualRev - totalDeductible);

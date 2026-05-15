@@ -1268,10 +1268,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- BUDGET PAGE -->
       <div class="page" id="page-budget">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total budget</div><div class="mc-val">$0</div><div class="mc-change neutral">Annual</div></div>
-          <div class="mc"><div class="mc-label">Spent</div><div class="mc-val">$0</div><div class="mc-change neutral">—</div></div>
-          <div class="mc"><div class="mc-label">Remaining</div><div class="mc-val">$0</div><div class="mc-change neutral">—</div></div>
-          <div class="mc"><div class="mc-label">Variance</div><div class="mc-val" style="color:var(--green)">$0</div><div class="mc-change neutral">—</div></div>
+          <div class="mc"><div class="mc-label">Total budget</div><div class="mc-val" id="budget-total">$0</div><div class="mc-change neutral" id="budget-total-sub">No targets set</div></div>
+          <div class="mc"><div class="mc-label">Spent</div><div class="mc-val" id="budget-spent">$0</div><div class="mc-change neutral" id="budget-spent-pct">—</div></div>
+          <div class="mc"><div class="mc-label">Remaining</div><div class="mc-val" id="budget-remaining">$0</div><div class="mc-change neutral" id="budget-remaining-sub">—</div></div>
+          <div class="mc"><div class="mc-label">Variance</div><div class="mc-val" id="budget-variance">$0</div><div class="mc-change neutral" id="budget-variance-sub">—</div></div>
         </div>
         <div class="card">
           <div class="card-header">
@@ -1356,8 +1356,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               </select>
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr repeat(3,80px) 90px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
-            <span>Line</span><span style="text-align:right">FinFlow</span><span style="text-align:right">FinScale</span><span style="text-align:right">FinPay</span><span style="text-align:right">Consolidated</span>
+          <div id="consol-pl-header" style="display:grid;grid-template-columns:1fr 90px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
+            <span>Line</span><span style="text-align:right">Consolidated</span>
           </div>
           <div id="consol-pl"></div>
         </div>
@@ -1380,10 +1380,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">Role permissions</div></div>
-            <div style="display:grid;grid-template-columns:1fr repeat(4,22px);gap:6px;padding:0 0 6px;font-size:9px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--bd);align-items:center">
-              <span>Permission</span><span title="Owner">O</span><span title="Admin">A</span><span title="Accountant">Ac</span><span title="Viewer">V</span>
+            <div style="display:grid;grid-template-columns:1fr repeat(4,32px);gap:6px;padding:0 0 6px;font-size:9px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--bd);align-items:center">
+              <span>Permission</span><span style="text-align:center" title="Owner">O</span><span style="text-align:center" title="Admin">A</span><span style="text-align:center" title="Accountant">Ac</span><span style="text-align:center" title="Viewer">V</span>
             </div>
             <div id="perm-list"></div>
+            <div style="margin-top:.75rem;display:flex;justify-content:flex-end">
+              <button class="btn btn-primary btn-sm" onclick="savePermissions()">Save permissions</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1391,9 +1394,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- AUDIT TRAIL PAGE -->
       <div class="page" id="page-audit">
         <div class="metrics-grid-3">
-          <div class="mc"><div class="mc-label">Events today</div><div class="mc-val">47</div><div class="mc-change neutral">Across all users</div></div>
-          <div class="mc"><div class="mc-label">Last change</div><div class="mc-val" style="font-size:18px">2m ago</div><div class="mc-change neutral">Invoice updated</div></div>
-          <div class="mc"><div class="mc-label">Retention</div><div class="mc-val">7 yrs</div><div class="mc-change up">Full history</div></div>
+          <div class="mc"><div class="mc-label">Events loaded</div><div class="mc-val" id="audit-event-count">—</div><div class="mc-change neutral">Across all users</div></div>
+          <div class="mc"><div class="mc-label">Last change</div><div class="mc-val" style="font-size:15px" id="audit-last-time">—</div><div class="mc-change neutral" id="audit-last-action">—</div></div>
+          <div class="mc"><div class="mc-label">Retention</div><div class="mc-val">Full history</div><div class="mc-change up">All time</div></div>
         </div>
         <div class="card">
           <div class="card-header">
@@ -4177,6 +4180,18 @@ async function loadEntityData(idx){
         gross:r.gross, taxRate:r.tax_rate, net:Math.round(r.gross*(1-r.tax_rate/100)),
         initials:(r.fname[0]+(r.lname||'')[0]||'').toUpperCase(), avClass:r.av_class||'av-blue', isOwner:false,
       }));
+      // Restore owner payroll so renderPayroll (medium.js override) shows it
+      const ownerRow = payroll.find(r=>r.is_owner);
+      if(ownerRow && !window.ownerPayroll){
+        window.ownerPayroll = {
+          _dbId:ownerRow.id, fname:ownerRow.fname, lname:ownerRow.lname, role:ownerRow.role||'',
+          type:ownerRow.emp_type||'Full-time', gross:ownerRow.gross, taxRate:ownerRow.tax_rate,
+          net:Math.round(ownerRow.gross*(1-ownerRow.tax_rate/100)),
+          initials:(ownerRow.fname[0]+(ownerRow.lname||'')[0]||'').toUpperCase(),
+          avClass:ownerRow.av_class||'av-blue', isOwner:true,
+        };
+        console.log('[loadEntityData] Restored owner payroll from DB:', window.ownerPayroll.fname, window.ownerPayroll.lname, '| gross:', window.ownerPayroll.gross);
+      }
     }
 
     // Store globally for dashboard wiring — MUST update before calling updateDashboard
@@ -7794,10 +7809,12 @@ function startStripeFeed(){
 document.addEventListener('DOMContentLoaded',startStripeFeed);
 
 // ── 4. BUDGET MODULE ────────────────────────────────────────────────────────
-const BUDGET_DATA=[];
+window.BUDGET_DATA=window.BUDGET_DATA||[];
 function renderBudget(){
   const el=document.getElementById('budget-rows');
   if(!el)return;
+  const BUDGET_DATA=window.BUDGET_DATA||[];
+  if(!BUDGET_DATA.length){el.innerHTML='<div style="padding:1.2rem;text-align:center;color:var(--t3);font-size:13px">No budget targets set. Click "Edit targets" to add categories.</div>';return;}
   el.innerHTML=BUDGET_DATA.map(r=>{
     const pct=Math.min(100,(r.actual/r.budget)*100);
     const over=r.actual>r.budget;
@@ -8177,6 +8194,17 @@ function renderConsolPL(){
   const pl = document.getElementById('consol-pl');
   if(!pl) return;
   const cur = window.CURRENCIES[consolCurrency] || {symbol:'$'};
+  const n = ENTITIES.length;
+  const cols = n > 0 ? `1fr repeat(${n},80px) 90px` : '1fr 90px';
+
+  // Update header with real entity names
+  const hdr = document.getElementById('consol-pl-header');
+  if(hdr){
+    hdr.style.gridTemplateColumns = cols;
+    hdr.innerHTML = '<span>Line</span>' +
+      ENTITIES.map(e=>`<span style="text-align:right">${e.name}</span>`).join('') +
+      '<span style="text-align:right">Consolidated</span>';
+  }
 
   pl.innerHTML = CONSOL_ROW_DEFS.map(row=>{
     const entityVals = ENTITIES.map(e=>`
@@ -8184,7 +8212,7 @@ function renderConsolPL(){
     ).join('');
     const total = getConsolTotal(row.key);
     return `
-      <div style="display:grid;grid-template-columns:1fr repeat(3,80px) 90px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);align-items:center;font-size:12px">
+      <div style="display:grid;grid-template-columns:${cols};gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);align-items:center;font-size:12px">
         <span style="color:var(--t1);font-weight:500">${row.label}</span>
         ${entityVals}
         <span style="text-align:right;font-family:var(--font-mono);font-weight:600;color:${row.color}">${fmtTotal(total)}</span>
@@ -8308,14 +8336,30 @@ window.renderTeam=function(){
   }
 
   const pl=document.getElementById('perm-list');
-  if(pl)pl.innerHTML=PERMS.map(p=>{
-    const dot=(on)=>`<div class="perm-dot ${on?'perm-dot-on':'perm-dot-off'}">${on?'✓':'—'}</div>`;
-    return `<div class="perm-row">
+  if(pl)pl.innerHTML=PERMS.map((p,pi)=>{
+    const chk=(role,on,disabled)=>`<input type="checkbox" data-pi="${pi}" data-role="${role}" ${on?'checked':''} ${disabled?'disabled':''} onchange="window._onPermChange(this)" style="width:16px;height:16px;accent-color:var(--acc);cursor:${disabled?'default':'pointer'};margin:0 auto;display:block">`;
+    return `<div class="perm-row" style="display:grid;grid-template-columns:1fr repeat(4,32px);gap:6px;align-items:center">
       <div><div class="perm-label">${p.label}</div><div class="perm-desc">${p.desc}</div></div>
-      <div class="perm-dots">${dot(p.o)}${dot(p.a)}${dot(p.ac)}${dot(p.v)}</div>
+      ${chk('o',p.o,true)}${chk('a',p.a,false)}${chk('ac',p.ac,false)}${chk('v',p.v,false)}
     </div>`;
   }).join('');
 };
+window._onPermChange=function(cb){
+  const pi=parseInt(cb.dataset.pi);const role=cb.dataset.role;
+  if(PERMS[pi])PERMS[pi][role]=cb.checked;
+};
+window.savePermissions=function(){
+  const state=PERMS.map(p=>({a:p.a,ac:p.ac,v:p.v}));
+  localStorage.setItem('ff_permissions',JSON.stringify(state));
+  notify('Role permissions saved ✦');
+};
+(function loadPermissions(){
+  try{
+    const saved=JSON.parse(localStorage.getItem('ff_permissions')||'null');
+    if(!saved||!Array.isArray(saved))return;
+    saved.forEach((s,i)=>{if(PERMS[i]){if(s.a!=null)PERMS[i].a=!!s.a;if(s.ac!=null)PERMS[i].ac=!!s.ac;if(s.v!=null)PERMS[i].v=!!s.v;}});
+  }catch(e){}
+})();
 
 // ── AUDIT TRAIL ──────────────────────────────────────────────────────────────
 const AUDIT_EVENTS=[
@@ -8364,6 +8408,26 @@ window.renderAudit=async function(){
           <div class="audit-time">${e.created_at?new Date(e.created_at).toLocaleString():''}</div>
         </div>
       </div>`).join('');
+    // Update KPI cards with real data
+    (function(){
+      const _set=(id,v)=>{const _e=document.getElementById(id);if(_e)_e.textContent=v;};
+      _set('audit-event-count', entries.length);
+      const _last=entries[0];
+      if(_last){
+        const _d=_last.created_at?new Date(_last.created_at):null;
+        const _now=new Date();
+        let _rel='—';
+        if(_d){
+          const _diff=Math.floor((_now-_d)/1000);
+          if(_diff<60)_rel=_diff+'s ago';
+          else if(_diff<3600)_rel=Math.floor(_diff/60)+'m ago';
+          else if(_diff<86400)_rel=Math.floor(_diff/3600)+'h ago';
+          else _rel=_d.toLocaleDateString();
+        }
+        _set('audit-last-time',_rel);
+        _set('audit-last-action',(_last.action||'')+(_last.table_name?' · '+_last.table_name:''));
+      }
+    })();
   }catch(err){
     const filtered=auditFilter==='all'?AUDIT_EVENTS:AUDIT_EVENTS.filter(e=>e.type===auditFilter);
     el.innerHTML=filtered.map(e=>`
@@ -9389,17 +9453,6 @@ setTimeout(()=>{
         <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">${inc>0?'$'+(inc/1000).toFixed(1)+'K':'—'}</div>
       </div>`;
     });
-
-    // Append static REIT row
-    rows.push(`<div style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;font-size:12.5px">
-      <div style="width:30px;height:30px;border-radius:7px;background:var(--purple-bg);border:1px solid var(--purple-bd);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--purple)">RE</div>
-      <div><div style="font-weight:500;color:var(--t1)">Commercial REIT</div><div style="font-size:11px;color:var(--t3)">Real Estate · private</div></div>
-      <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">—</div>
-      <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$148.6K</div>
-      <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">$130.0K</div>
-      <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+14.3%</div>
-      <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$8.9K</div>
-    </div>`);
 
     list.innerHTML = rows.join('');
 

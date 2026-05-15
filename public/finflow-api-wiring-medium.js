@@ -523,9 +523,16 @@
     // Boot: load saved payroll from DB
     async function loadPayrollFromDB() {
       try {
-        const _eidPay = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
-        const rows = await api('GET', '/api/payroll' + (_eidPay ? '?entity_id=' + _eidPay : ''));
+        const _activeEnt = (window.ENTITIES||[]).find(e=>e.active);
+        const _eidPay = _activeEnt?._dbId;
+        const _url = '/api/payroll' + (_eidPay ? '?entity_id=' + _eidPay : '');
+        console.log('[Payroll] GET', _url, '| active entity:', _activeEnt?.name || '(none)', '| entity_id:', _eidPay || '(all)');
+        const rows = await api('GET', _url);
+        console.log('[Payroll] Received', rows?.length || 0, 'rows:', rows);
         if (!rows || rows.length === 0) return;
+
+        // Reset so stale employees aren't duplicated on entity switch
+        window.payrollEmployees = [];
 
         rows.forEach(r => {
           const emp = {
@@ -543,6 +550,7 @@
           };
 
           if (r.is_owner) {
+            console.log('[Payroll] Restoring owner entry:', emp.fname, emp.lname, '| gross:', emp.gross, '| dbId:', emp._dbId);
             // Restore ownerPayroll compat pointer
             window.ownerPayroll = emp;
             // Also restore ownerPayrollByEntity for the active entity
@@ -551,21 +559,19 @@
               window.ownerPayrollByEntity = window.ownerPayrollByEntity || {};
               window.ownerPayrollByEntity[activeIdx] = {
                 ...emp,
-                currency:   'USD',
+                currency:   _activeEnt?.currency || 'USD',
                 entityName: (window.ENTITIES[activeIdx] || {}).name || 'Entity',
               };
             }
           } else {
-            // Add to payrollEmployees if not already present
-            if (!window.payrollEmployees) window.payrollEmployees = [];
-            const exists = window.payrollEmployees.some(e => e._dbId === r.id);
-            if (!exists) window.payrollEmployees.push(emp);
+            window.payrollEmployees.push(emp);
           }
         });
 
+        console.log('[Payroll] State after load — ownerPayroll:', window.ownerPayroll?.fname || '(none)', '| employees:', window.payrollEmployees.length);
         if (typeof renderPayroll === 'function') renderPayroll();
       } catch (e) {
-        // Ignore
+        console.warn('[Payroll] loadPayrollFromDB failed:', e.message);
       }
     }
     loadPayrollFromDB();
@@ -636,6 +642,7 @@
       const byEntity = window.ownerPayrollByEntity || {};
       const ENTITIES = window.ENTITIES || [];
 
+      console.log('[Payroll Save] ownerPayrollByEntity keys:', Object.keys(byEntity), '| ENTITIES:', ENTITIES.map(e=>e.name+'('+e._dbId+')'));
       try {
         for (const [idxStr, op] of Object.entries(byEntity)) {
           const idx = parseInt(idxStr);
@@ -644,6 +651,7 @@
 
           if (op._dbId) {
             // Update existing record
+            console.log('[Payroll Save] PUT /api/payroll/' + op._dbId, '| entity:', entity?.name, '| gross:', op.gross);
             await api('PUT', `/api/payroll/${op._dbId}`, {
               fname:     op.fname,
               lname:     op.lname,
@@ -654,9 +662,10 @@
               av_class:  op.avClass || 'av-blue',
               entity_id: entityDbId,
             });
+            console.log('[Payroll Save] PUT success for dbId:', op._dbId);
           } else {
             // Create new record scoped to this entity
-            const saved = await api('POST', '/api/payroll', {
+            const payload = {
               fname:     op.fname,
               lname:     op.lname,
               role:      op.role     || 'CEO / Founder',
@@ -666,7 +675,10 @@
               av_class:  op.avClass  || 'av-blue',
               is_owner:  true,
               entity_id: entityDbId,
-            });
+            };
+            console.log('[Payroll Save] POST /api/payroll', payload);
+            const saved = await api('POST', '/api/payroll', payload);
+            console.log('[Payroll Save] POST response:', saved);
             // Store DB id back so next save does a PUT
             byEntity[idxStr]._dbId = saved.id;
             if (window.ownerPayroll && !window.ownerPayroll._dbId) {
@@ -674,9 +686,10 @@
             }
           }
         }
-        console.log('[FinFlow] Owner payroll persisted per-entity ✦');
+        console.log('[Payroll Save] ✅ Owner payroll persisted per-entity. window.ownerPayroll:', window.ownerPayroll);
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
+        console.error('[Payroll Save] ❌ Failed:', e.message);
         notify('Payroll saved locally but could not sync to server — ' + e.message, true);
       }
     };
@@ -948,6 +961,119 @@
       el.textContent = 'Timesheet — ' + now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
     }
 
+    // ════════════════════════════════════════════
+    // BUDGET TARGETS — load + KPI wiring
+    // ════════════════════════════════════════════
+    async function loadBudgetFromDB() {
+      try {
+        const res = await api('GET', '/api/budget-targets');
+        if (!res) return;
+        const targets = res.targets || {};
+        const expenses = window._realExpenses || [];
+
+        // Aggregate actual spend per category
+        const catActuals = {};
+        expenses.forEach(e => {
+          const cat = e.category || 'Other';
+          catActuals[cat] = (catActuals[cat] || 0) + (parseFloat(e.amount) || 0);
+        });
+
+        const COLORS = ['#c9a84c','#5aaa9e','#9e8fbf','#7db87d','#d4964a','#c46a5a'];
+        const bd = window.BUDGET_DATA;
+        if (bd) { bd.length = 0; }
+        let totalBudget = 0, totalSpent = 0;
+
+        Object.entries(targets).forEach(([cat, budget], i) => {
+          const bAmt = parseFloat(budget) || 0;
+          const actual = catActuals[cat] || 0;
+          totalBudget += bAmt;
+          totalSpent  += actual;
+          if (bd) bd.push({ cat, budget: bAmt, actual, color: COLORS[i % COLORS.length] });
+        });
+
+        const remaining = totalBudget - totalSpent;
+        const pct = totalBudget > 0 ? Math.round(totalSpent / totalBudget * 100) : 0;
+        const sm = v => typeof window.S === 'function' ? window.S(v) : '$' + Math.round(v).toLocaleString();
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+        set('budget-total',    sm(totalBudget));
+        set('budget-total-sub', totalBudget > 0 ? Object.keys(targets).length + ' categor' + (Object.keys(targets).length === 1 ? 'y' : 'ies') : 'No targets set');
+        set('budget-spent',    sm(totalSpent));
+        set('budget-spent-pct', pct + '% used');
+        set('budget-remaining', sm(Math.max(0, remaining)));
+        set('budget-remaining-sub', remaining >= 0 ? 'On track' : 'Over budget');
+        set('budget-variance',  sm(Math.abs(remaining)));
+        set('budget-variance-sub', remaining >= 0 ? 'Under budget' : 'Over budget');
+
+        if (typeof renderBudget === 'function') renderBudget();
+      } catch (e) {
+        console.warn('[Budget] Load failed:', e.message);
+      }
+    }
+    window._loadBudgetFromDB = loadBudgetFromDB;
+
+    // Budget targets modal — open a simple modal to set per-category budgets
+    window.openBudgetTargetsModal = async function () {
+      const BUDGET_CATS = ['Salaries','Rent','Software','Marketing','Travel','Meals','Office','Utilities','Other'];
+      let currentTargets = {};
+      try {
+        const res = await api('GET', '/api/budget-targets');
+        currentTargets = res?.targets || {};
+      } catch (e) { /* no saved targets yet */ }
+
+      // Build modal HTML inline
+      let existing = document.getElementById('_budget-targets-modal');
+      if (!existing) {
+        existing = document.createElement('div');
+        existing.id = '_budget-targets-modal';
+        existing.className = 'modal-overlay hidden';
+        existing.innerHTML = `
+          <div class="modal" style="max-width:420px">
+            <div class="modal-header">
+              <div><div class="modal-title">Budget targets</div><div class="modal-sub">Set annual targets per category</div></div>
+              <button class="modal-close" onclick="document.getElementById('_budget-targets-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            </div>
+            <div id="_budget-target-rows" style="display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;padding:4px 0"></div>
+            <div class="modal-footer">
+              <button class="btn btn-ghost" onclick="document.getElementById('_budget-targets-modal').classList.add('hidden')">Cancel</button>
+              <button class="btn btn-primary" onclick="window._saveBudgetTargets()">Save targets</button>
+            </div>
+          </div>`;
+        document.body.appendChild(existing);
+      }
+
+      // Populate rows
+      const rowsEl = document.getElementById('_budget-target-rows');
+      rowsEl.innerHTML = BUDGET_CATS.map(cat => `
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:12.5px;color:var(--t1);min-width:90px">${cat}</span>
+          <input type="number" class="finput" placeholder="0" min="0" step="100" data-cat="${cat}"
+            value="${currentTargets[cat]||''}" style="flex:1;font-size:12.5px;padding:5px 8px">
+        </div>`).join('');
+
+      existing.classList.remove('hidden');
+    };
+
+    window._saveBudgetTargets = async function () {
+      const inputs = document.querySelectorAll('#_budget-target-rows input[data-cat]');
+      const targets = {};
+      inputs.forEach(inp => {
+        const v = parseFloat(inp.value);
+        if (v > 0) targets[inp.dataset.cat] = v;
+      });
+      try {
+        await api('PUT', '/api/budget-targets', { targets });
+        document.getElementById('_budget-targets-modal').classList.add('hidden');
+        await loadBudgetFromDB();
+        if (typeof notify === 'function') notify('Budget targets saved ✦');
+      } catch (e) {
+        if (typeof notify === 'function') notify('Could not save targets — ' + e.message, true);
+      }
+    };
+
+    // Load budget on boot
+    loadBudgetFromDB();
+
     // ── showPage hooks: reload when navigating to entity-scoped pages ─
     const _medOrig = window.showPage;
     if (typeof _medOrig === 'function') {
@@ -958,6 +1084,7 @@
         if (id === 'inventory')  loadInventoryFromDB();
         if (id === 'payroll')    loadPayrollFromDB();
         if (id === 'items')      loadItemsFromDB();
+        if (id === 'budget')     loadBudgetFromDB();
         if (id === 'timesheet')  _setTimesheetTitle();
         if (id === 'documents')  { if (typeof window.renderDocuments === 'function') window.renderDocuments(); }
       };

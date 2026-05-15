@@ -9,7 +9,10 @@ const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
 const { db, initDB, pool } = require('./database');
-const pgSession = require('connect-pg-simple')(session);
+const { createClient } = require('@upstash/redis');
+const RedisStore = require('connect-redis').default;
+
+const redisClient = createClient({ url: process.env.REDIS_URL });
 
 let resendClient = null;
 try {
@@ -143,7 +146,7 @@ app.use(express.json({ limit: '10mb' })); // 10 mb covers base64-encoded receipt
 app.use(express.urlencoded({ extended: false }));
 app.set('trust proxy', 1);
 app.use(session({
-  store: new pgSession({ pool, tableName: 'session', createTableIfMissing: true }),
+  store: new RedisStore({ client: redisClient }),
   secret: process.env.SESSION_SECRET || 'finflow-dev-secret-change-in-production',
   resave: false,
   saveUninitialized: false,

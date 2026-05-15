@@ -8,9 +8,11 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.0",
+    "@upstash/redis": "^1.28.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
-    "connect-pg-simple": "^9.0.1",
+    "connect-redis": "^7.1.1",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.2.0",

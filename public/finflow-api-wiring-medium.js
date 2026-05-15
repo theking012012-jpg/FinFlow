@@ -889,6 +889,65 @@
     window._loadPayrollFromDB   = loadPayrollFromDB;
     window._loadItemsFromDB     = loadItemsFromDB;
 
+    // ── Scenario BASE sync: populate from real invoice/expense data ───
+    window._syncScenarioBase = function () {
+      const invs = window._realInvoices || [];
+      const exps = window._realExpenses || [];
+      const annualRev = invs.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      const annualExp = exps.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+      const monthlyExp = annualExp / 12;
+      window.BASE = { rev: annualRev, exp: annualExp, cash: 0, burn: monthlyExp };
+    };
+
+    // ── Entity KPI cards: update after renderEntities() ───────────────
+    const _medOrigRenderEntities = window.renderEntities;
+    window.renderEntities = function () {
+      if (typeof _medOrigRenderEntities === 'function') _medOrigRenderEntities();
+      const ents = typeof ENTITIES !== 'undefined' ? ENTITIES : (window.ENTITIES || []);
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      set('ent-count', ents.length);
+      const S = v => typeof window.S === 'function' ? window.S(v) : '$' + (parseFloat(v) || 0).toLocaleString();
+      const totalRev = ents.reduce((s, e) => s + (e.data && e.data.rev ? parseFloat(e.data.rev) : 0), 0);
+      const totalProfit = ents.reduce((s, e) => s + (e.data && e.data.netProfit ? parseFloat(e.data.netProfit) : 0), 0);
+      set('ent-consol-rev', S(totalRev));
+      set('ent-consol-profit', S(totalProfit));
+      if (totalRev > 0) {
+        const margin = Math.round(totalProfit / totalRev * 100);
+        set('ent-consol-margin', margin + '% margin');
+      }
+    };
+
+    // ── Document KPI cards: update after renderDocuments() ────────────
+    const _medOrigRenderDocuments = window.renderDocuments;
+    if (typeof _medOrigRenderDocuments === 'function') {
+      window.renderDocuments = async function () {
+        await _medOrigRenderDocuments();
+        const cache = window._docsCache || [];
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+        set('docs-count', cache.length);
+        const totalKB = cache.reduce((s, d) => {
+          const kb = parseFloat((d.size || '').replace(/[^0-9.]/g, '')) || 0;
+          return s + kb;
+        }, 0);
+        set('docs-storage', totalKB >= 1024 ? (totalKB / 1024).toFixed(1) + ' MB' : Math.round(totalKB) + ' KB');
+        const now = new Date();
+        const thisMonth = cache.filter(d => {
+          if (!d.uploaded_at) return false;
+          const u = new Date(d.uploaded_at);
+          return u.getFullYear() === now.getFullYear() && u.getMonth() === now.getMonth();
+        });
+        set('docs-added', thisMonth.length);
+      };
+    }
+
+    // ── Timesheet title: set to current month dynamically ─────────────
+    function _setTimesheetTitle() {
+      const el = document.getElementById('timesheet-title');
+      if (!el) return;
+      const now = new Date();
+      el.textContent = 'Timesheet — ' + now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    }
+
     // ── showPage hooks: reload when navigating to entity-scoped pages ─
     const _medOrig = window.showPage;
     if (typeof _medOrig === 'function') {
@@ -899,8 +958,13 @@
         if (id === 'inventory')  loadInventoryFromDB();
         if (id === 'payroll')    loadPayrollFromDB();
         if (id === 'items')      loadItemsFromDB();
+        if (id === 'timesheet')  _setTimesheetTitle();
+        if (id === 'documents')  { if (typeof window.renderDocuments === 'function') window.renderDocuments(); }
       };
     }
+
+    // Set timesheet title immediately on load
+    _setTimesheetTitle();
 
     console.log('[FinFlow API Wiring — Medium] ✅ Invoices, Expenses, Inventory, Payroll, Items patched');
   })()

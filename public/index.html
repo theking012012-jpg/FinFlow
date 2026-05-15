@@ -1327,10 +1327,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- MULTI-ENTITY PAGE -->
       <div class="page" id="page-entities">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Entities</div><div class="mc-val">3</div><div class="mc-change neutral">Separate ledgers</div></div>
-          <div class="mc"><div class="mc-label">Consolidated revenue</div><div class="mc-val">$821K</div><div class="mc-change up">All entities</div></div>
-          <div class="mc"><div class="mc-label">Consolidated profit</div><div class="mc-val">$312K</div><div class="mc-change up">38% margin</div></div>
-          <div class="mc"><div class="mc-label">Intercompany</div><div class="mc-val">$24K</div><div class="mc-change neutral">Eliminated</div></div>
+          <div class="mc"><div class="mc-label">Entities</div><div class="mc-val" id="ent-count">0</div><div class="mc-change neutral">Separate ledgers</div></div>
+          <div class="mc"><div class="mc-label">Consolidated revenue</div><div class="mc-val" id="ent-consol-rev">$0</div><div class="mc-change up">All entities</div></div>
+          <div class="mc"><div class="mc-label">Consolidated profit</div><div class="mc-val" id="ent-consol-profit">$0</div><div class="mc-change up" id="ent-consol-margin">—</div></div>
+          <div class="mc"><div class="mc-label">Intercompany</div><div class="mc-val">$0</div><div class="mc-change neutral">Eliminated</div></div>
         </div>
         <div class="card">
           <div class="card-header">
@@ -1366,9 +1366,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- TEAM & ROLES PAGE -->
       <div class="page" id="page-team">
         <div class="metrics-grid-3">
-          <div class="mc"><div class="mc-label">Team members</div><div class="mc-val">8</div><div class="mc-change neutral">Active users</div></div>
+          <div class="mc"><div class="mc-label">Team members</div><div class="mc-val" id="team-count">0</div><div class="mc-change neutral">Active users</div></div>
           <div class="mc"><div class="mc-label">Roles</div><div class="mc-val">4</div><div class="mc-change neutral">Owner · Admin · Accountant · Viewer</div></div>
-          <div class="mc"><div class="mc-label">Pending invites</div><div class="mc-val">2</div><div class="mc-change neutral">Awaiting acceptance</div></div>
+          <div class="mc"><div class="mc-label">Pending invites</div><div class="mc-val" id="team-pending">0</div><div class="mc-change neutral">Awaiting acceptance</div></div>
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
@@ -1778,17 +1778,17 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- INVENTORY -->
       <div class="page" id="page-inventory">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total SKUs</div><div class="mc-val">48</div><div class="mc-change neutral">Active products</div></div>
-          <div class="mc"><div class="mc-label">Inventory value</div><div class="mc-val">$34,200</div><div class="mc-change up">At cost</div></div>
-          <div class="mc"><div class="mc-label">Low stock alerts</div><div class="mc-val" style="color:var(--amber)">2</div><div class="mc-change dn">Reorder needed</div></div>
-          <div class="mc"><div class="mc-label">COGS this month</div><div class="mc-val">$11,400</div><div class="mc-change neutral">MAC method</div></div>
+          <div class="mc"><div class="mc-label">Total SKUs</div><div class="mc-val" id="inv-skus">0</div><div class="mc-change neutral">Active products</div></div>
+          <div class="mc"><div class="mc-label">Inventory value</div><div class="mc-val" id="inv-value">$0</div><div class="mc-change up">At cost</div></div>
+          <div class="mc"><div class="mc-label">Low stock alerts</div><div class="mc-val" style="color:var(--amber)" id="inv-lowstock">0</div><div class="mc-change dn">Reorder needed</div></div>
+          <div class="mc"><div class="mc-label">COGS this month</div><div class="mc-val" id="inv-cogs">$0</div><div class="mc-change neutral">MAC method</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Stock levels</div><button class="btn btn-ghost btn-sm" onclick="openProductModal()">+ Add product</button></div>
           <div class="inv-item-row" style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>SKU</span><span>Product</span><span>In stock</span><span>Level</span><span>Value</span><span></span></div>
           <div id="inventory-list"><!-- rendered --></div>
         </div>
-        <button class="btn btn-ghost" onclick="sendPrompt('Which inventory items should I reorder this week? I have 9 Webcam 4K Ultras and 4 Ergonomic Mice left in stock.')">Get AI reorder recommendations ↗</button>
+        <button class="btn btn-ghost" onclick="sendPrompt('Which inventory items should I reorder this week based on my current stock levels and reorder thresholds?')">Get AI reorder recommendations ↗</button>
       </div>
 
       <!-- API CONNECTIONS -->
@@ -2235,10 +2235,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- ITEMS -->
       <div class="page" id="page-items">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Items</div><div class="mc-val">124</div><div class="mc-change neutral">Products &amp; services</div></div>
-          <div class="mc"><div class="mc-label">Active</div><div class="mc-val">98</div><div class="mc-change up">79% of catalog</div></div>
-          <div class="mc"><div class="mc-label">Low Stock</div><div class="mc-val" style="color:var(--amber)">5</div><div class="mc-change dn">Below reorder point</div></div>
-          <div class="mc"><div class="mc-label">Avg Margin</div><div class="mc-val">64%</div><div class="mc-change up">+2% vs last quarter</div></div>
+          <div class="mc"><div class="mc-label">Total Items</div><div class="mc-val" id="items-total">0</div><div class="mc-change neutral">Products &amp; services</div></div>
+          <div class="mc"><div class="mc-label">Active</div><div class="mc-val" id="items-active">0</div><div class="mc-change up">Of catalog</div></div>
+          <div class="mc"><div class="mc-label">Low Stock</div><div class="mc-val" style="color:var(--amber)" id="items-lowstock">0</div><div class="mc-change dn">Below reorder point</div></div>
+          <div class="mc"><div class="mc-label">Avg Margin</div><div class="mc-val" id="items-margin">—</div><div class="mc-change up">Across all products</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Items &amp; Products</div><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="filterItems('all')">All</button><button class="btn btn-ghost btn-sm" onclick="filterItems('product')">Products</button><button class="btn btn-ghost btn-sm" onclick="filterItems('service')">Services</button><button class="btn btn-primary btn-sm" onclick="openNewItemModal()">+ New item</button></div></div>
@@ -2419,10 +2419,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- PROJECTS -->
       <div class="page" id="page-projects">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Active Projects</div><div class="mc-val">7</div><div class="mc-change neutral">In progress</div></div>
-          <div class="mc"><div class="mc-label">Billable Hours</div><div class="mc-val">284h</div><div class="mc-change up">This month</div></div>
-          <div class="mc"><div class="mc-label">Revenue</div><div class="mc-val">$42,600</div><div class="mc-change up">From projects</div></div>
-          <div class="mc"><div class="mc-label">Unbilled</div><div class="mc-val" style="color:var(--amber)">$8,400</div><div class="mc-change dn">Pending invoice</div></div>
+          <div class="mc"><div class="mc-label">Active Projects</div><div class="mc-val" id="proj-active">0</div><div class="mc-change neutral">In progress</div></div>
+          <div class="mc"><div class="mc-label">Billable Hours</div><div class="mc-val" id="proj-hours">0 hrs</div><div class="mc-change up">This month</div></div>
+          <div class="mc"><div class="mc-label">Revenue</div><div class="mc-val" id="proj-revenue">$0</div><div class="mc-change up">From projects</div></div>
+          <div class="mc"><div class="mc-label">Unbilled</div><div class="mc-val" style="color:var(--amber)" id="proj-unbilled">$0</div><div class="mc-change dn">Pending invoice</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Projects</div><button class="btn btn-primary btn-sm" onclick="openNewProjectModal()">+ New Project</button></div>
@@ -2433,13 +2433,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- TIMESHEET -->
       <div class="page" id="page-timesheet">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Hours Logged</div><div class="mc-val">284h</div><div class="mc-change up">This month</div></div>
-          <div class="mc"><div class="mc-label">Billable</div><div class="mc-val">241h</div><div class="mc-change up">85% billable rate</div></div>
-          <div class="mc"><div class="mc-label">Non-Billable</div><div class="mc-val">43h</div><div class="mc-change neutral">Internal tasks</div></div>
-          <div class="mc"><div class="mc-label">Avg per Day</div><div class="mc-val">9.5h</div><div class="mc-change neutral">Across team</div></div>
+          <div class="mc"><div class="mc-label">Hours Logged</div><div class="mc-val" id="ts-total">0 hrs</div><div class="mc-change up">This month</div></div>
+          <div class="mc"><div class="mc-label">Billable</div><div class="mc-val" id="ts-billable">0 hrs</div><div class="mc-change up" id="ts-billable-pct">0% billable rate</div></div>
+          <div class="mc"><div class="mc-label">Non-Billable</div><div class="mc-val" id="ts-nonbillable">0 hrs</div><div class="mc-change neutral">Internal tasks</div></div>
+          <div class="mc"><div class="mc-label">Avg per Day</div><div class="mc-val" id="ts-avg">0 hrs</div><div class="mc-change neutral">Across team</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Timesheet — April 2026</div><button class="btn btn-primary btn-sm" onclick="openLogTimeModal()">+ Log Time</button></div>
+          <div class="card-header"><div class="card-title" id="timesheet-title">Timesheet</div><button class="btn btn-primary btn-sm" onclick="openLogTimeModal()">+ Log Time</button></div>
           <div style="display:grid;grid-template-columns:1fr 100px 80px 70px 70px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Employee</span><span>Project</span><span>Date</span><span>Hours</span><span>Billable</span><span>Rate</span></div>
           <div id="timesheet-list"></div>
         </div>
@@ -2505,8 +2505,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <div class="page" id="page-reports">
         <div class="metrics-grid-3">
           <div class="mc"><div class="mc-label">Reports Available</div><div class="mc-val">24</div><div class="mc-change neutral">Standard reports</div></div>
-          <div class="mc"><div class="mc-label">Last Generated</div><div class="mc-val">Apr 28</div><div class="mc-change neutral">P&amp;L Statement</div></div>
-          <div class="mc"><div class="mc-label">Scheduled</div><div class="mc-val">3</div><div class="mc-change up">Auto-sends monthly</div></div>
+          <div class="mc"><div class="mc-label">Last Generated</div><div class="mc-val">—</div><div class="mc-change neutral">P&amp;L Statement</div></div>
+          <div class="mc"><div class="mc-label">Scheduled</div><div class="mc-val">0</div><div class="mc-change up">Auto-sends monthly</div></div>
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
@@ -2523,10 +2523,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- DOCUMENTS -->
       <div class="page" id="page-documents">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Files</div><div class="mc-val">84</div><div class="mc-change neutral">Stored documents</div></div>
-          <div class="mc"><div class="mc-label">Storage Used</div><div class="mc-val">1.2 GB</div><div class="mc-change neutral">of 5 GB</div></div>
-          <div class="mc"><div class="mc-label">Unattached</div><div class="mc-val" style="color:var(--amber)">7</div><div class="mc-change dn">Needs linking</div></div>
-          <div class="mc"><div class="mc-label">Added (Apr)</div><div class="mc-val">12</div><div class="mc-change up">New this month</div></div>
+          <div class="mc"><div class="mc-label">Total Files</div><div class="mc-val" id="docs-count">0</div><div class="mc-change neutral">Stored documents</div></div>
+          <div class="mc"><div class="mc-label">Storage Used</div><div class="mc-val" id="docs-storage">0 KB</div><div class="mc-change neutral">of 5 GB</div></div>
+          <div class="mc"><div class="mc-label">Unattached</div><div class="mc-val" style="color:var(--amber)" id="docs-unattached">0</div><div class="mc-change dn">Needs linking</div></div>
+          <div class="mc"><div class="mc-label">Added this month</div><div class="mc-val" id="docs-added">0</div><div class="mc-change up">New this month</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Documents</div><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="filterDocs('all')">All</button><button class="btn btn-ghost btn-sm" onclick="filterDocs('invoice')">Invoices</button><button class="btn btn-ghost btn-sm" onclick="filterDocs('receipt')">Receipts</button><button class="btn btn-primary btn-sm" onclick="openUploadModal()">↑ Upload</button></div></div>
@@ -4734,6 +4734,11 @@ function renderInventory(){
   const lowCount=inventory.filter(i=>i.low).length;
   document.getElementById('badge-inv2').textContent=lowCount;
   document.getElementById('badge-inv2').style.display=lowCount>0?'':'none';
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('inv-skus',inventory.length);
+  set('inv-lowstock',lowCount);
+  const totalVal=inventory.reduce((s,i)=>s+(i.units||0)*(i.cost||0),0);
+  set('inv-value',S(totalVal));
   document.getElementById('inventory-list').innerHTML=inventory.map((item,idx)=>{
     const pct=Math.min(100,Math.round(item.units/item.max*100));
     const col=pct<10?'var(--red)':pct<20?'var(--amber)':'var(--green)';
@@ -5989,23 +5994,17 @@ window.toggleGroup = function(name) {
 // ════════════════════════════════════════════
 // ITEMS PAGE
 // ════════════════════════════════════════════
-const itemsData=[
-  {name:'Web Development Services',type:'Service',price:150,unit:'hr',stock:null,status:'Active',sku:'SVC-001'},
-  {name:'UI/UX Design',type:'Service',price:120,unit:'hr',stock:null,status:'Active',sku:'SVC-002'},
-  {name:'SEO Monthly Retainer',type:'Service',price:2400,unit:'mo',stock:null,status:'Active',sku:'SVC-003'},
-  {name:'Laptop Stand Pro',type:'Product',price:89,unit:'each',stock:34,status:'Active',sku:'PRD-001'},
-  {name:'Webcam 4K Ultra',type:'Product',price:199,unit:'each',stock:9,status:'Low Stock',sku:'PRD-002'},
-  {name:'Ergonomic Mouse',type:'Product',price:64,unit:'each',stock:4,status:'Low Stock',sku:'PRD-003'},
-  {name:'USB-C Hub 7-in-1',type:'Product',price:45,unit:'each',stock:82,status:'Active',sku:'PRD-004'},
-  {name:'Mechanical Keyboard',type:'Product',price:149,unit:'each',stock:28,status:'Active',sku:'PRD-005'},
-  {name:'Annual Support Plan',type:'Service',price:1800,unit:'yr',stock:null,status:'Active',sku:'SVC-004'},
-  {name:'Cloud Hosting Setup',type:'Service',price:500,unit:'project',stock:null,status:'Active',sku:'SVC-005'},
-];
+const itemsData=[];
 let itemsFilter='all';
 function renderItems(filter=itemsFilter){
   itemsFilter=filter;
   const list=document.getElementById('items-list');if(!list)return;
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('items-total',itemsData.length);
+  set('items-active',itemsData.filter(i=>i.status==='Active').length);
+  set('items-lowstock',itemsData.filter(i=>i.status==='Low Stock').length);
   const filtered=itemsData.filter(i=>filter==='all'||i.type.toLowerCase()===filter);
+  if(!filtered.length){list.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No items yet. Click + New item to add your products and services.</div>';return;}
   list.innerHTML=filtered.map(i=>`
     <div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
       <span style="font-weight:500">${i.name}<br><span style="font-size:11px;color:var(--t3)">${i.sku}</span></span>
@@ -6123,9 +6122,9 @@ function renderTimesheet(){
       <span style="font-weight:500">${t.employee}</span>
       <span style="color:var(--t2)">${t.project}</span>
       <span style="color:var(--t3)">${t.date}</span>
-      <span style="font-family:var(--font-mono)">${t.hours}h</span>
-      <span style="font-family:var(--font-mono);color:${t.billable>0?'var(--green)':'var(--t3)'}">${t.billable}h</span>
-      <span style="font-family:var(--font-mono)">$${t.rate}/h</span>
+      <span style="font-family:var(--font-mono)">${t.hours} hrs</span>
+      <span style="font-family:var(--font-mono);color:${t.billable>0?'var(--green)':'var(--t3)'}">${t.billable} hrs</span>
+      <span style="font-family:var(--font-mono)">$${t.rate}/hr</span>
     </div>`).join('');
 }
 function openLogTimeModal(){notify('Log time entry');}
@@ -7224,16 +7223,7 @@ advisorPage.id = 'page-advisors';
 advisorPage.innerHTML = '<div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem"><div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#128101;</div><div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Advisor Network &#8212; Coming Soon</div><div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Connect with certified FinFlow accountants and financial advisors who can review your books, file taxes, and help you scale.</div><span class="badge b-amber" style="font-size:11px;padding:4px 12px">In development</span></div>';
 document.querySelector('.content')?.appendChild(advisorPage);
 
-const ADVISORS = [
-  {name:'Sarah Mensah, CPA',firm:'Mensah & Partners',location:'New York, US',region:'North America',specialty:'Tax & Filing',rating:5,clients:42,avatar:'SM',avClass:'av-green',tags:['Tax','IRS e-file','S-Corp'],verified:true},
-  {name:"Liam O'Connor",firm:'BluePeak Accounting',location:'Dublin, IE',region:'Europe',specialty:'Bookkeeping',rating:5,clients:38,avatar:'LO',avClass:'av-blue',tags:['VAT','Bookkeeping','SaaS'],verified:true},
-  {name:'Priya Nair, ACA',firm:'Nair Financial',location:'London, UK',region:'Europe',specialty:'CFO Services',rating:5,clients:27,avatar:'PN',avClass:'av-purple',tags:['CFO','Fractional','Scale-up'],verified:true},
-  {name:'Marcus Webb',firm:'Webb Tax Group',location:'Toronto, CA',region:'North America',specialty:'Tax & Filing',rating:4,clients:55,avatar:'MW',avClass:'av-amber',tags:['Tax','T2','Startups'],verified:true},
-  {name:'Diana Torres',firm:'Caribbean Bookkeeping Co.',location:'Port of Spain, TT',region:'Caribbean',specialty:'Bookkeeping',rating:5,clients:31,avatar:'DT',avClass:'av-teal',tags:['TT Business','VAT','Payroll'],verified:true},
-  {name:'Kevin Park, CPA',firm:'Park & Cho Advisory',location:'Seoul, KR',region:'Asia-Pacific',specialty:'E-commerce',rating:4,clients:62,avatar:'KP',avClass:'av-red',tags:['E-commerce','Shopify','Import'],verified:true},
-  {name:'Ana Lima',firm:'Lima Contabilidade',location:'São Paulo, BR',region:'Latin America',specialty:'Payroll',rating:4,clients:29,avatar:'AL',avClass:'av-green',tags:['Brazil','eSocial','Payroll'],verified:false},
-  {name:'Tom Blackwell',firm:'Blackwell CFO',location:'Sydney, AU',region:'Asia-Pacific',specialty:'CFO Services',rating:5,clients:18,avatar:'TB',avClass:'av-blue',tags:['Fractional CFO','SaaS','Board Reports'],verified:true},
-];
+const ADVISORS = [];
 
 window.renderAdvisors = function(){
   const q = (document.getElementById('adv-search')?.value||'').toLowerCase();
@@ -8281,14 +8271,7 @@ window.switchEntity=async function(idx){
 })();
 
 // ── TEAM & RBAC ─────────────────────────────────────────────────────────────
-const TEAM=[
-  {name:'Alex Johnson',email:'alex@finflow.io',role:'owner',avatar:'AJ',color:'#c9a84c',lastSeen:'Now'},
-  {name:'Sarah Chen',email:'sarah@finflow.io',role:'admin',avatar:'SC',color:'#9e8fbf',lastSeen:'5m ago'},
-  {name:'Marcus Reid',email:'marcus@finflow.io',role:'accountant',avatar:'MR',color:'#5aaa9e',lastSeen:'1h ago'},
-  {name:'Priya Nair',email:'priya@finflow.io',role:'accountant',avatar:'PN',color:'#7db87d',lastSeen:'Today'},
-  {name:'Tom Williams',email:'tom@finflow.io',role:'viewer',avatar:'TW',color:'#888',lastSeen:'Yesterday'},
-  {name:'Invited user',email:'cfo@acmecorp.com',role:'viewer',avatar:'?',color:'#5a4e3a',lastSeen:'Pending'},
-];
+const TEAM=[];
 const ROLE_LABELS={owner:'Owner',admin:'Admin',accountant:'Accountant',viewer:'Viewer'};
 const ROLE_CLASSES={owner:'role-owner',admin:'role-admin',accountant:'role-accountant',viewer:'role-viewer'};
 const PERMS=[
@@ -8304,7 +8287,13 @@ const PERMS=[
 ];
 window.renderTeam=function(){
   const tl=document.getElementById('team-list');
-  if(tl)tl.innerHTML=TEAM.map(m=>`
+  const active=TEAM.filter(m=>m.lastSeen!=='Pending');
+  const pending=TEAM.filter(m=>m.lastSeen==='Pending');
+  const tc=document.getElementById('team-count');if(tc)tc.textContent=active.length;
+  const tp=document.getElementById('team-pending');if(tp)tp.textContent=pending.length;
+  if(tl){
+    if(!TEAM.length){tl.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No team members yet. Click + Invite to add someone.</div>';}
+    else tl.innerHTML=TEAM.map(m=>`
     <div class="team-member-row">
       <div class="team-avatar" style="background:${m.color}22;color:${m.color};border:1px solid ${m.color}44">${m.avatar}</div>
       <div style="flex:1;min-width:0">
@@ -8316,6 +8305,7 @@ window.renderTeam=function(){
         <span style="font-size:10px;color:var(--t3)">${m.lastSeen}</span>
       </div>
     </div>`).join('');
+  }
 
   const pl=document.getElementById('perm-list');
   if(pl)pl.innerHTML=PERMS.map(p=>{
@@ -8771,10 +8761,10 @@ window.resetScanner=function(){
     scenarioPage.id = 'page-scenario';
     scenarioPage.innerHTML = `
       <div class="metrics-grid" id="scenario-metrics">
-        <div class="mc"><div class="mc-label">Projected revenue</div><div class="mc-val" id="sc-rev">$469K</div><div class="mc-change up" id="sc-rev-chg">Baseline</div></div>
-        <div class="mc"><div class="mc-label">Projected expenses</div><div class="mc-val" id="sc-exp">$231K</div><div class="mc-change neutral" id="sc-exp-chg">Baseline</div></div>
-        <div class="mc"><div class="mc-label">Net profit</div><div class="mc-val" id="sc-profit">$238K</div><div class="mc-change up" id="sc-profit-chg">50.7% margin</div></div>
-        <div class="mc"><div class="mc-label">Cash runway</div><div class="mc-val" id="sc-runway">14 mo</div><div class="mc-change up" id="sc-runway-chg">At current burn</div></div>
+        <div class="mc"><div class="mc-label">Projected revenue</div><div class="mc-val" id="sc-rev">$0</div><div class="mc-change up" id="sc-rev-chg">Baseline</div></div>
+        <div class="mc"><div class="mc-label">Projected expenses</div><div class="mc-val" id="sc-exp">$0</div><div class="mc-change neutral" id="sc-exp-chg">Baseline</div></div>
+        <div class="mc"><div class="mc-label">Net profit</div><div class="mc-val" id="sc-profit">$0</div><div class="mc-change up" id="sc-profit-chg">Baseline</div></div>
+        <div class="mc"><div class="mc-label">Cash runway</div><div class="mc-val" id="sc-runway">—</div><div class="mc-change up" id="sc-runway-chg">At current burn</div></div>
       </div>
 
       <div class="two-col">
@@ -8815,9 +8805,9 @@ window.resetScanner=function(){
           </div>
 
           <div class="scenario-result-grid">
-            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo revenue</div><div class="scenario-result-val" id="sc-r-rev">$469K</div><div class="scenario-result-delta" id="sc-r-rev-d" style="color:var(--t3)">Baseline</div></div>
-            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo profit</div><div class="scenario-result-val" id="sc-r-profit">$238K</div><div class="scenario-result-delta" id="sc-r-profit-d" style="color:var(--t3)">Baseline</div></div>
-            <div class="scenario-result-mc"><div class="scenario-result-label">Runway</div><div class="scenario-result-val" id="sc-r-runway">14 mo</div><div class="scenario-result-delta" id="sc-r-runway-d" style="color:var(--t3)">Baseline</div></div>
+            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo revenue</div><div class="scenario-result-val" id="sc-r-rev">$0</div><div class="scenario-result-delta" id="sc-r-rev-d" style="color:var(--t3)">Baseline</div></div>
+            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo profit</div><div class="scenario-result-val" id="sc-r-profit">$0</div><div class="scenario-result-delta" id="sc-r-profit-d" style="color:var(--t3)">Baseline</div></div>
+            <div class="scenario-result-mc"><div class="scenario-result-label">Runway</div><div class="scenario-result-val" id="sc-r-runway">—</div><div class="scenario-result-delta" id="sc-r-runway-d" style="color:var(--t3)">Baseline</div></div>
           </div>
         </div>
 
@@ -8950,7 +8940,7 @@ requestAnimationFrame(renderNotifs);
 // ══════════════════════════════════════════════════════════════════
 // SCENARIO MODELLER
 // ══════════════════════════════════════════════════════════════════
-const BASE = { rev: 469200, exp: 231450, cash: 284320, burn: 19287 };
+window.BASE = { rev: 0, exp: 0, cash: 0, burn: 0 };
 
 window.updateScenario = function(){
   const revGrowth = parseFloat(document.getElementById('sl-rev-growth')?.value||18)/100;
@@ -9244,7 +9234,7 @@ window.showPage = function(id, el){
   _spV15(id, el);
   const names = {scenario:'Scenario planner',autocat:'Auto-categorise',portal:'Client portal','biz-investments':'Investments'};
   if(names[id]) document.getElementById('pageTitle').textContent = names[id];
-  if(id==='scenario'){ requestAnimationFrame(()=>{ updateScenario(); renderScenarioChart(469200,231450); }); }
+  if(id==='scenario'){ requestAnimationFrame(()=>{ if(typeof window._syncScenarioBase==='function')window._syncScenarioBase(); updateScenario(); renderScenarioChart(BASE.rev||0,BASE.exp||0); }); }
   if(id==='autocat')  requestAnimationFrame(renderAutocat);
   if(id==='portal')   requestAnimationFrame(renderPortal);
   if(id==='notifications') toggleNotifPanel();
@@ -9902,12 +9892,7 @@ async function loadDirectory() {
     allAccountants = await res.json();
   } catch(e) {
     // Fallback demo data while directory is being populated
-    allAccountants = [
-      {id:1,first_name:'Sarah',last_name:'Mensah',firm:'Mensah & Partners',country:'Trinidad & Tobago',specialisation:'Tax & Filing',experience:'10–20 years',bio:'Certified tax professional with 15 years experience helping SMEs in T&T.',status:'verified'},
-      {id:2,first_name:'James',last_name:'Phillip',firm:'Phillip Accounting',country:'Trinidad & Tobago',specialisation:'Bookkeeping',experience:'5–10 years',bio:'Chartered accountant specialising in bookkeeping for small businesses.',status:'verified'},
-      {id:3,first_name:'Priya',last_name:'Nair',firm:'Nair Financial',country:'United Kingdom',specialisation:'CFO Services',experience:'10–20 years',bio:'Fractional CFO helping SaaS and scale-up companies with financial strategy.',status:'verified'},
-      {id:4,first_name:'Marcus',last_name:'Webb',firm:'Webb Tax Group',country:'Canada',specialisation:'Tax & Filing',experience:'5–10 years',bio:'Corporate tax specialist focused on startups and tech companies.',status:'verified'},
-    ];
+    allAccountants = [];
   }
   filterAccountants();
   loadMyAccountant();

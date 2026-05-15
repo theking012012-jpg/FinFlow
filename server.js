@@ -9,10 +9,10 @@ const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
 const { db, initDB, pool } = require('./database');
-const { createClient } = require('@upstash/redis');
+const Redis = require('ioredis');
 const RedisStore = require('connect-redis').default;
 
-const redisClient = createClient({ url: process.env.REDIS_URL });
+const redisClient = new Redis(process.env.REDIS_URL);
 
 let resendClient = null;
 try {

@@ -303,7 +303,22 @@
     const period = window.currentPeriod || 'year';
     const { months, revByMonth, expByMonth } = buildMonthlyArrays(invs, exps);
     updateOverviewChart(revByMonth, expByMonth, months);
-    updateKPIs(invs, exps, period);
+    const kpis = updateKPIs(invs, exps, period);
+
+    // Add owner payroll gross to expense/profit KPIs so adding payroll
+    // immediately reflects in dashboard totals without requiring a page refresh.
+    const _op    = window.ownerPayroll;
+    const _emps  = window.payrollEmployees || [];
+    const _all   = _op ? [_op, ..._emps] : _emps;
+    const _payrollTotal = _all.reduce((s, e) => s + (parseFloat(e.gross) || 0), 0);
+    if (_payrollTotal > 0 && kpis) {
+      const _totalExp    = (kpis.exp    || 0) + _payrollTotal;
+      const _totalProfit = (kpis.rev    || 0) - _totalExp;
+      const _set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+      _set('d-exp',    money(_totalExp));
+      _set('d-profit', money(_totalProfit));
+    }
+
     updateExpenseBars(exps);
     updateTransactions(invs, exps);
     updateInvoiceStats(invs);

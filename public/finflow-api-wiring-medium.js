@@ -570,6 +570,62 @@
     }
     loadPayrollFromDB();
 
+    // Override renderPayroll to read from window.ownerPayroll (set by loadPayrollFromDB).
+    // `let ownerPayroll` in index.html is script-scoped — not accessible via window —
+    // so loadPayrollFromDB correctly sets window.ownerPayroll but the original renderPayroll
+    // reads the stale let-binding. This override reads from window.* instead.
+    window.renderPayroll = function () {
+      const op      = window.ownerPayroll || null;
+      const emps    = window.payrollEmployees || [];
+      const allEmps = op ? [{...op, isOwner:true}, ...emps] : emps;
+      const fn      = typeof esc === 'function' ? esc : (s => String(s == null ? '' : s).replace(/</g,'&lt;').replace(/>/g,'&gt;'));
+      const sm      = typeof S   === 'function' ? S   : (n => '$' + (parseFloat(n)||0).toLocaleString());
+      const set     = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+      const totalGross = allEmps.reduce((a, e) => a + (parseFloat(e.gross)   || 0), 0);
+      const totalTax   = allEmps.reduce((a, e) => a + Math.round((parseFloat(e.gross)||0) * (parseFloat(e.taxRate)||0) / 100), 0);
+      set('pr-total',    sm(totalGross));
+      set('pr-headcount', allEmps.length + ' employee' + (allEmps.length !== 1 ? 's' : ''));
+      set('pr-tax',      sm(totalTax));
+
+      if (op) {
+        set('pr-owner-net',   sm(op.net));
+        set('pr-owner-label', 'Your net salary');
+        const ownerCta    = document.getElementById('owner-cta');
+        if (ownerCta)    ownerCta.style.display    = 'none';
+        const payrollLink = document.getElementById('payroll-link-card');
+        if (payrollLink) payrollLink.style.display  = 'flex';
+        const linkNet     = document.getElementById('link-net-display');
+        if (linkNet)     linkNet.textContent = sm(op.net) + '/mo';
+      } else {
+        set('pr-owner-net',   '—');
+        set('pr-owner-label', 'Not on payroll');
+        const ownerCta    = document.getElementById('owner-cta');
+        if (ownerCta)    ownerCta.style.display    = 'block';
+        const payrollLink = document.getElementById('payroll-link-card');
+        if (payrollLink) payrollLink.style.display  = 'none';
+      }
+
+      const list = document.getElementById('payroll-list');
+      if (!list) return;
+      list.innerHTML = allEmps.map(e => {
+        const net      = Math.round((parseFloat(e.gross)||0) * (1 - (parseFloat(e.taxRate)||0) / 100));
+        const tax      = Math.round((parseFloat(e.gross)||0) * (parseFloat(e.taxRate)||0) / 100);
+        const initials = e.initials || (typeof getInitials === 'function' ? getInitials(e.fname, e.lname) : ((e.fname||'')[0] + ((e.lname||'')[0]||'')).toUpperCase());
+        return `<div class="payroll-row">
+          <div class="emp-info">
+            <div class="emp-init ${e.avClass||'av-blue'}">${initials}</div>
+            <div><div class="emp-name">${fn(e.fname)} ${fn(e.lname)}${e.isOwner ? ' <span class="badge b-blue" style="font-size:9px">You</span>' : ''}</div><div class="emp-role">${fn(e.type||'Full-time')}</div></div>
+          </div>
+          <span style="color:var(--t2);font-size:12px">${fn(e.role||'')}</span>
+          <span style="font-family:var(--font-mono)">${sm(e.gross)}</span>
+          <span style="color:var(--red);font-family:var(--font-mono)">${(parseFloat(e.taxRate)||0) > 0 ? '-' + sm(tax) : '—'}</span>
+          <span style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${sm(net)}</span>
+          ${e.isOwner ? `<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>` : '<span></span>'}
+        </div>`;
+      }).join('');
+    };
+
     // Patch saveOwnerPayroll to persist per-entity to DB
     const _origSaveOwnerPayroll = window.saveOwnerPayroll;
     window.saveOwnerPayroll = async function () {

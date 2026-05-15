@@ -234,6 +234,9 @@
   const _origRenderBudget = typeof renderBudget === 'function' ? renderBudget : null;
   window.renderBudget = async function () {
     if (_origRenderBudget) _origRenderBudget();   // show static rows immediately
+    // Clear the hardcoded AI insight text set by the original renderBudget
+    const _aiText = document.getElementById('budget-ai-text');
+    if (_aiText) _aiText.textContent = '';
     try {
       const expenses = await api('GET', '/api/expenses');
       const catTotals = {};

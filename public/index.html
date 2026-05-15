@@ -1268,10 +1268,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- BUDGET PAGE -->
       <div class="page" id="page-budget">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total budget</div><div class="mc-val">$420K</div><div class="mc-change neutral">Annual</div></div>
-          <div class="mc"><div class="mc-label">Spent</div><div class="mc-val">$231K</div><div class="mc-change up">55% used</div></div>
-          <div class="mc"><div class="mc-label">Remaining</div><div class="mc-val">$189K</div><div class="mc-change up">7 months left</div></div>
-          <div class="mc"><div class="mc-label">Variance</div><div class="mc-val" style="color:var(--green)">+$12K</div><div class="mc-change up">Under budget</div></div>
+          <div class="mc"><div class="mc-label">Total budget</div><div class="mc-val">$0</div><div class="mc-change neutral">Annual</div></div>
+          <div class="mc"><div class="mc-label">Spent</div><div class="mc-val">$0</div><div class="mc-change neutral">—</div></div>
+          <div class="mc"><div class="mc-label">Remaining</div><div class="mc-val">$0</div><div class="mc-change neutral">—</div></div>
+          <div class="mc"><div class="mc-label">Variance</div><div class="mc-val" style="color:var(--green)">$0</div><div class="mc-change neutral">—</div></div>
         </div>
         <div class="card">
           <div class="card-header">
@@ -1534,9 +1534,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- BUSINESS INVESTMENTS PAGE -->
       <div class="page" id="page-biz-investments">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Portfolio Value</div><div class="mc-val" id="biz-inv-total">$1,240,500</div><div class="mc-change up" id="biz-inv-total-chg">+$38,200 this month</div></div>
-          <div class="mc"><div class="mc-label">Unrealised Gain</div><div class="mc-val" id="biz-inv-gain">$184,300</div><div class="mc-change up" id="biz-inv-gain-chg">+17.4% since inception</div></div>
-          <div class="mc"><div class="mc-label">Annual Income</div><div class="mc-val" id="biz-inv-income">$29,600</div><div class="mc-change neutral">Dividends &amp; interest</div></div>
+          <div class="mc"><div class="mc-label">Portfolio Value</div><div class="mc-val" id="biz-inv-total">$0</div><div class="mc-change neutral" id="biz-inv-total-chg">—</div></div>
+          <div class="mc"><div class="mc-label">Unrealised Gain</div><div class="mc-val" id="biz-inv-gain">$0</div><div class="mc-change neutral" id="biz-inv-gain-chg">—</div></div>
+          <div class="mc"><div class="mc-label">Annual Income</div><div class="mc-val" id="biz-inv-income">$0</div><div class="mc-change neutral">Dividends &amp; interest</div></div>
           <div class="mc"><div class="mc-label">Day's Change</div><div class="mc-val" id="biz-inv-daychg">—</div><div class="mc-change neutral" id="biz-inv-daychg-chg">Loading…</div></div>
         </div>
         <div class="two-col" style="margin-bottom:1.25rem">
@@ -1546,10 +1546,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <button class="btn btn-ghost btn-sm" onclick="notify('Rebalance plan generated ✦')">Rebalance ↗</button>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-              <div class="bar-row"><span class="bar-label">Equities</span><div class="bar-track"><div class="bar-fill" style="width:55%;background:var(--acc)"></div></div><span class="bar-val">$682K</span></div>
-              <div class="bar-row"><span class="bar-label">Fixed income</span><div class="bar-track"><div class="bar-fill" style="width:25%;background:var(--teal)"></div></div><span class="bar-val">$310K</span></div>
-              <div class="bar-row"><span class="bar-label">Real estate</span><div class="bar-track"><div class="bar-fill" style="width:12%;background:var(--purple)"></div></div><span class="bar-val">$149K</span></div>
-              <div class="bar-row"><span class="bar-label">Cash</span><div class="bar-track"><div class="bar-fill" style="width:8%;background:var(--green)"></div></div><span class="bar-val">$64K</span></div>
+              <div class="bar-row"><span class="bar-label">Equities</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--acc)"></div></div><span class="bar-val">$0</span></div>
+              <div class="bar-row"><span class="bar-label">Fixed income</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--teal)"></div></div><span class="bar-val">$0</span></div>
+              <div class="bar-row"><span class="bar-label">Real estate</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--purple)"></div></div><span class="bar-val">$0</span></div>
+              <div class="bar-row"><span class="bar-label">Cash</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--green)"></div></div><span class="bar-val">$0</span></div>
             </div>
           </div>
           <div class="card" style="margin-bottom:0">
@@ -1590,82 +1590,18 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <span></span><span>Asset</span><span style="text-align:right">Type</span><span style="text-align:right">Value</span><span style="text-align:right">Cost</span><span style="text-align:right">Gain/Loss</span><span style="text-align:right">Income</span>
           </div>
           <div id="biz-inv-holdings-list">
-            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">VTI</div>
-              <div><div style="font-weight:500;color:var(--t1)">VTI</div><div style="font-size:11px;color:var(--t3)">Vanguard Total Market ETF</div></div>
-              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">ETF</span></div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$342,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$295,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+$47,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$3,420</div>
-            </div>
-            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">BND</div>
-              <div><div style="font-weight:500;color:var(--t1)">BND</div><div style="font-size:11px;color:var(--t3)">Vanguard Total Bond ETF</div></div>
-              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">Bond ETF</span></div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$218,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$210,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+$8,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$9,810</div>
-            </div>
-            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">MSF</div>
-              <div><div style="font-weight:500;color:var(--t1)">MSFT</div><div style="font-size:11px;color:var(--t3)">Microsoft Corp</div></div>
-              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">Stock</span></div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$156,400</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$98,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+$58,400</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$1,248</div>
-            </div>
-            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">RE</div>
-              <div><div style="font-weight:500;color:var(--t1)">RE</div><div style="font-size:11px;color:var(--t3)">Commercial Property REIT</div></div>
-              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">Real Estate</span></div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$148,600</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$130,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+$18,600</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$8,916</div>
-            </div>
-            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">SGO</div>
-              <div><div style="font-weight:500;color:var(--t1)">SGOV</div><div style="font-size:11px;color:var(--t3)">iShares 0-3 Mo Treasury</div></div>
-              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">T-Bill</span></div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$92,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$92,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$0</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$4,600</div>
-            </div>
+            <div style="padding:2rem;text-align:center;color:var(--t3)">No holdings yet — click + Add holding to get started</div>
           </div>
         </div>
         <div class="two-col">
           <div class="ai-box" style="margin-bottom:0">
             <div class="ai-head">&#10022; Claude analysis</div>
-            <div class="ai-insight">Portfolio is well-diversified across equities, fixed income and real estate with low single-stock concentration risk.</div>
-            <div class="ai-insight">Bond allocation provides $9,810/yr in predictable income — useful as a buffer against seasonal revenue dips.</div>
-            <div class="ai-insight">Consider tax-loss harvesting on SGOV before year-end to offset gains elsewhere in the portfolio.</div>
+            <div class="ai-insight">Add holdings to your portfolio to see AI-powered analysis and insights.</div>
           </div>
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">Upcoming income</div><div class="card-sub">Dividends &amp; distributions</div></div>
             <div style="display:flex;flex-direction:column;gap:8px" id="upcoming-income-list">
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-                  <div><div style="color:var(--t1);font-weight:500">VTI dividend</div><div style="font-size:11px;color:var(--t3)">Jun 28</div></div>
-                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">$855</div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-                  <div><div style="color:var(--t1);font-weight:500">BND coupon</div><div style="font-size:11px;color:var(--t3)">Jul 2</div></div>
-                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">$2,453</div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-                  <div><div style="color:var(--t1);font-weight:500">REIT distribution</div><div style="font-size:11px;color:var(--t3)">Jul 15</div></div>
-                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">$2,229</div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-                  <div><div style="color:var(--t1);font-weight:500">MSFT dividend</div><div style="font-size:11px;color:var(--t3)">Sep 12</div></div>
-                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">$312</div>
-                </div>
-              <div style="padding-top:6px;font-size:11.5px;color:var(--t2);display:flex;justify-content:space-between">
-                <span>Next 90 days</span><span style="color:var(--teal);font-weight:600">$5,849</span>
-              </div>
+              <div style="padding:1rem 0;text-align:center;color:var(--t3);font-size:12px">No upcoming income — add holdings with dividends to see scheduled payments</div>
             </div>
           </div>
         </div>
@@ -1815,7 +1751,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <div class="page" id="page-payroll">
         <div class="metrics-grid">
           <div class="mc"><div class="mc-label">Monthly payroll</div><div class="mc-val" id="pr-total">—</div><div class="mc-change neutral" id="pr-headcount">5 employees</div></div>
-          <div class="mc"><div class="mc-label">Next run date</div><div class="mc-val">May 1</div><div class="mc-change up">3 days away</div></div>
+          <div class="mc"><div class="mc-label">Next run date</div><div class="mc-val">—</div><div class="mc-change neutral">No upcoming run</div></div>
           <div class="mc"><div class="mc-label">Tax withheld</div><div class="mc-val" id="pr-tax">—</div><div class="mc-change neutral">This month</div></div>
           <div class="mc"><div class="mc-label">Your net pay</div><div class="mc-val" id="pr-owner-net" style="color:var(--acc)">—</div><div class="mc-change neutral" id="pr-owner-label">Not on payroll</div></div>
         </div>
@@ -2133,16 +2069,16 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div id="pers-payroll-breakdown" style="display:none;background:rgba(0,0,0,.2);border-radius:var(--radius);padding:.6rem .75rem"></div>
         </div>
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Monthly income</div><div class="mc-val" id="pers-income">$6,800</div><div class="mc-change up" id="pers-income-src">After tax</div></div>
-          <div class="mc"><div class="mc-label">Monthly spending</div><div class="mc-val" id="pers-spend">$3,240</div><div class="mc-change dn">vs $3,180 last month</div></div>
-          <div class="mc"><div class="mc-label">Savings rate</div><div class="mc-val" id="pers-savings">52%</div><div class="mc-change up" id="pers-savings-vs">Above 40% target</div></div>
-          <div class="mc"><div class="mc-label">Net worth</div><div class="mc-val" id="pers-nw">$84,500</div><div class="mc-change up" id="pers-nw-chg">+$1,200 this month</div></div>
+          <div class="mc"><div class="mc-label">Monthly income</div><div class="mc-val" id="pers-income">$0</div><div class="mc-change neutral" id="pers-income-src">After tax</div></div>
+          <div class="mc"><div class="mc-label">Monthly spending</div><div class="mc-val" id="pers-spend">$0</div><div class="mc-change neutral">—</div></div>
+          <div class="mc"><div class="mc-label">Savings rate</div><div class="mc-val" id="pers-savings">0%</div><div class="mc-change neutral" id="pers-savings-vs">—</div></div>
+          <div class="mc"><div class="mc-label">Net worth</div><div class="mc-val" id="pers-nw">$0</div><div class="mc-change neutral" id="pers-nw-chg">—</div></div>
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">Spending breakdown</div><button class="btn btn-ghost btn-sm" onclick="openSpendingModal()">Edit</button></div>
             <div id="spending-bars"></div>
-            <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)" id="pers-spend-total">$3,240</span></div>
+            <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)" id="pers-spend-total">$0</span></div>
           </div>
           <div style="display:flex;flex-direction:column;gap:12px">
             <div class="card" style="margin-bottom:0">
@@ -2152,11 +2088,11 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div class="card" style="margin-bottom:0">
               <div class="card-header"><div class="card-title">Monthly cash flow</div></div>
               <div style="display:flex;flex-direction:column;gap:8px">
-                <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Income (net pay)</span><span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="p-cf-income">+$6,800</span></div>
-                <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--red);font-family:var(--font-mono);font-weight:600" id="p-cf-spend">-$3,240</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Income (net pay)</span><span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="p-cf-income">+$0</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--red);font-family:var(--font-mono);font-weight:600" id="p-cf-spend">-$0</span></div>
                 <div style="height:1px;background:var(--bd);margin:2px 0"></div>
-                <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t1);font-weight:500">Monthly surplus</span><span style="font-family:var(--font-mono);font-weight:700" id="p-cf-surplus">$3,560</span></div>
-                <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3)"><span>Savings rate</span><span id="p-cf-rate">52%</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t1);font-weight:500">Monthly surplus</span><span style="font-family:var(--font-mono);font-weight:700" id="p-cf-surplus">$0</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3)"><span>Savings rate</span><span id="p-cf-rate">0%</span></div>
               </div>
             </div>
           </div>
@@ -2350,10 +2286,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- SALES RECEIPTS -->
       <div class="page" id="page-sales-receipts">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Receipts</div><div class="mc-val">24</div><div class="mc-change neutral">This month</div></div>
-          <div class="mc"><div class="mc-label">Cash Sales</div><div class="mc-val">$12,400</div><div class="mc-change up">Direct payments</div></div>
-          <div class="mc"><div class="mc-label">Card Sales</div><div class="mc-val">$31,200</div><div class="mc-change up">Via Stripe</div></div>
-          <div class="mc"><div class="mc-label">Refunds</div><div class="mc-val" style="color:var(--red)">$840</div><div class="mc-change dn">2 refunds issued</div></div>
+          <div class="mc"><div class="mc-label">Total Receipts</div><div class="mc-val">0</div><div class="mc-change neutral">This month</div></div>
+          <div class="mc"><div class="mc-label">Cash Sales</div><div class="mc-val">$0</div><div class="mc-change neutral">Direct payments</div></div>
+          <div class="mc"><div class="mc-label">Card Sales</div><div class="mc-val">$0</div><div class="mc-change neutral">Via Stripe</div></div>
+          <div class="mc"><div class="mc-label">Refunds</div><div class="mc-val" style="color:var(--red)">$0</div><div class="mc-change neutral">Refunds issued</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Sales Receipts</div><button class="btn btn-primary btn-sm" onclick="openNewReceiptModal()">+ New Receipt</button></div>
@@ -2365,10 +2301,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- PAYMENTS RECEIVED -->
       <div class="page" id="page-payments-received">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Received (Apr)</div><div class="mc-val">$43,680</div><div class="mc-change up">+8% vs Mar</div></div>
-          <div class="mc"><div class="mc-label">Outstanding</div><div class="mc-val" style="color:var(--amber)">$9,150</div><div class="mc-change dn">4 invoices pending</div></div>
-          <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" style="color:var(--red)">$3,800</div><div class="mc-change dn">2 overdue invoices</div></div>
-          <div class="mc"><div class="mc-label">Avg Days to Pay</div><div class="mc-val">18</div><div class="mc-change up">Down from 22 days</div></div>
+          <div class="mc"><div class="mc-label">Received</div><div class="mc-val">$0</div><div class="mc-change neutral">This month</div></div>
+          <div class="mc"><div class="mc-label">Outstanding</div><div class="mc-val" style="color:var(--amber)">$0</div><div class="mc-change neutral">Invoices pending</div></div>
+          <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" style="color:var(--red)">$0</div><div class="mc-change neutral">Overdue invoices</div></div>
+          <div class="mc"><div class="mc-label">Avg Days to Pay</div><div class="mc-val">—</div><div class="mc-change neutral">No data yet</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Payments Received</div><button class="btn btn-primary btn-sm" onclick="openRecordPaymentModal()">+ Record Payment</button></div>
@@ -2380,10 +2316,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- RECURRING INVOICES -->
       <div class="page" id="page-recurring-invoices">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Active Profiles</div><div class="mc-val">6</div><div class="mc-change neutral">Recurring setups</div></div>
-          <div class="mc"><div class="mc-label">Monthly Value</div><div class="mc-val">$28,400</div><div class="mc-change up">Auto-generated</div></div>
-          <div class="mc"><div class="mc-label">Next Run</div><div class="mc-val">May 1</div><div class="mc-change neutral">2 days away</div></div>
-          <div class="mc"><div class="mc-label">YTD Generated</div><div class="mc-val">$312,400</div><div class="mc-change up">From recurring</div></div>
+          <div class="mc"><div class="mc-label">Active Profiles</div><div class="mc-val">0</div><div class="mc-change neutral">Recurring setups</div></div>
+          <div class="mc"><div class="mc-label">Monthly Value</div><div class="mc-val">$0</div><div class="mc-change neutral">Auto-generated</div></div>
+          <div class="mc"><div class="mc-label">Next Run</div><div class="mc-val">—</div><div class="mc-change neutral">No profiles yet</div></div>
+          <div class="mc"><div class="mc-label">YTD Generated</div><div class="mc-val">$0</div><div class="mc-change neutral">From recurring</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Recurring Invoice Profiles</div><button class="btn btn-primary btn-sm" onclick="openNewRecurringModal()">+ New Profile</button></div>
@@ -2394,10 +2330,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- CREDIT NOTES -->
       <div class="page" id="page-credit-notes">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val">$2,840</div><div class="mc-change neutral">Issued YTD</div></div>
-          <div class="mc"><div class="mc-label">Open Credits</div><div class="mc-val" style="color:var(--amber)">$1,200</div><div class="mc-change dn">Not yet applied</div></div>
-          <div class="mc"><div class="mc-label">Applied</div><div class="mc-val">$1,640</div><div class="mc-change up">Against invoices</div></div>
-          <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">2</div><div class="mc-change neutral">Credits issued</div></div>
+          <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val">$0</div><div class="mc-change neutral">Issued YTD</div></div>
+          <div class="mc"><div class="mc-label">Open Credits</div><div class="mc-val" style="color:var(--amber)">$0</div><div class="mc-change neutral">Not yet applied</div></div>
+          <div class="mc"><div class="mc-label">Applied</div><div class="mc-val">$0</div><div class="mc-change neutral">Against invoices</div></div>
+          <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">0</div><div class="mc-change neutral">Credits issued</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Credit Notes</div><button class="btn btn-primary btn-sm" onclick="openNewCreditNoteModal()">+ New Credit Note</button></div>
@@ -2409,10 +2345,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- VENDORS -->
       <div class="page" id="page-vendors">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Vendors</div><div class="mc-val">18</div><div class="mc-change neutral">Active suppliers</div></div>
-          <div class="mc"><div class="mc-label">Payables</div><div class="mc-val" style="color:var(--amber)">$14,200</div><div class="mc-change dn">Outstanding bills</div></div>
-          <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" style="color:var(--red)">$3,100</div><div class="mc-change dn">Past due date</div></div>
-          <div class="mc"><div class="mc-label">Paid (Apr)</div><div class="mc-val">$19,800</div><div class="mc-change up">Processed this month</div></div>
+          <div class="mc"><div class="mc-label">Total Vendors</div><div class="mc-val">0</div><div class="mc-change neutral">Active suppliers</div></div>
+          <div class="mc"><div class="mc-label">Payables</div><div class="mc-val" style="color:var(--amber)">$0</div><div class="mc-change neutral">Outstanding bills</div></div>
+          <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" style="color:var(--red)">$0</div><div class="mc-change neutral">Past due date</div></div>
+          <div class="mc"><div class="mc-label">Paid</div><div class="mc-val">$0</div><div class="mc-change neutral">This month</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Vendors</div><button class="btn btn-primary btn-sm" onclick="openNewVendorModal()">+ New Vendor</button></div>
@@ -2424,10 +2360,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- BILLS -->
       <div class="page" id="page-bills">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Bills</div><div class="mc-val">$14,200</div><div class="mc-change dn">Unpaid balance</div></div>
-          <div class="mc"><div class="mc-label">Due This Week</div><div class="mc-val" style="color:var(--amber)">$5,400</div><div class="mc-change dn">3 bills due soon</div></div>
-          <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" style="color:var(--red)">$3,100</div><div class="mc-change dn">Past due date</div></div>
-          <div class="mc"><div class="mc-label">Paid (Apr)</div><div class="mc-val">$19,800</div><div class="mc-change up">This month</div></div>
+          <div class="mc"><div class="mc-label">Total Bills</div><div class="mc-val">$0</div><div class="mc-change neutral">Unpaid balance</div></div>
+          <div class="mc"><div class="mc-label">Due This Week</div><div class="mc-val" style="color:var(--amber)">$0</div><div class="mc-change neutral">Bills due soon</div></div>
+          <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" style="color:var(--red)">$0</div><div class="mc-change neutral">Past due date</div></div>
+          <div class="mc"><div class="mc-label">Paid</div><div class="mc-val">$0</div><div class="mc-change neutral">This month</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Bills</div><button class="btn btn-primary btn-sm" onclick="openNewBillModal()">+ New Bill</button></div>
@@ -2439,10 +2375,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- PAYMENTS MADE -->
       <div class="page" id="page-payments-made">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Paid (Apr)</div><div class="mc-val">$19,800</div><div class="mc-change neutral">Total outflows</div></div>
-          <div class="mc"><div class="mc-label">Vendors Paid</div><div class="mc-val">12</div><div class="mc-change neutral">This month</div></div>
-          <div class="mc"><div class="mc-label">Largest Payment</div><div class="mc-val">$6,200</div><div class="mc-change neutral">AWS Infrastructure</div></div>
-          <div class="mc"><div class="mc-label">Avg Payment</div><div class="mc-val">$1,650</div><div class="mc-change neutral">Per vendor</div></div>
+          <div class="mc"><div class="mc-label">Paid</div><div class="mc-val">$0</div><div class="mc-change neutral">This month</div></div>
+          <div class="mc"><div class="mc-label">Vendors Paid</div><div class="mc-val">0</div><div class="mc-change neutral">This month</div></div>
+          <div class="mc"><div class="mc-label">Largest Payment</div><div class="mc-val">$0</div><div class="mc-change neutral">—</div></div>
+          <div class="mc"><div class="mc-label">Avg Payment</div><div class="mc-val">$0</div><div class="mc-change neutral">Per vendor</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Payments Made</div><button class="btn btn-primary btn-sm" onclick="openMakePaymentModal()">+ Make Payment</button></div>
@@ -2454,10 +2390,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- RECURRING BILLS -->
       <div class="page" id="page-recurring-bills">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Active Profiles</div><div class="mc-val">4</div><div class="mc-change neutral">Recurring bills</div></div>
-          <div class="mc"><div class="mc-label">Monthly Cost</div><div class="mc-val">$8,600</div><div class="mc-change neutral">Auto-recurring</div></div>
-          <div class="mc"><div class="mc-label">Next Due</div><div class="mc-val">May 1</div><div class="mc-change neutral">2 bills due</div></div>
-          <div class="mc"><div class="mc-label">YTD Total</div><div class="mc-val">$94,600</div><div class="mc-change neutral">Recurring spend</div></div>
+          <div class="mc"><div class="mc-label">Active Profiles</div><div class="mc-val">0</div><div class="mc-change neutral">Recurring bills</div></div>
+          <div class="mc"><div class="mc-label">Monthly Cost</div><div class="mc-val">$0</div><div class="mc-change neutral">Auto-recurring</div></div>
+          <div class="mc"><div class="mc-label">Next Due</div><div class="mc-val">—</div><div class="mc-change neutral">No profiles yet</div></div>
+          <div class="mc"><div class="mc-label">YTD Total</div><div class="mc-val">$0</div><div class="mc-change neutral">Recurring spend</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Recurring Bill Profiles</div><button class="btn btn-primary btn-sm" onclick="openNewRecurringBillModal()">+ New Profile</button></div>
@@ -2468,10 +2404,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- VENDOR CREDITS -->
       <div class="page" id="page-vendor-credits">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val">$1,820</div><div class="mc-change neutral">From vendors</div></div>
-          <div class="mc"><div class="mc-label">Open Credits</div><div class="mc-val" style="color:var(--green)">$820</div><div class="mc-change up">Available to apply</div></div>
-          <div class="mc"><div class="mc-label">Applied</div><div class="mc-val">$1,000</div><div class="mc-change neutral">Against bills</div></div>
-          <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">1</div><div class="mc-change neutral">Credits received</div></div>
+          <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val">$0</div><div class="mc-change neutral">From vendors</div></div>
+          <div class="mc"><div class="mc-label">Open Credits</div><div class="mc-val" style="color:var(--green)">$0</div><div class="mc-change neutral">Available to apply</div></div>
+          <div class="mc"><div class="mc-label">Applied</div><div class="mc-val">$0</div><div class="mc-change neutral">Against bills</div></div>
+          <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">0</div><div class="mc-change neutral">Credits received</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Vendor Credits</div><button class="btn btn-primary btn-sm" onclick="openNewVendorCreditModal()">+ New Credit</button></div>
@@ -4316,32 +4252,11 @@ let ownerPayrollByEntity = {};
 let ownerPayroll = null;
 let activeOwnerEntityIdx = 0;
 // Personal
-let spending = [
-  {label:'Rent / mortgage',amount:1800,color:'var(--acc)'},
-  {label:'Groceries',      amount:580, color:'#c9a84c99'},
-  {label:'Subscriptions',  amount:310, color:'#c9a84c66'},
-  {label:'Dining out',     amount:240, color:'#c9a84c44'},
-  {label:'Transport',      amount:150, color:'#c9a84c22'},
-];
-let goals = [
-  {name:'Emergency fund',      current:12000,target:15000,monthly:500, color:'var(--green)'},
-  {name:'House deposit',       current:28000,target:60000,monthly:1500,color:'var(--acc)'},
-  {name:'Investment portfolio',current:44500,target:50000,monthly:1800,color:'var(--acc-light)'},
-];
-let persTransactions = [
-  {desc:'Salary — April',       cat:'Income',        amount:6800,type:'income', date:'Apr 30'},
-  {desc:'Rent payment',         cat:'Rent/Mortgage', amount:1800,type:'expense',date:'Apr 1'},
-  {desc:'Supermarket run',      cat:'Groceries',     amount:182, type:'expense',date:'Apr 8'},
-  {desc:'Netflix & Spotify',    cat:'Subscriptions', amount:42,  type:'expense',date:'Apr 3'},
-  {desc:'Dinner with client',   cat:'Dining out',    amount:95,  type:'expense',date:'Apr 12'},
-  {desc:'Fuel',                 cat:'Transport',     amount:60,  type:'expense',date:'Apr 15'},
-  {desc:'Dividend income',      cat:'Income',        amount:320, type:'income', date:'Apr 20'},
-  {desc:'Gym membership',       cat:'Subscriptions', amount:45,  type:'expense',date:'Apr 5'},
-  {desc:'Uber rides',           cat:'Transport',     amount:38,  type:'expense',date:'Apr 22'},
-  {desc:'Grocery — bulk shop',  cat:'Groceries',     amount:210, type:'expense',date:'Apr 28'},
-];
-let basePersonalIncome = 6800;
-let baseNetWorth = 84500;
+let spending = [];
+let goals = [];
+let persTransactions = [];
+let basePersonalIncome = 0;
+let baseNetWorth = 0;
 // User invoices — populated from DB via loadEntityData
 let userInvoices = [];
 let nextInvId = 100;
@@ -5418,15 +5333,7 @@ function saveTransaction(){
 // ════════════════════════════════════════════
 // INVESTMENTS
 // ════════════════════════════════════════════
-let holdings=[
-  {ticker:'MSFT',name:'Microsoft Corp',type:'Stock',shares:25,cost:290,price:415,div:3.00,color:'#5aaa9e'},
-  {ticker:'AAPL',name:'Apple Inc',type:'Stock',shares:30,cost:148,price:171,div:0.96,color:'#c9a84c'},
-  {ticker:'VTI',name:'Vanguard Total Market ETF',type:'ETF',shares:40,cost:195,price:241,div:3.60,color:'#9e8fbf'},
-  {ticker:'BRK.B',name:'Berkshire Hathaway B',type:'Stock',shares:15,cost:298,price:408,div:0,color:'#7db87d'},
-  {ticker:'GOOGL',name:'Alphabet Inc',type:'Stock',shares:8,cost:110,price:165,div:0,color:'#d4964a'},
-  {ticker:'BND',name:'Vanguard Bond ETF',type:'Bond',shares:50,cost:73,price:72,div:3.40,color:'#c46a5a'},
-  {ticker:'CASH',name:'Money Market / Cash',type:'Cash',shares:1,cost:5000,price:5000,div:220,color:'#5a4e3a'},
-];
+let holdings=[];
 const INV_PERIOD_DATA={
   '1m':{portPts:[100,101.2,100.8,102.1,103.4,102.9,104.2,105.1,104.8,106.3,107.0,106.5,107.8,108.2,108.9,110.1,109.7,110.5,111.2,110.8,112.1,113.0,112.4,113.8,114.2,115.0,114.8,116.1,115.7,116.9,117.4],sp500:[100,101.0,100.5,101.8,102.9,102.3,103.5,104.2,103.9,105.0,105.8,105.2,106.1,106.8,107.3,108.2,107.8,108.9,109.5,109.1,110.2,111.0,110.5,111.6,112.0,112.8,112.4,113.5,113.0,113.8,114.2]},
   '3m':{portPts:[100,101.8,103.2,102.4,104.8,106.1,105.3,107.5,108.9,108.1,110.4,111.8,110.9,113.2,114.5,113.6,115.9,117.2,116.3,118.6,119.9,119.0,121.3,122.6,121.8,123.1,122.4,124.7,125.9,125.1,117.4],sp500:[100,101.5,102.8,102.0,104.1,105.3,104.6,106.7,107.9,107.2,109.2,110.5,109.8,111.8,113.0,112.4,114.2,115.5,114.8,116.8,118.0,117.4,119.3,120.5,119.9,121.0,120.4,122.3,123.5,122.9,114.2]},
@@ -7897,16 +7804,7 @@ function startStripeFeed(){
 document.addEventListener('DOMContentLoaded',startStripeFeed);
 
 // ── 4. BUDGET MODULE ────────────────────────────────────────────────────────
-const BUDGET_DATA=[
-  {cat:'Salaries',budget:180000,actual:157200,color:'var(--green)'},
-  {cat:'Rent & Office',budget:50000,actual:46800,color:'var(--acc)'},
-  {cat:'Software & SaaS',budget:15000,actual:12000,color:'var(--teal)'},
-  {cat:'Marketing',budget:25000,actual:19200,color:'var(--purple)'},
-  {cat:'Travel',budget:12000,actual:14800,color:'var(--red)'},
-  {cat:'Equipment',budget:8000,actual:5200,color:'var(--amber)'},
-  {cat:'Legal & Accounting',budget:10000,actual:8900,color:'#7db87d'},
-  {cat:'R&D',budget:20000,actual:17340,color:'var(--acc)'},
-];
+const BUDGET_DATA=[];
 function renderBudget(){
   const el=document.getElementById('budget-rows');
   if(!el)return;
@@ -7928,7 +7826,7 @@ function renderBudget(){
   }).join('');
 
   const aiText=document.getElementById('budget-ai-text');
-  if(aiText)aiText.textContent='Travel is 23% over budget ($14.8K vs $12K target). All other categories are tracking well. Redirecting $5.6K saved from Software & Salaries could cover the travel overage and leave $1.8K buffer for Q4.';
+  if(aiText)aiText.textContent='Add real expenses and budget targets to see AI-powered insights.';
 }
 requestAnimationFrame(renderBudget);
 
@@ -9382,16 +9280,8 @@ setTimeout(()=>{
   // ── Ticker registries ──────────────────────────────────────────
   // Personal portfolio tickers come from the live `holdings` array.
   // Business portfolio tickers are declared here.
-  const BIZ_HOLDINGS = [
-    {ticker:'VTI',  shares:142, costPer:240, type:'ETF',          color:'#c9a84c'},
-    {ticker:'BND',  shares:302, costPer:72,  type:'Bond ETF',     color:'#5aaa9e'},
-    {ticker:'MSFT', shares:42,  costPer:230, type:'Stock',        color:'#9e8fbf'},
-    {ticker:'SGOV', shares:920, costPer:100, type:'T-Bill',       color:'#7db87d'},
-  ];
-  // REIT is not exchange-traded in this demo — keep as static
-  const BIZ_STATIC = [
-    {name:'Commercial Property REIT', type:'Real Estate', value:148600, income:8916},
-  ];
+  const BIZ_HOLDINGS = [];
+  const BIZ_STATIC = [];
 
   // ── Status pill helpers ────────────────────────────────────────
   function setLiveStatus(pageId, state, text){

@@ -520,61 +520,23 @@
     // 4. PAYROLL
     // ════════════════════════════════════════════
 
-    // Boot: load saved payroll from DB
+    // Note: payroll loading is now driven by loadEntityData() in index.html
+    // which fetches /api/payroll?entity_id=X per-entity and populates
+    // window.ownerPayrollByEntity correctly. We no longer do an unscoped
+    // /api/payroll GET here — that returned ALL rows and mis-mapped the
+    // owner entry to the wrong entity index.
+    //
+    // For showPage/refresh hooks that need to reload payroll for the active
+    // entity, delegate to loadEntityData(activeIdx) which handles both
+    // employees and owner-per-entity restoration.
     async function loadPayrollFromDB() {
-      try {
-        const _activeEnt = (window.ENTITIES||[]).find(e=>e.active);
-        const _eidPay = _activeEnt?._dbId;
-        const _url = '/api/payroll' + (_eidPay ? '?entity_id=' + _eidPay : '');
-        console.log('[Payroll] GET', _url, '| active entity:', _activeEnt?.name || '(none)', '| entity_id:', _eidPay || '(all)');
-        const rows = await api('GET', _url);
-        console.log('[Payroll] Received', rows?.length || 0, 'rows:', rows);
-        if (!rows || rows.length === 0) return;
-
-        // Reset so stale employees aren't duplicated on entity switch
-        window.payrollEmployees = [];
-
-        rows.forEach(r => {
-          const emp = {
-            _dbId:    r.id,
-            fname:    r.fname,
-            lname:    r.lname,
-            role:     r.role     || '',
-            type:     r.emp_type || 'Full-time',
-            gross:    r.gross,
-            taxRate:  r.tax_rate,
-            net:      Math.round(r.gross * (1 - r.tax_rate / 100)),
-            initials: (typeof getInitials === 'function') ? getInitials(r.fname, r.lname) : (r.fname[0] + (r.lname[0] || '')).toUpperCase(),
-            avClass:  r.av_class || 'av-blue',
-            isOwner:  !!r.is_owner,
-          };
-
-          if (r.is_owner) {
-            console.log('[Payroll] Restoring owner entry:', emp.fname, emp.lname, '| gross:', emp.gross, '| dbId:', emp._dbId);
-            // Restore ownerPayroll compat pointer
-            window.ownerPayroll = emp;
-            // Also restore ownerPayrollByEntity for the active entity
-            const activeIdx = (window.ENTITIES || []).findIndex(e => e.active);
-            if (activeIdx >= 0) {
-              window.ownerPayrollByEntity = window.ownerPayrollByEntity || {};
-              window.ownerPayrollByEntity[activeIdx] = {
-                ...emp,
-                currency:   _activeEnt?.currency || 'USD',
-                entityName: (window.ENTITIES[activeIdx] || {}).name || 'Entity',
-              };
-            }
-          } else {
-            window.payrollEmployees.push(emp);
-          }
-        });
-
-        console.log('[Payroll] State after load — ownerPayroll:', window.ownerPayroll?.fname || '(none)', '| employees:', window.payrollEmployees.length);
-        if (typeof renderPayroll === 'function') renderPayroll();
-      } catch (e) {
-        console.warn('[Payroll] loadPayrollFromDB failed:', e.message);
+      const ents = window.ENTITIES || [];
+      const activeIdx = ents.findIndex(e => e.active);
+      if (activeIdx < 0 || !ents[activeIdx]?._dbId) return;
+      if (typeof window.loadEntityData === 'function') {
+        try { await window.loadEntityData(activeIdx); } catch (e) { console.warn('[Payroll] reload via loadEntityData failed:', e.message); }
       }
     }
-    loadPayrollFromDB();
 
     // Override renderPayroll to read from window.ownerPayroll (set by loadPayrollFromDB).
     // `let ownerPayroll` in index.html is script-scoped — not accessible via window —
@@ -967,8 +929,9 @@
     async function loadBudgetFromDB() {
       try {
         const res = await api('GET', '/api/budget-targets');
-        if (!res) return;
-        const targets = res.targets || {};
+        if (!res || typeof res !== 'object') return;
+        // Accept both shapes: flat {Rent:5000} or wrapped {targets:{Rent:5000}}
+        const targets = (res.targets && typeof res.targets === 'object') ? res.targets : res;
         const expenses = window._realExpenses || [];
 
         // Aggregate actual spend per category
@@ -1012,58 +975,120 @@
     }
     window._loadBudgetFromDB = loadBudgetFromDB;
 
-    // Budget targets modal — open a simple modal to set per-category budgets
+    // Budget targets modal — fully editable: user can add, remove, and set
+    // monthly/annual targets per category. Saves to /api/budget-targets.
+    const SUGGESTED_CATS = ['Salaries','Rent','Software','Marketing','Travel','Meals','Office','Utilities','Other'];
+    const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    function _renderBudgetTargetRows(targets) {
+      const rowsEl = document.getElementById('_budget-target-rows');
+      if (!rowsEl) return;
+      const entries = Object.entries(targets);
+      if (!entries.length) {
+        rowsEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--t3);font-size:12.5px">No categories yet — add one below</div>';
+        return;
+      }
+      rowsEl.innerHTML = entries.map(([cat, val]) => `
+        <div class="_bt-row" style="display:flex;align-items:center;gap:8px">
+          <input type="text" class="finput" placeholder="Category" data-bt-cat value="${esc(cat)}" style="flex:1.4;font-size:12.5px;padding:5px 8px">
+          <input type="number" class="finput" placeholder="Amount" min="0" step="50" data-bt-amt value="${val||''}" style="flex:1;font-size:12.5px;padding:5px 8px">
+          <button class="btn btn-ghost btn-sm" onclick="this.closest('._bt-row').remove()" title="Remove" style="color:var(--red);opacity:.7;padding:0 6px">✕</button>
+        </div>`).join('');
+    }
+
+    function _addBudgetTargetRow(cat, val) {
+      const rowsEl = document.getElementById('_budget-target-rows');
+      if (!rowsEl) return;
+      const empty = rowsEl.querySelector('div[style*="No categories yet"]');
+      if (empty) empty.remove();
+      const wrap = document.createElement('div');
+      wrap.className = '_bt-row';
+      wrap.style.cssText = 'display:flex;align-items:center;gap:8px';
+      wrap.innerHTML = `
+        <input type="text" class="finput" placeholder="Category" data-bt-cat value="${esc(cat||'')}" style="flex:1.4;font-size:12.5px;padding:5px 8px">
+        <input type="number" class="finput" placeholder="Amount" min="0" step="50" data-bt-amt value="${val||''}" style="flex:1;font-size:12.5px;padding:5px 8px">
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('._bt-row').remove()" title="Remove" style="color:var(--red);opacity:.7;padding:0 6px">✕</button>`;
+      rowsEl.appendChild(wrap);
+      wrap.querySelector('[data-bt-cat]').focus();
+    }
+    window._addBudgetTargetRow = _addBudgetTargetRow;
+
     window.openBudgetTargetsModal = async function () {
-      const BUDGET_CATS = ['Salaries','Rent','Software','Marketing','Travel','Meals','Office','Utilities','Other'];
       let currentTargets = {};
       try {
         const res = await api('GET', '/api/budget-targets');
-        currentTargets = res?.targets || {};
+        // Server returns the targets object directly (or empty object). Be
+        // permissive: accept either {Rent:5000,...} or {targets:{Rent:5000}}.
+        if (res && typeof res === 'object') {
+          currentTargets = res.targets && typeof res.targets === 'object' ? res.targets : res;
+        }
       } catch (e) { /* no saved targets yet */ }
 
-      // Build modal HTML inline
       let existing = document.getElementById('_budget-targets-modal');
       if (!existing) {
         existing = document.createElement('div');
         existing.id = '_budget-targets-modal';
         existing.className = 'modal-overlay hidden';
         existing.innerHTML = `
-          <div class="modal" style="max-width:420px">
+          <div class="modal" style="max-width:460px">
             <div class="modal-header">
-              <div><div class="modal-title">Budget targets</div><div class="modal-sub">Set annual targets per category</div></div>
+              <div><div class="modal-title">Budget targets</div><div class="modal-sub">Set <span id="_bt-period-label">annual</span> targets per expense category</div></div>
               <button class="modal-close" onclick="document.getElementById('_budget-targets-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
             </div>
-            <div id="_budget-target-rows" style="display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;padding:4px 0"></div>
-            <div class="modal-footer">
+            <div style="display:flex;gap:6px;margin:4px 0 10px">
+              <button class="btn btn-ghost btn-sm _bt-period" data-period="annual" style="font-weight:600">Annual</button>
+              <button class="btn btn-ghost btn-sm _bt-period" data-period="monthly">Monthly</button>
+            </div>
+            <div id="_budget-target-rows" style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;padding:4px 0"></div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--bd)">
+              <span style="font-size:11px;color:var(--t3);align-self:center;margin-right:4px">Quick add:</span>
+              <span id="_bt-suggested"></span>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--acc)" onclick="window._addBudgetTargetRow('', '')">+ Add custom</button>
+            </div>
+            <div class="modal-footer" style="margin-top:14px">
               <button class="btn btn-ghost" onclick="document.getElementById('_budget-targets-modal').classList.add('hidden')">Cancel</button>
               <button class="btn btn-primary" onclick="window._saveBudgetTargets()">Save targets</button>
             </div>
           </div>`;
         document.body.appendChild(existing);
+
+        // Wire period toggle
+        existing.querySelectorAll('._bt-period').forEach(btn => {
+          btn.onclick = () => {
+            existing.querySelectorAll('._bt-period').forEach(b => b.style.fontWeight = '');
+            btn.style.fontWeight = '600';
+            existing.dataset.period = btn.dataset.period;
+            const lbl = document.getElementById('_bt-period-label');
+            if (lbl) lbl.textContent = btn.dataset.period;
+          };
+        });
+        existing.dataset.period = 'annual';
+
+        // Wire suggested category chips
+        document.getElementById('_bt-suggested').innerHTML = SUGGESTED_CATS.map(cat =>
+          `<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:2px 7px;border:1px solid var(--bd)" onclick="window._addBudgetTargetRow('${esc(cat)}','')">${esc(cat)}</button>`
+        ).join(' ');
       }
 
-      // Populate rows
-      const rowsEl = document.getElementById('_budget-target-rows');
-      rowsEl.innerHTML = BUDGET_CATS.map(cat => `
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:12.5px;color:var(--t1);min-width:90px">${cat}</span>
-          <input type="number" class="finput" placeholder="0" min="0" step="100" data-cat="${cat}"
-            value="${currentTargets[cat]||''}" style="flex:1;font-size:12.5px;padding:5px 8px">
-        </div>`).join('');
-
+      _renderBudgetTargetRows(currentTargets);
       existing.classList.remove('hidden');
     };
 
     window._saveBudgetTargets = async function () {
-      const inputs = document.querySelectorAll('#_budget-target-rows input[data-cat]');
+      const modal = document.getElementById('_budget-targets-modal');
+      const period = (modal && modal.dataset.period) || 'annual';
+      const rows = document.querySelectorAll('#_budget-target-rows ._bt-row');
       const targets = {};
-      inputs.forEach(inp => {
-        const v = parseFloat(inp.value);
-        if (v > 0) targets[inp.dataset.cat] = v;
+      rows.forEach(row => {
+        const cat = row.querySelector('[data-bt-cat]')?.value?.trim();
+        const v   = parseFloat(row.querySelector('[data-bt-amt]')?.value);
+        if (!cat || !(v > 0)) return;
+        // Store annual values in DB; convert monthly→annual on save
+        targets[cat] = period === 'monthly' ? Math.round(v * 12) : Math.round(v);
       });
       try {
         await api('PUT', '/api/budget-targets', { targets });
-        document.getElementById('_budget-targets-modal').classList.add('hidden');
+        modal.classList.add('hidden');
         await loadBudgetFromDB();
         if (typeof notify === 'function') notify('Budget targets saved ✦');
       } catch (e) {

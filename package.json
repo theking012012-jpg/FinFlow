@@ -8,19 +8,16 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.20.0",
-    "@upstash/redis": "^1.28.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
-    "connect-redis": "^7.1.1",
+    "connect-pg-simple": "^9.0.1",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.2.0",
     "express-session": "^1.18.0",
     "helmet": "^7.1.0",
-    "ioredis": "^5.10.1",
     "pg": "^8.20.0",
     "resend": "^3.2.0",
-    "stripe": "^14.25.0"
+    "stripe": "^14.0.0"
   }
 }

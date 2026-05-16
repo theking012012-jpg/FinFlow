@@ -399,9 +399,9 @@ If you cannot find a field, use null. Be concise.`;
 
     // Fetch all client data
     const [invoices, expenses, entities, settings, payroll, journals, customers, bills] = await Promise.all([
-      pool.query(`SELECT entity_id, data FROM invoices WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
-      pool.query(`SELECT entity_id, data FROM expenses WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
-      pool.query(`SELECT id, data->>'name' AS name FROM entities WHERE user_id = $1 ORDER BY id`, [userId]),
+      pool.query(`SELECT id, entity_id, data FROM invoices WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+      pool.query(`SELECT id, entity_id, data FROM expenses WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+      pool.query(`SELECT id, data->>'name' AS name, data->>'color' AS color, data->>'currency' AS currency FROM entities WHERE user_id = $1 ORDER BY id`, [userId]),
       pool.query(`SELECT data FROM users WHERE id = $1 LIMIT 1`, [userId]),
       pool.query(`SELECT data FROM payroll WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT data FROM journals WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
@@ -430,9 +430,9 @@ If you cannot find a field, use null. Be concise.`;
         totalExpenses: totalExpenses.toFixed(2),
         netProfit:     (totalIncome - totalExpenses).toFixed(2),
       },
-      entities:    entities.rows,
-      allInvoices: invoices.rows.map(r => ({ ...r.data, entity_id: r.entity_id })),
-      allExpenses: expenses.rows.map(r => ({ ...r.data, entity_id: r.entity_id })),
+      entities:    entities.rows.map(r => ({ id: r.id, name: r.name, color: r.color || '#c9a84c', currency: r.currency || 'USD' })),
+      allInvoices: invoices.rows.map(r => ({ ...r.data, id: r.id, entity_id: r.entity_id })),
+      allExpenses: expenses.rows.map(r => ({ ...r.data, id: r.id, entity_id: r.entity_id })),
       allPayroll:  payroll.rows.map(r => r.data),
       allJournals: journals.rows.map(r => r.data),
       allCustomers: customers.rows.map(r => r.data),

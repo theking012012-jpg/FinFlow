@@ -401,9 +401,12 @@ html{overflow-x:hidden}
 .btn-icon:hover{background:var(--bg3);color:var(--t1)}
 .btn-icon svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 /* CONTENT */
-.content{padding:1.25rem 1.5rem;overflow-y:auto;flex:1;max-height:calc(100svh - 52px)}
+.content{padding:1.25rem 1.5rem;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0;max-height:calc(100svh - 52px)}
 .page{display:none}
 .page.active{display:block}
+/* Ensure tall pages are fully scrollable — give the active page its own
+   scroll context and bottom breathing room so nothing is cut off. */
+#page-settings.page.active,#page-pricing.page.active{padding-bottom:80px}
 /* METRICS */
 .metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem}
 .metrics-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.25rem}
@@ -1564,20 +1567,20 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
                 <button class="btn btn-ghost btn-sm">3Y</button>
               </div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px">
+            <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px" id="biz-perf-rows">
               <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px">
                 <span style="color:var(--t2)">This portfolio</span>
-                <span style="color:var(--green);font-weight:600;font-family:var(--font-mono)">+12.4%</span>
+                <span id="biz-perf-port" style="color:var(--t3);font-family:var(--font-mono)">—</span>
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px">
                 <span style="color:var(--t2)">S&amp;P 500</span>
-                <span style="color:var(--t1);font-family:var(--font-mono)">+9.8%</span>
+                <span id="biz-perf-sp" style="color:var(--t3);font-family:var(--font-mono)">—</span>
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px">
                 <span style="color:var(--t2)">60/40 Benchmark</span>
-                <span style="color:var(--t1);font-family:var(--font-mono)">+6.2%</span>
+                <span id="biz-perf-bench" style="color:var(--t3);font-family:var(--font-mono)">—</span>
               </div>
-              <div style="padding-top:8px;border-top:1px solid var(--bd);font-size:11.5px;color:var(--t3)">Outperforming benchmark by <span style="color:var(--green);font-weight:600">+6.2pp</span> YTD</div>
+              <div id="biz-perf-summary" style="padding-top:8px;border-top:1px solid var(--bd);font-size:11.5px;color:var(--t3)">No holdings yet — add positions to see performance.</div>
             </div>
           </div>
         </div>
@@ -2436,10 +2439,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- TIMESHEET -->
       <div class="page" id="page-timesheet">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Hours Logged</div><div class="mc-val" id="ts-total">0 hrs</div><div class="mc-change up">This month</div></div>
-          <div class="mc"><div class="mc-label">Billable</div><div class="mc-val" id="ts-billable">0 hrs</div><div class="mc-change up" id="ts-billable-pct">0% billable rate</div></div>
-          <div class="mc"><div class="mc-label">Non-Billable</div><div class="mc-val" id="ts-nonbillable">0 hrs</div><div class="mc-change neutral">Internal tasks</div></div>
-          <div class="mc"><div class="mc-label">Avg per Day</div><div class="mc-val" id="ts-avg">0 hrs</div><div class="mc-change neutral">Across team</div></div>
+          <div class="mc"><div class="mc-label">Hours Logged</div><div class="mc-val" id="ts-total">0h</div><div class="mc-change up">This month</div></div>
+          <div class="mc"><div class="mc-label">Billable</div><div class="mc-val" id="ts-bill">0h</div><div class="mc-change up" id="ts-billable-pct">0% billable rate</div></div>
+          <div class="mc"><div class="mc-label">Non-Billable</div><div class="mc-val" id="ts-nonbillable">0h</div><div class="mc-change neutral">Internal tasks</div></div>
+          <div class="mc"><div class="mc-label">Avg per Day</div><div class="mc-val" id="ts-avg">0h</div><div class="mc-change neutral">Across team</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title" id="timesheet-title">Timesheet</div><button class="btn btn-primary btn-sm" onclick="openLogTimeModal()">+ Log Time</button></div>
@@ -2563,7 +2566,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div>
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="2" y="4" width="12" height="10" rx="1.2"/><path d="M5 4V3a3 3 0 016 0v1"/></svg>Business profile</div>
-              <div class="field-wrap"><label class="field-label">Business name</label><input class="finput" id="s-biz-name" value="FinFlow Inc." oninput="updateBrandName()"></div>
+              <div class="field-wrap"><label class="field-label">Business name</label><input class="finput" id="s-biz-name" placeholder="Your business name" oninput="updateBrandName()"></div>
               <div class="field-group">
                 <div class="field-wrap"><label class="field-label">Industry</label><select class="finput" id="s-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option></select></div>
                 <div class="field-wrap"><label class="field-label">Currency</label><select class="finput" id="s-currency" onchange="updateCurrency()"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="TTD">TTD (TT$)</option><option value="CAD">CAD (C$)</option><option value="AUD">AUD (A$)</option></select></div>
@@ -2572,7 +2575,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
                 <div class="field-wrap"><label class="field-label">Tax ID / EIN</label><input class="finput" id="s-tax-id" placeholder="XX-XXXXXXX"></div>
                 <div class="field-wrap"><label class="field-label">Fiscal year start</label><select class="finput" id="s-fy"><option>January</option><option>April</option><option>July</option><option>October</option></select></div>
               </div>
-              <div class="field-wrap"><label class="field-label">Business address</label><textarea class="finput" id="s-address" style="min-height:60px">123 Business Ave, Suite 400&#10;San Francisco, CA 94102</textarea></div>
+              <div class="field-wrap"><label class="field-label">Business address</label><textarea class="finput" id="s-address" style="min-height:60px" placeholder="Street, City, State, Country"></textarea></div>
               <div class="field-wrap"><label class="field-label">Website</label><input class="finput" id="s-website" placeholder="https://yourbusiness.com"></div>
             </div>
             <div class="settings-section">
@@ -3940,6 +3943,10 @@ async function renderCOALive(){
     const res=await fetch('/api/chart-of-accounts');
     if(!res.ok)throw new Error();
     const accounts=await res.json();
+    if(!accounts || !accounts.length){
+      l.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No accounts yet. Click "+ New account" to add your chart of accounts.</div>';
+      return;
+    }
     const grouped={};
     accounts.forEach(a=>{if(!grouped[a.type])grouped[a.type]=[];grouped[a.type].push(a);});
     l.innerHTML=Object.entries(grouped).map(([type,accs])=>`
@@ -4173,25 +4180,53 @@ async function loadEntityData(idx){
     // Replace inventory
     inventory = invt.map(r=>({_dbId:r.id, sku:r.sku, name:r.name, units:r.units, max:r.max_units||200, cost:r.cost, low:!!r.low_stock}));
 
-    // Update payroll
-    if(payroll.length) {
-      payrollEmployees = payroll.filter(r=>!r.is_owner).map(r=>({
-        _dbId:r.id, fname:r.fname, lname:r.lname, role:r.role||'', type:r.emp_type||'Full-time',
-        gross:r.gross, taxRate:r.tax_rate, net:Math.round(r.gross*(1-r.tax_rate/100)),
-        initials:(r.fname[0]+(r.lname||'')[0]||'').toUpperCase(), avClass:r.av_class||'av-blue', isOwner:false,
-      }));
-      // Restore owner payroll so renderPayroll (medium.js override) shows it
-      const ownerRow = payroll.find(r=>r.is_owner);
-      if(ownerRow && !window.ownerPayroll){
-        window.ownerPayroll = {
-          _dbId:ownerRow.id, fname:ownerRow.fname, lname:ownerRow.lname, role:ownerRow.role||'',
-          type:ownerRow.emp_type||'Full-time', gross:ownerRow.gross, taxRate:ownerRow.tax_rate,
-          net:Math.round(ownerRow.gross*(1-ownerRow.tax_rate/100)),
-          initials:(ownerRow.fname[0]+(ownerRow.lname||'')[0]||'').toUpperCase(),
-          avClass:ownerRow.av_class||'av-blue', isOwner:true,
-        };
-        console.log('[loadEntityData] Restored owner payroll from DB:', window.ownerPayroll.fname, window.ownerPayroll.lname, '| gross:', window.ownerPayroll.gross);
+    // Update payroll — always reset employees per entity (no stale cross-entity rows)
+    payrollEmployees = (payroll||[]).filter(r=>!r.is_owner).map(r=>({
+      _dbId:r.id, fname:r.fname, lname:r.lname, role:r.role||'', type:r.emp_type||'Full-time',
+      gross:r.gross, taxRate:r.tax_rate, net:Math.round(r.gross*(1-r.tax_rate/100)),
+      initials:((r.fname||'')[0]+((r.lname||'')[0]||'')).toUpperCase(), avClass:r.av_class||'av-blue', isOwner:false,
+    }));
+    window.payrollEmployees = payrollEmployees;
+
+    // Restore owner payroll PER-ENTITY — index by the entity idx we're loading
+    const ownerRow = (payroll||[]).find(r=>r.is_owner);
+    if(typeof ownerPayrollByEntity === 'undefined') window.ownerPayrollByEntity = window.ownerPayrollByEntity || {};
+    if(ownerRow){
+      const _entity = ENTITIES[idx];
+      const owner = {
+        _dbId:    ownerRow.id,
+        fname:    ownerRow.fname,
+        lname:    ownerRow.lname || '',
+        role:     ownerRow.role || 'CEO / Founder',
+        type:     ownerRow.emp_type || 'owner',
+        gross:    parseFloat(ownerRow.gross) || 0,
+        taxRate:  parseFloat(ownerRow.tax_rate) || 0,
+        net:      Math.round((parseFloat(ownerRow.gross)||0)*(1-(parseFloat(ownerRow.tax_rate)||0)/100)),
+        initials: ((ownerRow.fname||'')[0]+((ownerRow.lname||'')[0]||'')).toUpperCase(),
+        avClass:  ownerRow.av_class || 'av-blue',
+        currency: _entity?.currency || 'USD',
+        entityName: _entity?.name || 'Entity',
+        isOwner:  true,
+      };
+      ownerPayrollByEntity[idx] = owner;
+      window.ownerPayrollByEntity = ownerPayrollByEntity;
+      // Sync compat pointer if this is the active entity
+      if (ENTITIES[idx]?.active) {
+        ownerPayroll = owner;
+        window.ownerPayroll = owner;
       }
+      console.log('[loadEntityData] Restored owner payroll for entity idx', idx, '('+_entity?.name+'):', owner.fname, owner.lname, '| gross:', owner.gross);
+    } else {
+      // No owner record for this entity — clear any stale mapping for this idx
+      if (ownerPayrollByEntity[idx]) {
+        delete ownerPayrollByEntity[idx];
+        if (ENTITIES[idx]?.active) { ownerPayroll = null; window.ownerPayroll = null; }
+      }
+    }
+
+    // Sync to Personal Finance (salary income line + banner)
+    if (typeof syncAllPayrollsToPersonal === 'function') {
+      try { syncAllPayrollsToPersonal(); } catch(e) { console.warn('[loadEntityData] syncAllPayrollsToPersonal failed:', e.message); }
     }
 
     // Store globally for dashboard wiring — MUST update before calling updateDashboard
@@ -4250,6 +4285,7 @@ async function loadEntityData(idx){
     console.log('[Entity] Loaded real data — invoices:'+invoices.length+' expenses:'+expenses.length+' top clients:'+_topClients.length);
   } catch(e){ console.warn('[Entity] loadEntityData failed:', e.message); } finally { _loadEntityDataRunning = false; }
 }
+window.loadEntityData = loadEntityData; // expose for medium.js payroll reload hook
 
 const INVOICES_BASE = []; // populated from DB via loadEntityData
 
@@ -4928,7 +4964,9 @@ window.switchOwnerEntityTab = function(idx){
 
   if(curFname && curGross > 0){
     const curEntity = ENTITIES[activeOwnerEntityIdx];
+    const existing = ownerPayrollByEntity[activeOwnerEntityIdx] || {};
     ownerPayrollByEntity[activeOwnerEntityIdx] = {
+      _dbId: existing._dbId,
       fname: curFname, lname: curLname,
       role: curRole, type: curType,
       gross: curGross, taxRate: curTax,
@@ -5021,7 +5059,9 @@ function saveOwnerPayroll(){
   // Save current tab if it has a salary filled in
   if(gross > 0){
     const entity = ENTITIES[activeOwnerEntityIdx];
+    const existing = ownerPayrollByEntity[activeOwnerEntityIdx] || {};
     ownerPayrollByEntity[activeOwnerEntityIdx] = {
+      _dbId: existing._dbId, // preserve so medium.js does PUT, not POST (no dupes)
       fname, lname, role, type,
       gross, taxRate,
       net: Math.round(gross*(1-taxRate/100)),
@@ -5424,6 +5464,25 @@ function renderInvestments(){
   buildInvPerfChart(invPeriod);
   updateInvAI(totalValue,totalGain,gainPct,totalDiv);
   updateNetWorthPanel(totalValue);
+
+  // Performance card — populate from real portfolio gain (no hardcoded benchmarks).
+  // S&P 500 / 60/40 stay as dashes unless a benchmark API is wired in.
+  const _perfPort = document.getElementById('biz-perf-port');
+  const _perfSum  = document.getElementById('biz-perf-summary');
+  if (_perfPort) {
+    if (holdings.length === 0) {
+      _perfPort.textContent = '—';
+      _perfPort.style.color = 'var(--t3)';
+      if (_perfSum) _perfSum.textContent = 'No holdings yet — add positions to see performance.';
+    } else {
+      const pct = parseFloat(gainPct) || 0;
+      const pos = pct >= 0;
+      _perfPort.textContent = (pos ? '+' : '') + pct.toFixed(1) + '%';
+      _perfPort.style.color = pos ? 'var(--green)' : 'var(--red)';
+      _perfPort.style.fontWeight = '600';
+      if (_perfSum) _perfSum.textContent = 'Unrealised ' + (pos ? 'gain' : 'loss') + ': ' + (pos ? '+' : '') + S2(totalGain) + ' on ' + S2(totalCost) + ' cost basis.';
+    }
+  }
 }
 
 function buildInvDonut(hs,totalValue){
@@ -5455,12 +5514,20 @@ function buildInvDonut(hs,totalValue){
 function buildInvPerfChart(period){
   const canvas=document.getElementById('invPerfChart');
   if(!canvas||typeof Chart==='undefined')return;
+  const retEl=document.getElementById('inv-perf-return');
+  // No holdings → show empty state (no fake benchmark data)
+  if(!holdings || holdings.length===0){
+    if(retEl) retEl.textContent='No data — add holdings to see performance';
+    if(invPerfChart){ invPerfChart.destroy(); invPerfChart=null; }
+    const ctx=canvas.getContext('2d');
+    if(ctx){ ctx.clearRect(0,0,canvas.width,canvas.height); }
+    return;
+  }
   const{portPts,sp500}=INV_PERIOD_DATA[period];
   const n=portPts.length;
   const labels=Array.from({length:n},(_,i)=>i===0?'Start':i===n-1?'Now':'');
   const portReturn=((portPts[n-1]-100)).toFixed(1);
   const spReturn=((sp500[n-1]-100)).toFixed(1);
-  const retEl=document.getElementById('inv-perf-return');
   if(retEl)retEl.textContent=`Portfolio +${portReturn}% vs S&P +${spReturn}%`;
   const{tc,gc}=chartDefaults();
   if(invPerfChart){invPerfChart.destroy();}
@@ -5498,9 +5565,17 @@ function updateInvAI(totalValue,totalGain,gainPct,totalDiv){
   const i1=document.getElementById('inv-ai-1');
   const i2=document.getElementById('inv-ai-2');
   const i3=document.getElementById('inv-ai-3');
-  if(i1)i1.textContent=`Your portfolio is up ${gainPct}% (${gainPct>11.1?'outperforming':'underperforming'} the S&P 500 by ${Math.abs(gainPct-11.1).toFixed(1)} percentage points YTD). Total unrealised gain: ${gainPct>0?'+':''}$${Math.round(totalGain).toLocaleString()}.`;
+  if (holdings.length === 0) {
+    if(i1)i1.textContent='No holdings yet. Add positions to see performance insights.';
+    if(i2)i2.textContent='';
+    if(i3)i3.textContent='';
+    return;
+  }
+  const gPos = parseFloat(gainPct) >= 0;
+  if(i1)i1.textContent=`Your portfolio is ${gPos?'up':'down'} ${Math.abs(gainPct)}% on a ${S2(totalValue-totalGain)} cost basis. Unrealised ${gPos?'gain':'loss'}: ${gPos?'+':''}$${Math.round(totalGain).toLocaleString()}.`;
   if(i2)i2.textContent=`${top.map(h=>h.ticker).join(' & ')} together represent ${topPct.toFixed(0)}% of portfolio value — consider diversifying if concentration risk concerns you.`;
-  if(i3)i3.textContent=`Dividend income of $${Math.round(totalDiv).toLocaleString()}/yr adds a ${yieldPct}% yield. This contributes to your personal finance surplus and reduces effective volatility exposure.`;
+  if(i3 && totalDiv>0)i3.textContent=`Dividend income of $${Math.round(totalDiv).toLocaleString()}/yr adds a ${yieldPct}% yield.`;
+  else if(i3)i3.textContent='No dividend-paying positions in this portfolio.';
 }
 
 function updateNetWorthPanel(portValue){
@@ -5709,12 +5784,22 @@ function toggleCompact(){
   document.getElementById('sidebar').classList.toggle('compact',document.getElementById('s-compact').checked);
 }
 async function saveSettings(){
+  const v = id => (document.getElementById(id)||{}).value;
+  const c = id => !!document.getElementById(id)?.checked;
   const b = {
-    name:       (document.getElementById('s-user-name')||{}).value,
-    currency:   (document.getElementById('s-currency')||{}).value,
-    dark_mode:  document.getElementById('s-dark')?.checked ? 1 : 0,
-    show_cents: document.getElementById('s-cents')?.checked ? 1 : 0,
-    notif_email:document.getElementById('s-email-alerts')?.checked ? 1 : 0,
+    name:          v('s-user-name'),
+    currency:      v('s-currency'),
+    business_name: v('s-biz-name'),
+    industry:      v('s-industry'),
+    address:       v('s-address'),
+    email:         v('s-email'),
+    phone:         v('s-phone'),
+    website:       v('s-website'),
+    tax_id:        v('s-tax-id'),
+    fiscal_year:   v('s-fy'),
+    dark_mode:     c('s-dark') ? 1 : 0,
+    show_cents:    c('s-cents') ? 1 : 0,
+    notif_email:   c('s-email-alerts') ? 1 : 0,
   };
   try {
     await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(b) });
@@ -6163,38 +6248,16 @@ function renderJournals(){
 function openNewJournalModal(){openJournalEntryModal();}
 
 // ════════════════════════════════════════════
-// CHART OF ACCOUNTS PAGE
+// CHART OF ACCOUNTS PAGE — empty until user creates accounts
+// (Data loaded from /api/chart-of-accounts if/when wired by extra scripts.)
 // ════════════════════════════════════════════
-const coaData=[
-  {type:'Assets',accounts:[
-    {name:'Checking Account',code:'1010',balance:98420,nature:'Debit'},
-    {name:'Savings Account',code:'1020',balance:38200,nature:'Debit'},
-    {name:'Accounts Receivable',code:'1100',balance:9150,nature:'Debit'},
-    {name:'Inventory',code:'1200',balance:34200,nature:'Debit'},
-    {name:'Equipment',code:'1500',balance:28000,nature:'Debit'},
-  ]},
-  {type:'Liabilities',accounts:[
-    {name:'Accounts Payable',code:'2000',balance:14200,nature:'Credit'},
-    {name:'Credit Card',code:'2100',balance:4800,nature:'Credit'},
-    {name:'Tax Payable',code:'2200',balance:19200,nature:'Credit'},
-  ]},
-  {type:'Equity',accounts:[
-    {name:"Owner's Equity",code:'3000',balance:186200,nature:'Credit'},
-    {name:'Retained Earnings',code:'3100',balance:238950,nature:'Credit'},
-  ]},
-  {type:'Revenue',accounts:[
-    {name:'Service Revenue',code:'4000',balance:469200,nature:'Credit'},
-    {name:'Product Sales',code:'4100',balance:0,nature:'Credit'},
-  ]},
-  {type:'Expenses',accounts:[
-    {name:'Salaries & Wages',code:'5000',balance:157200,nature:'Debit'},
-    {name:'Rent',code:'5100',balance:45600,nature:'Debit'},
-    {name:'Software Subscriptions',code:'5200',balance:12000,nature:'Debit'},
-    {name:'Marketing',code:'5300',balance:15450,nature:'Debit'},
-  ]},
-];
+const coaData=[]; // populated by API wiring; no hardcoded demo data
 function renderCOA(){
   const l=document.getElementById('coa-list');if(!l)return;
+  if(!coaData.length){
+    l.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No accounts yet. Click "+ New account" to add your chart of accounts.</div>';
+    return;
+  }
   l.innerHTML=coaData.map(section=>`
     <div style="margin-bottom:1rem">
       <div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${section.type}</div>
@@ -6202,12 +6265,70 @@ function renderCOA(){
         <div style="display:grid;grid-template-columns:60px 1fr 80px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
           <span style="color:var(--t3);font-family:var(--font-mono)">${a.code}</span>
           <span style="color:var(--t1)">${a.name}</span>
-          <span style="font-family:var(--font-mono);text-align:right;color:var(--t1)">$${a.balance.toLocaleString()}</span>
+          <span style="font-family:var(--font-mono);text-align:right;color:var(--t1)">$${(a.balance||0).toLocaleString()}</span>
           <span style="color:var(--t3);text-align:right">${a.nature}</span>
         </div>`).join('')}
     </div>`).join('');
 }
-function openNewAccountModal(){notify('New account modal');}
+function openNewAccountModal(){
+  let m=document.getElementById('coa-new-modal');
+  if(!m){
+    m=document.createElement('div');
+    m.id='coa-new-modal';
+    m.className='modal-overlay hidden';
+    m.innerHTML=`<div class="modal" style="max-width:380px">
+      <div class="modal-header">
+        <div><div class="modal-title">New account</div><div class="modal-sub">Add a chart-of-accounts entry</div></div>
+        <button class="modal-close" onclick="document.getElementById('coa-new-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      </div>
+      <div class="field-group">
+        <div class="field-wrap"><label class="field-label">Code *</label><input class="finput" id="coa-code" placeholder="e.g. 1010"></div>
+        <div class="field-wrap"><label class="field-label">Name *</label><input class="finput" id="coa-name" placeholder="e.g. Checking Account"></div>
+      </div>
+      <div class="field-group">
+        <div class="field-wrap"><label class="field-label">Category *</label>
+          <select class="finput" id="coa-cat">
+            <option value="Assets">Assets</option>
+            <option value="Liabilities">Liabilities</option>
+            <option value="Equity">Equity</option>
+            <option value="Revenue">Revenue</option>
+            <option value="Expenses">Expenses</option>
+          </select>
+        </div>
+        <div class="field-wrap"><label class="field-label">Nature</label>
+          <select class="finput" id="coa-nature"><option value="Debit">Debit</option><option value="Credit">Credit</option></select>
+        </div>
+      </div>
+      <div class="field-wrap"><label class="field-label">Opening balance</label><input class="finput" id="coa-balance" type="number" min="0" step="0.01" value="0"></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="document.getElementById('coa-new-modal').classList.add('hidden')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveNewAccount()">Add account</button>
+      </div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  document.getElementById('coa-code').value='';
+  document.getElementById('coa-name').value='';
+  document.getElementById('coa-cat').value='Assets';
+  document.getElementById('coa-nature').value='Debit';
+  document.getElementById('coa-balance').value='0';
+  m.classList.remove('hidden');
+}
+async function saveNewAccount(){
+  const code=document.getElementById('coa-code').value.trim();
+  const name=document.getElementById('coa-name').value.trim();
+  const category=document.getElementById('coa-cat').value;
+  const nature=document.getElementById('coa-nature').value;
+  const balance=parseFloat(document.getElementById('coa-balance').value)||0;
+  if(!code||!name){notify('Code and name are required',true);return;}
+  try{
+    const r=await fetch('/api/chart-of-accounts',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,name,category,nature,balance})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||'API error');}
+    document.getElementById('coa-new-modal').classList.add('hidden');
+    notify('Account added ✦');
+    if(typeof renderCOA==='function')renderCOA();
+  }catch(e){notify('Could not add account — '+e.message,true);}
+}
 
 // ════════════════════════════════════════════
 // TRANSACTION LOCKING PAGE
@@ -7479,12 +7600,37 @@ overlay.innerHTML = `
     <!-- STEP 1: Business basics -->
     <div class="ob-step active" id="ob-s1">
       <div class="ob-field">
-        <label class="ob-label">Business name</label>
-        <input class="ob-input" id="ob-biz-name" placeholder="e.g. Acme Ltd." value="FinFlow Inc.">
+        <label class="ob-label">Business name *</label>
+        <input class="ob-input" id="ob-biz-name" placeholder="e.g. Acme Ltd." value="">
       </div>
       <div class="ob-field">
-        <label class="ob-label">Your name</label>
-        <input class="ob-input" id="ob-user-name" placeholder="e.g. Alex Johnson" value="Alex Johnson">
+        <label class="ob-label">Industry</label>
+        <select class="ob-input" id="ob-industry">
+          <option value="">Select an industry…</option>
+          <option value="Technology">Technology</option>
+          <option value="Retail">Retail</option>
+          <option value="Finance">Finance</option>
+          <option value="Healthcare">Healthcare</option>
+          <option value="Consulting">Consulting / Services</option>
+          <option value="Manufacturing">Manufacturing</option>
+          <option value="Construction">Construction</option>
+          <option value="Food & Beverage">Food &amp; Beverage</option>
+          <option value="Real Estate">Real Estate</option>
+          <option value="Media & Creative">Media &amp; Creative</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="ob-field">
+        <label class="ob-label">Your name *</label>
+        <input class="ob-input" id="ob-user-name" placeholder="e.g. Alex Johnson" value="">
+      </div>
+      <div class="ob-field">
+        <label class="ob-label">Email *</label>
+        <input class="ob-input" id="ob-email" type="email" placeholder="you@company.com" value="">
+      </div>
+      <div class="ob-field">
+        <label class="ob-label">Business address</label>
+        <textarea class="ob-input" id="ob-address" style="min-height:48px;resize:vertical" placeholder="Street, City, Country"></textarea>
       </div>
       <div class="ob-field">
         <label class="ob-label">Primary currency</label>
@@ -7599,6 +7745,10 @@ window.obNext = function(){
   if(currentStep===1){
     const name = document.getElementById('ob-biz-name').value.trim();
     const user = document.getElementById('ob-user-name').value.trim();
+    const email = (document.getElementById('ob-email')?.value||'').trim();
+    if(!name){ if(typeof notify==='function') notify('Business name is required', true); return; }
+    if(!user){ if(typeof notify==='function') notify('Your name is required', true); return; }
+    if(!email || !/^.+@.+\..+$/.test(email)){ if(typeof notify==='function') notify('A valid email is required', true); return; }
     if(name && document.getElementById('sb-brand-name')) document.getElementById('sb-brand-name').textContent=name;
     if(user && document.querySelector('.user-name')) document.querySelector('.user-name').textContent=user;
   }
@@ -7617,11 +7767,24 @@ window.obNext = function(){
 
 async function finishOnboarding(){
   const bizName=(document.getElementById('ob-biz-name')?.value||'').trim();
+  const userName=(document.getElementById('ob-user-name')?.value||'').trim();
+  const industry=document.getElementById('ob-industry')?.value||'';
+  const email=(document.getElementById('ob-email')?.value||'').trim();
+  const address=(document.getElementById('ob-address')?.value||'').trim();
   const currency=document.getElementById('ob-currency')?.value||'USD';
   if(bizName||bizType||currency){
     try{
-      await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({business_name:bizName,business_type:bizType||'',currency,onboarding_done:1})});
+      await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',
+        body:JSON.stringify({
+          business_name:bizName,
+          business_type:bizType||'',
+          industry,
+          email,
+          address,
+          name:userName,
+          currency,
+          onboarding_done:1
+        })});
     }catch(e){}
   }
   sessionStorage.setItem('ff_onboarded','1');
@@ -8126,6 +8289,44 @@ async function loadEntitiesFromDB(){
       }
       await loadEntityData(activeIdx);
     }
+
+    // Bulk-load owner payroll for ALL entities so multi-entity Personal sync works.
+    // We do this after entity activation so each fetch is scoped by entity_id.
+    try {
+      window.ownerPayrollByEntity = window.ownerPayrollByEntity || {};
+      for (let i = 0; i < ENTITIES.length; i++) {
+        if (i === activeIdx) continue; // already loaded
+        const e = ENTITIES[i];
+        if (!e?._dbId) continue;
+        const pr = await fetch('/api/payroll?entity_id=' + e._dbId, {credentials:'include'});
+        if (!pr.ok) continue;
+        const rows = await pr.json();
+        const ownerRow = (rows||[]).find(r=>r.is_owner);
+        if (ownerRow) {
+          window.ownerPayrollByEntity[i] = {
+            _dbId:    ownerRow.id,
+            fname:    ownerRow.fname,
+            lname:    ownerRow.lname || '',
+            role:     ownerRow.role || 'CEO / Founder',
+            type:     ownerRow.emp_type || 'owner',
+            gross:    parseFloat(ownerRow.gross) || 0,
+            taxRate:  parseFloat(ownerRow.tax_rate) || 0,
+            net:      Math.round((parseFloat(ownerRow.gross)||0)*(1-(parseFloat(ownerRow.tax_rate)||0)/100)),
+            initials: ((ownerRow.fname||'')[0]+((ownerRow.lname||'')[0]||'')).toUpperCase(),
+            avClass:  ownerRow.av_class || 'av-blue',
+            currency: e.currency || 'USD',
+            entityName: e.name || 'Entity',
+            isOwner:  true,
+          };
+        }
+      }
+      ownerPayrollByEntity = window.ownerPayrollByEntity;
+      // Sync Personal Finance one more time now that all entities are loaded
+      if (typeof syncAllPayrollsToPersonal === 'function') {
+        try { syncAllPayrollsToPersonal(); } catch(e) {}
+      }
+      console.log('[Entities] Bulk-loaded owner payroll for', Object.keys(window.ownerPayrollByEntity).length, 'entities');
+    } catch (e) { console.warn('[Entities] Bulk payroll load failed:', e.message); }
   } catch(e){ console.warn('[Entities] Boot load failed:', e.message); }
 }
 
@@ -8844,20 +9045,20 @@ window.resetScanner=function(){
           </div>
 
           <div class="scenario-slider-wrap">
-            <div class="scenario-slider-label"><span class="scenario-slider-name">Revenue growth rate</span><span class="scenario-slider-val" id="lbl-rev-growth">+18%</span></div>
-            <input type="range" class="ff-range" id="sl-rev-growth" min="-30" max="100" value="18" oninput="updateScenario()">
+            <div class="scenario-slider-label"><span class="scenario-slider-name">Revenue growth rate</span><span class="scenario-slider-val" id="lbl-rev-growth">0%</span></div>
+            <input type="range" class="ff-range" id="sl-rev-growth" min="-30" max="100" value="0" oninput="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
             <div class="scenario-slider-label"><span class="scenario-slider-name">Additional headcount</span><span class="scenario-slider-val" id="lbl-headcount">0 hires</span></div>
             <input type="range" class="ff-range" id="sl-headcount" min="0" max="10" value="0" oninput="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
-            <div class="scenario-slider-label"><span class="scenario-slider-name">Avg salary per hire ($K)</span><span class="scenario-slider-val" id="lbl-salary">$95K</span></div>
-            <input type="range" class="ff-range" id="sl-salary" min="40" max="250" value="95" oninput="updateScenario()">
+            <div class="scenario-slider-label"><span class="scenario-slider-name">Avg salary per hire ($K)</span><span class="scenario-slider-val" id="lbl-salary">$0K</span></div>
+            <input type="range" class="ff-range" id="sl-salary" min="0" max="250" value="0" oninput="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
-            <div class="scenario-slider-label"><span class="scenario-slider-name">Churn rate</span><span class="scenario-slider-val" id="lbl-churn">1.8%</span></div>
-            <input type="range" class="ff-range" id="sl-churn" min="0" max="20" value="1.8" step="0.1" oninput="updateScenario()">
+            <div class="scenario-slider-label"><span class="scenario-slider-name">Churn rate</span><span class="scenario-slider-val" id="lbl-churn">0%</span></div>
+            <input type="range" class="ff-range" id="sl-churn" min="0" max="20" value="0" step="0.1" oninput="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
             <div class="scenario-slider-label"><span class="scenario-slider-name">One-time investment ($K)</span><span class="scenario-slider-val" id="lbl-invest">$0K</span></div>
@@ -9007,10 +9208,10 @@ requestAnimationFrame(renderNotifs);
 window.BASE = { rev: 0, exp: 0, cash: 0, burn: 0 };
 
 window.updateScenario = function(){
-  const revGrowth = parseFloat(document.getElementById('sl-rev-growth')?.value||18)/100;
+  const revGrowth = parseFloat(document.getElementById('sl-rev-growth')?.value||0)/100;
   const headcount = parseInt(document.getElementById('sl-headcount')?.value||0);
-  const salary = parseInt(document.getElementById('sl-salary')?.value||95)*1000;
-  const churn = parseFloat(document.getElementById('sl-churn')?.value||1.8)/100;
+  const salary = parseInt(document.getElementById('sl-salary')?.value||0)*1000;
+  const churn = parseFloat(document.getElementById('sl-churn')?.value||0)/100;
   const invest = parseInt(document.getElementById('sl-invest')?.value||0)*1000;
   const efficiency = parseFloat(document.getElementById('sl-efficiency')?.value||0)/100;
 
@@ -9048,7 +9249,10 @@ window.updateScenario = function(){
   set('sc-r-runway', runway===99?'∞':runway+' mo');
   document.getElementById('sc-r-rev-d').innerHTML = delta(projRev, BASE.rev);
   document.getElementById('sc-r-profit-d').innerHTML = delta(projProfit, BASE.rev-BASE.exp);
-  document.getElementById('sc-r-runway-d').innerHTML = delta(runway, 14)+'<span style="color:var(--t3)"> mo</span>';
+  // Baseline runway = current cash ÷ current monthly burn (no hardcoded 14)
+  const baseRunway = BASE.burn > 0 ? Math.round(BASE.cash / BASE.burn) : 0;
+  const _runDelta = runway === 99 ? '<span style="color:var(--green)">∞</span>' : (runway - baseRunway >= 0 ? '<span style="color:var(--green)">▲ ' : '<span style="color:var(--red)">▼ ') + Math.abs(runway - baseRunway) + ' mo</span>';
+  document.getElementById('sc-r-runway-d').innerHTML = _runDelta;
 
   renderScenarioChart(projRev, projExp);
 };
@@ -9081,7 +9285,7 @@ window.applyPreset = function(preset){
   document.querySelectorAll('.scenario-preset-btn').forEach(b=>b.classList.remove('active-preset'));
   document.getElementById('preset-'+preset)?.classList.add('active-preset');
   const presets = {
-    base:{revGrowth:18,headcount:0,salary:95,churn:1.8,invest:0,efficiency:0},
+    base:{revGrowth:0,headcount:0,salary:0,churn:0,invest:0,efficiency:0},
     hire:{revGrowth:25,headcount:2,salary:110,churn:1.8,invest:0,efficiency:0},
     growth:{revGrowth:60,headcount:4,salary:95,churn:1.2,invest:50,efficiency:5},
     downturn:{revGrowth:-15,headcount:0,salary:95,churn:8,invest:0,efficiency:10},

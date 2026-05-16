@@ -112,15 +112,22 @@
     const total    = _tsData.reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
     const billable = _tsData.filter(t => t.billable === 'Yes').reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
     const nb       = total - billable;
-    const rate     = total > 0 ? (billable / total * 100).toFixed(0) : 0;
+    const rate     = total > 0 ? Math.round(billable / total * 100) : 0;
     const days     = new Set(_tsData.map(t => t.date)).size;
-    const avg      = days > 0 ? (total / days).toFixed(1) : '0';
+    const avg      = days > 0 ? total / days : 0;
+
+    // Format hours: integers as "5h", decimals as "5.5h", zero as "0h"
+    const fmtH = (n) => {
+      if (!n || n === 0) return '0h';
+      const rounded = Math.round(n * 10) / 10;
+      return (Number.isInteger(rounded) ? rounded : rounded.toFixed(1)) + 'h';
+    };
 
     const mcs = document.querySelectorAll('#page-timesheet .mc-val');
-    if (mcs[0]) mcs[0].textContent = total.toFixed(1) + 'h';
-    if (mcs[1]) mcs[1].textContent = billable.toFixed(1) + 'h';
-    if (mcs[2]) mcs[2].textContent = nb.toFixed(1) + 'h';
-    if (mcs[3]) mcs[3].textContent = avg + 'h';
+    if (mcs[0]) mcs[0].textContent = fmtH(total);
+    if (mcs[1]) mcs[1].textContent = fmtH(billable);
+    if (mcs[2]) mcs[2].textContent = fmtH(nb);
+    if (mcs[3]) mcs[3].textContent = fmtH(avg);
     const chgs = document.querySelectorAll('#page-timesheet .mc-change');
     if (chgs[1]) chgs[1].textContent = rate + '% billable rate';
   }
@@ -229,65 +236,10 @@
   };
 
   // ══════════════════════════════════════════════════════
-  // 4. BUDGET — live rows from real expense categories
+  // 4. BUDGET — handled by finflow-api-wiring-medium.js (loadBudgetFromDB)
+  // which reads real /api/budget-targets and real /api/expenses. No hardcoded
+  // targets here.
   // ══════════════════════════════════════════════════════
-  const _origRenderBudget = typeof renderBudget === 'function' ? renderBudget : null;
-  window.renderBudget = async function () {
-    if (_origRenderBudget) _origRenderBudget();   // show static rows immediately
-    // Clear the hardcoded AI insight text set by the original renderBudget
-    const _aiText = document.getElementById('budget-ai-text');
-    if (_aiText) _aiText.textContent = '';
-    try {
-      const expenses = await api('GET', '/api/expenses');
-      const catTotals = {};
-      expenses.forEach(ex => {
-        catTotals[ex.category] = (catTotals[ex.category] || 0) + (ex.amount || 0);
-      });
-      if (!Object.keys(catTotals).length) return;
-
-      const targets = {
-        Rent: 50000, Software: 15000, Meals: 5000, Travel: 12000,
-        Salaries: 180000, Marketing: 25000, Equipment: 8000, Other: 20000,
-      };
-      const colorMap = {
-        Rent: 'var(--acc)', Software: 'var(--teal)', Meals: '#d4964a',
-        Travel: 'var(--red)', Salaries: 'var(--green)', Marketing: 'var(--purple)',
-        Equipment: 'var(--amber)', Other: 'var(--t3)',
-      };
-
-      const el = document.getElementById('budget-rows');
-      if (!el) return;
-
-      el.innerHTML = Object.entries(catTotals).map(([cat, actual]) => {
-        const budget  = targets[cat] || 5000;
-        const pct     = Math.min(100, (actual / budget) * 100);
-        const over    = actual > budget;
-        const variance = budget - actual;
-        const varStr  = (over ? '-' : '+') + '$' + (Math.abs(variance) / 1000).toFixed(1) + 'K';
-        const color   = colorMap[cat] || 'var(--acc)';
-        return `<div class="budget-row" style="margin-top:8px">
-          <span class="budget-label">${e(cat)}</span>
-          <div class="budget-track">
-            <div class="budget-actual" style="width:${pct.toFixed(1)}%;background:${over ? 'var(--red)' : color}"></div>
-            <div class="budget-marker" style="left:100%"></div>
-          </div>
-          <span class="budget-vals" style="font-family:var(--font-mono);font-size:11px">$${(actual / 1000).toFixed(1)}K / $${(budget / 1000).toFixed(0)}K</span>
-          <span class="budget-variance" style="color:${over ? 'var(--red)' : 'var(--green)'}">${varStr}</span>
-        </div>`;
-      }).join('');
-
-      const totalActual = expenses.reduce((s, ex) => s + (ex.amount || 0), 0);
-      const totalBudget = Object.values(targets).reduce((s, v) => s + v, 0);
-      const remaining   = totalBudget - totalActual;
-      const mcs  = document.querySelectorAll('#page-budget .mc-val');
-      const chgs = document.querySelectorAll('#page-budget .mc-change');
-      if (mcs[0])  mcs[0].textContent = '$' + (totalBudget / 1000).toFixed(0) + 'K';
-      if (mcs[1])  mcs[1].textContent = '$' + (totalActual / 1000).toFixed(1) + 'K';
-      if (chgs[1]) chgs[1].textContent = ((totalActual / totalBudget) * 100).toFixed(0) + '% used';
-      if (mcs[2])  mcs[2].textContent = '$' + (Math.abs(remaining) / 1000).toFixed(1) + 'K';
-      if (mcs[3])  { mcs[3].textContent = (remaining >= 0 ? '+' : '-') + '$' + (Math.abs(remaining) / 1000).toFixed(1) + 'K'; mcs[3].style.color = remaining >= 0 ? 'var(--green)' : 'var(--red)'; }
-    } catch (err) { /* static already showing */ }
-  };
 
   // ══════════════════════════════════════════════════════
   // 5. INVESTMENTS — load holdings from API into local array
@@ -540,62 +492,9 @@
   };
 
   // ══════════════════════════════════════════════════════
-  // 9. BUDGET TARGETS — editable modal + /api/budget-targets
+  // 9. BUDGET TARGETS — handled by finflow-api-wiring-medium.js
+  // (window.openBudgetTargetsModal + window._saveBudgetTargets there).
   // ══════════════════════════════════════════════════════
-  const DEFAULT_TARGETS = {
-    Rent: 50000, Software: 15000, Meals: 5000, Travel: 12000,
-    Salaries: 180000, Marketing: 25000, Equipment: 8000, Other: 20000,
-  };
-
-  window.openBudgetTargetsModal = async function () {
-    let modal = document.getElementById('budget-targets-modal');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'budget-targets-modal';
-      modal.className = 'modal-overlay hidden';
-      modal.innerHTML = `<div class="modal" style="max-width:400px">
-        <div class="modal-header">
-          <div class="modal-title">Edit Budget Targets</div>
-          <button class="modal-close" onclick="document.getElementById('budget-targets-modal').classList.add('hidden')">
-            <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
-          </button>
-        </div>
-        <div id="bt-rows" style="margin-top:10px;display:flex;flex-direction:column;gap:8px">Loading…</div>
-        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('budget-targets-modal').classList.add('hidden')">Cancel</button>
-          <button class="btn btn-primary btn-sm" onclick="saveBudgetTargets()">Save Targets</button>
-        </div>
-      </div>`;
-      document.body.appendChild(modal);
-    }
-    modal.classList.remove('hidden');
-    let targets = { ...DEFAULT_TARGETS };
-    try {
-      const saved = await api('GET', '/api/budget-targets');
-      if (saved && typeof saved === 'object') targets = { ...targets, ...saved };
-    } catch (err) { /* use defaults */ }
-    document.getElementById('bt-rows').innerHTML = Object.entries(targets).map(([cat, val]) =>
-      `<div style="display:flex;align-items:center;gap:8px">
-        <label style="width:90px;font-size:12px;color:var(--t2)">${e(cat)}</label>
-        <input id="bt-${e(cat)}" class="finput" type="number" min="0" value="${val}" style="flex:1">
-      </div>`
-    ).join('');
-  };
-
-  window.saveBudgetTargets = async function () {
-    const targets = {};
-    Object.keys(DEFAULT_TARGETS).forEach(cat => {
-      const el = document.getElementById('bt-' + cat);
-      if (el) targets[cat] = parseFloat(el.value) || 0;
-    });
-    try {
-      await api('PUT', '/api/budget-targets', targets);
-      document.getElementById('budget-targets-modal').classList.add('hidden');
-      tip('Budget targets saved');
-      if (typeof window.renderBudget === 'function') window.renderBudget();
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
-    } catch (err) { tip('Could not save — ' + err.message, true); }
-  };
 
   // ══════════════════════════════════════════════════════
   // 10. ADD HOLDING — override saveHolding to POST /api/holdings

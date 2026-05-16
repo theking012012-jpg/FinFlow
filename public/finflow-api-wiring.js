@@ -86,6 +86,16 @@
           const el = document.getElementById('s-notif-pay');
           if (el) el.checked = !!s.notif_pay;
         }
+        // Business profile fields (set from onboarding or earlier saves)
+        const setField = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+        setField('s-biz-name', s.business_name);
+        setField('s-industry', s.industry);
+        setField('s-address',  s.address);
+        setField('s-email',    s.email);
+        setField('s-phone',    s.phone);
+        setField('s-website',  s.website);
+        setField('s-tax-id',   s.tax_id);
+        setField('s-fy',       s.fiscal_year);
       } catch (e) {
         // Not logged in yet or no settings saved — fine, use defaults
       }
@@ -95,12 +105,21 @@
     // Patch saveSettings to actually persist
     window.saveSettings = async function () {
       const currency = document.getElementById('s-currency')?.value;
-      const dark_mode = document.getElementById('s-dark-toggle')?.checked;
+      const dark_mode = document.getElementById('s-dark-toggle')?.checked || document.getElementById('s-dark')?.checked;
       const show_cents = document.getElementById('s-cents')?.checked;
       const notif_email = document.getElementById('s-notif-email')?.checked;
       const notif_inv = document.getElementById('s-notif-inv')?.checked;
       const notif_pay = document.getElementById('s-notif-pay')?.checked;
       const name = document.getElementById('s-user-name')?.value?.trim();
+      // Business profile fields — these are audit-logged on the server
+      const business_name = document.getElementById('s-biz-name')?.value?.trim();
+      const industry      = document.getElementById('s-industry')?.value;
+      const address       = document.getElementById('s-address')?.value?.trim();
+      const email         = document.getElementById('s-email')?.value?.trim();
+      const phone         = document.getElementById('s-phone')?.value?.trim();
+      const website       = document.getElementById('s-website')?.value?.trim();
+      const tax_id        = document.getElementById('s-tax-id')?.value?.trim();
+      const fiscal_year   = document.getElementById('s-fy')?.value;
 
       try {
         await api('PUT', '/api/settings', {
@@ -111,6 +130,14 @@
           notif_inv,
           notif_pay,
           name,
+          business_name,
+          industry,
+          address,
+          email,
+          phone,
+          website,
+          tax_id,
+          fiscal_year,
         });
         notify('Settings saved successfully ✦');
       } catch (e) {

@@ -9,10 +9,7 @@ const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
 const { db, initDB, pool } = require('./database');
-const Redis = require('ioredis');
-const RedisStore = require('connect-redis').default;
-
-const redisClient = new Redis(process.env.REDIS_URL);
+const pgSession = require('connect-pg-simple')(session);
 
 let resendClient = null;
 try {
@@ -146,7 +143,7 @@ app.use(express.json({ limit: '10mb' })); // 10 mb covers base64-encoded receipt
 app.use(express.urlencoded({ extended: false }));
 app.set('trust proxy', 1);
 app.use(session({
-  store: new RedisStore({ client: redisClient }),
+  store: new pgSession({ pool, tableName: 'session', createTableIfMissing: true }),
   secret: process.env.SESSION_SECRET || 'finflow-dev-secret-change-in-production',
   resave: false,
   saveUninitialized: false,
@@ -844,15 +841,24 @@ app.get('/api/settings', requireAuth, wrap(async (req, res) => {
 app.put('/api/settings', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
+  // Read current settings for audit diff
+  const before = (await db.get('user_settings', r => r.user_id === req.session.userId)) || {};
   if (b.dark_mode      != null) patch.dark_mode      = b.dark_mode ? 1 : 0;
   if (b.currency       != null) patch.currency        = b.currency;
   if (b.show_cents     != null) patch.show_cents      = b.show_cents ? 1 : 0;
   if (b.notif_email    != null) patch.notif_email     = b.notif_email ? 1 : 0;
   if (b.notif_inv      != null) patch.notif_inv       = b.notif_inv ? 1 : 0;
   if (b.notif_pay      != null) patch.notif_pay       = b.notif_pay ? 1 : 0;
-  // Onboarding fields
-  if (b.business_name  != null) patch.business_name   = b.business_name.slice(0,200);
+  // Onboarding + profile fields
+  if (b.business_name  != null) patch.business_name   = String(b.business_name).slice(0,200);
   if (b.business_type  != null) patch.business_type   = b.business_type;
+  if (b.industry       != null) patch.industry        = String(b.industry).slice(0,100);
+  if (b.address        != null) patch.address         = String(b.address).slice(0,500);
+  if (b.email          != null) patch.email           = String(b.email).trim().slice(0,254).toLowerCase();
+  if (b.phone          != null) patch.phone           = String(b.phone).slice(0,50);
+  if (b.website        != null) patch.website         = String(b.website).slice(0,200);
+  if (b.tax_id         != null) patch.tax_id          = String(b.tax_id).slice(0,50);
+  if (b.fiscal_year    != null) patch.fiscal_year     = String(b.fiscal_year).slice(0,20);
   if (b.num_employees  != null) patch.num_employees   = b.num_employees;
   if (b.onboarding_done!= null) patch.onboarding_done = b.onboarding_done ? 1 : 0;
   await db.upsert('user_settings', 'user_id', req.session.userId, patch);
@@ -862,6 +868,20 @@ app.put('/api/settings', requireAuth, wrap(async (req, res) => {
     const uid = req.session.userId;
     const ent = await activeEntity(uid);
     if (ent) await db.update('entities', e => e.id === ent.id, { name: b.business_name.slice(0,100) });
+  }
+  // Audit log: emit one entry per business-profile field that changed.
+  // We only log fields that the user typically modifies on the Settings page —
+  // toggles (dark_mode, notif_*, show_cents) are intentionally excluded.
+  const TRACKED = ['business_name','industry','address','email','phone','website','tax_id','fiscal_year','currency','business_type','name'];
+  for (const f of TRACKED) {
+    if (patch[f] == null && f !== 'name') continue;
+    const newVal = f === 'name' ? (b.name ? b.name.trim() : null) : patch[f];
+    const oldVal = f === 'name'
+      ? (await db.get('users', u => u.id === req.session.userId))?.name
+      : before[f];
+    if (newVal == null) continue;
+    if (String(oldVal||'') === String(newVal||'')) continue;
+    logAudit(req, 'UPDATE', 'settings', null, { field: f, value: oldVal || null }, { field: f, value: newVal });
   }
   res.json({ ok: true });
 }));

@@ -113,13 +113,16 @@
       const eid = activeEntity?._dbId;
       const eq  = eid ? '?entity_id=' + eid : '';
 
-      // Always fetch invoices + expenses — needed for dashboard KPIs and charts.
-      const [invoices, expenses] = await Promise.all([
-        api('GET', '/api/invoices' + eq),
-        api('GET', '/api/expenses' + eq),
+      // Fetch everything in parallel — not just invoices/expenses
+      const [invoices, expenses, customers, inventory, payroll] = await Promise.all([
+        api('GET', '/api/invoices'  + eq),
+        api('GET', '/api/expenses'  + eq),
+        api('GET', '/api/customers' + eq),
+        api('GET', '/api/inventory' + eq),
+        api('GET', '/api/payroll'   + eq),
       ]);
 
-      // ── Refresh canonical arrays ───────────────────────────────────
+      // ── Invoices ──────────────────────────────────────────────────
       window.userInvoices = (invoices || []).map(r => ({
         _dbId:    r.id,
         client:   r.client,
@@ -134,6 +137,7 @@
       }));
       window._realInvoices = invoices || [];
 
+      // ── Expenses ──────────────────────────────────────────────────
       window.bizExpenses = (expenses || []).map(r => ({
         _dbId:  r.id,
         desc:   r.description,
@@ -146,58 +150,87 @@
       }));
       window._realExpenses = expenses || [];
 
-      // ── Detect the currently open page ────────────────────────────
-      // window.currentPage is set by the showPage tracking wrapper below.
-      // Fall back to DOM inspection for robustness.
-      const _curPage = window.currentPage
-        || document.querySelector('.page.active')?.id?.replace('page-', '')
-        || 'dashboard';
+      // ── Customers ─────────────────────────────────────────────────
+      if (customers) {
+        window.bizCustomers = customers.map(r => ({
+          _dbId:   r.id,
+          name:    r.name,
+          email:   r.email   || '',
+          phone:   r.phone   || '',
+          address: r.address || '',
+          notes:   r.notes   || '',
+        }));
+        if (typeof window.renderCustomers === 'function') window.renderCustomers();
+      }
 
-      // ── Re-render the active page (list rows + stat cards) ─────────
-      // Each page's render function rebuilds BOTH the table rows and the
-      // stat/KPI cards at the top of that page from the current in-memory
-      // arrays (which the save handler already updated optimistically).
-      const _renderDispatch = {
-        'invoices':           () => { if (typeof window.renderInvoices          === 'function') window.renderInvoices(); },
-        'expenses':           () => { if (typeof window.renderExpenses          === 'function') window.renderExpenses(); },
-        'customers':          () => { if (typeof window.renderCustomers         === 'function') window.renderCustomers(); },
-        'payroll':            () => { if (typeof window.renderPayroll           === 'function') window.renderPayroll(); },
-        'inventory':          () => { if (typeof window.renderInventory         === 'function') window.renderInventory(); },
-        'items':              () => { if (typeof window.renderItems             === 'function') window.renderItems(); },
-        'quotes':             () => { if (typeof window.renderQuotes            === 'function') window.renderQuotes(); },
-        'vendors':            () => { if (typeof window.renderVendors           === 'function') window.renderVendors(); },
-        'bills':              () => { if (typeof window.renderBills             === 'function') window.renderBills(); },
-        'payments-received':  () => { if (typeof window.renderPaymentsReceived  === 'function') window.renderPaymentsReceived(); },
-        'payments-made':      () => { if (typeof window.renderPaymentsMade      === 'function') window.renderPaymentsMade(); },
-        'sales-receipts':     () => { if (typeof window.renderReceipts          === 'function') window.renderReceipts(); },
-        'recurring-invoices': () => { if (typeof window.renderRecurringInvoices === 'function') window.renderRecurringInvoices(); },
-        'recurring-bills':    () => { if (typeof window.renderRecurringBills    === 'function') window.renderRecurringBills(); },
-        'credit-notes':       () => { if (typeof window.renderCreditNotes       === 'function') window.renderCreditNotes(); },
-        'vendor-credits':     () => { if (typeof window.renderVendorCredits     === 'function') window.renderVendorCredits(); },
-        'projects':           () => { if (typeof window.renderProjects          === 'function') window.renderProjects(); },
-        'timesheet':          () => { if (typeof window.renderTimesheet         === 'function') window.renderTimesheet(); },
-        'investments':        () => { if (typeof window.renderInvestments       === 'function') window.renderInvestments(); },
-        'personal':           () => { if (typeof window.renderPersonal          === 'function') window.renderPersonal(); },
-        'manual-journals':    () => { if (typeof window.renderJournals          === 'function') window.renderJournals(); },
-        'chart-of-accounts':  () => { if (typeof window.renderCOA              === 'function') window.renderCOA(); },
-        'reports':            () => { if (typeof window.renderReports           === 'function') window.renderReports(); },
-        'budget':             () => { if (typeof window.renderBudget            === 'function') window.renderBudget(); },
-      };
+      // ── Inventory ─────────────────────────────────────────────────
+      if (inventory) {
+        window.inventoryItems = inventory.map(r => ({
+          _dbId:    r.id,
+          name:     r.name,
+          sku:      r.sku      || '',
+          price:    r.price,
+          units:    r.units,
+          category: r.category || '',
+          reorder:  r.reorder_point || 0,
+        }));
+        if (typeof window.renderInventory === 'function') window.renderInventory();
+      }
 
-      const _pgFn = _renderDispatch[_curPage];
-      if (_pgFn) _pgFn();
+      // ── Payroll ───────────────────────────────────────────────────
+      if (payroll) {
+        window.payrollEmployees = payroll.filter(r => !r.is_owner).map(r => ({
+          _dbId:   r.id,
+          fname:   r.fname,
+          lname:   r.lname,
+          role:    r.role,
+          type:    r.emp_type,
+          gross:   r.gross,
+          taxRate: r.tax_rate,
+          avClass: r.av_class || 'av-blue',
+        }));
+        const ownerRow = payroll.find(r => r.is_owner);
+        if (ownerRow) {
+          window.ownerPayroll = {
+            _dbId:   ownerRow.id,
+            fname:   ownerRow.fname,
+            lname:   ownerRow.lname,
+            role:    ownerRow.role,
+            type:    ownerRow.emp_type,
+            gross:   ownerRow.gross,
+            taxRate: ownerRow.tax_rate,
+            avClass: ownerRow.av_class || 'av-blue',
+          };
+        }
+        if (typeof window.renderPayroll === 'function') window.renderPayroll();
+      }
 
-      // ── Always rebuild dashboard KPIs + charts ─────────────────────
-      // This keeps revenue/expenses/profit/outstanding current even when
-      // the user is on a non-dashboard page and a save happens.
+      // ── Rebuild top clients from real paid invoices ───────────────
+      const _clientTotals = {};
+      (invoices || []).filter(i => i.status === 'paid').forEach(i => {
+        const c = i.client || 'Other';
+        _clientTotals[c] = (_clientTotals[c] || 0) + (parseFloat(i.amount) || 0);
+      });
+      window._topClients = Object.entries(_clientTotals)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([label, total]) => ({ label, total }));
+
+      // ── Re-render lists ───────────────────────────────────────────
+      if (typeof window.renderInvoices === 'function') window.renderInvoices();
+      if (typeof window.renderExpenses === 'function') window.renderExpenses();
+
+      // ── Refresh all dashboard KPIs and charts ─────────────────────
       if (typeof window._refreshDashboardUI === 'function') {
         window._refreshDashboardUI();
       } else if (typeof window.updateDashboard === 'function') {
         window.updateDashboard();
       }
+      if (typeof window.buildCharts === 'function') window.buildCharts();
 
-      console.log('[FinFlow] refreshFinancials ✅ page:', _curPage,
-        '— inv:', (invoices || []).length, 'exp:', (expenses || []).length);
+      console.log('[FinFlow] refreshFinancials ✅ — invoices:', (invoices||[]).length,
+        'expenses:', (expenses||[]).length, 'customers:', (customers||[]).length,
+        'inventory:', (inventory||[]).length, 'payroll:', (payroll||[]).length);
     } catch (err) {
       console.warn('[FinFlow] refreshFinancials failed:', err.message);
     }
@@ -255,35 +288,6 @@
           '— backed by PostgreSQL on Supabase. It\'s safe across all browsers and devices.';
       }
     }, 600);
-  })();
-
-  // ── 7. Track current page so refreshFinancials dispatches correctly ─
-  // ── Also wrap loadEntitiesFromDB to reload vendors/bills on entity switch
-  (function _run2() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run2); return; }
-    // Outermost showPage wrapper — runs first, sets currentPage, then calls chain
-    const _pgTrack = window.showPage;
-    if (typeof _pgTrack === 'function') {
-      window.showPage = function (id, navEl) {
-        window.currentPage = id;
-        return _pgTrack(id, navEl);
-      };
-    }
-    // Set initial page from DOM in case showPage was never called yet
-    if (!window.currentPage) {
-      window.currentPage = document.querySelector('.page:not(.hidden)')?.id?.replace('page-', '') || 'dashboard';
-    }
-
-    // Wrap loadEntitiesFromDB to also reload vendors/bills after entity switch
-    const _origLoadEnt = (typeof loadEntitiesFromDB === 'function') ? loadEntitiesFromDB : null;
-    if (_origLoadEnt) {
-      window.loadEntitiesFromDB = async function () {
-        await _origLoadEnt();
-        if (typeof window._loadVendorsFromDB === 'function') try { await window._loadVendorsFromDB(); } catch(e) {}
-        if (typeof window._loadBillsFromDB   === 'function') try { await window._loadBillsFromDB();   } catch(e) {}
-      };
-    }
-  })();
+  })()
 
   console.log('[FinFlow] Postgres wiring active — localStorage persistence neutralised.');
-
-})();

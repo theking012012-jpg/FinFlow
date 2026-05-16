@@ -396,8 +396,7 @@
 
     async function loadVendors() {
       try {
-        const _eidV2 = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
-        const rows = await api('GET', '/api/vendors' + (_eidV2 ? '?entity_id=' + _eidV2 : ''));
+        const rows = await api('GET', '/api/vendors');
         _vendorsFetched = true;
         _vendorsData = rows || [];
         console.log('[Vendors] loaded', _vendorsData.length);
@@ -453,8 +452,7 @@
       const owing    = parseFloat(document.getElementById('vendor-owing')?.value) || 0;
       const ytd_paid = parseFloat(document.getElementById('vendor-ytd')?.value)   || 0;
       try {
-        const _eidVNew = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
-        const saved = await api('POST', '/api/vendors', { name, contact, category, owing, ytd_paid, status: 'active', entity_id: _eidVNew });
+        const saved = await api('POST', '/api/vendors', { name, contact, category, owing, ytd_paid, status: 'active' });
         _vendorsData.unshift(saved.row || saved);
         closeModal('vendor-modal');
         renderVendors();
@@ -483,8 +481,7 @@
 
     async function loadBills() {
       try {
-        const _eidB2 = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
-        const rows = await api('GET', '/api/bills' + (_eidB2 ? '?entity_id=' + _eidB2 : ''));
+        const rows = await api('GET', '/api/bills');
         _billsFetched = true;
         _billsData = rows || [];
         console.log('[Bills] loaded', _billsData.length);
@@ -535,8 +532,7 @@
       const status   = document.getElementById('bill-status')?.value || 'unpaid';
       const notes    = document.getElementById('bill-notes')?.value?.trim() || '';
       try {
-        const _eidBNew = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
-        const saved = await api('POST', '/api/bills', { vendor, amount, due_date, status, notes, entity_id: _eidBNew });
+        const saved = await api('POST', '/api/bills', { vendor, amount, due_date, status, notes });
         _billsData.unshift(saved.row || saved);
         closeModal('bill-modal');
         renderBills();
@@ -784,33 +780,6 @@
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) { notify('Could not delete — ' + e.message, true); }
     };
-
-    // ── Expose load functions so entity-switch + showPage can reload ──
-    window._loadVendorsFromDB        = loadVendors;       // overrides stubs.js — pages.js wins
-    window._loadBillsFromDB          = loadBills;         // overrides stubs.js — pages.js wins
-    window._loadReceiptsFromDB       = loadReceipts;
-    window._loadPaymentsRecvFromDB   = loadPaymentsReceived;
-    window._loadCreditNotesFromDB    = loadCreditNotes;
-    window._loadPaymentsMadeFromDB   = loadPaymentsMade;
-    window._loadVendorCreditsFromDB  = loadVendorCredits;
-    window._loadRecurringBillsFromDB = loadRecurringBills;
-    window._loadRecurringInvFromDB   = loadRecurringInvoices;
-    window._loadQuotesFromDB         = loadQuotes;
-
-    // ── showPage hooks for pages not already covered by stubs.js ─────
-    const _pagesOrig = window.showPage;
-    if (typeof _pagesOrig === 'function') {
-      window.showPage = function (id, navEl) {
-        _pagesOrig(id, navEl);
-        if (id === 'sales-receipts')     loadReceipts();
-        if (id === 'payments-received')  loadPaymentsReceived();
-        if (id === 'credit-notes')       loadCreditNotes();
-        if (id === 'payments-made')      loadPaymentsMade();
-        if (id === 'vendor-credits')     loadVendorCredits();
-        if (id === 'vendors')            loadVendors();
-        if (id === 'bills')              loadBills();
-      };
-    }
 
     console.log('[FinFlow API Wiring — Pages] ✅ Quotes, Receipts, Payments Received, Recurring Invoices, Credit Notes, Vendors, Bills, Payments Made, Recurring Bills, Vendor Credits wired');
   })()

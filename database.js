@@ -207,33 +207,6 @@ async function initDB() {
   return pool;
 }
 
-// ── Auto-create missing table (JSONB schema) ─────────────────────────────────
-// Called when a query throws 42P01 (relation does not exist). This happens
-// when a new deployment adds a table that wasn't part of the older initDB run,
-// or when a route references a table that hasn't been provisioned yet.
-async function _ensureTable(table) {
-  // Allowlist: only auto-create tables we know about (don't let arbitrary
-  // table names from SQL strings create rogue tables).
-  if (!TABLES.includes(table)) return;
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ${table} (
-        id         SERIAL PRIMARY KEY,
-        user_id    INTEGER,
-        entity_id  INTEGER,
-        data       JSONB NOT NULL DEFAULT '{}',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_${table}_user_id ON ${table}(user_id)`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_${table}_entity_id ON ${table}(entity_id)`);
-    console.log(`[DB] Auto-created missing table: ${table}`);
-  } catch (e) {
-    console.error(`[DB] Failed to auto-create table ${table}:`, e.message);
-  }
-}
-
 // ── Row serialisation helpers ─────────────────────────────────────────────────
 function rowToObj(pgRow) {
   if (!pgRow) return null;
@@ -262,125 +235,73 @@ const db = {
   async insert(table, row) {
     const { user_id = null, entity_id = null, ...rest } = row;
     const data = objToData(rest);
-    const doInsert = () => pool.query(
+    const res = await pool.query(
       `INSERT INTO ${table} (user_id, entity_id, data)
        VALUES ($1, $2, $3)
        RETURNING *`,
       [user_id, entity_id, data]
     );
-    let res;
-    try {
-      res = await doInsert();
-    } catch (err) {
-      if (err.code === '42P01') {
-        await _ensureTable(table);
-        res = await doInsert();
-      } else {
-        throw err;
-      }
-    }
     const inserted = rowToObj(res.rows[0]);
     return { lastInsertRowid: inserted.id, row: inserted };
   },
 
   // get() — tries SQL first for common id/user_id lookups, falls back to JS filter
   async get(table, filterFn) {
-    try {
-      const res = await pool.query(
-        `SELECT * FROM ${table} ORDER BY id`
-      );
-      const row = res.rows.map(rowToObj).find(filterFn);
-      return row || null;
-    } catch (err) {
-      if (err.code === '42P01') {
-        // Relation does not exist — try to create it on-the-fly so we can
-        // serve a clean empty result instead of throwing a 500.
-        await _ensureTable(table);
-        return null;
-      }
-      throw err;
-    }
+    const res = await pool.query(
+      `SELECT * FROM ${table} ORDER BY id`
+    );
+    const row = res.rows.map(rowToObj).find(filterFn);
+    return row || null;
   },
 
   // get by user_id — uses index directly
   async getByUser(table, userId, filterFn) {
-    try {
-      const res = await pool.query(
-        `SELECT * FROM ${table} WHERE user_id = $1 ORDER BY id`,
-        [userId]
-      );
-      const rows = res.rows.map(rowToObj);
-      return filterFn ? (rows.find(filterFn) || null) : (rows[0] || null);
-    } catch (err) {
-      if (err.code === '42P01') { await _ensureTable(table); return null; }
-      throw err;
-    }
+    const res = await pool.query(
+      `SELECT * FROM ${table} WHERE user_id = $1 ORDER BY id`,
+      [userId]
+    );
+    const rows = res.rows.map(rowToObj);
+    return filterFn ? (rows.find(filterFn) || null) : (rows[0] || null);
   },
 
   // all() — scoped by user_id using index; optional JS filter for remaining predicates
   async all(table, filterFn, sortFn) {
     // Extract user_id from filterFn if it's a simple user_id check to use index
     // For backward compat we still support arbitrary filterFn
-    try {
-      const res = await pool.query(`SELECT * FROM ${table}`);
-      let rows = res.rows.map(rowToObj);
-      if (filterFn) rows = rows.filter(filterFn);
-      if (sortFn) rows.sort(sortFn);
-      return rows;
-    } catch (err) {
-      if (err.code === '42P01') {
-        // Table missing — auto-create the JSONB schema and return [] so
-        // freshly-deployed instances don't 500 on first read.
-        await _ensureTable(table);
-        return [];
-      }
-      throw err;
-    }
+    const res = await pool.query(`SELECT * FROM ${table}`);
+    let rows = res.rows.map(rowToObj);
+    if (filterFn) rows = rows.filter(filterFn);
+    if (sortFn) rows.sort(sortFn);
+    return rows;
   },
 
   // allByUser() — always uses the user_id index; optional extra JS filter
   async allByUser(table, userId, filterFn, sortFn) {
-    try {
-      const res = await pool.query(
-        `SELECT * FROM ${table} WHERE user_id = $1 ORDER BY created_at DESC`,
-        [userId]
-      );
-      let rows = res.rows.map(rowToObj);
-      if (filterFn) rows = rows.filter(filterFn);
-      if (sortFn) rows.sort(sortFn);
-      return rows;
-    } catch (err) {
-      if (err.code === '42P01') { await _ensureTable(table); return []; }
-      throw err;
-    }
+    const res = await pool.query(
+      `SELECT * FROM ${table} WHERE user_id = $1 ORDER BY created_at DESC`,
+      [userId]
+    );
+    let rows = res.rows.map(rowToObj);
+    if (filterFn) rows = rows.filter(filterFn);
+    if (sortFn) rows.sort(sortFn);
+    return rows;
   },
 
   // allByEntity() — scoped by both user_id and entity_id
   async allByEntity(table, userId, entityId, filterFn, sortFn) {
-    try {
-      const res = await pool.query(
-        `SELECT * FROM ${table} WHERE user_id = $1 AND entity_id = $2 ORDER BY created_at DESC`,
-        [userId, entityId]
-      );
-      let rows = res.rows.map(rowToObj);
-      if (filterFn) rows = rows.filter(filterFn);
-      if (sortFn) rows.sort(sortFn);
-      return rows;
-    } catch (err) {
-      if (err.code === '42P01') { await _ensureTable(table); return []; }
-      throw err;
-    }
+    const res = await pool.query(
+      `SELECT * FROM ${table} WHERE user_id = $1 AND entity_id = $2 ORDER BY created_at DESC`,
+      [userId, entityId]
+    );
+    let rows = res.rows.map(rowToObj);
+    if (filterFn) rows = rows.filter(filterFn);
+    if (sortFn) rows.sort(sortFn);
+    return rows;
   },
 
   async update(table, filterFn, patch) {
     // Optimised: if filterFn targets a single id, use WHERE id = $1
-    let res;
-    try {
-      res = await pool.query(`SELECT * FROM ${table}`);
-    } catch (err) {
-      if (err.code === '42P01') { await _ensureTable(table); return; }
-      throw err;
-    }
+    const res = await pool.query(`SELECT * FROM ${table}`);
     const toUpdate = res.rows.map(rowToObj).filter(filterFn);
     for (const row of toUpdate) {
       const applied = typeof patch === 'function' ? patch(row) : patch;
@@ -409,13 +330,7 @@ const db = {
   },
 
   async delete(table, filterFn) {
-    let res;
-    try {
-      res = await pool.query(`SELECT * FROM ${table}`);
-    } catch (err) {
-      if (err.code === '42P01') { await _ensureTable(table); return; }
-      throw err;
-    }
+    const res = await pool.query(`SELECT * FROM ${table}`);
     const toDelete = res.rows.map(rowToObj).filter(filterFn).map(r => r.id);
     if (toDelete.length === 0) return;
     await pool.query(`DELETE FROM ${table} WHERE id = ANY($1::int[])`, [toDelete]);
@@ -432,16 +347,7 @@ const db = {
   },
 
   async upsert(table, keyField, keyVal, patch) {
-    let res;
-    try {
-      res = await pool.query(`SELECT * FROM ${table}`);
-    } catch (err) {
-      if (err.code === '42P01') {
-        await _ensureTable(table);
-        return db.insert(table, { [keyField]: keyVal, ...patch });
-      }
-      throw err;
-    }
+    const res = await pool.query(`SELECT * FROM ${table}`);
     const existing = res.rows.map(rowToObj).find(r => r[keyField] === keyVal);
     if (existing) {
       await db.update(table, r => r[keyField] === keyVal, patch);

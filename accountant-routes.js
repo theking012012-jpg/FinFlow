@@ -890,23 +890,14 @@ If you cannot find a field, use null. Be concise.`;
 
   // ── PUBLIC DIRECTORY — verified accountants only ───────────────────────────
   app.get('/api/accountants/directory', wrap(async (req, res) => {
-    try {
-      const { country, specialisation } = req.query;
-      let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience, avg_rating, review_count, credentials, memberships, hourly_rate, packages, has_pricing FROM accountants WHERE status = 'verified'`;
-      const params = [];
-      if (country) { params.push(country); query += ` AND country = $${params.length}`; }
-      if (specialisation) { params.push(specialisation); query += ` AND specialisation = $${params.length}`; }
-      query += ' ORDER BY verified_at ASC';
-      const result = await pool.query(query, params);
-      return res.json(result.rows);
-    } catch (e) {
-      console.error('[GET /api/accountants/directory] failed:', e.code, e.message);
-      // 42P01 = relation does not exist — accountants table not provisioned
-      // on this deployment. Fail soft so the marketplace page renders empty
-      // instead of throwing a 500 that breaks the rest of the app.
-      if (e.code === '42P01') return res.json([]);
-      return res.json([]);
-    }
+    const { country, specialisation } = req.query;
+    let query = `SELECT id, first_name, last_name, firm, country, specialisation, bio, experience, avg_rating, review_count, credentials, memberships, hourly_rate, packages, has_pricing FROM accountants WHERE status = 'verified'`;
+    const params = [];
+    if (country) { params.push(country); query += ` AND country = $${params.length}`; }
+    if (specialisation) { params.push(specialisation); query += ` AND specialisation = $${params.length}`; }
+    query += ' ORDER BY verified_at ASC';
+    const result = await pool.query(query, params);
+    return res.json(result.rows);
   }));
 
   // ── CLIENT: GET MY LINKED ACCOUNTANT ──────────────────────────────────────

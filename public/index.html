@@ -6965,11 +6965,24 @@ document.addEventListener('keydown', function(e){
 function buildRiver(d){
   const wrap=document.getElementById('river-wrap');
   if(!wrap)return;
+  // Guard: skip render if any required input is NaN/undefined/non-finite.
+  // Otherwise SVG path math produces NaN coords which Chrome logs as
+  // "<path> attribute d: Expected number, ..." spam in the console.
+  const _num = v => (typeof v === 'number' && isFinite(v));
+  if (!d || ![d.rev,d.exp,d.profit,d.sal,d.rent,d.sw,d.mkt].every(_num)) {
+    wrap.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">No cash flow data yet — add invoices and expenses to see the river chart.</div>';
+    return;
+  }
   const dark=darkMode;
   const W=wrap.clientWidth||wrap.getBoundingClientRect().width||560,H=200;
-  const rev=d.rev, exp=d.exp, profit=d.profit;
-  const sal=d.sal, rent=d.rent, sw=d.sw, mkt=d.mkt;
-  const other=exp-sal-rent-sw-mkt;
+  const rev=d.rev||0, exp=d.exp||0, profit=d.profit||0;
+  const sal=d.sal||0, rent=d.rent||0, sw=d.sw||0, mkt=d.mkt||0;
+  // If revenue is zero, ratio math below would divide by zero → NaN. Skip.
+  if (rev <= 0 || exp <= 0) {
+    wrap.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">Add revenue and expenses to see the cash-flow river.</div>';
+    return;
+  }
+  const other=Math.max(0, exp-sal-rent-sw-mkt);
 
   // Color palette
   const C={

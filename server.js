@@ -758,7 +758,13 @@ app.delete('/api/goals/:id', requireAuth, wrap(async (req, res) => {
 
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
 app.get('/api/projects', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('projects', r => r.user_id === req.session.userId, (a, b) => b.id - a.id));
+  try {
+    const rows = await db.all('projects', r => r.user_id === req.session.userId, (a, b) => b.id - a.id);
+    res.json(rows);
+  } catch (e) {
+    console.error('[GET /api/projects] failed for user', req.session.userId, ':', e.code, e.message);
+    res.json([]);
+  }
 }));
 app.post('/api/projects', requireAuth, wrap(async (req, res) => {
   const { name, client = '', budget = 0, status = 'In Progress' } = req.body || {};
@@ -799,7 +805,13 @@ app.delete('/api/projects/:id', requireAuth, wrap(async (req, res) => {
 
 // ── HOLDINGS ──────────────────────────────────────────────────────────────────
 app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('holdings', r => r.user_id === req.session.userId, (a,b) => a.id - b.id));
+  try {
+    const rows = await db.all('holdings', r => r.user_id === req.session.userId, (a,b) => a.id - b.id);
+    res.json(rows);
+  } catch (e) {
+    console.error('[GET /api/holdings] failed for user', req.session.userId, ':', e.code, e.message);
+    res.json([]); // fail-soft: empty list keeps the frontend happy
+  }
 }));
 app.post('/api/holdings', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -1726,14 +1738,18 @@ app.get('/admin', (req, res) => {
 app.get('/sitemap.xml', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'sitemap.xml'));
 });
-// Any unmatched /api/* request should return JSON 404 — never fall through
-// to the static catch-all (which would return HTML and confuse fetch()).
-app.use('/api', (req, res) => {
-  res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
+// Favicon — return 204 if no file is bundled so it doesn't 500 via the
+// static handler. Place this before the wildcard so HEAD requests succeed.
+app.get('/favicon.ico', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'favicon.ico'), (err) => {
+    if (err) res.status(204).end();
+  });
 });
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
-});
+// NOTE: The /api 404 fallback and the * static fallback are registered at
+// the BOTTOM of this file (just before the global error handler) so that
+// every app.get/post/put/delete('/api/...') has been registered first.
+// (Express matches middleware in registration order — placing the /api
+// 404 here would short-circuit any routes defined further down.)
 
 // ── GLOBAL ERROR HANDLER ──────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
@@ -1828,6 +1844,17 @@ app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
   }
   res.json({ ok: true });
 }));
+
+// ── /api 404 + STATIC FALLBACKS ───────────────────────────────────────────────
+// Must come AFTER every route registration — Express matches in order.
+// Any unmatched /api/* path returns JSON (so fetch().json() doesn't choke on
+// the landing.html that the wildcard below would otherwise serve).
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
+});
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 initDB().then(() => {

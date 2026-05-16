@@ -58,7 +58,7 @@
         if (_activeEnt?._dbId) {
           try { await api('POST', `/api/entities/${_activeEnt._dbId}/activate`); } catch(e) {}
         }
-        const rows = await api('GET', '/api/invoices');
+        const rows = await api('GET', '/api/invoices' + (_activeEnt?._dbId ? '?entity_id=' + _activeEnt._dbId : ''));
         if (rows && rows.length > 0) {
           // Map DB shape → frontend shape, prepend to seed data or replace
           const mapped = rows.map(r => ({
@@ -209,7 +209,8 @@
     // Boot: load saved expenses
     async function loadExpensesFromDB() {
       try {
-        const rows = await api('GET', '/api/expenses');
+        const _eidExp = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
+        const rows = await api('GET', '/api/expenses' + (_eidExp ? '?entity_id=' + _eidExp : ''));
         if (rows && rows.length > 0) {
           const mapped = rows.map(r => ({
             _dbId:  r.id,
@@ -325,7 +326,8 @@
 
     async function loadInventoryFromDB() {
       try {
-        const rows = await api('GET', '/api/inventory');
+        const _eidInv = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
+        const rows = await api('GET', '/api/inventory' + (_eidInv ? '?entity_id=' + _eidInv : ''));
         _inventoryFetched = true;
         console.log('[Inventory] API returned', rows ? rows.length : 0, 'rows');
         if (rows && rows.length > 0) {
@@ -381,12 +383,14 @@
       const max      = Math.max(units * 2, 100);
 
       try {
+        const _eidProd = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
         const saved = await api('POST', '/api/inventory', {
           sku,
           name,
           units,
           max_units: max,
           cost,
+          entity_id: _eidProd,
         });
 
         if (!window.inventory) window.inventory = [];
@@ -516,54 +520,79 @@
     // 4. PAYROLL
     // ════════════════════════════════════════════
 
-    // Boot: load saved payroll from DB
+    // Note: payroll loading is now driven by loadEntityData() in index.html
+    // which fetches /api/payroll?entity_id=X per-entity and populates
+    // window.ownerPayrollByEntity correctly. We no longer do an unscoped
+    // /api/payroll GET here — that returned ALL rows and mis-mapped the
+    // owner entry to the wrong entity index.
+    //
+    // For showPage/refresh hooks that need to reload payroll for the active
+    // entity, delegate to loadEntityData(activeIdx) which handles both
+    // employees and owner-per-entity restoration.
     async function loadPayrollFromDB() {
-      try {
-        const rows = await api('GET', '/api/payroll');
-        if (!rows || rows.length === 0) return;
-
-        rows.forEach(r => {
-          const emp = {
-            _dbId:    r.id,
-            fname:    r.fname,
-            lname:    r.lname,
-            role:     r.role     || '',
-            type:     r.emp_type || 'Full-time',
-            gross:    r.gross,
-            taxRate:  r.tax_rate,
-            net:      Math.round(r.gross * (1 - r.tax_rate / 100)),
-            initials: (typeof getInitials === 'function') ? getInitials(r.fname, r.lname) : (r.fname[0] + (r.lname[0] || '')).toUpperCase(),
-            avClass:  r.av_class || 'av-blue',
-            isOwner:  !!r.is_owner,
-          };
-
-          if (r.is_owner) {
-            // Restore ownerPayroll compat pointer
-            window.ownerPayroll = emp;
-            // Also restore ownerPayrollByEntity for the active entity
-            const activeIdx = (window.ENTITIES || []).findIndex(e => e.active);
-            if (activeIdx >= 0) {
-              window.ownerPayrollByEntity = window.ownerPayrollByEntity || {};
-              window.ownerPayrollByEntity[activeIdx] = {
-                ...emp,
-                currency:   'USD',
-                entityName: (window.ENTITIES[activeIdx] || {}).name || 'Entity',
-              };
-            }
-          } else {
-            // Add to payrollEmployees if not already present
-            if (!window.payrollEmployees) window.payrollEmployees = [];
-            const exists = window.payrollEmployees.some(e => e._dbId === r.id);
-            if (!exists) window.payrollEmployees.push(emp);
-          }
-        });
-
-        if (typeof renderPayroll === 'function') renderPayroll();
-      } catch (e) {
-        // Ignore
+      const ents = window.ENTITIES || [];
+      const activeIdx = ents.findIndex(e => e.active);
+      if (activeIdx < 0 || !ents[activeIdx]?._dbId) return;
+      if (typeof window.loadEntityData === 'function') {
+        try { await window.loadEntityData(activeIdx); } catch (e) { console.warn('[Payroll] reload via loadEntityData failed:', e.message); }
       }
     }
-    loadPayrollFromDB();
+
+    // Override renderPayroll to read from window.ownerPayroll (set by loadPayrollFromDB).
+    // `let ownerPayroll` in index.html is script-scoped — not accessible via window —
+    // so loadPayrollFromDB correctly sets window.ownerPayroll but the original renderPayroll
+    // reads the stale let-binding. This override reads from window.* instead.
+    window.renderPayroll = function () {
+      const op      = window.ownerPayroll || null;
+      const emps    = window.payrollEmployees || [];
+      const allEmps = op ? [{...op, isOwner:true}, ...emps] : emps;
+      const fn      = typeof esc === 'function' ? esc : (s => String(s == null ? '' : s).replace(/</g,'&lt;').replace(/>/g,'&gt;'));
+      const sm      = typeof S   === 'function' ? S   : (n => '$' + (parseFloat(n)||0).toLocaleString());
+      const set     = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+      const totalGross = allEmps.reduce((a, e) => a + (parseFloat(e.gross)   || 0), 0);
+      const totalTax   = allEmps.reduce((a, e) => a + Math.round((parseFloat(e.gross)||0) * (parseFloat(e.taxRate)||0) / 100), 0);
+      set('pr-total',    sm(totalGross));
+      set('pr-headcount', allEmps.length + ' employee' + (allEmps.length !== 1 ? 's' : ''));
+      set('pr-tax',      sm(totalTax));
+
+      if (op) {
+        set('pr-owner-net',   sm(op.net));
+        set('pr-owner-label', 'Your net salary');
+        const ownerCta    = document.getElementById('owner-cta');
+        if (ownerCta)    ownerCta.style.display    = 'none';
+        const payrollLink = document.getElementById('payroll-link-card');
+        if (payrollLink) payrollLink.style.display  = 'flex';
+        const linkNet     = document.getElementById('link-net-display');
+        if (linkNet)     linkNet.textContent = sm(op.net) + '/mo';
+      } else {
+        set('pr-owner-net',   '—');
+        set('pr-owner-label', 'Not on payroll');
+        const ownerCta    = document.getElementById('owner-cta');
+        if (ownerCta)    ownerCta.style.display    = 'block';
+        const payrollLink = document.getElementById('payroll-link-card');
+        if (payrollLink) payrollLink.style.display  = 'none';
+      }
+
+      const list = document.getElementById('payroll-list');
+      if (!list) return;
+      list.innerHTML = allEmps.map(e => {
+        const net      = Math.round((parseFloat(e.gross)||0) * (1 - (parseFloat(e.taxRate)||0) / 100));
+        const tax      = Math.round((parseFloat(e.gross)||0) * (parseFloat(e.taxRate)||0) / 100);
+        const initials = e.initials || (typeof getInitials === 'function' ? getInitials(e.fname, e.lname) : ((e.fname||'')[0] + ((e.lname||'')[0]||'')).toUpperCase());
+        return `<div class="payroll-row">
+          <div class="emp-info">
+            <div class="emp-init ${e.avClass||'av-blue'}">${initials}</div>
+            <div><div class="emp-name">${fn(e.fname)} ${fn(e.lname)}${e.isOwner ? ' <span class="badge b-blue" style="font-size:9px">You</span>' : ''}</div><div class="emp-role">${fn(e.type||'Full-time')}</div></div>
+          </div>
+          <span style="color:var(--t2);font-size:12px">${fn(e.role||'')}</span>
+          <span style="font-family:var(--font-mono)">${sm(e.gross)}</span>
+          <span style="color:var(--red);font-family:var(--font-mono)">${(parseFloat(e.taxRate)||0) > 0 ? '-' + sm(tax) : '—'}</span>
+          <span style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${sm(net)}</span>
+          ${e.isOwner ? `<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>` : '<span></span>'}
+        </div>`;
+      }).join('');
+    };
 
     // Patch saveOwnerPayroll to persist per-entity to DB
     const _origSaveOwnerPayroll = window.saveOwnerPayroll;
@@ -575,6 +604,7 @@
       const byEntity = window.ownerPayrollByEntity || {};
       const ENTITIES = window.ENTITIES || [];
 
+      console.log('[Payroll Save] ownerPayrollByEntity keys:', Object.keys(byEntity), '| ENTITIES:', ENTITIES.map(e=>e.name+'('+e._dbId+')'));
       try {
         for (const [idxStr, op] of Object.entries(byEntity)) {
           const idx = parseInt(idxStr);
@@ -583,6 +613,7 @@
 
           if (op._dbId) {
             // Update existing record
+            console.log('[Payroll Save] PUT /api/payroll/' + op._dbId, '| entity:', entity?.name, '| gross:', op.gross);
             await api('PUT', `/api/payroll/${op._dbId}`, {
               fname:     op.fname,
               lname:     op.lname,
@@ -593,9 +624,10 @@
               av_class:  op.avClass || 'av-blue',
               entity_id: entityDbId,
             });
+            console.log('[Payroll Save] PUT success for dbId:', op._dbId);
           } else {
             // Create new record scoped to this entity
-            const saved = await api('POST', '/api/payroll', {
+            const payload = {
               fname:     op.fname,
               lname:     op.lname,
               role:      op.role     || 'CEO / Founder',
@@ -605,7 +637,10 @@
               av_class:  op.avClass  || 'av-blue',
               is_owner:  true,
               entity_id: entityDbId,
-            });
+            };
+            console.log('[Payroll Save] POST /api/payroll', payload);
+            const saved = await api('POST', '/api/payroll', payload);
+            console.log('[Payroll Save] POST response:', saved);
             // Store DB id back so next save does a PUT
             byEntity[idxStr]._dbId = saved.id;
             if (window.ownerPayroll && !window.ownerPayroll._dbId) {
@@ -613,9 +648,10 @@
             }
           }
         }
-        console.log('[FinFlow] Owner payroll persisted per-entity ✦');
+        console.log('[Payroll Save] ✅ Owner payroll persisted per-entity. window.ownerPayroll:', window.ownerPayroll);
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
+        console.error('[Payroll Save] ❌ Failed:', e.message);
         notify('Payroll saved locally but could not sync to server — ' + e.message, true);
       }
     };
@@ -820,6 +856,267 @@
         notify('Could not delete item — ' + e.message, true);
       }
     };
+
+    // ── Expose load functions so entity-switch and showPage can reload ─
+    window._loadInvoicesFromDB  = loadInvoicesFromDB;
+    window._loadExpensesFromDB  = loadExpensesFromDB;
+    window._loadInventoryFromDB = loadInventoryFromDB;
+    window._loadPayrollFromDB   = loadPayrollFromDB;
+    window._loadItemsFromDB     = loadItemsFromDB;
+
+    // ── Scenario BASE sync: populate from real invoice/expense data ───
+    window._syncScenarioBase = function () {
+      const invs = window._realInvoices || [];
+      const exps = window._realExpenses || [];
+      const annualRev = invs.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      const annualExp = exps.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+      const monthlyExp = annualExp / 12;
+      window.BASE = { rev: annualRev, exp: annualExp, cash: 0, burn: monthlyExp };
+    };
+
+    // ── Entity KPI cards: update after renderEntities() ───────────────
+    const _medOrigRenderEntities = window.renderEntities;
+    window.renderEntities = function () {
+      if (typeof _medOrigRenderEntities === 'function') _medOrigRenderEntities();
+      const ents = typeof ENTITIES !== 'undefined' ? ENTITIES : (window.ENTITIES || []);
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      set('ent-count', ents.length);
+      const S = v => typeof window.S === 'function' ? window.S(v) : '$' + (parseFloat(v) || 0).toLocaleString();
+      const totalRev = ents.reduce((s, e) => s + (e.data && e.data.rev ? parseFloat(e.data.rev) : 0), 0);
+      const totalProfit = ents.reduce((s, e) => s + (e.data && e.data.netProfit ? parseFloat(e.data.netProfit) : 0), 0);
+      set('ent-consol-rev', S(totalRev));
+      set('ent-consol-profit', S(totalProfit));
+      if (totalRev > 0) {
+        const margin = Math.round(totalProfit / totalRev * 100);
+        set('ent-consol-margin', margin + '% margin');
+      }
+    };
+
+    // ── Document KPI cards: update after renderDocuments() ────────────
+    const _medOrigRenderDocuments = window.renderDocuments;
+    if (typeof _medOrigRenderDocuments === 'function') {
+      window.renderDocuments = async function () {
+        await _medOrigRenderDocuments();
+        const cache = window._docsCache || [];
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+        set('docs-count', cache.length);
+        const totalKB = cache.reduce((s, d) => {
+          const kb = parseFloat((d.size || '').replace(/[^0-9.]/g, '')) || 0;
+          return s + kb;
+        }, 0);
+        set('docs-storage', totalKB >= 1024 ? (totalKB / 1024).toFixed(1) + ' MB' : Math.round(totalKB) + ' KB');
+        const now = new Date();
+        const thisMonth = cache.filter(d => {
+          if (!d.uploaded_at) return false;
+          const u = new Date(d.uploaded_at);
+          return u.getFullYear() === now.getFullYear() && u.getMonth() === now.getMonth();
+        });
+        set('docs-added', thisMonth.length);
+      };
+    }
+
+    // ── Timesheet title: set to current month dynamically ─────────────
+    function _setTimesheetTitle() {
+      const el = document.getElementById('timesheet-title');
+      if (!el) return;
+      const now = new Date();
+      el.textContent = 'Timesheet — ' + now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    }
+
+    // ════════════════════════════════════════════
+    // BUDGET TARGETS — load + KPI wiring
+    // ════════════════════════════════════════════
+    async function loadBudgetFromDB() {
+      try {
+        const res = await api('GET', '/api/budget-targets');
+        if (!res || typeof res !== 'object') return;
+        // Accept both shapes: flat {Rent:5000} or wrapped {targets:{Rent:5000}}
+        const targets = (res.targets && typeof res.targets === 'object') ? res.targets : res;
+        const expenses = window._realExpenses || [];
+
+        // Aggregate actual spend per category
+        const catActuals = {};
+        expenses.forEach(e => {
+          const cat = e.category || 'Other';
+          catActuals[cat] = (catActuals[cat] || 0) + (parseFloat(e.amount) || 0);
+        });
+
+        const COLORS = ['#c9a84c','#5aaa9e','#9e8fbf','#7db87d','#d4964a','#c46a5a'];
+        const bd = window.BUDGET_DATA;
+        if (bd) { bd.length = 0; }
+        let totalBudget = 0, totalSpent = 0;
+
+        Object.entries(targets).forEach(([cat, budget], i) => {
+          const bAmt = parseFloat(budget) || 0;
+          const actual = catActuals[cat] || 0;
+          totalBudget += bAmt;
+          totalSpent  += actual;
+          if (bd) bd.push({ cat, budget: bAmt, actual, color: COLORS[i % COLORS.length] });
+        });
+
+        const remaining = totalBudget - totalSpent;
+        const pct = totalBudget > 0 ? Math.round(totalSpent / totalBudget * 100) : 0;
+        const sm = v => typeof window.S === 'function' ? window.S(v) : '$' + Math.round(v).toLocaleString();
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+        set('budget-total',    sm(totalBudget));
+        set('budget-total-sub', totalBudget > 0 ? Object.keys(targets).length + ' categor' + (Object.keys(targets).length === 1 ? 'y' : 'ies') : 'No targets set');
+        set('budget-spent',    sm(totalSpent));
+        set('budget-spent-pct', pct + '% used');
+        set('budget-remaining', sm(Math.max(0, remaining)));
+        set('budget-remaining-sub', remaining >= 0 ? 'On track' : 'Over budget');
+        set('budget-variance',  sm(Math.abs(remaining)));
+        set('budget-variance-sub', remaining >= 0 ? 'Under budget' : 'Over budget');
+
+        if (typeof renderBudget === 'function') renderBudget();
+      } catch (e) {
+        console.warn('[Budget] Load failed:', e.message);
+      }
+    }
+    window._loadBudgetFromDB = loadBudgetFromDB;
+
+    // Budget targets modal — fully editable: user can add, remove, and set
+    // monthly/annual targets per category. Saves to /api/budget-targets.
+    const SUGGESTED_CATS = ['Salaries','Rent','Software','Marketing','Travel','Meals','Office','Utilities','Other'];
+    const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    function _renderBudgetTargetRows(targets) {
+      const rowsEl = document.getElementById('_budget-target-rows');
+      if (!rowsEl) return;
+      const entries = Object.entries(targets);
+      if (!entries.length) {
+        rowsEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--t3);font-size:12.5px">No categories yet — add one below</div>';
+        return;
+      }
+      rowsEl.innerHTML = entries.map(([cat, val]) => `
+        <div class="_bt-row" style="display:flex;align-items:center;gap:8px">
+          <input type="text" class="finput" placeholder="Category" data-bt-cat value="${esc(cat)}" style="flex:1.4;font-size:12.5px;padding:5px 8px">
+          <input type="number" class="finput" placeholder="Amount" min="0" step="50" data-bt-amt value="${val||''}" style="flex:1;font-size:12.5px;padding:5px 8px">
+          <button class="btn btn-ghost btn-sm" onclick="this.closest('._bt-row').remove()" title="Remove" style="color:var(--red);opacity:.7;padding:0 6px">✕</button>
+        </div>`).join('');
+    }
+
+    function _addBudgetTargetRow(cat, val) {
+      const rowsEl = document.getElementById('_budget-target-rows');
+      if (!rowsEl) return;
+      const empty = rowsEl.querySelector('div[style*="No categories yet"]');
+      if (empty) empty.remove();
+      const wrap = document.createElement('div');
+      wrap.className = '_bt-row';
+      wrap.style.cssText = 'display:flex;align-items:center;gap:8px';
+      wrap.innerHTML = `
+        <input type="text" class="finput" placeholder="Category" data-bt-cat value="${esc(cat||'')}" style="flex:1.4;font-size:12.5px;padding:5px 8px">
+        <input type="number" class="finput" placeholder="Amount" min="0" step="50" data-bt-amt value="${val||''}" style="flex:1;font-size:12.5px;padding:5px 8px">
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('._bt-row').remove()" title="Remove" style="color:var(--red);opacity:.7;padding:0 6px">✕</button>`;
+      rowsEl.appendChild(wrap);
+      wrap.querySelector('[data-bt-cat]').focus();
+    }
+    window._addBudgetTargetRow = _addBudgetTargetRow;
+
+    window.openBudgetTargetsModal = async function () {
+      let currentTargets = {};
+      try {
+        const res = await api('GET', '/api/budget-targets');
+        // Server returns the targets object directly (or empty object). Be
+        // permissive: accept either {Rent:5000,...} or {targets:{Rent:5000}}.
+        if (res && typeof res === 'object') {
+          currentTargets = res.targets && typeof res.targets === 'object' ? res.targets : res;
+        }
+      } catch (e) { /* no saved targets yet */ }
+
+      let existing = document.getElementById('_budget-targets-modal');
+      if (!existing) {
+        existing = document.createElement('div');
+        existing.id = '_budget-targets-modal';
+        existing.className = 'modal-overlay hidden';
+        existing.innerHTML = `
+          <div class="modal" style="max-width:460px">
+            <div class="modal-header">
+              <div><div class="modal-title">Budget targets</div><div class="modal-sub">Set <span id="_bt-period-label">annual</span> targets per expense category</div></div>
+              <button class="modal-close" onclick="document.getElementById('_budget-targets-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            </div>
+            <div style="display:flex;gap:6px;margin:4px 0 10px">
+              <button class="btn btn-ghost btn-sm _bt-period" data-period="annual" style="font-weight:600">Annual</button>
+              <button class="btn btn-ghost btn-sm _bt-period" data-period="monthly">Monthly</button>
+            </div>
+            <div id="_budget-target-rows" style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;padding:4px 0"></div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px;padding-top:8px;border-top:1px dashed var(--bd)">
+              <span style="font-size:11px;color:var(--t3);align-self:center;margin-right:4px">Quick add:</span>
+              <span id="_bt-suggested"></span>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--acc)" onclick="window._addBudgetTargetRow('', '')">+ Add custom</button>
+            </div>
+            <div class="modal-footer" style="margin-top:14px">
+              <button class="btn btn-ghost" onclick="document.getElementById('_budget-targets-modal').classList.add('hidden')">Cancel</button>
+              <button class="btn btn-primary" onclick="window._saveBudgetTargets()">Save targets</button>
+            </div>
+          </div>`;
+        document.body.appendChild(existing);
+
+        // Wire period toggle
+        existing.querySelectorAll('._bt-period').forEach(btn => {
+          btn.onclick = () => {
+            existing.querySelectorAll('._bt-period').forEach(b => b.style.fontWeight = '');
+            btn.style.fontWeight = '600';
+            existing.dataset.period = btn.dataset.period;
+            const lbl = document.getElementById('_bt-period-label');
+            if (lbl) lbl.textContent = btn.dataset.period;
+          };
+        });
+        existing.dataset.period = 'annual';
+
+        // Wire suggested category chips
+        document.getElementById('_bt-suggested').innerHTML = SUGGESTED_CATS.map(cat =>
+          `<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:2px 7px;border:1px solid var(--bd)" onclick="window._addBudgetTargetRow('${esc(cat)}','')">${esc(cat)}</button>`
+        ).join(' ');
+      }
+
+      _renderBudgetTargetRows(currentTargets);
+      existing.classList.remove('hidden');
+    };
+
+    window._saveBudgetTargets = async function () {
+      const modal = document.getElementById('_budget-targets-modal');
+      const period = (modal && modal.dataset.period) || 'annual';
+      const rows = document.querySelectorAll('#_budget-target-rows ._bt-row');
+      const targets = {};
+      rows.forEach(row => {
+        const cat = row.querySelector('[data-bt-cat]')?.value?.trim();
+        const v   = parseFloat(row.querySelector('[data-bt-amt]')?.value);
+        if (!cat || !(v > 0)) return;
+        // Store annual values in DB; convert monthly→annual on save
+        targets[cat] = period === 'monthly' ? Math.round(v * 12) : Math.round(v);
+      });
+      try {
+        await api('PUT', '/api/budget-targets', { targets });
+        modal.classList.add('hidden');
+        await loadBudgetFromDB();
+        if (typeof notify === 'function') notify('Budget targets saved ✦');
+      } catch (e) {
+        if (typeof notify === 'function') notify('Could not save targets — ' + e.message, true);
+      }
+    };
+
+    // Load budget on boot
+    loadBudgetFromDB();
+
+    // ── showPage hooks: reload when navigating to entity-scoped pages ─
+    const _medOrig = window.showPage;
+    if (typeof _medOrig === 'function') {
+      window.showPage = function (id, navEl) {
+        _medOrig(id, navEl);
+        if (id === 'invoices')   loadInvoicesFromDB();
+        if (id === 'expenses')   loadExpensesFromDB();
+        if (id === 'inventory')  loadInventoryFromDB();
+        if (id === 'payroll')    loadPayrollFromDB();
+        if (id === 'items')      loadItemsFromDB();
+        if (id === 'budget')     loadBudgetFromDB();
+        if (id === 'timesheet')  _setTimesheetTitle();
+        if (id === 'documents')  { if (typeof window.renderDocuments === 'function') window.renderDocuments(); }
+      };
+    }
+
+    // Set timesheet title immediately on load
+    _setTimesheetTitle();
 
     console.log('[FinFlow API Wiring — Medium] ✅ Invoices, Expenses, Inventory, Payroll, Items patched');
   })()

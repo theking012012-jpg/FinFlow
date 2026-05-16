@@ -383,6 +383,8 @@ html{overflow-x:hidden}
 .user-plan{font-size:10px;color:var(--t3)}
 /* TOPBAR */
 .main{background:var(--bg2);display:flex;flex-direction:column;overflow:hidden}
+/* Settings & Plans pages need full scroll - override column height clipping */
+#page-settings .two-col>div,#page-pricing .two-col>div{height:auto;overflow:visible}
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.5rem;background:var(--bg1);border-bottom:1px solid var(--bd);flex-shrink:0;gap:8px}
 .topbar-left{display:flex;align-items:center;gap:10px;min-width:0}
 .page-title{font-size:16px;font-weight:600;color:var(--t1);white-space:nowrap;font-family:var(--font-display);letter-spacing:.03em}
@@ -401,9 +403,16 @@ html{overflow-x:hidden}
 .btn-icon:hover{background:var(--bg3);color:var(--t1)}
 .btn-icon svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 /* CONTENT */
-.content{padding:1.25rem 1.5rem;overflow-y:auto;flex:1;max-height:calc(100svh - 52px)}
+.content{padding:1.25rem 1.5rem;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0;max-height:calc(100svh - 52px)}
+/* Settings & Plans: allow full scroll of all content */
+#page-settings .two-col,#page-pricing .two-col{align-items:start}
+#page-settings,#page-pricing{padding-bottom:2rem}
 .page{display:none}
 .page.active{display:block}
+/* Ensure tall pages are fully scrollable — give the active page its own
+   scroll context and bottom breathing room so nothing is cut off. */
+#page-settings.page.active,#page-pricing.page.active{padding-bottom:80px}
+#page-settings,#page-pricing{height:auto;min-height:0}
 /* METRICS */
 .metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem}
 .metrics-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.25rem}
@@ -421,7 +430,7 @@ html{overflow-x:hidden}
 .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.9rem}
 .card-title{font-size:14px;font-weight:400;color:var(--t1);font-family:var(--font-display);letter-spacing:.04em}
 .card-sub{font-size:11px;color:var(--t3);margin-top:2px}
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem}.page-settings .two-col,.page-pricing .two-col{align-items:start}
 /* BARS */
 .bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .bar-label{font-size:12px;color:var(--t2);width:105px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1268,10 +1277,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- BUDGET PAGE -->
       <div class="page" id="page-budget">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total budget</div><div class="mc-val">$420K</div><div class="mc-change neutral">Annual</div></div>
-          <div class="mc"><div class="mc-label">Spent</div><div class="mc-val">$231K</div><div class="mc-change up">55% used</div></div>
-          <div class="mc"><div class="mc-label">Remaining</div><div class="mc-val">$189K</div><div class="mc-change up">7 months left</div></div>
-          <div class="mc"><div class="mc-label">Variance</div><div class="mc-val" style="color:var(--green)">+$12K</div><div class="mc-change up">Under budget</div></div>
+          <div class="mc"><div class="mc-label">Total budget</div><div class="mc-val" id="budget-total">$0</div><div class="mc-change neutral" id="budget-total-sub">No targets set</div></div>
+          <div class="mc"><div class="mc-label">Spent</div><div class="mc-val" id="budget-spent">$0</div><div class="mc-change neutral" id="budget-spent-pct">—</div></div>
+          <div class="mc"><div class="mc-label">Remaining</div><div class="mc-val" id="budget-remaining">$0</div><div class="mc-change neutral" id="budget-remaining-sub">—</div></div>
+          <div class="mc"><div class="mc-label">Variance</div><div class="mc-val" id="budget-variance">$0</div><div class="mc-change neutral" id="budget-variance-sub">—</div></div>
         </div>
         <div class="card">
           <div class="card-header">
@@ -1327,10 +1336,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- MULTI-ENTITY PAGE -->
       <div class="page" id="page-entities">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Entities</div><div class="mc-val">3</div><div class="mc-change neutral">Separate ledgers</div></div>
-          <div class="mc"><div class="mc-label">Consolidated revenue</div><div class="mc-val">$821K</div><div class="mc-change up">All entities</div></div>
-          <div class="mc"><div class="mc-label">Consolidated profit</div><div class="mc-val">$312K</div><div class="mc-change up">38% margin</div></div>
-          <div class="mc"><div class="mc-label">Intercompany</div><div class="mc-val">$24K</div><div class="mc-change neutral">Eliminated</div></div>
+          <div class="mc"><div class="mc-label">Entities</div><div class="mc-val" id="ent-count">0</div><div class="mc-change neutral">Separate ledgers</div></div>
+          <div class="mc"><div class="mc-label">Consolidated revenue</div><div class="mc-val" id="ent-consol-rev">$0</div><div class="mc-change up">All entities</div></div>
+          <div class="mc"><div class="mc-label">Consolidated profit</div><div class="mc-val" id="ent-consol-profit">$0</div><div class="mc-change up" id="ent-consol-margin">—</div></div>
+          <div class="mc"><div class="mc-label">Intercompany</div><div class="mc-val">$0</div><div class="mc-change neutral">Eliminated</div></div>
         </div>
         <div class="card">
           <div class="card-header">
@@ -1356,8 +1365,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               </select>
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr repeat(3,80px) 90px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
-            <span>Line</span><span style="text-align:right">FinFlow</span><span style="text-align:right">FinScale</span><span style="text-align:right">FinPay</span><span style="text-align:right">Consolidated</span>
+          <div id="consol-pl-header" style="display:grid;grid-template-columns:1fr 90px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
+            <span>Line</span><span style="text-align:right">Consolidated</span>
           </div>
           <div id="consol-pl"></div>
         </div>
@@ -1366,9 +1375,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- TEAM & ROLES PAGE -->
       <div class="page" id="page-team">
         <div class="metrics-grid-3">
-          <div class="mc"><div class="mc-label">Team members</div><div class="mc-val">8</div><div class="mc-change neutral">Active users</div></div>
+          <div class="mc"><div class="mc-label">Team members</div><div class="mc-val" id="team-count">0</div><div class="mc-change neutral">Active users</div></div>
           <div class="mc"><div class="mc-label">Roles</div><div class="mc-val">4</div><div class="mc-change neutral">Owner · Admin · Accountant · Viewer</div></div>
-          <div class="mc"><div class="mc-label">Pending invites</div><div class="mc-val">2</div><div class="mc-change neutral">Awaiting acceptance</div></div>
+          <div class="mc"><div class="mc-label">Pending invites</div><div class="mc-val" id="team-pending">0</div><div class="mc-change neutral">Awaiting acceptance</div></div>
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
@@ -1380,10 +1389,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">Role permissions</div></div>
-            <div style="display:grid;grid-template-columns:1fr repeat(4,22px);gap:6px;padding:0 0 6px;font-size:9px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--bd);align-items:center">
-              <span>Permission</span><span title="Owner">O</span><span title="Admin">A</span><span title="Accountant">Ac</span><span title="Viewer">V</span>
+            <div style="display:grid;grid-template-columns:1fr repeat(4,32px);gap:6px;padding:0 0 6px;font-size:9px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--bd);align-items:center">
+              <span>Permission</span><span style="text-align:center" title="Owner">O</span><span style="text-align:center" title="Admin">A</span><span style="text-align:center" title="Accountant">Ac</span><span style="text-align:center" title="Viewer">V</span>
             </div>
             <div id="perm-list"></div>
+            <div style="margin-top:.75rem;display:flex;justify-content:flex-end">
+              <button class="btn btn-primary btn-sm" onclick="savePermissions()">Save permissions</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1391,9 +1403,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- AUDIT TRAIL PAGE -->
       <div class="page" id="page-audit">
         <div class="metrics-grid-3">
-          <div class="mc"><div class="mc-label">Events today</div><div class="mc-val">47</div><div class="mc-change neutral">Across all users</div></div>
-          <div class="mc"><div class="mc-label">Last change</div><div class="mc-val" style="font-size:18px">2m ago</div><div class="mc-change neutral">Invoice updated</div></div>
-          <div class="mc"><div class="mc-label">Retention</div><div class="mc-val">7 yrs</div><div class="mc-change up">Full history</div></div>
+          <div class="mc"><div class="mc-label">Events loaded</div><div class="mc-val" id="audit-event-count">—</div><div class="mc-change neutral">Across all users</div></div>
+          <div class="mc"><div class="mc-label">Last change</div><div class="mc-val" style="font-size:15px" id="audit-last-time">—</div><div class="mc-change neutral" id="audit-last-action">—</div></div>
+          <div class="mc"><div class="mc-label">Retention</div><div class="mc-val">Full history</div><div class="mc-change up">All time</div></div>
         </div>
         <div class="card">
           <div class="card-header">
@@ -1534,9 +1546,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- BUSINESS INVESTMENTS PAGE -->
       <div class="page" id="page-biz-investments">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Portfolio Value</div><div class="mc-val" id="biz-inv-total">$1,240,500</div><div class="mc-change up" id="biz-inv-total-chg">+$38,200 this month</div></div>
-          <div class="mc"><div class="mc-label">Unrealised Gain</div><div class="mc-val" id="biz-inv-gain">$184,300</div><div class="mc-change up" id="biz-inv-gain-chg">+17.4% since inception</div></div>
-          <div class="mc"><div class="mc-label">Annual Income</div><div class="mc-val" id="biz-inv-income">$29,600</div><div class="mc-change neutral">Dividends &amp; interest</div></div>
+          <div class="mc"><div class="mc-label">Portfolio Value</div><div class="mc-val" id="biz-inv-total">$0</div><div class="mc-change neutral" id="biz-inv-total-chg">—</div></div>
+          <div class="mc"><div class="mc-label">Unrealised Gain</div><div class="mc-val" id="biz-inv-gain">$0</div><div class="mc-change neutral" id="biz-inv-gain-chg">—</div></div>
+          <div class="mc"><div class="mc-label">Annual Income</div><div class="mc-val" id="biz-inv-income">$0</div><div class="mc-change neutral">Dividends &amp; interest</div></div>
           <div class="mc"><div class="mc-label">Day's Change</div><div class="mc-val" id="biz-inv-daychg">—</div><div class="mc-change neutral" id="biz-inv-daychg-chg">Loading…</div></div>
         </div>
         <div class="two-col" style="margin-bottom:1.25rem">
@@ -1546,10 +1558,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <button class="btn btn-ghost btn-sm" onclick="notify('Rebalance plan generated ✦')">Rebalance ↗</button>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-              <div class="bar-row"><span class="bar-label">Equities</span><div class="bar-track"><div class="bar-fill" style="width:55%;background:var(--acc)"></div></div><span class="bar-val">$682K</span></div>
-              <div class="bar-row"><span class="bar-label">Fixed income</span><div class="bar-track"><div class="bar-fill" style="width:25%;background:var(--teal)"></div></div><span class="bar-val">$310K</span></div>
-              <div class="bar-row"><span class="bar-label">Real estate</span><div class="bar-track"><div class="bar-fill" style="width:12%;background:var(--purple)"></div></div><span class="bar-val">$149K</span></div>
-              <div class="bar-row"><span class="bar-label">Cash</span><div class="bar-track"><div class="bar-fill" style="width:8%;background:var(--green)"></div></div><span class="bar-val">$64K</span></div>
+              <div class="bar-row"><span class="bar-label">Equities</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--acc)"></div></div><span class="bar-val">$0</span></div>
+              <div class="bar-row"><span class="bar-label">Fixed income</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--teal)"></div></div><span class="bar-val">$0</span></div>
+              <div class="bar-row"><span class="bar-label">Real estate</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--purple)"></div></div><span class="bar-val">$0</span></div>
+              <div class="bar-row"><span class="bar-label">Cash</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--green)"></div></div><span class="bar-val">$0</span></div>
             </div>
           </div>
           <div class="card" style="margin-bottom:0">
@@ -1561,20 +1573,20 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
                 <button class="btn btn-ghost btn-sm">3Y</button>
               </div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px">
+            <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px" id="biz-perf-rows">
               <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px">
                 <span style="color:var(--t2)">This portfolio</span>
-                <span style="color:var(--green);font-weight:600;font-family:var(--font-mono)">+12.4%</span>
+                <span id="biz-perf-port" style="color:var(--t3);font-family:var(--font-mono)">—</span>
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px">
                 <span style="color:var(--t2)">S&amp;P 500</span>
-                <span style="color:var(--t1);font-family:var(--font-mono)">+9.8%</span>
+                <span id="biz-perf-sp" style="color:var(--t3);font-family:var(--font-mono)">—</span>
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px">
                 <span style="color:var(--t2)">60/40 Benchmark</span>
-                <span style="color:var(--t1);font-family:var(--font-mono)">+6.2%</span>
+                <span id="biz-perf-bench" style="color:var(--t3);font-family:var(--font-mono)">—</span>
               </div>
-              <div style="padding-top:8px;border-top:1px solid var(--bd);font-size:11.5px;color:var(--t3)">Outperforming benchmark by <span style="color:var(--green);font-weight:600">+6.2pp</span> YTD</div>
+              <div id="biz-perf-summary" style="padding-top:8px;border-top:1px solid var(--bd);font-size:11.5px;color:var(--t3)">No holdings yet — add positions to see performance.</div>
             </div>
           </div>
         </div>
@@ -1590,82 +1602,18 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <span></span><span>Asset</span><span style="text-align:right">Type</span><span style="text-align:right">Value</span><span style="text-align:right">Cost</span><span style="text-align:right">Gain/Loss</span><span style="text-align:right">Income</span>
           </div>
           <div id="biz-inv-holdings-list">
-            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">VTI</div>
-              <div><div style="font-weight:500;color:var(--t1)">VTI</div><div style="font-size:11px;color:var(--t3)">Vanguard Total Market ETF</div></div>
-              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">ETF</span></div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$342,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$295,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+$47,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$3,420</div>
-            </div>
-            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">BND</div>
-              <div><div style="font-weight:500;color:var(--t1)">BND</div><div style="font-size:11px;color:var(--t3)">Vanguard Total Bond ETF</div></div>
-              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">Bond ETF</span></div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$218,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$210,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+$8,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$9,810</div>
-            </div>
-            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">MSF</div>
-              <div><div style="font-weight:500;color:var(--t1)">MSFT</div><div style="font-size:11px;color:var(--t3)">Microsoft Corp</div></div>
-              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">Stock</span></div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$156,400</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$98,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+$58,400</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$1,248</div>
-            </div>
-            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">RE</div>
-              <div><div style="font-weight:500;color:var(--t1)">RE</div><div style="font-size:11px;color:var(--t3)">Commercial Property REIT</div></div>
-              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">Real Estate</span></div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$148,600</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$130,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+$18,600</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$8,916</div>
-            </div>
-            <div class="inv-holding-row" style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-              <div style="width:30px;height:30px;border-radius:7px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--acc)">SGO</div>
-              <div><div style="font-weight:500;color:var(--t1)">SGOV</div><div style="font-size:11px;color:var(--t3)">iShares 0-3 Mo Treasury</div></div>
-              <div style="text-align:right"><span class="badge b-blue" style="font-size:10px">T-Bill</span></div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$92,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$92,000</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--t2)">$0</div>
-              <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$4,600</div>
-            </div>
+            <div style="padding:2rem;text-align:center;color:var(--t3)">No holdings yet — click + Add holding to get started</div>
           </div>
         </div>
         <div class="two-col">
           <div class="ai-box" style="margin-bottom:0">
             <div class="ai-head">&#10022; Claude analysis</div>
-            <div class="ai-insight">Portfolio is well-diversified across equities, fixed income and real estate with low single-stock concentration risk.</div>
-            <div class="ai-insight">Bond allocation provides $9,810/yr in predictable income — useful as a buffer against seasonal revenue dips.</div>
-            <div class="ai-insight">Consider tax-loss harvesting on SGOV before year-end to offset gains elsewhere in the portfolio.</div>
+            <div class="ai-insight">Add holdings to your portfolio to see AI-powered analysis and insights.</div>
           </div>
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">Upcoming income</div><div class="card-sub">Dividends &amp; distributions</div></div>
             <div style="display:flex;flex-direction:column;gap:8px" id="upcoming-income-list">
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-                  <div><div style="color:var(--t1);font-weight:500">VTI dividend</div><div style="font-size:11px;color:var(--t3)">Jun 28</div></div>
-                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">$855</div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-                  <div><div style="color:var(--t1);font-weight:500">BND coupon</div><div style="font-size:11px;color:var(--t3)">Jul 2</div></div>
-                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">$2,453</div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-                  <div><div style="color:var(--t1);font-weight:500">REIT distribution</div><div style="font-size:11px;color:var(--t3)">Jul 15</div></div>
-                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">$2,229</div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-                  <div><div style="color:var(--t1);font-weight:500">MSFT dividend</div><div style="font-size:11px;color:var(--t3)">Sep 12</div></div>
-                  <div style="font-family:var(--font-mono);color:var(--teal);font-weight:600">$312</div>
-                </div>
-              <div style="padding-top:6px;font-size:11.5px;color:var(--t2);display:flex;justify-content:space-between">
-                <span>Next 90 days</span><span style="color:var(--teal);font-weight:600">$5,849</span>
-              </div>
+              <div style="padding:1rem 0;text-align:center;color:var(--t3);font-size:12px">No upcoming income — add holdings with dividends to see scheduled payments</div>
             </div>
           </div>
         </div>
@@ -1815,7 +1763,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <div class="page" id="page-payroll">
         <div class="metrics-grid">
           <div class="mc"><div class="mc-label">Monthly payroll</div><div class="mc-val" id="pr-total">—</div><div class="mc-change neutral" id="pr-headcount">5 employees</div></div>
-          <div class="mc"><div class="mc-label">Next run date</div><div class="mc-val">May 1</div><div class="mc-change up">3 days away</div></div>
+          <div class="mc"><div class="mc-label">Next run date</div><div class="mc-val">—</div><div class="mc-change neutral">No upcoming run</div></div>
           <div class="mc"><div class="mc-label">Tax withheld</div><div class="mc-val" id="pr-tax">—</div><div class="mc-change neutral">This month</div></div>
           <div class="mc"><div class="mc-label">Your net pay</div><div class="mc-val" id="pr-owner-net" style="color:var(--acc)">—</div><div class="mc-change neutral" id="pr-owner-label">Not on payroll</div></div>
         </div>
@@ -1842,17 +1790,17 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- INVENTORY -->
       <div class="page" id="page-inventory">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total SKUs</div><div class="mc-val">48</div><div class="mc-change neutral">Active products</div></div>
-          <div class="mc"><div class="mc-label">Inventory value</div><div class="mc-val">$34,200</div><div class="mc-change up">At cost</div></div>
-          <div class="mc"><div class="mc-label">Low stock alerts</div><div class="mc-val" style="color:var(--amber)">2</div><div class="mc-change dn">Reorder needed</div></div>
-          <div class="mc"><div class="mc-label">COGS this month</div><div class="mc-val">$11,400</div><div class="mc-change neutral">MAC method</div></div>
+          <div class="mc"><div class="mc-label">Total SKUs</div><div class="mc-val" id="inv-skus">0</div><div class="mc-change neutral">Active products</div></div>
+          <div class="mc"><div class="mc-label">Inventory value</div><div class="mc-val" id="inv-value">$0</div><div class="mc-change up">At cost</div></div>
+          <div class="mc"><div class="mc-label">Low stock alerts</div><div class="mc-val" style="color:var(--amber)" id="inv-lowstock">0</div><div class="mc-change dn">Reorder needed</div></div>
+          <div class="mc"><div class="mc-label">COGS this month</div><div class="mc-val" id="inv-cogs">$0</div><div class="mc-change neutral">MAC method</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Stock levels</div><button class="btn btn-ghost btn-sm" onclick="openProductModal()">+ Add product</button></div>
           <div class="inv-item-row" style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>SKU</span><span>Product</span><span>In stock</span><span>Level</span><span>Value</span><span></span></div>
           <div id="inventory-list"><!-- rendered --></div>
         </div>
-        <button class="btn btn-ghost" onclick="sendPrompt('Which inventory items should I reorder this week? I have 9 Webcam 4K Ultras and 4 Ergonomic Mice left in stock.')">Get AI reorder recommendations ↗</button>
+        <button class="btn btn-ghost" onclick="sendPrompt('Which inventory items should I reorder this week based on my current stock levels and reorder thresholds?')">Get AI reorder recommendations ↗</button>
       </div>
 
       <!-- API CONNECTIONS -->
@@ -2133,16 +2081,16 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div id="pers-payroll-breakdown" style="display:none;background:rgba(0,0,0,.2);border-radius:var(--radius);padding:.6rem .75rem"></div>
         </div>
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Monthly income</div><div class="mc-val" id="pers-income">$6,800</div><div class="mc-change up" id="pers-income-src">After tax</div></div>
-          <div class="mc"><div class="mc-label">Monthly spending</div><div class="mc-val" id="pers-spend">$3,240</div><div class="mc-change dn">vs $3,180 last month</div></div>
-          <div class="mc"><div class="mc-label">Savings rate</div><div class="mc-val" id="pers-savings">52%</div><div class="mc-change up" id="pers-savings-vs">Above 40% target</div></div>
-          <div class="mc"><div class="mc-label">Net worth</div><div class="mc-val" id="pers-nw">$84,500</div><div class="mc-change up" id="pers-nw-chg">+$1,200 this month</div></div>
+          <div class="mc"><div class="mc-label">Monthly income</div><div class="mc-val" id="pers-income">$0</div><div class="mc-change neutral" id="pers-income-src">After tax</div></div>
+          <div class="mc"><div class="mc-label">Monthly spending</div><div class="mc-val" id="pers-spend">$0</div><div class="mc-change neutral">—</div></div>
+          <div class="mc"><div class="mc-label">Savings rate</div><div class="mc-val" id="pers-savings">0%</div><div class="mc-change neutral" id="pers-savings-vs">—</div></div>
+          <div class="mc"><div class="mc-label">Net worth</div><div class="mc-val" id="pers-nw">$0</div><div class="mc-change neutral" id="pers-nw-chg">—</div></div>
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">Spending breakdown</div><button class="btn btn-ghost btn-sm" onclick="openSpendingModal()">Edit</button></div>
             <div id="spending-bars"></div>
-            <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)" id="pers-spend-total">$3,240</span></div>
+            <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)" id="pers-spend-total">$0</span></div>
           </div>
           <div style="display:flex;flex-direction:column;gap:12px">
             <div class="card" style="margin-bottom:0">
@@ -2152,11 +2100,11 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div class="card" style="margin-bottom:0">
               <div class="card-header"><div class="card-title">Monthly cash flow</div></div>
               <div style="display:flex;flex-direction:column;gap:8px">
-                <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Income (net pay)</span><span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="p-cf-income">+$6,800</span></div>
-                <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--red);font-family:var(--font-mono);font-weight:600" id="p-cf-spend">-$3,240</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Income (net pay)</span><span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="p-cf-income">+$0</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--red);font-family:var(--font-mono);font-weight:600" id="p-cf-spend">-$0</span></div>
                 <div style="height:1px;background:var(--bd);margin:2px 0"></div>
-                <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t1);font-weight:500">Monthly surplus</span><span style="font-family:var(--font-mono);font-weight:700" id="p-cf-surplus">$3,560</span></div>
-                <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3)"><span>Savings rate</span><span id="p-cf-rate">52%</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t1);font-weight:500">Monthly surplus</span><span style="font-family:var(--font-mono);font-weight:700" id="p-cf-surplus">$0</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3)"><span>Savings rate</span><span id="p-cf-rate">0%</span></div>
               </div>
             </div>
           </div>
@@ -2299,10 +2247,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- ITEMS -->
       <div class="page" id="page-items">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Items</div><div class="mc-val">124</div><div class="mc-change neutral">Products &amp; services</div></div>
-          <div class="mc"><div class="mc-label">Active</div><div class="mc-val">98</div><div class="mc-change up">79% of catalog</div></div>
-          <div class="mc"><div class="mc-label">Low Stock</div><div class="mc-val" style="color:var(--amber)">5</div><div class="mc-change dn">Below reorder point</div></div>
-          <div class="mc"><div class="mc-label">Avg Margin</div><div class="mc-val">64%</div><div class="mc-change up">+2% vs last quarter</div></div>
+          <div class="mc"><div class="mc-label">Total Items</div><div class="mc-val" id="items-total">0</div><div class="mc-change neutral">Products &amp; services</div></div>
+          <div class="mc"><div class="mc-label">Active</div><div class="mc-val" id="items-active">0</div><div class="mc-change up">Of catalog</div></div>
+          <div class="mc"><div class="mc-label">Low Stock</div><div class="mc-val" style="color:var(--amber)" id="items-lowstock">0</div><div class="mc-change dn">Below reorder point</div></div>
+          <div class="mc"><div class="mc-label">Avg Margin</div><div class="mc-val" id="items-margin">—</div><div class="mc-change up">Across all products</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Items &amp; Products</div><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="filterItems('all')">All</button><button class="btn btn-ghost btn-sm" onclick="filterItems('product')">Products</button><button class="btn btn-ghost btn-sm" onclick="filterItems('service')">Services</button><button class="btn btn-primary btn-sm" onclick="openNewItemModal()">+ New item</button></div></div>
@@ -2350,10 +2298,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- SALES RECEIPTS -->
       <div class="page" id="page-sales-receipts">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Receipts</div><div class="mc-val">24</div><div class="mc-change neutral">This month</div></div>
-          <div class="mc"><div class="mc-label">Cash Sales</div><div class="mc-val">$12,400</div><div class="mc-change up">Direct payments</div></div>
-          <div class="mc"><div class="mc-label">Card Sales</div><div class="mc-val">$31,200</div><div class="mc-change up">Via Stripe</div></div>
-          <div class="mc"><div class="mc-label">Refunds</div><div class="mc-val" style="color:var(--red)">$840</div><div class="mc-change dn">2 refunds issued</div></div>
+          <div class="mc"><div class="mc-label">Total Receipts</div><div class="mc-val">0</div><div class="mc-change neutral">This month</div></div>
+          <div class="mc"><div class="mc-label">Cash Sales</div><div class="mc-val">$0</div><div class="mc-change neutral">Direct payments</div></div>
+          <div class="mc"><div class="mc-label">Card Sales</div><div class="mc-val">$0</div><div class="mc-change neutral">Via Stripe</div></div>
+          <div class="mc"><div class="mc-label">Refunds</div><div class="mc-val" style="color:var(--red)">$0</div><div class="mc-change neutral">Refunds issued</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Sales Receipts</div><button class="btn btn-primary btn-sm" onclick="openNewReceiptModal()">+ New Receipt</button></div>
@@ -2365,10 +2313,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- PAYMENTS RECEIVED -->
       <div class="page" id="page-payments-received">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Received (Apr)</div><div class="mc-val">$43,680</div><div class="mc-change up">+8% vs Mar</div></div>
-          <div class="mc"><div class="mc-label">Outstanding</div><div class="mc-val" style="color:var(--amber)">$9,150</div><div class="mc-change dn">4 invoices pending</div></div>
-          <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" style="color:var(--red)">$3,800</div><div class="mc-change dn">2 overdue invoices</div></div>
-          <div class="mc"><div class="mc-label">Avg Days to Pay</div><div class="mc-val">18</div><div class="mc-change up">Down from 22 days</div></div>
+          <div class="mc"><div class="mc-label">Received</div><div class="mc-val">$0</div><div class="mc-change neutral">This month</div></div>
+          <div class="mc"><div class="mc-label">Outstanding</div><div class="mc-val" style="color:var(--amber)">$0</div><div class="mc-change neutral">Invoices pending</div></div>
+          <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" style="color:var(--red)">$0</div><div class="mc-change neutral">Overdue invoices</div></div>
+          <div class="mc"><div class="mc-label">Avg Days to Pay</div><div class="mc-val">—</div><div class="mc-change neutral">No data yet</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Payments Received</div><button class="btn btn-primary btn-sm" onclick="openRecordPaymentModal()">+ Record Payment</button></div>
@@ -2380,10 +2328,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- RECURRING INVOICES -->
       <div class="page" id="page-recurring-invoices">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Active Profiles</div><div class="mc-val">6</div><div class="mc-change neutral">Recurring setups</div></div>
-          <div class="mc"><div class="mc-label">Monthly Value</div><div class="mc-val">$28,400</div><div class="mc-change up">Auto-generated</div></div>
-          <div class="mc"><div class="mc-label">Next Run</div><div class="mc-val">May 1</div><div class="mc-change neutral">2 days away</div></div>
-          <div class="mc"><div class="mc-label">YTD Generated</div><div class="mc-val">$312,400</div><div class="mc-change up">From recurring</div></div>
+          <div class="mc"><div class="mc-label">Active Profiles</div><div class="mc-val">0</div><div class="mc-change neutral">Recurring setups</div></div>
+          <div class="mc"><div class="mc-label">Monthly Value</div><div class="mc-val">$0</div><div class="mc-change neutral">Auto-generated</div></div>
+          <div class="mc"><div class="mc-label">Next Run</div><div class="mc-val">—</div><div class="mc-change neutral">No profiles yet</div></div>
+          <div class="mc"><div class="mc-label">YTD Generated</div><div class="mc-val">$0</div><div class="mc-change neutral">From recurring</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Recurring Invoice Profiles</div><button class="btn btn-primary btn-sm" onclick="openNewRecurringModal()">+ New Profile</button></div>
@@ -2394,10 +2342,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- CREDIT NOTES -->
       <div class="page" id="page-credit-notes">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val">$2,840</div><div class="mc-change neutral">Issued YTD</div></div>
-          <div class="mc"><div class="mc-label">Open Credits</div><div class="mc-val" style="color:var(--amber)">$1,200</div><div class="mc-change dn">Not yet applied</div></div>
-          <div class="mc"><div class="mc-label">Applied</div><div class="mc-val">$1,640</div><div class="mc-change up">Against invoices</div></div>
-          <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">2</div><div class="mc-change neutral">Credits issued</div></div>
+          <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val">$0</div><div class="mc-change neutral">Issued YTD</div></div>
+          <div class="mc"><div class="mc-label">Open Credits</div><div class="mc-val" style="color:var(--amber)">$0</div><div class="mc-change neutral">Not yet applied</div></div>
+          <div class="mc"><div class="mc-label">Applied</div><div class="mc-val">$0</div><div class="mc-change neutral">Against invoices</div></div>
+          <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">0</div><div class="mc-change neutral">Credits issued</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Credit Notes</div><button class="btn btn-primary btn-sm" onclick="openNewCreditNoteModal()">+ New Credit Note</button></div>
@@ -2409,10 +2357,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- VENDORS -->
       <div class="page" id="page-vendors">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Vendors</div><div class="mc-val">18</div><div class="mc-change neutral">Active suppliers</div></div>
-          <div class="mc"><div class="mc-label">Payables</div><div class="mc-val" style="color:var(--amber)">$14,200</div><div class="mc-change dn">Outstanding bills</div></div>
-          <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" style="color:var(--red)">$3,100</div><div class="mc-change dn">Past due date</div></div>
-          <div class="mc"><div class="mc-label">Paid (Apr)</div><div class="mc-val">$19,800</div><div class="mc-change up">Processed this month</div></div>
+          <div class="mc"><div class="mc-label">Total Vendors</div><div class="mc-val">0</div><div class="mc-change neutral">Active suppliers</div></div>
+          <div class="mc"><div class="mc-label">Payables</div><div class="mc-val" style="color:var(--amber)">$0</div><div class="mc-change neutral">Outstanding bills</div></div>
+          <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" style="color:var(--red)">$0</div><div class="mc-change neutral">Past due date</div></div>
+          <div class="mc"><div class="mc-label">Paid</div><div class="mc-val">$0</div><div class="mc-change neutral">This month</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Vendors</div><button class="btn btn-primary btn-sm" onclick="openNewVendorModal()">+ New Vendor</button></div>
@@ -2424,10 +2372,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- BILLS -->
       <div class="page" id="page-bills">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Bills</div><div class="mc-val">$14,200</div><div class="mc-change dn">Unpaid balance</div></div>
-          <div class="mc"><div class="mc-label">Due This Week</div><div class="mc-val" style="color:var(--amber)">$5,400</div><div class="mc-change dn">3 bills due soon</div></div>
-          <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" style="color:var(--red)">$3,100</div><div class="mc-change dn">Past due date</div></div>
-          <div class="mc"><div class="mc-label">Paid (Apr)</div><div class="mc-val">$19,800</div><div class="mc-change up">This month</div></div>
+          <div class="mc"><div class="mc-label">Total Bills</div><div class="mc-val">$0</div><div class="mc-change neutral">Unpaid balance</div></div>
+          <div class="mc"><div class="mc-label">Due This Week</div><div class="mc-val" style="color:var(--amber)">$0</div><div class="mc-change neutral">Bills due soon</div></div>
+          <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" style="color:var(--red)">$0</div><div class="mc-change neutral">Past due date</div></div>
+          <div class="mc"><div class="mc-label">Paid</div><div class="mc-val">$0</div><div class="mc-change neutral">This month</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Bills</div><button class="btn btn-primary btn-sm" onclick="openNewBillModal()">+ New Bill</button></div>
@@ -2439,10 +2387,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- PAYMENTS MADE -->
       <div class="page" id="page-payments-made">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Paid (Apr)</div><div class="mc-val">$19,800</div><div class="mc-change neutral">Total outflows</div></div>
-          <div class="mc"><div class="mc-label">Vendors Paid</div><div class="mc-val">12</div><div class="mc-change neutral">This month</div></div>
-          <div class="mc"><div class="mc-label">Largest Payment</div><div class="mc-val">$6,200</div><div class="mc-change neutral">AWS Infrastructure</div></div>
-          <div class="mc"><div class="mc-label">Avg Payment</div><div class="mc-val">$1,650</div><div class="mc-change neutral">Per vendor</div></div>
+          <div class="mc"><div class="mc-label">Paid</div><div class="mc-val">$0</div><div class="mc-change neutral">This month</div></div>
+          <div class="mc"><div class="mc-label">Vendors Paid</div><div class="mc-val">0</div><div class="mc-change neutral">This month</div></div>
+          <div class="mc"><div class="mc-label">Largest Payment</div><div class="mc-val">$0</div><div class="mc-change neutral">—</div></div>
+          <div class="mc"><div class="mc-label">Avg Payment</div><div class="mc-val">$0</div><div class="mc-change neutral">Per vendor</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Payments Made</div><button class="btn btn-primary btn-sm" onclick="openMakePaymentModal()">+ Make Payment</button></div>
@@ -2454,10 +2402,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- RECURRING BILLS -->
       <div class="page" id="page-recurring-bills">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Active Profiles</div><div class="mc-val">4</div><div class="mc-change neutral">Recurring bills</div></div>
-          <div class="mc"><div class="mc-label">Monthly Cost</div><div class="mc-val">$8,600</div><div class="mc-change neutral">Auto-recurring</div></div>
-          <div class="mc"><div class="mc-label">Next Due</div><div class="mc-val">May 1</div><div class="mc-change neutral">2 bills due</div></div>
-          <div class="mc"><div class="mc-label">YTD Total</div><div class="mc-val">$94,600</div><div class="mc-change neutral">Recurring spend</div></div>
+          <div class="mc"><div class="mc-label">Active Profiles</div><div class="mc-val">0</div><div class="mc-change neutral">Recurring bills</div></div>
+          <div class="mc"><div class="mc-label">Monthly Cost</div><div class="mc-val">$0</div><div class="mc-change neutral">Auto-recurring</div></div>
+          <div class="mc"><div class="mc-label">Next Due</div><div class="mc-val">—</div><div class="mc-change neutral">No profiles yet</div></div>
+          <div class="mc"><div class="mc-label">YTD Total</div><div class="mc-val">$0</div><div class="mc-change neutral">Recurring spend</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Recurring Bill Profiles</div><button class="btn btn-primary btn-sm" onclick="openNewRecurringBillModal()">+ New Profile</button></div>
@@ -2468,10 +2416,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- VENDOR CREDITS -->
       <div class="page" id="page-vendor-credits">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val">$1,820</div><div class="mc-change neutral">From vendors</div></div>
-          <div class="mc"><div class="mc-label">Open Credits</div><div class="mc-val" style="color:var(--green)">$820</div><div class="mc-change up">Available to apply</div></div>
-          <div class="mc"><div class="mc-label">Applied</div><div class="mc-val">$1,000</div><div class="mc-change neutral">Against bills</div></div>
-          <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">1</div><div class="mc-change neutral">Credits received</div></div>
+          <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val">$0</div><div class="mc-change neutral">From vendors</div></div>
+          <div class="mc"><div class="mc-label">Open Credits</div><div class="mc-val" style="color:var(--green)">$0</div><div class="mc-change neutral">Available to apply</div></div>
+          <div class="mc"><div class="mc-label">Applied</div><div class="mc-val">$0</div><div class="mc-change neutral">Against bills</div></div>
+          <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">0</div><div class="mc-change neutral">Credits received</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Vendor Credits</div><button class="btn btn-primary btn-sm" onclick="openNewVendorCreditModal()">+ New Credit</button></div>
@@ -2483,10 +2431,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- PROJECTS -->
       <div class="page" id="page-projects">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Active Projects</div><div class="mc-val">7</div><div class="mc-change neutral">In progress</div></div>
-          <div class="mc"><div class="mc-label">Billable Hours</div><div class="mc-val">284h</div><div class="mc-change up">This month</div></div>
-          <div class="mc"><div class="mc-label">Revenue</div><div class="mc-val">$42,600</div><div class="mc-change up">From projects</div></div>
-          <div class="mc"><div class="mc-label">Unbilled</div><div class="mc-val" style="color:var(--amber)">$8,400</div><div class="mc-change dn">Pending invoice</div></div>
+          <div class="mc"><div class="mc-label">Active Projects</div><div class="mc-val" id="proj-active">0</div><div class="mc-change neutral">In progress</div></div>
+          <div class="mc"><div class="mc-label">Billable Hours</div><div class="mc-val" id="proj-hours">0 hrs</div><div class="mc-change up">This month</div></div>
+          <div class="mc"><div class="mc-label">Revenue</div><div class="mc-val" id="proj-revenue">$0</div><div class="mc-change up">From projects</div></div>
+          <div class="mc"><div class="mc-label">Unbilled</div><div class="mc-val" style="color:var(--amber)" id="proj-unbilled">$0</div><div class="mc-change dn">Pending invoice</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Projects</div><button class="btn btn-primary btn-sm" onclick="openNewProjectModal()">+ New Project</button></div>
@@ -2497,13 +2445,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- TIMESHEET -->
       <div class="page" id="page-timesheet">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Hours Logged</div><div class="mc-val">284h</div><div class="mc-change up">This month</div></div>
-          <div class="mc"><div class="mc-label">Billable</div><div class="mc-val">241h</div><div class="mc-change up">85% billable rate</div></div>
-          <div class="mc"><div class="mc-label">Non-Billable</div><div class="mc-val">43h</div><div class="mc-change neutral">Internal tasks</div></div>
-          <div class="mc"><div class="mc-label">Avg per Day</div><div class="mc-val">9.5h</div><div class="mc-change neutral">Across team</div></div>
+          <div class="mc"><div class="mc-label">Hours Logged</div><div class="mc-val" id="ts-total">0h</div><div class="mc-change up">This month</div></div>
+          <div class="mc"><div class="mc-label">Billable</div><div class="mc-val" id="ts-bill">0h</div><div class="mc-change up" id="ts-billable-pct">0% billable rate</div></div>
+          <div class="mc"><div class="mc-label">Non-Billable</div><div class="mc-val" id="ts-nonbillable">0h</div><div class="mc-change neutral">Internal tasks</div></div>
+          <div class="mc"><div class="mc-label">Avg per Day</div><div class="mc-val" id="ts-avg">0h</div><div class="mc-change neutral">Across team</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Timesheet — April 2026</div><button class="btn btn-primary btn-sm" onclick="openLogTimeModal()">+ Log Time</button></div>
+          <div class="card-header"><div class="card-title" id="timesheet-title">Timesheet</div><button class="btn btn-primary btn-sm" onclick="openLogTimeModal()">+ Log Time</button></div>
           <div style="display:grid;grid-template-columns:1fr 100px 80px 70px 70px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Employee</span><span>Project</span><span>Date</span><span>Hours</span><span>Billable</span><span>Rate</span></div>
           <div id="timesheet-list"></div>
         </div>
@@ -2512,10 +2460,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- MANUAL JOURNALS -->
       <div class="page" id="page-manual-journals">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Journals (Apr)</div><div class="mc-val">12</div><div class="mc-change neutral">Entries made</div></div>
-          <div class="mc"><div class="mc-label">Total Debits</div><div class="mc-val">$48,200</div><div class="mc-change neutral">This month</div></div>
-          <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val">$48,200</div><div class="mc-change up">Balanced</div></div>
-          <div class="mc"><div class="mc-label">Draft Entries</div><div class="mc-val" style="color:var(--amber)">2</div><div class="mc-change dn">Pending review</div></div>
+          <div class="mc"><div class="mc-label">Journals</div><div class="mc-val" id="jnl-count">0</div><div class="mc-change neutral">Entries made</div></div>
+          <div class="mc"><div class="mc-label">Total Debits</div><div class="mc-val" id="jnl-debits">$0</div><div class="mc-change neutral">This month</div></div>
+          <div class="mc"><div class="mc-label">Total Credits</div><div class="mc-val" id="jnl-credits">$0</div><div class="mc-change up" id="jnl-balance-label">Balanced</div></div>
+          <div class="mc"><div class="mc-label">Draft Entries</div><div class="mc-val" id="jnl-drafts" style="color:var(--amber)">0</div><div class="mc-change dn">Pending review</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Manual Journal Entries</div><button class="btn btn-primary btn-sm" onclick="openNewJournalModal()">+ New Entry</button></div>
@@ -2527,10 +2475,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- CHART OF ACCOUNTS -->
       <div class="page" id="page-chart-of-accounts">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Accounts</div><div class="mc-val">42</div><div class="mc-change neutral">In chart</div></div>
-          <div class="mc"><div class="mc-label">Assets</div><div class="mc-val">$284,500</div><div class="mc-change up">Total assets</div></div>
-          <div class="mc"><div class="mc-label">Liabilities</div><div class="mc-val">$38,200</div><div class="mc-change neutral">Total liabilities</div></div>
-          <div class="mc"><div class="mc-label">Net Equity</div><div class="mc-val" style="color:var(--green)">$246,300</div><div class="mc-change up">Owner's equity</div></div>
+          <div class="mc"><div class="mc-label">Total Accounts</div><div class="mc-val" id="coa-count">0</div><div class="mc-change neutral">In chart</div></div>
+          <div class="mc"><div class="mc-label">Assets</div><div class="mc-val" id="coa-assets">$0</div><div class="mc-change up">Total assets</div></div>
+          <div class="mc"><div class="mc-label">Liabilities</div><div class="mc-val" id="coa-liabs">$0</div><div class="mc-change neutral">Total liabilities</div></div>
+          <div class="mc"><div class="mc-label">Net Equity</div><div class="mc-val" id="coa-equity" style="color:var(--green)">$0</div><div class="mc-change up">Owner's equity</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Chart of Accounts</div><button class="btn btn-primary btn-sm" onclick="openNewAccountModal()">+ New Account</button></div>
@@ -2569,8 +2517,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <div class="page" id="page-reports">
         <div class="metrics-grid-3">
           <div class="mc"><div class="mc-label">Reports Available</div><div class="mc-val">24</div><div class="mc-change neutral">Standard reports</div></div>
-          <div class="mc"><div class="mc-label">Last Generated</div><div class="mc-val">Apr 28</div><div class="mc-change neutral">P&amp;L Statement</div></div>
-          <div class="mc"><div class="mc-label">Scheduled</div><div class="mc-val">3</div><div class="mc-change up">Auto-sends monthly</div></div>
+          <div class="mc"><div class="mc-label">Last Generated</div><div class="mc-val">—</div><div class="mc-change neutral">P&amp;L Statement</div></div>
+          <div class="mc"><div class="mc-label">Scheduled</div><div class="mc-val">0</div><div class="mc-change up">Auto-sends monthly</div></div>
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
@@ -2587,10 +2535,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- DOCUMENTS -->
       <div class="page" id="page-documents">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Files</div><div class="mc-val">84</div><div class="mc-change neutral">Stored documents</div></div>
-          <div class="mc"><div class="mc-label">Storage Used</div><div class="mc-val">1.2 GB</div><div class="mc-change neutral">of 5 GB</div></div>
-          <div class="mc"><div class="mc-label">Unattached</div><div class="mc-val" style="color:var(--amber)">7</div><div class="mc-change dn">Needs linking</div></div>
-          <div class="mc"><div class="mc-label">Added (Apr)</div><div class="mc-val">12</div><div class="mc-change up">New this month</div></div>
+          <div class="mc"><div class="mc-label">Total Files</div><div class="mc-val" id="docs-count">0</div><div class="mc-change neutral">Stored documents</div></div>
+          <div class="mc"><div class="mc-label">Storage Used</div><div class="mc-val" id="docs-storage">0 KB</div><div class="mc-change neutral">of 5 GB</div></div>
+          <div class="mc"><div class="mc-label">Unattached</div><div class="mc-val" style="color:var(--amber)" id="docs-unattached">0</div><div class="mc-change dn">Needs linking</div></div>
+          <div class="mc"><div class="mc-label">Added this month</div><div class="mc-val" id="docs-added">0</div><div class="mc-change up">New this month</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Documents</div><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="filterDocs('all')">All</button><button class="btn btn-ghost btn-sm" onclick="filterDocs('invoice')">Invoices</button><button class="btn btn-ghost btn-sm" onclick="filterDocs('receipt')">Receipts</button><button class="btn btn-primary btn-sm" onclick="openUploadModal()">↑ Upload</button></div></div>
@@ -2624,7 +2572,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div>
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="2" y="4" width="12" height="10" rx="1.2"/><path d="M5 4V3a3 3 0 016 0v1"/></svg>Business profile</div>
-              <div class="field-wrap"><label class="field-label">Business name</label><input class="finput" id="s-biz-name" value="FinFlow Inc." oninput="updateBrandName()"></div>
+              <div class="field-wrap"><label class="field-label">Business name</label><input class="finput" id="s-biz-name" placeholder="Your business name" oninput="updateBrandName()"></div>
               <div class="field-group">
                 <div class="field-wrap"><label class="field-label">Industry</label><select class="finput" id="s-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option></select></div>
                 <div class="field-wrap"><label class="field-label">Currency</label><select class="finput" id="s-currency" onchange="updateCurrency()"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="TTD">TTD (TT$)</option><option value="CAD">CAD (C$)</option><option value="AUD">AUD (A$)</option></select></div>
@@ -2633,7 +2581,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
                 <div class="field-wrap"><label class="field-label">Tax ID / EIN</label><input class="finput" id="s-tax-id" placeholder="XX-XXXXXXX"></div>
                 <div class="field-wrap"><label class="field-label">Fiscal year start</label><select class="finput" id="s-fy"><option>January</option><option>April</option><option>July</option><option>October</option></select></div>
               </div>
-              <div class="field-wrap"><label class="field-label">Business address</label><textarea class="finput" id="s-address" style="min-height:60px">123 Business Ave, Suite 400&#10;San Francisco, CA 94102</textarea></div>
+              <div class="field-wrap"><label class="field-label">Business address</label><textarea class="finput" id="s-address" style="min-height:60px" placeholder="Street, City, State, Country"></textarea></div>
               <div class="field-wrap"><label class="field-label">Website</label><input class="finput" id="s-website" placeholder="https://yourbusiness.com"></div>
             </div>
             <div class="settings-section">
@@ -4001,6 +3949,22 @@ async function renderCOALive(){
     const res=await fetch('/api/chart-of-accounts');
     if(!res.ok)throw new Error();
     const accounts=await res.json();
+
+    // Update KPI cards with real data
+    const assets = accounts.filter(a=>a.type==='Asset').reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
+    const liabs  = accounts.filter(a=>a.type==='Liability').reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
+    const equity = assets - liabs;
+    const S = n=>'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+    const setEl = (id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+    setEl('coa-count', accounts.length);
+    setEl('coa-assets', S(assets));
+    setEl('coa-liabs',  S(liabs));
+    setEl('coa-equity', S(equity));
+
+    if(!accounts || !accounts.length){
+      l.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No accounts yet. Click "+ New account" to add your chart of accounts.</div>';
+      return;
+    }
     const grouped={};
     accounts.forEach(a=>{if(!grouped[a.type])grouped[a.type]=[];grouped[a.type].push(a);});
     l.innerHTML=Object.entries(grouped).map(([type,accs])=>`
@@ -4040,6 +4004,20 @@ async function renderJournalsLive(){
     const res=await fetch('/api/journals');
     if(!res.ok)throw new Error();
     const journals=await res.json();
+
+    // Update KPI cards with real data
+    const S = n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+    const setEl = (id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+    const totalDebits  = journals.reduce((s,j)=>s+(parseFloat(j.debit)||0),0);
+    const totalCredits = journals.reduce((s,j)=>s+(parseFloat(j.credit)||0),0);
+    const draftCount   = journals.filter(j=>j.status!=='Posted').length;
+    setEl('jnl-count',   journals.length);
+    setEl('jnl-debits',  S(totalDebits));
+    setEl('jnl-credits', S(totalCredits));
+    setEl('jnl-drafts',  draftCount);
+    const balEl = document.getElementById('jnl-balance-label');
+    if(balEl) balEl.textContent = Math.abs(totalDebits-totalCredits)<0.01 ? 'Balanced' : 'Unbalanced';
+
     if(!journals.length){l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No journal entries yet.</div>';return;}
     l.innerHTML=journals.map(j=>`
       <div class="table-row" style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
@@ -4234,13 +4212,53 @@ async function loadEntityData(idx){
     // Replace inventory
     inventory = invt.map(r=>({_dbId:r.id, sku:r.sku, name:r.name, units:r.units, max:r.max_units||200, cost:r.cost, low:!!r.low_stock}));
 
-    // Update payroll
-    if(payroll.length) {
-      payrollEmployees = payroll.filter(r=>!r.is_owner).map(r=>({
-        _dbId:r.id, fname:r.fname, lname:r.lname, role:r.role||'', type:r.emp_type||'Full-time',
-        gross:r.gross, taxRate:r.tax_rate, net:Math.round(r.gross*(1-r.tax_rate/100)),
-        initials:(r.fname[0]+(r.lname||'')[0]||'').toUpperCase(), avClass:r.av_class||'av-blue', isOwner:false,
-      }));
+    // Update payroll — always reset employees per entity (no stale cross-entity rows)
+    payrollEmployees = (payroll||[]).filter(r=>!r.is_owner).map(r=>({
+      _dbId:r.id, fname:r.fname, lname:r.lname, role:r.role||'', type:r.emp_type||'Full-time',
+      gross:r.gross, taxRate:r.tax_rate, net:Math.round(r.gross*(1-r.tax_rate/100)),
+      initials:((r.fname||'')[0]+((r.lname||'')[0]||'')).toUpperCase(), avClass:r.av_class||'av-blue', isOwner:false,
+    }));
+    window.payrollEmployees = payrollEmployees;
+
+    // Restore owner payroll PER-ENTITY — index by the entity idx we're loading
+    const ownerRow = (payroll||[]).find(r=>r.is_owner);
+    if(typeof ownerPayrollByEntity === 'undefined') window.ownerPayrollByEntity = window.ownerPayrollByEntity || {};
+    if(ownerRow){
+      const _entity = ENTITIES[idx];
+      const owner = {
+        _dbId:    ownerRow.id,
+        fname:    ownerRow.fname,
+        lname:    ownerRow.lname || '',
+        role:     ownerRow.role || 'CEO / Founder',
+        type:     ownerRow.emp_type || 'owner',
+        gross:    parseFloat(ownerRow.gross) || 0,
+        taxRate:  parseFloat(ownerRow.tax_rate) || 0,
+        net:      Math.round((parseFloat(ownerRow.gross)||0)*(1-(parseFloat(ownerRow.tax_rate)||0)/100)),
+        initials: ((ownerRow.fname||'')[0]+((ownerRow.lname||'')[0]||'')).toUpperCase(),
+        avClass:  ownerRow.av_class || 'av-blue',
+        currency: _entity?.currency || 'USD',
+        entityName: _entity?.name || 'Entity',
+        isOwner:  true,
+      };
+      ownerPayrollByEntity[idx] = owner;
+      window.ownerPayrollByEntity = ownerPayrollByEntity;
+      // Sync compat pointer if this is the active entity
+      if (ENTITIES[idx]?.active) {
+        ownerPayroll = owner;
+        window.ownerPayroll = owner;
+      }
+      console.log('[loadEntityData] Restored owner payroll for entity idx', idx, '('+_entity?.name+'):', owner.fname, owner.lname, '| gross:', owner.gross);
+    } else {
+      // No owner record for this entity — clear any stale mapping for this idx
+      if (ownerPayrollByEntity[idx]) {
+        delete ownerPayrollByEntity[idx];
+        if (ENTITIES[idx]?.active) { ownerPayroll = null; window.ownerPayroll = null; }
+      }
+    }
+
+    // Sync to Personal Finance (salary income line + banner)
+    if (typeof syncAllPayrollsToPersonal === 'function') {
+      try { syncAllPayrollsToPersonal(); } catch(e) { console.warn('[loadEntityData] syncAllPayrollsToPersonal failed:', e.message); }
     }
 
     // Store globally for dashboard wiring — MUST update before calling updateDashboard
@@ -4299,6 +4317,7 @@ async function loadEntityData(idx){
     console.log('[Entity] Loaded real data — invoices:'+invoices.length+' expenses:'+expenses.length+' top clients:'+_topClients.length);
   } catch(e){ console.warn('[Entity] loadEntityData failed:', e.message); } finally { _loadEntityDataRunning = false; }
 }
+window.loadEntityData = loadEntityData; // expose for medium.js payroll reload hook
 
 const INVOICES_BASE = []; // populated from DB via loadEntityData
 
@@ -4316,32 +4335,11 @@ let ownerPayrollByEntity = {};
 let ownerPayroll = null;
 let activeOwnerEntityIdx = 0;
 // Personal
-let spending = [
-  {label:'Rent / mortgage',amount:1800,color:'var(--acc)'},
-  {label:'Groceries',      amount:580, color:'#c9a84c99'},
-  {label:'Subscriptions',  amount:310, color:'#c9a84c66'},
-  {label:'Dining out',     amount:240, color:'#c9a84c44'},
-  {label:'Transport',      amount:150, color:'#c9a84c22'},
-];
-let goals = [
-  {name:'Emergency fund',      current:12000,target:15000,monthly:500, color:'var(--green)'},
-  {name:'House deposit',       current:28000,target:60000,monthly:1500,color:'var(--acc)'},
-  {name:'Investment portfolio',current:44500,target:50000,monthly:1800,color:'var(--acc-light)'},
-];
-let persTransactions = [
-  {desc:'Salary — April',       cat:'Income',        amount:6800,type:'income', date:'Apr 30'},
-  {desc:'Rent payment',         cat:'Rent/Mortgage', amount:1800,type:'expense',date:'Apr 1'},
-  {desc:'Supermarket run',      cat:'Groceries',     amount:182, type:'expense',date:'Apr 8'},
-  {desc:'Netflix & Spotify',    cat:'Subscriptions', amount:42,  type:'expense',date:'Apr 3'},
-  {desc:'Dinner with client',   cat:'Dining out',    amount:95,  type:'expense',date:'Apr 12'},
-  {desc:'Fuel',                 cat:'Transport',     amount:60,  type:'expense',date:'Apr 15'},
-  {desc:'Dividend income',      cat:'Income',        amount:320, type:'income', date:'Apr 20'},
-  {desc:'Gym membership',       cat:'Subscriptions', amount:45,  type:'expense',date:'Apr 5'},
-  {desc:'Uber rides',           cat:'Transport',     amount:38,  type:'expense',date:'Apr 22'},
-  {desc:'Grocery — bulk shop',  cat:'Groceries',     amount:210, type:'expense',date:'Apr 28'},
-];
-let basePersonalIncome = 6800;
-let baseNetWorth = 84500;
+let spending = [];
+let goals = [];
+let persTransactions = [];
+let basePersonalIncome = 0;
+let baseNetWorth = 0;
 // User invoices — populated from DB via loadEntityData
 let userInvoices = [];
 let nextInvId = 100;
@@ -4819,6 +4817,11 @@ function renderInventory(){
   const lowCount=inventory.filter(i=>i.low).length;
   document.getElementById('badge-inv2').textContent=lowCount;
   document.getElementById('badge-inv2').style.display=lowCount>0?'':'none';
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('inv-skus',inventory.length);
+  set('inv-lowstock',lowCount);
+  const totalVal=inventory.reduce((s,i)=>s+(i.units||0)*(i.cost||0),0);
+  set('inv-value',S(totalVal));
   document.getElementById('inventory-list').innerHTML=inventory.map((item,idx)=>{
     const pct=Math.min(100,Math.round(item.units/item.max*100));
     const col=pct<10?'var(--red)':pct<20?'var(--amber)':'var(--green)';
@@ -4993,7 +4996,9 @@ window.switchOwnerEntityTab = function(idx){
 
   if(curFname && curGross > 0){
     const curEntity = ENTITIES[activeOwnerEntityIdx];
+    const existing = ownerPayrollByEntity[activeOwnerEntityIdx] || {};
     ownerPayrollByEntity[activeOwnerEntityIdx] = {
+      _dbId: existing._dbId,
       fname: curFname, lname: curLname,
       role: curRole, type: curType,
       gross: curGross, taxRate: curTax,
@@ -5086,7 +5091,9 @@ function saveOwnerPayroll(){
   // Save current tab if it has a salary filled in
   if(gross > 0){
     const entity = ENTITIES[activeOwnerEntityIdx];
+    const existing = ownerPayrollByEntity[activeOwnerEntityIdx] || {};
     ownerPayrollByEntity[activeOwnerEntityIdx] = {
+      _dbId: existing._dbId, // preserve so medium.js does PUT, not POST (no dupes)
       fname, lname, role, type,
       gross, taxRate,
       net: Math.round(gross*(1-taxRate/100)),
@@ -5135,7 +5142,7 @@ function removeOwnerFromPayroll(){
 function syncAllPayrollsToPersonal(){
   const entries = Object.entries(ownerPayrollByEntity);
   const totalUSD = calcTotalOwnerNetUSD();
-  basePersonalIncome = entries.length > 0 ? Math.round(totalUSD) : 6800;
+  basePersonalIncome = entries.length > 0 ? Math.round(totalUSD) : 0;
 
   // Replace salary transactions with one per entity
   persTransactions = persTransactions.filter(t=>!(t.cat==='Income' && t.desc.startsWith('Salary —')));
@@ -5230,6 +5237,7 @@ function syncPayrollToPersonal(netPay,fname,lname){
   // Legacy shim — use syncAllPayrollsToPersonal instead
   syncAllPayrollsToPersonal();
 }
+window.syncPayrollToPersonal = syncAllPayrollsToPersonal;
 
 // ════════════════════════════════════════════
 // PERSONAL
@@ -5418,15 +5426,7 @@ function saveTransaction(){
 // ════════════════════════════════════════════
 // INVESTMENTS
 // ════════════════════════════════════════════
-let holdings=[
-  {ticker:'MSFT',name:'Microsoft Corp',type:'Stock',shares:25,cost:290,price:415,div:3.00,color:'#5aaa9e'},
-  {ticker:'AAPL',name:'Apple Inc',type:'Stock',shares:30,cost:148,price:171,div:0.96,color:'#c9a84c'},
-  {ticker:'VTI',name:'Vanguard Total Market ETF',type:'ETF',shares:40,cost:195,price:241,div:3.60,color:'#9e8fbf'},
-  {ticker:'BRK.B',name:'Berkshire Hathaway B',type:'Stock',shares:15,cost:298,price:408,div:0,color:'#7db87d'},
-  {ticker:'GOOGL',name:'Alphabet Inc',type:'Stock',shares:8,cost:110,price:165,div:0,color:'#d4964a'},
-  {ticker:'BND',name:'Vanguard Bond ETF',type:'Bond',shares:50,cost:73,price:72,div:3.40,color:'#c46a5a'},
-  {ticker:'CASH',name:'Money Market / Cash',type:'Cash',shares:1,cost:5000,price:5000,div:220,color:'#5a4e3a'},
-];
+let holdings=[];
 const INV_PERIOD_DATA={
   '1m':{portPts:[100,101.2,100.8,102.1,103.4,102.9,104.2,105.1,104.8,106.3,107.0,106.5,107.8,108.2,108.9,110.1,109.7,110.5,111.2,110.8,112.1,113.0,112.4,113.8,114.2,115.0,114.8,116.1,115.7,116.9,117.4],sp500:[100,101.0,100.5,101.8,102.9,102.3,103.5,104.2,103.9,105.0,105.8,105.2,106.1,106.8,107.3,108.2,107.8,108.9,109.5,109.1,110.2,111.0,110.5,111.6,112.0,112.8,112.4,113.5,113.0,113.8,114.2]},
   '3m':{portPts:[100,101.8,103.2,102.4,104.8,106.1,105.3,107.5,108.9,108.1,110.4,111.8,110.9,113.2,114.5,113.6,115.9,117.2,116.3,118.6,119.9,119.0,121.3,122.6,121.8,123.1,122.4,124.7,125.9,125.1,117.4],sp500:[100,101.5,102.8,102.0,104.1,105.3,104.6,106.7,107.9,107.2,109.2,110.5,109.8,111.8,113.0,112.4,114.2,115.5,114.8,116.8,118.0,117.4,119.3,120.5,119.9,121.0,120.4,122.3,123.5,122.9,114.2]},
@@ -5497,6 +5497,25 @@ function renderInvestments(){
   buildInvPerfChart(invPeriod);
   updateInvAI(totalValue,totalGain,gainPct,totalDiv);
   updateNetWorthPanel(totalValue);
+
+  // Performance card — populate from real portfolio gain (no hardcoded benchmarks).
+  // S&P 500 / 60/40 stay as dashes unless a benchmark API is wired in.
+  const _perfPort = document.getElementById('biz-perf-port');
+  const _perfSum  = document.getElementById('biz-perf-summary');
+  if (_perfPort) {
+    if (holdings.length === 0) {
+      _perfPort.textContent = '—';
+      _perfPort.style.color = 'var(--t3)';
+      if (_perfSum) _perfSum.textContent = 'No holdings yet — add positions to see performance.';
+    } else {
+      const pct = parseFloat(gainPct) || 0;
+      const pos = pct >= 0;
+      _perfPort.textContent = (pos ? '+' : '') + pct.toFixed(1) + '%';
+      _perfPort.style.color = pos ? 'var(--green)' : 'var(--red)';
+      _perfPort.style.fontWeight = '600';
+      if (_perfSum) _perfSum.textContent = 'Unrealised ' + (pos ? 'gain' : 'loss') + ': ' + (pos ? '+' : '') + S2(totalGain) + ' on ' + S2(totalCost) + ' cost basis.';
+    }
+  }
 }
 
 function buildInvDonut(hs,totalValue){
@@ -5528,12 +5547,20 @@ function buildInvDonut(hs,totalValue){
 function buildInvPerfChart(period){
   const canvas=document.getElementById('invPerfChart');
   if(!canvas||typeof Chart==='undefined')return;
+  const retEl=document.getElementById('inv-perf-return');
+  // No holdings → show empty state (no fake benchmark data)
+  if(!holdings || holdings.length===0){
+    if(retEl) retEl.textContent='No data — add holdings to see performance';
+    if(invPerfChart){ invPerfChart.destroy(); invPerfChart=null; }
+    const ctx=canvas.getContext('2d');
+    if(ctx){ ctx.clearRect(0,0,canvas.width,canvas.height); }
+    return;
+  }
   const{portPts,sp500}=INV_PERIOD_DATA[period];
   const n=portPts.length;
   const labels=Array.from({length:n},(_,i)=>i===0?'Start':i===n-1?'Now':'');
   const portReturn=((portPts[n-1]-100)).toFixed(1);
   const spReturn=((sp500[n-1]-100)).toFixed(1);
-  const retEl=document.getElementById('inv-perf-return');
   if(retEl)retEl.textContent=`Portfolio +${portReturn}% vs S&P +${spReturn}%`;
   const{tc,gc}=chartDefaults();
   if(invPerfChart){invPerfChart.destroy();}
@@ -5571,9 +5598,17 @@ function updateInvAI(totalValue,totalGain,gainPct,totalDiv){
   const i1=document.getElementById('inv-ai-1');
   const i2=document.getElementById('inv-ai-2');
   const i3=document.getElementById('inv-ai-3');
-  if(i1)i1.textContent=`Your portfolio is up ${gainPct}% (${gainPct>11.1?'outperforming':'underperforming'} the S&P 500 by ${Math.abs(gainPct-11.1).toFixed(1)} percentage points YTD). Total unrealised gain: ${gainPct>0?'+':''}$${Math.round(totalGain).toLocaleString()}.`;
+  if (holdings.length === 0) {
+    if(i1)i1.textContent='No holdings yet. Add positions to see performance insights.';
+    if(i2)i2.textContent='';
+    if(i3)i3.textContent='';
+    return;
+  }
+  const gPos = parseFloat(gainPct) >= 0;
+  if(i1)i1.textContent=`Your portfolio is ${gPos?'up':'down'} ${Math.abs(gainPct)}% on a ${S2(totalValue-totalGain)} cost basis. Unrealised ${gPos?'gain':'loss'}: ${gPos?'+':''}$${Math.round(totalGain).toLocaleString()}.`;
   if(i2)i2.textContent=`${top.map(h=>h.ticker).join(' & ')} together represent ${topPct.toFixed(0)}% of portfolio value — consider diversifying if concentration risk concerns you.`;
-  if(i3)i3.textContent=`Dividend income of $${Math.round(totalDiv).toLocaleString()}/yr adds a ${yieldPct}% yield. This contributes to your personal finance surplus and reduces effective volatility exposure.`;
+  if(i3 && totalDiv>0)i3.textContent=`Dividend income of $${Math.round(totalDiv).toLocaleString()}/yr adds a ${yieldPct}% yield.`;
+  else if(i3)i3.textContent='No dividend-paying positions in this portfolio.';
 }
 
 function updateNetWorthPanel(portValue){
@@ -5782,12 +5817,22 @@ function toggleCompact(){
   document.getElementById('sidebar').classList.toggle('compact',document.getElementById('s-compact').checked);
 }
 async function saveSettings(){
+  const v = id => (document.getElementById(id)||{}).value;
+  const c = id => !!document.getElementById(id)?.checked;
   const b = {
-    name:       (document.getElementById('s-user-name')||{}).value,
-    currency:   (document.getElementById('s-currency')||{}).value,
-    dark_mode:  document.getElementById('s-dark')?.checked ? 1 : 0,
-    show_cents: document.getElementById('s-cents')?.checked ? 1 : 0,
-    notif_email:document.getElementById('s-email-alerts')?.checked ? 1 : 0,
+    name:          v('s-user-name'),
+    currency:      v('s-currency'),
+    business_name: v('s-biz-name'),
+    industry:      v('s-industry'),
+    address:       v('s-address'),
+    email:         v('s-email'),
+    phone:         v('s-phone'),
+    website:       v('s-website'),
+    tax_id:        v('s-tax-id'),
+    fiscal_year:   v('s-fy'),
+    dark_mode:     c('s-dark') ? 1 : 0,
+    show_cents:    c('s-cents') ? 1 : 0,
+    notif_email:   c('s-email-alerts') ? 1 : 0,
   };
   try {
     await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(b) });
@@ -6082,23 +6127,17 @@ window.toggleGroup = function(name) {
 // ════════════════════════════════════════════
 // ITEMS PAGE
 // ════════════════════════════════════════════
-const itemsData=[
-  {name:'Web Development Services',type:'Service',price:150,unit:'hr',stock:null,status:'Active',sku:'SVC-001'},
-  {name:'UI/UX Design',type:'Service',price:120,unit:'hr',stock:null,status:'Active',sku:'SVC-002'},
-  {name:'SEO Monthly Retainer',type:'Service',price:2400,unit:'mo',stock:null,status:'Active',sku:'SVC-003'},
-  {name:'Laptop Stand Pro',type:'Product',price:89,unit:'each',stock:34,status:'Active',sku:'PRD-001'},
-  {name:'Webcam 4K Ultra',type:'Product',price:199,unit:'each',stock:9,status:'Low Stock',sku:'PRD-002'},
-  {name:'Ergonomic Mouse',type:'Product',price:64,unit:'each',stock:4,status:'Low Stock',sku:'PRD-003'},
-  {name:'USB-C Hub 7-in-1',type:'Product',price:45,unit:'each',stock:82,status:'Active',sku:'PRD-004'},
-  {name:'Mechanical Keyboard',type:'Product',price:149,unit:'each',stock:28,status:'Active',sku:'PRD-005'},
-  {name:'Annual Support Plan',type:'Service',price:1800,unit:'yr',stock:null,status:'Active',sku:'SVC-004'},
-  {name:'Cloud Hosting Setup',type:'Service',price:500,unit:'project',stock:null,status:'Active',sku:'SVC-005'},
-];
+const itemsData=[];
 let itemsFilter='all';
 function renderItems(filter=itemsFilter){
   itemsFilter=filter;
   const list=document.getElementById('items-list');if(!list)return;
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('items-total',itemsData.length);
+  set('items-active',itemsData.filter(i=>i.status==='Active').length);
+  set('items-lowstock',itemsData.filter(i=>i.status==='Low Stock').length);
   const filtered=itemsData.filter(i=>filter==='all'||i.type.toLowerCase()===filter);
+  if(!filtered.length){list.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No items yet. Click + New item to add your products and services.</div>';return;}
   list.innerHTML=filtered.map(i=>`
     <div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
       <span style="font-weight:500">${i.name}<br><span style="font-size:11px;color:var(--t3)">${i.sku}</span></span>
@@ -6216,9 +6255,9 @@ function renderTimesheet(){
       <span style="font-weight:500">${t.employee}</span>
       <span style="color:var(--t2)">${t.project}</span>
       <span style="color:var(--t3)">${t.date}</span>
-      <span style="font-family:var(--font-mono)">${t.hours}h</span>
-      <span style="font-family:var(--font-mono);color:${t.billable>0?'var(--green)':'var(--t3)'}">${t.billable}h</span>
-      <span style="font-family:var(--font-mono)">$${t.rate}/h</span>
+      <span style="font-family:var(--font-mono)">${t.hours} hrs</span>
+      <span style="font-family:var(--font-mono);color:${t.billable>0?'var(--green)':'var(--t3)'}">${t.billable} hrs</span>
+      <span style="font-family:var(--font-mono)">$${t.rate}/hr</span>
     </div>`).join('');
 }
 function openLogTimeModal(){notify('Log time entry');}
@@ -6242,38 +6281,16 @@ function renderJournals(){
 function openNewJournalModal(){openJournalEntryModal();}
 
 // ════════════════════════════════════════════
-// CHART OF ACCOUNTS PAGE
+// CHART OF ACCOUNTS PAGE — empty until user creates accounts
+// (Data loaded from /api/chart-of-accounts if/when wired by extra scripts.)
 // ════════════════════════════════════════════
-const coaData=[
-  {type:'Assets',accounts:[
-    {name:'Checking Account',code:'1010',balance:98420,nature:'Debit'},
-    {name:'Savings Account',code:'1020',balance:38200,nature:'Debit'},
-    {name:'Accounts Receivable',code:'1100',balance:9150,nature:'Debit'},
-    {name:'Inventory',code:'1200',balance:34200,nature:'Debit'},
-    {name:'Equipment',code:'1500',balance:28000,nature:'Debit'},
-  ]},
-  {type:'Liabilities',accounts:[
-    {name:'Accounts Payable',code:'2000',balance:14200,nature:'Credit'},
-    {name:'Credit Card',code:'2100',balance:4800,nature:'Credit'},
-    {name:'Tax Payable',code:'2200',balance:19200,nature:'Credit'},
-  ]},
-  {type:'Equity',accounts:[
-    {name:"Owner's Equity",code:'3000',balance:186200,nature:'Credit'},
-    {name:'Retained Earnings',code:'3100',balance:238950,nature:'Credit'},
-  ]},
-  {type:'Revenue',accounts:[
-    {name:'Service Revenue',code:'4000',balance:469200,nature:'Credit'},
-    {name:'Product Sales',code:'4100',balance:0,nature:'Credit'},
-  ]},
-  {type:'Expenses',accounts:[
-    {name:'Salaries & Wages',code:'5000',balance:157200,nature:'Debit'},
-    {name:'Rent',code:'5100',balance:45600,nature:'Debit'},
-    {name:'Software Subscriptions',code:'5200',balance:12000,nature:'Debit'},
-    {name:'Marketing',code:'5300',balance:15450,nature:'Debit'},
-  ]},
-];
+const coaData=[]; // populated by API wiring; no hardcoded demo data
 function renderCOA(){
   const l=document.getElementById('coa-list');if(!l)return;
+  if(!coaData.length){
+    l.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No accounts yet. Click "+ New account" to add your chart of accounts.</div>';
+    return;
+  }
   l.innerHTML=coaData.map(section=>`
     <div style="margin-bottom:1rem">
       <div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${section.type}</div>
@@ -6281,12 +6298,70 @@ function renderCOA(){
         <div style="display:grid;grid-template-columns:60px 1fr 80px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
           <span style="color:var(--t3);font-family:var(--font-mono)">${a.code}</span>
           <span style="color:var(--t1)">${a.name}</span>
-          <span style="font-family:var(--font-mono);text-align:right;color:var(--t1)">$${a.balance.toLocaleString()}</span>
+          <span style="font-family:var(--font-mono);text-align:right;color:var(--t1)">$${(a.balance||0).toLocaleString()}</span>
           <span style="color:var(--t3);text-align:right">${a.nature}</span>
         </div>`).join('')}
     </div>`).join('');
 }
-function openNewAccountModal(){notify('New account modal');}
+function openNewAccountModal(){
+  let m=document.getElementById('coa-new-modal');
+  if(!m){
+    m=document.createElement('div');
+    m.id='coa-new-modal';
+    m.className='modal-overlay hidden';
+    m.innerHTML=`<div class="modal" style="max-width:380px">
+      <div class="modal-header">
+        <div><div class="modal-title">New account</div><div class="modal-sub">Add a chart-of-accounts entry</div></div>
+        <button class="modal-close" onclick="document.getElementById('coa-new-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+      </div>
+      <div class="field-group">
+        <div class="field-wrap"><label class="field-label">Code *</label><input class="finput" id="coa-code" placeholder="e.g. 1010"></div>
+        <div class="field-wrap"><label class="field-label">Name *</label><input class="finput" id="coa-name" placeholder="e.g. Checking Account"></div>
+      </div>
+      <div class="field-group">
+        <div class="field-wrap"><label class="field-label">Category *</label>
+          <select class="finput" id="coa-cat">
+            <option value="Assets">Assets</option>
+            <option value="Liabilities">Liabilities</option>
+            <option value="Equity">Equity</option>
+            <option value="Revenue">Revenue</option>
+            <option value="Expenses">Expenses</option>
+          </select>
+        </div>
+        <div class="field-wrap"><label class="field-label">Nature</label>
+          <select class="finput" id="coa-nature"><option value="Debit">Debit</option><option value="Credit">Credit</option></select>
+        </div>
+      </div>
+      <div class="field-wrap"><label class="field-label">Opening balance</label><input class="finput" id="coa-balance" type="number" min="0" step="0.01" value="0"></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="document.getElementById('coa-new-modal').classList.add('hidden')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveNewAccount()">Add account</button>
+      </div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  document.getElementById('coa-code').value='';
+  document.getElementById('coa-name').value='';
+  document.getElementById('coa-cat').value='Assets';
+  document.getElementById('coa-nature').value='Debit';
+  document.getElementById('coa-balance').value='0';
+  m.classList.remove('hidden');
+}
+async function saveNewAccount(){
+  const code=document.getElementById('coa-code').value.trim();
+  const name=document.getElementById('coa-name').value.trim();
+  const category=document.getElementById('coa-cat').value;
+  const nature=document.getElementById('coa-nature').value;
+  const balance=parseFloat(document.getElementById('coa-balance').value)||0;
+  if(!code||!name){notify('Code and name are required',true);return;}
+  try{
+    const r=await fetch('/api/chart-of-accounts',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,name,category,nature,balance})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||'API error');}
+    document.getElementById('coa-new-modal').classList.add('hidden');
+    notify('Account added ✦');
+    if(typeof renderCOA==='function')renderCOA();
+  }catch(e){notify('Could not add account — '+e.message,true);}
+}
 
 // ════════════════════════════════════════════
 // TRANSACTION LOCKING PAGE
@@ -6923,11 +6998,24 @@ document.addEventListener('keydown', function(e){
 function buildRiver(d){
   const wrap=document.getElementById('river-wrap');
   if(!wrap)return;
+  // Guard: skip render if any required input is NaN/undefined/non-finite.
+  // Otherwise SVG path math produces NaN coords which Chrome logs as
+  // "<path> attribute d: Expected number, ..." spam in the console.
+  const _num = v => (typeof v === 'number' && isFinite(v));
+  if (!d || ![d.rev,d.exp,d.profit,d.sal,d.rent,d.sw,d.mkt].every(_num)) {
+    wrap.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">No cash flow data yet — add invoices and expenses to see the river chart.</div>';
+    return;
+  }
   const dark=darkMode;
   const W=wrap.clientWidth||wrap.getBoundingClientRect().width||560,H=200;
-  const rev=d.rev, exp=d.exp, profit=d.profit;
-  const sal=d.sal, rent=d.rent, sw=d.sw, mkt=d.mkt;
-  const other=exp-sal-rent-sw-mkt;
+  const rev=d.rev||0, exp=d.exp||0, profit=d.profit||0;
+  const sal=d.sal||0, rent=d.rent||0, sw=d.sw||0, mkt=d.mkt||0;
+  // If revenue is zero, ratio math below would divide by zero → NaN. Skip.
+  if (rev <= 0 || exp <= 0) {
+    wrap.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">Add revenue and expenses to see the cash-flow river.</div>';
+    return;
+  }
+  const other=Math.max(0, exp-sal-rent-sw-mkt);
 
   // Color palette
   const C={
@@ -7317,16 +7405,7 @@ advisorPage.id = 'page-advisors';
 advisorPage.innerHTML = '<div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem"><div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#128101;</div><div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Advisor Network &#8212; Coming Soon</div><div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Connect with certified FinFlow accountants and financial advisors who can review your books, file taxes, and help you scale.</div><span class="badge b-amber" style="font-size:11px;padding:4px 12px">In development</span></div>';
 document.querySelector('.content')?.appendChild(advisorPage);
 
-const ADVISORS = [
-  {name:'Sarah Mensah, CPA',firm:'Mensah & Partners',location:'New York, US',region:'North America',specialty:'Tax & Filing',rating:5,clients:42,avatar:'SM',avClass:'av-green',tags:['Tax','IRS e-file','S-Corp'],verified:true},
-  {name:"Liam O'Connor",firm:'BluePeak Accounting',location:'Dublin, IE',region:'Europe',specialty:'Bookkeeping',rating:5,clients:38,avatar:'LO',avClass:'av-blue',tags:['VAT','Bookkeeping','SaaS'],verified:true},
-  {name:'Priya Nair, ACA',firm:'Nair Financial',location:'London, UK',region:'Europe',specialty:'CFO Services',rating:5,clients:27,avatar:'PN',avClass:'av-purple',tags:['CFO','Fractional','Scale-up'],verified:true},
-  {name:'Marcus Webb',firm:'Webb Tax Group',location:'Toronto, CA',region:'North America',specialty:'Tax & Filing',rating:4,clients:55,avatar:'MW',avClass:'av-amber',tags:['Tax','T2','Startups'],verified:true},
-  {name:'Diana Torres',firm:'Caribbean Bookkeeping Co.',location:'Port of Spain, TT',region:'Caribbean',specialty:'Bookkeeping',rating:5,clients:31,avatar:'DT',avClass:'av-teal',tags:['TT Business','VAT','Payroll'],verified:true},
-  {name:'Kevin Park, CPA',firm:'Park & Cho Advisory',location:'Seoul, KR',region:'Asia-Pacific',specialty:'E-commerce',rating:4,clients:62,avatar:'KP',avClass:'av-red',tags:['E-commerce','Shopify','Import'],verified:true},
-  {name:'Ana Lima',firm:'Lima Contabilidade',location:'São Paulo, BR',region:'Latin America',specialty:'Payroll',rating:4,clients:29,avatar:'AL',avClass:'av-green',tags:['Brazil','eSocial','Payroll'],verified:false},
-  {name:'Tom Blackwell',firm:'Blackwell CFO',location:'Sydney, AU',region:'Asia-Pacific',specialty:'CFO Services',rating:5,clients:18,avatar:'TB',avClass:'av-blue',tags:['Fractional CFO','SaaS','Board Reports'],verified:true},
-];
+const ADVISORS = [];
 
 window.renderAdvisors = function(){
   const q = (document.getElementById('adv-search')?.value||'').toLowerCase();
@@ -7567,12 +7646,37 @@ overlay.innerHTML = `
     <!-- STEP 1: Business basics -->
     <div class="ob-step active" id="ob-s1">
       <div class="ob-field">
-        <label class="ob-label">Business name</label>
-        <input class="ob-input" id="ob-biz-name" placeholder="e.g. Acme Ltd." value="FinFlow Inc.">
+        <label class="ob-label">Business name *</label>
+        <input class="ob-input" id="ob-biz-name" placeholder="e.g. Acme Ltd." value="">
       </div>
       <div class="ob-field">
-        <label class="ob-label">Your name</label>
-        <input class="ob-input" id="ob-user-name" placeholder="e.g. Alex Johnson" value="Alex Johnson">
+        <label class="ob-label">Industry</label>
+        <select class="ob-input" id="ob-industry">
+          <option value="">Select an industry…</option>
+          <option value="Technology">Technology</option>
+          <option value="Retail">Retail</option>
+          <option value="Finance">Finance</option>
+          <option value="Healthcare">Healthcare</option>
+          <option value="Consulting">Consulting / Services</option>
+          <option value="Manufacturing">Manufacturing</option>
+          <option value="Construction">Construction</option>
+          <option value="Food & Beverage">Food &amp; Beverage</option>
+          <option value="Real Estate">Real Estate</option>
+          <option value="Media & Creative">Media &amp; Creative</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="ob-field">
+        <label class="ob-label">Your name *</label>
+        <input class="ob-input" id="ob-user-name" placeholder="e.g. Alex Johnson" value="">
+      </div>
+      <div class="ob-field">
+        <label class="ob-label">Email *</label>
+        <input class="ob-input" id="ob-email" type="email" placeholder="you@company.com" value="">
+      </div>
+      <div class="ob-field">
+        <label class="ob-label">Business address</label>
+        <textarea class="ob-input" id="ob-address" style="min-height:48px;resize:vertical" placeholder="Street, City, Country"></textarea>
       </div>
       <div class="ob-field">
         <label class="ob-label">Primary currency</label>
@@ -7687,6 +7791,10 @@ window.obNext = function(){
   if(currentStep===1){
     const name = document.getElementById('ob-biz-name').value.trim();
     const user = document.getElementById('ob-user-name').value.trim();
+    const email = (document.getElementById('ob-email')?.value||'').trim();
+    if(!name){ if(typeof notify==='function') notify('Business name is required', true); return; }
+    if(!user){ if(typeof notify==='function') notify('Your name is required', true); return; }
+    if(!email || !/^.+@.+\..+$/.test(email)){ if(typeof notify==='function') notify('A valid email is required', true); return; }
     if(name && document.getElementById('sb-brand-name')) document.getElementById('sb-brand-name').textContent=name;
     if(user && document.querySelector('.user-name')) document.querySelector('.user-name').textContent=user;
   }
@@ -7705,11 +7813,24 @@ window.obNext = function(){
 
 async function finishOnboarding(){
   const bizName=(document.getElementById('ob-biz-name')?.value||'').trim();
+  const userName=(document.getElementById('ob-user-name')?.value||'').trim();
+  const industry=document.getElementById('ob-industry')?.value||'';
+  const email=(document.getElementById('ob-email')?.value||'').trim();
+  const address=(document.getElementById('ob-address')?.value||'').trim();
   const currency=document.getElementById('ob-currency')?.value||'USD';
   if(bizName||bizType||currency){
     try{
-      await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({business_name:bizName,business_type:bizType||'',currency,onboarding_done:1})});
+      await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',
+        body:JSON.stringify({
+          business_name:bizName,
+          business_type:bizType||'',
+          industry,
+          email,
+          address,
+          name:userName,
+          currency,
+          onboarding_done:1
+        })});
     }catch(e){}
   }
   sessionStorage.setItem('ff_onboarded','1');
@@ -7897,19 +8018,12 @@ function startStripeFeed(){
 document.addEventListener('DOMContentLoaded',startStripeFeed);
 
 // ── 4. BUDGET MODULE ────────────────────────────────────────────────────────
-const BUDGET_DATA=[
-  {cat:'Salaries',budget:180000,actual:157200,color:'var(--green)'},
-  {cat:'Rent & Office',budget:50000,actual:46800,color:'var(--acc)'},
-  {cat:'Software & SaaS',budget:15000,actual:12000,color:'var(--teal)'},
-  {cat:'Marketing',budget:25000,actual:19200,color:'var(--purple)'},
-  {cat:'Travel',budget:12000,actual:14800,color:'var(--red)'},
-  {cat:'Equipment',budget:8000,actual:5200,color:'var(--amber)'},
-  {cat:'Legal & Accounting',budget:10000,actual:8900,color:'#7db87d'},
-  {cat:'R&D',budget:20000,actual:17340,color:'var(--acc)'},
-];
+window.BUDGET_DATA=window.BUDGET_DATA||[];
 function renderBudget(){
   const el=document.getElementById('budget-rows');
   if(!el)return;
+  const BUDGET_DATA=window.BUDGET_DATA||[];
+  if(!BUDGET_DATA.length){el.innerHTML='<div style="padding:1.2rem;text-align:center;color:var(--t3);font-size:13px">No budget targets set. Click "Edit targets" to add categories.</div>';return;}
   el.innerHTML=BUDGET_DATA.map(r=>{
     const pct=Math.min(100,(r.actual/r.budget)*100);
     const over=r.actual>r.budget;
@@ -7928,7 +8042,7 @@ function renderBudget(){
   }).join('');
 
   const aiText=document.getElementById('budget-ai-text');
-  if(aiText)aiText.textContent='Travel is 23% over budget ($14.8K vs $12K target). All other categories are tracking well. Redirecting $5.6K saved from Software & Salaries could cover the travel overage and leave $1.8K buffer for Q4.';
+  if(aiText)aiText.textContent='Add real expenses and budget targets to see AI-powered insights.';
 }
 requestAnimationFrame(renderBudget);
 
@@ -8221,6 +8335,44 @@ async function loadEntitiesFromDB(){
       }
       await loadEntityData(activeIdx);
     }
+
+    // Bulk-load owner payroll for ALL entities so multi-entity Personal sync works.
+    // We do this after entity activation so each fetch is scoped by entity_id.
+    try {
+      window.ownerPayrollByEntity = window.ownerPayrollByEntity || {};
+      for (let i = 0; i < ENTITIES.length; i++) {
+        if (i === activeIdx) continue; // already loaded
+        const e = ENTITIES[i];
+        if (!e?._dbId) continue;
+        const pr = await fetch('/api/payroll?entity_id=' + e._dbId, {credentials:'include'});
+        if (!pr.ok) continue;
+        const rows = await pr.json();
+        const ownerRow = (rows||[]).find(r=>r.is_owner);
+        if (ownerRow) {
+          window.ownerPayrollByEntity[i] = {
+            _dbId:    ownerRow.id,
+            fname:    ownerRow.fname,
+            lname:    ownerRow.lname || '',
+            role:     ownerRow.role || 'CEO / Founder',
+            type:     ownerRow.emp_type || 'owner',
+            gross:    parseFloat(ownerRow.gross) || 0,
+            taxRate:  parseFloat(ownerRow.tax_rate) || 0,
+            net:      Math.round((parseFloat(ownerRow.gross)||0)*(1-(parseFloat(ownerRow.tax_rate)||0)/100)),
+            initials: ((ownerRow.fname||'')[0]+((ownerRow.lname||'')[0]||'')).toUpperCase(),
+            avClass:  ownerRow.av_class || 'av-blue',
+            currency: e.currency || 'USD',
+            entityName: e.name || 'Entity',
+            isOwner:  true,
+          };
+        }
+      }
+      ownerPayrollByEntity = window.ownerPayrollByEntity;
+      // Sync Personal Finance one more time now that all entities are loaded
+      if (typeof syncAllPayrollsToPersonal === 'function') {
+        try { syncAllPayrollsToPersonal(); } catch(e) {}
+      }
+      console.log('[Entities] Bulk-loaded owner payroll for', Object.keys(window.ownerPayrollByEntity).length, 'entities');
+    } catch (e) { console.warn('[Entities] Bulk payroll load failed:', e.message); }
   } catch(e){ console.warn('[Entities] Boot load failed:', e.message); }
 }
 
@@ -8289,6 +8441,17 @@ function renderConsolPL(){
   const pl = document.getElementById('consol-pl');
   if(!pl) return;
   const cur = window.CURRENCIES[consolCurrency] || {symbol:'$'};
+  const n = ENTITIES.length;
+  const cols = n > 0 ? `1fr repeat(${n},80px) 90px` : '1fr 90px';
+
+  // Update header with real entity names
+  const hdr = document.getElementById('consol-pl-header');
+  if(hdr){
+    hdr.style.gridTemplateColumns = cols;
+    hdr.innerHTML = '<span>Line</span>' +
+      ENTITIES.map(e=>`<span style="text-align:right">${e.name}</span>`).join('') +
+      '<span style="text-align:right">Consolidated</span>';
+  }
 
   pl.innerHTML = CONSOL_ROW_DEFS.map(row=>{
     const entityVals = ENTITIES.map(e=>`
@@ -8296,7 +8459,7 @@ function renderConsolPL(){
     ).join('');
     const total = getConsolTotal(row.key);
     return `
-      <div style="display:grid;grid-template-columns:1fr repeat(3,80px) 90px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);align-items:center;font-size:12px">
+      <div style="display:grid;grid-template-columns:${cols};gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);align-items:center;font-size:12px">
         <span style="color:var(--t1);font-weight:500">${row.label}</span>
         ${entityVals}
         <span style="text-align:right;font-family:var(--font-mono);font-weight:600;color:${row.color}">${fmtTotal(total)}</span>
@@ -8383,14 +8546,7 @@ window.switchEntity=async function(idx){
 })();
 
 // ── TEAM & RBAC ─────────────────────────────────────────────────────────────
-const TEAM=[
-  {name:'Alex Johnson',email:'alex@finflow.io',role:'owner',avatar:'AJ',color:'#c9a84c',lastSeen:'Now'},
-  {name:'Sarah Chen',email:'sarah@finflow.io',role:'admin',avatar:'SC',color:'#9e8fbf',lastSeen:'5m ago'},
-  {name:'Marcus Reid',email:'marcus@finflow.io',role:'accountant',avatar:'MR',color:'#5aaa9e',lastSeen:'1h ago'},
-  {name:'Priya Nair',email:'priya@finflow.io',role:'accountant',avatar:'PN',color:'#7db87d',lastSeen:'Today'},
-  {name:'Tom Williams',email:'tom@finflow.io',role:'viewer',avatar:'TW',color:'#888',lastSeen:'Yesterday'},
-  {name:'Invited user',email:'cfo@acmecorp.com',role:'viewer',avatar:'?',color:'#5a4e3a',lastSeen:'Pending'},
-];
+const TEAM=[];
 const ROLE_LABELS={owner:'Owner',admin:'Admin',accountant:'Accountant',viewer:'Viewer'};
 const ROLE_CLASSES={owner:'role-owner',admin:'role-admin',accountant:'role-accountant',viewer:'role-viewer'};
 const PERMS=[
@@ -8406,7 +8562,13 @@ const PERMS=[
 ];
 window.renderTeam=function(){
   const tl=document.getElementById('team-list');
-  if(tl)tl.innerHTML=TEAM.map(m=>`
+  const active=TEAM.filter(m=>m.lastSeen!=='Pending');
+  const pending=TEAM.filter(m=>m.lastSeen==='Pending');
+  const tc=document.getElementById('team-count');if(tc)tc.textContent=active.length;
+  const tp=document.getElementById('team-pending');if(tp)tp.textContent=pending.length;
+  if(tl){
+    if(!TEAM.length){tl.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No team members yet. Click + Invite to add someone.</div>';}
+    else tl.innerHTML=TEAM.map(m=>`
     <div class="team-member-row">
       <div class="team-avatar" style="background:${m.color}22;color:${m.color};border:1px solid ${m.color}44">${m.avatar}</div>
       <div style="flex:1;min-width:0">
@@ -8418,16 +8580,33 @@ window.renderTeam=function(){
         <span style="font-size:10px;color:var(--t3)">${m.lastSeen}</span>
       </div>
     </div>`).join('');
+  }
 
   const pl=document.getElementById('perm-list');
-  if(pl)pl.innerHTML=PERMS.map(p=>{
-    const dot=(on)=>`<div class="perm-dot ${on?'perm-dot-on':'perm-dot-off'}">${on?'✓':'—'}</div>`;
-    return `<div class="perm-row">
+  if(pl)pl.innerHTML=PERMS.map((p,pi)=>{
+    const chk=(role,on,disabled)=>`<input type="checkbox" data-pi="${pi}" data-role="${role}" ${on?'checked':''} ${disabled?'disabled':''} onchange="window._onPermChange(this)" style="width:16px;height:16px;accent-color:var(--acc);cursor:${disabled?'default':'pointer'};margin:0 auto;display:block">`;
+    return `<div class="perm-row" style="display:grid;grid-template-columns:1fr repeat(4,32px);gap:6px;align-items:center">
       <div><div class="perm-label">${p.label}</div><div class="perm-desc">${p.desc}</div></div>
-      <div class="perm-dots">${dot(p.o)}${dot(p.a)}${dot(p.ac)}${dot(p.v)}</div>
+      ${chk('o',p.o,true)}${chk('a',p.a,false)}${chk('ac',p.ac,false)}${chk('v',p.v,false)}
     </div>`;
   }).join('');
 };
+window._onPermChange=function(cb){
+  const pi=parseInt(cb.dataset.pi);const role=cb.dataset.role;
+  if(PERMS[pi])PERMS[pi][role]=cb.checked;
+};
+window.savePermissions=function(){
+  const state=PERMS.map(p=>({a:p.a,ac:p.ac,v:p.v}));
+  localStorage.setItem('ff_permissions',JSON.stringify(state));
+  notify('Role permissions saved ✦');
+};
+(function loadPermissions(){
+  try{
+    const saved=JSON.parse(localStorage.getItem('ff_permissions')||'null');
+    if(!saved||!Array.isArray(saved))return;
+    saved.forEach((s,i)=>{if(PERMS[i]){if(s.a!=null)PERMS[i].a=!!s.a;if(s.ac!=null)PERMS[i].ac=!!s.ac;if(s.v!=null)PERMS[i].v=!!s.v;}});
+  }catch(e){}
+})();
 
 // ── AUDIT TRAIL ──────────────────────────────────────────────────────────────
 const AUDIT_EVENTS=[
@@ -8476,6 +8655,26 @@ window.renderAudit=async function(){
           <div class="audit-time">${e.created_at?new Date(e.created_at).toLocaleString():''}</div>
         </div>
       </div>`).join('');
+    // Update KPI cards with real data
+    (function(){
+      const _set=(id,v)=>{const _e=document.getElementById(id);if(_e)_e.textContent=v;};
+      _set('audit-event-count', entries.length);
+      const _last=entries[0];
+      if(_last){
+        const _d=_last.created_at?new Date(_last.created_at):null;
+        const _now=new Date();
+        let _rel='—';
+        if(_d){
+          const _diff=Math.floor((_now-_d)/1000);
+          if(_diff<60)_rel=_diff+'s ago';
+          else if(_diff<3600)_rel=Math.floor(_diff/60)+'m ago';
+          else if(_diff<86400)_rel=Math.floor(_diff/3600)+'h ago';
+          else _rel=_d.toLocaleDateString();
+        }
+        _set('audit-last-time',_rel);
+        _set('audit-last-action',(_last.action||'')+(_last.table_name?' · '+_last.table_name:''));
+      }
+    })();
   }catch(err){
     const filtered=auditFilter==='all'?AUDIT_EVENTS:AUDIT_EVENTS.filter(e=>e.type===auditFilter);
     el.innerHTML=filtered.map(e=>`
@@ -8873,10 +9072,10 @@ window.resetScanner=function(){
     scenarioPage.id = 'page-scenario';
     scenarioPage.innerHTML = `
       <div class="metrics-grid" id="scenario-metrics">
-        <div class="mc"><div class="mc-label">Projected revenue</div><div class="mc-val" id="sc-rev">$469K</div><div class="mc-change up" id="sc-rev-chg">Baseline</div></div>
-        <div class="mc"><div class="mc-label">Projected expenses</div><div class="mc-val" id="sc-exp">$231K</div><div class="mc-change neutral" id="sc-exp-chg">Baseline</div></div>
-        <div class="mc"><div class="mc-label">Net profit</div><div class="mc-val" id="sc-profit">$238K</div><div class="mc-change up" id="sc-profit-chg">50.7% margin</div></div>
-        <div class="mc"><div class="mc-label">Cash runway</div><div class="mc-val" id="sc-runway">14 mo</div><div class="mc-change up" id="sc-runway-chg">At current burn</div></div>
+        <div class="mc"><div class="mc-label">Projected revenue</div><div class="mc-val" id="sc-rev">$0</div><div class="mc-change up" id="sc-rev-chg">Baseline</div></div>
+        <div class="mc"><div class="mc-label">Projected expenses</div><div class="mc-val" id="sc-exp">$0</div><div class="mc-change neutral" id="sc-exp-chg">Baseline</div></div>
+        <div class="mc"><div class="mc-label">Net profit</div><div class="mc-val" id="sc-profit">$0</div><div class="mc-change up" id="sc-profit-chg">Baseline</div></div>
+        <div class="mc"><div class="mc-label">Cash runway</div><div class="mc-val" id="sc-runway">—</div><div class="mc-change up" id="sc-runway-chg">At current burn</div></div>
       </div>
 
       <div class="two-col">
@@ -8892,20 +9091,20 @@ window.resetScanner=function(){
           </div>
 
           <div class="scenario-slider-wrap">
-            <div class="scenario-slider-label"><span class="scenario-slider-name">Revenue growth rate</span><span class="scenario-slider-val" id="lbl-rev-growth">+18%</span></div>
-            <input type="range" class="ff-range" id="sl-rev-growth" min="-30" max="100" value="18" oninput="updateScenario()">
+            <div class="scenario-slider-label"><span class="scenario-slider-name">Revenue growth rate</span><span class="scenario-slider-val" id="lbl-rev-growth">0%</span></div>
+            <input type="range" class="ff-range" id="sl-rev-growth" min="-30" max="100" value="0" oninput="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
             <div class="scenario-slider-label"><span class="scenario-slider-name">Additional headcount</span><span class="scenario-slider-val" id="lbl-headcount">0 hires</span></div>
             <input type="range" class="ff-range" id="sl-headcount" min="0" max="10" value="0" oninput="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
-            <div class="scenario-slider-label"><span class="scenario-slider-name">Avg salary per hire ($K)</span><span class="scenario-slider-val" id="lbl-salary">$95K</span></div>
-            <input type="range" class="ff-range" id="sl-salary" min="40" max="250" value="95" oninput="updateScenario()">
+            <div class="scenario-slider-label"><span class="scenario-slider-name">Avg salary per hire ($K)</span><span class="scenario-slider-val" id="lbl-salary">$0K</span></div>
+            <input type="range" class="ff-range" id="sl-salary" min="0" max="250" value="0" oninput="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
-            <div class="scenario-slider-label"><span class="scenario-slider-name">Churn rate</span><span class="scenario-slider-val" id="lbl-churn">1.8%</span></div>
-            <input type="range" class="ff-range" id="sl-churn" min="0" max="20" value="1.8" step="0.1" oninput="updateScenario()">
+            <div class="scenario-slider-label"><span class="scenario-slider-name">Churn rate</span><span class="scenario-slider-val" id="lbl-churn">0%</span></div>
+            <input type="range" class="ff-range" id="sl-churn" min="0" max="20" value="0" step="0.1" oninput="updateScenario()">
           </div>
           <div class="scenario-slider-wrap">
             <div class="scenario-slider-label"><span class="scenario-slider-name">One-time investment ($K)</span><span class="scenario-slider-val" id="lbl-invest">$0K</span></div>
@@ -8917,9 +9116,9 @@ window.resetScanner=function(){
           </div>
 
           <div class="scenario-result-grid">
-            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo revenue</div><div class="scenario-result-val" id="sc-r-rev">$469K</div><div class="scenario-result-delta" id="sc-r-rev-d" style="color:var(--t3)">Baseline</div></div>
-            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo profit</div><div class="scenario-result-val" id="sc-r-profit">$238K</div><div class="scenario-result-delta" id="sc-r-profit-d" style="color:var(--t3)">Baseline</div></div>
-            <div class="scenario-result-mc"><div class="scenario-result-label">Runway</div><div class="scenario-result-val" id="sc-r-runway">14 mo</div><div class="scenario-result-delta" id="sc-r-runway-d" style="color:var(--t3)">Baseline</div></div>
+            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo revenue</div><div class="scenario-result-val" id="sc-r-rev">$0</div><div class="scenario-result-delta" id="sc-r-rev-d" style="color:var(--t3)">Baseline</div></div>
+            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo profit</div><div class="scenario-result-val" id="sc-r-profit">$0</div><div class="scenario-result-delta" id="sc-r-profit-d" style="color:var(--t3)">Baseline</div></div>
+            <div class="scenario-result-mc"><div class="scenario-result-label">Runway</div><div class="scenario-result-val" id="sc-r-runway">—</div><div class="scenario-result-delta" id="sc-r-runway-d" style="color:var(--t3)">Baseline</div></div>
           </div>
         </div>
 
@@ -9052,13 +9251,13 @@ requestAnimationFrame(renderNotifs);
 // ══════════════════════════════════════════════════════════════════
 // SCENARIO MODELLER
 // ══════════════════════════════════════════════════════════════════
-const BASE = { rev: 469200, exp: 231450, cash: 284320, burn: 19287 };
+window.BASE = { rev: 0, exp: 0, cash: 0, burn: 0 };
 
 window.updateScenario = function(){
-  const revGrowth = parseFloat(document.getElementById('sl-rev-growth')?.value||18)/100;
+  const revGrowth = parseFloat(document.getElementById('sl-rev-growth')?.value||0)/100;
   const headcount = parseInt(document.getElementById('sl-headcount')?.value||0);
-  const salary = parseInt(document.getElementById('sl-salary')?.value||95)*1000;
-  const churn = parseFloat(document.getElementById('sl-churn')?.value||1.8)/100;
+  const salary = parseInt(document.getElementById('sl-salary')?.value||0)*1000;
+  const churn = parseFloat(document.getElementById('sl-churn')?.value||0)/100;
   const invest = parseInt(document.getElementById('sl-invest')?.value||0)*1000;
   const efficiency = parseFloat(document.getElementById('sl-efficiency')?.value||0)/100;
 
@@ -9096,7 +9295,10 @@ window.updateScenario = function(){
   set('sc-r-runway', runway===99?'∞':runway+' mo');
   document.getElementById('sc-r-rev-d').innerHTML = delta(projRev, BASE.rev);
   document.getElementById('sc-r-profit-d').innerHTML = delta(projProfit, BASE.rev-BASE.exp);
-  document.getElementById('sc-r-runway-d').innerHTML = delta(runway, 14)+'<span style="color:var(--t3)"> mo</span>';
+  // Baseline runway = current cash ÷ current monthly burn (no hardcoded 14)
+  const baseRunway = BASE.burn > 0 ? Math.round(BASE.cash / BASE.burn) : 0;
+  const _runDelta = runway === 99 ? '<span style="color:var(--green)">∞</span>' : (runway - baseRunway >= 0 ? '<span style="color:var(--green)">▲ ' : '<span style="color:var(--red)">▼ ') + Math.abs(runway - baseRunway) + ' mo</span>';
+  document.getElementById('sc-r-runway-d').innerHTML = _runDelta;
 
   renderScenarioChart(projRev, projExp);
 };
@@ -9129,7 +9331,7 @@ window.applyPreset = function(preset){
   document.querySelectorAll('.scenario-preset-btn').forEach(b=>b.classList.remove('active-preset'));
   document.getElementById('preset-'+preset)?.classList.add('active-preset');
   const presets = {
-    base:{revGrowth:18,headcount:0,salary:95,churn:1.8,invest:0,efficiency:0},
+    base:{revGrowth:0,headcount:0,salary:0,churn:0,invest:0,efficiency:0},
     hire:{revGrowth:25,headcount:2,salary:110,churn:1.8,invest:0,efficiency:0},
     growth:{revGrowth:60,headcount:4,salary:95,churn:1.2,invest:50,efficiency:5},
     downturn:{revGrowth:-15,headcount:0,salary:95,churn:8,invest:0,efficiency:10},
@@ -9346,7 +9548,7 @@ window.showPage = function(id, el){
   _spV15(id, el);
   const names = {scenario:'Scenario planner',autocat:'Auto-categorise',portal:'Client portal','biz-investments':'Investments'};
   if(names[id]) document.getElementById('pageTitle').textContent = names[id];
-  if(id==='scenario'){ requestAnimationFrame(()=>{ updateScenario(); renderScenarioChart(469200,231450); }); }
+  if(id==='scenario'){ requestAnimationFrame(()=>{ if(typeof window._syncScenarioBase==='function')window._syncScenarioBase(); updateScenario(); renderScenarioChart(BASE.rev||0,BASE.exp||0); }); }
   if(id==='autocat')  requestAnimationFrame(renderAutocat);
   if(id==='portal')   requestAnimationFrame(renderPortal);
   if(id==='notifications') toggleNotifPanel();
@@ -9382,16 +9584,8 @@ setTimeout(()=>{
   // ── Ticker registries ──────────────────────────────────────────
   // Personal portfolio tickers come from the live `holdings` array.
   // Business portfolio tickers are declared here.
-  const BIZ_HOLDINGS = [
-    {ticker:'VTI',  shares:142, costPer:240, type:'ETF',          color:'#c9a84c'},
-    {ticker:'BND',  shares:302, costPer:72,  type:'Bond ETF',     color:'#5aaa9e'},
-    {ticker:'MSFT', shares:42,  costPer:230, type:'Stock',        color:'#9e8fbf'},
-    {ticker:'SGOV', shares:920, costPer:100, type:'T-Bill',       color:'#7db87d'},
-  ];
-  // REIT is not exchange-traded in this demo — keep as static
-  const BIZ_STATIC = [
-    {name:'Commercial Property REIT', type:'Real Estate', value:148600, income:8916},
-  ];
+  const BIZ_HOLDINGS = [];
+  const BIZ_STATIC = [];
 
   // ── Status pill helpers ────────────────────────────────────────
   function setLiveStatus(pageId, state, text){
@@ -9509,17 +9703,6 @@ setTimeout(()=>{
         <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">${inc>0?'$'+(inc/1000).toFixed(1)+'K':'—'}</div>
       </div>`;
     });
-
-    // Append static REIT row
-    rows.push(`<div style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;font-size:12.5px">
-      <div style="width:30px;height:30px;border-radius:7px;background:var(--purple-bg);border:1px solid var(--purple-bd);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:var(--purple)">RE</div>
-      <div><div style="font-weight:500;color:var(--t1)">Commercial REIT</div><div style="font-size:11px;color:var(--t3)">Real Estate · private</div></div>
-      <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">—</div>
-      <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$148.6K</div>
-      <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">$130.0K</div>
-      <div style="text-align:right;font-family:var(--font-mono);color:var(--green)">+14.3%</div>
-      <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">$8.9K</div>
-    </div>`);
 
     list.innerHTML = rows.join('');
 
@@ -10012,12 +10195,7 @@ async function loadDirectory() {
     allAccountants = await res.json();
   } catch(e) {
     // Fallback demo data while directory is being populated
-    allAccountants = [
-      {id:1,first_name:'Sarah',last_name:'Mensah',firm:'Mensah & Partners',country:'Trinidad & Tobago',specialisation:'Tax & Filing',experience:'10–20 years',bio:'Certified tax professional with 15 years experience helping SMEs in T&T.',status:'verified'},
-      {id:2,first_name:'James',last_name:'Phillip',firm:'Phillip Accounting',country:'Trinidad & Tobago',specialisation:'Bookkeeping',experience:'5–10 years',bio:'Chartered accountant specialising in bookkeeping for small businesses.',status:'verified'},
-      {id:3,first_name:'Priya',last_name:'Nair',firm:'Nair Financial',country:'United Kingdom',specialisation:'CFO Services',experience:'10–20 years',bio:'Fractional CFO helping SaaS and scale-up companies with financial strategy.',status:'verified'},
-      {id:4,first_name:'Marcus',last_name:'Webb',firm:'Webb Tax Group',country:'Canada',specialisation:'Tax & Filing',experience:'5–10 years',bio:'Corporate tax specialist focused on startups and tech companies.',status:'verified'},
-    ];
+    allAccountants = [];
   }
   filterAccountants();
   loadMyAccountant();

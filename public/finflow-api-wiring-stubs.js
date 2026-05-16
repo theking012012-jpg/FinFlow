@@ -194,7 +194,8 @@
 
   async function loadVendors() {
     try {
-      _vendors = await api('GET', '/api/vendors');
+      const _eidV = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
+      _vendors = await api('GET', '/api/vendors' + (_eidV ? '?entity_id=' + _eidV : ''));
       renderVendorsList();
       updateVendorMetrics();
     } catch (e) { console.warn('[Vendors] load error', e); }
@@ -285,7 +286,8 @@
         if (idx > -1) _vendors[idx] = { ..._vendors[idx], name, contact, category, owing, ytd_paid };
         showNotify('Vendor updated ✦');
       } else {
-        const row = await api('POST', '/api/vendors', { name, contact, category, owing, ytd_paid });
+        const _eidVS = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
+        const row = await api('POST', '/api/vendors', { name, contact, category, owing, ytd_paid, entity_id: _eidVS });
         _vendors.push(row);
         _vendors.sort((a,b) => a.name.localeCompare(b.name));
         showNotify('Vendor added ✦');
@@ -315,7 +317,8 @@
 
   async function loadBills() {
     try {
-      _bills = await api('GET', '/api/bills');
+      const _eidB = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
+      _bills = await api('GET', '/api/bills' + (_eidB ? '?entity_id=' + _eidB : ''));
       renderBillsList();
       updateBillMetrics();
     } catch (e) { console.warn('[Bills] load error', e); }
@@ -418,7 +421,8 @@
         if (idx > -1) _bills[idx] = { ..._bills[idx], vendor, amount, due_date, status, notes };
         showNotify('Bill updated ✦');
       } else {
-        const row = await api('POST', '/api/bills', { vendor, amount, due_date, status, notes });
+        const _eidBS = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
+        const row = await api('POST', '/api/bills', { vendor, amount, due_date, status, notes, entity_id: _eidBS });
         _bills.unshift(row);
         showNotify('Bill created ✦');
       }
@@ -675,6 +679,13 @@
       }
     }, 800);
   })()
+
+  // Expose so entity-switch handler can reload entity-scoped data
+  window._loadVendorsFromDB        = loadVendors;
+  window._loadBillsFromDB          = loadBills;
+  window._loadQuotesFromDB         = loadQuotes;
+  window._loadRecurringBillsFromDB = loadRecurringBills;
+  window._loadRecurringInvFromDB   = loadRecurringInvoices;
 
   console.log('[FinFlow Stubs Wiring] ✅ Quotes, Bills, Vendors, Recurring Bills, Recurring Invoices — all wired to real API');
 

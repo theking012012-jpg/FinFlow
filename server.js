@@ -673,12 +673,22 @@ app.delete('/api/items/:id', requireAuth, wrap(async (req, res) => {
 
 // ── PAYROLL ───────────────────────────────────────────────────────────────────
 app.get('/api/payroll', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('payroll', userFilter(req.session.userId, req.entityId), (a,b) => b.is_owner - a.is_owner || a.id - b.id));
+  const userId = req.session.userId;
+  const entityId = req.entityId || null;
+  const rows = entityId
+    ? await db.allByEntity('payroll', userId, entityId)
+    : await db.allByUser('payroll', userId);
+  // Normalise is_owner to boolean and sort owner first
+  const normalised = (rows || []).map(r => ({
+    ...r,
+    is_owner: r.is_owner === true || r.is_owner === 1 || r.is_owner === '1',
+  })).sort((a, b) => (b.is_owner ? 1 : 0) - (a.is_owner ? 1 : 0) || a.id - b.id);
+  res.json(normalised);
 }));
 app.post('/api/payroll', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.fname) return res.status(400).json({ error: 'fname required.' });
-  const { row } = await db.insert('payroll', { user_id: req.session.userId, entity_id: b.entity_id||null, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, tax_rate: parseFloat(b.tax_rate)||0, av_class: b.av_class||'av-blue', is_owner: b.is_owner ? 1 : 0 });
+  const { row } = await db.insert('payroll', { user_id: req.session.userId, entity_id: b.entity_id||null, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, tax_rate: parseFloat(b.tax_rate)||0, av_class: b.av_class||'av-blue', is_owner: b.is_owner ? true : false });
   res.status(201).json(row);
 }));
 app.put('/api/payroll/:id', requireAuth, wrap(async (req, res) => {
@@ -758,7 +768,13 @@ app.delete('/api/goals/:id', requireAuth, wrap(async (req, res) => {
 
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
 app.get('/api/projects', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('projects', r => r.user_id === req.session.userId, (a, b) => b.id - a.id));
+  try {
+    const rows = await db.all('projects', r => r.user_id === req.session.userId, (a, b) => b.id - a.id);
+    res.json(rows);
+  } catch (e) {
+    console.error('[GET /api/projects] failed for user', req.session.userId, ':', e.code, e.message);
+    res.json([]);
+  }
 }));
 app.post('/api/projects', requireAuth, wrap(async (req, res) => {
   const { name, client = '', budget = 0, status = 'In Progress' } = req.body || {};
@@ -799,7 +815,13 @@ app.delete('/api/projects/:id', requireAuth, wrap(async (req, res) => {
 
 // ── HOLDINGS ──────────────────────────────────────────────────────────────────
 app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('holdings', r => r.user_id === req.session.userId, (a,b) => a.id - b.id));
+  try {
+    const rows = await db.all('holdings', r => r.user_id === req.session.userId, (a,b) => a.id - b.id);
+    res.json(rows);
+  } catch (e) {
+    console.error('[GET /api/holdings] failed for user', req.session.userId, ':', e.code, e.message);
+    res.json([]); // fail-soft: empty list keeps the frontend happy
+  }
 }));
 app.post('/api/holdings', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -841,15 +863,24 @@ app.get('/api/settings', requireAuth, wrap(async (req, res) => {
 app.put('/api/settings', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
+  // Read current settings for audit diff
+  const before = (await db.get('user_settings', r => r.user_id === req.session.userId)) || {};
   if (b.dark_mode      != null) patch.dark_mode      = b.dark_mode ? 1 : 0;
   if (b.currency       != null) patch.currency        = b.currency;
   if (b.show_cents     != null) patch.show_cents      = b.show_cents ? 1 : 0;
   if (b.notif_email    != null) patch.notif_email     = b.notif_email ? 1 : 0;
   if (b.notif_inv      != null) patch.notif_inv       = b.notif_inv ? 1 : 0;
   if (b.notif_pay      != null) patch.notif_pay       = b.notif_pay ? 1 : 0;
-  // Onboarding fields
-  if (b.business_name  != null) patch.business_name   = b.business_name.slice(0,200);
+  // Onboarding + profile fields
+  if (b.business_name  != null) patch.business_name   = String(b.business_name).slice(0,200);
   if (b.business_type  != null) patch.business_type   = b.business_type;
+  if (b.industry       != null) patch.industry        = String(b.industry).slice(0,100);
+  if (b.address        != null) patch.address         = String(b.address).slice(0,500);
+  if (b.email          != null) patch.email           = String(b.email).trim().slice(0,254).toLowerCase();
+  if (b.phone          != null) patch.phone           = String(b.phone).slice(0,50);
+  if (b.website        != null) patch.website         = String(b.website).slice(0,200);
+  if (b.tax_id         != null) patch.tax_id          = String(b.tax_id).slice(0,50);
+  if (b.fiscal_year    != null) patch.fiscal_year     = String(b.fiscal_year).slice(0,20);
   if (b.num_employees  != null) patch.num_employees   = b.num_employees;
   if (b.onboarding_done!= null) patch.onboarding_done = b.onboarding_done ? 1 : 0;
   await db.upsert('user_settings', 'user_id', req.session.userId, patch);
@@ -859,6 +890,20 @@ app.put('/api/settings', requireAuth, wrap(async (req, res) => {
     const uid = req.session.userId;
     const ent = await activeEntity(uid);
     if (ent) await db.update('entities', e => e.id === ent.id, { name: b.business_name.slice(0,100) });
+  }
+  // Audit log: emit one entry per business-profile field that changed.
+  // We only log fields that the user typically modifies on the Settings page —
+  // toggles (dark_mode, notif_*, show_cents) are intentionally excluded.
+  const TRACKED = ['business_name','industry','address','email','phone','website','tax_id','fiscal_year','currency','business_type','name'];
+  for (const f of TRACKED) {
+    if (patch[f] == null && f !== 'name') continue;
+    const newVal = f === 'name' ? (b.name ? b.name.trim() : null) : patch[f];
+    const oldVal = f === 'name'
+      ? (await db.get('users', u => u.id === req.session.userId))?.name
+      : before[f];
+    if (newVal == null) continue;
+    if (String(oldVal||'') === String(newVal||'')) continue;
+    logAudit(req, 'UPDATE', 'settings', null, { field: f, value: oldVal || null }, { field: f, value: newVal });
   }
   res.json({ ok: true });
 }));
@@ -1703,9 +1748,18 @@ app.get('/admin', (req, res) => {
 app.get('/sitemap.xml', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'sitemap.xml'));
 });
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+// Favicon — return 204 if no file is bundled so it doesn't 500 via the
+// static handler. Place this before the wildcard so HEAD requests succeed.
+app.get('/favicon.ico', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'favicon.ico'), (err) => {
+    if (err) res.status(204).end();
+  });
 });
+// NOTE: The /api 404 fallback and the * static fallback are registered at
+// the BOTTOM of this file (just before the global error handler) so that
+// every app.get/post/put/delete('/api/...') has been registered first.
+// (Express matches middleware in registration order — placing the /api
+// 404 here would short-circuit any routes defined further down.)
 
 // ── GLOBAL ERROR HANDLER ──────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
@@ -1800,6 +1854,17 @@ app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
   }
   res.json({ ok: true });
 }));
+
+// ── /api 404 + STATIC FALLBACKS ───────────────────────────────────────────────
+// Must come AFTER every route registration — Express matches in order.
+// Any unmatched /api/* path returns JSON (so fetch().json() doesn't choke on
+// the landing.html that the wildcard below would otherwise serve).
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
+});
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 initDB().then(() => {

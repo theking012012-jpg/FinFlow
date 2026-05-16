@@ -255,11 +255,11 @@
           '— backed by PostgreSQL on Supabase. It\'s safe across all browsers and devices.';
       }
     }, 600);
-  })()
+  })();
 
   // ── 7. Track current page so refreshFinancials dispatches correctly ─
   // ── Also wrap loadEntitiesFromDB to reload vendors/bills on entity switch
-  (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
+  (function _run2() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run2); return; }
     // Outermost showPage wrapper — runs first, sets currentPage, then calls chain
     const _pgTrack = window.showPage;
     if (typeof _pgTrack === 'function') {

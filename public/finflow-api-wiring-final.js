@@ -42,7 +42,7 @@
     }
   };
 
-  (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
+  (async function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
 
     // ── Auto-restore session ────────────────────────────────────────
     try {

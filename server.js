@@ -1726,6 +1726,11 @@ app.get('/admin', (req, res) => {
 app.get('/sitemap.xml', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'sitemap.xml'));
 });
+// Any unmatched /api/* request should return JSON 404 — never fall through
+// to the static catch-all (which would return HTML and confuse fetch()).
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
+});
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'landing.html'));
 });

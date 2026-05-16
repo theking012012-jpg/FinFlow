@@ -1855,6 +1855,22 @@ app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── PERMISSIONS ───────────────────────────────────────────────────────────────
+app.get('/api/permissions', requireAuth, wrap(async (req, res) => {
+  const rows = await db.all('user_settings', r => r.user_id === req.session.userId && r.key === 'permissions');
+  res.json(rows[0]?.value ? JSON.parse(rows[0].value) : null);
+}));
+app.post('/api/permissions', requireAuth, wrap(async (req, res) => {
+  const data = JSON.stringify(req.body || []);
+  const existing = await db.get('user_settings', r => r.user_id === req.session.userId && r.key === 'permissions');
+  if (existing) {
+    await db.update('user_settings', r => r.id === existing.id, { value: data });
+  } else {
+    await db.insert('user_settings', { user_id: req.session.userId, key: 'permissions', value: data });
+  }
+  res.json({ ok: true });
+}));
+
 // ── /api 404 + STATIC FALLBACKS ───────────────────────────────────────────────
 // Must come AFTER every route registration — Express matches in order.
 // Any unmatched /api/* path returns JSON (so fetch().json() doesn't choke on

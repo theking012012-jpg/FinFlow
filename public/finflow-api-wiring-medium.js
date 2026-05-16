@@ -932,12 +932,21 @@
         if (!res || typeof res !== 'object') return;
         // Accept both shapes: flat {Rent:5000} or wrapped {targets:{Rent:5000}}
         const targets = (res.targets && typeof res.targets === 'object') ? res.targets : res;
-        const expenses = window._realExpenses || [];
 
-        // Aggregate actual spend per category
+        // Fetch expenses directly — window._realExpenses may be stale or empty on first load
+        let expenses = window._realExpenses || [];
+        if (!expenses.length) {
+          try {
+            const active = (window.ENTITIES || []).find(e => e.active);
+            const eq = active?._dbId ? '?entity_id=' + active._dbId : '';
+            expenses = await api('GET', '/api/expenses' + eq);
+          } catch (_) { expenses = []; }
+        }
+
+        // Aggregate actual spend per category — case-insensitive match
         const catActuals = {};
         expenses.forEach(e => {
-          const cat = e.category || 'Other';
+          const cat = (e.category || 'Other').toLowerCase();
           catActuals[cat] = (catActuals[cat] || 0) + (parseFloat(e.amount) || 0);
         });
 
@@ -948,7 +957,7 @@
 
         Object.entries(targets).forEach(([cat, budget], i) => {
           const bAmt = parseFloat(budget) || 0;
-          const actual = catActuals[cat] || 0;
+          const actual = catActuals[cat.toLowerCase()] || 0;
           totalBudget += bAmt;
           totalSpent  += actual;
           if (bd) bd.push({ cat, budget: bAmt, actual, color: COLORS[i % COLORS.length] });

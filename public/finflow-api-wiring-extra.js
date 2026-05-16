@@ -575,17 +575,75 @@
   };
 
   // ══════════════════════════════════════════════════════
+  // 12. PERSONAL FINANCE — wire spending, net worth, transactions
+  //     Fetches: /api/holdings → net worth from portfolio value
+  //              /api/personal-transactions → spending array + recent txns
+  // ══════════════════════════════════════════════════════
+  window.loadPersonalFinance = async function () {
+    try {
+      const [holdRows, txRows] = await Promise.all([
+        api('GET', '/api/holdings').catch(() => []),
+        api('GET', '/api/personal-transactions').catch(() => []),
+      ]);
+
+      // Net worth from total portfolio market value
+      const portfolioValue = (holdRows || []).reduce((s, h) => {
+        const price = parseFloat(h.price) || parseFloat(h.cost_per) || 0;
+        return s + price * (parseFloat(h.shares) || 0);
+      }, 0);
+      if (typeof window.baseNetWorth !== 'undefined') {
+        window.baseNetWorth = Math.round(portfolioValue);
+      }
+
+      // Personal transactions → populate persTransactions (keep salary entries)
+      const dbTxns = (txRows || []).map(r => ({
+        id:     r.id,
+        desc:   r.description || r.desc || '',
+        cat:    r.category || r.cat || 'Other',
+        amount: Math.abs(parseFloat(r.amount) || 0),
+        type:   r.type || (parseFloat(r.amount) >= 0 ? 'income' : 'expense'),
+        date:   r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '',
+      }));
+
+      // Merge: keep payroll salary entries (added by syncAllPayrollsToPersonal),
+      // replace everything else with DB rows
+      if (typeof window.persTransactions !== 'undefined') {
+        const salaryEntries = (window.persTransactions || []).filter(t => t.cat === 'Income' && t.desc.startsWith('Salary —'));
+        window.persTransactions = [...salaryEntries, ...dbTxns.filter(t => !(t.cat === 'Income' && t.desc.startsWith('Salary —')))];
+      }
+
+      // Spending categories from DB transactions (non-income)
+      const expTxns = dbTxns.filter(t => t.type === 'expense' || t.type === 'debit');
+      if (expTxns.length && typeof window.spending !== 'undefined') {
+        const catMap = {};
+        expTxns.forEach(t => { catMap[t.cat] = (catMap[t.cat] || 0) + t.amount; });
+        const SPEND_COLORS = ['var(--red)', 'var(--amber)', 'var(--purple)', 'var(--teal)', 'var(--green)', 'var(--acc)'];
+        const newSpending = Object.entries(catMap).map(([label, amount], i) => ({
+          label, amount, color: SPEND_COLORS[i % SPEND_COLORS.length],
+        }));
+        if (newSpending.length) window.spending = newSpending;
+      }
+
+      if (typeof window.renderPersonal === 'function') window.renderPersonal();
+    } catch (err) {
+      console.warn('[PersonalFinance]', err.message);
+    }
+  };
+
+  // ══════════════════════════════════════════════════════
   // BOOT
   // ══════════════════════════════════════════════════════
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
     loadTimesheet();
     loadHoldingsFromDB();
     loadProjects();
+    window.loadPersonalFinance();
 
     // Expose so entity-switch and external callers can reload
     window._loadTimesheetFromDB  = loadTimesheet;
     window._loadHoldingsFromDB   = loadHoldingsFromDB;
     window._loadProjectsFromDB   = loadProjects;
+    window._loadPersonalFinance  = window.loadPersonalFinance;
 
     // Re-load when navigating to these pages via showPage
     const _orig = window.showPage;
@@ -597,6 +655,7 @@
           else { renderTimesheetList(); updateTimesheetMetrics(); }
         }
         if (id === 'investments') loadHoldingsFromDB();
+        if (id === 'personal') window.loadPersonalFinance().catch(() => {});
         if (id === 'projects') {
           if (!_projectsFetched) loadProjects();
           else renderProjectsList();

@@ -207,6 +207,24 @@
         window.syncPayrollToPersonal();
       }
 
+      // ── Reload budget progress bars with fresh expense data ─────────
+      if (typeof window._loadBudgetFromDB === 'function') {
+        window._loadBudgetFromDB().catch(() => {});
+      }
+
+      // ── Refresh journal + COA KPI cards ────────────────────────────
+      if (typeof window.renderJournals === 'function' && (_curPage === 'manual-journals' || _curPage === 'chart-of-accounts')) {
+        window.renderJournals();
+      }
+      if (typeof window.renderCOA === 'function' && _curPage === 'chart-of-accounts') {
+        window.renderCOA();
+      }
+
+      // ── Refresh personal finance surfaces (net worth, transactions) ─
+      if (typeof window.loadPersonalFinance === 'function') {
+        window.loadPersonalFinance().catch(() => {});
+      }
+
       console.log('[FinFlow] refreshFinancials ✅ page:', _curPage,
         '— inv:', (invoices || []).length, 'exp:', (expenses || []).length);
     } catch (err) {

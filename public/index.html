@@ -4282,6 +4282,12 @@ async function loadEntityData(idx){
       const mIdx = (d.getFullYear() - now.getFullYear()) * 12 + d.getMonth() - (now.getMonth() - 11);
       if(mIdx >= 0 && mIdx < 12) monthlyExp[mIdx] += parseFloat(exp.amount)||0;
     });
+    // Add owner monthly gross spread evenly across all 12 months in opex
+    const ownerMonthlyGross = (ownerPayrollByEntity[idx]?.gross) || 0;
+    if (ownerMonthlyGross > 0) {
+      for (let i = 0; i < 12; i++) monthlyExp[i] += ownerMonthlyGross;
+    }
+
     REV.splice(0,12,...monthlyRev);
     EXP.splice(0,12,...monthlyExp);
     for(let i=0;i<12;i++) PROFIT[i] = REV[i]-EXP[i];
@@ -5704,7 +5710,7 @@ function updateAI(d=getPeriodData()){
   document.getElementById('ai-insights-list').innerHTML=insights.map(t=>`<div class="ai-insight">${esc(t)}</div>`).join('');
   document.getElementById('ai-period-label').textContent=d.label;
 }
-function updateHealthScore(savingsRate=52,income=6800,surplus=3560){
+function updateHealthScore(savingsRate=0,income=0,surplus=0){
   const d=getPeriodData();
   const profitMargin=Math.round(d.profit/d.rev*100);
   const cfScore=Math.min(100,Math.round(60+profitMargin*.8));
@@ -8595,14 +8601,18 @@ window._onPermChange=function(cb){
   const pi=parseInt(cb.dataset.pi);const role=cb.dataset.role;
   if(PERMS[pi])PERMS[pi][role]=cb.checked;
 };
-window.savePermissions=function(){
+window.savePermissions=async function(){
   const state=PERMS.map(p=>({a:p.a,ac:p.ac,v:p.v}));
-  localStorage.setItem('ff_permissions',JSON.stringify(state));
-  notify('Role permissions saved ✦');
-};
-(function loadPermissions(){
   try{
-    const saved=JSON.parse(localStorage.getItem('ff_permissions')||'null');
+    await fetch('/api/permissions',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+    notify('Role permissions saved ✦');
+  }catch(e){notify('Could not save permissions',true);}
+};
+(async function loadPermissions(){
+  try{
+    const res=await fetch('/api/permissions',{credentials:'same-origin'});
+    if(!res.ok)return;
+    const saved=await res.json();
     if(!saved||!Array.isArray(saved))return;
     saved.forEach((s,i)=>{if(PERMS[i]){if(s.a!=null)PERMS[i].a=!!s.a;if(s.ac!=null)PERMS[i].ac=!!s.ac;if(s.v!=null)PERMS[i].v=!!s.v;}});
   }catch(e){}

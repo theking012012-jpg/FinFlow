@@ -413,6 +413,10 @@ html{overflow-x:hidden}
    scroll context and bottom breathing room so nothing is cut off. */
 #page-settings.page.active,#page-pricing.page.active{padding-bottom:80px}
 #page-settings,#page-pricing{height:auto;min-height:0}
+/* Stronger scroll fix — !important overrides any conflicting rule */
+#page-settings,#page-pricing{overflow:visible!important;padding-bottom:120px!important}
+#page-settings .two-col>div,#page-pricing .two-col>div{height:auto!important;overflow:visible!important}
+.content{overflow-y:auto!important;-webkit-overflow-scrolling:touch}
 /* METRICS */
 .metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem}
 .metrics-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.25rem}
@@ -4171,6 +4175,18 @@ async function loadEntityData(idx){
   if(typeof EXP !== 'undefined') EXP.splice(0,12,...z);
   if(typeof PROFIT !== 'undefined') PROFIT.splice(0,12,...z);
 
+  // Zero out data arrays immediately so stale entity data doesn't bleed across entity switches
+  userInvoices.length = 0;
+  bizExpenses.length = 0;
+  customers.length = 0;
+  inventory.length = 0;
+  payrollEmployees.length = 0;
+  ownerPayroll = null;
+  window.ownerPayroll = null;
+  const _clrEl = id => { const el = document.getElementById(id); if(el) el.innerHTML = ''; };
+  _clrEl('invoice-list'); _clrEl('expense-list'); _clrEl('customer-list');
+  _clrEl('inventory-list'); _clrEl('payroll-list');
+
   try {
     // Pass entity_id explicitly — don't rely on session
     const _entityObj = ENTITIES[idx] || ENTITIES.find(e=>e.active);
@@ -5168,43 +5184,46 @@ function syncAllPayrollsToPersonal(){
     });
   });
 
-  // Update payroll page banner
+  // Update payroll page banner — show entity name + owner name for clarity
+  const _bannerEnts = (typeof ENTITIES!=='undefined'?ENTITIES:null)||window.ENTITIES||[];
   const banner = document.getElementById('pers-payroll-banner');
   if(banner){
     banner.style.display = entries.length > 0 ? 'flex' : 'none';
     const salaryEl = document.getElementById('pers-salary-source');
     if(salaryEl){
-      salaryEl.textContent = entries.length === 1
-        ? `${entries[0][1].fname} ${entries[0][1].lname} · ${SP(totalUSD)}/mo net (${persCurrency})`
-        : `${entries.length} entities · ${SP(totalUSD)}/mo combined net (${persCurrency})`;
+      if(entries.length === 1){
+        const [_idx0, _ep0] = entries[0];
+        const _ent0 = _bannerEnts[parseInt(_idx0)];
+        salaryEl.textContent = `${_ent0?.name||'Entity'} — ${_ep0.fname} ${_ep0.lname} · ${SP(totalUSD)}/mo net (${persCurrency})`;
+      } else {
+        salaryEl.textContent = `${entries.length} entities · ${SP(totalUSD)}/mo combined net (${persCurrency})`;
+      }
     }
   }
 
-  // Update per-entity breakdown in payroll link card
+  // Per-entity breakdown — always show for 1 or more entities (not just 2+)
   const breakdownEl = document.getElementById('pers-payroll-breakdown');
   if(breakdownEl){
-    if(entries.length > 1){
+    if(entries.length >= 1){
       breakdownEl.style.display = 'block';
       const _dispCur = ((typeof CURRENCIES!=='undefined'?CURRENCIES:null)||window.CURRENCIES||{})[persCurrency] || {symbol:'$', rate:1};
       breakdownEl.innerHTML = entries.map(([idx,ep])=>{
-        const _ents2 = (typeof ENTITIES!=='undefined'?ENTITIES:null)||window.ENTITIES||[];
-        const entity = _ents2[parseInt(idx)];
+        const entity = _bannerEnts[parseInt(idx)];
         const _fromCur2 = ep.currency || entity?.currency || 'USD';
         const entCur = ((typeof CURRENCIES!=='undefined'?CURRENCIES:null)||window.CURRENCIES||{})[_fromCur2] || {symbol:'$'};
-        const netUSD = Math.round(_safeFX(ep.net, _fromCur2, 'USD'));
         const netDisp = Math.round(_safeFX(ep.net, _fromCur2, persCurrency));
         return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:11.5px;border-bottom:1px solid var(--bd)">
           <span style="display:flex;align-items:center;gap:5px">
             <span style="width:14px;height:14px;border-radius:3px;background:${entity?.color||'var(--acc)'};display:inline-block;flex-shrink:0"></span>
-            <span style="color:var(--t2)">${entity?.name||'Entity'}</span>
-            <span style="color:var(--t3);font-size:10px">${entity?.currency||'USD'}</span>
+            <span style="color:var(--t1);font-weight:500">${entity?.name||'Entity'}</span>
+            <span style="color:var(--t3);font-size:10px">${ep.fname} ${ep.lname} · ${entity?.currency||'USD'}</span>
           </span>
           <span style="font-family:var(--font-mono);color:var(--green)">${entCur.symbol}${ep.net.toLocaleString()}/mo <span style="color:var(--t3);font-size:10px">≈ ${_dispCur.symbol}${netDisp.toLocaleString()}</span></span>
         </div>`;
-      }).join('') + `<div style="display:flex;justify-content:space-between;padding:5px 0 0;font-size:12.5px;font-weight:600">
+      }).join('') + (entries.length > 1 ? `<div style="display:flex;justify-content:space-between;padding:5px 0 0;font-size:12.5px;font-weight:600">
         <span style="color:var(--t2)">Total (${persCurrency})</span>
         <span style="color:var(--acc);font-family:var(--font-mono)">${_dispCur.symbol}${Math.round(totalUSD * _dispCur.rate).toLocaleString()}/mo</span>
-      </div>`;
+      </div>` : '');
     } else {
       breakdownEl.style.display = 'none';
     }
@@ -5342,10 +5361,19 @@ function renderPersonal(){
   document.getElementById('pers-nw-chg').className = 'mc-change '+(nwChgUSD>0?'up':'dn');
 
   const entityCount = Object.keys(ownerPayrollByEntity).length;
-  document.getElementById('pers-income-src').textContent = entityCount>1
-    ? `${entityCount} entities · combined (${persCurrency})`
-    : entityCount===1 ? `From payroll · after tax (${persCurrency})`
-    : `After tax (${persCurrency})`;
+  const _incSrcEl = document.getElementById('pers-income-src');
+  if(_incSrcEl){
+    if(entityCount === 0){
+      _incSrcEl.textContent = `After tax (${persCurrency})`;
+    } else {
+      const _pEnts = (typeof ENTITIES!=='undefined'?ENTITIES:null)||window.ENTITIES||[];
+      const _lineItems = Object.entries(ownerPayrollByEntity).map(([idx,ep])=>{
+        const ent = _pEnts[parseInt(idx)];
+        return `${ent?.name||'Entity'}: ${SP(_safeFX(ep.net, ep.currency||ent?.currency||'USD', 'USD'))}`;
+      });
+      _incSrcEl.textContent = _lineItems.join(' · ') + (entityCount>1 ? ' · Total' : ' net');
+    }
+  }
 
   // Payroll banner
   const banner = document.getElementById('pers-payroll-banner');

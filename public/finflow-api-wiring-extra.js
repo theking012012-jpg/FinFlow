@@ -624,7 +624,12 @@
         if (newSpending.length) window.spending = newSpending;
       }
 
-      if (typeof window.renderPersonal === 'function') window.renderPersonal();
+      // Recalculate income from payroll net (single source of truth) then render
+      if (typeof window.syncAllPayrollsToPersonal === 'function') {
+        window.syncAllPayrollsToPersonal();
+      } else if (typeof window.renderPersonal === 'function') {
+        window.renderPersonal();
+      }
     } catch (err) {
       console.warn('[PersonalFinance]', err.message);
     }

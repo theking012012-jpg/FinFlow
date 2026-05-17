@@ -2990,7 +2990,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
   <div class="modal modal-wide">
     <div class="modal-header"><div><div class="modal-title" id="cust-modal-title">Add customer</div><div class="modal-sub" id="cust-modal-sub">Fill in the customer details</div></div><button class="modal-close" onclick="closeModal('customer-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <input type="hidden" id="cust-edit-id">
-    <div class="field-group"><div class="field-wrap"><label class="field-label">First name *</label><input class="finput" id="cust-fname" placeholder="Jane"></div><div class="field-wrap"><label class="field-label">Last name *</label><input class="finput" id="cust-lname" placeholder="Smith"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label">First name *</label><input class="finput" id="cust-fname" placeholder="First name"></div><div class="field-wrap"><label class="field-label">Last name *</label><input class="finput" id="cust-lname" placeholder="Last name"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label">Company</label><input class="finput" id="cust-company" placeholder="Enter company name"></div><div class="field-wrap"><label class="field-label">Industry</label><select class="finput" id="cust-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Media</option><option>Consulting</option><option>Other</option></select></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label">Email *</label><input class="finput" id="cust-email" type="email" placeholder="jane@acme.com"></div><div class="field-wrap"><label class="field-label">Phone</label><input class="finput" id="cust-phone" type="tel" placeholder="+1 (555) 000-0000"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label">Lifetime revenue ($)</label><input class="finput" id="cust-revenue-val" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label">Status</label><select class="finput" id="cust-status"><option value="active">Active</option><option value="inactive">Inactive</option><option value="prospect">Prospect</option></select></div></div>
@@ -5967,11 +5967,12 @@ function buildCashChart(){
   if(!_cc)return;
   const ctx=_cc.getContext('2d');
   if(!ctx)return;
-  const FORECAST_REV=[51200,54000,57800];
-  const FORECAST_EXP=[22400,23100,23800];
+  const _recentProfit=PROFIT.filter(v=>v!==0);
+  const _hasData=_recentProfit.length>0;
+  const _avgP=_hasData?_recentProfit.slice(-3).reduce((a,b)=>a+b,0)/Math.min(_recentProfit.slice(-3).length,3):0;
   const labels=[...MONTHS,'May \'26*','Jun \'26*','Jul \'26*'];
   const actual=[...PROFIT,null,null,null];
-  const forecast=[...PROFIT.map(()=>null),PROFIT[11],FORECAST_REV[0]-FORECAST_EXP[0],FORECAST_REV[1]-FORECAST_EXP[1],FORECAST_REV[2]-FORECAST_EXP[2]];
+  const forecast=[...PROFIT.map(()=>null),_hasData?PROFIT[11]:null,_hasData?Math.round(_avgP*1.02):null,_hasData?Math.round(_avgP*1.04):null,_hasData?Math.round(_avgP*1.06):null];
   // Gradient fill under profit line
   const profitGrad=ctx.createLinearGradient(0,0,0,160);
   profitGrad.addColorStop(0,'rgba(201,168,76,0.22)');
@@ -6608,7 +6609,7 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
   const t = invTemplatesData.find(x=>x.id===templateId) || invTemplatesData[0];
   const acc = settings.accentColor || t.accentColor;
   const bizName = document.getElementById('s-biz-name')?.value || 'FinFlow Inc.';
-  const bizEmail = document.getElementById('s-email')?.value || 'hello@finflow.io';
+  const bizEmail = document.getElementById('s-email')?.value || '';
   const poweredBy = settings.poweredBy !== false;
   const logoHTML = logoDataURL
     ? `<img src="${logoDataURL}" style="max-height:52px;max-width:160px;object-fit:contain">`
@@ -7644,7 +7645,7 @@ overlay.innerHTML = `
       </div>
       <div class="ob-field">
         <label class="ob-label">Your name *</label>
-        <input class="ob-input" id="ob-user-name" placeholder="e.g. Alex Johnson" value="">
+        <input class="ob-input" id="ob-user-name" placeholder="Your full name" value="">
       </div>
       <div class="ob-field">
         <label class="ob-label">Email *</label>
@@ -7717,7 +7718,7 @@ overlay.innerHTML = `
       <div class="ob-success">
         <div class="ob-success-ring">✓</div>
         <div style="font-size:16px;font-family:var(--font-display);font-style:italic;color:var(--acc-light);margin-bottom:6px" id="ob-done-title">You're all set!</div>
-        <div style="font-size:12.5px;color:var(--t2);line-height:1.6" id="ob-done-sub">Your workspace is configured. FinFlow has pre-loaded sample data so you can explore every feature right away.</div>
+        <div style="font-size:12.5px;color:var(--t2);line-height:1.6" id="ob-done-sub">Your workspace is ready. Add your first entity, create an invoice, or record an expense to get started.</div>
       </div>
     </div>
 
@@ -9455,9 +9456,12 @@ window.copyPortalLink = function(slug){
   notify('Portal link copied to clipboard ✦');
 };
 window.createPortal = function(){
-  notify('New client portal created ✦');
-  PORTALS.push({client:'New Client',slug:'newclient-'+Math.random().toString(36).slice(2,6),outstanding:'$0',paidYTD:'$0',lastViewed:'Never',active:true});
+  const clientName = prompt('Client name for portal:','');
+  if(!clientName||!clientName.trim()) return;
+  const slug = clientName.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'-'+Math.random().toString(36).slice(2,6);
+  PORTALS.push({client:clientName.trim(),slug,outstanding:'$0',paidYTD:'$0',lastViewed:'Never',active:true});
   renderPortal();
+  notify('Portal created for '+clientName.trim()+' ✦');
 };
 
 // ══════════════════════════════════════════════════════════════════

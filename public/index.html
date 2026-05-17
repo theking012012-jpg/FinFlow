@@ -1373,6 +1373,39 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
       </div>
 
+      <!-- ══ CREATE BUSINESS PAGE ══ -->
+      <div class="page" id="page-create-business">
+        <div style="max-width:600px;margin:0 auto">
+          <div class="settings-section">
+            <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="2" y="4" width="12" height="10" rx="1.2"/><path d="M5 4V3a3 3 0 016 0v1"/></svg>Business profile</div>
+            <div class="field-wrap"><label class="field-label">Business name</label><input class="finput" id="nb-name" placeholder="Your business name"></div>
+            <div class="field-group">
+              <div class="field-wrap"><label class="field-label">Industry</label><select class="finput" id="nb-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option></select></div>
+              <div class="field-wrap"><label class="field-label">Currency</label><select class="finput" id="nb-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="CAD">CAD (C$)</option><option value="AUD">AUD (A$)</option><option value="TTD">TTD (TT$)</option></select></div>
+            </div>
+            <div class="field-group">
+              <div class="field-wrap"><label class="field-label">Tax ID / EIN</label><input class="finput" id="nb-tax-id" placeholder="XX-XXXXXXX"></div>
+              <div class="field-wrap"><label class="field-label">Fiscal year start</label><select class="finput" id="nb-fiscal"><option>January</option><option>April</option><option>July</option><option>October</option></select></div>
+            </div>
+            <div class="field-wrap"><label class="field-label">Business address</label><textarea class="finput" id="nb-address" style="min-height:60px" placeholder="Street, City, State, Country"></textarea></div>
+            <div class="field-wrap"><label class="field-label">Website</label><input class="finput" id="nb-website" placeholder="https://yourbusiness.com"></div>
+          </div>
+          <div class="settings-section" id="cb-profile-section">
+            <div class="settings-title"><svg viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="3"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/></svg>Your profile</div>
+            <div class="field-group">
+              <div class="field-wrap"><label class="field-label">Your name</label><input class="finput" id="nb-user-name" placeholder="Your name" oninput="nbAutoInitials()"></div>
+              <div class="field-wrap"><label class="field-label">Initials</label><input class="finput" id="nb-user-initials" placeholder="JD" maxlength="2"></div>
+            </div>
+            <div class="field-wrap"><label class="field-label">Email</label><input class="finput" type="email" id="nb-email" placeholder="you@company.com"></div>
+            <div class="field-wrap"><label class="field-label">Phone</label><input class="finput" type="tel" id="nb-phone" placeholder="+1 (555) 000-0000"></div>
+          </div>
+          <div style="display:flex;gap:.75rem;justify-content:flex-end;padding-bottom:2rem">
+            <button class="btn btn-ghost" id="cb-cancel-btn" onclick="showPage(window._cbPrev||'entities',null)">Cancel</button>
+            <button class="btn btn-primary" onclick="submitCreateBusiness()">Create business →</button>
+          </div>
+        </div>
+      </div>
+
       <!-- TEAM & ROLES PAGE -->
       <div class="page" id="page-team">
         <div class="metrics-grid-3">
@@ -2652,100 +2685,6 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 </div>
 
 <!-- ══ ADD ENTITY MODAL ══ -->
-<div class="modal-overlay hidden" id="add-entity-modal">
-  <div class="modal" style="max-width:400px">
-    <div class="modal-header">
-      <div><div class="modal-title">Add Entity</div><div class="modal-sub">Each entity has its own separate ledger</div></div>
-      <button class="modal-close" onclick="closeModal('add-entity-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
-    </div>
-    <div class="field-wrap"><label class="field-label">Entity name</label><input class="finput" id="ne-name" placeholder="e.g. FinScale Ltd."></div>
-    <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Currency</label><select class="finput" id="ne-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="TTD">TTD (TT$)</option><option value="CAD">CAD (C$)</option></select></div>
-      <div class="field-wrap"><label class="field-label">Colour</label><input class="finput" type="color" id="ne-color" value="#c9a84c" style="height:36px;padding:3px"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('add-entity-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveNewEntity()">Create entity</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══ ADD BUSINESS MODAL ══ -->
-<div class="modal-overlay hidden" id="add-biz-modal">
-  <div class="modal" style="max-width:480px;max-height:85vh;display:flex;flex-direction:column">
-    <div class="modal-header" style="flex-shrink:0">
-      <div><div class="modal-title">Add Business</div><div class="modal-sub">Set up your business profile to get started</div></div>
-      <button class="modal-close" onclick="closeModal('add-biz-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
-    </div>
-    <div style="overflow-y:auto;flex:1;padding:0 1.5rem 0.5rem">
-      <div class="settings-title" style="margin-top:1.25rem;margin-bottom:.75rem"><svg viewBox="0 0 16 16" width="14" height="14" style="vertical-align:-2px;margin-right:5px"><rect x="2" y="4" width="12" height="10" rx="1.2"/><path d="M5 4V3a3 3 0 016 0v1"/></svg>Business profile</div>
-      <div class="field-wrap">
-        <label class="field-label">Business name</label>
-        <input class="finput" id="nb-name" placeholder="Your business name">
-      </div>
-      <div class="field-group">
-        <div class="field-wrap">
-          <label class="field-label">Industry</label>
-          <select class="finput" id="nb-industry">
-            <option>Technology</option><option>Retail</option><option>Finance</option>
-            <option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option>
-          </select>
-        </div>
-        <div class="field-wrap">
-          <label class="field-label">Currency</label>
-          <select class="finput" id="nb-currency">
-            <option value="USD">USD ($)</option><option value="EUR">EUR (€)</option>
-            <option value="GBP">GBP (£)</option><option value="CAD">CAD (C$)</option>
-            <option value="AUD">AUD (A$)</option><option value="TTD">TTD (TT$)</option>
-          </select>
-        </div>
-      </div>
-      <div class="field-group">
-        <div class="field-wrap">
-          <label class="field-label">Tax ID / EIN</label>
-          <input class="finput" id="nb-tax-id" placeholder="XX-XXXXXXX">
-        </div>
-        <div class="field-wrap">
-          <label class="field-label">Fiscal year start</label>
-          <select class="finput" id="nb-fiscal">
-            <option>January</option><option>April</option><option>July</option><option>October</option>
-          </select>
-        </div>
-      </div>
-      <div class="field-wrap">
-        <label class="field-label">Business address</label>
-        <textarea class="finput" id="nb-address" style="min-height:56px" placeholder="Street, City, State, Country"></textarea>
-      </div>
-      <div class="field-wrap">
-        <label class="field-label">Website</label>
-        <input class="finput" id="nb-website" placeholder="https://yourbusiness.com">
-      </div>
-      <div class="settings-title" style="margin-top:1.25rem;margin-bottom:.75rem"><svg viewBox="0 0 16 16" width="14" height="14" style="vertical-align:-2px;margin-right:5px"><circle cx="8" cy="5.5" r="3"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/></svg>Your profile</div>
-      <div class="field-group">
-        <div class="field-wrap">
-          <label class="field-label">Your name</label>
-          <input class="finput" id="nb-user-name" placeholder="Your name" oninput="nbAutoInitials()">
-        </div>
-        <div class="field-wrap">
-          <label class="field-label">Initials</label>
-          <input class="finput" id="nb-user-initials" placeholder="JD" maxlength="2">
-        </div>
-      </div>
-      <div class="field-wrap">
-        <label class="field-label">Email</label>
-        <input class="finput" type="email" id="nb-email" placeholder="you@company.com">
-      </div>
-      <div class="field-wrap" style="margin-bottom:1rem">
-        <label class="field-label">Phone</label>
-        <input class="finput" type="tel" id="nb-phone" placeholder="+1 (555) 000-0000">
-      </div>
-    </div>
-    <div class="modal-footer" style="flex-shrink:0">
-      <button class="btn btn-ghost" onclick="closeModal('add-biz-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="addBusiness()">Create business →</button>
-    </div>
-  </div>
-</div>
 
 <!-- ══ LOGIN SCREEN ══ -->
 <div id="login-screen" style="position:fixed;inset:0;background:var(--bg0);z-index:9000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1.5rem">
@@ -3434,13 +3373,23 @@ function flashTopbar(color){
 function openAddBizModal(e){
   if(e) e.stopPropagation();
   document.getElementById('biz-menu').style.display='none';
+  openCreateBusinessPage('dashboard');
+}
+
+function openCreateBusinessPage(fromPage){
+  window._cbPrev = fromPage || 'entities';
   ['nb-name','nb-tax-id','nb-address','nb-website','nb-user-name','nb-user-initials','nb-email','nb-phone'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.value='';
   });
   const cur=document.getElementById('nb-currency'); if(cur) cur.value='USD';
   const ind=document.getElementById('nb-industry'); if(ind) ind.selectedIndex=0;
   const fy=document.getElementById('nb-fiscal');   if(fy)  fy.selectedIndex=0;
-  document.getElementById('add-biz-modal').classList.remove('hidden');
+  const isFirst=typeof ENTITIES==='undefined'||ENTITIES.length===0;
+  const profileSec=document.getElementById('cb-profile-section');
+  if(profileSec) profileSec.style.display=isFirst?'':'none';
+  const cancelBtn=document.getElementById('cb-cancel-btn');
+  if(cancelBtn) cancelBtn.style.display=isFirst?'none':'';
+  showPage('create-business', null);
 }
 
 function nbAutoInitials(){
@@ -3450,13 +3399,14 @@ function nbAutoInitials(){
   const el=document.getElementById('nb-user-initials'); if(el&&!el._manual) el.value=initials;
 }
 
-async function addBusiness(){
+async function submitCreateBusiness(){
   const name=(document.getElementById('nb-name')||{}).value.trim();
   if(!name){ notify('Please enter a business name'); return; }
   const currency=(document.getElementById('nb-currency')||{}).value||'USD';
   const industry=(document.getElementById('nb-industry')||{}).value||'Other';
+  const isFirst=typeof ENTITIES==='undefined'||ENTITIES.length===0;
   const color='#c9a84c';
-  const tag=typeof ENTITIES!=='undefined'&&ENTITIES.length===0?'Parent':'Subsidiary';
+  const tag=isFirst?'Parent':'Subsidiary';
   try {
     const res=await fetch('/api/entities',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name,currency,color,tag,sort_order:typeof ENTITIES!=='undefined'?ENTITIES.length:0})});
     if(!res.ok) throw new Error((await res.json()).error);
@@ -3468,14 +3418,16 @@ async function addBusiness(){
       fiscal_year:   (document.getElementById('nb-fiscal')||{}).value||'January',
       address:       (document.getElementById('nb-address')||{}).value||'',
       website:       (document.getElementById('nb-website')||{}).value||'',
-      name:          (document.getElementById('nb-user-name')||{}).value||'',
-      email:         (document.getElementById('nb-email')||{}).value||'',
-      phone:         (document.getElementById('nb-phone')||{}).value||'',
     };
+    if(isFirst){
+      profile.name  =(document.getElementById('nb-user-name')||{}).value||'';
+      profile.email =(document.getElementById('nb-email')||{}).value||'';
+      profile.phone =(document.getElementById('nb-phone')||{}).value||'';
+    }
     await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(profile)});
-    closeModal('add-biz-modal');
     if(typeof loadEntitiesFromDB==='function') await loadEntitiesFromDB();
     notify('Business "'+esc(name)+'" created ✦');
+    showPage('dashboard', null);
   } catch(e){ notify('Error: '+(e.message||'Failed to create business')); }
 }
 
@@ -4440,10 +4392,10 @@ function getPeriodData(){
 function showPage(id, el){
   // Gate: block all business pages until at least one entity exists
   if (typeof ENTITIES !== 'undefined' && ENTITIES.length === 0) {
-    const _allowed = ['settings','pricing','login','register','entities','personal'];
+    const _allowed = ['settings','pricing','login','register','entities','personal','create-business'];
     if (!_allowed.includes(id)) {
       if (typeof notify === 'function') notify('Create your first business to get started ✦');
-      showPage('entities', null);
+      showPage('create-business', null);
       return;
     }
   }
@@ -4464,6 +4416,7 @@ function showPage(id, el){
     'chart-of-accounts':'Chart of Accounts','transaction-locking':'Transaction Locking',
     reports:'Reports',documents:'Documents',templates:'Templates',
     investments:'Investments',
+    'create-business':'Create Business',
   };
   document.getElementById('pageTitle').textContent=titles[id]||id;
   // Page-specific renders
@@ -5867,30 +5820,7 @@ function openAddEntityModal(){
     if(typeof showUpgradeModal==='function') showUpgradeModal('entity');
     return;
   }
-  document.getElementById('ne-name').value='';
-  document.getElementById('ne-currency').value='USD';
-  document.getElementById('ne-color').value='#c9a84c';
-  document.getElementById('add-entity-modal').classList.remove('hidden');
-}
-
-async function saveNewEntity(){
-  const name = document.getElementById('ne-name').value.trim();
-  if(!name){ notify('Entity name is required'); return; }
-  const currency = document.getElementById('ne-currency').value || 'USD';
-  const color = document.getElementById('ne-color').value || '#c9a84c';
-  const tag = ENTITIES.length === 0 ? 'Parent' : 'Subsidiary';
-  try {
-    const res = await fetch('/api/entities', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({name, currency, color, tag, sort_order: ENTITIES.length}) });
-    if(!res.ok) throw new Error((await res.json()).error);
-    const saved = await res.json();
-    // Clear the form
-    document.getElementById('ne-name').value = '';
-    closeModal('add-entity-modal');
-    // Add to ENTITIES array
-    ENTITIES.push({ _dbId: saved.id, name, tag, color, currency, active:false, data:{rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0} });
-    renderEntities();
-    notify('Entity "'+esc(name)+'" created — switch to it to add data ✦');
-  } catch(e){ notify('Error: '+(e.message||'Failed to create entity')); }
+  openCreateBusinessPage('entities');
 }
 
 async function changePassword(){
@@ -8309,8 +8239,8 @@ async function loadEntitiesFromDB(){
       // Highlight the + Add business button
       const addBizBtn = document.querySelector('#biz-menu button');
       if(addBizBtn){ addBizBtn.classList.remove('btn-ghost'); addBizBtn.classList.add('btn-primary'); }
-      // Redirect to entities page so user can create their first entity
-      if(typeof window.showPage === 'function') window.showPage('entities', null);
+      // Redirect to create-business page so user can create their first entity
+      if(typeof window.showPage === 'function') window.showPage('create-business', null);
       return;
     }
 

@@ -485,26 +485,29 @@ If you cannot find a field, use null. Be concise.`;
   }));
 
 
-  // ── 7. SAVE ACCOUNTANT NOTES ON CLIENT ───────────────────────────────────
+  // ── 7. ACCOUNTANT NOTES ON CLIENT (GET + POST) ───────────────────────────
+  app.get('/api/accountants/clients/:userId/notes', requireAccountant, apiLimiter, wrap(async (req, res) => {
+    const { userId } = req.params;
+    const access = await pool.query(
+      `SELECT notes FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    res.json({ note: access.rows[0].notes || '' });
+  }));
+
   app.post('/api/accountants/clients/:userId/notes', requireAccountant, apiLimiter, wrap(async (req, res) => {
     const { userId } = req.params;
     const { note } = req.body || {};
-    // Verify access
     const access = await pool.query(
       `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
     await pool.query(
-      `UPDATE accountant_clients SET access_level = access_level WHERE accountant_id = $1 AND user_id = $2`,
-      [req.session.accountantId, userId]
+      `UPDATE accountant_clients SET notes = $1 WHERE accountant_id = $2 AND user_id = $3`,
+      [(note || '').slice(0, 2000), req.session.accountantId, userId]
     );
-    // Store note in accountant_reports table
-    await pool.query(`
-      INSERT INTO accountant_reports (accountant_id, client_id, type, content, created_at)
-      VALUES ($1, $2, 'note', $3, NOW())
-      ON CONFLICT DO NOTHING
-    `, [req.session.accountantId, userId, (note || '').slice(0, 2000)]);
     res.json({ ok: true });
   }));
 

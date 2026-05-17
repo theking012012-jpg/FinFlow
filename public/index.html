@@ -1225,7 +1225,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Revenue</div><div class="mc-val" id="d-rev">—</div><div class="mc-change" id="d-rev-chg"></div></div>
           <div class="mc"><div class="mc-label">Expenses</div><div class="mc-val" id="d-exp">—</div><div class="mc-change" id="d-exp-chg"></div></div>
           <div class="mc"><div class="mc-label">Net Profit</div><div class="mc-val" id="d-profit">—</div><div class="mc-change" id="d-profit-chg"></div></div>
-          <div class="mc"><div class="mc-label">Outstanding</div><div class="mc-val" id="d-outstanding">$9,150</div><div class="mc-change dn" id="d-outstanding-chg">2 overdue · $3,800</div></div>
+          <div class="mc"><div class="mc-label">Outstanding</div><div class="mc-val" id="d-outstanding">—</div><div class="mc-change" id="d-outstanding-chg"></div></div>
         </div>
         <div class="card">
           <div class="card-header"><div><div class="card-title" id="d-chart-title">Revenue vs Expenses</div></div><div style="display:flex;gap:12px;font-size:11px;color:var(--t2)"><span><span style="display:inline-block;width:8px;height:8px;background:var(--acc);border-radius:2px;margin-right:4px"></span>Revenue</span><span><span style="display:inline-block;width:8px;height:8px;background:var(--bg4);border-radius:2px;margin-right:4px"></span>Expenses</span></div></div>
@@ -1308,27 +1308,24 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- MRR / SAAS PAGE -->
       <div class="page" id="page-mrr">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">MRR</div><div class="mc-val" id="mrr-val" style="color:var(--acc)">$39,100</div><div class="mc-change up">▲ 8.2% MoM</div></div>
-          <div class="mc"><div class="mc-label">ARR</div><div class="mc-val" id="arr-val">$469K</div><div class="mc-change up">Annualized</div></div>
-          <div class="mc"><div class="mc-label">Churn rate</div><div class="mc-val" style="color:var(--green)">1.8%</div><div class="mc-change up">Below 2% target</div></div>
-          <div class="mc"><div class="mc-label">LTV : CAC</div><div class="mc-val">4.2x</div><div class="mc-change up">Healthy ratio</div></div>
+          <div class="mc"><div class="mc-label">MRR</div><div class="mc-val" id="mrr-val" style="color:var(--acc)">—</div><div class="mc-change" id="mrr-mom"></div></div>
+          <div class="mc"><div class="mc-label">ARR</div><div class="mc-val" id="arr-val">—</div><div class="mc-change neutral">Annualized</div></div>
+          <div class="mc"><div class="mc-label">Churn rate</div><div class="mc-val" id="mrr-churn" style="color:var(--green)">—</div><div class="mc-change" id="mrr-churn-note"></div></div>
+          <div class="mc"><div class="mc-label">Active customers</div><div class="mc-val" id="mrr-customers">—</div><div class="mc-change neutral">Paying clients</div></div>
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">MRR breakdown</div></div>
             <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
-              <div class="mrr-metric"><div class="mrr-val" style="color:var(--green)">$41,200</div><div class="mrr-label">New MRR</div></div>
-              <div class="mrr-metric"><div class="mrr-val" style="color:var(--red)">$1,800</div><div class="mrr-label">Churned MRR</div></div>
-              <div class="mrr-metric"><div class="mrr-val" style="color:var(--acc)">$2,100</div><div class="mrr-label">Expansion MRR</div></div>
-              <div class="mrr-metric"><div class="mrr-val" style="color:var(--purple)">$39,100</div><div class="mrr-label">Net MRR</div></div>
+              <div class="mrr-metric"><div class="mrr-val" id="mrr-new" style="color:var(--green)">—</div><div class="mrr-label">New MRR</div></div>
+              <div class="mrr-metric"><div class="mrr-val" id="mrr-churned" style="color:var(--red)">—</div><div class="mrr-label">Churned MRR</div></div>
+              <div class="mrr-metric"><div class="mrr-val" id="mrr-expansion" style="color:var(--acc)">—</div><div class="mrr-label">Expansion MRR</div></div>
+              <div class="mrr-metric"><div class="mrr-val" id="mrr-net" style="color:var(--purple)">—</div><div class="mrr-label">Net MRR</div></div>
             </div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Plan distribution</div></div>
-            <div class="bar-row"><span class="bar-label">Enterprise</span><div class="bar-track"><div class="bar-fill" style="width:55%;background:var(--acc)"></div></div><span class="bar-val">$21.5K</span></div>
-            <div class="bar-row"><span class="bar-label">Pro</span><div class="bar-track"><div class="bar-fill" style="width:30%;background:#c9a84c99"></div></div><span class="bar-val">$11.7K</span></div>
-            <div class="bar-row"><span class="bar-label">Starter</span><div class="bar-track"><div class="bar-fill" style="width:15%;background:#c9a84c55"></div></div><span class="bar-val">$5.9K</span></div>
-            <div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--bd);font-size:11.5px;color:var(--t2)">Avg revenue per account: <strong style="color:var(--t1)">$512/mo</strong></div>
+            <div class="card-header"><div class="card-title">Revenue by customer</div></div>
+            <div id="mrr-by-customer" style="font-size:12px;color:var(--t2);padding:8px 0">Loading…</div>
           </div>
         </div>
         <div class="card">
@@ -1667,9 +1664,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- CUSTOMERS -->
       <div class="page" id="page-customers">
         <div class="metrics-grid-3">
-          <div class="mc"><div class="mc-label">Total Customers</div><div class="mc-val" id="cust-total">6</div><div class="mc-change neutral">In your CRM</div></div>
-          <div class="mc"><div class="mc-label">Active</div><div class="mc-val" id="cust-active">5</div><div class="mc-change up">Paying clients</div></div>
-          <div class="mc"><div class="mc-label">Lifetime Revenue</div><div class="mc-val" id="cust-revenue">$50,800</div><div class="mc-change up">All customers</div></div>
+          <div class="mc"><div class="mc-label">Total Customers</div><div class="mc-val" id="cust-total">—</div><div class="mc-change neutral">In your CRM</div></div>
+          <div class="mc"><div class="mc-label">Active</div><div class="mc-val" id="cust-active">—</div><div class="mc-change up">Paying clients</div></div>
+          <div class="mc"><div class="mc-label">Lifetime Revenue</div><div class="mc-val" id="cust-revenue">—</div><div class="mc-change up">All customers</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div><div class="card-title">Customer directory</div><div class="card-sub">Click any row to edit</div></div><button class="btn btn-primary" onclick="openCustomerModal()">+ Add customer</button></div>
@@ -1703,9 +1700,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <div class="page" id="page-expenses">
         <div class="metrics-grid">
           <div class="mc"><div class="mc-label">Total expenses</div><div class="mc-val" id="ex-total">—</div><div class="mc-change" id="ex-total-chg"></div></div>
-          <div class="mc"><div class="mc-label">Business</div><div class="mc-val" id="ex-biz">—</div><div class="mc-change neutral" id="ex-biz-pct">85%</div></div>
-          <div class="mc"><div class="mc-label">Tax deductible</div><div class="mc-val" id="ex-ded">—</div><div class="mc-change up" id="ex-ded-save">Saving ~$3,700</div></div>
-          <div class="mc"><div class="mc-label">Largest category</div><div class="mc-val" id="ex-top">Salaries</div><div class="mc-change neutral" id="ex-top-pct">72%</div></div>
+          <div class="mc"><div class="mc-label">Business</div><div class="mc-val" id="ex-biz">—</div><div class="mc-change neutral" id="ex-biz-pct"></div></div>
+          <div class="mc"><div class="mc-label">Tax deductible</div><div class="mc-val" id="ex-ded">—</div><div class="mc-change" id="ex-ded-save"></div></div>
+          <div class="mc"><div class="mc-label">Largest category</div><div class="mc-val" id="ex-top">—</div><div class="mc-change neutral" id="ex-top-pct"></div></div>
         </div>
 
         <!-- RECEIPT SCANNER -->
@@ -1936,8 +1933,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             'Reviews & Reputation':'#fbbf24','IoT & Devices':'#14b8a6'
           };
 
-          function loadStates(){try{return JSON.parse(localStorage.getItem('ff_integrations')||'{}')}catch(e){return{}}}
-          function saveStates(s){try{localStorage.setItem('ff_integrations',JSON.stringify(s))}catch(e){}}
+          function loadStates(){ return {}; }
+          function saveStates(s){}
 
           let connStates=loadStates();
           let activeFilter=null;
@@ -2124,12 +2121,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="ai-box">
           <div class="ai-head"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="8" y1="12.5" x2="8" y2="15"/><line x1="1" y1="8" x2="3.5" y2="8"/><line x1="12.5" y1="8" x2="15" y2="8"/></svg>AI insights — <span id="ai-period-label">Full Year 2025–2026</span></div>
           <div id="ai-insights-list">
-            <div class="ai-insight">Full year revenue reached $469,200 — a 38% annualised growth rate vs the prior year trajectory.</div>
-            <div class="ai-insight">Best month: April 2026 at $48,320. Weakest: May 2025 at $28,400. Range shows strong scaling momentum.</div>
-            <div class="ai-insight">2 invoices are overdue totalling $3,800. Mango &amp; Co typically pays within 7 days of a reminder.</div>
-            <div class="ai-insight">Payroll-to-revenue ratio is 33.5% for the year — within healthy range. Industry avg for your size is 35–40%.</div>
-            <div class="ai-insight">Webcam 4K Ultra (9 units) and Ergonomic Mouse (4 units) are critically low — stock out risk within 6 days.</div>
-            <div class="ai-insight">Annual net profit: $238,950. At current savings rate, house deposit goal completes in approx. 15 months.</div>
+            <div class="ai-insight" style="color:var(--t3)">Ask the AI below to generate insights based on your actual data.</div>
           </div>
         </div>
         <div class="two-col">
@@ -2139,13 +2131,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('What are my biggest financial risks for the next quarter?')" style="text-align:left;font-size:12px;justify-content:flex-start">Biggest risks next quarter ↗</button>
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('How can I reduce business expenses without cutting headcount or salary?')" style="text-align:left;font-size:12px;justify-content:flex-start">Reduce expenses without cuts ↗</button>
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('Generate a full annual financial health report with recommendations for May 2025 - April 2026')" style="text-align:left;font-size:12px;justify-content:flex-start">Generate annual health report ↗</button>
-              <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('Should I hire another developer given $469,200 annual revenue and 14-month runway?')" style="text-align:left;font-size:12px;justify-content:flex-start">Should I hire another developer? ↗</button>
+              <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('Should I hire another employee given my current revenue and runway?')" style="text-align:left;font-size:12px;justify-content:flex-start">Should I hire another employee? ↗</button>
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('What is my optimal salary as a business owner given current revenue and expenses?')" style="text-align:left;font-size:12px;justify-content:flex-start">What salary should I pay myself? ↗</button>
             </div>
           </div>
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">Financial health score</div></div>
-            <div style="text-align:center;padding:.75rem 0 1rem"><div id="health-score" style="font-size:52px;font-weight:400;font-family:var(--font-display);background:linear-gradient(135deg,var(--acc),var(--acc-light));-webkit-background-clip:text;-webkit-text-fill-color:transparent">84</div><div style="font-size:12px;color:var(--t2);letter-spacing:.06em;text-transform:uppercase" id="health-label">out of 100 — Good</div></div>
+            <div style="text-align:center;padding:.75rem 0 1rem"><div id="health-score" style="font-size:52px;font-weight:400;font-family:var(--font-display);background:linear-gradient(135deg,var(--acc),var(--acc-light));-webkit-background-clip:text;-webkit-text-fill-color:transparent">—</div><div style="font-size:12px;color:var(--t2);letter-spacing:.06em;text-transform:uppercase" id="health-label">Loading…</div></div>
             <div class="bar-row"><span class="bar-label">Cash flow</span><div class="bar-track"><div class="bar-fill" id="hs-cf" style="width:91%;background:var(--green)"></div></div><span class="bar-val" id="hs-cf-v">91/100</span></div>
             <div class="bar-row"><span class="bar-label">Profitability</span><div class="bar-track"><div class="bar-fill" id="hs-pr" style="width:86%;background:var(--green)"></div></div><span class="bar-val" id="hs-pr-v">86/100</span></div>
             <div class="bar-row"><span class="bar-label">Receivables</span><div class="bar-track"><div class="bar-fill" id="hs-rec" style="width:65%;background:var(--amber)"></div></div><span class="bar-val" id="hs-rec-v">65/100</span></div>
@@ -2267,10 +2259,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- BANKING (biz ledger view) -->
       <div class="page" id="page-banking-biz">
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Balance</div><div class="mc-val">$142,350</div><div class="mc-change up">Across all accounts</div></div>
-          <div class="mc"><div class="mc-label">Inflow (Apr)</div><div class="mc-val">$48,320</div><div class="mc-change up">+12% vs Mar</div></div>
-          <div class="mc"><div class="mc-label">Outflow (Apr)</div><div class="mc-val">$21,840</div><div class="mc-change neutral">Within budget</div></div>
-          <div class="mc"><div class="mc-label">Uncategorized</div><div class="mc-val" style="color:var(--amber)">7</div><div class="mc-change dn">Need review</div></div>
+          <div class="mc"><div class="mc-label">Total Balance</div><div class="mc-val" id="bank-total-bal">—</div><div class="mc-change neutral">Across all accounts</div></div>
+          <div class="mc"><div class="mc-label">Inflow (MTD)</div><div class="mc-val" id="bank-inflow">—</div><div class="mc-change" id="bank-inflow-chg"></div></div>
+          <div class="mc"><div class="mc-label">Outflow (MTD)</div><div class="mc-val" id="bank-outflow">—</div><div class="mc-change neutral">This month</div></div>
+          <div class="mc"><div class="mc-label">Uncategorized</div><div class="mc-val" id="bank-uncat" style="color:var(--amber)">—</div><div class="mc-change dn">Need review</div></div>
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
@@ -2288,9 +2280,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <div class="page" id="page-quotes">
         <div class="metrics-grid">
           <div class="mc"><div class="mc-label">Total Quotes</div><div class="mc-val" id="qt-total">8</div><div class="mc-change neutral">This month</div></div>
-          <div class="mc"><div class="mc-label">Accepted</div><div class="mc-val" id="qt-accepted">5</div><div class="mc-change up">63% acceptance rate</div></div>
-          <div class="mc"><div class="mc-label">Pending</div><div class="mc-val" id="qt-pending" style="color:var(--amber)">2</div><div class="mc-change neutral">Awaiting response</div></div>
-          <div class="mc"><div class="mc-label">Value (open)</div><div class="mc-val" id="qt-value">$18,400</div><div class="mc-change up">Potential revenue</div></div>
+          <div class="mc"><div class="mc-label">Accepted</div><div class="mc-val" id="qt-accepted">—</div><div class="mc-change" id="qt-accept-pct"></div></div>
+          <div class="mc"><div class="mc-label">Pending</div><div class="mc-val" id="qt-pending" style="color:var(--amber)">—</div><div class="mc-change neutral">Awaiting response</div></div>
+          <div class="mc"><div class="mc-label">Value (open)</div><div class="mc-val" id="qt-value">—</div><div class="mc-change up">Potential revenue</div></div>
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Quotes</div><button class="btn btn-primary btn-sm" onclick="openNewQuoteModal()">+ New Quote</button></div>
@@ -2826,7 +2818,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       </div>
       <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:.75rem">
         <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Book balance</div>
-        <div style="font-size:18px;font-family:var(--font-mono);color:var(--t1)" id="recon-book-bal">$98,420</div>
+        <div style="font-size:18px;font-family:var(--font-mono);color:var(--t1)" id="recon-book-bal">—</div>
       </div>
     </div>
     <div style="font-size:11px;color:var(--t2);margin-bottom:.5rem;font-weight:500">Transactions — tick each one that appears on your statement</div>
@@ -3634,65 +3626,15 @@ function injectRoleBadge(role){
 }
 
 // ════════════════════════════════════════════
-// ② LOCAL STORAGE PERSISTENCE
+// ② PERSISTENCE — DB-only, no localStorage
 // ════════════════════════════════════════════
-const LS_KEYS = {
-  customers:   'ff_customers',
-  invoices:    'ff_invoices',
-  expenses:    'ff_expenses',
-  inventory:   'ff_inventory',
-  journalEntries: 'ff_journals',
-  coaBalances: 'ff_coa_balances',
-  reconState:  'ff_recon',
-  settings:    'ff_settings',
-  businesses:  'ff_businesses',
-  activeBizId: 'ff_active_biz',
-};
-
-function lsSave(key, data){
-  try{ localStorage.setItem(LS_KEYS[key]||key, JSON.stringify(data)); }catch(e){
-    if(e && (e.name==='QuotaExceededError'||e.name==='NS_ERROR_DOM_QUOTA_REACHED')){
-      notify('Storage full — some data could not be saved. Please export a backup.',true);
-    }
-  }
-}
-function lsLoad(key, fallback){
-  try{
-    const v = localStorage.getItem(LS_KEYS[key]||key);
-    return v ? JSON.parse(v) : fallback;
-  }catch(e){ return fallback; }
-}
-
-// Patch save functions to persist
-function persistAfter(origFn){
-  return function(){
-    origFn.apply(this, arguments);
-    persistAll();
-  };
-}
-
-function persistAll(){}      // no-op — data lives in PostgreSQL
-function loadPersistedData(){} // no-op — data loaded via API
-
-// ── DATA SAFETY: first-use banner + CSV export ────────────────────────────
-(function initDataSafety(){
-  const SEEN_KEY = 'ff_data_warn_seen';
-  if(!localStorage.getItem(SEEN_KEY)){
-    // Show banner after DOM is ready
-    requestAnimationFrame(()=>{
-      const banner = document.createElement('div');
-      banner.id = 'data-safety-banner';
-      banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9000;background:#1e1808;border-top:1px solid #c9a84c;padding:.7rem 1.2rem;display:flex;align-items:center;gap:12px;font-size:12.5px;color:#e4c97a';
-      banner.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#c9a84c" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><line x1="8" y1="5" x2="8" y2="8.5"/><circle cx="8" cy="11" r=".6" fill="#c9a84c"/></svg>
-        <span style="flex:1;color:#9e8e73">Your data is <strong style="color:#f2e8d5">securely stored in the cloud</strong> — backed by PostgreSQL on Supabase. It's safe across all browsers and devices.</span>
-        <button onclick="exportAllCSV()" style="background:rgba(201,168,76,.15);border:1px solid #c9a84c;color:#e4c97a;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:11.5px;font-family:inherit;white-space:nowrap">⬇ Export backup</button>
-        <button onclick="document.getElementById('data-safety-banner').remove();localStorage.setItem('${SEEN_KEY}','1')" style="background:none;border:none;color:#5a4e3a;cursor:pointer;font-size:16px;line-height:1;padding:0 4px">×</button>
-      `;
-      document.body.appendChild(banner);
-    });
-  }
-})();
+// All data lives in PostgreSQL. lsSave/lsLoad are no-ops so any legacy
+// call sites do nothing. persistAll/loadPersistedData are also no-ops.
+function lsSave(){}
+function lsLoad(key, fallback){ return fallback; }
+function persistAfter(origFn){ return origFn; }
+function persistAll(){}
+function loadPersistedData(){}
 
 // CSV export — exports all major data tables as a ZIP-like multi-section CSV
 window.exportAllCSV = function(){
@@ -6194,11 +6136,7 @@ function openNewItemModal(){notify('New Item modal — add your products & servi
 // ════════════════════════════════════════════
 // BANKING PAGE
 // ════════════════════════════════════════════
-const bankAccounts=[
-  {name:'Main Checking',bank:'First National Bank',balance:98420,type:'Checking',last4:'4821',updated:'Today'},
-  {name:'Business Savings',bank:'Chase Business',balance:38200,type:'Savings',last4:'9201',updated:'Today'},
-  {name:'Stripe Balance',bank:'Stripe',balance:5730,type:'Payment Processor',last4:'—',updated:'2h ago'},
-];
+const bankAccounts=[]; // populated from DB via loadBankingFromDB()
 let bankTxns=[];
 
 async function loadBankingFromDB(){
@@ -8130,39 +8068,13 @@ document.addEventListener('DOMContentLoaded',()=>{ requestAnimationFrame(renderM
 requestAnimationFrame(renderMRRChart);
 
 // ── 6. PLAID BANKING ────────────────────────────────────────────────────────
-const PLAID_ACCOUNTS=[
-  {name:'Chase Business Checking',last4:'4821',balance:'$142,800',logo:'C',color:'#003087',connected:true},
-  {name:'Mercury Savings',last4:'2247',balance:'$98,500',logo:'M',color:'#4f46e5',connected:true},
-  {name:'Stripe Balance',last4:'—',balance:'$43,020',logo:'S',color:'#635bff',connected:true},
-];
-const PLAID_TXNS=[
-  {desc:'AWS — Cloud infrastructure',cat:'Software',amt:'-$3,420',color:'var(--red)',date:'Apr 28'},
-  {desc:'TechCorp — Invoice #1042',cat:'Revenue',amt:'+$18,500',color:'var(--green)',date:'Apr 27'},
-  {desc:'Gusto — Payroll',cat:'Payroll',amt:'-$32,800',color:'var(--red)',date:'Apr 25'},
-  {desc:'Google Ads',cat:'Marketing',amt:'-$2,100',color:'var(--red)',date:'Apr 24'},
-  {desc:'Globex LLC — Invoice #1041',cat:'Revenue',amt:'+$12,200',color:'var(--green)',date:'Apr 23'},
-  {desc:'WeWork — Office rent',cat:'Rent',amt:'-$3,900',color:'var(--red)',date:'Apr 22'},
-  {desc:'Initech — Invoice #1040',cat:'Revenue',amt:'+$9,800',color:'var(--green)',date:'Apr 20'},
-];
+// No hardcoded demo data — all banking data loads from DB via loadBankingFromDB()
 function renderPlaid(){
-  const accEl=document.getElementById('plaid-accounts');
-  if(accEl)accEl.innerHTML=PLAID_ACCOUNTS.map(a=>`
-    <div class="plaid-bank connected">
-      <div class="plaid-bank-logo" style="background:${a.color};color:#fff">${a.logo}</div>
-      <div><div class="plaid-bank-name">${a.name}</div><div style="font-size:11px;color:var(--t3)">••••${a.last4}</div></div>
-      <div class="plaid-bank-bal">${a.balance}</div>
-      <span class="badge b-green">Synced</span>
-    </div>`).join('');
-  const txEl=document.getElementById('plaid-txns');
-  if(txEl)txEl.innerHTML=PLAID_TXNS.map(t=>`
-    <div class="tx-row">
-      <div class="tx-left"><div class="tx-icon" style="background:var(--bg3)"><svg viewBox="0 0 16 16" fill="none" stroke="var(--t2)" stroke-width="1.4" stroke-linecap="round"><rect x="1" y="4" width="14" height="10" rx="1.2"/><line x1="1" y1="8" x2="15" y2="8"/></svg></div>
-      <div><div class="tx-name">${t.desc}</div><div class="tx-cat">${t.cat} · ${t.date}</div></div></div>
-      <div class="tx-amt" style="color:${t.color}">${t.amt}</div>
-    </div>`).join('');
+  // Delegate entirely to renderBanking() which reads live DB data
+  if(typeof renderBanking === 'function') renderBanking();
 }
-window.plaidConnect=function(){notify('Bank sync requires a backend token exchange with Plaid — this is a demo build. Export your data as CSV to import manually ✦');};
-requestAnimationFrame(renderPlaid);
+window.plaidConnect=function(){notify('Connect your bank account to start syncing transactions ✦');};
+requestAnimationFrame(()=>{ if(typeof loadBankingFromDB==='function') loadBankingFromDB(); });
 
 // ── 7. KEYBOARD SHORTCUTS ───────────────────────────────────────────────────
 document.addEventListener('keydown',function(e){
@@ -8646,19 +8558,8 @@ window.savePermissions=async function(){
   }catch(e){}
 })();
 
-// ── AUDIT TRAIL ──────────────────────────────────────────────────────────────
-const AUDIT_EVENTS=[
-  {user:'Alex Johnson',avatar:'AJ',color:'#c9a84c',action:'Updated invoice',target:'INV-1042 · TechCorp',time:'2 min ago',type:'invoice',diff:'Amount: $17,500 → $18,500',icon:'receipt'},
-  {user:'Sarah Chen',avatar:'SC',color:'#9e8fbf',action:'Added expense',target:'AWS Cloud · $3,420',time:'18 min ago',type:'payment',diff:'Category: Software · Auto-approved',icon:'dollar'},
-  {user:'Marcus Reid',avatar:'MR',color:'#5aaa9e',action:'Ran payroll',target:'Apr 2026 · 5 employees',time:'1h ago',type:'payment',diff:'Total disbursed: $32,800',icon:'users'},
-  {user:'Sarah Chen',avatar:'SC',color:'#9e8fbf',action:'Invited user',target:'cfo@acmecorp.com',time:'2h ago',type:'user',diff:'Role: Viewer · Entity: FinFlow Inc.',icon:'user'},
-  {user:'Alex Johnson',avatar:'AJ',color:'#c9a84c',action:'Changed settings',target:'Currency → TTD added',time:'3h ago',type:'settings',diff:'Multi-currency enabled for FinPay TTD',icon:'settings'},
-  {user:'Priya Nair',avatar:'PN',color:'#7db87d',action:'Marked invoice paid',target:'INV-1041 · Globex LLC',time:'Yesterday',type:'invoice',diff:'$12,200 received · Bank: Chase ••4821',icon:'check'},
-  {user:'Marcus Reid',avatar:'MR',color:'#5aaa9e',action:'Created customer',target:'NovaTech Solutions',time:'Yesterday',type:'user',diff:'CRM entry created · Contact: James Park',icon:'user'},
-  {user:'Alex Johnson',avatar:'AJ',color:'#c9a84c',action:'Switched entity',target:'FinScale Ltd.',time:'2 days ago',type:'settings',diff:'Ledger context: GBP · UK VAT',icon:'grid'},
-  {user:'Sarah Chen',avatar:'SC',color:'#9e8fbf',action:'Deleted draft invoice',target:'INV-1039 (draft)',time:'2 days ago',type:'invoice',diff:'Reason: Duplicate — replaced by INV-1042',icon:'trash'},
-  {user:'Alex Johnson',avatar:'AJ',color:'#c9a84c',action:'Updated team role',target:'Tom Williams → Viewer',time:'3 days ago',type:'user',diff:'Previous role: Accountant',icon:'users'},
-];
+// ── AUDIT TRAIL — all data from DB via /api/audit-log ──────────────────────
+const AUDIT_EVENTS=[]; // intentionally empty — no hardcoded demo data
 const ICON_SVG={
   receipt:'<rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="9" y2="8"/>',
   dollar:'<circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M6 9.5c0 .83.67 1.5 2 1.5s2-.67 2-1.5"/>',
@@ -8714,18 +8615,7 @@ window.renderAudit=async function(){
       }
     })();
   }catch(err){
-    const filtered=auditFilter==='all'?AUDIT_EVENTS:AUDIT_EVENTS.filter(e=>e.type===auditFilter);
-    el.innerHTML=filtered.map(e=>`
-      <div class="audit-row">
-        <div class="audit-icon" style="background:${e.color}22;color:${e.color}">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ICON_SVG[e.icon]||''}</svg>
-        </div>
-        <div style="flex:1;min-width:0">
-          <div><span class="audit-user">${e.user}</span> <span class="audit-action">${e.action}</span> <span class="audit-target">${e.target}</span></div>
-          <div class="audit-time">${e.time}</div>
-          <div class="audit-diff">${e.diff}</div>
-        </div>
-      </div>`).join('');
+    el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Could not load audit log. Check your connection.</div>';
   }
 };
 
@@ -9231,16 +9121,7 @@ window.resetScanner=function(){
 // ══════════════════════════════════════════════════════════════════
 // NOTIFICATION CENTRE
 // ══════════════════════════════════════════════════════════════════
-const NOTIFS = [
-  
-  {id:2,unread:true,type:'danger',title:'Cash runway alert',sub:'At current burn rate, runway drops below 6 months in 8 months',time:'18 min ago',action:()=>showPage('scenario',null),icon:'<polyline points="1,12 5,7 8.5,9.5 12,4 15,6"/>'},
-  {id:3,unread:true,type:'success',title:'Payment received',sub:'TechCorp paid INV-1042 · $18,500 · via Stripe',time:'1h ago',action:()=>showPage('invoices',null),icon:'<polyline points="2,8 6,12 14,4"/>'},
-  {id:4,unread:true,type:'warning',title:'Budget overrun',sub:'Travel expenses exceeded budget by $2,800 this month',time:'3h ago',action:()=>showPage('budget',null),icon:'<rect x="1" y="10" width="3" height="5" rx="1"/><rect x="6" y="6" width="3" height="9" rx="1"/><rect x="11" y="2" width="3" height="13" rx="1"/>'},
-  {id:5,unread:true,type:'info',title:'Low inventory alert',sub:'Webcam 4K Ultra — 9 units left. Estimated stockout in 6 days',time:'5h ago',action:()=>showPage('inventory',null),icon:'<rect x="1" y="6" width="14" height="9" rx="1.2"/><path d="M4 6V4a4 4 0 018 0v2"/>'},
-  {id:6,unread:false,type:'info',title:'Payroll due in 3 days',sub:'April 2026 payroll · $32,800 · 5 employees',time:'Yesterday',action:()=>showPage('payroll',null),icon:'<circle cx="6" cy="5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/>'},
-  {id:7,unread:false,type:'success',title:'Bank sync complete',sub:'Chase Business & Mercury synced · 47 new transactions',time:'Yesterday',action:()=>showPage('banking',null),icon:'<path d="M1 6l7-4 7 4"/>'},
-  {id:8,unread:false,type:'info',title:'New AI insight available',sub:'Claude detected an unusual expense pattern in March',time:'2 days ago',action:()=>openAIPanel&&openAIPanel(),icon:'<circle cx="8" cy="8" r="2.5"/><line x1="8" y1="1" x2="8" y2="3.5"/>'},
-];
+const NOTIFS = []; // no hardcoded demo notifications — populated dynamically
 
 const TYPE_COLORS = {warning:'var(--amber)',danger:'var(--red)',success:'var(--green)',info:'var(--acc)'};
 const TYPE_BG = {warning:'rgba(200,160,70,.1)',danger:'rgba(184,96,80,.1)',success:'rgba(106,170,106,.1)',info:'rgba(200,164,74,.08)'};
@@ -9540,11 +9421,7 @@ window.getAutocatAI = function(){
 // ══════════════════════════════════════════════════════════════════
 // CLIENT PORTAL
 // ══════════════════════════════════════════════════════════════════
-const PORTALS = [
-  {client:'TechCorp',slug:'techcorp-x7k2',outstanding:'$18,500',paidYTD:'$74,000',lastViewed:'2h ago',active:true},
-  {client:'Globex LLC',slug:'globex-k9m4',outstanding:'$0',paidYTD:'$48,800',lastViewed:'Yesterday',active:true},
-  {client:'Initech Group',slug:'initech-z3p1',outstanding:'$9,800',paidYTD:'$39,200',lastViewed:'3 days ago',active:true},
-];
+const PORTALS = []; // populated from DB
 
 function renderPortal(){
   const list = document.getElementById('portal-list');
@@ -9601,14 +9478,6 @@ document.addEventListener('click', e=>{
   }
 });
 
-// Kick off background notifications
-setTimeout(()=>{
-  setTimeout(()=>{
-    NOTIFS.unshift({id:99,unread:true,type:'warning',title:'Duplicate expense detected',sub:'Claude flagged a possible duplicate: AWS charge $3,420 (Apr 27 & Apr 28)',time:'just now',action:()=>showPage('autocat',null),icon:'<circle cx="8" cy="8" r="6.5"/><path d="M8 5v3M8 11v1"/>'});
-    renderNotifs();
-    if(typeof notify==='function') notify('New alert: possible duplicate expense detected ✦');
-  }, 12000);
-}, 500);
 
 // ══════════════════════════════════════════════════════════════════
 // LIVE MARKET DATA

@@ -121,6 +121,8 @@ async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_clients_accountant ON accountant_clients(accountant_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_clients_user       ON accountant_clients(user_id)`);
+    // Add notes column if missing (safe ALTER TABLE)
+    await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_earnings (

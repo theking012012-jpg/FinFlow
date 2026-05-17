@@ -313,6 +313,41 @@
     }
   })();
 
-  console.log('[FinFlow] Postgres wiring active — localStorage persistence neutralised.');
+  // ── window.finflow.refresh(sections[]) ────────────────────────────
+  // Global real-time refresh dispatcher. Call after any DB write with an
+  // array of affected section names. Falls back to full refreshFinancials.
+  window.finflow = window.finflow || {};
+  window.finflow.refresh = function (sections) {
+    const all = sections || [];
+    // Page-specific re-renders
+    const dispatch = {
+      'invoices':           () => { if (typeof window.renderInvoices          === 'function') window.renderInvoices(); },
+      'expenses':           () => { if (typeof window.renderExpenses          === 'function') window.renderExpenses(); },
+      'customers':          () => { if (typeof window.renderCustomers         === 'function') window.renderCustomers(); },
+      'payroll':            () => { if (typeof window.renderPayroll           === 'function') window.renderPayroll(); },
+      'inventory':          () => { if (typeof window.renderInventory         === 'function') window.renderInventory(); },
+      'budget':             () => { if (typeof window.renderBudget            === 'function') window.renderBudget(); if (typeof window._loadBudgetFromDB === 'function') window._loadBudgetFromDB().catch(()=>{}); },
+      'banking':            () => { if (typeof window._loadVendorsFromDB      === 'function') window._loadVendorsFromDB().catch(()=>{}); if (typeof window._loadBillsFromDB === 'function') window._loadBillsFromDB().catch(()=>{}); },
+      'journal':            () => { if (typeof window.renderJournals          === 'function') window.renderJournals(); },
+      'chart-of-accounts':  () => { if (typeof window.renderCOA              === 'function') window.renderCOA(); },
+      'reports':            () => { if (typeof window.renderReports           === 'function') window.renderReports(); },
+      'time-tracking':      () => { if (typeof window.renderTimesheet         === 'function') window.renderTimesheet(); },
+      'investments':        () => { if (typeof window.renderInvestments       === 'function') window.renderInvestments(); },
+      'documents':          () => { if (typeof window.renderDocuments         === 'function') window.renderDocuments(); },
+      'mrr':                () => { if (typeof window.renderMRR               === 'function') window.renderMRR(); },
+      'money-in':           () => { if (typeof window.renderInvoices          === 'function') window.renderInvoices(); },
+      'money-out':          () => { if (typeof window.renderExpenses          === 'function') window.renderExpenses(); },
+      'personal-finance':   () => { if (typeof window.loadPersonalFinance     === 'function') window.loadPersonalFinance().catch(()=>{}); },
+    };
+    all.forEach(s => { const fn = dispatch[s]; if (fn) fn(); });
+    // Always refresh dashboard when requested or when dashboard is in the list
+    if (!all.length || all.includes('dashboard')) {
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+    } else if (typeof window._refreshDashboardUI === 'function') {
+      window._refreshDashboardUI();
+    }
+  };
+
+  console.log('[FinFlow] Postgres wiring active — DB-only, zero localStorage.');
 
 })();

@@ -847,12 +847,26 @@ app.delete('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
 
 // ── BUDGET TARGETS ────────────────────────────────────────────────────────────
 app.get('/api/budget-targets', requireAuth, wrap(async (req, res) => {
-  const row = await db.get('budget_targets', r => r.user_id === req.session.userId);
+  const uid = req.session.userId;
+  const eid = req.entityId || null;
+  const row = eid
+    ? await db.get('budget_targets', r => r.user_id === uid && r.entity_id === eid)
+    : await db.get('budget_targets', r => r.user_id === uid && !r.entity_id);
   res.json(row ? row.targets : {});
 }));
 app.put('/api/budget-targets', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const eid = req.entityId || null;
   const targets = req.body || {};
-  await db.upsert('budget_targets', 'user_id', req.session.userId, { targets });
+  // Upsert by both user_id and entity_id so each entity has its own budget
+  const existing = eid
+    ? await db.get('budget_targets', r => r.user_id === uid && r.entity_id === eid)
+    : await db.get('budget_targets', r => r.user_id === uid && !r.entity_id);
+  if (existing) {
+    await db.update('budget_targets', r => r.id === existing.id, { targets });
+  } else {
+    await db.insert('budget_targets', { user_id: uid, entity_id: eid, targets });
+  }
   res.json({ ok: true });
 }));
 

@@ -974,22 +974,25 @@ function renderTax(invoices, expenses) {
 
 // ── NOTES ──────────────────────────────────────────────────────────────────
 async function loadNotes() {
-  const key = `books_note_${_userId}`;
-  const saved = localStorage.getItem(key);
-  if (saved) document.getElementById('notes-content').value = saved;
+  try {
+    const r = await fetch(`/api/accountants/clients/${_userId}/notes`, { credentials:'include' });
+    if (r.ok) {
+      const data = await r.json();
+      if (data.note) document.getElementById('notes-content').value = data.note;
+    }
+  } catch(e) {}
 }
 
 async function saveNotes() {
   const note = document.getElementById('notes-content').value;
-  localStorage.setItem(`books_note_${_userId}`, note);
   try {
     await fetch(`/api/accountants/clients/${_userId}/notes`, {
       method:'POST', credentials:'include',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({note}),
     });
-  } catch(e){}
-  showToast('Note saved');
+    showToast('Note saved');
+  } catch(e) { showToast('Save failed'); }
 }
 
 // ── JOURNAL FORM ───────────────────────────────────────────────────────────

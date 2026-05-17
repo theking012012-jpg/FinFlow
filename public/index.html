@@ -2672,63 +2672,75 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 
 <!-- ══ ADD BUSINESS MODAL ══ -->
 <div class="modal-overlay hidden" id="add-biz-modal">
-  <div class="modal" style="max-width:440px">
-    <div class="modal-header">
-      <div><div class="modal-title">Add Business</div><div class="modal-sub">Currency is set automatically from your country</div></div>
+  <div class="modal" style="max-width:480px;max-height:85vh;display:flex;flex-direction:column">
+    <div class="modal-header" style="flex-shrink:0">
+      <div><div class="modal-title">Add Business</div><div class="modal-sub">Set up your business profile to get started</div></div>
       <button class="modal-close" onclick="closeModal('add-biz-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
-    <div class="field-group">
-      <div class="field-wrap" style="grid-column:1/-1">
+    <div style="overflow-y:auto;flex:1;padding:0 1.5rem 0.5rem">
+      <div class="settings-title" style="margin-top:1.25rem;margin-bottom:.75rem"><svg viewBox="0 0 16 16" width="14" height="14" style="vertical-align:-2px;margin-right:5px"><rect x="2" y="4" width="12" height="10" rx="1.2"/><path d="M5 4V3a3 3 0 016 0v1"/></svg>Business profile</div>
+      <div class="field-wrap">
         <label class="field-label">Business name</label>
-        <input class="finput" id="nb-name" placeholder="e.g. Seaside Consulting Ltd.">
+        <input class="finput" id="nb-name" placeholder="Your business name">
+      </div>
+      <div class="field-group">
+        <div class="field-wrap">
+          <label class="field-label">Industry</label>
+          <select class="finput" id="nb-industry">
+            <option>Technology</option><option>Retail</option><option>Finance</option>
+            <option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option>
+          </select>
+        </div>
+        <div class="field-wrap">
+          <label class="field-label">Currency</label>
+          <select class="finput" id="nb-currency">
+            <option value="USD">USD ($)</option><option value="EUR">EUR (€)</option>
+            <option value="GBP">GBP (£)</option><option value="CAD">CAD (C$)</option>
+            <option value="AUD">AUD (A$)</option><option value="TTD">TTD (TT$)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-group">
+        <div class="field-wrap">
+          <label class="field-label">Tax ID / EIN</label>
+          <input class="finput" id="nb-tax-id" placeholder="XX-XXXXXXX">
+        </div>
+        <div class="field-wrap">
+          <label class="field-label">Fiscal year start</label>
+          <select class="finput" id="nb-fiscal">
+            <option>January</option><option>April</option><option>July</option><option>October</option>
+          </select>
+        </div>
       </div>
       <div class="field-wrap">
-        <label class="field-label">Industry</label>
-        <select class="finput" id="nb-industry">
-          <option>Consulting / Services</option><option>Retail</option><option>Technology</option>
-          <option>Construction</option><option>Food & Beverage</option><option>Healthcare</option>
-          <option>Real Estate</option><option>Media & Creative</option><option>Finance</option><option>Other</option>
-        </select>
+        <label class="field-label">Business address</label>
+        <textarea class="finput" id="nb-address" style="min-height:56px" placeholder="Street, City, State, Country"></textarea>
       </div>
       <div class="field-wrap">
-        <label class="field-label">Fiscal year end</label>
-        <select class="finput" id="nb-fiscal">
-          <option value="12">December</option><option value="3">March</option>
-          <option value="6">June</option><option value="9">September</option>
-        </select>
+        <label class="field-label">Website</label>
+        <input class="finput" id="nb-website" placeholder="https://yourbusiness.com">
       </div>
-      <div class="field-wrap" style="grid-column:1/-1;position:relative">
-        <label class="field-label">Country</label>
-        <input class="finput" id="nb-country-input" placeholder="Type a country…" autocomplete="off"
-          oninput="filterCountries(this.value)" onfocus="showCountryDropdown()" style="padding-right:80px">
-        <div id="nb-currency-preview" style="position:absolute;right:10px;top:50%;transform:translateY(2px);
-          font-size:11.5px;font-weight:600;color:var(--acc);font-family:var(--font-mono);pointer-events:none"></div>
-        <div id="nb-country-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;
-          background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius);
-          box-shadow:var(--shadow-lg);z-index:400;max-height:200px;overflow-y:auto"></div>
+      <div class="settings-title" style="margin-top:1.25rem;margin-bottom:.75rem"><svg viewBox="0 0 16 16" width="14" height="14" style="vertical-align:-2px;margin-right:5px"><circle cx="8" cy="5.5" r="3"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/></svg>Your profile</div>
+      <div class="field-group">
+        <div class="field-wrap">
+          <label class="field-label">Your name</label>
+          <input class="finput" id="nb-user-name" placeholder="Your name" oninput="nbAutoInitials()">
+        </div>
+        <div class="field-wrap">
+          <label class="field-label">Initials</label>
+          <input class="finput" id="nb-user-initials" placeholder="JD" maxlength="2">
+        </div>
       </div>
-      <!-- Hidden actual value -->
-      <input type="hidden" id="nb-country" value="">
-      <input type="hidden" id="nb-currency" value="USD">
-    </div>
-    <!-- Currency confirmation chip -->
-    <div id="nb-currency-chip" style="display:none;margin-bottom:1rem;padding:10px 12px;
-      background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);
-      display:flex;align-items:center;gap:10px">
-      <span id="nb-chip-flag" style="font-size:20px"></span>
-      <div>
-        <div style="font-size:12.5px;font-weight:600;color:var(--t1)" id="nb-chip-text"></div>
-        <div style="font-size:11px;color:var(--t3)">Base currency · <span id="nb-chip-rate"></span> to USD</div>
+      <div class="field-wrap">
+        <label class="field-label">Email</label>
+        <input class="finput" type="email" id="nb-email" placeholder="you@company.com">
       </div>
-      <button class="btn btn-ghost btn-sm" style="margin-left:auto;font-size:11px" onclick="overrideCurrency()">Change</button>
+      <div class="field-wrap" style="margin-bottom:1rem">
+        <label class="field-label">Phone</label>
+        <input class="finput" type="tel" id="nb-phone" placeholder="+1 (555) 000-0000">
+      </div>
     </div>
-    <!-- Override currency (hidden by default) -->
-    <div id="nb-currency-override" style="display:none;margin-bottom:1rem">
-      <label class="field-label">Override currency</label>
-      <input class="finput" id="nb-override-input" placeholder="Type currency code e.g. EUR" oninput="filterCurrencyOverride(this.value)" style="margin-bottom:4px">
-      <div id="nb-override-dropdown" style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);max-height:160px;overflow-y:auto"></div>
-    </div>
-    <div class="modal-footer">
+    <div class="modal-footer" style="flex-shrink:0">
       <button class="btn btn-ghost" onclick="closeModal('add-biz-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="addBusiness()">Create business →</button>
     </div>
@@ -3422,25 +3434,49 @@ function flashTopbar(color){
 function openAddBizModal(e){
   if(e) e.stopPropagation();
   document.getElementById('biz-menu').style.display='none';
-  document.getElementById('nb-name').value='';
+  ['nb-name','nb-tax-id','nb-address','nb-website','nb-user-name','nb-user-initials','nb-email','nb-phone'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  const cur=document.getElementById('nb-currency'); if(cur) cur.value='USD';
+  const ind=document.getElementById('nb-industry'); if(ind) ind.selectedIndex=0;
+  const fy=document.getElementById('nb-fiscal');   if(fy)  fy.selectedIndex=0;
   document.getElementById('add-biz-modal').classList.remove('hidden');
 }
 
-function addBusiness(){
-  const name = document.getElementById('nb-name').value.trim();
-  if(!name){ notify('Please enter a business name','error'); return; }
-  const currency = document.getElementById('nb-currency').value;
-  const industry = document.getElementById('nb-industry').value;
-  const fiscal   = parseInt(document.getElementById('nb-fiscal').value);
-  const id = 'biz-' + Date.now();
-  const colorIdx = businesses.length % BIZ_COLORS.length;
-  const iconIdx  = businesses.length % BIZ_ICONS.length;
-  const newBiz = {id,name,industry,currency,displayCurrency:currency,fiscal,
-                  color:BIZ_COLORS[colorIdx],icon:BIZ_ICONS[iconIdx],isDefault:false};
-  businesses.push(newBiz);
-  // lsSave removed — window.addBusiness is overridden by postgres wiring to POST /api/entities
-  closeModal('add-biz-modal');
-  switchBusiness(id);
+function nbAutoInitials(){
+  const name=(document.getElementById('nb-user-name')||{}).value||'';
+  const parts=name.trim().split(/\s+/);
+  const initials=(parts.length>=2?parts[0][0]+parts[parts.length-1][0]:name.slice(0,2)).toUpperCase();
+  const el=document.getElementById('nb-user-initials'); if(el&&!el._manual) el.value=initials;
+}
+
+async function addBusiness(){
+  const name=(document.getElementById('nb-name')||{}).value.trim();
+  if(!name){ notify('Please enter a business name'); return; }
+  const currency=(document.getElementById('nb-currency')||{}).value||'USD';
+  const industry=(document.getElementById('nb-industry')||{}).value||'Other';
+  const color='#c9a84c';
+  const tag=typeof ENTITIES!=='undefined'&&ENTITIES.length===0?'Parent':'Subsidiary';
+  try {
+    const res=await fetch('/api/entities',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name,currency,color,tag,sort_order:typeof ENTITIES!=='undefined'?ENTITIES.length:0})});
+    if(!res.ok) throw new Error((await res.json()).error);
+    const profile={
+      business_name: name,
+      industry,
+      currency,
+      tax_id:        (document.getElementById('nb-tax-id')||{}).value||'',
+      fiscal_year:   (document.getElementById('nb-fiscal')||{}).value||'January',
+      address:       (document.getElementById('nb-address')||{}).value||'',
+      website:       (document.getElementById('nb-website')||{}).value||'',
+      name:          (document.getElementById('nb-user-name')||{}).value||'',
+      email:         (document.getElementById('nb-email')||{}).value||'',
+      phone:         (document.getElementById('nb-phone')||{}).value||'',
+    };
+    await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(profile)});
+    closeModal('add-biz-modal');
+    if(typeof loadEntitiesFromDB==='function') await loadEntitiesFromDB();
+    notify('Business "'+esc(name)+'" created ✦');
+  } catch(e){ notify('Error: '+(e.message||'Failed to create business')); }
 }
 
 function closeAllDropdowns(){
@@ -4404,7 +4440,7 @@ function getPeriodData(){
 function showPage(id, el){
   // Gate: block all business pages until at least one entity exists
   if (typeof ENTITIES !== 'undefined' && ENTITIES.length === 0) {
-    const _allowed = ['settings','pricing','login','register','entities'];
+    const _allowed = ['settings','pricing','login','register','entities','personal'];
     if (!_allowed.includes(id)) {
       if (typeof notify === 'function') notify('Create your first business to get started ✦');
       showPage('entities', null);

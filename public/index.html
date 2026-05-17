@@ -8396,7 +8396,7 @@ function renderConsolPL(){
       <div style="display:grid;grid-template-columns:${cols};gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);align-items:center;font-size:12px">
         <span style="color:var(--t1);font-weight:500">${row.label}</span>
         ${entityVals}
-        <span style="text-align:right;font-family:var(--font-mono);font-weight:600;color:${row.color}">${fmtTotal(total)}</span>
+        <span style="text-align:right;font-family:var(--font-mono);font-weight:600;color:${total===0?'var(--t2)':row.color}">${fmtTotal(total)}</span>
       </div>`;
   }).join('');
 }
@@ -8430,7 +8430,7 @@ window.renderEntities=function(){
       </div>
       <div class="entity-stat">
         <div class="entity-stat-val">${revConverted}</div>
-        <div class="entity-stat-lbl">Revenue · ${margin!==null?margin+'% margin':'—'}</div>
+        <div class="entity-stat-lbl">${margin!==null?'Revenue · '+margin+'% margin':'—'}</div>
       </div>
       ${e.active?`<span class="badge b-green" style="flex-shrink:0">Active</span>`:`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();switchEntity(${i})">Switch</button>`}
     </div>`;

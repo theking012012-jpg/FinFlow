@@ -85,6 +85,7 @@ async function saveReceipt(){
     else   { await apiFetch('/api/sales-receipts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
     closeModal('modal-receipt');
     renderReceipts();
+    window.finflow.refresh(['invoices','dashboard','money-in','reports']);
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
@@ -92,6 +93,7 @@ async function deleteReceipt(id){
   if(!confirm('Delete this receipt?')) return;
   await apiFetch('/api/sales-receipts/'+id,{method:'DELETE'});
   renderReceipts();
+  window.finflow.refresh(['invoices','dashboard','money-in','reports']);
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -163,6 +165,7 @@ async function savePaymentReceived(){
     else   { await apiFetch('/api/payments-received',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
     closeModal('modal-payment-received');
     renderPaymentsReceived();
+    window.finflow.refresh(['invoices','dashboard','money-in','reports']);
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
@@ -170,6 +173,7 @@ async function deletePaymentReceived(id){
   if(!confirm('Delete this payment?')) return;
   await apiFetch('/api/payments-received/'+id,{method:'DELETE'});
   renderPaymentsReceived();
+  window.finflow.refresh(['invoices','dashboard','money-in','reports']);
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -240,6 +244,7 @@ async function saveCreditNote(){
     else   { await apiFetch('/api/credit-notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
     closeModal('modal-credit-note');
     renderCreditNotes();
+    window.finflow.refresh(['invoices','dashboard','money-in','reports']);
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
@@ -247,6 +252,7 @@ async function deleteCreditNote(id){
   if(!confirm('Delete this credit note?')) return;
   await apiFetch('/api/credit-notes/'+id,{method:'DELETE'});
   renderCreditNotes();
+  window.finflow.refresh(['invoices','dashboard','money-in','reports']);
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -317,6 +323,7 @@ async function savePaymentMade(){
     else   { await apiFetch('/api/payments-made',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
     closeModal('modal-payment-made');
     renderPaymentsMade();
+    window.finflow.refresh(['expenses','dashboard','money-out','budget','reports']);
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
@@ -324,6 +331,7 @@ async function deletePaymentMade(id){
   if(!confirm('Delete this payment?')) return;
   await apiFetch('/api/payments-made/'+id,{method:'DELETE'});
   renderPaymentsMade();
+  window.finflow.refresh(['expenses','dashboard','money-out','budget','reports']);
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -394,6 +402,7 @@ async function saveVendorCredit(){
     else   { await apiFetch('/api/vendor-credits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
     closeModal('modal-vendor-credit');
     renderVendorCredits();
+    window.finflow.refresh(['expenses','dashboard','money-out','budget','reports']);
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
@@ -401,6 +410,7 @@ async function deleteVendorCredit(id){
   if(!confirm('Delete this vendor credit?')) return;
   await apiFetch('/api/vendor-credits/'+id,{method:'DELETE'});
   renderVendorCredits();
+  window.finflow.refresh(['expenses','dashboard','money-out','budget','reports']);
 }
 
 /* ══════════════════════════════════════════════════════════════════

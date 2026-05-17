@@ -3892,7 +3892,7 @@ const _origRenderJournals = renderJournals;
 async function renderCOALive(){
   const l=document.getElementById('coa-list');if(!l)return;
   try{
-    const res=await fetch('/api/chart-of-accounts');
+    const res=await fetch('/api/chart-of-accounts',{credentials:'include'});
     if(!res.ok)throw new Error();
     const accounts=await res.json();
 
@@ -3947,7 +3947,7 @@ async function renderJournalsLive(){
   const l=document.getElementById('journals-list');if(!l)return;
   l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
   try{
-    const res=await fetch('/api/journals');
+    const res=await fetch('/api/journals',{credentials:'include'});
     if(!res.ok)throw new Error();
     const journals=await res.json();
 
@@ -6053,6 +6053,7 @@ ${ownerLine}Personal savings rate: ${document.getElementById('pers-savings').tex
 4 tight paragraphs: Executive Summary, Financial Performance, Risks & Opportunities, Outlook. Data-driven and executive-level.`, 3000);
     const res = await fetch('/api/ai', {
       method: 'POST',
+      credentials: 'include',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({message: prompt, history: []})
     });
@@ -6162,6 +6163,7 @@ async function saveBankTxn(desc, amount, type, cat){
       body:JSON.stringify({desc, amount, type, cat, date:new Date().toISOString().slice(0,10)})});
     if(!res.ok) throw new Error('Save failed');
     await loadBankingFromDB();
+    window.finflow.refresh(['banking','dashboard','reports']);
   } catch(e){ if(typeof notify==='function') notify('Error saving transaction'); }
 }
 function renderBanking(){
@@ -6331,6 +6333,7 @@ async function saveNewAccount(){
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||'API error');}
     document.getElementById('coa-new-modal').classList.add('hidden');
     notify('Account added ✦');
+    window.finflow.refresh(['journal','dashboard','reports','chart-of-accounts']);
     if(typeof renderCOA==='function')renderCOA();
   }catch(e){notify('Could not add account — '+e.message,true);}
 }
@@ -6472,7 +6475,7 @@ async function renderDocuments(){
   const l=document.getElementById('documents-list');if(!l)return;
   l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
   try{
-    const res=await fetch('/api/documents');
+    const res=await fetch('/api/documents',{credentials:'include'});
     if(!res.ok)throw new Error();
     _docsCache=await res.json();
   }catch(e){_docsCache=[];}
@@ -6495,8 +6498,8 @@ function filterDocs(f){docsFilter=f;renderDocuments();}
 async function downloadDoc(id){window.open('/api/documents/'+id+'/download','_blank');}
 async function deleteDoc(id){
   if(!confirm('Delete this document?'))return;
-  const res=await fetch('/api/documents/'+id,{method:'DELETE'});
-  if(res.ok)renderDocuments();else notify('Delete failed');
+  const res=await fetch('/api/documents/'+id,{method:'DELETE',credentials:'include'});
+  if(res.ok){ renderDocuments(); window.finflow.refresh(['documents','dashboard']); }else notify('Delete failed');
 }
 function openUploadModal(){
   let m=document.getElementById('doc-upload-modal');
@@ -6529,12 +6532,12 @@ async function uploadDocument(){
   reader.onload=async function(e){
     const b64=e.target.result.split(',')[1];
     try{
-      const res=await fetch('/api/documents',{method:'POST',headers:{'Content-Type':'application/json'},
+      const res=await fetch('/api/documents',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({name:file.name,type:document.getElementById('doc-type-input').value,
           size:Math.round(file.size/1024)+' KB',notes:document.getElementById('doc-notes-input').value,
           file_data:b64,media_type:file.type})});
       if(!res.ok){const d=await res.json();notify(d.error||'Upload failed');return;}
-      closeModal('doc-upload-modal');renderDocuments();notify('Document uploaded ✦');
+      closeModal('doc-upload-modal');renderDocuments();window.finflow.refresh(['documents','dashboard']);notify('Document uploaded ✦');
     }catch(e){notify('Upload failed');}
   };
   reader.readAsDataURL(file);
@@ -7944,6 +7947,7 @@ window.sendAIQuery = async function(text){
   try{
     const res = await fetch('/api/ai', {
       method: 'POST',
+      credentials: 'include',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({message: text, history: aiHistory})
     });
@@ -8125,6 +8129,7 @@ async function startTrial(plan) {
     notify('Redirecting to checkout… ✦');
     const res = await fetch('/api/stripe/checkout', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ plan }),
     });
@@ -8579,7 +8584,7 @@ window.renderAudit=async function(){
   el.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div>';
   try{
     const params=auditFilter!=='all'?'?type='+encodeURIComponent(auditFilter):'';
-    const res=await fetch('/api/audit-log'+params);
+    const res=await fetch('/api/audit-log'+params,{credentials:'include'});
     if(!res.ok)throw new Error();
     const data=await res.json();
     const entries=Array.isArray(data)?data:(data.rows||data.entries||[]);
@@ -8878,6 +8883,7 @@ async function scanFile(file){
   try{
     const res = await fetch('/api/ai/scan', {
       method: 'POST',
+      credentials: 'include',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({base64, mediaType, isPDF})
     });
@@ -9336,7 +9342,7 @@ async function renderAutocat(){
   const rulesList = document.getElementById('autocat-rules-list');
   if(rulesList){
     try{
-      const res=await fetch('/api/autocat-rules');
+      const res=await fetch('/api/autocat-rules',{credentials:'include'});
       const apiRules=res.ok?await res.json():[];
       const rules=apiRules.length?apiRules:AUTOCAT_RULES;
       rulesList.innerHTML=rules.map(r=>`
@@ -9358,14 +9364,15 @@ async function renderAutocat(){
 }
 window.deleteAutocatRule=async function(id){
   if(!confirm('Delete this rule?'))return;
-  const res=await fetch('/api/autocat-rules/'+id,{method:'DELETE'});
-  if(res.ok)renderAutocat();else notify('Delete failed');
+  const res=await fetch('/api/autocat-rules/'+id,{method:'DELETE',credentials:'include'});
+  if(res.ok){ renderAutocat(); window.finflow.refresh(['banking','dashboard']); }else notify('Delete failed');
 };
 window.runAutocatRules=async function(){
   try{
-    const res=await fetch('/api/autocat-rules/run',{method:'POST'});
+    const res=await fetch('/api/autocat-rules/run',{method:'POST',credentials:'include'});
     const data=await res.json();
     notify('Auto-categorised '+(data.updated||0)+' expenses ✦');
+    window.finflow.refresh(['banking','dashboard']);
   }catch(e){notify('Run failed');}
 };
 window.openAddRuleModal=function(){
@@ -9393,10 +9400,10 @@ window.saveAutocatRule=async function(){
   const enabled=document.getElementById('rule-auto').checked?1:0;
   if(!keyword){notify('Enter a keyword');return;}
   try{
-    const res=await fetch('/api/autocat-rules',{method:'POST',headers:{'Content-Type':'application/json'},
+    const res=await fetch('/api/autocat-rules',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({keyword,category,enabled})});
     if(!res.ok){const d=await res.json();notify(d.error||'Save failed');return;}
-    closeModal('add-rule-modal');renderAutocat();notify('Rule saved ✦');
+    closeModal('add-rule-modal');renderAutocat();window.finflow.refresh(['banking','dashboard']);notify('Rule saved ✦');
   }catch(e){notify('Save failed');}
 };
 
@@ -10097,7 +10104,7 @@ let allAccountants = [];
 
 async function loadDirectory() {
   try {
-    const res = await fetch('/api/accountants/directory');
+    const res = await fetch('/api/accountants/directory', {credentials:'include'});
     if (!res.ok) throw new Error('not ok');
     allAccountants = await res.json();
   } catch(e) {

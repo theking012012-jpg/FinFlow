@@ -8402,10 +8402,25 @@ function renderConsolPL(){
 }
 
 window.renderEntities=function(){
+  // Update entity count KPI card
+  const cntEl=document.getElementById('ent-count');
+  if(cntEl) cntEl.textContent=ENTITIES.length;
+
+  // Update consolidated KPI cards
+  const totalRev=getConsolTotal('rev');
+  const totalProfit=getConsolTotal('netProfit');
+  const consolMarginPct=totalRev>0?Math.round(totalProfit/totalRev*100):null;
+  const revEl=document.getElementById('ent-consol-rev');
+  if(revEl) revEl.textContent=fmtTotal(totalRev);
+  const profEl=document.getElementById('ent-consol-profit');
+  if(profEl) profEl.textContent=fmtTotal(totalProfit);
+  const marginEl=document.getElementById('ent-consol-margin');
+  if(marginEl) marginEl.textContent=consolMarginPct!==null?consolMarginPct+'% margin':'—';
+
   const el=document.getElementById('entity-list');
   if(el)el.innerHTML=ENTITIES.map((e,i)=>{
     const revConverted = fmtConsol(e.data.rev, e.currency);
-    const margin = Math.round(e.data.netProfit/e.data.rev*100*10)/10;
+    const margin = e.data.rev ? Math.round(e.data.netProfit/e.data.rev*100*10)/10 : null;
     return `
     <div class="entity-card${e.active?' active-entity':''}" onclick="switchEntity(${i})">
       <div class="entity-logo" style="background:${e.color}">${e.name.slice(0,2).toUpperCase()}</div>
@@ -8415,7 +8430,7 @@ window.renderEntities=function(){
       </div>
       <div class="entity-stat">
         <div class="entity-stat-val">${revConverted}</div>
-        <div class="entity-stat-lbl">Revenue · ${margin}% margin</div>
+        <div class="entity-stat-lbl">Revenue · ${margin!==null?margin+'% margin':'—'}</div>
       </div>
       ${e.active?`<span class="badge b-green" style="flex-shrink:0">Active</span>`:`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();switchEntity(${i})">Switch</button>`}
     </div>`;

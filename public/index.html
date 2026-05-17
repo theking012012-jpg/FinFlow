@@ -1022,7 +1022,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <div class="brand-logo" id="biz-logo"><svg viewBox="0 0 16 16"><polyline points="1,11 5,6 8,9 11,4 15,7"/><line x1="1" y1="14" x2="15" y2="14"/></svg></div>
       <div class="brand-text" style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:4px">
-          <div class="brand-name" id="sb-brand-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px"></div>
+          <div class="brand-name" id="sb-brand-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px">Create a business</div>
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--t3)" stroke-width="1.5" stroke-linecap="round" style="flex-shrink:0"><polyline points="2,3 5,7 8,3"/></svg>
         </div>
         <div class="brand-badge" id="biz-currency-badge">USD · Pro</div>
@@ -4402,6 +4402,15 @@ function getPeriodData(){
 // NAVIGATION
 // ════════════════════════════════════════════
 function showPage(id, el){
+  // Gate: block all business pages until at least one entity exists
+  if (typeof ENTITIES !== 'undefined' && ENTITIES.length === 0) {
+    const _allowed = ['settings','pricing','login','register','entities'];
+    if (!_allowed.includes(id)) {
+      if (typeof notify === 'function') notify('Create your first business to get started ✦');
+      showPage('entities', null);
+      return;
+    }
+  }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const pg=document.getElementById('page-'+id);
@@ -8253,11 +8262,20 @@ async function loadEntitiesFromDB(){
 
     // Update sidebar brand
     const active = ENTITIES.find(e=>e.active);
+    const nameEl = document.getElementById('sb-brand-name');
+    const badgeEl = document.getElementById('biz-currency-badge');
     if(active){
-      const nameEl = document.getElementById('sb-brand-name');
-      const badgeEl = document.getElementById('biz-currency-badge');
       if(nameEl) nameEl.textContent = active.name;
       if(badgeEl) badgeEl.textContent = active.currency + ' · Pro';
+    } else {
+      if(nameEl) nameEl.textContent = 'Create a business';
+      if(badgeEl) badgeEl.textContent = '';
+      // Highlight the + Add business button
+      const addBizBtn = document.querySelector('#biz-menu button');
+      if(addBizBtn){ addBizBtn.classList.remove('btn-ghost'); addBizBtn.classList.add('btn-primary'); }
+      // Redirect to entities page so user can create their first entity
+      if(typeof window.showPage === 'function') window.showPage('entities', null);
+      return;
     }
 
     // Activate in session FIRST, then load data

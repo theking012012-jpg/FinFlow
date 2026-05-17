@@ -2991,7 +2991,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     <div class="modal-header"><div><div class="modal-title" id="cust-modal-title">Add customer</div><div class="modal-sub" id="cust-modal-sub">Fill in the customer details</div></div><button class="modal-close" onclick="closeModal('customer-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <input type="hidden" id="cust-edit-id">
     <div class="field-group"><div class="field-wrap"><label class="field-label">First name *</label><input class="finput" id="cust-fname" placeholder="Jane"></div><div class="field-wrap"><label class="field-label">Last name *</label><input class="finput" id="cust-lname" placeholder="Smith"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Company</label><input class="finput" id="cust-company" placeholder="Acme Corp"></div><div class="field-wrap"><label class="field-label">Industry</label><select class="finput" id="cust-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Media</option><option>Consulting</option><option>Other</option></select></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label">Company</label><input class="finput" id="cust-company" placeholder="Enter company name"></div><div class="field-wrap"><label class="field-label">Industry</label><select class="finput" id="cust-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Media</option><option>Consulting</option><option>Other</option></select></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label">Email *</label><input class="finput" id="cust-email" type="email" placeholder="jane@acme.com"></div><div class="field-wrap"><label class="field-label">Phone</label><input class="finput" id="cust-phone" type="tel" placeholder="+1 (555) 000-0000"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label">Lifetime revenue ($)</label><input class="finput" id="cust-revenue-val" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label">Status</label><select class="finput" id="cust-status"><option value="active">Active</option><option value="inactive">Inactive</option><option value="prospect">Prospect</option></select></div></div>
     <div class="field-wrap"><label class="field-label">Notes</label><textarea class="finput" id="cust-notes" placeholder="Any relevant notes…"></textarea></div>
@@ -7623,7 +7623,7 @@ overlay.innerHTML = `
     <div class="ob-step active" id="ob-s1">
       <div class="ob-field">
         <label class="ob-label">Business name *</label>
-        <input class="ob-input" id="ob-biz-name" placeholder="e.g. Acme Ltd." value="">
+        <input class="ob-input" id="ob-biz-name" placeholder="Enter your business name" value="">
       </div>
       <div class="ob-field">
         <label class="ob-label">Industry</label>
@@ -9697,7 +9697,7 @@ document.addEventListener('click', e=>{
       <button class="modal-close" onclick="document.getElementById('quote-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Client *</label><input class="finput" id="quote-client" placeholder="e.g. Acme Corp"></div>
+      <div class="field-wrap"><label class="field-label">Client *</label><input class="finput" id="quote-client" placeholder="Enter client name"></div>
       <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="quote-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
@@ -9812,7 +9812,7 @@ document.addEventListener('click', e=>{
       <button class="modal-close" onclick="document.getElementById('recurring-inv-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Client *</label><input class="finput" id="ri-client" placeholder="e.g. Acme Corp"></div>
+      <div class="field-wrap"><label class="field-label">Client *</label><input class="finput" id="ri-client" placeholder="Enter client name"></div>
       <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="ri-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
@@ -9870,7 +9870,7 @@ document.addEventListener('click', e=>{
     </div>
     <input type="hidden" id="pr-id">
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Customer *</label><input class="finput" id="pr-customer" placeholder="e.g. Acme Corp"></div>
+      <div class="field-wrap"><label class="field-label">Customer *</label><input class="finput" id="pr-customer" placeholder="Enter customer name"></div>
       <div class="field-wrap"><label class="field-label">Invoice Ref</label><input class="finput" id="pr-invoice-ref" placeholder="e.g. INV-2026-010"></div>
     </div>
     <div class="field-group">

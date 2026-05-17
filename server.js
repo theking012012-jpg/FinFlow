@@ -212,16 +212,6 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       name: (name || '').trim().slice(0, 100), plan: 'pro', trial_ends: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner',
     });
 
-    // Create default entity so the app has something to scope data to
-    await db.insert('entities', {
-      user_id: userId,
-      name: 'My Business',
-      currency: 'USD',
-      color: '#c9a84c',
-      is_active: 1,
-      sort_order: 0,
-    });
-
     // If user signed up via an accountant referral link (?ref=CODE), link them now
     const refCode = req.body.referralCode || req.query.ref;
     if (refCode) {

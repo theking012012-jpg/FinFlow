@@ -650,6 +650,7 @@
         }
         console.log('[Payroll Save] ✅ Owner payroll persisted per-entity. window.ownerPayroll:', window.ownerPayroll);
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (window.finflow?.refresh) window.finflow.refresh(['personal-finance']);
       } catch (e) {
         console.error('[Payroll Save] ❌ Failed:', e.message);
         notify('Payroll saved locally but could not sync to server — ' + e.message, true);

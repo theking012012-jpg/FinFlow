@@ -2143,6 +2143,23 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             </div>
           </div>
         </div>
+        <!-- Income sources + Budget vs Actual -->
+        <div class="two-col">
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><div class="card-title">Income sources</div></div>
+            <div id="income-sources-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No income recorded — add payroll or income transactions</div></div>
+          </div>
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><div class="card-title">Budget vs actual</div><button class="btn btn-ghost btn-sm" onclick="showPage('settings',null)" style="font-size:11px">Edit budget</button></div>
+            <div id="budget-vs-actual-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Set a budget in Settings and add transactions to track</div></div>
+          </div>
+        </div>
+        <!-- Net worth breakdown -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">Net worth breakdown</div><div class="card-sub" id="nw-sub">—</div></div>
+          <div id="nw-breakdown-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No data yet — add payroll, transactions, or investments</div></div>
+        </div>
+        <!-- Transactions -->
         <div class="card">
           <div class="card-header"><div class="card-title">Personal transactions</div><button class="btn btn-ghost btn-sm" onclick="openTransactionModal()">+ Add</button></div>
           <div id="pers-transactions"></div>
@@ -4392,7 +4409,7 @@ function getPeriodData(){
 function showPage(id, el){
   // Gate: block all business pages until at least one entity exists
   if (typeof ENTITIES !== 'undefined' && ENTITIES.length === 0) {
-    const _allowed = ['settings','pricing','login','register','entities','personal','create-business'];
+    const _allowed = ['settings','pricing','login','register','entities','personal','create-business','investments','scenario'];
     if (!_allowed.includes(id)) {
       if (typeof notify === 'function') notify('Create your first business to get started ✦');
       showPage('create-business', null);
@@ -5181,7 +5198,7 @@ function syncAllPayrollsToPersonal(){
     : entries.length === 1 ? (entries[0][1]?.entityName||'Entity') : 'Not on payroll';
   if(linkNet) linkNet.textContent = _dispCurPayroll.symbol + totalDisp.toLocaleString() + '/mo';
 
-  baseNetWorth = Math.round(84500 + (Math.max(0, basePersonalIncome - spending.reduce((a,s)=>a+s.amount,0))*2));
+  baseNetWorth = 0; // computed from real transactions in loadPersonalFinance()
   renderPersonal();
 }
 // openOwnerModal — all call sites now route to the full multi-entity modal
@@ -5274,6 +5291,7 @@ function _updatePersCurrencyValues(){
   // Update transaction amounts
   const txAmts = document.querySelectorAll('#pers-transactions .tx-amt');
   persTransactions.slice(0,8).forEach((t,i)=>{ if(txAmts[i]) txAmts[i].textContent=(t.type==='income'?'+':'-')+SP(t.amount); });
+  renderPersonalSections();
 }
 
 function renderPersonal(){
@@ -5370,6 +5388,7 @@ function renderPersonal(){
       <div class="tx-amt ${t.type==='income'?'up':'dn'}">${t.type==='income'?'+':'-'}${SP(t.amount)}</div>
     </div>`).join('');
 
+  renderPersonalSections();
   updateHealthScore(savingsRate, incomeUSD, surplusUSD);
 }
 function openSpendingModal(){
@@ -5389,12 +5408,109 @@ function saveGoal(){
   closeModal('goal-modal');renderPersonal();notify('Goal added');
 }
 function openTransactionModal(){document.getElementById('tx-desc').value='';document.getElementById('tx-amount').value='';openModal('transaction-modal')}
-function saveTransaction(){
+async function saveTransaction(){
   const desc=document.getElementById('tx-desc').value.trim();
   const amount=Number(document.getElementById('tx-amount').value);
-  if(!desc||!amount){notify('Description and amount required',true);return;}
-  persTransactions.unshift({desc,cat:document.getElementById('tx-cat-sel').value,amount,type:document.getElementById('tx-type').value,date:'Today'});
-  closeModal('transaction-modal');renderPersonal();notify('Transaction added');
+  if(!desc||!amount){notify('Description and amount required');return;}
+  const cat=document.getElementById('tx-cat-sel').value;
+  const type=document.getElementById('tx-type').value;
+  try{
+    const res=await fetch('/api/personal-transactions',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({description:desc,category:cat,amount,tx_type:type,tx_date:new Date().toISOString().slice(0,10)})});
+    if(!res.ok) throw new Error((await res.json()).error||'Failed');
+    closeModal('transaction-modal');
+    if(typeof loadPersonalFinance==='function') await loadPersonalFinance();
+    notify('Transaction added ✦');
+  }catch(e){notify('Error: '+(e.message||'Failed to save'));}
+}
+
+window._persSideIncome=0;
+
+async function loadPersonalFinance(){
+  try{
+    const r=await fetch('/api/personal-transactions',{credentials:'include'});
+    if(!r.ok) return;
+    const txs=await r.json();
+    const CAT_GROUP={'Rent/Mortgage':'Housing','Groceries':'Food','Dining out':'Food','Transport':'Transport','Entertainment':'Entertainment','Healthcare':'Healthcare','Shopping':'Shopping','Subscriptions':'Subscriptions','Other':'Other','Income':'Other'};
+    const CAT_COLOR={Housing:'var(--acc)',Food:'var(--green)',Transport:'var(--teal)',Entertainment:'var(--purple)',Healthcare:'var(--red)',Shopping:'var(--amber)',Subscriptions:'var(--acc2)',Other:'var(--t3)'};
+    persTransactions=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,type:t.tx_type||'expense',date:(t.tx_date||t.created_at||'').slice(0,10)}));
+    const catTotals={};
+    persTransactions.filter(t=>t.type==='expense').forEach(t=>{const c=CAT_GROUP[t.cat]||'Other';catTotals[c]=(catTotals[c]||0)+t.amount;});
+    spending=Object.entries(catTotals).map(([label,amount])=>({label,amount,color:CAT_COLOR[label]||'var(--t3)',budget:0}));
+    const sideIncome=persTransactions.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+    window._persSideIncome=sideIncome;
+    const totalInc=basePersonalIncome+sideIncome;
+    const totalExp=spending.reduce((a,s)=>a+s.amount,0);
+    baseNetWorth=Math.max(0,totalInc-totalExp);
+    renderPersonal();
+  }catch(e){console.warn('[Personal] Load failed:',e.message);}
+}
+window.loadPersonalFinance=loadPersonalFinance;
+
+function renderPersonalSections(){
+  const salary=basePersonalIncome;
+  const sideIncome=window._persSideIncome||0;
+  const totalInc=salary+sideIncome;
+  const totalExp=spending.reduce((a,s)=>a+s.amount,0);
+
+  // Income sources
+  const inEl=document.getElementById('income-sources-list');
+  if(inEl){
+    if(totalInc===0){
+      inEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No income recorded — add payroll or income transactions</div>';
+    }else{
+      const rows=[];
+      if(salary>0) rows.push({label:'Salary (payroll)',amount:salary,color:'var(--acc)'});
+      if(sideIncome>0) rows.push({label:'Side income / freelance',amount:sideIncome,color:'var(--green)'});
+      inEl.innerHTML=rows.map(r=>`<div class="bar-row"><span class="bar-label">${r.label}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(r.amount/totalInc*100)}%;background:${r.color}"></div></div><span class="bar-val">${SP(r.amount)}</span></div>`).join('')
+        +'<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total income</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)">'+SP(totalInc)+'</span></div>';
+    }
+  }
+
+  // Budget vs Actual
+  const budgetTarget=parseInt(document.getElementById('s-budget')?.value)||0;
+  const usedPct=budgetTarget>0?Math.min(100,Math.round(totalExp/budgetTarget*100)):0;
+  const variance=budgetTarget-totalExp;
+  const bvEl=document.getElementById('budget-vs-actual-list');
+  if(bvEl){
+    if(totalExp===0&&budgetTarget===0){
+      bvEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Set a budget in Settings and add transactions to track</div>';
+    }else{
+      bvEl.innerHTML=`
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px"><span style="color:var(--t2)">Monthly budget</span><span style="font-family:var(--font-mono);font-weight:600;color:var(--t1)">${SP(budgetTarget)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:10px"><span style="color:var(--t2)">Actual spending</span><span style="font-family:var(--font-mono);font-weight:600;color:var(--t1)">${SP(totalExp)}</span></div>
+        <div class="bar-track" style="margin-bottom:6px"><div class="bar-fill" style="width:${usedPct}%;background:${usedPct>90?'var(--red)':usedPct>70?'var(--amber)':'var(--green)'}"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--t3);margin-bottom:10px"><span>${usedPct}% used</span>${budgetTarget>0?`<span>${SP(budgetTarget)} limit</span>`:''}</div>
+        <div style="height:1px;background:var(--bd);margin-bottom:10px"></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t1);font-weight:500">Variance</span><span style="font-family:var(--font-mono);font-weight:700;color:${variance>=0?'var(--green)':'var(--red)'}">${variance>=0?'+':''}${SP(variance)}</span></div>`;
+    }
+  }
+
+  // Net worth breakdown
+  const cashAssets=Math.max(0,totalInc-totalExp);
+  const invValue=typeof holdings!=='undefined'?holdings.reduce((a,h)=>a+((h.price||0)*(h.shares||0)),0):0;
+  const totalAssets=cashAssets+invValue;
+  const totalLiab=Math.max(0,totalExp-totalInc);
+  const netWorth=totalAssets-totalLiab;
+  const nwEl=document.getElementById('nw-breakdown-list');
+  const nwSub=document.getElementById('nw-sub');
+  if(nwSub) nwSub.textContent=SP(Math.abs(netWorth))+(netWorth<0?' deficit':' total');
+  if(nwEl){
+    if(totalAssets===0&&totalLiab===0){
+      nwEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No data yet — add payroll, transactions, or investments</div>';
+    }else{
+      nwEl.innerHTML=`<div style="display:flex;flex-direction:column;gap:4px">
+        <div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Assets</div>
+        ${cashAssets>0?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">Cash savings</span><span style="color:var(--green);font-family:var(--font-mono)">${SP(cashAssets)}</span></div>`:''}
+        ${invValue>0?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">Investment portfolio</span><span style="color:var(--green);font-family:var(--font-mono)">${SP(invValue)}</span></div>`:''}
+        ${totalAssets===0?`<div style="font-size:12px;color:var(--t3);padding:3px 0">$0</div>`:''}
+        <div style="height:1px;background:var(--bd);margin:6px 0"></div>
+        <div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Liabilities</div>
+        ${totalLiab>0?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">Excess spending</span><span style="color:var(--red);font-family:var(--font-mono)">-${SP(totalLiab)}</span></div>`:`<div style="font-size:12px;color:var(--t3);padding:3px 0">$0</div>`}
+        <div style="height:1px;background:var(--bd);margin:6px 0"></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span style="color:var(--t1);font-weight:600">Net worth</span><span style="font-family:var(--font-mono);font-weight:700;color:${netWorth>=0?'var(--acc)':'var(--red)'}">${netWorth>=0?'':'-'}${SP(Math.abs(netWorth))}</span></div>
+      </div>`;
+    }
+  }
 }
 
 // ════════════════════════════════════════════

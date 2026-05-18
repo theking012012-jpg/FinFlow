@@ -2113,6 +2113,21 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <button class="scenario-preset-btn pers-period-btn" data-period="quarter" onclick="setPersPeriod('quarter')" style="font-size:10.5px;padding:3px 8px">Quarter</button>
           <button class="scenario-preset-btn active-preset pers-period-btn" data-period="year" onclick="setPersPeriod('year')" style="font-size:10.5px;padding:3px 8px">Year</button>
         </div>
+        <!-- Personal salary entry -->
+        <div class="card" id="pers-salary-card" style="margin-bottom:.85rem">
+          <div class="card-header">
+            <div class="card-title">Monthly salary</div>
+            <span id="pers-salary-sync-label" style="display:none;font-size:11px;color:var(--green)">Synced from payroll ✓</span>
+          </div>
+          <div class="field-group" style="margin-bottom:.6rem">
+            <div class="field-wrap"><label class="field-label">Gross salary (USD / mo)</label><input class="finput" id="pers-sal-gross" type="number" placeholder="e.g. 5000" oninput="persPreviewNet()"></div>
+            <div class="field-wrap"><label class="field-label">Tax rate (%)</label><input class="finput" id="pers-sal-tax" type="number" value="20" min="0" max="60" step="0.5" oninput="persPreviewNet()"></div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div style="font-size:12.5px;color:var(--t2)">Net take-home: <span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="pers-sal-net-preview">—</span></div>
+            <button class="btn btn-primary btn-sm" onclick="savePersonalSalary()">Save salary</button>
+          </div>
+        </div>
         <div id="pers-payroll-banner" style="display:none;background:linear-gradient(135deg,var(--acc-bg),rgba(30,24,8,.5));border:1px solid var(--acc2);border-radius:var(--radius-lg);padding:.75rem 1.1rem;margin-bottom:1rem;flex-direction:column;gap:8px">
           <div style="display:flex;align-items:center;gap:10px">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--acc)" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/><path d="M10 9l1.5 1.5L14 8"/></svg>
@@ -2129,7 +2144,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Spending breakdown</div><button class="btn btn-ghost btn-sm" onclick="openSpendingModal()">Edit</button></div>
+            <div class="card-header"><div class="card-title">Spending breakdown</div><button class="btn btn-ghost btn-sm" id="spending-edit-btn" onclick="toggleSpendingEdit()">Edit</button></div>
             <div id="spending-bars"></div>
             <div id="spending-footer-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)" id="pers-spend-total">$0</span></div>
           </div>
@@ -2181,6 +2196,11 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <!-- Transactions -->
         <div class="card">
           <div class="card-header"><div class="card-title">Transaction history</div><button class="btn btn-ghost btn-sm" onclick="openTransactionModal()">+ Add</button></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.75rem">
+            <button class="btn btn-ghost btn-sm" onclick="openTransactionModal('expense')">+ Add expense</button>
+            <button class="btn btn-ghost btn-sm" onclick="openTransactionModal('income')">+ Add income</button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('pers-salary-card').scrollIntoView({behavior:'smooth'})">+ Add salary</button>
+          </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.75rem" id="pers-tx-filters">
             <button class="scenario-preset-btn active-preset pers-tx-filter-btn" data-filter="all" onclick="setPersTxFilter('all')">All</button>
             <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="income" onclick="setPersTxFilter('income')">Income</button>
@@ -2973,8 +2993,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 <div class="modal-overlay hidden" id="transaction-modal">
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Add transaction</div><div class="modal-sub">Log a personal income or expense</div></div><button class="modal-close" onclick="closeModal('transaction-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Description *</label><input class="finput" id="tx-desc" placeholder="e.g. Grocery run"></div><div class="field-wrap"><label class="field-label">Category</label><select class="finput" id="tx-cat-sel"><option>Rent/Mortgage</option><option>Groceries</option><option>Dining out</option><option>Transport</option><option>Subscriptions</option><option>Healthcare</option><option>Entertainment</option><option>Shopping</option><option>Income</option><option>Other</option></select></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="tx-amount" type="number" placeholder="0.00"></div><div class="field-wrap"><label class="field-label">Type</label><select class="finput" id="tx-type"><option value="expense">Expense</option><option value="income">Income</option></select></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label">Description *</label><input class="finput" id="tx-desc" placeholder="e.g. Grocery run"></div><div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="tx-date" type="date"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label">Category</label><select class="finput" id="tx-cat-sel"><option>Rent/Mortgage</option><option>Groceries</option><option>Dining out</option><option>Transport</option><option>Subscriptions</option><option>Healthcare</option><option>Entertainment</option><option>Shopping</option><option>Salary</option><option>Freelance</option><option>Other Income</option><option>Other</option></select></div><div class="field-wrap"><label class="field-label">Type</label><select class="finput" id="tx-type"><option value="expense">Expense</option><option value="income">Income</option></select></div></div>
+    <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="tx-amount" type="number" placeholder="0.00" step="0.01"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('transaction-modal')">Cancel</button><button class="btn btn-primary" onclick="saveTransaction()">Add transaction</button></div>
   </div>
 </div>
@@ -5373,20 +5394,36 @@ function renderPersonal(){
   document.getElementById('p-cf-rate').textContent    = savingsRate+'%';
   document.getElementById('pers-spend-total').textContent = SP(totalSpendUSD);
 
-  // Spending bars (convert each amount from USD to display currency)
+  // Spending bars
   const maxSpend = Math.max(...spending.map(s=>s.amount), 1);
   const _spFooter = document.getElementById('spending-footer-row');
-  if(spending.length === 0){
-    document.getElementById('spending-bars').innerHTML = '<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No spending recorded yet — add a transaction to get started.</div>';
-    if(_spFooter) _spFooter.style.display = 'none';
+  const _spEditBtn = document.getElementById('spending-edit-btn');
+  if(window._persSpendEditMode){
+    // Inline edit mode — show amount inputs per category
+    document.getElementById('spending-bars').innerHTML = (spending.length === 0
+      ? '<div style="font-size:12px;color:var(--t3);padding:.5rem">No categories yet — add expense transactions first.</div>'
+      : spending.map((s,i)=>`
+          <div class="bar-row" style="gap:8px">
+            <span class="bar-label" style="flex:1">${s.label}</span>
+            <input class="finput" id="sinput-${i}" type="number" value="${s.amount}" style="width:90px;padding:3px 8px;font-size:12px">
+          </div>`).join('')
+    ) + '<div style="margin-top:.6rem;text-align:right"><button class="btn btn-primary btn-sm" onclick="saveSpendingInline()">Save</button></div>';
+    if(_spFooter) _spFooter.style.display='none';
+    if(_spEditBtn) _spEditBtn.textContent='Cancel';
   } else {
-    document.getElementById('spending-bars').innerHTML = spending.map(s=>`
-      <div class="bar-row">
-        <span class="bar-label">${s.label}</span>
-        <div class="bar-track"><div class="bar-fill" style="width:${Math.round(s.amount/maxSpend*100)}%;background:${s.color}"></div></div>
-        <span class="bar-val">${SP(s.amount)}</span>
-      </div>`).join('');
-    if(_spFooter) _spFooter.style.display = '';
+    if(_spEditBtn) _spEditBtn.textContent='Edit';
+    if(spending.length === 0){
+      document.getElementById('spending-bars').innerHTML = '<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No spending recorded yet — add a transaction to get started.</div>';
+      if(_spFooter) _spFooter.style.display = 'none';
+    } else {
+      document.getElementById('spending-bars').innerHTML = spending.map(s=>`
+        <div class="bar-row">
+          <span class="bar-label">${s.label}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(s.amount/maxSpend*100)}%;background:${s.color}"></div></div>
+          <span class="bar-val">${SP(s.amount)}</span>
+        </div>`).join('');
+      if(_spFooter) _spFooter.style.display = '';
+    }
   }
 
   // Goals (convert from USD)
@@ -5412,16 +5449,28 @@ function renderPersonal(){
 
   renderPersonalSections();
   updateHealthScore(savingsRate, incomeUSD, surplusUSD);
+  if(typeof prefillPersSalaryCard==='function') prefillPersSalaryCard();
 }
-function openSpendingModal(){
-  document.getElementById('spending-edit-fields').innerHTML=spending.map((s,i)=>`
-    <div class="field-wrap" style="margin-bottom:.6rem"><label class="field-label">${s.label}</label><input class="finput" id="spend-${i}" type="number" value="${s.amount}"></div>`).join('');
-  openModal('spending-modal');
+// ── Spending inline edit ──────────────────────────────────────────────
+window._persSpendEditMode = false;
+function openSpendingModal(){ toggleSpendingEdit(); } // keep old name working
+function saveSpending(){ saveSpendingInline(); }      // keep old name working
+
+function toggleSpendingEdit(){
+  window._persSpendEditMode = !window._persSpendEditMode;
+  renderPersonal();
 }
-function saveSpending(){
-  spending.forEach((s,i)=>{const v=Number(document.getElementById('spend-'+i).value)||0;spending[i].amount=v;});
-  closeModal('spending-modal');renderPersonal();notify('Spending updated');
+
+function saveSpendingInline(){
+  spending.forEach((s,i)=>{
+    const v=Number(document.getElementById('sinput-'+i)?.value)||0;
+    spending[i].amount=v;
+  });
+  window._persSpendEditMode=false;
+  renderPersonal();
+  notify('Spending updated');
 }
+
 function openGoalModal(){document.getElementById('goal-name').value='';document.getElementById('goal-current').value='';document.getElementById('goal-target').value='';document.getElementById('goal-monthly').value='';openModal('goal-modal')}
 function saveGoal(){
   const name=document.getElementById('goal-name').value.trim();
@@ -5429,20 +5478,105 @@ function saveGoal(){
   goals.push({name,current:Number(document.getElementById('goal-current').value)||0,target:Number(document.getElementById('goal-target').value)||0,monthly:Number(document.getElementById('goal-monthly').value)||0});
   closeModal('goal-modal');renderPersonal();notify('Goal added');
 }
-function openTransactionModal(){document.getElementById('tx-desc').value='';document.getElementById('tx-amount').value='';openModal('transaction-modal')}
+
+// ── Transaction modal ─────────────────────────────────────────────────
+function openTransactionModal(type){
+  document.getElementById('tx-desc').value='';
+  document.getElementById('tx-amount').value='';
+  document.getElementById('tx-date').value=new Date().toISOString().slice(0,10);
+  if(type){
+    const sel=document.getElementById('tx-type');
+    if(sel) sel.value=type;
+    // Auto-set a sensible default category
+    const catSel=document.getElementById('tx-cat-sel');
+    if(catSel && type==='income') catSel.value='Other Income';
+    if(catSel && type==='expense') catSel.value='Other';
+  }
+  openModal('transaction-modal');
+}
+
 async function saveTransaction(){
   const desc=document.getElementById('tx-desc').value.trim();
   const amount=Number(document.getElementById('tx-amount').value);
   if(!desc||!amount){notify('Description and amount required');return;}
   const cat=document.getElementById('tx-cat-sel').value;
   const type=document.getElementById('tx-type').value;
+  const txDate=document.getElementById('tx-date')?.value||new Date().toISOString().slice(0,10);
   try{
-    const res=await fetch('/api/personal-transactions',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({description:desc,category:cat,amount,tx_type:type,tx_date:new Date().toISOString().slice(0,10)})});
+    const res=await fetch('/api/personal-transactions',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({description:desc,category:cat,amount,tx_type:type,tx_date:txDate})});
     if(!res.ok) throw new Error((await res.json()).error||'Failed');
     closeModal('transaction-modal');
     if(typeof loadPersonalFinance==='function') await loadPersonalFinance();
     notify('Transaction added ✦');
   }catch(e){notify('Error: '+(e.message||'Failed to save'));}
+}
+
+// ── Personal salary card ──────────────────────────────────────────────
+function persPreviewNet(){
+  const gross=parseFloat(document.getElementById('pers-sal-gross')?.value)||0;
+  const tax=parseFloat(document.getElementById('pers-sal-tax')?.value)||20;
+  const net=Math.round(gross*(1-tax/100));
+  const el=document.getElementById('pers-sal-net-preview');
+  if(el) el.textContent=gross>0?SP(net)+'/mo':'—';
+}
+
+function prefillPersSalaryCard(){
+  const activeIdx=typeof ENTITIES!=='undefined'?ENTITIES.findIndex(e=>e.active):-1;
+  const ep=activeIdx>=0?(ownerPayrollByEntity[activeIdx]||null):null;
+  const syncLabel=document.getElementById('pers-salary-sync-label');
+  const grossEl=document.getElementById('pers-sal-gross');
+  const taxEl=document.getElementById('pers-sal-tax');
+  if(ep&&ep.gross>0){
+    if(grossEl) grossEl.value=ep.gross;
+    if(taxEl) taxEl.value=ep.taxRate||20;
+    if(syncLabel) syncLabel.style.display='';
+  }else{
+    if(syncLabel) syncLabel.style.display='none';
+  }
+  persPreviewNet();
+}
+
+async function savePersonalSalary(){
+  const gross=parseFloat(document.getElementById('pers-sal-gross')?.value)||0;
+  const taxRate=parseFloat(document.getElementById('pers-sal-tax')?.value)||20;
+  if(!gross){notify('Please enter a salary amount');return;}
+  const activeIdx=typeof ENTITIES!=='undefined'?ENTITIES.findIndex(e=>e.active):-1;
+  const entity=activeIdx>=0?ENTITIES[activeIdx]:null;
+  const existing=activeIdx>=0?(ownerPayrollByEntity[activeIdx]||null):null;
+  const rawName=(document.getElementById('s-name')?.value||'').trim()||'Owner';
+  const parts=rawName.split(' ');
+  const fname=parts[0]||'Owner';
+  const lname=parts.slice(1).join(' ')||'';
+  const payload={fname,lname,gross,tax_rate:taxRate,is_owner:true,entity_id:entity?._dbId||null,role:'CEO / Founder',emp_type:'owner',av_class:'av-blue'};
+  try{
+    let saved;
+    if(existing?._dbId){
+      const r=await fetch('/api/payroll/'+existing._dbId,{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(payload)});
+      if(!r.ok) throw new Error((await r.json()).error||'Failed');
+      saved=await r.json();
+    }else{
+      const r=await fetch('/api/payroll',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(payload)});
+      if(!r.ok) throw new Error((await r.json()).error||'Failed');
+      saved=await r.json();
+    }
+    if(activeIdx>=0){
+      ownerPayrollByEntity[activeIdx]={
+        _dbId:saved.id,fname,lname,
+        gross,taxRate,
+        net:Math.round(gross*(1-taxRate/100)),
+        currency:entity?.currency||'USD',
+        initials:((fname[0]||'')+(lname[0]||'')).toUpperCase(),
+        avClass:'av-blue',
+        entityName:entity?.name||'Entity',
+      };
+      window.ownerPayrollByEntity=ownerPayrollByEntity;
+      if(entity?.active){ownerPayroll=ownerPayrollByEntity[activeIdx];window.ownerPayroll=ownerPayroll;}
+    }
+    if(typeof syncAllPayrollsToPersonal==='function') syncAllPayrollsToPersonal();
+    if(typeof loadPersonalFinance==='function') await loadPersonalFinance();
+    prefillPersSalaryCard();
+    notify('Salary saved ✦');
+  }catch(e){notify('Error: '+(e.message||'Failed to save salary'));}
 }
 
 function _renderPersTxList(){

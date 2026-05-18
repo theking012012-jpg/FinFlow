@@ -2106,6 +2106,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
         </div>
 
+        <!-- Period filter -->
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:.85rem">
+          <span style="font-size:11px;color:var(--t3)">Period:</span>
+          <button class="scenario-preset-btn pers-period-btn" data-period="month" onclick="setPersPeriod('month')" style="font-size:10.5px;padding:3px 8px">Month</button>
+          <button class="scenario-preset-btn pers-period-btn" data-period="quarter" onclick="setPersPeriod('quarter')" style="font-size:10.5px;padding:3px 8px">Quarter</button>
+          <button class="scenario-preset-btn active-preset pers-period-btn" data-period="year" onclick="setPersPeriod('year')" style="font-size:10.5px;padding:3px 8px">Year</button>
+        </div>
         <div id="pers-payroll-banner" style="display:none;background:linear-gradient(135deg,var(--acc-bg),rgba(30,24,8,.5));border:1px solid var(--acc2);border-radius:var(--radius-lg);padding:.75rem 1.1rem;margin-bottom:1rem;flex-direction:column;gap:8px">
           <div style="display:flex;align-items:center;gap:10px">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--acc)" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/><path d="M10 9l1.5 1.5L14 8"/></svg>
@@ -2124,7 +2131,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">Spending breakdown</div><button class="btn btn-ghost btn-sm" onclick="openSpendingModal()">Edit</button></div>
             <div id="spending-bars"></div>
-            <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)" id="pers-spend-total">$0</span></div>
+            <div id="spending-footer-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)" id="pers-spend-total">$0</span></div>
           </div>
           <div style="display:flex;flex-direction:column;gap:12px">
             <div class="card" style="margin-bottom:0">
@@ -2134,8 +2141,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div class="card" style="margin-bottom:0">
               <div class="card-header"><div class="card-title">Monthly cash flow</div></div>
               <div style="display:flex;flex-direction:column;gap:8px">
-                <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Income (net pay)</span><span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="p-cf-income">+$0</span></div>
-                <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--red);font-family:var(--font-mono);font-weight:600" id="p-cf-spend">-$0</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Income (net pay)</span><span style="font-family:var(--font-mono);font-weight:600" id="p-cf-income">+$0</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Total spending</span><span style="font-family:var(--font-mono);font-weight:600" id="p-cf-spend">-$0</span></div>
                 <div style="height:1px;background:var(--bd);margin:2px 0"></div>
                 <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t1);font-weight:500">Monthly surplus</span><span style="font-family:var(--font-mono);font-weight:700" id="p-cf-surplus">$0</span></div>
                 <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3)"><span>Savings rate</span><span id="p-cf-rate">0%</span></div>
@@ -2159,10 +2166,28 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="card-header"><div class="card-title">Net worth breakdown</div><div class="card-sub" id="nw-sub">—</div></div>
           <div id="nw-breakdown-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No data yet — add payroll, transactions, or investments</div></div>
         </div>
+        <!-- Expense categories breakdown + Tax estimate -->
+        <div class="two-col">
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><div class="card-title">Expense categories</div></div>
+            <div id="expense-cat-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No expenses recorded yet</div></div>
+          </div>
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><div class="card-title">Tax estimate</div><div class="card-sub" style="font-size:10px;color:var(--t3)">Estimate only</div></div>
+            <div id="tax-estimate-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Add income to see tax estimate</div></div>
+            <div style="margin-top:10px;font-size:10.5px;color:var(--t3);font-style:italic">Estimate only — consult a tax professional</div>
+          </div>
+        </div>
         <!-- Transactions -->
         <div class="card">
-          <div class="card-header"><div class="card-title">Personal transactions</div><button class="btn btn-ghost btn-sm" onclick="openTransactionModal()">+ Add</button></div>
+          <div class="card-header"><div class="card-title">Transaction history</div><button class="btn btn-ghost btn-sm" onclick="openTransactionModal()">+ Add</button></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.75rem" id="pers-tx-filters">
+            <button class="scenario-preset-btn active-preset pers-tx-filter-btn" data-filter="all" onclick="setPersTxFilter('all')">All</button>
+            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="income" onclick="setPersTxFilter('income')">Income</button>
+            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="expense" onclick="setPersTxFilter('expense')">Expenses</button>
+          </div>
           <div id="pers-transactions"></div>
+          <div id="pers-tx-balance" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Running balance</span><span style="font-family:var(--font-mono);font-weight:600" id="pers-tx-balance-val">$0</span></div>
         </div>
       </div>
 
@@ -5279,8 +5304,11 @@ function _updatePersCurrencyValues(){
   set('pers-nw-chg',  '+'+SP(nwChgUSD)+' this month');
   set('pers-spend-total', SP(totalSpendUSD));
   set('p-cf-income',  '+'+SP(incomeUSD));
+  const _cfIn=document.getElementById('p-cf-income'); if(_cfIn) _cfIn.style.color=incomeUSD>0?'var(--green)':'var(--t2)';
   set('p-cf-spend',   '-'+SP(totalSpendUSD));
+  const _cfSp=document.getElementById('p-cf-spend');  if(_cfSp) _cfSp.style.color=totalSpendUSD>0?'var(--red)':'var(--t2)';
   set('p-cf-surplus', SP(surplusUSD));
+  const _cfSu=document.getElementById('p-cf-surplus'); if(_cfSu) _cfSu.style.color=surplusUSD>0?'var(--acc)':surplusUSD<0?'var(--red)':'var(--t2)';
   set('pers-income-src', entityCount>1?`${entityCount} entities · combined (${persCurrency})`:entityCount===1?`From payroll · after tax (${persCurrency})`:`After tax (${persCurrency})`);
   // Update bar values only (not widths — those are ratio-based, unchanged)
   const barVals = document.querySelectorAll('#spending-bars .bar-val');
@@ -5288,9 +5316,7 @@ function _updatePersCurrencyValues(){
   // Update goal amounts
   const goalVals = document.querySelectorAll('#goals-list .goal-val');
   goals.forEach((g,i)=>{ if(goalVals[i]) goalVals[i].textContent=SP(g.current)+(g.target?' / '+SP(g.target):''); });
-  // Update transaction amounts
-  const txAmts = document.querySelectorAll('#pers-transactions .tx-amt');
-  persTransactions.slice(0,8).forEach((t,i)=>{ if(txAmts[i]) txAmts[i].textContent=(t.type==='income'?'+':'-')+SP(t.amount); });
+  _renderPersTxList();
   renderPersonalSections();
 }
 
@@ -5339,20 +5365,29 @@ function renderPersonal(){
 
   // Cash flow
   document.getElementById('p-cf-income').textContent  = '+'+SP(incomeUSD);
+  document.getElementById('p-cf-income').style.color  = incomeUSD > 0 ? 'var(--green)' : 'var(--t2)';
   document.getElementById('p-cf-spend').textContent   = '-'+SP(totalSpendUSD);
+  document.getElementById('p-cf-spend').style.color   = totalSpendUSD > 0 ? 'var(--red)' : 'var(--t2)';
   document.getElementById('p-cf-surplus').textContent = SP(surplusUSD);
-  document.getElementById('p-cf-surplus').style.color = surplusUSD>=0 ? 'var(--acc)' : 'var(--red)';
+  document.getElementById('p-cf-surplus').style.color = surplusUSD > 0 ? 'var(--acc)' : surplusUSD < 0 ? 'var(--red)' : 'var(--t2)';
   document.getElementById('p-cf-rate').textContent    = savingsRate+'%';
   document.getElementById('pers-spend-total').textContent = SP(totalSpendUSD);
 
   // Spending bars (convert each amount from USD to display currency)
   const maxSpend = Math.max(...spending.map(s=>s.amount), 1);
-  document.getElementById('spending-bars').innerHTML = spending.map(s=>`
-    <div class="bar-row">
-      <span class="bar-label">${s.label}</span>
-      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(s.amount/maxSpend*100)}%;background:${s.color}"></div></div>
-      <span class="bar-val">${SP(s.amount)}</span>
-    </div>`).join('');
+  const _spFooter = document.getElementById('spending-footer-row');
+  if(spending.length === 0){
+    document.getElementById('spending-bars').innerHTML = '<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No spending recorded yet — add a transaction to get started.</div>';
+    if(_spFooter) _spFooter.style.display = 'none';
+  } else {
+    document.getElementById('spending-bars').innerHTML = spending.map(s=>`
+      <div class="bar-row">
+        <span class="bar-label">${s.label}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.round(s.amount/maxSpend*100)}%;background:${s.color}"></div></div>
+        <span class="bar-val">${SP(s.amount)}</span>
+      </div>`).join('');
+    if(_spFooter) _spFooter.style.display = '';
+  }
 
   // Goals (convert from USD)
   const goalColors = ['var(--green)','var(--acc)','var(--acc-light)','var(--amber)','var(--purple)','var(--teal)'];
@@ -5372,21 +5407,8 @@ function renderPersonal(){
         </div>`;
       }).join('');
 
-  // Transactions (amounts stored in USD, display in persCurrency)
-  document.getElementById('pers-transactions').innerHTML = persTransactions.slice(0,8).map(t=>`
-    <div class="tx-row">
-      <div class="tx-left">
-        <div class="tx-icon ${t.type==='income'?'av-green':'av-red'}">
-          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-            ${t.type==='income'
-              ?'<polyline points="1,8 6,3 10,7 15,2"/><polyline points="10,2 15,2 15,7"/>'
-              :'<polyline points="1,5 5,10 9,7 15,13"/><polyline points="10,13 15,13 15,8"/>'}
-          </svg>
-        </div>
-        <div><div class="tx-name">${t.desc}</div><div class="tx-cat">${t.cat} · ${t.date}</div></div>
-      </div>
-      <div class="tx-amt ${t.type==='income'?'up':'dn'}">${t.type==='income'?'+':'-'}${SP(t.amount)}</div>
-    </div>`).join('');
+  // Transactions
+  _renderPersTxList();
 
   renderPersonalSections();
   updateHealthScore(savingsRate, incomeUSD, surplusUSD);
@@ -5423,25 +5445,106 @@ async function saveTransaction(){
   }catch(e){notify('Error: '+(e.message||'Failed to save'));}
 }
 
+function _renderPersTxList(){
+  const filter=window._persTxFilter||'all';
+  const txs=persTransactions.filter(t=>filter==='all'||t.type===filter);
+  const el=document.getElementById('pers-transactions');
+  if(!el) return;
+  if(txs.length===0){
+    el.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No transactions yet — add your first one above</div>';
+    const balRow=document.getElementById('pers-tx-balance');
+    if(balRow) balRow.style.display='none';
+    return;
+  }
+  let running=0;
+  el.innerHTML=txs.map(t=>{
+    running+=t.type==='income'?t.amount:-t.amount;
+    return `<div class="tx-row" style="align-items:center">
+      <div class="tx-left" style="flex:1;min-width:0">
+        <div class="tx-icon ${t.type==='income'?'av-green':'av-red'}">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            ${t.type==='income'?'<polyline points="1,8 6,3 10,7 15,2"/><polyline points="10,2 15,2 15,7"/>':'<polyline points="1,5 5,10 9,7 15,13"/><polyline points="10,13 15,13 15,8"/>'}
+          </svg>
+        </div>
+        <div><div class="tx-name">${esc(t.desc)}</div><div class="tx-cat">${esc(t.cat)} · ${t.date}</div></div>
+      </div>
+      <div class="tx-amt ${t.type==='income'?'up':'dn'}" style="margin-right:8px">${t.type==='income'?'+':'-'}${SP(t.amount)}</div>
+      ${t._dbId?`<button onclick="deletePersonalTransaction(${t._dbId})" style="background:none;border:none;cursor:pointer;color:var(--t3);padding:2px 4px;font-size:11px;line-height:1" title="Delete">✕</button>`:''}
+    </div>`;
+  }).join('');
+  const balRow=document.getElementById('pers-tx-balance');
+  const balVal=document.getElementById('pers-tx-balance-val');
+  if(balRow){balRow.style.display='';}
+  if(balVal){balVal.textContent=SP(Math.abs(running));balVal.style.color=running>=0?'var(--green)':'var(--red)';}
+}
+
 window._persSideIncome=0;
+window._persPeriod='year';
+window._persTxFilter='all';
+window._allPersTxs=[];
+
+function _persPeriodRange(){
+  const now=new Date();
+  const y=now.getFullYear(),m=now.getMonth();
+  if(window._persPeriod==='month'){
+    return{from:new Date(y,m,1),to:now};
+  }else if(window._persPeriod==='quarter'){
+    const qStart=new Date(y,Math.floor(m/3)*3,1);
+    return{from:qStart,to:now};
+  }
+  return{from:new Date(y,0,1),to:now};
+}
+
+function setPersPeriod(period){
+  window._persPeriod=period;
+  document.querySelectorAll('.pers-period-btn').forEach(b=>{
+    b.classList.toggle('active-preset',b.dataset.period===period);
+  });
+  _applyPersFilter();
+}
+
+function setPersTxFilter(filter){
+  window._persTxFilter=filter;
+  document.querySelectorAll('.pers-tx-filter-btn').forEach(b=>{
+    b.classList.toggle('active-preset',b.dataset.filter===filter);
+  });
+  _renderPersTxList();
+}
+
+function _applyPersFilter(){
+  const{from,to}=_persPeriodRange();
+  const CAT_GROUP={'Rent/Mortgage':'Housing','Groceries':'Food','Dining out':'Food','Transport':'Transport','Entertainment':'Entertainment','Healthcare':'Healthcare','Shopping':'Shopping','Subscriptions':'Subscriptions','Other':'Other','Income':'Other'};
+  const CAT_COLOR={Housing:'var(--acc)',Food:'var(--green)',Transport:'var(--teal)',Entertainment:'var(--purple)',Healthcare:'var(--red)',Shopping:'var(--amber)',Subscriptions:'var(--acc2)',Other:'var(--t3)'};
+  persTransactions=window._allPersTxs.filter(t=>{
+    const d=new Date(t.date);return d>=from&&d<=to;
+  });
+  const catTotals={};
+  persTransactions.filter(t=>t.type==='expense').forEach(t=>{const c=CAT_GROUP[t.cat]||'Other';catTotals[c]=(catTotals[c]||0)+t.amount;});
+  spending=Object.entries(catTotals).map(([label,amount])=>({label,amount,color:CAT_COLOR[label]||'var(--t3)',budget:0}));
+  const sideIncome=persTransactions.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+  window._persSideIncome=sideIncome;
+  const totalInc=basePersonalIncome+sideIncome;
+  const totalExp=spending.reduce((a,s)=>a+s.amount,0);
+  baseNetWorth=Math.max(0,totalInc-totalExp);
+  renderPersonal();
+}
+
+async function deletePersonalTransaction(dbId){
+  try{
+    const res=await fetch('/api/personal-transactions/'+dbId,{method:'DELETE',credentials:'include'});
+    if(!res.ok) throw new Error('Failed');
+    await loadPersonalFinance();
+    notify('Transaction deleted');
+  }catch(e){notify('Error: '+(e.message||'Failed to delete'));}
+}
 
 async function loadPersonalFinance(){
   try{
     const r=await fetch('/api/personal-transactions',{credentials:'include'});
     if(!r.ok) return;
     const txs=await r.json();
-    const CAT_GROUP={'Rent/Mortgage':'Housing','Groceries':'Food','Dining out':'Food','Transport':'Transport','Entertainment':'Entertainment','Healthcare':'Healthcare','Shopping':'Shopping','Subscriptions':'Subscriptions','Other':'Other','Income':'Other'};
-    const CAT_COLOR={Housing:'var(--acc)',Food:'var(--green)',Transport:'var(--teal)',Entertainment:'var(--purple)',Healthcare:'var(--red)',Shopping:'var(--amber)',Subscriptions:'var(--acc2)',Other:'var(--t3)'};
-    persTransactions=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,type:t.tx_type||'expense',date:(t.tx_date||t.created_at||'').slice(0,10)}));
-    const catTotals={};
-    persTransactions.filter(t=>t.type==='expense').forEach(t=>{const c=CAT_GROUP[t.cat]||'Other';catTotals[c]=(catTotals[c]||0)+t.amount;});
-    spending=Object.entries(catTotals).map(([label,amount])=>({label,amount,color:CAT_COLOR[label]||'var(--t3)',budget:0}));
-    const sideIncome=persTransactions.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
-    window._persSideIncome=sideIncome;
-    const totalInc=basePersonalIncome+sideIncome;
-    const totalExp=spending.reduce((a,s)=>a+s.amount,0);
-    baseNetWorth=Math.max(0,totalInc-totalExp);
-    renderPersonal();
+    window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,type:t.tx_type||'expense',date:(t.tx_date||t.created_at||'').slice(0,10)}));
+    _applyPersFilter();
   }catch(e){console.warn('[Personal] Load failed:',e.message);}
 }
 window.loadPersonalFinance=loadPersonalFinance;
@@ -5509,6 +5612,48 @@ function renderPersonalSections(){
         <div style="height:1px;background:var(--bd);margin:6px 0"></div>
         <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span style="color:var(--t1);font-weight:600">Net worth</span><span style="font-family:var(--font-mono);font-weight:700;color:${netWorth>=0?'var(--acc)':'var(--red)'}">${netWorth>=0?'':'-'}${SP(Math.abs(netWorth))}</span></div>
       </div>`;
+    }
+  }
+
+  // Expense categories breakdown (raw categories, not grouped buckets)
+  const CAT_COLORS_RAW={'Rent/Mortgage':'var(--acc)','Groceries':'var(--green)','Dining out':'var(--teal)','Transport':'var(--teal)','Subscriptions':'var(--acc2)','Healthcare':'var(--red)','Entertainment':'var(--purple)','Shopping':'var(--amber)','Other':'var(--t3)'};
+  const catEl=document.getElementById('expense-cat-list');
+  if(catEl){
+    const rawCats={};
+    persTransactions.filter(t=>t.type==='expense').forEach(t=>{rawCats[t.cat]=(rawCats[t.cat]||0)+t.amount;});
+    const catEntries=Object.entries(rawCats).sort((a,b)=>b[1]-a[1]);
+    if(catEntries.length===0){
+      catEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No expenses recorded yet</div>';
+    }else{
+      const catMax=Math.max(...catEntries.map(e=>e[1]),1);
+      catEl.innerHTML=catEntries.map(([label,amount])=>`
+        <div class="bar-row">
+          <span class="bar-label">${label}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(amount/catMax*100)}%;background:${CAT_COLORS_RAW[label]||'var(--t3)'}"></div></div>
+          <span class="bar-val">${SP(amount)}</span>
+        </div>`).join('')
+        +'<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)">'+SP(totalExp)+'</span></div>';
+    }
+  }
+
+  // Tax estimate
+  const taxEl=document.getElementById('tax-estimate-list');
+  if(taxEl){
+    const monthlyInc=basePersonalIncome+(window._persSideIncome||0);
+    if(monthlyInc===0){
+      taxEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Add income to see tax estimate</div>';
+    }else{
+      const taxRate=parseFloat(document.getElementById('own-taxrate')?.value)||20;
+      const annualGross=monthlyInc*12;
+      const estTax=Math.round(annualGross*taxRate/100);
+      const netAfterTax=annualGross-estTax;
+      const monthlyTakeHome=Math.round(netAfterTax/12);
+      taxEl.innerHTML=`
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">Gross annual income</span><span style="font-family:var(--font-mono);font-weight:600;color:var(--t1)">${SP(annualGross)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">Est. tax (${taxRate}%)</span><span style="font-family:var(--font-mono);font-weight:600;color:var(--red)">-${SP(estTax)}</span></div>
+        <div style="height:1px;background:var(--bd);margin:8px 0"></div>
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">Net after tax</span><span style="font-family:var(--font-mono);font-weight:600;color:var(--green)">${SP(netAfterTax)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0 3px"><span style="color:var(--t1);font-weight:600">Monthly take-home</span><span style="font-family:var(--font-mono);font-weight:700;color:var(--acc)">${SP(monthlyTakeHome)}</span></div>`;
     }
   }
 }

@@ -5745,17 +5745,16 @@ async function loadPersonalFinance(){
     if(!r.ok) return;
     const txs=await r.json();
     window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,type:t.tx_type||'expense',date:(t.tx_date||t.created_at||'').slice(0,10)}));
-    // Fetch payroll so basePersonalIncome always reflects DB, regardless of entity state
+    // /api/personal-salary returns ALL is_owner rows across entities (no entity filter)
     try{
-      const prRes=await fetch('/api/payroll',{credentials:'include'});
+      const prRes=await fetch('/api/personal-salary',{credentials:'include'});
       if(prRes.ok){
-        const prData=await prRes.json();
-        const ownerRows=prData.filter(row=>row.is_owner == true);
+        const ownerRows=await prRes.json();
         if(ownerRows.length>0){
           basePersonalIncome=ownerRows.reduce((sum,row)=>sum+Math.round((parseFloat(row.gross)||0)*(1-(parseFloat(row.tax_rate)||20)/100)),0);
         }
       }
-    }catch(prErr){console.warn('[Personal] Payroll fetch failed:',prErr.message);}
+    }catch(prErr){console.warn('[Personal] Salary fetch failed:',prErr.message);}
     _applyPersFilter();
   }catch(e){console.warn('[Personal] Load failed:',e.message);}
 }

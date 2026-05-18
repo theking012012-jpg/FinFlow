@@ -698,6 +698,16 @@ app.delete('/api/payroll/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── PERSONAL SALARY — cross-entity owner payroll (no entity filter) ───────────
+// GET /api/payroll scopes to req.entityId from session, so it only returns rows
+// for the currently-active entity. This endpoint bypasses that and returns ALL
+// is_owner payroll rows for the user — used by Personal Finance income display.
+app.get('/api/personal-salary', requireAuth, wrap(async (req, res) => {
+  const rows = await db.allByUser('payroll', req.session.userId,
+    r => r.is_owner === true || r.is_owner === 1 || r.is_owner === '1');
+  res.json(rows.map(r => ({ ...r, is_owner: true })));
+}));
+
 // ── PERSONAL TRANSACTIONS ─────────────────────────────────────────────────────
 app.get('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
   res.json(await db.all('personal_transactions', r => r.user_id === req.session.userId, (a,b) => b.id - a.id));

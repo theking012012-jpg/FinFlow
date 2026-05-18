@@ -703,9 +703,11 @@ app.delete('/api/payroll/:id', requireAuth, wrap(async (req, res) => {
 // for the currently-active entity. This endpoint bypasses that and returns ALL
 // is_owner payroll rows for the user — used by Personal Finance income display.
 app.get('/api/personal-salary', requireAuth, wrap(async (req, res) => {
-  const rows = await db.allByUser('payroll', req.session.userId,
-    r => r.is_owner === true || r.is_owner === 1 || r.is_owner === '1');
-  res.json(rows.map(r => ({ ...r, is_owner: true })));
+  const rows = await db.allByUser('payroll', req.session.userId);
+  const ownerRows = rows.filter(r =>
+    r.is_owner === true || r.is_owner === 1 || r.is_owner === '1' || r.is_owner === 'true'
+  );
+  res.json(ownerRows);
 }));
 
 // ── PERSONAL TRANSACTIONS ─────────────────────────────────────────────────────

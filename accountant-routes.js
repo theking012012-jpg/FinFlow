@@ -96,6 +96,14 @@ function requireAccountant(req, res, next) {
   next();
 }
 
+/** Require the session to be an authenticated admin */
+function requireAdmin(req, res, next) {
+  if (!req.session.isAdmin) {
+    return res.status(401).json({ error: 'Admin access required.' });
+  }
+  next();
+}
+
 /** Membership body lookup table — replace stub with real API calls per body */
 const MEMBERSHIP_APIS = {
   ACCA:  { name: 'ACCA',  url: 'https://www.accaglobal.com/api/members', mock: true },
@@ -574,7 +582,7 @@ If you cannot find a field, use null. Be concise.`;
 
 
   // ── 8. LINK CLIENT AFTER SIGNUP (called when user registers with ?ref=code) ─
-  app.post('/api/accountants/link-client', wrap(async (req, res) => {
+  app.post('/api/accountants/link-client', requireAccountant, wrap(async (req, res) => {
     const { referralCode, userId } = req.body || {};
     if (!referralCode || !userId) return res.status(400).json({ error: 'Missing referral code or user ID.' });
 
@@ -606,7 +614,7 @@ If you cannot find a field, use null. Be concise.`;
 
   // ── 9. ACTIVATE CLIENT (called when client completes payment/trial) ────────
   // Call this from your Stripe webhook when a client's subscription activates.
-  app.post('/api/accountants/activate-client', wrap(async (req, res) => {
+  app.post('/api/accountants/activate-client', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'userId required.' });
 
@@ -669,7 +677,7 @@ If you cannot find a field, use null. Be concise.`;
 
   // ── 11. RECORD SERVICE COMMISSION (call from payment flow) ────────────────
   // When an accountant charges a client for work via FinFlow, call this.
-  app.post('/api/accountants/record-commission', wrap(async (req, res) => {
+  app.post('/api/accountants/record-commission', requireAccountant, wrap(async (req, res) => {
     const { accountantId, userId, billedAmountCents, description } = req.body || {};
     if (!accountantId || !billedAmountCents) return res.status(400).json({ error: 'Missing fields.' });
 
@@ -761,7 +769,7 @@ If you cannot find a field, use null. Be concise.`;
   // When a client cancels their subscription, call this immediately.
   // Their $10/month commission stops — accountant is only paid for active clients.
   // If the client resubscribes later, reactivate-client re-links them.
-  app.post('/api/accountants/suspend-client', wrap(async (req, res) => {
+  app.post('/api/accountants/suspend-client', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'userId required.' });
 
@@ -776,7 +784,7 @@ If you cannot find a field, use null. Be concise.`;
 
 
   // ── 12c. REACTIVATE CLIENT COMMISSION (call from Stripe when client resubscribes) ─
-  app.post('/api/accountants/reactivate-client', wrap(async (req, res) => {
+  app.post('/api/accountants/reactivate-client', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'userId required.' });
 
@@ -795,8 +803,7 @@ If you cannot find a field, use null. Be concise.`;
 
   // ── 13. ADMIN: LIST PENDING VERIFICATIONS ─────────────────────────────────
   // Add your admin auth middleware here before deploying
-  app.get('/api/admin/accountants/pending', wrap(async (req, res) => {
-    // TODO: add requireAdmin middleware
+  app.get('/api/admin/accountants/pending', requireAdmin, wrap(async (req, res) => {
     const result = await pool.query(`
       SELECT id, first_name, last_name, email, firm, country,
              verification_method, verification_data, created_at
@@ -808,8 +815,7 @@ If you cannot find a field, use null. Be concise.`;
 
 
   // ── 14. ADMIN: APPROVE / REJECT ACCOUNTANT ────────────────────────────────
-  app.post('/api/admin/accountants/:id/verify', wrap(async (req, res) => {
-    // TODO: add requireAdmin middleware
+  app.post('/api/admin/accountants/:id/verify', requireAdmin, wrap(async (req, res) => {
     const { action, notes } = req.body || {}; // action: 'approve' | 'reject'
     if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: 'Invalid action.' });
 

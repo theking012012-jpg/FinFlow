@@ -483,7 +483,7 @@ app.post('/api/entities/:id/activate', requireAuth, wrap(async (req, res) => {
 
 // ── INVOICES ──────────────────────────────────────────────────────────────────
 app.get('/api/invoices', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('invoices', userFilter(req.session.userId, req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('invoices', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => b.id - a.id));
 }));
 app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, due_date, status = 'pending', notes = '', entity_id } = req.body || {};
@@ -521,7 +521,7 @@ app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
 
 // ── EXPENSES ──────────────────────────────────────────────────────────────────
 app.get('/api/expenses', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('expenses', userFilter(req.session.userId, req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('expenses', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => b.id - a.id));
 }));
 app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   const { description, category = 'Other', amount, deductible = 'no', expense_date, entity_id } = req.body || {};
@@ -560,7 +560,7 @@ app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
 
 // ── CUSTOMERS ─────────────────────────────────────────────────────────────────
 app.get('/api/customers', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('customers', userFilter(req.session.userId, req.entityId), (a,b) => b.revenue - a.revenue));
+  res.json(await db.allByUser('customers', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => b.revenue - a.revenue));
 }));
 app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -585,7 +585,7 @@ app.delete('/api/customers/:id', requireAuth, wrap(async (req, res) => {
 
 // ── INVENTORY ─────────────────────────────────────────────────────────────────
 app.get('/api/inventory', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('inventory', userFilter(req.session.userId, req.entityId), (a,b) => a.id - b.id));
+  res.json(await db.allByUser('inventory', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => a.id - b.id));
 }));
 app.post('/api/inventory', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -622,7 +622,7 @@ app.delete('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
 
 // ── ITEMS (product & service catalog) ────────────────────────────────────────
 app.get('/api/items', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('items', r => r.user_id === req.session.userId, (a, b) => a.id - b.id));
+  res.json(await db.allByUser('items', req.session.userId, null, (a, b) => a.id - b.id));
 }));
 app.post('/api/items', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -712,7 +712,7 @@ app.get('/api/personal-salary', requireAuth, wrap(async (req, res) => {
 
 // ── PERSONAL TRANSACTIONS ─────────────────────────────────────────────────────
 app.get('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('personal_transactions', r => r.user_id === req.session.userId, (a,b) => b.id - a.id));
+  res.json(await db.allByUser('personal_transactions', req.session.userId, null, (a,b) => b.id - a.id));
 }));
 app.post('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
   const { description, category = 'Other', amount, tx_type = 'expense', tx_date } = req.body || {};
@@ -741,7 +741,7 @@ app.delete('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) 
 
 // ── GOALS ─────────────────────────────────────────────────────────────────────
 app.get('/api/goals', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('goals', r => r.user_id === req.session.userId, (a,b) => a.id - b.id));
+  res.json(await db.allByUser('goals', req.session.userId, null, (a,b) => a.id - b.id));
 }));
 app.post('/api/goals', requireAuth, wrap(async (req, res) => {
   const { name, current_val = 0, target_val, monthly_contrib = 0, color = 'var(--acc)' } = req.body || {};
@@ -771,7 +771,7 @@ app.delete('/api/goals/:id', requireAuth, wrap(async (req, res) => {
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
 app.get('/api/projects', requireAuth, wrap(async (req, res) => {
   try {
-    const rows = await db.all('projects', r => r.user_id === req.session.userId, (a, b) => b.id - a.id);
+    const rows = await db.allByUser('projects', req.session.userId, null, (a, b) => b.id - a.id);
     res.json(rows);
   } catch (e) {
     console.error('[GET /api/projects] failed for user', req.session.userId, ':', e.code, e.message);
@@ -818,7 +818,7 @@ app.delete('/api/projects/:id', requireAuth, wrap(async (req, res) => {
 // ── HOLDINGS ──────────────────────────────────────────────────────────────────
 app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
   try {
-    const rows = await db.all('holdings', r => r.user_id === req.session.userId, (a,b) => a.id - b.id);
+    const rows = await db.allByUser('holdings', req.session.userId, null, (a,b) => a.id - b.id);
     res.json(rows);
   } catch (e) {
     console.error('[GET /api/holdings] failed for user', req.session.userId, ':', e.code, e.message);
@@ -979,7 +979,7 @@ app.post('/api/lock-settings', requireAuth, wrap(async (req, res) => {
 
 // ── MANUAL JOURNALS ───────────────────────────────────────────────────────────
 app.get('/api/journals', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('journals', userFilter(req.session.userId, req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('journals', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => b.id - a.id));
 }));
 app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   const { date, description, lines = [], status = 'Draft' } = req.body || {};
@@ -1017,7 +1017,7 @@ app.delete('/api/journals/:id', requireAuth, wrap(async (req, res) => {
 
 // ── CHART OF ACCOUNTS ─────────────────────────────────────────────────────────
 app.get('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('chart_of_accounts', userFilter(req.session.userId, req.entityId), (a,b) => a.code.localeCompare(b.code)));
+  res.json(await db.allByUser('chart_of_accounts', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => a.code.localeCompare(b.code)));
 }));
 app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
   const { code, name, category, nature = 'Debit', balance = 0 } = req.body || {};
@@ -1052,7 +1052,7 @@ app.delete('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
 // ── AUDIT LOG ─────────────────────────────────────────────────────────────────
 app.get('/api/audit-log', requireAuth, wrap(async (req, res) => {
   const { page = 1, limit = 50, type } = req.query;
-  let rows = await db.all('audit_log', r => r.user_id === req.session.userId, (a,b) => b.id - a.id);
+  let rows = await db.allByUser('audit_log', req.session.userId, null, (a,b) => b.id - a.id);
   if (type && type !== 'all') rows = rows.filter(r => r.table_name === type);
   const start = (parseInt(page) - 1) * parseInt(limit);
   res.json({ total: rows.length, rows: rows.slice(start, start + parseInt(limit)) });
@@ -1061,7 +1061,7 @@ app.get('/api/audit-log', requireAuth, wrap(async (req, res) => {
 // ── DOCUMENTS ─────────────────────────────────────────────────────────────────
 const MAX_DOC_SIZE = 5 * 1024 * 1024; // 5MB in bytes before base64 (~3.75MB actual)
 app.get('/api/documents', requireAuth, wrap(async (req, res) => {
-  const rows = await db.all('documents', r => r.user_id === req.session.userId, (a,b) => b.id - a.id);
+  const rows = await db.allByUser('documents', req.session.userId, null, (a,b) => b.id - a.id);
   // Strip file_data from list responses to keep payload small
   res.json(rows.map(({ file_data, ...meta }) => meta));
 }));
@@ -1095,7 +1095,7 @@ app.delete('/api/documents/:id', requireAuth, wrap(async (req, res) => {
 
 // ── TEMPLATES ─────────────────────────────────────────────────────────────────
 app.get('/api/templates', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('templates', r => r.user_id === req.session.userId, (a,b) => a.id - b.id));
+  res.json(await db.allByUser('templates', req.session.userId, null, (a,b) => a.id - b.id));
 }));
 app.post('/api/templates', requireAuth, wrap(async (req, res) => {
   const { name, type = 'invoice', preview = '', is_default = 0, accent_color = '#c9a84c' } = req.body || {};
@@ -1123,7 +1123,7 @@ app.delete('/api/templates/:id', requireAuth, wrap(async (req, res) => {
 
 // ── AUTO-CATEGORISE ───────────────────────────────────────────────────────────
 app.get('/api/autocat-rules', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('autocat_rules', r => r.user_id === req.session.userId, (a,b) => a.id - b.id));
+  res.json(await db.allByUser('autocat_rules', req.session.userId, null, (a,b) => a.id - b.id));
 }));
 app.post('/api/autocat-rules', requireAuth, wrap(async (req, res) => {
   const { keyword, match_type = 'description', category, enabled = 1 } = req.body || {};
@@ -1150,8 +1150,8 @@ app.delete('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
-  const rules = await db.all('autocat_rules', r => r.user_id === uid && r.enabled);
-  const expenses = await db.all('expenses', r => r.user_id === uid && (!r.category || r.category === 'Other'));
+  const rules = await db.allByUser('autocat_rules', uid, r => r.enabled);
+  const expenses = await db.allByUser('expenses', uid, r => !r.category || r.category === 'Other');
   let updated = 0;
   for (const exp of expenses) {
     for (const rule of rules) {
@@ -1175,7 +1175,7 @@ app.get('/', (req, res) => {
 
 // ── QUOTES ────────────────────────────────────────────────────────────────────
 app.get('/api/quotes', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('quotes', r => r.user_id === req.session.userId, (a,b) => b.id - a.id));
+  res.json(await db.allByUser('quotes', req.session.userId, null, (a,b) => b.id - a.id));
 }));
 app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   const { client, amount, expiry_date, status = 'pending', notes = '' } = req.body;
@@ -1205,7 +1205,7 @@ app.delete('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
 
 // ── VENDORS ───────────────────────────────────────────────────────────────────
 app.get('/api/vendors', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('vendors', userFilter(req.session.userId, req.entityId), (a,b) => a.name.localeCompare(b.name)));
+  res.json(await db.allByUser('vendors', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => a.name.localeCompare(b.name)));
 }));
 app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const { name, contact, category, owing = 0, ytd_paid = 0, status = 'active' } = req.body;
@@ -1228,7 +1228,7 @@ app.delete('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
 
 // ── BILLS ─────────────────────────────────────────────────────────────────────
 app.get('/api/bills', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('bills', userFilter(req.session.userId, req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('bills', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => b.id - a.id));
 }));
 app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, due_date, status = 'unpaid', notes = '' } = req.body;
@@ -1258,7 +1258,7 @@ app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
 
 // ── RECURRING BILLS ───────────────────────────────────────────────────────────
 app.get('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('recurring_bills', r => r.user_id === req.session.userId));
+  res.json(await db.allByUser('recurring_bills', req.session.userId));
 }));
 app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, frequency = 'Monthly', next_run, status = 'active' } = req.body;
@@ -1281,7 +1281,7 @@ app.delete('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
 
 // ── RECURRING INVOICES ────────────────────────────────────────────────────────
 app.get('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('recurring_invoices', r => r.user_id === req.session.userId));
+  res.json(await db.allByUser('recurring_invoices', req.session.userId));
 }));
 app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, frequency = 'Monthly', next_run, status = 'active' } = req.body;
@@ -1304,7 +1304,7 @@ app.delete('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => 
 
 // ── SALES RECEIPTS ────────────────────────────────────────────────────────────
 app.get('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('sales_receipts', r => r.user_id === req.session.userId));
+  res.json(await db.allByUser('sales_receipts', req.session.userId));
 }));
 app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   const { customer, num, amount, date, method = 'Card' } = req.body || {};
@@ -1337,7 +1337,7 @@ app.delete('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
 
 // ── PAYMENTS RECEIVED ─────────────────────────────────────────────────────────
 app.get('/api/payments-received', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('payments_received', r => r.user_id === req.session.userId));
+  res.json(await db.allByUser('payments_received', req.session.userId));
 }));
 app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
   const { customer, invoice_ref, amount, date, method = 'Bank Transfer' } = req.body || {};
@@ -1370,7 +1370,7 @@ app.delete('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
 
 // ── CREDIT NOTES ──────────────────────────────────────────────────────────────
 app.get('/api/credit-notes', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('credit_notes', r => r.user_id === req.session.userId));
+  res.json(await db.allByUser('credit_notes', req.session.userId));
 }));
 app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   const { customer, num, amount, date, status = 'Open', reason = '' } = req.body || {};
@@ -1423,7 +1423,7 @@ app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
 
 // ── VENDOR CREDITS ────────────────────────────────────────────────────────────
 app.get('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('vendor_credits', r => r.user_id === req.session.userId));
+  res.json(await db.allByUser('vendor_credits', req.session.userId));
 }));
 app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   const { vendor, num, amount, date, status = 'Open', reason = '' } = req.body || {};
@@ -1499,8 +1499,8 @@ app.delete('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
 app.get('/api/team', requireAuth, wrap(async (req, res) => {
   const uid  = req.session.userId;
   const user = await db.get('users', u => u.id === uid);
-  const pay  = await db.all('payroll', r => r.user_id === uid);
-  const invited = await db.all('team_members', r => r.user_id === uid);
+  const pay  = await db.allByUser('payroll', uid);
+  const invited = await db.allByUser('team_members', uid);
   const members = [
     { id: 'u0', name: user?.name || user?.email || 'You', email: user?.email || '', role: 'owner', emp_type: 'Owner', lastSeen: 'Now' },
     ...pay.map(p => ({
@@ -1576,9 +1576,9 @@ app.post('/api/ai', requireAuth, async (req, res) => {
 
     // Gather financial context in parallel
     const [invoices, expenses, customers, settings] = await Promise.all([
-      db.all('invoices',  r => r.user_id === uid),
-      db.all('expenses',  r => r.user_id === uid),
-      db.all('customers', r => r.user_id === uid),
+      db.allByUser('invoices', uid),
+      db.allByUser('expenses', uid),
+      db.allByUser('customers', uid),
       db.get('user_settings', r => r.user_id === uid),
     ]);
     const cfg = settings || {};
@@ -1746,78 +1746,6 @@ app.get('/accountant', (req, res) => {
 app.get('/accountant-login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accountant-login.html'));
 });
-// ── ACCOUNTANTS API ───────────────────────────────────────────────────────────
-app.get('/api/accountants/directory', requireAuth, wrap(async (req, res) => {
-  const result = await pool.query(
-    `SELECT id, first_name, last_name, firm, country, specialisation, bio,
-            experience, avg_rating, review_count, credentials, hourly_rate,
-            packages, pricing_note, has_pricing, memberships
-     FROM accountants WHERE status = 'verified'
-     ORDER BY avg_rating DESC, created_at DESC`
-  );
-  res.json(result.rows);
-}));
-
-app.get('/api/accountants/my-accountant', requireAuth, wrap(async (req, res) => {
-  const result = await pool.query(
-    `SELECT a.id, a.first_name, a.last_name, a.firm, a.country, a.specialisation,
-            a.experience, a.avg_rating, a.review_count, ac.access_level
-     FROM accountants a
-     JOIN accountant_clients ac ON ac.accountant_id = a.id
-     WHERE ac.user_id = $1 AND ac.status = 'active'
-     LIMIT 1`,
-    [req.session.userId]
-  );
-  res.json(result.rows[0] || null);
-}));
-
-app.post('/api/accountants/request-access', requireAuth, wrap(async (req, res) => {
-  const { accountantId } = req.body || {};
-  if (!accountantId) return res.status(400).json({ error: 'accountantId required' });
-  const acc = await pool.query(
-    `SELECT id FROM accountants WHERE id = $1 AND status = 'verified'`, [accountantId]
-  );
-  if (!acc.rows.length) return res.status(404).json({ error: 'Accountant not found' });
-  await pool.query(
-    `INSERT INTO accountant_clients (accountant_id, user_id, status, activated_at)
-     VALUES ($1, $2, 'active', NOW())
-     ON CONFLICT (accountant_id, user_id) DO UPDATE SET status = 'active', activated_at = NOW()`,
-    [accountantId, req.session.userId]
-  );
-  res.json({ ok: true });
-}));
-
-app.post('/api/accountants/report', requireAuth, wrap(async (req, res) => {
-  const { accountantId, reason } = req.body || {};
-  if (!accountantId || !reason) return res.status(400).json({ error: 'accountantId and reason required' });
-  await pool.query(
-    `INSERT INTO accountant_reports (accountant_id, reporter_id, reason) VALUES ($1, $2, $3)`,
-    [accountantId, req.session.userId, String(reason).slice(0, 1000)]
-  );
-  res.json({ ok: true });
-}));
-
-app.post('/api/accountants/review', requireAuth, wrap(async (req, res) => {
-  const { accountantId, rating, comment } = req.body || {};
-  if (!accountantId || !rating) return res.status(400).json({ error: 'accountantId and rating required' });
-  const r = parseInt(rating);
-  if (r < 1 || r > 5) return res.status(400).json({ error: 'Rating must be 1-5' });
-  await pool.query(
-    `INSERT INTO accountant_reviews (accountant_id, client_id, rating, comment)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (accountant_id, client_id) DO UPDATE SET rating = $3, comment = $4`,
-    [accountantId, req.session.userId, r, String(comment || '').slice(0, 1000)]
-  );
-  await pool.query(
-    `UPDATE accountants
-     SET avg_rating = (SELECT ROUND(AVG(rating)::NUMERIC,2) FROM accountant_reviews WHERE accountant_id = $1),
-         review_count = (SELECT COUNT(*) FROM accountant_reviews WHERE accountant_id = $1)
-     WHERE id = $1`,
-    [accountantId]
-  );
-  res.json({ ok: true });
-}));
-
 app.get('/accountants', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accountants.html'));
 });
@@ -1907,7 +1835,7 @@ async function runRecurringScheduler() {
 
 // ── BANKING TRANSACTIONS ──────────────────────────────────────────────────────
 app.get('/api/banking', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('personal_transactions', r => r.user_id === req.session.userId && r.source === 'banking', (a, b) => new Date(b.date) - new Date(a.date)));
+  res.json(await db.allByUser('personal_transactions', req.session.userId, r => r.source === 'banking', (a, b) => new Date(b.date) - new Date(a.date)));
 }));
 app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   const { desc, amount, type, date, cat } = req.body || {};
@@ -1929,7 +1857,7 @@ app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
 
 // ── MRR / SAAS ────────────────────────────────────────────────────────────────
 app.get('/api/mrr', requireAuth, wrap(async (req, res) => {
-  const rows = await db.all('user_settings', r => r.user_id === req.session.userId && r.key === 'mrr_data');
+  const rows = await db.allByUser('user_settings', req.session.userId, r => r.key === 'mrr_data');
   res.json(rows[0]?.value ? JSON.parse(rows[0].value) : { subscribers: [], plans: [] });
 }));
 app.put('/api/mrr', requireAuth, wrap(async (req, res) => {

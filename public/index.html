@@ -5591,6 +5591,9 @@ async function savePersonalSalary(){
       window.ownerPayrollByEntity=ownerPayrollByEntity;
       if(entity?.active){ownerPayroll=ownerPayrollByEntity[activeIdx];window.ownerPayroll=ownerPayroll;}
     }
+    // Immediately update UI — don't wait for API round-trip
+    basePersonalIncome=Math.round(gross*(1-taxRate/100));
+    if(typeof renderPersonal==='function') renderPersonal();
     if(typeof syncAllPayrollsToPersonal==='function') syncAllPayrollsToPersonal();
     if(typeof loadPersonalFinance==='function') await loadPersonalFinance();
     prefillPersSalaryCard();
@@ -5745,11 +5748,15 @@ async function deletePersonalTransaction(dbId){
 }
 
 async function loadPersonalFinance(){
+  console.log('[PersFinance] starting loadPersonalFinance');
   try{
     const r=await fetch('/api/personal-transactions',{credentials:'include'});
-    if(!r.ok) return;
-    const txs=await r.json();
-    window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,type:t.tx_type||'expense',date:(t.tx_date||t.created_at||'').slice(0,10)}));
+    if(!r.ok){
+      console.warn('[PersFinance] /api/personal-transactions returned',r.status,'— continuing without transactions');
+    } else {
+      const txs=await r.json();
+      window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,type:t.tx_type||'expense',date:(t.tx_date||t.created_at||'').slice(0,10)}));
+    }
     try{
       const prRes=await fetch('/api/personal-salary',{credentials:'include'});
       const ownerRows=await prRes.json();

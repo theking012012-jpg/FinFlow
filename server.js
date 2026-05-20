@@ -1406,7 +1406,7 @@ app.delete('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
 
 // ── PAYMENTS MADE ─────────────────────────────────────────────────────────────
 app.get('/api/payments-made', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('payments_made', r => r.user_id === req.session.userId));
+  res.json(await db.allByUser('payments_made', req.session.userId));
 }));
 app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   const { row } = await db.insert('payments_made', { ...req.body, user_id: req.session.userId });
@@ -1459,7 +1459,7 @@ app.delete('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
 
 // ── TIMESHEET ─────────────────────────────────────────────────────────────────
 app.get('/api/timesheet', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('timesheet', r => r.user_id === req.session.userId, (a, b) => b.id - a.id));
+  res.json(await db.allByUser('timesheet', req.session.userId, null, (a, b) => b.id - a.id));
 }));
 app.post('/api/timesheet', requireAuth, wrap(async (req, res) => {
   const { employee, project = '', date, hours, billable = 'Yes', rate = 0 } = req.body || {};
@@ -1746,6 +1746,78 @@ app.get('/accountant', (req, res) => {
 app.get('/accountant-login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accountant-login.html'));
 });
+// ── ACCOUNTANTS API ───────────────────────────────────────────────────────────
+app.get('/api/accountants/directory', requireAuth, wrap(async (req, res) => {
+  const result = await pool.query(
+    `SELECT id, first_name, last_name, firm, country, specialisation, bio,
+            experience, avg_rating, review_count, credentials, hourly_rate,
+            packages, pricing_note, has_pricing, memberships
+     FROM accountants WHERE status = 'verified'
+     ORDER BY avg_rating DESC, created_at DESC`
+  );
+  res.json(result.rows);
+}));
+
+app.get('/api/accountants/my-accountant', requireAuth, wrap(async (req, res) => {
+  const result = await pool.query(
+    `SELECT a.id, a.first_name, a.last_name, a.firm, a.country, a.specialisation,
+            a.experience, a.avg_rating, a.review_count, ac.access_level
+     FROM accountants a
+     JOIN accountant_clients ac ON ac.accountant_id = a.id
+     WHERE ac.user_id = $1 AND ac.status = 'active'
+     LIMIT 1`,
+    [req.session.userId]
+  );
+  res.json(result.rows[0] || null);
+}));
+
+app.post('/api/accountants/request-access', requireAuth, wrap(async (req, res) => {
+  const { accountantId } = req.body || {};
+  if (!accountantId) return res.status(400).json({ error: 'accountantId required' });
+  const acc = await pool.query(
+    `SELECT id FROM accountants WHERE id = $1 AND status = 'verified'`, [accountantId]
+  );
+  if (!acc.rows.length) return res.status(404).json({ error: 'Accountant not found' });
+  await pool.query(
+    `INSERT INTO accountant_clients (accountant_id, user_id, status, activated_at)
+     VALUES ($1, $2, 'active', NOW())
+     ON CONFLICT (accountant_id, user_id) DO UPDATE SET status = 'active', activated_at = NOW()`,
+    [accountantId, req.session.userId]
+  );
+  res.json({ ok: true });
+}));
+
+app.post('/api/accountants/report', requireAuth, wrap(async (req, res) => {
+  const { accountantId, reason } = req.body || {};
+  if (!accountantId || !reason) return res.status(400).json({ error: 'accountantId and reason required' });
+  await pool.query(
+    `INSERT INTO accountant_reports (accountant_id, reporter_id, reason) VALUES ($1, $2, $3)`,
+    [accountantId, req.session.userId, String(reason).slice(0, 1000)]
+  );
+  res.json({ ok: true });
+}));
+
+app.post('/api/accountants/review', requireAuth, wrap(async (req, res) => {
+  const { accountantId, rating, comment } = req.body || {};
+  if (!accountantId || !rating) return res.status(400).json({ error: 'accountantId and rating required' });
+  const r = parseInt(rating);
+  if (r < 1 || r > 5) return res.status(400).json({ error: 'Rating must be 1-5' });
+  await pool.query(
+    `INSERT INTO accountant_reviews (accountant_id, client_id, rating, comment)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (accountant_id, client_id) DO UPDATE SET rating = $3, comment = $4`,
+    [accountantId, req.session.userId, r, String(comment || '').slice(0, 1000)]
+  );
+  await pool.query(
+    `UPDATE accountants
+     SET avg_rating = (SELECT ROUND(AVG(rating)::NUMERIC,2) FROM accountant_reviews WHERE accountant_id = $1),
+         review_count = (SELECT COUNT(*) FROM accountant_reviews WHERE accountant_id = $1)
+     WHERE id = $1`,
+    [accountantId]
+  );
+  res.json({ ok: true });
+}));
+
 app.get('/accountants', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accountants.html'));
 });

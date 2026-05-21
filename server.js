@@ -1409,11 +1409,29 @@ app.get('/api/payments-made', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('payments_made', req.session.userId));
 }));
 app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
-  const { row } = await db.insert('payments_made', { ...req.body, user_id: req.session.userId });
+  const { vendor, amount, date, method, notes, ref } = req.body || {};
+  const { row } = await db.insert('payments_made', {
+    user_id: req.session.userId,
+    entity_id: req.entityId || null,
+    vendor: (vendor || '').trim().slice(0, 200),
+    amount: parseFloat(amount) || 0,
+    date: date || new Date().toISOString().slice(0, 10),
+    method: (method || '').slice(0, 50),
+    notes: (notes || '').slice(0, 500),
+    ref: (ref || '').slice(0, 100),
+  });
   res.json(row);
 }));
 app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
-  await db.update('payments_made', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, req.body);
+  const { vendor, amount, date, method, notes, ref } = req.body || {};
+  await db.update('payments_made', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, {
+    vendor: (vendor || '').trim().slice(0, 200),
+    amount: parseFloat(amount) || 0,
+    date: date || new Date().toISOString().slice(0, 10),
+    method: (method || '').slice(0, 50),
+    notes: (notes || '').slice(0, 500),
+    ref: (ref || '').slice(0, 100),
+  });
   res.json({ ok: true });
 }));
 app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {

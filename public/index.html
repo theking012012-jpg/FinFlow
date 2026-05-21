@@ -6629,7 +6629,7 @@ async function saveBankTxn(desc, amount, type, cat){
       body:JSON.stringify({desc, amount, type, cat, date:new Date().toISOString().slice(0,10)})});
     if(!res.ok) throw new Error('Save failed');
     await loadBankingFromDB();
-    window.finflow.refresh(['banking','dashboard','reports']);
+    window.finflow?.refresh(['banking','dashboard','reports']);
   } catch(e){ if(typeof notify==='function') notify('Error saving transaction'); }
 }
 function renderBanking(){
@@ -6799,7 +6799,7 @@ async function saveNewAccount(){
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||'API error');}
     document.getElementById('coa-new-modal').classList.add('hidden');
     notify('Account added ✦');
-    window.finflow.refresh(['journal','dashboard','reports','chart-of-accounts']);
+    window.finflow?.refresh(['journal','dashboard','reports','chart-of-accounts']);
     if(typeof renderCOA==='function')renderCOA();
   }catch(e){notify('Could not add account — '+e.message,true);}
 }
@@ -6965,7 +6965,7 @@ async function downloadDoc(id){window.open('/api/documents/'+id+'/download','_bl
 async function deleteDoc(id){
   if(!confirm('Delete this document?'))return;
   const res=await fetch('/api/documents/'+id,{method:'DELETE',credentials:'include'});
-  if(res.ok){ renderDocuments(); window.finflow.refresh(['documents','dashboard']); }else notify('Delete failed');
+  if(res.ok){ renderDocuments(); window.finflow?.refresh(['documents','dashboard']); }else notify('Delete failed');
 }
 function openUploadModal(){
   let m=document.getElementById('doc-upload-modal');
@@ -7003,7 +7003,7 @@ async function uploadDocument(){
           size:Math.round(file.size/1024)+' KB',notes:document.getElementById('doc-notes-input').value,
           file_data:b64,media_type:file.type})});
       if(!res.ok){const d=await res.json();notify(d.error||'Upload failed');return;}
-      closeModal('doc-upload-modal');renderDocuments();window.finflow.refresh(['documents','dashboard']);notify('Document uploaded ✦');
+      closeModal('doc-upload-modal');renderDocuments();window.finflow?.refresh(['documents','dashboard']);notify('Document uploaded ✦');
     }catch(e){notify('Upload failed');}
   };
   reader.readAsDataURL(file);
@@ -9837,14 +9837,14 @@ async function renderAutocat(){
 window.deleteAutocatRule=async function(id){
   if(!confirm('Delete this rule?'))return;
   const res=await fetch('/api/autocat-rules/'+id,{method:'DELETE',credentials:'include'});
-  if(res.ok){ renderAutocat(); window.finflow.refresh(['banking','dashboard']); }else notify('Delete failed');
+  if(res.ok){ renderAutocat(); window.finflow?.refresh(['banking','dashboard']); }else notify('Delete failed');
 };
 window.runAutocatRules=async function(){
   try{
     const res=await fetch('/api/autocat-rules/run',{method:'POST',credentials:'include'});
     const data=await res.json();
     notify('Auto-categorised '+(data.updated||0)+' expenses ✦');
-    window.finflow.refresh(['banking','dashboard']);
+    window.finflow?.refresh(['banking','dashboard']);
   }catch(e){notify('Run failed');}
 };
 window.openAddRuleModal=function(){
@@ -9875,7 +9875,7 @@ window.saveAutocatRule=async function(){
     const res=await fetch('/api/autocat-rules',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({keyword,category,enabled})});
     if(!res.ok){const d=await res.json();notify(d.error||'Save failed');return;}
-    closeModal('add-rule-modal');renderAutocat();window.finflow.refresh(['banking','dashboard']);notify('Rule saved ✦');
+    closeModal('add-rule-modal');renderAutocat();window.finflow?.refresh(['banking','dashboard']);notify('Rule saved ✦');
   }catch(e){notify('Save failed');}
 };
 

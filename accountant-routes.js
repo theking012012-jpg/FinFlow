@@ -67,6 +67,8 @@
 
 'use strict';
 
+const db = require('./database');
+
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 
 /** Wraps async route handlers so thrown errors go to Express error handler */
@@ -253,6 +255,9 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
 
   // ── RESUME / CV EXTRACTION ───────────────────────────────────────────────────
   app.post('/api/accountants/extract-resume', apiLimiter, wrap(async (req, res) => {
+    if (!req.session.accountantId && !req.session.userId) {
+      return res.status(401).json({ error: 'Authentication required.' });
+    }
     const { base64, mediaType, isPDF, isWord, fileName } = req.body || {};
     if (!base64) return res.status(400).json({ error: 'No file data received.' });
 
@@ -529,9 +534,9 @@ If you cannot find a field, use null. Be concise.`;
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
     await pool.query(`
-      INSERT INTO accountant_reports (accountant_id, client_id, type, content, created_at)
-      VALUES ($1, $2, 'flag', $3, NOW())
-    `, [req.session.accountantId, userId, JSON.stringify({ type, ref, message })]);
+      INSERT INTO accountant_reports (accountant_id, reporter_id, reason, created_at)
+      VALUES ($1, $2, $3, NOW())
+    `, [req.session.accountantId, parseInt(userId), JSON.stringify({ type, ref, message })]);
     res.json({ ok: true });
   }));
 
@@ -814,21 +819,9 @@ If you cannot find a field, use null. Be concise.`;
   }));
 
 
-  // ── 14. ADMIN: APPROVE / REJECT ACCOUNTANT ────────────────────────────────
-  app.post('/api/admin/accountants/:id/verify', requireAdmin, wrap(async (req, res) => {
-    const { action, notes } = req.body || {}; // action: 'approve' | 'reject'
-    if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: 'Invalid action.' });
-
-    const newStatus = action === 'approve' ? 'verified' : 'rejected';
-    await pool.query(
-      `UPDATE accountants SET status = $1, verified_at = $2, updated_at = NOW() WHERE id = $3`,
-      [newStatus, action === 'approve' ? new Date() : null, req.params.id]
-    );
-
-    // TODO: send email to accountant notifying them of outcome
-
-    return res.json({ success: true, status: newStatus });
-  }));
+  // ── 14. ADMIN: APPROVE / REJECT ACCOUNTANT — handled by admin-routes.js ─────
+  // Route removed: POST /api/admin/accountants/:id/verify is defined in admin-routes.js
+  // (supports approve/reject/suspend/reinstate, logs to admin_log, sends email via Resend)
 
 
   // ── ACCOUNTANT LOGOUT ─────────────────────────────────────────────────────

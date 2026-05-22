@@ -167,7 +167,7 @@ html{overflow-x:hidden}
   .sidebar-overlay.open{display:block}
   .mob-hamburger{display:flex}
   .topbar{padding:.6rem 1rem}
-  .content{padding:1rem;max-height:calc(100svh - 52px - 60px);padding-bottom:70px;overflow-x:hidden}
+  .content{padding:1rem;height:calc(100svh - 52px - 60px);padding-bottom:70px;overflow-x:hidden}
   .metrics-grid{grid-template-columns:repeat(2,1fr)}
   .metrics-grid-3{grid-template-columns:repeat(2,1fr)}
   .two-col{grid-template-columns:1fr}
@@ -191,7 +191,7 @@ html{overflow-x:hidden}
 @media(min-width:769px) and (max-width:1024px){
   :root{ --sidebar-w:200px }
   .app{min-height:100svh;border-radius:var(--radius-lg);border:none}
-  .content{padding:1rem 1.25rem;max-height:calc(100svh - 52px)}
+  .content{padding:1rem 1.25rem;height:calc(100svh - 52px)}
   .metrics-grid{grid-template-columns:repeat(2,1fr);gap:8px}
   .metrics-grid-3{grid-template-columns:repeat(3,1fr)}
   .mc-val{font-size:26px}
@@ -230,7 +230,7 @@ html{overflow-x:hidden}
    ══════════════════════════════════════════════ */
 @media(min-width:1400px){
   :root{ --sidebar-w:248px }
-  .content{padding:1.5rem 2rem;max-height:calc(100svh - 56px)}
+  .content{padding:1.5rem 2rem;height:calc(100svh - 56px)}
   .metrics-grid{gap:14px}
   .metrics-grid-3{gap:14px}
   .mc-val{font-size:38px}
@@ -7729,7 +7729,7 @@ mobileCSS.textContent = `
   #currency-picker-wrap { display: none; }
   #pMonth,#pQ,#pY { display: none; }
   #month-nav { display: none !important; }
-  .content { padding: .85rem .9rem; max-height: calc(100dvh - 52px - 60px); overflow-y: auto; }
+  .content { padding: .85rem .9rem; height: calc(100dvh - 52px - 60px); overflow-y: auto; }
   .metrics-grid { grid-template-columns: 1fr 1fr !important; gap: 7px; }
   .metrics-grid-3 { grid-template-columns: 1fr 1fr !important; gap: 7px; }
   .two-col { grid-template-columns: 1fr !important; }

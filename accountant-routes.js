@@ -922,7 +922,9 @@ If you cannot find a field, use null. Be concise.`;
       WHERE ac.user_id = $1 AND ac.status = 'active'
       LIMIT 1
     `, [req.session.userId]);
-    if (!result.rows[0]) return res.status(404).json({ error: 'No accountant linked.' });
+    // No accountant linked yet — return an empty object (200) rather than 404
+    // so the client renders an empty state instead of treating it as an error.
+    if (!result.rows[0]) return res.json({});
     return res.json(result.rows[0]);
   }));
 

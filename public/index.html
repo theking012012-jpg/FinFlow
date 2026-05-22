@@ -4456,15 +4456,6 @@ function getPeriodData(){
 // NAVIGATION
 // ════════════════════════════════════════════
 function showPage(id, el){
-  // Gate: block all business pages until at least one entity exists
-  if (typeof ENTITIES !== 'undefined' && ENTITIES.length === 0) {
-    const _allowed = ['settings','pricing','login','register','entities','personal','create-business','investments','scenario'];
-    if (!_allowed.includes(id)) {
-      if (typeof notify === 'function') notify('Create your first business to get started ✦');
-      showPage('create-business', null);
-      return;
-    }
-  }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const pg=document.getElementById('page-'+id);
@@ -8717,8 +8708,6 @@ async function loadEntitiesFromDB(){
       // Highlight the + Add business button
       const addBizBtn = document.querySelector('#biz-menu button');
       if(addBizBtn){ addBizBtn.classList.remove('btn-ghost'); addBizBtn.classList.add('btn-primary'); }
-      // Redirect to create-business page so user can create their first entity
-      if(typeof window.showPage === 'function') window.showPage('create-business', null);
       return;
     }
 

@@ -127,6 +127,16 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   res.json({ received: true });
 });
 
+// ── ROOT ROUTES — registered BEFORE express.static so the static handler
+// can't auto-serve public/index.html at "/". "/" = marketing landing page,
+// "/app" = the FinFlow SPA.
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+app.get('/app', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 // ── STATIC FILES — served before session so DB issues never block index.html ──
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: false,
@@ -1178,11 +1188,6 @@ app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true, updated });
 }));
 
-// ── PAGE ROUTES ───────────────────────────────────────────────────────────────
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
-});
-
 // ── QUOTES ────────────────────────────────────────────────────────────────────
 app.get('/api/quotes', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('quotes', req.session.userId, null, (a,b) => b.id - a.id));
@@ -1769,9 +1774,6 @@ If you cannot read a field clearly, use null. Do not invent data.`;
 });
 
 // ── STATIC / SPA ──────────────────────────────────────────────────────────────
-app.get('/app', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 app.get('/reset-password.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
 });

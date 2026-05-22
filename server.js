@@ -712,7 +712,12 @@ app.get('/api/personal-salary', requireAuth, wrap(async (req, res) => {
 
 // ── PERSONAL TRANSACTIONS ─────────────────────────────────────────────────────
 app.get('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('personal_transactions', req.session.userId, null, (a,b) => b.id - a.id));
+  try {
+    res.json(await db.allByUser('personal_transactions', req.session.userId, null, (a,b) => b.id - a.id));
+  } catch (e) {
+    console.error('[GET /api/personal-transactions] failed for user', req.session.userId, ':', e.code, e.message);
+    res.json([]);
+  }
 }));
 app.post('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
   const { description, category = 'Other', amount, tx_type = 'expense', tx_date } = req.body || {};
@@ -741,7 +746,12 @@ app.delete('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) 
 
 // ── GOALS ─────────────────────────────────────────────────────────────────────
 app.get('/api/goals', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('goals', req.session.userId, null, (a,b) => a.id - b.id));
+  try {
+    res.json(await db.allByUser('goals', req.session.userId, null, (a,b) => a.id - b.id));
+  } catch (e) {
+    console.error('[GET /api/goals] failed for user', req.session.userId, ':', e.code, e.message);
+    res.json([]);
+  }
 }));
 app.post('/api/goals', requireAuth, wrap(async (req, res) => {
   const { name, current_val = 0, target_val, monthly_contrib = 0, color = 'var(--acc)' } = req.body || {};
@@ -1258,7 +1268,12 @@ app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
 
 // ── RECURRING BILLS ───────────────────────────────────────────────────────────
 app.get('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('recurring_bills', req.session.userId));
+  try {
+    res.json(await db.allByUser('recurring_bills', req.session.userId));
+  } catch (e) {
+    console.error('[GET /api/recurring-bills] failed for user', req.session.userId, ':', e.code, e.message);
+    res.json([]);
+  }
 }));
 app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, frequency = 'Monthly', next_run, status = 'active' } = req.body;
@@ -1441,7 +1456,12 @@ app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
 
 // ── VENDOR CREDITS ────────────────────────────────────────────────────────────
 app.get('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('vendor_credits', req.session.userId));
+  try {
+    res.json(await db.allByUser('vendor_credits', req.session.userId));
+  } catch (e) {
+    console.error('[GET /api/vendor-credits] failed for user', req.session.userId, ':', e.code, e.message);
+    res.json([]);
+  }
 }));
 app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   const { vendor, num, amount, date, status = 'Open', reason = '' } = req.body || {};

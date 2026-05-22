@@ -406,8 +406,8 @@ html{overflow-x:hidden}
 #page-settings,#page-pricing{padding-bottom:3rem}
 #page-settings .two-col,#page-pricing .two-col{align-items:start}
 #page-settings .two-col>div,#page-pricing .two-col>div{height:auto}
-.page{display:none}
-.page.active{display:block}
+.page{display:none;flex:0 0 0;overflow:hidden}
+.page.active{display:block;flex:1 1 0;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
 /* METRICS */
 .metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem}
 .metrics-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.25rem}

@@ -383,8 +383,6 @@ html{overflow-x:hidden}
 .user-plan{font-size:10px;color:var(--t3)}
 /* TOPBAR */
 .main{background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;height:100svh}
-/* Settings & Plans pages need full scroll - override column height clipping */
-#page-settings .two-col>div,#page-pricing .two-col>div{height:auto;overflow:visible}
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.5rem;background:var(--bg1);border-bottom:1px solid var(--bd);flex-shrink:0;gap:8px}
 .topbar-left{display:flex;align-items:center;gap:10px;min-width:0}
 .page-title{font-size:16px;font-weight:600;color:var(--t1);white-space:nowrap;font-family:var(--font-display);letter-spacing:.03em}
@@ -403,20 +401,13 @@ html{overflow-x:hidden}
 .btn-icon:hover{background:var(--bg3);color:var(--t1)}
 .btn-icon svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 /* CONTENT */
-.content{padding:1.25rem 1.5rem;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0;max-height:calc(100svh - 52px)}
+.content{padding:1.25rem 1.5rem;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 0;min-height:0;height:0}
 /* Settings & Plans: allow full scroll of all content */
+#page-settings,#page-pricing{padding-bottom:3rem}
 #page-settings .two-col,#page-pricing .two-col{align-items:start}
-#page-settings,#page-pricing{padding-bottom:2rem}
+#page-settings .two-col>div,#page-pricing .two-col>div{height:auto}
 .page{display:none}
 .page.active{display:block}
-/* Ensure tall pages are fully scrollable — give the active page its own
-   scroll context and bottom breathing room so nothing is cut off. */
-#page-settings.page.active,#page-pricing.page.active{padding-bottom:80px}
-#page-settings,#page-pricing{height:auto;min-height:0}
-/* Stronger scroll fix — !important overrides any conflicting rule */
-#page-settings,#page-pricing{overflow:visible!important;padding-bottom:120px!important}
-#page-settings .two-col>div,#page-pricing .two-col>div{height:auto!important;overflow:visible!important}
-.content{overflow-y:auto!important;-webkit-overflow-scrolling:touch}
 /* METRICS */
 .metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem}
 .metrics-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.25rem}

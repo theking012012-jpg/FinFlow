@@ -316,6 +316,12 @@
   function renderProjectsList() {
     const l = document.getElementById('projects-list');
     if (!l) return;
+    // KPI cards: Active Projects · Billable Hours · Revenue · Unbilled
+    const _pjKpi = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    _pjKpi('proj-active', _projects.filter(p => p.status === 'In Progress').length);
+    _pjKpi('proj-hours', _projects.reduce((s, p) => s + (parseFloat(p.hours) || 0), 0) + ' hrs');
+    _pjKpi('proj-revenue', money(_projects.reduce((s, p) => s + (parseFloat(p.billed) || 0), 0)));
+    _pjKpi('proj-unbilled', money(_projects.reduce((s, p) => s + Math.max(0, (parseFloat(p.budget) || 0) - (parseFloat(p.billed) || 0)), 0)));
     if (!_projects.length) {
       l.innerHTML = '<div style="padding:16px 0;color:var(--t3);font-size:13px">No projects yet. Click + New Project to add one.</div>';
       return;

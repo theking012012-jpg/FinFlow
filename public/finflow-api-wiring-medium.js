@@ -488,6 +488,11 @@
       }
       if (!window.inventory) window.inventory = [];
       const lowCount = window.inventory.filter(i => i.low).length;
+      // KPI cards: Total SKUs · Inventory value · Low stock alerts
+      const _invKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+      _invKpi('inv-skus', window.inventory.length);
+      _invKpi('inv-value', S(window.inventory.reduce((s, i) => s + ((parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0)), 0)));
+      _invKpi('inv-lowstock', lowCount);
       const badge2 = document.getElementById('badge-inv2');
       if (badge2) {
         badge2.textContent = lowCount;
@@ -756,6 +761,11 @@
       }
 
       const data = window.itemsData || [];
+      // KPI cards: Total Items · Active · Low Stock
+      const _itKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+      _itKpi('items-total', data.length);
+      _itKpi('items-active', data.filter(i => i.status === 'Active').length);
+      _itKpi('items-lowstock', data.filter(i => i.status === 'Low Stock').length);
       const filtered = data.filter(i => filter === 'all' || (i.type || '').toLowerCase() === filter);
       list.innerHTML = filtered.length
         ? filtered.map(i => renderItemRow(i)).join('')

@@ -4476,37 +4476,41 @@ function showPage(id, el){
     'create-business':'Create Business',
   };
   document.getElementById('pageTitle').textContent=titles[id]||id;
-  // Page-specific renders
-  if(id==='investments')renderInvestments();
-  if(id==='cashflow')renderCashflow();
-  if(id==='customers')renderCustomers();
-  if(id==='payroll')renderPayroll();
-  if(id==='personal')renderPersonal();
-  if(id==='invoices')renderInvoices();
-  if(id==='expenses')renderExpenses();
-  if(id==='inventory')renderInventory();
-  if(id==='connections'&&typeof connRenderAll==='function')connRenderAll();
-  if(id==='ai')updateAI();
-  if(id==='items')renderItems();
-  if(id==='banking')renderBanking();
-  if(id==='quotes')renderQuotes();
-  if(id==='sales-receipts')renderReceipts();
-  if(id==='payments-received')renderPaymentsReceived();
-  if(id==='recurring-invoices')renderRecurringInvoices();
-  if(id==='credit-notes')renderCreditNotes();
-  if(id==='vendors')renderVendors();
-  if(id==='bills')renderBills();
-  if(id==='payments-made')renderPaymentsMade();
-  if(id==='recurring-bills')renderRecurringBills();
-  if(id==='vendor-credits')renderVendorCredits();
-  if(id==='projects')renderProjects();
-  if(id==='timesheet')renderTimesheet();
-  if(id==='manual-journals')renderJournals();
-  if(id==='chart-of-accounts')renderCOA();
-  if(id==='transaction-locking')renderLockHistory();
-  if(id==='reports')renderReports();
-  if(id==='documents')renderDocuments();
-  if(id==='templates')renderTemplates();
+  // Page-specific renders — every call typeof-guarded so a missing wiring
+  // file (or a render function loaded later via deferred IIFE) never throws
+  // ReferenceError and crashes the rest of showPage. The cascade-fail was
+  // what was nuking sibling KPI updates further down the function.
+  const _call = (fn) => { try { fn(); } catch (e) { console.warn('[showPage] render error for', id, ':', e.message); } };
+  if(id==='investments'&&typeof renderInvestments==='function')_call(renderInvestments);
+  if(id==='cashflow'&&typeof renderCashflow==='function')_call(renderCashflow);
+  if(id==='customers'&&typeof renderCustomers==='function')_call(renderCustomers);
+  if(id==='payroll'&&typeof renderPayroll==='function')_call(renderPayroll);
+  if(id==='personal'&&typeof renderPersonal==='function')_call(renderPersonal);
+  if(id==='invoices'&&typeof renderInvoices==='function')_call(renderInvoices);
+  if(id==='expenses'&&typeof renderExpenses==='function')_call(renderExpenses);
+  if(id==='inventory'&&typeof renderInventory==='function')_call(renderInventory);
+  if(id==='connections'&&typeof connRenderAll==='function')_call(connRenderAll);
+  if(id==='ai'&&typeof updateAI==='function')_call(updateAI);
+  if(id==='items'&&typeof renderItems==='function')_call(renderItems);
+  if(id==='banking'&&typeof renderBanking==='function')_call(renderBanking);
+  if(id==='quotes'&&typeof renderQuotes==='function')_call(renderQuotes);
+  if(id==='sales-receipts'&&typeof renderReceipts==='function')_call(renderReceipts);
+  if(id==='payments-received'&&typeof renderPaymentsReceived==='function')_call(renderPaymentsReceived);
+  if(id==='recurring-invoices'&&typeof renderRecurringInvoices==='function')_call(renderRecurringInvoices);
+  if(id==='credit-notes'&&typeof renderCreditNotes==='function')_call(renderCreditNotes);
+  if(id==='vendors'&&typeof renderVendors==='function')_call(renderVendors);
+  if(id==='bills'&&typeof renderBills==='function')_call(renderBills);
+  if(id==='payments-made'&&typeof renderPaymentsMade==='function')_call(renderPaymentsMade);
+  if(id==='recurring-bills'&&typeof renderRecurringBills==='function')_call(renderRecurringBills);
+  if(id==='vendor-credits'&&typeof renderVendorCredits==='function')_call(renderVendorCredits);
+  if(id==='projects'&&typeof renderProjects==='function')_call(renderProjects);
+  if(id==='timesheet'&&typeof renderTimesheet==='function')_call(renderTimesheet);
+  if(id==='manual-journals'&&typeof renderJournals==='function')_call(renderJournals);
+  if(id==='chart-of-accounts'&&typeof renderCOA==='function')_call(renderCOA);
+  if(id==='transaction-locking'&&typeof renderLockHistory==='function')_call(renderLockHistory);
+  if(id==='reports'&&typeof renderReports==='function')_call(renderReports);
+  if(id==='documents'&&typeof renderDocuments==='function')_call(renderDocuments);
+  if(id==='templates'&&typeof renderTemplates==='function')_call(renderTemplates);
   // Trigger bar animations on the new page
   setTimeout(()=>{ if(pg) animateBarsOnPage(pg); },80);
   // Animate metric counters

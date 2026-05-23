@@ -28,6 +28,9 @@ async function loadReceipts(){
 }
 
 function renderReceipts(){
+  // Was: loadReceipts().then(()=>{...})()  — that extra () invoked the Promise
+  // returned by .then() as a function, throwing TypeError every time the
+  // tab was rendered before pages.js had assigned its override.
   loadReceipts().then(()=>{
     const l = document.getElementById('receipts-list'); if(!l) return;
     if(!_receipts.length){ l.innerHTML='<div style="padding:20px;text-align:center;color:var(--t3)">No sales receipts yet. Click + New Receipt to add one.</div>'; return; }
@@ -43,7 +46,7 @@ function renderReceipts(){
           <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteReceipt(${r.id})">Del</button>
         </span>
       </div>`).join('');
-  })()
+  });
 }
 
 function openNewReceiptModal(){
@@ -486,4 +489,4 @@ function clearAIChat(){
   if(inp) inp.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendAIMessage(); } });
   const clearBtn = document.getElementById('ai-clear-btn');
   if(clearBtn) clearBtn.addEventListener('click', clearAIChat);
-});
+})();

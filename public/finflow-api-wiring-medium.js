@@ -658,7 +658,49 @@
           }
         }
         console.log('[Payroll Save] ✅ Owner payroll persisted per-entity. window.ownerPayroll:', window.ownerPayroll);
+
+        // Auto-post each entity's owner net salary as a personal-finance
+        // income transaction so Personal Finance reflects the salary income.
+        // Idempotent per (entity-name, calendar month): updates the existing
+        // row if one already exists for this month rather than appending a
+        // new entry on every save.
+        try {
+          const existingPersonal = await api('GET', '/api/personal-transactions').catch(() => []);
+          const today = new Date().toISOString().slice(0, 10);
+          const monthStart = today.slice(0, 8) + '01';
+          for (const [idxStr, op] of Object.entries(byEntity)) {
+            const idx = parseInt(idxStr);
+            const entity = ENTITIES[idx];
+            const entityName = entity?.name || 'Business';
+            const gross = parseFloat(op.gross) || 0;
+            const taxRate = parseFloat(op.taxRate) || 0;
+            const net = Math.round(gross * (1 - taxRate / 100));
+            if (net <= 0) continue;
+            const description = `Owner salary — ${entityName}`;
+            const existing = (existingPersonal || []).find(t =>
+              t && t.description === description && (t.tx_date || '') >= monthStart
+            );
+            try {
+              if (existing) {
+                await api('PUT', `/api/personal-transactions/${existing.id}`, { amount: net });
+              } else {
+                await api('POST', '/api/personal-transactions', {
+                  description, amount: net, tx_type: 'income',
+                  category: 'Salary', tx_date: today,
+                });
+              }
+            } catch (perr) {
+              console.warn('[OwnerSalary→Personal] sync failed for', entityName, ':', perr.message);
+            }
+          }
+        } catch (e) {
+          console.warn('[OwnerSalary→Personal] sync block failed:', e.message);
+        }
+
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.loadPersonalFinance === 'function') {
+          window.loadPersonalFinance().catch(() => {});
+        }
         if (window.finflow?.refresh) window.finflow.refresh(['personal-finance']);
       } catch (e) {
         console.error('[Payroll Save] ❌ Failed:', e.message);

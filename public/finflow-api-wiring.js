@@ -168,6 +168,7 @@
           color: 'var(--acc)',
         });
         // Push with DB id so we can delete later
+        if (!window.goals) window.goals = [];
         window.goals.push({
           _dbId: saved.id,
           name,
@@ -308,6 +309,7 @@
           dividend: div,
           color,
         });
+        if (!window.holdings) window.holdings = [];
         window.holdings.push({ _dbId: saved.id, ticker, name, type, shares, cost, price, div, color });
         closeModal('holding-modal');
         if (typeof renderInvestments === 'function') renderInvestments();
@@ -352,6 +354,7 @@
       const editId = document.getElementById('cust-edit-id')?.value;
 
       try {
+        if (!window.customers) window.customers = [];
         if (editId) {
           // Find DB id
           const cust = window.customers.find(c => c.id === Number(editId));
@@ -380,12 +383,12 @@
       if (!id) return;
       if (!confirm('Delete this customer? This cannot be undone.')) return;
 
-      const cust = window.customers.find(c => c.id === id);
+      const cust = (window.customers || []).find(c => c.id === id);
       const dbId = cust?._dbId || id;
 
       try {
         await api('DELETE', `/api/customers/${dbId}`);
-        window.customers = window.customers.filter(c => c.id !== id);
+        window.customers = (window.customers || []).filter(c => c.id !== id);
         closeModal('customer-modal');
         if (typeof renderCustomers === 'function') renderCustomers();
         notify('Customer deleted');

@@ -1928,6 +1928,159 @@ app.post('/api/permissions', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── DERIVED / AGGREGATE ENDPOINTS ─────────────────────────────────────────────
+// These aren't backed by their own table — they compute a summary on the fly
+// from invoices + expenses. Used by the Cashflow, Reports, and Tax Filing
+// pages so each one has a single round-trip instead of refetching invoices
+// and expenses individually and re-summing on the client.
+
+// GET /api/cashflow — { in, out, net, monthly: [{month, in, out, net}, ...] }
+app.get('/api/cashflow', requireAuth, wrap(async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const eid = req.entityId || null;
+    const matchEnt = r => !eid || r.entity_id === eid || r.entity_id == null;
+    const invoices = (await db.allByUser('invoices', uid, matchEnt)) || [];
+    const expenses = (await db.allByUser('expenses', uid, matchEnt)) || [];
+
+    const inflow  = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    const outflow = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+
+    // Build last-12-month rolling buckets (oldest first).
+    const now = new Date();
+    const monthly = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = d.toISOString().slice(0, 7); // YYYY-MM
+      const label = d.toLocaleString('en-US', { month: 'short' });
+      const mIn = invoices
+        .filter(x => x.status === 'paid' && (x.due_date || '').slice(0, 7) === key)
+        .reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
+      const mOut = expenses
+        .filter(x => (x.expense_date || '').slice(0, 7) === key)
+        .reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
+      monthly.push({ month: label, in: mIn, out: mOut, net: mIn - mOut });
+    }
+
+    res.json({ in: inflow, out: outflow, net: inflow - outflow, monthly });
+  } catch (e) {
+    console.error('[GET /api/cashflow]', e.message);
+    res.json({ in: 0, out: 0, net: 0, monthly: [] });
+  }
+}));
+
+// GET /api/reports — summary stats (revenue, expenses, profit, counts).
+app.get('/api/reports', requireAuth, wrap(async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const eid = req.entityId || null;
+    const matchEnt = r => !eid || r.entity_id === eid || r.entity_id == null;
+    const invoices = (await db.allByUser('invoices', uid, matchEnt)) || [];
+    const expenses = (await db.allByUser('expenses', uid, matchEnt)) || [];
+
+    const revenue = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    const outstanding = invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    const overdue = invoices.filter(i => i.status === 'overdue').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    const totalExp = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+    const netProfit = revenue - totalExp;
+    const margin = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;
+
+    res.json({
+      revenue, outstanding, overdue,
+      expenses: totalExp,
+      netProfit, margin,
+      invoiceCount: invoices.length,
+      expenseCount: expenses.length,
+    });
+  } catch (e) {
+    console.error('[GET /api/reports]', e.message);
+    res.json({ revenue: 0, outstanding: 0, overdue: 0, expenses: 0, netProfit: 0, margin: 0, invoiceCount: 0, expenseCount: 0 });
+  }
+}));
+
+// GET /api/tax-filing — quarterly tax estimates from paid invoices and
+// deductible expenses. Uses a flat 25% combined federal+self-employment
+// estimate as a starting point; users override on the frontend.
+app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
+  try {
+    const uid = req.session.userId;
+    const eid = req.entityId || null;
+    const matchEnt = r => !eid || r.entity_id === eid || r.entity_id == null;
+    const invoices = (await db.allByUser('invoices', uid, matchEnt)) || [];
+    const expenses = (await db.allByUser('expenses', uid, matchEnt)) || [];
+
+    const revenue = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    const deductible = expenses.reduce((s, e) => {
+      const ded = e.deductible;
+      const factor = ded === 'yes' || ded === '100' ? 1 : ded === 'half' || ded === '50' ? 0.5 : 0;
+      return s + ((parseFloat(e.amount) || 0) * factor);
+    }, 0);
+    const taxableIncome = Math.max(0, revenue - deductible);
+    const estimatedTax = Math.round(taxableIncome * 0.25);
+    const quarterly = Math.round(estimatedTax / 4);
+
+    res.json({
+      revenue, deductible, taxableIncome,
+      estimatedTax, quarterly,
+      rate: 0.25,
+    });
+  } catch (e) {
+    console.error('[GET /api/tax-filing]', e.message);
+    res.json({ revenue: 0, deductible: 0, taxableIncome: 0, estimatedTax: 0, quarterly: 0, rate: 0.25 });
+  }
+}));
+
+// GET /api/scenario — placeholder; scenarios live entirely client-side for
+// now. Returns the saved scenario blob from user_settings if present, else
+// an empty object so the client can default.
+app.get('/api/scenario', requireAuth, wrap(async (req, res) => {
+  try {
+    const row = await db.get('user_settings', r => r.user_id === req.session.userId && r.key === 'scenario');
+    res.json(row?.value ? JSON.parse(row.value) : {});
+  } catch (e) {
+    console.error('[GET /api/scenario]', e.message);
+    res.json({});
+  }
+}));
+app.put('/api/scenario', requireAuth, wrap(async (req, res) => {
+  try {
+    const data = JSON.stringify(req.body || {});
+    const existing = await db.get('user_settings', r => r.user_id === req.session.userId && r.key === 'scenario');
+    if (existing) await db.update('user_settings', r => r.id === existing.id, { value: data });
+    else await db.insert('user_settings', { user_id: req.session.userId, key: 'scenario', value: data });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[PUT /api/scenario]', e.message);
+    res.status(500).json({ error: 'Could not save scenario.' });
+  }
+}));
+
+// GET /api/connections + POST /api/connections — connection toggle states
+// (e.g. "Stripe enabled", "QuickBooks enabled"). Stored as a JSON blob in
+// user_settings under key='connections'. Defaults to an empty object so the
+// frontend can render all toggles off.
+app.get('/api/connections', requireAuth, wrap(async (req, res) => {
+  try {
+    const row = await db.get('user_settings', r => r.user_id === req.session.userId && r.key === 'connections');
+    res.json(row?.value ? JSON.parse(row.value) : {});
+  } catch (e) {
+    console.error('[GET /api/connections]', e.message);
+    res.json({});
+  }
+}));
+app.post('/api/connections', requireAuth, wrap(async (req, res) => {
+  try {
+    const data = JSON.stringify(req.body || {});
+    const existing = await db.get('user_settings', r => r.user_id === req.session.userId && r.key === 'connections');
+    if (existing) await db.update('user_settings', r => r.id === existing.id, { value: data });
+    else await db.insert('user_settings', { user_id: req.session.userId, key: 'connections', value: data });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[POST /api/connections]', e.message);
+    res.status(500).json({ error: 'Could not save connection settings.' });
+  }
+}));
+
 // ── /api 404 + STATIC FALLBACKS ───────────────────────────────────────────────
 // Must come AFTER every route registration — Express matches in order.
 // Any unmatched /api/* path returns JSON (so fetch().json() doesn't choke on

@@ -191,7 +191,27 @@
       if (chgEl) chgEl.className = 'mc-change dn';
     }
 
-    return { rev, exp, profit, outstanding };
+    // ── Investments: total portfolio value from window.holdings ─────
+    // Each holding has { shares, price, cost }. Value = shares × current price.
+    // Cost basis is shown as the change line so the user sees unrealized P/L.
+    const holdings = window.holdingsData || window.holdings || [];
+    const portfolio = holdings.reduce((s, h) => s + (parseFloat(h.shares) || 0) * (parseFloat(h.price) || parseFloat(h.cost) || 0), 0);
+    const basis     = holdings.reduce((s, h) => s + (parseFloat(h.shares) || 0) * (parseFloat(h.cost)  || 0), 0);
+    set('d-invest', money(portfolio));
+    const invChgEl = document.getElementById('d-invest-chg');
+    if (invChgEl) {
+      if (basis > 0) {
+        const pl  = portfolio - basis;
+        const pct = Math.round(pl / basis * 100);
+        invChgEl.textContent = (pl >= 0 ? '+' : '') + money(pl) + ' · ' + (pct >= 0 ? '+' : '') + pct + '%';
+        invChgEl.className   = 'mc-change ' + (pl >= 0 ? 'up' : 'dn');
+      } else {
+        invChgEl.textContent = holdings.length ? holdings.length + ' holding' + (holdings.length !== 1 ? 's' : '') : 'No holdings';
+        invChgEl.className   = 'mc-change neutral';
+      }
+    }
+
+    return { rev, exp, profit, outstanding, portfolio };
   }
 
   // ── Update expense breakdown bars ────────────────────────────────

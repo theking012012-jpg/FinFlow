@@ -107,44 +107,56 @@
   // ── 4. Live refresh helper ───────────────────────────────────────────
   // Called after any create/edit/delete so the dashboard and lists
   // immediately reflect the authoritative API state without a page reload.
-  window.refreshFinancials = async function () {
+  // Targeted refresh. `hint` filters which collections re-fetch:
+  //   'all'              — invoices + expenses (default, backwards-compatible)
+  //   'invoices'|'revenue' — invoices only
+  //   'expenses'|'costs'   — expenses only
+  //   'none'             — skip API fetches, just re-render the active page
+  window.refreshFinancials = async function (hint) {
+    if (hint === undefined) hint = 'all';
     try {
       const activeEntity = (window.ENTITIES || []).find(e => e.active);
       const eid = activeEntity?._dbId;
       const eq  = eid ? '?entity_id=' + eid : '';
 
-      // Always fetch invoices + expenses — needed for dashboard KPIs and charts.
-      const [invoices, expenses] = await Promise.all([
-        api('GET', '/api/invoices' + eq),
-        api('GET', '/api/expenses' + eq),
-      ]);
+      const fetchInv = ['all','invoices','revenue'].includes(hint);
+      const fetchExp = ['all','expenses','costs'].includes(hint);
+      const fetches = [
+        fetchInv ? api('GET', '/api/invoices' + eq) : Promise.resolve(null),
+        fetchExp ? api('GET', '/api/expenses' + eq) : Promise.resolve(null),
+      ];
+      const [invoices, expenses] = await Promise.all(fetches);
 
-      // ── Refresh canonical arrays ───────────────────────────────────
-      window.userInvoices = (invoices || []).map(r => ({
-        _dbId:    r.id,
-        client:   r.client,
-        amount:   r.amount,
-        due:      r.due_date
-          ? new Date(r.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          : 'TBD',
-        due_date: r.due_date,
-        status:   r.status,
-        notes:    r.notes || '',
-        color:    r.status === 'overdue' ? 'var(--red)' : 'var(--t2)',
-      }));
-      window._realInvoices = invoices || [];
+      // ── Refresh canonical arrays only when re-fetched ──────────────
+      if (fetchInv && invoices) {
+        window.userInvoices = invoices.map(r => ({
+          _dbId:    r.id,
+          client:   r.client,
+          amount:   r.amount,
+          due:      r.due_date
+            ? new Date(r.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            : 'TBD',
+          due_date: r.due_date,
+          status:   r.status,
+          notes:    r.notes || '',
+          color:    r.status === 'overdue' ? 'var(--red)' : 'var(--t2)',
+        }));
+        window._realInvoices = invoices;
+      }
 
-      window.bizExpenses = (expenses || []).map(r => ({
-        _dbId:  r.id,
-        desc:   r.description,
-        cat:    r.category,
-        amount: r.amount,
-        ded:    r.deductible,
-        date:   r.expense_date
-          ? new Date(r.expense_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          : 'Today',
-      }));
-      window._realExpenses = expenses || [];
+      if (fetchExp && expenses) {
+        window.bizExpenses = expenses.map(r => ({
+          _dbId:  r.id,
+          desc:   r.description,
+          cat:    r.category,
+          amount: r.amount,
+          ded:    r.deductible,
+          date:   r.expense_date
+            ? new Date(r.expense_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            : 'Today',
+        }));
+        window._realExpenses = expenses;
+      }
 
       // ── Detect the currently open page ────────────────────────────
       // window.currentPage is set by the showPage tracking wrapper below.
@@ -233,7 +245,9 @@
       }
 
       console.log('[FinFlow] refreshFinancials ✅ page:', _curPage,
-        '— inv:', (invoices || []).length, 'exp:', (expenses || []).length);
+        '— hint:', hint,
+        '— inv:', invoices ? invoices.length : 'skipped',
+        'exp:',  expenses ? expenses.length : 'skipped');
     } catch (err) {
       console.warn('[FinFlow] refreshFinancials failed:', err.message);
     }
@@ -349,9 +363,13 @@
       'personal-finance':   () => { if (typeof window.loadPersonalFinance     === 'function') window.loadPersonalFinance().catch(()=>{}); },
     };
     all.forEach(s => { const fn = dispatch[s]; if (fn) fn(); });
-    // Always refresh dashboard when requested or when dashboard is in the list
+    // Always refresh dashboard when requested or when dashboard is in the list.
+    // Pick a narrower hint when the affected sections only touch one side.
     if (!all.length || all.includes('dashboard')) {
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+      const hasInc = all.some(s => ['invoices','money-in','quotes','receipts','payments-received','credit-notes','recurring-invoices','revenue'].includes(s));
+      const hasExp = all.some(s => ['expenses','money-out','vendors','bills','payments-made','vendor-credits','recurring-bills','payroll','budget','costs'].includes(s));
+      const hint = (hasInc && !hasExp) ? 'invoices' : (hasExp && !hasInc) ? 'expenses' : 'all';
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials(hint);
     } else if (typeof window._refreshDashboardUI === 'function') {
       window._refreshDashboardUI();
     }

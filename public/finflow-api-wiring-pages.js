@@ -111,7 +111,7 @@
         notify(`Quote for ${esc(client)} saved ✦`);
         loadQuotes().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
 
@@ -123,7 +123,7 @@
         _quotesData = _quotesData.filter(r => r.id !== id);
         renderQuotes();
         notify('Quote deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) { notify('Could not delete — ' + e.message, true); }
     };
 
@@ -193,7 +193,7 @@
         notify(`Receipt for ${esc(customer)} saved ✦`);
         loadReceipts().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
 
@@ -204,7 +204,7 @@
         _receiptsData = _receiptsData.filter(r => r.id !== id);
         renderReceipts();
         notify('Receipt deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) { notify('Could not delete — ' + e.message, true); }
     };
 
@@ -278,7 +278,7 @@
         notify(`Payment from ${esc(customer)} recorded ✦`);
         loadPaymentsReceived().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
 
@@ -289,7 +289,7 @@
         _paymentsRecvData = _paymentsRecvData.filter(r => r.id !== id);
         renderPaymentsReceived();
         notify('Payment record deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) { notify('Could not delete — ' + e.message, true); }
     };
 
@@ -368,7 +368,7 @@
         notify(`Recurring profile for ${esc(client)} saved ✦`);
         loadRecurringInvoices().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
 
@@ -379,7 +379,7 @@
         _recurringInvData = _recurringInvData.filter(r => r.id !== id);
         renderRecurringInvoices();
         notify('Profile deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) { notify('Could not delete — ' + e.message, true); }
     };
 
@@ -450,7 +450,7 @@
         notify(`Credit note for ${esc(customer)} saved ✦`);
         loadCreditNotes().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
 
@@ -461,7 +461,7 @@
         _creditNotesData = _creditNotesData.filter(r => r.id !== id);
         renderCreditNotes();
         notify('Credit note deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) { notify('Could not delete — ' + e.message, true); }
     };
 
@@ -547,7 +547,7 @@
         notify(`${esc(name)} added ✦`);
         loadVendors().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
 
@@ -559,7 +559,7 @@
         _vendorsData = _vendorsData.filter(r => r.id !== id);
         renderVendors();
         notify('Vendor deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) { notify('Could not delete — ' + e.message, true); }
     };
 
@@ -643,7 +643,7 @@
         notify(`Bill from ${esc(vendor)} saved ✦`);
         loadBills().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
 
@@ -654,7 +654,7 @@
         if (b) b.status = 'paid';
         renderBills();
         notify('Bill marked as paid ✦');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) { notify('Could not update — ' + e.message, true); }
     };
 
@@ -665,7 +665,7 @@
         _billsData = _billsData.filter(r => r.id !== id);
         renderBills();
         notify('Bill deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) { notify('Could not delete — ' + e.message, true); }
     };
 
@@ -737,7 +737,7 @@
         notify(`Payment to ${esc(vendor)} recorded ✦`);
         loadPaymentsMade().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
 
@@ -748,7 +748,7 @@
         _paymentsMadeData = _paymentsMadeData.filter(r => r.id !== id);
         renderPaymentsMade();
         notify('Payment deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) { notify('Could not delete — ' + e.message, true); }
     };
 
@@ -826,7 +826,7 @@
         notify(`Recurring bill for ${esc(vendor)} saved ✦`);
         loadRecurringBills().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
 
@@ -837,7 +837,7 @@
         _recurringBillsData = _recurringBillsData.filter(r => r.id !== id);
         renderRecurringBills();
         notify('Profile deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) { notify('Could not delete — ' + e.message, true); }
     };
 
@@ -908,7 +908,7 @@
         notify(`Vendor credit from ${esc(vendor)} saved ✦`);
         loadVendorCredits().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
 
@@ -919,7 +919,7 @@
         _vendorCreditsData = _vendorCreditsData.filter(r => r.id !== id);
         renderVendorCredits();
         notify('Vendor credit deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) { notify('Could not delete — ' + e.message, true); }
     };
 

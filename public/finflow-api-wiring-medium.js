@@ -132,7 +132,7 @@
         notify(`Invoice created for ${client} ✦`);
         loadInvoicesFromDB().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) {
         notify('Could not save invoice — ' + e.message, true);
       }
@@ -150,7 +150,7 @@
         window.userInvoices[idx].color  = 'var(--t2)';
         if (typeof renderInvoices === 'function') renderInvoices();
         notify('Invoice marked as paid ✦');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) {
         notify('Could not update invoice — ' + e.message, true);
       }
@@ -166,7 +166,7 @@
         window.userInvoices.splice(idx, 1);
         if (typeof renderInvoices === 'function') renderInvoices();
         notify('Invoice deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) {
         notify('Could not delete invoice — ' + e.message, true);
       }
@@ -277,7 +277,7 @@
         notify('Expense logged ✦');
         loadExpensesFromDB().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) {
         notify('Could not log expense — ' + e.message, true);
       }
@@ -293,7 +293,7 @@
         window.bizExpenses.splice(idx, 1);
         if (typeof renderExpenses === 'function') renderExpenses();
         notify('Expense deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) {
         notify('Could not delete expense — ' + e.message, true);
       }
@@ -413,7 +413,7 @@
         notify(`${name} added to inventory ✦`);
         loadInventoryFromDB().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
       } catch (e) {
         notify('Could not add product — ' + e.message, true);
       }
@@ -464,7 +464,7 @@
         closeModal('restock-modal');
         if (typeof renderInventory === 'function') renderInventory();
         notify(`+${qty} units added to ${esc(item.name)} ✦`);
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
       } catch (e) {
         notify('Could not restock — ' + e.message, true);
       }
@@ -480,7 +480,7 @@
         window.inventory.splice(idx, 1);
         if (typeof renderInventory === 'function') renderInventory();
         notify('Item removed from inventory');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
       } catch (e) {
         notify('Could not delete item — ' + e.message, true);
       }
@@ -703,7 +703,7 @@
           console.warn('[OwnerSalary→Personal] sync block failed:', e.message);
         }
 
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
         if (typeof window.loadPersonalFinance === 'function') {
           window.loadPersonalFinance().catch(() => {});
         }
@@ -749,7 +749,7 @@
         closeModal('edit-inv-modal');
         if (typeof renderInventory === 'function') renderInventory();
         notify(`${esc(name)} updated ✦`);
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
       } catch (e) {
         notify('Could not save — ' + e.message, true);
       }
@@ -905,7 +905,7 @@
         notify(`${esc(name)} saved ✦`);
         loadItemsFromDB().catch(()=>{});
         window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
       } catch (e) {
         notify('Could not save item — ' + e.message, true);
       }
@@ -920,7 +920,7 @@
         window.itemsData = (window.itemsData || []).filter(i => i._dbId !== dbId);
         if (typeof renderItems === 'function') renderItems();
         notify('Item deleted');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
       } catch (e) {
         notify('Could not delete item — ' + e.message, true);
       }

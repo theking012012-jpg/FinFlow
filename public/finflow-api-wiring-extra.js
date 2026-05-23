@@ -197,7 +197,7 @@
       tip('Time entry saved ✦');
       loadTimesheet().catch(()=>{});
       window._refreshDashboardUI?.();
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not save — ' + err.message, true); }
   };
 
@@ -209,7 +209,7 @@
       renderTimesheetList();
       updateTimesheetMetrics();
       tip('Entry deleted');
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not delete — ' + err.message, true); }
   };
 
@@ -412,7 +412,7 @@
       tip(`Project "${e(row.name)}" created`);
       loadProjects().catch(()=>{});
       window._refreshDashboardUI?.();
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not save — ' + err.message, true); }
   };
 
@@ -423,7 +423,7 @@
       _projects = _projects.filter(p => p.id !== id);
       renderProjectsList();
       tip('Project deleted');
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not delete — ' + err.message, true); }
   };
 
@@ -530,7 +530,7 @@
       if (typeof closeModal === 'function') closeModal('holding-modal');
       tip(`${e(ticker)} added to portfolio`);
       await loadHoldingsFromDB();
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not save holding — ' + err.message, true); }
   };
 
@@ -585,7 +585,7 @@
       document.getElementById('invite-modal').classList.add('hidden');
       tip(`Invite sent to ${e(email)}`);
       if (typeof window.renderTeam === 'function') window.renderTeam();
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not invite — ' + err.message, true); }
   };
 

@@ -122,7 +122,7 @@
         if (typeof renderExpenses === 'function') renderExpenses();
         notify('Expense updated ✦');
         document.getElementById('expense-edit-id').value = '';
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) {
         notify('Could not update expense — ' + e.message, true);
       }
@@ -242,7 +242,7 @@
         else if (typeof renderPortfolio === 'function') renderPortfolio();
         notify('Holding updated ✦');
         document.getElementById('holding-edit-id').value = '';
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
       } catch (e) {
         notify('Could not update holding — ' + e.message, true);
       }
@@ -261,7 +261,7 @@
         if (typeof renderHoldings === 'function') renderHoldings();
         else if (typeof renderPortfolio === 'function') renderPortfolio();
         notify('Holding removed');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
       } catch (e) {
         notify('Could not remove holding — ' + e.message, true);
       }

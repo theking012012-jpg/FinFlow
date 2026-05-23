@@ -488,11 +488,15 @@
       }
       if (!window.inventory) window.inventory = [];
       const lowCount = window.inventory.filter(i => i.low).length;
-      // KPI cards: Total SKUs · Inventory value · Low stock alerts
+      // KPI cards: Total SKUs · Inventory value · Low stock alerts · COGS this month
+      // COGS isn't derivable from inventory alone (would need recorded sales),
+      // so we surface "$0" rather than fabricate a value.
       const _invKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
       _invKpi('inv-skus', window.inventory.length);
       _invKpi('inv-value', S(window.inventory.reduce((s, i) => s + ((parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0)), 0)));
       _invKpi('inv-lowstock', lowCount);
+      _invKpi('inv-cogs', S(0));
+      window._refreshDashboardUI?.();
       const badge2 = document.getElementById('badge-inv2');
       if (badge2) {
         badge2.textContent = lowCount;
@@ -761,11 +765,15 @@
       }
 
       const data = window.itemsData || [];
-      // KPI cards: Total Items · Active · Low Stock
+      // KPI cards: Total Items · Active · Low Stock · Avg Margin
+      // Items only carry a price (no cost), so margin can't be computed;
+      // we show "—" rather than invent a percentage.
       const _itKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
       _itKpi('items-total', data.length);
       _itKpi('items-active', data.filter(i => i.status === 'Active').length);
       _itKpi('items-lowstock', data.filter(i => i.status === 'Low Stock').length);
+      _itKpi('items-margin', '—');
+      window._refreshDashboardUI?.();
       const filtered = data.filter(i => filter === 'all' || (i.type || '').toLowerCase() === filter);
       list.innerHTML = filtered.length
         ? filtered.map(i => renderItemRow(i)).join('')

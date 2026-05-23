@@ -322,6 +322,7 @@
     _pjKpi('proj-hours', _projects.reduce((s, p) => s + (parseFloat(p.hours) || 0), 0) + ' hrs');
     _pjKpi('proj-revenue', money(_projects.reduce((s, p) => s + (parseFloat(p.billed) || 0), 0)));
     _pjKpi('proj-unbilled', money(_projects.reduce((s, p) => s + Math.max(0, (parseFloat(p.budget) || 0) - (parseFloat(p.billed) || 0)), 0)));
+    window._refreshDashboardUI?.();
     if (!_projects.length) {
       l.innerHTML = '<div style="padding:16px 0;color:var(--t3);font-size:13px">No projects yet. Click + New Project to add one.</div>';
       return;

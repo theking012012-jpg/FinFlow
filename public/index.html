@@ -4776,6 +4776,11 @@ function updateExpenses(d=getPeriodData()){
     document.getElementById('ex-total').textContent=S(total);
     document.getElementById('ex-biz').textContent=S(total);
     document.getElementById('ex-biz-pct').textContent='Business expenses';
+    // Top category name (label only — amount/% shown in ex-top-pct below)
+    const _exTopEl = document.getElementById('ex-top');
+    if(_exTopEl) _exTopEl.textContent = sorted[0]?.[0] || '—';
+    const _exTopPctEl = document.getElementById('ex-top-pct');
+    if(_exTopPctEl && sorted[0]) _exTopPctEl.textContent = S(sorted[0][1]) + ' · ' + Math.round(sorted[0][1]/total*100) + '%';
     document.getElementById('ex-biz-pct').className='mc-change neutral';
     document.getElementById('ex-ded').textContent=S(ded);
     const taxSaving=Math.round(ded*.25);
@@ -6613,6 +6618,19 @@ async function saveBankTxn(desc, amount, type, cat){
   } catch(e){ if(typeof notify==='function') notify('Error saving transaction'); }
 }
 function renderBanking(){
+  // KPI cards: Total Balance · Inflow (MTD) · Outflow (MTD) · Uncategorized
+  const _bkSet = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  const _bkTotal = (bankAccounts||[]).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
+  const _now = new Date(), _ym = _now.getFullYear()+'-'+String(_now.getMonth()+1).padStart(2,'0');
+  const _bkMtd = (bankTxns||[]).filter(t => (t.date||'').startsWith(_ym));
+  const _bkIn  = _bkMtd.filter(t => t.type==='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
+  const _bkOut = _bkMtd.filter(t => t.type!=='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
+  const _bkUncat = (bankTxns||[]).filter(t => !t.cat || /uncategor/i.test(t.cat)).length;
+  _bkSet('bank-total-bal', S(_bkTotal));
+  _bkSet('bank-inflow',    S(_bkIn));
+  _bkSet('bank-outflow',   S(_bkOut));
+  _bkSet('bank-uncat',     _bkUncat);
+  window._refreshDashboardUI?.();
   const al=document.getElementById('bank-accounts-list');
   if(al)al.innerHTML=bankAccounts.map(a=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">

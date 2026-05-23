@@ -155,11 +155,12 @@
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteReceipt(${r.id})">✕</button>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No receipts yet</div>';
-      // KPI cards: Total Receipts · Cash Sales · Card Sales · Refunds
+      // KPI cards: count · cash sales · card/stripe sales · refunds
       const _rcCash = _receiptsData.filter(r => /cash/i.test(r.method || '')).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _rcCard = _receiptsData.filter(r => /card|stripe/i.test(r.method || '')).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _rcRefund = _receiptsData.filter(r => (parseFloat(r.amount) || 0) < 0).reduce((s, r) => s + Math.abs(parseFloat(r.amount) || 0), 0);
       setKpiCards('page-sales-receipts', [_receiptsData.length, S(_rcCash), S(_rcCard), S(_rcRefund)]);
+      window._refreshDashboardUI?.();
     };
 
     window.openNewReceiptModal = function () {
@@ -231,9 +232,16 @@
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deletePaymentReceived(${r.id})">✕</button>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No payments received yet</div>';
-      // KPI card: Received (total). Outstanding/Overdue/Avg need invoice data — left as placeholder.
+      // KPI cards: total received · outstanding · overdue · avg days to pay
+      // Outstanding/overdue are derived from window._realInvoices (set by the
+      // dashboard wiring). Avg-days-to-pay isn't derivable from the current
+      // payment shape (no paid_at vs due_date), so it stays as the "—" placeholder.
       const _prTotal = _paymentsRecvData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-      setKpiCards('page-payments-received', [S(_prTotal), null, null, null]);
+      const _prInvs = window._realInvoices || [];
+      const _prOut = _prInvs.filter(i => i.status !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      const _prOver = _prInvs.filter(i => i.status === 'overdue').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      setKpiCards('page-payments-received', [S(_prTotal), S(_prOut), S(_prOver), null]);
+      window._refreshDashboardUI?.();
     };
 
     window.openRecordPaymentModal = function () {
@@ -309,11 +317,17 @@
             </div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No recurring invoice profiles yet</div>';
-      // KPI cards: Active Profiles · Monthly Value · Next Run
+      // KPI cards: active count · monthly value · next run · YTD generated
+      // YTD comes from invoices that the recurring scheduler created (server
+      // tags them with notes "Auto-generated from recurring schedule").
       const _riActive = _recurringInvData.filter(r => r.status === 'active');
       const _riMonthly = _riActive.reduce((s, r) => s + monthlyEquiv(r.amount, r.frequency), 0);
       const _riNext = _riActive.map(r => r.next_run).filter(Boolean).sort()[0] || '—';
-      setKpiCards('page-recurring-invoices', [_riActive.length, S(_riMonthly), _riNext, null]);
+      const _riYtd = (window._realInvoices || [])
+        .filter(i => (i.notes || '').includes('recurring schedule'))
+        .reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      setKpiCards('page-recurring-invoices', [_riActive.length, S(_riMonthly), _riNext, S(_riYtd)]);
+      window._refreshDashboardUI?.();
     };
 
     window.openNewRecurringModal = function () {
@@ -386,12 +400,12 @@
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteCreditNote(${r.id})">✕</button>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No credit notes yet</div>';
-      // KPI cards: Total Credits · Open Credits · Applied · This Month
-      const _cnTotal = _creditNotesData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+      // KPI cards: count · open/unapplied sum · applied sum · this-month sum
       const _cnOpen = _creditNotesData.filter(r => r.status === 'Open').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _cnApplied = _creditNotesData.filter(r => r.status === 'Applied').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-      const _cnMonth = _creditNotesData.filter(r => inThisMonth(r.date)).length;
-      setKpiCards('page-credit-notes', [S(_cnTotal), S(_cnOpen), S(_cnApplied), _cnMonth]);
+      const _cnMonthSum = _creditNotesData.filter(r => inThisMonth(r.date)).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+      setKpiCards('page-credit-notes', [_creditNotesData.length, S(_cnOpen), S(_cnApplied), S(_cnMonthSum)]);
+      window._refreshDashboardUI?.();
     };
 
     window.openNewCreditNoteModal = function () {
@@ -473,9 +487,13 @@
     window.renderVendors = function () {
       if (!_vendorsFetched) { loadVendors(); return; }
       renderVendorRows(_vendorsData);
-      // KPI cards: Total Vendors · Payables (outstanding)
+      // KPI cards: count · total payables · overdue · total paid
+      // Vendor rows don't carry a due-date, so "overdue" stays as the "—"
+      // placeholder. Paid is the YTD-paid sum from the rows themselves.
       const _vPayables = _vendorsData.reduce((s, v) => s + (parseFloat(v.owing) || 0), 0);
-      setKpiCards('page-vendors', [_vendorsData.length, S(_vPayables), null, null]);
+      const _vPaid = _vendorsData.reduce((s, v) => s + (parseFloat(v.ytd_paid) || 0), 0);
+      setKpiCards('page-vendors', [_vendorsData.length, S(_vPayables), null, S(_vPaid)]);
+      window._refreshDashboardUI?.();
     };
 
     window.filterVendorsBySearch = function (v) {
@@ -563,8 +581,7 @@
       const overdue = _billsData.filter(b => b.status === 'overdue' || b.status === 'due_soon').length;
       const badge = document.getElementById('badge-bills');
       if (badge) { badge.textContent = overdue; badge.style.display = overdue > 0 ? '' : 'none'; }
-      // KPI cards: Total Bills (unpaid) · Due This Week · Overdue · Paid
-      const _blUnpaid = _billsData.filter(b => b.status !== 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+      // KPI cards: count · due-this-week sum · overdue sum · paid sum
       const _blOverdue = _billsData.filter(b => b.status === 'overdue').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
       const _blPaid = _billsData.filter(b => b.status === 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
       const _weekAhead = new Date(); _weekAhead.setDate(_weekAhead.getDate() + 7);
@@ -572,7 +589,8 @@
         if (b.status === 'paid' || !b.due_date) return false;
         const d = new Date(b.due_date); return !isNaN(d) && d <= _weekAhead;
       }).reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
-      setKpiCards('page-bills', [S(_blUnpaid), S(_blDueWeek), S(_blOverdue), S(_blPaid)]);
+      setKpiCards('page-bills', [_billsData.length, S(_blDueWeek), S(_blOverdue), S(_blPaid)]);
+      window._refreshDashboardUI?.();
     };
 
     window.openNewBillModal = function () {
@@ -655,13 +673,14 @@
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deletePaymentMade(${r.id})">✕</button>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No payments made yet</div>';
-      // KPI cards: Paid (total) · Vendors Paid · Largest Payment · Avg Payment
+      // KPI cards: total paid · unique vendor count · largest single · avg
       const _pmTotal = _paymentsMadeData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _pmVendors = new Set(_paymentsMadeData.map(r => r.vendor)).size;
       const _pmAmts = _paymentsMadeData.map(r => parseFloat(r.amount) || 0);
       const _pmLargest = _pmAmts.length ? Math.max(..._pmAmts) : 0;
       const _pmAvg = _pmAmts.length ? _pmTotal / _pmAmts.length : 0;
       setKpiCards('page-payments-made', [S(_pmTotal), _pmVendors, S(_pmLargest), S(_pmAvg)]);
+      window._refreshDashboardUI?.();
     };
 
     window.openMakePaymentModal = function () {
@@ -737,11 +756,16 @@
             </div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No recurring bill profiles yet</div>';
-      // KPI cards: Active Profiles · Monthly Cost · Next Due
+      // KPI cards: active count · monthly cost · next due · YTD total
+      // YTD is approximated as monthly × elapsed months (Jan = 1 … current
+      // month). No global "_realBills" array exists, so we can't filter
+      // server-tagged bills the way recurring-invoices does.
       const _rbActive = _recurringBillsData.filter(r => r.status === 'active');
       const _rbMonthly = _rbActive.reduce((s, r) => s + monthlyEquiv(r.amount, r.frequency), 0);
       const _rbNext = _rbActive.map(r => r.next_run).filter(Boolean).sort()[0] || '—';
-      setKpiCards('page-recurring-bills', [_rbActive.length, S(_rbMonthly), _rbNext, null]);
+      const _rbYtd = _rbMonthly * (new Date().getMonth() + 1);
+      setKpiCards('page-recurring-bills', [_rbActive.length, S(_rbMonthly), _rbNext, S(_rbYtd)]);
+      window._refreshDashboardUI?.();
     };
 
     window.openNewRecurringBillModal = function () {
@@ -814,12 +838,12 @@
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteVendorCredit(${r.id})">✕</button>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No vendor credits yet</div>';
-      // KPI cards: Total Credits · Open Credits · Applied · This Month
-      const _vcTotal = _vendorCreditsData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+      // KPI cards: count · open sum · applied sum · this-month sum
       const _vcOpen = _vendorCreditsData.filter(r => r.status === 'Open').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _vcApplied = _vendorCreditsData.filter(r => r.status === 'Applied').reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-      const _vcMonth = _vendorCreditsData.filter(r => inThisMonth(r.date)).length;
-      setKpiCards('page-vendor-credits', [S(_vcTotal), S(_vcOpen), S(_vcApplied), _vcMonth]);
+      const _vcMonthSum = _vendorCreditsData.filter(r => inThisMonth(r.date)).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+      setKpiCards('page-vendor-credits', [_vendorCreditsData.length, S(_vcOpen), S(_vcApplied), S(_vcMonthSum)]);
+      window._refreshDashboardUI?.();
     };
 
     window.openNewVendorCreditModal = function () {

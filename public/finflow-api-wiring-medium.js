@@ -176,7 +176,7 @@
       const badgeCls = { paid: 'b-green', pending: 'b-amber', overdue: 'b-red' };
       const el = document.getElementById('invoice-list');
       if (!el) return;
-      el.innerHTML = window.userInvoices.map((inv, idx) => `
+      el.innerHTML = (window.userInvoices||[]).map((inv, idx) => `
         <div class="table-row inv-cols">
           <span>${esc(inv.client)}</span>
           <span style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
@@ -961,6 +961,7 @@
             expenses = await api('GET', '/api/expenses' + eq);
           } catch (_) { expenses = []; }
         }
+        if (!Array.isArray(expenses)) expenses = [];
 
         // Aggregate actual spend per category — case-insensitive match
         const catActuals = {};

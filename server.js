@@ -219,7 +219,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const hash = bcrypt.hashSync(password, 12);
     const { lastInsertRowid: userId } = await db.insert('users', {
       email: email.toLowerCase(), password: hash,
-      name: (name || '').trim().slice(0, 100), plan: 'pro', trial_ends: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner',
+      name: (name || '').trim().slice(0, 100), plan: 'trial', trial_ends: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner',
     });
 
     // If user signed up via an accountant referral link (?ref=CODE), link them now
@@ -1233,8 +1233,15 @@ app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
 app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
   const row = await db.get('vendors', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
   if (!row) return res.status(404).json({ error: 'not found' });
-  const { name, contact, category, owing, ytd_paid, status } = req.body;
-  await db.update('vendors', r => r.id === Number(req.params.id), { name, contact, category, owing: Number(owing), ytd_paid: Number(ytd_paid), status });
+  const b = req.body || {};
+  const patch = {};
+  if (b.name     != null) patch.name     = String(b.name).trim().slice(0, 200);
+  if (b.contact  != null) patch.contact  = String(b.contact).trim().slice(0, 200);
+  if (b.category != null) patch.category = String(b.category).slice(0, 100);
+  if (b.owing    != null) patch.owing    = parseFloat(b.owing)    || 0;
+  if (b.ytd_paid != null) patch.ytd_paid = parseFloat(b.ytd_paid) || 0;
+  if (b.status   != null) patch.status   = String(b.status).slice(0, 50);
+  await db.update('vendors', r => r.id === Number(req.params.id), patch);
   res.json({ ok: true });
 }));
 app.delete('/api/vendors/:id', requireAuth, wrap(async (req, res) => {

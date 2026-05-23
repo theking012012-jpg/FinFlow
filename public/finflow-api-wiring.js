@@ -140,6 +140,8 @@
           fiscal_year,
         });
         notify('Settings saved successfully ✦');
+        // Refresh all financial displays so currency symbol + format changes apply immediately
+        if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save settings — ' + e.message, true);
       }

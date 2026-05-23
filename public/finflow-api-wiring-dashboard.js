@@ -70,6 +70,28 @@
       if (idx >= 0) expByMonth[idx] += parseFloat(exp.amount) || 0;
     });
 
+    // Include sales receipts + payments received in revenue
+    (window._receipts || []).forEach(r => {
+      const d = parseDate(r.date);
+      if (!d) return;
+      const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
+      if (idx >= 0) revByMonth[idx] += parseFloat(r.amount) || 0;
+    });
+    (window._paymentsReceived || []).forEach(p => {
+      const d = parseDate(p.date);
+      if (!d) return;
+      const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
+      if (idx >= 0) revByMonth[idx] += parseFloat(p.amount) || 0;
+    });
+
+    // Include payments made in expenses
+    (window._paymentsMade || []).forEach(p => {
+      const d = parseDate(p.date);
+      if (!d) return;
+      const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
+      if (idx >= 0) expByMonth[idx] += parseFloat(p.amount) || 0;
+    });
+
     return { months: months.map(m => m.label), revByMonth, expByMonth };
   }
 
@@ -115,9 +137,20 @@
     const now = new Date();
     let rev = 0, exp = 0;
 
+    // Extra revenue sources: sales receipts + payments received
+    const receipts  = window._receipts         || [];
+    const paymentsIn = window._paymentsReceived || [];
+    // Extra expense sources: payments made
+    const paymentsMade = window._paymentsMade  || [];
+
     if (period === 'month') {
       const { rev: r, exp: e } = calcMTD(invoices, expenses);
       rev = r; exp = e;
+      // Add MTD receipts
+      const m = now.getMonth(), y = now.getFullYear();
+      receipts.forEach(r => { const d = parseDate(r.date); if (d && d.getMonth()===m && d.getFullYear()===y) rev += parseFloat(r.amount)||0; });
+      paymentsIn.forEach(p => { const d = parseDate(p.date); if (d && d.getMonth()===m && d.getFullYear()===y) rev += parseFloat(p.amount)||0; });
+      paymentsMade.forEach(p => { const d = parseDate(p.date); if (d && d.getMonth()===m && d.getFullYear()===y) exp += parseFloat(p.amount)||0; });
     } else if (period === 'quarter') {
       const q = Math.floor(now.getMonth() / 3) * 3;
       const paidInv = invoices.filter(i => {
@@ -130,10 +163,16 @@
       });
       rev = paidInv.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
       exp = qExp.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+      receipts.forEach(r => { const d = parseDate(r.date); if (d && d.getMonth()>=q && d.getMonth()<q+3 && d.getFullYear()===now.getFullYear()) rev += parseFloat(r.amount)||0; });
+      paymentsIn.forEach(p => { const d = parseDate(p.date); if (d && d.getMonth()>=q && d.getMonth()<q+3 && d.getFullYear()===now.getFullYear()) rev += parseFloat(p.amount)||0; });
+      paymentsMade.forEach(p => { const d = parseDate(p.date); if (d && d.getMonth()>=q && d.getMonth()<q+3 && d.getFullYear()===now.getFullYear()) exp += parseFloat(p.amount)||0; });
     } else {
-      // Year (default)
+      // Year (default) — all records
       rev = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
       exp = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+      rev += receipts.reduce((s, r) => s + (parseFloat(r.amount)||0), 0);
+      rev += paymentsIn.reduce((s, p) => s + (parseFloat(p.amount)||0), 0);
+      exp += paymentsMade.reduce((s, p) => s + (parseFloat(p.amount)||0), 0);
     }
 
     const profit = rev - exp;

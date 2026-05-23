@@ -493,7 +493,7 @@ app.post('/api/entities/:id/activate', requireAuth, wrap(async (req, res) => {
 
 // ── INVOICES ──────────────────────────────────────────────────────────────────
 app.get('/api/invoices', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('invoices', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => b.id - a.id));
+  res.json(await db.allByUser('invoices', req.session.userId, req.entityId ? r => r.entity_id === req.entityId || r.entity_id == null : null, (a,b) => b.id - a.id));
 }));
 app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, due_date, status = 'pending', notes = '', entity_id } = req.body || {};
@@ -531,7 +531,7 @@ app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
 
 // ── EXPENSES ──────────────────────────────────────────────────────────────────
 app.get('/api/expenses', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('expenses', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => b.id - a.id));
+  res.json(await db.allByUser('expenses', req.session.userId, req.entityId ? r => r.entity_id === req.entityId || r.entity_id == null : null, (a,b) => b.id - a.id));
 }));
 app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   const { description, category = 'Other', amount, deductible = 'no', expense_date, entity_id } = req.body || {};
@@ -570,7 +570,7 @@ app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
 
 // ── CUSTOMERS ─────────────────────────────────────────────────────────────────
 app.get('/api/customers', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('customers', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => b.revenue - a.revenue));
+  res.json(await db.allByUser('customers', req.session.userId, req.entityId ? r => r.entity_id === req.entityId || r.entity_id == null : null, (a,b) => b.revenue - a.revenue));
 }));
 app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -595,7 +595,7 @@ app.delete('/api/customers/:id', requireAuth, wrap(async (req, res) => {
 
 // ── INVENTORY ─────────────────────────────────────────────────────────────────
 app.get('/api/inventory', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('inventory', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => a.id - b.id));
+  res.json(await db.allByUser('inventory', req.session.userId, req.entityId ? r => r.entity_id === req.entityId || r.entity_id == null : null, (a,b) => a.id - b.id));
 }));
 app.post('/api/inventory', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -676,7 +676,7 @@ app.get('/api/payroll', requireAuth, wrap(async (req, res) => {
   const userId = req.session.userId;
   const entityId = req.entityId || null;
   const rows = entityId
-    ? await db.allByEntity('payroll', userId, entityId)
+    ? await db.allByUser('payroll', userId, r => r.entity_id === entityId || r.entity_id == null)
     : await db.allByUser('payroll', userId);
   // Normalise is_owner to boolean and sort owner first
   const normalised = (rows || []).map(r => ({
@@ -871,9 +871,10 @@ app.delete('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
 app.get('/api/budget-targets', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const eid = req.entityId || null;
-  const row = eid
-    ? await db.get('budget_targets', r => r.user_id === uid && r.entity_id === eid)
-    : await db.get('budget_targets', r => r.user_id === uid && !r.entity_id);
+  // Prefer entity-scoped row if present, fall back to entity-less row.
+  let row = null;
+  if (eid) row = await db.get('budget_targets', r => r.user_id === uid && r.entity_id === eid);
+  if (!row) row = await db.get('budget_targets', r => r.user_id === uid && !r.entity_id);
   res.json(row ? row.targets : {});
 }));
 app.put('/api/budget-targets', requireAuth, wrap(async (req, res) => {
@@ -999,7 +1000,7 @@ app.post('/api/lock-settings', requireAuth, wrap(async (req, res) => {
 
 // ── MANUAL JOURNALS ───────────────────────────────────────────────────────────
 app.get('/api/journals', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('journals', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => b.id - a.id));
+  res.json(await db.allByUser('journals', req.session.userId, req.entityId ? r => r.entity_id === req.entityId || r.entity_id == null : null, (a,b) => b.id - a.id));
 }));
 app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   const { date, description, lines = [], status = 'Draft' } = req.body || {};
@@ -1037,7 +1038,7 @@ app.delete('/api/journals/:id', requireAuth, wrap(async (req, res) => {
 
 // ── CHART OF ACCOUNTS ─────────────────────────────────────────────────────────
 app.get('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('chart_of_accounts', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => a.code.localeCompare(b.code)));
+  res.json(await db.allByUser('chart_of_accounts', req.session.userId, req.entityId ? r => r.entity_id === req.entityId || r.entity_id == null : null, (a,b) => a.code.localeCompare(b.code)));
 }));
 app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
   const { code, name, category, nature = 'Debit', balance = 0 } = req.body || {};
@@ -1220,7 +1221,7 @@ app.delete('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
 
 // ── VENDORS ───────────────────────────────────────────────────────────────────
 app.get('/api/vendors', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('vendors', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => a.name.localeCompare(b.name)));
+  res.json(await db.allByUser('vendors', req.session.userId, req.entityId ? r => r.entity_id === req.entityId || r.entity_id == null : null, (a,b) => a.name.localeCompare(b.name)));
 }));
 app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const { name, contact, category, owing = 0, ytd_paid = 0, status = 'active' } = req.body;
@@ -1243,7 +1244,7 @@ app.delete('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
 
 // ── BILLS ─────────────────────────────────────────────────────────────────────
 app.get('/api/bills', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('bills', req.session.userId, req.entityId ? r => r.entity_id === req.entityId : null, (a,b) => b.id - a.id));
+  res.json(await db.allByUser('bills', req.session.userId, req.entityId ? r => r.entity_id === req.entityId || r.entity_id == null : null, (a,b) => b.id - a.id));
 }));
 app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, due_date, status = 'unpaid', notes = '' } = req.body;

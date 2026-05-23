@@ -84,6 +84,7 @@
       const rows = await api('GET', '/api/timesheet');
       _tsFetched = true;
       _tsData = rows || [];
+      window.timesheet = _tsData;
       renderTimesheetList();
       updateTimesheetMetrics();
     } catch (err) { console.warn('[Timesheet]', err.message); }
@@ -189,10 +190,13 @@
     try {
       const saved = await api('POST', '/api/timesheet', { employee, project, date, hours, billable, rate });
       _tsData.unshift(saved.row || saved);
+      window.timesheet = _tsData;
       document.getElementById('ts-log-modal')?.classList.add('hidden');
       renderTimesheetList();
       updateTimesheetMetrics();
       tip('Time entry saved ✦');
+      loadTimesheet().catch(()=>{});
+      window._refreshDashboardUI?.();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (err) { tip('Could not save — ' + err.message, true); }
   };
@@ -247,12 +251,12 @@
   async function loadHoldingsFromDB() {
     try {
       const rows = await api('GET', '/api/holdings');
-      if (!rows || !rows.length) return;
-      const mapped = rows.map(r => ({
+      const mapped = (rows || []).map(r => ({
         _dbId: r.id, id: r.id, ticker: r.ticker, name: r.name,
         type: r.asset_type, shares: r.shares, cost: r.cost_per,
         price: r.price, div: r.dividend, color: r.color,
       }));
+      window.holdings = mapped;
       // holdings is declared as `let` in index.html — splice to update in-place
       // so renderInvestments() picks up the API data
       if (typeof holdings !== 'undefined') {
@@ -307,8 +311,9 @@
 
   async function loadProjects() {
     try {
-      _projects = await api('GET', '/api/projects');
+      _projects = await api('GET', '/api/projects') || [];
       _projectsFetched = true;
+      window.projects = _projects;
       renderProjectsList();
     } catch (err) { console.warn('[Projects]', err.message); }
   }
@@ -401,9 +406,12 @@
     try {
       const row = await api('POST', '/api/projects', body);
       _projects.unshift(row);
+      window.projects = _projects;
       renderProjectsList();
       document.getElementById('proj-modal').classList.add('hidden');
       tip(`Project "${e(row.name)}" created`);
+      loadProjects().catch(()=>{});
+      window._refreshDashboardUI?.();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (err) { tip('Could not save — ' + err.message, true); }
   };

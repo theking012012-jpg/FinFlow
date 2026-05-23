@@ -24,7 +24,8 @@ function nextNum(prefix, list, field='num'){
 let _receipts = [];
 
 async function loadReceipts(){
-  try{ _receipts = await apiFetch('/api/sales-receipts'); } catch(e){ _receipts=[]; }
+  try{ _receipts = await apiFetch('/api/sales-receipts') || []; } catch(e){ _receipts=[]; }
+  window.receipts = _receipts;
 }
 
 function renderReceipts(){
@@ -49,26 +50,28 @@ function renderReceipts(){
   });
 }
 
+function _sv(id,v){const el=document.getElementById(id); if(el) el.value=v;}
+function _st(id,v){const el=document.getElementById(id); if(el) el.textContent=v;}
 function openNewReceiptModal(){
-  document.getElementById('receipt-modal-title').textContent = 'New Sales Receipt';
-  document.getElementById('receipt-id').value = '';
-  document.getElementById('receipt-customer').value = '';
-  document.getElementById('receipt-amount').value = '';
-  document.getElementById('receipt-date').value = new Date().toISOString().slice(0,10);
-  document.getElementById('receipt-method').value = 'Card';
-  document.getElementById('receipt-notes').value = '';
+  _st('receipt-modal-title','New Sales Receipt');
+  _sv('receipt-id','');
+  _sv('receipt-customer','');
+  _sv('receipt-amount','');
+  _sv('receipt-date', new Date().toISOString().slice(0,10));
+  _sv('receipt-method','Card');
+  _sv('receipt-notes','');
   openModal('modal-receipt');
 }
 
 function openEditReceiptModal(id){
   const r = _receipts.find(x=>x.id===id); if(!r) return;
-  document.getElementById('receipt-modal-title').textContent = 'Edit Sales Receipt';
-  document.getElementById('receipt-id').value = id;
-  document.getElementById('receipt-customer').value = r.customer||'';
-  document.getElementById('receipt-amount').value = r.amount||'';
-  document.getElementById('receipt-date').value = (r.date||'').slice(0,10)||new Date().toISOString().slice(0,10);
-  document.getElementById('receipt-method').value = r.method||'Card';
-  document.getElementById('receipt-notes').value = r.notes||'';
+  _st('receipt-modal-title','Edit Sales Receipt');
+  _sv('receipt-id',id);
+  _sv('receipt-customer',r.customer||'');
+  _sv('receipt-amount',r.amount||'');
+  _sv('receipt-date',(r.date||'').slice(0,10)||new Date().toISOString().slice(0,10));
+  _sv('receipt-method',r.method||'Card');
+  _sv('receipt-notes',r.notes||'');
   openModal('modal-receipt');
 }
 
@@ -105,7 +108,8 @@ async function deleteReceipt(id){
 let _paymentsReceived = [];
 
 async function loadPaymentsReceived(){
-  try{ _paymentsReceived = await apiFetch('/api/payments-received'); } catch(e){ _paymentsReceived=[]; }
+  try{ _paymentsReceived = await apiFetch('/api/payments-received') || []; } catch(e){ _paymentsReceived=[]; }
+  window.paymentsReceived = _paymentsReceived;
 }
 
 function renderPaymentsReceived(){
@@ -128,27 +132,27 @@ function renderPaymentsReceived(){
 }
 
 function openRecordPaymentModal(){
-  document.getElementById('pr-modal-title').textContent = 'Record Payment Received';
-  document.getElementById('pr-id').value = '';
-  document.getElementById('pr-customer').value = '';
-  document.getElementById('pr-invoice-ref').value = '';
-  document.getElementById('pr-amount').value = '';
-  document.getElementById('pr-date').value = new Date().toISOString().slice(0,10);
-  document.getElementById('pr-method').value = 'Bank Transfer';
-  document.getElementById('pr-notes').value = '';
+  _st('pr-modal-title','Record Payment Received');
+  _sv('pr-id','');
+  _sv('pr-customer','');
+  _sv('pr-invoice-ref','');
+  _sv('pr-amount','');
+  _sv('pr-date', new Date().toISOString().slice(0,10));
+  _sv('pr-method','Bank Transfer');
+  _sv('pr-notes','');
   openModal('modal-payment-received');
 }
 
 function openEditPaymentReceivedModal(id){
   const p = _paymentsReceived.find(x=>x.id===id); if(!p) return;
-  document.getElementById('pr-modal-title').textContent = 'Edit Payment Received';
-  document.getElementById('pr-id').value = id;
-  document.getElementById('pr-customer').value = p.customer||'';
-  document.getElementById('pr-invoice-ref').value = p.invoice_ref||'';
-  document.getElementById('pr-amount').value = p.amount||'';
-  document.getElementById('pr-date').value = (p.date||'').slice(0,10)||new Date().toISOString().slice(0,10);
-  document.getElementById('pr-method').value = p.method||'Bank Transfer';
-  document.getElementById('pr-notes').value = p.notes||'';
+  _st('pr-modal-title','Edit Payment Received');
+  _sv('pr-id',id);
+  _sv('pr-customer',p.customer||'');
+  _sv('pr-invoice-ref',p.invoice_ref||'');
+  _sv('pr-amount',p.amount||'');
+  _sv('pr-date',(p.date||'').slice(0,10)||new Date().toISOString().slice(0,10));
+  _sv('pr-method',p.method||'Bank Transfer');
+  _sv('pr-notes',p.notes||'');
   openModal('modal-payment-received');
 }
 
@@ -185,7 +189,8 @@ async function deletePaymentReceived(id){
 let _creditNotes = [];
 
 async function loadCreditNotes(){
-  try{ _creditNotes = await apiFetch('/api/credit-notes'); } catch(e){ _creditNotes=[]; }
+  try{ _creditNotes = await apiFetch('/api/credit-notes') || []; } catch(e){ _creditNotes=[]; }
+  window.creditNotes = _creditNotes;
 }
 
 function renderCreditNotes(){
@@ -208,25 +213,25 @@ function renderCreditNotes(){
 }
 
 function openNewCreditNoteModal(){
-  document.getElementById('cn-modal-title').textContent = 'New Credit Note';
-  document.getElementById('cn-id').value = '';
-  document.getElementById('cn-customer').value = '';
-  document.getElementById('cn-amount').value = '';
-  document.getElementById('cn-date').value = new Date().toISOString().slice(0,10);
-  document.getElementById('cn-status').value = 'Open';
-  document.getElementById('cn-reason').value = '';
+  _st('cn-modal-title','New Credit Note');
+  _sv('cn-id','');
+  _sv('cn-customer','');
+  _sv('cn-amount','');
+  _sv('cn-date', new Date().toISOString().slice(0,10));
+  _sv('cn-status','Open');
+  _sv('cn-reason','');
   openModal('modal-credit-note');
 }
 
 function openEditCreditNoteModal(id){
   const c = _creditNotes.find(x=>x.id===id); if(!c) return;
-  document.getElementById('cn-modal-title').textContent = 'Edit Credit Note';
-  document.getElementById('cn-id').value = id;
-  document.getElementById('cn-customer').value = c.customer||'';
-  document.getElementById('cn-amount').value = c.amount||'';
-  document.getElementById('cn-date').value = (c.date||'').slice(0,10)||new Date().toISOString().slice(0,10);
-  document.getElementById('cn-status').value = c.status||'Open';
-  document.getElementById('cn-reason').value = c.reason||'';
+  _st('cn-modal-title','Edit Credit Note');
+  _sv('cn-id',id);
+  _sv('cn-customer',c.customer||'');
+  _sv('cn-amount',c.amount||'');
+  _sv('cn-date',(c.date||'').slice(0,10)||new Date().toISOString().slice(0,10));
+  _sv('cn-status',c.status||'Open');
+  _sv('cn-reason',c.reason||'');
   openModal('modal-credit-note');
 }
 
@@ -264,7 +269,8 @@ async function deleteCreditNote(id){
 let _paymentsMade = [];
 
 async function loadPaymentsMade(){
-  try{ _paymentsMade = await apiFetch('/api/payments-made'); } catch(e){ _paymentsMade=[]; }
+  try{ _paymentsMade = await apiFetch('/api/payments-made') || []; } catch(e){ _paymentsMade=[]; }
+  window.paymentsMade = _paymentsMade;
 }
 
 function renderPaymentsMade(){
@@ -287,25 +293,25 @@ function renderPaymentsMade(){
 }
 
 function openMakePaymentModal(){
-  document.getElementById('pm-modal-title').textContent = 'Make Payment';
-  document.getElementById('pm-id').value = '';
-  document.getElementById('pm-vendor').value = '';
-  document.getElementById('pm-amount').value = '';
-  document.getElementById('pm-date').value = new Date().toISOString().slice(0,10);
-  document.getElementById('pm-method').value = 'Bank Transfer';
-  document.getElementById('pm-notes').value = '';
+  _st('pm-modal-title','Make Payment');
+  _sv('pm-id','');
+  _sv('pm-vendor','');
+  _sv('pm-amount','');
+  _sv('pm-date', new Date().toISOString().slice(0,10));
+  _sv('pm-method','Bank Transfer');
+  _sv('pm-notes','');
   openModal('modal-payment-made');
 }
 
 function openEditPaymentMadeModal(id){
   const p = _paymentsMade.find(x=>x.id===id); if(!p) return;
-  document.getElementById('pm-modal-title').textContent = 'Edit Payment';
-  document.getElementById('pm-id').value = id;
-  document.getElementById('pm-vendor').value = p.vendor||'';
-  document.getElementById('pm-amount').value = p.amount||'';
-  document.getElementById('pm-date').value = (p.date||'').slice(0,10)||new Date().toISOString().slice(0,10);
-  document.getElementById('pm-method').value = p.method||'Bank Transfer';
-  document.getElementById('pm-notes').value = p.notes||'';
+  _st('pm-modal-title','Edit Payment');
+  _sv('pm-id',id);
+  _sv('pm-vendor',p.vendor||'');
+  _sv('pm-amount',p.amount||'');
+  _sv('pm-date',(p.date||'').slice(0,10)||new Date().toISOString().slice(0,10));
+  _sv('pm-method',p.method||'Bank Transfer');
+  _sv('pm-notes',p.notes||'');
   openModal('modal-payment-made');
 }
 
@@ -343,7 +349,8 @@ async function deletePaymentMade(id){
 let _vendorCredits = [];
 
 async function loadVendorCredits(){
-  try{ _vendorCredits = await apiFetch('/api/vendor-credits'); } catch(e){ _vendorCredits=[]; }
+  try{ _vendorCredits = await apiFetch('/api/vendor-credits') || []; } catch(e){ _vendorCredits=[]; }
+  window.vendorCredits = _vendorCredits;
 }
 
 function renderVendorCredits(){
@@ -366,25 +373,25 @@ function renderVendorCredits(){
 }
 
 function openNewVendorCreditModal(){
-  document.getElementById('vc-modal-title').textContent = 'New Vendor Credit';
-  document.getElementById('vc-id').value = '';
-  document.getElementById('vc-vendor').value = '';
-  document.getElementById('vc-amount').value = '';
-  document.getElementById('vc-date').value = new Date().toISOString().slice(0,10);
-  document.getElementById('vc-status').value = 'Open';
-  document.getElementById('vc-reason').value = '';
+  _st('vc-modal-title','New Vendor Credit');
+  _sv('vc-id','');
+  _sv('vc-vendor','');
+  _sv('vc-amount','');
+  _sv('vc-date', new Date().toISOString().slice(0,10));
+  _sv('vc-status','Open');
+  _sv('vc-reason','');
   openModal('modal-vendor-credit');
 }
 
 function openEditVendorCreditModal(id){
   const c = _vendorCredits.find(x=>x.id===id); if(!c) return;
-  document.getElementById('vc-modal-title').textContent = 'Edit Vendor Credit';
-  document.getElementById('vc-id').value = id;
-  document.getElementById('vc-vendor').value = c.vendor||'';
-  document.getElementById('vc-amount').value = c.amount||'';
-  document.getElementById('vc-date').value = (c.date||'').slice(0,10)||new Date().toISOString().slice(0,10);
-  document.getElementById('vc-status').value = c.status||'Open';
-  document.getElementById('vc-reason').value = c.reason||'';
+  _st('vc-modal-title','Edit Vendor Credit');
+  _sv('vc-id',id);
+  _sv('vc-vendor',c.vendor||'');
+  _sv('vc-amount',c.amount||'');
+  _sv('vc-date',(c.date||'').slice(0,10)||new Date().toISOString().slice(0,10));
+  _sv('vc-status',c.status||'Open');
+  _sv('vc-reason',c.reason||'');
   openModal('modal-vendor-credit');
 }
 

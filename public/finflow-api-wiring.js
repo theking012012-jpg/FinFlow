@@ -182,6 +182,8 @@
         closeModal('goal-modal');
         if (typeof renderPersonal === 'function') renderPersonal();
         notify('Goal added ✦');
+        loadGoalsFromDB().catch(()=>{});
+        window._refreshDashboardUI?.();
       } catch (e) {
         notify('Could not save goal — ' + e.message, true);
       }
@@ -278,6 +280,8 @@
         closeModal('transaction-modal');
         if (typeof renderPersonal === 'function') renderPersonal();
         notify('Transaction added ✦');
+        loadPersonalTransactionsFromDB().catch(()=>{});
+        window._refreshDashboardUI?.();
       } catch (e) {
         notify('Could not save transaction — ' + e.message, true);
       }
@@ -316,6 +320,8 @@
         closeModal('holding-modal');
         if (typeof renderInvestments === 'function') renderInvestments();
         notify(`${ticker} added to portfolio ✦`);
+        if (typeof window._loadHoldingsFromDB === 'function') window._loadHoldingsFromDB().catch(()=>{});
+        window._refreshDashboardUI?.();
       } catch (e) {
         notify('Could not save holding — ' + e.message, true);
       }

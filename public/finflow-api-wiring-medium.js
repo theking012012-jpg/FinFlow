@@ -130,6 +130,8 @@
         closeModal('invoice-modal');
         if (typeof renderInvoices === 'function') renderInvoices();
         notify(`Invoice created for ${client} ✦`);
+        loadInvoicesFromDB().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save invoice — ' + e.message, true);
@@ -273,6 +275,8 @@
         closeModal('expense-modal');
         if (typeof renderExpenses === 'function') renderExpenses();
         notify('Expense logged ✦');
+        loadExpensesFromDB().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not log expense — ' + e.message, true);
@@ -407,6 +411,8 @@
         closeModal('product-modal');
         if (typeof renderInventory === 'function') renderInventory();
         notify(`${name} added to inventory ✦`);
+        loadInventoryFromDB().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not add product — ' + e.message, true);
@@ -760,19 +766,18 @@
         const rows = await api('GET', '/api/items');
         _itemsFetched = true;
         console.log('[Items] API returned', rows ? rows.length : 0, 'rows');
-        if (rows && rows.length > 0) {
-          window.itemsData = rows.map(r => ({
-            _dbId:  r.id,
-            name:   r.name,
-            type:   r.type,
-            price:  r.price,
-            unit:   r.unit,
-            stock:  r.stock,
-            status: r.status,
-            sku:    r.sku || '',
-          }));
-          if (typeof renderItems === 'function') renderItems();
-        }
+        window.itemsData = (rows || []).map(r => ({
+          _dbId:  r.id,
+          name:   r.name,
+          type:   r.type,
+          price:  r.price,
+          unit:   r.unit,
+          stock:  r.stock,
+          status: r.status,
+          sku:    r.sku || '',
+        }));
+        window.items = window.itemsData;
+        if (typeof renderItems === 'function') renderItems();
       } catch (e) {
         console.warn('[Items] loadItemsFromDB failed:', e.message);
       }
@@ -895,8 +900,11 @@
           window.itemsData.unshift({ _dbId: saved.id, name, type, price, unit, stock, status, sku });
         }
         closeModal('item-modal');
+        window.items = window.itemsData;
         if (typeof renderItems === 'function') renderItems();
         notify(`${esc(name)} saved ✦`);
+        loadItemsFromDB().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) {
         notify('Could not save item — ' + e.message, true);

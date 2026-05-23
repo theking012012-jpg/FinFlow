@@ -80,7 +80,8 @@
 
   async function loadQuotes() {
     try {
-      _quotes = await api('GET', '/api/quotes');
+      _quotes = await api('GET', '/api/quotes') || [];
+      window.quotes = _quotes;
       renderQuotesList();
       updateQuoteMetrics();
     } catch (e) { console.warn('[Quotes] load error', e); }
@@ -168,8 +169,11 @@
         showNotify('Quote created ✦');
       }
       closeModalById('quote-modal');
+      window.quotes = _quotes;
       renderQuotesList();
       updateQuoteMetrics();
+      loadQuotes().catch(()=>{});
+      window._refreshDashboardUI?.();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not save quote — ' + e.message, true); }
   };
@@ -195,7 +199,8 @@
   async function loadVendors() {
     try {
       const _eidV = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
-      _vendors = await api('GET', '/api/vendors' + (_eidV ? '?entity_id=' + _eidV : ''));
+      _vendors = await api('GET', '/api/vendors' + (_eidV ? '?entity_id=' + _eidV : '')) || [];
+      window.vendors = _vendors;
       renderVendorsList();
       updateVendorMetrics();
     } catch (e) { console.warn('[Vendors] load error', e); }
@@ -293,7 +298,10 @@
         showNotify('Vendor added ✦');
       }
       closeModalById('vendor-modal');
+      window.vendors = _vendors;
       renderVendorsList(); updateVendorMetrics();
+      loadVendors().catch(()=>{});
+      window._refreshDashboardUI?.();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not save vendor — ' + e.message, true); }
   };
@@ -318,7 +326,8 @@
   async function loadBills() {
     try {
       const _eidB = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
-      _bills = await api('GET', '/api/bills' + (_eidB ? '?entity_id=' + _eidB : ''));
+      _bills = await api('GET', '/api/bills' + (_eidB ? '?entity_id=' + _eidB : '')) || [];
+      window.bills = _bills;
       renderBillsList();
       updateBillMetrics();
     } catch (e) { console.warn('[Bills] load error', e); }
@@ -427,7 +436,10 @@
         showNotify('Bill created ✦');
       }
       closeModalById('bill-modal');
+      window.bills = _bills;
       renderBillsList(); updateBillMetrics();
+      loadBills().catch(()=>{});
+      window._refreshDashboardUI?.();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not save bill — ' + e.message, true); }
   };
@@ -451,7 +463,8 @@
 
   async function loadRecurringBills() {
     try {
-      _recurringBills = await api('GET', '/api/recurring-bills');
+      _recurringBills = await api('GET', '/api/recurring-bills') || [];
+      window.recurringBills = _recurringBills;
       renderRecurringBillsList();
       updateRecurringBillMetrics();
     } catch (e) { console.warn('[RecurringBills] load error', e); }
@@ -536,7 +549,10 @@
         showNotify('Recurring bill added ✦');
       }
       closeModalById('recurring-bill-modal');
+      window.recurringBills = _recurringBills;
       renderRecurringBillsList(); updateRecurringBillMetrics();
+      loadRecurringBills().catch(()=>{});
+      window._refreshDashboardUI?.();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not save — ' + e.message, true); }
   };
@@ -560,7 +576,8 @@
 
   async function loadRecurringInvoices() {
     try {
-      _recurringInvoices = await api('GET', '/api/recurring-invoices');
+      _recurringInvoices = await api('GET', '/api/recurring-invoices') || [];
+      window.recurringInvoices = _recurringInvoices;
       renderRecurringInvoicesList();
     } catch (e) { console.warn('[RecurringInvoices] load error', e); }
   }
@@ -636,7 +653,10 @@
         showNotify('Recurring invoice added ✦');
       }
       closeModalById('recurring-inv-modal');
+      window.recurringInvoices = _recurringInvoices;
       renderRecurringInvoicesList();
+      loadRecurringInvoices().catch(()=>{});
+      window._refreshDashboardUI?.();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
     } catch (e) { showNotify('Could not save — ' + e.message, true); }
   };

@@ -55,6 +55,7 @@
         const rows = await api('GET', '/api/quotes');
         _quotesFetched = true;
         _quotesData = rows || [];
+        window.quotes = _quotesData;
         console.log('[Quotes] loaded', _quotesData.length);
         renderQuotes();
       } catch (e) { console.warn('[Quotes]', e.message); }
@@ -104,9 +105,12 @@
       try {
         const saved = await api('POST', '/api/quotes', { client, amount, expiry_date, status, notes });
         _quotesData.unshift(saved.row || saved);
+        window.quotes = _quotesData;
         closeModal('quote-modal');
         renderQuotes();
         notify(`Quote for ${esc(client)} saved ✦`);
+        loadQuotes().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
@@ -134,6 +138,7 @@
         const rows = await api('GET', '/api/sales-receipts');
         _receiptsFetched = true;
         _receiptsData = rows || [];
+        window.receipts = _receiptsData;
         console.log('[Receipts] loaded', _receiptsData.length);
         renderReceipts();
       } catch (e) { console.warn('[Receipts]', e.message); }
@@ -182,9 +187,12 @@
       try {
         const saved = await api('POST', '/api/sales-receipts', { customer, num, amount, date, method, notes });
         _receiptsData.unshift(saved.row || saved);
+        window.receipts = _receiptsData;
         closeModal('modal-receipt');
         renderReceipts();
         notify(`Receipt for ${esc(customer)} saved ✦`);
+        loadReceipts().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
@@ -211,6 +219,7 @@
         const rows = await api('GET', '/api/payments-received');
         _paymentsRecvFetched = true;
         _paymentsRecvData = rows || [];
+        window.paymentsReceived = _paymentsRecvData;
         console.log('[Payments Received] loaded', _paymentsRecvData.length);
         renderPaymentsReceived();
       } catch (e) { console.warn('[Payments Received]', e.message); }
@@ -263,9 +272,12 @@
       try {
         const saved = await api('POST', '/api/payments-received', { customer, invoice_ref, amount, date, method, notes });
         _paymentsRecvData.unshift(saved.row || saved);
+        window.paymentsReceived = _paymentsRecvData;
         closeModal('modal-payment-received');
         renderPaymentsReceived();
         notify(`Payment from ${esc(customer)} recorded ✦`);
+        loadPaymentsReceived().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
@@ -292,6 +304,7 @@
         const rows = await api('GET', '/api/recurring-invoices');
         _recurringInvFetched = true;
         _recurringInvData = rows || [];
+        window.recurringInvoices = _recurringInvData;
         console.log('[Recurring Invoices] loaded', _recurringInvData.length);
         renderRecurringInvoices();
       } catch (e) { console.warn('[Recurring Invoices]', e.message); }
@@ -349,9 +362,12 @@
       try {
         const saved = await api('POST', '/api/recurring-invoices', { client, amount, frequency, next_run, status });
         _recurringInvData.unshift(saved.row || saved);
+        window.recurringInvoices = _recurringInvData;
         closeModal('recurring-inv-modal');
         renderRecurringInvoices();
         notify(`Recurring profile for ${esc(client)} saved ✦`);
+        loadRecurringInvoices().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
@@ -378,6 +394,7 @@
         const rows = await api('GET', '/api/credit-notes');
         _creditNotesFetched = true;
         _creditNotesData = rows || [];
+        window.creditNotes = _creditNotesData;
         console.log('[Credit Notes] loaded', _creditNotesData.length);
         renderCreditNotes();
       } catch (e) { console.warn('[Credit Notes]', e.message); }
@@ -427,9 +444,12 @@
       try {
         const saved = await api('POST', '/api/credit-notes', { customer, num, amount, date, status, reason });
         _creditNotesData.unshift(saved.row || saved);
+        window.creditNotes = _creditNotesData;
         closeModal('modal-credit-note');
         renderCreditNotes();
         notify(`Credit note for ${esc(customer)} saved ✦`);
+        loadCreditNotes().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
@@ -457,6 +477,7 @@
         const rows = await api('GET', '/api/vendors' + (_eidV2 ? '?entity_id=' + _eidV2 : ''));
         _vendorsFetched = true;
         _vendorsData = rows || [];
+        window.vendors = _vendorsData;
         console.log('[Vendors] loaded', _vendorsData.length);
         renderVendors();
       } catch (e) { console.warn('[Vendors]', e.message); }
@@ -520,9 +541,12 @@
         const _eidVNew = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
         const saved = await api('POST', '/api/vendors', { name, contact, category, owing, ytd_paid, status: 'active', entity_id: _eidVNew });
         _vendorsData.unshift(saved.row || saved);
+        window.vendors = _vendorsData;
         closeModal('vendor-modal');
         renderVendors();
         notify(`${esc(name)} added ✦`);
+        loadVendors().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
@@ -551,6 +575,7 @@
         const rows = await api('GET', '/api/bills' + (_eidB2 ? '?entity_id=' + _eidB2 : ''));
         _billsFetched = true;
         _billsData = rows || [];
+        window.bills = _billsData;
         console.log('[Bills] loaded', _billsData.length);
         renderBills();
       } catch (e) { console.warn('[Bills]', e.message); }
@@ -612,9 +637,12 @@
         const _eidBNew = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
         const saved = await api('POST', '/api/bills', { vendor, amount, due_date, status, notes, entity_id: _eidBNew });
         _billsData.unshift(saved.row || saved);
+        window.bills = _billsData;
         closeModal('bill-modal');
         renderBills();
         notify(`Bill from ${esc(vendor)} saved ✦`);
+        loadBills().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
@@ -652,6 +680,7 @@
         const rows = await api('GET', '/api/payments-made');
         _paymentsMadeFetched = true;
         _paymentsMadeData = rows || [];
+        window.paymentsMade = _paymentsMadeData;
         console.log('[Payments Made] loaded', _paymentsMadeData.length);
         renderPaymentsMade();
       } catch (e) { console.warn('[Payments Made]', e.message); }
@@ -702,9 +731,12 @@
       try {
         const saved = await api('POST', '/api/payments-made', { vendor, ref, amount, date, method, notes });
         _paymentsMadeData.unshift(saved.row || saved);
+        window.paymentsMade = _paymentsMadeData;
         closeModal('modal-payment-made');
         renderPaymentsMade();
         notify(`Payment to ${esc(vendor)} recorded ✦`);
+        loadPaymentsMade().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
@@ -731,6 +763,7 @@
         const rows = await api('GET', '/api/recurring-bills');
         _recurringBillsFetched = true;
         _recurringBillsData = rows || [];
+        window.recurringBills = _recurringBillsData;
         console.log('[Recurring Bills] loaded', _recurringBillsData.length);
         renderRecurringBills();
       } catch (e) { console.warn('[Recurring Bills]', e.message); }
@@ -787,9 +820,12 @@
       try {
         const saved = await api('POST', '/api/recurring-bills', { vendor, amount, frequency, next_run, status });
         _recurringBillsData.unshift(saved.row || saved);
+        window.recurringBills = _recurringBillsData;
         closeModal('recurring-bill-modal');
         renderRecurringBills();
         notify(`Recurring bill for ${esc(vendor)} saved ✦`);
+        loadRecurringBills().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
@@ -816,6 +852,7 @@
         const rows = await api('GET', '/api/vendor-credits');
         _vendorCreditsFetched = true;
         _vendorCreditsData = rows || [];
+        window.vendorCredits = _vendorCreditsData;
         console.log('[Vendor Credits] loaded', _vendorCreditsData.length);
         renderVendorCredits();
       } catch (e) { console.warn('[Vendor Credits]', e.message); }
@@ -865,9 +902,12 @@
       try {
         const saved = await api('POST', '/api/vendor-credits', { vendor, num, amount, date, status, reason });
         _vendorCreditsData.unshift(saved.row || saved);
+        window.vendorCredits = _vendorCreditsData;
         closeModal('modal-vendor-credit');
         renderVendorCredits();
         notify(`Vendor credit from ${esc(vendor)} saved ✦`);
+        loadVendorCredits().catch(()=>{});
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials();
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };

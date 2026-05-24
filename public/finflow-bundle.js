@@ -1515,7 +1515,20 @@
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
       set('ent-count', ents.length);
       const S = v => typeof window.S === 'function' ? window.S(v) : '$' + (parseFloat(v) || 0).toLocaleString();
-      const totalRev = (window._realInvoices || [])
+      const _invSrc = (window._realInvoices && window._realInvoices.length)
+        ? window._realInvoices
+        : (window.userInvoices || []);
+      if (!_invSrc.length && !window._entRevFetching) {
+        window._entRevFetching = true;
+        fetch('/api/invoices', { credentials: 'same-origin' })
+          .then(r => r.ok ? r.json() : [])
+          .then(rows => {
+            window._entRevFetching = false;
+            if (rows && rows.length) { window._realInvoices = rows; if (typeof window.renderEntities === 'function') window.renderEntities(); }
+          })
+          .catch(() => { window._entRevFetching = false; });
+      }
+      const totalRev = _invSrc
         .filter(i => i.status?.toLowerCase() === 'paid')
         .reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
       const totalProfit = ents.reduce((s, e) => s + (e.data && e.data.netProfit ? parseFloat(e.data.netProfit) : 0), 0);
@@ -4413,6 +4426,13 @@ function clearAIChat(){
   window.renderTimesheet     = renderTimesheetList;
   window.loadTimesheetFromDB = loadTimesheet;
 
+  const _isBillable = t => {
+    const b = t.billable;
+    if (b === true  || b === 1)              return true;
+    if (b === false || b === 0 || b == null) return false;
+    return String(b).toLowerCase() === 'yes';
+  };
+
   function renderTimesheetList() {
     const el = document.getElementById('timesheet-list');
     if (!el) return;
@@ -4431,8 +4451,6 @@ function clearAIChat(){
         <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button>
       </div>`).join('');
   }
-
-  const _isBillable = t => t.billable === true || t.billable === 1 || String(t.billable).toLowerCase() === 'yes';
 
   function updateTimesheetMetrics() {
     const total    = _tsData.reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
@@ -5009,6 +5027,10 @@ function clearAIChat(){
           if (!_projectsFetched) loadProjects();
           else renderProjectsList();
         }
+        if (id === 'settings') {
+          const _se = document.getElementById('settings-user-email');
+          if (_se && window.CURRENT_USER?.email) _se.textContent = window.CURRENT_USER.email;
+        }
       };
     }
   })()
@@ -5418,7 +5440,8 @@ function clearAIChat(){
         const r = await fetch('/api/me', {credentials:'include'});
         if (!r.ok) return;
         const _meData = await r.json().catch(() => ({}));
-        window.CURRENT_USER = _meData;
+        window.CURRENT_USER = _meData.user || _meData;
+        const _seEl = document.getElementById('settings-user-email'); if (_seEl && window.CURRENT_USER?.email) _seEl.textContent = window.CURRENT_USER.email;
         if (typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
       } catch(e) {}
     }, 600);

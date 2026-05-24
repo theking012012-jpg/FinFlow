@@ -397,7 +397,8 @@
         const r = await fetch('/api/me', {credentials:'include'});
         if (!r.ok) return;
         const _meData = await r.json().catch(() => ({}));
-        window.CURRENT_USER = _meData;
+        window.CURRENT_USER = _meData.user || _meData;
+        const _seEl = document.getElementById('settings-user-email'); if (_seEl && window.CURRENT_USER?.email) _seEl.textContent = window.CURRENT_USER.email;
         if (typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
       } catch(e) {}
     }, 600);

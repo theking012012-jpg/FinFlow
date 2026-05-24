@@ -94,6 +94,13 @@
   window.renderTimesheet     = renderTimesheetList;
   window.loadTimesheetFromDB = loadTimesheet;
 
+  const _isBillable = t => {
+    const b = t.billable;
+    if (b === true  || b === 1)              return true;
+    if (b === false || b === 0 || b == null) return false;
+    return String(b).toLowerCase() === 'yes';
+  };
+
   function renderTimesheetList() {
     const el = document.getElementById('timesheet-list');
     if (!el) return;
@@ -112,8 +119,6 @@
         <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button>
       </div>`).join('');
   }
-
-  const _isBillable = t => t.billable === true || t.billable === 1 || String(t.billable).toLowerCase() === 'yes';
 
   function updateTimesheetMetrics() {
     const total    = _tsData.reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
@@ -689,6 +694,10 @@
         if (id === 'projects') {
           if (!_projectsFetched) loadProjects();
           else renderProjectsList();
+        }
+        if (id === 'settings') {
+          const _se = document.getElementById('settings-user-email');
+          if (_se && window.CURRENT_USER?.email) _se.textContent = window.CURRENT_USER.email;
         }
       };
     }

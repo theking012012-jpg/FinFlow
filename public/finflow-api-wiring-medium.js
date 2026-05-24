@@ -957,7 +957,20 @@
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
       set('ent-count', ents.length);
       const S = v => typeof window.S === 'function' ? window.S(v) : '$' + (parseFloat(v) || 0).toLocaleString();
-      const totalRev = (window._realInvoices || [])
+      const _invSrc = (window._realInvoices && window._realInvoices.length)
+        ? window._realInvoices
+        : (window.userInvoices || []);
+      if (!_invSrc.length && !window._entRevFetching) {
+        window._entRevFetching = true;
+        fetch('/api/invoices', { credentials: 'same-origin' })
+          .then(r => r.ok ? r.json() : [])
+          .then(rows => {
+            window._entRevFetching = false;
+            if (rows && rows.length) { window._realInvoices = rows; if (typeof window.renderEntities === 'function') window.renderEntities(); }
+          })
+          .catch(() => { window._entRevFetching = false; });
+      }
+      const totalRev = _invSrc
         .filter(i => i.status?.toLowerCase() === 'paid')
         .reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
       const totalProfit = ents.reduce((s, e) => s + (e.data && e.data.netProfit ? parseFloat(e.data.netProfit) : 0), 0);

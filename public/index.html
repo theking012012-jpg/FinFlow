@@ -4160,7 +4160,8 @@ document.addEventListener('DOMContentLoaded', function() {
       fetch('/api/me', {credentials:'include'}).then(async r => {
         if (r.ok) {
           const data = await r.json();
-          window.CURRENT_USER = data;
+          window.CURRENT_USER = data.user || data;
+          const _seEl2 = document.getElementById('settings-user-email'); if (_seEl2 && window.CURRENT_USER?.email) _seEl2.textContent = window.CURRENT_USER.email;
           currentRole = 'owner';
           applyRole('owner');
           sessionStorage.setItem('ff_role', 'owner');

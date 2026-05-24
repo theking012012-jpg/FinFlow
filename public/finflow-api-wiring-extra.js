@@ -340,7 +340,10 @@
     // KPI cards: Active Projects · Billable Hours · Revenue · Unbilled
     const _pjKpi = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     _pjKpi('proj-active', _projects.filter(p => p.status === 'In Progress').length);
-    _pjKpi('proj-hours', _projects.reduce((s, p) => s + (parseFloat(p.hours) || 0), 0) + ' hrs');
+    const _tsAll = window.timesheetData || window.timesheet || [];
+    const _billFn = window._isBillable || (t => t.billable === true || t.billable === 1 || String(t.billable || '').toLowerCase() === 'yes');
+    const _billHrs = _tsAll.filter(_billFn).reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
+    _pjKpi('proj-hours', _billHrs.toFixed(1) + ' hrs');
     _pjKpi('proj-revenue', money(_projects.reduce((s, p) => s + (parseFloat(p.billed) || 0), 0)));
     _pjKpi('proj-unbilled', money(_projects.reduce((s, p) => s + Math.max(0, (parseFloat(p.budget) || 0) - (parseFloat(p.billed) || 0)), 0)));
     window._refreshDashboardUI?.();

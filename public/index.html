@@ -7014,28 +7014,51 @@ async function renderReports(){
     </div>`).join('');
 }
 
-function generateReport(name,revenue,expenses,profit){
-  const fmt=n=>'$'+(n||0).toLocaleString();
-  const content = name==='Profit & Loss Statement'
-    ? `<div style="margin-bottom:1rem"><div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:6px;margin-bottom:8px">Income</div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--t2)">Revenue (paid invoices)</span><span style="color:var(--green);font-family:var(--font-mono)">${fmt(revenue)}</span></div>
-       </div>
-       <div style="margin-bottom:1rem"><div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd);padding-bottom:6px;margin-bottom:8px">Expenses</div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--t2)">Total expenses</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(expenses)}</span></div>
-       </div>
-       <div style="padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:600"><span>Net Profit</span><span style="color:${profit>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt(profit)}</span></div>`
-    : `<div style="padding:1rem;text-align:center;color:var(--t2);font-size:13px">Generating ${esc(name)}…<br><span style="font-size:11px;color:var(--t3);margin-top:6px;display:block">Full report generation coming soon.</span></div>`;
-
+async function generateReport(name,revenue,expenses,profit){
+  const fmt=n=>'$'+(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
   const overlay=document.createElement('div');
   overlay.className='modal-overlay';
   overlay.style.zIndex='1100';
-  overlay.innerHTML=`<div class="modal" style="max-width:500px">
+  overlay.innerHTML=`<div class="modal" style="max-width:560px">
     <div class="modal-header"><div><div class="modal-title">${esc(name)}</div><div class="modal-sub">Generated ${new Date().toLocaleDateString()}</div></div>
     <button class="modal-close" onclick="this.closest('.modal-overlay').remove()"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div>${content}</div>
+    <div id="_rpt-body"><div style="padding:2rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Close</button><button class="btn btn-primary" onclick="notify('Export as PDF coming soon ✦')">Export PDF</button></div>
   </div>`;
   document.body.appendChild(overlay);
+  const body=overlay.querySelector('#_rpt-body');
+  const rowStyle='display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)';
+  const hdr=label=>`<div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;padding:8px 0 4px">${label}</div>`;
+  try{
+    if(name==='Profit & Loss Statement'){
+      const d=await fetch('/api/reports/profit-loss',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());
+      const rows=(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${r.month}</span><span style="font-family:var(--font-mono);color:${r.netProfit>=0?'var(--green)':'var(--red)'}">${fmt(r.netProfit)}</span></div>`).join('');
+      body.innerHTML=`${hdr('Revenue')}${(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${r.month}</span><span style="color:var(--green);font-family:var(--font-mono)">${fmt(r.revenue)}</span></div>`).join('')}
+        <div style="${rowStyle};font-weight:600"><span>Total Revenue</span><span style="color:var(--green);font-family:var(--font-mono)">${fmt(d.totalRevenue)}</span></div>
+        ${hdr('Expenses')}${(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${r.month}</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(r.expenses)}</span></div>`).join('')}
+        <div style="${rowStyle};font-weight:600"><span>Total Expenses</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(d.totalExpenses)}</span></div>
+        <div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Net Profit</span><span style="color:${(d.netProfit||0)>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt(d.netProfit)}</span></div>`;
+    } else if(name==='Balance Sheet'){
+      const d=await fetch('/api/reports/balance-sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());
+      body.innerHTML=`${hdr('Assets')}
+        <div style="${rowStyle}"><span style="color:var(--t2)">Cash & Equivalents</span><span style="font-family:var(--font-mono);color:var(--green)">${fmt(d.cash)}</span></div>
+        <div style="${rowStyle}"><span style="color:var(--t2)">Accounts Receivable</span><span style="font-family:var(--font-mono);color:var(--green)">${fmt(d.accountsReceivable)}</span></div>
+        <div style="${rowStyle};font-weight:600"><span>Total Assets</span><span style="font-family:var(--font-mono);color:var(--green)">${fmt(d.totalAssets)}</span></div>
+        ${hdr('Liabilities')}
+        <div style="${rowStyle}"><span style="color:var(--t2)">Accounts Payable</span><span style="font-family:var(--font-mono);color:var(--red)">${fmt(d.accountsPayable)}</span></div>
+        <div style="${rowStyle};font-weight:600"><span>Total Liabilities</span><span style="font-family:var(--font-mono);color:var(--red)">${fmt(d.totalLiabilities)}</span></div>
+        <div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="color:${(d.equity||0)>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt(d.equity)}</span></div>`;
+    } else if(name==='Cash Flow Statement'){
+      const d=await fetch('/api/reports/cash-flow',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());
+      const rows=(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${r.month}</span><span style="color:var(--t2);font-family:var(--font-mono)">${fmt(r.inflow)} in / ${fmt(r.outflow)} out</span><span style="font-family:var(--font-mono);color:${r.net>=0?'var(--green)':'var(--red)'}">${fmt(r.net)}</span></div>`).join('');
+      body.innerHTML=`${hdr('Monthly Cash Flow')}${rows||'<div style="padding:8px 0;color:var(--t3);font-size:12px">No data yet</div>'}
+        <div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:13px;font-weight:600"><span>Net Cash Flow</span><span style="color:${((d.totalInflow||0)-(d.totalOutflow||0))>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt((d.totalInflow||0)-(d.totalOutflow||0))}</span></div>`;
+    } else {
+      body.innerHTML=`<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">${esc(name)} report is not yet available.</div>`;
+    }
+  }catch(err){
+    body.innerHTML=`<div style="padding:1.5rem;text-align:center;color:var(--red);font-size:13px">Error loading report: ${esc(err.message||'unknown error')}</div>`;
+  }
 }
 
 // ════════════════════════════════════════════

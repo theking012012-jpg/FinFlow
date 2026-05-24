@@ -2030,6 +2030,77 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
   }
 }));
 
+// POST /api/reports/profit-loss — monthly P&L breakdown
+app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const [invoices, expenses] = await Promise.all([
+    db.allByUser('invoices', uid),
+    db.allByUser('expenses', uid),
+  ]);
+  const monthMap = {};
+  (invoices || []).filter(i => i.status === 'paid').forEach(i => {
+    const m = (i.date || '').slice(0, 7) || 'Unknown';
+    if (!monthMap[m]) monthMap[m] = { revenue: 0, expenses: 0 };
+    monthMap[m].revenue += parseFloat(i.amount) || 0;
+  });
+  (expenses || []).forEach(e => {
+    const m = (e.date || '').slice(0, 7) || 'Unknown';
+    if (!monthMap[m]) monthMap[m] = { revenue: 0, expenses: 0 };
+    monthMap[m].expenses += parseFloat(e.amount) || 0;
+  });
+  const rows = Object.keys(monthMap).sort().map(m => ({
+    month: m, revenue: monthMap[m].revenue, expenses: monthMap[m].expenses,
+    netProfit: monthMap[m].revenue - monthMap[m].expenses,
+  }));
+  const totalRevenue  = rows.reduce((s, r) => s + r.revenue, 0);
+  const totalExpenses = rows.reduce((s, r) => s + r.expenses, 0);
+  res.json({ rows, totalRevenue, totalExpenses, netProfit: totalRevenue - totalExpenses });
+}));
+
+// POST /api/reports/balance-sheet — assets vs liabilities snapshot
+app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const [invoices, expenses, bills] = await Promise.all([
+    db.allByUser('invoices', uid),
+    db.allByUser('expenses', uid),
+    db.allByUser('bills', uid).catch(() => []),
+  ]);
+  const paidRev  = (invoices || []).filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+  const totalExp = (expenses || []).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+  const cash     = Math.max(0, paidRev - totalExp);
+  const ar       = (invoices || []).filter(i => i.status !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+  const ap       = (bills   || []).filter(b => b.status !== 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+  const totalAssets      = cash + ar;
+  const totalLiabilities = ap;
+  res.json({ cash, accountsReceivable: ar, totalAssets, accountsPayable: ap, totalLiabilities, equity: totalAssets - totalLiabilities });
+}));
+
+// POST /api/reports/cash-flow — monthly inflows vs outflows
+app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const [receipts, payments, invoices, expenses] = await Promise.all([
+    db.allByUser('receipts', uid).catch(() => []),
+    db.allByUser('payments', uid).catch(() => []),
+    db.allByUser('invoices', uid),
+    db.allByUser('expenses', uid),
+  ]);
+  const monthMap = {};
+  const add = (date, field, amount) => {
+    const m = (date || '').slice(0, 7) || 'Unknown';
+    if (!monthMap[m]) monthMap[m] = { inflow: 0, outflow: 0 };
+    monthMap[m][field] += parseFloat(amount) || 0;
+  };
+  (receipts || []).forEach(r => add(r.date, 'inflow', r.amount));
+  (invoices || []).filter(i => i.status === 'paid').forEach(i => add(i.date, 'inflow', i.amount));
+  (payments || []).forEach(p => add(p.date, 'outflow', p.amount));
+  (expenses || []).forEach(e => add(e.date, 'outflow', e.amount));
+  const rows = Object.keys(monthMap).sort().map(m => ({
+    month: m, inflow: monthMap[m].inflow, outflow: monthMap[m].outflow,
+    net: monthMap[m].inflow - monthMap[m].outflow,
+  }));
+  res.json({ rows, totalInflow: rows.reduce((s, r) => s + r.inflow, 0), totalOutflow: rows.reduce((s, r) => s + r.outflow, 0) });
+}));
+
 // GET /api/tax-filing — quarterly tax estimates from paid invoices and
 // deductible expenses. Uses a flat 25% combined federal+self-employment
 // estimate as a starting point; users override on the frontend.

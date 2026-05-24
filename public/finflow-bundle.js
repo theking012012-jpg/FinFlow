@@ -5413,6 +5413,34 @@ function clearAIChat(){
       if (!window.charts?.overview && typeof buildCharts === 'function') buildCharts();
       if (typeof window._refreshDashboardUI === 'function') window._refreshDashboardUI();
 
+      // Belt-and-suspenders: write KPI cards directly in case updateKPIs
+      // IDs or the DOM aren't ready when _refreshDashboardUI runs above.
+      (function _forceKPIs() {
+        const inv = window._realInvoices || [];
+        const exps = window._realExpenses || [];
+        const rev = inv.filter(i => (i.status||'').toLowerCase() === 'paid')
+                       .reduce((s, i) => s + (Number(i.amount) || 0), 0);
+        let exp = exps.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+        // Include payroll gross in expenses
+        const payroll = window.payrollEmployees || [];
+        if (window.ownerPayroll) payroll.unshift(window.ownerPayroll);
+        exp += payroll.reduce((s, e) => s + (Number(e.gross) || 0), 0);
+        const outstanding = inv.filter(i => (i.status||'').toLowerCase() !== 'paid')
+                              .reduce((s, i) => s + (Number(i.amount) || 0), 0);
+        const fmt = n => {
+          const v = Math.abs(n);
+          const sign = n < 0 ? '-' : '';
+          if (v >= 1000000) return sign + '$' + (v / 1000000).toFixed(1) + 'M';
+          if (v >= 1000)    return sign + '$' + (v / 1000).toFixed(1) + 'K';
+          return sign + '$' + v.toFixed(0);
+        };
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        set('d-rev',         fmt(rev));
+        set('d-exp',         fmt(exp));
+        set('d-profit',      fmt(rev - exp));
+        set('d-outstanding', fmt(outstanding));
+      })();
+
       console.log('[Dashboard Wiring] ✅ Real data loaded — invoices:', invoices.length, 'expenses:', expenses.length);
     } catch (err) {
       console.warn('[Dashboard Wiring] Could not load real data:', err.message);

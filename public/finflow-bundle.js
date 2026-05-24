@@ -1531,9 +1531,7 @@
       const totalRev = _invSrc
         .filter(i => i.status?.toLowerCase() === 'paid')
         .reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-      const _expSrc2 = window._realExpenses || [];
-      const totalExp2 = _expSrc2.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-      const totalProfit = totalRev - totalExp2;
+      const totalProfit = totalRev - (window._realExpenses||[]).reduce((s,e)=>s+Number(e.amount||0),0);
       set('ent-consol-rev', S(totalRev));
       set('ent-consol-profit', S(totalProfit));
       if (totalRev > 0) {

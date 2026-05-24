@@ -2037,14 +2037,15 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
     db.allByUser('invoices', uid),
     db.allByUser('expenses', uid),
   ]);
+  const toMonth = d => { const dt = new Date(d); return isNaN(dt) ? 'Unknown' : dt.toLocaleString('default', { month: 'short', year: '2-digit' }); };
   const monthMap = {};
   (invoices || []).filter(i => i.status === 'paid').forEach(i => {
-    const m = (i.date || '').slice(0, 7) || 'Unknown';
+    const m = toMonth(i.created_at || i.due_date || i.date);
     if (!monthMap[m]) monthMap[m] = { revenue: 0, expenses: 0 };
     monthMap[m].revenue += parseFloat(i.amount) || 0;
   });
   (expenses || []).forEach(e => {
-    const m = (e.date || '').slice(0, 7) || 'Unknown';
+    const m = toMonth(e.expense_date || e.date || e.created_at);
     if (!monthMap[m]) monthMap[m] = { revenue: 0, expenses: 0 };
     monthMap[m].expenses += parseFloat(e.amount) || 0;
   });
@@ -2086,14 +2087,16 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   ]);
   const monthMap = {};
   const add = (date, field, amount) => {
-    const m = (date || '').slice(0, 7) || 'Unknown';
+    if (!date) return;
+    const dt = new Date(date);
+    const m = isNaN(dt) ? 'Unknown' : dt.toLocaleString('default', { month: 'short', year: '2-digit' });
     if (!monthMap[m]) monthMap[m] = { inflow: 0, outflow: 0 };
     monthMap[m][field] += parseFloat(amount) || 0;
   };
   (receipts || []).forEach(r => add(r.date, 'inflow', r.amount));
-  (invoices || []).filter(i => i.status === 'paid').forEach(i => add(i.date, 'inflow', i.amount));
+  (invoices || []).filter(i => i.status === 'paid').forEach(i => add(i.created_at || i.due_date || i.date, 'inflow', i.amount));
   (payments || []).forEach(p => add(p.date, 'outflow', p.amount));
-  (expenses || []).forEach(e => add(e.date, 'outflow', e.amount));
+  (expenses || []).forEach(e => add(e.expense_date || e.date || e.created_at, 'outflow', e.amount));
   const rows = Object.keys(monthMap).sort().map(m => ({
     month: m, inflow: monthMap[m].inflow, outflow: monthMap[m].outflow,
     net: monthMap[m].inflow - monthMap[m].outflow,

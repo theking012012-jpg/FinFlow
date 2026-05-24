@@ -499,9 +499,10 @@
       // so we surface "$0" rather than fabricate a value.
       const _invKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
       _invKpi('inv-skus', window.inventory.length);
-      _invKpi('inv-value', S(window.inventory.reduce((s, i) => s + ((parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0)), 0)));
+      const _iQty = i => parseFloat(i.units != null ? i.units : (i.qty != null ? i.qty : i.stock)) || 0;
+      _invKpi('inv-value', S(window.inventory.reduce((s, i) => s + _iQty(i) * (parseFloat(i.price != null ? i.price : i.cost) || 0), 0)));
       _invKpi('inv-lowstock', lowCount);
-      _invKpi('inv-cogs', S(window.inventory.reduce((s, i) => s + ((parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0)), 0)));
+      _invKpi('inv-cogs',  S(window.inventory.reduce((s, i) => s + _iQty(i) * (parseFloat(i.cost) || 0), 0)));
       window._refreshDashboardUI?.();
       const badge2 = document.getElementById('badge-inv2');
       if (badge2) {
@@ -1199,6 +1200,7 @@
         if (id === 'budget')     loadBudgetFromDB();
         if (id === 'timesheet')  _setTimesheetTitle();
         if (id === 'documents')  { if (typeof window.renderDocuments === 'function') window.renderDocuments(); }
+        if (id === 'settings')   { const _sEl = document.getElementById('settings-user-email'); if (_sEl) _sEl.textContent = window.CURRENT_USER?.email || ''; }
       };
     }
 

@@ -4964,13 +4964,15 @@ function clearAIChat(){
       }
 
       // Personal transactions → populate persTransactions (keep salary entries)
+      // DB stores tx_type (not type) and tx_date (not date)
       const dbTxns = (txRows || []).map(r => ({
-        id:     r.id,
-        desc:   r.description || r.desc || '',
-        cat:    r.category || r.cat || 'Other',
-        amount: Math.abs(parseFloat(r.amount) || 0),
-        type:   r.type || (parseFloat(r.amount) >= 0 ? 'income' : 'expense'),
-        date:   r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '',
+        id:      r.id,
+        desc:    r.description || r.desc || '',
+        cat:     r.category || r.cat || 'Other',
+        amount:  Math.abs(parseFloat(r.amount) || 0),
+        type:    r.tx_type || r.type || (parseFloat(r.amount) < 0 ? 'expense' : 'income'),
+        rawDate: r.tx_date || r.date || '',
+        date:    (r.tx_date || r.date) ? new Date(r.tx_date || r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '',
       }));
 
       // Merge: keep payroll salary entries (added by syncAllPayrollsToPersonal),
@@ -4980,11 +4982,15 @@ function clearAIChat(){
         window.persTransactions = [...salaryEntries, ...dbTxns.filter(t => !(t.cat === 'Income' && t.desc.startsWith('Salary —')))];
       }
 
-      // Spending categories from DB transactions (non-income)
+      // Spending categories — filter to current month for pers-spend KPI
+      const _now = new Date();
+      const _thisMonth = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}`;
       const expTxns = dbTxns.filter(t => t.type === 'expense' || t.type === 'debit');
-      if (expTxns.length && typeof window.spending !== 'undefined') {
+      const monthExpTxns = expTxns.filter(t => t.rawDate.startsWith(_thisMonth));
+      const _allExpOrMonth = monthExpTxns.length ? monthExpTxns : expTxns;
+      if (_allExpOrMonth.length && typeof window.spending !== 'undefined') {
         const catMap = {};
-        expTxns.forEach(t => { catMap[t.cat] = (catMap[t.cat] || 0) + t.amount; });
+        _allExpOrMonth.forEach(t => { catMap[t.cat] = (catMap[t.cat] || 0) + t.amount; });
         const SPEND_COLORS = ['var(--red)', 'var(--amber)', 'var(--purple)', 'var(--teal)', 'var(--green)', 'var(--acc)'];
         const newSpending = Object.entries(catMap).map(([label, amount], i) => ({
           label, amount, color: SPEND_COLORS[i % SPEND_COLORS.length],
@@ -5036,6 +5042,8 @@ function clearAIChat(){
         if (id === 'settings') {
           const _se = document.getElementById('settings-user-email');
           if (_se && window.CURRENT_USER?.email) _se.textContent = window.CURRENT_USER.email;
+          const _sn = document.getElementById('s-user-name');
+          if (_sn && !_sn.value && window.CURRENT_USER?.name) _sn.value = window.CURRENT_USER.name;
         }
       };
     }

@@ -6394,6 +6394,7 @@ async function saveSettings(){
   };
   try {
     await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(b) });
+    if (window.CURRENT_USER && b.name) window.CURRENT_USER.name = b.name;
     notify('Settings saved ✦');
   } catch(e) { notify('Failed to save settings'); }
 }

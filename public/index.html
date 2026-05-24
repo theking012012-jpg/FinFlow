@@ -1816,7 +1816,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
         </div>
         <div class="card">
-          <div class="card-header"><div><div class="card-title">Team payroll — April 2026</div></div><button class="btn btn-ghost btn-sm" onclick="openOwnerModal()">+ Add employee</button></div>
+          <div class="card-header"><div><div class="card-title">Team payroll — April 2026</div></div><button class="btn btn-ghost btn-sm" onclick="openAddEmployeeModal()">+ Add employee</button></div>
           <div style="display:grid;grid-template-columns:1fr 90px 80px 70px 80px 36px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Employee</span><span>Role</span><span>Gross</span><span>Tax</span><span>Net pay</span><span></span></div>
           <div id="payroll-list"></div>
         </div>
@@ -2916,6 +2916,39 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <button class="btn btn-ghost" onclick="closeModal('owner-modal')">Cancel</button>
       <button class="btn btn-danger btn-sm" id="owner-remove-btn" style="display:none" onclick="removeOwnerFromPayroll()">Remove from this entity</button>
       <button class="btn btn-primary" onclick="saveOwnerPayroll()">Save &amp; sync to Personal</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD EMPLOYEE MODAL -->
+<div class="modal-overlay hidden" id="add-employee-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div><div class="modal-title">Add employee</div><div class="modal-sub">Add a team member to payroll</div></div>
+      <button class="modal-close" onclick="closeModal('add-employee-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+    </div>
+    <div class="field-group" style="margin-bottom:.6rem">
+      <div class="field-wrap"><label class="field-label">First name</label><input class="finput" id="emp-fname" placeholder="First name"></div>
+      <div class="field-wrap"><label class="field-label">Last name</label><input class="finput" id="emp-lname" placeholder="Last name"></div>
+    </div>
+    <div class="field-wrap" style="margin-bottom:.6rem"><label class="field-label">Job title</label><input class="finput" id="emp-jobtitle" placeholder="e.g. Software Engineer"></div>
+    <div class="field-wrap" style="margin-bottom:.6rem">
+      <label class="field-label">Role</label>
+      <select class="finput" id="emp-type">
+        <option value="Full-time">Full-time</option>
+        <option value="Part-time">Part-time</option>
+        <option value="Contractor">Contractor</option>
+      </select>
+    </div>
+    <div class="field-group" style="margin-bottom:.6rem">
+      <div class="field-wrap"><label class="field-label">Monthly gross (USD)</label><input class="finput" id="emp-gross" type="number" placeholder="e.g. 4000" min="0" step="100" oninput="previewEmpNet()"></div>
+      <div class="field-wrap"><label class="field-label">Tax rate (%)</label><input class="finput" id="emp-taxrate" type="number" value="20" min="0" max="60" step="0.5" oninput="previewEmpNet()"></div>
+    </div>
+    <div class="field-wrap" style="margin-bottom:.85rem"><label class="field-label">Start date</label><input class="finput" id="emp-startdate" type="date"></div>
+    <div style="font-size:12.5px;color:var(--t2);padding:.4rem 0 .85rem">Net pay: <span id="emp-net-preview" style="color:var(--green);font-family:var(--font-mono);font-weight:600">—</span></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('add-employee-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNewEmployee()">Save employee</button>
     </div>
   </div>
 </div>
@@ -5646,6 +5679,51 @@ async function saveOwnerPayrollCard(){
     if(typeof renderPayroll==='function') renderPayroll();
     notify('Payroll saved — Personal Finance synced ✦');
   }catch(e){notify('Error: '+(e.message||'Failed to save'));}
+}
+
+function openAddEmployeeModal(){
+  const _sv=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
+  _sv('emp-fname',''); _sv('emp-lname',''); _sv('emp-jobtitle','');
+  _sv('emp-type','Full-time'); _sv('emp-gross',''); _sv('emp-taxrate','20'); _sv('emp-startdate','');
+  const prev=document.getElementById('emp-net-preview');
+  if(prev) prev.textContent='—';
+  openModal('add-employee-modal');
+}
+
+function previewEmpNet(){
+  const gross=parseFloat(document.getElementById('emp-gross')?.value)||0;
+  const tax=parseFloat(document.getElementById('emp-taxrate')?.value)||0;
+  const net=Math.round(gross*(1-tax/100));
+  const el=document.getElementById('emp-net-preview');
+  if(el) el.textContent=gross>0?'$'+net.toLocaleString():'—';
+}
+
+async function saveNewEmployee(){
+  const fname=(document.getElementById('emp-fname')?.value||'').trim();
+  const lname=(document.getElementById('emp-lname')?.value||'').trim();
+  const role=(document.getElementById('emp-jobtitle')?.value||'').trim();
+  const empType=document.getElementById('emp-type')?.value||'Full-time';
+  const gross=parseFloat(document.getElementById('emp-gross')?.value)||0;
+  const taxRate=parseFloat(document.getElementById('emp-taxrate')?.value)||0;
+  if(!fname){notify('First name is required');return;}
+  if(!gross){notify('Monthly gross salary is required');return;}
+  const colors=['av-blue','av-green','av-purple','av-amber','av-teal'];
+  const avClass=colors[Math.floor(Math.random()*colors.length)];
+  const activeIdx=typeof ENTITIES!=='undefined'?ENTITIES.findIndex(e=>e.active):-1;
+  const entity=activeIdx>=0?ENTITIES[activeIdx]:null;
+  try{
+    const r=await fetch('/api/payroll',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
+      body:JSON.stringify({fname,lname,role,emp_type:empType,gross,tax_rate:taxRate,is_owner:false,av_class:avClass,entity_id:entity?._dbId||null})});
+    if(!r.ok) throw new Error((await r.json()).error||'Failed to save');
+    const saved=await r.json();
+    const net=Math.round(gross*(1-taxRate/100));
+    const initials=((fname[0]||'')+(lname[0]||'')).toUpperCase();
+    payrollEmployees.push({_dbId:saved.id,fname,lname,role,type:empType,gross,taxRate,net,initials,avClass,isOwner:false});
+    window.payrollEmployees=payrollEmployees;
+    closeModal('add-employee-modal');
+    renderPayroll();
+    notify(fname+' '+lname+' added to payroll ✦');
+  }catch(e){notify('Error: '+(e.message||'Failed to save employee'));}
 }
 
 function _renderPersTxList(){

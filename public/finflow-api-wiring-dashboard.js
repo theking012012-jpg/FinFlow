@@ -110,9 +110,10 @@
       chart = window.charts?.overview;
       if (!chart) return;
     }
+    const safeData = arr => arr.map(v => Math.max(0, v || 0));
     chart.data.labels = labels;
-    chart.data.datasets[0].data = revArr;
-    chart.data.datasets[1].data = expArr;
+    chart.data.datasets[0].data = safeData(revArr);
+    chart.data.datasets[1].data = safeData(expArr);
     chart.update('none');
   }
 
@@ -396,9 +397,10 @@
     if (!window.charts?.overview && typeof buildCharts === 'function') buildCharts();
     updateOverviewChart(revByMonth, expByMonth, months);
     if (window.charts?.overview) {
+      const _safe = arr => arr.map(v => Math.max(0, v || 0));
       window.charts.overview.data.labels = months;
-      window.charts.overview.data.datasets[0].data = revByMonth;
-      window.charts.overview.data.datasets[1].data = expByMonth;
+      window.charts.overview.data.datasets[0].data = _safe(revByMonth);
+      window.charts.overview.data.datasets[1].data = _safe(expByMonth);
       window.charts.overview.update();
     }
     const kpis = updateKPIs(invs, exps, period);

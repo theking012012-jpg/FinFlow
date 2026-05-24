@@ -5409,6 +5409,10 @@ function clearAIChat(){
         updateInvoiceStats(window._realInvoices);
       };
 
+      // Force a full UI refresh so KPIs + chart render with real data on page load
+      if (!window.charts?.overview && typeof buildCharts === 'function') buildCharts();
+      if (typeof window._refreshDashboardUI === 'function') window._refreshDashboardUI();
+
       console.log('[Dashboard Wiring] ✅ Real data loaded — invoices:', invoices.length, 'expenses:', expenses.length);
     } catch (err) {
       console.warn('[Dashboard Wiring] Could not load real data:', err.message);

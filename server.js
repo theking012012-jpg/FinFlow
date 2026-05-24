@@ -599,7 +599,7 @@ app.get('/api/inventory', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/inventory', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
-  const u = Math.max(0, parseInt(b.units)||0);
+  const u = Math.max(0, parseInt(b.units != null ? b.units : b.qty)||0);
   const mx = parseInt(b.max_units)||200;
   const { row } = await db.insert('inventory', { user_id: req.session.userId, entity_id: b.entity_id||null, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: u, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: u < mx * 0.1 ? 1 : 0 });
   res.status(201).json(row);

@@ -4136,6 +4136,7 @@ function initEnhancements(){
     fetch('/api/me', {credentials:'include'}).then(async r => {
       if (r.ok) {
         const data = await r.json();
+        window.CURRENT_USER = data;
         currentRole = 'owner';
         applyRole('owner');
         sessionStorage.setItem('ff_role', 'owner');
@@ -4158,6 +4159,8 @@ document.addEventListener('DOMContentLoaded', function() {
       // No session storage — check server session
       fetch('/api/me', {credentials:'include'}).then(async r => {
         if (r.ok) {
+          const data = await r.json();
+          window.CURRENT_USER = data;
           currentRole = 'owner';
           applyRole('owner');
           sessionStorage.setItem('ff_role', 'owner');

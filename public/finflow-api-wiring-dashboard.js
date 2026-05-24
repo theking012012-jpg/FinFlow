@@ -396,6 +396,8 @@
       try {
         const r = await fetch('/api/me', {credentials:'include'});
         if (!r.ok) return;
+        const _meData = await r.json().catch(() => ({}));
+        window.CURRENT_USER = _meData;
         if (typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
       } catch(e) {}
     }, 600);

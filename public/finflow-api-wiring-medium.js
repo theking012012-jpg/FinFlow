@@ -493,16 +493,13 @@
         loadInventoryFromDB(); // async — will re-render when data arrives
       }
       if (!window.inventory) window.inventory = [];
-      const lowCount = window.inventory.filter(i => i.low).length;
-      // KPI cards: Total SKUs · Inventory value · Low stock alerts · COGS this month
-      // COGS isn't derivable from inventory alone (would need recorded sales),
-      // so we surface "$0" rather than fabricate a value.
+      const lowCount = window.inventory.filter(i => i.low || (parseFloat(i.units) || 0) < 5).length;
+      // KPI cards: Total SKUs · Inventory value (units × cost) · Low stock · COGS
       const _invKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
       _invKpi('inv-skus', window.inventory.length);
-      const _iQty = i => parseFloat(i.units != null ? i.units : (i.qty != null ? i.qty : i.stock)) || 0;
-      _invKpi('inv-value', S(window.inventory.reduce((s, i) => s + _iQty(i) * (parseFloat(i.price != null ? i.price : i.cost) || 0), 0)));
+      _invKpi('inv-value', S(window.inventory.reduce((s, i) => s + (parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0), 0)));
       _invKpi('inv-lowstock', lowCount);
-      _invKpi('inv-cogs',  S(window.inventory.reduce((s, i) => s + _iQty(i) * (parseFloat(i.cost) || 0), 0)));
+      _invKpi('inv-cogs',  S(window.inventory.reduce((s, i) => s + (parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0), 0)));
       window._refreshDashboardUI?.();
       const badge2 = document.getElementById('badge-inv2');
       if (badge2) {
@@ -960,7 +957,9 @@
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
       set('ent-count', ents.length);
       const S = v => typeof window.S === 'function' ? window.S(v) : '$' + (parseFloat(v) || 0).toLocaleString();
-      const totalRev = ents.reduce((s, e) => s + (e.data && e.data.rev ? parseFloat(e.data.rev) : 0), 0);
+      const totalRev = (window._realInvoices || [])
+        .filter(i => i.status?.toLowerCase() === 'paid')
+        .reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
       const totalProfit = ents.reduce((s, e) => s + (e.data && e.data.netProfit ? parseFloat(e.data.netProfit) : 0), 0);
       set('ent-consol-rev', S(totalRev));
       set('ent-consol-profit', S(totalProfit));
@@ -1032,13 +1031,13 @@
         const COLORS = ['#c9a84c','#5aaa9e','#9e8fbf','#7db87d','#d4964a','#c46a5a'];
         const bd = window.BUDGET_DATA;
         if (bd) { bd.length = 0; }
-        let totalBudget = 0, totalSpent = 0;
+        let totalBudget = 0;
+        const totalSpent = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
 
         Object.entries(targets).forEach(([cat, budget], i) => {
           const bAmt = parseFloat(budget) || 0;
           const actual = catActuals[cat.toLowerCase()] || 0;
           totalBudget += bAmt;
-          totalSpent  += actual;
           if (bd) bd.push({ cat, budget: bAmt, actual, color: COLORS[i % COLORS.length] });
         });
 

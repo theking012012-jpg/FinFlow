@@ -1051,16 +1051,13 @@
         loadInventoryFromDB(); // async — will re-render when data arrives
       }
       if (!window.inventory) window.inventory = [];
-      const lowCount = window.inventory.filter(i => i.low).length;
-      // KPI cards: Total SKUs · Inventory value · Low stock alerts · COGS this month
-      // COGS isn't derivable from inventory alone (would need recorded sales),
-      // so we surface "$0" rather than fabricate a value.
+      const lowCount = window.inventory.filter(i => i.low || (parseFloat(i.units) || 0) < 5).length;
+      // KPI cards: Total SKUs · Inventory value (units × cost) · Low stock · COGS
       const _invKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
       _invKpi('inv-skus', window.inventory.length);
-      const _iQty = i => parseFloat(i.units != null ? i.units : (i.qty != null ? i.qty : i.stock)) || 0;
-      _invKpi('inv-value', S(window.inventory.reduce((s, i) => s + _iQty(i) * (parseFloat(i.price != null ? i.price : i.cost) || 0), 0)));
+      _invKpi('inv-value', S(window.inventory.reduce((s, i) => s + (parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0), 0)));
       _invKpi('inv-lowstock', lowCount);
-      _invKpi('inv-cogs',  S(window.inventory.reduce((s, i) => s + _iQty(i) * (parseFloat(i.cost) || 0), 0)));
+      _invKpi('inv-cogs',  S(window.inventory.reduce((s, i) => s + (parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0), 0)));
       window._refreshDashboardUI?.();
       const badge2 = document.getElementById('badge-inv2');
       if (badge2) {
@@ -1518,7 +1515,9 @@
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
       set('ent-count', ents.length);
       const S = v => typeof window.S === 'function' ? window.S(v) : '$' + (parseFloat(v) || 0).toLocaleString();
-      const totalRev = ents.reduce((s, e) => s + (e.data && e.data.rev ? parseFloat(e.data.rev) : 0), 0);
+      const totalRev = (window._realInvoices || [])
+        .filter(i => i.status?.toLowerCase() === 'paid')
+        .reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
       const totalProfit = ents.reduce((s, e) => s + (e.data && e.data.netProfit ? parseFloat(e.data.netProfit) : 0), 0);
       set('ent-consol-rev', S(totalRev));
       set('ent-consol-profit', S(totalProfit));
@@ -1590,13 +1589,13 @@
         const COLORS = ['#c9a84c','#5aaa9e','#9e8fbf','#7db87d','#d4964a','#c46a5a'];
         const bd = window.BUDGET_DATA;
         if (bd) { bd.length = 0; }
-        let totalBudget = 0, totalSpent = 0;
+        let totalBudget = 0;
+        const totalSpent = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
 
         Object.entries(targets).forEach(([cat, budget], i) => {
           const bAmt = parseFloat(budget) || 0;
           const actual = catActuals[cat.toLowerCase()] || 0;
           totalBudget += bAmt;
-          totalSpent  += actual;
           if (bd) bd.push({ cat, budget: bAmt, actual, color: COLORS[i % COLORS.length] });
         });
 
@@ -3951,7 +3950,7 @@ function clearAIChat(){
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(b.amount)}</span>
             <span style="color:${b.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc(b.due_date || '—')}</span>
-            <span><span class="badge ${cls[b.status] || 'b-amber'}">${esc(b.status)}</span></span>
+            <span><span class="badge ${cls[b.status?.toLowerCase()] || 'b-amber'}">${esc(b.status)}</span></span>
             <div style="display:flex;gap:4px">
               ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
               <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>
@@ -4427,15 +4426,17 @@ function clearAIChat(){
         <span style="color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(t.project || '—')}</span>
         <span style="color:var(--t2)">${e(t.date || '—')}</span>
         <span style="font-family:var(--font-mono)">${(t.hours || 0)}h</span>
-        <span><span class="badge ${t.billable === 'Yes' ? 'b-green' : 'b-amber'}">${e(t.billable || 'No')}</span></span>
+        <span><span class="badge ${_isBillable(t) ? 'b-green' : 'b-amber'}">${_isBillable(t) ? 'Yes' : 'No'}</span></span>
         <span style="font-family:var(--font-mono);color:var(--t2)">${t.rate ? '$' + t.rate + '/h' : '—'}</span>
         <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button>
       </div>`).join('');
   }
 
+  const _isBillable = t => t.billable === true || t.billable === 1 || String(t.billable).toLowerCase() === 'yes';
+
   function updateTimesheetMetrics() {
     const total    = _tsData.reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
-    const billable = _tsData.filter(t => t.billable === 'Yes').reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
+    const billable = _tsData.filter(_isBillable).reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
     const nb       = total - billable;
     const rate     = total > 0 ? Math.round(billable / total * 100) : 0;
     const days     = new Set(_tsData.map(t => t.date)).size;
@@ -5416,6 +5417,8 @@ function clearAIChat(){
       try {
         const r = await fetch('/api/me', {credentials:'include'});
         if (!r.ok) return;
+        const _meData = await r.json().catch(() => ({}));
+        window.CURRENT_USER = _meData;
         if (typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
       } catch(e) {}
     }, 600);

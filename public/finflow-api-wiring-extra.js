@@ -107,15 +107,17 @@
         <span style="color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e(t.project || '—')}</span>
         <span style="color:var(--t2)">${e(t.date || '—')}</span>
         <span style="font-family:var(--font-mono)">${(t.hours || 0)}h</span>
-        <span><span class="badge ${t.billable === 'Yes' ? 'b-green' : 'b-amber'}">${e(t.billable || 'No')}</span></span>
+        <span><span class="badge ${_isBillable(t) ? 'b-green' : 'b-amber'}">${_isBillable(t) ? 'Yes' : 'No'}</span></span>
         <span style="font-family:var(--font-mono);color:var(--t2)">${t.rate ? '$' + t.rate + '/h' : '—'}</span>
         <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button>
       </div>`).join('');
   }
 
+  const _isBillable = t => t.billable === true || t.billable === 1 || String(t.billable).toLowerCase() === 'yes';
+
   function updateTimesheetMetrics() {
     const total    = _tsData.reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
-    const billable = _tsData.filter(t => t.billable === 'Yes').reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
+    const billable = _tsData.filter(_isBillable).reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
     const nb       = total - billable;
     const rate     = total > 0 ? Math.round(billable / total * 100) : 0;
     const days     = new Set(_tsData.map(t => t.date)).size;

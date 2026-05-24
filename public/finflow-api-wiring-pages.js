@@ -947,6 +947,9 @@
         if (id === 'vendor-credits')     loadVendorCredits();
         if (id === 'vendors')            loadVendors();
         if (id === 'bills')              loadBills();
+        if (id === 'quotes')             loadQuotes();
+        if (id === 'recurring-invoices') loadRecurringInvoices();
+        if (id === 'recurring-bills')    loadRecurringBills();
       };
     }
 

@@ -4296,6 +4296,9 @@ function clearAIChat(){
         if (id === 'vendor-credits')     loadVendorCredits();
         if (id === 'vendors')            loadVendors();
         if (id === 'bills')              loadBills();
+        if (id === 'quotes')             loadQuotes();
+        if (id === 'recurring-invoices') loadRecurringInvoices();
+        if (id === 'recurring-bills')    loadRecurringBills();
       };
     }
 
@@ -4391,12 +4394,16 @@ function clearAIChat(){
     try {
       const rows = await api('GET', '/api/timesheet');
       _tsFetched = true;
-      _tsData = rows || [];
+      _tsData = Array.isArray(rows) ? rows : (rows ? [rows] : []);
       window.timesheet = _tsData;
+      window.timesheetData = _tsData;
       renderTimesheetList();
       updateTimesheetMetrics();
     } catch (err) { console.warn('[Timesheet]', err.message); }
   }
+  // Expose under the name the user-facing code expects
+  window.renderTimesheet     = renderTimesheetList;
+  window.loadTimesheetFromDB = loadTimesheet;
 
   function renderTimesheetList() {
     const el = document.getElementById('timesheet-list');
@@ -4619,12 +4626,16 @@ function clearAIChat(){
 
   async function loadProjects() {
     try {
-      _projects = await api('GET', '/api/projects') || [];
+      const rows = await api('GET', '/api/projects');
+      _projects = Array.isArray(rows) ? rows : (rows ? [rows] : []);
       _projectsFetched = true;
       window.projects = _projects;
+      window.projectsData = _projects;
       renderProjectsList();
     } catch (err) { console.warn('[Projects]', err.message); }
   }
+  window.renderProjectsList = function() { renderProjectsList(); };
+  window.loadProjectsFromDB = loadProjects;
 
   function renderProjectsList() {
     const l = document.getElementById('projects-list');

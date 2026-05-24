@@ -333,7 +333,7 @@
       // KPI cards: active count · monthly value · next run · YTD generated
       // YTD comes from invoices that the recurring scheduler created (server
       // tags them with notes "Auto-generated from recurring schedule").
-      const _riActive = _recurringInvData.filter(r => r.status === 'active');
+      const _riActive = _recurringInvData.filter(r => r.status?.toLowerCase() === 'active');
       const _riMonthly = _riActive.reduce((s, r) => s + monthlyEquiv(r.amount, r.frequency), 0);
       const _riNext = _riActive.map(r => r.next_run).filter(Boolean).sort()[0] || '—';
       const _riYtd = (window._realInvoices || [])
@@ -508,11 +508,9 @@
     window.renderVendors = function () {
       if (!_vendorsFetched) { loadVendors(); return; }
       renderVendorRows(_vendorsData);
-      // KPI cards: count · total payables · overdue · total paid
-      // Vendor rows don't carry a due-date, so "overdue" stays as the "—"
-      // placeholder. Paid is the YTD-paid sum from the rows themselves.
-      const _vPayables = _vendorsData.reduce((s, v) => s + (parseFloat(v.owing) || 0), 0);
-      const _vPaid = _vendorsData.reduce((s, v) => s + (parseFloat(v.ytd_paid) || 0), 0);
+      // KPI cards: count · total payables (unpaid bills) · overdue · paid (payments-made)
+      const _vPayables = _billsData.filter(b => b.status?.toLowerCase() !== 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+      const _vPaid = _paymentsMadeData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       setKpiCards('page-vendors', [_vendorsData.length, S(_vPayables), null, S(_vPaid)]);
       window._refreshDashboardUI?.();
     };
@@ -609,10 +607,11 @@
       // KPI cards: count · due-this-week sum · overdue sum · paid sum
       const _blOverdue = _billsData.filter(b => b.status?.toLowerCase() === 'overdue').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
       const _blPaid = _billsData.filter(b => b.status?.toLowerCase() === 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+      const _blToday = new Date(); _blToday.setHours(0, 0, 0, 0);
       const _weekAhead = new Date(); _weekAhead.setDate(_weekAhead.getDate() + 7);
       const _blDueWeek = _billsData.filter(b => {
         if (b.status?.toLowerCase() === 'paid' || !b.due_date) return false;
-        const d = new Date(b.due_date); return !isNaN(d) && d <= _weekAhead;
+        const d = new Date(b.due_date); return !isNaN(d) && d >= _blToday && d <= _weekAhead;
       }).reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
       setKpiCards('page-bills', [_billsData.length, S(_blDueWeek), S(_blOverdue), S(_blPaid)]);
       window._refreshDashboardUI?.();
@@ -793,7 +792,7 @@
       // YTD is approximated as monthly × elapsed months (Jan = 1 … current
       // month). No global "_realBills" array exists, so we can't filter
       // server-tagged bills the way recurring-invoices does.
-      const _rbActive = _recurringBillsData.filter(r => r.status === 'active');
+      const _rbActive = _recurringBillsData.filter(r => r.status?.toLowerCase() === 'active');
       const _rbMonthly = _rbActive.reduce((s, r) => s + monthlyEquiv(r.amount, r.frequency), 0);
       const _rbNext = _rbActive.map(r => r.next_run).filter(Boolean).sort()[0] || '—';
       const _rbYtd = _rbMonthly * (new Date().getMonth() + 1);

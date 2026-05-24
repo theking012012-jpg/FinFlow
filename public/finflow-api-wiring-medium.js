@@ -501,7 +501,7 @@
       _invKpi('inv-skus', window.inventory.length);
       _invKpi('inv-value', S(window.inventory.reduce((s, i) => s + ((parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0)), 0)));
       _invKpi('inv-lowstock', lowCount);
-      _invKpi('inv-cogs', S(0));
+      _invKpi('inv-cogs', S(window.inventory.reduce((s, i) => s + ((parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0)), 0)));
       window._refreshDashboardUI?.();
       const badge2 = document.getElementById('badge-inv2');
       if (badge2) {
@@ -775,6 +775,7 @@
           stock:  r.stock,
           status: r.status,
           sku:    r.sku || '',
+          cost:   r.cost != null ? r.cost : null,
         }));
         window.items = window.itemsData;
         if (typeof renderItems === 'function') renderItems();
@@ -818,8 +819,12 @@
       const _itKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
       _itKpi('items-total', data.length);
       _itKpi('items-active', data.filter(i => i.status === 'Active').length);
-      _itKpi('items-lowstock', data.filter(i => i.status === 'Low Stock').length);
-      _itKpi('items-margin', '—');
+      _itKpi('items-lowstock', data.filter(i => i.stock !== null && i.stock !== undefined && i.stock < 10).length);
+      const _withMargin = data.filter(i => (parseFloat(i.price) || 0) > 0 && i.cost != null && (parseFloat(i.cost) || 0) > 0);
+      const _avgMargin = _withMargin.length
+        ? Math.round(_withMargin.reduce((s, i) => s + (i.price - i.cost) / i.price * 100, 0) / _withMargin.length)
+        : null;
+      _itKpi('items-margin', _avgMargin != null ? _avgMargin + '%' : '—');
       window._refreshDashboardUI?.();
       const filtered = data.filter(i => filter === 'all' || (i.type || '').toLowerCase() === filter);
       list.innerHTML = filtered.length
@@ -849,7 +854,7 @@
       _itemModalMode = 'new';
       _editItemDbId  = null;
       document.getElementById('item-modal-title').textContent = 'New Item';
-      ['item-name', 'item-sku', 'item-price', 'item-unit', 'item-stock'].forEach(id => {
+      ['item-name', 'item-sku', 'item-price', 'item-cost', 'item-unit', 'item-stock'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
@@ -872,6 +877,7 @@
       document.getElementById('item-name').value   = item.name   || '';
       document.getElementById('item-type').value   = item.type   || 'Product';
       document.getElementById('item-price').value  = item.price  != null ? item.price  : '';
+      document.getElementById('item-cost').value   = item.cost   != null ? item.cost   : '';
       document.getElementById('item-unit').value   = item.unit   || 'each';
       document.getElementById('item-stock').value  = item.stock  != null ? item.stock  : '';
       document.getElementById('item-status').value = item.status || 'Active';
@@ -884,6 +890,8 @@
       if (!name) { notify('Name is required', true); return; }
       const type   = document.getElementById('item-type')?.value   || 'Product';
       const price  = parseFloat(document.getElementById('item-price')?.value)  || 0;
+      const costEl = document.getElementById('item-cost');
+      const cost   = costEl?.value !== '' && costEl?.value != null ? (parseFloat(costEl.value) || null) : null;
       const unit   = document.getElementById('item-unit')?.value?.trim() || 'each';
       const stockEl = document.getElementById('item-stock');
       const stock  = stockEl?.value !== '' && stockEl?.value != null ? parseInt(stockEl.value) : null;
@@ -891,13 +899,13 @@
       const sku    = document.getElementById('item-sku')?.value?.trim() || '';
       try {
         if (_itemModalMode === 'edit' && _editItemDbId != null) {
-          await api('PUT', `/api/items/${_editItemDbId}`, { name, type, price, unit, stock, status, sku });
+          await api('PUT', `/api/items/${_editItemDbId}`, { name, type, price, cost, unit, stock, status, sku });
           const item = (window.itemsData || []).find(i => i._dbId === _editItemDbId);
-          if (item) Object.assign(item, { name, type, price, unit, stock, status, sku });
+          if (item) Object.assign(item, { name, type, price, cost, unit, stock, status, sku });
         } else {
-          const saved = await api('POST', '/api/items', { name, type, price, unit, stock, status, sku });
+          const saved = await api('POST', '/api/items', { name, type, price, cost, unit, stock, status, sku });
           if (!window.itemsData) window.itemsData = [];
-          window.itemsData.unshift({ _dbId: saved.id, name, type, price, unit, stock, status, sku });
+          window.itemsData.unshift({ _dbId: saved.id, name, type, price, cost, unit, stock, status, sku });
         }
         closeModal('item-modal');
         window.items = window.itemsData;

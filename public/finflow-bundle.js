@@ -1059,7 +1059,7 @@
       _invKpi('inv-skus', window.inventory.length);
       _invKpi('inv-value', S(window.inventory.reduce((s, i) => s + ((parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0)), 0)));
       _invKpi('inv-lowstock', lowCount);
-      _invKpi('inv-cogs', S(0));
+      _invKpi('inv-cogs', S(window.inventory.reduce((s, i) => s + ((parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0)), 0)));
       window._refreshDashboardUI?.();
       const badge2 = document.getElementById('badge-inv2');
       if (badge2) {
@@ -1333,6 +1333,7 @@
           stock:  r.stock,
           status: r.status,
           sku:    r.sku || '',
+          cost:   r.cost != null ? r.cost : null,
         }));
         window.items = window.itemsData;
         if (typeof renderItems === 'function') renderItems();
@@ -1376,8 +1377,12 @@
       const _itKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
       _itKpi('items-total', data.length);
       _itKpi('items-active', data.filter(i => i.status === 'Active').length);
-      _itKpi('items-lowstock', data.filter(i => i.status === 'Low Stock').length);
-      _itKpi('items-margin', '—');
+      _itKpi('items-lowstock', data.filter(i => i.stock !== null && i.stock !== undefined && i.stock < 10).length);
+      const _withMargin = data.filter(i => (parseFloat(i.price) || 0) > 0 && i.cost != null && (parseFloat(i.cost) || 0) > 0);
+      const _avgMargin = _withMargin.length
+        ? Math.round(_withMargin.reduce((s, i) => s + (i.price - i.cost) / i.price * 100, 0) / _withMargin.length)
+        : null;
+      _itKpi('items-margin', _avgMargin != null ? _avgMargin + '%' : '—');
       window._refreshDashboardUI?.();
       const filtered = data.filter(i => filter === 'all' || (i.type || '').toLowerCase() === filter);
       list.innerHTML = filtered.length
@@ -1407,7 +1412,7 @@
       _itemModalMode = 'new';
       _editItemDbId  = null;
       document.getElementById('item-modal-title').textContent = 'New Item';
-      ['item-name', 'item-sku', 'item-price', 'item-unit', 'item-stock'].forEach(id => {
+      ['item-name', 'item-sku', 'item-price', 'item-cost', 'item-unit', 'item-stock'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
@@ -1430,6 +1435,7 @@
       document.getElementById('item-name').value   = item.name   || '';
       document.getElementById('item-type').value   = item.type   || 'Product';
       document.getElementById('item-price').value  = item.price  != null ? item.price  : '';
+      document.getElementById('item-cost').value   = item.cost   != null ? item.cost   : '';
       document.getElementById('item-unit').value   = item.unit   || 'each';
       document.getElementById('item-stock').value  = item.stock  != null ? item.stock  : '';
       document.getElementById('item-status').value = item.status || 'Active';
@@ -1442,6 +1448,8 @@
       if (!name) { notify('Name is required', true); return; }
       const type   = document.getElementById('item-type')?.value   || 'Product';
       const price  = parseFloat(document.getElementById('item-price')?.value)  || 0;
+      const costEl = document.getElementById('item-cost');
+      const cost   = costEl?.value !== '' && costEl?.value != null ? (parseFloat(costEl.value) || null) : null;
       const unit   = document.getElementById('item-unit')?.value?.trim() || 'each';
       const stockEl = document.getElementById('item-stock');
       const stock  = stockEl?.value !== '' && stockEl?.value != null ? parseInt(stockEl.value) : null;
@@ -1449,13 +1457,13 @@
       const sku    = document.getElementById('item-sku')?.value?.trim() || '';
       try {
         if (_itemModalMode === 'edit' && _editItemDbId != null) {
-          await api('PUT', `/api/items/${_editItemDbId}`, { name, type, price, unit, stock, status, sku });
+          await api('PUT', `/api/items/${_editItemDbId}`, { name, type, price, cost, unit, stock, status, sku });
           const item = (window.itemsData || []).find(i => i._dbId === _editItemDbId);
-          if (item) Object.assign(item, { name, type, price, unit, stock, status, sku });
+          if (item) Object.assign(item, { name, type, price, cost, unit, stock, status, sku });
         } else {
-          const saved = await api('POST', '/api/items', { name, type, price, unit, stock, status, sku });
+          const saved = await api('POST', '/api/items', { name, type, price, cost, unit, stock, status, sku });
           if (!window.itemsData) window.itemsData = [];
-          window.itemsData.unshift({ _dbId: saved.id, name, type, price, unit, stock, status, sku });
+          window.itemsData.unshift({ _dbId: saved.id, name, type, price, cost, unit, stock, status, sku });
         }
         closeModal('item-modal');
         window.items = window.itemsData;
@@ -3682,7 +3690,7 @@ function clearAIChat(){
       // KPI cards: active count · monthly value · next run · YTD generated
       // YTD comes from invoices that the recurring scheduler created (server
       // tags them with notes "Auto-generated from recurring schedule").
-      const _riActive = _recurringInvData.filter(r => r.status === 'active');
+      const _riActive = _recurringInvData.filter(r => r.status?.toLowerCase() === 'active');
       const _riMonthly = _riActive.reduce((s, r) => s + monthlyEquiv(r.amount, r.frequency), 0);
       const _riNext = _riActive.map(r => r.next_run).filter(Boolean).sort()[0] || '—';
       const _riYtd = (window._realInvoices || [])
@@ -3857,11 +3865,9 @@ function clearAIChat(){
     window.renderVendors = function () {
       if (!_vendorsFetched) { loadVendors(); return; }
       renderVendorRows(_vendorsData);
-      // KPI cards: count · total payables · overdue · total paid
-      // Vendor rows don't carry a due-date, so "overdue" stays as the "—"
-      // placeholder. Paid is the YTD-paid sum from the rows themselves.
-      const _vPayables = _vendorsData.reduce((s, v) => s + (parseFloat(v.owing) || 0), 0);
-      const _vPaid = _vendorsData.reduce((s, v) => s + (parseFloat(v.ytd_paid) || 0), 0);
+      // KPI cards: count · total payables (unpaid bills) · overdue · paid (payments-made)
+      const _vPayables = _billsData.filter(b => b.status?.toLowerCase() !== 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+      const _vPaid = _paymentsMadeData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       setKpiCards('page-vendors', [_vendorsData.length, S(_vPayables), null, S(_vPaid)]);
       window._refreshDashboardUI?.();
     };
@@ -3958,10 +3964,11 @@ function clearAIChat(){
       // KPI cards: count · due-this-week sum · overdue sum · paid sum
       const _blOverdue = _billsData.filter(b => b.status?.toLowerCase() === 'overdue').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
       const _blPaid = _billsData.filter(b => b.status?.toLowerCase() === 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+      const _blToday = new Date(); _blToday.setHours(0, 0, 0, 0);
       const _weekAhead = new Date(); _weekAhead.setDate(_weekAhead.getDate() + 7);
       const _blDueWeek = _billsData.filter(b => {
         if (b.status?.toLowerCase() === 'paid' || !b.due_date) return false;
-        const d = new Date(b.due_date); return !isNaN(d) && d <= _weekAhead;
+        const d = new Date(b.due_date); return !isNaN(d) && d >= _blToday && d <= _weekAhead;
       }).reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
       setKpiCards('page-bills', [_billsData.length, S(_blDueWeek), S(_blOverdue), S(_blPaid)]);
       window._refreshDashboardUI?.();
@@ -4142,7 +4149,7 @@ function clearAIChat(){
       // YTD is approximated as monthly × elapsed months (Jan = 1 … current
       // month). No global "_realBills" array exists, so we can't filter
       // server-tagged bills the way recurring-invoices does.
-      const _rbActive = _recurringBillsData.filter(r => r.status === 'active');
+      const _rbActive = _recurringBillsData.filter(r => r.status?.toLowerCase() === 'active');
       const _rbMonthly = _rbActive.reduce((s, r) => s + monthlyEquiv(r.amount, r.frequency), 0);
       const _rbNext = _rbActive.map(r => r.next_run).filter(Boolean).sort()[0] || '—';
       const _rbYtd = _rbMonthly * (new Date().getMonth() + 1);

@@ -100,6 +100,7 @@
     if (b === false || b === 0 || b == null) return false;
     return String(b).toLowerCase() === 'yes';
   };
+  window._isBillable = _isBillable;
 
   function renderTimesheetList() {
     const el = document.getElementById('timesheet-list');

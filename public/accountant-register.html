@@ -938,53 +938,62 @@
   }
 
   // ── FORM SUBMISSION ──
-  function submitForm() {
+  async function submitForm() {
+    const btn = document.querySelector('#pane3 .btn-primary');
     const exp = document.getElementById('experience').value;
     if (!exp) { alert('Please select your years of experience.'); return; }
 
-    // Gather all form data
-    const payload = {
-      firstName: document.getElementById('fname').value.trim(),
-      lastName: document.getElementById('lname').value.trim(),
-      email: document.getElementById('email').value.trim(),
-      password: document.getElementById('password').value,
-      firm: document.getElementById('firm').value.trim(),
-      country: document.getElementById('country').value,
-      specialisation: document.getElementById('spec').value,
-      bio: document.getElementById('bio').value.trim(),
-      experience: exp,
-      referralCode: document.getElementById('referral').value.trim(),
-      credentials: window._resumeCredentials || '',
-      memberships: window._resumeMemberships || '',
-      ...collectPricing(),
-      verification: {
-        method: selectedVerify,
-        profBody: selectedVerify === 'membership' ? document.getElementById('prof-body').value : null,
-        membershipNumber: selectedVerify === 'membership' ? document.getElementById('membership-num').value.trim() : null,
-        employerFirm: selectedVerify === 'employer' ? document.getElementById('emp-firm').value.trim() : null,
-        employerContact: selectedVerify === 'employer' ? document.getElementById('emp-contact').value.trim() : null,
-        employerPhone: selectedVerify === 'employer' ? document.getElementById('emp-phone').value.trim() : null,
-        institution: selectedVerify === 'institution' ? document.getElementById('inst-name').value.trim() : null,
-        degree: selectedVerify === 'institution' ? document.getElementById('inst-degree').value.trim() : null,
-      }
-    };
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
 
-    // POST to /api/accountants/register
-    fetch('/api/accountants/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      credentials: 'include'
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (data.error) { alert(data.error); return; }
+    try {
+      const payload = {
+        firstName:     document.getElementById('fname').value.trim(),
+        lastName:      document.getElementById('lname').value.trim(),
+        email:         document.getElementById('email').value.trim(),
+        password:      document.getElementById('password').value,
+        firm:          document.getElementById('firm').value.trim(),
+        country:       document.getElementById('country').value,
+        specialisation: document.getElementById('spec').value,
+        bio:           document.getElementById('bio').value.trim(),
+        experience:    exp,
+        referralCode:  document.getElementById('referral').value.trim(),
+        credentials:   window._resumeCredentials || '',
+        memberships:   window._resumeMemberships || '',
+        ...collectPricing(),
+        verification: {
+          method:           selectedVerify,
+          profBody:         selectedVerify === 'membership' ? document.getElementById('prof-body').value : null,
+          membershipNumber: selectedVerify === 'membership' ? document.getElementById('membership-num').value.trim() : null,
+          employerFirm:     selectedVerify === 'employer'   ? document.getElementById('emp-firm').value.trim()     : null,
+          employerContact:  selectedVerify === 'employer'   ? document.getElementById('emp-contact').value.trim()  : null,
+          employerPhone:    selectedVerify === 'employer'   ? document.getElementById('emp-phone').value.trim()    : null,
+          institution:      selectedVerify === 'institution'? document.getElementById('inst-name').value.trim()   : null,
+          degree:           selectedVerify === 'institution'? document.getElementById('inst-degree').value.trim() : null,
+        }
+      };
+
+      const res = await fetch('/api/accountants/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'include',
+      });
+
+      let data;
+      try { data = await res.json(); } catch (e) { data = {}; }
+
+      if (!res.ok || data.error) {
+        alert(data.error || ('Registration failed (' + res.status + '). Please try again.'));
+        if (btn) { btn.disabled = false; btn.textContent = 'Submit application →'; }
+        return;
+      }
+
       setStep(4);
-    })
-    .catch(() => {
-      // For demo: still show success
-      setStep(4);
-    });
+    } catch (err) {
+      console.error('[Register] submit error:', err);
+      alert('Could not connect to server. Please check your connection and try again.');
+      if (btn) { btn.disabled = false; btn.textContent = 'Submit application →'; }
+    }
   }
 </script>
 </body>

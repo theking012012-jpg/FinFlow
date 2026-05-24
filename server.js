@@ -1825,6 +1825,11 @@ app.get('/join', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accountant-register.html'));
 });
 app.get('/accountant', (req, res) => {
+  if (!req.session?.accountantId) return res.redirect('/accountant-login');
+  res.sendFile(path.join(__dirname, 'public', 'accountant-dashboard.html'));
+});
+app.get('/accountant-dashboard', (req, res) => {
+  if (!req.session?.accountantId) return res.redirect('/accountant-login');
   res.sendFile(path.join(__dirname, 'public', 'accountant-dashboard.html'));
 });
 app.get('/accountant-login', (req, res) => {

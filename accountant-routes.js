@@ -163,9 +163,13 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
       verification,
     } = req.body || {};
 
+    console.log('[Register] req.body fields:', JSON.stringify({ firstName, lastName, email: email ? '***' : undefined, firm, country, specialisation, experience, verificationMethod: verification?.method }));
+
     // Validate required fields
-    if (!firstName || !lastName || !email || !password || !firm || !country || !specialisation) {
-      return res.status(400).json({ error: 'All required fields must be completed.' });
+    const _required = { firstName, lastName, email, password, firm, country, specialisation };
+    const _missing = Object.keys(_required).filter(k => !_required[k]);
+    if (_missing.length > 0) {
+      return res.status(400).json({ error: 'Missing required fields: ' + _missing.join(', ') });
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
       return res.status(400).json({ error: 'Invalid email address.' });

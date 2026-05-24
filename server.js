@@ -127,6 +127,29 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   res.json({ received: true });
 });
 
+// ── STRIPE CHECKOUT ───────────────────────────────────────────────────────────
+app.post('/api/stripe/checkout', async (req, res) => {
+  if (!stripe) return res.status(400).json({ error: 'Stripe not configured.' });
+  if (!req.session?.userId) return res.status(401).json({ error: 'Not authenticated.' });
+  const { plan } = req.body;
+  if (!plan || !['pro', 'business'].includes(plan)) {
+    return res.status(400).json({ error: 'Invalid plan. Must be "pro" or "business".' });
+  }
+  const priceId = plan === 'business' ? process.env.STRIPE_PRICE_BUSINESS : process.env.STRIPE_PRICE_PRO;
+  if (!priceId) return res.status(500).json({ error: `STRIPE_PRICE_${plan.toUpperCase()} env var not set.` });
+  const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+  const session = await stripe.checkout.sessions.create({
+    mode: 'subscription',
+    payment_method_types: ['card'],
+    line_items: [{ price: priceId, quantity: 1 }],
+    customer_email: req.session.userEmail,
+    metadata: { userId: String(req.session.userId), plan },
+    success_url: appUrl + '/app?upgraded=1',
+    cancel_url: appUrl + '/app#pricing',
+  });
+  res.json({ url: session.url });
+});
+
 // ── ROOT ROUTES — registered BEFORE express.static so the static handler
 // can't auto-serve public/index.html at "/". "/" = marketing landing page,
 // "/app" = the FinFlow SPA.

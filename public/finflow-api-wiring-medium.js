@@ -71,7 +71,7 @@
             due_date: r.due_date,
             status: r.status,
             notes:  r.notes || '',
-            color:  r.status === 'overdue' ? 'var(--red)' : 'var(--t2)',
+            color:  r.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)',
           }));
           // Prepend user-created invoices before seed data
           if (!window.userInvoices) window.userInvoices = [];
@@ -185,16 +185,16 @@
           <span style="color:${esc(inv.color)}">${esc(inv.due)}</span>
           <span><span class="badge ${badgeCls[inv.status] || 'b-amber'}">${esc(inv.status)}</span></span>
           <span class="table-actions">
-            ${inv.status === 'overdue'
+            ${inv.status?.toLowerCase() === 'overdue'
               ? `<button class="btn btn-ghost btn-sm inv-remind-btn"
                    data-idx="${idx}"
                    data-client="${esc(inv.client)}"
                    data-amount="${esc(S(inv.amount))}">Remind ↗</button>`
               : ''}
-            ${inv.status === 'paid'
+            ${inv.status?.toLowerCase() === 'paid'
               ? `<button class="btn btn-ghost btn-sm" onclick="viewInvoice(${idx})">View</button>`
               : ''}
-            ${inv.status === 'pending'
+            ${inv.status?.toLowerCase() === 'pending'
               ? `<button class="btn btn-ghost btn-sm" onclick="markInvoicePaid(${idx})">Mark paid</button>`
               : ''}
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7"
@@ -937,7 +937,7 @@
     window._syncScenarioBase = function () {
       const invs = window._realInvoices || [];
       const exps = window._realExpenses || [];
-      const annualRev = invs.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      const annualRev = invs.filter(i => i.status?.toLowerCase() === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
       const annualExp = exps.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
       const monthlyExp = annualExp / 12;
       window.BASE = { rev: annualRev, exp: annualExp, cash: 0, burn: monthlyExp };

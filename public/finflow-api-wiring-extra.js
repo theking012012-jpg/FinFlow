@@ -228,7 +228,7 @@
         api('GET', '/api/invoices'),
         api('GET', '/api/expenses'),
       ]);
-      const revenue  = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
+      const revenue  = invoices.filter(i => i.status?.toLowerCase() === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
       const expTotal = expenses.reduce((s, ex) => s + (ex.amount || 0), 0);
       const profit   = revenue - expTotal;
 
@@ -476,11 +476,11 @@
 
     try {
       const [invoices, expenses] = await Promise.all([api('GET', '/api/invoices'), api('GET', '/api/expenses')]);
-      const paid      = invoices.filter(i => i.status === 'paid');
+      const paid      = invoices.filter(i => i.status?.toLowerCase() === 'paid');
       const revenue   = paid.reduce((s, i) => s + (i.amount || 0), 0);
       const expTotal  = expenses.reduce((s, ex) => s + (ex.amount || 0), 0);
       const profit    = revenue - expTotal;
-      const outstanding = invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
+      const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
       const catTotals = {};
       expenses.forEach(ex => { catTotals[ex.category] = (catTotals[ex.category] || 0) + (ex.amount || 0); });
       const catRows = Object.entries(catTotals).sort((a, b) => b[1] - a[1])

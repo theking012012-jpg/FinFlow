@@ -89,9 +89,9 @@
 
   function updateQuoteMetrics() {
     const total   = _quotes.length;
-    const pending = _quotes.filter(q => q.status === 'pending').length;
+    const pending = _quotes.filter(q => q.status?.toLowerCase() === 'pending').length;
     const value   = _quotes.reduce((s, q) => s + Number(q.amount || 0), 0);
-    const accepted = _quotes.filter(q => q.status === 'accepted').length;
+    const accepted = _quotes.filter(q => q.status?.toLowerCase() === 'accepted').length;
     const setMC = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     setMC('qt-total',    total);
     setMC('qt-pending',  pending);
@@ -334,8 +334,8 @@
   }
 
   function updateBillMetrics() {
-    const unpaid  = _bills.filter(b => b.status !== 'paid').reduce((s,b) => s + Number(b.amount||0), 0);
-    const overdue = _bills.filter(b => b.status === 'overdue').length;
+    const unpaid  = _bills.filter(b => b.status?.toLowerCase() !== 'paid').reduce((s,b) => s + Number(b.amount||0), 0);
+    const overdue = _bills.filter(b => b.status?.toLowerCase() === 'overdue').length;
     const setMC = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     setMC('bills-total',   '$' + unpaid.toLocaleString());
     setMC('bills-overdue', overdue);
@@ -353,10 +353,10 @@
         <span style="font-weight:500">${b.vendor}</span>
         <span style="color:var(--t3)">${b.num}</span>
         <span style="font-family:var(--font-mono)">$${Number(b.amount||0).toLocaleString()}</span>
-        <span style="color:${b.status==='overdue'?'var(--red)':'var(--t2)'}">${b.due_date || '—'}</span>
+        <span style="color:${b.status?.toLowerCase()==='overdue'?'var(--red)':'var(--t2)'}">${b.due_date || '—'}</span>
         <span>${statusBadge(b.status)}</span>
         <div class="table-actions" style="display:flex;gap:4px">
-          ${b.status !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : '<span style="font-size:11px;color:var(--t3)">✓ Paid</span>'}
+          ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : '<span style="font-size:11px;color:var(--t3)">✓ Paid</span>'}
           <button class="btn btn-ghost btn-sm" onclick="editBill(${b.id})">Edit</button>
           <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteBill(${b.id})">✕</button>
         </div>

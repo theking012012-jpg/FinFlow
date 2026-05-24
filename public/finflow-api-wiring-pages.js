@@ -78,9 +78,9 @@
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteQuote(${q.id})">✕</button>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No quotes yet — click + New Quote to create one</div>';
-      const accepted = _quotesData.filter(q => q.status === 'accepted').length;
-      const pending  = _quotesData.filter(q => q.status === 'pending').length;
-      const openVal  = _quotesData.filter(q => q.status === 'pending').reduce((s, q) => s + (q.amount || 0), 0);
+      const accepted = _quotesData.filter(q => q.status?.toLowerCase() === 'accepted').length;
+      const pending  = _quotesData.filter(q => q.status?.toLowerCase() === 'pending').length;
+      const openVal  = _quotesData.filter(q => q.status?.toLowerCase() === 'pending').reduce((s, q) => s + (q.amount || 0), 0);
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
       set('qt-total', _quotesData.length);
       set('qt-accepted', accepted);
@@ -247,8 +247,8 @@
       // payment shape (no paid_at vs due_date), so it stays as the "—" placeholder.
       const _prTotal = _paymentsRecvData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _prInvs = window._realInvoices || [];
-      const _prOut = _prInvs.filter(i => i.status !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-      const _prOver = _prInvs.filter(i => i.status === 'overdue').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      const _prOut = _prInvs.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      const _prOver = _prInvs.filter(i => i.status?.toLowerCase() === 'overdue').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
       setKpiCards('page-payments-received', [S(_prTotal), S(_prOut), S(_prOver), null]);
       window._refreshDashboardUI?.();
     };
@@ -593,25 +593,25 @@
             <span style="font-weight:500">${esc(b.vendor)}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(b.amount)}</span>
-            <span style="color:${b.status === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc(b.due_date || '—')}</span>
+            <span style="color:${b.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc(b.due_date || '—')}</span>
             <span><span class="badge ${cls[b.status] || 'b-amber'}">${esc(b.status)}</span></span>
             <div style="display:flex;gap:4px">
-              ${b.status !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
+              ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
               <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>
             </div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No bills yet</div>';
 
       // badge
-      const overdue = _billsData.filter(b => b.status === 'overdue' || b.status === 'due_soon').length;
+      const overdue = _billsData.filter(b => b.status?.toLowerCase() === 'overdue' || b.status?.toLowerCase() === 'due_soon').length;
       const badge = document.getElementById('badge-bills');
       if (badge) { badge.textContent = overdue; badge.style.display = overdue > 0 ? '' : 'none'; }
       // KPI cards: count · due-this-week sum · overdue sum · paid sum
-      const _blOverdue = _billsData.filter(b => b.status === 'overdue').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
-      const _blPaid = _billsData.filter(b => b.status === 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+      const _blOverdue = _billsData.filter(b => b.status?.toLowerCase() === 'overdue').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+      const _blPaid = _billsData.filter(b => b.status?.toLowerCase() === 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
       const _weekAhead = new Date(); _weekAhead.setDate(_weekAhead.getDate() + 7);
       const _blDueWeek = _billsData.filter(b => {
-        if (b.status === 'paid' || !b.due_date) return false;
+        if (b.status?.toLowerCase() === 'paid' || !b.due_date) return false;
         const d = new Date(b.due_date); return !isNaN(d) && d <= _weekAhead;
       }).reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
       setKpiCards('page-bills', [_billsData.length, S(_blDueWeek), S(_blOverdue), S(_blPaid)]);

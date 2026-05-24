@@ -629,7 +629,7 @@
             due_date: r.due_date,
             status: r.status,
             notes:  r.notes || '',
-            color:  r.status === 'overdue' ? 'var(--red)' : 'var(--t2)',
+            color:  r.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)',
           }));
           // Prepend user-created invoices before seed data
           if (!window.userInvoices) window.userInvoices = [];
@@ -743,16 +743,16 @@
           <span style="color:${esc(inv.color)}">${esc(inv.due)}</span>
           <span><span class="badge ${badgeCls[inv.status] || 'b-amber'}">${esc(inv.status)}</span></span>
           <span class="table-actions">
-            ${inv.status === 'overdue'
+            ${inv.status?.toLowerCase() === 'overdue'
               ? `<button class="btn btn-ghost btn-sm inv-remind-btn"
                    data-idx="${idx}"
                    data-client="${esc(inv.client)}"
                    data-amount="${esc(S(inv.amount))}">Remind ↗</button>`
               : ''}
-            ${inv.status === 'paid'
+            ${inv.status?.toLowerCase() === 'paid'
               ? `<button class="btn btn-ghost btn-sm" onclick="viewInvoice(${idx})">View</button>`
               : ''}
-            ${inv.status === 'pending'
+            ${inv.status?.toLowerCase() === 'pending'
               ? `<button class="btn btn-ghost btn-sm" onclick="markInvoicePaid(${idx})">Mark paid</button>`
               : ''}
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7"
@@ -1495,7 +1495,7 @@
     window._syncScenarioBase = function () {
       const invs = window._realInvoices || [];
       const exps = window._realExpenses || [];
-      const annualRev = invs.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      const annualRev = invs.filter(i => i.status?.toLowerCase() === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
       const annualExp = exps.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
       const monthlyExp = annualExp / 12;
       window.BASE = { rev: annualRev, exp: annualExp, cash: 0, burn: monthlyExp };
@@ -2219,9 +2219,9 @@
 
   function updateQuoteMetrics() {
     const total   = _quotes.length;
-    const pending = _quotes.filter(q => q.status === 'pending').length;
+    const pending = _quotes.filter(q => q.status?.toLowerCase() === 'pending').length;
     const value   = _quotes.reduce((s, q) => s + Number(q.amount || 0), 0);
-    const accepted = _quotes.filter(q => q.status === 'accepted').length;
+    const accepted = _quotes.filter(q => q.status?.toLowerCase() === 'accepted').length;
     const setMC = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     setMC('qt-total',    total);
     setMC('qt-pending',  pending);
@@ -2464,8 +2464,8 @@
   }
 
   function updateBillMetrics() {
-    const unpaid  = _bills.filter(b => b.status !== 'paid').reduce((s,b) => s + Number(b.amount||0), 0);
-    const overdue = _bills.filter(b => b.status === 'overdue').length;
+    const unpaid  = _bills.filter(b => b.status?.toLowerCase() !== 'paid').reduce((s,b) => s + Number(b.amount||0), 0);
+    const overdue = _bills.filter(b => b.status?.toLowerCase() === 'overdue').length;
     const setMC = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     setMC('bills-total',   '$' + unpaid.toLocaleString());
     setMC('bills-overdue', overdue);
@@ -2483,10 +2483,10 @@
         <span style="font-weight:500">${b.vendor}</span>
         <span style="color:var(--t3)">${b.num}</span>
         <span style="font-family:var(--font-mono)">$${Number(b.amount||0).toLocaleString()}</span>
-        <span style="color:${b.status==='overdue'?'var(--red)':'var(--t2)'}">${b.due_date || '—'}</span>
+        <span style="color:${b.status?.toLowerCase()==='overdue'?'var(--red)':'var(--t2)'}">${b.due_date || '—'}</span>
         <span>${statusBadge(b.status)}</span>
         <div class="table-actions" style="display:flex;gap:4px">
-          ${b.status !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : '<span style="font-size:11px;color:var(--t3)">✓ Paid</span>'}
+          ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : '<span style="font-size:11px;color:var(--t3)">✓ Paid</span>'}
           <button class="btn btn-ghost btn-sm" onclick="editBill(${b.id})">Edit</button>
           <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteBill(${b.id})">✕</button>
         </div>
@@ -3427,9 +3427,9 @@ function clearAIChat(){
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteQuote(${q.id})">✕</button>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No quotes yet — click + New Quote to create one</div>';
-      const accepted = _quotesData.filter(q => q.status === 'accepted').length;
-      const pending  = _quotesData.filter(q => q.status === 'pending').length;
-      const openVal  = _quotesData.filter(q => q.status === 'pending').reduce((s, q) => s + (q.amount || 0), 0);
+      const accepted = _quotesData.filter(q => q.status?.toLowerCase() === 'accepted').length;
+      const pending  = _quotesData.filter(q => q.status?.toLowerCase() === 'pending').length;
+      const openVal  = _quotesData.filter(q => q.status?.toLowerCase() === 'pending').reduce((s, q) => s + (q.amount || 0), 0);
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
       set('qt-total', _quotesData.length);
       set('qt-accepted', accepted);
@@ -3596,8 +3596,8 @@ function clearAIChat(){
       // payment shape (no paid_at vs due_date), so it stays as the "—" placeholder.
       const _prTotal = _paymentsRecvData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _prInvs = window._realInvoices || [];
-      const _prOut = _prInvs.filter(i => i.status !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-      const _prOver = _prInvs.filter(i => i.status === 'overdue').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      const _prOut = _prInvs.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      const _prOver = _prInvs.filter(i => i.status?.toLowerCase() === 'overdue').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
       setKpiCards('page-payments-received', [S(_prTotal), S(_prOut), S(_prOver), null]);
       window._refreshDashboardUI?.();
     };
@@ -3942,25 +3942,25 @@ function clearAIChat(){
             <span style="font-weight:500">${esc(b.vendor)}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(b.amount)}</span>
-            <span style="color:${b.status === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc(b.due_date || '—')}</span>
+            <span style="color:${b.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc(b.due_date || '—')}</span>
             <span><span class="badge ${cls[b.status] || 'b-amber'}">${esc(b.status)}</span></span>
             <div style="display:flex;gap:4px">
-              ${b.status !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
+              ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
               <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>
             </div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No bills yet</div>';
 
       // badge
-      const overdue = _billsData.filter(b => b.status === 'overdue' || b.status === 'due_soon').length;
+      const overdue = _billsData.filter(b => b.status?.toLowerCase() === 'overdue' || b.status?.toLowerCase() === 'due_soon').length;
       const badge = document.getElementById('badge-bills');
       if (badge) { badge.textContent = overdue; badge.style.display = overdue > 0 ? '' : 'none'; }
       // KPI cards: count · due-this-week sum · overdue sum · paid sum
-      const _blOverdue = _billsData.filter(b => b.status === 'overdue').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
-      const _blPaid = _billsData.filter(b => b.status === 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+      const _blOverdue = _billsData.filter(b => b.status?.toLowerCase() === 'overdue').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+      const _blPaid = _billsData.filter(b => b.status?.toLowerCase() === 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
       const _weekAhead = new Date(); _weekAhead.setDate(_weekAhead.getDate() + 7);
       const _blDueWeek = _billsData.filter(b => {
-        if (b.status === 'paid' || !b.due_date) return false;
+        if (b.status?.toLowerCase() === 'paid' || !b.due_date) return false;
         const d = new Date(b.due_date); return !isNaN(d) && d <= _weekAhead;
       }).reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
       setKpiCards('page-bills', [_billsData.length, S(_blDueWeek), S(_blOverdue), S(_blPaid)]);
@@ -4539,7 +4539,7 @@ function clearAIChat(){
         api('GET', '/api/invoices'),
         api('GET', '/api/expenses'),
       ]);
-      const revenue  = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
+      const revenue  = invoices.filter(i => i.status?.toLowerCase() === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
       const expTotal = expenses.reduce((s, ex) => s + (ex.amount || 0), 0);
       const profit   = revenue - expTotal;
 
@@ -4787,11 +4787,11 @@ function clearAIChat(){
 
     try {
       const [invoices, expenses] = await Promise.all([api('GET', '/api/invoices'), api('GET', '/api/expenses')]);
-      const paid      = invoices.filter(i => i.status === 'paid');
+      const paid      = invoices.filter(i => i.status?.toLowerCase() === 'paid');
       const revenue   = paid.reduce((s, i) => s + (i.amount || 0), 0);
       const expTotal  = expenses.reduce((s, ex) => s + (ex.amount || 0), 0);
       const profit    = revenue - expTotal;
-      const outstanding = invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
+      const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
       const catTotals = {};
       expenses.forEach(ex => { catTotals[ex.category] = (catTotals[ex.category] || 0) + (ex.amount || 0); });
       const catRows = Object.entries(catTotals).sort((a, b) => b[1] - a[1])
@@ -5071,7 +5071,7 @@ function clearAIChat(){
       const d = parseDate(inv.due_date);
       if (!d) return;
       const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
-      if (idx >= 0 && inv.status === 'paid') revByMonth[idx] += parseFloat(inv.amount) || 0;
+      if (idx >= 0 && inv.status?.toLowerCase() === 'paid') revByMonth[idx] += parseFloat(inv.amount) || 0;
     });
 
     expenses.forEach(exp => {
@@ -5131,7 +5131,7 @@ function clearAIChat(){
 
     const mtdInv  = invoices.filter(i => {
       const d = parseDate(i.due_date);
-      return d && d.getMonth() === m && d.getFullYear() === y && i.status === 'paid';
+      return d && d.getMonth() === m && d.getFullYear() === y && i.status?.toLowerCase() === 'paid';
     });
     const mtdExp  = expenses.filter(e => {
       const d = parseDate(e.expense_date);
@@ -5166,7 +5166,7 @@ function clearAIChat(){
       const q = Math.floor(now.getMonth() / 3) * 3;
       const paidInv = invoices.filter(i => {
         const d = parseDate(i.due_date);
-        return d && d.getMonth() >= q && d.getMonth() < q + 3 && d.getFullYear() === now.getFullYear() && i.status === 'paid';
+        return d && d.getMonth() >= q && d.getMonth() < q + 3 && d.getFullYear() === now.getFullYear() && i.status?.toLowerCase() === 'paid';
       });
       const qExp = expenses.filter(e => {
         const d = parseDate(e.expense_date);
@@ -5179,7 +5179,7 @@ function clearAIChat(){
       paymentsMade.forEach(p => { const d = parseDate(p.date); if (d && d.getMonth()>=q && d.getMonth()<q+3 && d.getFullYear()===now.getFullYear()) exp += parseFloat(p.amount)||0; });
     } else {
       // Year (default) — all records
-      rev = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      rev = invoices.filter(i => i.status?.toLowerCase() === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
       exp = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
       rev += receipts.reduce((s, r) => s + (parseFloat(r.amount)||0), 0);
       rev += paymentsIn.reduce((s, p) => s + (parseFloat(p.amount)||0), 0);
@@ -5187,8 +5187,8 @@ function clearAIChat(){
     }
 
     const profit = rev - exp;
-    const outstanding = invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const overdue = invoices.filter(i => i.status === 'overdue');
+    const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    const overdue = invoices.filter(i => i.status?.toLowerCase() === 'overdue');
     const overdueAmt = overdue.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
 
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
@@ -5300,8 +5300,8 @@ function clearAIChat(){
 
   // ── Update invoice stats panel ────────────────────────────────────
   function updateInvoiceStats(invoices) {
-    const paid       = invoices.filter(i => i.status === 'paid');
-    const outstanding = invoices.filter(i => i.status !== 'paid');
+    const paid       = invoices.filter(i => i.status?.toLowerCase() === 'paid');
+    const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid');
     const outAmt     = outstanding.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
     const paidAmt    = paid.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
     const total      = paidAmt + outAmt || 1;
@@ -5557,7 +5557,7 @@ function clearAIChat(){
           due_date: r.due_date,
           status:   r.status,
           notes:    r.notes || '',
-          color:    r.status === 'overdue' ? 'var(--red)' : 'var(--t2)',
+          color:    r.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)',
         }));
         window._realInvoices = invoices;
       }
@@ -5684,11 +5684,11 @@ function clearAIChat(){
     const period = d || (typeof getPeriodData === 'function' ? getPeriodData() : { label: 'All time' });
 
     const totalBilled  = invs.reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const collected    = invs.filter(i => i.status === 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const outstanding  = invs.filter(i => i.status !== 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const overdue      = invs.filter(i => i.status === 'overdue').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const overdueCount = invs.filter(i => i.status === 'overdue').length;
-    const outCount     = invs.filter(i => i.status !== 'paid').length;
+    const collected    = invs.filter(i => i.status?.toLowerCase() === 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
+    const outstanding  = invs.filter(i => i.status?.toLowerCase() !== 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
+    const overdue      = invs.filter(i => i.status?.toLowerCase() === 'overdue').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
+    const overdueCount = invs.filter(i => i.status?.toLowerCase() === 'overdue').length;
+    const outCount     = invs.filter(i => i.status?.toLowerCase() !== 'paid').length;
     const pctCollected = totalBilled > 0 ? Math.round(collected / totalBilled * 100) : 0;
 
     set('inv-billed',     money(totalBilled));

@@ -139,7 +139,7 @@
           due_date: r.due_date,
           status:   r.status,
           notes:    r.notes || '',
-          color:    r.status === 'overdue' ? 'var(--red)' : 'var(--t2)',
+          color:    r.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)',
         }));
         window._realInvoices = invoices;
       }
@@ -266,11 +266,11 @@
     const period = d || (typeof getPeriodData === 'function' ? getPeriodData() : { label: 'All time' });
 
     const totalBilled  = invs.reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const collected    = invs.filter(i => i.status === 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const outstanding  = invs.filter(i => i.status !== 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const overdue      = invs.filter(i => i.status === 'overdue').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const overdueCount = invs.filter(i => i.status === 'overdue').length;
-    const outCount     = invs.filter(i => i.status !== 'paid').length;
+    const collected    = invs.filter(i => i.status?.toLowerCase() === 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
+    const outstanding  = invs.filter(i => i.status?.toLowerCase() !== 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
+    const overdue      = invs.filter(i => i.status?.toLowerCase() === 'overdue').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
+    const overdueCount = invs.filter(i => i.status?.toLowerCase() === 'overdue').length;
+    const outCount     = invs.filter(i => i.status?.toLowerCase() !== 'paid').length;
     const pctCollected = totalBilled > 0 ? Math.round(collected / totalBilled * 100) : 0;
 
     set('inv-billed',     money(totalBilled));

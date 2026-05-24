@@ -60,7 +60,7 @@
       const d = parseDate(inv.due_date);
       if (!d) return;
       const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
-      if (idx >= 0 && inv.status === 'paid') revByMonth[idx] += parseFloat(inv.amount) || 0;
+      if (idx >= 0 && inv.status?.toLowerCase() === 'paid') revByMonth[idx] += parseFloat(inv.amount) || 0;
     });
 
     expenses.forEach(exp => {
@@ -120,7 +120,7 @@
 
     const mtdInv  = invoices.filter(i => {
       const d = parseDate(i.due_date);
-      return d && d.getMonth() === m && d.getFullYear() === y && i.status === 'paid';
+      return d && d.getMonth() === m && d.getFullYear() === y && i.status?.toLowerCase() === 'paid';
     });
     const mtdExp  = expenses.filter(e => {
       const d = parseDate(e.expense_date);
@@ -155,7 +155,7 @@
       const q = Math.floor(now.getMonth() / 3) * 3;
       const paidInv = invoices.filter(i => {
         const d = parseDate(i.due_date);
-        return d && d.getMonth() >= q && d.getMonth() < q + 3 && d.getFullYear() === now.getFullYear() && i.status === 'paid';
+        return d && d.getMonth() >= q && d.getMonth() < q + 3 && d.getFullYear() === now.getFullYear() && i.status?.toLowerCase() === 'paid';
       });
       const qExp = expenses.filter(e => {
         const d = parseDate(e.expense_date);
@@ -168,7 +168,7 @@
       paymentsMade.forEach(p => { const d = parseDate(p.date); if (d && d.getMonth()>=q && d.getMonth()<q+3 && d.getFullYear()===now.getFullYear()) exp += parseFloat(p.amount)||0; });
     } else {
       // Year (default) — all records
-      rev = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      rev = invoices.filter(i => i.status?.toLowerCase() === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
       exp = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
       rev += receipts.reduce((s, r) => s + (parseFloat(r.amount)||0), 0);
       rev += paymentsIn.reduce((s, p) => s + (parseFloat(p.amount)||0), 0);
@@ -176,8 +176,8 @@
     }
 
     const profit = rev - exp;
-    const outstanding = invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const overdue = invoices.filter(i => i.status === 'overdue');
+    const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    const overdue = invoices.filter(i => i.status?.toLowerCase() === 'overdue');
     const overdueAmt = overdue.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
 
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
@@ -289,8 +289,8 @@
 
   // ── Update invoice stats panel ────────────────────────────────────
   function updateInvoiceStats(invoices) {
-    const paid       = invoices.filter(i => i.status === 'paid');
-    const outstanding = invoices.filter(i => i.status !== 'paid');
+    const paid       = invoices.filter(i => i.status?.toLowerCase() === 'paid');
+    const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid');
     const outAmt     = outstanding.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
     const paidAmt    = paid.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
     const total      = paidAmt + outAmt || 1;

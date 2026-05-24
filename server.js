@@ -513,7 +513,7 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   if (client != null) patch.client = client;
   if (amount != null) patch.amount = parseFloat(amount);
   if (due_date != null) patch.due_date = due_date;
-  if (status != null) patch.status = status;
+  if (status != null) patch.status = status.toLowerCase();
   if (notes != null) patch.notes = notes;
   await db.update('invoices', r => r.id === row.id, patch);
   const updated = await db.get('invoices', r => r.id === row.id);

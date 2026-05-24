@@ -1531,11 +1531,14 @@
       const totalRev = _invSrc
         .filter(i => i.status?.toLowerCase() === 'paid')
         .reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-      const totalProfit = totalRev - (window._realExpenses||[]).reduce((s,e)=>s+Number(e.amount||0),0);
+      const totalExp = (window._realExpenses||[]).reduce((s,e)=>s+Number(e.amount||0),0);
+      const _payAll = [...(Array.isArray(window.payrollEmployees)?window.payrollEmployees:[]), ...(window.ownerPayroll?[window.ownerPayroll]:[])];
+      const payrollExp = _payAll.reduce((s,p)=>s+Number(p.gross||p.salary||0),0);
+      const consolidatedProfit = totalRev - totalExp - payrollExp;
       set('ent-consol-rev', S(totalRev));
-      set('ent-consol-profit', S(totalProfit));
+      set('ent-consol-profit', S(consolidatedProfit));
       if (totalRev > 0) {
-        const margin = Math.round(totalProfit / totalRev * 100);
+        const margin = Math.round(consolidatedProfit / totalRev * 100);
         set('ent-consol-margin', margin + '% margin');
       }
     };

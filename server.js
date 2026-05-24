@@ -2037,7 +2037,8 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
     db.allByUser('invoices', uid),
     db.allByUser('expenses', uid),
   ]);
-  const toMonth = d => { const dt = new Date(d); return isNaN(dt) ? 'Unknown' : dt.toLocaleString('default', { month: 'short', year: '2-digit' }); };
+  const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const toMonth = d => { const dt = new Date(d); return isNaN(dt) ? 'Unknown' : `${_MO[dt.getMonth()]} '${String(dt.getFullYear()).slice(-2)}`; };
   const monthMap = {};
   (invoices || []).filter(i => i.status === 'paid').forEach(i => {
     const m = toMonth(i.created_at || i.due_date || i.date);
@@ -2086,10 +2087,11 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
     db.allByUser('expenses', uid),
   ]);
   const monthMap = {};
+  const _MO2 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const add = (date, field, amount) => {
     if (!date) return;
     const dt = new Date(date);
-    const m = isNaN(dt) ? 'Unknown' : dt.toLocaleString('default', { month: 'short', year: '2-digit' });
+    const m = isNaN(dt) ? 'Unknown' : `${_MO2[dt.getMonth()]} '${String(dt.getFullYear()).slice(-2)}`;
     if (!monthMap[m]) monthMap[m] = { inflow: 0, outflow: 0 };
     monthMap[m][field] += parseFloat(amount) || 0;
   };

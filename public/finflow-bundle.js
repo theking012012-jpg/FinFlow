@@ -5114,7 +5114,7 @@ function clearAIChat(){
     const expByMonth  = new Array(12).fill(0);
 
     invoices.forEach(inv => {
-      const d = parseDate(inv.due_date);
+      const d = parseDate(inv.date || inv.due_date || inv.created_at);
       if (!d) return;
       const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
       if (idx >= 0 && inv.status?.toLowerCase() === 'paid') revByMonth[idx] += parseFloat(inv.amount) || 0;
@@ -5161,8 +5161,12 @@ function clearAIChat(){
     if (typeof window.REV !== 'undefined') window.REV.splice(0, 12, ...revArr);
     if (typeof window.EXP !== 'undefined') window.EXP.splice(0, 12, ...expArr);
 
-    const chart = window.charts.overview;
-    if (!chart) return;
+    let chart = window.charts.overview;
+    if (!chart) {
+      if (typeof buildCharts === 'function') buildCharts();
+      chart = window.charts?.overview;
+      if (!chart) return;
+    }
     chart.data.labels = labels;
     chart.data.datasets[0].data = revArr;
     chart.data.datasets[1].data = expArr;
@@ -5176,11 +5180,11 @@ function clearAIChat(){
     const y = now.getFullYear();
 
     const mtdInv  = invoices.filter(i => {
-      const d = parseDate(i.due_date);
+      const d = parseDate(i.date || i.due_date || i.created_at);
       return d && d.getMonth() === m && d.getFullYear() === y && i.status?.toLowerCase() === 'paid';
     });
     const mtdExp  = expenses.filter(e => {
-      const d = parseDate(e.expense_date);
+      const d = parseDate(e.expense_date || e.date || e.created_at);
       return d && d.getMonth() === m && d.getFullYear() === y;
     });
 
@@ -5312,7 +5316,7 @@ function clearAIChat(){
         cat: `Revenue · ${i.status}`,
         amt: parseFloat(i.amount) || 0,
         type: 'income',
-        date: parseDate(i.due_date),
+        date: parseDate(i.date || i.due_date || i.created_at),
       })),
       ...expenses.slice(0, 5).map(e => ({
         name: e.description || e.category || 'Expense',
@@ -5418,6 +5422,30 @@ function clearAIChat(){
     if (!invs || !exps) return;
     const period = window.currentPeriod || 'year';
     const { months, revByMonth, expByMonth } = buildMonthlyArrays(invs, exps);
+
+    // Populate EXP_SAL/RENT/SW/MKT per-month so getPeriodData() has real values
+    if (typeof window.EXP_SAL !== 'undefined') {
+      const _n = new Date();
+      const _ms = [];
+      for (let _i = 11; _i >= 0; _i--) {
+        const _d = new Date(_n.getFullYear(), _n.getMonth() - _i, 1);
+        _ms.push({ year: _d.getFullYear(), month: _d.getMonth() });
+      }
+      window.EXP_SAL.fill(0); window.EXP_RENT.fill(0); window.EXP_SW.fill(0); window.EXP_MKT.fill(0);
+      exps.forEach(e => {
+        const _d2 = parseDate(e.expense_date || e.date || e.created_at);
+        if (!_d2) return;
+        const _ix = _ms.findIndex(m => m.year === _d2.getFullYear() && m.month === _d2.getMonth());
+        if (_ix < 0) return;
+        const _c = (e.category || '').toLowerCase();
+        const _a = parseFloat(e.amount) || 0;
+        if (/salary|salaries|payroll/.test(_c))    window.EXP_SAL[_ix]  += _a;
+        else if (/rent|lease|office/.test(_c))     window.EXP_RENT[_ix] += _a;
+        else if (/software|saas|subscript/.test(_c)) window.EXP_SW[_ix] += _a;
+        else if (/marketing|adverti/.test(_c))     window.EXP_MKT[_ix] += _a;
+      });
+    }
+
     updateOverviewChart(revByMonth, expByMonth, months);
     const kpis = updateKPIs(invs, exps, period);
 

@@ -4688,10 +4688,9 @@ function updateDashboard(d=getPeriodData()){
   document.getElementById('exp-rent').textContent=S(d.rent);
   document.getElementById('exp-sw').textContent=S(d.sw);
   document.getElementById('exp-mkt').textContent=S(d.mkt);
-  document.getElementById('exp-sal-bar').style.width='72%';
-  document.getElementById('exp-rent-bar').style.width=Math.round(d.rent/d.exp*100)+'%';
-  document.getElementById('exp-sw-bar').style.width=Math.round(d.sw/d.exp*100)+'%';
-  document.getElementById('exp-mkt-bar').style.width=Math.round(d.mkt/d.exp*100)+'%';
+  const _maxExpAmt=Math.max(d.sal||0,d.rent||0,d.sw||0,d.mkt||0,1);
+  const _sb=function(id,amt){const el=document.getElementById(id);if(!el)return;const w=Math.round(amt/_maxExpAmt*100)+'%';el.style.setProperty('width',w,'important');el.style.setProperty('--bar-w',w);};
+  _sb('exp-sal-bar',d.sal||0);_sb('exp-rent-bar',d.rent||0);_sb('exp-sw-bar',d.sw||0);_sb('exp-mkt-bar',d.mkt||0);
   // Business transactions (period-contextual)
   // Build real transactions from DB data
   const _allTxns = [

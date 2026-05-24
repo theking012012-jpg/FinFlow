@@ -5301,7 +5301,11 @@ function clearAIChat(){
       const barEl = document.getElementById(barIds[i][1]);
       const lblEl = document.getElementById(labelIds[i]);
       if (valEl) valEl.textContent = money(amt);
-      if (barEl) barEl.style.width = Math.round(amt / total * 100) + '%';
+      if (barEl) {
+        const w = Math.round(amt / total * 100) + '%';
+        barEl.style.setProperty('width', w, 'important');
+        barEl.style.setProperty('--bar-w', w);
+      }
       if (lblEl) lblEl.textContent = cat;
     });
   }
@@ -5447,7 +5451,14 @@ function clearAIChat(){
       });
     }
 
+    if (!window.charts?.overview && typeof buildCharts === 'function') buildCharts();
     updateOverviewChart(revByMonth, expByMonth, months);
+    if (window.charts?.overview) {
+      window.charts.overview.data.labels = months;
+      window.charts.overview.data.datasets[0].data = revByMonth;
+      window.charts.overview.data.datasets[1].data = expByMonth;
+      window.charts.overview.update();
+    }
     const kpis = updateKPIs(invs, exps, period);
 
     // Add owner payroll gross to expense/profit KPIs so adding payroll

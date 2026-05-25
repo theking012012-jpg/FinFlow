@@ -421,7 +421,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       FROM accountant_clients ac
       JOIN users u ON u.id = ac.user_id
       WHERE ac.accountant_id = $1
-      ORDER BY ac.created_at DESC LIMIT 50
+      ORDER BY ac.invited_at DESC LIMIT 50
     `, [id]);
     const jsonbClients = await pool.query(`
       SELECT u.id, u.data->>'name' AS name, u.data->>'email' AS email, 'jsonb' AS status

@@ -304,8 +304,8 @@ td.amber{color:var(--amber)}
         <div class="page-title">All Accountants</div>
         <div class="page-sub">Manage verified, suspended, and rejected accountants</div>
         <div class="filter-row">
-          <input class="search-input" placeholder="Search name, email, firm..." oninput="loadAccountants(this.value, document.getElementById('acc-status-filter').value)" style="width:250px">
-          <select class="filter-select" id="acc-status-filter" onchange="loadAccountants(document.querySelector('.search-input').value, this.value)">
+          <input class="search-input" id="acc-search" placeholder="Search name, email, firm..." oninput="loadAccountants(this.value, document.getElementById('acc-status-filter').value)" style="width:250px">
+          <select class="filter-select" id="acc-status-filter" onchange="loadAccountants(document.getElementById('acc-search').value, this.value)">
             <option value="">All statuses</option>
             <option value="verified">Verified</option>
             <option value="pending">Pending</option>
@@ -735,7 +735,14 @@ async function loadUsers(search='', plan='') {
       <tr>
         <td class="primary">${u.name || '—'}</td>
         <td>${u.email || '—'}</td>
-        <td><span class="badge b-gold">${u.plan || 'trial'}</span></td>
+        <td>
+          <select class="filter-select" id="plan-sel-${u.id}" style="font-size:11px;padding:3px 8px;margin-right:4px">
+            <option value="trial" ${(u.plan||'trial')==='trial'?'selected':''}>Trial</option>
+            <option value="pro" ${u.plan==='pro'?'selected':''}>Pro</option>
+            <option value="business" ${u.plan==='business'?'selected':''}>Business</option>
+          </select>
+          <button class="action-btn" onclick="setPlan(${u.id})">Save</button>
+        </td>
         <td>${u.accountant_first ? `${u.accountant_first} ${u.accountant_last}` : '—'}</td>
         <td>${new Date(u.created_at).toLocaleDateString()}</td>
         <td><span class="badge ${u.suspended==='true'?'b-red':'b-green'}">${u.suspended==='true'?'Suspended':'Active'}</span></td>
@@ -743,6 +750,20 @@ async function loadUsers(search='', plan='') {
       </tr>`).join('')
     : '<tr><td colspan="7" class="empty">No users found</td></tr>';
   } catch(e) { console.error('Users error', e); }
+}
+
+async function setPlan(id) {
+  const sel = document.getElementById('plan-sel-' + id);
+  if (!sel) return;
+  const plan = sel.value;
+  const res = await fetch(`/api/admin/users/${id}/plan`, {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan }),
+  });
+  const data = await res.json();
+  if (data.error) { toast(data.error, 'error'); return; }
+  toast('Plan updated to ' + plan, 'success');
 }
 
 async function suspendUser(id, suspend) {
@@ -760,10 +781,11 @@ async function loadEarnings() {
   try {
     const res = await fetch('/api/admin/earnings', { credentials: 'include' });
     const { records, summary } = await res.json();
+    const s = summary || {};
 
-    document.getElementById('earn-commission').textContent = '$' + (parseInt(summary.commission_cents)/100).toFixed(2);
-    document.getElementById('earn-referral').textContent = '$' + (parseInt(summary.referral_cents)/100).toFixed(2);
-    document.getElementById('earn-paid').textContent = '$' + (parseInt(summary.paid_cents)/100).toFixed(2);
+    document.getElementById('earn-commission').textContent = '$' + ((parseInt(s.commission_cents)||0)/100).toFixed(2);
+    document.getElementById('earn-referral').textContent = '$' + ((parseInt(s.referral_cents)||0)/100).toFixed(2);
+    document.getElementById('earn-paid').textContent = '$' + ((parseInt(s.paid_cents)||0)/100).toFixed(2);
 
     document.getElementById('earnings-tbody').innerHTML = records.length ? records.map(e => `
       <tr>

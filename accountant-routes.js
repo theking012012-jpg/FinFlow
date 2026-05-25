@@ -238,6 +238,25 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
       }
       // All verification methods stay 'pending' — admin does final approval
 
+      // Notify admin of new application
+      if (resendClient) {
+        const adminEmail = process.env.ADMIN_EMAIL;
+        if (adminEmail) {
+          resendClient.emails.send({
+            from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
+            to: adminEmail,
+            subject: `New accountant application from ${firstName} ${lastName} (${firm})`,
+            html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow Admin</h2><p>New accountant application received:</p><ul style="margin:12px 0;padding-left:20px;line-height:1.8"><li><strong>Name:</strong> ${firstName} ${lastName}</li><li><strong>Firm:</strong> ${firm}</li><li><strong>Email:</strong> ${email}</li><li><strong>Country:</strong> ${country}</li><li><strong>Specialisation:</strong> ${specialisation}</li><li><strong>Verification:</strong> ${verification.method}</li></ul><a href="${process.env.APP_URL || 'https://finflow-production-8e57.up.railway.app'}/admin" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:8px">Review in Admin Panel →</a></div>`,
+          }).catch(e => console.error('[Register] Admin notification failed:', e.message));
+        } else {
+          // TODO: set ADMIN_EMAIL env var to enable admin email notifications
+          console.log(`[Register] New application from ${firstName} ${lastName} (${firm}) — set ADMIN_EMAIL to enable notifications`);
+        }
+      } else {
+        // TODO: set RESEND_API_KEY env var to enable email notifications
+        console.log(`[Register] New application from ${firstName} ${lastName} (${firm}) — configure RESEND_API_KEY to enable email notifications`);
+      }
+
       // Start session
       req.session.accountantId = accountantId;
 

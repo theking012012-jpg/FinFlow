@@ -227,6 +227,21 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     return res.json({ success: true });
   }));
 
+  // Override user plan
+  app.post('/api/admin/users/:id/plan', requireAdmin, wrap(async (req, res) => {
+    const { plan } = req.body || {};
+    if (!['trial', 'pro', 'business'].includes(plan)) return res.status(400).json({ error: 'Invalid plan.' });
+    await pool.query(
+      `UPDATE users SET data = data || $1 WHERE id = $2`,
+      [JSON.stringify({ plan }), req.params.id]
+    );
+    await pool.query(
+      `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ($1, 'user', $2, $3, NOW())`,
+      ['user_plan_override', req.params.id, `Set plan to ${plan}`]
+    ).catch(() => {});
+    return res.json({ success: true });
+  }));
+
   // ── REPORTS ───────────────────────────────────────────────────────────────
   app.get('/api/admin/reports', requireAdmin, wrap(async (req, res) => {
     const result = await pool.query(`

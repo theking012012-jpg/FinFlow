@@ -114,7 +114,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     let query = `
       SELECT a.id, a.first_name, a.last_name, a.email, a.firm, a.country,
              a.specialisation, a.experience, a.status, a.verification_method,
-             a.verification_data, a.credentials, a.memberships, a.avg_rating,
+             a.verification_data, a.credentials, a.memberships, a.avg_rating, a.preferred_partner,
              a.review_count, a.stripe_onboarded, a.created_at, a.verified_at,
              COUNT(ac.id) AS client_count,
              COALESCE(SUM(ae.amount_cents),0) AS total_earnings_cents
@@ -182,12 +182,11 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
 
   // Toggle Preferred Partner badge manually
   app.post('/api/admin/accountants/:id/preferred-partner', requireAdmin, wrap(async (req, res) => {
-    const { enabled } = req.body || {};
-    await pool.query(
-      `UPDATE accountants SET avg_rating = $1 WHERE id = $2`,
-      [enabled ? 5.0 : 0, req.params.id]
+    const result = await pool.query(
+      `UPDATE accountants SET preferred_partner = NOT COALESCE(preferred_partner, false) WHERE id = $1 RETURNING preferred_partner`,
+      [req.params.id]
     );
-    return res.json({ success: true });
+    return res.json({ success: true, preferred_partner: result.rows[0]?.preferred_partner });
   }));
 
   // ── CLIENT MANAGEMENT ─────────────────────────────────────────────────────

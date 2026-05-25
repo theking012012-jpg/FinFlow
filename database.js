@@ -104,6 +104,7 @@ async function initDB() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_accountants_email    ON accountants(email)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_accountants_referral ON accountants(referral_code)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_accountants_status   ON accountants(status)`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS preferred_partner BOOLEAN DEFAULT FALSE`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_clients (

@@ -282,6 +282,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 
     req.session.userId = userId;
     req.session.userRole = 'owner';
+    req.session.userEmail = email.toLowerCase();
     const user = await db.get('users', u => u.id === userId);
     console.log('[Register] New user created:', email);
     res.status(201).json({ user: safeUser(user) });
@@ -299,6 +300,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Invalid email or password.' });
     req.session.userId = user.id;
     req.session.userRole = user.role || 'owner';
+    req.session.userEmail = user.email;
     // Track last login time
     await pool.query(
       `UPDATE users SET data = data || jsonb_build_object('last_login', $1::text) WHERE id = $2`,

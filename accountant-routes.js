@@ -656,9 +656,9 @@ If you cannot find a field, use null. Be concise.`;
       const result = await client.query(`
         UPDATE accountant_clients
         SET status = 'active', activated_at = NOW()
-        WHERE user_id = $1 AND status = 'pending'
+        WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending'
         RETURNING accountant_id, referral_months_total
-      `, [userId]);
+      `, [userId, req.session.accountantId]);
 
       if (result.rows[0]) {
         const { accountant_id, referral_months_total } = result.rows[0];
@@ -1027,14 +1027,12 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const { accountantId, rating, comment } = req.body || {};
     if (!accountantId || !rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'Invalid review data.' });
 
-    // Only allow review if client has a completed payment to this accountant
+    // Only allow review if client is an active linked client of this accountant
     const paymentCheck = await pool.query(`
-      SELECT id FROM accountant_earnings
-      WHERE accountant_id = $1 AND client_id = $2 AND type = 'service_commission' AND status = 'pending'
-      LIMIT 1
-    `, [accountantId, req.session.userId]);
+      SELECT 1 FROM accountant_clients WHERE user_id = $1 AND accountant_id = $2 AND status = 'active'
+    `, [req.session.userId, accountantId]);
     if (!paymentCheck.rows[0]) {
-      return res.status(403).json({ error: 'You can only review an accountant after completing a FinFlow payment with them.' });
+      return res.status(403).json({ error: 'You can only review an accountant you are actively linked with.' });
     }
 
     // Upsert review (one per client per accountant)

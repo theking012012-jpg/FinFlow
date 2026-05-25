@@ -478,7 +478,18 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     let db = false, redis = false;
     try { await pool.query('SELECT 1'); db = true; } catch(e) {}
     try {
-      if (app.locals.redisClient) { await app.locals.redisClient.ping(); redis = true; }
+      const redisClient = app.locals.redisClient;
+      if (redisClient) {
+        let redisOk = false;
+        try {
+          await redisClient.set('health_check', '1');
+          const val = await redisClient.get('health_check');
+          redisOk = val === '1';
+        } catch(e) {
+          redisOk = false;
+        }
+        redis = redisOk;
+      }
     } catch(e) {}
     return res.json({ db, redis, deployId: process.env.RAILWAY_DEPLOYMENT_ID || null });
   }));

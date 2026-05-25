@@ -226,19 +226,17 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
         ).catch(e => console.error('[Register] Credentials save failed:', e.message));
       }
 
-      // If membership verification — attempt auto-lookup
+      // If membership verification — attempt auto-lookup but do NOT auto-approve.
+      // Record the lookup result for admin review; admin must manually verify.
       if (verification.method === 'membership' && verification.profBody && verification.membershipNumber) {
         const lookup = await lookupMembership(verification.profBody, verification.membershipNumber);
-        if (lookup.verified) {
-          await client.query(
-            `UPDATE accountants SET status = 'verified', verified_at = NOW(),
-             verification_data = verification_data || $1 WHERE id = $2`,
-            [JSON.stringify({ autoVerified: true, lookupResult: lookup.status }), accountantId]
-          );
-        }
-        // If not auto-verified, stays 'pending' — team follows up
+        await client.query(
+          `UPDATE accountants SET verification_data = verification_data || $1 WHERE id = $2`,
+          [JSON.stringify({ lookupAttempted: true, lookupVerified: lookup.verified, lookupResult: lookup.status }), accountantId]
+        ).catch(e => console.error('[Register] Lookup result save failed:', e.message));
+        // Status stays 'pending' — admin reviews and approves manually
       }
-      // employer + institution methods stay 'pending' — team does manual call/check
+      // All verification methods stay 'pending' — admin does final approval
 
       // Start session
       req.session.accountantId = accountantId;

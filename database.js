@@ -139,6 +139,8 @@ async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_earnings_accountant ON accountant_earnings(accountant_id)`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS stripe_account_id TEXT`);
+    await client.query(`ALTER TABLE accountant_earnings ADD COLUMN IF NOT EXISTS client_id INTEGER`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_reviews (

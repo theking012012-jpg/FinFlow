@@ -657,6 +657,10 @@
   <button class="btn btn-gold btn-sm" onclick="connectStripe()" style="margin-left:auto">Connect Stripe →</button>
   <button style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1" onclick="document.getElementById('stripe-banner').style.display='none'">×</button>
 </div>
+<!-- STRIPE CONNECTED BADGE (shown when connected) -->
+<div id="stripe-connected-badge" style="display:none;position:fixed;top:57px;left:0;right:0;z-index:20;background:linear-gradient(90deg,#081a0e,#0d2414);border-bottom:1px solid rgba(76,201,120,0.3);padding:8px 32px;display:flex;align-items:center;gap:10px">
+  <span style="font-size:13px;color:#4cc97a;font-weight:600">✓ Stripe connected</span>
+</div>
 
 <!-- BILL CLIENT MODAL -->
 <div class="modal-overlay" id="bill-modal">
@@ -1651,7 +1655,14 @@ async function checkStripeStatus() {
     if (!res.ok) return;
     const data = await res.json();
     const banner = document.getElementById('stripe-banner');
-    if (!data.onboarded && banner) banner.style.display = 'flex';
+    const badge  = document.getElementById('stripe-connected-badge');
+    if (data.connected) {
+      if (banner) banner.style.display = 'none';
+      if (badge)  badge.style.display = 'flex';
+    } else {
+      if (banner) banner.style.display = 'flex';
+      if (badge)  badge.style.display = 'none';
+    }
   } catch(e) {}
 }
 

@@ -1136,6 +1136,109 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     return res.json({ success: true });
   }));
 
+  // ── STRIPE STATUS ─────────────────────────────────────────────────────────
+  app.get('/api/accountants/stripe-status', requireAccountant, async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        'SELECT stripe_account_id FROM accountants WHERE id = $1',
+        [req.session.accountantId]
+      );
+      const acct = rows[0];
+      if (!acct?.stripe_account_id) return res.json({ connected: false, accountId: null });
+      if (stripe) {
+        const stripeAcct = await stripe.accounts.retrieve(acct.stripe_account_id).catch(() => null);
+        return res.json({
+          connected: !!stripeAcct?.charges_enabled,
+          accountId: acct.stripe_account_id,
+          chargesEnabled: stripeAcct?.charges_enabled || false,
+          payoutsEnabled: stripeAcct?.payouts_enabled || false,
+          requirements: stripeAcct?.requirements?.currently_due || []
+        });
+      }
+      return res.json({ connected: false, accountId: acct.stripe_account_id, chargesEnabled: false, message: 'Stripe not configured on server' });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── STRIPE CONNECT ────────────────────────────────────────────────────────
+  app.post('/api/accountants/stripe-connect', requireAccountant, async (req, res) => {
+    try {
+      if (!stripe) return res.status(503).json({ error: 'Stripe not configured.' });
+      const { rows } = await pool.query('SELECT * FROM accountants WHERE id = $1', [req.session.accountantId]);
+      const acct = rows[0];
+      if (!acct) return res.status(404).json({ error: 'Accountant not found' });
+      let stripeAccountId = acct.stripe_account_id;
+      if (!stripeAccountId) {
+        const stripeAcct = await stripe.accounts.create({
+          type: 'express',
+          email: acct.email,
+          capabilities: { transfers: { requested: true } },
+          business_type: 'individual',
+          individual: { first_name: acct.first_name, last_name: acct.last_name },
+          metadata: { accountant_id: acct.id }
+        });
+        stripeAccountId = stripeAcct.id;
+        await pool.query('UPDATE accountants SET stripe_account_id = $1 WHERE id = $2', [stripeAccountId, acct.id]);
+      }
+      const appUrl = process.env.APP_URL || 'https://finflow-production-0817.up.railway.app';
+      const accountLink = await stripe.accountLinks.create({
+        account: stripeAccountId,
+        refresh_url: `${appUrl}/accountant?stripe=refresh`,
+        return_url: `${appUrl}/accountant?stripe=success`,
+        type: 'account_onboarding'
+      });
+      res.json({ url: accountLink.url });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── BILL CLIENT ───────────────────────────────────────────────────────────
+  app.post('/api/accountants/bill-client', requireAccountant, async (req, res) => {
+    try {
+      if (!stripe) return res.status(503).json({ error: 'Stripe not configured.' });
+      const { clientId, amount, description, currency = 'usd' } = req.body;
+      if (!clientId || !amount) return res.status(400).json({ error: 'clientId and amount required' });
+      const { rows: clientRows } = await pool.query(
+        `SELECT u.id, u.data FROM users u
+         WHERE u.id = $1 AND (u.data->>'accountant_id')::int = $2`,
+        [clientId, req.session.accountantId]
+      );
+      if (!clientRows.length) return res.status(403).json({ error: 'Client not found or not linked to you' });
+      const { rows: accRows } = await pool.query('SELECT stripe_account_id FROM accountants WHERE id = $1', [req.session.accountantId]);
+      const stripeAccountId = accRows[0]?.stripe_account_id;
+      if (!stripeAccountId) return res.status(400).json({ error: 'Connect your Stripe account first' });
+      const amountCents = Math.round(parseFloat(amount) * 100);
+      const platformFeeCents = Math.round(amountCents * 0.04);
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amountCents,
+        currency,
+        application_fee_amount: platformFeeCents,
+        transfer_data: { destination: stripeAccountId },
+        metadata: {
+          accountant_id: req.session.accountantId,
+          client_id: clientId,
+          description: description || 'Accounting services'
+        }
+      });
+      await pool.query(
+        `INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, status, created_at)
+         VALUES ($1, $2, 'service_fee', $3, $4, 'pending', NOW())
+         ON CONFLICT DO NOTHING`,
+        [req.session.accountantId, clientId, amountCents, description || 'Accounting services']
+      );
+      res.json({
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id,
+        amount: amountCents,
+        platformFee: platformFeeCents
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
 }; // end registerAccountantRoutes
 
 

@@ -1042,13 +1042,13 @@ function renderClients() {
     ? '<tr class="loading-row"><td colspan="8">No clients yet. <a style="color:var(--gold);cursor:pointer" onclick="showPage(\'invite\')">Invite your first client &rarr;</a></td></tr>'
     : clients.map(c => `
       <tr>
-        <td class="primary">${c.client_name || 'Unknown'}</td>
+        <td class="primary">${(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</td>
         <td style="font-size:12px;color:var(--text3)">${c.client_email || '&mdash;'}</td>
         <td><span class="badge badge-gold">${c.client_plan || 'trial'}</span></td>
         <td><span class="badge ${c.status === 'active' ? 'badge-green' : c.status === 'pending' ? 'badge-amber' : 'badge-red'}">${c.status}</span></td>
         <td>${activityBadge(c)}</td>
         <td>${c.referral_month}/${c.referral_months_total} months</td>
-        <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${(c.client_name||'').replace(/'/g,'')}')">View books</button></td>
+        <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,'')}')">View books</button></td>
       </tr>`).join('');
 
   document.getElementById('clients-tbody').innerHTML = rows;
@@ -1056,12 +1056,12 @@ function renderClients() {
   // Dashboard preview (first 5)
   const dashRows = clients.slice(0, 5).map(c => `
     <tr>
-      <td class="primary">${c.client_name || 'Unknown'}</td>
+      <td class="primary">${(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</td>
       <td><span class="badge badge-gold">${c.client_plan || 'trial'}</span></td>
       <td><span class="badge ${c.status === 'active' ? 'badge-green' : 'badge-amber'}">${c.status}</span></td>
       <td>${activityBadge(c)}</td>
       <td>${c.activated_at ? new Date(c.activated_at).toLocaleDateString() : '&mdash;'}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${(c.client_name||'').replace(/'/g,'')}')">View books</button></td>
+      <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,'')}')">View books</button></td>
     </tr>`).join('') || '<tr class="loading-row"><td colspan="6">No clients yet.</td></tr>';
   document.getElementById('dashboard-clients-tbody').innerHTML = dashRows;
 }
@@ -1411,10 +1411,9 @@ let _booksActiveEntity = 'all';
 
 const fmt = v => '$' + parseFloat(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-async function viewBooks(userId, clientName) {
-  // Open the full-screen client workspace
-  const name = encodeURIComponent(clientName || 'Client');
-  window.open(`/accountant-client.html?client=${userId}&name=${name}`, '_blank');
+function viewBooks(clientId, clientName) {
+  if (!clientId) return;
+  window.location.href = '/accountant-client?client=' + clientId + '&name=' + encodeURIComponent(clientName || '');
 }
 
 function renderEntityTabs() {
@@ -1676,7 +1675,7 @@ function openBillModal() {
   const activeClients = clients.filter(c => c.status === 'active');
   if (!activeClients.length) { toast('No active clients to bill', 'error'); return; }
   sel.innerHTML = '<option value="">Select client...</option>' +
-    activeClients.map(c => `<option value="${c.id}">${c.client_name || 'Unknown'}</option>`).join('');
+    activeClients.map(c => `<option value="${c.id}">${(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</option>`).join('');
   document.getElementById('bill-breakdown').style.display = 'none';
   document.getElementById('bill-amount').value = '';
   document.getElementById('bill-description').value = '';

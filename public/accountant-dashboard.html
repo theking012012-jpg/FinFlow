@@ -1048,7 +1048,7 @@ function renderClients() {
         <td><span class="badge ${c.status === 'active' ? 'badge-green' : c.status === 'pending' ? 'badge-amber' : 'badge-red'}">${c.status}</span></td>
         <td>${activityBadge(c)}</td>
         <td>${c.referral_month}/${c.referral_months_total} months</td>
-        <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.user_id},'${(c.client_name||'').replace(/'/g,'')}')">View books</button></td>
+        <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${(c.client_name||'').replace(/'/g,'')}')">View books</button></td>
       </tr>`).join('');
 
   document.getElementById('clients-tbody').innerHTML = rows;
@@ -1061,7 +1061,7 @@ function renderClients() {
       <td><span class="badge ${c.status === 'active' ? 'badge-green' : 'badge-amber'}">${c.status}</span></td>
       <td>${activityBadge(c)}</td>
       <td>${c.activated_at ? new Date(c.activated_at).toLocaleDateString() : '&mdash;'}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.user_id},'${(c.client_name||'').replace(/'/g,'')}')">View books</button></td>
+      <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${(c.client_name||'').replace(/'/g,'')}')">View books</button></td>
     </tr>`).join('') || '<tr class="loading-row"><td colspan="6">No clients yet.</td></tr>';
   document.getElementById('dashboard-clients-tbody').innerHTML = dashRows;
 }
@@ -1676,7 +1676,7 @@ function openBillModal() {
   const activeClients = clients.filter(c => c.status === 'active');
   if (!activeClients.length) { toast('No active clients to bill', 'error'); return; }
   sel.innerHTML = '<option value="">Select client...</option>' +
-    activeClients.map(c => `<option value="${c.user_id}">${c.client_name || 'Unknown'}</option>`).join('');
+    activeClients.map(c => `<option value="${c.id}">${c.client_name || 'Unknown'}</option>`).join('');
   document.getElementById('bill-breakdown').style.display = 'none';
   document.getElementById('bill-amount').value = '';
   document.getElementById('bill-description').value = '';

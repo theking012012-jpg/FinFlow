@@ -364,9 +364,143 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // ── ADMIN ACTIVITY LOG ────────────────────────────────────────────────────
   app.get('/api/admin/log', requireAdmin, wrap(async (req, res) => {
     const result = await pool.query(`
-      SELECT * FROM admin_log ORDER BY created_at DESC LIMIT 100
+      SELECT * FROM admin_log ORDER BY created_at DESC LIMIT 500
     `).catch(() => ({ rows: [] }));
     return res.json(result.rows);
+  }));
+
+  // ── USER DETAIL ───────────────────────────────────────────────────────────
+  app.get('/api/admin/users/:id', requireAdmin, wrap(async (req, res) => {
+    const { id } = req.params;
+    const userRes = await pool.query(`
+      SELECT u.id, u.data->>'name' AS name, u.data->>'email' AS email,
+             u.data->>'plan' AS plan, u.data->>'subscriptionStatus' AS sub_status,
+             u.data->>'suspended' AS suspended, u.data->>'last_login' AS last_login,
+             u.data->>'trialEnds' AS trial_ends, u.created_at,
+             a.first_name AS accountant_first, a.last_name AS accountant_last,
+             a.firm AS accountant_firm, a.email AS accountant_email
+      FROM users u
+      LEFT JOIN accountant_clients ac ON ac.user_id = u.id AND ac.status IN ('active','pending')
+      LEFT JOIN accountants a ON a.id = ac.accountant_id
+      WHERE u.id = $1
+    `, [id]);
+    if (!userRes.rows[0]) return res.status(404).json({ error: 'User not found.' });
+    const entityCount = await pool.query(`SELECT COUNT(*) FROM entities WHERE user_id = $1`, [id])
+      .catch(() => ({ rows: [{ count: 0 }] }));
+    return res.json({ ...userRes.rows[0], entity_count: parseInt(entityCount.rows[0].count) });
+  }));
+
+  // ── DELETE USER (soft) ────────────────────────────────────────────────────
+  app.delete('/api/admin/users/:id', requireAdmin, wrap(async (req, res) => {
+    const { id } = req.params;
+    await pool.query(
+      `UPDATE users SET data = jsonb_set(jsonb_set(data, '{deleted}', 'true'), '{email}', $1) WHERE id = $2`,
+      [JSON.stringify(`deleted_${id}@deleted.com`), id]
+    );
+    await pool.query(
+      `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ('user_delete','user',$1,'Soft deleted by admin',NOW())`,
+      [id]
+    ).catch(() => {});
+    return res.json({ success: true });
+  }));
+
+  // ── ACCOUNTANT DETAIL ─────────────────────────────────────────────────────
+  app.get('/api/admin/accountants/:id', requireAdmin, wrap(async (req, res) => {
+    const { id } = req.params;
+    const accRes = await pool.query(`
+      SELECT a.*,
+             COALESCE(SUM(ae.amount_cents),0) AS total_earnings_cents,
+             COALESCE(SUM(CASE WHEN ae.status='paid' THEN ae.amount_cents ELSE 0 END),0) AS paid_earnings_cents
+      FROM accountants a
+      LEFT JOIN accountant_earnings ae ON ae.accountant_id = a.id
+      WHERE a.id = $1
+      GROUP BY a.id
+    `, [id]);
+    if (!accRes.rows[0]) return res.status(404).json({ error: 'Accountant not found.' });
+    const clients = await pool.query(`
+      SELECT u.id, u.data->>'name' AS name, u.data->>'email' AS email, ac.status
+      FROM accountant_clients ac
+      JOIN users u ON u.id = ac.user_id
+      WHERE ac.accountant_id = $1
+      ORDER BY ac.created_at DESC LIMIT 50
+    `, [id]);
+    const jsonbClients = await pool.query(`
+      SELECT u.id, u.data->>'name' AS name, u.data->>'email' AS email, 'jsonb' AS status
+      FROM users u
+      WHERE (u.data->>'accountant_id')::int = $1
+        AND u.id NOT IN (SELECT user_id FROM accountant_clients WHERE accountant_id = $1)
+      LIMIT 50
+    `, [id]);
+    return res.json({ ...accRes.rows[0], clients: [...clients.rows, ...jsonbClients.rows] });
+  }));
+
+  // ── FLAGGED TRANSACTIONS ──────────────────────────────────────────────────
+  app.get('/api/admin/flags', requireAdmin, wrap(async (req, res) => {
+    const result = await pool.query(`
+      SELECT id, action, target_type, target_id, notes, created_at,
+             CASE WHEN notes LIKE '%[resolved]%' THEN 'resolved' ELSE 'open' END AS status
+      FROM admin_log
+      WHERE action LIKE '%flag%'
+      ORDER BY created_at DESC LIMIT 200
+    `).catch(() => ({ rows: [] }));
+    return res.json(result.rows);
+  }));
+
+  app.post('/api/admin/flags/:id/resolve', requireAdmin, wrap(async (req, res) => {
+    await pool.query(
+      `UPDATE admin_log SET notes = COALESCE(notes,'') || ' [resolved]' WHERE id = $1`,
+      [req.params.id]
+    );
+    return res.json({ success: true });
+  }));
+
+  // ── BROADCAST ─────────────────────────────────────────────────────────────
+  app.post('/api/admin/broadcast', requireAdmin, wrap(async (req, res) => {
+    const { audience, subject, message } = req.body || {};
+    const countQueries = {
+      all_users:      `SELECT COUNT(*) FROM users WHERE data->>'deleted' IS DISTINCT FROM 'true'`,
+      all_accountants:`SELECT COUNT(*) FROM accountants WHERE status = 'verified'`,
+      pro_users:      `SELECT COUNT(*) FROM users WHERE data->>'plan' = 'pro'`,
+      business_users: `SELECT COUNT(*) FROM users WHERE data->>'plan' = 'business'`,
+      trial_users:    `SELECT COUNT(*) FROM users WHERE (data->>'plan' = 'trial' OR data->>'plan' IS NULL)`,
+    };
+    const q = countQueries[audience] || countQueries.all_users;
+    const countRes = await pool.query(q);
+    const count = parseInt(countRes.rows[0].count);
+    await pool.query(
+      `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('broadcast','system',$1,NOW())`,
+      [`${audience}: ${subject} — ${(message||'').slice(0,200)}`]
+    ).catch(() => {});
+    return res.json({ ok: true, sent: count });
+  }));
+
+  // ── PLATFORM HEALTH ───────────────────────────────────────────────────────
+  app.get('/api/admin/health', requireAdmin, wrap(async (req, res) => {
+    let db = false, redis = false;
+    try { await pool.query('SELECT 1'); db = true; } catch(e) {}
+    try {
+      if (app.locals.redisClient) { await app.locals.redisClient.ping(); redis = true; }
+    } catch(e) {}
+    return res.json({ db, redis, deployId: process.env.RAILWAY_DEPLOYMENT_ID || null });
+  }));
+
+  // ── SECURITY LOG ──────────────────────────────────────────────────────────
+  app.get('/api/admin/security-log', requireAdmin, wrap(async (req, res) => {
+    const result = await pool.query(`
+      SELECT * FROM admin_log WHERE action = 'failed_login'
+      ORDER BY created_at DESC LIMIT 100
+    `).catch(() => ({ rows: [] }));
+    return res.json(result.rows);
+  }));
+
+  // No auth required — called on failed login before session exists
+  app.post('/api/admin/log-security', wrap(async (req, res) => {
+    const { action, notes } = req.body || {};
+    await pool.query(
+      `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ($1,'security',$2,NOW())`,
+      [action || 'failed_login', notes || '']
+    ).catch(() => {});
+    return res.json({ ok: true });
   }));
 
 }; // end registerAdminRoutes

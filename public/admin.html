@@ -6,6 +6,7 @@
 <title>FinFlow Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root {
   --bg:#0a0806;--bg1:#111009;--bg2:#181410;--bg3:#201a12;
@@ -155,6 +156,37 @@ td.amber{color:var(--amber)}
 /* FILTERS */
 .filter-row{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
 .filter-select{background:var(--bg1);border:1px solid var(--bd);border-radius:6px;padding:6px 12px;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--t1);outline:none;appearance:none;cursor:pointer}
+
+/* CHART */
+.chart-wrap{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--r);padding:20px;margin-top:20px}
+.chart-title{font-size:11px;color:var(--t2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px}
+#overview-chart{max-height:200px}
+
+/* TAB TOGGLE */
+.tab-row{display:flex;gap:2px;margin-bottom:14px;border-bottom:1px solid var(--bd);padding-bottom:0}
+.tab-btn{padding:7px 14px;font-family:'DM Sans',sans-serif;font-size:12px;color:var(--t2);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px;transition:all .15s}
+.tab-btn.active{color:var(--acc);border-bottom-color:var(--acc)}
+
+/* BROADCAST */
+.broadcast-form{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--r);padding:24px;max-width:560px}
+.broadcast-form label{display:block;font-size:11px;color:var(--t2);margin-bottom:5px;margin-top:14px}
+.broadcast-form select,.broadcast-form input,.broadcast-form textarea{width:100%;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;padding:9px 12px;font-family:'DM Sans',sans-serif;font-size:13px;color:var(--t1);outline:none;resize:vertical}
+.broadcast-form select:focus,.broadcast-form input:focus,.broadcast-form textarea:focus{border-color:var(--acc2)}
+.broadcast-form .send-btn{margin-top:16px;padding:10px 22px;background:var(--acc);border:none;border-radius:7px;color:var(--bg);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all .2s}
+.broadcast-form .send-btn:hover{background:var(--acc-light)}
+
+/* HEALTH */
+.health-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd);font-size:12px}
+.health-row:last-child{border-bottom:none}
+.health-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.health-dot.ok{background:var(--green)}
+.health-dot.warn{background:var(--amber)}
+
+/* WIDE MODAL */
+.modal.wide{width:640px}
+.client-list{max-height:180px;overflow-y:auto;border:1px solid var(--bd);border-radius:6px;margin-top:6px}
+.client-list-row{display:flex;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--bd);font-size:12px}
+.client-list-row:last-child{border-bottom:none}
 </style>
 </head>
 <body>
@@ -229,6 +261,14 @@ td.amber{color:var(--amber)}
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="11" x2="9" y2="11"/></svg>
         Activity Log
       </div>
+      <div class="nav-item" onclick="showPage('flags')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 1v14M3 1l10 4-10 4"/></svg>
+        Flagged Txns
+      </div>
+      <div class="nav-item" onclick="showPage('broadcast')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M2 8c0-3.3 2.7-6 6-6M14 8c0 3.3-2.7 6-6 6"/><path d="M4.5 8c0-1.9 1.6-3.5 3.5-3.5M11.5 8c0 1.9-1.6 3.5-3.5 3.5"/></svg>
+        Broadcast
+      </div>
     </aside>
 
     <!-- MAIN -->
@@ -238,7 +278,7 @@ td.amber{color:var(--amber)}
       <div class="page active" id="page-overview">
         <div class="page-title">Dashboard</div>
         <div class="page-sub">Platform overview — <span id="overview-updated">loading...</span></div>
-        <div class="stat-grid">
+        <div class="stat-grid" style="grid-template-columns:repeat(5,1fr)">
           <div class="stat-card gold">
             <div class="stat-label">Total Users</div>
             <div class="stat-val" id="ov-users">—</div>
@@ -258,6 +298,11 @@ td.amber{color:var(--amber)}
             <div class="stat-label">AI Queries (Month)</div>
             <div class="stat-val" id="ov-ai">—</div>
             <div class="stat-sub" id="ov-ai-cost">est. cost —</div>
+          </div>
+          <div class="stat-card gold">
+            <div class="stat-label">Platform MRR</div>
+            <div class="stat-val" id="ov-mrr">—</div>
+            <div class="stat-sub">Pro $79 · Business $199</div>
           </div>
         </div>
 
@@ -280,6 +325,10 @@ td.amber{color:var(--amber)}
               </table>
             </div>
           </div>
+        </div>
+        <div class="chart-wrap">
+          <div class="chart-title">Monthly Signups (last 6 months)</div>
+          <canvas id="overview-chart"></canvas>
         </div>
       </div>
 
@@ -312,6 +361,7 @@ td.amber{color:var(--amber)}
             <option value="suspended">Suspended</option>
             <option value="rejected">Rejected</option>
           </select>
+          <button class="btn-sm" onclick="exportAccountantsCSV()">Export CSV</button>
         </div>
         <div class="table-wrap">
           <table>
@@ -338,13 +388,14 @@ td.amber{color:var(--amber)}
         <div class="page-title">All Users</div>
         <div class="page-sub">Registered FinFlow clients</div>
         <div class="filter-row">
-          <input class="search-input" placeholder="Search name or email..." oninput="loadUsers(this.value, document.getElementById('user-plan-filter').value)" style="width:250px">
-          <select class="filter-select" id="user-plan-filter" onchange="loadUsers(document.querySelector('#page-users .search-input').value||'', this.value)">
+          <input class="search-input" id="user-search" placeholder="Search name or email..." oninput="filterUserRows(this.value)" style="width:250px">
+          <select class="filter-select" id="user-plan-filter" onchange="loadUsers(document.getElementById('user-search').value||'', this.value)">
             <option value="">All plans</option>
             <option value="pro">Pro</option>
             <option value="business">Business</option>
             <option value="trial">Trial</option>
           </select>
+          <button class="btn-sm" onclick="exportUsersCSV()">Export CSV</button>
         </div>
         <div class="table-wrap">
           <table>
@@ -358,6 +409,13 @@ td.amber{color:var(--amber)}
       <div class="page" id="page-earnings">
         <div class="page-title">Payouts</div>
         <div class="page-sub">Referral commissions and service fees owed to accountants</div>
+        <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+          <div class="stat-card gold">
+            <div class="stat-label">Projected MRR</div>
+            <div class="stat-val" id="earn-mrr">—</div>
+            <div class="stat-sub">Pro $79 · Business $199</div>
+          </div>
+        </div>
         <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
           <div class="stat-card gold">
             <div class="stat-label">Total Earned (Platform)</div>
@@ -425,12 +483,40 @@ td.amber{color:var(--amber)}
             </table>
           </div>
         </div>
+        <div class="cost-card" style="margin-top:16px">
+          <h4>🩺 Platform Health</h4>
+          <div id="health-rows">
+            <div class="health-row"><span class="health-dot warn" id="h-db-dot"></span><span id="h-db-label" style="color:var(--t2)">Database — checking...</span></div>
+            <div class="health-row"><span class="health-dot warn" id="h-redis-dot"></span><span id="h-redis-label" style="color:var(--t2)">Redis — checking...</span></div>
+            <div class="health-row"><span class="health-dot ok"></span><span id="h-deploy-label" style="color:var(--t2)">Last deploy — checking...</span></div>
+          </div>
+        </div>
       </div>
 
       <!-- ACTIVITY LOG -->
       <div class="page" id="page-log">
         <div class="page-title">Activity Log</div>
-        <div class="page-sub">All admin actions with timestamps</div>
+        <div class="page-sub">All admin actions and security events</div>
+        <div class="tab-row">
+          <button class="tab-btn active" id="tab-admin" onclick="switchLogTab('admin')">Admin Actions</button>
+          <button class="tab-btn" id="tab-security" onclick="switchLogTab('security')">Security Events</button>
+        </div>
+        <div class="filter-row" id="log-filters">
+          <select class="filter-select" id="log-action-filter" onchange="applyLogFilters()">
+            <option value="">All Actions</option>
+            <option value="accountant_approve">accountant_approve</option>
+            <option value="accountant_decline">accountant_decline</option>
+            <option value="accountant_reject">accountant_reject</option>
+            <option value="accountant_notification">accountant_notification</option>
+            <option value="user_suspend">user_suspend</option>
+            <option value="user_delete">user_delete</option>
+            <option value="user_plan_override">plan_change</option>
+            <option value="broadcast">broadcast</option>
+          </select>
+          <input type="date" class="search-input" id="log-date-from" onchange="applyLogFilters()" placeholder="From" style="width:140px">
+          <input type="date" class="search-input" id="log-date-to" onchange="applyLogFilters()" placeholder="To" style="width:140px">
+          <input class="search-input" id="log-notes-search" placeholder="Search notes..." oninput="applyLogFilters()" style="width:200px">
+        </div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Action</th><th>Target</th><th>Notes</th><th>Time</th></tr></thead>
@@ -439,7 +525,70 @@ td.amber{color:var(--amber)}
         </div>
       </div>
 
+      <!-- FLAGGED TRANSACTIONS -->
+      <div class="page" id="page-flags">
+        <div class="page-title">Flagged Transactions</div>
+        <div class="page-sub">Transactions flagged by accountants for review</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Accountant</th><th>Client</th><th>Type</th><th>Note</th><th>Date</th><th>Status</th><th></th></tr></thead>
+            <tbody id="flags-tbody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- BROADCAST -->
+      <div class="page" id="page-broadcast">
+        <div class="page-title">Email Broadcast</div>
+        <div class="page-sub">Send a message to a segment of users or accountants</div>
+        <div class="broadcast-form">
+          <label>Audience</label>
+          <select id="bc-audience">
+            <option value="all_users">All Users</option>
+            <option value="all_accountants">All Accountants</option>
+            <option value="pro_users">Pro Users</option>
+            <option value="business_users">Business Users</option>
+            <option value="trial_users">Trial Users</option>
+          </select>
+          <label>Subject</label>
+          <input type="text" id="bc-subject" placeholder="Email subject line">
+          <label>Message</label>
+          <textarea id="bc-message" rows="6" placeholder="Your message..."></textarea>
+          <button class="send-btn" onclick="sendBroadcast()">Send Broadcast →</button>
+        </div>
+      </div>
+
     </main>
+  </div>
+</div>
+
+<!-- USER DETAIL MODAL -->
+<div class="modal-overlay" id="user-modal" onclick="if(event.target===this)document.getElementById('user-modal').classList.remove('open')">
+  <div class="modal">
+    <h3 id="um-name">User</h3>
+    <p id="um-email" style="color:var(--t2);margin-bottom:12px"></p>
+    <div id="um-details"></div>
+    <div class="modal-actions" style="margin-top:16px;justify-content:space-between">
+      <button class="btn-reject" id="um-delete-btn" onclick="deleteUser()">Delete User</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn-cancel" onclick="document.getElementById('user-modal').classList.remove('open')">Close</button>
+        <button class="btn-approve" id="um-suspend-btn" onclick="toggleUserSuspend()">Suspend</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ACCOUNTANT DETAIL MODAL -->
+<div class="modal-overlay" id="acc-modal" onclick="if(event.target===this)document.getElementById('acc-modal').classList.remove('open')">
+  <div class="modal wide">
+    <h3 id="am-name">Accountant</h3>
+    <p id="am-sub" style="color:var(--t2);margin-bottom:12px"></p>
+    <div id="am-details"></div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn-cancel" onclick="document.getElementById('acc-modal').classList.remove('open')">Close</button>
+      <button class="btn-reject" id="am-suspend-btn" onclick="accModalAction('suspend')">Suspend</button>
+      <button class="btn-approve" id="am-approve-btn" onclick="accModalAction('approve')">Verify</button>
+    </div>
   </div>
 </div>
 
@@ -466,6 +615,14 @@ td.amber{color:var(--amber)}
 <script>
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let currentModal = null;
+let _allUsers = [];
+let _allAccountants = [];
+let _logData = [];
+let _securityData = [];
+let _overviewChart = null;
+let _currentLogTab = 'admin';
+let _currentUserId = null;
+let _currentAccId = null;
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
 async function adminLogin() {
@@ -479,7 +636,11 @@ async function adminLogin() {
       body: JSON.stringify({ password: pw }),
     });
     const data = await res.json();
-    if (data.error) { err.textContent = data.error; return; }
+    if (data.error) {
+      err.textContent = data.error;
+      fetch('/api/admin/log-security', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'failed_login', notes:'Failed attempt' }) }).catch(()=>{});
+      return;
+    }
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').classList.add('visible');
     boot();
@@ -525,6 +686,7 @@ function showPage(name) {
     earnings: loadEarnings,
     costs: loadCosts,
     log: loadLog,
+    flags: loadFlags,
   };
   if (loaders[name]) loaders[name]();
 }
@@ -553,6 +715,14 @@ async function loadOverview() {
     }
     document.getElementById('topbar-pending').textContent = d.accountants.pending > 0 ? `⚠ ${d.accountants.pending} pending applications` : '';
 
+    // MRR
+    const proCount = parseInt((d.users.plans.find(p => p.plan === 'pro') || {}).count || 0);
+    const bizCount = parseInt((d.users.plans.find(p => p.plan === 'business') || {}).count || 0);
+    const mrr = proCount * 79 + bizCount * 199;
+    document.getElementById('ov-mrr').textContent = '$' + mrr.toLocaleString();
+    const earnMrr = document.getElementById('earn-mrr');
+    if (earnMrr) earnMrr.textContent = '$' + mrr.toLocaleString();
+
     // Plans table
     document.getElementById('plans-tbody').innerHTML = d.users.plans.map(p => `
       <tr><td class="primary">${p.plan || 'unknown'}</td><td>${p.count}</td></tr>`).join('') || '<tr><td colspan="2" class="empty">No data</td></tr>';
@@ -564,6 +734,30 @@ async function loadOverview() {
       <tr><td>Total accountants</td><td class="primary">${d.accountants.total}</td></tr>
       <tr><td>Total AI queries</td><td class="primary">${d.ai.totalQueries.toLocaleString()}</td></tr>
       <tr><td>Reports this month</td><td class="primary">${d.reports.recent}</td></tr>`;
+
+    // Chart
+    const monthly = d.users.monthly || [];
+    const labels = monthly.map(m => new Date(m.month).toLocaleDateString('en-US',{month:'short',year:'2-digit'}));
+    const counts = monthly.map(m => parseInt(m.count));
+    const ctx = document.getElementById('overview-chart').getContext('2d');
+    if (_overviewChart) _overviewChart.destroy();
+    _overviewChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{ label:'New Signups', data: counts,
+          backgroundColor:'rgba(200,164,74,0.4)', borderColor:'rgba(200,164,74,0.9)',
+          borderWidth:1, borderRadius:4 }]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:true,
+        plugins:{ legend:{ display:false } },
+        scales:{
+          x:{ grid:{ color:'rgba(255,255,255,0.04)' }, ticks:{ color:'#9a8a6e', font:{size:10} } },
+          y:{ grid:{ color:'rgba(255,255,255,0.04)' }, ticks:{ color:'#9a8a6e', font:{size:10} }, beginAtZero:true }
+        }
+      }
+    });
   } catch(e) { console.error('Overview error', e); }
 }
 
@@ -603,9 +797,9 @@ async function loadAccountants(search='', status='') {
     if (search) params.set('search', search);
     if (status) params.set('status', status);
     const res = await fetch(`/api/admin/accountants?${params}`, { credentials: 'include' });
-    const data = await res.json();
-    document.getElementById('accountants-tbody').innerHTML = data.length ? data.map(a => `
-      <tr>
+    _allAccountants = await res.json();
+    document.getElementById('accountants-tbody').innerHTML = _allAccountants.length ? _allAccountants.map(a => `
+      <tr onclick="openAccountant(${a.id})" style="cursor:pointer">
         <td><div class="primary">${a.first_name} ${a.last_name}</div><div style="font-size:11px;color:var(--t3)">${a.email}</div></td>
         <td>${a.firm || '—'}</td>
         <td>${a.country || '—'}</td>
@@ -614,10 +808,10 @@ async function loadAccountants(search='', status='') {
         <td><span class="badge ${a.status==='verified'?'b-green':a.status==='pending'?'b-amber':a.status==='suspended'?'b-red':'b-purple'}">${a.status}</span></td>
         <td><span class="badge ${a.stripe_onboarded?'b-green':'b-amber'}">${a.stripe_onboarded?'Connected':'Not set'}</span></td>
         <td>
-          ${a.status==='verified' ? `<button class="action-btn suspend" onclick="verifyAction(${a.id},'suspend')">Suspend</button>` : ''}
-          ${a.status==='suspended' ? `<button class="action-btn approve" onclick="verifyAction(${a.id},'reinstate')">Reinstate</button>` : ''}
-          ${a.status==='pending' ? `<button class="action-btn approve" onclick="verifyAction(${a.id},'approve')">Approve</button><button class="action-btn reject" onclick="verifyAction(${a.id},'reject')">Reject</button>` : ''}
-          <button class="action-btn gold" onclick="togglePreferred(${a.id},${a.avg_rating < 4.5})">${a.avg_rating >= 4.5 ? '★ Remove PP' : '☆ Set PP'}</button>
+          ${a.status==='verified' ? `<button class="action-btn suspend" onclick="event.stopPropagation();verifyAction(${a.id},'suspend')">Suspend</button>` : ''}
+          ${a.status==='suspended' ? `<button class="action-btn approve" onclick="event.stopPropagation();verifyAction(${a.id},'reinstate')">Reinstate</button>` : ''}
+          ${a.status==='pending' ? `<button class="action-btn approve" onclick="event.stopPropagation();verifyAction(${a.id},'approve')">Approve</button><button class="action-btn reject" onclick="event.stopPropagation();verifyAction(${a.id},'reject')">Reject</button>` : ''}
+          <button class="action-btn gold" onclick="event.stopPropagation();togglePreferred(${a.id},${a.avg_rating < 4.5})">${a.avg_rating >= 4.5 ? '★ Remove PP' : '☆ Set PP'}</button>
         </td>
       </tr>`).join('')
     : '<tr><td colspan="8" class="empty">No accountants found</td></tr>';
@@ -727,29 +921,38 @@ async function dismissReport(id) {
 async function loadUsers(search='', plan='') {
   try {
     const params = new URLSearchParams();
-    if (search) params.set('search', search);
     if (plan) params.set('plan', plan);
     const res = await fetch(`/api/admin/users?${params}`, { credentials: 'include' });
-    const data = await res.json();
-    document.getElementById('users-tbody').innerHTML = data.length ? data.map(u => `
-      <tr>
-        <td class="primary">${u.name || '—'}</td>
-        <td>${u.email || '—'}</td>
-        <td>
-          <select class="filter-select" id="plan-sel-${u.id}" style="font-size:11px;padding:3px 8px;margin-right:4px">
-            <option value="trial" ${(u.plan||'trial')==='trial'?'selected':''}>Trial</option>
-            <option value="pro" ${u.plan==='pro'?'selected':''}>Pro</option>
-            <option value="business" ${u.plan==='business'?'selected':''}>Business</option>
-          </select>
-          <button class="action-btn" onclick="setPlan(${u.id})">Save</button>
-        </td>
-        <td>${u.accountant_first ? `${u.accountant_first} ${u.accountant_last}` : '—'}</td>
-        <td>${new Date(u.created_at).toLocaleDateString()}</td>
-        <td><span class="badge ${u.suspended==='true'?'b-red':'b-green'}">${u.suspended==='true'?'Suspended':'Active'}</span></td>
-        <td><button class="action-btn ${u.suspended==='true'?'approve':'suspend'}" onclick="suspendUser(${u.id},${u.suspended!=='true'})">${u.suspended==='true'?'Reinstate':'Suspend'}</button></td>
-      </tr>`).join('')
-    : '<tr><td colspan="7" class="empty">No users found</td></tr>';
+    _allUsers = await res.json();
+    renderUsers(_allUsers, search);
   } catch(e) { console.error('Users error', e); }
+}
+
+function renderUsers(data, search='') {
+  const q = (search||'').toLowerCase();
+  const filtered = q ? data.filter(u => (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q)) : data;
+  document.getElementById('users-tbody').innerHTML = filtered.length ? filtered.map(u => `
+    <tr onclick="openUser(${u.id})" style="cursor:pointer">
+      <td class="primary">${u.name || '—'}</td>
+      <td>${u.email || '—'}</td>
+      <td>
+        <select class="filter-select" id="plan-sel-${u.id}" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="event.stopPropagation()">
+          <option value="trial" ${(u.plan||'trial')==='trial'?'selected':''}>Trial</option>
+          <option value="pro" ${u.plan==='pro'?'selected':''}>Pro</option>
+          <option value="business" ${u.plan==='business'?'selected':''}>Business</option>
+        </select>
+        <button class="action-btn" onclick="event.stopPropagation();setPlan(${u.id})">Save</button>
+      </td>
+      <td>${u.accountant_first ? `${u.accountant_first} ${u.accountant_last}` : '—'}</td>
+      <td>${new Date(u.created_at).toLocaleDateString()}</td>
+      <td><span class="badge ${u.suspended==='true'?'b-red':'b-green'}">${u.suspended==='true'?'Suspended':'Active'}</span></td>
+      <td><button class="action-btn ${u.suspended==='true'?'approve':'suspend'}" onclick="event.stopPropagation();suspendUser(${u.id},${u.suspended!=='true'})">${u.suspended==='true'?'Reinstate':'Suspend'}</button></td>
+    </tr>`).join('')
+  : '<tr><td colspan="7" class="empty">No users found</td></tr>';
+}
+
+function filterUserRows(q) {
+  renderUsers(_allUsers, q);
 }
 
 async function setPlan(id) {
@@ -845,6 +1048,17 @@ async function loadCosts() {
           </tr>`).join('')
         : '<tr><td colspan="4" class="empty">No payouts yet</td></tr>';
     }
+
+    // Health check
+    try {
+      const hRes = await fetch('/api/admin/health', { credentials:'include' });
+      const h = await hRes.json();
+      document.getElementById('h-db-dot').className = 'health-dot ' + (h.db ? 'ok' : 'warn');
+      document.getElementById('h-db-label').textContent = 'Database — ' + (h.db ? 'Connected ✅' : 'Error ⚠');
+      document.getElementById('h-redis-dot').className = 'health-dot ' + (h.redis ? 'ok' : 'warn');
+      document.getElementById('h-redis-label').textContent = 'Redis — ' + (h.redis ? 'Connected ✅' : 'Not connected');
+      document.getElementById('h-deploy-label').textContent = 'Last deploy — ' + (h.deployId || 'Unknown');
+    } catch(e) {}
   } catch(e) { console.error('Costs error', e); }
 }
 
@@ -852,16 +1066,54 @@ async function loadCosts() {
 async function loadLog() {
   try {
     const res = await fetch('/api/admin/log', { credentials: 'include' });
-    const data = await res.json();
-    document.getElementById('log-tbody').innerHTML = data.length ? data.map(l => `
-      <tr>
-        <td class="primary">${l.action.replace(/_/g,' ')}</td>
-        <td>${l.target_type||'—'} #${l.target_id||'—'}</td>
-        <td>${l.notes||'—'}</td>
-        <td>${new Date(l.created_at).toLocaleString()}</td>
-      </tr>`).join('')
-    : '<tr><td colspan="4" class="empty">No admin actions logged yet</td></tr>';
+    _logData = await res.json();
+    applyLogFilters();
   } catch(e) { console.error('Log error', e); }
+}
+
+function renderLogRows(data) {
+  document.getElementById('log-tbody').innerHTML = data.length ? data.map(l => `
+    <tr>
+      <td class="primary">${l.action.replace(/_/g,' ')}</td>
+      <td>${l.target_type||'—'} ${l.target_id ? '#'+l.target_id : ''}</td>
+      <td style="max-width:300px;word-break:break-word">${l.notes||'—'}</td>
+      <td>${new Date(l.created_at).toLocaleString()}</td>
+    </tr>`).join('')
+  : '<tr><td colspan="4" class="empty">No entries</td></tr>';
+}
+
+function applyLogFilters() {
+  const data = _currentLogTab === 'security' ? _securityData : _logData;
+  const action = document.getElementById('log-action-filter').value;
+  const from = document.getElementById('log-date-from').value;
+  const to = document.getElementById('log-date-to').value;
+  const notes = (document.getElementById('log-notes-search').value||'').toLowerCase();
+  const filtered = data.filter(l => {
+    if (action && l.action !== action) return false;
+    if (from && new Date(l.created_at) < new Date(from)) return false;
+    if (to && new Date(l.created_at) > new Date(to + 'T23:59:59')) return false;
+    if (notes && !(l.notes||'').toLowerCase().includes(notes)) return false;
+    return true;
+  });
+  renderLogRows(filtered);
+}
+
+async function switchLogTab(tab) {
+  _currentLogTab = tab;
+  document.getElementById('tab-admin').classList.toggle('active', tab==='admin');
+  document.getElementById('tab-security').classList.toggle('active', tab==='security');
+  const filtersEl = document.getElementById('log-filters');
+  if (tab === 'security') {
+    filtersEl.style.display = 'none';
+    if (!_securityData.length) {
+      const res = await fetch('/api/admin/security-log', { credentials:'include' });
+      _securityData = await res.json().catch(()=>[]);
+    }
+    renderLogRows(_securityData);
+  } else {
+    filtersEl.style.display = 'flex';
+    applyLogFilters();
+  }
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
@@ -870,6 +1122,166 @@ function toast(msg, type='') {
   el.textContent = msg;
   el.className = 'toast show' + (type?' '+type:'');
   setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── USER DETAIL MODAL ─────────────────────────────────────────────────────────
+async function openUser(id) {
+  _currentUserId = id;
+  try {
+    const res = await fetch(`/api/admin/users/${id}`, { credentials:'include' });
+    const u = await res.json();
+    if (u.error) { toast(u.error,'error'); return; }
+    document.getElementById('um-name').textContent = u.name || '—';
+    document.getElementById('um-email').textContent = u.email || '';
+    document.getElementById('um-details').innerHTML = `
+      <div class="detail-row"><span class="detail-label">Plan</span><span class="detail-val">${u.plan||'trial'}</span></div>
+      <div class="detail-row"><span class="detail-label">Status</span><span class="detail-val"><span class="badge ${u.suspended==='true'?'b-red':'b-green'}">${u.suspended==='true'?'Suspended':'Active'}</span></span></div>
+      <div class="detail-row"><span class="detail-label">Joined</span><span class="detail-val">${new Date(u.created_at).toLocaleDateString()}</span></div>
+      <div class="detail-row"><span class="detail-label">Last Login</span><span class="detail-val">${u.last_login ? new Date(u.last_login).toLocaleString() : '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Trial Ends</span><span class="detail-val">${u.trial_ends ? new Date(u.trial_ends).toLocaleDateString() : '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Entities</span><span class="detail-val">${u.entity_count||0}</span></div>
+      <div class="detail-row"><span class="detail-label">Accountant</span><span class="detail-val">${u.accountant_first ? `${u.accountant_first} ${u.accountant_last} (${u.accountant_firm||''})` : '—'}</span></div>`;
+    const suspBtn = document.getElementById('um-suspend-btn');
+    suspBtn.textContent = u.suspended==='true' ? 'Reinstate' : 'Suspend';
+    suspBtn.className = u.suspended==='true' ? 'btn-approve' : 'btn-reject';
+    document.getElementById('user-modal').classList.add('open');
+  } catch(e) { toast('Failed to load user','error'); }
+}
+
+async function toggleUserSuspend() {
+  if (!_currentUserId) return;
+  const suspBtn = document.getElementById('um-suspend-btn');
+  const suspend = suspBtn.textContent.trim() === 'Suspend';
+  await suspendUser(_currentUserId, suspend);
+  document.getElementById('user-modal').classList.remove('open');
+}
+
+async function deleteUser() {
+  if (!_currentUserId) return;
+  if (!confirm('Permanently soft-delete this user? This cannot be undone.')) return;
+  const res = await fetch(`/api/admin/users/${_currentUserId}`, { method:'DELETE', credentials:'include' });
+  const data = await res.json();
+  if (data.error) { toast(data.error,'error'); return; }
+  toast('User deleted','success');
+  document.getElementById('user-modal').classList.remove('open');
+  loadUsers('','');
+}
+
+// ── ACCOUNTANT DETAIL MODAL ───────────────────────────────────────────────────
+async function openAccountant(id) {
+  _currentAccId = id;
+  try {
+    const res = await fetch(`/api/admin/accountants/${id}`, { credentials:'include' });
+    const a = await res.json();
+    if (a.error) { toast(a.error,'error'); return; }
+    document.getElementById('am-name').textContent = `${a.first_name} ${a.last_name}`;
+    document.getElementById('am-sub').textContent = `${a.firm||''} · ${a.country||''} · ${a.specialisation||''}`;
+    const vData = typeof a.verification_data === 'string' ? JSON.parse(a.verification_data||'{}') : a.verification_data||{};
+    const clientRows = (a.clients||[]).map(c => `
+      <div class="client-list-row">
+        <span>${c.name||'—'}</span>
+        <span style="color:var(--t3)">${c.email||''}</span>
+        <span class="badge ${c.status==='active'?'b-green':'b-amber'}" style="margin-left:8px">${c.status}</span>
+      </div>`).join('') || '<div class="client-list-row" style="color:var(--t3)">No clients</div>';
+    document.getElementById('am-details').innerHTML = `
+      <div class="detail-row"><span class="detail-label">Email</span><span class="detail-val">${a.email}</span></div>
+      <div class="detail-row"><span class="detail-label">Status</span><span class="detail-val"><span class="badge ${a.status==='verified'?'b-green':a.status==='pending'?'b-amber':'b-red'}">${a.status}</span></span></div>
+      <div class="detail-row"><span class="detail-label">Rating</span><span class="detail-val">${a.avg_rating > 0 ? parseFloat(a.avg_rating).toFixed(1) + ' ★' : '—'}</span></div>
+      <div class="detail-row"><span class="detail-label">Stripe</span><span class="detail-val"><span class="badge ${a.stripe_onboarded?'b-green':'b-amber'}">${a.stripe_onboarded?'Connected':'Not set'}</span></span></div>
+      <div class="detail-row"><span class="detail-label">Total Earned</span><span class="detail-val">$${(parseInt(a.total_earnings_cents||0)/100).toFixed(2)}</span></div>
+      <div class="detail-row"><span class="detail-label">Verify Method</span><span class="detail-val">${a.verification_method||'—'}</span></div>
+      ${vData.profBody?`<div class="detail-row"><span class="detail-label">Prof Body</span><span class="detail-val">${vData.profBody} · ${vData.membershipNumber||''}</span></div>`:''}
+      <div class="detail-row"><span class="detail-label">Clients (${(a.clients||[]).length})</span></div>
+      <div class="client-list">${clientRows}</div>`;
+    const suspBtn = document.getElementById('am-suspend-btn');
+    const appBtn = document.getElementById('am-approve-btn');
+    suspBtn.style.display = a.status === 'verified' ? '' : 'none';
+    appBtn.style.display = a.status === 'pending' ? '' : 'none';
+    document.getElementById('acc-modal').classList.add('open');
+  } catch(e) { toast('Failed to load accountant','error'); }
+}
+
+async function accModalAction(action) {
+  if (!_currentAccId) return;
+  document.getElementById('acc-modal').classList.remove('open');
+  await verifyAction(_currentAccId, action);
+}
+
+// ── FLAGS ─────────────────────────────────────────────────────────────────────
+async function loadFlags() {
+  try {
+    const res = await fetch('/api/admin/flags', { credentials:'include' });
+    const data = await res.json();
+    document.getElementById('flags-tbody').innerHTML = data.length ? data.map(f => `
+      <tr>
+        <td class="primary">${f.target_type||'—'}</td>
+        <td>${f.target_id ? '#'+f.target_id : '—'}</td>
+        <td><span class="badge b-amber">${f.action}</span></td>
+        <td style="max-width:260px;word-break:break-word">${f.notes||'—'}</td>
+        <td>${new Date(f.created_at).toLocaleDateString()}</td>
+        <td><span class="badge ${f.status==='resolved'?'b-green':'b-amber'}">${f.status}</span></td>
+        <td>${f.status!=='resolved'?`<button class="action-btn approve" onclick="resolveFlag(${f.id},this)">Resolve</button>`:''}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="7" class="empty">No flagged transactions</td></tr>';
+  } catch(e) { console.error('Flags error',e); }
+}
+
+async function resolveFlag(id, btn) {
+  const res = await fetch(`/api/admin/flags/${id}/resolve`, { method:'POST', credentials:'include' });
+  const data = await res.json();
+  if (data.error) { toast(data.error,'error'); return; }
+  toast('Flag resolved','success');
+  btn.closest('tr').querySelector('.badge').className = 'badge b-green';
+  btn.closest('tr').querySelector('.badge').textContent = 'resolved';
+  btn.remove();
+}
+
+// ── BROADCAST ─────────────────────────────────────────────────────────────────
+async function sendBroadcast() {
+  const audience = document.getElementById('bc-audience').value;
+  const subject = document.getElementById('bc-subject').value.trim();
+  const message = document.getElementById('bc-message').value.trim();
+  if (!subject || !message) { toast('Subject and message required','error'); return; }
+  const res = await fetch('/api/admin/broadcast', {
+    method:'POST', credentials:'include',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ audience, subject, message }),
+  });
+  const data = await res.json();
+  if (data.error) { toast(data.error,'error'); return; }
+  toast(`Broadcast sent to ${data.sent} recipients`,'success');
+  document.getElementById('bc-subject').value = '';
+  document.getElementById('bc-message').value = '';
+}
+
+// ── EXPORT CSV ────────────────────────────────────────────────────────────────
+function downloadCSV(filename, rows) {
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = filename;
+  a.click();
+}
+
+function exportUsersCSV() {
+  if (!_allUsers.length) { toast('Load users first','error'); return; }
+  const rows = [['ID','Name','Email','Plan','Joined','Accountant']];
+  _allUsers.forEach(u => rows.push([
+    u.id, u.name||'', u.email||'', u.plan||'trial',
+    new Date(u.created_at).toLocaleDateString(),
+    u.accountant_first ? `${u.accountant_first} ${u.accountant_last}` : '',
+  ]));
+  downloadCSV('users.csv', rows);
+}
+
+function exportAccountantsCSV() {
+  if (!_allAccountants.length) { toast('Load accountants first','error'); return; }
+  const rows = [['ID','Name','Firm','Country','Status','Clients','Rating']];
+  _allAccountants.forEach(a => rows.push([
+    a.id, `${a.first_name} ${a.last_name}`, a.firm||'', a.country||'',
+    a.status, a.client_count||0, a.avg_rating ? parseFloat(a.avg_rating).toFixed(1) : '',
+  ]));
+  downloadCSV('accountants.csv', rows);
 }
 </script>
 </body>

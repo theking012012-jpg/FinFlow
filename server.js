@@ -1835,7 +1835,7 @@ app.get('/accountant-dashboard', (req, res) => {
 app.get('/accountant-login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accountant-login.html'));
 });
-app.get('/accountant-client', requireAccountant, (req, res) => {
+app.get('/accountant-client', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accountant-client.html'));
 });
 app.get('/accountants', (req, res) => {

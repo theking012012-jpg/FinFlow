@@ -401,18 +401,15 @@ If you cannot find a field, use null. Be concise.`;
   // ── 5. GET ACCOUNTANT'S CLIENTS ───────────────────────────────────────────
   app.get('/api/accountants/clients', requireAccountant, wrap(async (req, res) => {
     const result = await pool.query(`
-      SELECT ac.id, ac.user_id, ac.status, ac.access_level, ac.activated_at,
-             ac.referral_month, ac.referral_months_total,
-             u.data->>'name'       AS client_name,
-             u.data->>'email'      AS client_email,
-             u.data->>'plan'       AS client_plan,
-             u.data->>'last_login' AS last_login,
-             (SELECT MAX(i.created_at) FROM invoices i WHERE i.user_id = ac.user_id) AS last_invoice,
-             (SELECT MAX(e.created_at) FROM expenses e WHERE e.user_id = ac.user_id) AS last_expense
-      FROM accountant_clients ac
-      JOIN users u ON u.id = ac.user_id
-      WHERE ac.accountant_id = $1
-      ORDER BY ac.activated_at DESC NULLS LAST
+      SELECT id,
+             data->>'email' AS client_email,
+             data->>'name'  AS client_name,
+             data->>'plan'  AS client_plan,
+             data->>'subscriptionStatus' AS status,
+             created_at
+      FROM users
+      WHERE (data->>'accountant_id')::int = $1
+      ORDER BY created_at DESC
     `, [req.session.accountantId]);
 
     return res.json(result.rows);
@@ -633,6 +630,12 @@ If you cannot find a field, use null. Be concise.`;
       VALUES ($1, $2, 'pending', $3)
       ON CONFLICT (accountant_id, user_id) DO NOTHING
     `, [accountantId, userId, months]);
+
+    // Write accountant_id into user's data JSONB for direct lookup
+    await pool.query(
+      `UPDATE users SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{accountant_id}', $1::text::jsonb) WHERE id = $2`,
+      [accountantId, userId]
+    ).catch(e => console.error('[link-client] JSONB update failed:', e.message));
 
     return res.json({ success: true, referralMonths: months });
   }));

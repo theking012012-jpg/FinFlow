@@ -614,6 +614,9 @@ const BAR_COLORS = ['#c9a84c','#4a9c6d','#5aaa9e','#c45c5c','#7a6fa0','#8fbfaa',
 
 // ── INIT ───────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
+  const meRes = await fetch('/api/accountants/me', { credentials: 'include' });
+  if (!meRes.ok) { location.href = '/accountant-login'; return; }
+
   const params = new URLSearchParams(location.search);
   _userId = params.get('client');
   _clientName = decodeURIComponent(params.get('name') || 'Client');
@@ -633,7 +636,11 @@ function setClientInfo() {
 async function loadData() {
   try {
     const res = await fetch(`/api/accountants/clients/${_userId}/books`, {credentials:'include'});
-    if (!res.ok) { if(res.status===403){location.href='/accountant';}return; }
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      document.getElementById('sb-client-meta').textContent = errData.error || 'Failed to load client data';
+      return;
+    }
     _data = await res.json();
     document.getElementById('sb-client-meta').textContent = (_data.allInvoices?.length||0) + ' invoices · ' + (_data.allExpenses?.length||0) + ' expenses';
     if (_data.accessLevel) {

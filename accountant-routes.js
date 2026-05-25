@@ -420,10 +420,14 @@ If you cannot find a field, use null. Be concise.`;
   app.get('/api/accountants/clients/:userId/books', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
 
-    // Verify the accountant has access to this client
+    // Verify access: join table (active or pending) OR JSONB accountant_id field
     const access = await pool.query(
-      `SELECT access_level FROM accountant_clients
-       WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
+      `SELECT ac.access_level FROM accountant_clients ac
+       WHERE ac.accountant_id = $1 AND ac.user_id = $2 AND ac.status IN ('active','pending')
+       UNION
+       SELECT 'view' AS access_level FROM users
+       WHERE id = $2 AND (data->>'accountant_id')::int = $1
+       LIMIT 1`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access to this client.' });

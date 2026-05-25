@@ -852,6 +852,170 @@ If you cannot find a field, use null. Be concise.`;
   // (supports approve/reject/suspend/reinstate, logs to admin_log, sends email via Resend)
 
 
+  // ── CLIENT NOTIFY ─────────────────────────────────────────────────────────
+  app.post('/api/accountants/clients/:userId/notify', requireAccountant, apiLimiter, wrap(async (req, res) => {
+    const { userId } = req.params;
+    const { message } = req.body || {};
+    const access = await pool.query(
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
+       UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    await pool.query(
+      `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ($1,'user',$2,$3,NOW())`,
+      ['accountant_notification', userId, (message || '').slice(0, 500)]
+    ).catch(() => {});
+    return res.json({ ok: true });
+  }));
+
+  // ── AI INSIGHTS ────────────────────────────────────────────────────────────
+  app.post('/api/accountants/clients/:userId/ai-insights', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    const access = await pool.query(
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
+       UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+
+    const [invR, expR, payR] = await Promise.all([
+      pool.query(`SELECT data FROM invoices WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
+      pool.query(`SELECT data FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
+      pool.query(`SELECT data FROM payroll WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+    ]);
+    const invs = invR.rows.map(r => r.data || {});
+    const exps = expR.rows.map(r => r.data || {});
+    const pays = payR.rows.map(r => r.data || {});
+    const paidRev = invs.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    const outstanding = invs.filter(i => i.status !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    const overdueCnt = invs.filter(i => i.status === 'overdue').length;
+    const totalExp = exps.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+    const payrollTotal = pays.reduce((s, p) => s + (parseFloat(p.gross) || 0), 0);
+
+    const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+    if (!apiKey) return res.status(503).json({ error: 'AI not configured (ANTHROPIC_API_KEY missing).' });
+
+    const prompt = `You are a professional accountant reviewing a client's financial data. Give 5 concise insights (one per line, no numbering or bullet symbols) covering: outstanding invoice risk, expense patterns, tax filing readiness, cash flow health, and your top recommendation.
+
+Client data:
+- Paid revenue: $${paidRev.toFixed(2)}
+- Outstanding invoices: $${outstanding.toFixed(2)} (${overdueCnt} overdue)
+- Total expenses: $${totalExp.toFixed(2)}
+- Payroll: $${payrollTotal.toFixed(2)}
+- Invoice count: ${invs.length}, Expense count: ${exps.length}
+
+Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
+
+    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!aiRes.ok) return res.status(502).json({ error: 'AI service unavailable.' });
+    const aiData = await aiRes.json();
+    return res.json({ insights: aiData.content?.[0]?.text || '' });
+  }));
+
+  // ── CHECKLIST ──────────────────────────────────────────────────────────────
+  app.get('/api/accountants/clients/:userId/checklist', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    const r = await pool.query(
+      `SELECT notes FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      [req.session.accountantId, userId]
+    );
+    let items = {};
+    if (r.rows[0]) {
+      try { const m = (r.rows[0].notes || '').match(/CHECKLIST:(\{[^}]*\})/); if (m) items = JSON.parse(m[1]); } catch (e) {}
+    } else {
+      const fb = await pool.query(
+        `SELECT 1 FROM users WHERE id = $1 AND (data->>'accountant_id')::int = $2`,
+        [userId, req.session.accountantId]
+      );
+      if (!fb.rows[0]) return res.status(403).json({ error: 'No access.' });
+    }
+    return res.json({ items });
+  }));
+
+  app.post('/api/accountants/clients/:userId/checklist', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    const { items } = req.body || {};
+    const r = await pool.query(
+      `SELECT notes FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      [req.session.accountantId, userId]
+    );
+    if (r.rows[0] !== undefined) {
+      const base = (r.rows[0]?.notes || '').replace(/\nCHECKLIST:\{[^}]*\}/, '');
+      await pool.query(
+        `UPDATE accountant_clients SET notes = $1 WHERE accountant_id = $2 AND user_id = $3`,
+        [(base + '\nCHECKLIST:' + JSON.stringify(items || {})).slice(0, 2000), req.session.accountantId, userId]
+      );
+    }
+    return res.json({ ok: true });
+  }));
+
+  // ── MESSAGES ───────────────────────────────────────────────────────────────
+  // CREATE TABLE IF NOT EXISTS accountant_messages (
+  //   id            SERIAL PRIMARY KEY,
+  //   accountant_id INTEGER NOT NULL,
+  //   client_id     INTEGER NOT NULL,
+  //   message       TEXT NOT NULL,
+  //   sender        VARCHAR(20) NOT NULL DEFAULT 'accountant',
+  //   created_at    TIMESTAMPTZ DEFAULT NOW()
+  // );
+  pool.query(
+    `CREATE TABLE IF NOT EXISTS accountant_messages (
+       id SERIAL PRIMARY KEY,
+       accountant_id INTEGER NOT NULL,
+       client_id INTEGER NOT NULL,
+       message TEXT NOT NULL,
+       sender VARCHAR(20) NOT NULL DEFAULT 'accountant',
+       created_at TIMESTAMPTZ DEFAULT NOW()
+     )`
+  ).catch(e => console.error('[accountant-routes] accountant_messages table init:', e.message));
+
+  app.get('/api/accountants/clients/:userId/message', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    const access = await pool.query(
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
+       UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    const msgs = await pool.query(
+      `SELECT id, message, sender, created_at FROM accountant_messages
+       WHERE accountant_id = $1 AND client_id = $2 ORDER BY created_at ASC LIMIT 100`,
+      [req.session.accountantId, userId]
+    ).catch(() => ({ rows: [] }));
+    return res.json(msgs.rows);
+  }));
+
+  app.post('/api/accountants/clients/:userId/message', requireAccountant, apiLimiter, wrap(async (req, res) => {
+    const { userId } = req.params;
+    const { message } = req.body || {};
+    if (!message?.trim()) return res.status(400).json({ error: 'Message required.' });
+    const access = await pool.query(
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
+       UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    const row = await pool.query(
+      `INSERT INTO accountant_messages (accountant_id, client_id, message, sender, created_at)
+       VALUES ($1, $2, $3, 'accountant', NOW()) RETURNING id, message, sender, created_at`,
+      [req.session.accountantId, userId, message.trim().slice(0, 2000)]
+    );
+    return res.json(row.rows[0]);
+  }));
+
   // ── ACCOUNTANT LOGOUT ─────────────────────────────────────────────────────
   app.post('/api/accountants/logout', (req, res) => {
     req.session.destroy(() => res.json({ ok: true }));

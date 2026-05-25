@@ -220,6 +220,33 @@
     /* SECTION BADGE */
     .section-count{font-size:10px;background:rgba(201,168,76,.1);color:var(--gold);border-radius:10px;padding:1px 7px;margin-left:6px;}
 
+    /* FLAG MODAL */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;display:none;align-items:center;justify-content:center;}
+    .modal-overlay.open{display:flex;}
+    .modal-box{background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:24px;width:400px;max-width:92vw;}
+    .modal-title{font-size:14px;color:var(--text);font-weight:400;margin-bottom:8px;}
+    .modal-sub{font-size:12px;color:var(--text3);margin-bottom:12px;}
+    .modal-textarea{width:100%;min-height:80px;resize:vertical;background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:10px;font-size:13px;color:var(--text);font-family:'DM Sans',sans-serif;outline:none;}
+    .modal-textarea:focus{border-color:var(--gold-dim);}
+    .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;}
+    /* CHECKLIST */
+    .checklist-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(42,40,32,.5);font-size:13px;}
+    .checklist-item:last-child{border:none;}
+    .checklist-item input[type=checkbox]{accent-color:var(--gold);width:15px;height:15px;cursor:pointer;flex-shrink:0;}
+    .checklist-item label{cursor:pointer;color:var(--text2);}
+    .checklist-item.done label{color:var(--text3);text-decoration:line-through;}
+    /* MESSAGES */
+    .msg-bubble{padding:10px 14px;border-radius:8px;margin-bottom:6px;font-size:13px;line-height:1.5;max-width:82%;}
+    .msg-accountant{background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.15);align-self:flex-end;color:var(--text);}
+    .msg-client{background:var(--card2);border:1px solid var(--border);align-self:flex-start;color:var(--text2);}
+    .msg-meta{font-size:10px;color:var(--text3);margin-top:4px;}
+    /* AI */
+    .ai-bullet{display:flex;align-items:flex-start;gap:10px;padding:12px 0;border-bottom:1px solid rgba(42,40,32,.5);font-size:13px;color:var(--text2);line-height:1.6;}
+    .ai-bullet:last-child{border:none;}
+    .ai-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);flex-shrink:0;margin-top:7px;}
+    /* WARN BANNER */
+    .warn-banner{background:var(--amber-bg);border:1px solid rgba(196,138,42,.3);border-radius:8px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;}
+    @keyframes spin{to{transform:rotate(360deg);}}
     /* RESPONSIVE */
     @media(max-width:900px){
       .metrics-grid{grid-template-columns:repeat(2,1fr);}
@@ -302,10 +329,14 @@
       <div class="nav-section-label">Accounting</div>
       <div class="nav-item" onclick="showSection('pnl',this)"><i class="ti ti-chart-bar"></i>P&L Statement</div>
       <div class="nav-item" onclick="showSection('balance',this)"><i class="ti ti-scale"></i>Balance Sheet</div>
+      <div class="nav-item" onclick="showSection('cashflow',this)"><i class="ti ti-chart-line"></i>Cash Flow</div>
       <div class="nav-item" onclick="showSection('journals',this)"><i class="ti ti-book"></i>Journals</div>
       <div class="nav-item" onclick="showSection('tax',this)"><i class="ti ti-calculator"></i>Tax Summary</div>
 
       <div class="nav-section-label">Accountant</div>
+      <div class="nav-item" onclick="showSection('ai',this)"><i class="ti ti-brain"></i>AI Insights</div>
+      <div class="nav-item" onclick="showSection('checklist',this)"><i class="ti ti-checklist"></i>Filing Checklist</div>
+      <div class="nav-item" onclick="showSection('messages',this)"><i class="ti ti-message"></i>Message Client</div>
       <div class="nav-item" onclick="showSection('notes',this)"><i class="ti ti-notes"></i>My Notes</div>
     </div>
   </div>
@@ -567,6 +598,10 @@
       <div class="page-hdr">
         <div><div class="page-title">Tax Summary</div></div>
       </div>
+      <div id="tax-rate-warning" style="display:none" class="warn-banner">
+        <span style="color:var(--amber)"><i class="ti ti-alert-triangle"></i> Client has not set a tax rate — tax liability cannot be calculated accurately.</span>
+        <button class="topbar-btn" onclick="sendTaxReminder()">Send Reminder</button>
+      </div>
       <div class="tax-grid">
         <div class="tax-card">
           <div class="tax-label">Est. Tax Liability</div>
@@ -600,8 +635,88 @@
       </div>
     </div>
 
+    <!-- ── CASH FLOW ────────────────────────────── -->
+    <div class="page-section" id="section-cashflow">
+      <div class="page-hdr">
+        <div><div class="page-title">Cash Flow Statement</div><div class="page-subtitle" id="cf-subtitle">—</div></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Operating Activities</div></div>
+        <div id="cf-operating"><div class="loading">Select a period to load cash flow.</div></div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-hdr"><div class="card-title">Investing Activities</div></div>
+          <div class="pl-row"><span class="pl-label">Capital expenditure</span><span>$0.00</span></div>
+          <div class="pl-row"><span class="pl-label" style="font-weight:500">Net investing</span><span style="font-weight:500">$0.00</span></div>
+        </div>
+        <div class="card">
+          <div class="card-hdr"><div class="card-title">Financing Activities</div></div>
+          <div class="pl-row"><span class="pl-label">Owner drawings / loans</span><span>$0.00</span></div>
+          <div class="pl-row"><span class="pl-label" style="font-weight:500">Net financing</span><span style="font-weight:500">$0.00</span></div>
+        </div>
+      </div>
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center">
+        <span style="color:var(--text2);font-size:14px">Net Cash Position</span>
+        <span class="mc-value gold" id="cf-net">—</span>
+      </div>
+    </div>
+
+    <!-- ── AI INSIGHTS ────────────────────────────── -->
+    <div class="page-section" id="section-ai">
+      <div class="page-hdr">
+        <div><div class="page-title">AI Insights</div><div class="page-subtitle">Powered by Claude — analysis of this client's books</div></div>
+        <div class="page-actions">
+          <button class="topbar-btn primary" onclick="generateInsights()"><i class="ti ti-brain"></i> Generate insights</button>
+        </div>
+      </div>
+      <div class="card" id="ai-results">
+        <div class="empty">Click "Generate insights" to analyse this client's books with Claude.</div>
+      </div>
+    </div>
+
+    <!-- ── FILING CHECKLIST ────────────────────────────── -->
+    <div class="page-section" id="section-checklist">
+      <div class="page-hdr">
+        <div><div class="page-title">Filing Checklist</div></div>
+        <div class="page-actions">
+          <button class="topbar-btn" onclick="saveChecklist()"><i class="ti ti-device-floppy"></i> Save progress</button>
+        </div>
+      </div>
+      <div class="card" id="checklist-items"><div class="loading">Loading checklist…</div></div>
+    </div>
+
+    <!-- ── MESSAGES ────────────────────────────── -->
+    <div class="page-section" id="section-messages">
+      <div class="page-hdr">
+        <div><div class="page-title">Message Client</div></div>
+      </div>
+      <div class="card" style="margin-bottom:16px;min-height:240px;max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:16px" id="messages-thread">
+        <div class="empty" style="margin:auto">No messages yet.</div>
+      </div>
+      <div class="card">
+        <textarea class="notes-textarea" id="msg-input" placeholder="Write a message to your client…" style="min-height:70px"></textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:10px">
+          <button class="topbar-btn primary" onclick="sendMessage()"><i class="ti ti-send"></i> Send</button>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /main -->
 </div><!-- /workspace -->
+
+<!-- FLAG MODAL -->
+<div class="modal-overlay" id="flag-modal" onclick="if(event.target===this)closeFlagModal()">
+  <div class="modal-box">
+    <div class="modal-title">⚑ Flag transaction</div>
+    <div class="modal-sub">Describe the issue — this will be logged for your records.</div>
+    <textarea class="modal-textarea" id="flag-note" placeholder="e.g. Receipt missing, amount doesn't match bank statement…"></textarea>
+    <div class="modal-actions">
+      <button class="topbar-btn" onclick="closeFlagModal()">Cancel</button>
+      <button class="topbar-btn primary" onclick="submitFlag()">Flag transaction</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ── STATE ──────────────────────────────────────────────────────────────────
@@ -610,6 +725,18 @@ let _userId = null;
 let _clientName = '';
 let _activeEntity = 'all';
 let _period = 'year';
+let _flagType = '', _flagRef = '';
+let _checklistState = {};
+const CHECKLIST_ITEMS = [
+  'Review all invoices for the period',
+  'Verify expense categorisation',
+  'Confirm payroll records are complete',
+  'Check bank reconciliation',
+  'Set client tax rate',
+  'Review journal entries',
+  'Prepare tax summary',
+  'File return',
+];
 const BAR_COLORS = ['#c9a84c','#4a9c6d','#5aaa9e','#c45c5c','#7a6fa0','#8fbfaa','#c48a2a'];
 
 // ── INIT ───────────────────────────────────────────────────────────────────
@@ -649,6 +776,7 @@ async function loadData() {
     buildEntityTabs();
     renderAll();
     loadNotes();
+    loadChecklist();
   } catch(e) { console.error('Load failed:', e); }
 }
 
@@ -728,6 +856,7 @@ function renderAll() {
   renderExpensesPage(expenses);
   renderPnL(invoices, expenses);
   renderBalanceSheet();
+  renderCashFlow(invoices, expenses);
   renderPayroll();
   renderCustomers();
   renderJournals();
@@ -889,6 +1018,25 @@ function renderBalanceSheet() {
   set('bs-equity', fmt(equity));
 }
 
+// ── CASH FLOW ──────────────────────────────────────────────────────────────
+function renderCashFlow(invoices, expenses) {
+  const cashIn = invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const cashOut = expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  const payrollOut = (_data?.allPayroll||[]).reduce((s,p)=>s+(parseFloat(p.gross)||0),0);
+  const ar = invoices.filter(i=>i.status!=='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const netOp = cashIn - cashOut - payrollOut;
+  const el = document.getElementById('cf-operating');
+  if (el) el.innerHTML = `
+    <div class="pl-row"><span class="pl-label">Cash receipts (paid invoices)</span><span style="color:var(--green)">${fmt(cashIn)}</span></div>
+    <div class="pl-row"><span class="pl-label">Cash payments (expenses)</span><span style="color:var(--red)">− ${fmt(cashOut)}</span></div>
+    <div class="pl-row"><span class="pl-label">Payroll paid</span><span style="color:var(--red)">− ${fmt(payrollOut)}</span></div>
+    <div class="pl-row"><span class="pl-label">A/R outstanding (not yet cash)</span><span style="color:var(--amber)">${fmt(ar)}</span></div>
+    <div class="pl-row"><span class="pl-label" style="font-weight:500">Net operating cash flow</span><span style="color:${netOp>=0?'var(--green)':'var(--red)'};font-weight:500">${fmt(netOp)}</span></div>`;
+  set('cf-net', fmt(netOp));
+  const labels = {year:'Full year',quarter:'Current quarter',month:'Current month',all:'All time'};
+  set('cf-subtitle', labels[_period] || _period);
+}
+
 // ── PAYROLL ────────────────────────────────────────────────────────────────
 function renderPayroll() {
   const payroll = _data?.allPayroll || [];
@@ -970,6 +1118,8 @@ function renderTax(invoices, expenses) {
   set('tax-liability', rate ? fmt(liability) : 'Rate not set');
   set('tax-deductible', fmt(totalDed));
   set('tax-taxable', fmt(taxable));
+  const warnBanner = document.getElementById('tax-rate-warning');
+  if (warnBanner) warnBanner.style.display = rate ? 'none' : 'flex';
   document.getElementById('tax-breakdown').innerHTML = `
     <div class="card-hdr"><div class="card-title">Tax Calculation Breakdown</div></div>
     <div class="pl-row"><span class="pl-label">Gross Revenue</span><span>${fmt(revenue)}</span></div>
@@ -1072,16 +1222,25 @@ async function lockPeriod(period, btn) {
 }
 
 // ── FLAG ───────────────────────────────────────────────────────────────────
-async function flagTxn(type, ref) {
-  const message = prompt(`Flag this ${type} for follow-up?\nAdd a note (optional):`);
-  if (message === null) return;
+function flagTxn(type, ref) {
+  _flagType = type; _flagRef = ref;
+  document.getElementById('flag-note').value = '';
+  document.getElementById('flag-modal').classList.add('open');
+}
+function closeFlagModal() {
+  document.getElementById('flag-modal').classList.remove('open');
+}
+async function submitFlag() {
+  const note = document.getElementById('flag-note').value.trim();
   try {
-    await fetch(`/api/accountants/clients/${_userId}/flag`, {
+    const res = await fetch(`/api/accountants/clients/${_userId}/flag`, {
       method:'POST', credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({type, ref, message: message||ref}),
+      body: JSON.stringify({type:_flagType, ref:_flagRef, note}),
     });
-    showToast(`${type} flagged`);
+    if (!res.ok) throw new Error();
+    closeFlagModal();
+    showToast('Flagged and client notified', 'success');
   } catch(e) { showToast('Could not flag', 'error'); }
 }
 
@@ -1089,15 +1248,33 @@ async function flagTxn(type, ref) {
 function exportCSV() {
   if (!_data) return;
   const { invoices, expenses } = getFiltered();
-  const rows = [
-    ['Type','Description/Client','Category','Amount','Status/Date','Deductible'],
-    ...invoices.map(i=>['Invoice',i.client||'','',(i.amount||0),i.status||'','']),
-    ...expenses.map(e=>['Expense',e.description||'',e.category||'',(e.amount||0),e.expense_date||'',e.deductible||'']),
-  ];
-  const csv = rows.map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
+  const q = v => '"' + String(v || '').replace(/"/g, '""') + '"';
+  const lines = [];
+  lines.push('INVOICES');
+  lines.push([q('Client'), q('Amount'), q('Status'), q('Due Date')].join(','));
+  invoices.forEach(i => lines.push([q(i.client||''), q(parseFloat(i.amount)||0), q(i.status||''), q(i.due_date||'')].join(',')));
+  lines.push('');
+  lines.push('EXPENSES');
+  lines.push([q('Description'), q('Category'), q('Amount'), q('Date'), q('Deductible')].join(','));
+  expenses.forEach(e => lines.push([q(e.description||''), q(e.category||''), q(parseFloat(e.amount)||0), q(e.expense_date||''), q(e.deductible||'')].join(',')));
+  lines.push('');
+  lines.push('PAYROLL');
+  lines.push([q('Name'), q('Role'), q('Gross'), q('Tax Rate'), q('Net Pay')].join(','));
+  (_data.allPayroll || []).forEach(p => {
+    const g = parseFloat(p.gross) || 0, r = parseFloat(p.tax_rate) || 0;
+    lines.push([q((p.fname||'')+' '+(p.lname||'')), q(p.role||''), q(g), q(r+'%'), q(Math.round(g*(1-r/100)))].join(','));
+  });
+  lines.push('');
+  const rev = invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const exp = expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  lines.push('P&L SUMMARY');
+  lines.push([q('Metric'), q('Amount')].join(','));
+  lines.push([q('Revenue'), q(rev)].join(','));
+  lines.push([q('Expenses'), q(exp)].join(','));
+  lines.push([q('Net Profit'), q(rev - exp)].join(','));
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download = `${_clientName.replace(/\s+/g,'_')}_books.csv`;
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], {type:'text/csv'}));
+  a.download = _clientName.replace(/\s+/g, '_') + '_books.csv';
   a.click();
 }
 
@@ -1113,6 +1290,108 @@ function showSection(name, el) {
       if (n.getAttribute('onclick')?.includes("'"+name+"'")) n.classList.add('active');
     });
   }
+  if (name === 'messages') loadMessages();
+}
+
+// ── TAX REMINDER ───────────────────────────────────────────────────────────
+async function sendTaxReminder() {
+  try {
+    const r = await fetch(`/api/accountants/clients/${_userId}/notify`, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message:'Please set your tax rate in Settings → Tax to enable accurate tax calculations.'}),
+    });
+    if (r.ok) showToast('Reminder sent to client', 'success');
+    else showToast('Could not send reminder', 'error');
+  } catch(e) { showToast('Could not send reminder', 'error'); }
+}
+
+// ── AI INSIGHTS ────────────────────────────────────────────────────────────
+async function generateInsights() {
+  const el = document.getElementById('ai-results');
+  el.innerHTML = '<div class="loading"><i class="ti ti-loader" style="display:inline-block;animation:spin 1s linear infinite;margin-right:8px"></i>Analysing books with Claude…</div>';
+  try {
+    const res = await fetch(`/api/accountants/clients/${_userId}/ai-insights`, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      el.innerHTML = `<div class="empty">${esc(e.error || 'Failed to generate insights.')}</div>`;
+      return;
+    }
+    const data = await res.json();
+    const bullets = (data.insights || '').split('\n').filter(b => b.trim());
+    el.innerHTML = bullets.length
+      ? bullets.map(b => `<div class="ai-bullet"><div class="ai-dot"></div><span>${esc(b.replace(/^[•\-\*\d\.\)]+\s*/, ''))}</span></div>`).join('')
+      : '<div class="empty">No insights generated.</div>';
+  } catch(e) { el.innerHTML = '<div class="empty">Failed to generate insights. Check AI configuration.</div>'; }
+}
+
+// ── FILING CHECKLIST ───────────────────────────────────────────────────────
+function renderChecklist() {
+  const el = document.getElementById('checklist-items');
+  if (!el) return;
+  el.innerHTML = CHECKLIST_ITEMS.map((item, i) => `
+    <div class="checklist-item${_checklistState[i] ? ' done' : ''}" id="ci-${i}">
+      <input type="checkbox" id="chk-${i}" ${_checklistState[i] ? 'checked' : ''} onchange="toggleCheck(${i},this)">
+      <label for="chk-${i}">${esc(item)}</label>
+    </div>`).join('');
+}
+function toggleCheck(idx, el) {
+  _checklistState[idx] = el.checked;
+  const row = document.getElementById('ci-' + idx);
+  if (el.checked) row.classList.add('done'); else row.classList.remove('done');
+}
+async function saveChecklist() {
+  try {
+    await fetch(`/api/accountants/clients/${_userId}/checklist`, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({items: _checklistState}),
+    });
+    showToast('Checklist saved', 'success');
+  } catch(e) { showToast('Save failed', 'error'); }
+}
+async function loadChecklist() {
+  try {
+    const r = await fetch(`/api/accountants/clients/${_userId}/checklist`, {credentials:'include'});
+    if (r.ok) { const d = await r.json(); _checklistState = d.items || {}; }
+  } catch(e) {}
+  renderChecklist();
+}
+
+// ── MESSAGES ───────────────────────────────────────────────────────────────
+async function loadMessages() {
+  const el = document.getElementById('messages-thread');
+  if (!el) return;
+  try {
+    const r = await fetch(`/api/accountants/clients/${_userId}/message`, {credentials:'include'});
+    if (!r.ok) { el.innerHTML = '<div class="empty" style="margin:auto">Could not load messages.</div>'; return; }
+    const msgs = await r.json();
+    if (!msgs.length) { el.innerHTML = '<div class="empty" style="margin:auto">No messages yet. Start the conversation.</div>'; return; }
+    el.innerHTML = msgs.map(m => `
+      <div class="msg-bubble msg-${esc(m.sender)}">
+        <div>${esc(m.message)}</div>
+        <div class="msg-meta">${m.sender === 'accountant' ? 'You' : 'Client'} · ${fmtDate(m.created_at)}</div>
+      </div>`).join('');
+    el.scrollTop = el.scrollHeight;
+  } catch(e) { el.innerHTML = '<div class="empty" style="margin:auto">Could not load messages.</div>'; }
+}
+async function sendMessage() {
+  const input = document.getElementById('msg-input');
+  const message = (input?.value || '').trim();
+  if (!message) return;
+  try {
+    const r = await fetch(`/api/accountants/clients/${_userId}/message`, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message}),
+    });
+    if (!r.ok) { showToast('Send failed', 'error'); return; }
+    input.value = '';
+    await loadMessages();
+  } catch(e) { showToast('Send failed', 'error'); }
 }
 
 // ── UTILS ──────────────────────────────────────────────────────────────────

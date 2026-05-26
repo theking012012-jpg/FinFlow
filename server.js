@@ -90,14 +90,35 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
     const accountantId = session.metadata?.accountantId;
-    const billedCents = session.amount_total;
-    const commissionCents = Math.round(billedCents * 0.04);
+    const billedCents  = session.amount_total;
     if (accountantId) {
+      // 4% is FinFlow's platform revenue — NOT the accountant's earnings.
+      // Stripe Connect deducts it automatically via application_fee_amount.
+      // We log it here in platform_fees for internal revenue audit only.
+      const feeCents = Math.round(billedCents * 0.04);
       await pool.query(`
-        INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, status, period_month)
-        VALUES ($1, $2, 'service_commission', $3, $4, 'pending', date_trunc('month', NOW()))
-      `, [accountantId, session.metadata?.clientUserId || null, commissionCents, session.metadata?.description || 'Service commission']);
-      console.log(`[Stripe] Commission recorded: $${(commissionCents/100).toFixed(2)} for accountant ${accountantId}`);
+        CREATE TABLE IF NOT EXISTS platform_fees (
+          id            SERIAL PRIMARY KEY,
+          accountant_id INTEGER NOT NULL,
+          client_id     INTEGER,
+          billed_cents  INTEGER NOT NULL,
+          fee_cents     INTEGER NOT NULL,
+          description   TEXT,
+          period_month  DATE,
+          created_at    TIMESTAMPTZ DEFAULT NOW()
+        )
+      `).catch(() => {});
+      await pool.query(`
+        INSERT INTO platform_fees (accountant_id, client_id, billed_cents, fee_cents, description, period_month)
+        VALUES ($1, $2, $3, $4, $5, date_trunc('month', NOW()))
+      `, [
+        accountantId,
+        session.metadata?.clientUserId || null,
+        billedCents,
+        feeCents,
+        session.metadata?.description || 'Platform fee (4%)',
+      ]).catch(err => console.error('[Stripe] platform_fees insert failed:', err.message));
+      console.log(`[Stripe] Platform fee logged: $${(feeCents/100).toFixed(2)} (4% of $${(billedCents/100).toFixed(2)}) — accountant ${accountantId}`);
     }
 
     // Upgrade user plan when they pay for a subscription

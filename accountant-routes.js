@@ -420,10 +420,19 @@ If you cannot find a field, use null. Be concise.`;
   app.get('/api/accountants/clients/:userId/books', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
 
-    // Verify access: join table (active or pending) OR JSONB accountant_id field
+    // Block pending/suspended accountants from reading books
+    const accStatus = await pool.query(
+      `SELECT status FROM accountants WHERE id = $1`,
+      [req.session.accountantId]
+    );
+    if (!accStatus.rows[0] || accStatus.rows[0].status !== 'verified') {
+      return res.status(403).json({ error: 'Your account must be verified before accessing client books.' });
+    }
+
+    // Verify access: join table (active only — pending clients haven't approved yet) OR JSONB accountant_id field
     const access = await pool.query(
       `SELECT ac.access_level FROM accountant_clients ac
-       WHERE ac.accountant_id = $1 AND ac.user_id = $2 AND ac.status IN ('active','pending')
+       WHERE ac.accountant_id = $1 AND ac.user_id = $2 AND ac.status = 'active'
        UNION
        SELECT 'view' AS access_level FROM users
        WHERE id = $2 AND (data->>'accountant_id')::int = $1
@@ -1127,12 +1136,132 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const acc = await pool.query(`SELECT id, status FROM accountants WHERE id = $1`, [accountantId]);
     if (!acc.rows[0] || acc.rows[0].status !== 'verified') return res.status(404).json({ error: 'Accountant not found.' });
 
+    // Check if already linked (don't allow duplicate requests)
+    const existing = await pool.query(
+      `SELECT status FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      [accountantId, req.session.userId]
+    );
+    if (existing.rows[0]) {
+      const s = existing.rows[0].status;
+      if (s === 'active')   return res.status(409).json({ error: 'You are already linked to this accountant.' });
+      if (s === 'pending')  return res.status(409).json({ error: 'You already have a pending request with this accountant.' });
+    }
+
+    // Create a PENDING record — accountant must approve before getting books access
+    // referral_months_total = 0 until approved (then set based on tier at activation time)
     await pool.query(`
       INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total)
-      VALUES ($1, $2, 'active', 0)
-      ON CONFLICT (accountant_id, user_id) DO UPDATE SET status = 'active'
+      VALUES ($1, $2, 'pending', 0)
+      ON CONFLICT (accountant_id, user_id) DO UPDATE SET status = 'pending'
     `, [accountantId, req.session.userId]);
 
+    // Notify accountant by email
+    const [userRes, accRes] = await Promise.all([
+      pool.query(`SELECT data->>'email' AS email, data->>'name' AS name FROM users WHERE id = $1`, [req.session.userId]),
+      pool.query(`SELECT email, first_name FROM accountants WHERE id = $1`, [accountantId]),
+    ]);
+    const clientEmail = userRes.rows[0]?.email || 'Unknown';
+    const clientName  = userRes.rows[0]?.name  || clientEmail;
+    const accEmail    = accRes.rows[0]?.email;
+    const accFirst    = accRes.rows[0]?.first_name || 'there';
+    if (accEmail && resend) {
+      resend.emails.send({
+        from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.io>',
+        to: accEmail,
+        subject: `New client request — ${clientName}`,
+        html: `<p>Hi ${accFirst},</p>
+               <p><strong>${clientName}</strong> (${clientEmail}) has requested to link with you on FinFlow.</p>
+               <p>Log in to your accountant dashboard to review and approve or decline the request.</p>
+               <p><a href="${process.env.APP_URL || 'https://app.finflow.io'}/accountant">Review request →</a></p>`,
+      }).catch(() => {});
+    }
+
+    return res.json({ success: true, message: 'Request sent. The accountant will review and approve your request.' });
+  }));
+
+  // ── PENDING ACCESS REQUESTS ───────────────────────────────────────────────
+
+  // GET — fetch all pending client access requests for this accountant
+  app.get('/api/accountants/pending-requests', requireAccountant, wrap(async (req, res) => {
+    const result = await pool.query(`
+      SELECT
+        ac.user_id,
+        ac.created_at   AS requested_at,
+        u.data->>'email' AS client_email,
+        u.data->>'name'  AS client_name,
+        u.data->>'plan'  AS client_plan
+      FROM accountant_clients ac
+      JOIN users u ON u.id = ac.user_id
+      WHERE ac.accountant_id = $1 AND ac.status = 'pending'
+      ORDER BY ac.created_at DESC
+    `, [req.session.accountantId]);
+    return res.json(result.rows);
+  }));
+
+  // POST — approve a pending client request
+  app.post('/api/accountants/approve-request', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId required.' });
+
+    const conn = await pool.connect();
+    try {
+      // Tier-based months based on current active count
+      const countRes = await conn.query(
+        `SELECT COUNT(*) FROM accountant_clients WHERE accountant_id = $1 AND status = 'active'`,
+        [req.session.accountantId]
+      );
+      const count  = parseInt(countRes.rows[0].count) || 0;
+      const months = count >= 500 ? 12 : count >= 50 ? 3 : 1;
+
+      // Activate the pending record
+      const upd = await conn.query(`
+        UPDATE accountant_clients
+        SET status = 'active', activated_at = NOW(), referral_months_total = $3
+        WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending'
+        RETURNING user_id
+      `, [userId, req.session.accountantId, months]);
+      if (!upd.rows[0]) return res.status(404).json({ error: 'Pending request not found.' });
+
+      // First month referral earning
+      await conn.query(`
+        INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, period_month)
+        VALUES ($1, $2, 'referral', 1000, 'Referral commission — month 1', date_trunc('month', NOW()))
+      `, [req.session.accountantId, userId]);
+
+      // Email the client
+      const [uRes, aRes] = await Promise.all([
+        conn.query(`SELECT data->>'email' AS email, data->>'name' AS name FROM users WHERE id = $1`, [userId]),
+        conn.query(`SELECT first_name, last_name, firm FROM accountants WHERE id = $1`, [req.session.accountantId]),
+      ]);
+      const clientEmail = uRes.rows[0]?.email;
+      const accName = `${aRes.rows[0]?.first_name || ''} ${aRes.rows[0]?.last_name || ''}`.trim();
+      const firm    = aRes.rows[0]?.firm || 'your accountant';
+      if (clientEmail && resend) {
+        resend.emails.send({
+          from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.io>',
+          to: clientEmail,
+          subject: 'Your accountant request has been approved',
+          html: `<p>Hi ${uRes.rows[0]?.name || 'there'},</p>
+                 <p><strong>${accName}</strong> from <strong>${firm}</strong> has approved your request on FinFlow.</p>
+                 <p>They now have read access to your books and can help manage your accounts.</p>
+                 <p><a href="${process.env.APP_URL || 'https://app.finflow.io'}">Log in to FinFlow →</a></p>`,
+        }).catch(() => {});
+      }
+
+      return res.json({ success: true, referralMonths: months });
+    } finally {
+      conn.release();
+    }
+  }));
+
+  // POST — decline a pending client request
+  app.post('/api/accountants/decline-request', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId required.' });
+    await pool.query(
+      `DELETE FROM accountant_clients WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending'`,
+      [userId, req.session.accountantId]
+    );
     return res.json({ success: true });
   }));
 

@@ -10862,8 +10862,8 @@ window.requestAccountant = async function(accountantId, name) {
       else alert(data.error);
       return;
     }
-    if(typeof notify==='function') notify(`✓ ${name} linked to your account`);
-    else alert('Accountant linked successfully!');
+    if(typeof notify==='function') notify(`✓ Request sent to ${name}`);
+    else alert('Request sent successfully!');
     showPage('my-accountant', null);
     setTimeout(loadMyAccountant, 300);
   } catch(e) {

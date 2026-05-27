@@ -1130,7 +1130,7 @@ function renderClients() {
         <td class="primary">${(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</td>
         <td style="font-size:12px;color:var(--text3)">${c.client_email || '&mdash;'}</td>
         <td><span class="badge badge-gold">${c.client_plan || 'trial'}</span></td>
-        <td><span class="badge ${c.status === 'active' ? 'badge-green' : c.status === 'pending' ? 'badge-amber' : 'badge-red'}">${c.status}</span></td>
+        <td><span class="badge ${c.status === 'active' ? 'badge-green' : c.status === 'pending' ? 'badge-amber' : 'badge-red'}">${c.status === 'active' ? 'Active' : c.status === 'pending' ? 'Pending' : c.status === 'invited' ? 'Invited' : 'Pending'}</span></td>
         <td>${activityBadge(c)}</td>
         <td>${c.referral_month}/${c.referral_months_total} months</td>
         <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,'')}')">View books</button></td>
@@ -1143,7 +1143,7 @@ function renderClients() {
     <tr>
       <td class="primary">${(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</td>
       <td><span class="badge badge-gold">${c.client_plan || 'trial'}</span></td>
-      <td><span class="badge ${c.status === 'active' ? 'badge-green' : 'badge-amber'}">${c.status}</span></td>
+      <td><span class="badge ${c.status === 'active' ? 'badge-green' : 'badge-amber'}">${c.status === 'active' ? 'Active' : c.status === 'pending' ? 'Pending' : c.status === 'invited' ? 'Invited' : 'Pending'}</span></td>
       <td>${activityBadge(c)}</td>
       <td>${c.activated_at ? new Date(c.activated_at).toLocaleDateString() : '&mdash;'}</td>
       <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,'')}')">View books</button></td>

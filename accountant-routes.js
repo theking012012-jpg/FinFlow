@@ -1164,8 +1164,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const clientName  = userRes.rows[0]?.name  || clientEmail;
     const accEmail    = accRes.rows[0]?.email;
     const accFirst    = accRes.rows[0]?.first_name || 'there';
-    if (accEmail && resend) {
-      resend.emails.send({
+    if (accEmail && resendClient) {
+      resendClient.emails.send({
         from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.io>',
         to: accEmail,
         subject: `New client request — ${clientName}`,

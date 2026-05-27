@@ -383,6 +383,23 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
   }
 });
 
+app.post('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+  const { rows } = await pool.query('SELECT data FROM users WHERE id = $1', [req.session.userId]);
+  if (!rows.length) return res.status(404).json({ error: 'User not found.' });
+  const userData = rows[0].data;
+  const bcrypt = require('bcryptjs');
+  const valid = await bcrypt.compare(currentPassword, userData.password);
+  if (!valid) return res.status(401).json({ error: 'Current password is incorrect.' });
+  const hashed = await bcrypt.hash(newPassword, 12);
+  await pool.query(
+    `UPDATE users SET data = jsonb_set(data, '{password}', $1::jsonb) WHERE id = $2`,
+    [JSON.stringify(hashed), req.session.userId]
+  );
+  res.json({ ok: true });
+}));
+
 app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
   try {
     const { token, password } = req.body || {};

@@ -691,6 +691,16 @@ If you cannot find a field, use null. Be concise.`;
     }
   }));
 
+  app.post('/api/accountants/reject-client', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId required.' });
+    await pool.query(
+      `UPDATE accountant_clients SET status = 'rejected' WHERE user_id = $1 AND accountant_id = $2`,
+      [userId, req.session.accountantId]
+    );
+    return res.json({ success: true });
+  }));
+
 
   // ── 10. GET ACCOUNTANT EARNINGS ───────────────────────────────────────────
   app.get('/api/accountants/earnings', requireAccountant, wrap(async (req, res) => {
@@ -1125,7 +1135,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
              ac.status, ac.access_level
       FROM accountant_clients ac
       JOIN accountants a ON a.id = ac.accountant_id
-      WHERE ac.user_id = $1 AND ac.status = 'active'
+      WHERE ac.user_id = $1 AND ac.status IN ('active', 'pending')
+      ORDER BY ac.invited_at DESC
       LIMIT 1
     `, [req.session.userId]);
     // No accountant linked yet — return an empty object (200) rather than 404

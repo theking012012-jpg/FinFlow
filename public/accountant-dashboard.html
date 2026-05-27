@@ -1050,6 +1050,35 @@ async function declineRequest(userId, btn) {
   }
 }
 
+async function activateClient(userId) {
+  try {
+    const res = await fetch('/api/accountants/activate-client', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    toast('Client approved ✓', 'success');
+    loadClients();
+  } catch(e) { toast('Could not approve client', 'error'); }
+}
+
+async function rejectClient(userId) {
+  if (!confirm('Reject this client request? They will remain on the platform but will not be linked to you.')) return;
+  try {
+    const res = await fetch('/api/accountants/reject-client', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+    const data = await res.json();
+    if (data.error) { toast(data.error, 'error'); return; }
+    toast('Request rejected', 'success');
+    loadClients();
+  } catch(e) { toast('Could not reject client', 'error'); }
+}
+
 function initUI() {
   const name = `${accountant.first_name} ${accountant.last_name}`;
   document.getElementById('nav-name').textContent = name;
@@ -1133,7 +1162,10 @@ function renderClients() {
         <td><span class="badge ${c.status === 'active' ? 'badge-green' : c.status === 'pending' ? 'badge-amber' : 'badge-red'}">${c.status === 'active' ? 'Active' : c.status === 'pending' ? 'Pending' : c.status === 'invited' ? 'Invited' : 'Pending'}</span></td>
         <td>${activityBadge(c)}</td>
         <td>${c.referral_month}/${c.referral_months_total} months</td>
-        <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,'')}')">View books</button></td>
+        <td>${c.status === 'pending'
+          ? `<button class="btn btn-gold btn-sm" onclick="activateClient(${c.id})">Approve</button> <button class="btn btn-outline btn-sm" style="color:var(--red,#c0392b);border-color:var(--red,#c0392b)" onclick="rejectClient(${c.id})">Reject</button>`
+          : `<button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,'')}')">View books</button>`
+        }</td>
       </tr>`).join('');
 
   document.getElementById('clients-tbody').innerHTML = rows;

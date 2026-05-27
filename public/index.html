@@ -10805,7 +10805,10 @@ window.filterAccountants = function() {
         ${a.has_pricing ? '<span style="font-size:10px;background:rgba(200,164,74,0.08);color:var(--acc,#c8a44a);border:1px solid rgba(200,164,74,0.25);border-radius:4px;padding:2px 7px">💰 Transparent Pricing</span>' : ''}
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-primary" style="flex:1;justify-content:center;font-size:12px;padding:7px" onclick="requestAccountant(${a.id},'${a.first_name} ${a.last_name}')">Request access</button>
+        ${linkedAccountant && linkedAccountant.id === a.id
+          ? `<button class="btn btn-outline" style="flex:1;justify-content:center;font-size:12px;padding:7px;opacity:0.7;cursor:default" disabled>${linkedAccountant.status === 'pending' ? '⏳ Pending approval' : '✓ Linked'}</button>`
+          : `<button class="btn btn-primary" style="flex:1;justify-content:center;font-size:12px;padding:7px" onclick="requestAccountant(${a.id},'${a.first_name} ${a.last_name}')">Request access</button>`
+        }
         <button class="btn btn-ghost" style="font-size:12px;padding:7px;color:var(--t3)" onclick="event.stopPropagation();reportAccountant(${a.id},'${a.first_name} ${a.last_name}')" title="Report">⚑</button>
       </div>
     </div>`;
@@ -10817,11 +10820,13 @@ let linkedAccountant = null;
 
 async function loadMyAccountant() {
   try {
-    // Check if this user has an accountant linked via accountant_clients table
     const res = await fetch('/api/accountants/my-accountant', { credentials: 'include' });
     if (res.ok) {
       linkedAccountant = await res.json();
-      if (linkedAccountant && linkedAccountant.id) renderLinkedAccountant();
+      if (linkedAccountant && linkedAccountant.id) {
+        renderLinkedAccountant();
+        filterAccountants(); // re-render directory cards with correct button state
+      }
     }
   } catch(e) { /* not linked */ }
 }
@@ -10836,6 +10841,21 @@ function renderLinkedAccountant() {
   const initials = ((a.first_name||'?')[0] + (a.last_name||'?')[0]).toUpperCase();
   const colors = ['#c9a84c','#4a9c6d','#6b8ecc'];
   const col = colors[(a.id || 0) % colors.length];
+
+  if (a.status === 'pending') {
+    content.innerHTML = `
+      <div class="card" style="padding:1.25rem;display:flex;align-items:center;gap:14px;border-color:rgba(196,138,42,0.4)">
+        <div style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${initials}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:500;color:var(--t1)">${a.first_name} ${a.last_name}</div>
+          <div style="font-size:12px;color:var(--t3)">${a.firm || ''} &nbsp;·&nbsp; ${a.country || ''}</div>
+          <div style="font-size:12px;color:var(--t3);margin-top:2px">Your request is awaiting approval from this accountant.</div>
+        </div>
+        <span style="font-size:10px;background:rgba(196,138,42,0.12);color:var(--amber,#c8a44a);border:1px solid rgba(196,138,42,0.35);border-radius:4px;padding:3px 8px;flex-shrink:0">⏳ Pending</span>
+      </div>`;
+    if (access) access.style.display = 'none';
+    return;
+  }
 
   content.innerHTML = `
     <div class="card" style="padding:1.25rem;display:flex;align-items:center;gap:14px">
@@ -10870,6 +10890,8 @@ window.requestAccountant = async function(accountantId, name) {
     if (data.success) {
       if(typeof notify==='function') notify(`✓ Request sent to ${name}`);
       else alert('Request sent successfully!');
+      linkedAccountant = { id: accountantId, status: 'pending', first_name: name.split(' ')[0], last_name: name.split(' ').slice(1).join(' ') };
+      filterAccountants();
       showPage('my-accountant', null);
       setTimeout(loadMyAccountant, 300);
     } else if (data.error?.includes('already')) {

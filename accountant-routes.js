@@ -619,16 +619,22 @@ If you cannot find a field, use null. Be concise.`;
 
   // ── 8. LINK CLIENT AFTER SIGNUP (called when user registers with ?ref=code) ─
   app.post('/api/accountants/link-client', requireAccountant, wrap(async (req, res) => {
-    const { referralCode, userId } = req.body || {};
-    if (!referralCode || !userId) return res.status(400).json({ error: 'Missing referral code or user ID.' });
+    const { referralCode, ref, accountantId: accountantIdParam, userId } = req.body || {};
+    const refCode = ref || referralCode;
+    if (!refCode && !accountantIdParam) return res.status(400).json({ error: 'Missing referral code or accountant ID.' });
+    if (!userId) return res.status(400).json({ error: 'Missing user ID.' });
 
-    const acc = await pool.query(
-      'SELECT id FROM accountants WHERE referral_code = $1 AND status = $2',
-      [referralCode, 'verified']
-    );
-    if (!acc.rows[0]) return res.status(404).json({ error: 'Referral code not found.' });
+    let accountant;
+    if (accountantIdParam) {
+      const { rows } = await pool.query('SELECT * FROM accountants WHERE id = $1 AND status = $2', [accountantIdParam, 'verified']);
+      accountant = rows[0];
+    } else {
+      const { rows } = await pool.query('SELECT * FROM accountants WHERE referral_code = $1 AND status = $2', [refCode, 'verified']);
+      accountant = rows[0];
+    }
+    if (!accountant) return res.status(404).json({ error: 'Accountant not found.' });
 
-    const accountantId = acc.rows[0].id;
+    const accountantId = accountant.id;
 
     // Count current clients to determine referral tier
     const countResult = await pool.query(

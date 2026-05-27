@@ -1254,8 +1254,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       const clientEmail = uRes.rows[0]?.email;
       const accName = `${aRes.rows[0]?.first_name || ''} ${aRes.rows[0]?.last_name || ''}`.trim();
       const firm    = aRes.rows[0]?.firm || 'your accountant';
-      if (clientEmail && resend) {
-        resend.emails.send({
+      if (clientEmail && resendClient) {
+        resendClient.emails.send({
           from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.io>',
           to: clientEmail,
           subject: 'Your accountant request has been approved',

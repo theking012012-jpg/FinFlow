@@ -401,15 +401,16 @@ If you cannot find a field, use null. Be concise.`;
   // ── 5. GET ACCOUNTANT'S CLIENTS ───────────────────────────────────────────
   app.get('/api/accountants/clients', requireAccountant, wrap(async (req, res) => {
     const result = await pool.query(`
-      SELECT id,
-             data->>'email' AS client_email,
-             data->>'name'  AS client_name,
-             data->>'plan'  AS client_plan,
-             data->>'subscriptionStatus' AS status,
-             created_at
-      FROM users
-      WHERE (data->>'accountant_id')::int = $1
-      ORDER BY created_at DESC
+      SELECT u.id,
+             u.data->>'email' AS client_email,
+             u.data->>'name'  AS client_name,
+             u.data->>'plan'  AS client_plan,
+             ac.status,
+             ac.invited_at AS created_at
+      FROM users u
+      JOIN accountant_clients ac ON ac.user_id = u.id
+      WHERE ac.accountant_id = $1
+      ORDER BY ac.invited_at DESC
     `, [req.session.accountantId]);
 
     return res.json(result.rows);

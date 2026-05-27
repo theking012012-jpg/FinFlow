@@ -6470,6 +6470,8 @@ function chartDefaults(){return{tc:darkMode?'#9e8e73':'#6b5c42',gc:darkMode?'rgb
 
 function buildCharts(){
   if(typeof Chart==='undefined'){console.warn('Chart.js not loaded — charts skipped');return;}
+  // Destroy ALL orphaned Chart instances (prevents "instance 0" ghost conflict on re-render)
+  Object.keys(Chart.instances).forEach(key=>{try{Chart.instances[key].destroy();}catch(e){}});
   // Destroy existing charts to prevent canvas reuse error
   if(window.charts){
     Object.values(window.charts).forEach(c=>{try{if(c&&typeof c.destroy==='function')c.destroy();}catch(e){}});

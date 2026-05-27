@@ -10851,21 +10851,32 @@ function renderLinkedAccountant() {
 
 window.requestAccountant = async function(accountantId, name) {
   try {
+    const meRes = await fetch('/api/me', { credentials: 'include' });
+    const me = await meRes.json();
+    const userId = me.user?.id;
+    if (!userId) {
+      if(typeof notify==='function') notify('Please log in first');
+      else alert('Please log in first');
+      return;
+    }
     const res = await fetch('/api/accountants/request-access', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accountantId }),
     });
     const data = await res.json();
-    if (data.error) {
-      if(typeof notify==='function') notify('⚠ ' + data.error);
+    if (data.success) {
+      if(typeof notify==='function') notify(`✓ Request sent to ${name}`);
+      else alert('Request sent successfully!');
+      showPage('my-accountant', null);
+      setTimeout(loadMyAccountant, 300);
+    } else if (data.error?.includes('already')) {
+      if(typeof notify==='function') notify('⚠ You are already linked to this accountant.');
       else alert(data.error);
-      return;
+    } else {
+      if(typeof notify==='function') notify('⚠ ' + (data.error || 'Something went wrong'));
+      else alert(data.error || 'Something went wrong');
     }
-    if(typeof notify==='function') notify(`✓ Request sent to ${name}`);
-    else alert('Request sent successfully!');
-    showPage('my-accountant', null);
-    setTimeout(loadMyAccountant, 300);
   } catch(e) {
     if(typeof notify==='function') notify('Could not send request — are you logged in?');
   }

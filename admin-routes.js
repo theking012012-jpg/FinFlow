@@ -223,7 +223,16 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       `INSERT INTO admin_log (action, target_type, target_id, created_at) VALUES ($1, 'user', $2, NOW())`,
       [suspend ? 'user_suspend' : 'user_reinstate', req.params.id]
     ).catch(() => {});
-    return res.json({ success: true });
+    return res.json({ ok: true });
+  }));
+
+  app.post('/api/admin/users/:id/unsuspend', requireAdmin, wrap(async (req, res) => {
+    await pool.query(`UPDATE users SET data = jsonb_set(COALESCE(data,'{}'), '{suspended}', 'false') WHERE id = $1`, [req.params.id]);
+    await pool.query(
+      `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ('user_unsuspend', 'user', $1, 'Unsuspended by admin', NOW())`,
+      [req.params.id]
+    ).catch(() => {});
+    res.json({ ok: true });
   }));
 
   // Override user plan
@@ -400,7 +409,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ('user_delete','user',$1,'Soft deleted by admin',NOW())`,
       [id]
     ).catch(() => {});
-    return res.json({ success: true });
+    return res.json({ ok: true });
   }));
 
   // ── ACCOUNTANT DETAIL ─────────────────────────────────────────────────────

@@ -4760,8 +4760,7 @@ setTimeout(function(){
   if(typeof renderTemplates==='function')renderTemplates();
 },0);
 };
-if('requestIdleCallback' in window){requestIdleCallback(_heavyInit,{timeout:2000});}
-else{setTimeout(_heavyInit,0);}
+setTimeout(_heavyInit,0);
 // Sales group starts closed - user clicks to open
 // Set default month nav label
 document.getElementById('month-nav-label').textContent=MONTH_FULL[currentMonthIdx];

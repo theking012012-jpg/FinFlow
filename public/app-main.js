@@ -4728,6 +4728,7 @@ function buildRiver(d){
   document.getElementById('river-sub').textContent=`${S(profit)} net profit · ${Math.round(profit/rev*100)}% margin`;
 }
 var _heavyInit=function(){
+if(!window._ffAuthed){window.addEventListener('ff:authed',_heavyInit,{once:true});return;}
 setTimeout(function(){
   loadChartJS(function(){buildCharts();buildCashChart();});
   refreshAllPeriodData();

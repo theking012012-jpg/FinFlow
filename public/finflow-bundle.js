@@ -70,6 +70,7 @@
     var ob=document.getElementById('ob-overlay'); if(ob) ob.remove();
     var ls=document.getElementById('login-screen'); if(ls) ls.style.display='none';
     if(user&&user.name){var ne=document.querySelector('.user-name');if(ne)ne.textContent=user.name;}
+    window._ffAuthed=true; window.dispatchEvent(new Event('ff:authed'));
     try{ await ffLoadData(); }catch(e){ console.warn('[FinFlow] data load failed:',e.message); }
   }
 
@@ -170,6 +171,7 @@
   // ── Wait for DOM + existing scripts to finish ──────────────────────
   // We patch after DOMContentLoaded so all original functions exist.
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
+    if (!window._ffAuthed) { window.addEventListener('ff:authed', _run, {once:true}); return; }
 
     // ════════════════════════════════════════════
     // 1. SETTINGS — load on boot + save
@@ -603,6 +605,7 @@
   }
 
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
+    if (!window._ffAuthed) { window.addEventListener('ff:authed', _run, {once:true}); return; }
 
     // ════════════════════════════════════════════
     // 1. INVOICES
@@ -3418,6 +3421,7 @@ function clearAIChat(){
   }
 
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
+    if (!window._ffAuthed) { window.addEventListener('ff:authed', _run, {once:true}); return; }
 
     // ════════════════════════════════════════════
     // QUOTES

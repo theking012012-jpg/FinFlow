@@ -2768,6 +2768,27 @@ app.get('/api/fx-summary', requireAuth, wrap(async (req, res) => {
   res.json({ totalRealised, totalUnrealised, netFX: totalRealised + totalUnrealised, byCurrency: rows });
 }));
 
+// ── STOCK PRICE PROXY (server-side, avoids CORS / tracking-prevention issues) ─
+app.get('/api/stock-price', requireAuth, async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: 'symbol required' });
+  try {
+    const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    const data = await response.json();
+    const meta = data?.chart?.result?.[0]?.meta;
+    const price = meta?.regularMarketPrice ?? meta?.previousClose ?? null;
+    const prevClose = meta?.chartPreviousClose ?? meta?.previousClose ?? price;
+    const dayChange = price != null && prevClose != null ? price - prevClose : null;
+    const dayChangePct = prevClose ? (dayChange / prevClose) * 100 : null;
+    const dividend = meta?.trailingAnnualDividendRate ?? 0;
+    res.json({ symbol, price, prevClose, dayChange, dayChangePct, dividend });
+  } catch(e) {
+    res.json({ symbol, price: null, error: e.message });
+  }
+});
+
 // ── /api 404 + STATIC FALLBACKS ───────────────────────────────────────────────
 // Must come AFTER every route registration — Express matches in order.
 // Any unmatched /api/* path returns JSON (so fetch().json() doesn't choke on

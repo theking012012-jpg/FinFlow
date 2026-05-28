@@ -3341,7 +3341,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" onerror="console.warn('Chart.js failed to load — charts will be skipped.')"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" crossorigin="anonymous" onerror="console.warn('Chart.js failed to load — charts will be skipped.')"></script>
 <script>
 // ════════════════════════════════════════════
 // sendPrompt STUB — replaced by host when embedded
@@ -10989,27 +10989,28 @@ document.addEventListener('click', e=>{
     page.insertBefore(pill, page.firstChild);
   }
 
-  // ── Yahoo Finance fetch via allorigins CORS proxy ──────────────
-  // Yahoo Finance v8 /chart endpoint returns OHLCV + meta with currentPrice.
+  // ── Stock price fetch via server-side proxy (/api/stock-price) ───
+  // Avoids CORS errors and Edge tracking-prevention blocks from direct
+  // Yahoo Finance or allorigins.win calls in the browser.
   async function fetchQuote(ticker){
-    // Return cached result if still fresh (within 55s TTL)
     const cached = window.getCachedQuote && window.getCachedQuote(ticker);
     if(cached) return cached;
 
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
-    const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-    const res = await fetch(proxy, {signal: AbortSignal.timeout(8000)});
+    const res = await fetch(`/api/stock-price?symbol=${encodeURIComponent(ticker)}`, {
+      credentials: 'include',
+      signal: AbortSignal.timeout(8000),
+    });
     if(!res.ok) throw new Error('HTTP ' + res.status);
-    const outer = await res.json();
-    const data = JSON.parse(outer.contents);
-    const meta = data?.chart?.result?.[0]?.meta;
-    if(!meta) throw new Error('No meta for ' + ticker);
-    const price   = meta.regularMarketPrice ?? meta.previousClose;
-    const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? price;
-    const dayChange = price - prevClose;
-    const dayChangePct = prevClose ? (dayChange / prevClose) * 100 : 0;
-    const dividend = meta.trailingAnnualDividendRate ?? 0;
-    const result = { ticker, price, prevClose, dayChange, dayChangePct, dividend };
+    const d = await res.json();
+    if(d.price == null) throw new Error('No price for ' + ticker);
+    const result = {
+      ticker,
+      price:        d.price,
+      prevClose:    d.prevClose ?? d.price,
+      dayChange:    d.dayChange ?? 0,
+      dayChangePct: d.dayChangePct ?? 0,
+      dividend:     d.dividend ?? 0,
+    };
     if(window.setCachedQuote) window.setCachedQuote(ticker, result);
     return result;
   }

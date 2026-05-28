@@ -468,7 +468,7 @@ html{overflow-x:hidden}
 .emp-name{font-size:13px;color:var(--t1);font-weight:500}
 .emp-role{font-size:11px;color:var(--t3)}
 /* INVENTORY */
-.inv-item-row{display:grid;grid-template-columns:55px 1fr 75px 90px 65px 50px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px;color:var(--t1)}
+.inv-item-row{display:grid;grid-template-columns:55px 1fr 75px 90px 65px 65px 100px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px;color:var(--t1)}
 .inv-item-row:last-child{border-bottom:none}
 .stock-bar{height:5px;background:var(--bg3);border-radius:3px;overflow:hidden}
 .stock-fill{height:100%;border-radius:3px;transition:width .5s ease}
@@ -1035,6 +1035,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     </div>
     <div class="nav-item active" onclick="showPage('dashboard',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="6.5" height="6.5" rx="1.2"/><rect x="8.5" y="1" width="6.5" height="6.5" rx="1.2"/><rect x="1" y="8.5" width="6.5" height="6.5" rx="1.2"/><rect x="8.5" y="8.5" width="6.5" height="6.5" rx="1.2"/></svg>Dashboard</div>
     <div class="nav-item" onclick="showPage('banking',this)"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M1 6l7-4 7 4"/><rect x="3" y="6" width="2.5" height="6"/><rect x="6.75" y="6" width="2.5" height="6"/><rect x="10.5" y="6" width="2.5" height="6"/><line x1="1" y1="12" x2="15" y2="12"/></svg>Banking</div>
+    <div class="nav-item" onclick="showPage('bank-rec',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="10" rx="1"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="8" y1="5" x2="8" y2="11"/></svg>Bank Rec</div>
+    <div class="nav-item" onclick="showPage('fx',this)"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="5" cy="8" r="4"/><circle cx="11" cy="8" r="4"/><path d="M7 6l2 2-2 2"/></svg>FX / Currency</div>
 
     <!-- MONEY IN group -->
     <div class="nav-group-header" id="grp-sales" onclick="toggleGroup('sales')" role="button" aria-expanded="false" aria-controls="nav-group-sales" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleGroup('sales')}">
@@ -1435,25 +1437,105 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- AUDIT TRAIL PAGE -->
       <div class="page" id="page-audit">
         <div class="metrics-grid-3">
-          <div class="mc"><div class="mc-label">Events loaded</div><div class="mc-val" id="audit-event-count">—</div><div class="mc-change neutral">Across all users</div></div>
+          <div class="mc"><div class="mc-label">Events loaded</div><div class="mc-val" id="audit-event-count">—</div><div class="mc-change neutral">Last 500 entries</div></div>
           <div class="mc"><div class="mc-label">Last change</div><div class="mc-val" style="font-size:15px" id="audit-last-time">—</div><div class="mc-change neutral" id="audit-last-action">—</div></div>
           <div class="mc"><div class="mc-label">Retention</div><div class="mc-val">Full history</div><div class="mc-change up">All time</div></div>
         </div>
         <div class="card">
           <div class="card-header">
-            <div><div class="card-title">Change history</div><div class="card-sub">Every action logged with user, timestamp &amp; diff</div></div>
-            <div style="display:flex;gap:6px">
-              <select class="finput" style="font-size:11px;padding:4px 8px;width:auto" onchange="filterAudit(this.value)">
-                <option value="all">All events</option>
-                <option value="invoice">Invoices</option>
-                <option value="payment">Payments</option>
-                <option value="user">User actions</option>
-                <option value="settings">Settings</option>
+            <div><div class="card-title">Field-level change history</div><div class="card-sub">Every field change logged with old &amp; new value</div></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <select class="finput" id="audit-filter-table" style="font-size:11px;padding:4px 8px;width:auto" onchange="loadAuditTrail()">
+                <option value="all">All tables</option>
+                <option value="invoices">Invoices</option>
+                <option value="invoice_payments">Payments</option>
+                <option value="expenses">Expenses</option>
+                <option value="customers">Customers</option>
+                <option value="payroll">Payroll</option>
+                <option value="inventory">Inventory</option>
+                <option value="vendors">Vendors</option>
+                <option value="bills">Bills</option>
               </select>
-              <button class="btn btn-ghost btn-sm" onclick="notify('Exporting audit log as CSV…')">Export CSV</button>
+              <select class="finput" id="audit-filter-action" style="font-size:11px;padding:4px 8px;width:auto" onchange="loadAuditTrail()">
+                <option value="all">All actions</option>
+                <option value="CREATE">Create</option>
+                <option value="UPDATE">Update</option>
+                <option value="DELETE">Delete</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" onclick="exportAuditCSV()">Export CSV</button>
             </div>
           </div>
-          <div id="audit-list"></div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead><tr style="border-bottom:1px solid var(--bd);color:var(--t3);font-size:10px;text-transform:uppercase;letter-spacing:.08em">
+                <th style="text-align:left;padding:6px 8px;font-weight:600">Date</th>
+                <th style="text-align:left;padding:6px 8px;font-weight:600">Table</th>
+                <th style="text-align:left;padding:6px 8px;font-weight:600">Record ID</th>
+                <th style="text-align:left;padding:6px 8px;font-weight:600">Action</th>
+                <th style="text-align:left;padding:6px 8px;font-weight:600">Field</th>
+                <th style="text-align:left;padding:6px 8px;font-weight:600">Old Value</th>
+                <th style="text-align:left;padding:6px 8px;font-weight:600">New Value</th>
+              </tr></thead>
+              <tbody id="audit-trail-body"><tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- BANK RECONCILIATION PAGE -->
+      <div class="page" id="page-bank-rec">
+        <div class="metrics-grid-3">
+          <div class="mc"><div class="mc-label">Unmatched bank txns</div><div class="mc-val" id="brec-unmatched-bank">—</div><div class="mc-change dn">Needs matching</div></div>
+          <div class="mc"><div class="mc-label">Unmatched payments</div><div class="mc-val" id="brec-unmatched-pay">—</div><div class="mc-change dn">Needs matching</div></div>
+          <div class="mc"><div class="mc-label">Matched pairs</div><div class="mc-val" id="brec-matched-count">—</div><div class="mc-change up">Reconciled</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><div class="card-title">Unmatched Bank Transactions</div></div>
+            <div id="brec-bank-list" style="font-size:12px"></div>
+          </div>
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><div class="card-title">Unmatched Invoice Payments</div></div>
+            <div id="brec-pay-list" style="font-size:12px"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Matched Pairs</div><button class="btn btn-ghost btn-sm" onclick="loadBankRec()">Refresh</button></div>
+          <div id="brec-matched-list" style="font-size:12px"></div>
+        </div>
+      </div>
+
+      <!-- FX / CURRENCY PAGE -->
+      <div class="page" id="page-fx">
+        <div class="metrics-grid-3">
+          <div class="mc"><div class="mc-label">Unrealised Gain/Loss</div><div class="mc-val" id="fx-unrealised">—</div><div class="mc-change neutral">Open positions</div></div>
+          <div class="mc"><div class="mc-label">Realised Gain/Loss</div><div class="mc-val" id="fx-realised">—</div><div class="mc-change neutral">Settled</div></div>
+          <div class="mc"><div class="mc-label">Net FX Impact</div><div class="mc-val" id="fx-net">—</div><div class="mc-change neutral">Total</div></div>
+        </div>
+        <div class="two-col" style="margin-bottom:1.25rem">
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><div class="card-title">FX Rates</div><button class="btn btn-primary btn-sm" onclick="openModal('fx-rate-modal')">+ Add Rate</button></div>
+            <div style="display:grid;grid-template-columns:60px 60px 90px 90px 40px;gap:6px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
+              <span>From</span><span>To</span><span>Rate</span><span>Date</span><span></span>
+            </div>
+            <div id="fx-rates-list" style="font-size:12px"></div>
+          </div>
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><div class="card-title">FX Transactions</div><button class="btn btn-primary btn-sm" onclick="openModal('fx-tx-modal')">+ Add</button></div>
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:11px">
+                <thead><tr style="border-bottom:1px solid var(--bd);color:var(--t3);font-size:10px;text-transform:uppercase;letter-spacing:.08em">
+                  <th style="text-align:left;padding:4px 6px;font-weight:600">Currency</th>
+                  <th style="text-align:left;padding:4px 6px;font-weight:600">Amount</th>
+                  <th style="text-align:left;padding:4px 6px;font-weight:600">Rate</th>
+                  <th style="text-align:left;padding:4px 6px;font-weight:600">Gain/Loss</th>
+                  <th style="text-align:left;padding:4px 6px;font-weight:600">Status</th>
+                  <th style="padding:4px 6px"></th>
+                </tr></thead>
+                <tbody id="fx-tx-list"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1529,6 +1611,154 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <span style="font-size:17px;font-weight:300;font-family:var(--font-display);font-style:italic;color:var(--t1)" id="nw-total-display">—</span>
             </div>
             <div style="margin-top:6px;font-size:11px;color:var(--t3)">Portfolio contributes <span id="nw-port-pct" style="color:var(--green);font-weight:600">—%</span> of net worth</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RECORD PAYMENT MODAL -->
+      <div class="modal-overlay hidden" id="record-payment-modal">
+        <div class="modal">
+          <div class="modal-header">
+            <div><div class="modal-title">Record Payment</div><div class="modal-sub" id="rp-sub">Record a payment against this invoice</div></div>
+            <button class="modal-close" onclick="closeModal('record-payment-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+          </div>
+          <input type="hidden" id="rp-invoice-id">
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label">Amount</label><input class="finput" id="rp-amount" type="number" placeholder="0.00" step="0.01"></div>
+            <div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="rp-date" type="date"></div>
+          </div>
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label">Method</label>
+              <select class="finput" id="rp-method">
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="cash">Cash</option>
+                <option value="cheque">Cheque</option>
+                <option value="card">Card</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="field-wrap"><label class="field-label">Reference</label><input class="finput" id="rp-reference" placeholder="e.g. TT-12345"></div>
+          </div>
+          <div class="field-wrap"><label class="field-label">Notes</label><input class="finput" id="rp-notes" placeholder="Optional notes"></div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('record-payment-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="recordPayment()">Save Payment</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- RUN PAYROLL MODAL -->
+      <div class="modal-overlay hidden" id="run-payroll-modal">
+        <div class="modal modal-wide">
+          <div class="modal-header">
+            <div><div class="modal-title">Run Payroll</div><div class="modal-sub">Process payroll for current period</div></div>
+            <button class="modal-close" onclick="closeModal('run-payroll-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+          </div>
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label">Period</label><input class="finput" id="prm-period" placeholder="e.g. May 2026"></div>
+            <div class="field-wrap"><label class="field-label">Run Date</label><input class="finput" id="prm-date" type="date"></div>
+          </div>
+          <div class="field-wrap" style="margin-bottom:.75rem"><label class="field-label">Notes</label><input class="finput" id="prm-notes" placeholder="Optional notes"></div>
+          <div style="font-size:12px;color:var(--t2);margin-bottom:.5rem">The following employees will be included (based on your team payroll list):</div>
+          <div id="prm-preview" style="font-size:12px;margin-bottom:.75rem;color:var(--t3)">Loading preview…</div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('run-payroll-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="submitPayrollRun()">Run Payroll</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- STOCK IN MODAL -->
+      <div class="modal-overlay hidden" id="stock-in-modal">
+        <div class="modal">
+          <div class="modal-header">
+            <div><div class="modal-title">Stock In</div><div class="modal-sub" id="si-sub">Record a purchase / stock receipt</div></div>
+            <button class="modal-close" onclick="closeModal('stock-in-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+          </div>
+          <input type="hidden" id="si-item-idx">
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label">Quantity</label><input class="finput" id="si-qty" type="number" placeholder="e.g. 100" min="0.0001" step="any"></div>
+            <div class="field-wrap"><label class="field-label">Unit Cost</label><input class="finput" id="si-cost" type="number" placeholder="e.g. 12.50" min="0" step="0.0001"></div>
+          </div>
+          <div class="field-wrap"><label class="field-label">Notes / Reference</label><input class="finput" id="si-notes" placeholder="e.g. PO-445"></div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('stock-in-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="submitStockIn()">Record Stock In</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- STOCK OUT MODAL -->
+      <div class="modal-overlay hidden" id="stock-out-modal">
+        <div class="modal">
+          <div class="modal-header">
+            <div><div class="modal-title">Stock Out / Sale</div><div class="modal-sub" id="so-sub">Record a sale or stock removal</div></div>
+            <button class="modal-close" onclick="closeModal('stock-out-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+          </div>
+          <input type="hidden" id="so-item-idx">
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label">Quantity</label><input class="finput" id="so-qty" type="number" placeholder="e.g. 10" min="0.0001" step="any"></div>
+            <div class="field-wrap"><label class="field-label">Reference</label><input class="finput" id="so-ref" placeholder="e.g. INV-200"></div>
+          </div>
+          <div id="so-cogs-preview" style="font-size:12px;padding:.5rem;background:var(--bg2);border-radius:var(--radius);color:var(--t2);margin-bottom:.5rem;display:none"></div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('stock-out-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="submitStockOut()">Record Stock Out</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- FX RATE MODAL -->
+      <div class="modal-overlay hidden" id="fx-rate-modal">
+        <div class="modal">
+          <div class="modal-header">
+            <div><div class="modal-title">Add FX Rate</div><div class="modal-sub">Log an exchange rate for a currency pair</div></div>
+            <button class="modal-close" onclick="closeModal('fx-rate-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+          </div>
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label">From Currency</label><input class="finput" id="fxr-from" placeholder="e.g. TTD" style="text-transform:uppercase" maxlength="3"></div>
+            <div class="field-wrap"><label class="field-label">To Currency</label><input class="finput" id="fxr-to" placeholder="e.g. USD" style="text-transform:uppercase" maxlength="3"></div>
+          </div>
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label">Rate</label><input class="finput" id="fxr-rate" type="number" placeholder="e.g. 0.1471" step="any"></div>
+            <div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="fxr-date" type="date"></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('fx-rate-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="addFXRate()">Save Rate</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- FX TRANSACTION MODAL -->
+      <div class="modal-overlay hidden" id="fx-tx-modal">
+        <div class="modal">
+          <div class="modal-header">
+            <div><div class="modal-title">Add FX Transaction</div><div class="modal-sub">Log a foreign currency transaction</div></div>
+            <button class="modal-close" onclick="closeModal('fx-tx-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+          </div>
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label">Foreign Currency</label><input class="finput" id="fxt-currency" placeholder="e.g. TTD" style="text-transform:uppercase" maxlength="3"></div>
+            <div class="field-wrap"><label class="field-label">Foreign Amount</label><input class="finput" id="fxt-amount" type="number" placeholder="e.g. 10000" step="0.01"></div>
+          </div>
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label">Base Currency</label><input class="finput" id="fxt-base" placeholder="USD" style="text-transform:uppercase" maxlength="3" value="USD"></div>
+            <div class="field-wrap"><label class="field-label">Rate at Transaction</label><input class="finput" id="fxt-rate" type="number" placeholder="e.g. 0.1471" step="any"></div>
+          </div>
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label">Reference Type</label>
+              <select class="finput" id="fxt-ref-type">
+                <option value="invoice">Invoice</option>
+                <option value="bill">Bill</option>
+                <option value="expense">Expense</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="field-wrap"><label class="field-label">Reference ID</label><input class="finput" id="fxt-ref-id" type="number" placeholder="e.g. 42"></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('fx-tx-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="addFXTransaction()">Save Transaction</button>
           </div>
         </div>
       </div>
@@ -1722,7 +1952,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <button class="btn btn-primary btn-sm" onclick="openInvoiceModal()">+ New invoice</button>
             </div>
           </div>
-          <div class="table-header inv-cols"><span>Client</span><span>Amount</span><span>Due date</span><span>Status</span><span></span></div>
+          <div class="table-header" style="display:grid;grid-template-columns:1fr 90px 90px 100px 1fr;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Client</span><span>Amount</span><span>Paid</span><span>Due date</span><span>Status / Actions</span></div>
           <div id="invoice-list"><!-- rendered --></div>
         </div>
       </div>
@@ -1820,9 +2050,46 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
         </div>
         <div class="card">
-          <div class="card-header"><div><div class="card-title">Team payroll — April 2026</div></div><button class="btn btn-ghost btn-sm" onclick="openAddEmployeeModal()">+ Add employee</button></div>
+          <div class="card-header">
+            <div><div class="card-title">Team payroll</div></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+              <select class="finput" id="payroll-jurisdiction" style="font-size:11px;padding:4px 8px;width:auto">
+                <option value="TT">T&amp;T (PAYE+NIS)</option>
+                <option value="BB">Barbados</option>
+                <option value="JM">Jamaica</option>
+                <option value="CA">Canada</option>
+                <option value="US">USA</option>
+                <option value="GB">UK</option>
+                <option value="MX">Mexico</option>
+                <option value="CO">Colombia</option>
+                <option value="OTHER">Other (20%)</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" onclick="openAddEmployeeModal()">+ Add employee</button>
+              <button class="btn btn-primary btn-sm" onclick="openRunPayrollModal()">Run Payroll</button>
+            </div>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 90px 80px 70px 80px 36px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Employee</span><span>Role</span><span>Gross</span><span>Tax</span><span>Net pay</span><span></span></div>
           <div id="payroll-list"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Tax Preview Calculator</div></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:.75rem">
+            <div class="field-wrap" style="margin:0"><label class="field-label">Monthly Gross</label><input class="finput" id="tax-prev-gross" type="number" placeholder="5000" oninput="runTaxPreview()" style="width:120px"></div>
+            <div class="field-wrap" style="margin:0"><label class="field-label">Jurisdiction</label>
+              <select class="finput" id="tax-prev-jur" style="width:140px" onchange="runTaxPreview()">
+                <option value="TT">T&amp;T</option><option value="BB">Barbados</option><option value="JM">Jamaica</option>
+                <option value="CA">Canada</option><option value="US">USA</option><option value="GB">UK</option>
+                <option value="MX">Mexico</option><option value="CO">Colombia</option><option value="OTHER">Other</option>
+              </select>
+            </div>
+            <div class="field-wrap" style="margin:0"><label class="field-label">Bonus</label><input class="finput" id="tax-prev-bonus" type="number" placeholder="0" oninput="runTaxPreview()" style="width:90px"></div>
+            <div class="field-wrap" style="margin:0"><label class="field-label">Overtime</label><input class="finput" id="tax-prev-overtime" type="number" placeholder="0" oninput="runTaxPreview()" style="width:90px"></div>
+          </div>
+          <div id="tax-preview-result" style="font-size:12px;color:var(--t3)">Enter a gross amount to see the tax breakdown.</div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Payroll Run History</div></div>
+          <div id="payroll-runs-list" style="font-size:12px;color:var(--t3)">No payroll runs yet.</div>
         </div>
         <div id="payroll-link-card" class="card" style="display:none;border-color:var(--green-bd);background:var(--green-bg)">
           <div style="display:flex;align-items:center;gap:12px">
@@ -1843,8 +2110,20 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="card">
           <div class="card-header"><div class="card-title">Stock levels</div><button class="btn btn-ghost btn-sm" onclick="openProductModal()">+ Add product</button></div>
-          <div class="inv-item-row" style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>SKU</span><span>Product</span><span>In stock</span><span>Level</span><span>Value</span><span></span></div>
+          <div class="inv-item-row" style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>SKU</span><span>Product</span><span>In stock</span><span>Level</span><span>Value</span><span style="text-align:right">COGS</span><span></span></div>
           <div id="inventory-list"><!-- rendered --></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div><div class="card-title">COGS Summary</div><div class="card-sub">FIFO cost of goods sold</div></div>
+            <button class="btn btn-ghost btn-sm" onclick="loadCOGS()">Refresh</button>
+          </div>
+          <div class="metrics-grid-3" style="margin-bottom:.75rem">
+            <div class="mc"><div class="mc-label">Total COGS</div><div class="mc-val" id="cogs-total">—</div><div class="mc-change neutral">All items</div></div>
+            <div class="mc"><div class="mc-label">Revenue</div><div class="mc-val" id="cogs-revenue">—</div><div class="mc-change up">Invoiced</div></div>
+            <div class="mc"><div class="mc-label">Gross Profit</div><div class="mc-val" id="cogs-gross-profit">—</div><div class="mc-change up">Rev − COGS</div></div>
+          </div>
+          <div id="cogs-breakdown" style="font-size:12px;color:var(--t3)">Refresh to load FIFO breakdown.</div>
         </div>
         <button class="btn btn-ghost" onclick="sendPrompt('Which inventory items should I reorder this week based on my current stock levels and reorder thresholds?')">Get AI reorder recommendations ↗</button>
       </div>
@@ -4764,19 +5043,32 @@ function updateInvoices(d=getPeriodData()){
 function renderInvoices(){
   updateInvoices();
   if(!userInvoices) userInvoices=[];
-  const badgeCls={'paid':'b-green','pending':'b-amber','overdue':'b-red'};
-  document.getElementById('invoice-list').innerHTML=userInvoices.map((inv,idx)=>`
-    <div class="table-row inv-cols">
+  const badgeCls={'paid':'b-green','pending':'b-amber','overdue':'b-red','partial':'b-blue'};
+  document.getElementById('invoice-list').innerHTML=userInvoices.map((inv,idx)=>{
+    const paid=parseFloat(inv.amount_paid)||0;
+    const total=parseFloat(inv.amount)||0;
+    const paidStr=paid>0?S(paid):'—';
+    const statusLabel=inv.status==='partial'?`partial (${S(paid)} of ${S(total)})`:inv.status;
+    return`<div class="table-row inv-cols">
       <span>${esc(inv.client)}</span>
       <span style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
+      <span style="font-family:var(--font-mono);color:${paid>0?'var(--green)':'var(--t3)'}">${paidStr}</span>
       <span style="color:${esc(inv.color)}">${esc(inv.due)}</span>
-      <span><span class="badge ${badgeCls[inv.status]||'b-amber'}">${esc(inv.status)}</span></span>
-      <span class="table-actions">
-        ${inv.status?.toLowerCase()==='overdue'?`<button class="btn btn-ghost btn-sm inv-remind-btn" data-idx="${Number(idx)}" data-client="${esc(inv.client)}" data-amount="${esc(S(inv.amount))}">Remind ↗</button>`:''}
-        ${inv.status?.toLowerCase()==='paid'?`<button class="btn btn-ghost btn-sm">View</button>`:''}
-        ${inv.status?.toLowerCase()==='pending'?`<button class="btn btn-ghost btn-sm" onclick="markInvoicePaid(${Number(idx)})">Mark paid</button>`:''}
+      <span class="table-actions" style="display:flex;gap:4px;flex-wrap:wrap">
+        <span class="badge ${badgeCls[inv.status]||'b-amber'}">${esc(statusLabel)}</span>
+        ${inv.status!=='paid'?`<button class="btn btn-ghost btn-sm inv-remind-btn" style="font-size:10px;padding:3px 7px" data-idx="${Number(idx)}" data-id="${inv.id||''}" data-client="${esc(inv.client)}" data-amount="${esc(S(inv.amount))}">Record Payment</button>`:''}
+        ${inv.status==='overdue'?`<button class="btn btn-ghost btn-sm inv-remind-btn-r" style="font-size:10px;padding:3px 7px" data-idx="${Number(idx)}" data-client="${esc(inv.client)}" data-amount="${esc(S(inv.amount))}">Remind ↗</button>`:''}
       </span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+  // Record Payment button delegation
+  document.getElementById('invoice-list').querySelectorAll('.inv-remind-btn').forEach(btn=>{
+    btn.onclick=function(){
+      const invId=this.getAttribute('data-id');
+      const invIdx=this.getAttribute('data-idx');
+      openRecordPaymentModal(invId||invIdx,this.getAttribute('data-client'),this.getAttribute('data-amount'));
+    };
+  });
 }
 // Event delegation for invoice remind buttons — no user data embedded in onclick
 document.addEventListener('click', function(e){
@@ -4912,13 +5204,19 @@ function renderInventory(){
     const pct=Math.min(100,Math.round(item.units/item.max*100));
     const col=pct<10?'var(--red)':pct<20?'var(--amber)':'var(--green)';
     const val=item.units*item.cost;
+    const cogsVal=item.cogs!=null?S(item.cogs):'—';
     return`<div class="inv-item-row">
       <span style="color:var(--t3);font-family:var(--font-mono)">${esc(item.sku)}</span>
       <span>${esc(item.name)}</span>
       <span style="color:${item.low?'var(--red)':'var(--t1)'}">${item.units} units${item.low?' ⚠':''}</span>
       <div class="stock-bar"><div class="stock-fill" style="width:${pct}%;background:${col}"></div></div>
       <span style="color:${item.low?'var(--red)':'var(--t1)'};">${S(val)}</span>
-      <span class="table-actions"><button class="btn btn-ghost btn-sm" onclick="restockItem(${idx})">Restock</button></span>
+      <span style="text-align:right;font-family:var(--font-mono);color:var(--t2)">${cogsVal}</span>
+      <span class="table-actions" style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="openStockInModal(${idx})">+ In</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="openStockOutModal(${idx})">- Out</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="restockItem(${idx})">Restock</button>
+      </span>
     </div>`;
   }).join('');
 }
@@ -8690,7 +8988,7 @@ window.showPage=function(id,el){
     return;
   }
   _sp8(id,el);
-  const extras={budget:'Budget',mrr:'MRR / SaaS',banking:'Banking',entities:'Entities',team:'Team & Roles',audit:'Audit Trail'};
+  const extras={budget:'Budget',mrr:'MRR / SaaS',banking:'Banking',entities:'Entities',team:'Team & Roles',audit:'Audit Trail','bank-rec':'Bank Reconciliation',fx:'FX / Currency'};
   if(extras[id])document.getElementById('pageTitle').textContent=extras[id];
   const _rAF=window.requestAnimationFrame||setTimeout;
   if(id==='budget')  _rAF(renderBudget);
@@ -8699,7 +8997,567 @@ window.showPage=function(id,el){
   if(id==='entities')_rAF(renderEntities);
   if(id==='team')    _rAF(renderTeam);
   if(id==='audit')   _rAF(renderAudit);
+  if(id==='bank-rec'&&typeof loadBankRec==='function') _rAF(loadBankRec);
+  if(id==='fx'&&typeof loadFXData==='function') _rAF(loadFXData);
+  if(id==='audit'&&typeof loadAuditTrail==='function') _rAF(loadAuditTrail);
+  if(id==='inventory'&&typeof loadCOGS==='function') _rAF(loadCOGS);
+  if(id==='payroll'&&typeof loadPayrollRuns==='function') setTimeout(loadPayrollRuns,200);
 };
+</script>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     FEATURES: Audit Trail · Partial Payments · Bank Rec · Payroll Runs
+               FIFO COGS · FX Gain/Loss
+══════════════════════════════════════════════════════════════════ -->
+<script>
+// ── FEATURE 1: AUDIT TRAIL ────────────────────────────────────────────────────
+async function loadAuditTrail(){
+  const tbody=document.getElementById('audit-trail-body');
+  const countEl=document.getElementById('audit-event-count');
+  const lastTimeEl=document.getElementById('audit-last-time');
+  const lastActEl=document.getElementById('audit-last-action');
+  if(!tbody)return;
+  tbody.innerHTML='<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--t3)">Loading…</td></tr>';
+  try{
+    const tbl=document.getElementById('audit-filter-table')?.value||'all';
+    const act=document.getElementById('audit-filter-action')?.value||'all';
+    const params=new URLSearchParams();
+    if(tbl&&tbl!=='all')params.set('table',tbl);
+    if(act&&act!=='all')params.set('action',act);
+    const res=await fetch('/api/audit-trail'+(params.toString()?'?'+params.toString():''),{credentials:'include'});
+    if(!res.ok)throw new Error(res.status);
+    const rows=await res.json();
+    if(countEl)countEl.textContent=rows.length;
+    if(rows.length&&lastTimeEl){
+      const d=new Date(rows[0].changed_at);
+      lastTimeEl.textContent=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+      if(lastActEl)lastActEl.textContent=rows[0].action||'—';
+    }
+    if(!rows.length){
+      tbody.innerHTML='<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--t3)">No audit events found.</td></tr>';
+      return;
+    }
+    const actionBadge={CREATE:'b-green',UPDATE:'b-amber',DELETE:'b-red'};
+    tbody.innerHTML=rows.map(r=>{
+      const d=new Date(r.changed_at);
+      const dStr=d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'})+' '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+      return`<tr style="border-bottom:1px solid var(--bd)">
+        <td style="padding:5px 8px;color:var(--t2);font-size:11px;white-space:nowrap">${esc(dStr)}</td>
+        <td style="padding:5px 8px;font-family:var(--font-mono);font-size:11px">${esc(r.table_name||'')}</td>
+        <td style="padding:5px 8px;font-family:var(--font-mono);font-size:11px">${r.record_id||'—'}</td>
+        <td style="padding:5px 8px"><span class="badge ${actionBadge[r.action]||'b-amber'}" style="font-size:9px">${esc(r.action||'')}</span></td>
+        <td style="padding:5px 8px;color:var(--t2)">${esc(r.field_name||'—')}</td>
+        <td style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.old_value||'')}">${esc(r.old_value||'—')}</td>
+        <td style="padding:5px 8px;color:var(--green);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.new_value||'')}">${esc(r.new_value||'—')}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){
+    tbody.innerHTML='<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:var(--red)">Failed to load audit trail.</td></tr>';
+  }
+}
+
+function exportAuditCSV(){
+  const rows=document.querySelectorAll('#audit-trail-body tr');
+  if(!rows.length)return;
+  const headers=['Date','Table','Record ID','Action','Field','Old Value','New Value'];
+  const lines=[headers.join(',')];
+  rows.forEach(tr=>{
+    const cells=tr.querySelectorAll('td');
+    if(cells.length<7)return;
+    const row=Array.from(cells).map(td=>'"'+td.textContent.replace(/"/g,'""')+'"');
+    lines.push(row.join(','));
+  });
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='audit-trail.csv';
+  a.click();
+}
+
+// ── FEATURE 2: PARTIAL PAYMENTS ───────────────────────────────────────────────
+let _rpInvoiceId=null;
+function openRecordPaymentModal(invoiceId,client,amount){
+  _rpInvoiceId=invoiceId;
+  const sub=document.getElementById('rp-sub');
+  if(sub)sub.textContent=(client?client+' — ':'')+(amount||'');
+  const idEl=document.getElementById('rp-invoice-id');
+  if(idEl)idEl.value=invoiceId||'';
+  const amtEl=document.getElementById('rp-amount');
+  if(amtEl)amtEl.value='';
+  const dateEl=document.getElementById('rp-date');
+  if(dateEl)dateEl.value=new Date().toISOString().slice(0,10);
+  const refEl=document.getElementById('rp-reference');
+  if(refEl)refEl.value='';
+  const notesEl=document.getElementById('rp-notes');
+  if(notesEl)notesEl.value='';
+  openModal('record-payment-modal');
+}
+async function recordPayment(){
+  const invoiceId=document.getElementById('rp-invoice-id')?.value;
+  const amount=parseFloat(document.getElementById('rp-amount')?.value||0);
+  const date=document.getElementById('rp-date')?.value;
+  const method=document.getElementById('rp-method')?.value||'bank_transfer';
+  const reference=document.getElementById('rp-reference')?.value||'';
+  const notes=document.getElementById('rp-notes')?.value||'';
+  if(!invoiceId){notify('No invoice selected',true);return;}
+  if(!amount||amount<=0){notify('Enter a valid amount',true);return;}
+  if(!date){notify('Select a payment date',true);return;}
+  try{
+    const res=await fetch('/api/invoice-payments',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({invoice_id:invoiceId,amount,payment_date:date,method,reference,notes}),
+    });
+    const data=await res.json();
+    if(data.error){notify('⚠ '+data.error,true);return;}
+    closeModal('record-payment-modal');
+    notify('✓ Payment recorded');
+    if(typeof renderInvoices==='function')renderInvoices();
+  }catch(e){notify('Could not record payment',true);}
+}
+
+// ── FEATURE 2b: BANK RECONCILIATION ──────────────────────────────────────────
+let _brecBankSelected=null;
+async function loadBankRec(){
+  try{
+    const res=await fetch('/api/bank-reconciliation',{credentials:'include'});
+    const data=await res.json();
+    const bankList=document.getElementById('brec-bank-list');
+    const payList=document.getElementById('brec-pay-list');
+    const matchedList=document.getElementById('brec-matched-list');
+    const ubEl=document.getElementById('brec-unmatched-bank');
+    const upEl=document.getElementById('brec-unmatched-pay');
+    const mcEl=document.getElementById('brec-matched-count');
+
+    const unbank=data.unmatched_bank||[];
+    const unpay=data.unmatched_payments||[];
+    const matched=data.matched||[];
+
+    if(ubEl)ubEl.textContent=unbank.length;
+    if(upEl)upEl.textContent=unpay.length;
+    if(mcEl)mcEl.textContent=matched.length;
+
+    if(bankList){
+      bankList.innerHTML=unbank.length?unbank.map(b=>`
+        <div class="tx-row" style="cursor:pointer;border-left:2px solid transparent;padding-left:8px;transition:border-color .15s" id="bbtx-${b.id}"
+          onclick="selectBankTx(${b.id},this)">
+          <div><div class="tx-name">${esc(b.description||b.merchant||'Transaction')}</div>
+          <div class="tx-cat">${esc(b.date||'')} · ${esc(b.account_name||'')}</div></div>
+          <div class="tx-amt ${parseFloat(b.amount)>=0?'up':'dn'}">${parseFloat(b.amount)>=0?'+':''}${S(Math.abs(parseFloat(b.amount)))}</div>
+        </div>`).join('')
+        :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All bank transactions matched</div>';
+    }
+    if(payList){
+      payList.innerHTML=unpay.length?unpay.map(p=>`
+        <div class="tx-row" style="cursor:pointer" onclick="matchBankRec(_brecBankSelected,${p.id})">
+          <div><div class="tx-name">${esc(p.client||'Invoice payment')}</div>
+          <div class="tx-cat">${esc(p.payment_date||'')} · ${esc(p.method||'')}</div></div>
+          <div class="tx-amt up">+${S(parseFloat(p.amount))}</div>
+        </div>`).join('')
+        :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All payments matched</div>';
+    }
+    if(matchedList){
+      matchedList.innerHTML=matched.length?matched.map(m=>`
+        <div class="tx-row">
+          <div><div class="tx-name">Bank ID ${m.banking_id} ↔ Payment ID ${m.invoice_payment_id}</div>
+          <div class="tx-cat">${esc(m.status||'matched')} · ${new Date(m.matched_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div></div>
+          <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="unmatchBankRec(${m.id})">Unmatch</button>
+        </div>`).join('')
+        :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No matched pairs yet — select a bank transaction then a payment to match.</div>';
+    }
+  }catch(e){if(typeof notify==='function')notify('Could not load bank reconciliation');}
+}
+function selectBankTx(id,el){
+  _brecBankSelected=id;
+  document.querySelectorAll('[id^="bbtx-"]').forEach(el2=>{el2.style.borderLeftColor='transparent';});
+  if(el)el.style.borderLeftColor='var(--acc)';
+  if(typeof notify==='function')notify('Bank transaction selected — now click a payment to match');
+}
+async function matchBankRec(bankingId,paymentId){
+  if(!bankingId){notify('Select a bank transaction first',true);return;}
+  try{
+    const res=await fetch('/api/bank-reconciliation/match',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({banking_id:bankingId,invoice_payment_id:paymentId}),
+    });
+    const data=await res.json();
+    if(data.error){notify('⚠ '+data.error,true);return;}
+    _brecBankSelected=null;
+    notify('✓ Matched');
+    loadBankRec();
+  }catch(e){notify('Could not match',true);}
+}
+async function unmatchBankRec(recId){
+  try{
+    await fetch('/api/bank-reconciliation/'+recId,{method:'DELETE',credentials:'include'});
+    notify('Unmatched');
+    loadBankRec();
+  }catch(e){notify('Could not unmatch',true);}
+}
+
+// ── FEATURE 3: PAYROLL RUNS ───────────────────────────────────────────────────
+function runTaxPreview(){
+  const gross=parseFloat(document.getElementById('tax-prev-gross')?.value||0);
+  const jur=document.getElementById('tax-prev-jur')?.value||'TT';
+  const bonus=parseFloat(document.getElementById('tax-prev-bonus')?.value||0);
+  const overtime=parseFloat(document.getElementById('tax-prev-overtime')?.value||0);
+  const resultEl=document.getElementById('tax-preview-result');
+  if(!resultEl)return;
+  if(!gross||gross<=0){resultEl.innerHTML='<span style="color:var(--t3)">Enter a gross amount to see the tax breakdown.</span>';return;}
+  fetch(`/api/payroll/preview?gross=${gross}&jurisdiction=${jur}&bonus=${bonus}&overtime=${overtime}`,{credentials:'include'})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.error){resultEl.innerHTML='<span style="color:var(--red)">'+esc(d.error)+'</span>';return;}
+      resultEl.innerHTML=`
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <div class="mc" style="margin:0"><div class="mc-label">Total Gross</div><div class="mc-val" style="font-size:16px">${S(d.totalGross)}</div></div>
+          <div class="mc" style="margin:0"><div class="mc-label">Total Deductions</div><div class="mc-val" style="font-size:16px;color:var(--red)">${S(d.totalDeductions)}</div></div>
+          <div class="mc" style="margin:0"><div class="mc-label">Net Pay</div><div class="mc-val" style="font-size:16px;color:var(--green)">${S(d.netPay)}</div></div>
+        </div>
+        <div style="margin-top:.6rem;font-size:11.5px;color:var(--t2);display:flex;gap:12px;flex-wrap:wrap">
+          ${d.tax1>0?`<span>${esc(d.tax1_label)}: <strong style="color:var(--t1)">${S(d.tax1)}</strong></span>`:''}
+          ${d.tax2>0?`<span>${esc(d.tax2_label)}: <strong style="color:var(--t1)">${S(d.tax2)}</strong></span>`:''}
+          ${d.tax3>0?`<span>${esc(d.tax3_label)}: <strong style="color:var(--t1)">${S(d.tax3)}</strong></span>`:''}
+          ${d.bonus>0?`<span>Bonus: <strong style="color:var(--t1)">${S(d.bonus)}</strong></span>`:''}
+          ${d.overtime>0?`<span>Overtime: <strong style="color:var(--t1)">${S(d.overtime)}</strong></span>`:''}
+        </div>`;
+    })
+    .catch(()=>{if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Preview unavailable</span>';});
+}
+
+async function loadPayrollRuns(){
+  const el=document.getElementById('payroll-runs-list');
+  if(!el)return;
+  try{
+    const res=await fetch('/api/payroll-runs',{credentials:'include'});
+    const rows=await res.json();
+    if(!rows.length){el.innerHTML='<div style="padding:1rem;color:var(--t3);text-align:center;font-size:12px">No payroll runs yet.</div>';return;}
+    const statusBadge={draft:'b-amber',approved:'b-blue',paid:'b-green'};
+    el.innerHTML=rows.map(r=>`
+      <div class="tx-row" style="align-items:flex-start">
+        <div style="flex:1">
+          <div class="tx-name">${esc(r.period)} — ${esc(r.jurisdiction||'TT')}</div>
+          <div class="tx-cat">${esc(r.run_date||'')} · Gross: ${S(parseFloat(r.total_gross||0))} · Net: ${S(parseFloat(r.total_net||0))}</div>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+          <span class="badge ${statusBadge[r.status]||'b-amber'}" style="font-size:9px">${esc(r.status)}</span>
+          ${r.status==='draft'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="approvePayrollRun(${r.id})">Approve</button>`:''}
+          ${r.status==='approved'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="markPayrollPaid(${r.id})">Mark Paid</button>`:''}
+        </div>
+      </div>`).join('');
+  }catch(e){el.innerHTML='<div style="color:var(--red);padding:1rem;font-size:12px">Could not load payroll runs</div>';}
+}
+
+function openRunPayrollModal(){
+  const period=document.getElementById('prm-period');
+  if(period){const d=new Date();period.value=d.toLocaleString('en-US',{month:'long',year:'numeric'});}
+  const runDate=document.getElementById('prm-date');
+  if(runDate)runDate.value=new Date().toISOString().slice(0,10);
+  const notesEl=document.getElementById('prm-notes');
+  if(notesEl)notesEl.value='';
+  const preview=document.getElementById('prm-preview');
+  if(preview){
+    const jur=document.getElementById('payroll-jurisdiction')?.value||'TT';
+    const emps=window.payrollEmployees||[];
+    const owner=window.ownerPayroll;
+    const all=owner?[owner,...emps]:emps;
+    if(!all.length){preview.innerHTML='<span style="color:var(--t3)">No employees on payroll yet.</span>';return;}
+    preview.innerHTML=all.map(e=>{
+      const net=Math.round((parseFloat(e.gross)||0)*(1-(parseFloat(e.taxRate)||20)/100));
+      return`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--t1)">${esc(e.fname||'')} ${esc(e.lname||'')}</span><span style="font-family:var(--font-mono);color:var(--green)">${S(net)} net</span></div>`;
+    }).join('');
+  }
+  openModal('run-payroll-modal');
+}
+
+async function submitPayrollRun(){
+  const period=document.getElementById('prm-period')?.value?.trim();
+  const runDate=document.getElementById('prm-date')?.value;
+  const notes=document.getElementById('prm-notes')?.value||'';
+  const jur=document.getElementById('payroll-jurisdiction')?.value||'TT';
+  if(!period){notify('Enter a pay period',true);return;}
+  if(!runDate){notify('Select a run date',true);return;}
+  const emps=window.payrollEmployees||[];
+  const owner=window.ownerPayroll;
+  const all=owner?[owner,...emps]:emps;
+  if(!all.length){notify('No employees on payroll',true);return;}
+  const lines=all.map(e=>({
+    employee_name:(e.fname||'')+ ' '+(e.lname||''),
+    gross:parseFloat(e.gross)||0,
+    bonus:0,overtime:0,
+    payroll_id:null,
+  }));
+  try{
+    const res=await fetch('/api/payroll-runs',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({period,jurisdiction:jur,run_date:runDate,notes,lines}),
+    });
+    const data=await res.json();
+    if(data.error){notify('⚠ '+data.error,true);return;}
+    closeModal('run-payroll-modal');
+    notify('✓ Payroll run created — '+data.run?.period);
+    loadPayrollRuns();
+  }catch(e){notify('Could not create payroll run',true);}
+}
+
+async function approvePayrollRun(id){
+  try{
+    await fetch('/api/payroll-runs/'+id+'/approve',{method:'PUT',credentials:'include'});
+    notify('✓ Payroll approved');
+    loadPayrollRuns();
+  }catch(e){notify('Could not approve',true);}
+}
+async function markPayrollPaid(id){
+  try{
+    await fetch('/api/payroll-runs/'+id+'/mark-paid',{method:'PUT',credentials:'include'});
+    notify('✓ Payroll marked paid');
+    loadPayrollRuns();
+  }catch(e){notify('Could not update',true);}
+}
+
+// ── FEATURE 4: INVENTORY COGS ─────────────────────────────────────────────────
+let _stockInIdx=null,_stockOutIdx=null;
+function openStockInModal(idx){
+  _stockInIdx=idx;
+  const item=(inventory||[])[idx];
+  const sub=document.getElementById('si-sub');
+  if(sub&&item)sub.textContent='Stock in for '+esc(item.name||'');
+  const idxEl=document.getElementById('si-item-idx');
+  if(idxEl)idxEl.value=idx;
+  ['si-qty','si-cost','si-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  openModal('stock-in-modal');
+}
+function openStockOutModal(idx){
+  _stockOutIdx=idx;
+  const item=(inventory||[])[idx];
+  const sub=document.getElementById('so-sub');
+  if(sub&&item)sub.textContent='Stock out for '+esc(item.name||'');
+  const idxEl=document.getElementById('so-item-idx');
+  if(idxEl)idxEl.value=idx;
+  ['so-qty','so-ref'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const prev=document.getElementById('so-cogs-preview');
+  if(prev)prev.style.display='none';
+  openModal('stock-out-modal');
+}
+async function submitStockIn(){
+  const idx=parseInt(document.getElementById('si-item-idx')?.value);
+  const qty=parseFloat(document.getElementById('si-qty')?.value||0);
+  const cost=parseFloat(document.getElementById('si-cost')?.value||0);
+  const notes=document.getElementById('si-notes')?.value||'';
+  if(isNaN(idx)||idx<0){notify('Invalid item',true);return;}
+  if(!qty||qty<=0){notify('Enter a valid quantity',true);return;}
+  if(!cost||cost<0){notify('Enter a valid unit cost',true);return;}
+  const item=(inventory||[])[idx];
+  if(!item){notify('Item not found',true);return;}
+  try{
+    const res=await fetch('/api/inventory-movements',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({inventory_id:item.dbId||idx,type:'purchase',quantity:qty,unit_cost:cost,notes}),
+    });
+    const data=await res.json();
+    if(data.error){notify('⚠ '+data.error,true);return;}
+    item.units=(item.units||0)+qty;
+    item.cost=cost;
+    item.low=item.units<(item.max||0)*.1;
+    closeModal('stock-in-modal');
+    notify(`✓ +${qty} units at ${S(cost)} each`);
+    if(typeof renderInventory==='function')renderInventory();
+    loadCOGS();
+  }catch(e){notify('Could not record stock in',true);}
+}
+async function submitStockOut(){
+  const idx=parseInt(document.getElementById('so-item-idx')?.value);
+  const qty=parseFloat(document.getElementById('so-qty')?.value||0);
+  const ref=document.getElementById('so-ref')?.value||'';
+  if(isNaN(idx)||idx<0){notify('Invalid item',true);return;}
+  if(!qty||qty<=0){notify('Enter a valid quantity',true);return;}
+  const item=(inventory||[])[idx];
+  if(!item){notify('Item not found',true);return;}
+  if(qty>item.units){notify('Quantity exceeds stock on hand',true);return;}
+  try{
+    const cogsRes=await fetch('/api/cogs/calculate',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({inventory_id:item.dbId||idx,quantity_sold:qty}),
+    });
+    const cogsData=await cogsRes.json();
+    const cogs=cogsData.cogs||0;
+    const prev=document.getElementById('so-cogs-preview');
+    if(prev){
+      prev.style.display='block';
+      prev.innerHTML=`FIFO COGS for ${qty} units: <strong style="color:var(--t1)">${S(cogs)}</strong>`;
+    }
+    const res=await fetch('/api/inventory-movements',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({inventory_id:item.dbId||idx,type:'sale',quantity:qty,unit_cost:cogs/qty,reference:ref}),
+    });
+    const data=await res.json();
+    if(data.error){notify('⚠ '+data.error,true);return;}
+    item.units=Math.max(0,(item.units||0)-qty);
+    item.cogs=(parseFloat(item.cogs)||0)+cogs;
+    item.low=item.units<(item.max||0)*.1;
+    closeModal('stock-out-modal');
+    notify(`✓ -${qty} units · COGS ${S(cogs)}`);
+    if(typeof renderInventory==='function')renderInventory();
+    loadCOGS();
+  }catch(e){notify('Could not record stock out',true);}
+}
+async function loadCOGS(){
+  try{
+    const res=await fetch('/api/cogs',{credentials:'include'});
+    const data=await res.json();
+    const totalEl=document.getElementById('cogs-total');
+    const revEl=document.getElementById('cogs-revenue');
+    const gpEl=document.getElementById('cogs-gross-profit');
+    const bdEl=document.getElementById('cogs-breakdown');
+    if(totalEl)totalEl.textContent=S(parseFloat(data.total_cogs||0));
+    if(revEl)revEl.textContent=S(parseFloat(data.revenue||0));
+    if(gpEl){
+      const gp=parseFloat(data.gross_profit||0);
+      gpEl.textContent=S(gp);
+      gpEl.style.color=gp>=0?'var(--green)':'var(--red)';
+    }
+    const breakdown=data.breakdown||[];
+    if(bdEl){
+      bdEl.innerHTML=breakdown.length?breakdown.map(b=>`
+        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--bd);font-size:12px">
+          <span style="color:var(--t1)">${esc(b.name||b.inventory_id||'Item')}</span>
+          <span style="font-family:var(--font-mono);color:var(--t2)">${S(parseFloat(b.cogs||0))}</span>
+        </div>`).join('')
+        :'<div style="padding:1rem;color:var(--t3);text-align:center;font-size:12px">No COGS recorded yet. Record stock out movements to calculate.</div>';
+    }
+    if(data.by_item){
+      (inventory||[]).forEach(item=>{
+        const found=(data.by_item||[]).find(b=>b.inventory_id===(item.dbId||item.id));
+        if(found)item.cogs=parseFloat(found.cogs)||0;
+      });
+      if(typeof renderInventory==='function')renderInventory();
+    }
+  }catch(e){}
+}
+
+// ── FEATURE 5: FX GAIN/LOSS ───────────────────────────────────────────────────
+async function loadFXData(){
+  try{
+    const [sumRes,ratesRes,txRes]=await Promise.all([
+      fetch('/api/fx-summary',{credentials:'include'}),
+      fetch('/api/fx-rates',{credentials:'include'}),
+      fetch('/api/fx-transactions',{credentials:'include'}),
+    ]);
+    const summary=await sumRes.json();
+    const rates=await ratesRes.json();
+    const txs=await txRes.json();
+
+    const unrel=parseFloat(summary.unrealised||0);
+    const rel=parseFloat(summary.realised||0);
+    const net=unrel+rel;
+    const fmtFX=v=>(v>=0?'+':'')+S(Math.abs(v));
+    const colFX=v=>v>=0?'var(--green)':'var(--red)';
+
+    const uEl=document.getElementById('fx-unrealised');
+    const rEl=document.getElementById('fx-realised');
+    const nEl=document.getElementById('fx-net');
+    if(uEl){uEl.textContent=fmtFX(unrel);uEl.style.color=colFX(unrel);}
+    if(rEl){rEl.textContent=fmtFX(rel);rEl.style.color=colFX(rel);}
+    if(nEl){nEl.textContent=fmtFX(net);nEl.style.color=colFX(net);}
+
+    const ratesList=document.getElementById('fx-rates-list');
+    if(ratesList){
+      ratesList.innerHTML=(rates.length?rates:[] ).map(r=>`
+        <div style="display:grid;grid-template-columns:60px 60px 90px 90px 40px;gap:6px;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12px;align-items:center">
+          <span style="font-family:var(--font-mono)">${esc(r.from_currency)}</span>
+          <span style="font-family:var(--font-mono)">${esc(r.to_currency)}</span>
+          <span style="font-family:var(--font-mono)">${parseFloat(r.rate).toFixed(4)}</span>
+          <span style="color:var(--t3)">${esc(r.rate_date||'')}</span>
+          <span></span>
+        </div>`).join('')||'<div style="padding:1rem;color:var(--t3);font-size:12px;text-align:center">No rates yet</div>';
+    }
+
+    const txList=document.getElementById('fx-tx-list');
+    if(txList){
+      txList.innerHTML=(txs.length?txs:[]).map(t=>{
+        const gl=parseFloat(t.status==='settled'?t.realised_gain_loss:t.unrealised_gain_loss)||0;
+        const glColor=gl>=0?'var(--green)':'var(--red)';
+        return`<tr style="border-bottom:1px solid var(--bd)">
+          <td style="padding:5px 6px;font-family:var(--font-mono)">${esc(t.foreign_currency)}</td>
+          <td style="padding:5px 6px;font-family:var(--font-mono)">${S(parseFloat(t.foreign_amount))}</td>
+          <td style="padding:5px 6px;font-family:var(--font-mono);color:var(--t2)">${parseFloat(t.rate_at_transaction||0).toFixed(4)}</td>
+          <td style="padding:5px 6px;font-family:var(--font-mono);color:${glColor}">${gl>=0?'+':''}${S(Math.abs(gl))}</td>
+          <td style="padding:5px 6px"><span class="badge ${t.status==='settled'?'b-green':'b-amber'}" style="font-size:9px">${esc(t.status)}</span></td>
+          <td style="padding:5px 6px">${t.status!=='settled'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="settleFXTransaction(${t.id})">Settle</button>`:''}</td>
+        </tr>`;
+      }).join('');
+    }
+  }catch(e){if(typeof notify==='function')notify('Could not load FX data');}
+}
+
+async function addFXRate(){
+  const from=(document.getElementById('fxr-from')?.value||'').trim().toUpperCase();
+  const to=(document.getElementById('fxr-to')?.value||'').trim().toUpperCase();
+  const rate=parseFloat(document.getElementById('fxr-rate')?.value||0);
+  const date=document.getElementById('fxr-date')?.value||new Date().toISOString().slice(0,10);
+  if(!from||!to){notify('Enter both currencies',true);return;}
+  if(!rate||rate<=0){notify('Enter a valid rate',true);return;}
+  try{
+    const res=await fetch('/api/fx-rates',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({from_currency:from,to_currency:to,rate,rate_date:date}),
+    });
+    const data=await res.json();
+    if(data.error){notify('⚠ '+data.error,true);return;}
+    closeModal('fx-rate-modal');
+    notify('✓ FX rate saved');
+    loadFXData();
+  }catch(e){notify('Could not save rate',true);}
+}
+
+async function addFXTransaction(){
+  const currency=(document.getElementById('fxt-currency')?.value||'').trim().toUpperCase();
+  const amount=parseFloat(document.getElementById('fxt-amount')?.value||0);
+  const base=(document.getElementById('fxt-base')?.value||'USD').trim().toUpperCase();
+  const rate=parseFloat(document.getElementById('fxt-rate')?.value||0);
+  const refType=document.getElementById('fxt-ref-type')?.value||'other';
+  const refId=parseInt(document.getElementById('fxt-ref-id')?.value||0)||null;
+  if(!currency){notify('Enter foreign currency',true);return;}
+  if(!amount||amount<=0){notify('Enter a valid amount',true);return;}
+  if(!rate||rate<=0){notify('Enter a valid rate',true);return;}
+  try{
+    const res=await fetch('/api/fx-transactions',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({foreign_currency:currency,foreign_amount:amount,base_currency:base,rate_at_transaction:rate,reference_type:refType,reference_id:refId}),
+    });
+    const data=await res.json();
+    if(data.error){notify('⚠ '+data.error,true);return;}
+    closeModal('fx-tx-modal');
+    notify('✓ FX transaction saved');
+    loadFXData();
+  }catch(e){notify('Could not save transaction',true);}
+}
+
+async function settleFXTransaction(id){
+  const rateStr=prompt('Settlement rate (e.g. 0.1480):');
+  if(!rateStr)return;
+  const rate=parseFloat(rateStr);
+  if(!rate||rate<=0){notify('Invalid rate',true);return;}
+  try{
+    const res=await fetch('/api/fx-transactions/'+id+'/settle',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({rate_at_settlement:rate}),
+    });
+    const data=await res.json();
+    if(data.error){notify('⚠ '+data.error,true);return;}
+    const gl=parseFloat(data.transaction?.realised_gain_loss||0);
+    notify('✓ Settled · Gain/Loss: '+(gl>=0?'+':'')+S(Math.abs(gl)));
+    loadFXData();
+  }catch(e){notify('Could not settle',true);}
+}
 </script>
 
 

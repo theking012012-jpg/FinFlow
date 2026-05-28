@@ -201,6 +201,108 @@ async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_ai_usage_user_month ON ai_usage(user_id, billing_month)`);
 
+    // ── FEATURE 1: FIELD-LEVEL AUDIT TRAIL ──────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS audit_trail (
+        id         SERIAL PRIMARY KEY,
+        user_id    INTEGER, entity_id INTEGER,
+        table_name TEXT, record_id INTEGER,
+        action     TEXT, field_name TEXT,
+        old_value  TEXT, new_value TEXT,
+        changed_at TIMESTAMPTZ DEFAULT NOW(),
+        ip_address TEXT
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_audit_trail_user ON audit_trail(user_id, changed_at DESC)`);
+
+    // ── FEATURE 2: PARTIAL PAYMENTS + BANK RECONCILIATION ───────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS invoice_payments (
+        id           SERIAL PRIMARY KEY, user_id INTEGER, entity_id INTEGER,
+        invoice_id   INTEGER, amount NUMERIC(12,2),
+        payment_date DATE, method TEXT, reference TEXT, notes TEXT,
+        created_at   TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_inv_payments_user ON invoice_payments(user_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_inv_payments_inv  ON invoice_payments(invoice_id)`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS bank_reconciliation (
+        id                SERIAL PRIMARY KEY, user_id INTEGER, entity_id INTEGER,
+        banking_id        INTEGER, invoice_payment_id INTEGER,
+        status            TEXT DEFAULT 'matched',
+        matched_at        TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_bank_rec_user ON bank_reconciliation(user_id)`);
+
+    // ── FEATURE 3: MULTI-JURISDICTION PAYROLL RUNS ──────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS payroll_runs (
+        id                SERIAL PRIMARY KEY, user_id INTEGER, entity_id INTEGER,
+        period            TEXT, jurisdiction TEXT DEFAULT 'TT',
+        run_date          DATE, status TEXT DEFAULT 'draft',
+        total_gross       NUMERIC(12,2), total_deductions NUMERIC(12,2), total_net NUMERIC(12,2),
+        notes             TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_payroll_runs_user ON payroll_runs(user_id)`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS payroll_run_lines (
+        id              SERIAL PRIMARY KEY,
+        run_id          INTEGER REFERENCES payroll_runs(id) ON DELETE CASCADE,
+        payroll_id      INTEGER, employee_name TEXT,
+        gross           NUMERIC(12,2), bonus NUMERIC(12,2) DEFAULT 0, overtime NUMERIC(12,2) DEFAULT 0,
+        tax1            NUMERIC(12,2) DEFAULT 0, tax1_label TEXT,
+        tax2            NUMERIC(12,2) DEFAULT 0, tax2_label TEXT,
+        tax3            NUMERIC(12,2) DEFAULT 0, tax3_label TEXT,
+        other_deductions NUMERIC(12,2) DEFAULT 0,
+        net_pay         NUMERIC(12,2), jurisdiction TEXT
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_payroll_run_lines_run ON payroll_run_lines(run_id)`);
+
+    // ── FEATURE 4: INVENTORY MOVEMENTS (FIFO COGS) ──────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS inventory_movements (
+        id           SERIAL PRIMARY KEY, user_id INTEGER, entity_id INTEGER,
+        inventory_id INTEGER, type TEXT,
+        quantity     NUMERIC(12,4), unit_cost NUMERIC(12,4),
+        reference    TEXT, notes TEXT,
+        moved_at     TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_inv_movements_user ON inventory_movements(user_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_inv_movements_inv  ON inventory_movements(inventory_id, moved_at)`);
+
+    // ── FEATURE 5: FX GAIN/LOSS TRACKING ────────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS fx_rates (
+        id            SERIAL PRIMARY KEY, user_id INTEGER, entity_id INTEGER,
+        from_currency TEXT, to_currency TEXT, rate NUMERIC(12,6),
+        rate_date     DATE, source TEXT DEFAULT 'manual',
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_fx_rates_user ON fx_rates(user_id)`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS fx_transactions (
+        id                    SERIAL PRIMARY KEY, user_id INTEGER, entity_id INTEGER,
+        reference_id          INTEGER, reference_type TEXT,
+        foreign_currency      TEXT, foreign_amount NUMERIC(12,2),
+        base_currency         TEXT DEFAULT 'USD', base_amount NUMERIC(12,2),
+        rate_at_transaction   NUMERIC(12,6), rate_at_settlement NUMERIC(12,6),
+        realised_gain_loss    NUMERIC(12,2) DEFAULT 0,
+        unrealised_gain_loss  NUMERIC(12,2) DEFAULT 0,
+        status                TEXT DEFAULT 'open',
+        settled_at            TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_fx_transactions_user ON fx_transactions(user_id)`);
+
     await client.query('COMMIT');
     console.log('[DB] PostgreSQL schema ready');
   } catch (err) {

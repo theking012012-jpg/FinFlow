@@ -2077,12 +2077,46 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     const netProfit = revenue - totalExp;
     const margin = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;
 
+    // COGS from inventory movements
+    let totalCOGS = 0;
+    try {
+      const { rows: cogsRows } = await pool.query(
+        `SELECT im.inventory_id,
+                SUM(CASE WHEN im.type='sale' THEN im.quantity ELSE 0 END) AS units_sold,
+                SUM(CASE WHEN im.type='purchase' THEN im.quantity*im.unit_cost ELSE 0 END) AS purchase_total,
+                SUM(CASE WHEN im.type='purchase' THEN im.quantity ELSE 0 END) AS units_purchased
+         FROM inventory_movements im WHERE im.user_id = $1 GROUP BY im.inventory_id`,
+        [uid]
+      );
+      for (const r of cogsRows) {
+        const unitCost = parseFloat(r.purchase_total) / Math.max(parseFloat(r.units_purchased), 1);
+        totalCOGS += parseFloat(r.units_sold) * unitCost;
+      }
+      totalCOGS = Math.round(totalCOGS * 100) / 100;
+    } catch (_) { totalCOGS = 0; }
+
+    // FX gain/loss
+    let fxRealised = 0, fxUnrealised = 0;
+    try {
+      const { rows: fxRows } = await pool.query(
+        `SELECT COALESCE(SUM(CASE WHEN status='settled' THEN realised_gain_loss ELSE 0 END),0) AS realised,
+                COALESCE(SUM(CASE WHEN status='open' THEN unrealised_gain_loss ELSE 0 END),0) AS unrealised
+         FROM fx_transactions WHERE user_id=$1`, [uid]
+      );
+      fxRealised = parseFloat(fxRows[0]?.realised) || 0;
+      fxUnrealised = parseFloat(fxRows[0]?.unrealised) || 0;
+    } catch (_) {}
+
     res.json({
       revenue, outstanding, overdue,
       expenses: totalExp,
       netProfit, margin,
       invoiceCount: invoices.length,
       expenseCount: expenses.length,
+      cogs: totalCOGS,
+      grossProfit: revenue - totalCOGS,
+      fx_realised: fxRealised,
+      fx_unrealised: fxUnrealised,
     });
   } catch (e) {
     console.error('[GET /api/reports]', e.message);
@@ -2247,6 +2281,491 @@ app.post('/api/connections', requireAuth, wrap(async (req, res) => {
     console.error('[POST /api/connections]', e.message);
     res.status(500).json({ error: 'Could not save connection settings.' });
   }
+}));
+
+// ════════════════════════════════════════════════════════════════════════════════
+// FEATURE 1 — FIELD-LEVEL AUDIT TRAIL
+// ════════════════════════════════════════════════════════════════════════════════
+async function auditLog(pool, { userId, entityId, table, recordId, action, field, oldValue, newValue, req }) {
+  try {
+    await pool.query(
+      `INSERT INTO audit_trail (user_id,entity_id,table_name,record_id,action,field_name,old_value,new_value,ip_address)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [userId, entityId, table, recordId, action, field || null, oldValue?.toString() || null, newValue?.toString() || null, req?.ip || null]
+    );
+  } catch (e) { console.error('auditLog error:', e.message); }
+}
+
+app.get('/api/audit-trail', requireAuth, wrap(async (req, res) => {
+  const { table, action } = req.query;
+  let q = `SELECT * FROM audit_trail WHERE user_id = $1`;
+  const params = [req.session.userId];
+  if (table && table !== 'all') { params.push(table); q += ` AND table_name = $${params.length}`; }
+  if (action && action !== 'all') { params.push(action); q += ` AND action = $${params.length}`; }
+  q += ` ORDER BY changed_at DESC LIMIT 500`;
+  const { rows } = await pool.query(q, params);
+  res.json(rows);
+}));
+
+// ════════════════════════════════════════════════════════════════════════════════
+// FEATURE 2 — PARTIAL PAYMENTS + BANK RECONCILIATION
+// ════════════════════════════════════════════════════════════════════════════════
+async function recalcInvoiceStatus(pool, invoiceId, userId) {
+  const invRow = await db.get('invoices', r => r.id === invoiceId && r.user_id === userId);
+  if (!invRow) return;
+  const { rows } = await pool.query(
+    `SELECT COALESCE(SUM(amount),0) AS paid FROM invoice_payments WHERE invoice_id = $1`,
+    [invoiceId]
+  );
+  const paid = parseFloat(rows[0].paid) || 0;
+  const total = parseFloat(invRow.amount) || 0;
+  const status = paid >= total ? 'paid' : paid > 0 ? 'partial' : invRow.status;
+  await db.update('invoices', r => r.id === invoiceId, { status, amount_paid: paid });
+}
+
+app.get('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
+  const { invoice_id } = req.query;
+  if (!invoice_id) return res.status(400).json({ error: 'invoice_id required' });
+  const { rows } = await pool.query(
+    `SELECT * FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2 ORDER BY payment_date DESC`,
+    [parseInt(invoice_id), req.session.userId]
+  );
+  res.json(rows);
+}));
+
+app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
+  const { invoice_id, amount, payment_date, method, reference, notes } = req.body || {};
+  if (!invoice_id || !amount) return res.status(400).json({ error: 'invoice_id and amount required' });
+  const { rows } = await pool.query(
+    `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [req.session.userId, req.entityId || null, parseInt(invoice_id), parseFloat(amount),
+     payment_date || new Date().toISOString().slice(0, 10), method || 'Bank Transfer', reference || null, notes || null]
+  );
+  await recalcInvoiceStatus(pool, parseInt(invoice_id), req.session.userId);
+  await auditLog(pool, { userId: req.session.userId, entityId: req.entityId, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE', req });
+  res.status(201).json(rows[0]);
+}));
+
+app.delete('/api/invoice-payments/:id', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `DELETE FROM invoice_payments WHERE id=$1 AND user_id=$2 RETURNING *`,
+    [parseInt(req.params.id), req.session.userId]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
+  await recalcInvoiceStatus(pool, rows[0].invoice_id, req.session.userId);
+  res.json({ ok: true });
+}));
+
+app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const matchedBankIds = await pool.query(`SELECT banking_id FROM bank_reconciliation WHERE user_id=$1`, [uid]);
+  const matchedPayIds  = await pool.query(`SELECT invoice_payment_id FROM bank_reconciliation WHERE user_id=$1`, [uid]);
+  const matchedBankSet = new Set(matchedBankIds.rows.map(r => r.banking_id));
+  const matchedPaySet  = new Set(matchedPayIds.rows.map(r => r.invoice_payment_id));
+
+  const banking = await db.allByUser('personal_transactions', uid, r => r.source === 'banking');
+  const unmatchedBanking = banking.filter(r => !matchedBankSet.has(r.id));
+
+  const { rows: payments } = await pool.query(
+    `SELECT ip.*, i.data->>'client' AS client FROM invoice_payments ip
+     LEFT JOIN invoices i ON i.id = ip.invoice_id
+     WHERE ip.user_id = $1 ORDER BY ip.payment_date DESC`,
+    [uid]
+  );
+  const unmatchedPayments = payments.filter(r => !matchedPaySet.has(r.id));
+
+  const { rows: matched } = await pool.query(
+    `SELECT br.*, ip.amount AS pay_amount, ip.payment_date, ip.method,
+            pt.data->>'description' AS bank_desc, pt.data->>'amount' AS bank_amount
+     FROM bank_reconciliation br
+     JOIN invoice_payments ip ON ip.id = br.invoice_payment_id
+     JOIN personal_transactions pt ON pt.id = br.banking_id
+     WHERE br.user_id = $1 ORDER BY br.matched_at DESC`,
+    [uid]
+  );
+  res.json({ unmatchedBanking, unmatchedPayments, matched });
+}));
+
+app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) => {
+  const { banking_id, invoice_payment_id } = req.body || {};
+  if (!banking_id || !invoice_payment_id) return res.status(400).json({ error: 'banking_id and invoice_payment_id required' });
+  const { rows } = await pool.query(
+    `INSERT INTO bank_reconciliation (user_id, entity_id, banking_id, invoice_payment_id)
+     VALUES ($1,$2,$3,$4) RETURNING *`,
+    [req.session.userId, req.entityId || null, parseInt(banking_id), parseInt(invoice_payment_id)]
+  );
+  res.status(201).json(rows[0]);
+}));
+
+app.delete('/api/bank-reconciliation/:id', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `DELETE FROM bank_reconciliation WHERE id=$1 AND user_id=$2 RETURNING *`,
+    [parseInt(req.params.id), req.session.userId]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
+  res.json({ ok: true });
+}));
+
+// ════════════════════════════════════════════════════════════════════════════════
+// FEATURE 3 — MULTI-JURISDICTION PAYROLL
+// ════════════════════════════════════════════════════════════════════════════════
+function calculatePayroll(grossMonthly, jurisdiction = 'TT', bonus = 0, overtime = 0) {
+  const totalGross = grossMonthly + bonus + overtime;
+  let tax1 = 0, tax1_label = '', tax2 = 0, tax2_label = '', tax3 = 0, tax3_label = '';
+
+  if (jurisdiction === 'TT') {
+    const nis = Math.min(totalGross * 0.0315, 414.72);
+    const personalAllowance = 7000;
+    const taxable = Math.max(0, totalGross - personalAllowance - nis);
+    const annualTaxable = taxable * 12;
+    const paye = annualTaxable <= 1000000 ? (annualTaxable * 0.25) / 12 : (250000 + (annualTaxable - 1000000) * 0.30) / 12;
+    const healthSurcharge = totalGross > 469 ? 35.75 : 8.25;
+    tax1 = Math.round(paye * 100) / 100; tax1_label = 'PAYE';
+    tax2 = Math.round(nis * 100) / 100; tax2_label = 'NIS';
+    tax3 = healthSurcharge; tax3_label = 'Health Surcharge';
+  } else if (jurisdiction === 'BB') {
+    const nis = totalGross * 0.111;
+    const taxable = Math.max(0, totalGross * 12 - 25000) / 12;
+    const paye = taxable * 0.25;
+    tax1 = Math.round(paye * 100) / 100; tax1_label = 'PAYE';
+    tax2 = Math.round(nis * 100) / 100; tax2_label = 'NIS';
+  } else if (jurisdiction === 'JM') {
+    const threshold = 1500096 / 12;
+    const taxable = Math.max(0, totalGross - threshold);
+    const incomeTax = taxable * 0.25;
+    const nis = Math.min(totalGross * 0.03, 22500 / 12);
+    const nht = totalGross * 0.02;
+    const edTax = totalGross * 0.0225;
+    tax1 = Math.round(incomeTax * 100) / 100; tax1_label = 'Income Tax';
+    tax2 = Math.round((nis + nht + edTax) * 100) / 100; tax2_label = 'NIS+NHT+Ed Tax';
+  } else if (jurisdiction === 'CA') {
+    const cpp = Math.min(totalGross * 0.0595, 3867.50 / 12);
+    const ei = Math.min(totalGross * 0.0166, 1049.12 / 12);
+    const annualGross = totalGross * 12;
+    let federalTax = 0;
+    if (annualGross <= 55867) federalTax = annualGross * 0.15;
+    else if (annualGross <= 111733) federalTax = 8380 + (annualGross - 55867) * 0.205;
+    else if (annualGross <= 154906) federalTax = 19832 + (annualGross - 111733) * 0.26;
+    else federalTax = 31016 + (annualGross - 154906) * 0.29;
+    tax1 = Math.round((federalTax / 12) * 100) / 100; tax1_label = 'Federal Tax';
+    tax2 = Math.round(cpp * 100) / 100; tax2_label = 'CPP';
+    tax3 = Math.round(ei * 100) / 100; tax3_label = 'EI';
+  } else if (jurisdiction === 'US') {
+    const annualGross = totalGross * 12;
+    let federalTax = 0;
+    if (annualGross <= 11600) federalTax = annualGross * 0.10;
+    else if (annualGross <= 47150) federalTax = 1160 + (annualGross - 11600) * 0.12;
+    else if (annualGross <= 100525) federalTax = 5426 + (annualGross - 47150) * 0.22;
+    else if (annualGross <= 191950) federalTax = 17168 + (annualGross - 100525) * 0.24;
+    else federalTax = 39110 + (annualGross - 191950) * 0.32;
+    const socialSecurity = Math.min(totalGross * 0.062, 160200 * 0.062 / 12);
+    const medicare = totalGross * 0.0145;
+    tax1 = Math.round((federalTax / 12) * 100) / 100; tax1_label = 'Federal Tax';
+    tax2 = Math.round(socialSecurity * 100) / 100; tax2_label = 'Social Security';
+    tax3 = Math.round(medicare * 100) / 100; tax3_label = 'Medicare';
+  } else if (jurisdiction === 'GB') {
+    const personalAllowance = 12570 / 12;
+    const taxable = Math.max(0, totalGross - personalAllowance);
+    const annualTaxable = taxable * 12;
+    let incomeTax = 0;
+    if (annualTaxable <= 37700) incomeTax = annualTaxable * 0.20;
+    else if (annualTaxable <= 125140) incomeTax = 7540 + (annualTaxable - 37700) * 0.40;
+    else incomeTax = 42140 + (annualTaxable - 125140) * 0.45;
+    const niThreshold = 12570 / 12;
+    const ni = totalGross > niThreshold ? Math.min((totalGross - niThreshold) * 0.08, (50270 - 12570) / 12 * 0.08) : 0;
+    tax1 = Math.round((incomeTax / 12) * 100) / 100; tax1_label = 'Income Tax';
+    tax2 = Math.round(ni * 100) / 100; tax2_label = 'National Insurance';
+  } else if (jurisdiction === 'MX') {
+    const annualGross = totalGross * 12;
+    let isr = 0;
+    if (annualGross <= 8952.49) isr = annualGross * 0.0192;
+    else if (annualGross <= 75984.55) isr = 171.88 + (annualGross - 8952.49) * 0.064;
+    else if (annualGross <= 133536.07) isr = 4461.94 + (annualGross - 75984.55) * 0.1088;
+    else isr = 10723.55 + (annualGross - 133536.07) * 0.16;
+    const imss = totalGross * 0.022;
+    tax1 = Math.round((isr / 12) * 100) / 100; tax1_label = 'ISR';
+    tax2 = Math.round(imss * 100) / 100; tax2_label = 'IMSS';
+  } else if (jurisdiction === 'CO') {
+    const pension = totalGross * 0.04;
+    const health = totalGross * 0.04;
+    tax1 = Math.round(pension * 100) / 100; tax1_label = 'Pensión';
+    tax2 = Math.round(health * 100) / 100; tax2_label = 'Salud';
+  } else {
+    tax1 = Math.round(totalGross * 0.20 * 100) / 100; tax1_label = 'Income Tax';
+  }
+
+  const totalDeductions = tax1 + tax2 + tax3;
+  const netPay = Math.round((totalGross - totalDeductions) * 100) / 100;
+  return { gross: grossMonthly, bonus, overtime, totalGross, tax1, tax1_label, tax2, tax2_label, tax3, tax3_label, totalDeductions, netPay };
+}
+
+app.get('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT pr.*, json_agg(prl ORDER BY prl.id) AS lines
+     FROM payroll_runs pr
+     LEFT JOIN payroll_run_lines prl ON prl.run_id = pr.id
+     WHERE pr.user_id = $1 AND ($2::int IS NULL OR pr.entity_id = $2)
+     GROUP BY pr.id ORDER BY pr.created_at DESC LIMIT 50`,
+    [req.session.userId, req.entityId || null]
+  );
+  res.json(rows);
+}));
+
+app.post('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
+  const { period, jurisdiction = 'TT', bonus_overrides = {}, overtime_overrides = {}, notes = '' } = req.body || {};
+  if (!period) return res.status(400).json({ error: 'period required' });
+  const uid = req.session.userId;
+  const eid = req.entityId || null;
+
+  const employees = await db.allByUser('payroll', uid, eid ? r => r.entity_id === eid || r.entity_id == null : null);
+  if (!employees.length) return res.status(400).json({ error: 'No employees found for this entity.' });
+
+  const lines = employees.map(emp => {
+    const gross = parseFloat(emp.gross) || 0;
+    const bonus = parseFloat(bonus_overrides[emp.id]) || 0;
+    const overtime = parseFloat(overtime_overrides[emp.id]) || 0;
+    const calc = calculatePayroll(gross, jurisdiction, bonus, overtime);
+    return { payroll_id: emp.id, employee_name: `${emp.fname} ${emp.lname}`.trim(), ...calc, jurisdiction };
+  });
+
+  const totalGross = lines.reduce((s, l) => s + l.totalGross, 0);
+  const totalDeductions = lines.reduce((s, l) => s + l.totalDeductions, 0);
+  const totalNet = lines.reduce((s, l) => s + l.netPay, 0);
+
+  const { rows: [run] } = await pool.query(
+    `INSERT INTO payroll_runs (user_id, entity_id, period, jurisdiction, run_date, status, total_gross, total_deductions, total_net, notes)
+     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,$9) RETURNING *`,
+    [uid, eid, period, jurisdiction, 'draft', totalGross, totalDeductions, totalNet, notes]
+  );
+
+  for (const l of lines) {
+    await pool.query(
+      `INSERT INTO payroll_run_lines (run_id, payroll_id, employee_name, gross, bonus, overtime, tax1, tax1_label, tax2, tax2_label, tax3, tax3_label, net_pay, jurisdiction)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [run.id, l.payroll_id, l.employee_name, l.gross, l.bonus, l.overtime, l.tax1, l.tax1_label, l.tax2, l.tax2_label, l.tax3, l.tax3_label, l.netPay, l.jurisdiction]
+    );
+  }
+
+  const { rows: fullLines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id = $1`, [run.id]);
+  await auditLog(pool, { userId: uid, entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', req });
+  res.status(201).json({ ...run, lines: fullLines });
+}));
+
+app.get('/api/payroll-runs/:id', requireAuth, wrap(async (req, res) => {
+  const { rows: [run] } = await pool.query(
+    `SELECT * FROM payroll_runs WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), req.session.userId]
+  );
+  if (!run) return res.status(404).json({ error: 'Not found.' });
+  const { rows: lines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id=$1`, [run.id]);
+  res.json({ ...run, lines });
+}));
+
+app.put('/api/payroll-runs/:id/approve', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `UPDATE payroll_runs SET status='approved' WHERE id=$1 AND user_id=$2 RETURNING *`,
+    [parseInt(req.params.id), req.session.userId]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
+  res.json(rows[0]);
+}));
+
+app.put('/api/payroll-runs/:id/mark-paid', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `UPDATE payroll_runs SET status='paid' WHERE id=$1 AND user_id=$2 RETURNING *`,
+    [parseInt(req.params.id), req.session.userId]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
+  res.json(rows[0]);
+}));
+
+app.get('/api/payroll/preview', requireAuth, wrap(async (req, res) => {
+  const gross = parseFloat(req.query.gross) || 0;
+  const jurisdiction = req.query.jurisdiction || 'TT';
+  const bonus = parseFloat(req.query.bonus) || 0;
+  const overtime = parseFloat(req.query.overtime) || 0;
+  res.json(calculatePayroll(gross, jurisdiction, bonus, overtime));
+}));
+
+// ════════════════════════════════════════════════════════════════════════════════
+// FEATURE 4 — INVENTORY COGS (FIFO)
+// ════════════════════════════════════════════════════════════════════════════════
+async function calculateFIFOCOGS(pool, inventoryId, quantitySold) {
+  const { rows: purchases } = await pool.query(
+    `SELECT quantity, unit_cost FROM inventory_movements WHERE inventory_id=$1 AND type='purchase' ORDER BY moved_at ASC`,
+    [inventoryId]
+  );
+  const { rows: [{ sold }] } = await pool.query(
+    `SELECT COALESCE(SUM(quantity),0) AS sold FROM inventory_movements WHERE inventory_id=$1 AND type='sale'`,
+    [inventoryId]
+  );
+  let alreadySold = parseFloat(sold), toSell = quantitySold, cogs = 0;
+  for (const b of purchases) {
+    const avail = parseFloat(b.quantity) - alreadySold;
+    if (avail <= 0) { alreadySold -= parseFloat(b.quantity); continue; }
+    alreadySold = 0;
+    const used = Math.min(avail, toSell);
+    cogs += used * parseFloat(b.unit_cost);
+    toSell -= used;
+    if (toSell <= 0) break;
+  }
+  return Math.round(cogs * 100) / 100;
+}
+
+app.get('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
+  const { inventory_id } = req.query;
+  let q = `SELECT * FROM inventory_movements WHERE user_id = $1`;
+  const params = [req.session.userId];
+  if (inventory_id) { params.push(parseInt(inventory_id)); q += ` AND inventory_id = $${params.length}`; }
+  q += ` ORDER BY moved_at DESC LIMIT 200`;
+  const { rows } = await pool.query(q, params);
+  res.json(rows);
+}));
+
+app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
+  const { inventory_id, type, quantity, unit_cost, reference, notes } = req.body || {};
+  if (!inventory_id || !type || !quantity) return res.status(400).json({ error: 'inventory_id, type, quantity required' });
+  if (!['purchase', 'sale', 'adjustment'].includes(type)) return res.status(400).json({ error: 'type must be purchase, sale, or adjustment' });
+
+  const item = await ownedBy('inventory', inventory_id, req.session.userId);
+  if (!item) return res.status(404).json({ error: 'Inventory item not found.' });
+
+  const qty = parseFloat(quantity);
+  let cogs = null;
+  if (type === 'sale') {
+    cogs = await calculateFIFOCOGS(pool, parseInt(inventory_id), qty);
+  }
+
+  const { rows: [movement] } = await pool.query(
+    `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [req.session.userId, req.entityId || null, parseInt(inventory_id), type, qty,
+     parseFloat(unit_cost) || 0, reference || null, notes || null]
+  );
+
+  const newUnits = type === 'purchase' ? item.units + qty : Math.max(0, item.units - qty);
+  const newMax = item.max_units || 200;
+  await db.update('inventory', r => r.id === parseInt(inventory_id), {
+    units: newUnits, low_stock: newUnits < newMax * 0.1 ? 1 : 0
+  });
+
+  res.status(201).json({ ...movement, cogs });
+}));
+
+app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const { rows: movements } = await pool.query(
+    `SELECT im.inventory_id, i.data->>'name' AS name, i.data->>'sku' AS sku,
+            SUM(CASE WHEN im.type='sale' THEN im.quantity ELSE 0 END) AS units_sold,
+            SUM(CASE WHEN im.type='purchase' THEN im.quantity * im.unit_cost ELSE 0 END) AS purchase_total,
+            SUM(CASE WHEN im.type='purchase' THEN im.quantity ELSE 0 END) AS units_purchased
+     FROM inventory_movements im
+     JOIN inventory i ON i.id = im.inventory_id
+     WHERE im.user_id = $1
+     GROUP BY im.inventory_id, i.data`,
+    [uid]
+  );
+
+  let totalCOGS = 0;
+  const breakdown = [];
+  for (const row of movements) {
+    const unitsCost = parseFloat(row.purchase_total) / Math.max(parseFloat(row.units_purchased), 1);
+    const cogs = Math.round(parseFloat(row.units_sold) * unitsCost * 100) / 100;
+    totalCOGS += cogs;
+    breakdown.push({ inventory_id: row.inventory_id, name: row.name, sku: row.sku, units_sold: parseFloat(row.units_sold), cogs });
+  }
+
+  const invoices = await db.allByUser('invoices', uid);
+  const revenue = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+  res.json({ totalCOGS, grossProfit: revenue - totalCOGS, revenue, breakdown });
+}));
+
+app.post('/api/cogs/calculate', requireAuth, wrap(async (req, res) => {
+  const { inventory_id, quantity } = req.body || {};
+  if (!inventory_id || !quantity) return res.status(400).json({ error: 'inventory_id and quantity required' });
+  const cogs = await calculateFIFOCOGS(pool, parseInt(inventory_id), parseFloat(quantity));
+  res.json({ cogs });
+}));
+
+// ════════════════════════════════════════════════════════════════════════════════
+// FEATURE 5 — FX GAIN/LOSS TRACKING
+// ════════════════════════════════════════════════════════════════════════════════
+app.get('/api/fx-rates', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT * FROM fx_rates WHERE user_id=$1 ORDER BY rate_date DESC, created_at DESC LIMIT 200`,
+    [req.session.userId]
+  );
+  res.json(rows);
+}));
+
+app.post('/api/fx-rates', requireAuth, wrap(async (req, res) => {
+  const { from_currency, to_currency, rate, rate_date } = req.body || {};
+  if (!from_currency || !to_currency || !rate) return res.status(400).json({ error: 'from_currency, to_currency, rate required' });
+  const { rows: [row] } = await pool.query(
+    `INSERT INTO fx_rates (user_id, entity_id, from_currency, to_currency, rate, rate_date)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [req.session.userId, req.entityId || null, from_currency.toUpperCase(), to_currency.toUpperCase(),
+     parseFloat(rate), rate_date || new Date().toISOString().slice(0, 10)]
+  );
+  res.status(201).json(row);
+}));
+
+app.get('/api/fx-transactions', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT * FROM fx_transactions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200`,
+    [req.session.userId]
+  );
+  res.json(rows);
+}));
+
+app.post('/api/fx-transactions', requireAuth, wrap(async (req, res) => {
+  const { reference_id, reference_type, foreign_currency, foreign_amount, rate_at_transaction } = req.body || {};
+  if (!foreign_currency || !foreign_amount || !rate_at_transaction) {
+    return res.status(400).json({ error: 'foreign_currency, foreign_amount, rate_at_transaction required' });
+  }
+  const fAmt = parseFloat(foreign_amount);
+  const rate = parseFloat(rate_at_transaction);
+  const baseAmount = Math.round(fAmt * rate * 100) / 100;
+  const { rows: [row] } = await pool.query(
+    `INSERT INTO fx_transactions (user_id, entity_id, reference_id, reference_type, foreign_currency, foreign_amount, base_amount, rate_at_transaction)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [req.session.userId, req.entityId || null, reference_id || null, reference_type || null,
+     foreign_currency.toUpperCase(), fAmt, baseAmount, rate]
+  );
+  res.status(201).json(row);
+}));
+
+app.post('/api/fx-transactions/:id/settle', requireAuth, wrap(async (req, res) => {
+  const { rate_at_settlement } = req.body || {};
+  if (!rate_at_settlement) return res.status(400).json({ error: 'rate_at_settlement required' });
+  const { rows: [tx] } = await pool.query(
+    `SELECT * FROM fx_transactions WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), req.session.userId]
+  );
+  if (!tx) return res.status(404).json({ error: 'Not found.' });
+  const settlementRate = parseFloat(rate_at_settlement);
+  const realisedGL = Math.round((settlementRate - parseFloat(tx.rate_at_transaction)) * parseFloat(tx.foreign_amount) * 100) / 100;
+  const { rows: [updated] } = await pool.query(
+    `UPDATE fx_transactions SET rate_at_settlement=$1, realised_gain_loss=$2, status='settled', settled_at=NOW()
+     WHERE id=$3 RETURNING *`,
+    [settlementRate, realisedGL, tx.id]
+  );
+  res.json(updated);
+}));
+
+app.get('/api/fx-summary', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN status='settled' THEN realised_gain_loss ELSE 0 END), 0) AS total_realised,
+       COALESCE(SUM(CASE WHEN status='open' THEN unrealised_gain_loss ELSE 0 END), 0) AS total_unrealised,
+       foreign_currency,
+       COUNT(*) AS count
+     FROM fx_transactions WHERE user_id=$1
+     GROUP BY foreign_currency`,
+    [req.session.userId]
+  );
+  const totalRealised = rows.reduce((s, r) => s + parseFloat(r.total_realised), 0);
+  const totalUnrealised = rows.reduce((s, r) => s + parseFloat(r.total_unrealised), 0);
+  res.json({ totalRealised, totalUnrealised, netFX: totalRealised + totalUnrealised, byCurrency: rows });
 }));
 
 // ── /api 404 + STATIC FALLBACKS ───────────────────────────────────────────────

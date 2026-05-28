@@ -7868,6 +7868,7 @@ document.addEventListener('keydown', function(e){
 function buildRiver(d){
   const wrap=document.getElementById('river-wrap');
   if(!wrap)return;
+  if(wrap.offsetWidth===0||wrap.offsetParent===null)return;
   // Guard: skip render if any required input is NaN/undefined/non-finite.
   // Otherwise SVG path math produces NaN coords which Chrome logs as
   // "<path> attribute d: Expected number, ..." spam in the console.
@@ -7907,17 +7908,17 @@ function buildRiver(d){
   const maxH=H-40; // usable height
   const totalH=maxH;
 
-  // Heights proportional to values
+  // Heights proportional to values — clamp to 0 to prevent negative SVG rect heights
   const revH=Math.min(totalH*0.9, totalH);
-  const profitH=Math.round(revH*(profit/rev));
-  const expH=revH-profitH;
+  const profitH=Math.max(0, Math.round(revH*(profit/rev)));
+  const expH=Math.max(0, revH-profitH);
 
-  // Expense breakdown heights
-  const salH=Math.round(expH*(sal/exp));
-  const rentH=Math.round(expH*(rent/exp));
-  const swH=Math.round(expH*(sw/exp));
-  const mktH=Math.round(expH*(mkt/exp));
-  const otherH=Math.max(2,expH-salH-rentH-swH-mktH);
+  // Expense breakdown heights — clamp each to prevent negative values
+  const salH=Math.max(0, Math.round(expH*(sal/exp)));
+  const rentH=Math.max(0, Math.round(expH*(rent/exp)));
+  const swH=Math.max(0, Math.round(expH*(sw/exp)));
+  const mktH=Math.max(0, Math.round(expH*(mkt/exp)));
+  const otherH=Math.max(2, expH-salH-rentH-swH-mktH);
 
   // Vertical centers
   const revY=H/2;
@@ -7991,7 +7992,7 @@ function buildRiver(d){
   svg+=`</defs>`;
 
   // Revenue node (col 0)
-  svg+=`<rect x="${col[0]-14}" y="${profitBlock.top}" width="14" height="${revH}" rx="3" fill="${C.rev}" opacity="0.9"/>`;
+  svg+=`<rect x="${col[0]-14}" y="${profitBlock.top}" width="14" height="${Math.max(0,revH)}" rx="3" fill="${C.rev}" opacity="0.9"/>`;
 
   // Revenue → mid split (col1): full block
   svg+=cubicPath(col[0],profitBlock.top,col[1],profitBlock.top,revH,revH,'url(#rg-rev)',0.35);
@@ -8003,7 +8004,7 @@ function buildRiver(d){
   svg+=cubicPath(col[1],profitBlock.top+profitH,col[2],expBlock.top,expH,expH,`${C.exp}`,0.22);
 
   // Profit node at col2
-  svg+=`<rect x="${col[2]}" y="${profitBlock.top}" width="12" height="${profitH}" rx="3" fill="${C.profit}" opacity="0.85"/>`;
+  svg+=`<rect x="${col[2]}" y="${profitBlock.top}" width="12" height="${Math.max(0,profitH)}" rx="3" fill="${C.profit}" opacity="0.85"/>`;
 
   // Profit → label
   const _lx1=col[2]+12, _lx2=col[3]-4, _ly=profitBlock.top+profitH/2;

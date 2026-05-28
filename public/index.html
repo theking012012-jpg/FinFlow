@@ -909,6 +909,7 @@ textarea.finput{resize:vertical;min-height:72px;line-height:1.5}
 .notif-panel.open{transform:translateX(0)}
 .notif-panel-hdr{padding:.85rem 1rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .notif-panel-title{font-size:14px;font-weight:500;color:var(--t1)}
+.notif-clear-btn{font-size:11.5px;color:var(--t2)}
 .notif-list{flex:1;overflow-y:auto;padding:.5rem 0}
 .notif-item{display:flex;gap:10px;padding:.75rem 1rem;border-bottom:1px solid var(--bd);cursor:pointer;transition:background .13s;position:relative}
 .notif-item:hover{background:var(--bg2)}
@@ -6074,7 +6075,7 @@ function renderInvestments(){
 
 function buildInvDonut(hs,totalValue){
   const canvas=document.getElementById('invDonut');
-  if(!canvas||typeof Chart==='undefined')return;
+  if(!canvas||typeof Chart==='undefined'||canvas.offsetWidth===0||canvas.offsetParent===null)return;
   const ctx=canvas.getContext('2d');
   const vals=hs.map(h=>h.price*h.shares);
   const colors=hs.map(h=>h.color||'#c9a84c');
@@ -6100,7 +6101,7 @@ function buildInvDonut(hs,totalValue){
 
 function buildInvPerfChart(period){
   const canvas=document.getElementById('invPerfChart');
-  if(!canvas||typeof Chart==='undefined')return;
+  if(!canvas||typeof Chart==='undefined'||canvas.offsetWidth===0||canvas.offsetParent===null)return;
   const retEl=document.getElementById('inv-perf-return');
   // No holdings → show empty state (no fake benchmark data)
   if(!holdings || holdings.length===0){
@@ -6479,7 +6480,7 @@ function buildCharts(){
   }
   const{tc,gc}=chartDefaults();
   const _oc=document.getElementById('overviewChart');
-  if(!_oc)return;
+  if(!_oc||_oc.offsetWidth===0||_oc.offsetParent===null)return;
   const ctx=_oc.getContext('2d');
   if(!ctx)return;
   // Gradient fill for revenue bars
@@ -6522,7 +6523,7 @@ function buildCashChart(){
   if(typeof Chart==='undefined'){console.warn('Chart.js not loaded — cash chart skipped');return;}
   const{tc,gc}=chartDefaults();
   const _cc=document.getElementById('cashChart');
-  if(!_cc)return;
+  if(!_cc||_cc.offsetWidth===0||_cc.offsetParent===null)return;
   const ctx=_cc.getContext('2d');
   if(!ctx)return;
   const _recentProfit=PROFIT.filter(v=>v!==0);
@@ -7774,35 +7775,37 @@ function buildRiver(d){
   wrap.innerHTML=svg;
   document.getElementById('river-sub').textContent=`${S(profit)} net profit · ${Math.round(profit/rev*100)}% margin`;
 }
-buildCharts();
-buildCashChart();
-refreshAllPeriodData();
-renderPayroll();
-renderPersonal();
-renderCustomers();
-renderInventory();
-renderInvoices();
-renderExpenses();
-renderItems();
-renderBanking();
-if(typeof renderQuotes==='function')renderQuotes();
-if(typeof renderReceipts==='function')renderReceipts();
-if(typeof renderPaymentsReceived==='function')renderPaymentsReceived();
-if(typeof renderRecurringInvoices==='function')renderRecurringInvoices();
-if(typeof renderCreditNotes==='function')renderCreditNotes();
-if(typeof renderVendors==='function')renderVendors();
-if(typeof renderBills==='function')renderBills();
-if(typeof renderPaymentsMade==='function')renderPaymentsMade();
-if(typeof renderRecurringBills==='function')renderRecurringBills();
-if(typeof renderVendorCredits==='function')renderVendorCredits();
-if(typeof renderProjects==='function')renderProjects();
-if(typeof renderTimesheet==='function')renderTimesheet();
-if(typeof renderJournals==='function')renderJournals();
-if(typeof renderCOA==='function')renderCOA();
-if(typeof renderLockHistory==='function')renderLockHistory();
-if(typeof renderReports==='function')renderReports();
-if(typeof renderDocuments==='function')renderDocuments();
-if(typeof renderTemplates==='function')renderTemplates();
+setTimeout(function(){
+  buildCharts();
+  buildCashChart();
+  refreshAllPeriodData();
+  renderPayroll();
+  renderPersonal();
+  renderCustomers();
+  renderInventory();
+  renderInvoices();
+  renderExpenses();
+  renderItems();
+  renderBanking();
+  if(typeof renderQuotes==='function')renderQuotes();
+  if(typeof renderReceipts==='function')renderReceipts();
+  if(typeof renderPaymentsReceived==='function')renderPaymentsReceived();
+  if(typeof renderRecurringInvoices==='function')renderRecurringInvoices();
+  if(typeof renderCreditNotes==='function')renderCreditNotes();
+  if(typeof renderVendors==='function')renderVendors();
+  if(typeof renderBills==='function')renderBills();
+  if(typeof renderPaymentsMade==='function')renderPaymentsMade();
+  if(typeof renderRecurringBills==='function')renderRecurringBills();
+  if(typeof renderVendorCredits==='function')renderVendorCredits();
+  if(typeof renderProjects==='function')renderProjects();
+  if(typeof renderTimesheet==='function')renderTimesheet();
+  if(typeof renderJournals==='function')renderJournals();
+  if(typeof renderCOA==='function')renderCOA();
+  if(typeof renderLockHistory==='function')renderLockHistory();
+  if(typeof renderReports==='function')renderReports();
+  if(typeof renderDocuments==='function')renderDocuments();
+  if(typeof renderTemplates==='function')renderTemplates();
+},0);
 // Sales group starts closed - user clicks to open
 // Set default month nav label
 document.getElementById('month-nav-label').textContent=MONTH_FULL[currentMonthIdx];
@@ -8628,7 +8631,7 @@ async function loadMRRData(){
 let mrrChartInst=null;
 function renderMRRChart(){
   const canvas=document.getElementById('mrrChart');
-  if(!canvas||typeof Chart==='undefined')return;
+  if(!canvas||typeof Chart==='undefined'||canvas.offsetWidth===0||canvas.offsetParent===null)return;
   const existing=Chart.getChart(canvas);
   if(existing){existing.destroy();}
   if(mrrChartInst){mrrChartInst.destroy();mrrChartInst=null;}
@@ -9588,7 +9591,7 @@ window.resetScanner=function(){
   <div class="notif-list" id="notif-list"></div>
   <div class="notif-footer">
     <button class="btn btn-ghost" style="flex:1;justify-content:center;font-size:12px" onclick="toggleNotifPanel();showPage('dashboard',null)">View all activity</button>
-    <button class="btn btn-ghost btn-sm" onclick="clearAllNotifs()" style="font-size:11.5px;color:var(--t3)">Clear all</button>
+    <button class="btn btn-ghost btn-sm notif-clear-btn" onclick="clearAllNotifs()">Clear all</button>
   </div>
 </div>
 
@@ -10302,7 +10305,7 @@ document.addEventListener('click', e=>{
 <!-- Single bundled wiring script — generated by `node bundle.js` from the
      10 individual finflow-api*.js files. To regenerate after edits, run
      `node bundle.js` in the project root. -->
-<script src="/finflow-bundle.js"></script>
+<script src="/finflow-bundle.js" defer></script>
 
 <!-- ══ MODAL OPEN ALIASES — keep button onclicks resolvable regardless of naming convention ══ -->
 <script>

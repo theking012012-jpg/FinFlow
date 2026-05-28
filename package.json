@@ -19,5 +19,8 @@
     "pg": "^8.20.0",
     "resend": "^3.2.0",
     "stripe": "^14.0.0"
+  },
+  "devDependencies": {
+    "terser": "^5.48.0"
   }
 }

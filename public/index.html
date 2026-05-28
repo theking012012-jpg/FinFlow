@@ -10,6 +10,9 @@
 <meta name="description" content="FinFlow — all-in-one financial management for small business. Invoicing, expenses, payroll, investments and AI-powered insights in one place.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+<link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+<link rel="preconnect" href="https://finflow-production-0817.up.railway.app">
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap"></noscript>
 <script>
@@ -24,6 +27,7 @@ window.addEventListener('load',function(){
      HTML is fully parsed. Regenerate with `node bundle.js`. -->
 </head>
 <body>
+<script>window._appReady=false;</script>
 <!-- ════════════════════════════════════════
      SECURITY UTILITIES  (loaded first)
      ════════════════════════════════════════ -->
@@ -3341,7 +3345,20 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" crossorigin="anonymous" onerror="console.warn('Chart.js failed to load — charts will be skipped.')"></script>
+<script>
+function loadChartJS(callback){
+  if(typeof Chart!=='undefined'){callback();return;}
+  if(window._chartJSLoading){(window._chartJSQueue=window._chartJSQueue||[]).push(callback);return;}
+  window._chartJSLoading=true;
+  window._chartJSQueue=[callback];
+  const s=document.createElement('script');
+  s.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js';
+  s.crossOrigin='anonymous';
+  s.onload=function(){(window._chartJSQueue||[]).forEach(function(fn){try{fn();}catch(e){}});window._chartJSQueue=[];};
+  s.onerror=function(){console.warn('Chart.js failed to load — charts will be skipped.');};
+  document.head.appendChild(s);
+}
+</script>
 <script>
 // ════════════════════════════════════════════
 // sendPrompt STUB — replaced by host when embedded
@@ -6756,9 +6773,7 @@ function toggleTheme(){
   // Rebuild charts with correct gradients for new theme
   if(charts.overview){charts.overview.destroy();delete charts.overview;}
   if(charts.cash){charts.cash.destroy();delete charts.cash;}
-  buildCharts();
-  buildCashChart();
-  updateCharts();
+  loadChartJS(function(){buildCharts();buildCashChart();updateCharts();});
   setTimeout(()=>buildRiver(getPeriodData()),60);
 }
 
@@ -8074,9 +8089,9 @@ function buildRiver(d){
   wrap.innerHTML=svg;
   document.getElementById('river-sub').textContent=`${S(profit)} net profit · ${Math.round(profit/rev*100)}% margin`;
 }
+var _heavyInit=function(){
 setTimeout(function(){
-  buildCharts();
-  buildCashChart();
+  loadChartJS(function(){buildCharts();buildCashChart();});
   refreshAllPeriodData();
   renderPayroll();
   renderPersonal();
@@ -8105,6 +8120,9 @@ setTimeout(function(){
   if(typeof renderDocuments==='function')renderDocuments();
   if(typeof renderTemplates==='function')renderTemplates();
 },0);
+};
+if('requestIdleCallback' in window){requestIdleCallback(_heavyInit,{timeout:2000});}
+else{setTimeout(_heavyInit,0);}
 // Sales group starts closed - user clicks to open
 // Set default month nav label
 document.getElementById('month-nav-label').textContent=MONTH_FULL[currentMonthIdx];
@@ -8948,8 +8966,7 @@ function renderMRRChart(){
               y:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10},callback:v=>'$'+(v/1000).toFixed(0)+'K'}}}}
   });
 }
-document.addEventListener('DOMContentLoaded',()=>{ requestAnimationFrame(renderMRRChart); });
-requestAnimationFrame(renderMRRChart);
+document.addEventListener('DOMContentLoaded',()=>{ loadChartJS(renderMRRChart); });
 
 // ── 6. PLAID BANKING ────────────────────────────────────────────────────────
 // No hardcoded demo data — all banking data loads from DB via loadBankingFromDB()
@@ -8992,8 +9009,10 @@ window.showPage=function(id,el){
   const extras={budget:'Budget',mrr:'MRR / SaaS',banking:'Banking',entities:'Entities',team:'Team & Roles',audit:'Audit Trail','bank-rec':'Bank Reconciliation',fx:'FX / Currency'};
   if(extras[id])document.getElementById('pageTitle').textContent=extras[id];
   const _rAF=window.requestAnimationFrame||setTimeout;
+  if(id==='dashboard') loadChartJS(function(){buildCharts();buildCashChart();});
+  if(id==='cashflow') loadChartJS(buildCashChart);
   if(id==='budget')  _rAF(renderBudget);
-  if(id==='mrr'){ _rAF(renderMRRChart); loadMRRData(); }
+  if(id==='mrr'){ loadChartJS(renderMRRChart); loadMRRData(); }
   if(id==='banking'){ _rAF(renderPlaid); loadBankingFromDB(); }
   if(id==='entities')_rAF(renderEntities);
   if(id==='team')    _rAF(renderTeam);
@@ -11165,7 +11184,7 @@ document.addEventListener('click', e=>{
 <!-- Single bundled wiring script — generated by `node bundle.js` from the
      10 individual finflow-api*.js files. To regenerate after edits, run
      `node bundle.js` in the project root. -->
-<script src="/finflow-bundle.js" defer></script>
+<script src="/finflow-bundle.min.js" defer></script>
 
 <!-- ══ MODAL OPEN ALIASES — keep button onclicks resolvable regardless of naming convention ══ -->
 <script>

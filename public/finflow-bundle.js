@@ -5018,6 +5018,7 @@ function clearAIChat(){
   // BOOT
   // ══════════════════════════════════════════════════════
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
+    if (!window._ffAuthed) { window.addEventListener('ff:authed', _run, {once:true}); return; }
     loadTimesheet();
     loadHoldingsFromDB();
     loadProjects();
@@ -5525,6 +5526,7 @@ function clearAIChat(){
   // Only run once on initial page load, never on entity switch
   let _booted = false;
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
+    if (!window._ffAuthed) { window.addEventListener('ff:authed', _run, {once:true}); return; }
     setTimeout(async function() {
       if (_booted) return;
       _booted = true;

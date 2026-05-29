@@ -315,7 +315,6 @@ async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_messages_accountant ON accountant_messages(accountant_id)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_messages_user ON accountant_messages(user_id)`);
 
     // ── ACCOUNTANT DEADLINES ─────────────────────────────────────────────────────
     await client.query(`

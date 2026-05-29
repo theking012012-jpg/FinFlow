@@ -70,8 +70,8 @@
     var ob=document.getElementById('ob-overlay'); if(ob) ob.remove();
     var ls=document.getElementById('login-screen'); if(ls) ls.style.display='none';
     if(user&&user.name){var ne=document.querySelector('.user-name');if(ne)ne.textContent=user.name;}
-    window._ffAuthed=true; window.dispatchEvent(new Event('ff:authed'));
     try{ await ffLoadData(); }catch(e){ console.warn('[FinFlow] data load failed:',e.message); }
+    window._ffAuthed=true; window.dispatchEvent(new Event('ff:authed'));
   }
 
   async function ffLoadData() {
@@ -1823,16 +1823,9 @@
   // SESSION RESTORE — check if user already has a valid session
   // on page load, and if so skip the login screen
   // ─────────────────────────────────────────────────────────────────
-  window.bootFinFlowAPI = async function () {
-    // Load all data from API
-    if (typeof window._apiBootDone === 'undefined') {
-      window._apiBootDone = true;
-      // Trigger the existing wiring boot functions if they haven't fired
-      // (the easy + medium wiring files listen for DOMContentLoaded which
-      //  has already fired by now — so we call them directly if exposed)
-      if (typeof window._ffApiBootEasy === 'function')  window._ffApiBootEasy();
-      if (typeof window._ffApiBootMedium === 'function') window._ffApiBootMedium();
-    }
+  window.bootFinFlowAPI = function() {
+    // Legacy stub — initialization now handled via ff:authed event
+    if (!window._ffAuthed) window.dispatchEvent(new Event('ff:authed'));
   };
 
   (async function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
@@ -1849,6 +1842,8 @@
         const loginScreen = document.getElementById('login-screen');
         if (loginScreen) loginScreen.style.display = 'none';
         if (typeof injectRoleBadge === 'function') injectRoleBadge(r);
+        window._ffAuthed = true;
+        window.dispatchEvent(new Event('ff:authed'));
         // Boot data load
         setTimeout(() => {
           if (typeof window._ffApiBootEasy === 'function')  window._ffApiBootEasy();
@@ -2230,6 +2225,8 @@
     return `<span class="badge ${cls}">${label}</span>`;
   }
 
+  function escHTML(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;}
+
   // ─────────────────────────────────────────────────────────────────
   // ══ QUOTES ══
   // ─────────────────────────────────────────────────────────────────
@@ -2266,7 +2263,7 @@
     }
     list.innerHTML = _quotes.map(q => `
       <div class="table-row" style="grid-template-columns:1fr 100px 90px 90px 80px 100px">
-        <span style="font-weight:500">${q.client}</span>
+        <span style="font-weight:500">${escHTML(q.client)}</span>
         <span style="color:var(--t3)">${q.num}</span>
         <span style="font-family:var(--font-mono)">$${Number(q.amount).toLocaleString()}</span>
         <span style="color:var(--t2)">${q.expiry_date || '—'}</span>
@@ -2385,10 +2382,10 @@
     list.innerHTML = filtered.map(v => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
         <div style="display:flex;align-items:center;gap:10px">
-          <div class="emp-init av-blue" style="font-size:10px;font-weight:700">${v.name.slice(0,2).toUpperCase()}</div>
+          <div class="emp-init av-blue" style="font-size:10px;font-weight:700">${escHTML(v.name.slice(0,2).toUpperCase())}</div>
           <div>
-            <div style="font-size:13px;font-weight:500;color:var(--t1)">${v.name}</div>
-            <div style="font-size:11px;color:var(--t3)">${v.contact || '—'} · ${v.category || '—'}</div>
+            <div style="font-size:13px;font-weight:500;color:var(--t1)">${escHTML(v.name)}</div>
+            <div style="font-size:11px;color:var(--t3)">${escHTML(v.contact || '—')} · ${escHTML(v.category || '—')}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:16px">
@@ -2508,7 +2505,7 @@
     }
     list.innerHTML = _bills.map(b => `
       <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 80px 110px">
-        <span style="font-weight:500">${b.vendor}</span>
+        <span style="font-weight:500">${escHTML(b.vendor)}</span>
         <span style="color:var(--t3)">${b.num}</span>
         <span style="font-family:var(--font-mono)">$${Number(b.amount||0).toLocaleString()}</span>
         <span style="color:${b.status?.toLowerCase()==='overdue'?'var(--red)':'var(--t2)'}">${b.due_date || '—'}</span>
@@ -2646,7 +2643,7 @@
     list.innerHTML = _recurringBills.map(r => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
         <div>
-          <div style="font-size:13px;font-weight:500;color:var(--t1)">${r.vendor}</div>
+          <div style="font-size:13px;font-weight:500;color:var(--t1)">${escHTML(r.vendor)}</div>
           <div style="font-size:11px;color:var(--t3)">${r.frequency} · Next: ${r.next_run || '—'}</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px">
@@ -2750,7 +2747,7 @@
     list.innerHTML = _recurringInvoices.map(r => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
         <div>
-          <div style="font-size:13px;font-weight:500;color:var(--t1)">${r.client}</div>
+          <div style="font-size:13px;font-weight:500;color:var(--t1)">${escHTML(r.client)}</div>
           <div style="font-size:11px;color:var(--t3)">${r.frequency} · Next: ${r.next_run || '—'}</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px">
@@ -2886,6 +2883,7 @@ async function apiFetch(path, opts={}){
 
 function fmtMoney(n){ return '$' + Number(n||0).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0}); }
 function fmtDate(s){ if(!s)return ''; const d=new Date(s); return isNaN(d)?s:d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+function _escHTML(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;}
 function nextNum(prefix, list, field='num'){
   const nums = list.map(r=>(r[field]||'').replace(prefix+'-','0')).map(Number).filter(n=>!isNaN(n));
   const next = nums.length ? Math.max(...nums)+1 : 1;
@@ -2911,7 +2909,7 @@ function renderReceipts(){
     if(!_receipts.length){ l.innerHTML='<div style="padding:20px;text-align:center;color:var(--t3)">No sales receipts yet. Click + New Receipt to add one.</div>'; return; }
     l.innerHTML = _receipts.map(r=>`
       <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 80px">
-        <span style="font-weight:500">${r.customer||''}</span>
+        <span style="font-weight:500">${_escHTML(r.customer||'')}</span>
         <span style="color:var(--t3)">${r.num||''}</span>
         <span style="font-family:var(--font-mono);color:var(--green)">${fmtMoney(r.amount)}</span>
         <span style="color:var(--t2)">${fmtDate(r.date)||r.date||''}</span>
@@ -2992,7 +2990,7 @@ function renderPaymentsReceived(){
     if(!_paymentsReceived.length){ l.innerHTML='<div style="padding:20px;text-align:center;color:var(--t3)">No payments recorded yet. Click + Record Payment to add one.</div>'; return; }
     l.innerHTML = _paymentsReceived.map(p=>`
       <div class="table-row" style="grid-template-columns:1fr 110px 80px 80px 70px 80px">
-        <span style="font-weight:500">${p.customer||''}</span>
+        <span style="font-weight:500">${_escHTML(p.customer||'')}</span>
         <span style="color:var(--t3)">${p.invoice_ref||''}</span>
         <span style="font-family:var(--font-mono);color:var(--green)">${fmtMoney(p.amount)}</span>
         <span style="color:var(--t2)">${fmtDate(p.date)||p.date||''}</span>
@@ -3073,7 +3071,7 @@ function renderCreditNotes(){
     if(!_creditNotes.length){ l.innerHTML='<div style="padding:20px;text-align:center;color:var(--t3)">No credit notes yet. Click + New Credit Note to add one.</div>'; return; }
     l.innerHTML = _creditNotes.map(c=>`
       <div class="table-row" style="grid-template-columns:1fr 90px 80px 80px 70px 80px">
-        <span style="font-weight:500">${c.customer||''}</span>
+        <span style="font-weight:500">${_escHTML(c.customer||'')}</span>
         <span style="color:var(--t3)">${c.num||''}</span>
         <span style="font-family:var(--font-mono);color:var(--amber)">${fmtMoney(c.amount)}</span>
         <span style="color:var(--t2)">${fmtDate(c.date)||c.date||''}</span>
@@ -3153,7 +3151,7 @@ function renderPaymentsMade(){
     if(!_paymentsMade.length){ l.innerHTML='<div style="padding:20px;text-align:center;color:var(--t3)">No payments recorded yet. Click + Make Payment to add one.</div>'; return; }
     l.innerHTML = _paymentsMade.map(p=>`
       <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 80px">
-        <span style="font-weight:500">${p.vendor||''}</span>
+        <span style="font-weight:500">${_escHTML(p.vendor||'')}</span>
         <span style="color:var(--t3)">${p.ref||''}</span>
         <span style="font-family:var(--font-mono);color:var(--red)">${fmtMoney(p.amount)}</span>
         <span style="color:var(--t2)">${fmtDate(p.date)||p.date||''}</span>
@@ -3233,7 +3231,7 @@ function renderVendorCredits(){
     if(!_vendorCredits.length){ l.innerHTML='<div style="padding:20px;text-align:center;color:var(--t3)">No vendor credits yet. Click + New Credit to add one.</div>'; return; }
     l.innerHTML = _vendorCredits.map(c=>`
       <div class="table-row" style="grid-template-columns:1fr 90px 80px 80px 70px 80px">
-        <span style="font-weight:500">${c.vendor||''}</span>
+        <span style="font-weight:500">${_escHTML(c.vendor||'')}</span>
         <span style="color:var(--t3)">${c.num||''}</span>
         <span style="font-family:var(--font-mono);color:var(--green)">${fmtMoney(c.amount)}</span>
         <span style="color:var(--t2)">${fmtDate(c.date)||c.date||''}</span>
@@ -5531,7 +5529,7 @@ function clearAIChat(){
       if (_booted) return;
       _booted = true;
       try {
-        const r = await fetch('/api/me', {credentials:'include'});
+        const r = await fetch('/api/auth/me', {credentials:'include'});
         if (!r.ok) return;
         const _meData = await r.json().catch(() => ({}));
         window.CURRENT_USER = _meData.user || _meData;
@@ -5787,8 +5785,8 @@ function clearAIChat(){
       }
 
       // ── Refresh personal finance surfaces (net worth, transactions) ─
-      if (typeof window.loadPersonalFinance === 'function') {
-        window.loadPersonalFinance().catch(() => {});
+      if (['all','personal','holdings'].includes(hint)) {
+        if (typeof window.loadPersonalFinance === 'function') window.loadPersonalFinance().catch(()=>{});
       }
 
       console.log('[FinFlow] refreshFinancials ✅ page:', _curPage,

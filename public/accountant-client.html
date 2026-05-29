@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FinFlow — Client Workspace</title>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.29.0/tabler-icons.min.css" integrity="sha384-sJoIAR/tUkK5XdIDMblLedGQJbFVAMJEHFpR/RWnm/oQZrTL0jf3SGMOR5N4I3j" crossorigin="anonymous">
   <style>
     :root {
       --bg:        #0e0e0c;
@@ -747,7 +747,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   const params = new URLSearchParams(location.search);
   _userId = params.get('client');
   _clientName = decodeURIComponent(params.get('name') || 'Client');
-  if (!_userId) { location.href = '/accountant'; return; }
+  if (!_userId || !/^\d+$/.test(_userId)) { location.href = '/accountant'; return; }
   setClientInfo();
   await loadData();
 });

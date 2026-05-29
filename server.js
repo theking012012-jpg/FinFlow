@@ -35,8 +35,8 @@ try {
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-if (require.main === module && process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
-  console.error('FATAL: SESSION_SECRET environment variable must be set in production.');
+if (!process.env.SESSION_SECRET) {
+  console.error('FATAL: SESSION_SECRET environment variable is not set');
   process.exit(1);
 }
 console.log('Starting on port:', PORT);
@@ -209,7 +209,7 @@ app.use(express.urlencoded({ extended: false }));
 app.set('trust proxy', 1);
 app.use(session({
   store: new pgSession({ pool, tableName: 'session', createTableIfMissing: true, pruneSessionInterval: 60 }),
-  secret: process.env.SESSION_SECRET || 'finflow-dev-secret-change-in-production',
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -222,6 +222,8 @@ app.use(session({
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30 });
 const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 200 });
+
+app.use('/api', apiLimiter);
 
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorised — please log in.' });
@@ -305,7 +307,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     req.session.userRole = 'owner';
     req.session.userEmail = email.toLowerCase();
     const user = await db.get('users', u => u.id === userId);
-    console.log('[Register] New user created:', email);
+    console.log('[Register] New user created, id:', userId);
     res.status(201).json({ user: safeUser(user) });
   } catch (err) {
     console.error('[Register] Unexpected error:', err);
@@ -318,6 +320,9 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
     const user = await db.get('users', u => u.email.toLowerCase() === email.toLowerCase());
+    if (user && (user.data?.deleted === 'true' || user.deleted === 'true')) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
     if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Invalid email or password.' });
     req.session.userId = user.id;
     req.session.userRole = user.role || 'owner';
@@ -373,7 +378,7 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
         console.error('[Resend] Failed to send reset email:', e.message);
       }
     } else {
-      console.log(`\n[Password Reset] No email provider configured.\nReset link for ${user.email}:\n${resetUrl}\n`);
+      console.log('[Password Reset] Reset requested for user ID:', user.id, '— configure RESEND_API_KEY to send email');
     }
 
     res.json({ ok: true });
@@ -382,23 +387,6 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
     res.status(500).json({ error: 'Request failed. Please try again.' });
   }
 });
-
-app.post('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-  if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters.' });
-  const { rows } = await pool.query('SELECT data FROM users WHERE id = $1', [req.session.userId]);
-  if (!rows.length) return res.status(404).json({ error: 'User not found.' });
-  const userData = rows[0].data;
-  const bcrypt = require('bcryptjs');
-  const valid = await bcrypt.compare(currentPassword, userData.password);
-  if (!valid) return res.status(401).json({ error: 'Current password is incorrect.' });
-  const hashed = await bcrypt.hash(newPassword, 12);
-  await pool.query(
-    `UPDATE users SET data = jsonb_set(data, '{password}', $1::jsonb) WHERE id = $2`,
-    [JSON.stringify(hashed), req.session.userId]
-  );
-  res.json({ ok: true });
-}));
 
 app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
   try {
@@ -436,8 +424,6 @@ app.get('/api/me', requireAuth, wrap(async (req, res) => {
   res.json({ user: safeUser(user) });
 }));
 
-app.use('/api', apiLimiter);
-
 // Trial / plan enforcement — applies to all /api routes except auth and stripe webhook
 app.use('/api', (req, res, next) => {
   const open = ['/api/auth/', '/api/stripe/'];
@@ -452,6 +438,10 @@ app.use('/api', async (req, res, next) => {
   // Allow explicit entity_id override from query param or body - this is the source of truth
   const explicitEntityId = req.query.entity_id || req.body?.entity_id;
   if (explicitEntityId) {
+    if (req.session.userId) {
+      const owned = await pool.query('SELECT id FROM entities WHERE id=$1 AND user_id=$2', [explicitEntityId, req.session.userId]);
+      if (!owned.rows[0]) return res.status(403).json({ error: 'Entity not found.' });
+    }
     req.entityId = parseInt(explicitEntityId);
     req.session.entityId = req.entityId;
     return next();
@@ -1049,6 +1039,8 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
     'credit_notes','payments_made','vendor_credits','items','timesheet','projects',
     'team_members','budget_targets','entities','journals','chart_of_accounts',
     'lock_settings','audit_log','documents','templates','autocat_rules',
+    'audit_trail','invoice_payments','bank_reconciliation','payroll_runs',
+    'payroll_run_lines','inventory_movements','fx_rates','fx_transactions',
   ];
   for (const t of allTables) {
     await db.delete(t, r => r.user_id === uid).catch(() => {});
@@ -1180,8 +1172,9 @@ app.get('/api/documents/:id/download', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('documents', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const buf = Buffer.from(row.file_data, 'base64');
+  const safeName = (row.name || 'export').replace(/[^\w\s.\-]/g, '_');
   res.setHeader('Content-Type', row.media_type || 'application/octet-stream');
-  res.setHeader('Content-Disposition', `attachment; filename="${row.name}"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
   res.send(buf);
 }));
 app.delete('/api/documents/:id', requireAuth, wrap(async (req, res) => {
@@ -2320,7 +2313,7 @@ async function recalcInvoiceStatus(pool, invoiceId, userId) {
   const paid = parseFloat(rows[0].paid) || 0;
   const total = parseFloat(invRow.amount) || 0;
   const status = paid >= total ? 'paid' : paid > 0 ? 'partial' : invRow.status;
-  await db.update('invoices', r => r.id === invoiceId, { status, amount_paid: paid });
+  await db.update('invoices', r => r.id === invoiceId && r.user_id === userId, { status, amount_paid: paid });
 }
 
 app.get('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
@@ -2390,6 +2383,9 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
 app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) => {
   const { banking_id, invoice_payment_id } = req.body || {};
   if (!banking_id || !invoice_payment_id) return res.status(400).json({ error: 'banking_id and invoice_payment_id required' });
+  const bankRow = await pool.query('SELECT id FROM personal_transactions WHERE id=$1 AND user_id=$2', [banking_id, req.session.userId]);
+  const payRow = await pool.query('SELECT id FROM invoice_payments WHERE id=$1 AND user_id=$2', [invoice_payment_id, req.session.userId]);
+  if (!bankRow.rows[0] || !payRow.rows[0]) return res.status(404).json({ error: 'Not found.' });
   const { rows } = await pool.query(
     `INSERT INTO bank_reconciliation (user_id, entity_id, banking_id, invoice_payment_id)
      VALUES ($1,$2,$3,$4) RETURNING *`,
@@ -2683,6 +2679,8 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
 app.post('/api/cogs/calculate', requireAuth, wrap(async (req, res) => {
   const { inventory_id, quantity } = req.body || {};
   if (!inventory_id || !quantity) return res.status(400).json({ error: 'inventory_id and quantity required' });
+  const item = await pool.query('SELECT id FROM inventory WHERE id=$1 AND user_id=$2', [inventory_id, req.session.userId]);
+  if (!item.rows[0]) return res.status(404).json({ error: 'Not found.' });
   const cogs = await calculateFIFOCOGS(pool, parseInt(inventory_id), parseFloat(quantity));
   res.json({ cogs });
 }));

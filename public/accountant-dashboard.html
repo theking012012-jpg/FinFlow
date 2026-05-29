@@ -296,6 +296,9 @@
   .profile-field input:focus, .profile-field textarea:focus { border-color: var(--gold-dim); }
   .profile-field textarea { resize: vertical; min-height: 80px; }
 
+  .finput{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg2);color:var(--text);font-family:'DM Sans',sans-serif;outline:none;appearance:none;}
+  .finput:focus{border-color:var(--gold-dim);}
+
   @media (max-width: 900px) {
     .layout { grid-template-columns: 1fr; }
     .sidebar { display: none; }
@@ -624,7 +627,7 @@
 </div>
 
 <!-- DEADLINE MODAL -->
-<div class="modal-overlay" id="deadline-modal">
+<div class="modal-overlay" id="deadline-modal" role="dialog" aria-modal="true" aria-labelledby="deadline-modal-title">
   <div class="modal">
     <h3>Add Filing Deadline</h3>
     <p>Track an upcoming tax or filing obligation for a client</p>
@@ -666,7 +669,7 @@
 </div>
 
 <!-- BILL CLIENT MODAL -->
-<div class="modal-overlay" id="bill-modal">
+<div class="modal-overlay" id="bill-modal" role="dialog" aria-modal="true" aria-labelledby="bill-modal-title">
   <div class="modal">
     <h3>Bill a Client</h3>
     <p>FinFlow processes the payment and transfers 96% to your connected Stripe account. You set the rate.</p>
@@ -697,7 +700,7 @@
 </div>
 
 <!-- BOOKS MODAL -->
-<div class="modal-overlay" id="books-modal">
+<div class="modal-overlay" id="books-modal" role="dialog" aria-modal="true" aria-labelledby="books-modal-title">
   <div class="modal" style="width:820px;max-width:97vw;max-height:92vh;overflow-y:auto;padding:28px 32px">
 
     <!-- Header -->
@@ -946,7 +949,7 @@
 let accountant = null;
 let clients = [];
 let earnings = [];
-let deadlines = []; // stored in-memory per session — accountant deadlines are per-device UI preferences
+let deadlines = [];
 
 const APP_URL = window.location.origin;
 
@@ -963,6 +966,7 @@ async function boot() {
     loadClients();
     loadEarnings();
     loadPendingRequests();
+    loadDeadlines();
   } catch (e) {
     console.error('Boot error:', e);
     window.location.href = '/accountant-login';
@@ -1317,18 +1321,37 @@ function renderDeadlines() {
 
 function openDeadlineModal() { document.getElementById('deadline-modal').classList.add('open'); }
 function closeDeadlineModal() { document.getElementById('deadline-modal').classList.remove('open'); }
-function saveDeadline() {
+
+async function loadDeadlines() {
+  try {
+    const res = await fetch('/api/accountants/deadlines', { credentials: 'include' });
+    if (!res.ok) return;
+    const rows = await res.json();
+    deadlines = rows.map(r => ({ id: r.id, client: r.client_name, type: r.filing_type, date: r.due_date.slice(0,10) }));
+    renderDeadlines();
+  } catch(e) {}
+}
+
+async function saveDeadline() {
   const client = document.getElementById('dl-client').value.trim();
   const type = document.getElementById('dl-type').value;
   const date = document.getElementById('dl-date').value;
   if (!client || !date) { toast('Please fill in all fields', 'error'); return; }
-  deadlines.push({ client, type, date, id: Date.now() });
-  // deadlines stored in-memory only
-  closeDeadlineModal();
-  renderDeadlines();
-  toast('Deadline added', 'success');
-  document.getElementById('dl-client').value = '';
-  document.getElementById('dl-date').value = '';
+  try {
+    const res = await fetch('/api/accountants/deadlines', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_name: client, filing_type: type, due_date: date }),
+    });
+    if (!res.ok) { toast('Could not save deadline', 'error'); return; }
+    const row = await res.json();
+    deadlines.push({ id: row.id, client: row.client_name, type: row.filing_type, date: row.due_date.slice(0,10) });
+    closeDeadlineModal();
+    renderDeadlines();
+    toast('Deadline saved', 'success');
+    document.getElementById('dl-client').value = '';
+    document.getElementById('dl-date').value = '';
+  } catch(e) { toast('Could not save deadline', 'error'); }
 }
 
 // ── INVITE ────────────────────────────────────────────────────────────────────

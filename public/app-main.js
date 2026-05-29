@@ -152,7 +152,6 @@ const CURRENCIES = {
   TJS:{symbol:'SM',    flag:'🇹🇯',name:'Tajikistani Somoni',     rate:10.95},
   TMT:{symbol:'T',     flag:'🇹🇲',name:'Turkmenistani Manat',    rate:3.50},
   MOP:{symbol:'P',     flag:'🇲🇴',name:'Macanese Pataca',        rate:8.06},
-  KHR:{symbol:'៛',     flag:'🇰🇭',name:'Cambodian Riel',         rate:4096},
   LAK:{symbol:'₭',     flag:'🇱🇦',name:'Laotian Kip',            rate:21900},
   BTN:{symbol:'Nu',    flag:'🇧🇹',name:'Bhutanese Ngultrum',     rate:83.5},
   ISK:{symbol:'kr',    flag:'🇮🇸',name:'Icelandic Króna',        rate:138},
@@ -478,8 +477,8 @@ async function submitCreateBusiness(){
 }
 
 function closeAllDropdowns(){
-  document.getElementById('biz-menu').style.display='none';
-  document.getElementById('currency-menu').style.display='none';
+  const bm = document.getElementById('biz-menu'); if(bm) bm.style.display='none';
+  const cm = document.getElementById('currency-menu'); if(cm) cm.style.display='none';
 }
 
 // Close dropdowns on outside click
@@ -563,8 +562,8 @@ async function doLogin(){
     window._ffAuthed = true;
     window.dispatchEvent(new Event('ff:authed'));
     if(typeof bootFinFlowAPI === 'function') bootFinFlowAPI();
-    loadEntitiesFromDB();
-  loadBankingFromDB();
+    await loadEntitiesFromDB();
+    if(typeof loadBankingFromDB === 'function') await loadBankingFromDB();
   }catch(e){
     if(errEl) errEl.textContent='Network error — is the server running?';
   }finally{
@@ -601,8 +600,8 @@ async function doRegister(){
     window._ffAuthed = true;
     window.dispatchEvent(new Event('ff:authed'));
     if(typeof bootFinFlowAPI === 'function') bootFinFlowAPI();
-    loadEntitiesFromDB();
-  loadBankingFromDB();
+    await loadEntitiesFromDB();
+    if(typeof loadBankingFromDB === 'function') await loadBankingFromDB();
   }catch(e){
     if(errEl) errEl.textContent='Network error — is the server running?';
   }finally{
@@ -745,8 +744,8 @@ function openReconcileModal(){
       <input type="checkbox" data-idx="${i}" style="accent-color:var(--acc);flex-shrink:0"
         ${reconState.clearedIds.includes(i)?'checked':''} onchange="updateReconSummary()">
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;color:var(--t1);font-weight:500">${t.desc}</div>
-        <div style="font-size:11px;color:var(--t3)">${t.cat} · ${t.date}</div>
+        <div style="font-size:13px;color:var(--t1);font-weight:500">${esc(t.desc||'')}</div>
+        <div style="font-size:11px;color:var(--t3)">${esc(t.cat||'')} · ${esc(t.date||'')}</div>
       </div>
       <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;flex-shrink:0;color:${t.type==='credit'?'var(--green)':'var(--red)'}">
         ${t.type==='credit'?'+':'-'}$${Math.abs(t.amount).toLocaleString()}
@@ -849,7 +848,7 @@ function openJournalEntryModal(){
   // Restore lines to 2 blank rows
   window._jeLines = [{code:'',dr:0,cr:0},{code:'',dr:0,cr:0}];
   renderJELines();
-  document.getElementById('je-date').value = '2026-04-29';
+  document.getElementById('je-date').value = new Date().toISOString().slice(0,10);
   document.getElementById('je-notes').value = '';
   updateJETotals();
   document.getElementById('journal-entry-modal').classList.remove('hidden');
@@ -970,6 +969,10 @@ async function renderCOALive(){
         </div>`).join('')}
       </div>`).join('');
   }catch(e){
+    if(!coaData.length){
+      l.innerHTML='<div style="padding:2rem;text-align:center;color:var(--t3)">Could not load chart of accounts. Please refresh.</div>';
+      return;
+    }
     const balances=computeCoaBalances();
     l.innerHTML=coaData.map(section=>`
       <div style="margin-bottom:1rem">
@@ -1023,10 +1026,10 @@ async function renderJournalsLive(){
     const allEntries=[...journalEntries,...journalsData.map(j=>({...j,lines:null}))];
     l.innerHTML=allEntries.map(j=>`
       <div class="table-row" style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
-        <span style="color:var(--t3)">${j.date}</span><span style="font-weight:500">${j.notes}</span>
-        <span style="color:var(--t3)">${j.ref}</span>
-        <span style="font-family:var(--font-mono);color:var(--red)">$${j.debit.toLocaleString()}</span>
-        <span style="font-family:var(--font-mono);color:var(--green)">$${j.credit.toLocaleString()}</span>
+        <span style="color:var(--t3)">${esc(j.date||'')}</span><span style="font-weight:500">${esc(j.notes||'')}</span>
+        <span style="color:var(--t3)">${esc(j.ref||'')}</span>
+        <span style="font-family:var(--font-mono);color:var(--red)">$${(j.debit||0).toLocaleString()}</span>
+        <span style="font-family:var(--font-mono);color:var(--green)">$${(j.credit||0).toLocaleString()}</span>
         <span><span class="badge ${j.status==='Posted'?'b-green':'b-amber'}">${j.status}</span></span>
       </div>`).join('');
   }
@@ -1096,33 +1099,7 @@ function initEnhancements(){
 }
 
 // ── AUTO SESSION CHECK ON LOAD ──────────────────────────────────────────────
-// Fire immediately when page loads to restore session without waiting for user action
-document.addEventListener('DOMContentLoaded', function() {
-  // Small delay to let all scripts initialize
-  setTimeout(function() {
-    const role = sessionStorage.getItem('ff_role');
-    if (!role) {
-      // No session storage — check server session
-      fetch('/api/me', {credentials:'include'}).then(async r => {
-        if (r.ok) {
-          const data = await r.json();
-          window.CURRENT_USER = data.user || data;
-          const _seEl2 = document.getElementById('settings-user-email'); if (_seEl2 && window.CURRENT_USER?.email) _seEl2.textContent = window.CURRENT_USER.email;
-          currentRole = 'owner';
-          applyRole('owner');
-          sessionStorage.setItem('ff_role', 'owner');
-          const ls = document.getElementById('login-screen');
-          if (ls) ls.style.display = 'none';
-          if(typeof injectRoleBadge === 'function') injectRoleBadge('owner');
-          window._ffAuthed = true;
-          window.dispatchEvent(new Event('ff:authed'));
-          if(typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
-          if(typeof loadBankingFromDB === 'function') loadBankingFromDB();
-        }
-      }).catch(()=>{});
-    }
-  }, 500);
-});
+// Session restoration is handled by initEnhancements() — duplicate removed (H-15).
 
 // ════════════════════════════════════════════
 // PATCH saveCustomer / saveInvoice / etc to persist
@@ -1172,17 +1149,7 @@ async function loadEntityData(idx){
   if(typeof EXP !== 'undefined') EXP.splice(0,12,...z);
   if(typeof PROFIT !== 'undefined') PROFIT.splice(0,12,...z);
 
-  // Zero out data arrays immediately so stale entity data doesn't bleed across entity switches
-  userInvoices.length = 0;
-  bizExpenses.length = 0;
-  customers.length = 0;
-  inventory.length = 0;
-  payrollEmployees.length = 0;
-  ownerPayroll = null;
-  window.ownerPayroll = null;
   const _clrEl = id => { const el = document.getElementById(id); if(el) el.innerHTML = ''; };
-  _clrEl('invoice-list'); _clrEl('expense-list'); _clrEl('customer-list');
-  _clrEl('inventory-list'); _clrEl('payroll-list');
 
   try {
     // Pass entity_id explicitly — don't rely on session
@@ -1203,6 +1170,17 @@ async function loadEntityData(idx){
     const custs      = custRes.ok  ? (await custRes.json() || []) : [];
     const invt       = invtRes.ok  ? (await invtRes.json() || []) : [];
     const payroll    = payRes.ok   ? (await payRes.json()  || []) : [];
+
+    // Atomically swap global arrays now that all data has arrived
+    userInvoices.length = 0;
+    bizExpenses.length = 0;
+    customers.length = 0;
+    inventory.length = 0;
+    payrollEmployees.length = 0;
+    ownerPayroll = null;
+    window.ownerPayroll = null;
+    _clrEl('invoice-list'); _clrEl('expense-list'); _clrEl('customer-list');
+    _clrEl('inventory-list'); _clrEl('payroll-list');
 
     // Replace userInvoices
     userInvoices = invoices.map(r=>({
@@ -1645,7 +1623,7 @@ function updateDashboard(d=getPeriodData()){
     <div class="tx-row">
       <div class="tx-left">
         <div class="tx-icon ${t.type==='income'?'av-green':'av-red'}"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">${t.type==='income'?'<polyline points="1,8 6,3 10,7 15,2"/><polyline points="10,2 15,2 15,7"/>':'<polyline points="1,5 5,10 9,7 15,13"/><polyline points="10,13 15,13 15,8"/>'}</svg></div>
-        <div><div class="tx-name">${t.name}</div><div class="tx-cat">${t.cat}</div></div>
+        <div><div class="tx-name">${esc(t.name||'')}</div><div class="tx-cat">${esc(t.cat||'')}</div></div>
       </div>
       <div class="tx-amt ${t.type==='income'?'up':'dn'}">${t.type==='income'?'+':'-'}${S(t.amt)}</div>
     </div>`).join('');
@@ -1887,13 +1865,8 @@ function renderInventory(){
 }
 function restockItem(idx){
   if(idx<0||idx>=inventory.length)return;
-  const qtyRaw=parseInt(prompt(`Restock — how many units to add?`,50));
-  if(!qtyRaw||isNaN(qtyRaw)||qtyRaw<=0)return;
-  const qty=Math.min(qtyRaw,100000);
-  inventory[idx].units+=qty;
-  inventory[idx].low=inventory[idx].units<inventory[idx].max*.1;
-  renderInventory();
-  notify(`+${qty} units added to ${esc(inventory[idx].name)}`);
+  notify('Use the Stock In modal to restock this item.');
+  return;
 }
 function openProductModal(){openModal('product-modal')}
 function saveProduct(){
@@ -2522,7 +2495,7 @@ function openTransactionModal(type){
 async function saveTransaction(){
   const desc=document.getElementById('tx-desc').value.trim();
   const amount=Number(document.getElementById('tx-amount').value);
-  if(!desc||!amount){notify('Description and amount required');return;}
+  if(!desc||!amount||Number(amount)<=0){notify('Valid positive amount required');return;}
   const cat=document.getElementById('tx-cat-sel').value;
   const type=document.getElementById('tx-type').value;
   const txDate=document.getElementById('tx-date')?.value||new Date().toISOString().slice(0,10);
@@ -2971,7 +2944,7 @@ function calcPortfolio(){
 function renderInvestments(){
   const{totalValue,totalCost,totalGain,totalDiv,dayChg}=calcPortfolio();
   const gainPct=totalCost>0?((totalGain/totalCost)*100).toFixed(1):0;
-  const dayPct=(dayChg/totalValue*100).toFixed(2);
+  const dayPct=totalValue > 0 ? (dayChg/totalValue*100).toFixed(2) : '0.00';
   const gainPos=totalGain>=0;
 
   // Metrics
@@ -3196,7 +3169,7 @@ function openRebalanceModal(){
 // ════════════════════════════════════════════
 function updateAI(d=getPeriodData()){
   document.getElementById('ai-period-label').textContent=d.label;
-  const margin=Math.round(d.profit/d.rev*100);
+  const margin=d.rev > 0 ? Math.round(d.profit/d.rev*100) : 0;
   const insights=currentPeriod==='year'?[
     `Full year revenue: ${S(d.rev)} — a 38% annualised growth rate vs the prior year.`,
     `Best month: April 2026 at ${S(REV[11])}. Weakest: May 2025 at ${S(REV[0])}. Strong scaling trend.`,
@@ -3224,7 +3197,7 @@ function updateAI(d=getPeriodData()){
 }
 function updateHealthScore(savingsRate=0,income=0,surplus=0){
   const d=getPeriodData();
-  const profitMargin=Math.round(d.profit/d.rev*100);
+  const profitMargin=d.rev > 0 ? Math.round(d.profit/d.rev*100) : 0;
   const cfScore=Math.min(100,Math.round(60+profitMargin*.8));
   const prScore=Math.min(100,Math.round(55+profitMargin));
   const arBalance=typeof userInvoices!=='undefined'?userInvoices.filter(i=>i.status?.toLowerCase()!=='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0):0;
@@ -3255,7 +3228,7 @@ function renderCustomers(filter=''){
   document.getElementById('cust-revenue').textContent=S(customers.reduce((a,c)=>a+Number(c.revenue),0));
   if(!filtered.length){document.getElementById('customers-list').innerHTML=`<div class="empty-state"><div class="empty-state-icon"><svg viewBox="0 0 16 16"><circle cx="5.5" cy="5" r="2.5"/><path d="M1 13c0-2.5 2-4.5 4.5-4.5"/><circle cx="11.5" cy="5" r="2.5"/><path d="M15 13c0-2.5-2-4.5-4.5-4.5"/></svg></div><h3>No customers found</h3><p>Try a different search term, or add your first customer to get started.</p><button class="btn btn-primary btn-sm" onclick="openCustomerModal()">+ Add customer</button></div>`;return;}
   document.getElementById('customers-list').innerHTML=filtered.map(c=>{
-    const av=AVATAR_COLORS[c.id%AVATAR_COLORS.length];
+    const av=AVATAR_COLORS[(parseInt(c.id)||0)%AVATAR_COLORS.length];
     const ini=getInitials(c.fname,c.lname);
     const badge={active:'b-green',inactive:'b-purple',prospect:'b-amber'}[c.status]||'b-blue';
     return`<div class="cust-row" onclick="openCustomerModal(${Number(c.id)})">
@@ -3568,7 +3541,7 @@ async function exportPDF(){
   const ownerLine=ownerPayroll?`- Owner salary: ${S(ownerPayroll.gross)} gross / ${S(ownerPayroll.net)} net\n`:'';
   try{
     const prompt = sanitizeForAPI(`Write an executive financial report for ${d.label}:
-Revenue: ${S(d.rev)} | Expenses: ${S(d.exp)} | Net profit: ${S(d.profit)} (${Math.round(d.profit/d.rev*100)}% margin)
+Revenue: ${S(d.rev)} | Expenses: ${S(d.exp)} | Net profit: ${S(d.profit)} (${d.rev > 0 ? Math.round(d.profit/d.rev*100) : 0}% margin)
 Annual run rate: ${S(sum(REV,0,12))} revenue | ${S(sum(PROFIT,0,12))} profit | YoY growth ~38%
 Top client: ${_topClients.length?_topClients[0].label:"N/A"} | Payroll: ${(payrollEmployees||[]).length+(ownerPayroll?1:0)} staff
 ${ownerLine}Personal savings rate: ${document.getElementById('pers-savings').textContent} | Net worth: ${document.getElementById('pers-nw').textContent}
@@ -3716,7 +3689,7 @@ function renderBanking(){
     <div class="tx-row">
       <div class="tx-left">
         <div class="tx-icon" style="background:${t.type==='credit'?'var(--green-bg)':'var(--red-bg)'};color:${t.type==='credit'?'var(--green)':'var(--red)'}"><svg viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13"/><polyline points="${t.type==='credit'?'4,9 8,13 12,9':'4,7 8,3 12,7'}"/></svg></div>
-        <div><div class="tx-name">${t.desc}</div><div class="tx-cat">${t.cat} · ${t.date}</div></div>
+        <div><div class="tx-name">${esc(t.desc||'')}</div><div class="tx-cat">${esc(t.cat||'')} · ${esc(t.date||'')}</div></div>
       </div>
       <span class="tx-amt" style="color:${t.type==='credit'?'var(--green)':'var(--red)'}">${t.type==='credit'?'+':''}$${Math.abs(t.amount).toLocaleString()}</span>
     </div>`).join('');
@@ -3779,11 +3752,11 @@ function renderJournals(){
   const l=document.getElementById('journals-list');if(!l)return;
   l.innerHTML=journalsData.map(j=>`
     <div class="table-row" style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
-      <span style="color:var(--t3)">${j.date}</span>
-      <span style="font-weight:500">${j.notes}</span>
-      <span style="color:var(--t3)">${j.ref}</span>
-      <span style="font-family:var(--font-mono);color:var(--red)">$${j.debit.toLocaleString()}</span>
-      <span style="font-family:var(--font-mono);color:var(--green)">$${j.credit.toLocaleString()}</span>
+      <span style="color:var(--t3)">${esc(j.date||'')}</span>
+      <span style="font-weight:500">${esc(j.notes||'')}</span>
+      <span style="color:var(--t3)">${esc(j.ref||'')}</span>
+      <span style="font-family:var(--font-mono);color:var(--red)">$${(j.debit||0).toLocaleString()}</span>
+      <span style="font-family:var(--font-mono);color:var(--green)">$${(j.credit||0).toLocaleString()}</span>
       <span><span class="badge ${j.status==='Posted'?'b-green':'b-amber'}">${j.status}</span></span>
     </div>`).join('');
 }
@@ -4959,17 +4932,17 @@ window.renderAdvisors = function(){
   const list = document.getElementById('adv-list');
   if(!list)return;
   list.innerHTML = filtered.map(a=>`
-    <div class="advisor-card" onclick="notify('Connecting you with ${a.name.replace(/'/g,"\'")}…')">
+    <div class="advisor-card" onclick="notify('Connecting you with ${esc(a.name||'')}…')">
       <div class="adv-avatar ${a.avClass}">${a.avatar}</div>
       <div style="flex:1;min-width:0">
-        <div class="adv-name">${a.name} ${a.verified?'<span style="color:var(--acc);font-size:11px">✦ Certified</span>':''}</div>
-        <div class="adv-firm">${a.firm} · ${a.location}</div>
+        <div class="adv-name">${esc(a.name||'')} ${a.verified?'<span style="color:var(--acc);font-size:11px">✦ Certified</span>':''}</div>
+        <div class="adv-firm">${esc(a.firm||'')} · ${esc(a.location||'')}</div>
         <div style="font-size:11px;color:var(--t3);margin-top:3px">${a.clients} client businesses</div>
-        <div class="adv-tags">${a.tags.map(t=>`<span class="adv-tag">${t}</span>`).join('')}</div>
+        <div class="adv-tags">${a.tags.map(t=>`<span class="adv-tag">${esc(t||'')}</span>`).join('')}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div class="adv-stars">${'★'.repeat(a.rating)}${'☆'.repeat(5-a.rating)}</div>
-        <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="event.stopPropagation();notify('Message sent to ${a.name.replace(/'/g,"\'")}')">Contact</button>
+        <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="event.stopPropagation();notify('Message sent to ${esc(a.name||'')}')">Contact</button>
       </div>
     </div>`).join('');
   if(!filtered.length) list.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--t3)">No advisors match your search</div>';

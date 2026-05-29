@@ -6,7 +6,7 @@
 <title>FinFlow Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-w8DLSxP3qmMD4HNiV74xCeRWIwMVtM1YN/Tj5+R1wAi5t6dIhSmFoHbr4mIqkCu" crossorigin="anonymous" defer></script>
 <style>
 :root {
   --bg:#0a0806;--bg1:#111009;--bg2:#181410;--bg3:#201a12;
@@ -542,7 +542,7 @@ td.amber{color:var(--amber)}
         <div class="page-title">Email Broadcast</div>
         <div class="page-sub">Send a message to a segment of users or accountants</div>
         <div class="broadcast-form">
-          <label>Audience</label>
+          <label for="bc-audience">Audience</label>
           <select id="bc-audience">
             <option value="all_users">All Users</option>
             <option value="all_accountants">All Accountants</option>
@@ -550,9 +550,9 @@ td.amber{color:var(--amber)}
             <option value="business_users">Business Users</option>
             <option value="trial_users">Trial Users</option>
           </select>
-          <label>Subject</label>
+          <label for="bc-subject">Subject</label>
           <input type="text" id="bc-subject" placeholder="Email subject line">
-          <label>Message</label>
+          <label for="bc-message">Message</label>
           <textarea id="bc-message" rows="6" placeholder="Your message..."></textarea>
           <button class="send-btn" onclick="sendBroadcast()">Send Broadcast →</button>
         </div>
@@ -613,6 +613,9 @@ td.amber{color:var(--amber)}
 <div class="toast" id="toast"></div>
 
 <script>
+// ── SECURITY ──────────────────────────────────────────────────────────────────
+function esc(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;}
+
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let currentModal = null;
 let _allUsers = [];
@@ -777,11 +780,11 @@ async function loadPending() {
 
     document.getElementById('pending-tbody').innerHTML = data.map(a => `
       <tr>
-        <td class="primary">${a.first_name} ${a.last_name}</td>
-        <td>${a.firm || '—'}</td>
-        <td>${a.country || '—'}</td>
-        <td><span class="badge b-amber">${a.verification_method || '—'}</span></td>
-        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.credentials || a.memberships || '—'}</td>
+        <td class="primary">${esc(a.first_name)} ${esc(a.last_name)}</td>
+        <td>${esc(a.firm || '—')}</td>
+        <td>${esc(a.country || '—')}</td>
+        <td><span class="badge b-amber">${esc(a.verification_method || '—')}</span></td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.credentials || a.memberships || '—')}</td>
         <td>${new Date(a.created_at).toLocaleDateString()}</td>
         <td>
           <button class="action-btn approve" onclick="openReviewById(${a.id})">Review</button>
@@ -800,9 +803,9 @@ async function loadAccountants(search='', status='') {
     _allAccountants = await res.json();
     document.getElementById('accountants-tbody').innerHTML = _allAccountants.length ? _allAccountants.map(a => `
       <tr onclick="openAccountant(${a.id})" style="cursor:pointer">
-        <td><div class="primary">${a.first_name} ${a.last_name}</div><div style="font-size:11px;color:var(--t3)">${a.email}</div></td>
-        <td>${a.firm || '—'}</td>
-        <td>${a.country || '—'}</td>
+        <td><div class="primary">${esc(a.first_name)} ${esc(a.last_name)}</div><div style="font-size:11px;color:var(--t3)">${esc(a.email)}</div></td>
+        <td>${esc(a.firm || '—')}</td>
+        <td>${esc(a.country || '—')}</td>
         <td>${a.client_count || 0}</td>
         <td>${a.avg_rating > 0 ? '★'.repeat(Math.round(a.avg_rating)) + ' ' + parseFloat(a.avg_rating).toFixed(1) : '—'}</td>
         <td><span class="badge ${a.status==='verified'?'b-green':a.status==='pending'?'b-amber':a.status==='suspended'?'b-red':'b-purple'}">${a.status}</span></td>
@@ -819,7 +822,7 @@ async function loadAccountants(search='', status='') {
 }
 
 async function verifyAction(id, action, notes) {
-  if (notes === undefined) notes = (action === 'reject' || action === 'suspend') ? prompt('Notes (sent to accountant):') || '' : '';
+  if (notes === undefined) notes = '';
   try {
     const res = await fetch(`/api/admin/accountants/${id}/verify`, {
       method: 'POST', credentials: 'include',
@@ -861,15 +864,15 @@ function openReview(accountant) {
     ? JSON.parse(accountant.verification_data) : accountant.verification_data || {};
 
   document.getElementById('modal-details').innerHTML = `
-    <div class="detail-row"><span class="detail-label">Email</span><span class="detail-val">${accountant.email}</span></div>
-    <div class="detail-row"><span class="detail-label">Specialisation</span><span class="detail-val">${accountant.specialisation || '—'}</span></div>
-    <div class="detail-row"><span class="detail-label">Experience</span><span class="detail-val">${accountant.experience || '—'}</span></div>
-    <div class="detail-row"><span class="detail-label">Verify method</span><span class="detail-val"><span class="badge b-amber">${accountant.verification_method || '—'}</span></span></div>
-    ${vData.profBody ? `<div class="detail-row"><span class="detail-label">Prof body</span><span class="detail-val">${vData.profBody} · ${vData.membershipNumber || ''}</span></div>` : ''}
-    ${vData.employerFirm ? `<div class="detail-row"><span class="detail-label">Employer</span><span class="detail-val">${vData.employerFirm} · ${vData.employerContact || ''} · ${vData.employerPhone || ''}</span></div>` : ''}
-    ${vData.institution ? `<div class="detail-row"><span class="detail-label">Institution</span><span class="detail-val">${vData.institution} · ${vData.degree || ''}</span></div>` : ''}
-    ${accountant.credentials ? `<div class="detail-row"><span class="detail-label">Credentials</span><span class="detail-val">${accountant.credentials}</span></div>` : ''}
-    ${accountant.memberships ? `<div class="detail-row"><span class="detail-label">Memberships</span><span class="detail-val">${accountant.memberships}</span></div>` : ''}
+    <div class="detail-row"><span class="detail-label">Email</span><span class="detail-val">${esc(accountant.email)}</span></div>
+    <div class="detail-row"><span class="detail-label">Specialisation</span><span class="detail-val">${esc(accountant.specialisation || '—')}</span></div>
+    <div class="detail-row"><span class="detail-label">Experience</span><span class="detail-val">${esc(accountant.experience || '—')}</span></div>
+    <div class="detail-row"><span class="detail-label">Verify method</span><span class="detail-val"><span class="badge b-amber">${esc(accountant.verification_method || '—')}</span></span></div>
+    ${vData.profBody ? `<div class="detail-row"><span class="detail-label">Prof body</span><span class="detail-val">${esc(vData.profBody)} · ${esc(vData.membershipNumber || '')}</span></div>` : ''}
+    ${vData.employerFirm ? `<div class="detail-row"><span class="detail-label">Employer</span><span class="detail-val">${esc(vData.employerFirm)} · ${esc(vData.employerContact || '')} · ${esc(vData.employerPhone || '')}</span></div>` : ''}
+    ${vData.institution ? `<div class="detail-row"><span class="detail-label">Institution</span><span class="detail-val">${esc(vData.institution)} · ${esc(vData.degree || '')}</span></div>` : ''}
+    ${accountant.credentials ? `<div class="detail-row"><span class="detail-label">Credentials</span><span class="detail-val">${esc(accountant.credentials)}</span></div>` : ''}
+    ${accountant.memberships ? `<div class="detail-row"><span class="detail-label">Memberships</span><span class="detail-val">${esc(accountant.memberships)}</span></div>` : ''}
     <div class="detail-row"><span class="detail-label">Applied</span><span class="detail-val">${new Date(accountant.created_at).toLocaleString()}</span></div>
   `;
 
@@ -898,9 +901,9 @@ async function loadReports() {
     const data = await res.json();
     document.getElementById('reports-tbody').innerHTML = data.length ? data.map(r => `
       <tr>
-        <td><div class="primary">${r.first_name} ${r.last_name}</div><div style="font-size:11px;color:var(--t3)">${r.firm || ''}</div></td>
-        <td>${r.reporter_name || '—'}<div style="font-size:11px;color:var(--t3)">${r.reporter_email || ''}</div></td>
-        <td style="max-width:240px">${r.reason}</td>
+        <td><div class="primary">${esc(r.first_name)} ${esc(r.last_name)}</div><div style="font-size:11px;color:var(--t3)">${esc(r.firm || '')}</div></td>
+        <td>${esc(r.reporter_name || '—')}<div style="font-size:11px;color:var(--t3)">${esc(r.reporter_email || '')}</div></td>
+        <td style="max-width:240px">${esc(r.reason)}</td>
         <td>${new Date(r.created_at).toLocaleDateString()}</td>
         <td>
           <button class="action-btn suspend" onclick="verifyAction(${r.accountant_id},'suspend')">Suspend</button>
@@ -933,8 +936,8 @@ function renderUsers(data, search='') {
   const filtered = q ? data.filter(u => (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q)) : data;
   document.getElementById('users-tbody').innerHTML = filtered.length ? filtered.map(u => `
     <tr onclick="openUser(${u.id})" style="cursor:pointer">
-      <td class="primary">${u.name || '—'}</td>
-      <td>${u.email || '—'}</td>
+      <td class="primary">${esc(u.name || '—')}</td>
+      <td>${esc(u.email || '—')}</td>
       <td>
         <select class="filter-select" id="plan-sel-${u.id}" style="font-size:11px;padding:3px 8px;margin-right:4px" onclick="event.stopPropagation()">
           <option value="trial" ${(u.plan||'trial')==='trial'?'selected':''}>Trial</option>
@@ -943,7 +946,7 @@ function renderUsers(data, search='') {
         </select>
         <button class="action-btn" onclick="event.stopPropagation();setPlan(${u.id})">Save</button>
       </td>
-      <td>${u.accountant_first ? `${u.accountant_first} ${u.accountant_last}` : '—'}</td>
+      <td>${u.accountant_first ? `${esc(u.accountant_first)} ${esc(u.accountant_last)}` : '—'}</td>
       <td>${new Date(u.created_at).toLocaleDateString()}</td>
       <td><span class="badge ${u.suspended==='true'?'b-red':'b-green'}">${u.suspended==='true'?'Suspended':'Active'}</span></td>
       <td><button class="action-btn ${u.suspended==='true'?'approve':'suspend'}" onclick="event.stopPropagation();suspendUser(${u.id},${u.suspended!=='true'})">${u.suspended==='true'?'Reinstate':'Suspend'}</button></td>
@@ -982,6 +985,7 @@ async function suspendUser(id, suspend) {
 // ── EARNINGS ──────────────────────────────────────────────────────────────────
 async function loadEarnings() {
   try {
+    const sa = document.getElementById('select-all'); if(sa) sa.checked = false;
     const res = await fetch('/api/admin/earnings', { credentials: 'include' });
     const { records, summary } = await res.json();
     const s = summary || {};
@@ -993,9 +997,9 @@ async function loadEarnings() {
     document.getElementById('earnings-tbody').innerHTML = records.length ? records.map(e => `
       <tr>
         <td><input type="checkbox" class="earn-check" value="${e.id}"></td>
-        <td class="primary">${e.first_name} ${e.last_name}<div style="font-size:11px;color:var(--t3)">${e.firm||''}</div></td>
+        <td class="primary">${esc(e.first_name)} ${esc(e.last_name)}<div style="font-size:11px;color:var(--t3)">${esc(e.firm||'')}</div></td>
         <td><span class="badge ${e.type==='referral'?'b-gold':'b-green'}">${e.type==='referral'?'Referral':'Commission'}</span></td>
-        <td>${e.description||'—'}</td>
+        <td>${esc(e.description||'—')}</td>
         <td class="gold">$${(e.amount_cents/100).toFixed(2)}</td>
         <td>${e.period_month ? new Date(e.period_month).toLocaleDateString('en-US',{month:'short',year:'numeric'}) : '—'}</td>
         <td><span class="badge ${e.status==='paid'?'b-green':'b-amber'}">${e.status}</span></td>
@@ -1074,9 +1078,9 @@ async function loadLog() {
 function renderLogRows(data) {
   document.getElementById('log-tbody').innerHTML = data.length ? data.map(l => `
     <tr>
-      <td class="primary">${l.action.replace(/_/g,' ')}</td>
-      <td>${l.target_type||'—'} ${l.target_id ? '#'+l.target_id : ''}</td>
-      <td style="max-width:300px;word-break:break-word">${l.notes||'—'}</td>
+      <td class="primary">${esc(l.action.replace(/_/g,' '))}</td>
+      <td>${esc(l.target_type||'—')} ${l.target_id ? '#'+l.target_id : ''}</td>
+      <td style="max-width:300px;word-break:break-word">${esc(l.notes||'—')}</td>
       <td>${new Date(l.created_at).toLocaleString()}</td>
     </tr>`).join('')
   : '<tr><td colspan="4" class="empty">No entries</td></tr>';
@@ -1179,18 +1183,18 @@ async function openAccountant(id) {
     const vData = typeof a.verification_data === 'string' ? JSON.parse(a.verification_data||'{}') : a.verification_data||{};
     const clientRows = (a.clients||[]).map(c => `
       <div class="client-list-row">
-        <span>${c.name||'—'}</span>
-        <span style="color:var(--t3)">${c.email||''}</span>
-        <span class="badge ${c.status==='active'?'b-green':'b-amber'}" style="margin-left:8px">${c.status}</span>
+        <span>${esc(c.name||'—')}</span>
+        <span style="color:var(--t3)">${esc(c.email||'')}</span>
+        <span class="badge ${c.status==='active'?'b-green':'b-amber'}" style="margin-left:8px">${esc(c.status)}</span>
       </div>`).join('') || '<div class="client-list-row" style="color:var(--t3)">No clients</div>';
     document.getElementById('am-details').innerHTML = `
-      <div class="detail-row"><span class="detail-label">Email</span><span class="detail-val">${a.email}</span></div>
-      <div class="detail-row"><span class="detail-label">Status</span><span class="detail-val"><span class="badge ${a.status==='verified'?'b-green':a.status==='pending'?'b-amber':'b-red'}">${a.status}</span></span></div>
+      <div class="detail-row"><span class="detail-label">Email</span><span class="detail-val">${esc(a.email)}</span></div>
+      <div class="detail-row"><span class="detail-label">Status</span><span class="detail-val"><span class="badge ${a.status==='verified'?'b-green':a.status==='pending'?'b-amber':'b-red'}">${esc(a.status)}</span></span></div>
       <div class="detail-row"><span class="detail-label">Rating</span><span class="detail-val">${a.avg_rating > 0 ? parseFloat(a.avg_rating).toFixed(1) + ' ★' : '—'}</span></div>
       <div class="detail-row"><span class="detail-label">Stripe</span><span class="detail-val"><span class="badge ${a.stripe_onboarded?'b-green':'b-amber'}">${a.stripe_onboarded?'Connected':'Not set'}</span></span></div>
       <div class="detail-row"><span class="detail-label">Total Earned</span><span class="detail-val">$${(parseInt(a.total_earnings_cents||0)/100).toFixed(2)}</span></div>
-      <div class="detail-row"><span class="detail-label">Verify Method</span><span class="detail-val">${a.verification_method||'—'}</span></div>
-      ${vData.profBody?`<div class="detail-row"><span class="detail-label">Prof Body</span><span class="detail-val">${vData.profBody} · ${vData.membershipNumber||''}</span></div>`:''}
+      <div class="detail-row"><span class="detail-label">Verify Method</span><span class="detail-val">${esc(a.verification_method||'—')}</span></div>
+      ${vData.profBody?`<div class="detail-row"><span class="detail-label">Prof Body</span><span class="detail-val">${esc(vData.profBody)} · ${esc(vData.membershipNumber||'')}</span></div>`:''}
       <div class="detail-row"><span class="detail-label">Clients (${(a.clients||[]).length})</span></div>
       <div class="client-list">${clientRows}</div>`;
     const suspBtn = document.getElementById('am-suspend-btn');

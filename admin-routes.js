@@ -4,6 +4,11 @@
 // Protected by ADMIN_PASSWORD env var — set this before deploying
 // ══════════════════════════════════════════════════════════════════════════════
 
+const crypto = require('crypto');
+const { rateLimit } = require('express-rate-limit');
+
+const adminLoginLimiter = rateLimit({ windowMs: 15*60*1000, max: 5, skipSuccessfulRequests: true });
+
 const wrap = fn => async (req, res, next) => {
   try { await fn(req, res, next); } catch (e) { next(e); }
 };
@@ -16,11 +21,16 @@ function requireAdmin(req, res, next) {
 module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
 
   // ── ADMIN LOGIN ───────────────────────────────────────────────────────────
-  app.post('/api/admin/login', wrap(async (req, res) => {
+  app.post('/api/admin/login', adminLoginLimiter, wrap(async (req, res) => {
     const { password } = req.body || {};
     const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
     if (!ADMIN_PASSWORD) return res.status(503).json({ error: 'ADMIN_PASSWORD not configured.' });
-    if (!password || password !== ADMIN_PASSWORD) {
+    if (!password) return res.status(401).json({ error: 'Invalid password.' });
+    try {
+      const a = Buffer.alloc(72); Buffer.from(password).copy(a);
+      const b = Buffer.alloc(72); Buffer.from(ADMIN_PASSWORD).copy(b);
+      if (!crypto.timingSafeEqual(a, b)) return res.status(401).json({ error: 'Invalid password.' });
+    } catch(e) {
       return res.status(401).json({ error: 'Invalid password.' });
     }
     req.session.isAdmin = true;
@@ -125,7 +135,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     const params = [];
     const conditions = [];
     if (status) { params.push(status); conditions.push(`a.status = $${params.length}`); }
-    if (search) { params.push(`%${search}%`); conditions.push(`(a.first_name ILIKE $${params.length} OR a.last_name ILIKE $${params.length} OR a.email ILIKE $${params.length} OR a.firm ILIKE $${params.length})`); }
+    if (search) { const safe = search.replace(/[%_\\]/g, '\\$&'); params.push(`%${safe}%`); conditions.push(`(a.first_name ILIKE $${params.length} ESCAPE '\\' OR a.last_name ILIKE $${params.length} ESCAPE '\\' OR a.email ILIKE $${params.length} ESCAPE '\\' OR a.firm ILIKE $${params.length} ESCAPE '\\')`); }
     if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
     query += ' GROUP BY a.id ORDER BY a.created_at DESC LIMIT 100';
     const result = await pool.query(query, params);
@@ -204,7 +214,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     `;
     const params = [];
     const conditions = [];
-    if (search) { params.push(`%${search}%`); conditions.push(`(u.data->>'name' ILIKE $${params.length} OR u.data->>'email' ILIKE $${params.length})`); }
+    if (search) { const safe = search.replace(/[%_\\]/g, '\\$&'); params.push(`%${safe}%`); conditions.push(`(u.data->>'name' ILIKE $${params.length} ESCAPE '\\' OR u.data->>'email' ILIKE $${params.length} ESCAPE '\\')`); }
     if (plan) { params.push(plan); conditions.push(`u.data->>'plan' = $${params.length}`); }
     if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
     query += ' ORDER BY u.created_at DESC LIMIT 200';
@@ -214,7 +224,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
 
   // Suspend / unsuspend user
   app.post('/api/admin/users/:id/suspend', requireAdmin, wrap(async (req, res) => {
-    const { suspend } = req.body || {};
+    const suspend = req.body?.suspend === true || req.body?.suspend === 'true';
     await pool.query(
       `UPDATE users SET data = data || $1 WHERE id = $2`,
       [JSON.stringify({ suspended: suspend ? 'true' : 'false' }), req.params.id]
@@ -514,10 +524,13 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
 
   // No auth required — called on failed login before session exists
   app.post('/api/admin/log-security', wrap(async (req, res) => {
-    const { action, notes } = req.body || {};
+    const { notes } = req.body || {};
+    const ALLOWED_ACTIONS = ['failed_login', 'rate_limited', 'suspicious_activity'];
+    const rawAction = (req.body || {}).action;
+    const safeAction = ALLOWED_ACTIONS.includes(rawAction) ? rawAction : 'failed_login';
     await pool.query(
       `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ($1,'security',$2,NOW())`,
-      [action || 'failed_login', notes || '']
+      [safeAction, notes || '']
     ).catch(() => {});
     return res.json({ ok: true });
   }));

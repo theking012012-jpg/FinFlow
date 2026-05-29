@@ -67,6 +67,7 @@
 
 'use strict';
 
+const crypto = require('crypto');
 const db = require('./database');
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -275,6 +276,7 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
 
 
   // ── RESUME / CV EXTRACTION ───────────────────────────────────────────────────
+  // TODO: add rate limit — rateLimit({ windowMs: 60*60*1000, max: 10 })
   app.post('/api/accountants/extract-resume', apiLimiter, wrap(async (req, res) => {
     if (!req.session.accountantId && !req.session.userId) {
       return res.status(401).json({ error: 'Authentication required.' });
@@ -346,6 +348,7 @@ If you cannot find a field, use null. Be concise.`;
 
   // ── 2. MEMBERSHIP LOOKUP (called from frontend verify button) ─────────────
   app.post('/api/accountants/verify-membership', authLimiter, wrap(async (req, res) => {
+    if (!req.session.accountantId && !req.session.userId) return res.status(401).json({ error: 'Not authenticated.' });
     const { profBody, membershipNumber } = req.body || {};
     if (!profBody || !membershipNumber) {
       return res.status(400).json({ error: 'Professional body and membership number are required.' });
@@ -520,6 +523,7 @@ If you cannot find a field, use null. Be concise.`;
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    if (access.rows[0].access_level === 'view') return res.status(403).json({ error: 'View-only access.' });
     const existing = await db.get('lock_settings', r => r.user_id === parseInt(userId) && r.period === period);
     if (existing) {
       await db.update('lock_settings', r => r.id === existing.id, { locked: locked ? 1 : 0, locked_by: `accountant:${req.session.accountantId}` });
@@ -737,7 +741,8 @@ If you cannot find a field, use null. Be concise.`;
   // ── 11. RECORD SERVICE COMMISSION (call from payment flow) ────────────────
   // When an accountant charges a client for work via FinFlow, call this.
   app.post('/api/accountants/record-commission', requireAccountant, wrap(async (req, res) => {
-    const { accountantId, userId, billedAmountCents, description } = req.body || {};
+    const accountantId = req.session.accountantId;
+    const { userId, billedAmountCents, description } = req.body || {};
     if (!accountantId || !billedAmountCents) return res.status(400).json({ error: 'Missing fields.' });
 
     const commissionCents = Math.round(billedAmountCents * 0.04); // 4%
@@ -762,8 +767,11 @@ If you cannot find a field, use null. Be concise.`;
   // before creating any payout record. No active subscription = no commission.
   app.post('/api/accountants/run-monthly-payouts', wrap(async (req, res) => {
     const secret = req.headers['x-cron-secret'];
-    if (!secret || secret !== process.env.CRON_SECRET) {
-      return res.status(401).json({ error: 'Unauthorised.' });
+    if (!process.env.CRON_SECRET || !crypto.timingSafeEqual(
+      Buffer.from(secret || '').slice(0, 64),
+      Buffer.from(process.env.CRON_SECRET).slice(0, 64)
+    )) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const client = await pool.connect();
@@ -835,8 +843,8 @@ If you cannot find a field, use null. Be concise.`;
     await pool.query(`
       UPDATE accountant_clients
       SET status = 'suspended'
-      WHERE user_id = $1 AND status = 'active'
-    `, [userId]);
+      WHERE user_id = $1 AND status = 'active' AND accountant_id = $2
+    `, [userId, req.session.accountantId]);
 
     return res.json({ success: true, message: 'Client commission suspended. No further payouts until client reactivates.' });
   }));
@@ -854,7 +862,8 @@ If you cannot find a field, use null. Be concise.`;
       WHERE user_id = $1
         AND status = 'suspended'
         AND referral_month < referral_months_total
-    `, [userId]);
+        AND accountant_id = $2
+    `, [userId, req.session.accountantId]);
 
     return res.json({ success: true });
   }));
@@ -997,17 +1006,6 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   //   sender        VARCHAR(20) NOT NULL DEFAULT 'accountant',
   //   created_at    TIMESTAMPTZ DEFAULT NOW()
   // );
-  pool.query(
-    `CREATE TABLE IF NOT EXISTS accountant_messages (
-       id SERIAL PRIMARY KEY,
-       accountant_id INTEGER NOT NULL,
-       client_id INTEGER NOT NULL,
-       message TEXT NOT NULL,
-       sender VARCHAR(20) NOT NULL DEFAULT 'accountant',
-       created_at TIMESTAMPTZ DEFAULT NOW()
-     )`
-  ).catch(e => console.error('[accountant-routes] accountant_messages table init:', e.message));
-
   app.get('/api/accountants/clients/:userId/message', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
     const access = await pool.query(
@@ -1083,7 +1081,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   app.get('/api/accountants/:id/reviews', wrap(async (req, res) => {
     const result = await pool.query(`
       SELECT r.rating, r.comment, r.created_at,
-             u.data->>'name' AS client_name
+             LEFT(u.data->>'name', 1) || '.' AS client_initial
       FROM accountant_reviews r
       JOIN users u ON u.id = r.client_id
       WHERE r.accountant_id = $1
@@ -1349,7 +1347,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       if (!clientId || !amount) return res.status(400).json({ error: 'clientId and amount required' });
       const { rows: clientRows } = await pool.query(
         `SELECT u.id, u.data FROM users u
-         WHERE u.id = $1 AND (u.data->>'accountant_id')::int = $2`,
+         JOIN accountant_clients ac ON ac.user_id = u.id AND ac.accountant_id = $2 AND ac.status = 'active'
+         WHERE u.id = $1`,
         [clientId, req.session.accountantId]
       );
       if (!clientRows.length) return res.status(403).json({ error: 'Client not found or not linked to you' });
@@ -1385,6 +1384,35 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       res.status(500).json({ error: e.message });
     }
   });
+
+  // ── ACCOUNTANT DEADLINES ──────────────────────────────────────────────────
+  app.get('/api/accountants/deadlines', requireAccountant, wrap(async (req, res) => {
+    const result = await pool.query(
+      `SELECT id, client_name, filing_type, due_date, created_at
+       FROM accountant_deadlines WHERE accountant_id = $1 ORDER BY due_date ASC`,
+      [req.session.accountantId]
+    );
+    return res.json(result.rows);
+  }));
+
+  app.post('/api/accountants/deadlines', requireAccountant, wrap(async (req, res) => {
+    const { client_name, filing_type, due_date } = req.body || {};
+    if (!client_name || !filing_type || !due_date) return res.status(400).json({ error: 'Missing fields.' });
+    const result = await pool.query(
+      `INSERT INTO accountant_deadlines (accountant_id, client_name, filing_type, due_date)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.session.accountantId, client_name, filing_type, due_date]
+    );
+    return res.status(201).json(result.rows[0]);
+  }));
+
+  app.delete('/api/accountants/deadlines/:id', requireAccountant, wrap(async (req, res) => {
+    await pool.query(
+      `DELETE FROM accountant_deadlines WHERE id = $1 AND accountant_id = $2`,
+      [req.params.id, req.session.accountantId]
+    );
+    return res.json({ ok: true });
+  }));
 
 }; // end registerAccountantRoutes
 

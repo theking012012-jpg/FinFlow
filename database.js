@@ -17,7 +17,7 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : false,
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
@@ -302,6 +302,33 @@ async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_fx_transactions_user ON fx_transactions(user_id)`);
+
+    // ── ACCOUNTANT MESSAGES ──────────────────────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accountant_messages (
+        id            SERIAL PRIMARY KEY,
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id),
+        user_id       INTEGER NOT NULL,
+        sender        VARCHAR(20) NOT NULL DEFAULT 'accountant',
+        message       TEXT NOT NULL,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_messages_accountant ON accountant_messages(accountant_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_messages_user ON accountant_messages(user_id)`);
+
+    // ── ACCOUNTANT DEADLINES ─────────────────────────────────────────────────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accountant_deadlines (
+        id            SERIAL PRIMARY KEY,
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id),
+        client_name   TEXT NOT NULL,
+        filing_type   TEXT NOT NULL,
+        due_date      DATE NOT NULL,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_deadlines_accountant ON accountant_deadlines(accountant_id)`);
 
     await client.query('COMMIT');
     console.log('[DB] PostgreSQL schema ready');

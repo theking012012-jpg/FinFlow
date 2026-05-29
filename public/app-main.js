@@ -560,6 +560,8 @@ async function doLogin(){
       if(planEl) planEl.textContent = data.user.plan.charAt(0).toUpperCase()+data.user.plan.slice(1)+' plan';
     }
     notify('Welcome back' + (data.user?.name ? ', '+data.user.name : '') + ' ✴');
+    window._ffAuthed = true;
+    window.dispatchEvent(new Event('ff:authed'));
     if(typeof bootFinFlowAPI === 'function') bootFinFlowAPI();
     loadEntitiesFromDB();
   loadBankingFromDB();
@@ -596,6 +598,8 @@ async function doRegister(){
       if(planEl) planEl.textContent = data.user.plan.charAt(0).toUpperCase()+data.user.plan.slice(1)+' plan';
     }
     notify('Account created ✴ Welcome to FinFlow!');
+    window._ffAuthed = true;
+    window.dispatchEvent(new Event('ff:authed'));
     if(typeof bootFinFlowAPI === 'function') bootFinFlowAPI();
     loadEntitiesFromDB();
   loadBankingFromDB();
@@ -1067,6 +1071,8 @@ function initEnhancements(){
     applyRole(savedRole);
     document.getElementById('login-screen').style.display = 'none';
     injectRoleBadge(savedRole);
+    window._ffAuthed = true;
+    window.dispatchEvent(new Event('ff:authed'));
     if(typeof loadEntitiesFromDB === 'function') setTimeout(()=>loadEntitiesFromDB(), 800);
     setTimeout(()=>{ if(typeof loadBankingFromDB==='function') loadBankingFromDB(); }, 900);
   } else {
@@ -1080,6 +1086,8 @@ function initEnhancements(){
         sessionStorage.setItem('ff_role', 'owner');
         document.getElementById('login-screen').style.display = 'none';
         injectRoleBadge('owner');
+        window._ffAuthed = true;
+        window.dispatchEvent(new Event('ff:authed'));
         if(typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
         if(typeof loadBankingFromDB === 'function') loadBankingFromDB();
       }
@@ -1106,6 +1114,8 @@ document.addEventListener('DOMContentLoaded', function() {
           const ls = document.getElementById('login-screen');
           if (ls) ls.style.display = 'none';
           if(typeof injectRoleBadge === 'function') injectRoleBadge('owner');
+          window._ffAuthed = true;
+          window.dispatchEvent(new Event('ff:authed'));
           if(typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
           if(typeof loadBankingFromDB === 'function') loadBankingFromDB();
         }

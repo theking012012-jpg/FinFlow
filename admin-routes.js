@@ -153,18 +153,18 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
 
     await pool.query(
       `UPDATE accountants SET status = $1, verified_at = $2, updated_at = NOW() WHERE id = $3`,
-      [newStatus, action === 'approve' || action === 'reinstate' ? new Date() : null, req.params.id]
+      [newStatus, action === 'approve' || action === 'reinstate' ? new Date() : null, (parseInt(req.params.id, 10) || 0)]
     );
 
     // Log admin action
     await pool.query(
       `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ($1, 'accountant', $2, $3, NOW())`,
-      [`accountant_${action}`, req.params.id, notes || '']
+      [`accountant_${action}`, (parseInt(req.params.id, 10) || 0), notes || '']
     ).catch(() => {});
 
     // Send email notification if Resend configured
     if (resendClient) {
-      const acc = await pool.query('SELECT email, first_name FROM accountants WHERE id = $1', [req.params.id]);
+      const acc = await pool.query('SELECT email, first_name FROM accountants WHERE id = $1', [(parseInt(req.params.id, 10) || 0)]);
       if (acc.rows[0]) {
         const { email, first_name } = acc.rows[0];
         const subject = action === 'approve'
@@ -194,7 +194,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   app.post('/api/admin/accountants/:id/preferred-partner', requireAdmin, wrap(async (req, res) => {
     const result = await pool.query(
       `UPDATE accountants SET preferred_partner = NOT COALESCE(preferred_partner, false) WHERE id = $1 RETURNING preferred_partner`,
-      [req.params.id]
+      [(parseInt(req.params.id, 10) || 0)]
     );
     return res.json({ success: true, preferred_partner: result.rows[0]?.preferred_partner });
   }));
@@ -227,20 +227,20 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     const suspend = req.body?.suspend === true || req.body?.suspend === 'true';
     await pool.query(
       `UPDATE users SET data = data || $1 WHERE id = $2`,
-      [JSON.stringify({ suspended: suspend ? 'true' : 'false' }), req.params.id]
+      [JSON.stringify({ suspended: suspend ? 'true' : 'false' }), (parseInt(req.params.id, 10) || 0)]
     );
     await pool.query(
       `INSERT INTO admin_log (action, target_type, target_id, created_at) VALUES ($1, 'user', $2, NOW())`,
-      [suspend ? 'user_suspend' : 'user_reinstate', req.params.id]
+      [suspend ? 'user_suspend' : 'user_reinstate', (parseInt(req.params.id, 10) || 0)]
     ).catch(() => {});
     return res.json({ ok: true });
   }));
 
   app.post('/api/admin/users/:id/unsuspend', requireAdmin, wrap(async (req, res) => {
-    await pool.query(`UPDATE users SET data = jsonb_set(COALESCE(data,'{}'), '{suspended}', 'false') WHERE id = $1`, [req.params.id]);
+    await pool.query(`UPDATE users SET data = jsonb_set(COALESCE(data,'{}'), '{suspended}', 'false') WHERE id = $1`, [(parseInt(req.params.id, 10) || 0)]);
     await pool.query(
       `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ('user_unsuspend', 'user', $1, 'Unsuspended by admin', NOW())`,
-      [req.params.id]
+      [(parseInt(req.params.id, 10) || 0)]
     ).catch(() => {});
     res.json({ ok: true });
   }));
@@ -251,11 +251,11 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     if (!['trial', 'pro', 'business'].includes(plan)) return res.status(400).json({ error: 'Invalid plan.' });
     await pool.query(
       `UPDATE users SET data = data || $1 WHERE id = $2`,
-      [JSON.stringify({ plan }), req.params.id]
+      [JSON.stringify({ plan }), (parseInt(req.params.id, 10) || 0)]
     );
     await pool.query(
       `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ($1, 'user', $2, $3, NOW())`,
-      ['user_plan_override', req.params.id, `Set plan to ${plan}`]
+      ['user_plan_override', (parseInt(req.params.id, 10) || 0), `Set plan to ${plan}`]
     ).catch(() => {});
     return res.json({ success: true });
   }));
@@ -275,7 +275,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   }));
 
   app.post('/api/admin/reports/:id/dismiss', requireAdmin, wrap(async (req, res) => {
-    await pool.query(`DELETE FROM accountant_reports WHERE id = $1`, [req.params.id]);
+    await pool.query(`DELETE FROM accountant_reports WHERE id = $1`, [(parseInt(req.params.id, 10) || 0)]);
     return res.json({ success: true });
   }));
 
@@ -467,7 +467,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   app.post('/api/admin/flags/:id/resolve', requireAdmin, wrap(async (req, res) => {
     await pool.query(
       `UPDATE admin_log SET notes = COALESCE(notes,'') || ' [resolved]' WHERE id = $1`,
-      [req.params.id]
+      [(parseInt(req.params.id, 10) || 0)]
     );
     return res.json({ success: true });
   }));
@@ -522,8 +522,8 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     return res.json(result.rows);
   }));
 
-  // No auth required — called on failed login before session exists
-  app.post('/api/admin/log-security', wrap(async (req, res) => {
+  // Called on failed login attempts. Rate-limited + ignores anonymous floods.
+  app.post('/api/admin/log-security', adminLoginLimiter, wrap(async (req, res) => {
     const { notes } = req.body || {};
     const ALLOWED_ACTIONS = ['failed_login', 'rate_limited', 'suspicious_activity'];
     const rawAction = (req.body || {}).action;

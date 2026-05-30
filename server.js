@@ -431,8 +431,8 @@ app.get('/api/me', requireAuth, wrap(async (req, res) => {
 
 // Trial / plan enforcement — applies to all /api routes except auth and stripe webhook
 app.use('/api', (req, res, next) => {
-  const open = ['/api/auth/', '/api/stripe/'];
-  if (open.some(p => req.path.startsWith(p.replace('/api', '')))) return next();
+  const open = ['/auth/', '/stripe/', '/accountants', '/admin'];
+  if (open.some(p => req.path.startsWith(p))) return next();
   if (!req.session?.userId) return next(); // requireAuth handles this
   checkPlan(req, res, next);
 });
@@ -1028,7 +1028,7 @@ app.put('/api/settings', requireAuth, wrap(async (req, res) => {
 app.put('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (!currentPassword || !newPassword) return res.status(400).json({ error: 'currentPassword and newPassword required.' });
-  if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+  if (newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters.' });
   const user = await db.get('users', u => u.id === req.session.userId);
   if (!user || !bcrypt.compareSync(currentPassword, user.password)) return res.status(401).json({ error: 'Current password is incorrect.' });
   const hash = bcrypt.hashSync(newPassword, 12);

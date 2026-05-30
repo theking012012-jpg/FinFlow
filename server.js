@@ -438,12 +438,20 @@ app.use('/api', async (req, res, next) => {
   // Allow explicit entity_id override from query param or body - this is the source of truth
   const explicitEntityId = req.query.entity_id || req.body?.entity_id;
   if (explicitEntityId) {
-    if (req.session.userId) {
-      const owned = await pool.query('SELECT id FROM entities WHERE id=$1 AND user_id=$2', [explicitEntityId, req.session.userId]);
-      if (!owned.rows[0]) return res.status(403).json({ error: 'Entity not found.' });
+    const entityIdInt = parseInt(explicitEntityId, 10);
+    if (isNaN(entityIdInt) || entityIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid entity ID.' });
     }
-    req.entityId = parseInt(explicitEntityId);
-    req.session.entityId = req.entityId;
+    if (req.session.userId) {
+      try {
+        const owned = await pool.query('SELECT id FROM entities WHERE id=$1 AND user_id=$2', [entityIdInt, req.session.userId]);
+        if (!owned.rows[0]) return res.status(403).json({ error: 'Entity not found.' });
+      } catch (e) {
+        return res.status(500).json({ error: 'Server error.' });
+      }
+    }
+    req.entityId = entityIdInt;
+    req.session.entityId = entityIdInt;
     return next();
   }
   if (req.session.entityId) {

@@ -3967,10 +3967,10 @@ async function generateReport(name,revenue,expenses,profit){
   try{
     if(name==='Profit & Loss Statement'){
       const d=await fetch('/api/reports/profit-loss',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());
-      const rows=(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${r.month}</span><span style="font-family:var(--font-mono);color:${r.netProfit>=0?'var(--green)':'var(--red)'}">${fmt(r.netProfit)}</span></div>`).join('');
-      body.innerHTML=`${hdr('Revenue')}${(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${r.month}</span><span style="color:var(--green);font-family:var(--font-mono)">${fmt(r.revenue)}</span></div>`).join('')}
+      const rows=(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${esc(r.month||'')}</span><span style="font-family:var(--font-mono);color:${r.netProfit>=0?'var(--green)':'var(--red)'}">${fmt(r.netProfit)}</span></div>`).join('');
+      body.innerHTML=`${hdr('Revenue')}${(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${esc(r.month||'')}</span><span style="color:var(--green);font-family:var(--font-mono)">${fmt(r.revenue)}</span></div>`).join('')}
         <div style="${rowStyle};font-weight:600"><span>Total Revenue</span><span style="color:var(--green);font-family:var(--font-mono)">${fmt(d.totalRevenue)}</span></div>
-        ${hdr('Expenses')}${(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${r.month}</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(r.expenses)}</span></div>`).join('')}
+        ${hdr('Expenses')}${(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${esc(r.month||'')}</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(r.expenses)}</span></div>`).join('')}
         <div style="${rowStyle};font-weight:600"><span>Total Expenses</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(d.totalExpenses)}</span></div>
         <div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Net Profit</span><span style="color:${(d.netProfit||0)>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt(d.netProfit)}</span></div>`;
     } else if(name==='Balance Sheet'){
@@ -3985,7 +3985,7 @@ async function generateReport(name,revenue,expenses,profit){
         <div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="color:${(d.equity||0)>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt(d.equity)}</span></div>`;
     } else if(name==='Cash Flow Statement'){
       const d=await fetch('/api/reports/cash-flow',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());
-      const rows=(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${r.month}</span><span style="color:var(--t2);font-family:var(--font-mono)">${fmt(r.inflow)} in / ${fmt(r.outflow)} out</span><span style="font-family:var(--font-mono);color:${r.net>=0?'var(--green)':'var(--red)'}">${fmt(r.net)}</span></div>`).join('');
+      const rows=(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${esc(r.month||'')}</span><span style="color:var(--t2);font-family:var(--font-mono)">${fmt(r.inflow)} in / ${fmt(r.outflow)} out</span><span style="font-family:var(--font-mono);color:${r.net>=0?'var(--green)':'var(--red)'}">${fmt(r.net)}</span></div>`).join('');
       body.innerHTML=`${hdr('Monthly Cash Flow')}${rows||'<div style="padding:8px 0;color:var(--t3);font-size:12px">No data yet</div>'}
         <div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:13px;font-weight:600"><span>Net Cash Flow</span><span style="color:${((d.totalInflow||0)-(d.totalOutflow||0))>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt((d.totalInflow||0)-(d.totalOutflow||0))}</span></div>`;
     } else {

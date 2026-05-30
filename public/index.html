@@ -3010,7 +3010,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div class="settings-section" style="margin-top:1rem">
               <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="8" rx="1.2"/><path d="M5 7V5a3 3 0 016 0v2"/><circle cx="8" cy="11" r="1"/></svg>Change password</div>
               <div class="field-wrap"><label class="field-label">Current password</label><input class="finput" type="password" id="s-cur-pw" placeholder="Enter current password"></div>
-              <div class="field-wrap"><label class="field-label">New password</label><input class="finput" type="password" id="s-new-pw" placeholder="At least 6 characters"></div>
+              <div class="field-wrap"><label class="field-label">New password</label><input class="finput" type="password" id="s-new-pw" placeholder="At least 8 characters"></div>
               <button class="btn btn-ghost" style="margin-top:.5rem" onclick="changePassword()">Update password</button>
             </div>
             <div class="settings-section" style="margin-top:1rem;border-color:var(--red-bd)">
@@ -3090,7 +3090,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     </div>
     <div style="margin-bottom:.25rem">
       <div style="font-size:11.5px;color:var(--t2);margin-bottom:5px;font-weight:500">Password</div>
-      <input class="finput" type="password" id="reg-pw" placeholder="At least 6 characters" style="width:100%" onkeydown="if(event.key==='Enter')doRegister()">
+      <input class="finput" type="password" id="reg-pw" placeholder="At least 8 characters" style="width:100%" onkeydown="if(event.key==='Enter')doRegister()">
     </div>
     <div id="register-error" style="font-size:11.5px;color:var(--red,#e05454);min-height:18px;margin-bottom:.5rem"></div>
     <button class="btn btn-primary" id="register-btn" style="width:100%;justify-content:center;padding:9px;font-size:13px;margin-top:.5rem" onclick="doRegister()">Create account →</button>

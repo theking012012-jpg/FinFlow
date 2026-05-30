@@ -1069,7 +1069,7 @@ function renderCustomers() {
       const initials = (c.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
       return `<div class="customer-row">
         <div style="display:flex;align-items:center;gap:12px">
-          <div class="customer-avatar">${initials}</div>
+          <div class="customer-avatar">${esc(initials)}</div>
           <div>
             <div style="font-size:13px;color:var(--text)">${esc(c.name||'—')}</div>
             <div style="font-size:11px;color:var(--text3)">${esc(c.email||c.company||'')}</div>

@@ -58,7 +58,7 @@ app.use((req, res, next) => {
     "style-src 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src https://fonts.gstatic.com; " +
     "img-src 'self' data: blob:; " +
-    "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com ws: wss:; " +
+    "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com ws: wss:; " +
     "frame-ancestors 'none'; " +
     "object-src 'none'; " +
     "base-uri 'self';"

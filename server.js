@@ -58,7 +58,7 @@ app.use((req, res, next) => {
     "style-src 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src https://fonts.gstatic.com; " +
     "img-src 'self' data: blob:; " +
-    "connect-src * ws: wss:; " +
+    "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com ws: wss:; " +
     "frame-ancestors 'none'; " +
     "object-src 'none'; " +
     "base-uri 'self';"
@@ -69,7 +69,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGIN || (process.env.NODE_ENV === 'production' ? false : true),
+  origin: process.env.ALLOWED_ORIGIN || (process.env.NODE_ENV === 'production' ? false : 'http://localhost:3000'),
   credentials: true,
 }));
 // ── STRIPE WEBHOOK ────────────────────────────────────────────────────────────
@@ -96,18 +96,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       // Stripe Connect deducts it automatically via application_fee_amount.
       // We log it here in platform_fees for internal revenue audit only.
       const feeCents = Math.round(billedCents * 0.04);
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS platform_fees (
-          id            SERIAL PRIMARY KEY,
-          accountant_id INTEGER NOT NULL,
-          client_id     INTEGER,
-          billed_cents  INTEGER NOT NULL,
-          fee_cents     INTEGER NOT NULL,
-          description   TEXT,
-          period_month  DATE,
-          created_at    TIMESTAMPTZ DEFAULT NOW()
-        )
-      `).catch(() => {});
+      // platform_fees table is created in initDB() (database.js) — no DDL in this hot path.
       await pool.query(`
         INSERT INTO platform_fees (accountant_id, client_id, billed_cents, fee_cents, description, period_month)
         VALUES ($1, $2, $3, $4, $5, date_trunc('month', NOW()))
@@ -123,7 +112,8 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
 
     // Upgrade user plan when they pay for a subscription
     const planUpgrade = session.metadata?.plan; // 'pro' or 'business'
-    const upgradeUserId = session.metadata?.userId;
+    const upgradeUserId = parseInt(session.metadata?.userId, 10);
+    if (session.metadata?.userId && !upgradeUserId) console.error('[Stripe] Invalid userId in webhook metadata');
     if (upgradeUserId && planUpgrade) {
       await pool.query(
         `UPDATE users SET data = data || jsonb_build_object('plan', $1::text, 'trial_ends', null::text) WHERE id = $2`,
@@ -159,28 +149,8 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   res.json({ received: true });
 });
 
-// ── STRIPE CHECKOUT ───────────────────────────────────────────────────────────
-app.post('/api/stripe/checkout', async (req, res) => {
-  if (!stripe) return res.status(400).json({ error: 'Stripe not configured.' });
-  if (!req.session?.userId) return res.status(401).json({ error: 'Not authenticated.' });
-  const { plan } = req.body;
-  if (!plan || !['pro', 'business'].includes(plan)) {
-    return res.status(400).json({ error: 'Invalid plan. Must be "pro" or "business".' });
-  }
-  const priceId = plan === 'business' ? process.env.STRIPE_PRICE_BUSINESS : process.env.STRIPE_PRICE_PRO;
-  if (!priceId) return res.status(500).json({ error: `STRIPE_PRICE_${plan.toUpperCase()} env var not set.` });
-  const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-  const session = await stripe.checkout.sessions.create({
-    mode: 'subscription',
-    payment_method_types: ['card'],
-    line_items: [{ price: priceId, quantity: 1 }],
-    customer_email: req.session.userEmail,
-    metadata: { userId: String(req.session.userId), plan },
-    success_url: appUrl + '/app?upgraded=1',
-    cancel_url: appUrl + '/app#pricing',
-  });
-  res.json({ url: session.url });
-});
+// NOTE: Stripe checkout route is registered later (after session + express.json +
+// requireAuth are active) so req.session and req.body are populated. See below.
 
 // ── ROOT ROUTES — registered BEFORE express.static so the static handler
 // can't auto-serve public/index.html at "/". "/" = marketing landing page,
@@ -204,8 +174,14 @@ app.use(express.static(path.join(__dirname, 'public'), {
   },
 }));
 
-app.use(express.json({ limit: '10mb' })); // 10 mb covers base64-encoded receipt images
-app.use(express.urlencoded({ extended: false }));
+// Small global JSON cap to limit DoS surface; routes that legitimately accept large
+// base64 payloads (receipt/document images, resume uploads) opt into a 10mb parser.
+// Conditional ensures the global parser doesn't 413 a large body before its route runs.
+const bigJson = express.json({ limit: '10mb' });
+const smallJson = express.json({ limit: '500kb' });
+const LARGE_PAYLOAD_PATHS = ['/api/ai/scan', '/api/documents', '/api/ai/extract-document', '/api/accountants/extract-resume'];
+app.use((req, res, next) => (LARGE_PAYLOAD_PATHS.includes(req.path) ? bigJson : smallJson)(req, res, next));
+app.use(express.urlencoded({ extended: false, limit: '500kb' }));
 app.set('trust proxy', 1);
 app.use(session({
   store: new pgSession({ pool, tableName: 'session', createTableIfMissing: true, pruneSessionInterval: 60 }),
@@ -215,12 +191,13 @@ app.use(session({
   cookie: {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
+    // 'none' required for cross-origin embeds (Stripe); ALLOWED_ORIGIN must be the exact domain
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000,
   },
 }));
 
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30 });
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
 const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 200 });
 
 app.use('/api', apiLimiter);
@@ -262,12 +239,35 @@ const wrap = fn => async (req, res, next) => {
   try { await fn(req, res, next); } catch (e) { next(e); }
 };
 
+// ── STRIPE CHECKOUT ───────────────────────────────────────────────────────────
+// Registered here (not earlier) so session + express.json + requireAuth are active.
+app.post('/api/stripe/checkout', requireAuth, wrap(async (req, res) => {
+  if (!stripe) return res.status(400).json({ error: 'Stripe not configured.' });
+  const { plan } = req.body;
+  if (!plan || !['pro', 'business'].includes(plan)) {
+    return res.status(400).json({ error: 'Invalid plan. Must be "pro" or "business".' });
+  }
+  const priceId = plan === 'business' ? process.env.STRIPE_PRICE_BUSINESS : process.env.STRIPE_PRICE_PRO;
+  if (!priceId) return res.status(500).json({ error: `STRIPE_PRICE_${plan.toUpperCase()} env var not set.` });
+  const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+  const session = await stripe.checkout.sessions.create({
+    mode: 'subscription',
+    payment_method_types: ['card'],
+    line_items: [{ price: priceId, quantity: 1 }],
+    customer_email: req.session.userEmail,
+    metadata: { userId: String(req.session.userId), plan },
+    success_url: appUrl + '/app?upgraded=1',
+    cancel_url: appUrl + '/app#pricing',
+  });
+  res.json({ url: session.url });
+}));
+
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const { email, password, name } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
-    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email address.' });
 
     const existing = await db.get('users', u => u.email.toLowerCase() === email.toLowerCase());
@@ -280,7 +280,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     });
 
     // If user signed up via an accountant referral link (?ref=CODE), link them now
-    const refCode = req.body.referralCode || req.query.ref;
+    const refCode = ((req.body?.referralCode || req.body?.ref || req.query?.ref || '')).slice(0, 50);
     if (refCode) {
       pool.query(
         `SELECT id FROM accountants WHERE referral_code = $1 AND status = 'verified'`,
@@ -339,7 +339,12 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/auth/logout', (req, res) => { req.session.destroy(() => res.json({ ok: true })); });
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie('connect.sid');
+    res.json({ ok: true });
+  });
+});
 
 app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
   try {
@@ -392,7 +397,7 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
   try {
     const { token, password } = req.body || {};
     if (!token || !password) return res.status(400).json({ error: 'Token and password required.' });
-    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
 
     const record = await db.get('password_resets', r => r.token === token);
     if (!record) return res.status(400).json({ error: 'Invalid or expired reset link.' });
@@ -1182,7 +1187,7 @@ app.get('/api/documents/:id/download', requireAuth, wrap(async (req, res) => {
   const buf = Buffer.from(row.file_data, 'base64');
   const safeName = (row.name || 'export').replace(/[^\w\s.\-]/g, '_');
   res.setHeader('Content-Type', row.media_type || 'application/octet-stream');
-  res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`);
   res.send(buf);
 }));
 app.delete('/api/documents/:id', requireAuth, wrap(async (req, res) => {
@@ -1634,7 +1639,7 @@ app.get('/api/team', requireAuth, wrap(async (req, res) => {
     ...pay.map(p => ({
       id:       `p${p.id}`,
       name:     `${p.fname} ${p.lname}`.trim(),
-      email:    `${p.fname.toLowerCase()}.${p.lname.toLowerCase()}@company.com`,
+      email:    `${(p.fname||'').replace(/[^a-z0-9]/gi,'').toLowerCase()}.${(p.lname||'user').replace(/[^a-z0-9]/gi,'').toLowerCase()}@company.com`,
       role:     p.is_owner ? 'owner' : (p.emp_type === 'Contractor' ? 'viewer' : 'accountant'),
       emp_type: p.emp_type,
       lastSeen: 'Recently',
@@ -1715,8 +1720,8 @@ app.post('/api/ai', requireAuth, async (req, res) => {
     const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0);
 
     const model = COMPLEX_QUERY_RE.test(message)
-      ? 'claude-sonnet-4-20250514'
-      : 'claude-haiku-4-5-20251001';
+      ? (process.env.AI_MODEL_COMPLEX || 'claude-sonnet-4-20250514')
+      : (process.env.AI_MODEL_SIMPLE || 'claude-haiku-4-5-20251001');
 
     // Instructions are static across all users — cache them at the system level.
     const systemInstruction = `You are FinFlow's AI assistant. You ONLY answer questions about the user's financial data provided in this context. You have no knowledge of external events, news, or general information. If asked something outside the user's FinFlow data, respond with: I can only help with your FinFlow financial data. Always be concise and specific to the numbers provided.`;
@@ -1732,7 +1737,9 @@ Open Invoices: ${invoices.filter(i => i.status !== 'paid').length}
 Overdue Invoices: ${invoices.filter(i => i.status === 'overdue').length}`;
 
     const messages = [
-      ...history.slice(-10).map(m => ({ role: m.role, content: m.content })),
+      ...history.slice(-10)
+        .filter(m => ['user', 'assistant'].includes(m.role))
+        .map(m => ({ role: m.role, content: String(m.content || '').slice(0, 4000) })),
       {
         role: 'user',
         content: [
@@ -1833,7 +1840,7 @@ If you cannot read a field clearly, use null. Do not invent data.`;
         'content-type':      'application/json',
       },
       body: JSON.stringify({
-        model:      'claude-sonnet-4-20250514',
+        model:      (process.env.AI_MODEL_COMPLEX || 'claude-sonnet-4-20250514'),
         max_tokens: 500,
         messages:   [{ role: 'user', content: [contentBlock, { type: 'text', text: prompt }] }],
       }),
@@ -1937,7 +1944,11 @@ async function runRecurringScheduler() {
     const today = new Date().toISOString().slice(0, 10);
 
     // Recurring invoices
-    const recInvoices = await db.all('recurring_invoices', r => r.status === 'active' && r.next_run && r.next_run <= today);
+    const { rows: _recInvRows } = await pool.query(
+      `SELECT * FROM recurring_invoices WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1`,
+      [today]
+    );
+    const recInvoices = _recInvRows.map(r => ({ id: r.id, user_id: r.user_id, entity_id: r.entity_id, ...r.data }));
     for (const r of recInvoices) {
       await db.insert('invoices', {
         user_id: r.user_id, entity_id: r.entity_id || null,
@@ -1948,7 +1959,11 @@ async function runRecurringScheduler() {
     }
 
     // Recurring bills
-    const recBills = await db.all('recurring_bills', r => r.status === 'active' && r.next_run && r.next_run <= today);
+    const { rows: _recBillRows } = await pool.query(
+      `SELECT * FROM recurring_bills WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1`,
+      [today]
+    );
+    const recBills = _recBillRows.map(r => ({ id: r.id, user_id: r.user_id, entity_id: r.entity_id, ...r.data }));
     for (const r of recBills) {
       const num = 'BILL-' + String(Date.now()).slice(-4);
       await db.insert('bills', {
@@ -2895,7 +2910,7 @@ app.get('/api/stock-price', requireAuth, async (req, res) => {
 // Any unmatched /api/* path returns JSON (so fetch().json() doesn't choke on
 // the landing.html that the wildcard below would otherwise serve).
 app.use('/api', (req, res) => {
-  res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
+  res.status(404).json({ error: 'API route not found.' });
 });
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'landing.html'));

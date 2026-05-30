@@ -283,6 +283,7 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
     }
     const { base64, mediaType, isPDF, isWord, fileName } = req.body || {};
     if (!base64) return res.status(400).json({ error: 'No file data received.' });
+    if (base64.length > 1000000) return res.status(413).json({ error: 'File too large. Maximum 750KB.' });
 
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
     if (!ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI service not configured.' });
@@ -423,6 +424,7 @@ If you cannot find a field, use null. Be concise.`;
   // ── 6. GET CLIENT BOOKS (with permission check) ───────────────────────────
   app.get('/api/accountants/clients/:userId/books', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
 
     // Block pending/suspended accountants from reading books
     const accStatus = await pool.query(
@@ -481,7 +483,7 @@ If you cannot find a field, use null. Be concise.`;
       entities:    entities.rows.map(r => ({ id: r.id, name: r.name, color: r.color || '#c9a84c', currency: r.currency || 'USD' })),
       allInvoices: invoices.rows.map(r => ({ ...r.data, id: r.id, entity_id: r.entity_id })),
       allExpenses: expenses.rows.map(r => ({ ...r.data, id: r.id, entity_id: r.entity_id })),
-      allPayroll:  payroll.rows.map(r => r.data),
+      allPayroll:  access.rows[0].access_level === 'view' ? [] : payroll.rows.map(r => r.data),
       allJournals: journals.rows.map(r => r.data),
       allCustomers: customers.rows.map(r => r.data),
       balanceSheet: {
@@ -497,6 +499,7 @@ If you cannot find a field, use null. Be concise.`;
   // ── ADD JOURNAL ENTRY ON BEHALF OF CLIENT ────────────────────────────────
   app.post('/api/accountants/clients/:userId/journal', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const { date, description, lines } = req.body || {};
     const access = await pool.query(
       `SELECT access_level FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
@@ -517,6 +520,7 @@ If you cannot find a field, use null. Be concise.`;
   // ── LOCK/UNLOCK PERIOD ───────────────────────────────────────────────────
   app.post('/api/accountants/clients/:userId/lock', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const { period, locked } = req.body || {};
     const access = await pool.query(
       `SELECT access_level FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
@@ -537,6 +541,7 @@ If you cannot find a field, use null. Be concise.`;
   // ── 7. ACCOUNTANT NOTES ON CLIENT (GET + POST) ───────────────────────────
   app.get('/api/accountants/clients/:userId/notes', requireAccountant, apiLimiter, wrap(async (req, res) => {
     const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const access = await pool.query(
       `SELECT notes FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
       [req.session.accountantId, userId]
@@ -547,6 +552,7 @@ If you cannot find a field, use null. Be concise.`;
 
   app.post('/api/accountants/clients/:userId/notes', requireAccountant, apiLimiter, wrap(async (req, res) => {
     const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const { note } = req.body || {};
     const access = await pool.query(
       `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
@@ -563,6 +569,7 @@ If you cannot find a field, use null. Be concise.`;
   // ── 8. FLAG A TRANSACTION ─────────────────────────────────────────────────
   app.post('/api/accountants/clients/:userId/flag', requireAccountant, apiLimiter, wrap(async (req, res) => {
     const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const { type, ref, message } = req.body || {};
     const access = await pool.query(
       `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
@@ -669,6 +676,7 @@ If you cannot find a field, use null. Be concise.`;
   // Call this from your Stripe webhook when a client's subscription activates.
   app.post('/api/accountants/activate-client', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.body || {};
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     if (!userId) return res.status(400).json({ error: 'userId required.' });
 
     const client = await pool.connect();
@@ -697,6 +705,7 @@ If you cannot find a field, use null. Be concise.`;
 
   app.post('/api/accountants/reject-client', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.body || {};
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     if (!userId) return res.status(400).json({ error: 'userId required.' });
     await pool.query(
       `UPDATE accountant_clients SET status = 'rejected' WHERE user_id = $1 AND accountant_id = $2`,
@@ -767,6 +776,7 @@ If you cannot find a field, use null. Be concise.`;
   // before creating any payout record. No active subscription = no commission.
   app.post('/api/accountants/run-monthly-payouts', wrap(async (req, res) => {
     const secret = req.headers['x-cron-secret'];
+    if (!process.env.CRON_SECRET) return res.status(503).json({ error: 'Cron not configured.' });
     if (!process.env.CRON_SECRET || !crypto.timingSafeEqual(
       Buffer.from(secret || '').slice(0, 64),
       Buffer.from(process.env.CRON_SECRET).slice(0, 64)
@@ -838,6 +848,7 @@ If you cannot find a field, use null. Be concise.`;
   // If the client resubscribes later, reactivate-client re-links them.
   app.post('/api/accountants/suspend-client', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.body || {};
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     if (!userId) return res.status(400).json({ error: 'userId required.' });
 
     await pool.query(`
@@ -853,6 +864,7 @@ If you cannot find a field, use null. Be concise.`;
   // ── 12c. REACTIVATE CLIENT COMMISSION (call from Stripe when client resubscribes) ─
   app.post('/api/accountants/reactivate-client', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.body || {};
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     if (!userId) return res.status(400).json({ error: 'userId required.' });
 
     // Only reactivate if referral months still remain — no extension for cancelled period
@@ -890,6 +902,7 @@ If you cannot find a field, use null. Be concise.`;
   // ── CLIENT NOTIFY ─────────────────────────────────────────────────────────
   app.post('/api/accountants/clients/:userId/notify', requireAccountant, apiLimiter, wrap(async (req, res) => {
     const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const { message } = req.body || {};
     const access = await pool.query(
       `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
@@ -907,6 +920,7 @@ If you cannot find a field, use null. Be concise.`;
   // ── AI INSIGHTS ────────────────────────────────────────────────────────────
   app.post('/api/accountants/clients/:userId/ai-insights', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const access = await pool.query(
       `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
        UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
@@ -963,6 +977,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // ── CHECKLIST ──────────────────────────────────────────────────────────────
   app.get('/api/accountants/clients/:userId/checklist', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const r = await pool.query(
       `SELECT notes FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
       [req.session.accountantId, userId]
@@ -982,6 +997,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
 
   app.post('/api/accountants/clients/:userId/checklist', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const { items } = req.body || {};
     const r = await pool.query(
       `SELECT notes FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
@@ -1008,6 +1024,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // );
   app.get('/api/accountants/clients/:userId/message', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const access = await pool.query(
       `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
        UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
@@ -1024,6 +1041,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
 
   app.post('/api/accountants/clients/:userId/message', requireAccountant, apiLimiter, wrap(async (req, res) => {
     const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const { message } = req.body || {};
     if (!message?.trim()) return res.status(400).json({ error: 'Message required.' });
     const access = await pool.query(
@@ -1079,6 +1097,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
 
   // ── GET REVIEWS FOR AN ACCOUNTANT ────────────────────────────────────────
   app.get('/api/accountants/:id/reviews', wrap(async (req, res) => {
+    if (!/^[1-9][0-9]*$/.test(String(req.params.id))) return res.status(400).json({ error: 'Invalid id.' });
     const result = await pool.query(`
       SELECT r.rating, r.comment, r.created_at,
              LEFT(u.data->>'name', 1) || '.' AS client_initial
@@ -1217,6 +1236,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // POST — approve a pending client request
   app.post('/api/accountants/approve-request', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.body || {};
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     if (!userId) return res.status(400).json({ error: 'userId required.' });
 
     const conn = await pool.connect();
@@ -1273,6 +1293,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // POST — decline a pending client request
   app.post('/api/accountants/decline-request', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.body || {};
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     if (!userId) return res.status(400).json({ error: 'userId required.' });
     await pool.query(
       `DELETE FROM accountant_clients WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending'`,
@@ -1407,6 +1428,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   }));
 
   app.delete('/api/accountants/deadlines/:id', requireAccountant, wrap(async (req, res) => {
+    if (!/^[1-9][0-9]*$/.test(String(req.params.id))) return res.status(400).json({ error: 'Invalid id.' });
     await pool.query(
       `DELETE FROM accountant_deadlines WHERE id = $1 AND accountant_id = $2`,
       [req.params.id, req.session.accountantId]

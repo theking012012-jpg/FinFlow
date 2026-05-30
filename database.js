@@ -350,10 +350,26 @@ async function initDB() {
     `CREATE INDEX IF NOT EXISTS idx_inventory_movements_item ON inventory_movements(inventory_id)`,
     `CREATE INDEX IF NOT EXISTS idx_payroll_runs_user_entity ON payroll_runs(user_id, entity_id)`,
     `CREATE INDEX IF NOT EXISTS idx_fx_transactions_user   ON fx_transactions(user_id, entity_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_users_email ON users((data->>'email'))`,
+    `CREATE INDEX IF NOT EXISTS idx_pwd_resets_token ON password_resets((data->>'token'))`,
   ]) {
     try { await pool.query(idxSQL); }
     catch (e) { console.warn('[DB] Index skipped:', e.message.slice(0, 80)); }
   }
+
+  // platform_fees: internal 4% revenue ledger (moved out of the Stripe webhook hot path).
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS platform_fees (
+      id            SERIAL PRIMARY KEY,
+      accountant_id INTEGER,
+      client_id     INTEGER,
+      billed_cents  INTEGER,
+      fee_cents     INTEGER,
+      description   TEXT,
+      period_month  DATE,
+      created_at    TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  } catch (e) { console.warn('[DB] platform_fees table:', e.message.slice(0, 80)); }
 
   return pool;
 }
@@ -408,6 +424,11 @@ function objToData(obj) {
 // JS-side filter functions are still supported for complex predicates that
 // can't be expressed as simple column lookups — but hot paths avoid them.
 
+// PERFORMANCE TODO: db.get(), db.all(), db.update(), db.delete() do full table scans
+// (JS filter over all rows). Replace the auth-path db.get('users', ...) with
+//   pool.query("SELECT * FROM users WHERE data->>'email' = $1 LIMIT 1", [email])
+// and hot-path db.update()/db.delete() with direct parameterized WHERE queries.
+// Acceptable at small scale; revisit before high row counts. See idx_users_email index.
 const db = {
 
   async insert(table, row) {

@@ -383,8 +383,8 @@ function buildBizMenu(){
         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:7">${b.icon}</div>
       </div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:12.5px;font-weight:${b.id===activeBizId?600:400};color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${b.name}</div>
-        <div style="font-size:11px;color:var(--t3)">${b.industry} · ${b.currency}</div>
+        <div style="font-size:12.5px;font-weight:${b.id===activeBizId?600:400};color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.name)}</div>
+        <div style="font-size:11px;color:var(--t3)">${esc(b.industry)} · ${esc(b.currency)}</div>
       </div>
       ${b.id===activeBizId?'<span style="color:var(--acc);font-size:14px;flex-shrink:0">✓</span>':''}
     </div>`).join('');
@@ -962,8 +962,8 @@ async function renderCOALive(){
         <div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${type}</div>
         ${accs.map(a=>`
         <div style="display:grid;grid-template-columns:60px 1fr 90px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-          <span style="color:var(--t3);font-family:var(--font-mono)">${a.code||''}</span>
-          <span style="color:var(--t1)">${a.name||''}</span>
+          <span style="color:var(--t3);font-family:var(--font-mono)">${esc(a.code||'')}</span>
+          <span style="color:var(--t1)">${esc(a.name||'')}</span>
           <span style="font-family:var(--font-mono);text-align:right;color:var(--t1)">$${(a.balance||0).toLocaleString()}</span>
           <span style="color:var(--t3);text-align:right">${a.nature||''}</span>
         </div>`).join('')}
@@ -1015,12 +1015,12 @@ async function renderJournalsLive(){
     if(!journals.length){l.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">No journal entries yet.</div>';return;}
     l.innerHTML=journals.map(j=>`
       <div class="table-row" style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
-        <span style="color:var(--t3)">${j.date||''}</span>
-        <span style="font-weight:500">${j.notes||j.description||''}</span>
-        <span style="color:var(--t3)">${j.ref||''}</span>
+        <span style="color:var(--t3)">${esc(j.date||'')}</span>
+        <span style="font-weight:500">${esc(j.notes||j.description||'')}</span>
+        <span style="color:var(--t3)">${esc(j.ref||'')}</span>
         <span style="font-family:var(--font-mono);color:var(--red)">$${(j.debit||0).toLocaleString()}</span>
         <span style="font-family:var(--font-mono);color:var(--green)">$${(j.credit||0).toLocaleString()}</span>
-        <span><span class="badge ${(j.status||'Draft')==='Posted'?'b-green':'b-amber'}">${j.status||'Draft'}</span></span>
+        <span><span class="badge ${(j.status||'Draft')==='Posted'?'b-green':'b-amber'}">${esc(j.status||'Draft')}</span></span>
       </div>`).join('');
   }catch(e){
     const allEntries=[...journalEntries,...journalsData.map(j=>({...j,lines:null}))];
@@ -1652,7 +1652,7 @@ function updateCashflow(d=getPeriodData()){
   const _srcList = _topClients.length ? _topClients.slice(0,4) : [];
   const _maxSrc = _srcList.length ? _srcList[0].total : 1;
   document.getElementById('cf-sources').innerHTML = _srcList.length
-    ? _srcList.map((s,i)=>{const pct=d.rev>0?Math.round(s.total/d.rev*100):0;return`<div class="bar-row"><span class="bar-label">${s.label}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${_src_colors[i]||'var(--green)'}"></div></div><span class="bar-val">${S(s.total)}</span></div>`;}).join('')
+    ? _srcList.map((s,i)=>{const pct=d.rev>0?Math.round(s.total/d.rev*100):0;return`<div class="bar-row"><span class="bar-label">${esc(s.label)}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${_src_colors[i]||'var(--green)'}"></div></div><span class="bar-val">${S(s.total)}</span></div>`;}).join('')
     : '<div style="color:var(--t3);font-size:12px;padding:8px 0">No revenue data yet</div>';
   // Change indicators
   const ic=chg(d.rev,d.prevRev);const ec=chg(d.exp,d.prevExp,true);
@@ -2703,7 +2703,7 @@ function _renderPersTxList(){
             ${t.type==='income'?'<polyline points="1,8 6,3 10,7 15,2"/><polyline points="10,2 15,2 15,7"/>':'<polyline points="1,5 5,10 9,7 15,13"/><polyline points="10,13 15,13 15,8"/>'}
           </svg>
         </div>
-        <div><div class="tx-name">${esc(t.desc)}</div><div class="tx-cat">${esc(t.cat)} · ${t.date}</div></div>
+        <div><div class="tx-name">${esc(t.desc)}</div><div class="tx-cat">${esc(t.cat)} · ${esc(t.date)}</div></div>
       </div>
       <div class="tx-amt ${t.type==='income'?'up':'dn'}" style="margin-right:8px">${t.type==='income'?'+':'-'}${SP(t.amount)}</div>
       ${t._dbId?`<button onclick="deletePersonalTransaction(${t._dbId})" style="background:none;border:none;cursor:pointer;color:var(--t3);padding:2px 4px;font-size:11px;line-height:1" title="Delete">✕</button>`:''}
@@ -2967,9 +2967,9 @@ function renderInvestments(){
     const colors=['#c9a84c','#5aaa9e','#9e8fbf','#7db87d','#d4964a','#c46a5a','#5a4e3a'];
     const bg=h.color||colors[i%colors.length];
     return`<div class="inv-holding-row">
-      <div class="inv-ticker-badge" style="background:${bg}22;color:${bg};border-color:${bg}44;font-size:9px">${h.ticker.slice(0,4)}</div>
+      <div class="inv-ticker-badge" style="background:${bg}22;color:${bg};border-color:${bg}44;font-size:9px">${esc(h.ticker.slice(0,4))}</div>
       <div>
-        <div style="font-weight:500;font-size:12.5px">${h.name} <span class="badge b-blue" style="font-size:9px;padding:1px 5px">${h.type}</span></div>
+        <div style="font-weight:500;font-size:12.5px">${esc(h.name)} <span class="badge b-blue" style="font-size:9px;padding:1px 5px">${esc(h.type)}</span></div>
         <div style="font-size:11px;color:var(--t3)">${(val/totalValue*100).toFixed(1)}% of portfolio</div>
         <div class="inv-alloc-bar"><div class="inv-alloc-fill" style="width:${(val/totalValue*100).toFixed(1)}%;background:${bg}"></div></div>
       </div>
@@ -3030,7 +3030,7 @@ function buildInvDonut(hs,totalValue){
   if(leg)leg.innerHTML=hs.map(h=>`
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
       <span style="width:8px;height:8px;border-radius:2px;background:${h.color};flex-shrink:0"></span>
-      <span style="font-size:11px;color:var(--t2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.ticker}</span>
+      <span style="font-size:11px;color:var(--t2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.ticker)}</span>
       <span style="font-size:11px;font-weight:600;color:var(--t1);font-family:var(--font-mono)">${(h.price*h.shares/totalValue*100).toFixed(1)}%</span>
     </div>`).join('');
 }

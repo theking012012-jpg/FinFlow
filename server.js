@@ -126,7 +126,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   if (event.type === 'customer.subscription.deleted') {
     // Downgrade user back to trial/free when subscription cancelled
     const sub = event.data.object;
-    const cancelUserId = sub.metadata?.userId;
+    const cancelUserId = parseInt(sub.metadata?.userId, 10);
     if (cancelUserId) {
       await pool.query(
         `UPDATE users SET data = data || jsonb_build_object('plan', 'trial'::text) WHERE id = $1`,
@@ -363,6 +363,7 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
     const APP_URL  = process.env.APP_URL || `http://localhost:${PORT}`;
     const resetUrl = `${APP_URL}/reset-password.html?token=${token}`;
 
+    const _htmlEsc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     if (resendClient) {
       try {
         await resendClient.emails.send({
@@ -372,7 +373,7 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
           html: `
             <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">
               <h2 style="color:#c9a84c;margin-bottom:8px">FinFlow</h2>
-              <p>Hi ${user.name || 'there'},</p>
+              <p>Hi ${_htmlEsc(user.name) || 'there'},</p>
               <p>We received a request to reset your password. Click the button below — this link expires in 1 hour.</p>
               <a href="${resetUrl}" style="display:inline-block;margin:20px 0;padding:12px 24px;background:#c9a84c;color:#0e0b08;border-radius:8px;font-weight:700;text-decoration:none">Reset password →</a>
               <p style="color:#888;font-size:13px">If you didn't request this, just ignore this email. Your password won't change.</p>
@@ -1374,7 +1375,7 @@ app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, frequency = 'Monthly', next_run, status = 'active' } = req.body;
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
   const entity = await activeEntity(req.session.userId);
-  const { row } = await db.insert('recurring_bills', { user_id: req.session.userId, entity_id: entity?.id, vendor, amount: Number(amount), frequency, next_run, status });
+  const { row } = await db.insert('recurring_bills', { user_id: req.session.userId, entity_id: entity?.id, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status });
   res.json(row);
 }));
 app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
@@ -1397,7 +1398,7 @@ app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, frequency = 'Monthly', next_run, status = 'active' } = req.body;
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req.session.userId);
-  const { row } = await db.insert('recurring_invoices', { user_id: req.session.userId, entity_id: entity?.id, client, amount: Number(amount), frequency, next_run, status });
+  const { row } = await db.insert('recurring_invoices', { user_id: req.session.userId, entity_id: entity?.id, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status });
   res.json(row);
 }));
 app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {

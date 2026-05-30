@@ -2414,9 +2414,19 @@ app.delete('/api/bank-reconciliation/:id', requireAuth, wrap(async (req, res) =>
 // ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 3 — MULTI-JURISDICTION PAYROLL
 // ════════════════════════════════════════════════════════════════════════════════
-function calculatePayroll(grossMonthly, jurisdiction = 'TT', bonus = 0, overtime = 0) {
+function calculatePayroll(grossMonthly, jurisdiction = 'TT', bonus = 0, overtime = 0, options = {}) {
+  const {
+    province = 'ON',
+    state = '',
+    scotland = false,
+    studentLoanPlan = 0,
+    pension = true,
+  } = options;
+
   const totalGross = grossMonthly + bonus + overtime;
   let tax1 = 0, tax1_label = '', tax2 = 0, tax2_label = '', tax3 = 0, tax3_label = '';
+  let employerContributions = 0;
+  let notes = '';
 
   if (jurisdiction === 'TT') {
     const nis = Math.min(totalGross * 0.0315, 414.72);
@@ -2428,12 +2438,14 @@ function calculatePayroll(grossMonthly, jurisdiction = 'TT', bonus = 0, overtime
     tax1 = Math.round(paye * 100) / 100; tax1_label = 'PAYE';
     tax2 = Math.round(nis * 100) / 100; tax2_label = 'NIS';
     tax3 = healthSurcharge; tax3_label = 'Health Surcharge';
+    employerContributions = Math.round(Math.min(totalGross * 0.0315, 414.72) * 100) / 100;
   } else if (jurisdiction === 'BB') {
     const nis = totalGross * 0.111;
     const taxable = Math.max(0, totalGross * 12 - 25000) / 12;
     const paye = taxable * 0.25;
     tax1 = Math.round(paye * 100) / 100; tax1_label = 'PAYE';
     tax2 = Math.round(nis * 100) / 100; tax2_label = 'NIS';
+    employerContributions = Math.round(totalGross * 0.111 * 100) / 100;
   } else if (jurisdiction === 'JM') {
     const threshold = 1500096 / 12;
     const taxable = Math.max(0, totalGross - threshold);
@@ -2443,6 +2455,7 @@ function calculatePayroll(grossMonthly, jurisdiction = 'TT', bonus = 0, overtime
     const edTax = totalGross * 0.0225;
     tax1 = Math.round(incomeTax * 100) / 100; tax1_label = 'Income Tax';
     tax2 = Math.round((nis + nht + edTax) * 100) / 100; tax2_label = 'NIS+NHT+Ed Tax';
+    employerContributions = Math.round((Math.min(totalGross * 0.03, 22500 / 12) + totalGross * 0.03 + totalGross * 0.03) * 100) / 100;
   } else if (jurisdiction === 'CA') {
     const cpp = Math.min(totalGross * 0.0595, 3867.50 / 12);
     const ei = Math.min(totalGross * 0.0166, 1049.12 / 12);
@@ -2452,9 +2465,35 @@ function calculatePayroll(grossMonthly, jurisdiction = 'TT', bonus = 0, overtime
     else if (annualGross <= 111733) federalTax = 8380 + (annualGross - 55867) * 0.205;
     else if (annualGross <= 154906) federalTax = 19832 + (annualGross - 111733) * 0.26;
     else federalTax = 31016 + (annualGross - 154906) * 0.29;
-    tax1 = Math.round((federalTax / 12) * 100) / 100; tax1_label = 'Federal Tax';
+    const p = (province || 'ON').toUpperCase();
+    let provTax = 0;
+    if (p === 'AB') {
+      provTax = Math.max(0, annualGross - 21003) * 0.10;
+    } else if (p === 'QC') {
+      if (annualGross <= 51780) provTax = annualGross * 0.14;
+      else if (annualGross <= 103560) provTax = 7249.20 + (annualGross - 51780) * 0.19;
+      else if (annualGross <= 126000) provTax = 17087.40 + (annualGross - 103560) * 0.24;
+      else provTax = 22474.20 + (annualGross - 126000) * 0.2575;
+    } else if (p === 'BC') {
+      if (annualGross <= 45654) provTax = annualGross * 0.0506;
+      else if (annualGross <= 91310) provTax = 2310.09 + (annualGross - 45654) * 0.0770;
+      else if (annualGross <= 104835) provTax = 5825.00 + (annualGross - 91310) * 0.1050;
+      else if (annualGross <= 127299) provTax = 7244.12 + (annualGross - 104835) * 0.1229;
+      else if (annualGross <= 172602) provTax = 10003.24 + (annualGross - 127299) * 0.1470;
+      else provTax = 16665.00 + (annualGross - 172602) * 0.1680;
+    } else {
+      if (annualGross <= 51446) provTax = annualGross * 0.0505;
+      else if (annualGross <= 102894) provTax = 2598.02 + (annualGross - 51446) * 0.0915;
+      else if (annualGross <= 150000) provTax = 7307.39 + (annualGross - 102894) * 0.1116;
+      else provTax = 12565.43 + (annualGross - 150000) * 0.1216;
+    }
+    tax1 = Math.round(((federalTax + provTax) / 12) * 100) / 100; tax1_label = `Federal+${p} Tax`;
     tax2 = Math.round(cpp * 100) / 100; tax2_label = 'CPP';
     tax3 = Math.round(ei * 100) / 100; tax3_label = 'EI';
+    const employerCPP = Math.min(totalGross * 0.0595, 3867.50 / 12);
+    const employerEI = Math.min(totalGross * 0.0166 * 1.4, 1049.12 / 12 * 1.4);
+    employerContributions = Math.round((employerCPP + employerEI) * 100) / 100;
+    if (p !== 'ON') notes = `Province: ${p}`;
   } else if (jurisdiction === 'US') {
     const annualGross = totalGross * 12;
     let federalTax = 0;
@@ -2465,21 +2504,66 @@ function calculatePayroll(grossMonthly, jurisdiction = 'TT', bonus = 0, overtime
     else federalTax = 39110 + (annualGross - 191950) * 0.32;
     const socialSecurity = Math.min(totalGross * 0.062, 160200 * 0.062 / 12);
     const medicare = totalGross * 0.0145;
-    tax1 = Math.round((federalTax / 12) * 100) / 100; tax1_label = 'Federal Tax';
+    const st = (state || '').toUpperCase();
+    let stateTax = 0;
+    if (!['TX','FL','NV','WA','SD','WY','AK','NH','TN'].includes(st)) {
+      if (st === 'CA') {
+        if (annualGross <= 10412) stateTax = annualGross * 0.01;
+        else if (annualGross <= 24684) stateTax = 104.12 + (annualGross - 10412) * 0.02;
+        else if (annualGross <= 38959) stateTax = 389.56 + (annualGross - 24684) * 0.04;
+        else if (annualGross <= 54081) stateTax = 960.56 + (annualGross - 38959) * 0.06;
+        else if (annualGross <= 68350) stateTax = 1867.88 + (annualGross - 54081) * 0.08;
+        else stateTax = 3009.40 + (annualGross - 68350) * 0.093;
+      } else if (st === 'NY') {
+        if (annualGross <= 17150) stateTax = annualGross * 0.04;
+        else if (annualGross <= 23600) stateTax = 686 + (annualGross - 17150) * 0.045;
+        else if (annualGross <= 27900) stateTax = 976.25 + (annualGross - 23600) * 0.0525;
+        else if (annualGross <= 161550) stateTax = 1202 + (annualGross - 27900) * 0.0585;
+        else if (annualGross <= 323200) stateTax = 9021.57 + (annualGross - 161550) * 0.0625;
+        else stateTax = 19124.57 + (annualGross - 323200) * 0.0685;
+      } else if (st === 'IL') {
+        stateTax = annualGross * 0.0495;
+      } else if (st) {
+        stateTax = annualGross * 0.05;
+      }
+    }
+    tax1 = Math.round(((federalTax + stateTax) / 12) * 100) / 100;
+    tax1_label = st ? `Federal+${st} Tax` : 'Federal Tax';
     tax2 = Math.round(socialSecurity * 100) / 100; tax2_label = 'Social Security';
     tax3 = Math.round(medicare * 100) / 100; tax3_label = 'Medicare';
+    employerContributions = Math.round((Math.min(totalGross * 0.062, 160200 * 0.062 / 12) + totalGross * 0.0145) * 100) / 100;
+    if (st) notes = `State: ${st}`;
   } else if (jurisdiction === 'GB') {
     const personalAllowance = 12570 / 12;
-    const taxable = Math.max(0, totalGross - personalAllowance);
-    const annualTaxable = taxable * 12;
+    const annualGross = totalGross * 12;
     let incomeTax = 0;
-    if (annualTaxable <= 37700) incomeTax = annualTaxable * 0.20;
-    else if (annualTaxable <= 125140) incomeTax = 7540 + (annualTaxable - 37700) * 0.40;
-    else incomeTax = 42140 + (annualTaxable - 125140) * 0.45;
+    if (scotland) {
+      const scottishTaxable = Math.max(0, annualGross - 12570);
+      if (scottishTaxable <= 2306) incomeTax = scottishTaxable * 0.19;
+      else if (scottishTaxable <= 13991) incomeTax = 437.14 + (scottishTaxable - 2306) * 0.20;
+      else if (scottishTaxable <= 31092) incomeTax = 2774.14 + (scottishTaxable - 13991) * 0.21;
+      else if (scottishTaxable <= 62430) incomeTax = 6365.35 + (scottishTaxable - 31092) * 0.42;
+      else incomeTax = 19526.51 + (scottishTaxable - 62430) * 0.47;
+      notes = 'Scottish income tax rates applied';
+    } else {
+      const annualTaxable = Math.max(0, annualGross - 12570);
+      if (annualTaxable <= 37700) incomeTax = annualTaxable * 0.20;
+      else if (annualTaxable <= 125140) incomeTax = 7540 + (annualTaxable - 37700) * 0.40;
+      else incomeTax = 42140 + (annualTaxable - 125140) * 0.45;
+    }
     const niThreshold = 12570 / 12;
     const ni = totalGross > niThreshold ? Math.min((totalGross - niThreshold) * 0.08, (50270 - 12570) / 12 * 0.08) : 0;
-    tax1 = Math.round((incomeTax / 12) * 100) / 100; tax1_label = 'Income Tax';
-    tax2 = Math.round(ni * 100) / 100; tax2_label = 'National Insurance';
+    const plan = parseInt(studentLoanPlan, 10) || 0;
+    const slThresholds = { 1: 22015 / 12, 2: 27295 / 12, 4: 27660 / 12, 5: 25000 / 12 };
+    const slRate = plan > 0 && slThresholds[plan] ? (totalGross > slThresholds[plan] ? (totalGross - slThresholds[plan]) * 0.09 : 0) : 0;
+    const pensionEmployee = pension ? totalGross * 0.05 : 0;
+    const pensionEmployer = pension ? totalGross * 0.03 : 0;
+    tax1 = Math.round((incomeTax / 12) * 100) / 100; tax1_label = scotland ? 'Scottish Income Tax' : 'Income Tax';
+    const niLabel = [plan > 0 ? `Student Loan Plan ${plan}` : '', pension ? 'Pension' : ''].filter(Boolean);
+    tax2 = Math.round((ni + slRate + pensionEmployee) * 100) / 100;
+    tax2_label = niLabel.length ? `NI+${niLabel.join('+')}` : 'National Insurance';
+    const employerNI = totalGross > (9100 / 12) ? (totalGross - 9100 / 12) * 0.138 : 0;
+    employerContributions = Math.round((employerNI + pensionEmployer) * 100) / 100;
   } else if (jurisdiction === 'MX') {
     const annualGross = totalGross * 12;
     let isr = 0;
@@ -2490,18 +2574,22 @@ function calculatePayroll(grossMonthly, jurisdiction = 'TT', bonus = 0, overtime
     const imss = totalGross * 0.022;
     tax1 = Math.round((isr / 12) * 100) / 100; tax1_label = 'ISR';
     tax2 = Math.round(imss * 100) / 100; tax2_label = 'IMSS';
+    employerContributions = Math.round(totalGross * 0.17 * 100) / 100;
   } else if (jurisdiction === 'CO') {
-    const pension = totalGross * 0.04;
+    const pensionCO = totalGross * 0.04;
     const health = totalGross * 0.04;
-    tax1 = Math.round(pension * 100) / 100; tax1_label = 'Pensión';
+    tax1 = Math.round(pensionCO * 100) / 100; tax1_label = 'Pensión';
     tax2 = Math.round(health * 100) / 100; tax2_label = 'Salud';
+    employerContributions = Math.round((totalGross * 0.12 + totalGross * 0.085) * 100) / 100;
   } else {
     tax1 = Math.round(totalGross * 0.20 * 100) / 100; tax1_label = 'Income Tax';
+    employerContributions = Math.round(totalGross * 0.05 * 100) / 100;
   }
 
-  const totalDeductions = tax1 + tax2 + tax3;
+  const totalDeductions = Math.round((tax1 + tax2 + tax3) * 100) / 100;
   const netPay = Math.round((totalGross - totalDeductions) * 100) / 100;
-  return { gross: grossMonthly, bonus, overtime, totalGross, tax1, tax1_label, tax2, tax2_label, tax3, tax3_label, totalDeductions, netPay };
+  const totalEmployerCost = Math.round((totalGross + employerContributions) * 100) / 100;
+  return { gross: grossMonthly, bonus, overtime, totalGross, tax1, tax1_label, tax2, tax2_label, tax3, tax3_label, totalDeductions, netPay, employerContributions, totalEmployerCost, notes, jurisdiction };
 }
 
 app.get('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
@@ -2517,7 +2605,7 @@ app.get('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
 }));
 
 app.post('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
-  const { period, jurisdiction = 'TT', bonus_overrides = {}, overtime_overrides = {}, notes = '' } = req.body || {};
+  const { period, jurisdiction = 'TT', bonus_overrides = {}, overtime_overrides = {}, options = {}, notes = '' } = req.body || {};
   if (!period) return res.status(400).json({ error: 'period required' });
   const uid = req.session.userId;
   const eid = req.entityId || null;
@@ -2529,7 +2617,7 @@ app.post('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
     const gross = parseFloat(emp.gross) || 0;
     const bonus = parseFloat(bonus_overrides[emp.id]) || 0;
     const overtime = parseFloat(overtime_overrides[emp.id]) || 0;
-    const calc = calculatePayroll(gross, jurisdiction, bonus, overtime);
+    const calc = calculatePayroll(gross, jurisdiction, bonus, overtime, options);
     return { payroll_id: emp.id, employee_name: `${emp.fname} ${emp.lname}`.trim(), ...calc, jurisdiction };
   });
 
@@ -2588,7 +2676,14 @@ app.get('/api/payroll/preview', requireAuth, wrap(async (req, res) => {
   const jurisdiction = req.query.jurisdiction || 'TT';
   const bonus = parseFloat(req.query.bonus) || 0;
   const overtime = parseFloat(req.query.overtime) || 0;
-  res.json(calculatePayroll(gross, jurisdiction, bonus, overtime));
+  const options = {
+    province: req.query.province || 'ON',
+    state: req.query.state || '',
+    scotland: req.query.scotland === 'true',
+    studentLoanPlan: parseInt(req.query.studentLoanPlan || '0', 10),
+    pension: req.query.pension !== 'false',
+  };
+  res.json(calculatePayroll(gross, jurisdiction, bonus, overtime, options));
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════

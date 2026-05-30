@@ -337,6 +337,24 @@ async function initDB() {
   } finally {
     client.release();
   }
+
+  // Safe supplemental indexes — each wrapped individually so one bad column
+  // never aborts initDB. IF NOT EXISTS makes these idempotent on redeploy.
+  for (const idxSQL of [
+    `CREATE INDEX IF NOT EXISTS idx_invoices_user_id       ON invoices(user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_expenses_user_id       ON expenses(user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_customers_user_id      ON customers(user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_payroll_user_entity    ON payroll(user_id, entity_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_audit_trail_user_id    ON audit_trail(user_id, changed_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_invoice_payments_invoice ON invoice_payments(invoice_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_inventory_movements_item ON inventory_movements(inventory_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_payroll_runs_user_entity ON payroll_runs(user_id, entity_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_fx_transactions_user   ON fx_transactions(user_id, entity_id)`,
+  ]) {
+    try { await pool.query(idxSQL); }
+    catch (e) { console.warn('[DB] Index skipped:', e.message.slice(0, 80)); }
+  }
+
   return pool;
 }
 

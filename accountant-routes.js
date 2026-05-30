@@ -68,7 +68,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const db = require('./database');
+const { db, pool: _dbPool, rowToObj: _rowToObj } = require('./database');
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 
@@ -528,9 +528,12 @@ If you cannot find a field, use null. Be concise.`;
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
     if (access.rows[0].access_level === 'view') return res.status(403).json({ error: 'View-only access.' });
-    const existing = await db.get('lock_settings', r => r.user_id === parseInt(userId) && r.period === period);
-    if (existing) {
-      await db.update('lock_settings', r => r.id === existing.id, { locked: locked ? 1 : 0, locked_by: `accountant:${req.session.accountantId}` });
+    const { rows: [_lsAcc] } = await pool.query(
+      `SELECT * FROM lock_settings WHERE user_id = $1 AND data->>'period' = $2 LIMIT 1`,
+      [parseInt(userId), period]
+    );
+    if (_lsAcc) {
+      await db.updateById('lock_settings', _lsAcc.id, { locked: locked ? 1 : 0, locked_by: `accountant:${req.session.accountantId}` });
     } else {
       await db.insert('lock_settings', { user_id: parseInt(userId), period, locked: locked ? 1 : 0, locked_by: `accountant:${req.session.accountantId}` });
     }

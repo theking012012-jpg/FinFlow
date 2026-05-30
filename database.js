@@ -351,7 +351,10 @@ async function initDB() {
     `CREATE INDEX IF NOT EXISTS idx_payroll_runs_user_entity ON payroll_runs(user_id, entity_id)`,
     `CREATE INDEX IF NOT EXISTS idx_fx_transactions_user   ON fx_transactions(user_id, entity_id)`,
     `CREATE INDEX IF NOT EXISTS idx_users_email ON users((data->>'email'))`,
+    `CREATE INDEX IF NOT EXISTS idx_users_email_ci ON users(lower(data->>'email'))`,
     `CREATE INDEX IF NOT EXISTS idx_pwd_resets_token ON password_resets((data->>'token'))`,
+    `CREATE INDEX IF NOT EXISTS idx_user_settings_user_key ON user_settings(user_id, (data->>'key'))`,
+    `CREATE INDEX IF NOT EXISTS idx_lock_settings_user ON lock_settings(user_id)`,
   ]) {
     try { await pool.query(idxSQL); }
     catch (e) { console.warn('[DB] Index skipped:', e.message.slice(0, 80)); }
@@ -628,4 +631,4 @@ const db = {
 // To restore demo seeding for development only, add it behind:
 //   if (process.env.NODE_ENV !== 'production') { ... }
 
-module.exports = { db, initDB, pool };
+module.exports = { db, initDB, pool, rowToObj };

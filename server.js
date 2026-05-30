@@ -8,7 +8,7 @@ const cors         = require('cors');
 const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
-const { db, initDB, pool } = require('./database');
+const { db, initDB, pool, rowToObj } = require('./database');
 const pgSession = require('connect-pg-simple')(session);
 
 let resendClient = null;
@@ -270,8 +270,10 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email address.' });
 
-    const existing = await db.get('users', u => u.email.toLowerCase() === email.toLowerCase());
-    if (existing) return res.status(409).json({ error: 'An account with this email already exists.' });
+    const { rows: [_existU] } = await pool.query(
+      `SELECT id FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [email]
+    );
+    if (_existU) return res.status(409).json({ error: 'An account with this email already exists.' });
 
     const hash = bcrypt.hashSync(password, 12);
     const { lastInsertRowid: userId } = await db.insert('users', {
@@ -306,7 +308,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     req.session.userId = userId;
     req.session.userRole = 'owner';
     req.session.userEmail = email.toLowerCase();
-    const user = await db.get('users', u => u.id === userId);
+    const { rows: [_ru] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [userId]);
+    const user = _ru ? rowToObj(_ru) : null;
     console.log('[Register] New user created, id:', userId);
     res.status(201).json({ user: safeUser(user) });
   } catch (err) {
@@ -319,7 +322,10 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
-    const user = await db.get('users', u => u.email.toLowerCase() === email.toLowerCase());
+    const { rows: [_lu] } = await pool.query(
+      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [email]
+    );
+    const user = _lu ? rowToObj(_lu) : null;
     if (user && (user.data?.deleted === 'true' || user.deleted === 'true')) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
@@ -351,13 +357,16 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
     const { email } = req.body || {};
     if (!email) return res.status(400).json({ error: 'Email required.' });
 
-    const user = await db.get('users', u => u.email.toLowerCase() === email.toLowerCase());
+    const { rows: [_fpu] } = await pool.query(
+      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [email]
+    );
+    const user = _fpu ? rowToObj(_fpu) : null;
     if (!user) return res.json({ ok: true });
 
     const token   = crypto.randomBytes(32).toString('hex');
     const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
-    await db.delete('password_resets', r => r.user_id === user.id);
+    await pool.query(`DELETE FROM password_resets WHERE user_id = $1`, [user.id]);
     await db.insert('password_resets', { user_id: user.id, token, expires });
 
     const APP_URL  = process.env.APP_URL || `http://localhost:${PORT}`;
@@ -400,16 +409,19 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
     if (!token || !password) return res.status(400).json({ error: 'Token and password required.' });
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
 
-    const record = await db.get('password_resets', r => r.token === token);
+    const { rows: [_pr] } = await pool.query(
+      `SELECT * FROM password_resets WHERE data->>'token' = $1 LIMIT 1`, [token]
+    );
+    const record = _pr ? rowToObj(_pr) : null;
     if (!record) return res.status(400).json({ error: 'Invalid or expired reset link.' });
     if (new Date(record.expires) < new Date()) {
-      await db.delete('password_resets', r => r.token === token);
+      await pool.query(`DELETE FROM password_resets WHERE data->>'token' = $1`, [token]);
       return res.status(400).json({ error: 'This reset link has expired. Please request a new one.' });
     }
 
     const hash = bcrypt.hashSync(password, 12);
-    await db.update('users', u => u.id === record.user_id, { password: hash });
-    await db.delete('password_resets', r => r.token === token);
+    await db.updateById('users', record.user_id, { password: hash });
+    await pool.query(`DELETE FROM password_resets WHERE data->>'token' = $1`, [token]);
 
     res.json({ ok: true });
   } catch (err) {
@@ -419,13 +431,15 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
 });
 
 app.get('/api/auth/me', requireAuth, wrap(async (req, res) => {
-  const user = await db.get('users', u => u.id === req.session.userId);
+  const { rows: [_mu] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [req.session.userId]);
+  const user = _mu ? rowToObj(_mu) : null;
   if (!user) return res.status(401).json({ error: 'Session expired.' });
   res.json({ user: safeUser(user) });
 }));
 // Alias used by frontend for session checks
 app.get('/api/me', requireAuth, wrap(async (req, res) => {
-  const user = await db.get('users', u => u.id === req.session.userId);
+  const { rows: [_meu] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [req.session.userId]);
+  const user = _meu ? rowToObj(_meu) : null;
   if (!user) return res.status(401).json({ error: 'Session expired.' });
   res.json({ user: safeUser(user) });
 }));
@@ -497,12 +511,16 @@ app.use('/api', (req, res, next) => {
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 async function ownedBy(table, id, userId) {
-  return db.get(table, r => r.id === parseInt(id) && r.user_id === userId);
+  const { rows } = await pool.query(
+    `SELECT * FROM ${table} WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [parseInt(id), userId]
+  );
+  return rows[0] ? rowToObj(rows[0]) : null;
 }
 
 // Resolve the first active entity for the current user (used by several POST routes)
 async function activeEntity(userId) {
-  const rows = await db.all('entities', e => e.user_id === userId && e.is_active);
+  const rows = await db.allByUser('entities', userId, e => e.is_active);
   return rows[0] || null;
 }
 
@@ -533,14 +551,18 @@ async function logAudit(req, action, tableName, recordId, oldData, newData) {
 // ── LOCK HELPER ───────────────────────────────────────────────────────────────
 async function isLocked(userId, date) {
   if (!date) return false;
-  const s = await db.get('lock_settings', r => r.user_id === userId && r.enabled);
+  const { rows } = await pool.query(
+    `SELECT * FROM lock_settings WHERE user_id = $1 AND (data->>'enabled')::int = 1 LIMIT 1`,
+    [userId]
+  );
+  const s = rows[0] ? rowToObj(rows[0]) : null;
   if (!s || !s.lock_date) return false;
   return date <= s.lock_date;
 }
 
 // ── ENTITIES ──────────────────────────────────────────────────────────────────
 app.get('/api/entities', requireAuth, wrap(async (req, res) => {
-  res.json(await db.all('entities', r => r.user_id === req.session.userId, (a, b) => a.sort_order - b.sort_order));
+  res.json(await db.allByUser('entities', req.session.userId, null, (a, b) => a.sort_order - b.sort_order));
 }));
 app.post('/api/entities', requireAuth, wrap(async (req, res) => {
   const { name, currency = 'USD', color = '#c9a84c' } = req.body || {};
@@ -552,19 +574,26 @@ app.put('/api/entities/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('entities', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const { name, currency, color } = req.body || {};
-  await db.update('entities', r => r.id === row.id, { ...(name && {name}), ...(currency && {currency}), ...(color && {color}) });
-  res.json(await db.get('entities', r => r.id === row.id));
+  await db.updateById('entities', row.id, { ...(name && {name}), ...(currency && {currency}), ...(color && {color}) });
+  const { rows: [_er] } = await pool.query(`SELECT * FROM entities WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_er ? rowToObj(_er) : {});
 }));
 app.delete('/api/entities/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('entities', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('entities', r => r.id === parseInt(req.params.id));
+  await db.deleteById('entities', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 app.post('/api/entities/:id/activate', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const eid = parseInt(req.params.id);
-  await db.update('entities', r => r.user_id === uid, { is_active: 0 });
-  await db.update('entities', r => r.id === eid && r.user_id === uid, { is_active: 1 });
+  await pool.query(
+    `UPDATE entities SET data = data || '{"is_active":0}'::jsonb, updated_at = NOW() WHERE user_id = $1`,
+    [uid]
+  );
+  await pool.query(
+    `UPDATE entities SET data = data || '{"is_active":1}'::jsonb, updated_at = NOW() WHERE id = $1 AND user_id = $2`,
+    [eid, uid]
+  );
   req.session.entityId = eid;
   res.json({ ok: true });
 }));
@@ -593,8 +622,9 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   if (due_date != null) patch.due_date = due_date;
   if (status != null) patch.status = status.toLowerCase();
   if (notes != null) patch.notes = notes;
-  await db.update('invoices', r => r.id === row.id, patch);
-  const updated = await db.get('invoices', r => r.id === row.id);
+  await db.updateById('invoices', row.id, patch);
+  const { rows: [_iur] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [row.id]);
+  const updated = _iur ? rowToObj(_iur) : {};
   logAudit(req, 'UPDATE', 'invoices', row.id, row, updated);
   res.json(updated);
 }));
@@ -602,7 +632,7 @@ app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('invoices', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
-  await db.delete('invoices', r => r.id === parseInt(req.params.id));
+  await db.deleteById('invoices', parseInt(req.params.id));
   logAudit(req, 'DELETE', 'invoices', row.id, row, null);
   res.json({ ok: true });
 }));
@@ -632,8 +662,9 @@ app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   if (b.amount != null) patch.amount = parseFloat(b.amount);
   if (b.deductible != null) patch.deductible = b.deductible;
   if (b.expense_date != null) patch.expense_date = b.expense_date;
-  await db.update('expenses', r => r.id === row.id, patch);
-  const updated = await db.get('expenses', r => r.id === row.id);
+  await db.updateById('expenses', row.id, patch);
+  const { rows: [_eur] } = await pool.query(`SELECT * FROM expenses WHERE id = $1 LIMIT 1`, [row.id]);
+  const updated = _eur ? rowToObj(_eur) : {};
   logAudit(req, 'UPDATE', 'expenses', row.id, row, updated);
   res.json(updated);
 }));
@@ -641,7 +672,7 @@ app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('expenses', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
-  await db.delete('expenses', r => r.id === parseInt(req.params.id));
+  await db.deleteById('expenses', parseInt(req.params.id));
   logAudit(req, 'DELETE', 'expenses', row.id, row, null);
   res.json({ ok: true });
 }));
@@ -662,12 +693,13 @@ app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   ['fname','lname','company','industry','email','phone','status','notes'].forEach(f => { if (b[f] != null) patch[f] = b[f]; });
   if (b.revenue != null) patch.revenue = parseFloat(b.revenue);
-  await db.update('customers', r => r.id === row.id, patch);
-  res.json(await db.get('customers', r => r.id === row.id));
+  await db.updateById('customers', row.id, patch);
+  const { rows: [_cur] } = await pool.query(`SELECT * FROM customers WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_cur ? rowToObj(_cur) : {});
 }));
 app.delete('/api/customers/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('customers', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('customers', r => r.id === parseInt(req.params.id));
+  await db.deleteById('customers', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -691,20 +723,22 @@ app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
   const patch = { units: newUnits, max_units: newMax, low_stock: newUnits < newMax * 0.1 ? 1 : 0 };
   if (b.name != null) patch.name = b.name;
   if (b.cost != null) patch.cost = parseFloat(b.cost);
-  await db.update('inventory', r => r.id === row.id, patch);
-  res.json(await db.get('inventory', r => r.id === row.id));
+  await db.updateById('inventory', row.id, patch);
+  const { rows: [_inur] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_inur ? rowToObj(_inur) : {});
 }));
 app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('inventory', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const qty = Math.max(1, Math.min(parseInt(req.body.qty)||0, 100000));
   const newUnits = row.units + qty;
-  await db.update('inventory', r => r.id === row.id, { units: newUnits, low_stock: newUnits < row.max_units * 0.1 ? 1 : 0 });
-  res.json(await db.get('inventory', r => r.id === row.id));
+  await db.updateById('inventory', row.id, { units: newUnits, low_stock: newUnits < row.max_units * 0.1 ? 1 : 0 });
+  const { rows: [_rstk] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_rstk ? rowToObj(_rstk) : {});
 }));
 app.delete('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('inventory', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('inventory', r => r.id === parseInt(req.params.id));
+  await db.deleteById('inventory', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -742,12 +776,13 @@ app.put('/api/items/:id', requireAuth, wrap(async (req, res) => {
   if (b.status != null) patch.status = b.status;
   if (b.sku    != null) patch.sku    = b.sku.slice(0, 50);
   if (b.cost   != null) patch.cost   = parseFloat(b.cost) || 0;
-  await db.update('items', r => r.id === row.id, patch);
-  res.json(await db.get('items', r => r.id === row.id));
+  await db.updateById('items', row.id, patch);
+  const { rows: [_itmr] } = await pool.query(`SELECT * FROM items WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_itmr ? rowToObj(_itmr) : {});
 }));
 app.delete('/api/items/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('items', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('items', r => r.id === parseInt(req.params.id));
+  await db.deleteById('items', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -779,12 +814,13 @@ app.put('/api/payroll/:id', requireAuth, wrap(async (req, res) => {
   ['fname','lname','role','emp_type','av_class'].forEach(f => { if (b[f] != null) patch[f] = b[f]; });
   if (b.gross != null) patch.gross = parseFloat(b.gross);
   if (b.tax_rate != null) patch.tax_rate = parseFloat(b.tax_rate);
-  await db.update('payroll', r => r.id === row.id, patch);
-  res.json(await db.get('payroll', r => r.id === row.id));
+  await db.updateById('payroll', row.id, patch);
+  const { rows: [_payr] } = await pool.query(`SELECT * FROM payroll WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_payr ? rowToObj(_payr) : {});
 }));
 app.delete('/api/payroll/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('payroll', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('payroll', r => r.id === parseInt(req.params.id));
+  await db.deleteById('payroll', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -825,12 +861,13 @@ app.put('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => 
   if (b.amount != null)      patch.amount      = parseFloat(b.amount) || 0;
   if (b.tx_type != null)     patch.tx_type     = b.tx_type;
   if (b.tx_date != null)     patch.tx_date     = b.tx_date;
-  await db.update('personal_transactions', r => r.id === row.id, patch);
-  res.json(await db.get('personal_transactions', r => r.id === row.id));
+  await db.updateById('personal_transactions', row.id, patch);
+  const { rows: [_ptr] } = await pool.query(`SELECT * FROM personal_transactions WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_ptr ? rowToObj(_ptr) : {});
 }));
 app.delete('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('personal_transactions', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('personal_transactions', r => r.id === parseInt(req.params.id));
+  await db.deleteById('personal_transactions', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -859,12 +896,13 @@ app.put('/api/goals/:id', requireAuth, wrap(async (req, res) => {
   if (b.current_val != null) patch.current_val = parseFloat(b.current_val);
   if (b.target_val != null) patch.target_val = parseFloat(b.target_val);
   if (b.monthly_contrib != null) patch.monthly_contrib = parseFloat(b.monthly_contrib);
-  await db.update('goals', r => r.id === row.id, patch);
-  res.json(await db.get('goals', r => r.id === row.id));
+  await db.updateById('goals', row.id, patch);
+  const { rows: [_gr] } = await pool.query(`SELECT * FROM goals WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_gr ? rowToObj(_gr) : {});
 }));
 app.delete('/api/goals/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('goals', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('goals', r => r.id === parseInt(req.params.id));
+  await db.deleteById('goals', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -906,12 +944,13 @@ app.put('/api/projects/:id', requireAuth, wrap(async (req, res) => {
   if (b.hours    != null) patch.hours    = parseFloat(b.hours) || 0;
   if (b.status   != null) patch.status   = b.status;
   if (b.progress != null) patch.progress = parseInt(b.progress);
-  await db.update('projects', r => r.id === row.id, patch);
-  res.json(await db.get('projects', r => r.id === row.id));
+  await db.updateById('projects', row.id, patch);
+  const { rows: [_pjr] } = await pool.query(`SELECT * FROM projects WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_pjr ? rowToObj(_pjr) : {});
 }));
 app.delete('/api/projects/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('projects', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('projects', r => r.id === parseInt(req.params.id));
+  await db.deleteById('projects', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -938,12 +977,13 @@ app.put('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   ['ticker','name','asset_type','color'].forEach(f => { if (b[f] != null) patch[f] = b[f]; });
   ['shares','cost_per','price','dividend'].forEach(f => { if (b[f] != null) patch[f] = parseFloat(b[f]); });
-  await db.update('holdings', r => r.id === row.id, patch);
-  res.json(await db.get('holdings', r => r.id === row.id));
+  await db.updateById('holdings', row.id, patch);
+  const { rows: [_hldr] } = await pool.query(`SELECT * FROM holdings WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_hldr ? rowToObj(_hldr) : {});
 }));
 app.delete('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('holdings', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('holdings', r => r.id === parseInt(req.params.id));
+  await db.deleteById('holdings', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -953,8 +993,18 @@ app.get('/api/budget-targets', requireAuth, wrap(async (req, res) => {
   const eid = req.entityId || null;
   // Prefer entity-scoped row if present, fall back to entity-less row.
   let row = null;
-  if (eid) row = await db.get('budget_targets', r => r.user_id === uid && r.entity_id === eid);
-  if (!row) row = await db.get('budget_targets', r => r.user_id === uid && !r.entity_id);
+  if (eid) {
+    const { rows: [_bte] } = await pool.query(
+      `SELECT * FROM budget_targets WHERE user_id = $1 AND entity_id = $2 LIMIT 1`, [uid, eid]
+    );
+    row = _bte ? rowToObj(_bte) : null;
+  }
+  if (!row) {
+    const { rows: [_bt0] } = await pool.query(
+      `SELECT * FROM budget_targets WHERE user_id = $1 AND entity_id IS NULL LIMIT 1`, [uid]
+    );
+    row = _bt0 ? rowToObj(_bt0) : null;
+  }
   res.json(row ? row.targets : {});
 }));
 app.put('/api/budget-targets', requireAuth, wrap(async (req, res) => {
@@ -962,11 +1012,20 @@ app.put('/api/budget-targets', requireAuth, wrap(async (req, res) => {
   const eid = req.entityId || null;
   const targets = req.body || {};
   // Upsert by both user_id and entity_id so each entity has its own budget
-  const existing = eid
-    ? await db.get('budget_targets', r => r.user_id === uid && r.entity_id === eid)
-    : await db.get('budget_targets', r => r.user_id === uid && !r.entity_id);
+  let existing = null;
+  if (eid) {
+    const { rows: [_bte2] } = await pool.query(
+      `SELECT * FROM budget_targets WHERE user_id = $1 AND entity_id = $2 LIMIT 1`, [uid, eid]
+    );
+    existing = _bte2 ? rowToObj(_bte2) : null;
+  } else {
+    const { rows: [_bt02] } = await pool.query(
+      `SELECT * FROM budget_targets WHERE user_id = $1 AND entity_id IS NULL LIMIT 1`, [uid]
+    );
+    existing = _bt02 ? rowToObj(_bt02) : null;
+  }
   if (existing) {
-    await db.update('budget_targets', r => r.id === existing.id, { targets });
+    await db.updateById('budget_targets', existing.id, { targets });
   } else {
     await db.insert('budget_targets', { user_id: uid, entity_id: eid, targets });
   }
@@ -975,13 +1034,21 @@ app.put('/api/budget-targets', requireAuth, wrap(async (req, res) => {
 
 // ── SETTINGS ──────────────────────────────────────────────────────────────────
 app.get('/api/settings', requireAuth, wrap(async (req, res) => {
-  res.json(await db.get('user_settings', r => r.user_id === req.session.userId) || {});
+  const { rows: [_sr] } = await pool.query(
+    `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`,
+    [req.session.userId]
+  );
+  res.json(_sr ? rowToObj(_sr) : {});
 }));
 app.put('/api/settings', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
   // Read current settings for audit diff
-  const before = (await db.get('user_settings', r => r.user_id === req.session.userId)) || {};
+  const { rows: [_sb] } = await pool.query(
+    `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`,
+    [req.session.userId]
+  );
+  const before = _sb ? rowToObj(_sb) : {};
   if (b.dark_mode      != null) patch.dark_mode      = b.dark_mode ? 1 : 0;
   if (b.currency       != null) patch.currency        = b.currency;
   if (b.show_cents     != null) patch.show_cents      = b.show_cents ? 1 : 0;
@@ -1000,13 +1067,17 @@ app.put('/api/settings', requireAuth, wrap(async (req, res) => {
   if (b.fiscal_year    != null) patch.fiscal_year     = String(b.fiscal_year).slice(0,20);
   if (b.num_employees  != null) patch.num_employees   = b.num_employees;
   if (b.onboarding_done!= null) patch.onboarding_done = b.onboarding_done ? 1 : 0;
-  await db.upsert('user_settings', 'user_id', req.session.userId, patch);
-  if (b.name) await db.update('users', u => u.id === req.session.userId, { name: b.name.trim().slice(0,100) });
+  const uid2 = req.session.userId;
+  const { rows: [_usRow] } = await pool.query(
+    `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [uid2]
+  );
+  if (_usRow) await db.updateById('user_settings', _usRow.id, patch);
+  else await db.insert('user_settings', { user_id: uid2, ...patch });
+  if (b.name) await db.updateById('users', uid2, { name: b.name.trim().slice(0,100) });
   if (b.business_name) {
     // Also update the active entity name if user is updating business name
-    const uid = req.session.userId;
-    const ent = await activeEntity(uid);
-    if (ent) await db.update('entities', e => e.id === ent.id, { name: b.business_name.slice(0,100) });
+    const ent = await activeEntity(uid2);
+    if (ent) await db.updateById('entities', ent.id, { name: b.business_name.slice(0,100) });
   }
   // Audit log: emit one entry per business-profile field that changed.
   // We only log fields that the user typically modifies on the Settings page —
@@ -1016,7 +1087,7 @@ app.put('/api/settings', requireAuth, wrap(async (req, res) => {
     if (patch[f] == null && f !== 'name') continue;
     const newVal = f === 'name' ? (b.name ? b.name.trim() : null) : patch[f];
     const oldVal = f === 'name'
-      ? (await db.get('users', u => u.id === req.session.userId))?.name
+      ? (await pool.query(`SELECT data->>'name' AS name FROM users WHERE id = $1 LIMIT 1`, [uid2])).rows[0]?.name
       : before[f];
     if (newVal == null) continue;
     if (String(oldVal||'') === String(newVal||'')) continue;
@@ -1030,10 +1101,11 @@ app.put('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (!currentPassword || !newPassword) return res.status(400).json({ error: 'currentPassword and newPassword required.' });
   if (newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters.' });
-  const user = await db.get('users', u => u.id === req.session.userId);
+  const { rows: [_cpu] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [req.session.userId]);
+  const user = _cpu ? rowToObj(_cpu) : null;
   if (!user || !bcrypt.compareSync(currentPassword, user.password)) return res.status(401).json({ error: 'Current password is incorrect.' });
   const hash = bcrypt.hashSync(newPassword, 12);
-  await db.update('users', u => u.id === req.session.userId, { password: hash });
+  await db.updateById('users', req.session.userId, { password: hash });
   logAudit(req, 'CHANGE_PASSWORD', 'users', req.session.userId, null, null);
   res.json({ ok: true });
 }));
@@ -1043,7 +1115,8 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const { password } = req.body || {};
   if (!password) return res.status(400).json({ error: 'Password required to confirm deletion.' });
-  const user = await db.get('users', u => u.id === uid);
+  const { rows: [_dau] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [uid]);
+  const user = _dau ? rowToObj(_dau) : null;
   if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Incorrect password.' });
   // Delete from all tables by user_id
   const allTables = [
@@ -1057,17 +1130,20 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
     'payroll_run_lines','inventory_movements','fx_rates','fx_transactions',
   ];
   for (const t of allTables) {
-    await db.delete(t, r => r.user_id === uid).catch(() => {});
+    await db.deleteByUser(t, uid).catch(() => {});
   }
   await pool.query('DELETE FROM ai_cache WHERE user_id=$1', [uid]).catch(() => {});
-  await db.delete('users', u => u.id === uid);
+  await db.deleteById('users', uid);
   req.session.destroy(() => {});
   res.json({ ok: true });
 }));
 
 // ── LOCK SETTINGS ─────────────────────────────────────────────────────────────
 app.get('/api/lock-settings', requireAuth, wrap(async (req, res) => {
-  const s = await db.get('lock_settings', r => r.user_id === req.session.userId);
+  const { rows: [_lsGet] } = await pool.query(
+    `SELECT * FROM lock_settings WHERE user_id = $1 LIMIT 1`, [req.session.userId]
+  );
+  const s = _lsGet ? rowToObj(_lsGet) : null;
   res.json(s || { enabled: 0, lock_date: null });
 }));
 app.post('/api/lock-settings', requireAuth, wrap(async (req, res) => {
@@ -1075,7 +1151,11 @@ app.post('/api/lock-settings', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const patch = { enabled: enabled ? 1 : 0, lock_date: lock_date || null };
   if (password) patch.password_hash = bcrypt.hashSync(password, 10);
-  await db.upsert('lock_settings', 'user_id', uid, patch);
+  const { rows: [_lsUp] } = await pool.query(
+    `SELECT * FROM lock_settings WHERE user_id = $1 LIMIT 1`, [uid]
+  );
+  if (_lsUp) await db.updateById('lock_settings', _lsUp.id, patch);
+  else await db.insert('lock_settings', { user_id: uid, ...patch });
   logAudit(req, enabled ? 'LOCK_ENABLED' : 'LOCK_DISABLED', 'lock_settings', null, null, patch);
   res.json({ ok: true });
 }));
@@ -1109,12 +1189,13 @@ app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
   if (b.description != null) patch.description = b.description;
   if (b.status      != null) patch.status      = b.status;
   if (b.date        != null) patch.date        = b.date;
-  await db.update('journals', r => r.id === row.id, patch);
-  res.json(await db.get('journals', r => r.id === row.id));
+  await db.updateById('journals', row.id, patch);
+  const { rows: [_jr] } = await pool.query(`SELECT * FROM journals WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_jr ? rowToObj(_jr) : {});
 }));
 app.delete('/api/journals/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('journals', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('journals', r => r.id === parseInt(req.params.id));
+  await db.deleteById('journals', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -1143,12 +1224,13 @@ app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
   if (b.balance  != null) patch.balance  = parseFloat(b.balance);
   if (b.category != null) patch.category = b.category;
   if (b.nature   != null) patch.nature   = b.nature;
-  await db.update('chart_of_accounts', r => r.id === row.id, patch);
-  res.json(await db.get('chart_of_accounts', r => r.id === row.id));
+  await db.updateById('chart_of_accounts', row.id, patch);
+  const { rows: [_coar] } = await pool.query(`SELECT * FROM chart_of_accounts WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_coar ? rowToObj(_coar) : {});
 }));
 app.delete('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('chart_of_accounts', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('chart_of_accounts', r => r.id === parseInt(req.params.id));
+  await db.deleteById('chart_of_accounts', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -1193,7 +1275,7 @@ app.get('/api/documents/:id/download', requireAuth, wrap(async (req, res) => {
 }));
 app.delete('/api/documents/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('documents', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('documents', r => r.id === parseInt(req.params.id));
+  await db.deleteById('documents', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -1216,12 +1298,13 @@ app.put('/api/templates/:id', requireAuth, wrap(async (req, res) => {
   if (b.preview      != null) patch.preview      = b.preview;
   if (b.is_default   != null) patch.is_default   = b.is_default ? 1 : 0;
   if (b.accent_color != null) patch.accent_color = b.accent_color;
-  await db.update('templates', r => r.id === row.id, patch);
-  res.json(await db.get('templates', r => r.id === row.id));
+  await db.updateById('templates', row.id, patch);
+  const { rows: [_tmpr] } = await pool.query(`SELECT * FROM templates WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_tmpr ? rowToObj(_tmpr) : {});
 }));
 app.delete('/api/templates/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('templates', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('templates', r => r.id === parseInt(req.params.id));
+  await db.deleteById('templates', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -1244,12 +1327,13 @@ app.put('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
   if (b.category   != null) patch.category   = b.category;
   if (b.match_type != null) patch.match_type = b.match_type;
   if (b.enabled    != null) patch.enabled    = b.enabled ? 1 : 0;
-  await db.update('autocat_rules', r => r.id === row.id, patch);
-  res.json(await db.get('autocat_rules', r => r.id === row.id));
+  await db.updateById('autocat_rules', row.id, patch);
+  const { rows: [_acr] } = await pool.query(`SELECT * FROM autocat_rules WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_acr ? rowToObj(_acr) : {});
 }));
 app.delete('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('autocat_rules', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('autocat_rules', r => r.id === parseInt(req.params.id));
+  await db.deleteById('autocat_rules', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
@@ -1263,7 +1347,7 @@ app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
         ? (exp.vendor || exp.description || '').toLowerCase()
         : (exp.description || '').toLowerCase();
       if (haystack.includes(rule.keyword)) {
-        await db.update('expenses', r => r.id === exp.id, { category: rule.category });
+        await db.updateById('expenses', exp.id, { category: rule.category });
         updated++;
         break;
       }
@@ -1285,8 +1369,12 @@ app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   res.json(row);
 }));
 app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
-  const row = await db.get('quotes', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
-  if (!row) return res.status(404).json({ error: 'not found' });
+  const { rows: [_qtr] } = await pool.query(
+    `SELECT * FROM quotes WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [Number(req.params.id), req.session.userId]
+  );
+  if (!_qtr) return res.status(404).json({ error: 'not found' });
+  const row = rowToObj(_qtr);
   const patch = {};
   const b = req.body || {};
   if (b.client      != null) patch.client      = b.client;
@@ -1294,11 +1382,11 @@ app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
   if (b.expiry_date != null) patch.expiry_date = b.expiry_date;
   if (b.status      != null) patch.status      = b.status;
   if (b.notes       != null) patch.notes       = b.notes;
-  await db.update('quotes', r => r.id === Number(req.params.id), patch);
+  await db.updateById('quotes', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
 app.delete('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
-  await db.delete('quotes', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
+  await pool.query('DELETE FROM quotes WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
   res.json({ ok: true });
 }));
 
@@ -1314,7 +1402,11 @@ app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   res.json(row);
 }));
 app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
-  const row = await db.get('vendors', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
+  const { rows: [_vndr] } = await pool.query(
+    `SELECT * FROM vendors WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [Number(req.params.id), req.session.userId]
+  );
+  const row = _vndr ? rowToObj(_vndr) : null;
   if (!row) return res.status(404).json({ error: 'not found' });
   const b = req.body || {};
   const patch = {};
@@ -1324,11 +1416,11 @@ app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
   if (b.owing    != null) patch.owing    = parseFloat(b.owing)    || 0;
   if (b.ytd_paid != null) patch.ytd_paid = parseFloat(b.ytd_paid) || 0;
   if (b.status   != null) patch.status   = String(b.status).slice(0, 50);
-  await db.update('vendors', r => r.id === Number(req.params.id), patch);
+  await db.updateById('vendors', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
 app.delete('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
-  await db.delete('vendors', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
+  await pool.query('DELETE FROM vendors WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
   res.json({ ok: true });
 }));
 
@@ -1345,7 +1437,11 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   res.json(row);
 }));
 app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
-  const row = await db.get('bills', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
+  const { rows: [_blr] } = await pool.query(
+    `SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [Number(req.params.id), req.session.userId]
+  );
+  const row = _blr ? rowToObj(_blr) : null;
   if (!row) return res.status(404).json({ error: 'not found' });
   const patch = {};
   const b = req.body || {};
@@ -1354,11 +1450,11 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   if (b.due_date != null) patch.due_date = b.due_date;
   if (b.status   != null) patch.status   = b.status;
   if (b.notes    != null) patch.notes    = b.notes;
-  await db.update('bills', r => r.id === Number(req.params.id), patch);
+  await db.updateById('bills', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
 app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
-  await db.delete('bills', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
+  await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
   res.json({ ok: true });
 }));
 
@@ -1379,14 +1475,17 @@ app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   res.json(row);
 }));
 app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
-  const row = await db.get('recurring_bills', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
-  if (!row) return res.status(404).json({ error: 'not found' });
+  const { rows: [_rblr] } = await pool.query(
+    `SELECT * FROM recurring_bills WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [Number(req.params.id), req.session.userId]
+  );
+  if (!_rblr) return res.status(404).json({ error: 'not found' });
   const { vendor, amount, frequency, next_run, status } = req.body;
-  await db.update('recurring_bills', r => r.id === Number(req.params.id), { vendor, amount: Number(amount), frequency, next_run, status });
+  await db.updateById('recurring_bills', Number(req.params.id), { vendor, amount: Number(amount), frequency, next_run, status });
   res.json({ ok: true });
 }));
 app.delete('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
-  await db.delete('recurring_bills', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
+  await pool.query('DELETE FROM recurring_bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
   res.json({ ok: true });
 }));
 
@@ -1402,14 +1501,17 @@ app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   res.json(row);
 }));
 app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
-  const row = await db.get('recurring_invoices', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
-  if (!row) return res.status(404).json({ error: 'not found' });
+  const { rows: [_rinvr] } = await pool.query(
+    `SELECT * FROM recurring_invoices WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [Number(req.params.id), req.session.userId]
+  );
+  if (!_rinvr) return res.status(404).json({ error: 'not found' });
   const { client, amount, frequency, next_run, status } = req.body;
-  await db.update('recurring_invoices', r => r.id === Number(req.params.id), { client, amount: Number(amount), frequency, next_run, status });
+  await db.updateById('recurring_invoices', Number(req.params.id), { client, amount: Number(amount), frequency, next_run, status });
   res.json({ ok: true });
 }));
 app.delete('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
-  await db.delete('recurring_invoices', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
+  await pool.query('DELETE FROM recurring_invoices WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
   res.json({ ok: true });
 }));
 
@@ -1438,11 +1540,14 @@ app.put('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
   if (b.date     != null) patch.date     = b.date;
   if (b.method   != null) patch.method   = String(b.method).slice(0, 50);
   if (b.num      != null) patch.num      = String(b.num).slice(0, 30);
-  await db.update('sales_receipts', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, patch);
+  await pool.query(
+    `UPDATE sales_receipts SET data = data || $1::jsonb, updated_at = NOW() WHERE id = $2 AND user_id = $3`,
+    [JSON.stringify(Object.fromEntries(Object.entries(patch).filter(([,v]) => v !== undefined))), Number(req.params.id), req.session.userId]
+  );
   res.json({ ok: true });
 }));
 app.delete('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
-  await db.delete('sales_receipts', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
+  await pool.query('DELETE FROM sales_receipts WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
   res.json({ ok: true });
 }));
 
@@ -1471,11 +1576,15 @@ app.put('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
   if (b.amount       != null) patch.amount       = parseFloat(b.amount) || 0;
   if (b.date         != null) patch.date         = b.date;
   if (b.method       != null) patch.method       = String(b.method).slice(0, 50);
-  await db.update('payments_received', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, patch);
+  const { rows: [_prchk] } = await pool.query(
+    `SELECT id FROM payments_received WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [Number(req.params.id), req.session.userId]
+  );
+  if (_prchk) await db.updateById('payments_received', _prchk.id, patch);
   res.json({ ok: true });
 }));
 app.delete('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
-  await db.delete('payments_received', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
+  await pool.query('DELETE FROM payments_received WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
   res.json({ ok: true });
 }));
 
@@ -1507,11 +1616,15 @@ app.put('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
   if (b.date     != null) patch.date     = b.date;
   if (b.status   != null) patch.status   = validStatuses.includes(b.status) ? b.status : 'Open';
   if (b.reason   != null) patch.reason   = String(b.reason).slice(0, 300);
-  await db.update('credit_notes', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, patch);
+  const { rows: [_cnchk] } = await pool.query(
+    `SELECT id FROM credit_notes WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [Number(req.params.id), req.session.userId]
+  );
+  if (_cnchk) await db.updateById('credit_notes', _cnchk.id, patch);
   res.json({ ok: true });
 }));
 app.delete('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
-  await db.delete('credit_notes', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
+  await pool.query('DELETE FROM credit_notes WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
   res.json({ ok: true });
 }));
 
@@ -1535,7 +1648,11 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
 }));
 app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, date, method, notes, ref } = req.body || {};
-  await db.update('payments_made', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, {
+  const { rows: [_pmchk] } = await pool.query(
+    `SELECT id FROM payments_made WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [Number(req.params.id), req.session.userId]
+  );
+  if (_pmchk) await db.updateById('payments_made', _pmchk.id, {
     vendor: (vendor || '').trim().slice(0, 200),
     amount: parseFloat(amount) || 0,
     date: date || new Date().toISOString().slice(0, 10),
@@ -1546,7 +1663,7 @@ app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
-  await db.delete('payments_made', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
+  await pool.query('DELETE FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
   res.json({ ok: true });
 }));
 
@@ -1583,11 +1700,15 @@ app.put('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
   if (b.date    != null) patch.date    = b.date;
   if (b.status  != null) patch.status  = validStatuses.includes(b.status) ? b.status : 'Open';
   if (b.reason  != null) patch.reason  = String(b.reason).slice(0, 300);
-  await db.update('vendor_credits', r => r.id === Number(req.params.id) && r.user_id === req.session.userId, patch);
+  const { rows: [_vcchk] } = await pool.query(
+    `SELECT id FROM vendor_credits WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [Number(req.params.id), req.session.userId]
+  );
+  if (_vcchk) await db.updateById('vendor_credits', _vcchk.id, patch);
   res.json({ ok: true });
 }));
 app.delete('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
-  await db.delete('vendor_credits', r => r.id === Number(req.params.id) && r.user_id === req.session.userId);
+  await pool.query('DELETE FROM vendor_credits WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
   res.json({ ok: true });
 }));
 
@@ -1620,19 +1741,21 @@ app.put('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
   if (b.hours    != null) patch.hours    = parseFloat(b.hours);
   if (b.billable != null) patch.billable = b.billable;
   if (b.rate     != null) patch.rate     = parseFloat(b.rate);
-  await db.update('timesheet', r => r.id === row.id, patch);
-  res.json(await db.get('timesheet', r => r.id === row.id));
+  await db.updateById('timesheet', row.id, patch);
+  const { rows: [_tsr] } = await pool.query(`SELECT * FROM timesheet WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_tsr ? rowToObj(_tsr) : {});
 }));
 app.delete('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('timesheet', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('timesheet', r => r.id === parseInt(req.params.id));
+  await db.deleteById('timesheet', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
 // ── TEAM ──────────────────────────────────────────────────────────────────────
 app.get('/api/team', requireAuth, wrap(async (req, res) => {
   const uid  = req.session.userId;
-  const user = await db.get('users', u => u.id === uid);
+  const { rows: [_tmu] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [uid]);
+  const user = _tmu ? rowToObj(_tmu) : null;
   const pay  = await db.allByUser('payroll', uid);
   const invited = await db.allByUser('team_members', uid);
   const members = [
@@ -1675,12 +1798,13 @@ app.put('/api/team/:id', requireAuth, wrap(async (req, res) => {
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const { role } = req.body || {};
   const validRoles = ['admin', 'accountant', 'viewer'];
-  if (role && validRoles.includes(role)) await db.update('team_members', r => r.id === row.id, { role });
-  res.json(await db.get('team_members', r => r.id === row.id));
+  if (role && validRoles.includes(role)) await db.updateById('team_members', row.id, { role });
+  const { rows: [_tmr] } = await pool.query(`SELECT * FROM team_members WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_tmr ? rowToObj(_tmr) : {});
 }));
 app.delete('/api/team/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('team_members', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('team_members', r => r.id === parseInt(req.params.id));
+  await db.deleteById('team_members', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -1713,7 +1837,7 @@ app.post('/api/ai', requireAuth, async (req, res) => {
       db.allByUser('invoices', uid),
       db.allByUser('expenses', uid),
       db.allByUser('customers', uid),
-      db.get('user_settings', r => r.user_id === uid),
+      pool.query(`SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [uid]).then(r => r.rows[0] ? rowToObj(r.rows[0]) : null),
     ]);
     const cfg = settings || {};
 
@@ -1956,7 +2080,7 @@ async function runRecurringScheduler() {
         client: r.client, amount: r.amount, due_date: r.next_run,
         status: 'pending', notes: `Auto-generated from recurring schedule`,
       });
-      await db.update('recurring_invoices', x => x.id === r.id, { next_run: nextRunDate(r.next_run, r.frequency) });
+      await db.updateById('recurring_invoices', r.id, { next_run: nextRunDate(r.next_run, r.frequency) });
     }
 
     // Recurring bills
@@ -1972,7 +2096,7 @@ async function runRecurringScheduler() {
         vendor: r.vendor, num, amount: r.amount, due_date: r.next_run,
         status: 'unpaid', notes: `Auto-generated from recurring schedule`,
       });
-      await db.update('recurring_bills', x => x.id === r.id, { next_run: nextRunDate(r.next_run, r.frequency) });
+      await db.updateById('recurring_bills', r.id, { next_run: nextRunDate(r.next_run, r.frequency) });
     }
 
     if (recInvoices.length + recBills.length > 0) {
@@ -2001,7 +2125,7 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
 }));
 app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
   if (!(await ownedBy('personal_transactions', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
-  await db.delete('personal_transactions', r => r.id === parseInt(req.params.id));
+  await db.deleteById('personal_transactions', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
@@ -2011,29 +2135,33 @@ app.get('/api/mrr', requireAuth, wrap(async (req, res) => {
   res.json(rows[0]?.value ? JSON.parse(rows[0].value) : { subscribers: [], plans: [] });
 }));
 app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
-  const existing = await db.get('user_settings', r => r.user_id === req.session.userId && r.key === 'mrr_data');
+  const { rows: [_mrre] } = await pool.query(
+    `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'mrr_data' LIMIT 1`,
+    [req.session.userId]
+  );
   const data = JSON.stringify(req.body || {});
-  if (existing) {
-    await db.update('user_settings', r => r.id === existing.id, { value: data });
-  } else {
-    await db.insert('user_settings', { user_id: req.session.userId, key: 'mrr_data', value: data });
-  }
+  if (_mrre) await db.updateById('user_settings', _mrre.id, { value: data });
+  else await db.insert('user_settings', { user_id: req.session.userId, key: 'mrr_data', value: data });
   res.json({ ok: true });
 }));
 
 // ── PERMISSIONS ───────────────────────────────────────────────────────────────
 app.get('/api/permissions', requireAuth, wrap(async (req, res) => {
-  const rows = await db.all('user_settings', r => r.user_id === req.session.userId && r.key === 'permissions');
-  res.json(rows[0]?.value ? JSON.parse(rows[0].value) : null);
+  const { rows: _permRows } = await pool.query(
+    `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' = 'permissions' LIMIT 1`,
+    [req.session.userId]
+  );
+  const _pr0 = _permRows[0] ? rowToObj(_permRows[0]) : null;
+  res.json(_pr0?.value ? JSON.parse(_pr0.value) : null);
 }));
 app.post('/api/permissions', requireAuth, wrap(async (req, res) => {
   const data = JSON.stringify(req.body || []);
-  const existing = await db.get('user_settings', r => r.user_id === req.session.userId && r.key === 'permissions');
-  if (existing) {
-    await db.update('user_settings', r => r.id === existing.id, { value: data });
-  } else {
-    await db.insert('user_settings', { user_id: req.session.userId, key: 'permissions', value: data });
-  }
+  const { rows: [_perme] } = await pool.query(
+    `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'permissions' LIMIT 1`,
+    [req.session.userId]
+  );
+  if (_perme) await db.updateById('user_settings', _perme.id, { value: data });
+  else await db.insert('user_settings', { user_id: req.session.userId, key: 'permissions', value: data });
   res.json({ ok: true });
 }));
 
@@ -2254,7 +2382,11 @@ app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
 // an empty object so the client can default.
 app.get('/api/scenario', requireAuth, wrap(async (req, res) => {
   try {
-    const row = await db.get('user_settings', r => r.user_id === req.session.userId && r.key === 'scenario');
+    const { rows: [_scn] } = await pool.query(
+      `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' = 'scenario' LIMIT 1`,
+      [req.session.userId]
+    );
+    const row = _scn ? rowToObj(_scn) : null;
     res.json(row?.value ? JSON.parse(row.value) : {});
   } catch (e) {
     console.error('[GET /api/scenario]', e.message);
@@ -2264,8 +2396,11 @@ app.get('/api/scenario', requireAuth, wrap(async (req, res) => {
 app.put('/api/scenario', requireAuth, wrap(async (req, res) => {
   try {
     const data = JSON.stringify(req.body || {});
-    const existing = await db.get('user_settings', r => r.user_id === req.session.userId && r.key === 'scenario');
-    if (existing) await db.update('user_settings', r => r.id === existing.id, { value: data });
+    const { rows: [_scne] } = await pool.query(
+      `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'scenario' LIMIT 1`,
+      [req.session.userId]
+    );
+    if (_scne) await db.updateById('user_settings', _scne.id, { value: data });
     else await db.insert('user_settings', { user_id: req.session.userId, key: 'scenario', value: data });
     res.json({ ok: true });
   } catch (e) {
@@ -2280,7 +2415,11 @@ app.put('/api/scenario', requireAuth, wrap(async (req, res) => {
 // frontend can render all toggles off.
 app.get('/api/connections', requireAuth, wrap(async (req, res) => {
   try {
-    const row = await db.get('user_settings', r => r.user_id === req.session.userId && r.key === 'connections');
+    const { rows: [_connr] } = await pool.query(
+      `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' = 'connections' LIMIT 1`,
+      [req.session.userId]
+    );
+    const row = _connr ? rowToObj(_connr) : null;
     res.json(row?.value ? JSON.parse(row.value) : {});
   } catch (e) {
     console.error('[GET /api/connections]', e.message);
@@ -2290,8 +2429,11 @@ app.get('/api/connections', requireAuth, wrap(async (req, res) => {
 app.post('/api/connections', requireAuth, wrap(async (req, res) => {
   try {
     const data = JSON.stringify(req.body || {});
-    const existing = await db.get('user_settings', r => r.user_id === req.session.userId && r.key === 'connections');
-    if (existing) await db.update('user_settings', r => r.id === existing.id, { value: data });
+    const { rows: [_conne] } = await pool.query(
+      `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'connections' LIMIT 1`,
+      [req.session.userId]
+    );
+    if (_conne) await db.updateById('user_settings', _conne.id, { value: data });
     else await db.insert('user_settings', { user_id: req.session.userId, key: 'connections', value: data });
     res.json({ ok: true });
   } catch (e) {
@@ -2328,7 +2470,10 @@ app.get('/api/audit-trail', requireAuth, wrap(async (req, res) => {
 // FEATURE 2 — PARTIAL PAYMENTS + BANK RECONCILIATION
 // ════════════════════════════════════════════════════════════════════════════════
 async function recalcInvoiceStatus(pool, invoiceId, userId) {
-  const invRow = await db.get('invoices', r => r.id === invoiceId && r.user_id === userId);
+  const { rows: [_invR] } = await pool.query(
+    `SELECT * FROM invoices WHERE id = $1 AND user_id = $2 LIMIT 1`, [invoiceId, userId]
+  );
+  const invRow = _invR ? rowToObj(_invR) : null;
   if (!invRow) return;
   const { rows } = await pool.query(
     `SELECT COALESCE(SUM(amount),0) AS paid FROM invoice_payments WHERE invoice_id = $1`,
@@ -2337,7 +2482,7 @@ async function recalcInvoiceStatus(pool, invoiceId, userId) {
   const paid = parseFloat(rows[0].paid) || 0;
   const total = parseFloat(invRow.amount) || 0;
   const status = paid >= total ? 'paid' : paid > 0 ? 'partial' : invRow.status;
-  await db.update('invoices', r => r.id === invoiceId && r.user_id === userId, { status, amount_paid: paid });
+  await db.updateById('invoices', invoiceId, { status, amount_paid: paid });
 }
 
 app.get('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
@@ -2760,7 +2905,7 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
 
   const newUnits = type === 'purchase' ? item.units + qty : Math.max(0, item.units - qty);
   const newMax = item.max_units || 200;
-  await db.update('inventory', r => r.id === parseInt(inventory_id), {
+  await db.updateById('inventory', parseInt(inventory_id), {
     units: newUnits, low_stock: newUnits < newMax * 0.1 ? 1 : 0
   });
 

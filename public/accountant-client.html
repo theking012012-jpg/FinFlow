@@ -771,7 +771,7 @@ async function loadData() {
     _data = await res.json();
     document.getElementById('sb-client-meta').textContent = (_data.allInvoices?.length||0) + ' invoices · ' + (_data.allExpenses?.length||0) + ' expenses';
     if (_data.accessLevel) {
-      document.getElementById('sb-access-badge').innerHTML = `<i class="ti ti-shield-check" style="font-size:11px"></i> ${_data.accessLevel} access`;
+      document.getElementById('sb-access-badge').innerHTML = `<i class="ti ti-shield-check" style="font-size:11px"></i> ${esc(_data.accessLevel)} access`;
     }
     buildEntityTabs();
     renderAll();
@@ -789,7 +789,7 @@ function buildEntityTabs() {
   list.innerHTML = `<div class="entity-item active" data-entity="all" onclick="switchEntity('all',this)"><div class="entity-dot" style="background:var(--gold)"></div>All entities</div>`;
   entities.forEach((e, i) => {
     const color = BAR_COLORS[i % BAR_COLORS.length];
-    list.innerHTML += `<div class="entity-item" data-entity="${e.id}" onclick="switchEntity('${e.id}',this)"><div class="entity-dot" style="background:${color}"></div>${e.name}</div>`;
+    list.innerHTML += `<div class="entity-item" data-entity="${parseInt(e.id)||0}" onclick="switchEntity('${parseInt(e.id)||0}',this)"><div class="entity-dot" style="background:${color}"></div>${esc(e.name)}</div>`;
   });
   document.getElementById('topbar-entity-name').textContent = 'All entities';
 }

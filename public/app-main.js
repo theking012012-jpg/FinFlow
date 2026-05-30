@@ -653,11 +653,11 @@ function injectRoleBadge(role){
   badge.id = 'role-badge';
   badge.style.cssText = `
     display:inline-flex;align-items:center;gap:6px;padding:4px 10px;
-    border-radius:20px;border:1px solid ${ROLES[role].color};
-    background:rgba(0,0,0,.2);font-size:11px;color:${ROLES[role].color};
+    border-radius:20px;border:1px solid ${ROLES[role]?.color||'#888'};
+    background:rgba(0,0,0,.2);font-size:11px;color:${ROLES[role]?.color||'#888'};
     font-weight:500;cursor:pointer;margin-right:4px;
   `;
-  badge.innerHTML = `<span style="width:6px;height:6px;border-radius:50%;background:${ROLES[role].color}"></span>${ROLES[role].label} <span style="opacity:.5;font-size:10px">▾</span>`;
+  badge.innerHTML = `<span style="width:6px;height:6px;border-radius:50%;background:${ROLES[role]?.color||'#888'}"></span>${ROLES[role]?.label||role} <span style="opacity:.5;font-size:10px">▾</span>`;
   badge.title = 'Click to switch role (demo)';
   badge.onclick = () => {
     document.getElementById('login-screen').style.display = 'flex';
@@ -1967,8 +1967,8 @@ function updateOwnerEntitySummary(){
       : `<span style="color:var(--t3);font-size:11px">Not added</span>`;
     return `<div style="display:flex;align-items:center;justify-content:space-between;font-size:12px">
       <span style="display:flex;align-items:center;gap:6px">
-        <span style="width:20px;height:20px;border-radius:4px;background:${e.color};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#0e0b08;flex-shrink:0">${e.name.slice(0,2).toUpperCase()}</span>
-        <span style="color:var(--t2)">${e.name}</span>
+        <span style="width:20px;height:20px;border-radius:4px;background:${e.color};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#0e0b08;flex-shrink:0">${esc(e.name.slice(0,2).toUpperCase())}</span>
+        <span style="color:var(--t2)">${esc(e.name)}</span>
         <span style="font-size:9px;color:var(--t3)">${e.currency}</span>
       </span>
       ${badge}
@@ -1993,8 +1993,8 @@ function renderOwnerModalTabs(){
     const ep = ownerPayrollByEntity[i];
     const active = i === activeOwnerEntityIdx;
     return `<button onclick="switchOwnerEntityTab(${i})" style="flex:1;padding:5px 6px;border:none;border-radius:calc(var(--radius) - 1px);font-size:11.5px;font-family:var(--font);cursor:pointer;transition:all .15s;background:${active?'var(--bg1)':'transparent'};color:${active?'var(--t1)':'var(--t3)'};font-weight:${active?'500':'400'};display:flex;align-items:center;justify-content:center;gap:5px">
-      <span style="width:16px;height:16px;border-radius:3px;background:${e.color};display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#0e0b08;flex-shrink:0">${e.name.slice(0,2).toUpperCase()}</span>
-      ${e.name.split(' ')[0]}
+      <span style="width:16px;height:16px;border-radius:3px;background:${e.color};display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#0e0b08;flex-shrink:0">${esc(e.name.slice(0,2).toUpperCase())}</span>
+      ${esc(e.name.split(' ')[0])}
       ${ep ? '<span style="width:5px;height:5px;border-radius:50%;background:var(--green);flex-shrink:0"></span>' : ''}
     </button>`;
   }).join('');
@@ -3610,14 +3610,14 @@ function renderItems(filter=itemsFilter){
   set('items-lowstock',itemsData.filter(i=>i.status==='Low Stock').length);
   const filtered=itemsData.filter(i=>filter==='all'||i.type.toLowerCase()===filter);
   if(!filtered.length){list.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No items yet. Click + New item to add your products and services.</div>';return;}
-  list.innerHTML=filtered.map(i=>`
+  list.innerHTML=filtered.map((i,idx)=>`
     <div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
-      <span style="font-weight:500">${i.name}<br><span style="font-size:11px;color:var(--t3)">${i.sku}</span></span>
-      <span><span class="badge ${i.type==='Service'?'b-blue':'b-purple'}">${i.type}</span></span>
-      <span style="font-family:var(--font-mono)">$${i.price}<span style="font-size:10px;color:var(--t3)">/${i.unit}</span></span>
-      <span style="color:var(--t2)">${i.stock!==null?i.stock+' units':'—'}</span>
-      <span><span class="badge ${i.status==='Active'?'b-green':i.status==='Low Stock'?'b-amber':'b-red'}">${i.status}</span></span>
-      <div class="table-actions"><button class="btn btn-ghost btn-sm" onclick="notify('Edit item: ${i.name}')">Edit</button></div>
+      <span style="font-weight:500">${esc(i.name)}<br><span style="font-size:11px;color:var(--t3)">${esc(i.sku)}</span></span>
+      <span><span class="badge ${i.type==='Service'?'b-blue':'b-purple'}">${esc(i.type)}</span></span>
+      <span style="font-family:var(--font-mono)">$${esc(i.price)}<span style="font-size:10px;color:var(--t3)">/${esc(i.unit)}</span></span>
+      <span style="color:var(--t2)">${i.stock!==null?esc(i.stock)+' units':'—'}</span>
+      <span><span class="badge ${i.status==='Active'?'b-green':i.status==='Low Stock'?'b-amber':'b-red'}">${esc(i.status)}</span></span>
+      <div class="table-actions"><button class="btn btn-ghost btn-sm" data-item-name="${esc(i.name)}" onclick="notify('Edit item: '+this.dataset.itemName)">Edit</button></div>
     </div>`).join('');
 }
 function filterItems(f){itemsFilter=f;renderItems(f);}
@@ -3625,7 +3625,7 @@ function filterItemsBySearch(v){
   const list=document.getElementById('items-list');if(!list)return;
   const q=v.toLowerCase();
   const filtered=itemsData.filter(i=>i.name.toLowerCase().includes(q)||i.sku.toLowerCase().includes(q));
-  list.innerHTML=filtered.map(i=>`<div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px"><span style="font-weight:500">${i.name}</span><span><span class="badge ${i.type==='Service'?'b-blue':'b-purple'}">${i.type}</span></span><span style="font-family:var(--font-mono)">$${i.price}</span><span>${i.stock!==null?i.stock:'—'}</span><span><span class="badge ${i.status==='Active'?'b-green':'b-amber'}">${i.status}</span></span><div class="table-actions"><button class="btn btn-ghost btn-sm">Edit</button></div></div>`).join('');
+  list.innerHTML=filtered.map(i=>`<div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px"><span style="font-weight:500">${esc(i.name)}</span><span><span class="badge ${i.type==='Service'?'b-blue':'b-purple'}">${esc(i.type)}</span></span><span style="font-family:var(--font-mono)">$${esc(i.price)}</span><span>${i.stock!==null?esc(i.stock):'—'}</span><span><span class="badge ${i.status==='Active'?'b-green':'b-amber'}">${esc(i.status)}</span></span><div class="table-actions"><button class="btn btn-ghost btn-sm">Edit</button></div></div>`).join('');
 }
 function openNewItemModal(){notify('New Item modal — add your products & services');}
 
@@ -4381,6 +4381,7 @@ window.handleLogoUpload = function(id, input){
     setTemplateSetting(id,'logo',dataURL);
     // Update preview box
     const prev = document.getElementById('logo-preview-'+id);
+    if(!dataURL || !dataURL.startsWith('data:image/')) { notify('Invalid image file', true); return; }
     if(prev) prev.innerHTML=`<img src="${dataURL}" alt="Uploaded logo" width="220" height="56" style="max-height:56px;max-width:220px;object-fit:contain;padding:8px">`;
     refreshEditorPreview(id);
     notify('Logo uploaded ✦');

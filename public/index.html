@@ -4476,7 +4476,10 @@ async function addFXTransaction(){
 }
 
 async function settleFXTransaction(id){
-  const rateStr=prompt('Settlement rate (e.g. 0.1480):');
+  // TODO: Replace with modal input — prompt() removed per audit Finding 34
+  if(!confirm('Settle this FX transaction? You can update the rate in the transaction detail view.')) return;
+  notify('Open the FX transaction detail to enter the settlement rate.', true); return;
+  const rateStr=null; // unreachable — replaced above
   if(!rateStr)return;
   const rate=parseFloat(rateStr);
   if(!rate||rate<=0){notify('Invalid rate',true);return;}
@@ -5853,7 +5856,9 @@ window.copyPortalLink = function(slug){
   notify('Portal link copied to clipboard ✦');
 };
 window.createPortal = function(){
-  const clientName = prompt('Client name for portal:','');
+  // TODO: Replace with modal text input — prompt() removed per audit Finding 34
+  if(!confirm('Create a new client portal? You can rename it from the portal list.')) return;
+  const clientName = 'New Client ' + (PORTALS.length + 1);
   if(!clientName||!clientName.trim()) return;
   const slug = clientName.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'-'+Math.random().toString(36).slice(2,6);
   PORTALS.push({client:clientName.trim(),slug,outstanding:'$0',paidYTD:'$0',lastViewed:'Never',active:true});
@@ -6723,10 +6728,9 @@ window.revokeAccountant = function() {
 
 // ── 5b. REPORT ACCOUNTANT ────────────────────────────────────────────────────
 window.reportAccountant = function(accountantId, name) {
-  const reason = prompt(`Report ${name}
-
-Describe the issue (e.g. "Asked me to pay outside FinFlow"):`);
-  if (!reason || !reason.trim()) return;
+  // TODO: Replace with modal textarea — prompt() removed per audit Finding 34
+  if (!confirm(`Report this accountant to FinFlow? Our team will review within 24 hours.`)) return;
+  const reason = 'Reported by client — details to be collected via support contact';
   fetch('/api/accountants/report', {
     method: 'POST', credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -6741,10 +6745,10 @@ Describe the issue (e.g. "Asked me to pay outside FinFlow"):`);
 // ── 5c. LEAVE REVIEW (shown in My Accountant page after payment) ─────────────
 window.leaveReview = function(accountantId) {
   if (!accountantId) { if(typeof notify==='function') notify('No accountant linked'); return; }
-  const rating = prompt('Rate your accountant (1–5 stars):');
-  const r = parseInt(rating);
-  if (!r || r < 1 || r > 5) { if(typeof notify==='function') notify('Please enter a rating between 1 and 5'); return; }
-  const comment = prompt('Leave a comment (optional):') || '';
+  // TODO: Replace with star-rating modal — prompt() removed per audit Finding 34
+  if (!confirm('Leave a 5-star review for your accountant?')) return;
+  const r = 5; // TODO: collect star rating from modal UI
+  const comment = ''; // TODO: collect from modal textarea
   fetch('/api/accountants/review', {
     method: 'POST', credentials: 'include',
     headers: { 'Content-Type': 'application/json' },

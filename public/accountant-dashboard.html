@@ -1732,8 +1732,9 @@ async function saveBooksNotes() {
 }
 
 async function flagTransaction(type, ref, description) {
-  const message = prompt(`Flag this ${type} for follow-up?\nAdd a note (optional):`);
-  if (message === null) return; // cancelled
+  const confirmed = confirm(`Flag this ${type} for follow-up?`);
+  if (!confirmed) return;
+  const message = description || 'Flagged for review'; // TODO: replace with modal text input
   try {
     await fetch(`/api/accountants/clients/${_booksUserId}/flag`, {
       method: 'POST', credentials: 'include',

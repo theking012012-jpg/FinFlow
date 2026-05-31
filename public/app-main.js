@@ -698,7 +698,7 @@ window.exportAllCSV = function(){
   } else if (activePage.includes('expense')) {
     const exp = window.bizExpenses || bizExpenses || [];
     rows = [['Description','Category','Amount','Date','Tax Deductible'],
-      ...exp.map(e => [e.desc||e.description||'', e.cat||e.category||'', Number(e.amount||0).toFixed(2), e.date||e.expense_date||'', e.ded||e.deductible?'Yes':'No'])];
+      ...exp.map(e => [e.desc||e.description||'', e.cat||e.category||'', Number(e.amount||0).toFixed(2), e.date||e.expense_date||'', (e.ded||e.deductible)?'Yes':'No'])];
     filename = 'expenses.csv';
   } else if (activePage.includes('payroll')) {
     const emps = [...(window.ownerPayroll ? [{...window.ownerPayroll, isOwner:true}] : []), ...(window.payrollEmployees||[])];
@@ -715,6 +715,26 @@ window.exportAllCSV = function(){
     rows = [['Product','SKU','Units','Max Units','Cost','Stock Status'],
       ...inv.map(i => [i.name||'', i.sku||'', i.units||0, i.max||i.max_units||0, Number(i.cost||0).toFixed(2), i.low?'Low Stock':'OK'])];
     filename = 'inventory.csv';
+  } else if (activePage.includes('item')) {
+    const items = window.userItems || window.allItems || [];
+    rows = [['Name','Type','Price','Status'],
+      ...items.map(i => [i.name||'', i.type||'', Number(i.price||i.rate||0).toFixed(2), i.status||''])];
+    filename = 'items.csv';
+  } else if (activePage.includes('vendor')) {
+    const vendors = window.allVendors || [];
+    rows = [['Vendor','Contact','Email','Phone','Balance'],
+      ...vendors.map(v => [v.name||'', v.contact||'', v.email||'', v.phone||'', Number(v.balance||0).toFixed(2)])];
+    filename = 'vendors.csv';
+  } else if (activePage.includes('quote')) {
+    const quotes = window._quotes || window.allQuotes || [];
+    rows = [['Client','Amount','Status','Valid Until','Notes'],
+      ...quotes.map(q => [q.client||'', Number(q.amount||0).toFixed(2), q.status||'', q.valid_until||'', q.notes||''])];
+    filename = 'quotes.csv';
+  } else if (activePage.includes('bill')) {
+    const bills = window.allBills || [];
+    rows = [['Vendor','Amount','Status','Due Date'],
+      ...bills.map(b => [b.vendor||b.vendor_name||'', Number(b.amount||0).toFixed(2), b.status||'', b.due_date||''])];
+    filename = 'bills.csv';
   } else {
     // Generic — scrape the visible table
     const activePg = document.querySelector('.page.active') || document.querySelector('[id="'+activePage+'"]');
@@ -1653,8 +1673,8 @@ function updateCashflow(d=getPeriodData()){
   const fixed=Math.round(d.exp*.738);const variable=d.exp-fixed;
   document.getElementById('cf-fixed').textContent=S(fixed);
   document.getElementById('cf-variable').textContent=S(variable);
-  const runway=Math.round(d.rev/d.exp*d.months*1.2);
-  document.getElementById('cf-runway').textContent=Math.round(runway/d.months*10)/10+' months';
+  const runway=d.exp>0?Math.round(d.rev/d.exp*d.months*1.2):Infinity;
+  document.getElementById('cf-runway').textContent=isFinite(runway)?Math.round(runway/d.months*10)/10+' months':'∞ months';
   // Income sources bars
   // Income sources — built from real invoice data grouped by client
   const _src_colors = ['var(--green)','#7db87d','#7db87d99','#7db87d66'];
@@ -3284,7 +3304,7 @@ function updateHealthScore(savingsRate=0,income=0,surplus=0){
   const prScore=Math.min(100,Math.round(55+profitMargin));
   const arBalance=typeof userInvoices!=='undefined'?userInvoices.filter(i=>i.status?.toLowerCase()!=='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0):0;
   const recScore=d.rev>0?Math.max(40,100-Math.round(arBalance/d.rev*100*5)):50;
-  const grScore=Math.min(100,Math.round(70+Math.max(0,REV[11]-REV[0])/REV[0]*50));
+  const grScore=REV[0]>0?Math.min(100,Math.round(70+Math.max(0,REV[11]-REV[0])/REV[0]*50)):50;
   const overall=Math.round((cfScore+prScore+recScore+grScore)/4);
   const el=document.getElementById('health-score');
   if(el)el.textContent=overall;

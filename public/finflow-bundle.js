@@ -1286,6 +1286,7 @@
         if (_activeIdx >= 0 && typeof window.loadEntityData === 'function') {
           window.loadEntityData(_activeIdx).catch(() => {});
         }
+        if (typeof window.renderPayroll === 'function') window.renderPayroll();
       } catch (e) {
         console.error('[Payroll Save] ❌ Failed:', e.message);
         notify('Payroll saved locally but could not sync to server — ' + e.message, true);
@@ -1796,6 +1797,7 @@
         if (id === 'timesheet')  _setTimesheetTitle();
         if (id === 'documents')  { if (typeof window.renderDocuments === 'function') window.renderDocuments(); }
         if (id === 'settings')   { const _sEl = document.getElementById('settings-user-email'); if (_sEl) _sEl.textContent = window.CURRENT_USER?.email || ''; }
+        if (id === 'my-accountant') { if (typeof window.loadAccountantMessages === 'function') window.loadAccountantMessages(); }
       };
     }
 

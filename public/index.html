@@ -6756,6 +6756,7 @@ async function loadAccountantMessages() {
     }
   } catch(e) { console.warn('[Chat] load failed:', e.message); }
 }
+window.loadAccountantMessages = loadAccountantMessages;
 
 window.sendMsgToAccountant = async function() {
   const input = document.getElementById('acct-chat-input');

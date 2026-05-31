@@ -4603,25 +4603,10 @@ function buildRiver(d){
       fill="${color}" opacity="${opacity}" class="river-flow"/>`;
   }
 
-  // Animate particles along a path
-  function particles(x1,y1c,x2,y2c,color,n=3){
-    let out='';
-    for(let i=0;i<n;i++){
-      const delay=i*(1.2/n);
-      const cy1=y1c, cy2=y2c;
-      const mx=(x1+x2)/2;
-      out+=`<circle r="2.5" fill="${color}" opacity="0.6">
-        <animateMotion dur="2.4s" begin="${delay}s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.2 1">
-          <mpath href="#dummy"/>
-        </animateMotion>
-      </circle>`;
-    }
-    return out;
-  }
-
   // Build SVG
   let svg=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="overflow:visible">
   <defs>
+    <style>@keyframes ff-ptcl{0%,5%{opacity:0;offset-distance:0%}15%,80%{opacity:.7}95%,100%{opacity:0;offset-distance:100%}}</style>
     <linearGradient id="rg-rev" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="${C.rev}" stop-opacity="0.9"/>
       <stop offset="100%" stop-color="${C.rev}" stop-opacity="0.5"/>
@@ -4672,17 +4657,9 @@ function buildRiver(d){
   const revMidY=profitBlock.top+revH/2;
   const profMidY=profitBlock.top+profitH/2;
   const expMidY=expBlock.top+expH/2;
-  let _particleIdCounter = 0;
   function flowParticle(x1,y1,x2,y2,color,delay,dur=2.8){
     const mx=(x1+x2)/2;
-    const pid='fp'+(++_particleIdCounter);
-    return `<circle r="2" fill="${color}" opacity="0">
-      <animate attributeName="opacity" values="0;0.7;0.7;0" dur="${dur}s" begin="${delay}s" repeatCount="indefinite"/>
-      <animateMotion dur="${dur}s" begin="${delay}s" repeatCount="indefinite" calcMode="spline" keySplines="0.42 0 0.58 1">
-        <mpath href="#${pid}"/>
-      </animateMotion>
-    </circle>
-    <path id="${pid}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" fill="none" opacity="0"/>`;
+    return `<circle r="2" fill="${color}" style="offset-path:path('M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}');offset-distance:0%;animation:ff-ptcl ${dur}s ${delay}s infinite linear"></circle>`;
   }
 
   // Particles on revenue → mid

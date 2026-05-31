@@ -29,7 +29,7 @@
     var gate = document.createElement('div');
     gate.id = 'ff-auth-gate';
     gate.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0e0b08;font-family:Jost,system-ui,sans-serif';
-    gate.innerHTML = '<style>#ff-box{width:100%;max-width:380px;padding:2rem 2.25rem;background:#16120d;border:1px solid #3d3222;border-radius:14px}.ff-t{font-size:22px;font-family:"Cormorant Garamond",serif;font-style:italic;color:#e4c97a;margin-bottom:4px}.ff-s{font-size:13px;color:#7d7060;margin-bottom:1.5rem}.ff-tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:#0e0b08;border-radius:8px;padding:4px}.ff-tab{flex:1;padding:6px;border:none;border-radius:5px;font-size:12.5px;cursor:pointer;color:#7d7060;background:transparent}.ff-tab.on{background:#1c1712;color:#f2e8d5}.ff-err{font-size:12px;color:#c46a5a;background:#1e0d0a;border:1px solid #3d1a14;border-radius:6px;padding:8px;margin-bottom:1rem;display:none}.ff-lbl{font-size:11.5px;color:#9e8e73;display:block;margin-bottom:5px}.ff-inp{width:100%;padding:9px 11px;border:1px solid #3d3222;border-radius:6px;background:#1c1712;color:#f2e8d5;font-size:13px;outline:none;margin-bottom:.9rem;box-sizing:border-box;font-family:Jost,system-ui}.ff-btn{width:100%;padding:10px;border:none;border-radius:6px;background:#c9a84c;color:#0e0b08;font-size:13.5px;font-weight:600;cursor:pointer}.ff-btn:disabled{opacity:.5}.ff-hint{font-size:11.5px;color:#7d7060;text-align:center;margin-top:1rem}.ff-hint span{color:#c9a84c;cursor:pointer}</style><div id="ff-box"><div class="ff-t">FinFlow</div><div class="ff-s">Sign in to your workspace</div><div class="ff-tabs"><button class="ff-tab on" id="fft-li" onclick="ffTab(\'login\')">Sign in</button><button class="ff-tab" id="fft-re" onclick="ffTab(\'register\')">Create account</button></div><div id="ff-err" class="ff-err"></div><div id="ff-li"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-le" type="email" placeholder="you@example.com"><label class="ff-lbl">Password</label><input class="ff-inp" id="ff-lp" type="password" placeholder="••••••••"><button class="ff-btn" id="ff-lb" onclick="ffLogin()">Sign in &rarr;</button><div class="ff-hint">No account? <span onclick="ffTab(\'register\')">Create one</span></div></div><div id="ff-re" style="display:none"><label class="ff-lbl">Name</label><input class="ff-inp" id="ff-rn" type="text" placeholder="Your name"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-re2" type="email" placeholder="you@example.com"><label class="ff-lbl">Password (min 8 chars)</label><input class="ff-inp" id="ff-rp" type="password" placeholder="Choose a password"><button class="ff-btn" id="ff-rb" onclick="ffRegister()">Create account &rarr;</button><div class="ff-hint">Have one? <span onclick="ffTab(\'login\')">Sign in</span></div></div></div>';
+    gate.innerHTML = '<style>#ff-box{width:100%;max-width:380px;padding:2rem 2.25rem;background:#16120d;border:1px solid #3d3222;border-radius:14px}.ff-t{font-size:22px;font-family:"Cormorant Garamond",serif;font-style:italic;color:#e4c97a;margin-bottom:4px}.ff-s{font-size:13px;color:#7d7060;margin-bottom:1.5rem}.ff-tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:#0e0b08;border-radius:8px;padding:4px}.ff-tab{flex:1;padding:6px;border:none;border-radius:5px;font-size:12.5px;cursor:pointer;color:#7d7060;background:transparent}.ff-tab.on{background:#1c1712;color:#f2e8d5}.ff-err{font-size:12px;color:#c46a5a;background:#1e0d0a;border:1px solid #3d1a14;border-radius:6px;padding:8px;margin-bottom:1rem;display:none}.ff-lbl{font-size:11.5px;color:#9e8e73;display:block;margin-bottom:5px}.ff-inp{width:100%;padding:9px 11px;border:1px solid #3d3222;border-radius:6px;background:#1c1712;color:#f2e8d5;font-size:13px;outline:none;margin-bottom:.9rem;box-sizing:border-box;font-family:Jost,system-ui}.ff-btn{width:100%;padding:10px;border:none;border-radius:6px;background:#c9a84c;color:#0e0b08;font-size:13.5px;font-weight:600;cursor:pointer}.ff-btn:disabled{opacity:.5}.ff-hint{font-size:11.5px;color:#7d7060;text-align:center;margin-top:1rem}.ff-hint span{color:#c9a84c;cursor:pointer}</style><div id="ff-box"><div class="ff-t">FinFlow</div><div class="ff-s">Sign in to your workspace</div><div class="ff-tabs"><button class="ff-tab on" id="fft-li" onclick="ffTab(\'login\')">Sign in</button><button class="ff-tab" id="fft-re" onclick="ffTab(\'register\')">Create account</button></div><div id="ff-err" class="ff-err"></div><div id="ff-li"><label class="ff-lbl" for="ff-le">Email</label><input class="ff-inp" id="ff-le" type="email" placeholder="you@example.com"><label class="ff-lbl" for="ff-lp">Password</label><input class="ff-inp" id="ff-lp" type="password" placeholder="••••••••"><button class="ff-btn" id="ff-lb" onclick="ffLogin()">Sign in &rarr;</button><div class="ff-hint">No account? <span onclick="ffTab(\'register\')">Create one</span></div></div><div id="ff-re" style="display:none"><label class="ff-lbl" for="ff-rn">Name</label><input class="ff-inp" id="ff-rn" type="text" placeholder="Your name"><label class="ff-lbl" for="ff-re2">Email</label><input class="ff-inp" id="ff-re2" type="email" placeholder="you@example.com"><label class="ff-lbl" for="ff-rp">Password (min 8 chars)</label><input class="ff-inp" id="ff-rp" type="password" placeholder="Choose a password"><button class="ff-btn" id="ff-rb" onclick="ffRegister()">Create account &rarr;</button><div class="ff-hint">Have one? <span onclick="ffTab(\'login\')">Sign in</span></div></div></div>';
     document.body.appendChild(gate);
     gate.addEventListener('keydown', function(e) {
       if (e.key !== 'Enter') return;
@@ -4499,16 +4499,16 @@ function clearAIChat(){
         </button>
       </div>
       <div class="field-group">
-        <div class="field-wrap"><label class="field-label">Employee *</label><input class="finput" id="ts-employee" placeholder="Name or team member"></div>
-        <div class="field-wrap"><label class="field-label">Project / Client</label><input class="finput" id="ts-project" placeholder="Project or client name"></div>
+        <div class="field-wrap"><label class="field-label" for="ts-employee">Employee *</label><input class="finput" id="ts-employee" placeholder="Name or team member"></div>
+        <div class="field-wrap"><label class="field-label" for="ts-project">Project / Client</label><input class="finput" id="ts-project" placeholder="Project or client name"></div>
       </div>
       <div class="field-group">
-        <div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="ts-date" type="date"></div>
-        <div class="field-wrap"><label class="field-label">Hours *</label><input class="finput" id="ts-hours" type="number" min="0.25" step="0.25" placeholder="e.g. 2.5"></div>
+        <div class="field-wrap"><label class="field-label" for="ts-date">Date</label><input class="finput" id="ts-date" type="date"></div>
+        <div class="field-wrap"><label class="field-label" for="ts-hours">Hours *</label><input class="finput" id="ts-hours" type="number" min="0.25" step="0.25" placeholder="e.g. 2.5"></div>
       </div>
       <div class="field-group">
-        <div class="field-wrap"><label class="field-label">Billable?</label><select class="finput" id="ts-billable"><option value="Yes">Yes — billable</option><option value="No">No — internal</option></select></div>
-        <div class="field-wrap"><label class="field-label">Rate ($/hr)</label><input class="finput" id="ts-rate" type="number" min="0" placeholder="0"></div>
+        <div class="field-wrap"><label class="field-label" for="ts-billable">Billable?</label><select class="finput" id="ts-billable"><option value="Yes">Yes — billable</option><option value="No">No — internal</option></select></div>
+        <div class="field-wrap"><label class="field-label" for="ts-rate">Rate ($/hr)</label><input class="finput" id="ts-rate" type="number" min="0" placeholder="0"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('ts-log-modal').classList.add('hidden')">Cancel</button>
@@ -4730,10 +4730,10 @@ function clearAIChat(){
           </button>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
-          <div><label class="flabel">Project Name *</label><input id="proj-name" class="finput" placeholder="e.g. RetailCo Portal v2"></div>
-          <div><label class="flabel">Client</label><input id="proj-client" class="finput" placeholder="Client name"></div>
-          <div><label class="flabel">Budget ($)</label><input id="proj-budget" class="finput" type="number" min="0" placeholder="0"></div>
-          <div><label class="flabel">Status</label>
+          <div><label class="flabel" for="proj-name">Project Name *</label><input id="proj-name" class="finput" placeholder="e.g. RetailCo Portal v2"></div>
+          <div><label class="flabel" for="proj-client">Client</label><input id="proj-client" class="finput" placeholder="Client name"></div>
+          <div><label class="flabel" for="proj-budget">Budget ($)</label><input id="proj-budget" class="finput" type="number" min="0" placeholder="0"></div>
+          <div><label class="flabel" for="proj-status">Status</label>
             <select id="proj-status" class="finput">
               <option value="In Progress">In Progress</option>
               <option value="On Hold">On Hold</option>
@@ -4910,9 +4910,9 @@ function clearAIChat(){
           </button>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
-          <div><label class="flabel">Name *</label><input id="inv-name" class="finput" placeholder="Full name"></div>
-          <div><label class="flabel">Email *</label><input id="inv-email" class="finput" type="email" placeholder="email@company.com"></div>
-          <div><label class="flabel">Role</label>
+          <div><label class="flabel" for="inv-name">Name *</label><input id="inv-name" class="finput" placeholder="Full name"></div>
+          <div><label class="flabel" for="inv-email">Email *</label><input id="inv-email" class="finput" type="email" placeholder="email@company.com"></div>
+          <div><label class="flabel" for="inv-role">Role</label>
             <select id="inv-role" class="finput">
               <option value="admin">Admin</option>
               <option value="accountant">Accountant</option>

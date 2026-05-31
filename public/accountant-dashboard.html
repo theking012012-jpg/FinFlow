@@ -605,17 +605,17 @@
       <div class="profile-grid">
         <div class="profile-card">
           <h3>Personal Details</h3>
-          <div class="profile-field"><label>First name</label><input type="text" id="pf-fname"></div>
-          <div class="profile-field"><label>Last name</label><input type="text" id="pf-lname"></div>
-          <div class="profile-field"><label>Email</label><input type="email" id="pf-email" disabled style="opacity:0.5"></div>
-          <div class="profile-field"><label>Firm / Practice</label><input type="text" id="pf-firm"></div>
+          <div class="profile-field"><label for="pf-fname">First name</label><input type="text" id="pf-fname"></div>
+          <div class="profile-field"><label for="pf-lname">Last name</label><input type="text" id="pf-lname"></div>
+          <div class="profile-field"><label for="pf-email">Email</label><input type="email" id="pf-email" disabled style="opacity:0.5"></div>
+          <div class="profile-field"><label for="pf-firm">Firm / Practice</label><input type="text" id="pf-firm"></div>
         </div>
         <div class="profile-card">
           <h3>Professional Info</h3>
-          <div class="profile-field"><label>Country</label><input type="text" id="pf-country"></div>
-          <div class="profile-field"><label>Specialisation</label><input type="text" id="pf-spec"></div>
-          <div class="profile-field"><label>Experience</label><input type="text" id="pf-exp"></div>
-          <div class="profile-field"><label>Bio</label><textarea id="pf-bio" rows="4"></textarea></div>
+          <div class="profile-field"><label for="pf-country">Country</label><input type="text" id="pf-country"></div>
+          <div class="profile-field"><label for="pf-spec">Specialisation</label><input type="text" id="pf-spec"></div>
+          <div class="profile-field"><label for="pf-exp">Experience</label><input type="text" id="pf-exp"></div>
+          <div class="profile-field"><label for="pf-bio">Bio</label><textarea id="pf-bio" rows="4"></textarea></div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
@@ -632,11 +632,11 @@
     <h3>Add Filing Deadline</h3>
     <p>Track an upcoming tax or filing obligation for a client</p>
     <div class="modal-form-group">
-      <label>Client name</label>
+      <label for="dl-client">Client name</label>
       <input type="text" id="dl-client" placeholder="e.g. Acme Corp">
     </div>
     <div class="modal-form-group">
-      <label>Filing type</label>
+      <label for="dl-type">Filing type</label>
       <select id="dl-type">
         <option>Corporation Tax Return</option>
         <option>VAT Return</option>
@@ -647,7 +647,7 @@
       </select>
     </div>
     <div class="modal-form-group">
-      <label>Due date</label>
+      <label for="dl-date">Due date</label>
       <input type="date" id="dl-date">
     </div>
     <div class="modal-actions">
@@ -674,17 +674,17 @@
     <h3>Bill a Client</h3>
     <p>FinFlow processes the payment and transfers 96% to your connected Stripe account. You set the rate.</p>
     <div class="modal-form-group">
-      <label>Client</label>
+      <label for="bill-client-select">Client</label>
       <select id="bill-client-select" class="finput" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text);outline:none;appearance:none">
         <option value="">Select client...</option>
       </select>
     </div>
     <div class="modal-form-group">
-      <label>Service description</label>
+      <label for="bill-description">Service description</label>
       <input type="text" id="bill-description" placeholder="e.g. Tax filing — FY 2025, Monthly bookkeeping">
     </div>
     <div class="modal-form-group">
-      <label>Amount (USD) — minimum $50</label>
+      <label for="bill-amount">Amount (USD) — minimum $50</label>
       <input type="number" id="bill-amount" placeholder="500" min="50" step="1">
     </div>
     <div id="bill-breakdown" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-top:4px;font-size:12px;color:var(--text2)">
@@ -897,11 +897,11 @@
         <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:12px">New Journal Entry</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:11px;color:var(--text3)">Date</label>
+            <label style="font-size:11px;color:var(--text3)" for="jnl-date">Date</label>
             <input type="date" id="jnl-date" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:13px;margin-top:4px">
           </div>
           <div>
-            <label style="font-size:11px;color:var(--text3)">Description</label>
+            <label style="font-size:11px;color:var(--text3)" for="jnl-desc">Description</label>
             <input type="text" id="jnl-desc" placeholder="e.g. Depreciation adjustment" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:13px;margin-top:4px">
           </div>
         </div>

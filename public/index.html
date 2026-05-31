@@ -1384,26 +1384,26 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div style="max-width:600px;margin:0 auto">
           <div class="settings-section">
             <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="2" y="4" width="12" height="10" rx="1.2"/><path d="M5 4V3a3 3 0 016 0v1"/></svg>Business profile</div>
-            <div class="field-wrap"><label class="field-label">Business name</label><input class="finput" id="nb-name" placeholder="Your business name"></div>
+            <div class="field-wrap"><label class="field-label" for="nb-name">Business name</label><input class="finput" id="nb-name" placeholder="Your business name"></div>
             <div class="field-group">
-              <div class="field-wrap"><label class="field-label">Industry</label><select class="finput" id="nb-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option></select></div>
-              <div class="field-wrap"><label class="field-label">Currency</label><select class="finput" id="nb-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="CAD">CAD (C$)</option><option value="AUD">AUD (A$)</option><option value="TTD">TTD (TT$)</option></select></div>
+              <div class="field-wrap"><label class="field-label" for="nb-industry">Industry</label><select class="finput" id="nb-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option></select></div>
+              <div class="field-wrap"><label class="field-label" for="nb-currency">Currency</label><select class="finput" id="nb-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="CAD">CAD (C$)</option><option value="AUD">AUD (A$)</option><option value="TTD">TTD (TT$)</option></select></div>
             </div>
             <div class="field-group">
-              <div class="field-wrap"><label class="field-label">Tax ID / EIN</label><input class="finput" id="nb-tax-id" placeholder="XX-XXXXXXX"></div>
-              <div class="field-wrap"><label class="field-label">Fiscal year start</label><select class="finput" id="nb-fiscal"><option>January</option><option>April</option><option>July</option><option>October</option></select></div>
+              <div class="field-wrap"><label class="field-label" for="nb-tax-id">Tax ID / EIN</label><input class="finput" id="nb-tax-id" placeholder="XX-XXXXXXX"></div>
+              <div class="field-wrap"><label class="field-label" for="nb-fiscal">Fiscal year start</label><select class="finput" id="nb-fiscal"><option>January</option><option>April</option><option>July</option><option>October</option></select></div>
             </div>
-            <div class="field-wrap"><label class="field-label">Business address</label><textarea class="finput" id="nb-address" style="min-height:60px" placeholder="Street, City, State, Country"></textarea></div>
-            <div class="field-wrap"><label class="field-label">Website</label><input class="finput" id="nb-website" placeholder="https://yourbusiness.com"></div>
+            <div class="field-wrap"><label class="field-label" for="nb-address">Business address</label><textarea class="finput" id="nb-address" style="min-height:60px" placeholder="Street, City, State, Country"></textarea></div>
+            <div class="field-wrap"><label class="field-label" for="nb-website">Website</label><input class="finput" id="nb-website" placeholder="https://yourbusiness.com"></div>
           </div>
           <div class="settings-section" id="cb-profile-section">
             <div class="settings-title"><svg viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="3"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/></svg>Your profile</div>
             <div class="field-group">
-              <div class="field-wrap"><label class="field-label">Your name</label><input class="finput" id="nb-user-name" placeholder="Your name" oninput="nbAutoInitials()"></div>
-              <div class="field-wrap"><label class="field-label">Initials</label><input class="finput" id="nb-user-initials" placeholder="JD" maxlength="2"></div>
+              <div class="field-wrap"><label class="field-label" for="nb-user-name">Your name</label><input class="finput" id="nb-user-name" placeholder="Your name" oninput="nbAutoInitials()"></div>
+              <div class="field-wrap"><label class="field-label" for="nb-user-initials">Initials</label><input class="finput" id="nb-user-initials" placeholder="JD" maxlength="2"></div>
             </div>
-            <div class="field-wrap"><label class="field-label">Email</label><input class="finput" type="email" id="nb-email" placeholder="you@company.com"></div>
-            <div class="field-wrap"><label class="field-label">Phone</label><input class="finput" type="tel" id="nb-phone" placeholder="+1 (555) 000-0000"></div>
+            <div class="field-wrap"><label class="field-label" for="nb-email">Email</label><input class="finput" type="email" id="nb-email" placeholder="you@company.com"></div>
+            <div class="field-wrap"><label class="field-label" for="nb-phone">Phone</label><input class="finput" type="tel" id="nb-phone" placeholder="+1 (555) 000-0000"></div>
           </div>
           <div style="display:flex;gap:.75rem;justify-content:flex-end;padding-bottom:2rem">
             <button class="btn btn-ghost" id="cb-cancel-btn" onclick="showPage(window._cbPrev||'entities',null)">Cancel</button>
@@ -1630,11 +1630,11 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
           <input type="hidden" id="rp-invoice-id">
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">Amount</label><input class="finput" id="rp-amount" type="number" placeholder="0.00" step="0.01"></div>
-            <div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="rp-date" type="date"></div>
+            <div class="field-wrap"><label class="field-label" for="rp-amount">Amount</label><input class="finput" id="rp-amount" type="number" placeholder="0.00" step="0.01"></div>
+            <div class="field-wrap"><label class="field-label" for="rp-date">Date</label><input class="finput" id="rp-date" type="date"></div>
           </div>
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">Method</label>
+            <div class="field-wrap"><label class="field-label" for="rp-method">Method</label>
               <select class="finput" id="rp-method">
                 <option value="bank_transfer">Bank Transfer</option>
                 <option value="cash">Cash</option>
@@ -1643,9 +1643,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
                 <option value="other">Other</option>
               </select>
             </div>
-            <div class="field-wrap"><label class="field-label">Reference</label><input class="finput" id="rp-reference" placeholder="e.g. TT-12345"></div>
+            <div class="field-wrap"><label class="field-label" for="rp-reference">Reference</label><input class="finput" id="rp-reference" placeholder="e.g. TT-12345"></div>
           </div>
-          <div class="field-wrap"><label class="field-label">Notes</label><input class="finput" id="rp-notes" placeholder="Optional notes"></div>
+          <div class="field-wrap"><label class="field-label" for="rp-notes">Notes</label><input class="finput" id="rp-notes" placeholder="Optional notes"></div>
           <div class="modal-footer">
             <button class="btn btn-ghost" onclick="closeModal('record-payment-modal')">Cancel</button>
             <button class="btn btn-primary" onclick="recordPayment()">Save Payment</button>
@@ -1661,10 +1661,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <button class="modal-close" onclick="closeModal('run-payroll-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">Period</label><input class="finput" id="prm-period" placeholder="e.g. May 2026"></div>
-            <div class="field-wrap"><label class="field-label">Run Date</label><input class="finput" id="prm-date" type="date"></div>
+            <div class="field-wrap"><label class="field-label" for="prm-period">Period</label><input class="finput" id="prm-period" placeholder="e.g. May 2026"></div>
+            <div class="field-wrap"><label class="field-label" for="prm-date">Run Date</label><input class="finput" id="prm-date" type="date"></div>
           </div>
-          <div class="field-wrap" style="margin-bottom:.75rem"><label class="field-label">Notes</label><input class="finput" id="prm-notes" placeholder="Optional notes"></div>
+          <div class="field-wrap" style="margin-bottom:.75rem"><label class="field-label" for="prm-notes">Notes</label><input class="finput" id="prm-notes" placeholder="Optional notes"></div>
           <div style="font-size:12px;color:var(--t2);margin-bottom:.5rem">The following employees will be included (based on your team payroll list):</div>
           <div id="prm-preview" style="font-size:12px;margin-bottom:.75rem;color:var(--t3)">Loading preview…</div>
           <div class="modal-footer">
@@ -1683,10 +1683,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
           <input type="hidden" id="si-item-idx">
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">Quantity</label><input class="finput" id="si-qty" type="number" placeholder="e.g. 100" min="0.0001" step="any"></div>
-            <div class="field-wrap"><label class="field-label">Unit Cost</label><input class="finput" id="si-cost" type="number" placeholder="e.g. 12.50" min="0" step="0.0001"></div>
+            <div class="field-wrap"><label class="field-label" for="si-qty">Quantity</label><input class="finput" id="si-qty" type="number" placeholder="e.g. 100" min="0.0001" step="any"></div>
+            <div class="field-wrap"><label class="field-label" for="si-cost">Unit Cost</label><input class="finput" id="si-cost" type="number" placeholder="e.g. 12.50" min="0" step="0.0001"></div>
           </div>
-          <div class="field-wrap"><label class="field-label">Notes / Reference</label><input class="finput" id="si-notes" placeholder="e.g. PO-445"></div>
+          <div class="field-wrap"><label class="field-label" for="si-notes">Notes / Reference</label><input class="finput" id="si-notes" placeholder="e.g. PO-445"></div>
           <div class="modal-footer">
             <button class="btn btn-ghost" onclick="closeModal('stock-in-modal')">Cancel</button>
             <button class="btn btn-primary" onclick="submitStockIn()">Record Stock In</button>
@@ -1703,8 +1703,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
           <input type="hidden" id="so-item-idx">
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">Quantity</label><input class="finput" id="so-qty" type="number" placeholder="e.g. 10" min="0.0001" step="any"></div>
-            <div class="field-wrap"><label class="field-label">Reference</label><input class="finput" id="so-ref" placeholder="e.g. INV-200"></div>
+            <div class="field-wrap"><label class="field-label" for="so-qty">Quantity</label><input class="finput" id="so-qty" type="number" placeholder="e.g. 10" min="0.0001" step="any"></div>
+            <div class="field-wrap"><label class="field-label" for="so-ref">Reference</label><input class="finput" id="so-ref" placeholder="e.g. INV-200"></div>
           </div>
           <div id="so-cogs-preview" style="font-size:12px;padding:.5rem;background:var(--bg2);border-radius:var(--radius);color:var(--t2);margin-bottom:.5rem;display:none"></div>
           <div class="modal-footer">
@@ -1722,12 +1722,12 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <button class="modal-close" onclick="closeModal('fx-rate-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">From Currency</label><input class="finput" id="fxr-from" placeholder="e.g. TTD" style="text-transform:uppercase" maxlength="3"></div>
-            <div class="field-wrap"><label class="field-label">To Currency</label><input class="finput" id="fxr-to" placeholder="e.g. USD" style="text-transform:uppercase" maxlength="3"></div>
+            <div class="field-wrap"><label class="field-label" for="fxr-from">From Currency</label><input class="finput" id="fxr-from" placeholder="e.g. TTD" style="text-transform:uppercase" maxlength="3"></div>
+            <div class="field-wrap"><label class="field-label" for="fxr-to">To Currency</label><input class="finput" id="fxr-to" placeholder="e.g. USD" style="text-transform:uppercase" maxlength="3"></div>
           </div>
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">Rate</label><input class="finput" id="fxr-rate" type="number" placeholder="e.g. 0.1471" step="any"></div>
-            <div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="fxr-date" type="date"></div>
+            <div class="field-wrap"><label class="field-label" for="fxr-rate">Rate</label><input class="finput" id="fxr-rate" type="number" placeholder="e.g. 0.1471" step="any"></div>
+            <div class="field-wrap"><label class="field-label" for="fxr-date">Date</label><input class="finput" id="fxr-date" type="date"></div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-ghost" onclick="closeModal('fx-rate-modal')">Cancel</button>
@@ -1744,15 +1744,15 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <button class="modal-close" onclick="closeModal('fx-tx-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">Foreign Currency</label><input class="finput" id="fxt-currency" placeholder="e.g. TTD" style="text-transform:uppercase" maxlength="3"></div>
-            <div class="field-wrap"><label class="field-label">Foreign Amount</label><input class="finput" id="fxt-amount" type="number" placeholder="e.g. 10000" step="0.01"></div>
+            <div class="field-wrap"><label class="field-label" for="fxt-currency">Foreign Currency</label><input class="finput" id="fxt-currency" placeholder="e.g. TTD" style="text-transform:uppercase" maxlength="3"></div>
+            <div class="field-wrap"><label class="field-label" for="fxt-amount">Foreign Amount</label><input class="finput" id="fxt-amount" type="number" placeholder="e.g. 10000" step="0.01"></div>
           </div>
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">Base Currency</label><input class="finput" id="fxt-base" placeholder="USD" style="text-transform:uppercase" maxlength="3" value="USD"></div>
-            <div class="field-wrap"><label class="field-label">Rate at Transaction</label><input class="finput" id="fxt-rate" type="number" placeholder="e.g. 0.1471" step="any"></div>
+            <div class="field-wrap"><label class="field-label" for="fxt-base">Base Currency</label><input class="finput" id="fxt-base" placeholder="USD" style="text-transform:uppercase" maxlength="3" value="USD"></div>
+            <div class="field-wrap"><label class="field-label" for="fxt-rate">Rate at Transaction</label><input class="finput" id="fxt-rate" type="number" placeholder="e.g. 0.1471" step="any"></div>
           </div>
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">Reference Type</label>
+            <div class="field-wrap"><label class="field-label" for="fxt-ref-type">Reference Type</label>
               <select class="finput" id="fxt-ref-type">
                 <option value="invoice">Invoice</option>
                 <option value="bill">Bill</option>
@@ -1760,7 +1760,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
                 <option value="other">Other</option>
               </select>
             </div>
-            <div class="field-wrap"><label class="field-label">Reference ID</label><input class="finput" id="fxt-ref-id" type="number" placeholder="e.g. 42"></div>
+            <div class="field-wrap"><label class="field-label" for="fxt-ref-id">Reference ID</label><input class="finput" id="fxt-ref-id" type="number" placeholder="e.g. 42"></div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-ghost" onclick="closeModal('fx-tx-modal')">Cancel</button>
@@ -1777,18 +1777,18 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <button class="modal-close" onclick="closeModal('holding-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">Ticker / Symbol</label><input class="finput" id="h-ticker" placeholder="e.g. AAPL" style="text-transform:uppercase"></div>
-            <div class="field-wrap"><label class="field-label">Asset type</label><select class="finput" id="h-type"><option>Stock</option><option>ETF</option><option>Bond</option><option>Crypto</option><option>Cash</option><option>Other</option></select></div>
+            <div class="field-wrap"><label class="field-label" for="h-ticker">Ticker / Symbol</label><input class="finput" id="h-ticker" placeholder="e.g. AAPL" style="text-transform:uppercase"></div>
+            <div class="field-wrap"><label class="field-label" for="h-type">Asset type</label><select class="finput" id="h-type"><option>Stock</option><option>ETF</option><option>Bond</option><option>Crypto</option><option>Cash</option><option>Other</option></select></div>
           </div>
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">Shares / Units</label><input class="finput" id="h-shares" type="number" placeholder="e.g. 10"></div>
-            <div class="field-wrap"><label class="field-label">Avg cost per share</label><input class="finput" id="h-cost" type="number" placeholder="e.g. 150.00"></div>
+            <div class="field-wrap"><label class="field-label" for="h-shares">Shares / Units</label><input class="finput" id="h-shares" type="number" placeholder="e.g. 10"></div>
+            <div class="field-wrap"><label class="field-label" for="h-cost">Avg cost per share</label><input class="finput" id="h-cost" type="number" placeholder="e.g. 150.00"></div>
           </div>
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label">Current price</label><input class="finput" id="h-price" type="number" placeholder="e.g. 185.00"></div>
-            <div class="field-wrap"><label class="field-label">Annual dividend / unit</label><input class="finput" id="h-div" type="number" placeholder="e.g. 0.96 (optional)"></div>
+            <div class="field-wrap"><label class="field-label" for="h-price">Current price</label><input class="finput" id="h-price" type="number" placeholder="e.g. 185.00"></div>
+            <div class="field-wrap"><label class="field-label" for="h-div">Annual dividend / unit</label><input class="finput" id="h-div" type="number" placeholder="e.g. 0.96 (optional)"></div>
           </div>
-          <div class="field-wrap"><label class="field-label">Name / Description</label><input class="finput" id="h-name" placeholder="e.g. Apple Inc."></div>
+          <div class="field-wrap"><label class="field-label" for="h-name">Name / Description</label><input class="finput" id="h-name" placeholder="e.g. Apple Inc."></div>
           <div class="modal-footer">
             <button class="btn btn-ghost" onclick="closeModal('holding-modal')">Cancel</button>
             <button class="btn btn-primary" onclick="saveHolding()">Add holding</button>
@@ -2039,14 +2039,14 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div style="font-size:14px;font-weight:500;color:var(--acc-light);font-family:var(--font-display);letter-spacing:.03em;margin-bottom:4px">Add yourself to payroll</div>
           <div style="font-size:12px;color:var(--t2);margin-bottom:.85rem">Your net salary flows automatically into Personal Finance.</div>
           <div class="field-group" style="margin-bottom:.6rem">
-            <div class="field-wrap"><label class="field-label">First name</label><input class="finput" id="payroll-cta-fname" placeholder="First name"></div>
-            <div class="field-wrap"><label class="field-label">Last name</label><input class="finput" id="payroll-cta-lname" placeholder="Last name"></div>
+            <div class="field-wrap"><label class="field-label" for="payroll-cta-fname">First name</label><input class="finput" id="payroll-cta-fname" placeholder="First name"></div>
+            <div class="field-wrap"><label class="field-label" for="payroll-cta-lname">Last name</label><input class="finput" id="payroll-cta-lname" placeholder="Last name"></div>
           </div>
           <div class="field-group" style="margin-bottom:.6rem">
-            <div class="field-wrap"><label class="field-label">Monthly gross (USD)</label><input class="finput" id="payroll-cta-gross" type="number" placeholder="e.g. 5000" oninput="payrollCardPreviewNet()"></div>
-            <div class="field-wrap"><label class="field-label">Tax rate (%)</label><input class="finput" id="payroll-cta-tax" type="number" value="20" min="0" max="60" step="0.5" oninput="payrollCardPreviewNet()"></div>
+            <div class="field-wrap"><label class="field-label" for="payroll-cta-gross">Monthly gross (USD)</label><input class="finput" id="payroll-cta-gross" type="number" placeholder="e.g. 5000" oninput="payrollCardPreviewNet()"></div>
+            <div class="field-wrap"><label class="field-label" for="payroll-cta-tax">Tax rate (%)</label><input class="finput" id="payroll-cta-tax" type="number" value="20" min="0" max="60" step="0.5" oninput="payrollCardPreviewNet()"></div>
           </div>
-          <div class="field-wrap" style="margin-bottom:.85rem"><label class="field-label">Role</label><input class="finput" id="payroll-cta-role" placeholder="e.g. Owner" value="Owner"></div>
+          <div class="field-wrap" style="margin-bottom:.85rem"><label class="field-label" for="payroll-cta-role">Role</label><input class="finput" id="payroll-cta-role" placeholder="e.g. Owner" value="Owner"></div>
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
             <span id="payroll-cta-net" style="font-size:12.5px;color:var(--green);font-family:var(--font-mono);font-weight:600"></span>
             <div style="display:flex;gap:8px">
@@ -2080,16 +2080,16 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="card">
           <div class="card-header"><div class="card-title">Tax Preview Calculator</div></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:.75rem">
-            <div class="field-wrap" style="margin:0"><label class="field-label">Monthly Gross</label><input class="finput" id="tax-prev-gross" type="number" placeholder="5000" oninput="runTaxPreview()" style="width:120px"></div>
-            <div class="field-wrap" style="margin:0"><label class="field-label">Jurisdiction</label>
+            <div class="field-wrap" style="margin:0"><label class="field-label" for="tax-prev-gross">Monthly Gross</label><input class="finput" id="tax-prev-gross" type="number" placeholder="5000" oninput="runTaxPreview()" style="width:120px"></div>
+            <div class="field-wrap" style="margin:0"><label class="field-label" for="tax-prev-jur">Jurisdiction</label>
               <select class="finput" id="tax-prev-jur" style="width:140px" onchange="runTaxPreview()">
                 <option value="TT">T&amp;T</option><option value="BB">Barbados</option><option value="JM">Jamaica</option>
                 <option value="CA">Canada</option><option value="US">USA</option><option value="GB">UK</option>
                 <option value="MX">Mexico</option><option value="CO">Colombia</option><option value="OTHER">Other</option>
               </select>
             </div>
-            <div class="field-wrap" style="margin:0"><label class="field-label">Bonus</label><input class="finput" id="tax-prev-bonus" type="number" placeholder="0" oninput="runTaxPreview()" style="width:90px"></div>
-            <div class="field-wrap" style="margin:0"><label class="field-label">Overtime</label><input class="finput" id="tax-prev-overtime" type="number" placeholder="0" oninput="runTaxPreview()" style="width:90px"></div>
+            <div class="field-wrap" style="margin:0"><label class="field-label" for="tax-prev-bonus">Bonus</label><input class="finput" id="tax-prev-bonus" type="number" placeholder="0" oninput="runTaxPreview()" style="width:90px"></div>
+            <div class="field-wrap" style="margin:0"><label class="field-label" for="tax-prev-overtime">Overtime</label><input class="finput" id="tax-prev-overtime" type="number" placeholder="0" oninput="runTaxPreview()" style="width:90px"></div>
           </div>
           <div id="tax-preview-result" style="font-size:12px;color:var(--t3)">Enter a gross amount to see the tax breakdown.</div>
         </div>
@@ -2417,8 +2417,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <span id="pers-salary-sync-label" style="display:none;font-size:11px;color:var(--green)">Synced from payroll ✓</span>
           </div>
           <div class="field-group" style="margin-bottom:.6rem">
-            <div class="field-wrap"><label class="field-label">Gross salary (USD / mo)</label><input class="finput" id="pers-sal-gross" type="number" placeholder="e.g. 5000" oninput="persPreviewNet()"></div>
-            <div class="field-wrap"><label class="field-label">Tax rate (%)</label><input class="finput" id="pers-sal-tax" type="number" value="20" min="0" max="60" step="0.5" oninput="persPreviewNet()"></div>
+            <div class="field-wrap"><label class="field-label" for="pers-sal-gross">Gross salary (USD / mo)</label><input class="finput" id="pers-sal-gross" type="number" placeholder="e.g. 5000" oninput="persPreviewNet()"></div>
+            <div class="field-wrap"><label class="field-label" for="pers-sal-tax">Tax rate (%)</label><input class="finput" id="pers-sal-tax" type="number" value="20" min="0" max="60" step="0.5" oninput="persPreviewNet()"></div>
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
             <div style="font-size:12.5px;color:var(--t2)">Net take-home: <span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="pers-sal-net-preview">—</span></div>
@@ -2883,8 +2883,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
           <div id="lock-config" style="display:none">
             <div class="field-group" style="margin-top:1rem">
-              <div class="field-wrap"><label class="field-label">Lock date</label><input class="finput" type="date" id="lock-date" value="2026-03-31"></div>
-              <div class="field-wrap"><label class="field-label">Lock password</label><input class="finput" type="password" id="lock-password" placeholder="Set a password to unlock"></div>
+              <div class="field-wrap"><label class="field-label" for="lock-date">Lock date</label><input class="finput" type="date" id="lock-date" value="2026-03-31"></div>
+              <div class="field-wrap"><label class="field-label" for="lock-password">Lock password</label><input class="finput" type="password" id="lock-password" placeholder="Set a password to unlock"></div>
             </div>
             <button class="btn btn-primary" onclick="saveLockSettings()" style="margin-top:.5rem">Save lock settings</button>
           </div>
@@ -2958,26 +2958,26 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div>
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="2" y="4" width="12" height="10" rx="1.2"/><path d="M5 4V3a3 3 0 016 0v1"/></svg>Business profile</div>
-              <div class="field-wrap"><label class="field-label">Business name</label><input class="finput" id="s-biz-name" placeholder="Your business name" oninput="updateBrandName()"></div>
+              <div class="field-wrap"><label class="field-label" for="s-biz-name">Business name</label><input class="finput" id="s-biz-name" placeholder="Your business name" oninput="updateBrandName()"></div>
               <div class="field-group">
-                <div class="field-wrap"><label class="field-label">Industry</label><select class="finput" id="s-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option></select></div>
-                <div class="field-wrap"><label class="field-label">Currency</label><select class="finput" id="s-currency" onchange="updateCurrency()"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="TTD">TTD (TT$)</option><option value="CAD">CAD (C$)</option><option value="AUD">AUD (A$)</option></select></div>
+                <div class="field-wrap"><label class="field-label" for="s-industry">Industry</label><select class="finput" id="s-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option></select></div>
+                <div class="field-wrap"><label class="field-label" for="s-currency">Currency</label><select class="finput" id="s-currency" onchange="updateCurrency()"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="TTD">TTD (TT$)</option><option value="CAD">CAD (C$)</option><option value="AUD">AUD (A$)</option></select></div>
               </div>
               <div class="field-group">
-                <div class="field-wrap"><label class="field-label">Tax ID / EIN</label><input class="finput" id="s-tax-id" placeholder="XX-XXXXXXX"></div>
-                <div class="field-wrap"><label class="field-label">Fiscal year start</label><select class="finput" id="s-fy"><option>January</option><option>April</option><option>July</option><option>October</option></select></div>
+                <div class="field-wrap"><label class="field-label" for="s-tax-id">Tax ID / EIN</label><input class="finput" id="s-tax-id" placeholder="XX-XXXXXXX"></div>
+                <div class="field-wrap"><label class="field-label" for="s-fy">Fiscal year start</label><select class="finput" id="s-fy"><option>January</option><option>April</option><option>July</option><option>October</option></select></div>
               </div>
-              <div class="field-wrap"><label class="field-label">Business address</label><textarea class="finput" id="s-address" style="min-height:60px" placeholder="Street, City, State, Country"></textarea></div>
-              <div class="field-wrap"><label class="field-label">Website</label><input class="finput" id="s-website" placeholder="https://yourbusiness.com"></div>
+              <div class="field-wrap"><label class="field-label" for="s-address">Business address</label><textarea class="finput" id="s-address" style="min-height:60px" placeholder="Street, City, State, Country"></textarea></div>
+              <div class="field-wrap"><label class="field-label" for="s-website">Website</label><input class="finput" id="s-website" placeholder="https://yourbusiness.com"></div>
             </div>
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="3"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/></svg>Your profile</div>
               <div class="field-group">
-                <div class="field-wrap"><label class="field-label">Your name</label><input class="finput" id="s-user-name" value="" placeholder="Your name" oninput="updateUserName()"></div>
-                <div class="field-wrap"><label class="field-label">Initials</label><input class="finput" id="s-user-initials" value="JD" maxlength="2" oninput="updateUserAvatar()"></div>
+                <div class="field-wrap"><label class="field-label" for="s-user-name">Your name</label><input class="finput" id="s-user-name" value="" placeholder="Your name" oninput="updateUserName()"></div>
+                <div class="field-wrap"><label class="field-label" for="s-user-initials">Initials</label><input class="finput" id="s-user-initials" value="JD" maxlength="2" oninput="updateUserAvatar()"></div>
               </div>
-              <div class="field-wrap"><label class="field-label">Email</label><input class="finput" id="s-email" placeholder="you@company.com" type="email"></div>
-              <div class="field-wrap"><label class="field-label">Phone</label><input class="finput" id="s-phone" placeholder="+1 (555) 000-0000" type="tel"></div>
+              <div class="field-wrap"><label class="field-label" for="s-email">Email</label><input class="finput" id="s-email" placeholder="you@company.com" type="email"></div>
+              <div class="field-wrap"><label class="field-label" for="s-phone">Phone</label><input class="finput" id="s-phone" placeholder="+1 (555) 000-0000" type="tel"></div>
             </div>
           </div>
           <div>
@@ -2991,26 +2991,26 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             </div>
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v3l2 2"/></svg>Invoice settings</div>
-              <div class="field-wrap"><label class="field-label">Invoice prefix</label><input class="finput" id="s-inv-prefix" value="INV-"></div>
+              <div class="field-wrap"><label class="field-label" for="s-inv-prefix">Invoice prefix</label><input class="finput" id="s-inv-prefix" value="INV-"></div>
               <div class="field-group">
-                <div class="field-wrap"><label class="field-label">Payment terms (days)</label><input class="finput" id="s-pay-terms" value="30" type="number" min="0"></div>
-                <div class="field-wrap"><label class="field-label">Default tax rate (%)</label><input class="finput" id="s-tax-rate" value="12.5" type="number" step="0.1"></div>
+                <div class="field-wrap"><label class="field-label" for="s-pay-terms">Payment terms (days)</label><input class="finput" id="s-pay-terms" value="30" type="number" min="0"></div>
+                <div class="field-wrap"><label class="field-label" for="s-tax-rate">Default tax rate (%)</label><input class="finput" id="s-tax-rate" value="12.5" type="number" step="0.1"></div>
               </div>
-              <div class="field-wrap"><label class="field-label">Invoice footer</label><textarea class="finput" id="s-inv-notes">Thank you for your business. Please make payment within the terms above.</textarea></div>
+              <div class="field-wrap"><label class="field-label" for="s-inv-notes">Invoice footer</label><textarea class="finput" id="s-inv-notes">Thank you for your business. Please make payment within the terms above.</textarea></div>
             </div>
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><path d="M2 2h12v12H2z"/><path d="M2 6h12M6 6v8"/></svg>Personal finance targets</div>
               <div class="field-group">
-                <div class="field-wrap"><label class="field-label">Income target ($/mo)</label><input class="finput" id="s-inc-target" value="0" type="number"></div>
-                <div class="field-wrap"><label class="field-label">Monthly budget ($)</label><input class="finput" id="s-budget" value="0" type="number"></div>
+                <div class="field-wrap"><label class="field-label" for="s-inc-target">Income target ($/mo)</label><input class="finput" id="s-inc-target" value="0" type="number"></div>
+                <div class="field-wrap"><label class="field-label" for="s-budget">Monthly budget ($)</label><input class="finput" id="s-budget" value="0" type="number"></div>
               </div>
-              <div class="field-wrap"><label class="field-label">Savings rate target (%)</label><input class="finput" id="s-savings-target" value="40" type="number" min="0" max="100" oninput="refreshPersonal()"></div>
+              <div class="field-wrap"><label class="field-label" for="s-savings-target">Savings rate target (%)</label><input class="finput" id="s-savings-target" value="40" type="number" min="0" max="100" oninput="refreshPersonal()"></div>
             </div>
             <button class="btn btn-primary" style="width:100%;justify-content:center;padding:9px" onclick="saveSettings()">Save all settings</button>
             <div class="settings-section" style="margin-top:1rem">
               <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="8" rx="1.2"/><path d="M5 7V5a3 3 0 016 0v2"/><circle cx="8" cy="11" r="1"/></svg>Change password</div>
-              <div class="field-wrap"><label class="field-label">Current password</label><input class="finput" type="password" id="s-cur-pw" placeholder="Enter current password"></div>
-              <div class="field-wrap"><label class="field-label">New password</label><input class="finput" type="password" id="s-new-pw" placeholder="At least 8 characters"></div>
+              <div class="field-wrap"><label class="field-label" for="s-cur-pw">Current password</label><input class="finput" type="password" id="s-cur-pw" placeholder="Enter current password"></div>
+              <div class="field-wrap"><label class="field-label" for="s-new-pw">New password</label><input class="finput" type="password" id="s-new-pw" placeholder="At least 8 characters"></div>
               <button class="btn btn-ghost" style="margin-top:.5rem" onclick="changePassword()">Update password</button>
             </div>
             <div class="settings-section" style="margin-top:1rem;border-color:var(--red-bd)">
@@ -3038,7 +3038,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <button class="modal-close" onclick="closeModal('delete-account-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div style="font-size:13px;color:var(--t2);margin-bottom:1rem;line-height:1.6">All your data — invoices, expenses, customers, payroll, investments and settings — will be permanently deleted. Enter your password to confirm.</div>
-    <div class="field-wrap"><label class="field-label">Confirm password</label><input class="finput" type="password" id="del-acct-pw" placeholder="Enter your password"></div>
+    <div class="field-wrap"><label class="field-label" for="del-acct-pw">Confirm password</label><input class="finput" type="password" id="del-acct-pw" placeholder="Enter your password"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('delete-account-modal')">Cancel</button>
       <button class="btn" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)" onclick="confirmDeleteAccount()">Delete permanently</button>
@@ -3155,8 +3155,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <button class="modal-close" onclick="closeModal('journal-entry-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group" style="margin-bottom:.75rem">
-      <div class="field-wrap"><label class="field-label">Date</label><input class="finput" type="date" id="je-date" value="2026-04-29"></div>
-      <div class="field-wrap"><label class="field-label">Reference / Notes</label><input class="finput" id="je-notes" placeholder="e.g. Depreciation — equipment"></div>
+      <div class="field-wrap"><label class="field-label" for="je-date">Date</label><input class="finput" type="date" id="je-date" value="2026-04-29"></div>
+      <div class="field-wrap"><label class="field-label" for="je-notes">Reference / Notes</label><input class="finput" id="je-notes" placeholder="e.g. Depreciation — equipment"></div>
     </div>
     <div style="font-size:11px;font-weight:500;color:var(--t2);margin-bottom:.4rem">Entry lines</div>
     <div style="display:grid;grid-template-columns:1fr 90px 90px 28px;gap:6px;padding:0 0 4px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em">
@@ -3187,12 +3187,12 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <span id="owner-entity-currency-label"></span>
     </div>
 
-    <div class="field-group"><div class="field-wrap"><label class="field-label">First name</label><input class="finput" id="own-fname"></div><div class="field-wrap"><label class="field-label">Last name</label><input class="finput" id="own-lname"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Job title</label><input class="finput" id="own-role" value="CEO / Founder"></div><div class="field-wrap"><label class="field-label">Type</label><select class="finput" id="own-type"><option value="owner">Owner / Director</option><option value="fulltime">Full-time</option><option value="parttime">Part-time</option><option value="contractor">Contractor</option></select></div></div>
-    <div class="field-wrap"><label class="field-label">Monthly gross salary <span id="own-currency-sym" style="color:var(--acc)">($)</span></label><input class="finput" id="own-gross" type="number" placeholder="e.g. 8000" oninput="previewOwnerNet()"></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="own-fname">First name</label><input class="finput" id="own-fname"></div><div class="field-wrap"><label class="field-label" for="own-lname">Last name</label><input class="finput" id="own-lname"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="own-role">Job title</label><input class="finput" id="own-role" value="CEO / Founder"></div><div class="field-wrap"><label class="field-label" for="own-type">Type</label><select class="finput" id="own-type"><option value="owner">Owner / Director</option><option value="fulltime">Full-time</option><option value="parttime">Part-time</option><option value="contractor">Contractor</option></select></div></div>
+    <div class="field-wrap"><label class="field-label" for="own-gross">Monthly gross salary <span id="own-currency-sym" style="color:var(--acc)">($)</span></label><input class="finput" id="own-gross" type="number" placeholder="e.g. 8000" oninput="previewOwnerNet()"></div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Tax rate (%)</label><input class="finput" id="own-taxrate" type="number" value="20" min="0" max="60" step="0.5" oninput="previewOwnerNet()"></div>
-      <div class="field-wrap"><label class="field-label">Net pay (preview)</label><input class="finput" id="own-net-preview" readonly style="color:var(--acc);font-family:var(--font-mono);font-weight:600"></div>
+      <div class="field-wrap"><label class="field-label" for="own-taxrate">Tax rate (%)</label><input class="finput" id="own-taxrate" type="number" value="20" min="0" max="60" step="0.5" oninput="previewOwnerNet()"></div>
+      <div class="field-wrap"><label class="field-label" for="own-net-preview">Net pay (preview)</label><input class="finput" id="own-net-preview" readonly style="color:var(--acc);font-family:var(--font-mono);font-weight:600"></div>
     </div>
 
     <!-- Per-entity summary -->
@@ -3222,12 +3222,12 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <button class="modal-close" onclick="closeModal('add-employee-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group" style="margin-bottom:.6rem">
-      <div class="field-wrap"><label class="field-label">First name</label><input class="finput" id="emp-fname" placeholder="First name"></div>
-      <div class="field-wrap"><label class="field-label">Last name</label><input class="finput" id="emp-lname" placeholder="Last name"></div>
+      <div class="field-wrap"><label class="field-label" for="emp-fname">First name</label><input class="finput" id="emp-fname" placeholder="First name"></div>
+      <div class="field-wrap"><label class="field-label" for="emp-lname">Last name</label><input class="finput" id="emp-lname" placeholder="Last name"></div>
     </div>
-    <div class="field-wrap" style="margin-bottom:.6rem"><label class="field-label">Job title</label><input class="finput" id="emp-jobtitle" placeholder="e.g. Software Engineer"></div>
+    <div class="field-wrap" style="margin-bottom:.6rem"><label class="field-label" for="emp-jobtitle">Job title</label><input class="finput" id="emp-jobtitle" placeholder="e.g. Software Engineer"></div>
     <div class="field-wrap" style="margin-bottom:.6rem">
-      <label class="field-label">Role</label>
+      <label class="field-label" for="emp-type">Role</label>
       <select class="finput" id="emp-type">
         <option value="Full-time">Full-time</option>
         <option value="Part-time">Part-time</option>
@@ -3235,10 +3235,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       </select>
     </div>
     <div class="field-group" style="margin-bottom:.6rem">
-      <div class="field-wrap"><label class="field-label">Monthly gross (USD)</label><input class="finput" id="emp-gross" type="number" placeholder="e.g. 4000" min="0" step="100" oninput="previewEmpNet()"></div>
-      <div class="field-wrap"><label class="field-label">Tax rate (%)</label><input class="finput" id="emp-taxrate" type="number" value="20" min="0" max="60" step="0.5" oninput="previewEmpNet()"></div>
+      <div class="field-wrap"><label class="field-label" for="emp-gross">Monthly gross (USD)</label><input class="finput" id="emp-gross" type="number" placeholder="e.g. 4000" min="0" step="100" oninput="previewEmpNet()"></div>
+      <div class="field-wrap"><label class="field-label" for="emp-taxrate">Tax rate (%)</label><input class="finput" id="emp-taxrate" type="number" value="20" min="0" max="60" step="0.5" oninput="previewEmpNet()"></div>
     </div>
-    <div class="field-wrap" style="margin-bottom:.85rem"><label class="field-label">Start date</label><input class="finput" id="emp-startdate" type="date"></div>
+    <div class="field-wrap" style="margin-bottom:.85rem"><label class="field-label" for="emp-startdate">Start date</label><input class="finput" id="emp-startdate" type="date"></div>
     <div style="font-size:12.5px;color:var(--t2);padding:.4rem 0 .85rem">Net pay: <span id="emp-net-preview" style="color:var(--green);font-family:var(--font-mono);font-weight:600">—</span></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('add-employee-modal')">Cancel</button>
@@ -3250,9 +3250,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 <div class="modal-overlay hidden" id="invoice-modal">
   <div class="modal modal-wide">
     <div class="modal-header"><div><div class="modal-title">New invoice</div><div class="modal-sub">Create and track a new client invoice</div></div><button class="modal-close" onclick="closeModal('invoice-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Client name *</label><input class="finput" id="inv-client" placeholder="Client or company name"></div><div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="inv-amount" type="number" placeholder="0.00"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Due date</label><input class="finput" id="inv-due" type="date"></div><div class="field-wrap"><label class="field-label">Status</label><select class="finput" id="inv-status"><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></div></div>
-    <div class="field-wrap"><label class="field-label">Description</label><textarea class="finput" id="inv-desc" placeholder="Services rendered…"></textarea></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-client">Client name *</label><input class="finput" id="inv-client" placeholder="Client or company name"></div><div class="field-wrap"><label class="field-label" for="inv-amount">Amount ($) *</label><input class="finput" id="inv-amount" type="number" placeholder="0.00"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-due">Due date</label><input class="finput" id="inv-due" type="date"></div><div class="field-wrap"><label class="field-label" for="inv-status">Status</label><select class="finput" id="inv-status"><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></div></div>
+    <div class="field-wrap"><label class="field-label" for="inv-desc">Description</label><textarea class="finput" id="inv-desc" placeholder="Services rendered…"></textarea></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('invoice-modal')">Cancel</button><button class="btn btn-primary" onclick="saveInvoice()">Create invoice</button></div>
   </div>
 </div>
@@ -3260,8 +3260,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 <div class="modal-overlay hidden" id="expense-modal">
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Add expense</div><div class="modal-sub">Log a business expense</div></div><button class="modal-close" onclick="closeModal('expense-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Description *</label><input class="finput" id="bexp-desc" placeholder="e.g. Office rent"></div><div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="bexp-amount" type="number" placeholder="0.00"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Category</label><select class="finput" id="bexp-cat"><option>Salaries</option><option>Rent</option><option>Software</option><option>Marketing</option><option>Travel</option><option>Equipment</option><option>Meals</option><option>Other</option></select></div><div class="field-wrap"><label class="field-label">Deductible?</label><select class="finput" id="bexp-ded"><option value="yes">Yes — 100%</option><option value="half">Yes — 50%</option><option value="no">No</option></select></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-desc">Description *</label><input class="finput" id="bexp-desc" placeholder="e.g. Office rent"></div><div class="field-wrap"><label class="field-label" for="bexp-amount">Amount ($) *</label><input class="finput" id="bexp-amount" type="number" placeholder="0.00"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-cat">Category</label><select class="finput" id="bexp-cat"><option>Salaries</option><option>Rent</option><option>Software</option><option>Marketing</option><option>Travel</option><option>Equipment</option><option>Meals</option><option>Other</option></select></div><div class="field-wrap"><label class="field-label" for="bexp-ded">Deductible?</label><select class="finput" id="bexp-ded"><option value="yes">Yes — 100%</option><option value="half">Yes — 50%</option><option value="no">No</option></select></div></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('expense-modal')">Cancel</button><button class="btn btn-primary" onclick="saveExpense()">Add expense</button></div>
   </div>
 </div>
@@ -3269,9 +3269,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 <div class="modal-overlay hidden" id="product-modal">
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Add product</div><div class="modal-sub">Add a new inventory item</div></div><button class="modal-close" onclick="closeModal('product-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Product name *</label><input class="finput" id="prod-name" placeholder="e.g. USB-C Hub"></div><div class="field-wrap"><label class="field-label">SKU</label><input class="finput" id="prod-sku" placeholder="#1050"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Units in stock</label><input class="finput" id="prod-units" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label">Unit cost ($)</label><input class="finput" id="prod-cost" type="number" placeholder="0.00"></div></div>
-    <div class="field-wrap"><label class="field-label">Reorder threshold (units)</label><input class="finput" id="prod-thresh" type="number" placeholder="20"></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="prod-name">Product name *</label><input class="finput" id="prod-name" placeholder="e.g. USB-C Hub"></div><div class="field-wrap"><label class="field-label" for="prod-sku">SKU</label><input class="finput" id="prod-sku" placeholder="#1050"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="prod-units">Units in stock</label><input class="finput" id="prod-units" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="prod-cost">Unit cost ($)</label><input class="finput" id="prod-cost" type="number" placeholder="0.00"></div></div>
+    <div class="field-wrap"><label class="field-label" for="prod-thresh">Reorder threshold (units)</label><input class="finput" id="prod-thresh" type="number" placeholder="20"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('product-modal')">Cancel</button><button class="btn btn-primary" onclick="saveProduct()">Add product</button></div>
   </div>
 </div>
@@ -3279,7 +3279,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 <div class="modal-overlay hidden" id="restock-modal">
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title" id="restock-modal-title">Restock</div><div class="modal-sub">Add units to current stock</div></div><button class="modal-close" onclick="closeModal('restock-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div class="field-wrap"><label class="field-label">Units to add</label><input class="finput" id="restock-qty" type="number" placeholder="50" min="1"></div>
+    <div class="field-wrap"><label class="field-label" for="restock-qty">Units to add</label><input class="finput" id="restock-qty" type="number" placeholder="50" min="1"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('restock-modal')">Cancel</button><button class="btn btn-primary" onclick="saveRestock()">Save</button></div>
   </div>
 </div>
@@ -3287,9 +3287,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 <div class="modal-overlay hidden" id="edit-inv-modal">
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Edit inventory item</div><div class="modal-sub">Update product details and stock levels</div></div><button class="modal-close" onclick="closeModal('edit-inv-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div class="field-wrap"><label class="field-label">Product name *</label><input class="finput" id="edit-inv-name" placeholder="e.g. USB-C Hub"></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Units in stock</label><input class="finput" id="edit-inv-units" type="number" min="0" placeholder="0"></div><div class="field-wrap"><label class="field-label">Unit cost ($)</label><input class="finput" id="edit-inv-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
-    <div class="field-wrap"><label class="field-label">Reorder level (max units)</label><input class="finput" id="edit-inv-max" type="number" min="1" placeholder="200"></div>
+    <div class="field-wrap"><label class="field-label" for="edit-inv-name">Product name *</label><input class="finput" id="edit-inv-name" placeholder="e.g. USB-C Hub"></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="edit-inv-units">Units in stock</label><input class="finput" id="edit-inv-units" type="number" min="0" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="edit-inv-cost">Unit cost ($)</label><input class="finput" id="edit-inv-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
+    <div class="field-wrap"><label class="field-label" for="edit-inv-max">Reorder level (max units)</label><input class="finput" id="edit-inv-max" type="number" min="1" placeholder="200"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('edit-inv-modal')">Cancel</button><button class="btn btn-primary" onclick="saveEditInv()">Save changes</button></div>
   </div>
 </div>
@@ -3297,11 +3297,11 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 <div class="modal-overlay hidden" id="item-modal">
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title" id="item-modal-title">New Item</div><div class="modal-sub">Add or edit a product or service in your catalog</div></div><button class="modal-close" onclick="closeModal('item-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Name *</label><input class="finput" id="item-name" placeholder="e.g. Web Development"></div><div class="field-wrap"><label class="field-label">SKU</label><input class="finput" id="item-sku" placeholder="SVC-001"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Type</label><select class="finput" id="item-type"><option value="Product">Product</option><option value="Service">Service</option></select></div><div class="field-wrap"><label class="field-label">Status</label><select class="finput" id="item-status"><option value="Active">Active</option><option value="Low Stock">Low Stock</option><option value="Inactive">Inactive</option></select></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Price ($)</label><input class="finput" id="item-price" type="number" min="0" step="0.01" placeholder="0.00"></div><div class="field-wrap"><label class="field-label">Cost ($) <span style="color:var(--t3);font-size:10.5px">for margin</span></label><input class="finput" id="item-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
-    <div class="field-wrap"><label class="field-label">Unit</label><input class="finput" id="item-unit" placeholder="each / hr / mo"></div>
-    <div class="field-wrap"><label class="field-label">Stock (leave blank for services)</label><input class="finput" id="item-stock" type="number" min="0" placeholder="—"></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="item-name">Name *</label><input class="finput" id="item-name" placeholder="e.g. Web Development"></div><div class="field-wrap"><label class="field-label" for="item-sku">SKU</label><input class="finput" id="item-sku" placeholder="SVC-001"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="item-type">Type</label><select class="finput" id="item-type"><option value="Product">Product</option><option value="Service">Service</option></select></div><div class="field-wrap"><label class="field-label" for="item-status">Status</label><select class="finput" id="item-status"><option value="Active">Active</option><option value="Low Stock">Low Stock</option><option value="Inactive">Inactive</option></select></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="item-price">Price ($)</label><input class="finput" id="item-price" type="number" min="0" step="0.01" placeholder="0.00"></div><div class="field-wrap"><label class="field-label" for="item-cost">Cost ($) <span style="color:var(--t3);font-size:10.5px">for margin</span></label><input class="finput" id="item-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
+    <div class="field-wrap"><label class="field-label" for="item-unit">Unit</label><input class="finput" id="item-unit" placeholder="each / hr / mo"></div>
+    <div class="field-wrap"><label class="field-label" for="item-stock">Stock (leave blank for services)</label><input class="finput" id="item-stock" type="number" min="0" placeholder="—"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('item-modal')">Cancel</button><button class="btn btn-primary" onclick="saveItem()">Save</button></div>
   </div>
 </div>
@@ -3317,9 +3317,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 <div class="modal-overlay hidden" id="goal-modal">
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Add savings goal</div><div class="modal-sub">Set a new financial milestone</div></div><button class="modal-close" onclick="closeModal('goal-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div class="field-wrap"><label class="field-label">Goal name *</label><input class="finput" id="goal-name" placeholder="e.g. House deposit"></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Current ($)</label><input class="finput" id="goal-current" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label">Target ($)</label><input class="finput" id="goal-target" type="number" placeholder="10000"></div></div>
-    <div class="field-wrap"><label class="field-label">Monthly contribution ($)</label><input class="finput" id="goal-monthly" type="number" placeholder="500"></div>
+    <div class="field-wrap"><label class="field-label" for="goal-name">Goal name *</label><input class="finput" id="goal-name" placeholder="e.g. House deposit"></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="goal-current">Current ($)</label><input class="finput" id="goal-current" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="goal-target">Target ($)</label><input class="finput" id="goal-target" type="number" placeholder="10000"></div></div>
+    <div class="field-wrap"><label class="field-label" for="goal-monthly">Monthly contribution ($)</label><input class="finput" id="goal-monthly" type="number" placeholder="500"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('goal-modal')">Cancel</button><button class="btn btn-primary" onclick="saveGoal()">Add goal</button></div>
   </div>
 </div>
@@ -3327,9 +3327,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 <div class="modal-overlay hidden" id="transaction-modal">
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Add transaction</div><div class="modal-sub">Log a personal income or expense</div></div><button class="modal-close" onclick="closeModal('transaction-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Description *</label><input class="finput" id="tx-desc" placeholder="e.g. Grocery run"></div><div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="tx-date" type="date"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Category</label><select class="finput" id="tx-cat-sel"><option>Rent/Mortgage</option><option>Groceries</option><option>Dining out</option><option>Transport</option><option>Subscriptions</option><option>Healthcare</option><option>Entertainment</option><option>Shopping</option><option>Salary</option><option>Freelance</option><option>Other Income</option><option>Other</option></select></div><div class="field-wrap"><label class="field-label">Type</label><select class="finput" id="tx-type"><option value="expense">Expense</option><option value="income">Income</option></select></div></div>
-    <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="tx-amount" type="number" placeholder="0.00" step="0.01"></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="tx-desc">Description *</label><input class="finput" id="tx-desc" placeholder="e.g. Grocery run"></div><div class="field-wrap"><label class="field-label" for="tx-date">Date</label><input class="finput" id="tx-date" type="date"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="tx-cat-sel">Category</label><select class="finput" id="tx-cat-sel"><option>Rent/Mortgage</option><option>Groceries</option><option>Dining out</option><option>Transport</option><option>Subscriptions</option><option>Healthcare</option><option>Entertainment</option><option>Shopping</option><option>Salary</option><option>Freelance</option><option>Other Income</option><option>Other</option></select></div><div class="field-wrap"><label class="field-label" for="tx-type">Type</label><select class="finput" id="tx-type"><option value="expense">Expense</option><option value="income">Income</option></select></div></div>
+    <div class="field-wrap"><label class="field-label" for="tx-amount">Amount ($) *</label><input class="finput" id="tx-amount" type="number" placeholder="0.00" step="0.01"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('transaction-modal')">Cancel</button><button class="btn btn-primary" onclick="saveTransaction()">Add transaction</button></div>
   </div>
 </div>
@@ -3338,11 +3338,11 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
   <div class="modal modal-wide">
     <div class="modal-header"><div><div class="modal-title" id="cust-modal-title">Add customer</div><div class="modal-sub" id="cust-modal-sub">Fill in the customer details</div></div><button class="modal-close" onclick="closeModal('customer-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <input type="hidden" id="cust-edit-id">
-    <div class="field-group"><div class="field-wrap"><label class="field-label">First name *</label><input class="finput" id="cust-fname" placeholder="First name"></div><div class="field-wrap"><label class="field-label">Last name *</label><input class="finput" id="cust-lname" placeholder="Last name"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Company</label><input class="finput" id="cust-company" placeholder="Enter company name"></div><div class="field-wrap"><label class="field-label">Industry</label><select class="finput" id="cust-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Media</option><option>Consulting</option><option>Other</option></select></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Email *</label><input class="finput" id="cust-email" type="email" placeholder="jane@acme.com"></div><div class="field-wrap"><label class="field-label">Phone</label><input class="finput" id="cust-phone" type="tel" placeholder="+1 (555) 000-0000"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label">Lifetime revenue ($)</label><input class="finput" id="cust-revenue-val" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label">Status</label><select class="finput" id="cust-status"><option value="active">Active</option><option value="inactive">Inactive</option><option value="prospect">Prospect</option></select></div></div>
-    <div class="field-wrap"><label class="field-label">Notes</label><textarea class="finput" id="cust-notes" placeholder="Any relevant notes…"></textarea></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="cust-fname">First name *</label><input class="finput" id="cust-fname" placeholder="First name"></div><div class="field-wrap"><label class="field-label" for="cust-lname">Last name *</label><input class="finput" id="cust-lname" placeholder="Last name"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="cust-company">Company</label><input class="finput" id="cust-company" placeholder="Enter company name"></div><div class="field-wrap"><label class="field-label" for="cust-industry">Industry</label><select class="finput" id="cust-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Media</option><option>Consulting</option><option>Other</option></select></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="cust-email">Email *</label><input class="finput" id="cust-email" type="email" placeholder="jane@acme.com"></div><div class="field-wrap"><label class="field-label" for="cust-phone">Phone</label><input class="finput" id="cust-phone" type="tel" placeholder="+1 (555) 000-0000"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="cust-revenue-val">Lifetime revenue ($)</label><input class="finput" id="cust-revenue-val" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="cust-status">Status</label><select class="finput" id="cust-status"><option value="active">Active</option><option value="inactive">Inactive</option><option value="prospect">Prospect</option></select></div></div>
+    <div class="field-wrap"><label class="field-label" for="cust-notes">Notes</label><textarea class="finput" id="cust-notes" placeholder="Any relevant notes…"></textarea></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('customer-modal')">Cancel</button><button class="btn btn-danger btn-sm" id="cust-delete-btn" style="display:none" onclick="deleteCustomer()">Delete</button><button class="btn btn-primary" onclick="saveCustomer()">Save customer</button></div>
   </div>
 </div>
@@ -3452,7 +3452,7 @@ overlay.innerHTML = `
     <!-- STEP 1: Business basics -->
     <div class="ob-step active" id="ob-s1">
       <div class="ob-field">
-        <label class="ob-label">Business name *</label>
+        <label class="ob-label" for="ob-biz-name">Business name *</label>
         <input class="ob-input" id="ob-biz-name" placeholder="Enter your business name" value="">
       </div>
       <div class="ob-field">
@@ -3473,19 +3473,19 @@ overlay.innerHTML = `
         </select>
       </div>
       <div class="ob-field">
-        <label class="ob-label">Your name *</label>
+        <label class="ob-label" for="ob-user-name">Your name *</label>
         <input class="ob-input" id="ob-user-name" placeholder="Your full name" value="">
       </div>
       <div class="ob-field">
-        <label class="ob-label">Email *</label>
+        <label class="ob-label" for="ob-email">Email *</label>
         <input class="ob-input" id="ob-email" type="email" placeholder="you@company.com" value="">
       </div>
       <div class="ob-field">
-        <label class="ob-label">Business address</label>
+        <label class="ob-label" for="ob-address">Business address</label>
         <textarea class="ob-input" id="ob-address" style="min-height:48px;resize:vertical" placeholder="Street, City, Country"></textarea>
       </div>
       <div class="ob-field">
-        <label class="ob-label">Primary currency</label>
+        <label class="ob-label" for="ob-currency">Primary currency</label>
         <select class="ob-input" aria-label="Primary currency" id="ob-currency">
           <option value="USD">🇺🇸 USD — US Dollar</option>
           <option value="TTD">🇹🇹 TTD — TT Dollar</option>
@@ -5781,8 +5781,8 @@ window.openAddRuleModal=function(){
     m.innerHTML=`<div class="modal" style="width:380px">
       <div class="modal-header"><span class="modal-title">Add Categorisation Rule</span><button class="modal-close" onclick="closeModal('add-rule-modal')">✕</button></div>
       <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
-        <div><label class="field-label">Keyword / Pattern</label><input id="rule-keyword" class="finput" placeholder="e.g. GOOGLE *"></div>
-        <div><label class="field-label">Category</label>
+        <div><label class="field-label" for="rule-keyword">Keyword / Pattern</label><input id="rule-keyword" class="finput" placeholder="e.g. GOOGLE *"></div>
+        <div><label class="field-label" for="rule-category">Category</label>
           <select id="rule-category" class="finput">${['Software & SaaS','Travel','Meals & Entertainment','Office Supplies','Salaries','Marketing','Professional Services','Other'].map(c=>`<option>${c}</option>`).join('')}</select></div>
         <div style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="rule-auto" checked><label for="rule-auto" style="font-size:13px;color:var(--t2)">Auto-approve matching transactions</label></div>
       </div>
@@ -6150,12 +6150,12 @@ document.addEventListener('click', e=>{
       <button class="modal-close" onclick="document.getElementById('quote-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Client *</label><input class="finput" id="quote-client" placeholder="Enter client name"></div>
-      <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="quote-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="quote-client">Client *</label><input class="finput" id="quote-client" placeholder="Enter client name"></div>
+      <div class="field-wrap"><label class="field-label" for="quote-amount">Amount ($) *</label><input class="finput" id="quote-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Expiry Date</label><input class="finput" id="quote-expiry" type="date"></div>
-      <div class="field-wrap"><label class="field-label">Status</label>
+      <div class="field-wrap"><label class="field-label" for="quote-expiry">Expiry Date</label><input class="finput" id="quote-expiry" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="quote-status">Status</label>
         <select class="finput" id="quote-status">
           <option value="pending">Pending</option>
           <option value="accepted">Accepted</option>
@@ -6163,7 +6163,7 @@ document.addEventListener('click', e=>{
         </select>
       </div>
     </div>
-    <div class="field-wrap"><label class="field-label">Notes</label><input class="finput" id="quote-notes" placeholder="Optional notes"></div>
+    <div class="field-wrap"><label class="field-label" for="quote-notes">Notes</label><input class="finput" id="quote-notes" placeholder="Optional notes"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="document.getElementById('quote-modal').classList.add('hidden')">Cancel</button>
       <button class="btn btn-primary ff-save-btn" onclick="saveQuote()">Save quote →</button>
@@ -6179,18 +6179,18 @@ document.addEventListener('click', e=>{
       <button class="modal-close" onclick="document.getElementById('vendor-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Vendor Name *</label><input class="finput" id="vendor-name" placeholder="e.g. AWS"></div>
-      <div class="field-wrap"><label class="field-label">Contact Email</label><input class="finput" id="vendor-contact" type="email" placeholder="billing@vendor.com"></div>
+      <div class="field-wrap"><label class="field-label" for="vendor-name">Vendor Name *</label><input class="finput" id="vendor-name" placeholder="e.g. AWS"></div>
+      <div class="field-wrap"><label class="field-label" for="vendor-contact">Contact Email</label><input class="finput" id="vendor-contact" type="email" placeholder="billing@vendor.com"></div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Category</label>
+      <div class="field-wrap"><label class="field-label" for="vendor-category">Category</label>
         <select class="finput" id="vendor-category">
           <option>Software</option><option>Infrastructure</option><option>Rent</option><option>Payments</option><option>Shipping</option><option>Marketing</option><option>Other</option>
         </select>
       </div>
-      <div class="field-wrap"><label class="field-label">Amount Owing ($)</label><input class="finput" id="vendor-owing" type="number" placeholder="0" value="0"></div>
+      <div class="field-wrap"><label class="field-label" for="vendor-owing">Amount Owing ($)</label><input class="finput" id="vendor-owing" type="number" placeholder="0" value="0"></div>
     </div>
-    <div class="field-wrap"><label class="field-label">YTD Paid ($)</label><input class="finput" id="vendor-ytd" type="number" placeholder="0" value="0"></div>
+    <div class="field-wrap"><label class="field-label" for="vendor-ytd">YTD Paid ($)</label><input class="finput" id="vendor-ytd" type="number" placeholder="0" value="0"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="document.getElementById('vendor-modal').classList.add('hidden')">Cancel</button>
       <button class="btn btn-primary ff-save-btn" onclick="saveVendor()">Save vendor →</button>
@@ -6206,12 +6206,12 @@ document.addEventListener('click', e=>{
       <button class="modal-close" onclick="document.getElementById('bill-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Vendor *</label><input class="finput" id="bill-vendor" placeholder="e.g. AWS"></div>
-      <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="bill-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="bill-vendor">Vendor *</label><input class="finput" id="bill-vendor" placeholder="e.g. AWS"></div>
+      <div class="field-wrap"><label class="field-label" for="bill-amount">Amount ($) *</label><input class="finput" id="bill-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Due Date</label><input class="finput" id="bill-due" type="date"></div>
-      <div class="field-wrap"><label class="field-label">Status</label>
+      <div class="field-wrap"><label class="field-label" for="bill-due">Due Date</label><input class="finput" id="bill-due" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="bill-status">Status</label>
         <select class="finput" id="bill-status">
           <option value="unpaid">Unpaid</option>
           <option value="due_soon">Due Soon</option>
@@ -6220,7 +6220,7 @@ document.addEventListener('click', e=>{
         </select>
       </div>
     </div>
-    <div class="field-wrap"><label class="field-label">Notes</label><input class="finput" id="bill-notes" placeholder="Optional notes"></div>
+    <div class="field-wrap"><label class="field-label" for="bill-notes">Notes</label><input class="finput" id="bill-notes" placeholder="Optional notes"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="document.getElementById('bill-modal').classList.add('hidden')">Cancel</button>
       <button class="btn btn-primary ff-save-btn" onclick="saveBill()">Save bill →</button>
@@ -6236,18 +6236,18 @@ document.addEventListener('click', e=>{
       <button class="modal-close" onclick="document.getElementById('recurring-bill-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Vendor *</label><input class="finput" id="rb-vendor" placeholder="e.g. AWS"></div>
-      <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="rb-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="rb-vendor">Vendor *</label><input class="finput" id="rb-vendor" placeholder="e.g. AWS"></div>
+      <div class="field-wrap"><label class="field-label" for="rb-amount">Amount ($) *</label><input class="finput" id="rb-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Frequency</label>
+      <div class="field-wrap"><label class="field-label" for="rb-freq">Frequency</label>
         <select class="finput" id="rb-freq">
           <option>Monthly</option><option>Quarterly</option><option>Annually</option><option>Weekly</option>
         </select>
       </div>
-      <div class="field-wrap"><label class="field-label">Next Run</label><input class="finput" id="rb-next" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="rb-next">Next Run</label><input class="finput" id="rb-next" type="date"></div>
     </div>
-    <div class="field-wrap"><label class="field-label">Status</label>
+    <div class="field-wrap"><label class="field-label" for="rb-status">Status</label>
       <select class="finput" id="rb-status"><option value="active">Active</option><option value="paused">Paused</option></select>
     </div>
     <div class="modal-footer">
@@ -6265,18 +6265,18 @@ document.addEventListener('click', e=>{
       <button class="modal-close" onclick="document.getElementById('recurring-inv-modal').classList.add('hidden')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Client *</label><input class="finput" id="ri-client" placeholder="Enter client name"></div>
-      <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="ri-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="ri-client">Client *</label><input class="finput" id="ri-client" placeholder="Enter client name"></div>
+      <div class="field-wrap"><label class="field-label" for="ri-amount">Amount ($) *</label><input class="finput" id="ri-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Frequency</label>
+      <div class="field-wrap"><label class="field-label" for="ri-freq">Frequency</label>
         <select class="finput" id="ri-freq">
           <option>Monthly</option><option>Quarterly</option><option>Annually</option><option>Weekly</option>
         </select>
       </div>
-      <div class="field-wrap"><label class="field-label">Next Run</label><input class="finput" id="ri-next" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="ri-next">Next Run</label><input class="finput" id="ri-next" type="date"></div>
     </div>
-    <div class="field-wrap"><label class="field-label">Status</label>
+    <div class="field-wrap"><label class="field-label" for="ri-status">Status</label>
       <select class="finput" id="ri-status"><option value="active">Active</option><option value="paused">Paused</option></select>
     </div>
     <div class="modal-footer">
@@ -6295,18 +6295,18 @@ document.addEventListener('click', e=>{
     </div>
     <input type="hidden" id="receipt-id">
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Customer *</label><input class="finput" id="receipt-customer" placeholder="e.g. Walk-in Customer"></div>
-      <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="receipt-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="receipt-customer">Customer *</label><input class="finput" id="receipt-customer" placeholder="e.g. Walk-in Customer"></div>
+      <div class="field-wrap"><label class="field-label" for="receipt-amount">Amount ($) *</label><input class="finput" id="receipt-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="receipt-date" type="date"></div>
-      <div class="field-wrap"><label class="field-label">Payment Method</label>
+      <div class="field-wrap"><label class="field-label" for="receipt-date">Date</label><input class="finput" id="receipt-date" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="receipt-method">Payment Method</label>
         <select class="finput" id="receipt-method">
           <option>Card</option><option>Cash</option><option>Bank Transfer</option><option>Mobile Money</option><option>Other</option>
         </select>
       </div>
     </div>
-    <div class="field-wrap"><label class="field-label">Notes</label><input class="finput" id="receipt-notes" placeholder="Optional notes"></div>
+    <div class="field-wrap"><label class="field-label" for="receipt-notes">Notes</label><input class="finput" id="receipt-notes" placeholder="Optional notes"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-receipt')">Cancel</button>
       <button class="btn btn-primary ff-save-btn" onclick="saveReceipt()">Save receipt →</button>
@@ -6323,19 +6323,19 @@ document.addEventListener('click', e=>{
     </div>
     <input type="hidden" id="pr-id">
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Customer *</label><input class="finput" id="pr-customer" placeholder="Enter customer name"></div>
-      <div class="field-wrap"><label class="field-label">Invoice Ref</label><input class="finput" id="pr-invoice-ref" placeholder="e.g. INV-2026-010"></div>
+      <div class="field-wrap"><label class="field-label" for="pr-customer">Customer *</label><input class="finput" id="pr-customer" placeholder="Enter customer name"></div>
+      <div class="field-wrap"><label class="field-label" for="pr-invoice-ref">Invoice Ref</label><input class="finput" id="pr-invoice-ref" placeholder="e.g. INV-2026-010"></div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="pr-amount" type="number" placeholder="0.00"></div>
-      <div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="pr-date" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="pr-amount">Amount ($) *</label><input class="finput" id="pr-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="pr-date">Date</label><input class="finput" id="pr-date" type="date"></div>
     </div>
-    <div class="field-wrap"><label class="field-label">Payment Method</label>
+    <div class="field-wrap"><label class="field-label" for="pr-method">Payment Method</label>
       <select class="finput" id="pr-method">
         <option>Bank Transfer</option><option>Card</option><option>Cash</option><option>Mobile Money</option><option>Other</option>
       </select>
     </div>
-    <div class="field-wrap"><label class="field-label">Notes</label><input class="finput" id="pr-notes" placeholder="Optional notes"></div>
+    <div class="field-wrap"><label class="field-label" for="pr-notes">Notes</label><input class="finput" id="pr-notes" placeholder="Optional notes"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-payment-received')">Cancel</button>
       <button class="btn btn-primary ff-save-btn" onclick="savePaymentReceived()">Save payment →</button>
@@ -6352,16 +6352,16 @@ document.addEventListener('click', e=>{
     </div>
     <input type="hidden" id="cn-id">
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Customer *</label><input class="finput" id="cn-customer" placeholder="e.g. Mango & Co"></div>
-      <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="cn-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="cn-customer">Customer *</label><input class="finput" id="cn-customer" placeholder="e.g. Mango & Co"></div>
+      <div class="field-wrap"><label class="field-label" for="cn-amount">Amount ($) *</label><input class="finput" id="cn-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="cn-date" type="date"></div>
-      <div class="field-wrap"><label class="field-label">Status</label>
+      <div class="field-wrap"><label class="field-label" for="cn-date">Date</label><input class="finput" id="cn-date" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="cn-status">Status</label>
         <select class="finput" id="cn-status"><option value="Open">Open</option><option value="Applied">Applied</option><option value="Void">Void</option></select>
       </div>
     </div>
-    <div class="field-wrap"><label class="field-label">Reason</label><input class="finput" id="cn-reason" placeholder="e.g. Return, billing error, service credit"></div>
+    <div class="field-wrap"><label class="field-label" for="cn-reason">Reason</label><input class="finput" id="cn-reason" placeholder="e.g. Return, billing error, service credit"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-credit-note')">Cancel</button>
       <button class="btn btn-primary ff-save-btn" onclick="saveCreditNote()">Save credit note →</button>
@@ -6378,18 +6378,18 @@ document.addEventListener('click', e=>{
     </div>
     <input type="hidden" id="pm-id">
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Vendor *</label><input class="finput" id="pm-vendor" placeholder="e.g. AWS"></div>
-      <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="pm-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="pm-vendor">Vendor *</label><input class="finput" id="pm-vendor" placeholder="e.g. AWS"></div>
+      <div class="field-wrap"><label class="field-label" for="pm-amount">Amount ($) *</label><input class="finput" id="pm-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="pm-date" type="date"></div>
-      <div class="field-wrap"><label class="field-label">Payment Method</label>
+      <div class="field-wrap"><label class="field-label" for="pm-date">Date</label><input class="finput" id="pm-date" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="pm-method">Payment Method</label>
         <select class="finput" id="pm-method">
           <option>Bank Transfer</option><option>Card</option><option>Cash</option><option>Mobile Money</option><option>Other</option>
         </select>
       </div>
     </div>
-    <div class="field-wrap"><label class="field-label">Notes</label><input class="finput" id="pm-notes" placeholder="Optional notes"></div>
+    <div class="field-wrap"><label class="field-label" for="pm-notes">Notes</label><input class="finput" id="pm-notes" placeholder="Optional notes"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-payment-made')">Cancel</button>
       <button class="btn btn-primary ff-save-btn" onclick="savePaymentMade()">Save payment →</button>
@@ -6406,16 +6406,16 @@ document.addEventListener('click', e=>{
     </div>
     <input type="hidden" id="vc-id">
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Vendor *</label><input class="finput" id="vc-vendor" placeholder="e.g. AWS"></div>
-      <div class="field-wrap"><label class="field-label">Amount ($) *</label><input class="finput" id="vc-amount" type="number" placeholder="0.00"></div>
+      <div class="field-wrap"><label class="field-label" for="vc-vendor">Vendor *</label><input class="finput" id="vc-vendor" placeholder="e.g. AWS"></div>
+      <div class="field-wrap"><label class="field-label" for="vc-amount">Amount ($) *</label><input class="finput" id="vc-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="vc-date" type="date"></div>
-      <div class="field-wrap"><label class="field-label">Status</label>
+      <div class="field-wrap"><label class="field-label" for="vc-date">Date</label><input class="finput" id="vc-date" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="vc-status">Status</label>
         <select class="finput" id="vc-status"><option value="Open">Open</option><option value="Applied">Applied</option></select>
       </div>
     </div>
-    <div class="field-wrap"><label class="field-label">Reason</label><input class="finput" id="vc-reason" placeholder="e.g. Overpayment, service credit, outage refund"></div>
+    <div class="field-wrap"><label class="field-label" for="vc-reason">Reason</label><input class="finput" id="vc-reason" placeholder="e.g. Overpayment, service credit, outage refund"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-vendor-credit')">Cancel</button>
       <button class="btn btn-primary ff-save-btn" onclick="saveVendorCredit()">Save credit →</button>
@@ -6475,11 +6475,11 @@ myAccPage.innerHTML = `
     <div class="card" style="padding:1.25rem">
       <div style="font-size:13px;font-weight:500;color:var(--t1);margin-bottom:1rem">Access permissions</div>
       <div style="display:flex;flex-direction:column;gap:12px">
-        <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--t2);cursor:pointer">
+        <label for="acc-perm-view" style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--t2);cursor:pointer">
           <span>View my books & reports</span>
           <input type="checkbox" id="acc-perm-view" checked onchange="updateAccPermission('view',this.checked)" style="width:16px;height:16px;accent-color:var(--acc)">
         </label>
-        <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--t2);cursor:pointer">
+        <label for="acc-perm-filing" style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--t2);cursor:pointer">
           <span>File tax returns on my behalf</span>
           <input type="checkbox" id="acc-perm-filing" onchange="updateAccPermission('filing',this.checked)" style="width:16px;height:16px;accent-color:var(--acc)">
         </label>

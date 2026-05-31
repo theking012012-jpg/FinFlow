@@ -693,14 +693,15 @@ If you cannot find a field, use null. Be concise.`;
         RETURNING accountant_id, referral_months_total
       `, [userId, req.session.accountantId]);
 
-      if (result.rows[0]) {
-        const { accountant_id, referral_months_total } = result.rows[0];
-        // Create first month's referral earning record
-        await client.query(`
-          INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, period_month)
-          VALUES ($1, $2, 'referral', 1000, 'Referral commission — month 1', date_trunc('month', NOW()))
-        `, [accountant_id, userId]);
+      if (!result.rows[0]) {
+        return res.status(404).json({ error: 'No pending client found for this accountant.' });
       }
+
+      const { accountant_id, referral_months_total } = result.rows[0];
+      await client.query(`
+        INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, period_month)
+        VALUES ($1, $2, 'referral', 1000, 'Referral commission — month 1', date_trunc('month', NOW()))
+      `, [accountant_id, userId]);
 
       return res.json({ success: true });
     } finally {
@@ -1126,10 +1127,10 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       ON CONFLICT (accountant_id, client_id) DO UPDATE SET rating = $3, comment = $4, created_at = NOW()
     `, [accountantId, req.session.userId, rating, (comment || '').trim().slice(0, 500)]);
 
-    // Recalculate average rating
+    // Recalculate average rating — ROUND to 2dp; COALESCE keeps current value if subquery returns NULL
     await pool.query(`
       UPDATE accountants SET
-        avg_rating = (SELECT AVG(rating) FROM accountant_reviews WHERE accountant_id = $1),
+        avg_rating = COALESCE(ROUND((SELECT AVG(rating) FROM accountant_reviews WHERE accountant_id = $1)::numeric, 2), avg_rating),
         review_count = (SELECT COUNT(*) FROM accountant_reviews WHERE accountant_id = $1)
       WHERE id = $1
     `, [accountantId]);

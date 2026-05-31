@@ -192,11 +192,27 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
 
   // Toggle Preferred Partner badge manually
   app.post('/api/admin/accountants/:id/preferred-partner', requireAdmin, wrap(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!id || id <= 0) return res.status(400).json({ error: 'Invalid id.' });
     const result = await pool.query(
       `UPDATE accountants SET preferred_partner = NOT COALESCE(preferred_partner, false) WHERE id = $1 RETURNING preferred_partner`,
-      [(parseInt(req.params.id, 10) || 0)]
+      [id]
     );
-    return res.json({ success: true, preferred_partner: result.rows[0]?.preferred_partner });
+    if (!result.rows[0]) return res.status(404).json({ error: 'Accountant not found.' });
+    return res.json({ success: true, preferred_partner: result.rows[0].preferred_partner });
+  }));
+
+  // /preferred alias — frontend calls /preferred, backend was only registered at /preferred-partner
+  app.post('/api/admin/accountants/:id/preferred', requireAdmin, wrap(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!id || id <= 0) return res.status(400).json({ error: 'Invalid id.' });
+    const { rows } = await pool.query(
+      `UPDATE accountants SET preferred_partner = NOT COALESCE(preferred_partner, false)
+       WHERE id = $1 RETURNING id, preferred_partner`,
+      [id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Accountant not found.' });
+    res.json({ ok: true, preferred_partner: rows[0].preferred_partner });
   }));
 
   // ── CLIENT MANAGEMENT ─────────────────────────────────────────────────────

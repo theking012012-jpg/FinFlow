@@ -6728,10 +6728,10 @@ function renderLinkedAccountant() {
     </div>`;
 
   if (access) access.style.display = 'block';
-  loadAccountantMessages();
+  if (typeof window.loadAccountantMessages === 'function') window.loadAccountantMessages();
 }
 
-async function loadAccountantMessages() {
+window.loadAccountantMessages = async function() {
   try {
     const res = await fetch('/api/accountant-messages', {credentials:'include'});
     if (!res.ok) return;
@@ -6755,8 +6755,7 @@ async function loadAccountantMessages() {
       el.scrollTop = el.scrollHeight;
     }
   } catch(e) { console.warn('[Chat] load failed:', e.message); }
-}
-window.loadAccountantMessages = loadAccountantMessages;
+};
 
 window.sendMsgToAccountant = async function() {
   const input = document.getElementById('acct-chat-input');
@@ -6772,7 +6771,7 @@ window.sendMsgToAccountant = async function() {
     });
     if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
     if (input) input.value = '';
-    await loadAccountantMessages();
+    await window.loadAccountantMessages();
   } catch(e) {
     alert('Failed to send: ' + e.message);
   } finally {
@@ -6883,7 +6882,7 @@ window.showPage = function(id, el) {
     const titles = document.getElementById('pageTitle');
     if (titles) titles.textContent = 'My Accountant';
     if (!allAccountants.length) loadDirectory();
-    if (linkedAccountant && linkedAccountant.status === 'active') loadAccountantMessages();
+    if (linkedAccountant && linkedAccountant.status === 'active') { if (typeof window.loadAccountantMessages === 'function') window.loadAccountantMessages(); }
   }
   if (id === 'advisors') {
     // Redirect old advisors page to find-accountant

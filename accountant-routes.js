@@ -1063,6 +1063,43 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     return res.json(row.rows[0]);
   }));
 
+  // ── MESSAGES (PLURAL alias — /messages vs legacy /message singular) ─────────
+  app.get('/api/accountants/clients/:userId/messages', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
+    const access = await pool.query(
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
+       UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    const { rows } = await pool.query(
+      `SELECT id, message AS content, sender, created_at FROM accountant_messages
+       WHERE accountant_id = $1 AND user_id = $2 ORDER BY created_at ASC LIMIT 200`,
+      [req.session.accountantId, userId]
+    ).catch(() => ({ rows: [] }));
+    res.json(rows.map(r => ({ ...r, sender_name: r.sender === 'accountant' ? 'Your accountant' : 'Client' })));
+  }));
+
+  app.post('/api/accountants/clients/:userId/messages', requireAccountant, apiLimiter, wrap(async (req, res) => {
+    const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
+    const content = String(req.body.content || req.body.message || '').trim().slice(0, 2000);
+    if (!content) return res.status(400).json({ error: 'Message required.' });
+    const access = await pool.query(
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
+       UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    const row = await pool.query(
+      `INSERT INTO accountant_messages (accountant_id, user_id, message, sender, created_at)
+       VALUES ($1, $2, $3, 'accountant', NOW()) RETURNING id, message AS content, sender, created_at`,
+      [req.session.accountantId, userId, content]
+    );
+    res.json(row.rows[0]);
+  }));
+
   // ── ACCOUNTANT LOGOUT ─────────────────────────────────────────────────────
   app.post('/api/accountants/logout', (req, res) => {
     req.session.destroy(() => res.json({ ok: true }));

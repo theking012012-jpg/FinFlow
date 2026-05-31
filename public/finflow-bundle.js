@@ -1283,6 +1283,9 @@
         if (window.finflow?.refresh) window.finflow.refresh(['personal-finance']);
         // Refresh dashboard KPIs immediately after owner payroll save
         const _activeIdx = (window.ENTITIES||[]).findIndex(e => e.active);
+        // Sync window.ownerPayroll to new form values so renderPayroll reads current data
+        const _savedOp = (window.ownerPayrollByEntity||{})[_activeIdx] || Object.values(window.ownerPayrollByEntity||{})[0] || null;
+        if (_savedOp) window.ownerPayroll = _savedOp;
         if (_activeIdx >= 0 && typeof window.loadEntityData === 'function') {
           window.loadEntityData(_activeIdx).catch(() => {});
         }

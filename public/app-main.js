@@ -3305,7 +3305,8 @@ function updateHealthScore(savingsRate=0,income=0,surplus=0){
   const arBalance=typeof userInvoices!=='undefined'?userInvoices.filter(i=>i.status?.toLowerCase()!=='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0):0;
   const recScore=d.rev>0?Math.max(40,100-Math.round(arBalance/d.rev*100*5)):50;
   const grScore=REV[0]>0?Math.min(100,Math.round(70+Math.max(0,REV[11]-REV[0])/REV[0]*50)):50;
-  const overall=Math.round((cfScore+prScore+recScore+grScore)/4);
+  const _scores=[cfScore,prScore,recScore,grScore].filter(s=>!isNaN(s));
+  const overall=_scores.length?Math.round(_scores.reduce((a,b)=>a+b,0)/_scores.length):0;
   const el=document.getElementById('health-score');
   if(el)el.textContent=overall;
   const lbl=document.getElementById('health-label');

@@ -1118,6 +1118,17 @@
     // so loadPayrollFromDB correctly sets window.ownerPayroll but the original renderPayroll
     // reads the stale let-binding. This override reads from window.* instead.
     window.renderPayroll = function () {
+      // Auto-set jurisdiction from active entity currency
+      (function(){
+        const active = (window.ENTITIES||[]).find(e=>e.active);
+        const cur = (active?.currency||'USD').toUpperCase();
+        const MAP = {USD:'US',GBP:'GB',EUR:'OTHER',CAD:'CA',AUD:'OTHER',NZD:'OTHER',SGD:'OTHER',TTD:'TT',ZAR:'OTHER',JMD:'JM',BBD:'BB',MXN:'MX',COP:'CO'};
+        const jur = MAP[cur]||'US';
+        ['payroll-jurisdiction','tax-prev-jur'].forEach(id=>{
+          const sel = document.getElementById(id);
+          if(sel && !sel._userSet){ const opt=Array.from(sel.options).find(o=>o.value===jur); if(opt) sel.value=jur; }
+        });
+      })();
       const op      = window.ownerPayroll || null;
       const emps    = window.payrollEmployees || [];
       const allEmps = op ? [{...op, isOwner:true}, ...emps] : emps;
@@ -1164,7 +1175,9 @@
           <span style="font-family:var(--font-mono)">${sm(e.gross)}</span>
           <span style="color:var(--red);font-family:var(--font-mono)">${(parseFloat(e.taxRate)||0) > 0 ? '-' + sm(tax) : '—'}</span>
           <span style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${sm(net)}</span>
-          ${e.isOwner ? `<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>` : '<span></span>'}
+          ${e.isOwner
+            ? `<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`
+            : `<button onclick="openEditEmployee(${e._dbId||e.id||0})" style="background:none;border:none;cursor:pointer;color:var(--t3);padding:4px;font-size:14px;line-height:1" title="Edit employee">✏</button>`}
         </div>`;
       }).join('');
     };
@@ -1268,6 +1281,11 @@
           window.loadPersonalFinance().catch(() => {});
         }
         if (window.finflow?.refresh) window.finflow.refresh(['personal-finance']);
+        // Refresh dashboard KPIs immediately after owner payroll save
+        const _activeIdx = (window.ENTITIES||[]).findIndex(e => e.active);
+        if (_activeIdx >= 0 && typeof window.loadEntityData === 'function') {
+          window.loadEntityData(_activeIdx).catch(() => {});
+        }
       } catch (e) {
         console.error('[Payroll Save] ❌ Failed:', e.message);
         notify('Payroll saved locally but could not sync to server — ' + e.message, true);

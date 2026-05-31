@@ -1928,6 +1928,44 @@ app.get('/api/ai/cache', requireAuth, wrap(async (req, res) => {
 const registerAdminRoutes = require('./admin-routes');
 registerAdminRoutes(app, pool, stripe, resendClient);
 
+// ── CLIENT ↔ ACCOUNTANT MESSAGES ─────────────────────────────────────────────
+app.get('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
+  const userId = req.session.userId;
+  const link = await pool.query(
+    `SELECT accountant_id FROM accountant_clients WHERE user_id = $1 AND status = 'active' LIMIT 1`,
+    [userId]
+  );
+  if (!link.rows[0]) return res.json([]);
+  const { rows } = await pool.query(
+    `SELECT m.id, m.message AS content, m.sender, m.created_at,
+       CASE WHEN m.sender = 'client' THEN 'You'
+            ELSE COALESCE(a.first_name || ' ' || a.last_name, 'Accountant') END AS sender_name
+     FROM accountant_messages m
+     LEFT JOIN accountants a ON a.id = m.accountant_id
+     WHERE m.user_id = $1 AND m.accountant_id = $2
+     ORDER BY m.created_at ASC LIMIT 200`,
+    [userId, link.rows[0].accountant_id]
+  );
+  res.json(rows);
+}));
+
+app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
+  const userId = req.session.userId;
+  const content = String(req.body?.content || '').trim().slice(0, 2000);
+  if (!content) return res.status(400).json({ error: 'Message required.' });
+  const link = await pool.query(
+    `SELECT accountant_id FROM accountant_clients WHERE user_id = $1 AND status = 'active' LIMIT 1`,
+    [userId]
+  );
+  if (!link.rows[0]) return res.status(404).json({ error: 'No linked accountant.' });
+  const { rows } = await pool.query(
+    `INSERT INTO accountant_messages (accountant_id, user_id, sender, message)
+     VALUES ($1, $2, 'client', $3) RETURNING id, created_at`,
+    [link.rows[0].accountant_id, userId, content]
+  );
+  res.json({ ok: true, id: rows[0].id });
+}));
+
 // ── ACCOUNTANT MARKETPLACE ROUTES ────────────────────────────────────────────
 const registerAccountantRoutes = require('./accountant-routes');
 registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient);

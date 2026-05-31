@@ -680,55 +680,64 @@ function persistAfter(origFn){ return origFn; }
 function persistAll(){}
 function loadPersistedData(){}
 
-// CSV export — exports all major data tables as a ZIP-like multi-section CSV
+// CSV export — page-aware, exports the data from whichever page is currently active
 window.exportAllCSV = function(){
-  const now = new Date().toISOString().slice(0,10);
-  let csv = '';
+  const activePage = Array.from(document.querySelectorAll('.page'))
+    .find(el => el.classList.contains('active') || (el.style.display && el.style.display !== 'none'))?.id || '';
 
-  // Invoices
-  csv += '# INVOICES\n';
-  csv += 'Number,Client,Amount,Status,Date\n';
-  (invoices||[]).forEach(inv=>{
-    csv += `"${inv.num||''}","${inv.client||''}","${inv.amount||''}","${inv.status||''}","${inv.date||''}"\n`;
-  });
+  let rows = [], filename = 'finflow-export.csv';
 
-  // Customers
-  csv += '\n# CUSTOMERS\n';
-  csv += 'Name,Email,Phone,Outstanding,Paid YTD\n';
-  (customers||[]).forEach(c=>{
-    csv += `"${c.name||''}","${c.email||''}","${c.phone||''}","${c.outstanding||0}","${c.paidYTD||0}"\n`;
-  });
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g,'""') + '"';
+  const toCSV = r => r.map(q).join(',');
 
-  // Expenses
-  csv += '\n# EXPENSES\n';
-  csv += 'Date,Description,Category,Amount,Vendor\n';
-  (bizExpenses||[]).forEach(e=>{
-    csv += `"${e.date||''}","${e.desc||e.description||''}","${e.cat||e.category||''}","${e.amount||e.amt||''}","${e.vendor||''}"\n`;
-  });
+  if (activePage.includes('invoice')) {
+    const inv = window.userInvoices || [];
+    rows = [['Client','Amount','Status','Due Date','Notes'],
+      ...inv.map(i => [i.client||'', Number(i.amount||0).toFixed(2), i.status||'', i.due||i.due_date||'', i.notes||''])];
+    filename = 'invoices.csv';
+  } else if (activePage.includes('expense')) {
+    const exp = window.bizExpenses || bizExpenses || [];
+    rows = [['Description','Category','Amount','Date','Tax Deductible'],
+      ...exp.map(e => [e.desc||e.description||'', e.cat||e.category||'', Number(e.amount||0).toFixed(2), e.date||e.expense_date||'', e.ded||e.deductible?'Yes':'No'])];
+    filename = 'expenses.csv';
+  } else if (activePage.includes('payroll')) {
+    const emps = [...(window.ownerPayroll ? [{...window.ownerPayroll, isOwner:true}] : []), ...(window.payrollEmployees||[])];
+    rows = [['Name','Role','Type','Gross','Tax Rate','Net Pay'],
+      ...emps.map(e => [(e.fname||'')+' '+(e.lname||''), e.role||'', e.type||e.emp_type||'', Number(e.gross||0).toFixed(2), (e.taxRate||e.tax_rate||0)+'%', Math.round((e.gross||0)*(1-(e.taxRate||e.tax_rate||0)/100))])];
+    filename = 'payroll.csv';
+  } else if (activePage.includes('customer')) {
+    const custs = window.customers || customers || [];
+    rows = [['First Name','Last Name','Company','Email','Phone','Revenue','Status'],
+      ...custs.map(c => [c.fname||'', c.lname||'', c.company||'', c.email||'', c.phone||'', Number(c.revenue||0).toFixed(2), c.status||''])];
+    filename = 'customers.csv';
+  } else if (activePage.includes('inventor')) {
+    const inv = window.inventory || inventory || [];
+    rows = [['Product','SKU','Units','Max Units','Cost','Stock Status'],
+      ...inv.map(i => [i.name||'', i.sku||'', i.units||0, i.max||i.max_units||0, Number(i.cost||0).toFixed(2), i.low?'Low Stock':'OK'])];
+    filename = 'inventory.csv';
+  } else {
+    // Generic — scrape the visible table
+    const activePg = document.querySelector('.page.active') || document.querySelector('[id="'+activePage+'"]');
+    const table = activePg?.querySelector('table, .data-table');
+    if (table) {
+      rows = Array.from(table.querySelectorAll('tr')).map(tr =>
+        Array.from(tr.querySelectorAll('th,td')).map(td => td.textContent.trim()));
+      filename = (activePage.replace('page-','') || 'export') + '.csv';
+    } else {
+      notify('Nothing to export on this page.', true);
+      return;
+    }
+  }
 
-  // Inventory
-  csv += '\n# INVENTORY\n';
-  csv += 'Name,SKU,Stock,Price,Value\n';
-  (inventory||[]).forEach(i=>{
-    csv += `"${i.name||''}","${i.sku||''}","${i.stock||0}","${i.price||0}","${(i.stock||0)*(i.price||0)}"\n`;
-  });
-
-  // Journal entries
-  csv += '\n# JOURNAL ENTRIES\n';
-  csv += 'Date,Description,Debit Account,Credit Account,Amount\n';
-  (journalEntries||[]).forEach(j=>{
-    (j.lines||[]).forEach((l,li)=>{
-      if(li===0) csv += `"${j.date||''}","${j.desc||''}","${l.code||''} ${l.debit>0?'Dr':''}","${l.code||''} ${l.credit>0?'Cr':''}","${l.debit||l.credit||''}"\n`;
-    });
-  });
-
-  const blob = new Blob([csv], {type:'text/csv'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'finflow-backup-'+now+'.csv';
+  if (rows.length <= 1) { notify('No data to export.', true); return; }
+  const csv = rows.map(toCSV).join('\r\n');
+  const blob = new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), {href:url, download:filename});
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(a.href);
-  notify('Backup exported — save it somewhere safe ✦');
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+  notify('Exported ' + filename + ' ✦');
 };
 
 // ════════════════════════════════════════════
@@ -1901,6 +1910,7 @@ function saveProduct(){
 // PAYROLL
 // ════════════════════════════════════════════
 function renderPayroll(){
+  if(typeof autoSetPayrollJurisdiction==='function') autoSetPayrollJurisdiction();
   const allEmps=ownerPayroll?[{...ownerPayroll,isOwner:true},...(payrollEmployees||[])]:( payrollEmployees||[]);
   const totalGross=allEmps.reduce((a,e)=>a+(parseFloat(e.gross)||0),0);
   const totalTax=allEmps.reduce((a,e)=>a+Math.round((parseFloat(e.gross)||0)*(parseFloat(e.taxRate)||0)/100),0);
@@ -1931,7 +1941,9 @@ function renderPayroll(){
       <span style="font-family:var(--font-mono)">${S(e.gross)}</span>
       <span style="color:var(--red);font-family:var(--font-mono)">${e.taxRate>0?'-'+S(tax):'—'}</span>
       <span style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${S(net)}</span>
-      ${e.isOwner?`<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`:'<span></span>'}
+      ${e.isOwner
+        ?`<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`
+        :`<button onclick="openEditEmployee(${e._dbId||e.id||0})" style="background:none;border:none;cursor:pointer;color:var(--t3);padding:4px;font-size:14px;line-height:1" title="Edit employee">✏</button>`}
     </div>`;
   }).join('');
 }
@@ -2172,6 +2184,64 @@ function removeOwnerFromPayroll(){
   renderPayroll();
   notify(`Removed from ${entity?.name||'entity'} payroll ✦`);
 }
+
+function autoSetPayrollJurisdiction(){
+  const active = (window.ENTITIES||ENTITIES||[]).find(e=>e.active);
+  const cur = (active?.currency||'USD').toUpperCase();
+  const MAP = {USD:'US',GBP:'GB',EUR:'OTHER',CAD:'CA',AUD:'OTHER',NZD:'OTHER',SGD:'OTHER',TTD:'TT',ZAR:'OTHER',JMD:'JM',BBD:'BB',MXN:'MX',COP:'CO'};
+  const jur = MAP[cur] || 'US';
+  ['payroll-jurisdiction','tax-prev-jur'].forEach(id=>{
+    const sel = document.getElementById(id);
+    if (sel && !sel._userSet) {
+      const opt = Array.from(sel.options).find(o=>o.value===jur);
+      if (opt) sel.value = jur;
+    }
+  });
+}
+
+window.openEditEmployee = function(id){
+  const emp = (window.payrollEmployees||[]).find(e=>(e._dbId||e.id)===id);
+  if(!emp) return;
+  document.getElementById('edit-emp-id').value = id;
+  document.getElementById('edit-emp-name').value = ((emp.fname||'')+' '+(emp.lname||'')).trim();
+  document.getElementById('edit-emp-role').value = emp.role||'';
+  document.getElementById('edit-emp-type').value = emp.type||emp.emp_type||'Full-time';
+  document.getElementById('edit-emp-gross').value = emp.gross||0;
+  document.getElementById('edit-emp-tax').value = emp.taxRate||emp.tax_rate||0;
+  document.getElementById('modal-edit-employee').style.display='flex';
+};
+
+window.closeEditEmployee = function(){
+  document.getElementById('modal-edit-employee').style.display='none';
+};
+
+window.saveEditEmployee = async function(){
+  const id = parseInt(document.getElementById('edit-emp-id').value);
+  const role = (document.getElementById('edit-emp-role').value||'').trim().slice(0,100);
+  const emp_type = document.getElementById('edit-emp-type').value;
+  const gross = parseFloat(document.getElementById('edit-emp-gross').value)||0;
+  const tax_rate = parseFloat(document.getElementById('edit-emp-tax').value)||0;
+  if(!id) return;
+  const btn = document.querySelector('#modal-edit-employee .btn-primary');
+  btn.disabled=true; btn.textContent='Saving…';
+  try{
+    const res = await fetch('/api/payroll/'+id,{
+      method:'PUT', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({role,emp_type,gross,tax_rate})
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const emp = (window.payrollEmployees||[]).find(e=>(e._dbId||e.id)===id);
+    if(emp){ emp.role=role; emp.type=emp_type; emp.gross=gross; emp.taxRate=tax_rate; }
+    window.closeEditEmployee();
+    if(typeof renderPayroll==='function') renderPayroll();
+    notify('Employee updated ✦');
+  }catch(e){
+    alert('Failed to save: '+e.message);
+  }finally{
+    btn.disabled=false; btn.textContent='Save changes';
+  }
+};
 
 function syncAllPayrollsToPersonal(){
   const entries = Object.entries(ownerPayrollByEntity);
@@ -3543,42 +3613,12 @@ function updateCharts(d=getPeriodData()){
 // ════════════════════════════════════════════
 // PDF EXPORT
 // ════════════════════════════════════════════
-async function exportPDF(){
-  const btn=document.getElementById('exportBtn');
-  const status=document.getElementById('pdf-status');
-  const d=getPeriodData();
-  // Apply unified rate limit
-  if(!apiRateLimit()){notify('Too many AI requests — please wait a moment.',true);return;}
-  btn.textContent='Generating…';btn.disabled=true;status.style.display='flex';
-  const ownerLine=ownerPayroll?`- Owner salary: ${S(ownerPayroll.gross)} gross / ${S(ownerPayroll.net)} net\n`:'';
-  try{
-    const prompt = sanitizeForAPI(`Write an executive financial report for ${d.label}:
-Revenue: ${S(d.rev)} | Expenses: ${S(d.exp)} | Net profit: ${S(d.profit)} (${d.rev > 0 ? Math.round(d.profit/d.rev*100) : 0}% margin)
-Annual run rate: ${S(sum(REV,0,12))} revenue | ${S(sum(PROFIT,0,12))} profit | YoY growth ~38%
-Top client: ${_topClients.length?_topClients[0].label:"N/A"} | Payroll: ${(payrollEmployees||[]).length+(ownerPayroll?1:0)} staff
-${ownerLine}Personal savings rate: ${document.getElementById('pers-savings').textContent} | Net worth: ${document.getElementById('pers-nw').textContent}
-4 tight paragraphs: Executive Summary, Financial Performance, Risks & Opportunities, Outlook. Data-driven and executive-level.`, 3000);
-    const res = await fetch('/api/ai', {
-      method: 'POST',
-      credentials: 'include',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({message: prompt, history: []})
-    });
-    const data = await res.json();
-    if(!res.ok) throw new Error(data.error || 'AI service error');
-    const text = data.reply || 'Report generated.';
-    status.style.display='none';
-    openAIPanel();
-    const msgs = document.getElementById('ai-messages');
-    const rMsg = document.createElement('div');
-    rMsg.className = 'ai-msg ai-msg-bot';
-    rMsg.textContent = text;
-    msgs.appendChild(rMsg);
-    msgs.scrollTop = msgs.scrollHeight;
-    aiHistory.push({role:'user',content:prompt},{role:'assistant',content:text});
-    if(aiHistory.length>20) aiHistory=aiHistory.slice(-20);
-  }catch(e){status.style.display='none';notify('Could not connect to AI',true);}
-  btn.textContent='⬇ Export PDF';btn.disabled=false;
+function exportPDF(){
+  const title = document.getElementById('pageTitle')?.textContent || document.querySelector('.page.active .card-title')?.textContent || 'FinFlow Report';
+  const orig = document.title;
+  document.title = title + ' — FinFlow';
+  window.print();
+  document.title = orig;
 }
 
 // ════════════════════════════════════════════

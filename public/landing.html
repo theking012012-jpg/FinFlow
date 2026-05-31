@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- SEO -->
-  <meta name="description" content="FinFlow is the only accounting platform with Claude AI built in. Multi-entity accounting, live bank sync, MRR dashboard, payroll and more. Try free for 14 days.">
+  <meta name="description" content="FinFlow is the only accounting platform with Claude AI built in. Multi-entity accounting, live bank sync, MRR dashboard, payroll and more. Try free for 30 days.">
   <meta name="keywords" content="accounting software, small business finance, AI accounting, multi-entity accounting, invoicing software, expense tracking, payroll software">
   <meta name="author" content="FinFlow Inc.">
   <meta name="robots" content="index, follow">
@@ -16,13 +16,13 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://finflow.io/">
   <meta property="og:title" content="FinFlow — Financial intelligence for modern business">
-  <meta property="og:description" content="The only accounting platform with Claude AI built in. Multi-entity, live bank sync, MRR dashboard. Try free for 14 days.">
+  <meta property="og:description" content="The only accounting platform with Claude AI built in. Multi-entity, live bank sync, MRR dashboard. Try free for 30 days.">
   <meta property="og:image" content="https://finflow.io/og-image.png">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="FinFlow — Financial intelligence for modern business">
-  <meta name="twitter:description" content="The only accounting platform with Claude AI built in. Try free for 14 days.">
+  <meta name="twitter:description" content="The only accounting platform with Claude AI built in. Try free for 30 days.">
   <meta name="twitter:image" content="https://finflow.io/og-image.png">
 
   <title>FinFlow — Financial intelligence for modern business</title>
@@ -226,7 +226,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
     <h1 class="hero-h1">Your business finances,<br><em>finally intelligent</em></h1>
     <p class="hero-sub">FinFlow is the only accounting platform with a real AI that knows your books — forecast, analyse, and act on your finances in plain English.</p>
     <div class="hero-ctas">
-      <a href="/app" class="btn-hero-p" style="text-decoration:none;display:inline-flex;align-items:center">Start 14-day free trial</a>
+      <a href="/app" class="btn-hero-p" style="text-decoration:none;display:inline-flex;align-items:center">Start 30-day free trial</a>
       <button class="btn-hero-g" onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})">See how it works ↓</button>
     </div>
     <p class="hero-note">No credit card required &nbsp;·&nbsp; Full access &nbsp;·&nbsp; Cancel any time</p>
@@ -429,7 +429,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
     <div style="text-align:center;margin-bottom:1rem">
       <div class="sec-label reveal" style="text-align:center">Pricing</div>
       <h2 class="sec-h2 reveal d1" style="text-align:center">Simple. Honest.<br><em>No surprises.</em></h2>
-      <p class="sec-sub reveal d2" style="margin:0 auto;text-align:center">14-day free trial on every plan. No credit card required.</p>
+      <p class="sec-sub reveal d2" style="margin:0 auto;text-align:center">30-day free trial on every plan. No credit card required.</p>
       <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:1.25rem">
         <span style="font-size:13px;color:var(--t2)" id="lbl-mo">Monthly</span>
         <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
@@ -438,7 +438,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
           <span style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:.3s" id="toggle-thumb"></span>
         </label>
         <span style="font-size:13px;color:var(--t2)">Annual</span>
-        <span style="font-size:11px;font-weight:600;color:#27500A;background:#EAF3DE;padding:2px 8px;border-radius:100px">Save 20%</span>
+        <span style="font-size:11px;font-weight:600;color:#27500A;background:#EAF3DE;padding:2px 8px;border-radius:100px">Save 10%</span>
       </div>
     </div>
     <div class="p-grid">
@@ -509,7 +509,7 @@ footer{padding:60px 5vw 40px;border-top:1px solid var(--bd)}
     <a href="/app" class="btn-hero-p" style="font-size:15px;padding:16px 36px;text-decoration:none;display:inline-flex;align-items:center">Start your free trial</a>
     <a href="mailto:hello@finflow.io?subject=Demo Request" class="btn-hero-g" style="font-size:15px;padding:16px 28px;text-decoration:none;display:inline-flex;align-items:center">Book a demo</a>
   </div>
-  <p style="font-size:12px;color:#9a8a78;margin-top:1.5rem" class="reveal d3">14-day free trial &nbsp;·&nbsp; No credit card &nbsp;·&nbsp; Cancel any time</p>
+  <p style="font-size:12px;color:#9a8a78;margin-top:1.5rem" class="reveal d3">30-day free trial &nbsp;·&nbsp; No credit card &nbsp;·&nbsp; Cancel any time</p>
 </section>
 
 </main>
@@ -566,8 +566,8 @@ setTimeout(()=>{
 var landingAnnual = false;
 function toggleLandingBilling() {
   landingAnnual = !landingAnnual;
-  var pro = landingAnnual ? 63 : 79;
-  var biz = landingAnnual ? 159 : 199;
+  var pro = landingAnnual ? 71 : 79;
+  var biz = landingAnnual ? 179 : 199;
   var track = document.getElementById('toggle-track');
   var thumb = document.getElementById('toggle-thumb');
   if (track) track.style.background = landingAnnual ? 'var(--acc)' : 'var(--bd2)';
@@ -578,8 +578,8 @@ function toggleLandingBilling() {
   var bizPer = document.getElementById('land-period-biz');
   if (proEl) proEl.textContent = pro;
   if (bizEl) bizEl.textContent = biz;
-  if (proPer) proPer.textContent = landingAnnual ? '$' + (pro*12) + '/yr · save $192' : 'per month';
-  if (bizPer) bizPer.textContent = landingAnnual ? '$' + (biz*12) + '/yr · save $480' : 'per month';
+  if (proPer) proPer.textContent = landingAnnual ? '$' + (pro*12) + '/yr · save $96' : 'per month';
+  if (bizPer) bizPer.textContent = landingAnnual ? '$' + (biz*12) + '/yr · save $240' : 'per month';
 }
 </script>
 </body>

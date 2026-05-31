@@ -1038,7 +1038,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
     const msgs = await pool.query(
       `SELECT id, message, sender, created_at FROM accountant_messages
-       WHERE accountant_id = $1 AND client_id = $2 ORDER BY created_at ASC LIMIT 100`,
+       WHERE accountant_id = $1 AND user_id = $2 ORDER BY created_at ASC LIMIT 100`,
       [req.session.accountantId, userId]
     ).catch(() => ({ rows: [] }));
     return res.json(msgs.rows);
@@ -1056,8 +1056,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
     const row = await pool.query(
-      `INSERT INTO accountant_messages (accountant_id, client_id, message, sender, created_at)
-       VALUES ($1, $2, $3, 'accountant', NOW()) RETURNING id, message, sender, created_at`,
+      `INSERT INTO accountant_messages (accountant_id, user_id, message, sender)
+       VALUES ($1, $2, $3, 'accountant') RETURNING id, message, sender, created_at`,
       [req.session.accountantId, userId, message.trim().slice(0, 2000)]
     );
     return res.json(row.rows[0]);

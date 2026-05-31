@@ -410,7 +410,9 @@ If you cannot find a field, use null. Be concise.`;
              u.data->>'name'  AS client_name,
              u.data->>'plan'  AS client_plan,
              ac.status,
-             ac.invited_at AS created_at
+             ac.invited_at AS created_at,
+             ac.referral_month,
+             ac.referral_months_total
       FROM users u
       JOIN accountant_clients ac ON ac.user_id = u.id
       WHERE ac.accountant_id = $1

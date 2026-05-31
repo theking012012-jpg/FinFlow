@@ -1165,7 +1165,7 @@ function renderClients() {
         <td><span class="badge badge-gold">${c.client_plan || 'trial'}</span></td>
         <td><span class="badge ${c.status === 'active' ? 'badge-green' : c.status === 'pending' ? 'badge-amber' : 'badge-red'}">${c.status === 'active' ? 'Active' : c.status === 'pending' ? 'Pending' : c.status === 'invited' ? 'Invited' : 'Pending'}</span></td>
         <td>${activityBadge(c)}</td>
-        <td>${c.referral_month}/${c.referral_months_total} months</td>
+        <td>${c.referral_month ?? 0}/${c.referral_months_total ?? 0} months</td>
         <td>${c.status === 'pending'
           ? `<button class="btn btn-gold btn-sm" onclick="activateClient(${c.id})">Approve</button> <button class="btn btn-outline btn-sm" style="color:var(--red,#c0392b);border-color:var(--red,#c0392b)" onclick="rejectClient(${c.id})">Reject</button>`
           : `<button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,'')}')">View books</button>`

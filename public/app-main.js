@@ -1782,9 +1782,21 @@ function updateExpenses(d=getPeriodData()){
     const taxSaving=Math.round(ded*.25);
     document.getElementById('ex-ded-save').textContent='Saving ~'+S(taxSaving)+' tax';
     document.getElementById('ex-ded-save').className='mc-change up';
-    // Category bars
-    const catEls=[['ex-sal','Salaries'],['ex-rent','Rent'],['ex-sw2','Software'],['ex-other','Other']];
-    sorted.slice(0,4).forEach(([cat,amt],i)=>{ const el=document.getElementById(catEls[i]?.[0]); if(el) el.textContent=S(amt); });
+    // Category bars — update label, fill width, and amount from real data
+    const _catBarIds=[['ex-sal'],['ex-rent'],['ex-sw2'],['ex-other']];
+    const _maxAmt=sorted[0]?.[1]||1;
+    _catBarIds.forEach(([elId],i)=>{
+      const el=document.getElementById(elId); if(!el) return;
+      const row=el.closest?.('.bar-row');
+      if(sorted[i]){
+        const[cat,amt]=sorted[i];
+        el.textContent=S(amt);
+        if(row){const lbl=row.querySelector('.bar-label');if(lbl)lbl.textContent=cat;const fill=row.querySelector('.bar-fill');if(fill)fill.style.width=Math.round(amt/_maxAmt*100)+'%';}
+      }else{
+        el.textContent='—';
+        if(row){const lbl=row.querySelector('.bar-label');if(lbl)lbl.textContent='—';const fill=row.querySelector('.bar-fill');if(fill)fill.style.width='0%';}
+      }
+    });
     return;
   }
   document.getElementById('ex-total').textContent=S(d.exp);
@@ -3173,9 +3185,9 @@ function updateAI(d=getPeriodData()){
   const insights=currentPeriod==='year'?[
     `Full year revenue: ${S(d.rev)} — a 38% annualised growth rate vs the prior year.`,
     `Best month: April 2026 at ${S(REV[11])}. Weakest: May 2025 at ${S(REV[0])}. Strong scaling trend.`,
-    `Net profit margin: ${margin}%. Annual profit: ${S(d.profit)}. Business is highly profitable.`,
+    `Net profit margin: ${margin}%. Annual profit: ${S(d.profit)}. Business is ${d.profit<0?'running at a loss':margin>=20?'highly profitable':margin>=10?'profitable':'breaking even'}.`,
 
-    `Payroll-to-revenue: ${Math.round(d.sal/d.rev*100)}% — healthy. Industry avg for your size is 35–40%.`,
+    d.rev > 0 ? `Payroll-to-revenue: ${Math.round(d.sal/d.rev*100)}% — ${Math.round(d.sal/d.rev*100)<=40?'healthy':'high'}. Industry avg for your size is 35–40%.` : `Add paid invoices to calculate your payroll-to-revenue ratio.`,
     `Webcam 4K Ultra (9 units) and Ergonomic Mouse (4 units) are critically low on stock.`,
   ]:currentPeriod==='quarter'?[
     `Q4 revenue: ${S(d.rev)} — your strongest quarter. Net profit: ${S(d.profit)} (${margin}% margin).`,

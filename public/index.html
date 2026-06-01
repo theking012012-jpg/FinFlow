@@ -427,8 +427,8 @@ html{overflow-x:hidden}
 .mc:nth-child(3)::before{background:var(--purple)}
 .mc:nth-child(4)::before{background:var(--amber)}
 .mc-label{font-size:9.5px;color:var(--t2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.14em;font-weight:500}
-.mc-val{font-size:34px;font-weight:300;color:var(--t1);letter-spacing:-.01em;font-family:var(--font-display);line-height:1;font-style:italic}
-.mc-change{font-size:11px;margin-top:5px}
+.mc-val{font-size:34px;font-weight:300;color:var(--t1);letter-spacing:-.01em;font-family:var(--font-display);line-height:1;font-style:italic;min-height:40px}
+.mc-change{font-size:11px;margin-top:5px;min-height:16px}
 .up{color:var(--green)}.dn{color:var(--red)}.neutral{color:var(--t2)}
 /* CARDS */
 .card{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-lg);padding:1rem 1.25rem;margin-bottom:1.25rem}
@@ -3361,7 +3361,7 @@ function loadChartJS(callback){
   document.head.appendChild(s);
 }
 </script>
-<script src="/app-main.min.js"></script>
+<script src="/app-main.min.js" defer></script>
 
 <!-- ── MOBILE SIDEBAR JS ───────────────────────────────────────────────── -->
 <script>

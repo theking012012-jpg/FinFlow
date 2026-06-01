@@ -985,37 +985,35 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const { userId } = req.params;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const r = await pool.query(
-      `SELECT notes FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      `SELECT checklist FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
       [req.session.accountantId, userId]
     );
-    let items = {};
-    if (r.rows[0]) {
-      try { const m = (r.rows[0].notes || '').match(/CHECKLIST:(\{[^}]*\})/); if (m) items = JSON.parse(m[1]); } catch (e) {}
-    } else {
+    if (!r.rows[0]) {
       const fb = await pool.query(
         `SELECT 1 FROM users WHERE id = $1 AND (data->>'accountant_id')::int = $2`,
         [userId, req.session.accountantId]
       );
       if (!fb.rows[0]) return res.status(403).json({ error: 'No access.' });
     }
-    return res.json({ items });
+    return res.json({ checklist: r.rows[0]?.checklist || {} });
   }));
 
   app.post('/api/accountants/clients/:userId/checklist', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
-    const { items } = req.body || {};
+    const { checklist } = req.body || {};
+    if (!checklist || typeof checklist !== 'object' || Array.isArray(checklist)) {
+      return res.status(400).json({ error: 'checklist must be an object' });
+    }
     const r = await pool.query(
-      `SELECT notes FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
       [req.session.accountantId, userId]
     );
-    if (r.rows[0] !== undefined) {
-      const base = (r.rows[0]?.notes || '').replace(/\nCHECKLIST:\{[^}]*\}/, '');
-      await pool.query(
-        `UPDATE accountant_clients SET notes = $1 WHERE accountant_id = $2 AND user_id = $3`,
-        [(base + '\nCHECKLIST:' + JSON.stringify(items || {})).slice(0, 2000), req.session.accountantId, userId]
-      );
-    }
+    if (!r.rows[0]) return res.status(403).json({ error: 'No access.' });
+    await pool.query(
+      `UPDATE accountant_clients SET checklist = $1 WHERE accountant_id = $2 AND user_id = $3`,
+      [checklist, req.session.accountantId, userId]
+    );
     return res.json({ ok: true });
   }));
 
@@ -1174,7 +1172,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       const params = [];
       if (country) { params.push(country); query += ` AND country = $${params.length}`; }
       if (specialisation) { params.push(specialisation); query += ` AND specialisation = $${params.length}`; }
-      query += ' ORDER BY verified_at ASC';
+      query += ' ORDER BY avg_rating DESC NULLS LAST, review_count DESC, verified_at ASC';
       const result = await pool.query(query, params);
       return res.json(result.rows);
     } catch (e) {

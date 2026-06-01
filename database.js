@@ -119,13 +119,16 @@ async function initDB() {
         referral_months_total INTEGER DEFAULT 1,
         invited_at            TIMESTAMPTZ DEFAULT NOW(),
         activated_at          TIMESTAMPTZ,
+        notes                 TEXT DEFAULT '',
+        checklist             JSONB DEFAULT '{}',
         UNIQUE(accountant_id, user_id)
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_clients_accountant ON accountant_clients(accountant_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_clients_user       ON accountant_clients(user_id)`);
-    // Add notes column if missing (safe ALTER TABLE)
+    // Add notes and checklist columns if missing (safe ALTER TABLE for existing deployments)
     await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''`);
+    await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS checklist JSONB DEFAULT '{}'`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_earnings (

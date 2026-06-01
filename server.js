@@ -41,6 +41,16 @@ if (!process.env.SESSION_SECRET) {
 }
 console.log('Starting on port:', PORT);
 
+process.on('unhandledRejection', (reason) => {
+  if (reason?.message?.includes('Connection terminated') ||
+      reason?.message?.includes('connection timeout') ||
+      reason?.code === 'ECONNRESET') {
+    console.warn('[DB] Transient connection reset (non-fatal):', reason.message);
+    return;
+  }
+  console.error('[Unhandled Rejection]', reason);
+});
+
 app.use(compression({ level: 6 }));
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -184,7 +194,13 @@ app.use((req, res, next) => (LARGE_PAYLOAD_PATHS.includes(req.path) ? bigJson : 
 app.use(express.urlencoded({ extended: false, limit: '500kb' }));
 app.set('trust proxy', 1);
 app.use(session({
-  store: new pgSession({ pool, tableName: 'session', createTableIfMissing: true, pruneSessionInterval: 60 }),
+  store: new pgSession({
+    pool,
+    tableName: 'session',
+    createTableIfMissing: true,
+    pruneSessionInterval: 60,
+    errorLog: (err) => console.warn('[Session Store] non-fatal:', err.message),
+  }),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,

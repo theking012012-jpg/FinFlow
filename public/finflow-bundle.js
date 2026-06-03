@@ -5482,6 +5482,7 @@ function clearAIChat(){
       })();
 
       console.log('[Dashboard Wiring] ✅ Real data loaded — invoices:', invoices.length, 'expenses:', expenses.length);
+      try { var s=document.getElementById('ff-splash'); if(s) s.style.display='none'; } catch(e) {}
     } catch (err) {
       console.warn('[Dashboard Wiring] Could not load real data:', err.message);
     }

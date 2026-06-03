@@ -110,11 +110,13 @@
     if(typeof window.holdings!=='undefined')
       window.holdings=res[6].map(function(r){return{_dbId:r.id,id:r.id,ticker:r.ticker,name:r.name,type:r.asset_type,shares:r.shares,cost:r.cost_per,price:r.price,div:r.dividend,color:r.color};});
 
-    if(typeof window['updateDashboard']==='function'){try{window['updateDashboard']();}catch(e){}}
+    setTimeout(function(){
+      if(typeof window['updateDashboard']==='function'){try{window['updateDashboard']();}catch(e){}}
+    }, 0);
     var _deferred=['renderInvoices','renderExpenses','renderCustomers','renderInventory',
       'renderPayroll','renderPersonal','renderInvestments','updateAI'];
     _deferred.forEach(function(fn,i){
-      setTimeout(function(){ if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}} }, i*50);
+      setTimeout(function(){ if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}} }, i*16);
     });
   }
 

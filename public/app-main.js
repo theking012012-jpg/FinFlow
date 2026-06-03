@@ -1312,15 +1312,14 @@ async function loadEntityData(idx){
     EXP.splice(0,12,...monthlyExp);
     for(let i=0;i<12;i++) PROFIT[i] = REV[i]-EXP[i];
 
-    // Re-render all pages — staggered to break 365ms blocking task
     const _safeRender = (fn) => { try { if(typeof fn==='function') fn(); } catch(e) { console.warn('render error:', e.message); } };
     _safeRender(renderInvoices);
-    setTimeout(function(){ _safeRender(renderExpenses); }, 0);
-    setTimeout(function(){ _safeRender(renderCustomers); }, 50);
-    setTimeout(function(){ _safeRender(renderInventory); }, 100);
-    setTimeout(function(){ _safeRender(renderPayroll); }, 150);
-    setTimeout(function(){ _safeRender(updateDashboard); }, 200);
-    setTimeout(function(){ _safeRender(buildCharts); }, 250);
+    _safeRender(renderExpenses);
+    _safeRender(renderCustomers);
+    _safeRender(renderInventory);
+    _safeRender(renderPayroll);
+    _safeRender(updateDashboard);
+    _safeRender(buildCharts);
 
     // Refresh dashboard wiring KPIs with correct entity data
     if(typeof window._bootDashboardWiring==='function') {
@@ -4863,7 +4862,7 @@ mobileCSS.textContent = `
   #currency-picker-wrap { display: none; }
   #pMonth,#pQ,#pY { display: none; }
   #month-nav { display: none !important; }
-  .content { padding: .85rem .9rem; height: calc(100dvh - 52px - 60px); overflow-y: auto; }
+  .content { padding: .85rem .9rem; height: calc(100dvh - 52px - 60px); min-height: calc(100dvh - 52px - 60px); overflow-y: auto; }
   .metrics-grid { grid-template-columns: 1fr 1fr !important; gap: 7px; }
   .metrics-grid-3 { grid-template-columns: 1fr 1fr !important; gap: 7px; }
   .two-col { grid-template-columns: 1fr !important; }

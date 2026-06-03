@@ -1312,15 +1312,15 @@ async function loadEntityData(idx){
     EXP.splice(0,12,...monthlyExp);
     for(let i=0;i<12;i++) PROFIT[i] = REV[i]-EXP[i];
 
-    // Re-render all pages
+    // Re-render all pages — staggered to break 365ms blocking task
     const _safeRender = (fn) => { try { if(typeof fn==='function') fn(); } catch(e) { console.warn('render error:', e.message); } };
     _safeRender(renderInvoices);
-    _safeRender(renderExpenses);
-    _safeRender(renderCustomers);
-    _safeRender(renderInventory);
-    _safeRender(renderPayroll);
-    _safeRender(updateDashboard);
-    _safeRender(buildCharts);
+    setTimeout(function(){ _safeRender(renderExpenses); }, 0);
+    setTimeout(function(){ _safeRender(renderCustomers); }, 50);
+    setTimeout(function(){ _safeRender(renderInventory); }, 100);
+    setTimeout(function(){ _safeRender(renderPayroll); }, 150);
+    setTimeout(function(){ _safeRender(updateDashboard); }, 200);
+    setTimeout(function(){ _safeRender(buildCharts); }, 250);
 
     // Refresh dashboard wiring KPIs with correct entity data
     if(typeof window._bootDashboardWiring==='function') {
@@ -4764,7 +4764,7 @@ function buildRiver(d){
 var _heavyInit=function(){
 if(!window._ffAuthed){window.addEventListener('ff:authed',_heavyInit,{once:true});return;}
 setTimeout(function(){
-  var _q=[
+  var _fns=[
     function(){loadChartJS(function(){buildCharts();buildCashChart();});},
     refreshAllPeriodData,
     renderPayroll,
@@ -4794,12 +4794,7 @@ setTimeout(function(){
     function(){if(typeof renderDocuments==='function')renderDocuments();},
     function(){if(typeof renderTemplates==='function')renderTemplates();}
   ];
-  (function _drain(i){
-    if(i>=_q.length) return;
-    try{_q[i]();}catch(e){}
-    var next=function(){_drain(i+1);};
-    typeof requestIdleCallback!=='undefined' ? requestIdleCallback(next) : setTimeout(next,0);
-  }(0));
+  _fns.forEach(function(fn,i){setTimeout(function(){try{fn();}catch(e){}},i*16);});
 },0);
 };
 setTimeout(_heavyInit,0);

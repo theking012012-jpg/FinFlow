@@ -113,13 +113,9 @@
     if(typeof window['updateDashboard']==='function'){try{window['updateDashboard']();}catch(e){}}
     var _deferred=['renderInvoices','renderExpenses','renderCustomers','renderInventory',
       'renderPayroll','renderPersonal','renderInvestments','updateAI'];
-    (function _drain(i){
-      if(i>=_deferred.length) return;
-      var fn=_deferred[i];
-      if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}}
-      var next=function(){_drain(i+1);};
-      typeof requestIdleCallback!=='undefined' ? requestIdleCallback(next) : setTimeout(next,0);
-    }(0));
+    _deferred.forEach(function(fn,i){
+      setTimeout(function(){ if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}} }, i*50);
+    });
   }
 
   window.ffLogout = async function() { try{await FF_API.logout();}catch(e){} location.reload(); };

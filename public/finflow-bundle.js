@@ -67,15 +67,19 @@
   };
 
   async function ffOnAuth(user) {
-    var _splash = document.getElementById('ff-splash');
-    if (_splash) { _splash.style.display = 'none'; }
-    var gate=document.getElementById('ff-auth-gate'); if(gate) gate.remove();
-    try{sessionStorage.setItem('ff_onboarded','1');}catch(e){}
-    var ob=document.getElementById('ob-overlay'); if(ob) ob.remove();
-    var ls=document.getElementById('login-screen'); if(ls) ls.style.display='none';
-    if(user&&user.name){var ne=document.querySelector('.user-name');if(ne)ne.textContent=user.name;}
-    try{ await ffLoadData(); }catch(e){ console.warn('[FinFlow] data load failed:',e.message); }
-    window._ffAuthed=true; window.dispatchEvent(new Event('ff:authed'));
+    try { var s=document.getElementById('ff-splash'); if(s) s.style.display='none'; } catch(e) {}
+    try {
+      var gate=document.getElementById('ff-auth-gate'); if(gate) gate.remove();
+      try{sessionStorage.setItem('ff_onboarded','1');}catch(e){}
+      var ob=document.getElementById('ob-overlay'); if(ob) ob.remove();
+      var ls=document.getElementById('login-screen'); if(ls) ls.style.display='none';
+      if(user&&user.name){var ne=document.querySelector('.user-name');if(ne)ne.textContent=user.name;}
+      try{ await ffLoadData(); }catch(e){ console.warn('[FinFlow] data load failed:',e.message); }
+      window._ffAuthed=true; window.dispatchEvent(new Event('ff:authed'));
+    } catch(err) {
+      console.error('[FinFlow] ffOnAuth crashed:',err);
+      var s2=document.getElementById('ff-splash'); if(s2) s2.style.display='none';
+    }
   }
 
   async function ffLoadData() {

@@ -12,7 +12,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
 <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
-<link rel="preconnect" href="https://finflow-production-0817.up.railway.app">
 <link rel="preload" href="/app-main.min.js" as="script">
 <link rel="preload" href="/finflow-bundle.min.js" as="script">
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'">
@@ -416,6 +415,9 @@ html{overflow-x:hidden}
 .mc-label{font-size:9.5px;color:var(--t2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.14em;font-weight:500}
 .mc-val{font-size:34px;font-weight:300;color:var(--t1);letter-spacing:-.01em;font-family:var(--font-display);line-height:1;font-style:italic;min-height:40px}
 .mc-change{font-size:11px;margin-top:5px;min-height:16px}
+#main-content{min-height:calc(100svh - 54px);contain:layout style}
+#page-dashboard{min-height:400px}
+.two-col{min-height:200px}
 .up{color:var(--green)}.dn{color:var(--red)}.neutral{color:var(--t2)}
 /* CARDS */
 .card{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-lg);padding:1rem 1.25rem;margin-bottom:1.25rem}
@@ -3868,8 +3870,6 @@ function renderMRRChart(){
               y:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10},callback:v=>'$'+(v/1000).toFixed(0)+'K'}}}}
   });
 }
-document.addEventListener('DOMContentLoaded',()=>{ loadChartJS(renderMRRChart); });
-
 // ── 6. PLAID BANKING ────────────────────────────────────────────────────────
 // No hardcoded demo data — all banking data loads from DB via loadBankingFromDB()
 function renderPlaid(){

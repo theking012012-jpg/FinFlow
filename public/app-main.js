@@ -4764,34 +4764,42 @@ function buildRiver(d){
 var _heavyInit=function(){
 if(!window._ffAuthed){window.addEventListener('ff:authed',_heavyInit,{once:true});return;}
 setTimeout(function(){
-  loadChartJS(function(){buildCharts();buildCashChart();});
-  refreshAllPeriodData();
-  renderPayroll();
-  renderPersonal();
-  renderCustomers();
-  renderInventory();
-  renderInvoices();
-  renderExpenses();
-  renderItems();
-  renderBanking();
-  if(typeof renderQuotes==='function')renderQuotes();
-  if(typeof renderReceipts==='function')renderReceipts();
-  if(typeof renderPaymentsReceived==='function')renderPaymentsReceived();
-  if(typeof renderRecurringInvoices==='function')renderRecurringInvoices();
-  if(typeof renderCreditNotes==='function')renderCreditNotes();
-  if(typeof renderVendors==='function')renderVendors();
-  if(typeof renderBills==='function')renderBills();
-  if(typeof renderPaymentsMade==='function')renderPaymentsMade();
-  if(typeof renderRecurringBills==='function')renderRecurringBills();
-  if(typeof renderVendorCredits==='function')renderVendorCredits();
-  if(typeof renderProjects==='function')renderProjects();
-  if(typeof renderTimesheet==='function')renderTimesheet();
-  if(typeof renderJournals==='function')renderJournals();
-  if(typeof renderCOA==='function')renderCOA();
-  if(typeof renderLockHistory==='function')renderLockHistory();
-  if(typeof renderReports==='function')renderReports();
-  if(typeof renderDocuments==='function')renderDocuments();
-  if(typeof renderTemplates==='function')renderTemplates();
+  var _q=[
+    function(){loadChartJS(function(){buildCharts();buildCashChart();});},
+    refreshAllPeriodData,
+    renderPayroll,
+    renderPersonal,
+    renderCustomers,
+    renderInventory,
+    renderInvoices,
+    renderExpenses,
+    renderItems,
+    renderBanking,
+    function(){if(typeof renderQuotes==='function')renderQuotes();},
+    function(){if(typeof renderReceipts==='function')renderReceipts();},
+    function(){if(typeof renderPaymentsReceived==='function')renderPaymentsReceived();},
+    function(){if(typeof renderRecurringInvoices==='function')renderRecurringInvoices();},
+    function(){if(typeof renderCreditNotes==='function')renderCreditNotes();},
+    function(){if(typeof renderVendors==='function')renderVendors();},
+    function(){if(typeof renderBills==='function')renderBills();},
+    function(){if(typeof renderPaymentsMade==='function')renderPaymentsMade();},
+    function(){if(typeof renderRecurringBills==='function')renderRecurringBills();},
+    function(){if(typeof renderVendorCredits==='function')renderVendorCredits();},
+    function(){if(typeof renderProjects==='function')renderProjects();},
+    function(){if(typeof renderTimesheet==='function')renderTimesheet();},
+    function(){if(typeof renderJournals==='function')renderJournals();},
+    function(){if(typeof renderCOA==='function')renderCOA();},
+    function(){if(typeof renderLockHistory==='function')renderLockHistory();},
+    function(){if(typeof renderReports==='function')renderReports();},
+    function(){if(typeof renderDocuments==='function')renderDocuments();},
+    function(){if(typeof renderTemplates==='function')renderTemplates();}
+  ];
+  (function _drain(i){
+    if(i>=_q.length) return;
+    try{_q[i]();}catch(e){}
+    var next=function(){_drain(i+1);};
+    typeof requestIdleCallback!=='undefined' ? requestIdleCallback(next) : setTimeout(next,0);
+  }(0));
 },0);
 };
 setTimeout(_heavyInit,0);
@@ -4880,7 +4888,7 @@ mobileCSS.textContent = `
   }
   .mob-nav-item {
     flex: 1; display: flex; flex-direction: column; align-items: center;
-    justify-content: center; gap: 3px; cursor: pointer; color: var(--t3);
+    justify-content: center; gap: 3px; cursor: pointer; color: #9e8f7a;
     font-size: 9.5px; font-weight: 500; letter-spacing: .04em;
     transition: color .13s; border: none; background: none; padding: 0;
   }

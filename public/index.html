@@ -16,26 +16,6 @@
 <link rel="preload" href="/app-main.min.js" as="script">
 <link rel="preload" href="/finflow-bundle.min.js" as="script">
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'">
-<link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/cormorantgaramond/v21/co3ZmX5slCNuHLi8bLeYkTE2KX0.woff2">
-<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap"></noscript>
-<script>
-window.addEventListener('load',function(){
-  var l=document.createElement('link');l.rel='stylesheet';
-  l.href='https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap';
-  document.head.appendChild(l);
-});
-</script>
-<!-- The 10 finflow-api*.js wiring scripts that used to load here are now in
-     /finflow-bundle.js, loaded at the bottom of <body> so they run after the
-     HTML is fully parsed. Regenerate with `node bundle.js`. -->
-</head>
-<body>
-<style id="ff-splash-css">
-#ff-splash{position:fixed;inset:0;z-index:99999;background:#0e0b08;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px}
-#ff-splash-logo{font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;font-size:36px;color:#c9a84c;letter-spacing:.02em}
-#ff-splash-sub{font-size:11px;color:#7d7060;letter-spacing:.15em;text-transform:uppercase;font-family:Jost,system-ui,sans-serif}
-</style>
-<div id="ff-splash" aria-hidden="true">
   <div id="ff-splash-logo">FinFlow</div>
   <div id="ff-splash-sub">Loading…</div>
 </div>

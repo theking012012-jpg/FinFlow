@@ -4861,15 +4861,11 @@ document.addEventListener('mouseleave',()=>{
 const mobileCSS = document.createElement('style');
 mobileCSS.textContent = `
 @media (max-width: 700px) {
-  .app { grid-template-columns: 1fr !important; min-height: 100dvh; border-radius: 0; border: none; }
   .sidebar { display: none !important; }
-  .main { display: flex; flex-direction: column; height: 100dvh; }
-  .topbar { padding: .55rem .75rem; gap: 5px; min-height: 54px; }
   .topbar-right #themeBtn { display: none; }
   #currency-picker-wrap { display: none; }
   #pMonth,#pQ,#pY { display: none; }
   #month-nav { display: none !important; }
-  .content { padding: .85rem .9rem; height: calc(100dvh - 52px - 60px); min-height: calc(100dvh - 52px - 60px); overflow-y: auto; }
   .metrics-grid { grid-template-columns: 1fr 1fr !important; gap: 7px; }
   .metrics-grid-3 { grid-template-columns: 1fr 1fr !important; gap: 7px; }
   .two-col { grid-template-columns: 1fr !important; }

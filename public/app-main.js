@@ -4864,7 +4864,7 @@ mobileCSS.textContent = `
   .app { grid-template-columns: 1fr !important; min-height: 100dvh; border-radius: 0; border: none; }
   .sidebar { display: none !important; }
   .main { display: flex; flex-direction: column; height: 100dvh; }
-  .topbar { padding: .55rem .75rem; gap: 5px; }
+  .topbar { padding: .55rem .75rem; gap: 5px; min-height: 54px; }
   .topbar-right #themeBtn { display: none; }
   #currency-picker-wrap { display: none; }
   #pMonth,#pQ,#pY { display: none; }

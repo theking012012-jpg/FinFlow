@@ -113,9 +113,14 @@
     if(typeof window['updateDashboard']==='function'){try{window['updateDashboard']();}catch(e){}}
     var _deferred=['renderInvoices','renderExpenses','renderCustomers','renderInventory',
       'renderPayroll','renderPersonal','renderInvestments','updateAI'];
-    _deferred.forEach(function(fn,i){
-      setTimeout(function(){ if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}} }, i*16);
-    });
+    var _di = 0;
+    function _drain() {
+      if (_di >= _deferred.length) return;
+      var fn = _deferred[_di++];
+      if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}}
+      (window.requestIdleCallback || function(cb){ setTimeout(cb,0); })(function(){ _drain(); });
+    }
+    _drain();
   }
 
   window.ffLogout = async function() { try{await FF_API.logout();}catch(e){} location.reload(); };

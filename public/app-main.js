@@ -4793,7 +4793,14 @@ setTimeout(function(){
     function(){if(typeof renderDocuments==='function')renderDocuments();},
     function(){if(typeof renderTemplates==='function')renderTemplates();}
   ];
-  _fns.forEach(function(fn,i){setTimeout(function(){try{fn();}catch(e){}},i*16);});
+  var _hi = 0;
+  function _hdrain() {
+    if (_hi >= _fns.length) return;
+    var fn = _fns[_hi++];
+    try { if(typeof fn==='function') fn(); } catch(e){}
+    (window.requestIdleCallback || function(cb){ setTimeout(cb,0); })(function(){ _hdrain(); });
+  }
+  _hdrain();
 },0);
 };
 setTimeout(_heavyInit,0);

@@ -1,0 +1,127 @@
+(function(){
+  // Wait for DOM then inject pages
+  function injectPages(){
+    const content = document.querySelector('.content');
+    if(!content){ setTimeout(injectPages, 100); return; }
+
+    // ── SCENARIO MODELLER PAGE ──────────────────────────────────────────
+    const scenarioPage = document.createElement('div');
+    scenarioPage.className = 'page';
+    scenarioPage.id = 'page-scenario';
+    scenarioPage.innerHTML = `
+      <div class="metrics-grid" id="scenario-metrics">
+        <div class="mc"><div class="mc-label">Projected revenue</div><div class="mc-val" id="sc-rev">$0</div><div class="mc-change up" id="sc-rev-chg">Baseline</div></div>
+        <div class="mc"><div class="mc-label">Projected expenses</div><div class="mc-val" id="sc-exp">$0</div><div class="mc-change neutral" id="sc-exp-chg">Baseline</div></div>
+        <div class="mc"><div class="mc-label">Net profit</div><div class="mc-val" id="sc-profit">$0</div><div class="mc-change up" id="sc-profit-chg">Baseline</div></div>
+        <div class="mc"><div class="mc-label">Cash runway</div><div class="mc-val" id="sc-runway">—</div><div class="mc-change up" id="sc-runway-chg">At current burn</div></div>
+      </div>
+
+      <div class="two-col">
+        <div class="card" style="margin-bottom:0">
+          <div class="card-header">
+            <div><div class="card-title">What-if scenario builder</div><div class="card-sub">Drag sliders to model different futures</div></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="scenario-preset-btn active-preset" id="preset-base" onclick="applyPreset('base')">Baseline</button>
+              <button class="scenario-preset-btn" id="preset-hire" onclick="applyPreset('hire')">🧑‍💻 Hire 2 devs</button>
+              <button class="scenario-preset-btn" id="preset-growth" onclick="applyPreset('growth')">🚀 High growth</button>
+              <button class="scenario-preset-btn" id="preset-downturn" onclick="applyPreset('downturn')">📉 Downturn</button>
+            </div>
+          </div>
+
+          <div class="scenario-slider-wrap">
+            <div class="scenario-slider-label"><span class="scenario-slider-name">Revenue growth rate</span><span class="scenario-slider-val" id="lbl-rev-growth">0%</span></div>
+            <input type="range" class="ff-range" id="sl-rev-growth" min="-30" max="100" value="0" oninput="updateScenario()">
+          </div>
+          <div class="scenario-slider-wrap">
+            <div class="scenario-slider-label"><span class="scenario-slider-name">Additional headcount</span><span class="scenario-slider-val" id="lbl-headcount">0 hires</span></div>
+            <input type="range" class="ff-range" id="sl-headcount" min="0" max="10" value="0" oninput="updateScenario()">
+          </div>
+          <div class="scenario-slider-wrap">
+            <div class="scenario-slider-label"><span class="scenario-slider-name">Avg salary per hire ($K)</span><span class="scenario-slider-val" id="lbl-salary">$0K</span></div>
+            <input type="range" class="ff-range" id="sl-salary" min="0" max="250" value="0" oninput="updateScenario()">
+          </div>
+          <div class="scenario-slider-wrap">
+            <div class="scenario-slider-label"><span class="scenario-slider-name">Churn rate</span><span class="scenario-slider-val" id="lbl-churn">0%</span></div>
+            <input type="range" class="ff-range" id="sl-churn" min="0" max="20" value="0" step="0.1" oninput="updateScenario()">
+          </div>
+          <div class="scenario-slider-wrap">
+            <div class="scenario-slider-label"><span class="scenario-slider-name">One-time investment ($K)</span><span class="scenario-slider-val" id="lbl-invest">$0K</span></div>
+            <input type="range" class="ff-range" id="sl-invest" min="0" max="500" value="0" step="5" oninput="updateScenario()">
+          </div>
+          <div class="scenario-slider-wrap">
+            <div class="scenario-slider-label"><span class="scenario-slider-name">Expense efficiency (%)</span><span class="scenario-slider-val" id="lbl-efficiency">0%</span></div>
+            <input type="range" class="ff-range" id="sl-efficiency" min="-20" max="40" value="0" oninput="updateScenario()">
+          </div>
+
+          <div class="scenario-result-grid">
+            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo revenue</div><div class="scenario-result-val" id="sc-r-rev">$0</div><div class="scenario-result-delta" id="sc-r-rev-d" style="color:var(--t3)">Baseline</div></div>
+            <div class="scenario-result-mc"><div class="scenario-result-label">12-mo profit</div><div class="scenario-result-val" id="sc-r-profit">$0</div><div class="scenario-result-delta" id="sc-r-profit-d" style="color:var(--t3)">Baseline</div></div>
+            <div class="scenario-result-mc"><div class="scenario-result-label">Runway</div><div class="scenario-result-val" id="sc-r-runway">—</div><div class="scenario-result-delta" id="sc-r-runway-d" style="color:var(--t3)">Baseline</div></div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><div class="card-title">Cash runway projection</div></div>
+            <div class="canvas-wrap" style="height:160px"><canvas id="scenarioChart" role="img" aria-label="Line chart comparing financial scenarios">Scenario comparison chart</canvas></div>
+          </div>
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><div class="card-title">✦ AI scenario analysis</div></div>
+            <div class="ai-insight" id="scenario-ai-text" style="font-size:12.5px;color:var(--t2);line-height:1.6">Adjust the sliders to model your scenario. Claude will analyse the impact and give a recommendation.</div>
+            <button class="btn btn-ghost btn-sm" style="margin-top:.75rem" onclick="getScenarioAI()">✦ Ask Claude to analyse this scenario</button>
+          </div>
+        </div>
+      </div>`;
+    content.appendChild(scenarioPage);
+
+    // ── AUTO-CATEGORISATION PAGE ─────────────────────────────────────────
+    const autocatPage = document.createElement('div');
+    autocatPage.className = 'page';
+    autocatPage.id = 'page-autocat';
+    autocatPage.innerHTML = `
+      <div class="metrics-grid-3">
+        <div class="mc"><div class="mc-label">Uncategorised</div><div class="mc-val" id="autocat-pending-count" style="color:var(--amber)">12</div><div class="mc-change neutral">Need review</div></div>
+        <div class="mc"><div class="mc-label">Auto-approved</div><div class="mc-val" id="autocat-approved-count" style="color:var(--green)">0</div><div class="mc-change up">This session</div></div>
+        <div class="mc"><div class="mc-label">Accuracy</div><div class="mc-val">96.4%</div><div class="mc-change up">Claude Vision</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div><div class="card-title">Transactions awaiting categorisation</div><div class="card-sub">Claude has suggested categories — approve or override each one</div></div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="runAutocatRules()">▶ Run rules</button>
+            <button class="btn btn-primary btn-sm" onclick="approveAllAutocat()">✓ Approve all</button>
+            <button class="btn btn-ghost btn-sm" onclick="getAutocatAI()">✦ Re-analyse with AI</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 100px 120px 90px 80px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
+          <span>Description</span><span>Amount</span><span>AI Category</span><span>Confidence</span><span>Action</span>
+        </div>
+        <div id="autocat-list"></div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header"><div class="card-title">Categorisation rules</div><div class="card-sub">Auto-approve future transactions matching these patterns</div></div>
+        <div id="autocat-rules-list"></div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:.75rem" onclick="openAddRuleModal()">+ Add custom rule</button>
+      </div>`;
+    content.appendChild(autocatPage);
+
+    // ── CLIENT PORTAL PAGE ───────────────────────────────────────────────
+    const portalPage = document.createElement('div');
+    portalPage.className = 'page';
+    portalPage.id = 'page-portal';
+    portalPage.innerHTML = `
+      <div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem">
+        <div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#128279;</div>
+        <div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Client Portal &#8212; Coming Soon</div>
+        <div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Give each client a branded self-service portal where they can view invoices, make payments via Stripe, and access documents you share with them.</div>
+        <div style="display:flex;flex-direction:column;gap:8px;text-align:left;margin-bottom:1.5rem">
+          <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--green)">&#10003;</span> Branded portal per client with unique link</div>
+          <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--green)">&#10003;</span> Online Stripe payments from the portal</div>
+          <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--green)">&#10003;</span> Shared documents and invoice history</div>
+        </div>
+        <span class="badge b-amber" style="font-size:11px;padding:4px 12px">Requires Stripe + custom auth</span>
+      </div>`;
+    content.appendChild(portalPage);
+  }
+  injectPages();
+})();

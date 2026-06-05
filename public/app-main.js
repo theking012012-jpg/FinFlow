@@ -533,6 +533,13 @@ function showForgotPassword(){
   document.getElementById('forgot-form-panel').style.display='';
   document.getElementById('login-screen-subtitle').textContent='Password recovery';
 }
+function _setUserDisplay(u){
+  if(!u) return;
+  var n=document.getElementById('sb-user-name');
+  if(n && u.name) n.textContent=u.name;
+  var e=document.getElementById('settings-user-email');
+  if(e) e.textContent=u.email||'';
+}
 
 async function doLogin(){
   const email = document.getElementById('login-email')?.value?.trim();
@@ -552,6 +559,7 @@ async function doLogin(){
     applyRole(r);
     document.getElementById('login-screen').style.display='none';
     window.CURRENT_USER = data.user || {};
+    _setUserDisplay(data.user);
     injectRoleBadge(r);
     if(data.user?.plan){
       currentUserPlan = data.user.plan;
@@ -590,6 +598,7 @@ async function doRegister(){
     applyRole(r);
     document.getElementById('login-screen').style.display='none';
     window.CURRENT_USER = data.user || {};
+    _setUserDisplay(data.user);
     injectRoleBadge(r);
     if(data.user?.plan){
       currentUserPlan = data.user.plan;
@@ -1096,35 +1105,24 @@ function initEnhancements(){
   // Pre-highlight checked
   const checked = document.querySelector('input[name="login-role"]:checked');
   if(checked) checked.closest('label').style.borderColor = 'var(--acc)';
-  // Auto-login if role saved in session (sessionStorage only — not cross-session)
-  const savedRole = sessionStorage.getItem('ff_role');
-  if(savedRole && Object.prototype.hasOwnProperty.call(ROLES, savedRole)){
-    currentRole = savedRole;
-    applyRole(savedRole);
+  // Always verify server session before firing ff:authed — avoids 401 race
+  // when sessionStorage has ff_role but the cookie has expired server-side.
+  fetch('/api/me', {credentials:'include'}).then(async r => {
+    if (!r.ok) { sessionStorage.removeItem('ff_role'); return; }
+    const data = await r.json();
+    window.CURRENT_USER = data.user;
+    _setUserDisplay(data.user);
+    const role = sessionStorage.getItem('ff_role') || 'owner';
+    currentRole = role;
+    applyRole(role);
+    sessionStorage.setItem('ff_role', role);
     document.getElementById('login-screen').style.display = 'none';
-    injectRoleBadge(savedRole);
+    injectRoleBadge(role);
     window._ffAuthed = true;
     window.dispatchEvent(new Event('ff:authed'));
-    if(typeof loadEntitiesFromDB === 'function') setTimeout(()=>loadEntitiesFromDB(), 800);
-    setTimeout(()=>{ if(typeof loadBankingFromDB==='function') loadBankingFromDB(); }, 900);
-  } else {
-    // Check server session — auto-login if session still valid
-    fetch('/api/me', {credentials:'include'}).then(async r => {
-      if (r.ok) {
-        const data = await r.json();
-        window.CURRENT_USER = data;
-        currentRole = 'owner';
-        applyRole('owner');
-        sessionStorage.setItem('ff_role', 'owner');
-        document.getElementById('login-screen').style.display = 'none';
-        injectRoleBadge('owner');
-        window._ffAuthed = true;
-        window.dispatchEvent(new Event('ff:authed'));
-        if(typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
-        if(typeof loadBankingFromDB === 'function') loadBankingFromDB();
-      }
-    }).catch(()=>{});
-  }
+    if(typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
+    if(typeof loadBankingFromDB === 'function') loadBankingFromDB();
+  }).catch(()=>{});
 }
 
 // ── AUTO SESSION CHECK ON LOAD ──────────────────────────────────────────────

@@ -6878,8 +6878,8 @@ window.showPage = function(id, el) {
   }
 };
 
-// Boot
-loadDirectory();
+// Boot — wait for auth before fetching directory or my-accountant
+window.addEventListener('ff:authed', function(){ loadDirectory(); }, {once:true});
 
 })();
 }); // end load listener

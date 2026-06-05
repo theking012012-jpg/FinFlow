@@ -3878,7 +3878,7 @@ function renderPlaid(){
   if(typeof renderBanking === 'function') renderBanking();
 }
 window.plaidConnect=function(){notify('Connect your bank account to start syncing transactions ✦');};
-requestAnimationFrame(()=>{ if(typeof loadBankingFromDB==='function') loadBankingFromDB(); });
+window.addEventListener('ff:authed',function(){ if(typeof loadBankingFromDB==='function') loadBankingFromDB(); },{once:true});
 
 // ── 7. KEYBOARD SHORTCUTS ───────────────────────────────────────────────────
 document.addEventListener('keydown',function(e){
@@ -4940,7 +4940,7 @@ window.savePermissions=async function(){
     notify('Role permissions saved ✦');
   }catch(e){notify('Could not save permissions',true);}
 };
-(async function loadPermissions(){
+window.addEventListener('ff:authed',async function(){
   try{
     const res=await fetch('/api/permissions',{credentials:'same-origin'});
     if(!res.ok)return;
@@ -4948,7 +4948,7 @@ window.savePermissions=async function(){
     if(!saved||!Array.isArray(saved))return;
     saved.forEach((s,i)=>{if(PERMS[i]){if(s.a!=null)PERMS[i].a=!!s.a;if(s.ac!=null)PERMS[i].ac=!!s.ac;if(s.v!=null)PERMS[i].v=!!s.v;}});
   }catch(e){}
-})();
+},{once:true});
 
 // ── AUDIT TRAIL — all data from DB via /api/audit-log ──────────────────────
 const AUDIT_EVENTS=[]; // intentionally empty — no hardcoded demo data

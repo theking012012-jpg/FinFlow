@@ -1142,8 +1142,23 @@ function initEnhancements(){
 // (Called after original functions are defined — see bottom of script)
 
 
-const MONTHS     = ['May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr'];
-const MONTH_FULL = ['May 2025','Jun 2025','Jul 2025','Aug 2025','Sep 2025','Oct 2025','Nov 2025','Dec 2025','Jan 2026','Feb 2026','Mar 2026','Apr 2026'];
+function computeMonthFull(){
+  var fyStart=(document.getElementById('s-fy')||{}).value||'January';
+  var mNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var fyStartIdx=Math.max(0,mNames.indexOf(fyStart));
+  var today=new Date();
+  var todayYear=today.getFullYear();
+  var todayMonth=today.getMonth();
+  var fyStartYear=(todayMonth>=fyStartIdx)?todayYear:todayYear-1;
+  var result=[];
+  for(var i=0;i<12;i++){
+    var d=new Date(fyStartYear,fyStartIdx+i,1);
+    result.push(d.toLocaleString('en-US',{month:'short',year:'numeric'}));
+  }
+  return result;
+}
+var MONTH_FULL=computeMonthFull();
+var MONTHS=MONTH_FULL.map(function(m){return m.split(' ')[0];});
 // ══════════════════════════════════════════════════════════════
 // ENTITY DATA — each entity has its own financials, invoices,
 // expenses, payroll, customers & inventory
@@ -1346,7 +1361,11 @@ async function loadEntityData(idx){
       .map(([label,total])=>({label,total}));
 
     console.log('[Entity] Loaded real data — invoices:'+invoices.length+' expenses:'+expenses.length+' top clients:'+_topClients.length);
-  } catch(e){ console.warn('[Entity] loadEntityData failed:', e.message); } finally { _loadEntityDataRunning = false; }
+  } catch(e){ console.warn('[Entity] loadEntityData failed:', e.message); } finally {
+    MONTH_FULL=computeMonthFull();
+    MONTHS=MONTH_FULL.map(function(m){return m.split(' ')[0];});
+    _loadEntityDataRunning=false;
+  }
 }
 window.loadEntityData = loadEntityData; // expose for medium.js payroll reload hook
 
@@ -1460,7 +1479,7 @@ function getPeriodData(){
       labels:MONTHS,revArr:REV,expArr:EXP,
       sal:sum(EXP_SAL,0,12),rent:EXP_RENT[0]*12,sw:sum(EXP_SW,0,12),mkt:sum(EXP_MKT,0,12),
       srcRC:0,srcTS:0,srcST:0,srcCO:0,
-      months:12, label:'Full Year · May 2025 – Apr 2026'
+      months:12, label:'Full Year · '+MONTH_FULL[0]+' – '+MONTH_FULL[11]
     };
   }
 }
@@ -3279,7 +3298,7 @@ function updateAI(d=getPeriodData()){
   const margin=d.rev > 0 ? Math.round(d.profit/d.rev*100) : 0;
   const insights=currentPeriod==='year'?[
     `Full year revenue: ${S(d.rev)} — a 38% annualised growth rate vs the prior year.`,
-    `Best month: April 2026 at ${S(REV[11])}. Weakest: May 2025 at ${S(REV[0])}. Strong scaling trend.`,
+    `Best month: ${MONTH_FULL[11]} at ${S(REV[11])}. Weakest: ${MONTH_FULL[0]} at ${S(REV[0])}. Strong scaling trend.`,
     `Net profit margin: ${margin}%. Annual profit: ${S(d.profit)}. Business is ${d.profit<0?'running at a loss':margin>=20?'highly profitable':margin>=10?'profitable':'breaking even'}.`,
 
     d.rev > 0 ? `Payroll-to-revenue: ${Math.round(d.sal/d.rev*100)}% — ${Math.round(d.sal/d.rev*100)<=40?'healthy':'high'}. Industry avg for your size is 35–40%.` : `Add paid invoices to calculate your payroll-to-revenue ratio.`,

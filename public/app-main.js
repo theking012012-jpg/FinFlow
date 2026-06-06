@@ -1306,21 +1306,25 @@ async function loadEntityData(idx){
     window._realInvoices = invoices || [];
     window._realExpenses = expenses || [];
 
-    // Rebuild monthly chart arrays from real data
-    const now = new Date();
+    // Rebuild monthly chart arrays from real data — aligned to fiscal year
+    const _fyMonths=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const _fyName=(document.getElementById('s-fy')||{}).value||'January';
+    const _fyStartIdx=Math.max(0,_fyMonths.indexOf(_fyName));
+    const _today=new Date();
+    const _fyStartYear=(_today.getMonth()>=_fyStartIdx)?_today.getFullYear():_today.getFullYear()-1;
     const monthlyRev = new Array(12).fill(0);
     const monthlyExp = new Array(12).fill(0);
     invoices.forEach(inv => {
       if(inv.status !== 'paid') return;
       const d = inv.due_date ? new Date(inv.due_date) : null;
       if(!d) return;
-      const mIdx = (d.getFullYear() - now.getFullYear()) * 12 + d.getMonth() - (now.getMonth() - 11);
+      const mIdx = (d.getMonth() - _fyStartIdx) + (d.getFullYear() - _fyStartYear) * 12;
       if(mIdx >= 0 && mIdx < 12) monthlyRev[mIdx] += parseFloat(inv.amount)||0;
     });
     expenses.forEach(exp => {
       const d = exp.expense_date ? new Date(exp.expense_date) : null;
       if(!d) return;
-      const mIdx = (d.getFullYear() - now.getFullYear()) * 12 + d.getMonth() - (now.getMonth() - 11);
+      const mIdx = (d.getMonth() - _fyStartIdx) + (d.getFullYear() - _fyStartYear) * 12;
       if(mIdx >= 0 && mIdx < 12) monthlyExp[mIdx] += parseFloat(exp.amount)||0;
     });
     // Add owner monthly gross spread evenly across all 12 months in opex

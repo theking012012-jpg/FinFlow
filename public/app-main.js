@@ -675,7 +675,7 @@ function injectRoleBadge(role){
     font-weight:500;cursor:pointer;margin-right:4px;
   `;
   badge.innerHTML = `<span style="width:6px;height:6px;border-radius:50%;background:${ROLES[role]?.color||'#888'}"></span>${ROLES[role]?.label||role} <span style="opacity:.5;font-size:10px">▾</span>`;
-  badge.title = 'Click to switch role (demo)';
+  badge.title = 'Click to switch role';
   badge.onclick = () => {
     document.getElementById('login-screen').style.display = 'flex';
     // reset role radio to current
@@ -3323,7 +3323,7 @@ function updateAI(d=getPeriodData()){
   document.getElementById('ai-period-label').textContent=d.label;
   const margin=d.rev > 0 ? Math.round(d.profit/d.rev*100) : 0;
   const insights=currentPeriod==='year'?[
-    `Full year revenue: ${S(d.rev)} — a 38% annualised growth rate vs the prior year.`,
+    (()=>{ const _g=REV[0]>0?Math.round((REV[11]-REV[0])/REV[0]*100):null; return _g!==null?`Full year revenue: ${S(d.rev)} — ${_g>=0?"+":""}${_g}% growth vs ${MONTH_FULL[0]}.`:`Full year revenue: ${S(d.rev)} — First year on record, no prior comparison.`; })(),
     `Best month: ${MONTH_FULL[11]} at ${S(REV[11])}. Weakest: ${MONTH_FULL[0]} at ${S(REV[0])}. Strong scaling trend.`,
     `Net profit margin: ${margin}%. Annual profit: ${S(d.profit)}. Business is ${d.profit<0?'running at a loss':margin>=20?'highly profitable':margin>=10?'profitable':'breaking even'}.`,
 

@@ -1496,7 +1496,7 @@ function getPeriodData(){
       labels:MONTHS.slice(s,e),revArr:REV.slice(s,e),expArr:EXP.slice(s,e),
       sal:sum(EXP_SAL,s,e),rent:EXP_RENT[0]*3,sw:sum(EXP_SW,s,e),mkt:sum(EXP_MKT,s,e),
       srcRC:0,srcTS:0,srcST:0,srcCO:0,
-      months:3, label:'Q4 · Feb–Apr 2026'
+      months:3, label:'Q4 · '+MONTH_FULL[9]+' – '+MONTH_FULL[11]
     };
   } else {
     return{
@@ -3330,12 +3330,11 @@ function updateAI(d=getPeriodData()){
     d.rev > 0 ? `Payroll-to-revenue: ${Math.round(d.sal/d.rev*100)}% — ${Math.round(d.sal/d.rev*100)<=40?'healthy':'high'}. Industry avg for your size is 35–40%.` : `Add paid invoices to calculate your payroll-to-revenue ratio.`,
     `Webcam 4K Ultra (9 units) and Ergonomic Mouse (4 units) are critically low on stock.`,
   ]:currentPeriod==='quarter'?[
-    `Q4 revenue: ${S(d.rev)} — your strongest quarter. Net profit: ${S(d.profit)} (${margin}% margin).`,
-    `Monthly average profit in Q4: ${S(Math.round(d.profit/3))} — up from ${S(Math.round(sum(PROFIT,6,9)/3))} in Q3.`,
+    `${MONTH_FULL[9]}–${MONTH_FULL[11]} revenue: ${S(d.rev)} — your strongest quarter. Net profit: ${S(d.profit)} (${margin}% margin).`,
+    `Monthly average profit this quarter: ${S(Math.round(d.profit/3))} — up from ${S(Math.round(sum(PROFIT,6,9)/3))} in the prior quarter.`,
     _topClients.length ? `Top client this quarter: ${_topClients[0].label} at ${S(_topClients[0].total)} (${d.rev>0?Math.round(_topClients[0].total/d.rev*100):0}% of revenue).` : `Add invoices to see client revenue breakdown.`,
-    `Payroll cost Q4: ${S(d.sal)} — at ${Math.round(d.sal/d.rev*100)}% of revenue, below industry average.`,
-
-    `90-day forecast: ${S(PROFIT[9]+PROFIT[10]+PROFIT[11]+28000+30200+32100)} net positive across Q4 + 3 forecast months.`,
+    `Payroll cost this quarter: ${S(d.sal)} — at ${d.rev>0?Math.round(d.sal/d.rev*100):0}% of revenue, below industry average.`,
+    `Cash trend: ${d.profit >= 0 ? 'Net positive' : 'Net negative'} at ${S(d.profit)} this quarter.`,
   ]:[
     `${MONTH_FULL[currentMonthIdx]} revenue: ${S(d.rev)} — ${margin}% profit margin.`,
     `Expenses this month: ${S(d.exp)}. Largest cost: salaries at ${S(d.sal)} (${Math.round(d.sal/d.exp*100)}%).`,

@@ -3352,6 +3352,7 @@ function loadChartJS(callback){
 }
 </script>
 <script src="/app-main.min.js"></script>
+<script>(function(){var p=new URLSearchParams(window.location.search);if(p.get('signup')==='1'&&typeof showRegister==='function')showRegister();})();</script>
 
 <!-- ── MOBILE SIDEBAR JS ───────────────────────────────────────────────── -->
 <script>
@@ -3879,6 +3880,20 @@ function renderPlaid(){
 }
 window.plaidConnect=function(){notify('Connect your bank account to start syncing transactions ✦');};
 window.addEventListener('ff:authed',function(){ if(typeof loadBankingFromDB==='function') loadBankingFromDB(); },{once:true});
+window.addEventListener('ff:authed',function(){
+  var u=window.CURRENT_USER;
+  if(!u||!u.trial_ends||(u.plan!=='trial'&&u.plan!=='free'))return;
+  var trialEnd=new Date(u.trial_ends);
+  var daysLeft=Math.ceil((trialEnd-Date.now())/86400000);
+  if(daysLeft<=0||daysLeft>30)return;
+  var banner=document.createElement('div');
+  banner.id='trial-banner';
+  banner.style.cssText='background:var(--acc);color:#000;text-align:center;font-size:12px;font-weight:600;padding:5px;cursor:pointer;';
+  banner.innerHTML='&#9889; '+daysLeft+' day'+(daysLeft===1?'':'s')+' left on your free trial — <u>Upgrade now</u>';
+  banner.onclick=function(){if(typeof showPage==='function')showPage('pricing',null);};
+  var main=document.querySelector('.main');
+  if(main)main.prepend(banner);
+},{once:true});
 
 // ── 7. KEYBOARD SHORTCUTS ───────────────────────────────────────────────────
 document.addEventListener('keydown',function(e){

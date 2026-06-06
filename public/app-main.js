@@ -592,6 +592,14 @@ async function doRegister(){
     const res = await fetch('/api/auth/register',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password:pw})});
     const data = await res.json();
     if(!res.ok){ if(errEl) errEl.textContent=data.error||'Registration failed.'; return; }
+    const plan = new URLSearchParams(window.location.search).get('plan');
+    if(plan && (plan==='pro'||plan==='business')){
+      try{
+        const sr = await fetch('/api/stripe/checkout',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan})});
+        const sd = await sr.json();
+        if(sd.url){ window.location.href = sd.url; return; }
+      }catch(e){}
+    }
     const r = 'owner';
     currentRole = r;
     sessionStorage.setItem('ff_role', r);

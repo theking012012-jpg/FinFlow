@@ -294,7 +294,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const hash = bcrypt.hashSync(password, 12);
     const { lastInsertRowid: userId } = await db.insert('users', {
       email: email.toLowerCase(), password: hash,
-      name: (name || '').trim().slice(0, 100), plan: 'trial', trial_ends: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner',
+      name: (name || '').trim().slice(0, 100), plan: 'trial', trial_ends: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner',
     });
 
     // If user signed up via an accountant referral link (?ref=CODE), link them now

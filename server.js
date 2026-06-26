@@ -2163,7 +2163,7 @@ async function runRecurringScheduler() {
 
 // ── BANKING TRANSACTIONS ──────────────────────────────────────────────────────
 app.get('/api/banking', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('personal_transactions', req.session.userId, r => r.source === 'banking', (a, b) => new Date(b.date) - new Date(a.date)));
+  res.json(await db.allByUser('personal_transactions', req.session.userId, r => r.source === 'banking' && (!req.entityId || r.entity_id === req.entityId || r.entity_id == null), (a, b) => new Date(b.date) - new Date(a.date)));
 }));
 app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   const { desc, amount, type, date, cat } = req.body || {};
@@ -2284,8 +2284,8 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
                 SUM(CASE WHEN im.type='sale' THEN im.quantity ELSE 0 END) AS units_sold,
                 SUM(CASE WHEN im.type='purchase' THEN im.quantity*im.unit_cost ELSE 0 END) AS purchase_total,
                 SUM(CASE WHEN im.type='purchase' THEN im.quantity ELSE 0 END) AS units_purchased
-         FROM inventory_movements im WHERE im.user_id = $1 GROUP BY im.inventory_id`,
-        [uid]
+         FROM inventory_movements im WHERE im.user_id = $1 AND ($2::int IS NULL OR im.entity_id = $2 OR im.entity_id IS NULL) GROUP BY im.inventory_id`,
+        [uid, eid]
       );
       for (const r of cogsRows) {
         const unitCost = parseFloat(r.purchase_total) / Math.max(parseFloat(r.units_purchased), 1);
@@ -2300,7 +2300,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       const { rows: fxRows } = await pool.query(
         `SELECT COALESCE(SUM(CASE WHEN status='settled' THEN realised_gain_loss ELSE 0 END),0) AS realised,
                 COALESCE(SUM(CASE WHEN status='open' THEN unrealised_gain_loss ELSE 0 END),0) AS unrealised
-         FROM fx_transactions WHERE user_id=$1`, [uid]
+         FROM fx_transactions WHERE user_id=$1 AND ($2::int IS NULL OR entity_id = $2 OR entity_id IS NULL)`, [uid, eid]
       );
       fxRealised = parseFloat(fxRows[0]?.realised) || 0;
       fxUnrealised = parseFloat(fxRows[0]?.unrealised) || 0;
@@ -3027,9 +3027,10 @@ app.post('/api/fx-rates', requireAuth, wrap(async (req, res) => {
 }));
 
 app.get('/api/fx-transactions', requireAuth, wrap(async (req, res) => {
+  const eid = req.entityId || null;
   const { rows } = await pool.query(
-    `SELECT * FROM fx_transactions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200`,
-    [req.session.userId]
+    `SELECT * FROM fx_transactions WHERE user_id=$1 AND ($2::int IS NULL OR entity_id = $2 OR entity_id IS NULL) ORDER BY created_at DESC LIMIT 200`,
+    [req.session.userId, eid]
   );
   res.json(rows);
 }));
@@ -3069,15 +3070,16 @@ app.post('/api/fx-transactions/:id/settle', requireAuth, wrap(async (req, res) =
 }));
 
 app.get('/api/fx-summary', requireAuth, wrap(async (req, res) => {
+  const eid = req.entityId || null;
   const { rows } = await pool.query(
     `SELECT
        COALESCE(SUM(CASE WHEN status='settled' THEN realised_gain_loss ELSE 0 END), 0) AS total_realised,
        COALESCE(SUM(CASE WHEN status='open' THEN unrealised_gain_loss ELSE 0 END), 0) AS total_unrealised,
        foreign_currency,
        COUNT(*) AS count
-     FROM fx_transactions WHERE user_id=$1
+     FROM fx_transactions WHERE user_id=$1 AND ($2::int IS NULL OR entity_id = $2 OR entity_id IS NULL)
      GROUP BY foreign_currency`,
-    [req.session.userId]
+    [req.session.userId, eid]
   );
   const totalRealised = rows.reduce((s, r) => s + parseFloat(r.total_realised), 0);
   const totalUnrealised = rows.reduce((s, r) => s + parseFloat(r.total_unrealised), 0);

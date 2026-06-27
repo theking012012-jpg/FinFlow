@@ -973,7 +973,7 @@ app.delete('/api/projects/:id', requireAuth, wrap(async (req, res) => {
 // ── HOLDINGS ──────────────────────────────────────────────────────────────────
 app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
   try {
-    const rows = await db.allByUser('holdings', req.session.userId, null, (a,b) => a.id - b.id);
+    const rows = await db.allByUser('holdings', req.session.userId, req.entityId ? r => r.entity_id === req.entityId || r.entity_id == null : null, (a,b) => a.id - b.id);
     res.json(rows);
   } catch (e) {
     console.error('[GET /api/holdings] failed for user', req.session.userId, ':', e.code, e.message);
@@ -983,7 +983,7 @@ app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
 app.post('/api/holdings', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.ticker || b.shares == null) return res.status(400).json({ error: 'ticker and shares required.' });
-  const { row } = await db.insert('holdings', { user_id: req.session.userId, ticker: b.ticker.trim().toUpperCase().slice(0,20), name: (b.name||b.ticker).trim().slice(0,200), asset_type: b.asset_type||'Stock', shares: parseFloat(b.shares)||0, cost_per: parseFloat(b.cost_per)||0, price: parseFloat(b.price)||parseFloat(b.cost_per)||0, dividend: parseFloat(b.dividend)||0, color: b.color||'#c9a84c' });
+  const { row } = await db.insert('holdings', { user_id: req.session.userId, entity_id: req.entityId || null, ticker: b.ticker.trim().toUpperCase().slice(0,20), name: (b.name||b.ticker).trim().slice(0,200), asset_type: b.asset_type||'Stock', shares: parseFloat(b.shares)||0, cost_per: parseFloat(b.cost_per)||0, price: parseFloat(b.price)||parseFloat(b.cost_per)||0, dividend: parseFloat(b.dividend)||0, color: b.color||'#c9a84c' });
   res.status(201).json(row);
 }));
 app.put('/api/holdings/:id', requireAuth, wrap(async (req, res) => {

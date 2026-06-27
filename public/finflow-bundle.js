@@ -22,7 +22,7 @@
     getInventory: function()      { return api('GET','/api/inventory'); },
     getPayroll:   function()      { return api('GET','/api/payroll'); },
     getGoals:     function()      { return api('GET','/api/goals'); },
-    getHoldings:  function()      { return api('GET','/api/holdings'); },
+    getHoldings:  function()      { var e=(window.ENTITIES||[]).find(function(x){return x.active;}); return api('GET','/api/holdings'+(e&&e._dbId?'?entity_id='+e._dbId:'')); },
   };
 
   function showAuthGate() {
@@ -4637,7 +4637,8 @@ function clearAIChat(){
   // ══════════════════════════════════════════════════════
   async function loadHoldingsFromDB() {
     try {
-      const rows = await api('GET', '/api/holdings');
+      const _e = (window.ENTITIES || []).find(x => x.active);
+      const rows = await api('GET', '/api/holdings' + (_e && _e._dbId ? '?entity_id=' + _e._dbId : ''));
       const mapped = (rows || []).map(r => ({
         _dbId: r.id, id: r.id, ticker: r.ticker, name: r.name,
         type: r.asset_type, shares: r.shares, cost: r.cost_per,
@@ -5279,6 +5280,11 @@ function clearAIChat(){
       exp += paymentsMade.reduce((s, p) => s + (parseFloat(p.amount)||0), 0);
     }
 
+    // Canonical expense total (real rows + bill payments + payroll) — the SAME
+    // function the Expenses page uses, so both screens always agree.
+    if (typeof window.computeExpenseBreakdown === 'function') {
+      exp = window.computeExpenseBreakdown(period).total;
+    }
     const profit = rev - exp;
     const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
     const overdue = invoices.filter(i => i.status?.toLowerCase() === 'overdue');
@@ -5461,11 +5467,11 @@ function clearAIChat(){
         const exps = window._realExpenses || [];
         const rev = inv.filter(i => (i.status||'').toLowerCase() === 'paid')
                        .reduce((s, i) => s + (Number(i.amount) || 0), 0);
-        let exp = exps.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-        // Include payroll gross in expenses
-        const payroll = window.payrollEmployees || [];
-        if (window.ownerPayroll) payroll.unshift(window.ownerPayroll);
-        exp += payroll.reduce((s, e) => s + (Number(e.gross) || 0), 0);
+        // Canonical expense total (real rows + bill payments + payroll). Never
+        // mutate window.payrollEmployees — the canonical fn builds a fresh array.
+        const exp = (typeof window.computeExpenseBreakdown === 'function')
+          ? window.computeExpenseBreakdown(window.currentPeriod || 'year').total
+          : exps.reduce((s, e) => s + (Number(e.amount) || 0), 0);
         const outstanding = inv.filter(i => (i.status||'').toLowerCase() !== 'paid')
                               .reduce((s, i) => s + (Number(i.amount) || 0), 0);
         const fmt = n => {
@@ -5534,21 +5540,10 @@ function clearAIChat(){
       window.charts.overview.data.datasets[1].data = _safe(expByMonth);
       window.charts.overview.update();
     }
-    const kpis = updateKPIs(invs, exps, period);
-
-    // Add owner payroll gross to expense/profit KPIs so adding payroll
-    // immediately reflects in dashboard totals without requiring a page refresh.
-    const _op    = window.ownerPayroll;
-    const _emps  = window.payrollEmployees || [];
-    const _all   = _op ? [_op, ..._emps] : _emps;
-    const _payrollTotal = _all.reduce((s, e) => s + (parseFloat(e.gross) || 0), 0);
-    if (_payrollTotal > 0 && kpis) {
-      const _totalExp    = (kpis.exp    || 0) + _payrollTotal;
-      const _totalProfit = (kpis.rev    || 0) - _totalExp;
-      const _set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-      _set('d-exp',    money(_totalExp));
-      _set('d-profit', money(_totalProfit));
-    }
+    // updateKPIs already writes d-exp / d-profit using the canonical expense
+    // total (real rows + bill payments + payroll), so payroll changes reflect
+    // immediately. No separate payroll bolt-on here — that double-counted.
+    updateKPIs(invs, exps, period);
 
     updateExpenseBars(exps);
     updateTransactions(invs, exps);

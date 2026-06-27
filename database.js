@@ -58,6 +58,13 @@ async function initDB() {
       await client.query(`CREATE INDEX IF NOT EXISTS idx_${table}_entity_id ON ${table}(entity_id)`);
     }
 
+    // Holdings entity isolation — the generic loop above already creates the
+    // entity_id column, but run an explicit idempotent migration so any holdings
+    // table that predates entity_id (legacy deployments) gets it safely. No
+    // NOT NULL — existing rows keep entity_id NULL until backfilled per-row.
+    await client.query(`ALTER TABLE holdings ADD COLUMN IF NOT EXISTS entity_id INTEGER`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_holdings_entity_id ON holdings(entity_id)`);
+
     // Sessions table (connect-pg-simple)
     await client.query(`
       CREATE TABLE IF NOT EXISTS session (

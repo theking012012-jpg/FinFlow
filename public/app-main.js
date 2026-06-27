@@ -1349,11 +1349,10 @@ async function loadEntityData(idx){
       const mIdx = (d.getMonth() - _fyStartIdx) + (d.getFullYear() - _fyStartYear) * 12;
       if(mIdx >= 0 && mIdx < 12) monthlyExp[mIdx] += parseFloat(exp.amount)||0;
     });
-    // Add owner monthly gross spread evenly across all 12 months in opex
-    const ownerMonthlyGross = (ownerPayrollByEntity[idx]?.gross) || 0;
-    if (ownerMonthlyGross > 0) {
-      for (let i = 0; i < 12; i++) monthlyExp[i] += ownerMonthlyGross;
-    }
+    // NOTE: payroll (owner + employees) is NOT injected into EXP[] here.
+    // It is added once, consistently, by computeExpenseBreakdown() — the single
+    // canonical expense-total used by both the dashboard and the Expenses page.
+    // EXP[] holds real expense rows only, so the monthly chart matches reality.
 
     REV.splice(0,12,...monthlyRev);
     EXP.splice(0,12,...monthlyExp);
@@ -1422,6 +1421,7 @@ let nextInvId = 100;
 // Period state
 let darkMode = true;
 let currentPeriod = 'year';
+window.currentPeriod = 'year'; // mirrored to window so the bundle's KPI engine reads the same period
 let currentMonthIdx = 11; // April
 let charts = {};
 let currencySymbol = '$';
@@ -1509,6 +1509,58 @@ function getPeriodData(){
     };
   }
 }
+
+// ════════════════════════════════════════════
+// CANONICAL EXPENSE BREAKDOWN  (single source of truth)
+// ════════════════════════════════════════════
+// Both the dashboard Expenses/Net-Profit KPIs and the Expenses-page
+// Total/Business/Tax-deductible KPIs call THIS function. Given the active
+// entity's real expense rows (window._realExpenses), bill payments
+// (window._paymentsMade) and entity payroll (window.ownerPayroll +
+// window.payrollEmployees), it returns totals that are identical on every
+// screen for the same entity + period. No fabricated ratios anywhere.
+function computeExpenseBreakdown(period){
+  period = period || (typeof currentPeriod !== 'undefined' ? currentPeriod : (window.currentPeriod || 'year'));
+  const months = period==='month' ? 1 : period==='quarter' ? 3 : 12;
+  const now = new Date();
+  const inPeriod = (val)=>{
+    if(period==='year') return true; // year = all recorded rows
+    const d = val ? new Date(val) : null;
+    if(!d || isNaN(d)) return false;
+    if(period==='month') return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
+    const q = Math.floor(now.getMonth()/3)*3;
+    return d.getFullYear()===now.getFullYear() && d.getMonth()>=q && d.getMonth()<q+3;
+  };
+  // Real expense rows in the period
+  const rows = (window._realExpenses || []).filter(e=>inPeriod(e.expense_date || e.date || e.created_at));
+  const realExpenses = rows.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  // Tax-deductible from REAL rows only: yes=100%, half=50%, no=0
+  const deductible = rows.reduce((s,e)=>{
+    const amt = parseFloat(e.amount)||0;
+    const ded = (e.deductible!=null ? e.deductible : (e.ded||'no'));
+    return s + (ded==='yes' ? amt : ded==='half' ? amt*0.5 : 0);
+  },0);
+  // Category breakdown from REAL rows only
+  const byCategory = {};
+  rows.forEach(e=>{ const c=e.category||e.cat||'Other'; byCategory[c]=(byCategory[c]||0)+(parseFloat(e.amount)||0); });
+  // Bill payments made in the period (kept consistent with the dashboard ledger)
+  const pmade = (window._paymentsMade || []).filter(p=>inPeriod(p.date||p.created_at));
+  const paymentsMade = pmade.reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
+  // Payroll for the ACTIVE entity (owner + employees), monthly gross × months.
+  // Build a NEW array — never mutate window.payrollEmployees.
+  const op = window.ownerPayroll;
+  const emps = window.payrollEmployees || [];
+  const allPay = op ? [op, ...emps] : [...emps];
+  const monthlyPayroll = allPay.reduce((s,e)=>s+(parseFloat(e.gross)||0),0);
+  const payroll = monthlyPayroll * months;
+  return {
+    total: realExpenses + paymentsMade + payroll,
+    realExpenses, paymentsMade, payroll,
+    business: realExpenses,   // data model has no personal/business split — all recorded rows are business
+    deductible, byCategory, months, period,
+  };
+}
+window.computeExpenseBreakdown = computeExpenseBreakdown;
 
 // ════════════════════════════════════════════
 // NAVIGATION
@@ -1628,6 +1680,7 @@ function animateCounters(page){
 // ════════════════════════════════════════════
 function setPeriod(el, p){
   currentPeriod=p;
+  window.currentPeriod=p; // keep the bundle's KPI engine in sync with the period switcher
   ['pMonth','pQ','pY'].forEach(id=>{
     const b=document.getElementById(id);
     b.style.borderColor='var(--bd2)';b.style.color='var(--t2)';
@@ -1839,59 +1892,39 @@ function saveInvoice(){
 // EXPENSES
 // ════════════════════════════════════════════
 function updateExpenses(d=getPeriodData()){
-  // Use real bizExpenses if available
-  const realExp = window.bizExpenses || [];
-  if(realExp.length > 0){
-    const total = realExp.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
-    const ded   = realExp.filter(e=>e.ded==='yes').reduce((s,e)=>s+(parseFloat(e.amount)||0),0)
-                + realExp.filter(e=>e.ded==='half').reduce((s,e)=>s+(parseFloat(e.amount)||0)*0.5,0);
-    const cats  = {};
-    realExp.forEach(e=>{ cats[e.cat]=(cats[e.cat]||0)+(parseFloat(e.amount)||0); });
-    const sorted = Object.entries(cats).sort((a,b)=>b[1]-a[1]);
-    document.getElementById('ex-total').textContent=S(total);
-    document.getElementById('ex-biz').textContent=S(total);
-    document.getElementById('ex-biz-pct').textContent='Business expenses';
-    // Top category name (label only — amount/% shown in ex-top-pct below)
-    const _exTopEl = document.getElementById('ex-top');
-    if(_exTopEl) _exTopEl.textContent = sorted[0]?.[0] || '—';
-    const _exTopPctEl = document.getElementById('ex-top-pct');
-    if(_exTopPctEl && sorted[0]) _exTopPctEl.textContent = S(sorted[0][1]) + ' · ' + Math.round(sorted[0][1]/total*100) + '%';
-    document.getElementById('ex-biz-pct').className='mc-change neutral';
-    document.getElementById('ex-ded').textContent=S(ded);
-    const taxSaving=Math.round(ded*.25);
-    document.getElementById('ex-ded-save').textContent='Saving ~'+S(taxSaving)+' tax';
-    document.getElementById('ex-ded-save').className='mc-change up';
-    // Category bars — update label, fill width, and amount from real data
-    const _catBarIds=[['ex-sal'],['ex-rent'],['ex-sw2'],['ex-other']];
-    const _maxAmt=sorted[0]?.[1]||1;
-    _catBarIds.forEach(([elId],i)=>{
-      const el=document.getElementById(elId); if(!el) return;
-      const row=el.closest?.('.bar-row');
-      if(sorted[i]){
-        const[cat,amt]=sorted[i];
-        el.textContent=S(amt);
-        if(row){const lbl=row.querySelector('.bar-label');if(lbl)lbl.textContent=cat;const fill=row.querySelector('.bar-fill');if(fill)fill.style.width=Math.round(amt/_maxAmt*100)+'%';}
-      }else{
-        el.textContent='—';
-        if(row){const lbl=row.querySelector('.bar-label');if(lbl)lbl.textContent='—';const fill=row.querySelector('.bar-fill');if(fill)fill.style.width='0%';}
-      }
-    });
-    return;
-  }
-  document.getElementById('ex-total').textContent=S(d.exp);
-  document.getElementById('ex-biz').textContent=S(Math.round(d.exp*.85));
-  document.getElementById('ex-biz-pct').textContent='85% of total';
-  document.getElementById('ex-biz-pct').className='mc-change neutral';
-  document.getElementById('ex-ded').textContent=S(Math.round(d.exp*.68));
-  const taxSaving=Math.round(d.exp*.68*.25);
-  document.getElementById('ex-ded-save').textContent='Saving ~'+S(taxSaving)+' tax';
-  document.getElementById('ex-ded-save').className='mc-change up';
-  const ec=chg(d.exp,d.prevExp,true);
+  // All KPIs come from the canonical breakdown — no fabricated ratios.
+  const b = computeExpenseBreakdown();
+  const _set=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=v;};
+  // Total expenses = real rows + bill payments + payroll (same number the dashboard shows)
+  _set('ex-total', S(b.total));
+  // Business = real recorded expense rows (data model has no personal/business split)
+  _set('ex-biz', S(b.business));
+  const _bizPct=document.getElementById('ex-biz-pct');
+  if(_bizPct){ _bizPct.textContent = b.total>0 ? Math.round(b.business/b.total*100)+'% of total' : 'Business expenses'; _bizPct.className='mc-change neutral'; }
+  // Tax deductible = real sum of deductible rows (yes 100% + half 50%)
+  _set('ex-ded', S(b.deductible));
+  const _dedEl=document.getElementById('ex-ded-save');
+  if(_dedEl){ _dedEl.textContent = b.business>0 ? Math.round(b.deductible/b.business*100)+'% of expenses deductible' : ''; _dedEl.className='mc-change up'; }
+  const ec=chg(b.total, d?d.prevExp:null, true);
   set('ex-total-chg',ec.txt,ec.cls);
-  document.getElementById('ex-sal').textContent=S(d.sal);
-  document.getElementById('ex-rent').textContent=S(d.rent);
-  document.getElementById('ex-sw2').textContent=S(d.sw);
-  document.getElementById('ex-other').textContent=S(d.mkt);
+  // Largest category + category bars — from REAL rows only
+  const sorted = Object.entries(b.byCategory).sort((a,b2)=>b2[1]-a[1]);
+  const _exTopEl=document.getElementById('ex-top'); if(_exTopEl) _exTopEl.textContent = sorted[0]?.[0] || '—';
+  const _exTopPctEl=document.getElementById('ex-top-pct');
+  if(_exTopPctEl) _exTopPctEl.textContent = (sorted[0] && b.business>0) ? S(sorted[0][1])+' · '+Math.round(sorted[0][1]/b.business*100)+'%' : '';
+  const _maxAmt=sorted[0]?.[1]||1;
+  [['ex-sal'],['ex-rent'],['ex-sw2'],['ex-other']].forEach(([elId],i)=>{
+    const el=document.getElementById(elId); if(!el) return;
+    const row=el.closest?.('.bar-row');
+    if(sorted[i]){
+      const[cat,amt]=sorted[i];
+      el.textContent=S(amt);
+      if(row){const lbl=row.querySelector('.bar-label');if(lbl)lbl.textContent=cat;const fill=row.querySelector('.bar-fill');if(fill)fill.style.width=Math.round(amt/_maxAmt*100)+'%';}
+    }else{
+      el.textContent='—';
+      if(row){const lbl=row.querySelector('.bar-label');if(lbl)lbl.textContent='—';const fill=row.querySelector('.bar-fill');if(fill)fill.style.width='0%';}
+    }
+  });
 }
 function renderExpenses(){
   updateExpenses();

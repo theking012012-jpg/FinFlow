@@ -11,18 +11,25 @@
     return data;
   }
 
+  // Active-entity query string for entity-scoped GETs. If no active entity is
+  // known yet (early boot), returns '' and the server fails safe (Fix 1).
+  function _entQ() {
+    var e = (window.ENTITIES || []).find(function(x){ return x.active; });
+    return (e && e._dbId) ? '?entity_id=' + e._dbId : '';
+  }
+
   window.FF_API = {
     register:     function(e,p,n) { return api('POST','/api/auth/register',{email:e,password:p,name:n}); },
     login:        function(e,p)   { return api('POST','/api/auth/login',{email:e,password:p}); },
     logout:       function()      { return api('POST','/api/auth/logout'); },
     me:           function()      { return api('GET','/api/auth/me'); },
-    getInvoices:  function()      { return api('GET','/api/invoices'); },
-    getExpenses:  function()      { return api('GET','/api/expenses'); },
-    getCustomers: function()      { return api('GET','/api/customers'); },
-    getInventory: function()      { return api('GET','/api/inventory'); },
-    getPayroll:   function()      { return api('GET','/api/payroll'); },
-    getGoals:     function()      { return api('GET','/api/goals'); },
-    getHoldings:  function()      { var e=(window.ENTITIES||[]).find(function(x){return x.active;}); return api('GET','/api/holdings'+(e&&e._dbId?'?entity_id='+e._dbId:'')); },
+    getInvoices:  function()      { return api('GET','/api/invoices'+_entQ()); },
+    getExpenses:  function()      { return api('GET','/api/expenses'+_entQ()); },
+    getCustomers: function()      { return api('GET','/api/customers'+_entQ()); },
+    getInventory: function()      { return api('GET','/api/inventory'+_entQ()); },
+    getPayroll:   function()      { return api('GET','/api/payroll'+_entQ()); },
+    getGoals:     function()      { return api('GET','/api/goals'+_entQ()); },
+    getHoldings:  function()      { return api('GET','/api/holdings'+_entQ()); },
   };
 
   function showAuthGate() {

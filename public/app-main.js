@@ -1744,11 +1744,13 @@ function updateDashboard(d=getPeriodData()){
   const _maxExpAmt=Math.max(d.sal||0,d.rent||0,d.sw||0,d.mkt||0,1);
   const _sb=function(id,amt){const el=document.getElementById(id);if(!el)return;const w=Math.round(amt/_maxExpAmt*100)+'%';el.style.setProperty('width',w,'important');el.style.setProperty('--bar-w',w);};
   _sb('exp-sal-bar',d.sal||0);_sb('exp-rent-bar',d.rent||0);_sb('exp-sw-bar',d.sw||0);_sb('exp-mkt-bar',d.mkt||0);
-  // Business transactions (period-contextual)
-  // Build real transactions from DB data
+  // Business transactions (period-contextual) — read the SAME entity-scoped
+  // source the bundle's updateTransactions uses (_realInvoices/_realExpenses),
+  // never the unscoped userInvoices/bizExpenses, so this widget can't bleed
+  // cross-entity rows.
   const _allTxns = [
-    ...((window.userInvoices||[]).slice(0,5).map(i=>({name:i.client, cat:'Revenue · '+i.status, amt:parseFloat(i.amount)||0, type:'income'}))),
-    ...((window.bizExpenses||[]).slice(0,5).map(e=>({name:e.desc||e.description, cat:'Expense · '+(e.cat||e.category||'Other'), amt:parseFloat(e.amount)||0, type:'expense'}))),
+    ...((window._realInvoices||[]).slice(0,5).map(i=>({name:i.client, cat:'Revenue · '+i.status, amt:parseFloat(i.amount)||0, type:'income'}))),
+    ...((window._realExpenses||[]).slice(0,5).map(e=>({name:e.desc||e.description, cat:'Expense · '+(e.cat||e.category||'Other'), amt:parseFloat(e.amount)||0, type:'expense'}))),
   ];
   const txns = _allTxns
   document.getElementById('d-txns').innerHTML=txns.map(t=>`

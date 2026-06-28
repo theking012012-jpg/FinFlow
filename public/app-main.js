@@ -1775,9 +1775,16 @@ function updateCashflow(d=getPeriodData()){
   document.getElementById('cf-net').textContent=S(d.profit);
   document.getElementById('cf-avg').textContent=S(Math.round(d.profit/d.months));
   document.getElementById('cf-avg-lbl').textContent=d.months===1?'Net this month':'Avg monthly net';
-  const fixed=Math.round(d.exp*.738);const variable=d.exp-fixed;
-  document.getElementById('cf-fixed').textContent=S(fixed);
-  document.getElementById('cf-variable').textContent=S(variable);
+  // Fixed vs variable from REAL categorised expense rows (no fabricated ratio).
+  // Fixed = recurring-overhead categories; variable = everything else. Honest
+  // empty state when there are no expense rows.
+  const _cfBd = (typeof computeExpenseBreakdown==='function') ? computeExpenseBreakdown() : null;
+  const _fixedCats = ['Rent','Salaries','Software','Insurance','Utilities','Lease','Subscriptions'];
+  let _cfFixed=0,_cfVar=0;
+  if(_cfBd){ for(const [cat,amt] of Object.entries(_cfBd.byCategory)){ if(_fixedCats.includes(cat)) _cfFixed+=amt; else _cfVar+=amt; } }
+  const _cfHasExp = !!_cfBd && (_cfFixed+_cfVar)>0;
+  document.getElementById('cf-fixed').textContent=_cfHasExp?S(_cfFixed):'—';
+  document.getElementById('cf-variable').textContent=_cfHasExp?S(_cfVar):'—';
   const runway=d.exp>0?Math.round(d.rev/d.exp*d.months*1.2):Infinity;
   document.getElementById('cf-runway').textContent=isFinite(runway)?Math.round(runway/d.months*10)/10+' months':'∞ months';
   // Income sources bars
@@ -3375,7 +3382,7 @@ function updateAI(d=getPeriodData()){
     `Expenses this month: ${S(d.exp)}. Largest cost: salaries at ${S(d.sal)} (${Math.round(d.sal/d.exp*100)}%).`,
     `Net profit: ${S(d.profit)} — ${currentMonthIdx>0?`${pct(d.profit,PROFIT[currentMonthIdx-1])>0?'up':'down'} ${Math.abs(pct(d.profit,PROFIT[currentMonthIdx-1]))}% vs last month`:'first month on record'}.`,
     _topClients.length ? `Top client this month: ${_topClients[0].label} at ${S(_topClients[0].total)} (${d.rev>0?Math.round(_topClients[0].total/d.rev*100):0}% of revenue).` : `Add invoices to track client revenue.`,
-    `Tax withheld on payroll: ${S(Math.round(d.exp*.16))}. Estimated quarterly tax liability: ${S(Math.round(d.profit*.25))}.`,
+    (()=>{ const _pay=(window.ownerPayroll?[window.ownerPayroll]:[]).concat(window.payrollEmployees||[]); const _wh=_pay.reduce((s,p)=>s+((parseFloat(p.gross)||0)*(parseFloat(p.taxRate!=null?p.taxRate:p.tax_rate)||0)/100),0); return _wh>0?`Payroll tax withheld this month: ${S(Math.round(_wh))}, computed from each employee's tax rate.`:`Add payroll with tax rates to see withholding.`; })(),
     `Inventory alert: 2 products below reorder threshold. Restock before end of month.`,
   ];
   document.getElementById('ai-insights-list').innerHTML=insights.map(t=>`<div class="ai-insight">${esc(t)}</div>`).join('');

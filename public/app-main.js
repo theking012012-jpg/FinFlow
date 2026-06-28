@@ -3391,19 +3391,32 @@ function updateAI(d=getPeriodData()){
 }
 function updateHealthScore(savingsRate=0,income=0,surplus=0){
   const d=getPeriodData();
-  const profitMargin=d.rev > 0 ? Math.round(d.profit/d.rev*100) : 0;
-  const cfScore=Math.min(100,Math.round(60+profitMargin*.8));
-  const prScore=Math.min(100,Math.round(55+profitMargin));
-  const arBalance=typeof userInvoices!=='undefined'?userInvoices.filter(i=>i.status?.toLowerCase()!=='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0):0;
-  const recScore=d.rev>0?Math.max(40,100-Math.round(arBalance/d.rev*100*5)):50;
-  const grScore=REV[0]>0?Math.min(100,Math.round(70+Math.max(0,REV[11]-REV[0])/REV[0]*50)):50;
-  const _scores=[cfScore,prScore,recScore,grScore].filter(s=>!isNaN(s));
-  const overall=_scores.length?Math.round(_scores.reduce((a,b)=>a+b,0)/_scores.length):0;
+  const _clamp=v=>Math.max(0,Math.min(100,Math.round(v)));
+  const _inv=((typeof userInvoices!=='undefined'?userInvoices:window.userInvoices)||[]);
+  // Each sub-score is computed ONLY from real data; when the data needed for a
+  // metric doesn't exist, the score is null and the panel shows "—" — never a
+  // fabricated baseline. Signed metrics (cash flow / profitability / growth) use
+  // 50 as the break-even midpoint of REAL values, not a default for empty data.
+  const throughput=(d.rev||0)+(d.exp||0);
+  const margin = d.rev>0 ? d.profit/d.rev*100 : 0;
+  // Cash flow — real net relative to total money moved this period.
+  const cfScore = throughput>0 ? _clamp(50 + (d.profit/throughput)*50) : null;
+  // Profitability — real margin (50 = break-even).
+  const prScore = d.rev>0 ? _clamp(50 + margin) : null;
+  // Receivables — real % of invoiced value actually collected.
+  const _invoiced=_inv.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const _paid=_inv.filter(i=>i.status?.toLowerCase()==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const recScore = _invoiced>0 ? _clamp(_paid/_invoiced*100) : null;
+  // Growth — real period-over-period revenue (needs a prior period to compare).
+  const grScore = REV[0]>0 ? _clamp(50 + (REV[11]-REV[0])/REV[0]*50) : null;
+  const _scores=[cfScore,prScore,recScore,grScore].filter(s=>s!=null);
+  const overall=_scores.length?Math.round(_scores.reduce((a,b)=>a+b,0)/_scores.length):null;
   const el=document.getElementById('health-score');
-  if(el)el.textContent=overall;
+  if(el)el.textContent=overall!=null?overall:'—';
   const lbl=document.getElementById('health-label');
-  if(lbl)lbl.textContent=`out of 100 — ${overall>=90?'Excellent':overall>=80?'Good':overall>=70?'Fair':'Needs attention'}`;
-  setBar('hs-cf',cfScore,'hs-cf-v');setBar('hs-pr',prScore,'hs-pr-v');setBar('hs-rec',recScore,'hs-rec-v');setBar('hs-gr',grScore,'hs-gr-v');
+  if(lbl)lbl.textContent=overall==null?'Not enough data yet':`out of 100 — ${overall>=90?'Excellent':overall>=80?'Good':overall>=70?'Fair':'Needs attention'}`;
+  const _setHs=(barId,score,valId)=>{ const bar=document.getElementById(barId),val=document.getElementById(valId); if(score==null){ if(bar){bar.style.width='0%';bar.style.background='var(--bd2)';} if(val)val.textContent='—'; } else setBar(barId,score,valId); };
+  _setHs('hs-cf',cfScore,'hs-cf-v');_setHs('hs-pr',prScore,'hs-pr-v');_setHs('hs-rec',recScore,'hs-rec-v');_setHs('hs-gr',grScore,'hs-gr-v');
 }
 function setBar(barId,score,valId){
   const bar=document.getElementById(barId);if(bar)bar.style.width=score+'%';

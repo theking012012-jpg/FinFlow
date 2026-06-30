@@ -1521,8 +1521,14 @@ function getPeriodData(){
 // screen for the same entity + period. No fabricated ratios anywhere.
 function computeExpenseBreakdown(period){
   period = period || (typeof currentPeriod !== 'undefined' ? currentPeriod : (window.currentPeriod || 'year'));
-  const months = period==='month' ? 1 : period==='quarter' ? 3 : 12;
   const now = new Date();
+  // Payroll accrues per ELAPSED month, never forward-projected — count months
+  // elapsed-to-date in the selected period from the real current date, so
+  // salary isn't ×12'd mid-year against actuals-to-date revenue.
+  let months;
+  if(period==='month') months = 1;
+  else if(period==='quarter'){ const _qs=Math.floor(now.getMonth()/3)*3; months = now.getMonth()-_qs+1; }
+  else months = now.getMonth()+1; // year: calendar months elapsed so far
   const inPeriod = (val)=>{
     if(period==='year') return true; // year = all recorded rows
     const d = val ? new Date(val) : null;
@@ -1561,6 +1567,39 @@ function computeExpenseBreakdown(period){
   };
 }
 window.computeExpenseBreakdown = computeExpenseBreakdown;
+
+// ════════════════════════════════════════════
+// CANONICAL REVENUE  (single source of truth)
+// ════════════════════════════════════════════
+// Mirrors the dashboard's revenue basis exactly: paid invoices + sales receipts
+// + payments received, period-scoped. The dashboard, AI insights and health
+// score all call THIS, so every screen agrees on revenue (and therefore profit).
+function computeRevenue(period){
+  period = period || (typeof currentPeriod !== 'undefined' ? currentPeriod : (window.currentPeriod || 'year'));
+  const now = new Date();
+  const _pd = v => { const d = v ? new Date(v) : null; return (d && !isNaN(d)) ? d : null; };
+  const invoices  = window._realInvoices    || [];
+  const receipts  = window._receipts        || [];
+  const paymentsIn= window._paymentsReceived|| [];
+  let rev = 0;
+  if(period==='month'){
+    const m=now.getMonth(), y=now.getFullYear();
+    invoices.forEach(i=>{ const d=_pd(i.date||i.due_date||i.created_at); if(d&&d.getMonth()===m&&d.getFullYear()===y&&(i.status||'').toLowerCase()==='paid') rev+=parseFloat(i.amount)||0; });
+    receipts.forEach(r=>{ const d=_pd(r.date); if(d&&d.getMonth()===m&&d.getFullYear()===y) rev+=parseFloat(r.amount)||0; });
+    paymentsIn.forEach(p=>{ const d=_pd(p.date); if(d&&d.getMonth()===m&&d.getFullYear()===y) rev+=parseFloat(p.amount)||0; });
+  } else if(period==='quarter'){
+    const q=Math.floor(now.getMonth()/3)*3, y=now.getFullYear();
+    invoices.forEach(i=>{ const d=_pd(i.due_date); if(d&&d.getMonth()>=q&&d.getMonth()<q+3&&d.getFullYear()===y&&(i.status||'').toLowerCase()==='paid') rev+=parseFloat(i.amount)||0; });
+    receipts.forEach(r=>{ const d=_pd(r.date); if(d&&d.getMonth()>=q&&d.getMonth()<q+3&&d.getFullYear()===y) rev+=parseFloat(r.amount)||0; });
+    paymentsIn.forEach(p=>{ const d=_pd(p.date); if(d&&d.getMonth()>=q&&d.getMonth()<q+3&&d.getFullYear()===y) rev+=parseFloat(p.amount)||0; });
+  } else { // year — all records
+    rev += invoices.filter(i=>(i.status||'').toLowerCase()==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+    rev += receipts.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
+    rev += paymentsIn.reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
+  }
+  return rev;
+}
+window.computeRevenue = computeRevenue;
 
 // ════════════════════════════════════════════
 // NAVIGATION
@@ -1715,13 +1754,20 @@ function refreshAllPeriodData(){
 // DASHBOARD
 // ════════════════════════════════════════════
 function updateDashboard(d=getPeriodData()){
-  document.getElementById('d-rev').textContent=S(d.rev);
-  document.getElementById('d-exp').textContent=S(d.exp);
-  document.getElementById('d-profit').textContent=S(d.profit);
+  // Expenses/Profit use the canonical total (real expenses + bill payments +
+  // elapsed-month payroll) so this matches the Expenses page, AI insights and
+  // health score even if the bundle's KPI engine hasn't run yet.
+  const _ddBd = (typeof computeExpenseBreakdown==='function') ? computeExpenseBreakdown() : null;
+  const _ddExp = _ddBd ? _ddBd.total : (d.exp||0);
+  const _ddRev = (typeof computeRevenue==='function') ? computeRevenue() : (d.rev||0);
+  const _ddProfit = _ddRev - _ddExp;
+  document.getElementById('d-rev').textContent=S(_ddRev);
+  document.getElementById('d-exp').textContent=S(_ddExp);
+  document.getElementById('d-profit').textContent=S(_ddProfit);
   document.getElementById('d-chart-title').textContent='Revenue vs Expenses — '+d.label;
-  const rc=chg(d.rev,d.prevRev);
-  const ec=chg(d.exp,d.prevExp,true);
-  const pc=chg(d.profit,d.prevProfit);
+  const rc=chg(_ddRev,d.prevRev);
+  const ec=chg(_ddExp,d.prevExp,true);
+  const pc=chg(_ddProfit,d.prevProfit);
   set('d-rev-chg',rc.txt,rc.cls);
   set('d-exp-chg',ec.txt,ec.cls);
   set('d-profit-chg',pc.txt,pc.cls);
@@ -1918,11 +1964,16 @@ function updateExpenses(d=getPeriodData()){
   if(_dedEl){ _dedEl.textContent = b.business>0 ? Math.round(b.deductible/b.business*100)+'% of expenses deductible' : ''; _dedEl.className='mc-change up'; }
   const ec=chg(b.total, d?d.prevExp:null, true);
   set('ex-total-chg',ec.txt,ec.cls);
-  // Largest category + category bars — from REAL rows only
-  const sorted = Object.entries(b.byCategory).sort((a,b2)=>b2[1]-a[1]);
+  // Largest cost + breakdown bars — operating categories PLUS Payroll and Bill
+  // payments as their own lines, so the bars reconcile with the headline total
+  // (no mystery gap between "Expenses $X" and the category breakdown).
+  const sorted = Object.entries(b.byCategory)
+    .concat(b.payroll>0?[['Payroll',b.payroll]]:[])
+    .concat(b.paymentsMade>0?[['Bill payments',b.paymentsMade]]:[])
+    .sort((a,b2)=>b2[1]-a[1]);
   const _exTopEl=document.getElementById('ex-top'); if(_exTopEl) _exTopEl.textContent = sorted[0]?.[0] || '—';
   const _exTopPctEl=document.getElementById('ex-top-pct');
-  if(_exTopPctEl) _exTopPctEl.textContent = (sorted[0] && b.business>0) ? S(sorted[0][1])+' · '+Math.round(sorted[0][1]/b.business*100)+'%' : '';
+  if(_exTopPctEl) _exTopPctEl.textContent = (sorted[0] && b.total>0) ? S(sorted[0][1])+' · '+Math.round(sorted[0][1]/b.total*100)+'%' : '';
   const _maxAmt=sorted[0]?.[1]||1;
   [['ex-sal'],['ex-rent'],['ex-sw2'],['ex-other']].forEach(([elId],i)=>{
     const el=document.getElementById(elId); if(!el) return;
@@ -3365,24 +3416,32 @@ function openRebalanceModal(){
 // ════════════════════════════════════════════
 function updateAI(d=getPeriodData()){
   document.getElementById('ai-period-label').textContent=d.label;
-  const margin=d.rev > 0 ? Math.round(d.profit/d.rev*100) : 0;
+  // Revenue, expenses, profit & margin ALL use the canonical helpers
+  // (computeRevenue + computeExpenseBreakdown) — the SAME basis the dashboard
+  // uses — so every screen agrees. d.rev/d.profit (operating-only) are not used
+  // for headline figures; REV[]/PROFIT[] remain only for relative trend deltas.
+  const _bd = (typeof computeExpenseBreakdown==='function') ? computeExpenseBreakdown() : null;
+  const _exp = _bd ? _bd.total : (d.exp||0);
+  const _rev = (typeof computeRevenue==='function') ? computeRevenue() : (d.rev||0);
+  const _profit = _rev - _exp;
+  const margin = _rev > 0 ? Math.round(_profit/_rev*100) : 0;
   const insights=currentPeriod==='year'?[
-    (()=>{ const _g=REV[0]>0?Math.round((REV[11]-REV[0])/REV[0]*100):null; return _g!==null?`Full year revenue: ${S(d.rev)} — ${_g>=0?"+":""}${_g}% growth vs ${MONTH_FULL[0]}.`:`Full year revenue: ${S(d.rev)} — First year on record, no prior comparison.`; })(),
+    (()=>{ const _g=REV[0]>0?Math.round((REV[11]-REV[0])/REV[0]*100):null; return _g!==null?`Full year revenue: ${S(_rev)} — ${_g>=0?"+":""}${_g}% growth vs ${MONTH_FULL[0]}.`:`Full year revenue: ${S(_rev)} — First year on record, no prior comparison.`; })(),
     (()=>{ let _mi=0,_xi=0; for(let i=0;i<12;i++){ if(REV[i]>REV[_xi])_xi=i; if(REV[i]<REV[_mi])_mi=i; } return REV.some(v=>v>0)?`Best month: ${MONTH_FULL[_xi]} at ${S(REV[_xi])}. Weakest: ${MONTH_FULL[_mi]} at ${S(REV[_mi])}.`:`Add paid invoices to see your best and weakest months.`; })(),
-    `Net profit margin: ${margin}%. Annual profit: ${S(d.profit)}. Business is ${d.profit<0?'running at a loss':margin>=20?'highly profitable':margin>=10?'profitable':'breaking even'}.`,
-    d.rev > 0 ? `Payroll-to-revenue: ${Math.round(d.sal/d.rev*100)}%.` : `Add paid invoices to calculate your payroll-to-revenue ratio.`,
+    `Net profit margin: ${margin}%. Annual profit: ${S(_profit)}. Business is ${_profit<0?'running at a loss':margin>=20?'highly profitable':margin>=10?'profitable':'breaking even'}.`,
+    _rev > 0 ? `Payroll-to-revenue: ${Math.round(d.sal/_rev*100)}%.` : `Add paid invoices to calculate your payroll-to-revenue ratio.`,
     (()=>{ const _low=(inventory||[]).filter(i=>i.low); return _low.length?`${_low.length} item${_low.length>1?'s':''} low on stock: ${_low.slice(0,3).map(i=>i.name).join(', ')}${_low.length>3?'…':''}.`:`No low-stock items.`; })(),
   ]:currentPeriod==='quarter'?[
-    `${MONTH_FULL[9]}–${MONTH_FULL[11]} revenue: ${S(d.rev)}. Net profit: ${S(d.profit)} (${margin}% margin).`,
-    (()=>{ const _cur=Math.round(d.profit/3), _prev=Math.round(sum(PROFIT,6,9)/3); return `Monthly average profit this quarter: ${S(_cur)} — ${_cur>=_prev?'up from':'down from'} ${S(_prev)} in the prior quarter.`; })(),
-    _topClients.length ? `Top client this quarter: ${_topClients[0].label} at ${S(_topClients[0].total)} (${d.rev>0?Math.round(_topClients[0].total/d.rev*100):0}% of revenue).` : `Add invoices to see client revenue breakdown.`,
-    `Payroll cost this quarter: ${S(d.sal)}${d.rev>0?` — ${Math.round(d.sal/d.rev*100)}% of revenue`:''}.`,
-    `Cash trend: ${d.profit >= 0 ? 'Net positive' : 'Net negative'} at ${S(d.profit)} this quarter.`,
+    `${MONTH_FULL[9]}–${MONTH_FULL[11]} revenue: ${S(_rev)}. Net profit: ${S(_profit)} (${margin}% margin).`,
+    (()=>{ const _em=_bd?Math.max(_bd.months,1):3; const _cur=Math.round(_profit/_em), _prev=Math.round(sum(PROFIT,6,9)/3); return `Monthly average profit this quarter: ${S(_cur)} — ${_cur>=_prev?'up from':'down from'} ${S(_prev)} in the prior quarter (operating).`; })(),
+    _topClients.length ? `Top client this quarter: ${_topClients[0].label} at ${S(_topClients[0].total)} (${_rev>0?Math.round(_topClients[0].total/_rev*100):0}% of revenue).` : `Add invoices to see client revenue breakdown.`,
+    `Payroll cost this quarter: ${S(d.sal)}${_rev>0?` — ${Math.round(d.sal/_rev*100)}% of revenue`:''}.`,
+    `Cash trend: ${_profit >= 0 ? 'Net positive' : 'Net negative'} at ${S(_profit)} this quarter.`,
   ]:[
-    `${MONTH_FULL[currentMonthIdx]} revenue: ${S(d.rev)} — ${margin}% profit margin.`,
-    (()=>{ const _b=(typeof computeExpenseBreakdown==='function')?computeExpenseBreakdown():null; const _cats=_b?Object.entries(_b.byCategory).filter(c=>c[1]>0).sort((a,b)=>b[1]-a[1]):[]; const _top=_cats[0]; return `Expenses this month: ${S(d.exp)}.${(_top&&_b.business>0)?` Largest cost: ${_top[0]} at ${S(_top[1])} (${Math.round(_top[1]/_b.business*100)}%).`:''}`; })(),
-    `Net profit: ${S(d.profit)} — ${currentMonthIdx>0?`${pct(d.profit,PROFIT[currentMonthIdx-1])>0?'up':'down'} ${Math.abs(pct(d.profit,PROFIT[currentMonthIdx-1]))}% vs last month`:'first month on record'}.`,
-    _topClients.length ? `Top client this month: ${_topClients[0].label} at ${S(_topClients[0].total)} (${d.rev>0?Math.round(_topClients[0].total/d.rev*100):0}% of revenue).` : `Add invoices to track client revenue.`,
+    `${MONTH_FULL[currentMonthIdx]} revenue: ${S(_rev)} — ${margin}% profit margin.`,
+    (()=>{ const _cats=_bd?Object.entries(_bd.byCategory).concat(_bd.payroll>0?[['Payroll',_bd.payroll]]:[]).concat(_bd.paymentsMade>0?[['Bill payments',_bd.paymentsMade]]:[]).filter(c=>c[1]>0).sort((a,b)=>b[1]-a[1]):[]; const _top=_cats[0]; return `Expenses this month: ${S(_exp)}.${(_top&&_exp>0)?` Largest cost: ${_top[0]} at ${S(_top[1])} (${Math.round(_top[1]/_exp*100)}%).`:''}`; })(),
+    `Net profit: ${S(_profit)} — ${currentMonthIdx>0?`${pct(d.profit,PROFIT[currentMonthIdx-1])>0?'up':'down'} ${Math.abs(pct(d.profit,PROFIT[currentMonthIdx-1]))}% vs last month (operating)`:'first month on record'}.`,
+    _topClients.length ? `Top client this month: ${_topClients[0].label} at ${S(_topClients[0].total)} (${_rev>0?Math.round(_topClients[0].total/_rev*100):0}% of revenue).` : `Add invoices to track client revenue.`,
     (()=>{ const _pay=(window.ownerPayroll?[window.ownerPayroll]:[]).concat(window.payrollEmployees||[]); const _wh=_pay.reduce((s,p)=>s+((parseFloat(p.gross)||0)*(parseFloat(p.taxRate!=null?p.taxRate:p.tax_rate)||0)/100),0); return _wh>0?`Payroll tax withheld this month: ${S(Math.round(_wh))}, computed from each employee's tax rate.`:`Add payroll with tax rates to see withholding.`; })(),
     (()=>{ const _low=(inventory||[]).filter(i=>i.low); return _low.length?`Inventory alert: ${_low.length} item${_low.length>1?'s':''} low on stock — ${_low.slice(0,3).map(i=>i.name).join(', ')}${_low.length>3?'…':''}.`:`No low-stock items — inventory healthy.`; })(),
   ];
@@ -3397,12 +3456,17 @@ function updateHealthScore(savingsRate=0,income=0,surplus=0){
   // metric doesn't exist, the score is null and the panel shows "—" — never a
   // fabricated baseline. Signed metrics (cash flow / profitability / growth) use
   // 50 as the break-even midpoint of REAL values, not a default for empty data.
-  const throughput=(d.rev||0)+(d.exp||0);
-  const margin = d.rev>0 ? d.profit/d.rev*100 : 0;
+  // Revenue/expenses/profit use the SAME canonical helpers as the dashboard & AI insights.
+  const _bd = (typeof computeExpenseBreakdown==='function') ? computeExpenseBreakdown() : null;
+  const _exp = _bd ? _bd.total : (d.exp||0);
+  const _rev = (typeof computeRevenue==='function') ? computeRevenue() : (d.rev||0);
+  const _profit = _rev - _exp;
+  const throughput=_rev+_exp;
+  const margin = _rev>0 ? _profit/_rev*100 : 0;
   // Cash flow — real net relative to total money moved this period.
-  const cfScore = throughput>0 ? _clamp(50 + (d.profit/throughput)*50) : null;
+  const cfScore = throughput>0 ? _clamp(50 + (_profit/throughput)*50) : null;
   // Profitability — real margin (50 = break-even).
-  const prScore = d.rev>0 ? _clamp(50 + margin) : null;
+  const prScore = _rev>0 ? _clamp(50 + margin) : null;
   // Receivables — real % of invoiced value actually collected.
   const _invoiced=_inv.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
   const _paid=_inv.filter(i=>i.status?.toLowerCase()==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
@@ -3410,7 +3474,9 @@ function updateHealthScore(savingsRate=0,income=0,surplus=0){
   // Growth — real period-over-period revenue (needs a prior period to compare).
   const grScore = REV[0]>0 ? _clamp(50 + (REV[11]-REV[0])/REV[0]*50) : null;
   const _scores=[cfScore,prScore,recScore,grScore].filter(s=>s!=null);
-  const overall=_scores.length?Math.round(_scores.reduce((a,b)=>a+b,0)/_scores.length):null;
+  // Composite needs at least 2 real sub-scores — one metric alone (e.g. only
+  // Receivables) must not be presented as a whole-business "EXCELLENT" score.
+  const overall=_scores.length>=2?Math.round(_scores.reduce((a,b)=>a+b,0)/_scores.length):null;
   const el=document.getElementById('health-score');
   if(el)el.textContent=overall!=null?overall:'—';
   const lbl=document.getElementById('health-label');

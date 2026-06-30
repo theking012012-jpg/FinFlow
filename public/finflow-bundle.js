@@ -5292,6 +5292,11 @@ function clearAIChat(){
     if (typeof window.computeExpenseBreakdown === 'function') {
       exp = window.computeExpenseBreakdown(period).total;
     }
+    // Canonical revenue (paid invoices + sales receipts + payments received) —
+    // the SAME helper AI insights & health score use, so every screen agrees.
+    if (typeof window.computeRevenue === 'function') {
+      rev = window.computeRevenue(period);
+    }
     const profit = rev - exp;
     const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
     const overdue = invoices.filter(i => i.status?.toLowerCase() === 'overdue');
@@ -5334,10 +5339,19 @@ function clearAIChat(){
   // ── Update expense breakdown bars ────────────────────────────────
   function updateExpenseBars(expenses) {
     const cats = {};
-    expenses.forEach(e => {
-      const cat = e.category || 'Other';
-      cats[cat] = (cats[cat] || 0) + (parseFloat(e.amount) || 0);
-    });
+    // Use the canonical breakdown so the dashboard bars match the headline
+    // expense total and show Payroll / Bill payments as their own lines.
+    const _bd = (typeof window.computeExpenseBreakdown === 'function') ? window.computeExpenseBreakdown() : null;
+    if (_bd) {
+      Object.entries(_bd.byCategory).forEach(([c, a]) => { cats[c] = (cats[c] || 0) + a; });
+      if (_bd.payroll > 0)      cats['Payroll']       = (cats['Payroll']       || 0) + _bd.payroll;
+      if (_bd.paymentsMade > 0) cats['Bill payments'] = (cats['Bill payments'] || 0) + _bd.paymentsMade;
+    } else {
+      (expenses || []).forEach(e => {
+        const cat = e.category || 'Other';
+        cats[cat] = (cats[cat] || 0) + (parseFloat(e.amount) || 0);
+      });
+    }
 
     const total = Object.values(cats).reduce((s, v) => s + v, 0) || 1;
     const sorted = Object.entries(cats).sort((a, b) => b[1] - a[1]);

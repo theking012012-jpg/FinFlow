@@ -164,7 +164,7 @@
       var ob=document.getElementById('ob-overlay'); if(ob) ob.remove();
       var ls=document.getElementById('login-screen'); if(ls) ls.style.display='none';
       if(user&&user.name){var ne=document.querySelector('.user-name');if(ne)ne.textContent=user.name;}
-      // Sidebar avatar initials from the real name (not the "JD" placeholder).
+      // Sidebar avatar initials computed from the real name (no hardcoded default).
       if(user){
         var _np=(user.name||'').trim().split(/\s+/).filter(Boolean);
         var _ini=_np.length?(_np[0][0]+(_np.length>1?_np[_np.length-1][0]:'')).toUpperCase():'';
@@ -5192,9 +5192,9 @@ function clearAIChat(){
           // none was saved it stayed on the placeholder — this is the fix).
           const _sem = document.getElementById('s-email');
           if (_sem && !_sem.value && _cu.email) _sem.value = _cu.email;
-          // Initials: compute from the real name instead of the "JD" default.
+          // Initials: compute from the real name when the field is empty.
           const _sini = document.getElementById('s-user-initials');
-          if (_sini && (!_sini.value || _sini.value === 'JD')) {
+          if (_sini && !_sini.value) {
             const _p = ((_sn && _sn.value) || _cu.name || '').trim().split(/\s+/).filter(Boolean);
             _sini.value = _p.length ? (_p[0][0] + (_p.length > 1 ? _p[_p.length - 1][0] : '')).toUpperCase() : '';
           }

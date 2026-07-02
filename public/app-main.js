@@ -434,6 +434,15 @@ function openCreateBusinessPage(fromPage){
   if(profileSec) profileSec.style.display=isFirst?'':'none';
   const cancelBtn=document.getElementById('cb-cancel-btn');
   if(cancelBtn) cancelBtn.style.display=isFirst?'none':'';
+  // Pre-fill the profile section from the logged-in user (first business only),
+  // mirroring the Settings profile screen. Only fill empty fields; phone stays
+  // blank; initials are computed from the name via the existing nbAutoInitials.
+  if(isFirst){
+    const _cu=window.CURRENT_USER||{};
+    const _nn=document.getElementById('nb-user-name'); if(_nn&&!_nn.value&&_cu.name) _nn.value=_cu.name;
+    const _ne=document.getElementById('nb-email');     if(_ne&&!_ne.value&&_cu.email) _ne.value=_cu.email;
+    if(typeof nbAutoInitials==='function') nbAutoInitials();
+  }
   showPage('create-business', null);
 }
 
@@ -465,9 +474,14 @@ async function submitCreateBusiness(){
       website:       (document.getElementById('nb-website')||{}).value||'',
     };
     if(isFirst){
-      profile.name  =(document.getElementById('nb-user-name')||{}).value||'';
-      profile.email =(document.getElementById('nb-email')||{}).value||'';
-      profile.phone =(document.getElementById('nb-phone')||{}).value||'';
+      const _un=(document.getElementById('nb-user-name')||{}).value.trim();
+      const _ue=(document.getElementById('nb-email')||{}).value.trim();
+      const _up=(document.getElementById('nb-phone')||{}).value.trim();
+      // Only include fields the user actually provided — a blank field must not
+      // overwrite an existing profile name/email/phone with an empty string.
+      if(_un) profile.name  = _un;
+      if(_ue) profile.email = _ue;
+      if(_up) profile.phone = _up;
     }
     await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(profile)});
     if(typeof loadEntitiesFromDB==='function') await loadEntitiesFromDB();

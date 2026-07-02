@@ -3045,6 +3045,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 <!-- ══ ADD ENTITY MODAL ══ -->
 
 <!-- ══ LOGIN SCREEN ══ -->
+<style>.pw-eye{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;background:none;border:none;cursor:pointer;color:var(--t3);transition:color .13s}.pw-eye:hover{color:var(--acc)}.pw-eye svg{width:17px;height:17px}</style>
 <div id="login-screen" style="position:fixed;inset:0;background:var(--bg0);z-index:9000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1.5rem">
   <div style="text-align:center;margin-bottom:.5rem">
     <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 24px var(--acc-glow);margin-bottom:1rem">
@@ -3063,8 +3064,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     <div style="margin-bottom:.5rem">
       <div style="font-size:11.5px;color:var(--t2);margin-bottom:5px;font-weight:500">Password</div>
       <div style="position:relative">
-        <input class="finput" type="password" id="login-pw" placeholder="Your password" style="width:100%;padding-right:54px" onkeydown="if(event.key==='Enter')doLogin()">
-        <span onclick="var i=document.getElementById('login-pw');var s=i.type==='password';i.type=s?'text':'password';this.textContent=s?'Hide':'Show';" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:500;color:var(--acc);cursor:pointer;user-select:none">Show</span>
+        <input class="finput" type="password" id="login-pw" placeholder="Your password" style="width:100%;padding-right:40px" onkeydown="if(event.key==='Enter')doLogin()">
+        <button type="button" class="pw-eye" aria-label="Show password" aria-pressed="false" onclick="ffPwToggle(this,'login-pw')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
       </div>
     </div>
     <div id="login-error" style="font-size:11.5px;color:var(--red,#e05454);min-height:18px;margin-bottom:.5rem"></div>
@@ -3090,8 +3091,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     <div style="margin-bottom:.25rem">
       <div style="font-size:11.5px;color:var(--t2);margin-bottom:5px;font-weight:500">Password</div>
       <div style="position:relative">
-        <input class="finput" type="password" id="reg-pw" placeholder="At least 8 characters" style="width:100%;padding-right:54px" onkeydown="if(event.key==='Enter')doRegister()">
-        <span onclick="var i=document.getElementById('reg-pw');var s=i.type==='password';i.type=s?'text':'password';this.textContent=s?'Hide':'Show';" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:500;color:var(--acc);cursor:pointer;user-select:none">Show</span>
+        <input class="finput" type="password" id="reg-pw" placeholder="At least 8 characters" style="width:100%;padding-right:40px" onkeydown="if(event.key==='Enter')doRegister()">
+        <button type="button" class="pw-eye" aria-label="Show password" aria-pressed="false" onclick="ffPwToggle(this,'reg-pw')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
       </div>
     </div>
     <div id="register-error" style="font-size:11.5px;color:var(--red,#e05454);min-height:18px;margin-bottom:.5rem"></div>

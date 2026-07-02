@@ -164,6 +164,12 @@
       var ob=document.getElementById('ob-overlay'); if(ob) ob.remove();
       var ls=document.getElementById('login-screen'); if(ls) ls.style.display='none';
       if(user&&user.name){var ne=document.querySelector('.user-name');if(ne)ne.textContent=user.name;}
+      // Sidebar avatar initials from the real name (not the "JD" placeholder).
+      if(user){
+        var _np=(user.name||'').trim().split(/\s+/).filter(Boolean);
+        var _ini=_np.length?(_np[0][0]+(_np.length>1?_np[_np.length-1][0]:'')).toUpperCase():'';
+        var _av=document.getElementById('sb-user-avatar'); if(_av) _av.textContent=_ini||'';
+      }
       try{ await ffLoadData(); }catch(e){ console.warn('[FinFlow] data load failed:',e.message); }
       window._ffAuthed=true; window.dispatchEvent(new Event('ff:authed'));
     } catch(err) {
@@ -5176,10 +5182,23 @@ function clearAIChat(){
           else renderProjectsList();
         }
         if (id === 'settings') {
+          const _cu = window.CURRENT_USER || {};
           const _se = document.getElementById('settings-user-email');
-          if (_se && window.CURRENT_USER?.email) _se.textContent = window.CURRENT_USER.email;
+          if (_se && _cu.email) _se.textContent = _cu.email;
           const _sn = document.getElementById('s-user-name');
-          if (_sn && !_sn.value && window.CURRENT_USER?.name) _sn.value = window.CURRENT_USER.name;
+          if (_sn && !_sn.value && _cu.name) _sn.value = _cu.name;
+          // Email input: default to the account email when no business email
+          // is saved (loadSettingsFromDB fills s-email from saved settings; if
+          // none was saved it stayed on the placeholder — this is the fix).
+          const _sem = document.getElementById('s-email');
+          if (_sem && !_sem.value && _cu.email) _sem.value = _cu.email;
+          // Initials: compute from the real name instead of the "JD" default.
+          const _sini = document.getElementById('s-user-initials');
+          if (_sini && (!_sini.value || _sini.value === 'JD')) {
+            const _p = ((_sn && _sn.value) || _cu.name || '').trim().split(/\s+/).filter(Boolean);
+            _sini.value = _p.length ? (_p[0][0] + (_p.length > 1 ? _p[_p.length - 1][0] : '')).toUpperCase() : '';
+          }
+          if (typeof window.updateUserAvatar === 'function') window.updateUserAvatar();
         }
       };
     }

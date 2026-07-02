@@ -546,6 +546,40 @@ function userFilter(userId, entityId) {
   return r => r.user_id === userId;
 }
 
+// ── LAYER 3: SERVER-SIDE DEDUPE (idempotency backstop) ────────────────────────
+// Final guard against duplicate CREATEs from a near-simultaneous double POST
+// (fast double-click, retry, flaky network). Returns an existing row that matches
+// the given field predicate for this user (+ entity) created within `windowSec`
+// seconds, so the duplicate POST returns the ORIGINAL row instead of inserting a
+// second record. The window is deliberately short (5s) so a user can still
+// legitimately create an identical record again later (e.g. logging the same
+// expense twice minutes apart). `textMatch`/`numMatch` are keyed by JSONB field
+// name; keys are code-controlled constants (never user input); values are bound
+// parameters. entity_id uses IS NOT DISTINCT FROM so NULL matches NULL.
+async function findRecentDuplicate(table, userId, entityId, { textMatch = {}, numMatch = {} }, windowSec = 5) {
+  const w = parseInt(windowSec) || 5;
+  const conds = ['user_id = $1', 'entity_id IS NOT DISTINCT FROM $2', `created_at > NOW() - INTERVAL '${w} seconds'`];
+  const params = [userId, entityId];
+  let i = 3;
+  for (const [k, v] of Object.entries(textMatch)) {
+    conds.push(`lower(trim(data->>'${k}')) = lower(trim($${i}))`);
+    params.push(v == null ? '' : String(v));
+    i++;
+  }
+  for (const [k, v] of Object.entries(numMatch)) {
+    // Cast the stored JSON value to numeric; a missing key yields NULL which
+    // never equals the bound value, so the row simply won't match (no throw).
+    conds.push(`(data->>'${k}')::numeric = $${i}::numeric`);
+    params.push(Number(v) || 0);
+    i++;
+  }
+  const { rows } = await pool.query(
+    `SELECT * FROM ${table} WHERE ${conds.join(' AND ')} ORDER BY id DESC LIMIT 1`,
+    params
+  );
+  return rows[0] ? rowToObj(rows[0]) : null;
+}
+
 // ── AUDIT LOG HELPER ──────────────────────────────────────────────────────────
 async function logAudit(req, action, tableName, recordId, oldData, newData) {
   try {
@@ -583,6 +617,9 @@ app.get('/api/entities', requireAuth, wrap(async (req, res) => {
 app.post('/api/entities', requireAuth, wrap(async (req, res) => {
   const { name, currency = 'USD', color = '#c9a84c' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Name is required.' });
+  // Layer 3: dedupe near-simultaneous duplicate creates (user_id + name).
+  const _dup = await findRecentDuplicate('entities', req.session.userId, null, { textMatch: { name: name.trim().slice(0,100) } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('entities', { user_id: req.session.userId, name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0 });
   res.status(201).json(row);
 }));
@@ -623,6 +660,9 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   if (!client || amount == null) return res.status(400).json({ error: 'client and amount required.' });
   const eid = entity_id || req.entityId || null;
   if (await isLocked(req.session.userId, due_date)) return res.status(403).json({ error: 'Period is locked.' });
+  // Layer 3: dedupe near-simultaneous duplicate creates (user_id + entity_id + client + amount).
+  const _dup = await findRecentDuplicate('invoices', req.session.userId, eid, { textMatch: { client: client.trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('invoices', { user_id: req.session.userId, entity_id: eid, client: client.trim().slice(0,200), amount: parseFloat(amount)||0, due_date: due_date||null, status, notes: notes.slice(0,500) });
   logAudit(req, 'CREATE', 'invoices', row.id, null, row);
   res.status(201).json(row);
@@ -663,6 +703,9 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   const eid = entity_id || req.entityId || null;
   const edate = expense_date || new Date().toISOString().slice(0,10);
   if (await isLocked(req.session.userId, edate)) return res.status(403).json({ error: 'Period is locked.' });
+  // Layer 3: dedupe near-simultaneous duplicate creates (user_id + entity_id + description + amount).
+  const _dup = await findRecentDuplicate('expenses', req.session.userId, eid, { textMatch: { description: description.trim().slice(0,300) }, numMatch: { amount: parseFloat(amount)||0 } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('expenses', { user_id: req.session.userId, entity_id: eid, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: edate });
   logAudit(req, 'CREATE', 'expenses', row.id, null, row);
   res.status(201).json(row);
@@ -818,7 +861,11 @@ app.get('/api/payroll', requireAuth, wrap(async (req, res) => {
 app.post('/api/payroll', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.fname) return res.status(400).json({ error: 'fname required.' });
-  const { row } = await db.insert('payroll', { user_id: req.session.userId, entity_id: b.entity_id||null, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, tax_rate: parseFloat(b.tax_rate)||0, av_class: b.av_class||'av-blue', is_owner: b.is_owner ? true : false });
+  const _peid = b.entity_id || null;
+  // Layer 3: dedupe near-simultaneous duplicate creates (user_id + entity_id + fname + lname + gross).
+  const _dup = await findRecentDuplicate('payroll', req.session.userId, _peid, { textMatch: { fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100) }, numMatch: { gross: parseFloat(b.gross)||0 } });
+  if (_dup) return res.status(200).json(_dup);
+  const { row } = await db.insert('payroll', { user_id: req.session.userId, entity_id: _peid, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, tax_rate: parseFloat(b.tax_rate)||0, av_class: b.av_class||'av-blue', is_owner: b.is_owner ? true : false });
   res.status(201).json(row);
 }));
 app.put('/api/payroll/:id', requireAuth, wrap(async (req, res) => {

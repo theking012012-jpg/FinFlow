@@ -453,9 +453,17 @@ function nbAutoInitials(){
   const el=document.getElementById('nb-user-initials'); if(el&&!el._manual) el.value=initials;
 }
 
+let _cbSubmitting=false;
 async function submitCreateBusiness(){
   const name=(document.getElementById('nb-name')||{}).value.trim();
   if(!name){ notify('Please enter a business name'); return; }
+  // Guard against double-submission: ignore re-entry while a create is in
+  // flight and disable the button so a fast double-click can't POST twice.
+  if(_cbSubmitting) return;
+  _cbSubmitting=true;
+  const _cbBtn=document.getElementById('cb-submit-btn');
+  const _cbBtnHtml=_cbBtn?_cbBtn.innerHTML:'';
+  if(_cbBtn){ _cbBtn.disabled=true; _cbBtn.innerHTML='Creating…'; }
   const currency=(document.getElementById('nb-currency')||{}).value||'USD';
   const industry=(document.getElementById('nb-industry')||{}).value||'Other';
   const isFirst=typeof ENTITIES==='undefined'||ENTITIES.length===0;
@@ -488,6 +496,12 @@ async function submitCreateBusiness(){
     notify('Business "'+esc(name)+'" created ✦');
     showPage('dashboard', null);
   } catch(e){ notify('Error: '+(e.message||'Failed to create business')); }
+  finally {
+    // Always clear the guard + restore the button (success hides the page,
+    // failure leaves it so the user can retry).
+    _cbSubmitting=false;
+    if(_cbBtn){ _cbBtn.disabled=false; _cbBtn.innerHTML=_cbBtnHtml; }
+  }
 }
 
 function closeAllDropdowns(){

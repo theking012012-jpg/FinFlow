@@ -1,5 +1,91 @@
 /* ── finflow-api.js ── */
 'use strict';
+
+/* ══════════════════════════════════════════════════════════════════════
+ * TRIAL-EXPIRED GUARD — single global interception point
+ * ----------------------------------------------------------------------
+ * checkPlan (server.js) returns 402 { code:'TRIAL_EXPIRED' } on every
+ * data route once a trial lapses. Rather than branch inside each of the
+ * ~9 private api() helpers (plus apiFetch + raw fetch() call sites), we
+ * wrap window.fetch ONCE here so EVERY API call is covered. On a 402 with
+ * that code we surface a blocking upgrade modal; the original Response is
+ * returned unchanged so existing !res.ok throwers still reject and callers
+ * stop. Frontend-only — no server logic is touched.
+ * ════════════════════════════════════════════════════════════════════ */
+(function () {
+  if (window.__ffTrialGuardInstalled) return;      // install once
+  window.__ffTrialGuardInstalled = true;
+
+  var _origFetch = window.fetch.bind(window);
+  window.fetch = async function () {
+    var res = await _origFetch.apply(this, arguments);
+    // Only inspect the rare 402; never clone/parse the body otherwise.
+    if (res && res.status === 402) {
+      try {
+        var body = await res.clone().json();
+        if (body && body.code === 'TRIAL_EXPIRED') {
+          if (typeof window.showTrialExpiredModal === 'function') window.showTrialExpiredModal();
+        }
+      } catch (e) { /* non-JSON 402 — leave it to the caller */ }
+    }
+    return res;
+  };
+
+  // POST /api/stripe/checkout — launch-ready. Redirects when Stripe is
+  // configured; shows a graceful inline message if it returns 400 (or the
+  // key isn't set yet) so the button works the instant Stripe is enabled.
+  window._ffTrialUpgrade = async function () {
+    var btn = document.getElementById('trial-upgrade-btn');
+    var msg = document.getElementById('trial-upgrade-msg');
+    if (btn) { btn.disabled = true; btn.textContent = 'Redirecting…'; }
+    if (msg) { msg.style.display = 'none'; }
+    try {
+      var r = await _origFetch('/api/stripe/checkout', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: 'pro' }),
+      });
+      var data = await r.json().catch(function () { return {}; });
+      if (r.ok && data.url) { window.location.href = data.url; return; }
+      // Not configured / error → graceful, non-broken fallback.
+      if (msg) {
+        msg.style.display = 'block';
+        msg.textContent = (data.error && /not configured/i.test(data.error))
+          ? 'Billing is being set up — please contact support to upgrade.'
+          : (data.error || 'Could not start checkout — please contact support.');
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Upgrade now'; }
+    } catch (e) {
+      if (msg) { msg.style.display = 'block'; msg.textContent = 'Billing is being set up — please contact support to upgrade.'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Upgrade now'; }
+    }
+  };
+
+  // Blocking, non-dismissable modal (no close X, no backdrop-dismiss) —
+  // an expired trial must not fall back into a broken app. Idempotent:
+  // returns early if it's already on screen. Styling mirrors the app's
+  // existing dynamic modal (showUpgradeModal) — same tokens/classes.
+  window.showTrialExpiredModal = function () {
+    if (document.getElementById('trial-expired-overlay')) return;
+    var overlay = document.createElement('div');
+    overlay.id = 'trial-expired-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);z-index:100000;display:flex;align-items:center;justify-content:center;padding:1rem';
+    overlay.innerHTML =
+      '<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);padding:2rem;max-width:400px;width:100%;box-shadow:0 32px 80px rgba(0,0,0,.5)">' +
+        '<div style="text-align:center;margin-bottom:1.5rem">' +
+          '<div style="width:52px;height:52px;background:var(--acc-bg);border:1px solid var(--acc);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:22px">&#10022;</div>' +
+          '<div style="font-size:11px;color:var(--acc);font-weight:600;text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px">Free trial</div>' +
+          '<div style="font-size:20px;font-family:var(--font-display);font-style:italic;color:var(--t1);font-weight:600;line-height:1.2">Your free trial has ended</div>' +
+          '<div style="font-size:12.5px;color:var(--t3);margin-top:8px;line-height:1.5">Upgrade to keep using FinFlow and access your data.</div>' +
+        '</div>' +
+        '<div id="trial-upgrade-msg" style="display:none;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius-lg);padding:.7rem;margin-bottom:1rem;font-size:12px;color:var(--t2);text-align:center"></div>' +
+        '<button id="trial-upgrade-btn" class="btn btn-primary" style="width:100%;justify-content:center;font-size:13px;padding:10px" onclick="window._ffTrialUpgrade()">Upgrade now</button>' +
+        '<button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:8px;font-size:12px" onclick="(window.ffLogout?window.ffLogout():fetch(\'/api/auth/logout\',{method:\'POST\',credentials:\'include\'}).then(function(){location.reload();}))">Log out</button>' +
+      '</div>';
+    document.body.appendChild(overlay);
+  };
+})();
+
 (function () {
 
   async function api(method, path, body) {

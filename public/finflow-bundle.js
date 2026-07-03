@@ -17,9 +17,10 @@
   window.__ffTrialGuardInstalled = true;
 
   var _origFetch = window.fetch.bind(window);
-  window.fetch = async function () {
-    var res = await _origFetch.apply(this, arguments);
-    // Only inspect the rare 402; never clone/parse the body otherwise.
+
+  // 402 TRIAL_EXPIRED interception (unchanged behaviour).
+  async function _ffHandle(promise) {
+    var res = await promise;
     if (res && res.status === 402) {
       try {
         var body = await res.clone().json();
@@ -29,6 +30,47 @@
       } catch (e) { /* non-JSON 402 — leave it to the caller */ }
     }
     return res;
+  }
+
+  // ── GLOBAL IN-FLIGHT DEDUPE (double-submit guarantee) ────────────────────
+  // A single choke point covering EVERY mutating request from EVERY handler
+  // (all api() helpers, apiFetch, raw fetch). If an identical request
+  // (method + URL + body) is already in flight, the duplicate returns the
+  // first one's response instead of firing a second POST/PUT — so a fast
+  // double-click / retry can never create two records. Each caller gets its
+  // OWN clone() of the response, so bodies stay independently readable.
+  // Only string/no-body mutating requests are keyed; anything else passes
+  // straight through. Server-side 5s dedupe (findRecentDuplicate) backstops
+  // the non-simultaneous case.
+  var _ffInflight = Object.create(null);
+  var _FF_MUT = { POST: 1, PUT: 1, PATCH: 1, DELETE: 1 };
+  window.fetch = function (input, init) {
+    var method = String((init && init.method) || (input && typeof input === 'object' && input.method) || 'GET').toUpperCase();
+    var body = init && init.body;
+    if (_FF_MUT[method] && (body == null || typeof body === 'string')) {
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      var key = method + ' ' + url + ' ' + (body == null ? '' : body);
+      if (_ffInflight[key]) return _ffInflight[key].then(function (r) { return r.clone(); });
+      var p = _ffHandle(_origFetch(input, init));
+      _ffInflight[key] = p;
+      var clear = function () { delete _ffInflight[key]; };
+      p.then(clear, clear);
+      return p.then(function (r) { return r.clone(); });
+    }
+    return _ffHandle(_origFetch(input, init));
+  };
+
+  // guardSubmit(btnId, pendingLabel, fn) — optional UX helper: disables the
+  // button + shows a pending label while `fn` runs, re-enabling in finally.
+  // Correctness (no double-fire) is already guaranteed by the in-flight
+  // dedupe above; this is purely visible feedback. Idempotent per button.
+  window.guardSubmit = async function (btnId, pendingLabel, fn) {
+    var btn = btnId ? document.getElementById(btnId) : null;
+    if (btn && btn._ffBusy) return;
+    var prev;
+    if (btn) { btn._ffBusy = true; btn.disabled = true; if (pendingLabel != null) { prev = btn.innerHTML; btn.innerHTML = pendingLabel; } }
+    try { return await fn(); }
+    finally { if (btn) { btn._ffBusy = false; btn.disabled = false; if (prev !== undefined) btn.innerHTML = prev; } }
   };
 
   // POST /api/stripe/checkout — launch-ready. Redirects when Stripe is
@@ -5793,6 +5835,7 @@ function clearAIChat(){
       if (typeof window.renderJournals === 'function') window.renderJournals();
       if (typeof window.renderCOA      === 'function') window.renderCOA();
       if (typeof window.closeModal     === 'function') window.closeModal('journal-entry-modal');
+      if (window.finflow?.refresh) window.finflow.refresh(['journal','chart-of-accounts','reports','dashboard']);
       tip('Journal entry ' + status.toLowerCase());
     } catch (e) {
       tip('Could not save journal entry — ' + e.message, true);

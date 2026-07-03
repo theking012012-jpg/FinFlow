@@ -742,6 +742,8 @@ app.get('/api/customers', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
+  const _dup = await findRecentDuplicate('customers', req.session.userId, b.entity_id||null, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: (b.email||'').slice(0,200) } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('customers', { user_id: req.session.userId, entity_id: b.entity_id||null, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: (b.email||'').slice(0,200), phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
   res.status(201).json(row);
 }));
@@ -770,6 +772,8 @@ app.post('/api/inventory', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   const u = Math.max(0, parseInt(b.qty || b.units)||0);
   const mx = parseInt(b.max_units)||200;
+  const _dup = await findRecentDuplicate('inventory', req.session.userId, b.entity_id||null, { textMatch: { name: (b.name||'').trim().slice(0,200) }, numMatch: { cost: parseFloat(b.cost)||0 } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('inventory', { user_id: req.session.userId, entity_id: b.entity_id||null, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: u, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: u < mx * 0.1 ? 1 : 0 });
   res.status(201).json(row);
 }));
@@ -808,6 +812,8 @@ app.get('/api/items', requireAuth, wrap(async (req, res) => {
 app.post('/api/items', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.name) return res.status(400).json({ error: 'name required.' });
+  const _dup = await findRecentDuplicate('items', req.session.userId, b.entity_id||null, { textMatch: { name: b.name.trim().slice(0,200) }, numMatch: { price: parseFloat(b.price)||0 } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('items', {
     user_id:   req.session.userId,
     entity_id: b.entity_id || null,
@@ -910,6 +916,8 @@ app.get('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
 app.post('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
   const { description, category = 'Other', amount, tx_type = 'expense', tx_date } = req.body || {};
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
+  const _dup = await findRecentDuplicate('personal_transactions', req.session.userId, null, { textMatch: { description: description.trim().slice(0,300) }, numMatch: { amount: parseFloat(amount)||0 } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('personal_transactions', { user_id: req.session.userId, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, tx_type, tx_date: tx_date || new Date().toISOString().slice(0,10) });
   res.status(201).json(row);
 }));
@@ -945,6 +953,8 @@ app.get('/api/goals', requireAuth, wrap(async (req, res) => {
 app.post('/api/goals', requireAuth, wrap(async (req, res) => {
   const { name, current_val = 0, target_val, monthly_contrib = 0, color = 'var(--acc)' } = req.body || {};
   if (!name || target_val == null) return res.status(400).json({ error: 'name and target_val required.' });
+  const _dup = await findRecentDuplicate('goals', req.session.userId, null, { textMatch: { name: name.trim().slice(0,200) }, numMatch: { target_val: parseFloat(target_val)||0 } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('goals', { user_id: req.session.userId, name: name.trim().slice(0,200), current_val: parseFloat(current_val)||0, target_val: parseFloat(target_val)||0, monthly_contrib: parseFloat(monthly_contrib)||0, color });
   res.status(201).json(row);
 }));
@@ -982,6 +992,8 @@ app.post('/api/projects', requireAuth, wrap(async (req, res) => {
   const { name, client = '', budget = 0, status = 'In Progress' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required.' });
   const validStatuses = ['In Progress', 'Completed', 'On Hold'];
+  const _dup = await findRecentDuplicate('projects', req.session.userId, null, { textMatch: { name: name.trim().slice(0,200), client: client.trim().slice(0,200) } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('projects', {
     user_id:  req.session.userId,
     name:     name.trim().slice(0, 200),
@@ -1029,6 +1041,8 @@ app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
 app.post('/api/holdings', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.ticker || b.shares == null) return res.status(400).json({ error: 'ticker and shares required.' });
+  const _dup = await findRecentDuplicate('holdings', req.session.userId, req.entityId || null, { textMatch: { ticker: b.ticker.trim().toUpperCase().slice(0,20) }, numMatch: { shares: parseFloat(b.shares)||0 } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('holdings', { user_id: req.session.userId, entity_id: req.entityId || null, ticker: b.ticker.trim().toUpperCase().slice(0,20), name: (b.name||b.ticker).trim().slice(0,200), asset_type: b.asset_type||'Stock', shares: parseFloat(b.shares)||0, cost_per: parseFloat(b.cost_per)||0, price: parseFloat(b.price)||parseFloat(b.cost_per)||0, dividend: parseFloat(b.dividend)||0, color: b.color||'#c9a84c' });
   res.status(201).json(row);
 }));
@@ -1234,6 +1248,8 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   if (Math.abs(totalDebit - totalCredit) > 0.01) return res.status(400).json({ error: 'Journal does not balance — debits must equal credits.' });
   if (await isLocked(req.session.userId, date)) return res.status(403).json({ error: 'Period is locked.' });
   const num = 'JE-' + String(Date.now()).slice(-4);
+  const _dup = await findRecentDuplicate('journals', req.session.userId, req.entityId || null, { textMatch: { description: description.trim().slice(0,500) }, numMatch: { debit: totalDebit } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('journals', {
     user_id: req.session.userId, entity_id: req.entityId || null,
     date: date || new Date().toISOString().slice(0,10),
@@ -1270,6 +1286,8 @@ app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
   if (!code || !name || !category) return res.status(400).json({ error: 'code, name and category required.' });
   const validCats = ['Assets','Liabilities','Equity','Revenue','Expenses'];
   if (!validCats.includes(category)) return res.status(400).json({ error: 'Invalid category.' });
+  const _dup = await findRecentDuplicate('chart_of_accounts', req.session.userId, req.entityId || null, { textMatch: { code: code.trim().slice(0,20) } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('chart_of_accounts', {
     user_id: req.session.userId, entity_id: req.entityId || null,
     code: code.trim().slice(0,20), name: name.trim().slice(0,200),
@@ -1427,6 +1445,8 @@ app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req.session.userId);
   const num = 'QT-' + String(Date.now()).slice(-4);
+  const _dup = await findRecentDuplicate('quotes', req.session.userId, entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(amount) } });
+  if (_dup) return res.json(_dup);
   const { row } = await db.insert('quotes', { user_id: req.session.userId, entity_id: entity?.id, client, num, amount: Number(amount), expiry_date, status, notes });
   res.json(row);
 }));
@@ -1460,6 +1480,8 @@ app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const { name, contact, category, owing = 0, ytd_paid = 0, status = 'active' } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
   const entity = await activeEntity(req.session.userId);
+  const _dup = await findRecentDuplicate('vendors', req.session.userId, entity?.id || null, { textMatch: { name: String(name) } });
+  if (_dup) return res.json(_dup);
   const { row } = await db.insert('vendors', { user_id: req.session.userId, entity_id: entity?.id, name, contact, category, owing: Number(owing), ytd_paid: Number(ytd_paid), status });
   res.json(row);
 }));
@@ -1495,6 +1517,8 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
   const entity = await activeEntity(req.session.userId);
   const num = 'BILL-' + String(Date.now()).slice(-4);
+  const _dup = await findRecentDuplicate('bills', req.session.userId, entity?.id || null, { textMatch: { vendor: String(vendor) }, numMatch: { amount: Number(amount) } });
+  if (_dup) return res.json(_dup);
   const { row } = await db.insert('bills', { user_id: req.session.userId, entity_id: entity?.id, vendor, num, amount: Number(amount), due_date, status, notes });
   res.json(row);
 }));
@@ -1533,6 +1557,8 @@ app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, frequency = 'Monthly', next_run, status = 'active' } = req.body;
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
   const entity = await activeEntity(req.session.userId);
+  const _dup = await findRecentDuplicate('recurring_bills', req.session.userId, entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
+  if (_dup) return res.json(_dup);
   const { row } = await db.insert('recurring_bills', { user_id: req.session.userId, entity_id: entity?.id, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status });
   res.json(row);
 }));
@@ -1559,6 +1585,8 @@ app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, frequency = 'Monthly', next_run, status = 'active' } = req.body;
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req.session.userId);
+  const _dup = await findRecentDuplicate('recurring_invoices', req.session.userId, entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
+  if (_dup) return res.json(_dup);
   const { row } = await db.insert('recurring_invoices', { user_id: req.session.userId, entity_id: entity?.id, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status });
   res.json(row);
 }));
@@ -1584,6 +1612,8 @@ app.get('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
 app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   const { customer, num, amount, date, method = 'Card' } = req.body || {};
   if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
+  const _dup = await findRecentDuplicate('sales_receipts', req.session.userId, null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+  if (_dup) return res.json(_dup);
   const { row } = await db.insert('sales_receipts', {
     user_id: req.session.userId,
     customer: String(customer).trim().slice(0, 200),
@@ -1620,6 +1650,8 @@ app.get('/api/payments-received', requireAuth, wrap(async (req, res) => {
 app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
   const { customer, invoice_ref, amount, date, method = 'Bank Transfer' } = req.body || {};
   if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
+  const _dup = await findRecentDuplicate('payments_received', req.session.userId, null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+  if (_dup) return res.json(_dup);
   const { row } = await db.insert('payments_received', {
     user_id: req.session.userId,
     customer: String(customer).trim().slice(0, 200),
@@ -1658,6 +1690,8 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   const { customer, num, amount, date, status = 'Open', reason = '' } = req.body || {};
   if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
   const validStatuses = ['Open', 'Applied', 'Void'];
+  const _dup = await findRecentDuplicate('credit_notes', req.session.userId, null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+  if (_dup) return res.json(_dup);
   const { row } = await db.insert('credit_notes', {
     user_id: req.session.userId,
     customer: String(customer).trim().slice(0, 200),
@@ -1696,6 +1730,8 @@ app.get('/api/payments-made', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, date, method, notes, ref } = req.body || {};
+  const _dup = await findRecentDuplicate('payments_made', req.session.userId, req.entityId || null, { textMatch: { vendor: (vendor || '').trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+  if (_dup) return res.json(_dup);
   const { row } = await db.insert('payments_made', {
     user_id: req.session.userId,
     entity_id: req.entityId || null,
@@ -1742,6 +1778,8 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   const { vendor, num, amount, date, status = 'Open', reason = '' } = req.body || {};
   if (!vendor || amount == null) return res.status(400).json({ error: 'vendor and amount required.' });
   const validStatuses = ['Open', 'Applied', 'Void'];
+  const _dup = await findRecentDuplicate('vendor_credits', req.session.userId, null, { textMatch: { vendor: String(vendor).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+  if (_dup) return res.json(_dup);
   const { row } = await db.insert('vendor_credits', {
     user_id: req.session.userId,
     vendor: String(vendor).trim().slice(0, 200),
@@ -1781,6 +1819,8 @@ app.get('/api/timesheet', requireAuth, wrap(async (req, res) => {
 app.post('/api/timesheet', requireAuth, wrap(async (req, res) => {
   const { employee, project = '', date, hours, billable = 'Yes', rate = 0 } = req.body || {};
   if (!employee || hours == null) return res.status(400).json({ error: 'employee and hours required' });
+  const _dup = await findRecentDuplicate('timesheet', req.session.userId, null, { textMatch: { employee: employee.trim().slice(0,100), project: project.trim().slice(0,200) }, numMatch: { hours: parseFloat(hours)||0 } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('timesheet', {
     user_id:  req.session.userId,
     employee: employee.trim().slice(0, 100),
@@ -1847,6 +1887,8 @@ app.post('/api/team', requireAuth, wrap(async (req, res) => {
   if (!name || !email) return res.status(400).json({ error: 'name and email required.' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email.' });
   const validRoles = ['admin', 'accountant', 'viewer'];
+  const _dup = await findRecentDuplicate('team_members', req.session.userId, null, { textMatch: { email: email.toLowerCase().slice(0,200) } });
+  if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('team_members', {
     user_id: req.session.userId,
     name:    name.trim().slice(0, 100),

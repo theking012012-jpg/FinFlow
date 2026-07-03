@@ -2908,6 +2908,7 @@ async function saveOwnerPayrollCard(){
     if(typeof syncAllPayrollsToPersonal==='function') syncAllPayrollsToPersonal();
     if(typeof loadPersonalFinance==='function') await loadPersonalFinance();
     if(typeof renderPayroll==='function') renderPayroll();
+    window.finflow?.refresh(['payroll','dashboard','personal-finance']);
     notify('Payroll saved — Personal Finance synced ✦');
   }catch(e){notify('Error: '+(e.message||'Failed to save'));}
 }
@@ -2953,6 +2954,7 @@ async function saveNewEmployee(){
     window.payrollEmployees=payrollEmployees;
     closeModal('add-employee-modal');
     renderPayroll();
+    window.finflow?.refresh(['payroll','dashboard']);
     notify(fname+' '+lname+' added to payroll ✦');
   }catch(e){notify('Error: '+(e.message||'Failed to save employee'));}
 }

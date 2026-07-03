@@ -5491,21 +5491,21 @@ window.resetScanner=function(){
     autocatPage.id = 'page-autocat';
     autocatPage.innerHTML = `
       <div class="metrics-grid-3">
-        <div class="mc"><div class="mc-label">Uncategorised</div><div class="mc-val" id="autocat-pending-count" style="color:var(--amber)">12</div><div class="mc-change neutral">Need review</div></div>
-        <div class="mc"><div class="mc-label">Auto-approved</div><div class="mc-val" id="autocat-approved-count" style="color:var(--green)">0</div><div class="mc-change up">This session</div></div>
-        <div class="mc"><div class="mc-label">Accuracy</div><div class="mc-val">96.4%</div><div class="mc-change up">Claude Vision</div></div>
+        <div class="mc"><div class="mc-label">Uncategorised</div><div class="mc-val" id="autocat-pending-count" style="color:var(--amber)">0</div><div class="mc-change neutral">Need a category</div></div>
+        <div class="mc"><div class="mc-label">Categorised this session</div><div class="mc-val" id="autocat-approved-count" style="color:var(--green)">0</div><div class="mc-change up">Applied to expenses</div></div>
+        <div class="mc"><div class="mc-label">Active rules</div><div class="mc-val" id="autocat-rules-count">0</div><div class="mc-change neutral">Keyword rules</div></div>
       </div>
       <div class="card">
         <div class="card-header">
-          <div><div class="card-title">Transactions awaiting categorisation</div><div class="card-sub">Claude has suggested categories — approve or override each one</div></div>
+          <div><div class="card-title">Transactions awaiting categorisation</div><div class="card-sub">Run keyword rules (free) or ask AI to suggest a category, then approve to apply</div></div>
           <div style="display:flex;gap:6px">
             <button class="btn btn-ghost btn-sm" onclick="runAutocatRules()">▶ Run rules</button>
+            <button class="btn btn-ghost btn-sm" id="autocat-ai-btn" onclick="runAutocatAI()">✦ Suggest with AI</button>
             <button class="btn btn-primary btn-sm" onclick="approveAllAutocat()">✓ Approve all</button>
-            <button class="btn btn-ghost btn-sm" onclick="getAutocatAI()">✦ Re-analyse with AI</button>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 100px 120px 90px 80px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
-          <span>Description</span><span>Amount</span><span>AI Category</span><span>Confidence</span><span>Action</span>
+          <span>Description</span><span>Amount</span><span>Suggested category</span><span>Confidence</span><span>Action</span>
         </div>
         <div id="autocat-list"></div>
       </div>
@@ -5699,81 +5699,68 @@ window.getScenarioAI = function(){
 // ══════════════════════════════════════════════════════════════════
 // AUTO-CATEGORISATION
 // ══════════════════════════════════════════════════════════════════
-const AUTOCAT_TXNS = [
-  {id:1,desc:'GOOGLE CLOUD PLATFORM',amt:-1840,cat:'Software & SaaS',conf:98,approved:false},
-  {id:2,desc:'UNITED AIRLINES 0162948',amt:-2400,cat:'Travel',conf:97,approved:false},
-  {id:3,desc:'WHOLE FOODS MARKET #142',amt:-340,cat:'Meals & Entertainment',conf:91,approved:false},
-  {id:4,desc:'GITHUB INC.',amt:-84,cat:'Software & SaaS',conf:99,approved:false},
-  {id:5,desc:'ZOOM VIDEO COMMUNICATIONS',amt:-149,cat:'Software & SaaS',conf:99,approved:false},
-  {id:6,desc:'MARRIOTT HOTELS INTL',amt:-890,cat:'Travel',conf:95,approved:false},
-  {id:7,desc:'STAPLES #1004',amt:-210,cat:'Office Supplies',conf:88,approved:false},
-  {id:8,desc:'XERO SOFTWARE',amt:-69,cat:'Software & SaaS',conf:96,approved:false},
-  {id:9,desc:'ACH TRANSFER OUT',amt:-5000,cat:'Bank Transfer',conf:72,approved:false},
-  {id:10,desc:'PAYPAL *FREELANCER0219',amt:-1200,cat:'Professional Services',conf:84,approved:false},
-  {id:11,desc:'AMAZON WEB SERVICES',amt:-3420,cat:'Software & SaaS',conf:99,approved:false},
-  {id:12,desc:'COFFEE BEAN & TEA LEAF',amt:-45,cat:'Meals & Entertainment',conf:93,approved:false},
-];
+// Auto-categorise — REAL data only. Uncategorised = expenses with no category or 'Other'.
+const AUTOCAT_CATS = ['Software & SaaS','Travel','Meals & Entertainment','Office Supplies','Salaries','Marketing','Professional Services','Rent','Utilities','Insurance','Bank Transfer','Cost of Goods','Other'];
+let _autocatSuggest = {};   // expense_id -> { category, confidence, source }  (from rules/AI)
+let _autocatApplied = 0;    // categorised this session (real writes)
 
-const AUTOCAT_RULES = [
-  {pattern:'GOOGLE *',cat:'Software & SaaS',auto:true},
-  {pattern:'AMAZON WEB *',cat:'Software & SaaS',auto:true},
-  {pattern:'AIRLINES *',cat:'Travel',auto:true},
-  {pattern:'MARRIOTT *',cat:'Travel',auto:false},
-  {pattern:'PAYROLL *',cat:'Salaries',auto:true},
-];
-
-function confColor(c){ return c>=95?'var(--green)':c>=80?'var(--amber)':'var(--red)'; }
+function _autocatUncat(){ return (window._realExpenses || []).filter(e => !e.category || e.category === 'Other'); }
+function _autocatCats(){
+  const used = [...new Set((window._realExpenses||[]).map(e=>e.category).filter(c=>c && c!=='Other'))];
+  return [...new Set([...used, ...AUTOCAT_CATS])];
+}
+// Confidence colour — input is a real 0..1 fraction from the AI, not a fabricated %.
+function confColor(f){ return f>=0.9?'var(--green)':f>=0.7?'var(--amber)':'var(--red)'; }
 
 async function renderAutocat(){
   const list = document.getElementById('autocat-list');
   if(!list) return;
-  const pending = AUTOCAT_TXNS.filter(t=>!t.approved);
-  const approved = AUTOCAT_TXNS.filter(t=>t.approved).length;
-  const pc = document.getElementById('autocat-pending-count');
-  const ac = document.getElementById('autocat-approved-count');
-  if(pc) pc.textContent = pending.length;
-  if(ac) ac.textContent = approved;
+  // Ensure real expenses are loaded before deciding the queue is empty.
+  if(!Array.isArray(window._realExpenses)){
+    try{ const eid=(window.ENTITIES||[]).find(e=>e.active)?._dbId; const er=await fetch('/api/expenses'+(eid?'?entity_id='+eid:''),{credentials:'include'}); if(er.ok) window._realExpenses=await er.json()||[]; }catch(_){ window._realExpenses=window._realExpenses||[]; }
+  }
+  const rows = _autocatUncat();
+  const cats = _autocatCats();
+  const pc = document.getElementById('autocat-pending-count'); if(pc) pc.textContent = rows.length;
+  const ac = document.getElementById('autocat-approved-count'); if(ac) ac.textContent = _autocatApplied;
 
-  list.innerHTML = pending.map(t=>`
-    <div class="autocat-row" id="acat-row-${t.id}">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:12.5px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.desc}</div>
-      </div>
-      <div style="font-family:var(--font-mono);font-size:12px;color:var(--red);width:80px;text-align:right;flex-shrink:0">-$${Math.abs(t.amt).toLocaleString()}</div>
+  list.innerHTML = rows.length ? rows.map(e=>{
+    const sug = _autocatSuggest[e.id];
+    const selected = sug?.category || 'Other';
+    const hasConf = sug && typeof sug.confidence === 'number';
+    const pct = hasConf ? Math.round(sug.confidence*100) : null;
+    const confHtml = hasConf
+      ? `<div class="autocat-conf"><div class="autocat-conf-bar"><div class="autocat-conf-fill" style="width:${pct}%;background:${confColor(sug.confidence)}"></div></div><span class="autocat-conf-pct">${pct}%</span></div>`
+      : `<span class="autocat-conf-pct" style="width:auto;color:var(--t3)">${sug?(sug.source==='rule'?'rule':'—'):'—'}</span>`;
+    return `<div class="autocat-row" id="acat-row-${e.id}">
+      <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.description||'(no description)')}</div></div>
+      <div style="font-family:var(--font-mono);font-size:12px;color:var(--red);width:80px;text-align:right;flex-shrink:0">-$${Math.abs(parseFloat(e.amount)||0).toLocaleString()}</div>
       <div style="width:110px;flex-shrink:0">
-        <select class="finput" style="font-size:11px;padding:3px 6px" onchange="overrideCat(${t.id},this.value)">
-          ${['Software & SaaS','Travel','Meals & Entertainment','Office Supplies','Salaries','Marketing','Professional Services','Bank Transfer','Other'].map(c=>`<option${c===t.cat?' selected':''}>${c}</option>`).join('')}
+        <select class="finput" id="acat-sel-${e.id}" style="font-size:11px;padding:3px 6px">
+          ${cats.map(c=>`<option${c===selected?' selected':''}>${esc(c)}</option>`).join('')}
         </select>
       </div>
-      <div class="autocat-conf">
-        <div class="autocat-conf-bar"><div class="autocat-conf-fill" style="width:${t.conf}%;background:${confColor(t.conf)}"></div></div>
-        <span class="autocat-conf-pct">${t.conf}%</span>
-      </div>
-      <div style="width:70px;flex-shrink:0;text-align:right">
-        <button class="autocat-tag" onclick="approveCat(${t.id})">✓ Approve</button>
-      </div>
-    </div>`).join('') || '<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">All transactions categorised ✓</div>';
+      ${confHtml}
+      <div style="width:70px;flex-shrink:0;text-align:right"><button class="autocat-tag" onclick="approveCat(${e.id})">✓ Approve</button></div>
+    </div>`;
+  }).join('') : '<div style="padding:1rem;text-align:center;color:var(--t3);font-size:13px">All expenses categorised ✓</div>';
 
+  // Rules list — REAL rules only; honest empty state (no phantom fallback).
   const rulesList = document.getElementById('autocat-rules-list');
   if(rulesList){
     try{
       const res=await fetch('/api/autocat-rules',{credentials:'include'});
-      const apiRules=res.ok?await res.json():[];
-      const rules=apiRules.length?apiRules:AUTOCAT_RULES;
-      rulesList.innerHTML=rules.map(r=>`
+      const rules=res.ok?(await res.json()||[]):[];
+      const rc=document.getElementById('autocat-rules-count'); if(rc) rc.textContent=rules.length;
+      rulesList.innerHTML = rules.length ? rules.map(r=>`
         <div style="display:flex;align-items:center;gap:10px;padding:.5rem 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-          <span style="font-family:var(--font-mono);color:var(--t1);flex:1">${r.keyword||r.pattern||''}</span>
-          <span style="color:var(--t2)">→ ${r.category||r.cat||''}</span>
-          <span style="font-size:11px;color:var(--t3)">${(r.enabled||r.auto)?'Auto-approve':'Review'}</span>
-          ${r.id?`<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteAutocatRule(${r.id})">✕</button>`:''}
-        </div>`).join('');
+          <span style="font-family:var(--font-mono);color:var(--t1);flex:1">${esc(r.keyword||'')}</span>
+          <span style="color:var(--t2)">→ ${esc(r.category||'')}</span>
+          <span style="font-size:11px;color:var(--t3)">${r.enabled?'Auto-approve':'Review'}</span>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteAutocatRule(${r.id})">✕</button>
+        </div>`).join('') : '<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12.5px">No rules yet — add one to auto-categorise matching transactions.</div>';
     }catch(e){
-      rulesList.innerHTML=AUTOCAT_RULES.map(r=>`
-        <div style="display:flex;align-items:center;gap:10px;padding:.5rem 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-          <span style="font-family:var(--font-mono);color:var(--t1);flex:1">${r.pattern}</span>
-          <span style="color:var(--t2)">→ ${r.cat}</span>
-          <span style="font-size:11px;color:var(--t3)">${r.auto?'Auto-approve':'Review'}</span>
-        </div>`).join('');
+      rulesList.innerHTML='<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12.5px">Could not load rules.</div>';
     }
   }
 }
@@ -5786,8 +5773,13 @@ window.runAutocatRules=async function(){
   try{
     const res=await fetch('/api/autocat-rules/run',{method:'POST',credentials:'include'});
     const data=await res.json();
-    notify('Auto-categorised '+(data.updated||0)+' expenses ✦');
-    window.finflow?.refresh(['banking','dashboard']);
+    const n=data.updated||0;
+    _autocatApplied += n;
+    // Re-fetch expenses so the queue drops the rows the server just categorised.
+    try{ const eid=(window.ENTITIES||[]).find(e=>e.active)?._dbId; const er=await fetch('/api/expenses'+(eid?'?entity_id='+eid:''),{credentials:'include'}); if(er.ok) window._realExpenses=await er.json()||window._realExpenses; }catch(_){ }
+    notify('Auto-categorised '+n+' expense'+(n!==1?'s':'')+' ✦');
+    renderAutocat();
+    window.finflow?.refresh(['expenses','dashboard']);
   }catch(e){notify('Run failed');}
 };
 window.openAddRuleModal=function(){
@@ -5822,22 +5814,61 @@ window.saveAutocatRule=async function(){
   }catch(e){notify('Save failed');}
 };
 
-window.approveCat = function(id){
-  const t = AUTOCAT_TXNS.find(x=>x.id===id);
-  if(t){ t.approved=true; }
-  const row = document.getElementById('acat-row-'+id);
-  if(row){ row.style.opacity='0'; row.style.transition='opacity .25s'; setTimeout(()=>renderAutocat(),280); }
-  notify('Transaction categorised ✦');
+// Approve — writes the chosen category to the REAL expense.
+window.approveCat = async function(id){
+  const sel = document.getElementById('acat-sel-'+id);
+  const category = sel ? sel.value : null;
+  if(!category){ notify('Pick a category first',true); return; }
+  try{
+    const res = await fetch('/api/expenses/'+id,{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({category})});
+    if(!res.ok){ const d=await res.json().catch(()=>({})); notify(d.error||'Could not apply',true); return; }
+    delete _autocatSuggest[id];
+    _autocatApplied++;
+    const e=(window._realExpenses||[]).find(x=>x.id===id); if(e) e.category=category;   // drop from queue
+    const row=document.getElementById('acat-row-'+id);
+    if(row){ row.style.opacity='0'; row.style.transition='opacity .25s'; }
+    setTimeout(()=>{ renderAutocat(); window.finflow?.refresh(['expenses','dashboard']); },260);
+    notify('Categorised as '+category+' ✦');
+  }catch(e){ notify('Could not apply — '+e.message,true); }
 };
-window.overrideCat = function(id,cat){ const t=AUTOCAT_TXNS.find(x=>x.id===id); if(t) t.cat=cat; };
-window.approveAllAutocat = function(){
-  AUTOCAT_TXNS.forEach(t=>t.approved=true);
+// Approve all — applies each row's selected category to its real expense.
+window.approveAllAutocat = async function(){
+  const rows=_autocatUncat();
+  if(!rows.length){ notify('Nothing to categorise'); return; }
+  let applied=0;
+  for(const e of rows){
+    const sel=document.getElementById('acat-sel-'+e.id);
+    const category=sel?sel.value:null;
+    if(!category) continue;
+    try{
+      const res=await fetch('/api/expenses/'+e.id,{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({category})});
+      if(res.ok){ const ex=(window._realExpenses||[]).find(x=>x.id===e.id); if(ex) ex.category=category; delete _autocatSuggest[e.id]; applied++; }
+    }catch(err){ }
+  }
+  _autocatApplied+=applied;
   renderAutocat();
-  notify('All transactions approved ✦');
+  window.finflow?.refresh(['expenses','dashboard']);
+  notify('Categorised '+applied+' expense'+(applied!==1?'s':'')+' ✦');
 };
-window.getAutocatAI = function(){
-  openAIPanel&&openAIPanel();
-  sendAIQuery&&sendAIQuery('Re-analyse my uncategorised transactions and suggest better categories. Flag any that look like duplicates or unusual charges I should review.');
+// Suggest with AI — rules-first + cached + capped batched Haiku (server endpoint).
+window.runAutocatAI = async function(){
+  const btn=document.getElementById('autocat-ai-btn');
+  if(btn){ btn.disabled=true; btn.textContent='Analysing…'; }
+  try{
+    const res=await fetch('/api/autocat-rules/ai-suggest',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'});
+    const data=await res.json().catch(()=>({}));
+    // Apply any suggestions the server DID return (rules/cache come back even on 402/502).
+    (data.suggestions||[]).forEach(s=>{ _autocatSuggest[s.expense_id]={category:s.category,confidence:s.confidence,source:s.source}; });
+    if(res.status===402){ notify(data.error||'Monthly AI limit reached — upgrade for unlimited',true); }
+    else if(res.status===502){ notify(data.error||'AI categorisation isn’t enabled yet',true); }
+    else if(!res.ok){ notify(data.error||'AI suggestion failed',true); }
+    else{
+      const n=(data.counts&&data.counts.ai)||0;
+      notify(n>0 ? ('AI suggested '+n+' categor'+(n!==1?'ies':'y')+(data.capped?' — monthly limit reached for the rest':'')+' ✦') : 'No new AI suggestions needed');
+    }
+  }catch(e){ notify('AI suggestion failed — '+e.message,true); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='✦ Suggest with AI'; } }
+  renderAutocat();
 };
 
 // ══════════════════════════════════════════════════════════════════

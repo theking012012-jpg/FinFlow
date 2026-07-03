@@ -1436,6 +1436,153 @@ app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true, updated });
 }));
 
+// ── AI EXPENSE CATEGORISATION (Path B) ────────────────────────────────────────
+// Rules-first (free) → per-description cache (free, ai_cache) → batched Haiku for
+// the rest, gated by a per-user MONTHLY cap (ai_usage). Only ever classifies
+// UNCATEGORISED expenses (!category || 'Other') — never re-analyses categorised
+// ones, so repeat runs can't leak cost. Does NOT write categories; the client
+// approves via PUT /api/expenses/:id. Requires ANTHROPIC_API_KEY (502 if unset).
+const STD_EXPENSE_CATS = ['Software & SaaS','Travel','Meals & Entertainment','Office Supplies','Salaries','Marketing','Professional Services','Rent','Utilities','Insurance','Bank Transfer','Cost of Goods','Other'];
+const AI_CAT_BATCH     = 40;      // expenses per Claude call
+const AI_CAT_CAP_TRIAL = 300;     // AI classifications / user / month (trial/free)
+const AI_CAT_CAP_PAID  = 5000;    // high ceiling for paid tiers
+function _acNorm(s) { return String(s || '').toLowerCase().replace(/[0-9#*]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120); }
+
+app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+
+  // 1) UNCATEGORISED expenses only (mirrors /run's filter).
+  const expenses = await db.allByUser('expenses', uid, r => !r.category || r.category === 'Other');
+  const counts = () => ({
+    total: expenses.length,
+    rule:  suggestions.filter(s => s.source === 'rule').length,
+    cache: suggestions.filter(s => s.source === 'cache').length,
+    ai:    suggestions.filter(s => s.source === 'ai').length,
+  });
+  const suggestions = [];
+  if (!expenses.length) return res.json({ suggestions, counts: counts() });
+
+  // Allowed categories = the user's OWN scheme + standard fallback.
+  const allExp    = await db.allByUser('expenses', uid);
+  const userCats  = [...new Set(allExp.map(e => e.category).filter(c => c && c !== 'Other'))];
+  const allowed   = [...new Set([...userCats, ...STD_EXPENSE_CATS])];
+  const allowedLc = new Set(allowed.map(c => c.toLowerCase()));
+
+  // 2) RULES-FIRST (free, in-memory, no write).
+  const rules = (await db.allByUser('autocat_rules', uid, r => r.enabled)) || [];
+  const remaining = [];
+  for (const exp of expenses) {
+    let cat = null;
+    for (const rule of rules) {
+      const hay = (rule.match_type === 'vendor' ? (exp.vendor || exp.description || '') : (exp.description || '')).toLowerCase();
+      if (rule.keyword && hay.includes(rule.keyword)) { cat = rule.category; break; }
+    }
+    if (cat) suggestions.push({ expense_id: exp.id, category: cat, confidence: null, source: 'rule' });
+    else remaining.push(exp);
+  }
+
+  // 3) CACHE by normalised description (free). Group identical descriptions so a
+  //    recurring merchant is classified once.
+  const keyOf = e => 'autocat:v1:' + _acNorm(e.vendor || e.description);
+  const byKey = new Map();
+  for (const exp of remaining) {
+    const k = keyOf(exp);
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(exp);
+  }
+  const uncached = [];
+  for (const [k, group] of byKey.entries()) {
+    const c = await pool.query(
+      `SELECT answer FROM ai_cache WHERE user_id = $1 AND question = $2 ORDER BY created_at DESC LIMIT 1`, [uid, k]
+    );
+    let hit = null;
+    if (c.rows[0]) { try { hit = JSON.parse(c.rows[0].answer); } catch (e) { hit = null; } }
+    if (hit && hit.category) {
+      for (const exp of group) suggestions.push({ expense_id: exp.id, category: hit.category, confidence: hit.confidence ?? null, source: 'cache' });
+    } else {
+      uncached.push({ key: k, group });
+    }
+  }
+  if (!uncached.length) return res.json({ suggestions, counts: counts() });
+
+  // 4) CAP CHECK — before any Claude call. Only unique uncached descriptions
+  //    count against the cap (that's what actually gets sent).
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(502).json({ error: 'AI categorization unavailable. Add ANTHROPIC_API_KEY to enable.', suggestions, counts: counts() });
+  }
+  const plan = req.userPlan || 'trial';
+  const cap  = (plan === 'trial' || plan === 'free') ? AI_CAT_CAP_TRIAL : AI_CAT_CAP_PAID;
+  const usedRow = await pool.query(
+    `SELECT query_count FROM ai_usage WHERE user_id = $1 AND billing_month = date_trunc('month', NOW())`, [uid]
+  );
+  const used   = usedRow.rows[0]?.query_count || 0;
+  const budget = cap - used;
+  if (budget <= 0) {
+    return res.status(402).json({ error: 'Monthly AI categorization limit reached — upgrade for unlimited.', code: 'AI_CAP_REACHED', suggestions, counts: counts() });
+  }
+
+  const toSend = uncached.slice(0, budget);          // unique descriptions within budget
+  const capped = uncached.length > toSend.length;    // some left unclassified this month
+
+  // 5) BATCHED Haiku classification (strict JSON). Category-list system prompt is
+  //    prompt-cached (ephemeral) so repeated batches only pay for it once.
+  const model = process.env.AI_MODEL_SIMPLE || 'claude-haiku-4-5-20251001';
+  const sys = `You are an expense classifier. Assign each expense to exactly ONE category from this ALLOWED list: ${allowed.join(', ')}. If none fit, use "Other". Reply with ONLY a JSON array, no markdown, no prose: [{"id":<number>,"category":"<one allowed category>","confidence":<number 0-1>}]. confidence is your certainty in the choice.`;
+  let sent = 0;
+  for (let i = 0; i < toSend.length; i += AI_CAT_BATCH) {
+    const batch = toSend.slice(i, i + AI_CAT_BATCH);
+    const payload = batch.map(u => { const e = u.group[0]; return { id: e.id, text: (e.vendor || e.description || '').slice(0, 140), amount: e.amount }; });
+    let resp;
+    try {
+      resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key':         process.env.ANTHROPIC_API_KEY?.trim(),
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta':    'prompt-caching-2024-07-31',
+          'content-type':      'application/json',
+        },
+        body: JSON.stringify({
+          model, max_tokens: 1500,
+          system:   [{ type: 'text', text: sys, cache_control: { type: 'ephemeral' } }],
+          messages: [{ role: 'user', content: JSON.stringify(payload) }],
+        }),
+      });
+    } catch (e) { console.error('[AI autocat] fetch failed:', e.message); break; }
+    if (!resp.ok) { console.error('[AI autocat] Anthropic error:', (await resp.text().catch(() => '')).slice(0, 200)); break; }
+    const data = await resp.json();
+    sent += batch.length;   // billable: the call happened, count it against the cap
+    const raw = (data.content?.[0]?.text || '').replace(/```json|```/g, '').trim();
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch (e) { console.error('[AI autocat] JSON parse failed'); continue; }
+    if (!Array.isArray(parsed)) continue;
+    const idToUnit = new Map(batch.map(u => [u.group[0].id, u]));
+    for (const item of parsed) {
+      const unit = idToUnit.get(item.id);
+      if (!unit) continue;
+      let category = String(item.category || 'Other');
+      if (!allowedLc.has(category.toLowerCase())) category = 'Other';
+      const confidence = typeof item.confidence === 'number' ? Math.max(0, Math.min(1, item.confidence)) : null;
+      // Cache the classification for this description (dedupes future runs).
+      pool.query(`INSERT INTO ai_cache (user_id, question, answer, model) VALUES ($1, $2, $3, $4)`,
+        [uid, unit.key, JSON.stringify({ category, confidence }), model]).catch(() => {});
+      for (const exp of unit.group) suggestions.push({ expense_id: exp.id, category, confidence, source: 'ai' });
+    }
+  }
+
+  // 6) Increment usage by unique descriptions actually SENT to Claude.
+  if (sent > 0) {
+    pool.query(
+      `INSERT INTO ai_usage (user_id, billing_month, query_count)
+       VALUES ($1, date_trunc('month', NOW()), $2)
+       ON CONFLICT (user_id, billing_month) DO UPDATE SET query_count = ai_usage.query_count + $2`,
+      [uid, sent]
+    ).catch(e => console.error('[AI usage]', e.message));
+  }
+
+  res.json({ suggestions, capped, counts: counts() });
+}));
+
 // ── QUOTES ────────────────────────────────────────────────────────────────────
 app.get('/api/quotes', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('quotes', req.session.userId, null, (a,b) => b.id - a.id));

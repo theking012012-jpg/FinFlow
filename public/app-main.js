@@ -2797,6 +2797,21 @@ function persPreviewNet(){
   if(el) el.textContent=gross>0?SP(net)+'/mo':'—';
 }
 
+// Collapse/expand the salary editor (pure UI). force=true opens, false collapses,
+// undefined toggles. When collapsed, the compact summary line is shown instead.
+function togglePersSalaryEdit(force){
+  const editor=document.getElementById('pers-salary-editor');
+  const summary=document.getElementById('pers-salary-summary');
+  const caret=document.getElementById('pers-salary-caret');
+  const header=document.getElementById('pers-salary-header');
+  if(!editor) return;
+  const open = force!==undefined ? force : editor.style.display==='none';
+  editor.style.display=open?'':'none';
+  if(summary) summary.style.display=open?'none':'';
+  if(caret) caret.style.transform=open?'':'rotate(180deg)';
+  if(header) header.setAttribute('aria-expanded',open?'true':'false');
+}
+
 function prefillPersSalaryCard(){
   const activeIdx=typeof ENTITIES!=='undefined'?ENTITIES.findIndex(e=>e.active):-1;
   const ep=activeIdx>=0?(ownerPayrollByEntity[activeIdx]||null):null;
@@ -2811,6 +2826,15 @@ function prefillPersSalaryCard(){
     if(syncLabel) syncLabel.style.display='none';
   }
   persPreviewNet();
+  // Collapsible state: default collapsed to a summary when a salary is set,
+  // expanded when it's empty so the user knows to fill it in.
+  const grossVal=parseFloat(grossEl?.value)||0;
+  const taxVal=parseFloat(taxEl?.value)||20;
+  const sg=document.getElementById('pers-salary-summary-gross');
+  const sn=document.getElementById('pers-salary-summary-net');
+  if(sg) sg.textContent=grossVal>0?SP(grossVal):'—';
+  if(sn) sn.textContent=grossVal>0?SP(Math.round(grossVal*(1-taxVal/100)))+'/mo':'—';
+  togglePersSalaryEdit(grossVal<=0);
 }
 
 async function savePersonalSalary(){

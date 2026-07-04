@@ -2408,17 +2408,27 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <!-- Personal salary entry -->
         <div class="card" id="pers-salary-card" style="margin-bottom:.85rem">
-          <div class="card-header">
+          <div class="card-header" id="pers-salary-header" style="cursor:pointer;margin-bottom:0" onclick="togglePersSalaryEdit()" role="button" aria-expanded="true" aria-controls="pers-salary-editor" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePersSalaryEdit()}">
             <div class="card-title">Monthly salary</div>
-            <span id="pers-salary-sync-label" style="display:none;font-size:11px;color:var(--green)">Synced from payroll ✓</span>
+            <div style="display:flex;align-items:center;gap:9px;margin-left:auto">
+              <span id="pers-salary-sync-label" style="display:none;font-size:11px;color:var(--green)">Synced from payroll ✓</span>
+              <svg id="pers-salary-caret" width="11" height="11" viewBox="0 0 10 10" style="transition:transform .15s cubic-bezier(.4,0,.2,1);stroke:var(--t2)" aria-hidden="true"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>
           </div>
-          <div class="field-group" style="margin-bottom:.6rem">
-            <div class="field-wrap"><label class="field-label" for="pers-sal-gross">Gross salary (USD / mo)</label><input class="finput" id="pers-sal-gross" type="number" placeholder="e.g. 5000" oninput="persPreviewNet()"></div>
-            <div class="field-wrap"><label class="field-label" for="pers-sal-tax">Tax rate (%)</label><input class="finput" id="pers-sal-tax" type="number" value="20" min="0" max="60" step="0.5" oninput="persPreviewNet()"></div>
+          <!-- Collapsed summary (shown when a salary is already set) -->
+          <div id="pers-salary-summary" style="display:none;font-size:12.5px;color:var(--t2);margin-top:.5rem">
+            <span style="color:var(--t1);font-weight:600" id="pers-salary-summary-gross">—</span> gross · <span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="pers-salary-summary-net">—</span> net
           </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-            <div style="font-size:12.5px;color:var(--t2)">Net take-home: <span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="pers-sal-net-preview">—</span></div>
-            <button class="btn btn-primary btn-sm" onclick="savePersonalSalary()">Save salary</button>
+          <!-- Expanded editor -->
+          <div id="pers-salary-editor">
+            <div class="field-group" style="margin-bottom:.6rem;margin-top:.75rem">
+              <div class="field-wrap"><label class="field-label" for="pers-sal-gross">Gross salary (USD / mo)</label><input class="finput" id="pers-sal-gross" type="number" placeholder="e.g. 5000" oninput="persPreviewNet()"></div>
+              <div class="field-wrap"><label class="field-label" for="pers-sal-tax">Tax rate (%)</label><input class="finput" id="pers-sal-tax" type="number" value="20" min="0" max="60" step="0.5" oninput="persPreviewNet()"></div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div style="font-size:12.5px;color:var(--t2)">Net take-home: <span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="pers-sal-net-preview">—</span></div>
+              <button class="btn btn-primary btn-sm" onclick="savePersonalSalary()">Save salary</button>
+            </div>
           </div>
         </div>
         <div id="pers-payroll-banner" style="display:none;background:linear-gradient(135deg,var(--acc-bg),rgba(30,24,8,.5));border:1px solid var(--acc2);border-radius:var(--radius-lg);padding:.75rem 1.1rem;margin-bottom:1rem;flex-direction:column;gap:8px">

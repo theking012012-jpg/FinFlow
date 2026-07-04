@@ -65,6 +65,37 @@ async function initDB() {
     await client.query(`ALTER TABLE holdings ADD COLUMN IF NOT EXISTS entity_id INTEGER`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_holdings_entity_id ON holdings(entity_id)`);
 
+    // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
+    // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
+    // but WITH cascade FKs to users/entities (created above by the generic loop)
+    // so rows can never orphan when a user or entity is deleted.
+    //   personal_accounts.data = { kind:'asset'|'liability', name, type, value }
+    //   snapshots.data          = { kind:'networth'|'portfolio', value, date, period_key }
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS personal_accounts (
+        id         SERIAL PRIMARY KEY,
+        user_id    INTEGER REFERENCES users(id)    ON DELETE CASCADE,
+        entity_id  INTEGER REFERENCES entities(id) ON DELETE CASCADE,
+        data       JSONB NOT NULL DEFAULT '{}',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_personal_accounts_user_id   ON personal_accounts(user_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_personal_accounts_entity_id ON personal_accounts(entity_id)`);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS snapshots (
+        id         SERIAL PRIMARY KEY,
+        user_id    INTEGER REFERENCES users(id)    ON DELETE CASCADE,
+        entity_id  INTEGER REFERENCES entities(id) ON DELETE CASCADE,
+        data       JSONB NOT NULL DEFAULT '{}',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_snapshots_user_id   ON snapshots(user_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_snapshots_entity_id ON snapshots(entity_id)`);
+
     // Sessions table (connect-pg-simple)
     await client.query(`
       CREATE TABLE IF NOT EXISTS session (

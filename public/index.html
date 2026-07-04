@@ -1604,9 +1604,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">Net worth impact</div></div>
             <div style="display:flex;flex-direction:column;gap:10px">
-              <div class="bar-row"><span class="bar-label">Bank cash</span><div class="bar-track"><div class="bar-fill" id="nw-cash-bar" style="width:45%;background:var(--acc)"></div></div><span class="bar-val" id="nw-cash-val">$284K</span></div>
-              <div class="bar-row"><span class="bar-label">Portfolio</span><div class="bar-track"><div class="bar-fill" id="nw-port-bar" style="width:38%;background:var(--green)"></div></div><span class="bar-val" id="nw-port-val">—</span></div>
-              <div class="bar-row"><span class="bar-label">Other assets</span><div class="bar-track"><div class="bar-fill" id="nw-other-bar" style="width:17%;background:var(--purple)"></div></div><span class="bar-val">$84K</span></div>
+              <div class="bar-row"><span class="bar-label">Cash &amp; savings</span><div class="bar-track"><div class="bar-fill" id="nw-cash-bar" style="width:0%;background:var(--acc)"></div></div><span class="bar-val" id="nw-cash-val">—</span></div>
+              <div class="bar-row"><span class="bar-label">Portfolio</span><div class="bar-track"><div class="bar-fill" id="nw-port-bar" style="width:0%;background:var(--green)"></div></div><span class="bar-val" id="nw-port-val">—</span></div>
+              <div class="bar-row"><span class="bar-label">Other assets</span><div class="bar-track"><div class="bar-fill" id="nw-other-bar" style="width:0%;background:var(--purple)"></div></div><span class="bar-val" id="nw-other-val">—</span></div>
             </div>
             <div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;align-items:baseline">
               <span style="font-size:11.5px;color:var(--t2)">Total net worth</span>
@@ -2472,13 +2472,27 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <!-- Net worth breakdown -->
         <div class="card">
           <div class="card-header"><div class="card-title">Net worth breakdown</div><div class="card-sub" id="nw-sub">—</div></div>
-          <div id="nw-breakdown-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No data yet — add payroll, transactions, or investments</div></div>
+          <div id="nw-breakdown-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No accounts yet — add assets &amp; liabilities below to track net worth</div></div>
+        </div>
+        <!-- Assets & liabilities (real net worth inputs) -->
+        <div class="card">
+          <div class="card-header">
+            <div><div class="card-title">Assets &amp; liabilities</div><div class="card-sub">Add what you own and owe — your net worth is computed from these</div></div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" onclick="openAccountModal('asset')">+ Asset</button>
+              <button class="btn btn-ghost btn-sm" onclick="openAccountModal('liability')">+ Liability</button>
+            </div>
+          </div>
+          <div id="pers-accounts-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No accounts yet — add an asset or liability to track your real net worth</div></div>
         </div>
         <!-- Expense categories breakdown + Tax estimate -->
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Expense categories</div></div>
-            <div id="expense-cat-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No expenses recorded yet</div></div>
+            <div class="card-header"><div class="card-title">Spending by category</div></div>
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+              <div style="position:relative;width:112px;height:112px;flex-shrink:0"><canvas id="persSpendDonut" width="112" height="112"></canvas></div>
+              <div id="expense-cat-list" style="flex:1;min-width:170px"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No expenses recorded yet</div></div>
+            </div>
           </div>
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><div class="card-title">Tax estimate</div><div class="card-sub" style="font-size:10px;color:var(--t3)">Estimate only</div></div>
@@ -3324,6 +3338,16 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="goal-current">Current ($)</label><input class="finput" id="goal-current" type="number" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="goal-target">Target ($)</label><input class="finput" id="goal-target" type="number" placeholder="10000"></div></div>
     <div class="field-wrap"><label class="field-label" for="goal-monthly">Monthly contribution ($)</label><input class="finput" id="goal-monthly" type="number" placeholder="500"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('goal-modal')">Cancel</button><button class="btn btn-primary" onclick="saveGoal()">Add goal</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="account-modal">
+  <div class="modal">
+    <div class="modal-header"><div><div class="modal-title" id="acct-modal-title">Add asset</div><div class="modal-sub">Assets and liabilities feed your real net worth</div></div><button class="modal-close" onclick="closeModal('account-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <input type="hidden" id="acct-edit-id"><input type="hidden" id="acct-kind">
+    <div class="field-wrap"><label class="field-label" for="acct-name">Name *</label><input class="finput" id="acct-name" placeholder="e.g. Chase savings / Car loan"></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="acct-type">Type</label><select class="finput" id="acct-type"></select></div><div class="field-wrap"><label class="field-label" for="acct-value">Value ($)</label><input class="finput" id="acct-value" type="number" placeholder="0.00" step="0.01"></div></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('account-modal')">Cancel</button><button class="btn btn-primary" onclick="saveAccount()">Save</button></div>
   </div>
 </div>
 

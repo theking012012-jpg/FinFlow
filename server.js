@@ -941,6 +941,91 @@ app.delete('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) 
   res.json({ ok: true });
 }));
 
+// ── PERSONAL ACCOUNTS (assets & liabilities → real net worth) ─────────────────
+app.get('/api/personal-accounts', requireAuth, wrap(async (req, res) => {
+  res.json(await db.allByUser('personal_accounts', req.session.userId,
+    r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId),
+    (a, b) => b.id - a.id));
+}));
+app.post('/api/personal-accounts', requireAuth, wrap(async (req, res) => {
+  const b = req.body || {};
+  const kind = b.kind === 'liability' ? 'liability' : 'asset';
+  const name = (b.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required.' });
+  const eid = req.entityId || null;
+  const value = parseFloat(b.value) || 0;
+  const _dup = await findRecentDuplicate('personal_accounts', req.session.userId, eid, { textMatch: { name, kind }, numMatch: { value } });
+  if (_dup) return res.status(200).json(_dup);
+  const { row } = await db.insert('personal_accounts', {
+    user_id: req.session.userId, entity_id: eid,
+    kind, name: name.slice(0, 120), type: (b.type || 'other').slice(0, 40), value,
+  });
+  res.status(201).json(row);
+}));
+app.put('/api/personal-accounts/:id', requireAuth, wrap(async (req, res) => {
+  const row = await ownedBy('personal_accounts', req.params.id, req.session.userId);
+  if (!row) return res.status(404).json({ error: 'Not found.' });
+  const b = req.body || {};
+  const patch = {};
+  if (b.name  != null) patch.name  = String(b.name).trim().slice(0, 120);
+  if (b.type  != null) patch.type  = String(b.type).slice(0, 40);
+  if (b.kind  != null) patch.kind  = b.kind === 'liability' ? 'liability' : 'asset';
+  if (b.value != null) patch.value = parseFloat(b.value) || 0;
+  await db.updateById('personal_accounts', row.id, patch);
+  const { rows: [_par] } = await pool.query(`SELECT * FROM personal_accounts WHERE id = $1 LIMIT 1`, [row.id]);
+  res.json(_par ? rowToObj(_par) : {});
+}));
+app.delete('/api/personal-accounts/:id', requireAuth, wrap(async (req, res) => {
+  if (!(await ownedBy('personal_accounts', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  await db.deleteById('personal_accounts', parseInt(req.params.id));
+  res.json({ ok: true });
+}));
+
+// ── SNAPSHOTS (real forward-only net-worth & portfolio series) ────────────────
+// GET returns the stored series (ascending by date). POST /capture computes the
+// value server-side from the user's own data and UPSERTS one row per period_key
+// (net worth monthly, portfolio daily) — idempotent, so repeated captures on
+// page load never create duplicates.
+app.get('/api/snapshots', requireAuth, wrap(async (req, res) => {
+  const kind = req.query.kind;
+  const eid  = req.entityId || null;
+  res.json(await db.allByUser('snapshots', req.session.userId,
+    r => (!kind || r.kind === kind) && (r.entity_id == null || (eid != null && r.entity_id === eid)),
+    (a, b) => String(a.date || '').localeCompare(String(b.date || ''))));
+}));
+app.post('/api/snapshots/capture', requireAuth, wrap(async (req, res) => {
+  const uid  = req.session.userId;
+  const eid  = req.entityId || null;
+  const kind = req.body?.kind === 'portfolio' ? 'portfolio' : (req.body?.kind === 'networth' ? 'networth' : null);
+  if (!kind) return res.status(400).json({ error: 'kind must be networth or portfolio.' });
+  const dateStr   = new Date().toISOString().slice(0, 10);
+  const periodKey = kind === 'networth' ? `networth:${dateStr.slice(0, 7)}` : `portfolio:${dateStr}`;
+
+  // Value is computed server-side from the user's real, entity-scoped data.
+  let value = 0;
+  if (kind === 'networth') {
+    // Net worth = manual assets + live investment portfolio − manual liabilities.
+    const accts  = await db.allByUser('personal_accounts', uid, r => (r.entity_id || null) === eid);
+    const assets = accts.filter(a => a.kind === 'asset').reduce((s, a) => s + (parseFloat(a.value) || 0), 0);
+    const liabs  = accts.filter(a => a.kind === 'liability').reduce((s, a) => s + (parseFloat(a.value) || 0), 0);
+    const holds  = await db.allByUser('holdings', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+    const portfolio = holds.reduce((s, h) => s + ((parseFloat(h.shares) || 0) * (parseFloat(h.price) || 0)), 0);
+    value = assets + portfolio - liabs;
+  } else {
+    const holds = await db.allByUser('holdings', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+    value = holds.reduce((s, h) => s + ((parseFloat(h.shares) || 0) * (parseFloat(h.price) || 0)), 0);
+  }
+
+  // Upsert by period_key within this user + entity.
+  const existing = await db.allByUser('snapshots', uid, r => r.period_key === periodKey && (r.entity_id || null) === eid);
+  if (existing[0]) {
+    await db.updateById('snapshots', existing[0].id, { value, date: dateStr });
+    return res.json({ ok: true, kind, value, date: dateStr, updated: true });
+  }
+  const { row } = await db.insert('snapshots', { user_id: uid, entity_id: eid, kind, value, date: dateStr, period_key: periodKey });
+  res.status(201).json({ ok: true, kind, value, date: dateStr, row });
+}));
+
 // ── GOALS ─────────────────────────────────────────────────────────────────────
 app.get('/api/goals', requireAuth, wrap(async (req, res) => {
   try {
@@ -1204,6 +1289,7 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
     'lock_settings','audit_log','documents','templates','autocat_rules',
     'audit_trail','invoice_payments','bank_reconciliation','payroll_runs',
     'payroll_run_lines','inventory_movements','fx_rates','fx_transactions',
+    'personal_accounts','snapshots',
   ];
   for (const t of allTables) {
     await db.deleteByUser(t, uid).catch(() => {});

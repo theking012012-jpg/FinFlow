@@ -2625,8 +2625,8 @@ function renderPersonal(){
 
   const target = parseInt(document.getElementById('s-savings-target')?.value)||40;
   const savingsRate = incomeUSD>0 ? Math.round(surplusUSD/incomeUSD*100) : 0;
-  const nwUSD = Math.round(baseNetWorth+(surplusUSD*2));
-  const nwChgUSD = Math.round(surplusUSD);
+  // REAL net worth = manual assets + live portfolio − manual liabilities.
+  const nwUSD = Math.round(computePersNetWorth().netWorth);
 
   document.getElementById('pers-income').textContent = SP(incomeUSD);
   document.getElementById('pers-spend').textContent  = SP(totalSpendUSD);
@@ -2634,8 +2634,13 @@ function renderPersonal(){
   document.getElementById('pers-savings-vs').textContent = (savingsRate>=target?'Above ':'Below ')+target+'% target';
   document.getElementById('pers-savings-vs').className = 'mc-change '+(savingsRate>=target?'up':'dn');
   document.getElementById('pers-nw').textContent   = SP(nwUSD);
-  document.getElementById('pers-nw-chg').textContent = '+'+SP(nwChgUSD)+' this month';
-  document.getElementById('pers-nw-chg').className = 'mc-change '+(nwChgUSD>0?'up':'dn');
+  // Real month-over-month delta from snapshots (≥2 needed); else honest "—".
+  const _nwChg = personalNetWorthChange();
+  const _chgEl = document.getElementById('pers-nw-chg');
+  if(_chgEl){
+    if(_nwChg.has){ _chgEl.textContent = (_nwChg.delta>=0?'+':'-')+SP(Math.abs(_nwChg.delta))+' this month'; _chgEl.className='mc-change '+(_nwChg.delta>=0?'up':'dn'); }
+    else { _chgEl.textContent='—'; _chgEl.className='mc-change neutral'; }
+  }
 
   const entityCount = Object.keys(ownerPayrollByEntity).length;
   const _incSrcEl = document.getElementById('pers-income-src');
@@ -3077,10 +3082,123 @@ async function loadPersonalFinance(){
         console.log('[PersFinance] basePersonalIncome set to:',basePersonalIncome);
       }
     }catch(prErr){console.warn('[Personal] Salary fetch failed:',prErr.message);}
+    // Real assets/liabilities + net-worth snapshots.
+    try{
+      const aRes=await fetch('/api/personal-accounts',{credentials:'include'});
+      window._persAccounts = aRes.ok ? ((await aRes.json())||[]).map(a=>({_dbId:a.id,kind:a.kind||'asset',name:a.name||'',type:a.type||'other',value:parseFloat(a.value)||0})) : (window._persAccounts||[]);
+    }catch(_){ window._persAccounts=window._persAccounts||[]; }
+    // Capture this month's net-worth snapshot — fire-and-forget, never blocks render.
+    fetch('/api/snapshots/capture',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'networth'})}).catch(()=>{});
+    try{
+      const sRes=await fetch('/api/snapshots?kind=networth',{credentials:'include'});
+      window._nwSnapshots = sRes.ok ? ((await sRes.json())||[]).map(s=>({value:parseFloat(s.value)||0,date:s.date||''})) : (window._nwSnapshots||[]);
+    }catch(_){ window._nwSnapshots=window._nwSnapshots||[]; }
+    if(typeof renderPersAccounts==='function'){ try{ renderPersAccounts(); }catch(_){}}
     _applyPersFilter();
   }catch(e){console.warn('[Personal] Load failed:',e.message);}
 }
 window.loadPersonalFinance=loadPersonalFinance;
+
+// ── PERSONAL NET WORTH (real, from personal_accounts + live portfolio) ─────────
+function personalPortfolioValue(){ return (typeof holdings!=='undefined'?holdings:[]).reduce((a,h)=>a+((parseFloat(h.price)||0)*(parseFloat(h.shares)||0)),0); }
+function computePersNetWorth(){
+  const accts=window._persAccounts||[];
+  const assets=accts.filter(a=>a.kind==='asset').reduce((s,a)=>s+(parseFloat(a.value)||0),0);
+  const liabs =accts.filter(a=>a.kind==='liability').reduce((s,a)=>s+(parseFloat(a.value)||0),0);
+  const portfolio=personalPortfolioValue();
+  return { assets, liabs, portfolio, netWorth: assets + portfolio - liabs };
+}
+// Real month-over-month delta from stored snapshots. Needs ≥2 monthly snapshots;
+// otherwise {has:false} → the UI shows "—". Never a surplus-relabel.
+function personalNetWorthChange(){
+  const s=(window._nwSnapshots||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  if(s.length<2) return {has:false,delta:0};
+  return {has:true, delta:(parseFloat(s[s.length-1].value)||0)-(parseFloat(s[s.length-2].value)||0)};
+}
+
+// ── PERSONAL ACCOUNTS CRUD (assets & liabilities) ─────────────────────────────
+async function loadPersonalAccounts(){
+  try{
+    const r=await fetch('/api/personal-accounts',{credentials:'include'});
+    window._persAccounts = r.ok ? ((await r.json())||[]).map(a=>({_dbId:a.id,kind:a.kind||'asset',name:a.name||'',type:a.type||'other',value:parseFloat(a.value)||0})) : (window._persAccounts||[]);
+  }catch(_){ window._persAccounts=window._persAccounts||[]; }
+  renderPersAccounts();
+}
+window.loadPersonalAccounts=loadPersonalAccounts;
+
+function renderPersAccounts(){
+  const el=document.getElementById('pers-accounts-list');
+  if(!el) return;
+  const accts=window._persAccounts||[];
+  if(!accts.length){ el.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No accounts yet — add an asset or liability to track your real net worth</div>'; return; }
+  const assets=accts.filter(a=>a.kind==='asset');
+  const liabs =accts.filter(a=>a.kind==='liability');
+  const row=(a)=>`<div class="bar-row" style="gap:8px">
+      <span class="bar-label" style="flex:1">${esc(a.name)} <span style="font-size:10px;color:var(--t3)">· ${esc(a.type)}</span></span>
+      <span class="bar-val" style="color:${a.kind==='asset'?'var(--green)':'var(--red)'}">${a.kind==='asset'?'':'-'}${SP(parseFloat(a.value)||0)}</span>
+      <button class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="openAccountModal('${a.kind}',${a._dbId})" title="Edit">✏</button>
+      <button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--red);opacity:.7" onclick="deletePersAccount(${a._dbId})" title="Delete">✕</button>
+    </div>`;
+  let html='';
+  html+='<div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:2px 0 4px">Assets</div>';
+  html+= assets.length ? assets.map(row).join('') : '<div style="font-size:11.5px;color:var(--t3);padding:2px 0">None yet</div>';
+  html+='<div style="height:1px;background:var(--bd);margin:8px 0"></div><div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:2px 0 4px">Liabilities</div>';
+  html+= liabs.length ? liabs.map(row).join('') : '<div style="font-size:11.5px;color:var(--t3);padding:2px 0">None yet</div>';
+  el.innerHTML=html;
+}
+window.renderPersAccounts=renderPersAccounts;
+
+window.openAccountModal=function(kind,id){
+  const isEdit=id!=null;
+  document.getElementById('acct-edit-id').value=isEdit?id:'';
+  document.getElementById('acct-modal-title').textContent=(isEdit?'Edit ':'Add ')+(kind==='liability'?'liability':'asset');
+  document.getElementById('acct-kind').value=kind;
+  // Populate type options for the chosen kind.
+  const typeSel=document.getElementById('acct-type');
+  const opts = kind==='liability' ? ['loan','credit_card','mortgage','other'] : ['cash','savings','investment','property','other'];
+  typeSel.innerHTML=opts.map(o=>`<option value="${o}">${o.replace('_',' ')}</option>`).join('');
+  const a=isEdit?(window._persAccounts||[]).find(x=>x._dbId===id):null;
+  document.getElementById('acct-name').value=a?a.name:'';
+  document.getElementById('acct-value').value=a?a.value:'';
+  if(a) typeSel.value=a.type;
+  openModal('account-modal');
+};
+window.saveAccount=async function(){
+  const id=document.getElementById('acct-edit-id').value;
+  const kind=document.getElementById('acct-kind').value==='liability'?'liability':'asset';
+  const name=(document.getElementById('acct-name').value||'').trim();
+  const type=document.getElementById('acct-type').value||'other';
+  const value=parseFloat(document.getElementById('acct-value').value)||0;
+  if(!name){ notify('Name is required',true); return; }
+  try{
+    if(id){
+      const r=await fetch('/api/personal-accounts/'+id,{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,type,kind,value})});
+      if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||'Failed');
+    }else{
+      const r=await fetch('/api/personal-accounts',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,type,kind,value})});
+      if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||'Failed');
+    }
+    closeModal('account-modal');
+    await loadPersonalAccounts();
+    // Net worth changed → capture a fresh snapshot (fire-and-forget) + re-render.
+    fetch('/api/snapshots/capture',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'networth'})}).catch(()=>{});
+    if(typeof renderPersonal==='function') renderPersonal();
+    if(typeof renderPersonalSections==='function') renderPersonalSections();
+    notify(kind==='liability'?'Liability saved ✦':'Asset saved ✦');
+  }catch(e){ notify('Could not save — '+(e.message||'error'),true); }
+};
+window.deletePersAccount=async function(id){
+  if(!confirm('Delete this account?')) return;
+  try{
+    const r=await fetch('/api/personal-accounts/'+id,{method:'DELETE',credentials:'include'});
+    if(!r.ok) throw new Error('Failed');
+    await loadPersonalAccounts();
+    fetch('/api/snapshots/capture',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'networth'})}).catch(()=>{});
+    if(typeof renderPersonal==='function') renderPersonal();
+    if(typeof renderPersonalSections==='function') renderPersonalSections();
+    notify('Account deleted');
+  }catch(e){ notify('Could not delete',true); }
+};
 
 function renderPersonalSections(){
   const salary=basePersonalIncome;
@@ -3121,30 +3239,30 @@ function renderPersonalSections(){
     }
   }
 
-  // Net worth breakdown
-  const cashAssets=Math.max(0,totalInc-totalExp);
-  const invValue=typeof holdings!=='undefined'?holdings.reduce((a,h)=>a+((h.price||0)*(h.shares||0)),0):0;
-  const totalAssets=cashAssets+invValue;
-  const totalLiab=Math.max(0,totalExp-totalInc);
-  const netWorth=totalAssets-totalLiab;
+  // Net worth breakdown — REAL assets & liabilities from personal_accounts +
+  // live investment portfolio (no inferred cash-flow model).
+  const _nwb=computePersNetWorth();
+  const _accts=window._persAccounts||[];
+  const _assetRows=_accts.filter(a=>a.kind==='asset');
+  const _liabRows =_accts.filter(a=>a.kind==='liability');
+  const netWorth=_nwb.netWorth;
   const nwEl=document.getElementById('nw-breakdown-list');
   const nwSub=document.getElementById('nw-sub');
-  if(nwSub) nwSub.textContent=SP(Math.abs(netWorth))+(netWorth<0?' deficit':' total');
+  if(nwSub) nwSub.textContent=SP(Math.abs(Math.round(netWorth)))+(netWorth<0?' deficit':' total');
   if(nwEl){
-    if(totalAssets===0&&totalLiab===0){
-      nwEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No data yet — add payroll, transactions, or investments</div>';
+    if(_assetRows.length===0&&_liabRows.length===0&&_nwb.portfolio===0){
+      nwEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No accounts yet — add assets & liabilities below to track net worth</div>';
     }else{
-      nwEl.innerHTML=`<div style="display:flex;flex-direction:column;gap:4px">
-        <div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Assets</div>
-        ${cashAssets>0?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">Cash savings</span><span style="color:var(--green);font-family:var(--font-mono)">${SP(cashAssets)}</span></div>`:''}
-        ${invValue>0?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">Investment portfolio</span><span style="color:var(--green);font-family:var(--font-mono)">${SP(invValue)}</span></div>`:''}
-        ${totalAssets===0?`<div style="font-size:12px;color:var(--t3);padding:3px 0">$0</div>`:''}
-        <div style="height:1px;background:var(--bd);margin:6px 0"></div>
-        <div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Liabilities</div>
-        ${totalLiab>0?`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">Excess spending</span><span style="color:var(--red);font-family:var(--font-mono)">-${SP(totalLiab)}</span></div>`:`<div style="font-size:12px;color:var(--t3);padding:3px 0">$0</div>`}
-        <div style="height:1px;background:var(--bd);margin:6px 0"></div>
-        <div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span style="color:var(--t1);font-weight:600">Net worth</span><span style="font-family:var(--font-mono);font-weight:700;color:${netWorth>=0?'var(--acc)':'var(--red)'}">${netWorth>=0?'':'-'}${SP(Math.abs(netWorth))}</span></div>
-      </div>`;
+      const _line=(label,val,color)=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">${esc(label)}</span><span style="color:${color};font-family:var(--font-mono)">${val<0?'-':''}${SP(Math.abs(val))}</span></div>`;
+      let _h='<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Assets</div>';
+      _assetRows.forEach(a=>{ _h+=_line(a.name,parseFloat(a.value)||0,'var(--green)'); });
+      if(_nwb.portfolio>0) _h+=_line('Investment portfolio',_nwb.portfolio,'var(--green)');
+      if(_assetRows.length===0&&_nwb.portfolio===0) _h+='<div style="font-size:12px;color:var(--t3);padding:3px 0">$0</div>';
+      _h+='<div style="height:1px;background:var(--bd);margin:6px 0"></div><div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Liabilities</div>';
+      if(_liabRows.length){ _liabRows.forEach(l=>{ _h+=_line(l.name,-(parseFloat(l.value)||0),'var(--red)'); }); }
+      else _h+='<div style="font-size:12px;color:var(--t3);padding:3px 0">$0</div>';
+      _h+='<div style="height:1px;background:var(--bd);margin:6px 0"></div><div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span style="color:var(--t1);font-weight:600">Net worth</span><span style="font-family:var(--font-mono);font-weight:700;color:'+(netWorth>=0?'var(--acc)':'var(--red)')+'">'+(netWorth<0?'-':'')+SP(Math.abs(Math.round(netWorth)))+'</span></div></div>';
+      nwEl.innerHTML=_h;
     }
   }
 
@@ -3167,6 +3285,7 @@ function renderPersonalSections(){
         </div>`).join('')
         +'<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)">'+SP(totalExp)+'</span></div>';
     }
+    if(typeof renderPersSpendDonut==='function') renderPersSpendDonut(catEntries);
   }
 
   // Tax estimate
@@ -3195,12 +3314,6 @@ function renderPersonalSections(){
 // INVESTMENTS
 // ════════════════════════════════════════════
 let holdings=[];
-const INV_PERIOD_DATA={
-  '1m':{portPts:[100,101.2,100.8,102.1,103.4,102.9,104.2,105.1,104.8,106.3,107.0,106.5,107.8,108.2,108.9,110.1,109.7,110.5,111.2,110.8,112.1,113.0,112.4,113.8,114.2,115.0,114.8,116.1,115.7,116.9,117.4],sp500:[100,101.0,100.5,101.8,102.9,102.3,103.5,104.2,103.9,105.0,105.8,105.2,106.1,106.8,107.3,108.2,107.8,108.9,109.5,109.1,110.2,111.0,110.5,111.6,112.0,112.8,112.4,113.5,113.0,113.8,114.2]},
-  '3m':{portPts:[100,101.8,103.2,102.4,104.8,106.1,105.3,107.5,108.9,108.1,110.4,111.8,110.9,113.2,114.5,113.6,115.9,117.2,116.3,118.6,119.9,119.0,121.3,122.6,121.8,123.1,122.4,124.7,125.9,125.1,117.4],sp500:[100,101.5,102.8,102.0,104.1,105.3,104.6,106.7,107.9,107.2,109.2,110.5,109.8,111.8,113.0,112.4,114.2,115.5,114.8,116.8,118.0,117.4,119.3,120.5,119.9,121.0,120.4,122.3,123.5,122.9,114.2]},
-  'ytd':{portPts:[100,102.1,104.5,103.8,106.2,108.4,107.6,110.1,112.3,111.5,113.9,116.2,115.3,117.8,120.1,119.2,121.7,123.9,123.1,125.6,127.9,127.0,129.4,131.7,130.9,133.3,132.4,134.8,137.1,136.2,117.4],sp500:[100,101.8,103.9,103.2,105.4,107.4,106.7,108.9,110.9,110.3,112.3,114.2,113.5,115.4,117.4,116.7,118.6,120.6,119.9,121.8,123.8,123.2,125.0,127.0,126.3,128.2,127.6,129.5,131.5,130.8,114.2]},
-  '1y':{portPts:[100,103.2,97.4,105.8,110.2,108.4,115.6,112.1,118.9,122.4,119.8,127.2,124.6,131.1,128.5,135.9,133.2,140.6,138.0,145.4,142.7,150.1,147.5,154.9,152.2,159.6,157.0,164.4,161.7,169.1,117.4],sp500:[100,102.8,96.4,104.5,108.7,106.9,113.8,110.4,116.9,120.1,117.6,124.8,122.2,128.5,125.9,132.3,129.7,136.2,133.6,140.1,137.4,143.9,141.3,147.8,145.1,151.6,148.9,155.4,152.7,159.2,114.2]}
-};
 let invPeriod='1m';
 let invPerfChart=null;
 let invDonutChart=null;
@@ -3208,20 +3321,26 @@ let invDonutChart=null;
 function S2(n){if(n>=1e6)return'$'+(n/1e6).toFixed(2)+'M';if(n>=1e3)return'$'+(n/1e3).toFixed(1)+'K';return'$'+Math.round(n).toLocaleString();}
 
 function calcPortfolio(){
-  let totalValue=0,totalCost=0,totalDiv=0,dayChg=0;
+  let totalValue=0,totalCost=0,totalDiv=0;
   holdings.forEach(h=>{
     totalValue+=h.price*h.shares;
     totalCost+=h.cost*h.shares;
     totalDiv+=(h.div||0)*h.shares;
-    dayChg+=(h.price*0.0031)*h.shares; // simulated day change ~0.31%
   });
+  // REAL day change = current value − most recent PRIOR-day snapshot. null when
+  // there's no prior-day snapshot yet (shown as "—"). No simulated figure.
+  const _snaps=(window._portSnapshots||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const _today=new Date().toISOString().slice(0,10);
+  const _prior=_snaps.filter(s=>s.date && s.date<_today).pop();
+  const dayChg = _prior ? (totalValue - (parseFloat(_prior.value)||0)) : null;
   return{totalValue,totalCost,totalGain:totalValue-totalCost,totalDiv,dayChg};
 }
 
 function renderInvestments(){
   const{totalValue,totalCost,totalGain,totalDiv,dayChg}=calcPortfolio();
   const gainPct=totalCost>0?((totalGain/totalCost)*100).toFixed(1):0;
-  const dayPct=totalValue > 0 ? (dayChg/totalValue*100).toFixed(2) : '0.00';
+  const hasDay = dayChg != null;
+  const dayPct = (hasDay && totalValue>0) ? (dayChg/totalValue*100).toFixed(2) : null;
   const gainPos=totalGain>=0;
 
   // Metrics
@@ -3229,8 +3348,11 @@ function renderInvestments(){
   const tChg=document.getElementById('inv-total-chg');tChg.textContent=(gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% all time';tChg.className='mc-change '+(gainPos?'up':'dn');
   document.getElementById('inv-gain').textContent=(gainPos?'+':'')+S2(totalGain);
   const gLbl=document.getElementById('inv-gain-lbl');gLbl.textContent=(gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% return';gLbl.className='mc-change '+(gainPos?'up':'dn');
-  document.getElementById('inv-day-chg').textContent=(dayChg>=0?'+':'')+S2(dayChg);
-  const dLbl=document.getElementById('inv-day-lbl');dLbl.textContent=(dayChg>=0?'▲ ':'▼ ')+Math.abs(dayPct)+'% today';dLbl.className='mc-change '+(dayChg>=0?'up':'dn');
+  // Day change — real (prior-day snapshot) or honest "—" until one exists.
+  document.getElementById('inv-day-chg').textContent = hasDay ? ((dayChg>=0?'+':'')+S2(dayChg)) : '—';
+  const dLbl=document.getElementById('inv-day-lbl');
+  if(hasDay){ dLbl.textContent=(dayChg>=0?'▲ ':'▼ ')+Math.abs(dayPct)+'% today'; dLbl.className='mc-change '+(dayChg>=0?'up':'dn'); }
+  else { dLbl.textContent='Builds after 1 day'; dLbl.className='mc-change neutral'; }
   document.getElementById('inv-yield').textContent=S2(totalDiv);
 
   // Holdings list
@@ -3262,7 +3384,9 @@ function renderInvestments(){
 
   // Donut chart
   buildInvDonut(holdings,totalValue);
-  buildInvPerfChart(invPeriod);
+  // Real forward-only performance series: capture today's value + load snapshots,
+  // then render. Fire-and-forget — never blocks this render.
+  loadPortfolioSnapshots();
   updateInvAI(totalValue,totalGain,gainPct,totalDiv);
   updateNetWorthPanel(totalValue);
 
@@ -3285,6 +3409,26 @@ function renderInvestments(){
     }
   }
 }
+
+// Personal spend-by-category donut (real transaction category totals).
+let persSpendDonutChart=null;
+function renderPersSpendDonut(entries){
+  const canvas=document.getElementById('persSpendDonut');
+  if(!canvas||typeof Chart==='undefined'||canvas.offsetParent===null) return;
+  const ctx=canvas.getContext('2d'); if(!ctx) return;
+  if(persSpendDonutChart){ persSpendDonutChart.destroy(); persSpendDonutChart=null; }
+  if(!entries||!entries.length){ ctx.clearRect(0,0,canvas.width,canvas.height); return; }
+  const palette=['#c9a84c','#5aaa9e','#9e8fbf','#7db87d','#d4964a','#c46a5a','#5a9ec9','#b0894a'];
+  const labels=entries.map(e=>e[0]);
+  const vals=entries.map(e=>e[1]);
+  const colors=entries.map((e,i)=>palette[i%palette.length]);
+  const total=vals.reduce((a,b)=>a+b,0)||1;
+  persSpendDonutChart=new Chart(canvas,{type:'doughnut',
+    data:{labels,datasets:[{data:vals,backgroundColor:colors.map(c=>c+'cc'),borderColor:colors,borderWidth:1.5}]},
+    options:{responsive:false,cutout:'66%',plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(22,18,13,0.95)',titleColor:'#f2e8d5',bodyColor:'#9e8e73',padding:8,cornerRadius:6,callbacks:{label:c=>`${c.label}: ${(c.raw/total*100).toFixed(0)}%`}}}}
+  });
+}
+window.renderPersSpendDonut=renderPersSpendDonut;
 
 function buildInvDonut(hs,totalValue){
   const canvas=document.getElementById('invDonut');
@@ -3312,24 +3456,39 @@ function buildInvDonut(hs,totalValue){
     </div>`).join('');
 }
 
+// Fire-and-forget: capture today's portfolio value, load the REAL stored series,
+// then render. Never throws into the render path.
+async function loadPortfolioSnapshots(){
+  try{
+    fetch('/api/snapshots/capture',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'portfolio'})}).catch(()=>{});
+    const r=await fetch('/api/snapshots?kind=portfolio',{credentials:'include'});
+    window._portSnapshots = r.ok ? ((await r.json())||[]).map(s=>({value:parseFloat(s.value)||0,date:s.date||''})) : (window._portSnapshots||[]);
+  }catch(_){ window._portSnapshots=window._portSnapshots||[]; }
+  try{ buildInvPerfChart(invPeriod); }catch(_){}
+}
+window.loadPortfolioSnapshots=loadPortfolioSnapshots;
+
 function buildInvPerfChart(period){
   const canvas=document.getElementById('invPerfChart');
   if(!canvas||typeof Chart==='undefined'||canvas.offsetWidth===0||canvas.offsetParent===null)return;
   const retEl=document.getElementById('inv-perf-return');
-  // No holdings → show empty state (no fake benchmark data)
-  if(!holdings || holdings.length===0){
-    if(retEl) retEl.textContent='No data — add holdings to see performance';
-    if(invPerfChart){ invPerfChart.destroy(); invPerfChart=null; }
-    const ctx=canvas.getContext('2d');
-    if(ctx){ ctx.clearRect(0,0,canvas.width,canvas.height); }
-    return;
-  }
-  const{portPts,sp500}=INV_PERIOD_DATA[period];
-  const n=portPts.length;
-  const labels=Array.from({length:n},(_,i)=>i===0?'Start':i===n-1?'Now':'');
-  const portReturn=((portPts[n-1]-100)).toFixed(1);
-  const spReturn=((sp500[n-1]-100)).toFixed(1);
-  if(retEl)retEl.textContent=`Portfolio +${portReturn}% vs S&P +${spReturn}%`;
+  const _clear=(msg)=>{ if(retEl) retEl.textContent=msg; if(invPerfChart){ invPerfChart.destroy(); invPerfChart=null; } const ctx=canvas.getContext('2d'); if(ctx) ctx.clearRect(0,0,canvas.width,canvas.height); };
+  if(!holdings || holdings.length===0){ _clear('No data — add holdings to see performance'); return; }
+  // REAL snapshots only — never fabricated. Honest "building" state until ≥2 points.
+  let snaps=(window._portSnapshots||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const now=new Date(); let cutoff=null;
+  if(period==='1m'){cutoff=new Date(now);cutoff.setMonth(now.getMonth()-1);}
+  else if(period==='3m'){cutoff=new Date(now);cutoff.setMonth(now.getMonth()-3);}
+  else if(period==='ytd'){cutoff=new Date(now.getFullYear(),0,1);}
+  else if(period==='1y'){cutoff=new Date(now);cutoff.setFullYear(now.getFullYear()-1);}
+  let series = cutoff ? snaps.filter(s=>new Date(s.date)>=cutoff) : snaps;
+  if(series.length<2) series = snaps;   // window too sparse → show whatever real history exists
+  if(series.length<2){ _clear('Performance history builds over time — check back as data accumulates'); return; }
+  const pts=series.map(s=>s.value);
+  const labels=series.map((s,i)=>i===0?'Start':i===series.length-1?'Now':'');
+  const first=pts[0]||1;
+  const retPct=(((pts[pts.length-1]-first)/first)*100).toFixed(1);
+  if(retEl) retEl.textContent=`Portfolio ${retPct>=0?'+':''}${retPct}% since ${series[0].date}`;
   const{tc,gc}=chartDefaults();
   if(invPerfChart){invPerfChart.destroy();}
   const portCtx=canvas.getContext('2d');
@@ -3339,12 +3498,11 @@ function buildInvPerfChart(period){
   invPerfChart=new Chart(canvas,{
     type:'line',
     data:{labels,datasets:[
-      {label:'Portfolio',data:portPts,borderColor:'#c9a84c',borderWidth:2,fill:true,backgroundColor:portGrad,tension:0.4,pointRadius:0,pointHoverRadius:4},
-      {label:'S&P 500',data:sp500,borderColor:'#9e8fbf',borderWidth:1.5,fill:false,tension:0.4,pointRadius:0,pointHoverRadius:4,borderDash:[4,3]}
+      {label:'Portfolio value',data:pts,borderColor:'#c9a84c',borderWidth:2,fill:true,backgroundColor:portGrad,tension:0.35,pointRadius:0,pointHoverRadius:4}
     ]},
     options:{responsive:true,maintainAspectRatio:false,animation:{duration:200},
-      plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(22,18,13,0.95)',titleColor:'#f2e8d5',bodyColor:'#9e8e73',padding:8,cornerRadius:6,callbacks:{label:c=>`${c.dataset.label}: +${(c.raw-100).toFixed(1)}%`}}},
-      scales:{x:{display:false},y:{grid:{color:gc},ticks:{color:tc,font:{size:10},callback:v=>'+'+(v-100).toFixed(0)+'%'},border:{display:false}}}
+      plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(22,18,13,0.95)',titleColor:'#f2e8d5',bodyColor:'#9e8e73',padding:8,cornerRadius:6,callbacks:{label:c=>S2(c.raw)}}},
+      scales:{x:{display:false},y:{grid:{color:gc},ticks:{color:tc,font:{size:10},callback:v=>S2(v)},border:{display:false}}}
     }
   });
 }
@@ -3380,19 +3538,25 @@ function updateInvAI(totalValue,totalGain,gainPct,totalDiv){
 }
 
 function updateNetWorthPanel(portValue){
-  const cash=284320;
-  const other=84000;
-  const total=cash+portValue+other;
-  const max=Math.max(cash,portValue,other);
-  const el=document.getElementById('nw-port-val');if(el)el.textContent=S2(portValue);
+  // REAL breakdown from personal_accounts (no hardcoded cash/other). Cash =
+  // cash+savings assets; Other = every other asset; total = assets + live
+  // portfolio − liabilities (same net-worth definition renderPersonal uses).
+  const accts=window._persAccounts||[];
+  const cash = accts.filter(a=>a.kind==='asset' && (a.type==='cash'||a.type==='savings')).reduce((s,a)=>s+(parseFloat(a.value)||0),0);
+  const other= accts.filter(a=>a.kind==='asset' && !(a.type==='cash'||a.type==='savings')).reduce((s,a)=>s+(parseFloat(a.value)||0),0);
+  const liab = accts.filter(a=>a.kind==='liability').reduce((s,a)=>s+(parseFloat(a.value)||0),0);
+  const total=cash+portValue+other-liab;
+  const max=Math.max(cash,portValue,other,1);
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('nw-port-val',S2(portValue));
+  set('nw-cash-val',S2(cash));
+  set('nw-other-val',S2(other));
   const pb=document.getElementById('nw-port-bar');if(pb)pb.style.width=(portValue/max*100).toFixed(0)+'%';
   const cb=document.getElementById('nw-cash-bar');if(cb)cb.style.width=(cash/max*100).toFixed(0)+'%';
   const ob=document.getElementById('nw-other-bar');if(ob)ob.style.width=(other/max*100).toFixed(0)+'%';
-  const td=document.getElementById('nw-total-display');if(td)td.textContent=S2(total);
-  const pp=document.getElementById('nw-port-pct');if(pp)pp.textContent=(portValue/total*100).toFixed(0)+'%';
-  // Also update personal net worth if available
-  const pnw=document.getElementById('pers-nw');
-  if(pnw)pnw.textContent=S2(total);
+  set('nw-total-display',S2(total));
+  const pp=document.getElementById('nw-port-pct');if(pp)pp.textContent=total>0?(portValue/total*100).toFixed(0)+'%':'0%';
+  // NOTE: pers-nw is owned by renderPersonal (real accounts+portfolio−liab) — not clobbered here.
 }
 
 function openAddHoldingModal(){

@@ -149,7 +149,7 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_clients (
         id                    SERIAL PRIMARY KEY,
-        accountant_id         INTEGER NOT NULL REFERENCES accountants(id),
+        accountant_id         INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
         user_id               INTEGER NOT NULL,
         status                VARCHAR(30) DEFAULT 'active',
         access_level          VARCHAR(30) DEFAULT 'view',
@@ -171,7 +171,7 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_earnings (
         id            SERIAL PRIMARY KEY,
-        accountant_id INTEGER NOT NULL REFERENCES accountants(id),
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
         client_id     INTEGER,
         type          VARCHAR(30) NOT NULL,
         amount_cents  INTEGER NOT NULL,
@@ -188,7 +188,7 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_reviews (
         id            SERIAL PRIMARY KEY,
-        accountant_id INTEGER NOT NULL REFERENCES accountants(id),
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
         client_id     INTEGER NOT NULL,
         rating        INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
         comment       TEXT,
@@ -201,7 +201,7 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_reports (
         id            SERIAL PRIMARY KEY,
-        accountant_id INTEGER NOT NULL REFERENCES accountants(id),
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
         reporter_id   INTEGER NOT NULL,
         reason        TEXT NOT NULL,
         created_at    TIMESTAMPTZ DEFAULT NOW()
@@ -350,7 +350,7 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_messages (
         id            SERIAL PRIMARY KEY,
-        accountant_id INTEGER NOT NULL REFERENCES accountants(id),
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
         user_id       INTEGER NOT NULL,
         sender        VARCHAR(20) NOT NULL DEFAULT 'accountant',
         message       TEXT NOT NULL,
@@ -363,7 +363,7 @@ async function initDB() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_deadlines (
         id            SERIAL PRIMARY KEY,
-        accountant_id INTEGER NOT NULL REFERENCES accountants(id),
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
         client_name   TEXT NOT NULL,
         filing_type   TEXT NOT NULL,
         due_date      DATE NOT NULL,
@@ -371,6 +371,62 @@ async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_deadlines_accountant ON accountant_deadlines(accountant_id)`);
+
+    // ── FOREIGN KEYS: single source of truth ─────────────────────────────────────
+    // Idempotently add every cascade FK so a database built purely from this code is
+    // fully FK-protected, while an existing database that already has them (production)
+    // is a zero-op. The guard checks whether ANY foreign key already exists on the
+    // given (table, column) via pg_constraint — matched BY COLUMN, not by name — so a
+    // production FK created under a different constraint name is still recognised and
+    // never duplicated. A constraint is only ADDed when none exists on that column.
+    // Runs after every table above is created (users/entities/accountants all exist),
+    // and inside the same BEGIN/COMMIT so a failure rolls the whole init back.
+    await client.query(`
+      DO $fk$
+      DECLARE
+        t text;
+        std text[] := ARRAY[
+          'invoices','expenses','customers','inventory','items','payroll','payroll_runs',
+          'holdings','journals','chart_of_accounts','vendors','bills','sales_receipts',
+          'payments_received','payments_made','credit_notes','vendor_credits',
+          'recurring_bills','recurring_invoices','quotes','projects','timesheet',
+          'budget_targets','documents','templates','autocat_rules','invoice_payments',
+          'bank_reconciliation','inventory_movements','fx_rates','fx_transactions','goals',
+          'personal_transactions','lock_settings','team_members','audit_trail',
+          'user_settings','personal_accounts','snapshots'
+        ];
+        uid_only text[] := ARRAY['entities','ai_cache','ai_usage','password_resets','accountants'];
+      BEGIN
+        FOREACH t IN ARRAY std LOOP
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_class cl ON cl.oid = c.conrelid
+            JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+            WHERE c.contype = 'f' AND cl.relname = t AND a.attname = 'user_id'
+          ) THEN
+            EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE', t, 'fk_'||t||'_user');
+          END IF;
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_class cl ON cl.oid = c.conrelid
+            JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+            WHERE c.contype = 'f' AND cl.relname = t AND a.attname = 'entity_id'
+          ) THEN
+            EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE', t, 'fk_'||t||'_entity');
+          END IF;
+        END LOOP;
+        FOREACH t IN ARRAY uid_only LOOP
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_class cl ON cl.oid = c.conrelid
+            JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+            WHERE c.contype = 'f' AND cl.relname = t AND a.attname = 'user_id'
+          ) THEN
+            EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE', t, 'fk_'||t||'_user');
+          END IF;
+        END LOOP;
+      END $fk$;
+    `);
 
     await client.query('COMMIT');
     console.log('[DB] PostgreSQL schema ready');

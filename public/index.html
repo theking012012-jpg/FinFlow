@@ -964,6 +964,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 .qa-actions{display:flex;justify-content:space-between;align-items:center;margin-top:.65rem;gap:8px;flex-wrap:wrap}
 .qa-hint{font-size:10.5px;color:var(--t3)}
 .pers-tx-row:hover{background:var(--bg2)}
+.tx-act{background:none;border:none;cursor:pointer;color:var(--t3);padding:2px 4px;line-height:0;border-radius:4px;transition:color .12s}
+.tx-act:hover{color:var(--t1)}
+.tx-act.tx-edit:hover{color:var(--acc)}
+.tx-act.tx-del:hover{color:var(--red)}
 /* expense-first lead labels + tucked income bar */
 .qa-lead{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.55rem;color:var(--t2)}
 .qa-lead::before{content:'';width:7px;height:7px;border-radius:50%;flex-shrink:0}
@@ -2441,6 +2445,44 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <button class="scenario-preset-btn pers-period-btn" data-period="quarter" onclick="setPersPeriod('quarter')" style="font-size:10.5px;padding:3px 8px">Quarter</button>
           <button class="scenario-preset-btn active-preset pers-period-btn" data-period="year" onclick="setPersPeriod('year')" style="font-size:10.5px;padding:3px 8px">Year</button>
         </div>
+        <!-- Transactions (moved to top: quick-add + list together, primary entry) -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">Transaction history</div></div>
+          <!-- PRIMARY: expense quick-add (expense by definition — no type toggle) -->
+          <div class="qa-bar qa-bar-exp">
+            <div class="qa-lead qa-lead-exp">Expense</div>
+            <div class="qa-row">
+              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qa-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Expense amount" onkeydown="if(event.key==='Enter')persQuickAdd()"></div>
+              <input class="qa-desc" id="qa-desc" placeholder="What was it for? (optional)" aria-label="Description" onkeydown="if(event.key==='Enter')persQuickAdd()">
+              <button class="btn btn-primary" onclick="persQuickAdd()">Add</button>
+            </div>
+            <div class="qa-pills" id="qa-cat-pills"></div>
+            <div class="qa-actions">
+              <button class="btn btn-ghost btn-sm" id="qa-income-toggle" onclick="toggleIncomeEntry()"><span style="color:var(--green)">+ Add income</span></button>
+              <button class="btn btn-ghost btn-sm" onclick="openTransactionModal()">More details ↗</button>
+            </div>
+          </div>
+          <!-- SECONDARY: income entry, tucked, collapsed by default -->
+          <div class="qa-bar qa-bar-inc" id="qa-income" style="display:none">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div class="qa-lead qa-lead-inc" style="margin-bottom:0">Income</div>
+              <button type="button" class="qa-collapse" onclick="toggleIncomeEntry()" title="Hide income" aria-label="Hide income entry"><svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            </div>
+            <div class="qa-row" style="margin-top:.55rem">
+              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qai-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Income amount" onkeydown="if(event.key==='Enter')persIncomeAdd()"></div>
+              <input class="qa-desc" id="qai-desc" placeholder="Source (optional)" aria-label="Income description" onkeydown="if(event.key==='Enter')persIncomeAdd()">
+              <button class="btn btn-green" onclick="persIncomeAdd()">Add</button>
+            </div>
+            <div class="qa-pills" id="qai-cat-pills"></div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.75rem" id="pers-tx-filters">
+            <button class="scenario-preset-btn active-preset pers-tx-filter-btn" data-filter="all" onclick="setPersTxFilter('all')">All</button>
+            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="income" onclick="setPersTxFilter('income')">Income</button>
+            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="expense" onclick="setPersTxFilter('expense')">Expenses</button>
+          </div>
+          <div id="pers-transactions"></div>
+          <div id="pers-tx-balance" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Running balance</span><span style="font-family:var(--font-mono);font-weight:600" id="pers-tx-balance-val">$0</span></div>
+        </div>
         <!-- Personal salary entry -->
         <div class="card" id="pers-salary-card" style="margin-bottom:.85rem">
           <div class="card-header" id="pers-salary-header" style="cursor:pointer;margin-bottom:0" onclick="togglePersSalaryEdit()" role="button" aria-expanded="true" aria-controls="pers-salary-editor" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePersSalaryEdit()}">
@@ -2544,44 +2586,6 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div id="tax-estimate-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Add income to see tax estimate</div></div>
             <div style="margin-top:10px;font-size:10.5px;color:var(--t3);font-style:italic">Estimate only — consult a tax professional</div>
           </div>
-        </div>
-        <!-- Transactions -->
-        <div class="card">
-          <div class="card-header"><div class="card-title">Transaction history</div></div>
-          <!-- PRIMARY: expense quick-add (expense by definition — no type toggle) -->
-          <div class="qa-bar qa-bar-exp">
-            <div class="qa-lead qa-lead-exp">Expense</div>
-            <div class="qa-row">
-              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qa-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Expense amount" onkeydown="if(event.key==='Enter')persQuickAdd()"></div>
-              <input class="qa-desc" id="qa-desc" placeholder="What was it for? (optional)" aria-label="Description" onkeydown="if(event.key==='Enter')persQuickAdd()">
-              <button class="btn btn-primary" onclick="persQuickAdd()">Add</button>
-            </div>
-            <div class="qa-pills" id="qa-cat-pills"></div>
-            <div class="qa-actions">
-              <button class="btn btn-ghost btn-sm" id="qa-income-toggle" onclick="toggleIncomeEntry()"><span style="color:var(--green)">+ Add income</span></button>
-              <button class="btn btn-ghost btn-sm" onclick="openTransactionModal()">More details ↗</button>
-            </div>
-          </div>
-          <!-- SECONDARY: income entry, tucked, collapsed by default -->
-          <div class="qa-bar qa-bar-inc" id="qa-income" style="display:none">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <div class="qa-lead qa-lead-inc" style="margin-bottom:0">Income</div>
-              <button type="button" class="qa-collapse" onclick="toggleIncomeEntry()" title="Hide income" aria-label="Hide income entry"><svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
-            </div>
-            <div class="qa-row" style="margin-top:.55rem">
-              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qai-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Income amount" onkeydown="if(event.key==='Enter')persIncomeAdd()"></div>
-              <input class="qa-desc" id="qai-desc" placeholder="Source (optional)" aria-label="Income description" onkeydown="if(event.key==='Enter')persIncomeAdd()">
-              <button class="btn btn-green" onclick="persIncomeAdd()">Add</button>
-            </div>
-            <div class="qa-pills" id="qai-cat-pills"></div>
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.75rem" id="pers-tx-filters">
-            <button class="scenario-preset-btn active-preset pers-tx-filter-btn" data-filter="all" onclick="setPersTxFilter('all')">All</button>
-            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="income" onclick="setPersTxFilter('income')">Income</button>
-            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="expense" onclick="setPersTxFilter('expense')">Expenses</button>
-          </div>
-          <div id="pers-transactions"></div>
-          <div id="pers-tx-balance" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Running balance</span><span style="font-family:var(--font-mono);font-weight:600" id="pers-tx-balance-val">$0</span></div>
         </div>
       </div>
 

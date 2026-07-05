@@ -3162,13 +3162,14 @@ function _renderPersTxList(){
   el.innerHTML=txs.map(t=>{
     running+=t.type==='income'?t.amount:-t.amount;
     const m=persCatMeta(t.cat);
-    return `<div class="tx-row pers-tx-row" style="align-items:center;cursor:pointer" ${t._dbId!=null?`onclick="editPersTx(${t._dbId})"`:''} title="Click to edit">
+    return `<div class="tx-row pers-tx-row" style="align-items:center">
       <div class="tx-left" style="flex:1;min-width:0">
         <div class="tx-icon" style="background:${m.bg};color:${m.color}">${persCatIconSvg(m.icon)}</div>
         <div style="min-width:0"><div class="tx-name">${esc(t.desc)}</div><div class="tx-cat">${esc(t.cat)} · ${esc(t.date)}</div></div>
       </div>
-      <div class="tx-amt ${t.type==='income'?'up':'dn'}" style="margin-right:8px">${t.type==='income'?'+':'-'}${SP(t.amount)}</div>
-      ${t._dbId?`<button onclick="event.stopPropagation();deletePersonalTransaction(${t._dbId})" style="background:none;border:none;cursor:pointer;color:var(--t3);padding:2px 4px;font-size:11px;line-height:1" title="Delete">✕</button>`:''}
+      <div class="tx-amt ${t.type==='income'?'up':'dn'}" style="margin-right:6px">${t.type==='income'?'+':'-'}${SP(t.amount)}</div>
+      ${t._dbId?`<button class="tx-act tx-edit" onclick="editPersTx(${t._dbId})" title="Edit transaction" aria-label="Edit transaction"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/></svg></button>`:''}
+      ${t._dbId?`<button class="tx-act tx-del" onclick="deletePersonalTransaction(${t._dbId})" style="font-size:12px" title="Delete transaction" aria-label="Delete transaction">✕</button>`:''}
     </div>`;
   }).join('');
   const balRow=document.getElementById('pers-tx-balance');

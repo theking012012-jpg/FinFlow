@@ -1,133 +1,5 @@
 /* ── finflow-api.js ── */
 'use strict';
-
-/* ══════════════════════════════════════════════════════════════════════
- * TRIAL-EXPIRED GUARD — single global interception point
- * ----------------------------------------------------------------------
- * checkPlan (server.js) returns 402 { code:'TRIAL_EXPIRED' } on every
- * data route once a trial lapses. Rather than branch inside each of the
- * ~9 private api() helpers (plus apiFetch + raw fetch() call sites), we
- * wrap window.fetch ONCE here so EVERY API call is covered. On a 402 with
- * that code we surface a blocking upgrade modal; the original Response is
- * returned unchanged so existing !res.ok throwers still reject and callers
- * stop. Frontend-only — no server logic is touched.
- * ════════════════════════════════════════════════════════════════════ */
-(function () {
-  if (window.__ffTrialGuardInstalled) return;      // install once
-  window.__ffTrialGuardInstalled = true;
-
-  var _origFetch = window.fetch.bind(window);
-
-  // 402 TRIAL_EXPIRED interception (unchanged behaviour).
-  async function _ffHandle(promise) {
-    var res = await promise;
-    if (res && res.status === 402) {
-      try {
-        var body = await res.clone().json();
-        if (body && body.code === 'TRIAL_EXPIRED') {
-          if (typeof window.showTrialExpiredModal === 'function') window.showTrialExpiredModal();
-        }
-      } catch (e) { /* non-JSON 402 — leave it to the caller */ }
-    }
-    return res;
-  }
-
-  // ── GLOBAL IN-FLIGHT DEDUPE (double-submit guarantee) ────────────────────
-  // A single choke point covering EVERY mutating request from EVERY handler
-  // (all api() helpers, apiFetch, raw fetch). If an identical request
-  // (method + URL + body) is already in flight, the duplicate returns the
-  // first one's response instead of firing a second POST/PUT — so a fast
-  // double-click / retry can never create two records. Each caller gets its
-  // OWN clone() of the response, so bodies stay independently readable.
-  // Only string/no-body mutating requests are keyed; anything else passes
-  // straight through. Server-side 5s dedupe (findRecentDuplicate) backstops
-  // the non-simultaneous case.
-  var _ffInflight = Object.create(null);
-  var _FF_MUT = { POST: 1, PUT: 1, PATCH: 1, DELETE: 1 };
-  window.fetch = function (input, init) {
-    var method = String((init && init.method) || (input && typeof input === 'object' && input.method) || 'GET').toUpperCase();
-    var body = init && init.body;
-    if (_FF_MUT[method] && (body == null || typeof body === 'string')) {
-      var url = typeof input === 'string' ? input : (input && input.url) || '';
-      var key = method + ' ' + url + ' ' + (body == null ? '' : body);
-      if (_ffInflight[key]) return _ffInflight[key].then(function (r) { return r.clone(); });
-      var p = _ffHandle(_origFetch(input, init));
-      _ffInflight[key] = p;
-      var clear = function () { delete _ffInflight[key]; };
-      p.then(clear, clear);
-      return p.then(function (r) { return r.clone(); });
-    }
-    return _ffHandle(_origFetch(input, init));
-  };
-
-  // guardSubmit(btnId, pendingLabel, fn) — optional UX helper: disables the
-  // button + shows a pending label while `fn` runs, re-enabling in finally.
-  // Correctness (no double-fire) is already guaranteed by the in-flight
-  // dedupe above; this is purely visible feedback. Idempotent per button.
-  window.guardSubmit = async function (btnId, pendingLabel, fn) {
-    var btn = btnId ? document.getElementById(btnId) : null;
-    if (btn && btn._ffBusy) return;
-    var prev;
-    if (btn) { btn._ffBusy = true; btn.disabled = true; if (pendingLabel != null) { prev = btn.innerHTML; btn.innerHTML = pendingLabel; } }
-    try { return await fn(); }
-    finally { if (btn) { btn._ffBusy = false; btn.disabled = false; if (prev !== undefined) btn.innerHTML = prev; } }
-  };
-
-  // POST /api/stripe/checkout — launch-ready. Redirects when Stripe is
-  // configured; shows a graceful inline message if it returns 400 (or the
-  // key isn't set yet) so the button works the instant Stripe is enabled.
-  window._ffTrialUpgrade = async function () {
-    var btn = document.getElementById('trial-upgrade-btn');
-    var msg = document.getElementById('trial-upgrade-msg');
-    if (btn) { btn.disabled = true; btn.textContent = 'Redirecting…'; }
-    if (msg) { msg.style.display = 'none'; }
-    try {
-      var r = await _origFetch('/api/stripe/checkout', {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan: 'pro' }),
-      });
-      var data = await r.json().catch(function () { return {}; });
-      if (r.ok && data.url) { window.location.href = data.url; return; }
-      // Not configured / error → graceful, non-broken fallback.
-      if (msg) {
-        msg.style.display = 'block';
-        msg.textContent = (data.error && /not configured/i.test(data.error))
-          ? 'Billing is being set up — please contact support to upgrade.'
-          : (data.error || 'Could not start checkout — please contact support.');
-      }
-      if (btn) { btn.disabled = false; btn.textContent = 'Upgrade now'; }
-    } catch (e) {
-      if (msg) { msg.style.display = 'block'; msg.textContent = 'Billing is being set up — please contact support to upgrade.'; }
-      if (btn) { btn.disabled = false; btn.textContent = 'Upgrade now'; }
-    }
-  };
-
-  // Blocking, non-dismissable modal (no close X, no backdrop-dismiss) —
-  // an expired trial must not fall back into a broken app. Idempotent:
-  // returns early if it's already on screen. Styling mirrors the app's
-  // existing dynamic modal (showUpgradeModal) — same tokens/classes.
-  window.showTrialExpiredModal = function () {
-    if (document.getElementById('trial-expired-overlay')) return;
-    var overlay = document.createElement('div');
-    overlay.id = 'trial-expired-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);z-index:100000;display:flex;align-items:center;justify-content:center;padding:1rem';
-    overlay.innerHTML =
-      '<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);padding:2rem;max-width:400px;width:100%;box-shadow:0 32px 80px rgba(0,0,0,.5)">' +
-        '<div style="text-align:center;margin-bottom:1.5rem">' +
-          '<div style="width:52px;height:52px;background:var(--acc-bg);border:1px solid var(--acc);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:22px">&#10022;</div>' +
-          '<div style="font-size:11px;color:var(--acc);font-weight:600;text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px">Free trial</div>' +
-          '<div style="font-size:20px;font-family:var(--font-display);font-style:italic;color:var(--t1);font-weight:600;line-height:1.2">Your free trial has ended</div>' +
-          '<div style="font-size:12.5px;color:var(--t3);margin-top:8px;line-height:1.5">Upgrade to keep using FinFlow and access your data.</div>' +
-        '</div>' +
-        '<div id="trial-upgrade-msg" style="display:none;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius-lg);padding:.7rem;margin-bottom:1rem;font-size:12px;color:var(--t2);text-align:center"></div>' +
-        '<button id="trial-upgrade-btn" class="btn btn-primary" style="width:100%;justify-content:center;font-size:13px;padding:10px" onclick="window._ffTrialUpgrade()">Upgrade now</button>' +
-        '<button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:8px;font-size:12px" onclick="(window.ffLogout?window.ffLogout():fetch(\'/api/auth/logout\',{method:\'POST\',credentials:\'include\'}).then(function(){location.reload();}))">Log out</button>' +
-      '</div>';
-    document.body.appendChild(overlay);
-  };
-})();
-
 (function () {
 
   async function api(method, path, body) {
@@ -139,48 +11,25 @@
     return data;
   }
 
-  // Active-entity query string for entity-scoped GETs. If no active entity is
-  // known yet (early boot), returns '' and the server fails safe (Fix 1).
-  function _entQ() {
-    var e = (window.ENTITIES || []).find(function(x){ return x.active; });
-    return (e && e._dbId) ? '?entity_id=' + e._dbId : '';
-  }
-
   window.FF_API = {
     register:     function(e,p,n) { return api('POST','/api/auth/register',{email:e,password:p,name:n}); },
     login:        function(e,p)   { return api('POST','/api/auth/login',{email:e,password:p}); },
     logout:       function()      { return api('POST','/api/auth/logout'); },
     me:           function()      { return api('GET','/api/auth/me'); },
-    getInvoices:  function()      { return api('GET','/api/invoices'+_entQ()); },
-    getExpenses:  function()      { return api('GET','/api/expenses'+_entQ()); },
-    getCustomers: function()      { return api('GET','/api/customers'+_entQ()); },
-    getInventory: function()      { return api('GET','/api/inventory'+_entQ()); },
-    getPayroll:   function()      { return api('GET','/api/payroll'+_entQ()); },
-    getGoals:     function()      { return api('GET','/api/goals'+_entQ()); },
-    getHoldings:  function()      { return api('GET','/api/holdings'+_entQ()); },
-  };
-
-  // Password show/hide — shared by the auth-gate overlay AND the static
-  // #login-screen form in index.html. Feather eye / eye-off icons (inline SVG,
-  // no icon-font dependency). Flips the input type and swaps the icon + a11y
-  // state. Exposed globally so both forms' inline onclick can reach it.
-  var FF_EYE     = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
-  var FF_EYE_OFF = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-  window.ffPwToggle = function (btn, id) {
-    var inp = document.getElementById(id);
-    if (!inp) return;
-    var reveal = inp.type === 'password';
-    inp.type = reveal ? 'text' : 'password';
-    btn.innerHTML = reveal ? FF_EYE_OFF : FF_EYE;
-    btn.setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
-    btn.setAttribute('aria-pressed', reveal ? 'true' : 'false');
+    getInvoices:  function()      { return api('GET','/api/invoices'); },
+    getExpenses:  function()      { return api('GET','/api/expenses'); },
+    getCustomers: function()      { return api('GET','/api/customers'); },
+    getInventory: function()      { return api('GET','/api/inventory'); },
+    getPayroll:   function()      { return api('GET','/api/payroll'); },
+    getGoals:     function()      { return api('GET','/api/goals'); },
+    getHoldings:  function()      { return api('GET','/api/holdings'); },
   };
 
   function showAuthGate() {
     var gate = document.createElement('div');
     gate.id = 'ff-auth-gate';
     gate.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0e0b08;font-family:Jost,system-ui,sans-serif';
-    gate.innerHTML = '<style>#ff-box{width:100%;max-width:380px;padding:2rem 2.25rem;background:#16120d;border:1px solid #3d3222;border-radius:14px}.ff-t{font-size:22px;font-family:"Cormorant Garamond",serif;font-style:italic;color:#e4c97a;margin-bottom:4px}.ff-s{font-size:13px;color:#7d7060;margin-bottom:1.5rem}.ff-tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:#0e0b08;border-radius:8px;padding:4px}.ff-tab{flex:1;padding:6px;border:none;border-radius:5px;font-size:12.5px;cursor:pointer;color:#7d7060;background:transparent}.ff-tab.on{background:#1c1712;color:#f2e8d5}.ff-err{font-size:12px;color:#c46a5a;background:#1e0d0a;border:1px solid #3d1a14;border-radius:6px;padding:8px;margin-bottom:1rem;display:none}.ff-lbl{font-size:11.5px;color:#9e8e73;display:block;margin-bottom:5px}.ff-inp{width:100%;padding:9px 11px;border:1px solid #3d3222;border-radius:6px;background:#1c1712;color:#f2e8d5;font-size:13px;outline:none;margin-bottom:.9rem;box-sizing:border-box;font-family:Jost,system-ui}.ff-btn{width:100%;padding:10px;border:none;border-radius:6px;background:#c9a84c;color:#0e0b08;font-size:13.5px;font-weight:600;cursor:pointer}.ff-btn:disabled{opacity:.5}.ff-hint{font-size:11.5px;color:#7d7060;text-align:center;margin-top:1rem}.ff-hint span{color:#c9a84c;cursor:pointer}.ff-pw-wrap{position:relative;margin-bottom:.9rem}.ff-pw-wrap .ff-inp{margin-bottom:0;padding-right:40px}.ff-eye{position:absolute;top:0;bottom:0;right:6px;display:flex;align-items:center;justify-content:center;width:30px;padding:0;background:none;border:none;cursor:pointer;color:#9e8e73;transition:color .13s}.ff-eye:hover{color:#c9a84c}</style><div id="ff-box"><div class="ff-t">FinFlow</div><div class="ff-s">Sign in to your workspace</div><div class="ff-tabs"><button class="ff-tab on" id="fft-li" onclick="ffTab(\'login\')">Sign in</button><button class="ff-tab" id="fft-re" onclick="ffTab(\'register\')">Create account</button></div><div id="ff-err" class="ff-err"></div><div id="ff-li"><label class="ff-lbl" for="ff-le">Email</label><input class="ff-inp" id="ff-le" type="email" placeholder="you@example.com"><label class="ff-lbl" for="ff-lp">Password</label><div class="ff-pw-wrap"><input class="ff-inp" id="ff-lp" type="password" placeholder="••••••••"><button type="button" class="ff-eye" aria-label="Show password" aria-pressed="false" onclick="ffPwToggle(this,\'ff-lp\')"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></div><button class="ff-btn" id="ff-lb" onclick="ffLogin()">Sign in &rarr;</button><div class="ff-hint">No account? <span onclick="ffTab(\'register\')">Create one</span></div></div><div id="ff-re" style="display:none"><label class="ff-lbl" for="ff-rn">Name</label><input class="ff-inp" id="ff-rn" type="text" placeholder="Your name"><label class="ff-lbl" for="ff-re2">Email</label><input class="ff-inp" id="ff-re2" type="email" placeholder="you@example.com"><label class="ff-lbl" for="ff-rp">Password (min 8 chars)</label><div class="ff-pw-wrap"><input class="ff-inp" id="ff-rp" type="password" placeholder="Choose a password"><button type="button" class="ff-eye" aria-label="Show password" aria-pressed="false" onclick="ffPwToggle(this,\'ff-rp\')"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button></div><button class="ff-btn" id="ff-rb" onclick="ffRegister()">Create account &rarr;</button><div class="ff-hint">Have one? <span onclick="ffTab(\'login\')">Sign in</span></div></div></div>';
+    gate.innerHTML = '<style>#ff-box{width:100%;max-width:380px;padding:2rem 2.25rem;background:#16120d;border:1px solid #3d3222;border-radius:14px}.ff-t{font-size:22px;font-family:"Cormorant Garamond",serif;font-style:italic;color:#e4c97a;margin-bottom:4px}.ff-s{font-size:13px;color:#7d7060;margin-bottom:1.5rem}.ff-tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:#0e0b08;border-radius:8px;padding:4px}.ff-tab{flex:1;padding:6px;border:none;border-radius:5px;font-size:12.5px;cursor:pointer;color:#7d7060;background:transparent}.ff-tab.on{background:#1c1712;color:#f2e8d5}.ff-err{font-size:12px;color:#c46a5a;background:#1e0d0a;border:1px solid #3d1a14;border-radius:6px;padding:8px;margin-bottom:1rem;display:none}.ff-lbl{font-size:11.5px;color:#9e8e73;display:block;margin-bottom:5px}.ff-inp{width:100%;padding:9px 11px;border:1px solid #3d3222;border-radius:6px;background:#1c1712;color:#f2e8d5;font-size:13px;outline:none;margin-bottom:.9rem;box-sizing:border-box;font-family:Jost,system-ui}.ff-btn{width:100%;padding:10px;border:none;border-radius:6px;background:#c9a84c;color:#0e0b08;font-size:13.5px;font-weight:600;cursor:pointer}.ff-btn:disabled{opacity:.5}.ff-hint{font-size:11.5px;color:#7d7060;text-align:center;margin-top:1rem}.ff-hint span{color:#c9a84c;cursor:pointer}</style><div id="ff-box"><div class="ff-t">FinFlow</div><div class="ff-s">Sign in to your workspace</div><div class="ff-tabs"><button class="ff-tab on" id="fft-li" onclick="ffTab(\'login\')">Sign in</button><button class="ff-tab" id="fft-re" onclick="ffTab(\'register\')">Create account</button></div><div id="ff-err" class="ff-err"></div><div id="ff-li"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-le" type="email" placeholder="you@example.com"><label class="ff-lbl">Password</label><input class="ff-inp" id="ff-lp" type="password" placeholder="••••••••"><button class="ff-btn" id="ff-lb" onclick="ffLogin()">Sign in &rarr;</button><div class="ff-hint">No account? <span onclick="ffTab(\'register\')">Create one</span></div></div><div id="ff-re" style="display:none"><label class="ff-lbl">Name</label><input class="ff-inp" id="ff-rn" type="text" placeholder="Your name"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-re2" type="email" placeholder="you@example.com"><label class="ff-lbl">Password (min 6 chars)</label><input class="ff-inp" id="ff-rp" type="password" placeholder="Choose a password"><button class="ff-btn" id="ff-rb" onclick="ffRegister()">Create account &rarr;</button><div class="ff-hint">Have one? <span onclick="ffTab(\'login\')">Sign in</span></div></div></div>';
     document.body.appendChild(gate);
     gate.addEventListener('keydown', function(e) {
       if (e.key !== 'Enter') return;
@@ -216,23 +65,12 @@
   };
 
   async function ffOnAuth(user) {
-    try {
-      var gate=document.getElementById('ff-auth-gate'); if(gate) gate.remove();
-      try{sessionStorage.setItem('ff_onboarded','1');}catch(e){}
-      var ob=document.getElementById('ob-overlay'); if(ob) ob.remove();
-      var ls=document.getElementById('login-screen'); if(ls) ls.style.display='none';
-      if(user&&user.name){var ne=document.querySelector('.user-name');if(ne)ne.textContent=user.name;}
-      // Sidebar avatar initials computed from the real name (no hardcoded default).
-      if(user){
-        var _np=(user.name||'').trim().split(/\s+/).filter(Boolean);
-        var _ini=_np.length?(_np[0][0]+(_np.length>1?_np[_np.length-1][0]:'')).toUpperCase():'';
-        var _av=document.getElementById('sb-user-avatar'); if(_av) _av.textContent=_ini||'';
-      }
-      try{ await ffLoadData(); }catch(e){ console.warn('[FinFlow] data load failed:',e.message); }
-      window._ffAuthed=true; window.dispatchEvent(new Event('ff:authed'));
-    } catch(err) {
-      console.error('[FinFlow] ffOnAuth crashed:',err);
-    }
+    var gate=document.getElementById('ff-auth-gate'); if(gate) gate.remove();
+    try{sessionStorage.setItem('ff_onboarded','1');}catch(e){}
+    var ob=document.getElementById('ob-overlay'); if(ob) ob.remove();
+    var ls=document.getElementById('login-screen'); if(ls) ls.style.display='none';
+    if(user&&user.name){var ne=document.querySelector('.user-name');if(ne)ne.textContent=user.name;}
+    try{ await ffLoadData(); }catch(e){ console.warn('[FinFlow] data load failed:',e.message); }
   }
 
   async function ffLoadData() {
@@ -267,23 +105,14 @@
     if(typeof window.holdings!=='undefined')
       window.holdings=res[6].map(function(r){return{_dbId:r.id,id:r.id,ticker:r.ticker,name:r.name,type:r.asset_type,shares:r.shares,cost:r.cost_per,price:r.price,div:r.dividend,color:r.color};});
 
-    if(typeof window['updateDashboard']==='function'){try{window['updateDashboard']();}catch(e){}}
-    var _deferred=['renderInvoices','renderExpenses','renderCustomers','renderInventory',
-      'renderPayroll','renderPersonal','renderInvestments','updateAI'];
-    var _di = 0;
-    function _drain() {
-      if (_di >= _deferred.length) return;
-      var fn = _deferred[_di++];
-      if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}}
-      (window.requestIdleCallback || function(cb){ setTimeout(cb,0); })(function(){ _drain(); });
-    }
-    _drain();
+    ['renderInvoices','renderExpenses','renderCustomers','renderInventory',
+     'renderPayroll','renderPersonal','renderInvestments','updateDashboard','updateAI'
+    ].forEach(function(fn){ if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}} });
   }
 
   window.ffLogout = async function() { try{await FF_API.logout();}catch(e){} location.reload(); };
 
   async function boot() {
-    if (window._ffAuthed) return;
     try { var r=await FF_API.me(); await ffOnAuth(r.user); }
     catch(e) { showAuthGate(); }
   }
@@ -341,7 +170,6 @@
   // ── Wait for DOM + existing scripts to finish ──────────────────────
   // We patch after DOMContentLoaded so all original functions exist.
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
-    if (!window._ffAuthed) { window.addEventListener('ff:authed', _run, {once:true}); return; }
 
     // ════════════════════════════════════════════
     // 1. SETTINGS — load on boot + save
@@ -447,99 +275,19 @@
     };
 
     // ════════════════════════════════════════════
-    // 2. GOALS — save + delete
+    // 2 + 3. GOALS & PERSONAL TRANSACTIONS — owned by app-main.js
     // ════════════════════════════════════════════
-    const _origSaveGoal = window.saveGoal;
-    window.saveGoal = async function () {
-      const name = document.getElementById('goal-name')?.value?.trim();
-      if (!name) { notify('Goal name required', true); return; }
-
-      const current_val = Number(document.getElementById('goal-current')?.value) || 0;
-      const target_val  = Number(document.getElementById('goal-target')?.value)  || 0;
-      const monthly     = Number(document.getElementById('goal-monthly')?.value) || 0;
-
-      if (!target_val) { notify('Target amount required', true); return; }
-
-      try {
-        const saved = await api('POST', '/api/goals', {
-          name,
-          current_val,
-          target_val,
-          monthly_contrib: monthly,
-          color: 'var(--acc)',
-        });
-        // Push with DB id so we can delete later
-        if (!window.goals) window.goals = [];
-        window.goals.push({
-          _dbId: saved.id,
-          name,
-          current: current_val,
-          target: target_val,
-          monthly,
-          color: 'var(--acc)',
-        });
-        closeModal('goal-modal');
-        if (typeof renderPersonal === 'function') renderPersonal();
-        notify('Goal added ✦');
-        loadGoalsFromDB().catch(()=>{});
-        window._refreshDashboardUI?.();
-      } catch (e) {
-        notify('Could not save goal — ' + e.message, true);
-      }
-    };
-
-    // New: deleteGoal — call from goal row buttons (wire up in renderPersonal if needed)
-    window.deleteGoal = async function (idx) {
-      const goal = window.goals[idx];
-      if (!goal) return;
-      if (!confirm('Delete this goal? This cannot be undone.')) return;
-      try {
-        if (goal._dbId) await api('DELETE', `/api/goals/${goal._dbId}`);
-        window.goals.splice(idx, 1);
-        if (typeof renderPersonal === 'function') renderPersonal();
-        notify('Goal deleted');
-      } catch (e) {
-        notify('Could not delete goal — ' + e.message, true);
-      }
-    };
-
-    // ════════════════════════════════════════════
-    // 2b. GOALS — load on boot
-    // ════════════════════════════════════════════
-    async function loadGoalsFromDB() {
-      try {
-        const rows = await api('GET', '/api/goals');
-        if (rows && rows.length > 0) {
-          if (!window.goals) window.goals = [];
-          window.goals.length = 0;
-          rows.forEach(g => window.goals.push({
-            _dbId:   g.id,
-            name:    g.name,
-            current: g.current_val,
-            target:  g.target_val,
-            monthly: g.monthly_contrib,
-            color:   g.color || 'var(--acc)',
-          }));
-          if (typeof renderPersonal === 'function') renderPersonal();
-        }
-      } catch (e) {
-        // Not logged in yet or no goals — fine
-      }
-    }
-    loadGoalsFromDB();
-
-    // ════════════════════════════════════════════
-    // 3. PERSONAL TRANSACTIONS — handled entirely by app-main.js
-    // ════════════════════════════════════════════
-    // REMOVED: the stale loadPersonalTransactionsFromDB() + window.saveTransaction
-    // override that used the legacy window.persTransactions model and business-only
-    // _refreshDashboardUI. They were disconnected from app-main's rebuilt personal
-    // pipeline (_allPersTxs → _applyPersFilter → loadPersonalFinance), so saves
-    // persisted but never refreshed the list / Monthly Spending / Savings Rate /
-    // spend donut until navigating away and back. app-main.js owns saveTransaction
-    // (which calls loadPersonalFinance()), and this bundle already calls
-    // window.loadPersonalFinance() on personal-page navigation, so the initial load
-    // is covered too.
+    // REMOVED the stale window.saveGoal / deleteGoal / loadGoalsFromDB and
+    // window.saveTransaction / loadPersonalTransactionsFromDB overrides. They wrote
+    // the legacy window.goals / window.persTransactions arrays and refreshed only the
+    // business dashboard (_refreshDashboardUI) — disconnected from app-main's rebuilt
+    // personal pipeline (module goals / _allPersTxs → _applyPersFilter → renderPersonal),
+    // so goals and transactions "saved but didn't show until re-nav". app-main.js now
+    // owns saveGoal / deletePersGoal / saveTransaction (+ inline quick-add), each POSTing
+    // and calling loadPersonalFinance(), which loads goals + transactions from the DB and
+    // re-renders. The showPage('personal') hook below calls loadPersonalFinance() so the
+    // initial load is covered too. (Holdings overrides intentionally left for a separate
+    // Investments-page pass.)
 
     // ════════════════════════════════════════════
     // 4. HOLDINGS — save
@@ -659,19 +407,15 @@
       }
     };
 
-    // ── Expose load functions for entity-switch and external callers ─
-    window._loadGoalsFromDB                = loadGoalsFromDB;
-
     // ── showPage hook: reload personal data when user visits that page ─
+    // Goals + personal transactions now load via app-main's loadPersonalFinance()
+    // (the rebuilt pipeline), not the removed legacy loaders.
     const _wiringOrig = window.showPage;
     if (typeof _wiringOrig === 'function') {
       window.showPage = function (id, navEl) {
         _wiringOrig(id, navEl);
-        if (id === 'personal') {
-          loadGoalsFromDB();
-          // Personal transactions now load via app-main's loadPersonalFinance()
-          // (rebuilt pipeline), not the removed legacy loadPersonalTransactionsFromDB.
-          if (typeof window.loadPersonalFinance === 'function') window.loadPersonalFinance();
+        if (id === 'personal' && typeof window.loadPersonalFinance === 'function') {
+          window.loadPersonalFinance();
         }
       };
     }
@@ -731,7 +475,6 @@
   }
 
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
-    if (!window._ffAuthed) { window.addEventListener('ff:authed', _run, {once:true}); return; }
 
     // ════════════════════════════════════════════
     // 1. INVOICES
@@ -1243,17 +986,6 @@
     // so loadPayrollFromDB correctly sets window.ownerPayroll but the original renderPayroll
     // reads the stale let-binding. This override reads from window.* instead.
     window.renderPayroll = function () {
-      // Auto-set jurisdiction from active entity currency
-      (function(){
-        const active = (window.ENTITIES||[]).find(e=>e.active);
-        const cur = (active?.currency||'USD').toUpperCase();
-        const MAP = {USD:'US',GBP:'GB',EUR:'OTHER',CAD:'CA',AUD:'OTHER',NZD:'OTHER',SGD:'OTHER',TTD:'TT',ZAR:'OTHER',JMD:'JM',BBD:'BB',MXN:'MX',COP:'CO'};
-        const jur = MAP[cur]||'US';
-        ['payroll-jurisdiction','tax-prev-jur'].forEach(id=>{
-          const sel = document.getElementById(id);
-          if(sel && !sel._userSet){ const opt=Array.from(sel.options).find(o=>o.value===jur); if(opt) sel.value=jur; }
-        });
-      })();
       const op      = window.ownerPayroll || null;
       const emps    = window.payrollEmployees || [];
       const allEmps = op ? [{...op, isOwner:true}, ...emps] : emps;
@@ -1300,9 +1032,7 @@
           <span style="font-family:var(--font-mono)">${sm(e.gross)}</span>
           <span style="color:var(--red);font-family:var(--font-mono)">${(parseFloat(e.taxRate)||0) > 0 ? '-' + sm(tax) : '—'}</span>
           <span style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${sm(net)}</span>
-          ${e.isOwner
-            ? `<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`
-            : `<button onclick="openEditEmployee(${e._dbId||e.id||0})" style="background:none;border:none;cursor:pointer;color:var(--t3);padding:4px;font-size:14px;line-height:1" title="Edit employee">✏</button>`}
+          ${e.isOwner ? `<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>` : '<span></span>'}
         </div>`;
       }).join('');
     };
@@ -1406,15 +1136,6 @@
           window.loadPersonalFinance().catch(() => {});
         }
         if (window.finflow?.refresh) window.finflow.refresh(['personal-finance']);
-        // Refresh dashboard KPIs immediately after owner payroll save
-        const _activeIdx = (window.ENTITIES||[]).findIndex(e => e.active);
-        // Sync window.ownerPayroll to new form values so renderPayroll reads current data
-        const _savedOp = (window.ownerPayrollByEntity||{})[_activeIdx] || Object.values(window.ownerPayrollByEntity||{})[0] || null;
-        if (_savedOp) window.ownerPayroll = _savedOp;
-        if (_activeIdx >= 0 && typeof window.loadEntityData === 'function') {
-          window.loadEntityData(_activeIdx).catch(() => {});
-        }
-        if (typeof window.renderPayroll === 'function') window.renderPayroll();
       } catch (e) {
         console.error('[Payroll Save] ❌ Failed:', e.message);
         notify('Payroll saved locally but could not sync to server — ' + e.message, true);
@@ -1925,7 +1646,6 @@
         if (id === 'timesheet')  _setTimesheetTitle();
         if (id === 'documents')  { if (typeof window.renderDocuments === 'function') window.renderDocuments(); }
         if (id === 'settings')   { const _sEl = document.getElementById('settings-user-email'); if (_sEl) _sEl.textContent = window.CURRENT_USER?.email || ''; }
-        if (id === 'my-accountant') { if (typeof window.loadAccountantMessages === 'function') window.loadAccountantMessages(); }
       };
     }
 
@@ -1972,9 +1692,16 @@
   // SESSION RESTORE — check if user already has a valid session
   // on page load, and if so skip the login screen
   // ─────────────────────────────────────────────────────────────────
-  window.bootFinFlowAPI = function() {
-    // Legacy stub — initialization now handled via ff:authed event
-    if (!window._ffAuthed) window.dispatchEvent(new Event('ff:authed'));
+  window.bootFinFlowAPI = async function () {
+    // Load all data from API
+    if (typeof window._apiBootDone === 'undefined') {
+      window._apiBootDone = true;
+      // Trigger the existing wiring boot functions if they haven't fired
+      // (the easy + medium wiring files listen for DOMContentLoaded which
+      //  has already fired by now — so we call them directly if exposed)
+      if (typeof window._ffApiBootEasy === 'function')  window._ffApiBootEasy();
+      if (typeof window._ffApiBootMedium === 'function') window._ffApiBootMedium();
+    }
   };
 
   (async function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
@@ -1991,10 +1718,6 @@
         const loginScreen = document.getElementById('login-screen');
         if (loginScreen) loginScreen.style.display = 'none';
         if (typeof injectRoleBadge === 'function') injectRoleBadge(r);
-        if (!window._ffAuthed) {
-          window._ffAuthed = true;
-          window.dispatchEvent(new Event('ff:authed'));
-        }
         // Boot data load
         setTimeout(() => {
           if (typeof window._ffApiBootEasy === 'function')  window._ffApiBootEasy();
@@ -2376,8 +2099,6 @@
     return `<span class="badge ${cls}">${label}</span>`;
   }
 
-  function escHTML(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;}
-
   // ─────────────────────────────────────────────────────────────────
   // ══ QUOTES ══
   // ─────────────────────────────────────────────────────────────────
@@ -2414,7 +2135,7 @@
     }
     list.innerHTML = _quotes.map(q => `
       <div class="table-row" style="grid-template-columns:1fr 100px 90px 90px 80px 100px">
-        <span style="font-weight:500">${escHTML(q.client)}</span>
+        <span style="font-weight:500">${q.client}</span>
         <span style="color:var(--t3)">${q.num}</span>
         <span style="font-family:var(--font-mono)">$${Number(q.amount).toLocaleString()}</span>
         <span style="color:var(--t2)">${q.expiry_date || '—'}</span>
@@ -2533,10 +2254,10 @@
     list.innerHTML = filtered.map(v => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
         <div style="display:flex;align-items:center;gap:10px">
-          <div class="emp-init av-blue" style="font-size:10px;font-weight:700">${escHTML(v.name.slice(0,2).toUpperCase())}</div>
+          <div class="emp-init av-blue" style="font-size:10px;font-weight:700">${v.name.slice(0,2).toUpperCase()}</div>
           <div>
-            <div style="font-size:13px;font-weight:500;color:var(--t1)">${escHTML(v.name)}</div>
-            <div style="font-size:11px;color:var(--t3)">${escHTML(v.contact || '—')} · ${escHTML(v.category || '—')}</div>
+            <div style="font-size:13px;font-weight:500;color:var(--t1)">${v.name}</div>
+            <div style="font-size:11px;color:var(--t3)">${v.contact || '—'} · ${v.category || '—'}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:16px">
@@ -2656,7 +2377,7 @@
     }
     list.innerHTML = _bills.map(b => `
       <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 80px 110px">
-        <span style="font-weight:500">${escHTML(b.vendor)}</span>
+        <span style="font-weight:500">${b.vendor}</span>
         <span style="color:var(--t3)">${b.num}</span>
         <span style="font-family:var(--font-mono)">$${Number(b.amount||0).toLocaleString()}</span>
         <span style="color:${b.status?.toLowerCase()==='overdue'?'var(--red)':'var(--t2)'}">${b.due_date || '—'}</span>
@@ -2794,7 +2515,7 @@
     list.innerHTML = _recurringBills.map(r => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
         <div>
-          <div style="font-size:13px;font-weight:500;color:var(--t1)">${escHTML(r.vendor)}</div>
+          <div style="font-size:13px;font-weight:500;color:var(--t1)">${r.vendor}</div>
           <div style="font-size:11px;color:var(--t3)">${r.frequency} · Next: ${r.next_run || '—'}</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px">
@@ -2898,7 +2619,7 @@
     list.innerHTML = _recurringInvoices.map(r => `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
         <div>
-          <div style="font-size:13px;font-weight:500;color:var(--t1)">${escHTML(r.client)}</div>
+          <div style="font-size:13px;font-weight:500;color:var(--t1)">${r.client}</div>
           <div style="font-size:11px;color:var(--t3)">${r.frequency} · Next: ${r.next_run || '—'}</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px">
@@ -3034,7 +2755,6 @@ async function apiFetch(path, opts={}){
 
 function fmtMoney(n){ return '$' + Number(n||0).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0}); }
 function fmtDate(s){ if(!s)return ''; const d=new Date(s); return isNaN(d)?s:d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
-function _escHTML(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;}
 function nextNum(prefix, list, field='num'){
   const nums = list.map(r=>(r[field]||'').replace(prefix+'-','0')).map(Number).filter(n=>!isNaN(n));
   const next = nums.length ? Math.max(...nums)+1 : 1;
@@ -3060,7 +2780,7 @@ function renderReceipts(){
     if(!_receipts.length){ l.innerHTML='<div style="padding:20px;text-align:center;color:var(--t3)">No sales receipts yet. Click + New Receipt to add one.</div>'; return; }
     l.innerHTML = _receipts.map(r=>`
       <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 80px">
-        <span style="font-weight:500">${_escHTML(r.customer||'')}</span>
+        <span style="font-weight:500">${r.customer||''}</span>
         <span style="color:var(--t3)">${r.num||''}</span>
         <span style="font-family:var(--font-mono);color:var(--green)">${fmtMoney(r.amount)}</span>
         <span style="color:var(--t2)">${fmtDate(r.date)||r.date||''}</span>
@@ -3141,7 +2861,7 @@ function renderPaymentsReceived(){
     if(!_paymentsReceived.length){ l.innerHTML='<div style="padding:20px;text-align:center;color:var(--t3)">No payments recorded yet. Click + Record Payment to add one.</div>'; return; }
     l.innerHTML = _paymentsReceived.map(p=>`
       <div class="table-row" style="grid-template-columns:1fr 110px 80px 80px 70px 80px">
-        <span style="font-weight:500">${_escHTML(p.customer||'')}</span>
+        <span style="font-weight:500">${p.customer||''}</span>
         <span style="color:var(--t3)">${p.invoice_ref||''}</span>
         <span style="font-family:var(--font-mono);color:var(--green)">${fmtMoney(p.amount)}</span>
         <span style="color:var(--t2)">${fmtDate(p.date)||p.date||''}</span>
@@ -3222,7 +2942,7 @@ function renderCreditNotes(){
     if(!_creditNotes.length){ l.innerHTML='<div style="padding:20px;text-align:center;color:var(--t3)">No credit notes yet. Click + New Credit Note to add one.</div>'; return; }
     l.innerHTML = _creditNotes.map(c=>`
       <div class="table-row" style="grid-template-columns:1fr 90px 80px 80px 70px 80px">
-        <span style="font-weight:500">${_escHTML(c.customer||'')}</span>
+        <span style="font-weight:500">${c.customer||''}</span>
         <span style="color:var(--t3)">${c.num||''}</span>
         <span style="font-family:var(--font-mono);color:var(--amber)">${fmtMoney(c.amount)}</span>
         <span style="color:var(--t2)">${fmtDate(c.date)||c.date||''}</span>
@@ -3302,7 +3022,7 @@ function renderPaymentsMade(){
     if(!_paymentsMade.length){ l.innerHTML='<div style="padding:20px;text-align:center;color:var(--t3)">No payments recorded yet. Click + Make Payment to add one.</div>'; return; }
     l.innerHTML = _paymentsMade.map(p=>`
       <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 80px">
-        <span style="font-weight:500">${_escHTML(p.vendor||'')}</span>
+        <span style="font-weight:500">${p.vendor||''}</span>
         <span style="color:var(--t3)">${p.ref||''}</span>
         <span style="font-family:var(--font-mono);color:var(--red)">${fmtMoney(p.amount)}</span>
         <span style="color:var(--t2)">${fmtDate(p.date)||p.date||''}</span>
@@ -3382,7 +3102,7 @@ function renderVendorCredits(){
     if(!_vendorCredits.length){ l.innerHTML='<div style="padding:20px;text-align:center;color:var(--t3)">No vendor credits yet. Click + New Credit to add one.</div>'; return; }
     l.innerHTML = _vendorCredits.map(c=>`
       <div class="table-row" style="grid-template-columns:1fr 90px 80px 80px 70px 80px">
-        <span style="font-weight:500">${_escHTML(c.vendor||'')}</span>
+        <span style="font-weight:500">${c.vendor||''}</span>
         <span style="color:var(--t3)">${c.num||''}</span>
         <span style="font-family:var(--font-mono);color:var(--green)">${fmtMoney(c.amount)}</span>
         <span style="color:var(--t2)">${fmtDate(c.date)||c.date||''}</span>
@@ -3570,7 +3290,6 @@ function clearAIChat(){
   }
 
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
-    if (!window._ffAuthed) { window.addEventListener('ff:authed', _run, {once:true}); return; }
 
     // ════════════════════════════════════════════
     // QUOTES
@@ -4647,16 +4366,16 @@ function clearAIChat(){
         </button>
       </div>
       <div class="field-group">
-        <div class="field-wrap"><label class="field-label" for="ts-employee">Employee *</label><input class="finput" id="ts-employee" placeholder="Name or team member"></div>
-        <div class="field-wrap"><label class="field-label" for="ts-project">Project / Client</label><input class="finput" id="ts-project" placeholder="Project or client name"></div>
+        <div class="field-wrap"><label class="field-label">Employee *</label><input class="finput" id="ts-employee" placeholder="Name or team member"></div>
+        <div class="field-wrap"><label class="field-label">Project / Client</label><input class="finput" id="ts-project" placeholder="Project or client name"></div>
       </div>
       <div class="field-group">
-        <div class="field-wrap"><label class="field-label" for="ts-date">Date</label><input class="finput" id="ts-date" type="date"></div>
-        <div class="field-wrap"><label class="field-label" for="ts-hours">Hours *</label><input class="finput" id="ts-hours" type="number" min="0.25" step="0.25" placeholder="e.g. 2.5"></div>
+        <div class="field-wrap"><label class="field-label">Date</label><input class="finput" id="ts-date" type="date"></div>
+        <div class="field-wrap"><label class="field-label">Hours *</label><input class="finput" id="ts-hours" type="number" min="0.25" step="0.25" placeholder="e.g. 2.5"></div>
       </div>
       <div class="field-group">
-        <div class="field-wrap"><label class="field-label" for="ts-billable">Billable?</label><select class="finput" id="ts-billable"><option value="Yes">Yes — billable</option><option value="No">No — internal</option></select></div>
-        <div class="field-wrap"><label class="field-label" for="ts-rate">Rate ($/hr)</label><input class="finput" id="ts-rate" type="number" min="0" placeholder="0"></div>
+        <div class="field-wrap"><label class="field-label">Billable?</label><select class="finput" id="ts-billable"><option value="Yes">Yes — billable</option><option value="No">No — internal</option></select></div>
+        <div class="field-wrap"><label class="field-label">Rate ($/hr)</label><input class="finput" id="ts-rate" type="number" min="0" placeholder="0"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('ts-log-modal').classList.add('hidden')">Cancel</button>
@@ -4750,8 +4469,7 @@ function clearAIChat(){
   // ══════════════════════════════════════════════════════
   async function loadHoldingsFromDB() {
     try {
-      const _e = (window.ENTITIES || []).find(x => x.active);
-      const rows = await api('GET', '/api/holdings' + (_e && _e._dbId ? '?entity_id=' + _e._dbId : ''));
+      const rows = await api('GET', '/api/holdings');
       const mapped = (rows || []).map(r => ({
         _dbId: r.id, id: r.id, ticker: r.ticker, name: r.name,
         type: r.asset_type, shares: r.shares, cost: r.cost_per,
@@ -4879,10 +4597,10 @@ function clearAIChat(){
           </button>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
-          <div><label class="flabel" for="proj-name">Project Name *</label><input id="proj-name" class="finput" placeholder="e.g. RetailCo Portal v2"></div>
-          <div><label class="flabel" for="proj-client">Client</label><input id="proj-client" class="finput" placeholder="Client name"></div>
-          <div><label class="flabel" for="proj-budget">Budget ($)</label><input id="proj-budget" class="finput" type="number" min="0" placeholder="0"></div>
-          <div><label class="flabel" for="proj-status">Status</label>
+          <div><label class="flabel">Project Name *</label><input id="proj-name" class="finput" placeholder="e.g. RetailCo Portal v2"></div>
+          <div><label class="flabel">Client</label><input id="proj-client" class="finput" placeholder="Client name"></div>
+          <div><label class="flabel">Budget ($)</label><input id="proj-budget" class="finput" type="number" min="0" placeholder="0"></div>
+          <div><label class="flabel">Status</label>
             <select id="proj-status" class="finput">
               <option value="In Progress">In Progress</option>
               <option value="On Hold">On Hold</option>
@@ -5059,9 +4777,9 @@ function clearAIChat(){
           </button>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
-          <div><label class="flabel" for="inv-name">Name *</label><input id="inv-name" class="finput" placeholder="Full name"></div>
-          <div><label class="flabel" for="inv-email">Email *</label><input id="inv-email" class="finput" type="email" placeholder="email@company.com"></div>
-          <div><label class="flabel" for="inv-role">Role</label>
+          <div><label class="flabel">Name *</label><input id="inv-name" class="finput" placeholder="Full name"></div>
+          <div><label class="flabel">Email *</label><input id="inv-email" class="finput" type="email" placeholder="email@company.com"></div>
+          <div><label class="flabel">Role</label>
             <select id="inv-role" class="finput">
               <option value="admin">Admin</option>
               <option value="accountant">Accountant</option>
@@ -5168,7 +4886,6 @@ function clearAIChat(){
   // BOOT
   // ══════════════════════════════════════════════════════
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
-    if (!window._ffAuthed) { window.addEventListener('ff:authed', _run, {once:true}); return; }
     loadTimesheet();
     loadHoldingsFromDB();
     loadProjects();
@@ -5196,23 +4913,10 @@ function clearAIChat(){
           else renderProjectsList();
         }
         if (id === 'settings') {
-          const _cu = window.CURRENT_USER || {};
           const _se = document.getElementById('settings-user-email');
-          if (_se && _cu.email) _se.textContent = _cu.email;
+          if (_se && window.CURRENT_USER?.email) _se.textContent = window.CURRENT_USER.email;
           const _sn = document.getElementById('s-user-name');
-          if (_sn && !_sn.value && _cu.name) _sn.value = _cu.name;
-          // Email input: default to the account email when no business email
-          // is saved (loadSettingsFromDB fills s-email from saved settings; if
-          // none was saved it stayed on the placeholder — this is the fix).
-          const _sem = document.getElementById('s-email');
-          if (_sem && !_sem.value && _cu.email) _sem.value = _cu.email;
-          // Initials: compute from the real name when the field is empty.
-          const _sini = document.getElementById('s-user-initials');
-          if (_sini && !_sini.value) {
-            const _p = ((_sn && _sn.value) || _cu.name || '').trim().split(/\s+/).filter(Boolean);
-            _sini.value = _p.length ? (_p[0][0] + (_p.length > 1 ? _p[_p.length - 1][0] : '')).toUpperCase() : '';
-          }
-          if (typeof window.updateUserAvatar === 'function') window.updateUserAvatar();
+          if (_sn && !_sn.value && window.CURRENT_USER?.name) _sn.value = window.CURRENT_USER.name;
         }
       };
     }
@@ -5406,16 +5110,6 @@ function clearAIChat(){
       exp += paymentsMade.reduce((s, p) => s + (parseFloat(p.amount)||0), 0);
     }
 
-    // Canonical expense total (real rows + bill payments + payroll) — the SAME
-    // function the Expenses page uses, so both screens always agree.
-    if (typeof window.computeExpenseBreakdown === 'function') {
-      exp = window.computeExpenseBreakdown(period).total;
-    }
-    // Canonical revenue (paid invoices + sales receipts + payments received) —
-    // the SAME helper AI insights & health score use, so every screen agrees.
-    if (typeof window.computeRevenue === 'function') {
-      rev = window.computeRevenue(period);
-    }
     const profit = rev - exp;
     const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
     const overdue = invoices.filter(i => i.status?.toLowerCase() === 'overdue');
@@ -5458,19 +5152,10 @@ function clearAIChat(){
   // ── Update expense breakdown bars ────────────────────────────────
   function updateExpenseBars(expenses) {
     const cats = {};
-    // Use the canonical breakdown so the dashboard bars match the headline
-    // expense total and show Payroll / Bill payments as their own lines.
-    const _bd = (typeof window.computeExpenseBreakdown === 'function') ? window.computeExpenseBreakdown() : null;
-    if (_bd) {
-      Object.entries(_bd.byCategory).forEach(([c, a]) => { cats[c] = (cats[c] || 0) + a; });
-      if (_bd.payroll > 0)      cats['Payroll']       = (cats['Payroll']       || 0) + _bd.payroll;
-      if (_bd.paymentsMade > 0) cats['Bill payments'] = (cats['Bill payments'] || 0) + _bd.paymentsMade;
-    } else {
-      (expenses || []).forEach(e => {
-        const cat = e.category || 'Other';
-        cats[cat] = (cats[cat] || 0) + (parseFloat(e.amount) || 0);
-      });
-    }
+    expenses.forEach(e => {
+      const cat = e.category || 'Other';
+      cats[cat] = (cats[cat] || 0) + (parseFloat(e.amount) || 0);
+    });
 
     const total = Object.values(cats).reduce((s, v) => s + v, 0) || 1;
     const sorted = Object.entries(cats).sort((a, b) => b[1] - a[1]);
@@ -5607,11 +5292,11 @@ function clearAIChat(){
         const exps = window._realExpenses || [];
         const rev = inv.filter(i => (i.status||'').toLowerCase() === 'paid')
                        .reduce((s, i) => s + (Number(i.amount) || 0), 0);
-        // Canonical expense total (real rows + bill payments + payroll). Never
-        // mutate window.payrollEmployees — the canonical fn builds a fresh array.
-        const exp = (typeof window.computeExpenseBreakdown === 'function')
-          ? window.computeExpenseBreakdown(window.currentPeriod || 'year').total
-          : exps.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+        let exp = exps.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+        // Include payroll gross in expenses
+        const payroll = window.payrollEmployees || [];
+        if (window.ownerPayroll) payroll.unshift(window.ownerPayroll);
+        exp += payroll.reduce((s, e) => s + (Number(e.gross) || 0), 0);
         const outstanding = inv.filter(i => (i.status||'').toLowerCase() !== 'paid')
                               .reduce((s, i) => s + (Number(i.amount) || 0), 0);
         const fmt = n => {
@@ -5680,10 +5365,21 @@ function clearAIChat(){
       window.charts.overview.data.datasets[1].data = _safe(expByMonth);
       window.charts.overview.update();
     }
-    // updateKPIs already writes d-exp / d-profit using the canonical expense
-    // total (real rows + bill payments + payroll), so payroll changes reflect
-    // immediately. No separate payroll bolt-on here — that double-counted.
-    updateKPIs(invs, exps, period);
+    const kpis = updateKPIs(invs, exps, period);
+
+    // Add owner payroll gross to expense/profit KPIs so adding payroll
+    // immediately reflects in dashboard totals without requiring a page refresh.
+    const _op    = window.ownerPayroll;
+    const _emps  = window.payrollEmployees || [];
+    const _all   = _op ? [_op, ..._emps] : _emps;
+    const _payrollTotal = _all.reduce((s, e) => s + (parseFloat(e.gross) || 0), 0);
+    if (_payrollTotal > 0 && kpis) {
+      const _totalExp    = (kpis.exp    || 0) + _payrollTotal;
+      const _totalProfit = (kpis.rev    || 0) - _totalExp;
+      const _set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+      _set('d-exp',    money(_totalExp));
+      _set('d-profit', money(_totalProfit));
+    }
 
     updateExpenseBars(exps);
     updateTransactions(invs, exps);
@@ -5697,17 +5393,16 @@ function clearAIChat(){
   // Only run once on initial page load, never on entity switch
   let _booted = false;
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
-    if (!window._ffAuthed) { window.addEventListener('ff:authed', _run, {once:true}); return; }
     setTimeout(async function() {
       if (_booted) return;
       _booted = true;
       try {
-        const r = await fetch('/api/auth/me', {credentials:'include'});
+        const r = await fetch('/api/me', {credentials:'include'});
         if (!r.ok) return;
         const _meData = await r.json().catch(() => ({}));
         window.CURRENT_USER = _meData.user || _meData;
         const _seEl = document.getElementById('settings-user-email'); if (_seEl && window.CURRENT_USER?.email) _seEl.textContent = window.CURRENT_USER.email;
-        if (!window.ENTITIES?.length && typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
+        if (typeof loadEntitiesFromDB === 'function') await loadEntitiesFromDB();
       } catch(e) {}
     }, 600);
   })()
@@ -5791,7 +5486,6 @@ function clearAIChat(){
       if (typeof window.renderJournals === 'function') window.renderJournals();
       if (typeof window.renderCOA      === 'function') window.renderCOA();
       if (typeof window.closeModal     === 'function') window.closeModal('journal-entry-modal');
-      if (window.finflow?.refresh) window.finflow.refresh(['journal','chart-of-accounts','reports','dashboard']);
       tip('Journal entry ' + status.toLowerCase());
     } catch (e) {
       tip('Could not save journal entry — ' + e.message, true);
@@ -5959,8 +5653,8 @@ function clearAIChat(){
       }
 
       // ── Refresh personal finance surfaces (net worth, transactions) ─
-      if (['all','personal','holdings'].includes(hint)) {
-        if (typeof window.loadPersonalFinance === 'function') window.loadPersonalFinance().catch(()=>{});
+      if (typeof window.loadPersonalFinance === 'function') {
+        window.loadPersonalFinance().catch(() => {});
       }
 
       console.log('[FinFlow] refreshFinancials ✅ page:', _curPage,

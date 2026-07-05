@@ -940,6 +940,31 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 .scenario-preset-btn{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border:1px solid var(--bd2);border-radius:10px;font-size:11.5px;color:var(--t2);cursor:pointer;background:var(--bg2);transition:all .13s;white-space:nowrap}
 .scenario-preset-btn:hover,.scenario-preset-btn.active-preset{border-color:var(--acc);color:var(--acc);background:var(--acc-bg)}
 
+/* ── Personal Finance: inline quick-add + category pills ──────────────── */
+.qa-bar{background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius-lg);padding:.7rem .8rem;margin-bottom:.9rem}
+.qa-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.qa-typetoggle{display:inline-flex;border:1px solid var(--bd2);border-radius:var(--radius);overflow:hidden;flex-shrink:0}
+.qa-typebtn{padding:7px 13px;font-size:11.5px;font-weight:600;background:var(--bg1);color:var(--t2);cursor:pointer;border:none;transition:all .13s;font-family:var(--font)}
+.qa-typebtn:not(.active):hover{color:var(--t1)}
+.qa-typebtn.qa-exp.active{background:var(--red-bg);color:var(--red)}
+.qa-typebtn.qa-inc.active{background:var(--green-bg);color:var(--green)}
+.qa-amountwrap{position:relative;flex:0 0 128px}
+.qa-amountwrap .qa-cur{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--t3);font-family:var(--font-mono);font-size:15px;pointer-events:none}
+.qa-amount{width:100%;padding:8px 10px 8px 23px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg1);color:var(--t1);font-size:17px;font-family:var(--font-mono);font-weight:600;outline:none;transition:border-color .13s}
+.qa-amount::-webkit-outer-spin-button,.qa-amount::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.qa-amount:focus{border-color:var(--acc)}
+.qa-desc{flex:1;min-width:130px;padding:9px 10px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg1);color:var(--t1);font-size:13px;outline:none;font-family:var(--font);transition:border-color .13s}
+.qa-desc:focus{border-color:var(--acc)}
+.qa-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:.6rem}
+.cat-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 9px 4px 8px;border:1px solid var(--bd2);border-radius:20px;font-size:11px;color:var(--t2);cursor:pointer;background:var(--bg1);transition:all .12s;white-space:nowrap;user-select:none;font-family:var(--font)}
+.cat-pill:hover{border-color:var(--t3);color:var(--t1)}
+.cat-pill svg{opacity:.85;flex-shrink:0}
+.cat-pill.active{font-weight:600}
+.cat-pill.active svg{opacity:1}
+.qa-actions{display:flex;justify-content:space-between;align-items:center;margin-top:.65rem;gap:8px;flex-wrap:wrap}
+.qa-hint{font-size:10.5px;color:var(--t3)}
+.pers-tx-row:hover{background:var(--bg2)}
+
 /* ── AUTO-CATEGORISATION ─────────────────────── */
 .autocat-row{display:flex;align-items:center;gap:10px;padding:.65rem 0;border-bottom:1px solid var(--bd);font-size:12.5px}
 .autocat-row:last-child{border-bottom:none}
@@ -2512,11 +2537,23 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <!-- Transactions -->
         <div class="card">
-          <div class="card-header"><div class="card-title">Transaction history</div><button class="btn btn-ghost btn-sm" onclick="openTransactionModal()">+ Add</button></div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.75rem">
-            <button class="btn btn-ghost btn-sm" onclick="openTransactionModal('expense')">+ Add expense</button>
-            <button class="btn btn-ghost btn-sm" onclick="openTransactionModal('income')">+ Add income</button>
-            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('pers-salary-card').scrollIntoView({behavior:'smooth'})">+ Add salary</button>
+          <div class="card-header"><div class="card-title">Transaction history</div></div>
+          <!-- Inline quick-add: log an expense in ~3 seconds, no modal -->
+          <div class="qa-bar">
+            <div class="qa-row">
+              <div class="qa-typetoggle" role="group" aria-label="Transaction type">
+                <button type="button" class="qa-typebtn qa-exp active" id="qa-type-exp" onclick="persQAsetType('expense')">Expense</button>
+                <button type="button" class="qa-typebtn qa-inc" id="qa-type-inc" onclick="persQAsetType('income')">Income</button>
+              </div>
+              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qa-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Amount" onkeydown="if(event.key==='Enter')persQuickAdd()"></div>
+              <input class="qa-desc" id="qa-desc" placeholder="What was it for? (optional)" aria-label="Description" onkeydown="if(event.key==='Enter')persQuickAdd()">
+              <button class="btn btn-primary" onclick="persQuickAdd()">Add</button>
+            </div>
+            <div class="qa-pills" id="qa-cat-pills"></div>
+            <div class="qa-actions">
+              <span class="qa-hint">Tap a category · Enter to add · dated today</span>
+              <button class="btn btn-ghost btn-sm" onclick="openTransactionModal()">More details ↗</button>
+            </div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.75rem" id="pers-tx-filters">
             <button class="scenario-preset-btn active-preset pers-tx-filter-btn" data-filter="all" onclick="setPersTxFilter('all')">All</button>
@@ -3363,11 +3400,21 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 
 <div class="modal-overlay hidden" id="transaction-modal">
   <div class="modal">
-    <div class="modal-header"><div><div class="modal-title">Add transaction</div><div class="modal-sub">Log a personal income or expense</div></div><button class="modal-close" onclick="closeModal('transaction-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="tx-desc">Description *</label><input class="finput" id="tx-desc" placeholder="e.g. Grocery run"></div><div class="field-wrap"><label class="field-label" for="tx-date">Date</label><input class="finput" id="tx-date" type="date"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="tx-cat-sel">Category</label><select class="finput" id="tx-cat-sel"><option>Rent/Mortgage</option><option>Groceries</option><option>Dining out</option><option>Transport</option><option>Subscriptions</option><option>Healthcare</option><option>Entertainment</option><option>Shopping</option><option>Salary</option><option>Freelance</option><option>Other Income</option><option>Other</option></select></div><div class="field-wrap"><label class="field-label" for="tx-type">Type</label><select class="finput" id="tx-type"><option value="expense">Expense</option><option value="income">Income</option></select></div></div>
-    <div class="field-wrap"><label class="field-label" for="tx-amount">Amount ($) *</label><input class="finput" id="tx-amount" type="number" placeholder="0.00" step="0.01"></div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('transaction-modal')">Cancel</button><button class="btn btn-primary" onclick="saveTransaction()">Add transaction</button></div>
+    <div class="modal-header"><div><div class="modal-title" id="txm-title">Add transaction</div><div class="modal-sub">Log a personal income or expense</div></div><button class="modal-close" onclick="closeModal('transaction-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
+    <input type="hidden" id="tx-edit-id">
+    <div class="field-wrap"><label class="field-label">Type</label>
+      <div class="qa-typetoggle" style="width:100%" role="group" aria-label="Transaction type">
+        <button type="button" class="qa-typebtn qa-exp active" id="txm-type-exp" style="flex:1" onclick="txmSetType('expense')">Expense</button>
+        <button type="button" class="qa-typebtn qa-inc" id="txm-type-inc" style="flex:1" onclick="txmSetType('income')">Income</button>
+      </div>
+    </div>
+    <div class="field-group">
+      <div class="field-wrap"><label class="field-label" for="tx-amount">Amount ($) *</label><input class="finput" id="tx-amount" type="number" placeholder="0.00" step="0.01"></div>
+      <div class="field-wrap"><label class="field-label" for="tx-date">Date</label><input class="finput" id="tx-date" type="date"></div>
+    </div>
+    <div class="field-wrap"><label class="field-label" for="tx-desc">Description *</label><input class="finput" id="tx-desc" placeholder="e.g. Grocery run"></div>
+    <div class="field-wrap"><label class="field-label">Category</label><div class="qa-pills" id="tx-cat-pills" style="margin-top:2px"></div></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('transaction-modal')">Cancel</button><button class="btn btn-primary" id="txm-save-btn" onclick="saveTransaction()">Add transaction</button></div>
   </div>
 </div>
 

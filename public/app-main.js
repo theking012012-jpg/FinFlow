@@ -2713,8 +2713,11 @@ function renderPersonal(){
         g.color = g.color||goalColors[i%goalColors.length];
         return `<div class="goal">
           <div class="goal-header">
-            <span class="goal-name">${g.name}</span>
-            <span class="goal-val">${SP(g.current)}${g.target?' / '+SP(g.target):''}</span>
+            <span class="goal-name">${esc(g.name)}</span>
+            <span style="display:flex;align-items:center;gap:6px">
+              <span class="goal-val">${SP(g.current)}${g.target?' / '+SP(g.target):''}</span>
+              ${g._dbId?`<button onclick="deletePersGoal(${g._dbId})" title="Delete goal" style="background:none;border:none;cursor:pointer;color:var(--t3);padding:0 1px;font-size:11px;line-height:1">✕</button>`:''}
+            </span>
           </div>
           <div class="goal-track"><div class="goal-fill bar-fill" style="width:${p}%;background:${g.color}"></div></div>
           <div class="goal-sub">${p}%${m?' — ~'+m+' months remaining':' — goal reached!'}</div>
@@ -2723,6 +2726,7 @@ function renderPersonal(){
 
   // Transactions
   _renderPersTxList();
+  if(typeof renderQAPills==='function') renderQAPills();
 
   renderPersonalSections();
   updateHealthScore(savingsRate, incomeUSD, surplusUSD);
@@ -2749,44 +2753,174 @@ function saveSpendingInline(){
 }
 
 function openGoalModal(){document.getElementById('goal-name').value='';document.getElementById('goal-current').value='';document.getElementById('goal-target').value='';document.getElementById('goal-monthly').value='';openModal('goal-modal')}
-function saveGoal(){
+// Persist to /api/goals, then push into the module `goals` array renderPersonal
+// reads, so the goal shows immediately without navigation. (Owned by app-main;
+// the stale bundle override was removed — see finflow-api-wiring.js.)
+async function saveGoal(){
   const name=document.getElementById('goal-name').value.trim();
   if(!name){notify('Goal name required',true);return;}
-  goals.push({name,current:Number(document.getElementById('goal-current').value)||0,target:Number(document.getElementById('goal-target').value)||0,monthly:Number(document.getElementById('goal-monthly').value)||0});
-  closeModal('goal-modal');renderPersonal();notify('Goal added');
+  const current=Number(document.getElementById('goal-current').value)||0;
+  const target=Number(document.getElementById('goal-target').value)||0;
+  const monthly=Number(document.getElementById('goal-monthly').value)||0;
+  if(!target){notify('Target amount required',true);return;}
+  try{
+    const res=await fetch('/api/goals',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name,current_val:current,target_val:target,monthly_contrib:monthly,color:'var(--acc)'})});
+    if(!res.ok) throw new Error((await res.json()).error||'Failed');
+    const saved=await res.json();
+    goals.push({_dbId:saved.id,name,current,target,monthly,color:'var(--acc)'});
+    closeModal('goal-modal');
+    renderPersonal();
+    window.finflow?.refresh(['dashboard']);
+    notify('Goal added ✦');
+  }catch(e){notify('Error: '+(e.message||'Failed to save goal'));}
+}
+async function deletePersGoal(dbId){
+  if(dbId==null) return;
+  if(!confirm('Delete this goal?')) return;
+  try{
+    const res=await fetch('/api/goals/'+dbId,{method:'DELETE',credentials:'include'});
+    if(!res.ok) throw new Error('Failed');
+    goals=goals.filter(g=>g._dbId!==dbId);
+    renderPersonal();
+    window.finflow?.refresh(['dashboard']);
+    notify('Goal deleted');
+  }catch(e){notify('Error: '+(e.message||'Failed to delete goal'));}
 }
 
-// ── Transaction modal ─────────────────────────────────────────────────
-function openTransactionModal(type){
-  document.getElementById('tx-desc').value='';
-  document.getElementById('tx-amount').value='';
-  document.getElementById('tx-date').value=new Date().toISOString().slice(0,10);
-  if(type){
-    const sel=document.getElementById('tx-type');
-    if(sel) sel.value=type;
-    // Auto-set a sensible default category
-    const catSel=document.getElementById('tx-cat-sel');
-    if(catSel && type==='income') catSel.value='Other Income';
-    if(catSel && type==='expense') catSel.value='Other';
-  }
+// ── Transaction entry: categories, inline quick-add + polished modal ───
+// One category vocabulary shared by the quick-add pills, the modal pills, and
+// the list rows (icon + colour). type drives which pills show.
+const PERS_CATS=[
+  {key:'Rent/Mortgage',type:'expense',color:'var(--acc)',   bg:'var(--acc-bg)',   icon:'home'},
+  {key:'Groceries',    type:'expense',color:'var(--green)', bg:'var(--green-bg)', icon:'basket'},
+  {key:'Dining out',   type:'expense',color:'var(--amber)', bg:'var(--amber-bg)', icon:'cup'},
+  {key:'Transport',    type:'expense',color:'var(--teal)',  bg:'var(--teal-bg)',  icon:'car'},
+  {key:'Entertainment',type:'expense',color:'var(--purple)',bg:'var(--purple-bg)',icon:'play'},
+  {key:'Healthcare',   type:'expense',color:'var(--red)',   bg:'var(--red-bg)',   icon:'heart'},
+  {key:'Shopping',     type:'expense',color:'var(--amber)', bg:'var(--amber-bg)', icon:'bag'},
+  {key:'Subscriptions',type:'expense',color:'var(--acc2)',  bg:'var(--acc-bg)',   icon:'repeat'},
+  {key:'Other',        type:'expense',color:'var(--t2)',    bg:'var(--bg3)',      icon:'dots'},
+  {key:'Salary',       type:'income', color:'var(--green)', bg:'var(--green-bg)', icon:'cash'},
+  {key:'Freelance',    type:'income', color:'var(--teal)',  bg:'var(--teal-bg)',  icon:'briefcase'},
+  {key:'Other Income', type:'income', color:'var(--green)', bg:'var(--green-bg)', icon:'coins'},
+];
+function persCatMeta(cat){ return PERS_CATS.find(c=>c.key===cat) || PERS_CATS.find(c=>c.key==='Other'); }
+function persCatIconSvg(icon){
+  const P={
+    home:'<path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/>',
+    basket:'<path d="M5 9h14l-1.3 9H6.3z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/>',
+    cup:'<path d="M6 9h10v4a5 5 0 0 1-10 0z"/><path d="M16 10h2a2 2 0 0 1 0 4h-2"/><path d="M6 20h10"/>',
+    car:'<path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13"/><path d="M4 13h16v4H4z"/><circle cx="7.5" cy="17.5" r="1.2"/><circle cx="16.5" cy="17.5" r="1.2"/>',
+    play:'<circle cx="12" cy="12" r="8.5"/><path d="M10.5 9l4.5 3-4.5 3z"/>',
+    heart:'<path d="M12 20s-6.5-4.2-6.5-8.5A3.5 3.5 0 0 1 12 8a3.5 3.5 0 0 1 6.5 3.5C18.5 15.8 12 20 12 20z"/>',
+    bag:'<path d="M6 8h12l1 12H5z"/><path d="M9 8a3 3 0 0 1 6 0"/>',
+    repeat:'<path d="M4 8l3-3 3 3"/><path d="M7 5v7a3 3 0 0 0 3 3h7"/><path d="M20 16l-3 3-3-3"/><path d="M17 19v-7a3 3 0 0 0-3-3H7"/>',
+    dots:'<circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/>',
+    cash:'<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>',
+    briefcase:'<rect x="3" y="7.5" width="18" height="11" rx="2"/><path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5"/>',
+    coins:'<ellipse cx="9" cy="8" rx="5" ry="2.5"/><path d="M4 8v4c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5V8"/><path d="M10 15.5c.3 1.3 2.4 2.3 5 2.3 2.8 0 5-1.1 5-2.5v-4c0-1-1.1-1.8-2.8-2.2"/>',
+  };
+  return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${P[icon]||P.dots}</svg>`;
+}
+function persPillHtml(c,active,onclick){
+  const style=active?` style="background:${c.color};border-color:${c.color};color:#0e0b08"`:'';
+  return `<button type="button" class="cat-pill${active?' active':''}"${style} onclick="${onclick}">${persCatIconSvg(c.icon)}${c.key}</button>`;
+}
+
+// ── Inline quick-add (the ~3-second common case) ──────────────────────
+window._qaType='expense';
+window._qaCat='Other';
+function persQAsetType(type){
+  window._qaType=type;
+  document.getElementById('qa-type-exp')?.classList.toggle('active',type==='expense');
+  document.getElementById('qa-type-inc')?.classList.toggle('active',type==='income');
+  window._qaCat = type==='income' ? 'Other Income' : 'Other';
+  renderQAPills();
+}
+function persQAsetCat(key){ window._qaCat=key; renderQAPills(); }
+function renderQAPills(){
+  const el=document.getElementById('qa-cat-pills'); if(!el) return;
+  const type=window._qaType||'expense';
+  const cats=PERS_CATS.filter(c=>c.type===type);
+  if(!cats.some(c=>c.key===window._qaCat)) window._qaCat=cats[cats.length-1].key;
+  el.innerHTML=cats.map(c=>persPillHtml(c,window._qaCat===c.key,`persQAsetCat('${c.key.replace(/'/g,"\\'")}')`)).join('');
+}
+async function persQuickAdd(){
+  const amount=Number(document.getElementById('qa-amount')?.value);
+  if(!amount||amount<=0){notify('Enter an amount',true);return;}
+  const type=window._qaType||'expense';
+  const cat=window._qaCat||(type==='income'?'Other Income':'Other');
+  const desc=(document.getElementById('qa-desc')?.value||'').trim()||cat;
+  try{
+    await _persCommitTx({desc,amount,cat,type,date:new Date().toISOString().slice(0,10)});
+    const a=document.getElementById('qa-amount'); if(a) a.value='';
+    const d=document.getElementById('qa-desc');   if(d) d.value='';
+    if(a) a.focus();
+    notify('Added ✦');
+  }catch(e){notify('Error: '+(e.message||'Failed to save'));}
+}
+
+// ── "More details" modal (custom date, notes, editing) ────────────────
+window._txmType='expense';
+window._txmCat='Other';
+function txmSetType(type,keepCat){
+  window._txmType=type;
+  document.getElementById('txm-type-exp')?.classList.toggle('active',type==='expense');
+  document.getElementById('txm-type-inc')?.classList.toggle('active',type==='income');
+  if(!keepCat) window._txmCat = type==='income' ? 'Other Income' : 'Other';
+  renderTxmPills();
+}
+function txmSetCat(key){ window._txmCat=key; renderTxmPills(); }
+function renderTxmPills(){
+  const el=document.getElementById('tx-cat-pills'); if(!el) return;
+  const type=window._txmType||'expense';
+  const cats=PERS_CATS.filter(c=>c.type===type);
+  if(!cats.some(c=>c.key===window._txmCat)) window._txmCat=cats[cats.length-1].key;
+  el.innerHTML=cats.map(c=>persPillHtml(c,window._txmCat===c.key,`txmSetCat('${c.key.replace(/'/g,"\\'")}')`)).join('');
+}
+function openTransactionModal(type,editTx){
+  const isEdit=!!(editTx&&editTx._dbId);
+  const t=isEdit?editTx.type:(type||window._qaType||'expense');
+  const setV=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
+  setV('tx-edit-id', isEdit?editTx._dbId:'');
+  // Carry over anything already typed in the quick-add bar for a smooth handoff.
+  setV('tx-amount', isEdit?editTx.amount:(document.getElementById('qa-amount')?.value||''));
+  setV('tx-desc',   isEdit?editTx.desc:(document.getElementById('qa-desc')?.value||''));
+  setV('tx-date',   isEdit?(editTx.date||new Date().toISOString().slice(0,10)):new Date().toISOString().slice(0,10));
+  const titleEl=document.getElementById('txm-title'); if(titleEl) titleEl.textContent=isEdit?'Edit transaction':'Add transaction';
+  const btnEl=document.getElementById('txm-save-btn'); if(btnEl) btnEl.textContent=isEdit?'Save changes':'Add transaction';
+  window._txmCat = isEdit?editTx.cat:(window._qaCat||(t==='income'?'Other Income':'Other'));
+  txmSetType(t,true);   // keep the category we just set
   openModal('transaction-modal');
 }
-
 async function saveTransaction(){
-  const desc=document.getElementById('tx-desc').value.trim();
-  const amount=Number(document.getElementById('tx-amount').value);
-  if(!desc||!amount||Number(amount)<=0){notify('Valid positive amount required');return;}
-  const cat=document.getElementById('tx-cat-sel').value;
-  const type=document.getElementById('tx-type').value;
-  const txDate=document.getElementById('tx-date')?.value||new Date().toISOString().slice(0,10);
+  const amount=Number(document.getElementById('tx-amount')?.value);
+  const desc=(document.getElementById('tx-desc')?.value||'').trim();
+  if(!desc||!amount||amount<=0){notify('Description and a valid amount are required',true);return;}
+  const cat=window._txmCat||'Other';
+  const type=window._txmType||'expense';
+  const date=document.getElementById('tx-date')?.value||new Date().toISOString().slice(0,10);
+  const editId=document.getElementById('tx-edit-id')?.value||'';
   try{
-    const res=await fetch('/api/personal-transactions',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({description:desc,category:cat,amount,tx_type:type,tx_date:txDate})});
-    if(!res.ok) throw new Error((await res.json()).error||'Failed');
+    await _persCommitTx({desc,amount,cat,type,date,editId:editId||null});
     closeModal('transaction-modal');
-    if(typeof loadPersonalFinance==='function') await loadPersonalFinance();
-    window.finflow?.refresh(['dashboard']);
-    notify('Transaction added ✦');
+    notify(editId?'Transaction updated ✦':'Transaction added ✦');
   }catch(e){notify('Error: '+(e.message||'Failed to save'));}
+}
+function editPersTx(dbId){
+  if(dbId==null) return;
+  const t=(persTransactions||[]).find(x=>x._dbId===dbId)||(window._allPersTxs||[]).find(x=>x._dbId===dbId);
+  if(t) openTransactionModal(null,t);
+}
+// Single commit path for BOTH quick-add and the modal → always refreshes the
+// rebuilt personal pipeline (list, tiles, donut) + the main dashboard.
+async function _persCommitTx({desc,amount,cat,type,date,editId}){
+  const body={description:desc,category:cat,amount,tx_type:type,tx_date:date};
+  const url=editId?('/api/personal-transactions/'+editId):'/api/personal-transactions';
+  const res=await fetch(url,{method:editId?'PUT':'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)});
+  if(!res.ok) throw new Error((await res.json()).error||'Failed');
+  if(typeof loadPersonalFinance==='function') await loadPersonalFinance();
+  window.finflow?.refresh(['dashboard']);
 }
 
 // ── Personal salary card ──────────────────────────────────────────────
@@ -2995,7 +3129,7 @@ function _renderPersTxList(){
   const el=document.getElementById('pers-transactions');
   if(!el) return;
   if(txs.length===0){
-    el.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No transactions yet — add your first one above</div>';
+    el.innerHTML='<div class="empty-state" style="padding:1.5rem .75rem"><div style="font-size:12.5px;color:var(--t3);text-align:center">'+(filter==='all'?'No transactions yet — add one above ↑':'No '+filter+' transactions in this view')+'</div></div>';
     const balRow=document.getElementById('pers-tx-balance');
     if(balRow) balRow.style.display='none';
     return;
@@ -3003,22 +3137,19 @@ function _renderPersTxList(){
   let running=0;
   el.innerHTML=txs.map(t=>{
     running+=t.type==='income'?t.amount:-t.amount;
-    return `<div class="tx-row" style="align-items:center">
+    const m=persCatMeta(t.cat);
+    return `<div class="tx-row pers-tx-row" style="align-items:center;cursor:pointer" ${t._dbId!=null?`onclick="editPersTx(${t._dbId})"`:''} title="Click to edit">
       <div class="tx-left" style="flex:1;min-width:0">
-        <div class="tx-icon ${t.type==='income'?'av-green':'av-red'}">
-          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-            ${t.type==='income'?'<polyline points="1,8 6,3 10,7 15,2"/><polyline points="10,2 15,2 15,7"/>':'<polyline points="1,5 5,10 9,7 15,13"/><polyline points="10,13 15,13 15,8"/>'}
-          </svg>
-        </div>
-        <div><div class="tx-name">${esc(t.desc)}</div><div class="tx-cat">${esc(t.cat)} · ${esc(t.date)}</div></div>
+        <div class="tx-icon" style="background:${m.bg};color:${m.color}">${persCatIconSvg(m.icon)}</div>
+        <div style="min-width:0"><div class="tx-name">${esc(t.desc)}</div><div class="tx-cat">${esc(t.cat)} · ${esc(t.date)}</div></div>
       </div>
       <div class="tx-amt ${t.type==='income'?'up':'dn'}" style="margin-right:8px">${t.type==='income'?'+':'-'}${SP(t.amount)}</div>
-      ${t._dbId?`<button onclick="deletePersonalTransaction(${t._dbId})" style="background:none;border:none;cursor:pointer;color:var(--t3);padding:2px 4px;font-size:11px;line-height:1" title="Delete">✕</button>`:''}
+      ${t._dbId?`<button onclick="event.stopPropagation();deletePersonalTransaction(${t._dbId})" style="background:none;border:none;cursor:pointer;color:var(--t3);padding:2px 4px;font-size:11px;line-height:1" title="Delete">✕</button>`:''}
     </div>`;
   }).join('');
   const balRow=document.getElementById('pers-tx-balance');
   const balVal=document.getElementById('pers-tx-balance-val');
-  if(balRow){balRow.style.display='';}
+  if(balRow){balRow.style.display='flex';}
   if(balVal){balVal.textContent=SP(Math.abs(running));balVal.style.color=running>=0?'var(--green)':'var(--red)';}
 }
 
@@ -3118,6 +3249,15 @@ async function loadPersonalFinance(){
       const sRes=await fetch('/api/snapshots?kind=networth',{credentials:'include'});
       window._nwSnapshots = sRes.ok ? ((await sRes.json())||[]).map(s=>({value:parseFloat(s.value)||0,date:s.date||''})) : (window._nwSnapshots||[]);
     }catch(_){ window._nwSnapshots=window._nwSnapshots||[]; }
+    // Goals — load into the module `goals` array renderPersonal reads (owned by
+    // app-main now; the bundle's loadGoalsFromDB override was removed).
+    try{
+      const gRes=await fetch('/api/goals',{credentials:'include'});
+      if(gRes.ok){
+        const gRows=await gRes.json();
+        goals=(gRows||[]).map(g=>({_dbId:g.id,name:g.name,current:parseFloat(g.current_val)||0,target:parseFloat(g.target_val)||0,monthly:parseFloat(g.monthly_contrib)||0,color:g.color||'var(--acc)'}));
+      }
+    }catch(_){}
     if(typeof renderPersAccounts==='function'){ try{ renderPersAccounts(); }catch(_){}}
     _applyPersFilter();
   }catch(e){console.warn('[Personal] Load failed:',e.message);}

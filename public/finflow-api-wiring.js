@@ -148,144 +148,19 @@
     };
 
     // ════════════════════════════════════════════
-    // 2. GOALS — save + delete
+    // 2 + 3. GOALS & PERSONAL TRANSACTIONS — owned by app-main.js
     // ════════════════════════════════════════════
-    const _origSaveGoal = window.saveGoal;
-    window.saveGoal = async function () {
-      const name = document.getElementById('goal-name')?.value?.trim();
-      if (!name) { notify('Goal name required', true); return; }
-
-      const current_val = Number(document.getElementById('goal-current')?.value) || 0;
-      const target_val  = Number(document.getElementById('goal-target')?.value)  || 0;
-      const monthly     = Number(document.getElementById('goal-monthly')?.value) || 0;
-
-      if (!target_val) { notify('Target amount required', true); return; }
-
-      try {
-        const saved = await api('POST', '/api/goals', {
-          name,
-          current_val,
-          target_val,
-          monthly_contrib: monthly,
-          color: 'var(--acc)',
-        });
-        // Push with DB id so we can delete later
-        if (!window.goals) window.goals = [];
-        window.goals.push({
-          _dbId: saved.id,
-          name,
-          current: current_val,
-          target: target_val,
-          monthly,
-          color: 'var(--acc)',
-        });
-        closeModal('goal-modal');
-        if (typeof renderPersonal === 'function') renderPersonal();
-        notify('Goal added ✦');
-        loadGoalsFromDB().catch(()=>{});
-        window._refreshDashboardUI?.();
-      } catch (e) {
-        notify('Could not save goal — ' + e.message, true);
-      }
-    };
-
-    // New: deleteGoal — call from goal row buttons (wire up in renderPersonal if needed)
-    window.deleteGoal = async function (idx) {
-      const goal = window.goals[idx];
-      if (!goal) return;
-      if (!confirm('Delete this goal? This cannot be undone.')) return;
-      try {
-        if (goal._dbId) await api('DELETE', `/api/goals/${goal._dbId}`);
-        window.goals.splice(idx, 1);
-        if (typeof renderPersonal === 'function') renderPersonal();
-        notify('Goal deleted');
-      } catch (e) {
-        notify('Could not delete goal — ' + e.message, true);
-      }
-    };
-
-    // ════════════════════════════════════════════
-    // 2b. GOALS — load on boot
-    // ════════════════════════════════════════════
-    async function loadGoalsFromDB() {
-      try {
-        const rows = await api('GET', '/api/goals');
-        if (rows && rows.length > 0) {
-          if (!window.goals) window.goals = [];
-          window.goals.length = 0;
-          rows.forEach(g => window.goals.push({
-            _dbId:   g.id,
-            name:    g.name,
-            current: g.current_val,
-            target:  g.target_val,
-            monthly: g.monthly_contrib,
-            color:   g.color || 'var(--acc)',
-          }));
-          if (typeof renderPersonal === 'function') renderPersonal();
-        }
-      } catch (e) {
-        // Not logged in yet or no goals — fine
-      }
-    }
-    loadGoalsFromDB();
-
-    // ════════════════════════════════════════════
-    // 3. PERSONAL TRANSACTIONS — load on boot + save
-    // ════════════════════════════════════════════
-    async function loadPersonalTransactionsFromDB() {
-      try {
-        const txns = await api('GET', '/api/personal-transactions');
-        if (txns && txns.length > 0) {
-          // Map DB fields to frontend shape
-          window.persTransactions = txns.map(t => ({
-            _dbId: t.id,
-            desc: t.description,
-            cat: t.category,
-            amount: t.amount,
-            type: t.tx_type,
-            date: t.tx_date,
-          }));
-          if (typeof renderPersonal === 'function') renderPersonal();
-        }
-      } catch (e) {
-        // Not logged in yet — ignore
-      }
-    }
-    loadPersonalTransactionsFromDB();
-
-    window.saveTransaction = async function () {
-      const desc   = document.getElementById('tx-desc')?.value?.trim();
-      const amount = Number(document.getElementById('tx-amount')?.value);
-      const cat    = document.getElementById('tx-cat-sel')?.value  || 'Other';
-      const type   = document.getElementById('tx-type')?.value     || 'expense';
-
-      if (!desc || !amount) { notify('Description and amount required', true); return; }
-
-      try {
-        const saved = await api('POST', '/api/personal-transactions', {
-          description: desc,
-          category: cat,
-          amount,
-          tx_type: type,
-          tx_date: new Date().toISOString().slice(0, 10),
-        });
-        window.persTransactions.unshift({
-          _dbId: saved.id,
-          desc,
-          cat,
-          amount,
-          type,
-          date: 'Today',
-        });
-        closeModal('transaction-modal');
-        if (typeof renderPersonal === 'function') renderPersonal();
-        notify('Transaction added ✦');
-        loadPersonalTransactionsFromDB().catch(()=>{});
-        window._refreshDashboardUI?.();
-      } catch (e) {
-        notify('Could not save transaction — ' + e.message, true);
-      }
-    };
+    // REMOVED the stale window.saveGoal / deleteGoal / loadGoalsFromDB and
+    // window.saveTransaction / loadPersonalTransactionsFromDB overrides. They wrote
+    // the legacy window.goals / window.persTransactions arrays and refreshed only the
+    // business dashboard (_refreshDashboardUI) — disconnected from app-main's rebuilt
+    // personal pipeline (module goals / _allPersTxs → _applyPersFilter → renderPersonal),
+    // so goals and transactions "saved but didn't show until re-nav". app-main.js now
+    // owns saveGoal / deletePersGoal / saveTransaction (+ inline quick-add), each POSTing
+    // and calling loadPersonalFinance(), which loads goals + transactions from the DB and
+    // re-renders. The showPage('personal') hook below calls loadPersonalFinance() so the
+    // initial load is covered too. (Holdings overrides intentionally left for a separate
+    // Investments-page pass.)
 
     // ════════════════════════════════════════════
     // 4. HOLDINGS — save
@@ -405,18 +280,15 @@
       }
     };
 
-    // ── Expose load functions for entity-switch and external callers ─
-    window._loadGoalsFromDB                = loadGoalsFromDB;
-    window._loadPersonalTransactionsFromDB = loadPersonalTransactionsFromDB;
-
     // ── showPage hook: reload personal data when user visits that page ─
+    // Goals + personal transactions now load via app-main's loadPersonalFinance()
+    // (the rebuilt pipeline), not the removed legacy loaders.
     const _wiringOrig = window.showPage;
     if (typeof _wiringOrig === 'function') {
       window.showPage = function (id, navEl) {
         _wiringOrig(id, navEl);
-        if (id === 'personal') {
-          loadGoalsFromDB();
-          loadPersonalTransactionsFromDB();
+        if (id === 'personal' && typeof window.loadPersonalFinance === 'function') {
+          window.loadPersonalFinance();
         }
       };
     }

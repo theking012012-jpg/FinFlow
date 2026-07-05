@@ -4816,71 +4816,17 @@ function clearAIChat(){
   };
 
   // ══════════════════════════════════════════════════════
-  // 12. PERSONAL FINANCE — wire spending, net worth, transactions
-  //     Fetches: /api/holdings → net worth from portfolio value
-  //              /api/personal-transactions → spending array + recent txns
+  // 12. PERSONAL FINANCE — owned by app-main.js
   // ══════════════════════════════════════════════════════
-  window.loadPersonalFinance = async function () {
-    try {
-      const [holdRows, txRows] = await Promise.all([
-        api('GET', '/api/holdings').catch(() => []),
-        api('GET', '/api/personal-transactions').catch(() => []),
-      ]);
-
-      // Net worth from total portfolio market value
-      const portfolioValue = (holdRows || []).reduce((s, h) => {
-        const price = parseFloat(h.price) || parseFloat(h.cost_per) || 0;
-        return s + price * (parseFloat(h.shares) || 0);
-      }, 0);
-      if (typeof window.baseNetWorth !== 'undefined') {
-        window.baseNetWorth = Math.round(portfolioValue);
-      }
-
-      // Personal transactions → populate persTransactions (keep salary entries)
-      // DB stores tx_type (not type) and tx_date (not date)
-      const dbTxns = (txRows || []).map(r => ({
-        id:      r.id,
-        desc:    r.description || r.desc || '',
-        cat:     r.category || r.cat || 'Other',
-        amount:  Math.abs(parseFloat(r.amount) || 0),
-        type:    r.tx_type || r.type || (parseFloat(r.amount) < 0 ? 'expense' : 'income'),
-        rawDate: r.tx_date || r.date || '',
-        date:    (r.tx_date || r.date) ? new Date(r.tx_date || r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '',
-      }));
-
-      // Merge: keep payroll salary entries (added by syncAllPayrollsToPersonal),
-      // replace everything else with DB rows
-      if (typeof window.persTransactions !== 'undefined') {
-        const salaryEntries = (window.persTransactions || []).filter(t => t.cat === 'Income' && t.desc.startsWith('Salary —'));
-        window.persTransactions = [...salaryEntries, ...dbTxns.filter(t => !(t.cat === 'Income' && t.desc.startsWith('Salary —')))];
-      }
-
-      // Spending categories — filter to current month for pers-spend KPI
-      const _now = new Date();
-      const _thisMonth = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}`;
-      const expTxns = dbTxns.filter(t => t.type === 'expense' || t.type === 'debit');
-      const monthExpTxns = expTxns.filter(t => t.rawDate.startsWith(_thisMonth));
-      const _allExpOrMonth = monthExpTxns.length ? monthExpTxns : expTxns;
-      if (_allExpOrMonth.length && typeof window.spending !== 'undefined') {
-        const catMap = {};
-        _allExpOrMonth.forEach(t => { catMap[t.cat] = (catMap[t.cat] || 0) + t.amount; });
-        const SPEND_COLORS = ['var(--red)', 'var(--amber)', 'var(--purple)', 'var(--teal)', 'var(--green)', 'var(--acc)'];
-        const newSpending = Object.entries(catMap).map(([label, amount], i) => ({
-          label, amount, color: SPEND_COLORS[i % SPEND_COLORS.length],
-        }));
-        if (newSpending.length) window.spending = newSpending;
-      }
-
-      // Recalculate income from payroll net (single source of truth) then render
-      if (typeof window.syncAllPayrollsToPersonal === 'function') {
-        window.syncAllPayrollsToPersonal();
-      } else if (typeof window.renderPersonal === 'function') {
-        window.renderPersonal();
-      }
-    } catch (err) {
-      console.warn('[PersonalFinance]', err.message);
-    }
-  };
+  // REMOVED the stale window.loadPersonalFinance override. It populated the
+  // legacy window.persTransactions / window.spending arrays, but app-main's
+  // rebuilt render path reads window._allPersTxs → _applyPersFilter → module
+  // persTransactions/spending. Because this file is concatenated after app-main
+  // and loaded deferred, its override WON at runtime and _allPersTxs was never
+  // populated — so the transaction list, Monthly Spending and the donut stayed
+  // empty even though rows loaded. app-main.js now owns loadPersonalFinance
+  // (it GETs /api/personal-transactions into window._allPersTxs and renders);
+  // the showPage('personal') hook below calls it so nav-based loads still work.
 
   // ══════════════════════════════════════════════════════
   // BOOT
@@ -4889,13 +4835,13 @@ function clearAIChat(){
     loadTimesheet();
     loadHoldingsFromDB();
     loadProjects();
-    window.loadPersonalFinance();
+    // Personal finance loads via app-main's loadPersonalFinance() on the
+    // showPage('personal') hook below (no boot preload needed here).
 
     // Expose so entity-switch and external callers can reload
     window._loadTimesheetFromDB  = loadTimesheet;
     window._loadHoldingsFromDB   = loadHoldingsFromDB;
     window._loadProjectsFromDB   = loadProjects;
-    window._loadPersonalFinance  = window.loadPersonalFinance;
 
     // Re-load when navigating to these pages via showPage
     const _orig = window.showPage;

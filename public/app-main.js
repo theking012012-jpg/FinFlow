@@ -2727,6 +2727,7 @@ function renderPersonal(){
   // Transactions
   _renderPersTxList();
   if(typeof renderQAPills==='function') renderQAPills();
+  if(typeof renderQAiPills==='function') renderQAiPills();
 
   renderPersonalSections();
   updateHealthScore(savingsRate, incomeUSD, surplusUSD);
@@ -2827,36 +2828,59 @@ function persPillHtml(c,active,onclick){
   return `<button type="button" class="cat-pill${active?' active':''}"${style} onclick="${onclick}">${persCatIconSvg(c.icon)}${c.key}</button>`;
 }
 
-// ── Inline quick-add (the ~3-second common case) ──────────────────────
-window._qaType='expense';
-window._qaCat='Other';
-function persQAsetType(type){
-  window._qaType=type;
-  document.getElementById('qa-type-exp')?.classList.toggle('active',type==='expense');
-  document.getElementById('qa-type-inc')?.classList.toggle('active',type==='income');
-  window._qaCat = type==='income' ? 'Other Income' : 'Other';
-  renderQAPills();
-}
+// ── Inline quick-add — EXPENSE-FIRST (primary) ────────────────────────
+// The primary bar is the expense entry by definition (no type toggle). Income
+// is a tucked, collapsed-by-default secondary bar below it. Both funnel through
+// the same _persCommitTx pipeline; only the category set + type differ.
+window._qaCat='Other';        // primary expense category
+window._qaiCat='Salary';      // secondary income category
 function persQAsetCat(key){ window._qaCat=key; renderQAPills(); }
 function renderQAPills(){
   const el=document.getElementById('qa-cat-pills'); if(!el) return;
-  const type=window._qaType||'expense';
-  const cats=PERS_CATS.filter(c=>c.type===type);
-  if(!cats.some(c=>c.key===window._qaCat)) window._qaCat=cats[cats.length-1].key;
+  const cats=PERS_CATS.filter(c=>c.type==='expense');
+  if(!cats.some(c=>c.key===window._qaCat)) window._qaCat='Other';
   el.innerHTML=cats.map(c=>persPillHtml(c,window._qaCat===c.key,`persQAsetCat('${c.key.replace(/'/g,"\\'")}')`)).join('');
 }
 async function persQuickAdd(){
   const amount=Number(document.getElementById('qa-amount')?.value);
   if(!amount||amount<=0){notify('Enter an amount',true);return;}
-  const type=window._qaType||'expense';
-  const cat=window._qaCat||(type==='income'?'Other Income':'Other');
+  const cat=window._qaCat||'Other';
   const desc=(document.getElementById('qa-desc')?.value||'').trim()||cat;
   try{
-    await _persCommitTx({desc,amount,cat,type,date:new Date().toISOString().slice(0,10)});
+    await _persCommitTx({desc,amount,cat,type:'expense',date:new Date().toISOString().slice(0,10)});
     const a=document.getElementById('qa-amount'); if(a) a.value='';
     const d=document.getElementById('qa-desc');   if(d) d.value='';
     if(a) a.focus();
-    notify('Added ✦');
+    notify('Expense added ✦');
+  }catch(e){notify('Error: '+(e.message||'Failed to save'));}
+}
+
+// ── Income — SECONDARY, collapsed by default ──────────────────────────
+function toggleIncomeEntry(){
+  const box=document.getElementById('qa-income'); if(!box) return;
+  const open = box.style.display==='none' || !box.style.display;
+  box.style.display = open ? '' : 'none';
+  const btn=document.getElementById('qa-income-toggle'); if(btn) btn.style.display = open ? 'none' : '';
+  if(open){ renderQAiPills(); document.getElementById('qai-amount')?.focus(); }
+}
+function persQAiSetCat(key){ window._qaiCat=key; renderQAiPills(); }
+function renderQAiPills(){
+  const el=document.getElementById('qai-cat-pills'); if(!el) return;
+  const cats=PERS_CATS.filter(c=>c.type==='income');
+  if(!cats.some(c=>c.key===window._qaiCat)) window._qaiCat=cats[0].key;
+  el.innerHTML=cats.map(c=>persPillHtml(c,window._qaiCat===c.key,`persQAiSetCat('${c.key.replace(/'/g,"\\'")}')`)).join('');
+}
+async function persIncomeAdd(){
+  const amount=Number(document.getElementById('qai-amount')?.value);
+  if(!amount||amount<=0){notify('Enter an amount',true);return;}
+  const cat=window._qaiCat||'Salary';
+  const desc=(document.getElementById('qai-desc')?.value||'').trim()||cat;
+  try{
+    await _persCommitTx({desc,amount,cat,type:'income',date:new Date().toISOString().slice(0,10)});
+    const a=document.getElementById('qai-amount'); if(a) a.value='';
+    const d=document.getElementById('qai-desc');   if(d) d.value='';
+    if(a) a.focus();
+    notify('Income added ✦');
   }catch(e){notify('Error: '+(e.message||'Failed to save'));}
 }
 
@@ -2880,7 +2904,7 @@ function renderTxmPills(){
 }
 function openTransactionModal(type,editTx){
   const isEdit=!!(editTx&&editTx._dbId);
-  const t=isEdit?editTx.type:(type||window._qaType||'expense');
+  const t=isEdit?editTx.type:(type||'expense');
   const setV=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
   setV('tx-edit-id', isEdit?editTx._dbId:'');
   // Carry over anything already typed in the quick-add bar for a smooth handoff.

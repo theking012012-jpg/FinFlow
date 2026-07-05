@@ -1787,12 +1787,12 @@ app.get('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   }
 }));
 app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
-  const { vendor, amount, frequency = 'Monthly', next_run, status = 'active' } = req.body;
+  const { vendor, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
   const entity = await activeEntity(req.session.userId);
   const _dup = await findRecentDuplicate('recurring_bills', req.session.userId, entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('recurring_bills', { user_id: req.session.userId, entity_id: entity?.id, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status });
+  const { row } = await db.insert('recurring_bills', { user_id: req.session.userId, entity_id: entity?.id, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });
   res.json(row);
 }));
 app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
@@ -2429,13 +2429,14 @@ app.use((err, req, res, _next) => {
 function nextRunDate(currentDate, frequency) {
   const d = new Date(currentDate);
   if (isNaN(d.getTime())) return null;
-  switch (frequency) {
-    case 'Weekly':    d.setDate(d.getDate() + 7);    break;
-    case 'Monthly':   d.setMonth(d.getMonth() + 1);  break;
-    case 'Quarterly': d.setMonth(d.getMonth() + 3);  break;
-    case 'Yearly':    d.setFullYear(d.getFullYear() + 1); break;
-    default:          d.setMonth(d.getMonth() + 1);
-  }
+  // Normalize so every entry point agrees: case-insensitive, and treat
+  // 'Annually'/'Annual' as yearly (the Recurring Bills/Invoices modals send
+  // 'Annually', which previously fell through to the monthly default).
+  const f = String(frequency || '').trim().toLowerCase();
+  if (f === 'weekly')                                    d.setDate(d.getDate() + 7);
+  else if (f === 'quarterly')                            d.setMonth(d.getMonth() + 3);
+  else if (f === 'yearly' || f === 'annually' || f === 'annual') d.setFullYear(d.getFullYear() + 1);
+  else                                                   d.setMonth(d.getMonth() + 1); // monthly / default
   return d.toISOString().slice(0, 10);
 }
 
@@ -2465,13 +2466,21 @@ async function runRecurringScheduler() {
     );
     const recBills = _recBillRows.map(r => ({ id: r.id, user_id: r.user_id, entity_id: r.entity_id, ...r.data }));
     for (const r of recBills) {
+      // Respect optional end_date: once the schedule has passed it, stop.
+      if (r.end_date && r.next_run > r.end_date) {
+        await db.updateById('recurring_bills', r.id, { status: 'completed' });
+        continue;
+      }
       const num = 'BILL-' + String(Date.now()).slice(-4);
       await db.insert('bills', {
         user_id: r.user_id, entity_id: r.entity_id || null,
         vendor: r.vendor, num, amount: r.amount, due_date: r.next_run,
         status: 'unpaid', notes: `Auto-generated from recurring schedule`,
       });
-      await db.updateById('recurring_bills', r.id, { next_run: nextRunDate(r.next_run, r.frequency) });
+      const _nextRun = nextRunDate(r.next_run, r.frequency);
+      const _patch = { next_run: _nextRun };
+      if (r.end_date && _nextRun > r.end_date) _patch.status = 'completed';
+      await db.updateById('recurring_bills', r.id, _patch);
     }
 
     if (recInvoices.length + recBills.length > 0) {

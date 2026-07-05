@@ -2445,77 +2445,6 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <button class="scenario-preset-btn pers-period-btn" data-period="quarter" onclick="setPersPeriod('quarter')" style="font-size:10.5px;padding:3px 8px">Quarter</button>
           <button class="scenario-preset-btn active-preset pers-period-btn" data-period="year" onclick="setPersPeriod('year')" style="font-size:10.5px;padding:3px 8px">Year</button>
         </div>
-        <!-- Transactions (moved to top: quick-add + list together, primary entry) -->
-        <div class="card">
-          <div class="card-header"><div class="card-title">Transaction history</div></div>
-          <!-- PRIMARY: expense quick-add (expense by definition — no type toggle) -->
-          <div class="qa-bar qa-bar-exp">
-            <div class="qa-lead qa-lead-exp">Expense</div>
-            <div class="qa-row">
-              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qa-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Expense amount" onkeydown="if(event.key==='Enter')persQuickAdd()"></div>
-              <input class="qa-desc" id="qa-desc" placeholder="What was it for? (optional)" aria-label="Description" onkeydown="if(event.key==='Enter')persQuickAdd()">
-              <button class="btn btn-primary" onclick="persQuickAdd()">Add</button>
-            </div>
-            <div class="qa-pills" id="qa-cat-pills"></div>
-            <div class="qa-actions">
-              <button class="btn btn-ghost btn-sm" id="qa-income-toggle" onclick="toggleIncomeEntry()"><span style="color:var(--green)">+ Add income</span></button>
-              <button class="btn btn-ghost btn-sm" onclick="openTransactionModal()">More details ↗</button>
-            </div>
-          </div>
-          <!-- SECONDARY: income entry, tucked, collapsed by default -->
-          <div class="qa-bar qa-bar-inc" id="qa-income" style="display:none">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <div class="qa-lead qa-lead-inc" style="margin-bottom:0">Income</div>
-              <button type="button" class="qa-collapse" onclick="toggleIncomeEntry()" title="Hide income" aria-label="Hide income entry"><svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
-            </div>
-            <div class="qa-row" style="margin-top:.55rem">
-              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qai-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Income amount" onkeydown="if(event.key==='Enter')persIncomeAdd()"></div>
-              <input class="qa-desc" id="qai-desc" placeholder="Source (optional)" aria-label="Income description" onkeydown="if(event.key==='Enter')persIncomeAdd()">
-              <button class="btn btn-green" onclick="persIncomeAdd()">Add</button>
-            </div>
-            <div class="qa-pills" id="qai-cat-pills"></div>
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.75rem" id="pers-tx-filters">
-            <button class="scenario-preset-btn active-preset pers-tx-filter-btn" data-filter="all" onclick="setPersTxFilter('all')">All</button>
-            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="income" onclick="setPersTxFilter('income')">Income</button>
-            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="expense" onclick="setPersTxFilter('expense')">Expenses</button>
-          </div>
-          <div id="pers-transactions"></div>
-          <div id="pers-tx-balance" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Running balance</span><span style="font-family:var(--font-mono);font-weight:600" id="pers-tx-balance-val">$0</span></div>
-        </div>
-        <!-- Personal salary entry -->
-        <div class="card" id="pers-salary-card" style="margin-bottom:.85rem">
-          <div class="card-header" id="pers-salary-header" style="cursor:pointer;margin-bottom:0" onclick="togglePersSalaryEdit()" role="button" aria-expanded="true" aria-controls="pers-salary-editor" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePersSalaryEdit()}">
-            <div class="card-title">Monthly salary</div>
-            <div style="display:flex;align-items:center;gap:9px;margin-left:auto">
-              <span id="pers-salary-sync-label" style="display:none;font-size:11px;color:var(--green)">Synced from payroll ✓</span>
-              <svg id="pers-salary-caret" width="11" height="11" viewBox="0 0 10 10" style="transition:transform .15s cubic-bezier(.4,0,.2,1);stroke:var(--t2)" aria-hidden="true"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-            </div>
-          </div>
-          <!-- Collapsed summary (shown when a salary is already set) -->
-          <div id="pers-salary-summary" style="display:none;font-size:12.5px;color:var(--t2);margin-top:.5rem">
-            <span style="color:var(--t1);font-weight:600" id="pers-salary-summary-gross">—</span> gross · <span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="pers-salary-summary-net">—</span> net
-          </div>
-          <!-- Expanded editor -->
-          <div id="pers-salary-editor">
-            <div class="field-group" style="margin-bottom:.6rem;margin-top:.75rem">
-              <div class="field-wrap"><label class="field-label" for="pers-sal-gross">Gross salary (USD / mo)</label><input class="finput" id="pers-sal-gross" type="number" placeholder="e.g. 5000" oninput="persPreviewNet()"></div>
-              <div class="field-wrap"><label class="field-label" for="pers-sal-tax">Tax rate (%)</label><input class="finput" id="pers-sal-tax" type="number" value="20" min="0" max="60" step="0.5" oninput="persPreviewNet()"></div>
-            </div>
-            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-              <div style="font-size:12.5px;color:var(--t2)">Net take-home: <span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="pers-sal-net-preview">—</span></div>
-              <button class="btn btn-primary btn-sm" onclick="savePersonalSalary()">Save salary</button>
-            </div>
-          </div>
-        </div>
-        <div id="pers-payroll-banner" style="display:none;background:linear-gradient(135deg,var(--acc-bg),rgba(30,24,8,.5));border:1px solid var(--acc2);border-radius:var(--radius-lg);padding:.75rem 1.1rem;margin-bottom:1rem;flex-direction:column;gap:8px">
-          <div style="display:flex;align-items:center;gap:10px">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--acc)" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/><path d="M10 9l1.5 1.5L14 8"/></svg>
-            <span style="font-size:12px;color:var(--t2)">Income from payroll · <span id="pers-salary-source" style="color:var(--acc-light)">—</span></span>
-            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showPage('payroll',document.getElementById('nav-payroll'))">Edit payroll →</button>
-          </div>
-          <div id="pers-payroll-breakdown" style="display:none;background:rgba(0,0,0,.2);border-radius:var(--radius);padding:.6rem .75rem"></div>
-        </div>
         <div class="metrics-grid">
           <div class="mc"><div class="mc-label">Monthly income</div><div class="mc-val" id="pers-income">$0</div><div class="mc-change neutral" id="pers-income-src">After tax</div></div>
           <div class="mc"><div class="mc-label">Monthly spending</div><div class="mc-val" id="pers-spend">$0</div><div class="mc-change neutral">—</div></div>
@@ -2586,6 +2515,77 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div id="tax-estimate-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Add income to see tax estimate</div></div>
             <div style="margin-top:10px;font-size:10.5px;color:var(--t3);font-style:italic">Estimate only — consult a tax professional</div>
           </div>
+        </div>
+        <!-- Transactions (below KPI/dashboard: quick-add + list together) -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">Transaction history</div></div>
+          <!-- PRIMARY: expense quick-add (expense by definition — no type toggle) -->
+          <div class="qa-bar qa-bar-exp">
+            <div class="qa-lead qa-lead-exp">Expense</div>
+            <div class="qa-row">
+              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qa-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Expense amount" onkeydown="if(event.key==='Enter')persQuickAdd()"></div>
+              <input class="qa-desc" id="qa-desc" placeholder="What was it for? (optional)" aria-label="Description" onkeydown="if(event.key==='Enter')persQuickAdd()">
+              <button class="btn btn-primary" onclick="persQuickAdd()">Add</button>
+            </div>
+            <div class="qa-pills" id="qa-cat-pills"></div>
+            <div class="qa-actions">
+              <button class="btn btn-ghost btn-sm" id="qa-income-toggle" onclick="toggleIncomeEntry()"><span style="color:var(--green)">+ Add income</span></button>
+              <button class="btn btn-ghost btn-sm" onclick="openTransactionModal()">More details ↗</button>
+            </div>
+          </div>
+          <!-- SECONDARY: income entry, tucked, collapsed by default -->
+          <div class="qa-bar qa-bar-inc" id="qa-income" style="display:none">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div class="qa-lead qa-lead-inc" style="margin-bottom:0">Income</div>
+              <button type="button" class="qa-collapse" onclick="toggleIncomeEntry()" title="Hide income" aria-label="Hide income entry"><svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            </div>
+            <div class="qa-row" style="margin-top:.55rem">
+              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qai-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Income amount" onkeydown="if(event.key==='Enter')persIncomeAdd()"></div>
+              <input class="qa-desc" id="qai-desc" placeholder="Source (optional)" aria-label="Income description" onkeydown="if(event.key==='Enter')persIncomeAdd()">
+              <button class="btn btn-green" onclick="persIncomeAdd()">Add</button>
+            </div>
+            <div class="qa-pills" id="qai-cat-pills"></div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.75rem" id="pers-tx-filters">
+            <button class="scenario-preset-btn active-preset pers-tx-filter-btn" data-filter="all" onclick="setPersTxFilter('all')">All</button>
+            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="income" onclick="setPersTxFilter('income')">Income</button>
+            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="expense" onclick="setPersTxFilter('expense')">Expenses</button>
+          </div>
+          <div id="pers-transactions"></div>
+          <div id="pers-tx-balance" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Running balance</span><span style="font-family:var(--font-mono);font-weight:600" id="pers-tx-balance-val">$0</span></div>
+        </div>
+        <!-- Personal salary entry (moved to bottom: set-once) -->
+        <div class="card" id="pers-salary-card" style="margin-bottom:.85rem">
+          <div class="card-header" id="pers-salary-header" style="cursor:pointer;margin-bottom:0" onclick="togglePersSalaryEdit()" role="button" aria-expanded="true" aria-controls="pers-salary-editor" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePersSalaryEdit()}">
+            <div class="card-title">Monthly salary</div>
+            <div style="display:flex;align-items:center;gap:9px;margin-left:auto">
+              <span id="pers-salary-sync-label" style="display:none;font-size:11px;color:var(--green)">Synced from payroll ✓</span>
+              <svg id="pers-salary-caret" width="11" height="11" viewBox="0 0 10 10" style="transition:transform .15s cubic-bezier(.4,0,.2,1);stroke:var(--t2)" aria-hidden="true"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>
+          </div>
+          <!-- Collapsed summary (shown when a salary is already set) -->
+          <div id="pers-salary-summary" style="display:none;font-size:12.5px;color:var(--t2);margin-top:.5rem">
+            <span style="color:var(--t1);font-weight:600" id="pers-salary-summary-gross">—</span> gross · <span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="pers-salary-summary-net">—</span> net
+          </div>
+          <!-- Expanded editor -->
+          <div id="pers-salary-editor">
+            <div class="field-group" style="margin-bottom:.6rem;margin-top:.75rem">
+              <div class="field-wrap"><label class="field-label" for="pers-sal-gross">Gross salary (USD / mo)</label><input class="finput" id="pers-sal-gross" type="number" placeholder="e.g. 5000" oninput="persPreviewNet()"></div>
+              <div class="field-wrap"><label class="field-label" for="pers-sal-tax">Tax rate (%)</label><input class="finput" id="pers-sal-tax" type="number" value="20" min="0" max="60" step="0.5" oninput="persPreviewNet()"></div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div style="font-size:12.5px;color:var(--t2)">Net take-home: <span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="pers-sal-net-preview">—</span></div>
+              <button class="btn btn-primary btn-sm" onclick="savePersonalSalary()">Save salary</button>
+            </div>
+          </div>
+        </div>
+        <div id="pers-payroll-banner" style="display:none;background:linear-gradient(135deg,var(--acc-bg),rgba(30,24,8,.5));border:1px solid var(--acc2);border-radius:var(--radius-lg);padding:.75rem 1.1rem;margin-bottom:1rem;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--acc)" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/><path d="M10 9l1.5 1.5L14 8"/></svg>
+            <span style="font-size:12px;color:var(--t2)">Income from payroll · <span id="pers-salary-source" style="color:var(--acc-light)">—</span></span>
+            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showPage('payroll',document.getElementById('nav-payroll'))">Edit payroll →</button>
+          </div>
+          <div id="pers-payroll-breakdown" style="display:none;background:rgba(0,0,0,.2);border-radius:var(--radius);padding:.6rem .75rem"></div>
         </div>
       </div>
 
@@ -6373,6 +6373,25 @@ document.addEventListener('click', e=>{
       </div>
     </div>
     <div class="field-wrap"><label class="field-label" for="bill-notes">Notes</label><input class="finput" id="bill-notes" placeholder="Optional notes"></div>
+    <div class="field-wrap" style="margin-bottom:.5rem">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--t1);user-select:none">
+        <input type="checkbox" id="bill-recurring" onchange="document.getElementById('bill-recurring-opts').style.display=this.checked?'':'none'" style="width:15px;height:15px;accent-color:var(--acc);cursor:pointer">
+        Make this recurring
+      </label>
+    </div>
+    <div id="bill-recurring-opts" style="display:none">
+      <div class="field-group">
+        <div class="field-wrap"><label class="field-label" for="bill-freq">Frequency</label>
+          <select class="finput" id="bill-freq">
+            <option value="Weekly">Weekly</option>
+            <option value="Monthly" selected>Monthly</option>
+            <option value="Quarterly">Quarterly</option>
+            <option value="Yearly">Annually</option>
+          </select>
+        </div>
+        <div class="field-wrap"><label class="field-label" for="bill-end-date">End date (optional)</label><input class="finput" id="bill-end-date" type="date"></div>
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="document.getElementById('bill-modal').classList.add('hidden')">Cancel</button>
       <button class="btn btn-primary ff-save-btn" onclick="saveBill()">Save bill →</button>

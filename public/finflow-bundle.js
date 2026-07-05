@@ -3864,11 +3864,24 @@ function clearAIChat(){
     };
 
     window.openNewBillModal = function () {
-      ['bill-vendor','bill-amount','bill-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      ['bill-vendor','bill-amount','bill-notes','bill-end-date'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const d = document.getElementById('bill-due'); if (d) d.value = '';
       const s = document.getElementById('bill-status'); if (s) s.value = 'unpaid';
+      const rc = document.getElementById('bill-recurring'); if (rc) rc.checked = false;
+      const ro = document.getElementById('bill-recurring-opts'); if (ro) ro.style.display = 'none';
+      const bf = document.getElementById('bill-freq'); if (bf) bf.value = 'Monthly';
       openModal('bill-modal');
     };
+
+    // Next occurrence date for a recurring bill (mirrors server nextRunDate).
+    function _billNextRun(dateStr, freq) {
+      const d = new Date(dateStr || todayStr());
+      if (freq === 'Weekly')         d.setDate(d.getDate() + 7);
+      else if (freq === 'Quarterly') d.setMonth(d.getMonth() + 3);
+      else if (freq === 'Yearly')    d.setFullYear(d.getFullYear() + 1);
+      else                           d.setMonth(d.getMonth() + 1); // Monthly
+      return d.toISOString().slice(0, 10);
+    }
 
     window.saveBill = async function () {
       const vendor = document.getElementById('bill-vendor')?.value?.trim();
@@ -3878,14 +3891,32 @@ function clearAIChat(){
       const due_date = document.getElementById('bill-due')?.value    || null;
       const status   = document.getElementById('bill-status')?.value || 'unpaid';
       const notes    = document.getElementById('bill-notes')?.value?.trim() || '';
+      const recurring = !!document.getElementById('bill-recurring')?.checked;
+      const frequency = document.getElementById('bill-freq')?.value || 'Monthly';
+      const endDate   = document.getElementById('bill-end-date')?.value || null;
       try {
         const _eidBNew = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
         const saved = await api('POST', '/api/bills', { vendor, amount, due_date, status, notes, entity_id: _eidBNew });
         _billsData.unshift(saved.row || saved);
         window.bills = _billsData;
+        // Recurring: this bill IS the current occurrence; also create a recurring
+        // profile scheduled for the NEXT cycle so the server's hourly scheduler
+        // (runRecurringScheduler) generates future bills. next_run is strictly
+        // after the due date, so today's bill is never duplicated. Reuses the
+        // existing /api/recurring-bills route + table; end_date is optional.
+        if (recurring) {
+          try {
+            await api('POST', '/api/recurring-bills', {
+              vendor, amount, frequency,
+              next_run: _billNextRun(due_date, frequency),
+              status: 'active', end_date: endDate,
+            });
+            if (typeof loadRecurringBills === 'function') loadRecurringBills().catch(()=>{});
+          } catch (re) { notify('Bill saved, but recurring setup failed — ' + re.message, true); }
+        }
         closeModal('bill-modal');
         renderBills();
-        notify(`Bill from ${esc(vendor)} saved ✦`);
+        notify(recurring ? `Recurring bill for ${esc(vendor)} set up ✦` : `Bill from ${esc(vendor)} saved ✦`);
         loadBills().catch(()=>{});
         window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');

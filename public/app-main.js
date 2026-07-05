@@ -2784,6 +2784,7 @@ async function saveTransaction(){
     if(!res.ok) throw new Error((await res.json()).error||'Failed');
     closeModal('transaction-modal');
     if(typeof loadPersonalFinance==='function') await loadPersonalFinance();
+    window.finflow?.refresh(['dashboard']);
     notify('Transaction added ✦');
   }catch(e){notify('Error: '+(e.message||'Failed to save'));}
 }

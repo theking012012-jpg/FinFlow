@@ -529,62 +529,17 @@
     loadGoalsFromDB();
 
     // ════════════════════════════════════════════
-    // 3. PERSONAL TRANSACTIONS — load on boot + save
+    // 3. PERSONAL TRANSACTIONS — handled entirely by app-main.js
     // ════════════════════════════════════════════
-    async function loadPersonalTransactionsFromDB() {
-      try {
-        const txns = await api('GET', '/api/personal-transactions');
-        if (txns && txns.length > 0) {
-          // Map DB fields to frontend shape
-          window.persTransactions = txns.map(t => ({
-            _dbId: t.id,
-            desc: t.description,
-            cat: t.category,
-            amount: t.amount,
-            type: t.tx_type,
-            date: t.tx_date,
-          }));
-          if (typeof renderPersonal === 'function') renderPersonal();
-        }
-      } catch (e) {
-        // Not logged in yet — ignore
-      }
-    }
-    loadPersonalTransactionsFromDB();
-
-    window.saveTransaction = async function () {
-      const desc   = document.getElementById('tx-desc')?.value?.trim();
-      const amount = Number(document.getElementById('tx-amount')?.value);
-      const cat    = document.getElementById('tx-cat-sel')?.value  || 'Other';
-      const type   = document.getElementById('tx-type')?.value     || 'expense';
-
-      if (!desc || !amount) { notify('Description and amount required', true); return; }
-
-      try {
-        const saved = await api('POST', '/api/personal-transactions', {
-          description: desc,
-          category: cat,
-          amount,
-          tx_type: type,
-          tx_date: new Date().toISOString().slice(0, 10),
-        });
-        window.persTransactions.unshift({
-          _dbId: saved.id,
-          desc,
-          cat,
-          amount,
-          type,
-          date: 'Today',
-        });
-        closeModal('transaction-modal');
-        if (typeof renderPersonal === 'function') renderPersonal();
-        notify('Transaction added ✦');
-        loadPersonalTransactionsFromDB().catch(()=>{});
-        window._refreshDashboardUI?.();
-      } catch (e) {
-        notify('Could not save transaction — ' + e.message, true);
-      }
-    };
+    // REMOVED: the stale loadPersonalTransactionsFromDB() + window.saveTransaction
+    // override that used the legacy window.persTransactions model and business-only
+    // _refreshDashboardUI. They were disconnected from app-main's rebuilt personal
+    // pipeline (_allPersTxs → _applyPersFilter → loadPersonalFinance), so saves
+    // persisted but never refreshed the list / Monthly Spending / Savings Rate /
+    // spend donut until navigating away and back. app-main.js owns saveTransaction
+    // (which calls loadPersonalFinance()), and this bundle already calls
+    // window.loadPersonalFinance() on personal-page navigation, so the initial load
+    // is covered too.
 
     // ════════════════════════════════════════════
     // 4. HOLDINGS — save
@@ -706,7 +661,6 @@
 
     // ── Expose load functions for entity-switch and external callers ─
     window._loadGoalsFromDB                = loadGoalsFromDB;
-    window._loadPersonalTransactionsFromDB = loadPersonalTransactionsFromDB;
 
     // ── showPage hook: reload personal data when user visits that page ─
     const _wiringOrig = window.showPage;
@@ -715,7 +669,9 @@
         _wiringOrig(id, navEl);
         if (id === 'personal') {
           loadGoalsFromDB();
-          loadPersonalTransactionsFromDB();
+          // Personal transactions now load via app-main's loadPersonalFinance()
+          // (rebuilt pipeline), not the removed legacy loadPersonalTransactionsFromDB.
+          if (typeof window.loadPersonalFinance === 'function') window.loadPersonalFinance();
         }
       };
     }

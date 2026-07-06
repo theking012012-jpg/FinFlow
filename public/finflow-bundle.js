@@ -1413,6 +1413,22 @@
         const margin = Math.round(consolidatedProfit / totalRev * 100);
         set('ent-consol-margin', margin + '% margin');
       }
+      // Fill the ACTIVE entity's P&L figures from the real numbers we just
+      // computed, then re-render the Consolidated P&L table. The table reads
+      // e.data (rev/cogs/grossProfit/opex/netProfit), which loadEntityData never
+      // populates — so without this it shows $0 on every line while the KPI cards
+      // above show real totals. FOLLOW-UP: multi-entity — only the active entity
+      // gets real figures here (the others need per-entity fetches).
+      try {
+        const _act = ents.find(e => e.active) || ents[0];
+        if (_act) {
+          _act.data = {
+            rev: totalRev, cogs: 0, grossProfit: totalRev,
+            opex: totalExp + payrollExp, netProfit: consolidatedProfit,
+          };
+          if (typeof renderConsolPL === 'function') renderConsolPL();
+        }
+      } catch (e) {}
     };
 
     // ── Document KPI cards: update after renderDocuments() ────────────

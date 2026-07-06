@@ -2832,7 +2832,10 @@ async function persQuickAdd(){
 // ── Income — SECONDARY, collapsed by default ──────────────────────────
 function toggleIncomeEntry(){
   const box=document.getElementById('qa-income'); if(!box) return;
-  const open = box.style.display==='none' || !box.style.display;
+  // `open` = should we open it? True only when it's currently hidden. NB: an
+  // opened panel has display==='' (empty), so the old `|| !box.style.display`
+  // clause made it read as "hidden" and re-open forever — the X never closed it.
+  const open = box.style.display==='none';
   box.style.display = open ? '' : 'none';
   const btn=document.getElementById('qa-income-toggle'); if(btn) btn.style.display = open ? 'none' : '';
   if(open){ renderQAiPills(); document.getElementById('qai-amount')?.focus(); }

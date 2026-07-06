@@ -1810,6 +1810,30 @@ app.delete('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── RECURRING PERSONAL TRANSACTIONS ─────────────────────────────────────────────
+// Mirrors recurring_bills; user-scoped (no entity_id, like personal_transactions).
+// The hourly runRecurringScheduler materialises personal_transactions rows.
+app.get('/api/recurring-personal-transactions', requireAuth, wrap(async (req, res) => {
+  try {
+    res.json(await db.allByUser('recurring_personal_transactions', req.session.userId));
+  } catch (e) {
+    console.error('[GET /api/recurring-personal-transactions] failed for user', req.session.userId, ':', e.code, e.message);
+    res.json([]);
+  }
+}));
+app.post('/api/recurring-personal-transactions', requireAuth, wrap(async (req, res) => {
+  const { description, category = 'Other', amount, tx_type = 'expense', frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body || {};
+  if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
+  const _dup = await findRecentDuplicate('recurring_personal_transactions', req.session.userId, null, { textMatch: { description: String(description).trim().slice(0,300), frequency: String(frequency) }, numMatch: { amount: parseFloat(amount)||0 } });
+  if (_dup) return res.json(_dup);
+  const { row } = await db.insert('recurring_personal_transactions', { user_id: req.session.userId, description: String(description).trim().slice(0, 300), category, amount: parseFloat(amount)||0, tx_type, frequency, next_run, status, end_date: end_date || null });
+  res.status(201).json(row);
+}));
+app.delete('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req, res) => {
+  await pool.query('DELETE FROM recurring_personal_transactions WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
+  res.json({ ok: true });
+}));
+
 // ── RECURRING INVOICES ────────────────────────────────────────────────────────
 app.get('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('recurring_invoices', req.session.userId));
@@ -2483,8 +2507,30 @@ async function runRecurringScheduler() {
       await db.updateById('recurring_bills', r.id, _patch);
     }
 
-    if (recInvoices.length + recBills.length > 0) {
-      console.log(`[Scheduler] Created ${recInvoices.length} invoices, ${recBills.length} bills`);
+    // Recurring personal transactions (mirrors bills; materialises personal_transactions)
+    const { rows: _recPtRows } = await pool.query(
+      `SELECT * FROM recurring_personal_transactions WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1`,
+      [today]
+    );
+    const recPts = _recPtRows.map(r => ({ id: r.id, user_id: r.user_id, ...r.data }));
+    for (const r of recPts) {
+      if (r.end_date && r.next_run > r.end_date) {
+        await db.updateById('recurring_personal_transactions', r.id, { status: 'completed' });
+        continue;
+      }
+      await db.insert('personal_transactions', {
+        user_id: r.user_id,
+        description: r.description, category: r.category || 'Other',
+        amount: r.amount, tx_type: r.tx_type || 'expense', tx_date: r.next_run,
+      });
+      const _ptNext = nextRunDate(r.next_run, r.frequency);
+      const _ptPatch = { next_run: _ptNext };
+      if (r.end_date && _ptNext > r.end_date) _ptPatch.status = 'completed';
+      await db.updateById('recurring_personal_transactions', r.id, _ptPatch);
+    }
+
+    if (recInvoices.length + recBills.length + recPts.length > 0) {
+      console.log(`[Scheduler] Created ${recInvoices.length} invoices, ${recBills.length} bills, ${recPts.length} personal txns`);
     }
   } catch (e) {
     console.error('[Scheduler] Error:', e.message);

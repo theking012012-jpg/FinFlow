@@ -2446,14 +2446,52 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <button class="scenario-preset-btn active-preset pers-period-btn" data-period="year" onclick="setPersPeriod('year')" style="font-size:10.5px;padding:3px 8px">Year</button>
         </div>
         <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Monthly income</div><div class="mc-val" id="pers-income">$0</div><div class="mc-change neutral" id="pers-income-src">After tax</div></div>
-          <div class="mc"><div class="mc-label">Monthly spending</div><div class="mc-val" id="pers-spend">$0</div><div class="mc-change neutral">—</div></div>
+          <div class="mc"><div class="mc-label" id="mc-income-label">Monthly income</div><div class="mc-val" id="pers-income">$0</div><div class="mc-change neutral" id="pers-income-src">After tax</div></div>
+          <div class="mc"><div class="mc-label" id="mc-spend-label">Monthly spending</div><div class="mc-val" id="pers-spend">$0</div><div class="mc-change neutral">—</div></div>
           <div class="mc"><div class="mc-label">Savings rate</div><div class="mc-val" id="pers-savings">0%</div><div class="mc-change neutral" id="pers-savings-vs">—</div></div>
           <div class="mc"><div class="mc-label">Net worth</div><div class="mc-val" id="pers-nw">$0</div><div class="mc-change neutral" id="pers-nw-chg">—</div></div>
         </div>
+        <!-- Transactions — directly under the KPI cards (quick-add + list together) -->
+        <div class="card">
+          <div class="card-header"><div class="card-title">Transaction history</div></div>
+          <!-- PRIMARY: expense quick-add (expense by definition — no type toggle) -->
+          <div class="qa-bar qa-bar-exp">
+            <div class="qa-lead qa-lead-exp">Expense</div>
+            <div class="qa-row">
+              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qa-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Expense amount" onkeydown="if(event.key==='Enter')persQuickAdd()"></div>
+              <input class="qa-desc" id="qa-desc" placeholder="What was it for? (optional)" aria-label="Description" onkeydown="if(event.key==='Enter')persQuickAdd()">
+              <button class="btn btn-primary" onclick="persQuickAdd()">Add</button>
+            </div>
+            <div class="qa-pills" id="qa-cat-pills"></div>
+            <div class="qa-actions">
+              <button class="btn btn-ghost btn-sm" id="qa-income-toggle" onclick="toggleIncomeEntry()"><span style="color:var(--green)">+ Add income</span></button>
+              <button class="btn btn-ghost btn-sm" onclick="openTransactionModal()">More details ↗</button>
+            </div>
+          </div>
+          <!-- SECONDARY: income entry, tucked, collapsed by default -->
+          <div class="qa-bar qa-bar-inc" id="qa-income" style="display:none">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div class="qa-lead qa-lead-inc" style="margin-bottom:0">Income</div>
+              <button type="button" class="qa-collapse" onclick="toggleIncomeEntry()" title="Hide income" aria-label="Hide income entry"><svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+            </div>
+            <div class="qa-row" style="margin-top:.55rem">
+              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qai-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Income amount" onkeydown="if(event.key==='Enter')persIncomeAdd()"></div>
+              <input class="qa-desc" id="qai-desc" placeholder="Source (optional)" aria-label="Income description" onkeydown="if(event.key==='Enter')persIncomeAdd()">
+              <button class="btn btn-green" onclick="persIncomeAdd()">Add</button>
+            </div>
+            <div class="qa-pills" id="qai-cat-pills"></div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.75rem" id="pers-tx-filters">
+            <button class="scenario-preset-btn active-preset pers-tx-filter-btn" data-filter="all" onclick="setPersTxFilter('all')">All</button>
+            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="income" onclick="setPersTxFilter('income')">Income</button>
+            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="expense" onclick="setPersTxFilter('expense')">Expenses</button>
+          </div>
+          <div id="pers-transactions"></div>
+          <div id="pers-tx-balance" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Running balance</span><span style="font-family:var(--font-mono);font-weight:600" id="pers-tx-balance-val">$0</span></div>
+        </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Spending breakdown</div><button class="btn btn-ghost btn-sm" id="spending-edit-btn" onclick="toggleSpendingEdit()">Edit</button></div>
+            <div class="card-header"><div class="card-title">Spending breakdown</div></div>
             <div id="spending-bars"></div>
             <div id="spending-footer-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)" id="pers-spend-total">$0</span></div>
           </div>
@@ -2463,12 +2501,12 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <div id="goals-list"></div>
             </div>
             <div class="card" style="margin-bottom:0">
-              <div class="card-header"><div class="card-title">Monthly cash flow</div></div>
+              <div class="card-header"><div class="card-title">Cash flow</div></div>
               <div style="display:flex;flex-direction:column;gap:8px">
                 <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Income (net pay)</span><span style="font-family:var(--font-mono);font-weight:600" id="p-cf-income">+$0</span></div>
                 <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Total spending</span><span style="font-family:var(--font-mono);font-weight:600" id="p-cf-spend">-$0</span></div>
                 <div style="height:1px;background:var(--bd);margin:2px 0"></div>
-                <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t1);font-weight:500">Monthly surplus</span><span style="font-family:var(--font-mono);font-weight:700" id="p-cf-surplus">$0</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t1);font-weight:500">Surplus</span><span style="font-family:var(--font-mono);font-weight:700" id="p-cf-surplus">$0</span></div>
                 <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3)"><span>Savings rate</span><span id="p-cf-rate">0%</span></div>
               </div>
             </div>
@@ -2515,44 +2553,6 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div id="tax-estimate-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Add income to see tax estimate</div></div>
             <div style="margin-top:10px;font-size:10.5px;color:var(--t3);font-style:italic">Estimate only — consult a tax professional</div>
           </div>
-        </div>
-        <!-- Transactions (below KPI/dashboard: quick-add + list together) -->
-        <div class="card">
-          <div class="card-header"><div class="card-title">Transaction history</div></div>
-          <!-- PRIMARY: expense quick-add (expense by definition — no type toggle) -->
-          <div class="qa-bar qa-bar-exp">
-            <div class="qa-lead qa-lead-exp">Expense</div>
-            <div class="qa-row">
-              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qa-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Expense amount" onkeydown="if(event.key==='Enter')persQuickAdd()"></div>
-              <input class="qa-desc" id="qa-desc" placeholder="What was it for? (optional)" aria-label="Description" onkeydown="if(event.key==='Enter')persQuickAdd()">
-              <button class="btn btn-primary" onclick="persQuickAdd()">Add</button>
-            </div>
-            <div class="qa-pills" id="qa-cat-pills"></div>
-            <div class="qa-actions">
-              <button class="btn btn-ghost btn-sm" id="qa-income-toggle" onclick="toggleIncomeEntry()"><span style="color:var(--green)">+ Add income</span></button>
-              <button class="btn btn-ghost btn-sm" onclick="openTransactionModal()">More details ↗</button>
-            </div>
-          </div>
-          <!-- SECONDARY: income entry, tucked, collapsed by default -->
-          <div class="qa-bar qa-bar-inc" id="qa-income" style="display:none">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <div class="qa-lead qa-lead-inc" style="margin-bottom:0">Income</div>
-              <button type="button" class="qa-collapse" onclick="toggleIncomeEntry()" title="Hide income" aria-label="Hide income entry"><svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
-            </div>
-            <div class="qa-row" style="margin-top:.55rem">
-              <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qai-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Income amount" onkeydown="if(event.key==='Enter')persIncomeAdd()"></div>
-              <input class="qa-desc" id="qai-desc" placeholder="Source (optional)" aria-label="Income description" onkeydown="if(event.key==='Enter')persIncomeAdd()">
-              <button class="btn btn-green" onclick="persIncomeAdd()">Add</button>
-            </div>
-            <div class="qa-pills" id="qai-cat-pills"></div>
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.75rem" id="pers-tx-filters">
-            <button class="scenario-preset-btn active-preset pers-tx-filter-btn" data-filter="all" onclick="setPersTxFilter('all')">All</button>
-            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="income" onclick="setPersTxFilter('income')">Income</button>
-            <button class="scenario-preset-btn pers-tx-filter-btn" data-filter="expense" onclick="setPersTxFilter('expense')">Expenses</button>
-          </div>
-          <div id="pers-transactions"></div>
-          <div id="pers-tx-balance" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Running balance</span><span style="font-family:var(--font-mono);font-weight:600" id="pers-tx-balance-val">$0</span></div>
         </div>
         <!-- Personal salary entry (moved to bottom: set-once) -->
         <div class="card" id="pers-salary-card" style="margin-bottom:.85rem">
@@ -3394,13 +3394,6 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
   </div>
 </div>
 
-<div class="modal-overlay hidden" id="spending-modal">
-  <div class="modal">
-    <div class="modal-header"><div><div class="modal-title">Edit monthly spending</div><div class="modal-sub">Adjust your personal spending categories</div></div><button class="modal-close" onclick="closeModal('spending-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div id="spending-edit-fields"></div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('spending-modal')">Cancel</button><button class="btn btn-primary" onclick="saveSpending()">Save spending</button></div>
-  </div>
-</div>
 
 <div class="modal-overlay hidden" id="goal-modal">
   <div class="modal">
@@ -3438,6 +3431,25 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     </div>
     <div class="field-wrap"><label class="field-label" for="tx-desc">Description *</label><input class="finput" id="tx-desc" placeholder="e.g. Grocery run"></div>
     <div class="field-wrap"><label class="field-label">Category</label><div class="qa-pills" id="tx-cat-pills" style="margin-top:2px"></div></div>
+    <div class="field-wrap" style="margin-bottom:.5rem" id="txm-recurring-wrap">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--t1);user-select:none">
+        <input type="checkbox" id="tx-recurring" onchange="document.getElementById('tx-recurring-opts').style.display=this.checked?'':'none'" style="width:15px;height:15px;accent-color:var(--acc);cursor:pointer">
+        Make this recurring
+      </label>
+    </div>
+    <div id="tx-recurring-opts" style="display:none">
+      <div class="field-group">
+        <div class="field-wrap"><label class="field-label" for="tx-freq">Frequency</label>
+          <select class="finput" id="tx-freq">
+            <option value="Weekly">Weekly</option>
+            <option value="Monthly" selected>Monthly</option>
+            <option value="Quarterly">Quarterly</option>
+            <option value="Yearly">Annually</option>
+          </select>
+        </div>
+        <div class="field-wrap"><label class="field-label" for="tx-end-date">End date (optional)</label><input class="finput" id="tx-end-date" type="date"></div>
+      </div>
+    </div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('transaction-modal')">Cancel</button><button class="btn btn-primary" id="txm-save-btn" onclick="saveTransaction()">Add transaction</button></div>
   </div>
 </div>

@@ -2617,8 +2617,9 @@ function renderPersonal(){
   const cur = window.CURRENCIES?.[persCurrency] || {symbol:'$', rate:1};
   const rate = cur.rate;
 
-  // Income is stored in USD (basePersonalIncome)
-  const incomeUSD = basePersonalIncome;
+  // Income scaled to the selected period window (salary × months + side income),
+  // computed in _applyPersFilter; falls back to monthly salary before first filter.
+  const incomeUSD = (typeof window._persPeriodIncome==='number') ? window._persPeriodIncome : basePersonalIncome;
   // Spending is stored in USD — convert for display
   const totalSpendUSD = spending.reduce((a,s)=>a+s.amount,0);
   const surplusUSD = incomeUSD - totalSpendUSD;
@@ -2630,6 +2631,10 @@ function renderPersonal(){
 
   document.getElementById('pers-income').textContent = SP(incomeUSD);
   document.getElementById('pers-spend').textContent  = SP(totalSpendUSD);
+  // KPI labels reflect the selected period.
+  const _perWord = {month:'Monthly',quarter:'Quarterly',year:'Yearly'}[window._persPeriod||'year'] || 'Monthly';
+  const _ilEl=document.getElementById('mc-income-label'); if(_ilEl) _ilEl.textContent=_perWord+' income';
+  const _slEl=document.getElementById('mc-spend-label');  if(_slEl) _slEl.textContent=_perWord+' spending';
   document.getElementById('pers-savings').textContent = savingsRate+'%';
   document.getElementById('pers-savings-vs').textContent = (savingsRate>=target?'Above ':'Below ')+target+'% target';
   document.getElementById('pers-savings-vs').className = 'mc-change '+(savingsRate>=target?'up':'dn');
@@ -2671,24 +2676,10 @@ function renderPersonal(){
   document.getElementById('p-cf-rate').textContent    = savingsRate+'%';
   document.getElementById('pers-spend-total').textContent = SP(totalSpendUSD);
 
-  // Spending bars
+  // Spending bars (read-only display; the confusing "Edit" budget editor was removed)
   const maxSpend = Math.max(...spending.map(s=>s.amount), 1);
   const _spFooter = document.getElementById('spending-footer-row');
-  const _spEditBtn = document.getElementById('spending-edit-btn');
-  if(window._persSpendEditMode){
-    // Inline edit mode — show amount inputs per category
-    document.getElementById('spending-bars').innerHTML = (spending.length === 0
-      ? '<div style="font-size:12px;color:var(--t3);padding:.5rem">No categories yet — add expense transactions first.</div>'
-      : spending.map((s,i)=>`
-          <div class="bar-row" style="gap:8px">
-            <span class="bar-label" style="flex:1">${s.label}</span>
-            <input class="finput" id="sinput-${i}" type="number" value="${s.amount}" style="width:90px;padding:3px 8px;font-size:12px">
-          </div>`).join('')
-    ) + '<div style="margin-top:.6rem;text-align:right"><button class="btn btn-primary btn-sm" onclick="saveSpendingInline()">Save</button></div>';
-    if(_spFooter) _spFooter.style.display='none';
-    if(_spEditBtn) _spEditBtn.textContent='Cancel';
-  } else {
-    if(_spEditBtn) _spEditBtn.textContent='Edit';
+  {
     if(spending.length === 0){
       document.getElementById('spending-bars').innerHTML = '<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No spending recorded yet — add a transaction to get started.</div>';
       if(_spFooter) _spFooter.style.display = 'none';
@@ -2733,25 +2724,8 @@ function renderPersonal(){
   updateHealthScore(savingsRate, incomeUSD, surplusUSD);
   if(typeof prefillPersSalaryCard==='function') prefillPersSalaryCard();
 }
-// ── Spending inline edit ──────────────────────────────────────────────
-window._persSpendEditMode = false;
-function openSpendingModal(){ toggleSpendingEdit(); } // keep old name working
-function saveSpending(){ saveSpendingInline(); }      // keep old name working
-
-function toggleSpendingEdit(){
-  window._persSpendEditMode = !window._persSpendEditMode;
-  renderPersonal();
-}
-
-function saveSpendingInline(){
-  spending.forEach((s,i)=>{
-    const v=Number(document.getElementById('sinput-'+i)?.value)||0;
-    spending[i].amount=v;
-  });
-  window._persSpendEditMode=false;
-  renderPersonal();
-  notify('Spending updated');
-}
+// (Spending inline-edit / budget editor removed — Spending breakdown is now
+// a read-only reflection of real transactions.)
 
 function openGoalModal(){document.getElementById('goal-name').value='';document.getElementById('goal-current').value='';document.getElementById('goal-target').value='';document.getElementById('goal-monthly').value='';openModal('goal-modal')}
 // Persist to /api/goals, then push into the module `goals` array renderPersonal
@@ -2915,7 +2889,22 @@ function openTransactionModal(type,editTx){
   const btnEl=document.getElementById('txm-save-btn'); if(btnEl) btnEl.textContent=isEdit?'Save changes':'Add transaction';
   window._txmCat = isEdit?editTx.cat:(window._qaCat||(t==='income'?'Other Income':'Other'));
   txmSetType(t,true);   // keep the category we just set
+  // Recurring toggle: reset; only offered for NEW transactions (not edits).
+  const _rc=document.getElementById('tx-recurring'); if(_rc) _rc.checked=false;
+  const _ro=document.getElementById('tx-recurring-opts'); if(_ro) _ro.style.display='none';
+  const _rf=document.getElementById('tx-freq'); if(_rf) _rf.value='Monthly';
+  const _re=document.getElementById('tx-end-date'); if(_re) _re.value='';
+  const _rw=document.getElementById('txm-recurring-wrap'); if(_rw) _rw.style.display=isEdit?'none':'';
   openModal('transaction-modal');
+}
+// Next occurrence for a recurring personal transaction (mirrors server nextRunDate).
+function _txNextRun(dateStr,freq){
+  const d=new Date(dateStr||new Date().toISOString().slice(0,10));
+  if(freq==='Weekly')         d.setDate(d.getDate()+7);
+  else if(freq==='Quarterly') d.setMonth(d.getMonth()+3);
+  else if(freq==='Yearly')    d.setFullYear(d.getFullYear()+1);
+  else                        d.setMonth(d.getMonth()+1); // Monthly
+  return d.toISOString().slice(0,10);
 }
 async function saveTransaction(){
   const amount=Number(document.getElementById('tx-amount')?.value);
@@ -2925,10 +2914,23 @@ async function saveTransaction(){
   const type=window._txmType||'expense';
   const date=document.getElementById('tx-date')?.value||new Date().toISOString().slice(0,10);
   const editId=document.getElementById('tx-edit-id')?.value||'';
+  const recurring=!editId && !!document.getElementById('tx-recurring')?.checked;
+  const frequency=document.getElementById('tx-freq')?.value||'Monthly';
+  const endDate=document.getElementById('tx-end-date')?.value||null;
   try{
     await _persCommitTx({desc,amount,cat,type,date,editId:editId||null});
+    // Recurring: this transaction IS the current occurrence; also create a
+    // recurring profile scheduled for the NEXT cycle (next_run strictly after
+    // the date, so today's row isn't duplicated). Reuses the hourly scheduler.
+    if(recurring){
+      try{
+        const res=await fetch('/api/recurring-personal-transactions',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
+          body:JSON.stringify({description:desc,category:cat,amount,tx_type:type,frequency,next_run:_txNextRun(date,frequency),status:'active',end_date:endDate})});
+        if(!res.ok) throw new Error((await res.json()).error||'Failed');
+      }catch(re){notify('Saved, but recurring setup failed — '+(re.message||''),true);}
+    }
     closeModal('transaction-modal');
-    notify(editId?'Transaction updated ✦':'Transaction added ✦');
+    notify(editId?'Transaction updated ✦':(recurring?'Recurring expense set up ✦':'Transaction added ✦'));
   }catch(e){notify('Error: '+(e.message||'Failed to save'));}
 }
 function editPersTx(dbId){
@@ -3223,7 +3225,13 @@ function _applyPersFilter(){
   spending=Object.entries(catTotals).map(([label,amount])=>({label,amount,color:CAT_COLOR[label]||'var(--t3)',budget:0}));
   const sideIncome=persTransactions.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
   window._persSideIncome=sideIncome;
-  const totalInc=basePersonalIncome+sideIncome;
+  // Income scaled to the selected window: monthly salary × months in the window
+  // + that window's income transactions. Keeps the income KPI and savings rate
+  // consistent with the period (Month=1, Quarter≈3, Year=elapsed months YTD).
+  const monthsInWindow=Math.max(1,(to.getFullYear()*12+to.getMonth())-(from.getFullYear()*12+from.getMonth())+1);
+  window._persPeriodMonths=monthsInWindow;
+  window._persPeriodIncome=basePersonalIncome*monthsInWindow+sideIncome;
+  const totalInc=window._persPeriodIncome;
   const totalExp=spending.reduce((a,s)=>a+s.amount,0);
   baseNetWorth=Math.max(0,totalInc-totalExp);
   renderPersonal();

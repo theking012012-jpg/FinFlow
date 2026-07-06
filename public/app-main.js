@@ -2889,13 +2889,39 @@ function openTransactionModal(type,editTx){
   const btnEl=document.getElementById('txm-save-btn'); if(btnEl) btnEl.textContent=isEdit?'Save changes':'Add transaction';
   window._txmCat = isEdit?editTx.cat:(window._qaCat||(t==='income'?'Other Income':'Other'));
   txmSetType(t,true);   // keep the category we just set
-  // Recurring toggle: reset; only offered for NEW transactions (not edits).
+  // Recurring toggle: offered for BOTH new and edited transactions. Reset to a
+  // clean state first; on edit we then async-prefill from the tied profile (if any).
+  setV('tx-recurring-id','');
   const _rc=document.getElementById('tx-recurring'); if(_rc) _rc.checked=false;
   const _ro=document.getElementById('tx-recurring-opts'); if(_ro) _ro.style.display='none';
   const _rf=document.getElementById('tx-freq'); if(_rf) _rf.value='Monthly';
   const _re=document.getElementById('tx-end-date'); if(_re) _re.value='';
-  const _rw=document.getElementById('txm-recurring-wrap'); if(_rw) _rw.style.display=isEdit?'none':'';
+  const _rw=document.getElementById('txm-recurring-wrap'); if(_rw) _rw.style.display='';
+  if(isEdit) _prefillRecurringForEdit(editTx);
   openModal('transaction-modal');
+}
+// On edit, find the recurring profile tied to this transaction (no FK exists, so
+// match on description+type+amount — the same fields the create flow copies) and
+// reflect its state in the modal. Async; guards against a stale/reopened modal.
+async function _prefillRecurringForEdit(editTx){
+  try{
+    const r=await fetch('/api/recurring-personal-transactions',{credentials:'include'});
+    if(!r.ok) return;
+    const profs=await r.json();
+    const match=(profs||[]).find(p=>
+      (p.description||'').trim()===(editTx.desc||'').trim() &&
+      (p.tx_type||'expense')===(editTx.type||'expense') &&
+      Math.abs((parseFloat(p.amount)||0)-(parseFloat(editTx.amount)||0))<0.005 &&
+      (p.status||'active')!=='cancelled');
+    if(!match) return;
+    // Only apply if the modal is still editing this same transaction.
+    if((document.getElementById('tx-edit-id')?.value||'')!==String(editTx._dbId)) return;
+    const idEl=document.getElementById('tx-recurring-id'); if(idEl) idEl.value=match.id;
+    const rc=document.getElementById('tx-recurring'); if(rc) rc.checked=true;
+    const ro=document.getElementById('tx-recurring-opts'); if(ro) ro.style.display='';
+    const rf=document.getElementById('tx-freq'); if(rf) rf.value=match.frequency||'Monthly';
+    const re=document.getElementById('tx-end-date'); if(re) re.value=(match.end_date||'').slice(0,10);
+  }catch(_){}
 }
 // Next occurrence for a recurring personal transaction (mirrors server nextRunDate).
 function _txNextRun(dateStr,freq){
@@ -2914,21 +2940,34 @@ async function saveTransaction(){
   const type=window._txmType||'expense';
   const date=document.getElementById('tx-date')?.value||new Date().toISOString().slice(0,10);
   const editId=document.getElementById('tx-edit-id')?.value||'';
-  const recurring=!editId && !!document.getElementById('tx-recurring')?.checked;
+  const recurring=!!document.getElementById('tx-recurring')?.checked;
+  const recurringId=document.getElementById('tx-recurring-id')?.value||'';
   const frequency=document.getElementById('tx-freq')?.value||'Monthly';
   const endDate=document.getElementById('tx-end-date')?.value||null;
   try{
     await _persCommitTx({desc,amount,cat,type,date,editId:editId||null});
-    // Recurring: this transaction IS the current occurrence; also create a
-    // recurring profile scheduled for the NEXT cycle (next_run strictly after
-    // the date, so today's row isn't duplicated). Reuses the hourly scheduler.
-    if(recurring){
-      try{
-        const res=await fetch('/api/recurring-personal-transactions',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
-          body:JSON.stringify({description:desc,category:cat,amount,tx_type:type,frequency,next_run:_txNextRun(date,frequency),status:'active',end_date:endDate})});
-        if(!res.ok) throw new Error((await res.json()).error||'Failed');
-      }catch(re){notify('Saved, but recurring setup failed — '+(re.message||''),true);}
-    }
+    // Recurring profile: this transaction IS the current occurrence. Sync the
+    // tied profile to the toggle — update an existing one (no duplicate), create
+    // a new one scheduled for the NEXT cycle (next_run strictly after the date,
+    // so today's row isn't duplicated), or cancel it if the toggle was cleared.
+    // Reuses the hourly scheduler either way.
+    try{
+      if(recurring){
+        const _body={description:desc,category:cat,amount,tx_type:type,frequency,status:'active',end_date:endDate};
+        if(recurringId){
+          const res=await fetch('/api/recurring-personal-transactions/'+recurringId,{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',
+            body:JSON.stringify(_body)});
+          if(!res.ok) throw new Error((await res.json()).error||'Failed');
+        }else{
+          const res=await fetch('/api/recurring-personal-transactions',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
+            body:JSON.stringify({..._body,next_run:_txNextRun(date,frequency)})});
+          if(!res.ok) throw new Error((await res.json()).error||'Failed');
+        }
+      }else if(recurringId){
+        // Toggle cleared on a transaction that had a profile → stop the recurrence.
+        await fetch('/api/recurring-personal-transactions/'+recurringId,{method:'DELETE',credentials:'include'});
+      }
+    }catch(re){notify('Saved, but recurring setup failed — '+(re.message||''),true);}
     closeModal('transaction-modal');
     notify(editId?'Transaction updated ✦':(recurring?'Recurring expense set up ✦':'Transaction added ✦'));
   }catch(e){notify('Error: '+(e.message||'Failed to save'));}
@@ -3225,10 +3264,12 @@ function _applyPersFilter(){
   spending=Object.entries(catTotals).map(([label,amount])=>({label,amount,color:CAT_COLOR[label]||'var(--t3)',budget:0}));
   const sideIncome=persTransactions.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
   window._persSideIncome=sideIncome;
-  // Income scaled to the selected window: monthly salary × months in the window
-  // + that window's income transactions. Keeps the income KPI and savings rate
-  // consistent with the period (Month=1, Quarter≈3, Year=elapsed months YTD).
-  const monthsInWindow=Math.max(1,(to.getFullYear()*12+to.getMonth())-(from.getFullYear()*12+from.getMonth())+1);
+  // Income scaled to the selected window: monthly salary × the period's full
+  // length + that window's income transactions. Uses the nominal period length
+  // (Month=1, Quarter=3, Year=12), NOT months-elapsed — so early in a quarter or
+  // year the income KPI still reflects the whole period (Quarter ≈ 3× monthly
+  // salary, Year ≈ 12×) instead of collapsing to one month.
+  const monthsInWindow={month:1,quarter:3,year:12}[window._persPeriod]||1;
   window._persPeriodMonths=monthsInWindow;
   window._persPeriodIncome=basePersonalIncome*monthsInWindow+sideIncome;
   const totalInc=window._persPeriodIncome;

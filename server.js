@@ -1829,6 +1829,25 @@ app.post('/api/recurring-personal-transactions', requireAuth, wrap(async (req, r
   const { row } = await db.insert('recurring_personal_transactions', { user_id: req.session.userId, description: String(description).trim().slice(0, 300), category, amount: parseFloat(amount)||0, tx_type, frequency, next_run, status, end_date: end_date || null });
   res.status(201).json(row);
 }));
+app.put('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req, res) => {
+  const { rows: [_rptr] } = await pool.query(
+    `SELECT * FROM recurring_personal_transactions WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    [Number(req.params.id), req.session.userId]
+  );
+  if (!_rptr) return res.status(404).json({ error: 'not found' });
+  // Merge-update (db.updateById preserves next_run so the existing schedule holds).
+  const { description, category, amount, tx_type, frequency, status, end_date } = req.body || {};
+  const patch = {};
+  if (description != null) patch.description = String(description).trim().slice(0, 300);
+  if (category != null) patch.category = category;
+  if (amount != null) patch.amount = parseFloat(amount) || 0;
+  if (tx_type != null) patch.tx_type = tx_type;
+  if (frequency != null) patch.frequency = frequency;
+  if (status != null) patch.status = status;
+  if (end_date !== undefined) patch.end_date = end_date || null;
+  await db.updateById('recurring_personal_transactions', Number(req.params.id), patch);
+  res.json({ ok: true });
+}));
 app.delete('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req, res) => {
   await pool.query('DELETE FROM recurring_personal_transactions WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
   res.json({ ok: true });

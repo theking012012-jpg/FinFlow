@@ -2948,12 +2948,13 @@ async function saveTransaction(){
   const frequency=document.getElementById('tx-freq')?.value||'Monthly';
   const endDate=document.getElementById('tx-end-date')?.value||null;
   try{
-    await _persCommitTx({desc,amount,cat,type,date,editId:editId||null});
-    // Recurring profile: this transaction IS the current occurrence. Sync the
-    // tied profile to the toggle — update an existing one (no duplicate), create
-    // a new one scheduled for the NEXT cycle (next_run strictly after the date,
-    // so today's row isn't duplicated), or cancel it if the toggle was cleared.
-    // Reuses the hourly scheduler either way.
+    // Resolve the recurring profile FIRST so the occurrence can be committed with
+    // its id (hard link). Update an existing profile (no duplicate), create a new
+    // one scheduled for the NEXT cycle (next_run strictly after the date so today's
+    // row isn't duplicated), or cancel it if the toggle was cleared. The resulting
+    // profileId is stamped onto the occurrence so the period-KPI math can exclude
+    // this materialised row and project the profile instead (no double-count).
+    let profileId = recurring ? (recurringId ? Number(recurringId) : null) : null;
     try{
       if(recurring){
         const _body={description:desc,category:cat,amount,tx_type:type,frequency,status:'active',end_date:endDate};
@@ -2961,16 +2962,21 @@ async function saveTransaction(){
           const res=await fetch('/api/recurring-personal-transactions/'+recurringId,{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',
             body:JSON.stringify(_body)});
           if(!res.ok) throw new Error((await res.json()).error||'Failed');
+          profileId=Number(recurringId);
         }else{
           const res=await fetch('/api/recurring-personal-transactions',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
             body:JSON.stringify({..._body,next_run:_txNextRun(date,frequency)})});
           if(!res.ok) throw new Error((await res.json()).error||'Failed');
+          const _prow=await res.json(); profileId=(_prow&&_prow.id!=null)?Number(_prow.id):null;
         }
       }else if(recurringId){
         // Toggle cleared on a transaction that had a profile → stop the recurrence.
         await fetch('/api/recurring-personal-transactions/'+recurringId,{method:'DELETE',credentials:'include'});
+        profileId=null;
       }
     }catch(re){notify('Saved, but recurring setup failed — '+(re.message||''),true);}
+    // Commit the occurrence, linking it to (profileId) or clearing it from (null) the profile.
+    await _persCommitTx({desc,amount,cat,type,date,editId:editId||null,recurringProfileId:profileId});
     closeModal('transaction-modal');
     notify(editId?'Transaction updated ✦':(recurring?'Recurring expense set up ✦':'Transaction added ✦'));
   }catch(e){notify('Error: '+(e.message||'Failed to save'));}
@@ -2982,8 +2988,11 @@ function editPersTx(dbId){
 }
 // Single commit path for BOTH quick-add and the modal → always refreshes the
 // rebuilt personal pipeline (list, tiles, donut) + the main dashboard.
-async function _persCommitTx({desc,amount,cat,type,date,editId}){
+async function _persCommitTx({desc,amount,cat,type,date,editId,recurringProfileId}){
   const body={description:desc,category:cat,amount,tx_type:type,tx_date:date};
+  // Only send the link when the caller supplies it (saveTransaction). Quick-add
+  // leaves it undefined → server stores null (one-time). On edit, null unlinks.
+  if(recurringProfileId!==undefined) body.recurring_profile_id=recurringProfileId;
   const url=editId?('/api/personal-transactions/'+editId):'/api/personal-transactions';
   const res=await fetch(url,{method:editId?'PUT':'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)});
   if(!res.ok) throw new Error((await res.json()).error||'Failed');
@@ -3226,6 +3235,17 @@ window._persSideIncome=0;
 window._persPeriod='year';
 window._persTxFilter='all';
 window._allPersTxs=[];
+window._persRecurring=[];
+
+// Monthly-equivalent value of a recurring amount given its frequency (mirrors the
+// helper in finflow-bundle.js). Weekly→×52/12, Quarterly→/3, Yearly→/12, else as-is.
+function _persMonthlyEquiv(amount,frequency){
+  const a=parseFloat(amount)||0; const f=String(frequency||'Monthly').toLowerCase();
+  if(f.startsWith('week')) return a*52/12;
+  if(f.startsWith('quarter')) return a/3;
+  if(f.startsWith('year')||f.startsWith('annual')) return a/12;
+  return a;
+}
 
 function _persPeriodRange(){
   const now=new Date();
@@ -3259,22 +3279,39 @@ function _applyPersFilter(){
   const{from,to}=_persPeriodRange();
   const CAT_GROUP={'Rent/Mortgage':'Housing','Groceries':'Food','Dining out':'Food','Transport':'Transport','Entertainment':'Entertainment','Healthcare':'Healthcare','Shopping':'Shopping','Subscriptions':'Subscriptions','Other':'Other','Income':'Other'};
   const CAT_COLOR={Housing:'var(--acc)',Food:'var(--green)',Transport:'var(--teal)',Entertainment:'var(--purple)',Healthcare:'var(--red)',Shopping:'var(--amber)',Subscriptions:'var(--acc2)',Other:'var(--t3)'};
+  // Nominal period length (Month=1, Quarter=3, Year=12) — NOT months-elapsed — so
+  // early in a quarter/year the KPIs still reflect the whole period.
+  const monthsInWindow={month:1,quarter:3,year:12}[window._persPeriod]||1;
+  window._persPeriodMonths=monthsInWindow;
+  // All actual transactions in the window — drives the transaction LIST, running
+  // balance and _persSideIncome (meaning unchanged: real income seen in-window).
   persTransactions=window._allPersTxs.filter(t=>{
     const d=new Date(t.date);return d>=from&&d<=to;
   });
+  window._persSideIncome=persTransactions.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+
+  // ── Unified period rule for income AND spending ─────────────────────────────
+  //   recurring source        → monthlyEquivalent × monthsInWindow   (from the profile)
+  //   one-time (no profile id) → summed only within the actual window
+  // DOUBLE-COUNT GUARD: an occurrence tied to a profile (recurringProfileId != null)
+  // is represented ONLY by its profile projection, so it is EXCLUDED from the
+  // one-time sums below. Without this, Quarter = 3×base (projection) + the real
+  // in-window occurrence — exactly the $16K-vs-$24K bug this fixes.
+  const oneTime=persTransactions.filter(t=>t.recurringProfileId==null);
+  const profiles=(window._persRecurring||[]).filter(p=>
+    (p.status||'active')==='active' && !(p.end_date && new Date(p.end_date)<from));
   const catTotals={};
-  persTransactions.filter(t=>t.type==='expense').forEach(t=>{const c=CAT_GROUP[t.cat]||'Other';catTotals[c]=(catTotals[c]||0)+t.amount;});
+  let recurIncome=0;
+  profiles.forEach(p=>{
+    const proj=_persMonthlyEquiv(p.amount,p.frequency)*monthsInWindow;
+    if((p.tx_type||'expense')==='income'){ recurIncome+=proj; }
+    else { const c=CAT_GROUP[p.category]||'Other'; catTotals[c]=(catTotals[c]||0)+proj; }
+  });
+  oneTime.filter(t=>t.type==='expense').forEach(t=>{const c=CAT_GROUP[t.cat]||'Other';catTotals[c]=(catTotals[c]||0)+t.amount;});
   spending=Object.entries(catTotals).map(([label,amount])=>({label,amount,color:CAT_COLOR[label]||'var(--t3)',budget:0}));
-  const sideIncome=persTransactions.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
-  window._persSideIncome=sideIncome;
-  // Income scaled to the selected window: monthly salary × the period's full
-  // length + that window's income transactions. Uses the nominal period length
-  // (Month=1, Quarter=3, Year=12), NOT months-elapsed — so early in a quarter or
-  // year the income KPI still reflects the whole period (Quarter ≈ 3× monthly
-  // salary, Year ≈ 12×) instead of collapsing to one month.
-  const monthsInWindow={month:1,quarter:3,year:12}[window._persPeriod]||1;
-  window._persPeriodMonths=monthsInWindow;
-  window._persPeriodIncome=basePersonalIncome*monthsInWindow+sideIncome;
+  const oneTimeIncome=oneTime.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+  // Income = recurring salary (base × months) + one-time income in window + projected recurring income.
+  window._persPeriodIncome=basePersonalIncome*monthsInWindow+oneTimeIncome+recurIncome;
   const totalInc=window._persPeriodIncome;
   const totalExp=spending.reduce((a,s)=>a+s.amount,0);
   baseNetWorth=Math.max(0,totalInc-totalExp);
@@ -3298,8 +3335,13 @@ async function loadPersonalFinance(){
       console.warn('[PersFinance] /api/personal-transactions returned',r.status,'— continuing without transactions');
     } else {
       const txs=await r.json();
-      window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,type:t.tx_type||'expense',date:(t.tx_date||t.created_at||'').slice(0,10)}));
+      window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,type:t.tx_type||'expense',date:(t.tx_date||t.created_at||'').slice(0,10),recurringProfileId:(t.recurring_profile_id!=null?Number(t.recurring_profile_id):null)}));
     }
+    // Active recurring profiles feed the period-KPI projection (base × months).
+    try{
+      const rr=await fetch('/api/recurring-personal-transactions',{credentials:'include'});
+      window._persRecurring = rr.ok ? ((await rr.json())||[]).map(p=>({id:p.id,description:p.description||'',category:p.category||'Other',amount:parseFloat(p.amount)||0,tx_type:p.tx_type||'expense',frequency:p.frequency||'Monthly',status:p.status||'active',end_date:p.end_date||null})) : (window._persRecurring||[]);
+    }catch(_){ window._persRecurring=window._persRecurring||[]; }
     try{
       const prRes=await fetch('/api/personal-salary',{credentials:'include'});
       const ownerRows=await prRes.json();

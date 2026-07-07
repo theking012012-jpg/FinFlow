@@ -921,11 +921,14 @@ app.get('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
   }
 }));
 app.post('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
-  const { description, category = 'Other', amount, tx_type = 'expense', tx_date } = req.body || {};
+  const { description, category = 'Other', amount, tx_type = 'expense', tx_date, recurring_profile_id = null } = req.body || {};
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
   const _dup = await findRecentDuplicate('personal_transactions', req.session.userId, null, { textMatch: { description: description.trim().slice(0,300) }, numMatch: { amount: parseFloat(amount)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('personal_transactions', { user_id: req.session.userId, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, tx_type, tx_date: tx_date || new Date().toISOString().slice(0,10) });
+  // recurring_profile_id links this occurrence to the recurring profile it came
+  // from (null = one-time). The period-KPI math uses it to exclude materialised
+  // occurrences from one-time sums and project the profile instead (no double-count).
+  const { row } = await db.insert('personal_transactions', { user_id: req.session.userId, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, tx_type, tx_date: tx_date || new Date().toISOString().slice(0,10), recurring_profile_id: recurring_profile_id != null ? Number(recurring_profile_id) : null });
   res.status(201).json(row);
 }));
 app.put('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => {
@@ -938,6 +941,8 @@ app.put('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => 
   if (b.amount != null)      patch.amount      = parseFloat(b.amount) || 0;
   if (b.tx_type != null)     patch.tx_type     = b.tx_type;
   if (b.tx_date != null)     patch.tx_date     = b.tx_date;
+  // Allow (re)linking or clearing the recurring profile on edit — null unlinks.
+  if (b.recurring_profile_id !== undefined) patch.recurring_profile_id = b.recurring_profile_id != null ? Number(b.recurring_profile_id) : null;
   await db.updateById('personal_transactions', row.id, patch);
   const { rows: [_ptr] } = await pool.query(`SELECT * FROM personal_transactions WHERE id = $1 LIMIT 1`, [row.id]);
   res.json(_ptr ? rowToObj(_ptr) : {});
@@ -2548,6 +2553,7 @@ async function runRecurringScheduler() {
         user_id: r.user_id,
         description: r.description, category: r.category || 'Other',
         amount: r.amount, tx_type: r.tx_type || 'expense', tx_date: r.next_run,
+        recurring_profile_id: r.id,   // link back so the KPI math can exclude this occurrence
       });
       const _ptNext = nextRunDate(r.next_run, r.frequency);
       const _ptPatch = { next_run: _ptNext };

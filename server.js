@@ -480,7 +480,7 @@ app.use('/api', async (req, res, next) => {
     }
     if (req.session.userId) {
       try {
-        const owned = await pool.query('SELECT id FROM entities WHERE id=$1 AND user_id=$2', [entityIdInt, req.session.userId]);
+        const owned = await pool.query('SELECT id FROM entities WHERE id=$1 AND user_id=$2', [entityIdInt, scopeId(req)]);
         if (!owned.rows[0]) return res.status(403).json({ error: 'Entity not found.' });
       } catch (e) {
         return res.status(500).json({ error: 'Server error.' });
@@ -498,7 +498,7 @@ app.use('/api', async (req, res, next) => {
     try {
       const r = await pool.query(
         `SELECT id FROM entities WHERE user_id = $1 ORDER BY (CASE WHEN (data->>'is_active')::int = 1 THEN 0 ELSE 1 END), id ASC LIMIT 1`,
-        [req.session.userId]
+        [scopeId(req)]
       );
       if (r.rows[0]) {
         req.session.entityId = r.rows[0].id;
@@ -526,6 +526,13 @@ app.use('/api', (req, res, next) => {
 });
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
+// scopeId(req) — the single indirection point for data-scope resolution.
+// Phase 1: returns req.session.userId unchanged (pure no-op groundwork). A later
+// RBAC phase swaps this for the effective account id so invited members resolve to
+// the owner's data. Use for "data belonging to this account" reads/writes; keep
+// req.session.userId for actor identity / audit / the acting user's own record.
+function scopeId(req) { return req.session.userId; }
+
 async function ownedBy(table, id, userId) {
   const { rows } = await pool.query(
     `SELECT * FROM ${table} WHERE id = $1 AND user_id = $2 LIMIT 1`,
@@ -641,11 +648,11 @@ app.post('/api/entities/:id/activate', requireAuth, wrap(async (req, res) => {
   const eid = parseInt(req.params.id);
   await pool.query(
     `UPDATE entities SET data = data || '{"is_active":0}'::jsonb, updated_at = NOW() WHERE user_id = $1`,
-    [uid]
+    [scopeId(req)]
   );
   await pool.query(
     `UPDATE entities SET data = data || '{"is_active":1}'::jsonb, updated_at = NOW() WHERE id = $1 AND user_id = $2`,
-    [eid, uid]
+    [eid, scopeId(req)]
   );
   req.session.entityId = eid;
   res.json({ ok: true });
@@ -1156,13 +1163,13 @@ app.get('/api/budget-targets', requireAuth, wrap(async (req, res) => {
   let row = null;
   if (eid) {
     const { rows: [_bte] } = await pool.query(
-      `SELECT * FROM budget_targets WHERE user_id = $1 AND entity_id = $2 LIMIT 1`, [uid, eid]
+      `SELECT * FROM budget_targets WHERE user_id = $1 AND entity_id = $2 LIMIT 1`, [scopeId(req), eid]
     );
     row = _bte ? rowToObj(_bte) : null;
   }
   if (!row) {
     const { rows: [_bt0] } = await pool.query(
-      `SELECT * FROM budget_targets WHERE user_id = $1 AND entity_id IS NULL LIMIT 1`, [uid]
+      `SELECT * FROM budget_targets WHERE user_id = $1 AND entity_id IS NULL LIMIT 1`, [scopeId(req)]
     );
     row = _bt0 ? rowToObj(_bt0) : null;
   }
@@ -1176,12 +1183,12 @@ app.put('/api/budget-targets', requireAuth, wrap(async (req, res) => {
   let existing = null;
   if (eid) {
     const { rows: [_bte2] } = await pool.query(
-      `SELECT * FROM budget_targets WHERE user_id = $1 AND entity_id = $2 LIMIT 1`, [uid, eid]
+      `SELECT * FROM budget_targets WHERE user_id = $1 AND entity_id = $2 LIMIT 1`, [scopeId(req), eid]
     );
     existing = _bte2 ? rowToObj(_bte2) : null;
   } else {
     const { rows: [_bt02] } = await pool.query(
-      `SELECT * FROM budget_targets WHERE user_id = $1 AND entity_id IS NULL LIMIT 1`, [uid]
+      `SELECT * FROM budget_targets WHERE user_id = $1 AND entity_id IS NULL LIMIT 1`, [scopeId(req)]
     );
     existing = _bt02 ? rowToObj(_bt02) : null;
   }
@@ -1197,7 +1204,7 @@ app.put('/api/budget-targets', requireAuth, wrap(async (req, res) => {
 app.get('/api/settings', requireAuth, wrap(async (req, res) => {
   const { rows: [_sr] } = await pool.query(
     `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`,
-    [req.session.userId]
+    [scopeId(req)]
   );
   res.json(_sr ? rowToObj(_sr) : {});
 }));
@@ -1207,7 +1214,7 @@ app.put('/api/settings', requireAuth, wrap(async (req, res) => {
   // Read current settings for audit diff
   const { rows: [_sb] } = await pool.query(
     `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`,
-    [req.session.userId]
+    [scopeId(req)]
   );
   const before = _sb ? rowToObj(_sb) : {};
   if (b.dark_mode      != null) patch.dark_mode      = b.dark_mode ? 1 : 0;
@@ -1230,7 +1237,7 @@ app.put('/api/settings', requireAuth, wrap(async (req, res) => {
   if (b.onboarding_done!= null) patch.onboarding_done = b.onboarding_done ? 1 : 0;
   const uid2 = req.session.userId;
   const { rows: [_usRow] } = await pool.query(
-    `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [uid2]
+    `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [scopeId(req)]
   );
   if (_usRow) await db.updateById('user_settings', _usRow.id, patch);
   else await db.insert('user_settings', { user_id: uid2, ...patch });
@@ -1303,7 +1310,7 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
 // ── LOCK SETTINGS ─────────────────────────────────────────────────────────────
 app.get('/api/lock-settings', requireAuth, wrap(async (req, res) => {
   const { rows: [_lsGet] } = await pool.query(
-    `SELECT * FROM lock_settings WHERE user_id = $1 LIMIT 1`, [req.session.userId]
+    `SELECT * FROM lock_settings WHERE user_id = $1 LIMIT 1`, [scopeId(req)]
   );
   const s = _lsGet ? rowToObj(_lsGet) : null;
   res.json(s || { enabled: 0, lock_date: null });
@@ -1314,7 +1321,7 @@ app.post('/api/lock-settings', requireAuth, wrap(async (req, res) => {
   const patch = { enabled: enabled ? 1 : 0, lock_date: lock_date || null };
   if (password) patch.password_hash = bcrypt.hashSync(password, 10);
   const { rows: [_lsUp] } = await pool.query(
-    `SELECT * FROM lock_settings WHERE user_id = $1 LIMIT 1`, [uid]
+    `SELECT * FROM lock_settings WHERE user_id = $1 LIMIT 1`, [scopeId(req)]
   );
   if (_lsUp) await db.updateById('lock_settings', _lsUp.id, patch);
   else await db.insert('lock_settings', { user_id: uid, ...patch });
@@ -1579,7 +1586,7 @@ app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => 
   const uncached = [];
   for (const [k, group] of byKey.entries()) {
     const c = await pool.query(
-      `SELECT answer FROM ai_cache WHERE user_id = $1 AND question = $2 ORDER BY created_at DESC LIMIT 1`, [uid, k]
+      `SELECT answer FROM ai_cache WHERE user_id = $1 AND question = $2 ORDER BY created_at DESC LIMIT 1`, [scopeId(req), k]
     );
     let hit = null;
     if (c.rows[0]) { try { hit = JSON.parse(c.rows[0].answer); } catch (e) { hit = null; } }
@@ -1599,7 +1606,7 @@ app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => 
   const plan = req.userPlan || 'trial';
   const cap  = (plan === 'trial' || plan === 'free') ? AI_CAT_CAP_TRIAL : AI_CAT_CAP_PAID;
   const usedRow = await pool.query(
-    `SELECT query_count FROM ai_usage WHERE user_id = $1 AND billing_month = date_trunc('month', NOW())`, [uid]
+    `SELECT query_count FROM ai_usage WHERE user_id = $1 AND billing_month = date_trunc('month', NOW())`, [scopeId(req)]
   );
   const used   = usedRow.rows[0]?.query_count || 0;
   const budget = cap - used;
@@ -1686,7 +1693,7 @@ app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
 app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_qtr] } = await pool.query(
     `SELECT * FROM quotes WHERE id = $1 AND user_id = $2 LIMIT 1`,
-    [Number(req.params.id), req.session.userId]
+    [Number(req.params.id), scopeId(req)]
   );
   if (!_qtr) return res.status(404).json({ error: 'not found' });
   const row = rowToObj(_qtr);
@@ -1701,7 +1708,7 @@ app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query('DELETE FROM quotes WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
+  await pool.query('DELETE FROM quotes WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
 
@@ -1721,7 +1728,7 @@ app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
 app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_vndr] } = await pool.query(
     `SELECT * FROM vendors WHERE id = $1 AND user_id = $2 LIMIT 1`,
-    [Number(req.params.id), req.session.userId]
+    [Number(req.params.id), scopeId(req)]
   );
   const row = _vndr ? rowToObj(_vndr) : null;
   if (!row) return res.status(404).json({ error: 'not found' });
@@ -1737,7 +1744,7 @@ app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query('DELETE FROM vendors WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
+  await pool.query('DELETE FROM vendors WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
 
@@ -1758,7 +1765,7 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
 app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_blr] } = await pool.query(
     `SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`,
-    [Number(req.params.id), req.session.userId]
+    [Number(req.params.id), scopeId(req)]
   );
   const row = _blr ? rowToObj(_blr) : null;
   if (!row) return res.status(404).json({ error: 'not found' });
@@ -1773,7 +1780,7 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
+  await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
 
@@ -1798,7 +1805,7 @@ app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
 app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_rblr] } = await pool.query(
     `SELECT * FROM recurring_bills WHERE id = $1 AND user_id = $2 LIMIT 1`,
-    [Number(req.params.id), req.session.userId]
+    [Number(req.params.id), scopeId(req)]
   );
   if (!_rblr) return res.status(404).json({ error: 'not found' });
   const { vendor, amount, frequency, next_run, status } = req.body;
@@ -1806,7 +1813,7 @@ app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query('DELETE FROM recurring_bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
+  await pool.query('DELETE FROM recurring_bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
 
@@ -1832,7 +1839,7 @@ app.post('/api/recurring-personal-transactions', requireAuth, wrap(async (req, r
 app.put('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_rptr] } = await pool.query(
     `SELECT * FROM recurring_personal_transactions WHERE id = $1 AND user_id = $2 LIMIT 1`,
-    [Number(req.params.id), req.session.userId]
+    [Number(req.params.id), scopeId(req)]
   );
   if (!_rptr) return res.status(404).json({ error: 'not found' });
   // Merge-update (db.updateById preserves next_run so the existing schedule holds).
@@ -1849,7 +1856,7 @@ app.put('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req
   res.json({ ok: true });
 }));
 app.delete('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query('DELETE FROM recurring_personal_transactions WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
+  await pool.query('DELETE FROM recurring_personal_transactions WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
 
@@ -1869,7 +1876,7 @@ app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
 app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_rinvr] } = await pool.query(
     `SELECT * FROM recurring_invoices WHERE id = $1 AND user_id = $2 LIMIT 1`,
-    [Number(req.params.id), req.session.userId]
+    [Number(req.params.id), scopeId(req)]
   );
   if (!_rinvr) return res.status(404).json({ error: 'not found' });
   const { client, amount, frequency, next_run, status } = req.body;
@@ -1877,7 +1884,7 @@ app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query('DELETE FROM recurring_invoices WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
+  await pool.query('DELETE FROM recurring_invoices WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
 
@@ -1910,12 +1917,12 @@ app.put('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
   if (b.num      != null) patch.num      = String(b.num).slice(0, 30);
   await pool.query(
     `UPDATE sales_receipts SET data = data || $1::jsonb, updated_at = NOW() WHERE id = $2 AND user_id = $3`,
-    [JSON.stringify(Object.fromEntries(Object.entries(patch).filter(([,v]) => v !== undefined))), Number(req.params.id), req.session.userId]
+    [JSON.stringify(Object.fromEntries(Object.entries(patch).filter(([,v]) => v !== undefined))), Number(req.params.id), scopeId(req)]
   );
   res.json({ ok: true });
 }));
 app.delete('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query('DELETE FROM sales_receipts WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
+  await pool.query('DELETE FROM sales_receipts WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
 
@@ -1948,13 +1955,13 @@ app.put('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
   if (b.method       != null) patch.method       = String(b.method).slice(0, 50);
   const { rows: [_prchk] } = await pool.query(
     `SELECT id FROM payments_received WHERE id = $1 AND user_id = $2 LIMIT 1`,
-    [Number(req.params.id), req.session.userId]
+    [Number(req.params.id), scopeId(req)]
   );
   if (_prchk) await db.updateById('payments_received', _prchk.id, patch);
   res.json({ ok: true });
 }));
 app.delete('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query('DELETE FROM payments_received WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
+  await pool.query('DELETE FROM payments_received WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
 
@@ -1990,13 +1997,13 @@ app.put('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
   if (b.reason   != null) patch.reason   = String(b.reason).slice(0, 300);
   const { rows: [_cnchk] } = await pool.query(
     `SELECT id FROM credit_notes WHERE id = $1 AND user_id = $2 LIMIT 1`,
-    [Number(req.params.id), req.session.userId]
+    [Number(req.params.id), scopeId(req)]
   );
   if (_cnchk) await db.updateById('credit_notes', _cnchk.id, patch);
   res.json({ ok: true });
 }));
 app.delete('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query('DELETE FROM credit_notes WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
+  await pool.query('DELETE FROM credit_notes WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
 
@@ -2024,7 +2031,7 @@ app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, date, method, notes, ref } = req.body || {};
   const { rows: [_pmchk] } = await pool.query(
     `SELECT id FROM payments_made WHERE id = $1 AND user_id = $2 LIMIT 1`,
-    [Number(req.params.id), req.session.userId]
+    [Number(req.params.id), scopeId(req)]
   );
   if (_pmchk) await db.updateById('payments_made', _pmchk.id, {
     vendor: (vendor || '').trim().slice(0, 200),
@@ -2037,7 +2044,7 @@ app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query('DELETE FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
+  await pool.query('DELETE FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
 
@@ -2078,13 +2085,13 @@ app.put('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
   if (b.reason  != null) patch.reason  = String(b.reason).slice(0, 300);
   const { rows: [_vcchk] } = await pool.query(
     `SELECT id FROM vendor_credits WHERE id = $1 AND user_id = $2 LIMIT 1`,
-    [Number(req.params.id), req.session.userId]
+    [Number(req.params.id), scopeId(req)]
   );
   if (_vcchk) await db.updateById('vendor_credits', _vcchk.id, patch);
   res.json({ ok: true });
 }));
 app.delete('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
-  await pool.query('DELETE FROM vendor_credits WHERE id = $1 AND user_id = $2', [Number(req.params.id), req.session.userId]);
+  await pool.query('DELETE FROM vendor_credits WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
 
@@ -2205,7 +2212,7 @@ app.post('/api/ai', requireAuth, async (req, res) => {
       `SELECT answer, model FROM ai_cache
        WHERE user_id = $1 AND question = $2 AND created_at > NOW() - INTERVAL '24 hours'
        ORDER BY created_at DESC LIMIT 1`,
-      [uid, questionKey]
+      [scopeId(req), questionKey]
     );
     if (cached.rows.length > 0) {
       const { answer, model } = cached.rows[0];
@@ -2217,7 +2224,7 @@ app.post('/api/ai', requireAuth, async (req, res) => {
       db.allByUser('invoices', uid),
       db.allByUser('expenses', uid),
       db.allByUser('customers', uid),
-      pool.query(`SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [uid]).then(r => r.rows[0] ? rowToObj(r.rows[0]) : null),
+      pool.query(`SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [scopeId(req)]).then(r => r.rows[0] ? rowToObj(r.rows[0]) : null),
     ]);
     const cfg = settings || {};
 
@@ -2299,7 +2306,7 @@ app.get('/api/ai/cache', requireAuth, wrap(async (req, res) => {
     `SELECT id, question, answer, model, created_at
      FROM ai_cache WHERE user_id = $1
      ORDER BY created_at DESC LIMIT 50`,
-    [req.session.userId]
+    [scopeId(req)]
   );
   res.json(result.rows);
 }));
@@ -2313,7 +2320,7 @@ app.get('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
   const userId = req.session.userId;
   const link = await pool.query(
     `SELECT accountant_id FROM accountant_clients WHERE user_id = $1 AND status = 'active' LIMIT 1`,
-    [userId]
+    [scopeId(req)]
   );
   if (!link.rows[0]) return res.json([]);
   const { rows } = await pool.query(
@@ -2324,7 +2331,7 @@ app.get('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
      LEFT JOIN accountants a ON a.id = m.accountant_id
      WHERE m.user_id = $1 AND m.accountant_id = $2
      ORDER BY m.created_at ASC LIMIT 200`,
-    [userId, link.rows[0].accountant_id]
+    [scopeId(req), link.rows[0].accountant_id]
   );
   res.json(rows);
 }));
@@ -2335,7 +2342,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
   if (!content) return res.status(400).json({ error: 'Message required.' });
   const link = await pool.query(
     `SELECT accountant_id FROM accountant_clients WHERE user_id = $1 AND status = 'active' LIMIT 1`,
-    [userId]
+    [scopeId(req)]
   );
   if (!link.rows[0]) return res.status(404).json({ error: 'No linked accountant.' });
   const { rows } = await pool.query(
@@ -2586,7 +2593,7 @@ app.get('/api/mrr', requireAuth, wrap(async (req, res) => {
 app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
   const { rows: [_mrre] } = await pool.query(
     `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'mrr_data' LIMIT 1`,
-    [req.session.userId]
+    [scopeId(req)]
   );
   const data = JSON.stringify(req.body || {});
   if (_mrre) await db.updateById('user_settings', _mrre.id, { value: data });
@@ -2598,7 +2605,7 @@ app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
 app.get('/api/permissions', requireAuth, wrap(async (req, res) => {
   const { rows: _permRows } = await pool.query(
     `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' = 'permissions' LIMIT 1`,
-    [req.session.userId]
+    [scopeId(req)]
   );
   const _pr0 = _permRows[0] ? rowToObj(_permRows[0]) : null;
   res.json(_pr0?.value ? JSON.parse(_pr0.value) : null);
@@ -2607,7 +2614,7 @@ app.post('/api/permissions', requireAuth, wrap(async (req, res) => {
   const data = JSON.stringify(req.body || []);
   const { rows: [_perme] } = await pool.query(
     `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'permissions' LIMIT 1`,
-    [req.session.userId]
+    [scopeId(req)]
   );
   if (_perme) await db.updateById('user_settings', _perme.id, { value: data });
   else await db.insert('user_settings', { user_id: req.session.userId, key: 'permissions', value: data });
@@ -2680,7 +2687,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
                 SUM(CASE WHEN im.type='purchase' THEN im.quantity*im.unit_cost ELSE 0 END) AS purchase_total,
                 SUM(CASE WHEN im.type='purchase' THEN im.quantity ELSE 0 END) AS units_purchased
          FROM inventory_movements im WHERE im.user_id = $1 AND (im.entity_id IS NULL OR ($2::int IS NOT NULL AND im.entity_id = $2)) GROUP BY im.inventory_id`,
-        [uid, eid]
+        [scopeId(req), eid]
       );
       for (const r of cogsRows) {
         const unitCost = parseFloat(r.purchase_total) / Math.max(parseFloat(r.units_purchased), 1);
@@ -2695,7 +2702,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       const { rows: fxRows } = await pool.query(
         `SELECT COALESCE(SUM(CASE WHEN status='settled' THEN realised_gain_loss ELSE 0 END),0) AS realised,
                 COALESCE(SUM(CASE WHEN status='open' THEN unrealised_gain_loss ELSE 0 END),0) AS unrealised
-         FROM fx_transactions WHERE user_id=$1 AND (entity_id IS NULL OR ($2::int IS NOT NULL AND entity_id = $2))`, [uid, eid]
+         FROM fx_transactions WHERE user_id=$1 AND (entity_id IS NULL OR ($2::int IS NOT NULL AND entity_id = $2))`, [scopeId(req), eid]
       );
       fxRealised = parseFloat(fxRows[0]?.realised) || 0;
       fxUnrealised = parseFloat(fxRows[0]?.unrealised) || 0;
@@ -2833,7 +2840,7 @@ app.get('/api/scenario', requireAuth, wrap(async (req, res) => {
   try {
     const { rows: [_scn] } = await pool.query(
       `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' = 'scenario' LIMIT 1`,
-      [req.session.userId]
+      [scopeId(req)]
     );
     const row = _scn ? rowToObj(_scn) : null;
     res.json(row?.value ? JSON.parse(row.value) : {});
@@ -2847,7 +2854,7 @@ app.put('/api/scenario', requireAuth, wrap(async (req, res) => {
     const data = JSON.stringify(req.body || {});
     const { rows: [_scne] } = await pool.query(
       `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'scenario' LIMIT 1`,
-      [req.session.userId]
+      [scopeId(req)]
     );
     if (_scne) await db.updateById('user_settings', _scne.id, { value: data });
     else await db.insert('user_settings', { user_id: req.session.userId, key: 'scenario', value: data });
@@ -2866,7 +2873,7 @@ app.get('/api/connections', requireAuth, wrap(async (req, res) => {
   try {
     const { rows: [_connr] } = await pool.query(
       `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' = 'connections' LIMIT 1`,
-      [req.session.userId]
+      [scopeId(req)]
     );
     const row = _connr ? rowToObj(_connr) : null;
     res.json(row?.value ? JSON.parse(row.value) : {});
@@ -2880,7 +2887,7 @@ app.post('/api/connections', requireAuth, wrap(async (req, res) => {
     const data = JSON.stringify(req.body || {});
     const { rows: [_conne] } = await pool.query(
       `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'connections' LIMIT 1`,
-      [req.session.userId]
+      [scopeId(req)]
     );
     if (_conne) await db.updateById('user_settings', _conne.id, { value: data });
     else await db.insert('user_settings', { user_id: req.session.userId, key: 'connections', value: data });
@@ -2907,7 +2914,7 @@ async function auditLog(pool, { userId, entityId, table, recordId, action, field
 app.get('/api/audit-trail', requireAuth, wrap(async (req, res) => {
   const { table, action } = req.query;
   let q = `SELECT * FROM audit_trail WHERE user_id = $1`;
-  const params = [req.session.userId];
+  const params = [scopeId(req)];
   if (table && table !== 'all') { params.push(table); q += ` AND table_name = $${params.length}`; }
   if (action && action !== 'all') { params.push(action); q += ` AND action = $${params.length}`; }
   q += ` ORDER BY changed_at DESC LIMIT 500`;
@@ -2939,7 +2946,7 @@ app.get('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   if (!invoice_id) return res.status(400).json({ error: 'invoice_id required' });
   const { rows } = await pool.query(
     `SELECT * FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2 ORDER BY payment_date DESC`,
-    [parseInt(invoice_id), req.session.userId]
+    [parseInt(invoice_id), scopeId(req)]
   );
   res.json(rows);
 }));
@@ -2961,7 +2968,7 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
 app.delete('/api/invoice-payments/:id', requireAuth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `DELETE FROM invoice_payments WHERE id=$1 AND user_id=$2 RETURNING *`,
-    [parseInt(req.params.id), req.session.userId]
+    [parseInt(req.params.id), scopeId(req)]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
   await recalcInvoiceStatus(pool, rows[0].invoice_id, req.session.userId);
@@ -2970,8 +2977,8 @@ app.delete('/api/invoice-payments/:id', requireAuth, wrap(async (req, res) => {
 
 app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
-  const matchedBankIds = await pool.query(`SELECT banking_id FROM bank_reconciliation WHERE user_id=$1`, [uid]);
-  const matchedPayIds  = await pool.query(`SELECT invoice_payment_id FROM bank_reconciliation WHERE user_id=$1`, [uid]);
+  const matchedBankIds = await pool.query(`SELECT banking_id FROM bank_reconciliation WHERE user_id=$1`, [scopeId(req)]);
+  const matchedPayIds  = await pool.query(`SELECT invoice_payment_id FROM bank_reconciliation WHERE user_id=$1`, [scopeId(req)]);
   const matchedBankSet = new Set(matchedBankIds.rows.map(r => r.banking_id));
   const matchedPaySet  = new Set(matchedPayIds.rows.map(r => r.invoice_payment_id));
 
@@ -2982,7 +2989,7 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
     `SELECT ip.*, i.data->>'client' AS client FROM invoice_payments ip
      LEFT JOIN invoices i ON i.id = ip.invoice_id
      WHERE ip.user_id = $1 ORDER BY ip.payment_date DESC`,
-    [uid]
+    [scopeId(req)]
   );
   const unmatchedPayments = payments.filter(r => !matchedPaySet.has(r.id));
 
@@ -2993,7 +3000,7 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
      JOIN invoice_payments ip ON ip.id = br.invoice_payment_id
      JOIN personal_transactions pt ON pt.id = br.banking_id
      WHERE br.user_id = $1 ORDER BY br.matched_at DESC`,
-    [uid]
+    [scopeId(req)]
   );
   res.json({ unmatchedBanking, unmatchedPayments, matched });
 }));
@@ -3001,8 +3008,8 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
 app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) => {
   const { banking_id, invoice_payment_id } = req.body || {};
   if (!banking_id || !invoice_payment_id) return res.status(400).json({ error: 'banking_id and invoice_payment_id required' });
-  const bankRow = await pool.query('SELECT id FROM personal_transactions WHERE id=$1 AND user_id=$2', [banking_id, req.session.userId]);
-  const payRow = await pool.query('SELECT id FROM invoice_payments WHERE id=$1 AND user_id=$2', [invoice_payment_id, req.session.userId]);
+  const bankRow = await pool.query('SELECT id FROM personal_transactions WHERE id=$1 AND user_id=$2', [banking_id, scopeId(req)]);
+  const payRow = await pool.query('SELECT id FROM invoice_payments WHERE id=$1 AND user_id=$2', [invoice_payment_id, scopeId(req)]);
   if (!bankRow.rows[0] || !payRow.rows[0]) return res.status(404).json({ error: 'Not found.' });
   const { rows } = await pool.query(
     `INSERT INTO bank_reconciliation (user_id, entity_id, banking_id, invoice_payment_id)
@@ -3015,7 +3022,7 @@ app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) =>
 app.delete('/api/bank-reconciliation/:id', requireAuth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `DELETE FROM bank_reconciliation WHERE id=$1 AND user_id=$2 RETURNING *`,
-    [parseInt(req.params.id), req.session.userId]
+    [parseInt(req.params.id), scopeId(req)]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
   res.json({ ok: true });
@@ -3209,7 +3216,7 @@ app.get('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
      LEFT JOIN payroll_run_lines prl ON prl.run_id = pr.id
      WHERE pr.user_id = $1 AND (pr.entity_id IS NULL OR ($2::int IS NOT NULL AND pr.entity_id = $2))
      GROUP BY pr.id ORDER BY pr.created_at DESC LIMIT 50`,
-    [req.session.userId, req.entityId || null]
+    [scopeId(req), req.entityId || null]
   );
   res.json(rows);
 }));
@@ -3256,7 +3263,7 @@ app.post('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
 
 app.get('/api/payroll-runs/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [run] } = await pool.query(
-    `SELECT * FROM payroll_runs WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), req.session.userId]
+    `SELECT * FROM payroll_runs WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), scopeId(req)]
   );
   if (!run) return res.status(404).json({ error: 'Not found.' });
   const { rows: lines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id=$1`, [run.id]);
@@ -3266,7 +3273,7 @@ app.get('/api/payroll-runs/:id', requireAuth, wrap(async (req, res) => {
 app.put('/api/payroll-runs/:id/approve', requireAuth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `UPDATE payroll_runs SET status='approved' WHERE id=$1 AND user_id=$2 RETURNING *`,
-    [parseInt(req.params.id), req.session.userId]
+    [parseInt(req.params.id), scopeId(req)]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
   res.json(rows[0]);
@@ -3275,7 +3282,7 @@ app.put('/api/payroll-runs/:id/approve', requireAuth, wrap(async (req, res) => {
 app.put('/api/payroll-runs/:id/mark-paid', requireAuth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `UPDATE payroll_runs SET status='paid' WHERE id=$1 AND user_id=$2 RETURNING *`,
-    [parseInt(req.params.id), req.session.userId]
+    [parseInt(req.params.id), scopeId(req)]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
   res.json(rows[0]);
@@ -3324,7 +3331,7 @@ async function calculateFIFOCOGS(pool, inventoryId, quantitySold) {
 app.get('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
   const { inventory_id } = req.query;
   let q = `SELECT * FROM inventory_movements WHERE user_id = $1`;
-  const params = [req.session.userId];
+  const params = [scopeId(req)];
   if (inventory_id) { params.push(parseInt(inventory_id)); q += ` AND inventory_id = $${params.length}`; }
   q += ` ORDER BY moved_at DESC LIMIT 200`;
   const { rows } = await pool.query(q, params);
@@ -3372,7 +3379,7 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
      JOIN inventory i ON i.id = im.inventory_id
      WHERE im.user_id = $1
      GROUP BY im.inventory_id, i.data`,
-    [uid]
+    [scopeId(req)]
   );
 
   let totalCOGS = 0;
@@ -3392,7 +3399,7 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
 app.post('/api/cogs/calculate', requireAuth, wrap(async (req, res) => {
   const { inventory_id, quantity } = req.body || {};
   if (!inventory_id || !quantity) return res.status(400).json({ error: 'inventory_id and quantity required' });
-  const item = await pool.query('SELECT id FROM inventory WHERE id=$1 AND user_id=$2', [inventory_id, req.session.userId]);
+  const item = await pool.query('SELECT id FROM inventory WHERE id=$1 AND user_id=$2', [inventory_id, scopeId(req)]);
   if (!item.rows[0]) return res.status(404).json({ error: 'Not found.' });
   const cogs = await calculateFIFOCOGS(pool, parseInt(inventory_id), parseFloat(quantity));
   res.json({ cogs });
@@ -3404,7 +3411,7 @@ app.post('/api/cogs/calculate', requireAuth, wrap(async (req, res) => {
 app.get('/api/fx-rates', requireAuth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT * FROM fx_rates WHERE user_id=$1 ORDER BY rate_date DESC, created_at DESC LIMIT 200`,
-    [req.session.userId]
+    [scopeId(req)]
   );
   res.json(rows);
 }));
@@ -3425,7 +3432,7 @@ app.get('/api/fx-transactions', requireAuth, wrap(async (req, res) => {
   const eid = req.entityId || null;
   const { rows } = await pool.query(
     `SELECT * FROM fx_transactions WHERE user_id=$1 AND (entity_id IS NULL OR ($2::int IS NOT NULL AND entity_id = $2)) ORDER BY created_at DESC LIMIT 200`,
-    [req.session.userId, eid]
+    [scopeId(req), eid]
   );
   res.json(rows);
 }));
@@ -3451,7 +3458,7 @@ app.post('/api/fx-transactions/:id/settle', requireAuth, wrap(async (req, res) =
   const { rate_at_settlement } = req.body || {};
   if (!rate_at_settlement) return res.status(400).json({ error: 'rate_at_settlement required' });
   const { rows: [tx] } = await pool.query(
-    `SELECT * FROM fx_transactions WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), req.session.userId]
+    `SELECT * FROM fx_transactions WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), scopeId(req)]
   );
   if (!tx) return res.status(404).json({ error: 'Not found.' });
   const settlementRate = parseFloat(rate_at_settlement);
@@ -3474,7 +3481,7 @@ app.get('/api/fx-summary', requireAuth, wrap(async (req, res) => {
        COUNT(*) AS count
      FROM fx_transactions WHERE user_id=$1 AND (entity_id IS NULL OR ($2::int IS NOT NULL AND entity_id = $2))
      GROUP BY foreign_currency`,
-    [req.session.userId, eid]
+    [scopeId(req), eid]
   );
   const totalRealised = rows.reduce((s, r) => s + parseFloat(r.total_realised), 0);
   const totalUnrealised = rows.reduce((s, r) => s + parseFloat(r.total_unrealised), 0);

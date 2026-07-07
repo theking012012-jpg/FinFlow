@@ -3290,27 +3290,37 @@ function _applyPersFilter(){
   });
   window._persSideIncome=persTransactions.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
 
-  // ── Unified period rule for income AND spending ─────────────────────────────
-  //   recurring source        → monthlyEquivalent × monthsInWindow   (from the profile)
-  //   one-time (no profile id) → summed only within the actual window
-  // DOUBLE-COUNT GUARD: an occurrence tied to a profile (recurringProfileId != null)
-  // is represented ONLY by its profile projection, so it is EXCLUDED from the
-  // one-time sums below. Without this, Quarter = 3×base (projection) + the real
-  // in-window occurrence — exactly the $16K-vs-$24K bug this fixes.
-  const oneTime=persTransactions.filter(t=>t.recurringProfileId==null);
-  const profiles=(window._persRecurring||[]).filter(p=>
-    (p.status||'active')==='active' && !(p.end_date && new Date(p.end_date)<from));
+  // ── SINGLE-REPRESENTATION period rule for income AND spending ───────────────
+  // Every source is counted from the OCCURRENCES actually present in the window —
+  // NEVER from a separate profile projection — so there is only one representation
+  // and a double-count is impossible, whether or not recurring_profile_id is
+  // populated. A recurring occurrence (linked to a known profile) is counted ONCE
+  // per source (deduped by profile id) and scaled to monthlyEquivalent × months;
+  // everything else (genuine one-time rows AND any not-yet-linked recurring row)
+  // counts at its actual in-window amount. recurring_profile_id is the reliable
+  // per-row signal that ENABLES scaling — correctness never depends on it being
+  // perfectly populated, and duplicate profiles are inert (no occurrence → no count).
+  // ACCEPTED SEMANTICS: a profile with ZERO occurrences in the window contributes
+  // nothing until it materialises — intended for a "what actually happened" view.
+  const profById=new Map((window._persRecurring||[]).map(p=>[p.id,p]));
+  const isRecur=t=>t.recurringProfileId!=null && profById.has(t.recurringProfileId);
   const catTotals={};
   let recurIncome=0;
-  profiles.forEach(p=>{
-    const proj=_persMonthlyEquiv(p.amount,p.frequency)*monthsInWindow;
-    if((p.tx_type||'expense')==='income'){ recurIncome+=proj; }
-    else { const c=CAT_GROUP[p.category]||'Other'; catTotals[c]=(catTotals[c]||0)+proj; }
+  const seenSource=new Set();
+  persTransactions.forEach(t=>{
+    if(!isRecur(t)) return;
+    if(seenSource.has(t.recurringProfileId)) return;   // dedupe: one scaled figure per source
+    seenSource.add(t.recurringProfileId);
+    const p=profById.get(t.recurringProfileId);
+    const scaled=_persMonthlyEquiv(p.amount,p.frequency)*monthsInWindow;
+    if((p.tx_type||'expense')==='income'){ recurIncome+=scaled; }
+    else { const c=CAT_GROUP[p.category]||'Other'; catTotals[c]=(catTotals[c]||0)+scaled; }
   });
-  oneTime.filter(t=>t.type==='expense').forEach(t=>{const c=CAT_GROUP[t.cat]||'Other';catTotals[c]=(catTotals[c]||0)+t.amount;});
+  // One-time (and any unlinked) rows — actual amounts, counted once.
+  persTransactions.filter(t=>!isRecur(t)&&t.type==='expense').forEach(t=>{const c=CAT_GROUP[t.cat]||'Other';catTotals[c]=(catTotals[c]||0)+t.amount;});
   spending=Object.entries(catTotals).map(([label,amount])=>({label,amount,color:CAT_COLOR[label]||'var(--t3)',budget:0}));
-  const oneTimeIncome=oneTime.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
-  // Income = recurring salary (base × months) + one-time income in window + projected recurring income.
+  const oneTimeIncome=persTransactions.filter(t=>!isRecur(t)&&t.type==='income').reduce((a,t)=>a+t.amount,0);
+  // Income = salary (base × months) + one-time income in window + scaled recurring income.
   window._persPeriodIncome=basePersonalIncome*monthsInWindow+oneTimeIncome+recurIncome;
   const totalInc=window._persPeriodIncome;
   const totalExp=spending.reduce((a,s)=>a+s.amount,0);

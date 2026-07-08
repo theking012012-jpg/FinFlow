@@ -955,6 +955,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 .qa-amount:focus{border-color:var(--acc)}
 .qa-desc{flex:1;min-width:130px;padding:9px 10px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg1);color:var(--t1);font-size:13px;outline:none;font-family:var(--font);transition:border-color .13s}
 .qa-desc:focus{border-color:var(--acc)}
+.qa-cur-sel{flex:0 0 auto;width:78px;padding:9px 6px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg1);color:var(--t1);font-size:12px;font-family:var(--font-mono);outline:none;cursor:pointer;transition:border-color .13s}
+.qa-cur-sel:focus{border-color:var(--acc)}
 .qa-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:.6rem}
 .cat-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 9px 4px 8px;border:1px solid var(--bd2);border-radius:20px;font-size:11px;color:var(--t2);cursor:pointer;background:var(--bg1);transition:all .12s;white-space:nowrap;user-select:none;font-family:var(--font)}
 .cat-pill:hover{border-color:var(--t3);color:var(--t1)}
@@ -2462,6 +2464,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div class="qa-lead qa-lead-exp">Expense</div>
             <div class="qa-row">
               <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qa-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Expense amount" onkeydown="if(event.key==='Enter')persQuickAdd()"></div>
+              <select class="qa-cur-sel" id="qa-currency" aria-label="Expense currency" title="Currency this expense is in"></select>
               <input class="qa-desc" id="qa-desc" placeholder="What was it for? (optional)" aria-label="Description" onkeydown="if(event.key==='Enter')persQuickAdd()">
               <button class="btn btn-primary" onclick="persQuickAdd()">Add</button>
             </div>
@@ -2479,6 +2482,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             </div>
             <div class="qa-row" style="margin-top:.55rem">
               <div class="qa-amountwrap"><span class="qa-cur">$</span><input class="qa-amount" id="qai-amount" type="number" inputmode="decimal" placeholder="0" step="0.01" aria-label="Income amount" onkeydown="if(event.key==='Enter')persIncomeAdd()"></div>
+              <select class="qa-cur-sel" id="qai-currency" aria-label="Income currency" title="Currency this income is in"></select>
               <input class="qa-desc" id="qai-desc" placeholder="Source (optional)" aria-label="Income description" onkeydown="if(event.key==='Enter')persIncomeAdd()">
               <button class="btn btn-green" onclick="persIncomeAdd()">Add</button>
             </div>
@@ -3430,9 +3434,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       </div>
     </div>
     <div class="field-group">
-      <div class="field-wrap"><label class="field-label" for="tx-amount">Amount ($) *</label><input class="finput" id="tx-amount" type="number" placeholder="0.00" step="0.01"></div>
-      <div class="field-wrap"><label class="field-label" for="tx-date">Date</label><input class="finput" id="tx-date" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="tx-amount">Amount *</label><input class="finput" id="tx-amount" type="number" placeholder="0.00" step="0.01"></div>
+      <div class="field-wrap"><label class="field-label" for="tx-currency">Currency</label><select class="finput" id="tx-currency" aria-label="Transaction currency"></select></div>
     </div>
+    <div class="field-wrap"><label class="field-label" for="tx-date">Date</label><input class="finput" id="tx-date" type="date"></div>
     <div class="field-wrap"><label class="field-label" for="tx-desc">Description *</label><input class="finput" id="tx-desc" placeholder="e.g. Grocery run"></div>
     <div class="field-wrap"><label class="field-label">Category</label><div class="qa-pills" id="tx-cat-pills" style="margin-top:2px"></div></div>
     <div class="field-wrap" style="margin-bottom:.5rem" id="txm-recurring-wrap">

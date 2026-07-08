@@ -1093,35 +1093,73 @@
         }
         console.log('[Payroll Save] ✅ Owner payroll persisted per-entity. window.ownerPayroll:', window.ownerPayroll);
 
-        // Auto-post each entity's owner net salary as a personal-finance
-        // income transaction so Personal Finance reflects the salary income.
-        // Idempotent per (entity-name, calendar month): updates the existing
-        // row if one already exists for this month rather than appending a
-        // new entry on every save.
+        // Owner salary → a LINKED recurring personal-income profile (unified income
+        // model). The salary is not special: it becomes an ordinary recurring income
+        // that the period-KPI math projects like any other. Stored in the ENTITY's
+        // currency (its true pay currency) — NOT normalized to USD; the aggregators
+        // FX-normalize at read, so the owner keeps their exact figure and the old
+        // raw-number-mislabeled-USD bug is fixed. Find-or-create is keyed ONLY off the
+        // profile id stored on the payroll record (never fuzzy description/amount
+        // matching), so re-saves update ONE profile instead of spawning duplicates.
         try {
-          const existingPersonal = await api('GET', '/api/personal-transactions').catch(() => []);
+          const [existingPersonal, existingProfiles] = await Promise.all([
+            api('GET', '/api/personal-transactions').catch(() => []),
+            api('GET', '/api/recurring-personal-transactions').catch(() => []),
+          ]);
           const today = new Date().toISOString().slice(0, 10);
           const monthStart = today.slice(0, 8) + '01';
+          // Profile schedules its NEXT run for the 1st of next month (create-now,
+          // schedule-next) — the server scheduler materialises+links future months.
+          const _nr = new Date(); _nr.setMonth(_nr.getMonth() + 1, 1);
+          const nextRun = _nr.toISOString().slice(0, 10);
           for (const [idxStr, op] of Object.entries(byEntity)) {
             const idx = parseInt(idxStr);
             const entity = ENTITIES[idx];
             const entityName = entity?.name || 'Business';
+            const curCode = op.currency || entity?.currency || 'USD';
             const gross = parseFloat(op.gross) || 0;
             const taxRate = parseFloat(op.taxRate) || 0;
-            const net = Math.round(gross * (1 - taxRate / 100));
+            const net = Math.round(gross * (1 - taxRate / 100));   // entity currency
             if (net <= 0) continue;
             const description = `Owner salary — ${entityName}`;
-            const existing = (existingPersonal || []).find(t =>
-              t && t.description === description && (t.tx_date || '') >= monthStart
-            );
+            const profileBody = {
+              description, amount: net, currency: curCode,
+              category: 'Salary', tx_type: 'income', frequency: 'Monthly', status: 'active',
+            };
             try {
-              if (existing) {
-                await api('PUT', `/api/personal-transactions/${existing.id}`, { amount: net });
+              // 1) Find-or-create the ONE salary profile, keyed off the stored id.
+              let profileId = op.salary_profile_id != null ? Number(op.salary_profile_id) : null;
+              if (profileId && (existingProfiles || []).some(p => Number(p.id) === profileId)) {
+                await api('PUT', `/api/recurring-personal-transactions/${profileId}`, profileBody);
               } else {
-                await api('POST', '/api/personal-transactions', {
-                  description, amount: net, tx_type: 'income',
-                  category: 'Salary', tx_date: today,
-                });
+                const created = await api('POST', '/api/recurring-personal-transactions', { ...profileBody, next_run: nextRun });
+                profileId = (created && created.id != null) ? Number(created.id) : null;
+                // Persist the new id back onto the payroll record (JSONB) so the next
+                // save updates this profile rather than creating a second one.
+                if (profileId && op._dbId) {
+                  op.salary_profile_id = profileId;
+                  await api('PUT', `/api/payroll/${op._dbId}`, { salary_profile_id: profileId });
+                }
+              }
+              // 2) Maintain THIS month's occurrence, hard-linked to the profile. Locate
+              //    it by the link (recurring_profile_id) — money-math never fuzzy-matches.
+              //    Migration: if a pre-model unlinked "Owner salary — X" row exists this
+              //    month, upgrade it in place (link + tag currency) rather than duplicate.
+              //    (That description is bundle-generated and unique per entity.)
+              if (profileId != null) {
+                const occ = (existingPersonal || []).find(t =>
+                  t && Number(t.recurring_profile_id) === profileId && (t.tx_date || '') >= monthStart
+                ) || (existingPersonal || []).find(t =>
+                  t && (t.recurring_profile_id == null) && t.description === description && (t.tx_date || '') >= monthStart
+                );
+                if (occ) {
+                  await api('PUT', `/api/personal-transactions/${occ.id}`, { amount: net, currency: curCode, recurring_profile_id: profileId });
+                } else {
+                  await api('POST', '/api/personal-transactions', {
+                    description, amount: net, currency: curCode, tx_type: 'income',
+                    category: 'Salary', tx_date: today, recurring_profile_id: profileId,
+                  });
+                }
               }
             } catch (perr) {
               console.warn('[OwnerSalary→Personal] sync failed for', entityName, ':', perr.message);

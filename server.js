@@ -878,7 +878,7 @@ app.post('/api/payroll', requireAuth, wrap(async (req, res) => {
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + entity_id + fname + lname + gross).
   const _dup = await findRecentDuplicate('payroll', req.session.userId, _peid, { textMatch: { fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100) }, numMatch: { gross: parseFloat(b.gross)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('payroll', { user_id: req.session.userId, entity_id: _peid, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, tax_rate: parseFloat(b.tax_rate)||0, av_class: b.av_class||'av-blue', is_owner: b.is_owner ? true : false });
+  const { row } = await db.insert('payroll', { user_id: req.session.userId, entity_id: _peid, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, tax_rate: parseFloat(b.tax_rate)||0, av_class: b.av_class||'av-blue', is_owner: b.is_owner ? true : false, salary_profile_id: b.salary_profile_id != null ? Number(b.salary_profile_id) : null });
   res.status(201).json(row);
 }));
 app.put('/api/payroll/:id', requireAuth, wrap(async (req, res) => {
@@ -889,6 +889,9 @@ app.put('/api/payroll/:id', requireAuth, wrap(async (req, res) => {
   ['fname','lname','role','emp_type','av_class'].forEach(f => { if (b[f] != null) patch[f] = b[f]; });
   if (b.gross != null) patch.gross = parseFloat(b.gross);
   if (b.tax_rate != null) patch.tax_rate = parseFloat(b.tax_rate);
+  // salary_profile_id links the owner's payroll to its recurring personal-income
+  // profile so the salary sync finds-or-updates ONE profile (never fuzzy-matches).
+  if (b.salary_profile_id !== undefined) patch.salary_profile_id = b.salary_profile_id != null ? Number(b.salary_profile_id) : null;
   await db.updateById('payroll', row.id, patch);
   const { rows: [_payr] } = await pool.query(`SELECT * FROM payroll WHERE id = $1 LIMIT 1`, [row.id]);
   res.json(_payr ? rowToObj(_payr) : {});
@@ -921,14 +924,14 @@ app.get('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
   }
 }));
 app.post('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
-  const { description, category = 'Other', amount, tx_type = 'expense', tx_date, recurring_profile_id = null } = req.body || {};
+  const { description, category = 'Other', amount, tx_type = 'expense', tx_date, recurring_profile_id = null, currency = 'USD' } = req.body || {};
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
   const _dup = await findRecentDuplicate('personal_transactions', req.session.userId, null, { textMatch: { description: description.trim().slice(0,300) }, numMatch: { amount: parseFloat(amount)||0 } });
   if (_dup) return res.status(200).json(_dup);
   // recurring_profile_id links this occurrence to the recurring profile it came
   // from (null = one-time). The period-KPI math uses it to exclude materialised
   // occurrences from one-time sums and project the profile instead (no double-count).
-  const { row } = await db.insert('personal_transactions', { user_id: req.session.userId, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, tx_type, tx_date: tx_date || new Date().toISOString().slice(0,10), recurring_profile_id: recurring_profile_id != null ? Number(recurring_profile_id) : null });
+  const { row } = await db.insert('personal_transactions', { user_id: req.session.userId, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, tx_type, tx_date: tx_date || new Date().toISOString().slice(0,10), recurring_profile_id: recurring_profile_id != null ? Number(recurring_profile_id) : null, currency: String(currency || 'USD') });
   res.status(201).json(row);
 }));
 app.put('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => {
@@ -941,6 +944,7 @@ app.put('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => 
   if (b.amount != null)      patch.amount      = parseFloat(b.amount) || 0;
   if (b.tx_type != null)     patch.tx_type     = b.tx_type;
   if (b.tx_date != null)     patch.tx_date     = b.tx_date;
+  if (b.currency != null)    patch.currency    = String(b.currency);
   // Allow (re)linking or clearing the recurring profile on edit — null unlinks.
   if (b.recurring_profile_id !== undefined) patch.recurring_profile_id = b.recurring_profile_id != null ? Number(b.recurring_profile_id) : null;
   await db.updateById('personal_transactions', row.id, patch);
@@ -1834,11 +1838,11 @@ app.get('/api/recurring-personal-transactions', requireAuth, wrap(async (req, re
   }
 }));
 app.post('/api/recurring-personal-transactions', requireAuth, wrap(async (req, res) => {
-  const { description, category = 'Other', amount, tx_type = 'expense', frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body || {};
+  const { description, category = 'Other', amount, tx_type = 'expense', frequency = 'Monthly', next_run, status = 'active', end_date = null, currency = 'USD' } = req.body || {};
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
   const _dup = await findRecentDuplicate('recurring_personal_transactions', req.session.userId, null, { textMatch: { description: String(description).trim().slice(0,300), frequency: String(frequency) }, numMatch: { amount: parseFloat(amount)||0 } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('recurring_personal_transactions', { user_id: req.session.userId, description: String(description).trim().slice(0, 300), category, amount: parseFloat(amount)||0, tx_type, frequency, next_run, status, end_date: end_date || null });
+  const { row } = await db.insert('recurring_personal_transactions', { user_id: req.session.userId, description: String(description).trim().slice(0, 300), category, amount: parseFloat(amount)||0, tx_type, frequency, next_run, status, end_date: end_date || null, currency: String(currency || 'USD') });
   res.status(201).json(row);
 }));
 app.put('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req, res) => {
@@ -1848,7 +1852,7 @@ app.put('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req
   );
   if (!_rptr) return res.status(404).json({ error: 'not found' });
   // Merge-update (db.updateById preserves next_run so the existing schedule holds).
-  const { description, category, amount, tx_type, frequency, status, end_date } = req.body || {};
+  const { description, category, amount, tx_type, frequency, status, end_date, currency } = req.body || {};
   const patch = {};
   if (description != null) patch.description = String(description).trim().slice(0, 300);
   if (category != null) patch.category = category;
@@ -1857,6 +1861,7 @@ app.put('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req
   if (frequency != null) patch.frequency = frequency;
   if (status != null) patch.status = status;
   if (end_date !== undefined) patch.end_date = end_date || null;
+  if (currency != null) patch.currency = String(currency);
   await db.updateById('recurring_personal_transactions', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
@@ -2553,6 +2558,7 @@ async function runRecurringScheduler() {
         user_id: r.user_id,
         description: r.description, category: r.category || 'Other',
         amount: r.amount, tx_type: r.tx_type || 'expense', tx_date: r.next_run,
+        currency: r.currency || 'USD',   // carry the profile's native currency onto the occurrence
         recurring_profile_id: r.id,   // link back so the KPI math can exclude this occurrence
       });
       const _ptNext = nextRunDate(r.next_run, r.frequency);

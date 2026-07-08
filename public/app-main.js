@@ -1330,6 +1330,10 @@ async function loadEntityData(idx){
         currency: _entity?.currency || 'USD',
         entityName: _entity?.name || 'Entity',
         isOwner:  true,
+        // Link to the recurring personal-income profile the payroll salary syncs to.
+        // The bundle keys find-or-create off THIS id (never fuzzy-matches) so re-saves
+        // update one profile instead of spawning duplicates.
+        salary_profile_id: ownerRow.salary_profile_id != null ? Number(ownerRow.salary_profile_id) : null,
       };
       ownerPayrollByEntity[idx] = owner;
       window.ownerPayrollByEntity = ownerPayrollByEntity;
@@ -1441,7 +1445,8 @@ let activeOwnerEntityIdx = 0;
 let spending = [];
 let goals = [];
 let persTransactions = [];
-let basePersonalIncome = 0;
+// (retired) basePersonalIncome — owner salary is now a linked recurring income
+// profile counted through the unified occurrence-driven projection in _applyPersFilter.
 let baseNetWorth = 0;
 // User invoices — populated from DB via loadEntityData
 let userInvoices = [];
@@ -2438,8 +2443,7 @@ window.saveEditEmployee = async function(){
 
 function syncAllPayrollsToPersonal(){
   const entries = Object.entries(ownerPayrollByEntity);
-  const totalUSD = calcTotalOwnerNetUSD();
-  basePersonalIncome = entries.length > 0 ? Math.round(totalUSD) : 0;
+  const totalUSD = calcTotalOwnerNetUSD();   // banner/breakdown display only (not an income term)
 
   // Replace salary transactions with one per entity
   persTransactions = persTransactions.filter(t=>!(t.cat==='Income' && t.desc.startsWith('Salary —')));
@@ -2579,9 +2583,48 @@ function SP(usdAmount){
   return formatted;
 }
 
+// Format a NATIVE-currency amount for display: convert fromCur → persCurrency and
+// format with the persCurrency symbol. When persCurrency===fromCur, _safeFX
+// short-circuits (from===to) → the viewer sees their EXACT entered figure, never
+// an FX round-trip. Aggregate figures normalized to USD use SP (fromCur 'USD').
+function SPfrom(amount, fromCur){
+  const _m = (typeof CURRENCIES !== 'undefined' ? CURRENCIES : null) || window.CURRENCIES || {};
+  const cur = _m[persCurrency] || {symbol:'$'};
+  const conv = _safeFX(amount, fromCur || 'USD', persCurrency);
+  const abs = Math.abs(conv);
+  return abs >= 1000 ? cur.symbol + (abs/1000).toFixed(1) + 'K' : cur.symbol + Math.round(abs).toLocaleString();
+}
+// Full (non-abbreviated) native-amount display — used in the transaction ledger so
+// a same-currency viewer reads the exact figure (e.g. TT$11,250, not TT$11.3K).
+function SPfromFull(amount, fromCur){
+  const _m = (typeof CURRENCIES !== 'undefined' ? CURRENCIES : null) || window.CURRENCIES || {};
+  const cur = _m[persCurrency] || {symbol:'$'};
+  const conv = _safeFX(amount, fromCur || 'USD', persCurrency);
+  return cur.symbol + Math.round(Math.abs(conv)).toLocaleString();
+}
+// Per-row pay/pay-out currency: personal transactions each store their own currency
+// (the currency the money is actually in), independent of the view toggle. Legacy
+// rows without one default to 'USD' — exactly the pre-currency-field assumption.
+function _txCurOf(t){ return (t && t.currency) || 'USD'; }
+// Options for the transaction-entry currency <select>s (built from CURRENCIES).
+function _persCurrencyOptionsHtml(){
+  const _m = (typeof CURRENCIES !== 'undefined' ? CURRENCIES : null) || window.CURRENCIES || {};
+  return Object.entries(_m).map(([code,c])=>`<option value="${code}">${code} ${c.symbol||''}</option>`).join('');
+}
+// Populate the three entry currency pickers once; first population defaults to the
+// current view currency (a sensible default — fully overridable, and never re-clobbered
+// on later calls so a user's explicit choice sticks).
+function _ensureTxCurrencyOptions(){
+  ['qa-currency','qai-currency','tx-currency'].forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    if(!el.options||el.options.length===0){ el.innerHTML=_persCurrencyOptionsHtml(); el.value=persCurrency; }
+  });
+}
+window._ensureTxCurrencyOptions=_ensureTxCurrencyOptions;
+
 // Fast currency-only update — rewrites numbers without rebuilding DOM lists
 function _updatePersCurrencyValues(){
-  const incomeUSD    = basePersonalIncome;
+  const incomeUSD    = window._persPeriodIncome || 0;
   const totalSpendUSD = spending.reduce((a,s)=>a+s.amount,0);
   const surplusUSD   = incomeUSD - totalSpendUSD;
   const target       = parseInt(document.getElementById('s-savings-target')?.value)||40;
@@ -2617,9 +2660,10 @@ function renderPersonal(){
   const cur = window.CURRENCIES?.[persCurrency] || {symbol:'$', rate:1};
   const rate = cur.rate;
 
-  // Income scaled to the selected period window (salary × months + side income),
-  // computed in _applyPersFilter; falls back to monthly salary before first filter.
-  const incomeUSD = (typeof window._persPeriodIncome==='number') ? window._persPeriodIncome : basePersonalIncome;
+  // Income scaled to the selected period window (recurring × months + one-time),
+  // all USD-normalized in _applyPersFilter; 0 before the first filter runs.
+  const incomeUSD = (typeof window._persPeriodIncome==='number') ? window._persPeriodIncome : 0;
+  _ensureTxCurrencyOptions();
   // Spending is stored in USD — convert for display
   const totalSpendUSD = spending.reduce((a,s)=>a+s.amount,0);
   const surplusUSD = incomeUSD - totalSpendUSD;
@@ -2820,8 +2864,9 @@ async function persQuickAdd(){
   if(!amount||amount<=0){notify('Enter an amount',true);return;}
   const cat=window._qaCat||'Other';
   const desc=(document.getElementById('qa-desc')?.value||'').trim()||cat;
+  const currency=document.getElementById('qa-currency')?.value||persCurrency;
   try{
-    await _persCommitTx({desc,amount,cat,type:'expense',date:new Date().toISOString().slice(0,10)});
+    await _persCommitTx({desc,amount,cat,type:'expense',date:new Date().toISOString().slice(0,10),currency});
     const a=document.getElementById('qa-amount'); if(a) a.value='';
     const d=document.getElementById('qa-desc');   if(d) d.value='';
     if(a) a.focus();
@@ -2852,8 +2897,9 @@ async function persIncomeAdd(){
   if(!amount||amount<=0){notify('Enter an amount',true);return;}
   const cat=window._qaiCat||'Salary';
   const desc=(document.getElementById('qai-desc')?.value||'').trim()||cat;
+  const currency=document.getElementById('qai-currency')?.value||persCurrency;
   try{
-    await _persCommitTx({desc,amount,cat,type:'income',date:new Date().toISOString().slice(0,10)});
+    await _persCommitTx({desc,amount,cat,type:'income',date:new Date().toISOString().slice(0,10),currency});
     const a=document.getElementById('qai-amount'); if(a) a.value='';
     const d=document.getElementById('qai-desc');   if(d) d.value='';
     if(a) a.focus();
@@ -2888,6 +2934,10 @@ function openTransactionModal(type,editTx){
   setV('tx-amount', isEdit?editTx.amount:(document.getElementById('qa-amount')?.value||''));
   setV('tx-desc',   isEdit?editTx.desc:(document.getElementById('qa-desc')?.value||''));
   setV('tx-date',   isEdit?(editTx.date||new Date().toISOString().slice(0,10)):new Date().toISOString().slice(0,10));
+  // Currency picker: populate options, then default (new → view currency; edit →
+  // the transaction's OWN stored currency so it shows and can be changed).
+  _ensureTxCurrencyOptions();
+  const _curEl=document.getElementById('tx-currency'); if(_curEl) _curEl.value = isEdit ? _txCurOf(editTx) : persCurrency;
   const titleEl=document.getElementById('txm-title'); if(titleEl) titleEl.textContent=isEdit?'Edit transaction':'Add transaction';
   const btnEl=document.getElementById('txm-save-btn'); if(btnEl) btnEl.textContent=isEdit?'Save changes':'Add transaction';
   window._txmCat = isEdit?editTx.cat:(window._qaCat||(t==='income'?'Other Income':'Other'));
@@ -2942,6 +2992,7 @@ async function saveTransaction(){
   const cat=window._txmCat||'Other';
   const type=window._txmType||'expense';
   const date=document.getElementById('tx-date')?.value||new Date().toISOString().slice(0,10);
+  const currency=document.getElementById('tx-currency')?.value||persCurrency;
   const editId=document.getElementById('tx-edit-id')?.value||'';
   const recurring=!!document.getElementById('tx-recurring')?.checked;
   const recurringId=document.getElementById('tx-recurring-id')?.value||'';
@@ -2957,7 +3008,7 @@ async function saveTransaction(){
     let profileId = recurring ? (recurringId ? Number(recurringId) : null) : null;
     try{
       if(recurring){
-        const _body={description:desc,category:cat,amount,tx_type:type,frequency,status:'active',end_date:endDate};
+        const _body={description:desc,category:cat,amount,tx_type:type,frequency,status:'active',end_date:endDate,currency};
         if(recurringId){
           const res=await fetch('/api/recurring-personal-transactions/'+recurringId,{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',
             body:JSON.stringify(_body)});
@@ -2976,7 +3027,7 @@ async function saveTransaction(){
       }
     }catch(re){notify('Saved, but recurring setup failed — '+(re.message||''),true);}
     // Commit the occurrence, linking it to (profileId) or clearing it from (null) the profile.
-    await _persCommitTx({desc,amount,cat,type,date,editId:editId||null,recurringProfileId:profileId});
+    await _persCommitTx({desc,amount,cat,type,date,editId:editId||null,recurringProfileId:profileId,currency});
     closeModal('transaction-modal');
     notify(editId?'Transaction updated ✦':(recurring?'Recurring expense set up ✦':'Transaction added ✦'));
   }catch(e){notify('Error: '+(e.message||'Failed to save'));}
@@ -2988,8 +3039,8 @@ function editPersTx(dbId){
 }
 // Single commit path for BOTH quick-add and the modal → always refreshes the
 // rebuilt personal pipeline (list, tiles, donut) + the main dashboard.
-async function _persCommitTx({desc,amount,cat,type,date,editId,recurringProfileId}){
-  const body={description:desc,category:cat,amount,tx_type:type,tx_date:date};
+async function _persCommitTx({desc,amount,cat,type,date,editId,recurringProfileId,currency}){
+  const body={description:desc,category:cat,amount,tx_type:type,tx_date:date,currency:currency||persCurrency};
   // Only send the link when the caller supplies it (saveTransaction). Quick-add
   // leaves it undefined → server stores null (one-time). On edit, null unlinks.
   if(recurringProfileId!==undefined) body.recurring_profile_id=recurringProfileId;
@@ -3090,8 +3141,8 @@ async function savePersonalSalary(){
       window.ownerPayrollByEntity=ownerPayrollByEntity;
       if(entity?.active){ownerPayroll=ownerPayrollByEntity[activeIdx];window.ownerPayroll=ownerPayroll;}
     }
-    // Immediately update UI — don't wait for API round-trip
-    basePersonalIncome=Math.round(gross*(1-taxRate/100));
+    // Immediately update UI — don't wait for API round-trip. (Income refreshes once
+    // loadPersonalFinance() reloads the linked salary profile + occurrences below.)
     if(typeof renderPersonal==='function') renderPersonal();
     if(typeof syncAllPayrollsToPersonal==='function') syncAllPayrollsToPersonal();
     if(typeof loadPersonalFinance==='function') await loadPersonalFinance();
@@ -3211,16 +3262,25 @@ function _renderPersTxList(){
     if(balRow) balRow.style.display='none';
     return;
   }
-  let running=0;
+  const _curMap=(typeof CURRENCIES!=='undefined'?CURRENCIES:null)||window.CURRENCIES||{};
+  let running=0;   // accumulated in USD so mixed-currency rows are additive
   el.innerHTML=txs.map(t=>{
-    running+=t.type==='income'?t.amount:-t.amount;
+    const _c=_txCurOf(t);
+    running+=(t.type==='income'?1:-1)*_safeFX(t.amount,_c,'USD');
     const m=persCatMeta(t.cat);
+    // Ledger shows each row in its OWN currency (the exact figure entered), with a
+    // muted ≈ conversion into the view currency when they differ, and the ISO code on
+    // the meta line for disambiguation — so a mixed-currency list stays legible.
+    const _nsym=(_curMap[_c]||{symbol:''}).symbol||'';
+    const _native=_nsym+Math.round(Math.abs(t.amount)).toLocaleString();
+    const _conv=(_c!==persCurrency)?` <span style="color:var(--t3);font-size:10px;font-weight:400">≈ ${SPfromFull(t.amount,_c)}</span>`:'';
+    const _codeTag=(_c!==persCurrency)?` · ${esc(_c)}`:'';
     return `<div class="tx-row pers-tx-row" style="align-items:center">
       <div class="tx-left" style="flex:1;min-width:0">
         <div class="tx-icon" style="background:${m.bg};color:${m.color}">${persCatIconSvg(m.icon)}</div>
-        <div style="min-width:0"><div class="tx-name">${esc(t.desc)}</div><div class="tx-cat">${esc(t.cat)} · ${esc(t.date)}</div></div>
+        <div style="min-width:0"><div class="tx-name">${esc(t.desc)}</div><div class="tx-cat">${esc(t.cat)} · ${esc(t.date)}${_codeTag}</div></div>
       </div>
-      <div class="tx-amt ${t.type==='income'?'up':'dn'}" style="margin-right:6px">${t.type==='income'?'+':'-'}${SP(t.amount)}</div>
+      <div class="tx-amt ${t.type==='income'?'up':'dn'}" style="margin-right:6px">${t.type==='income'?'+':'-'}${_native}${_conv}</div>
       ${t._dbId?`<button class="tx-act tx-edit" onclick="editPersTx(${t._dbId})" title="Edit transaction" aria-label="Edit transaction"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/></svg></button>`:''}
       ${t._dbId?`<button class="tx-act tx-del" onclick="deletePersonalTransaction(${t._dbId})" style="font-size:12px" title="Delete transaction" aria-label="Delete transaction">✕</button>`:''}
     </div>`;
@@ -3288,7 +3348,11 @@ function _applyPersFilter(){
   persTransactions=window._allPersTxs.filter(t=>{
     const d=new Date(t.date);return d>=from&&d<=to;
   });
-  window._persSideIncome=persTransactions.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+  // Per-row FX normalization: each personal amount is stored in its OWN currency;
+  // every aggregate below sums in USD via _fxu so mixed-currency rows are additive.
+  // (No amount is ever stored as USD — normalization happens only here, at read.)
+  const _fxu=(amt,cur)=>_safeFX(amt, cur||'USD', 'USD');
+  window._persSideIncome=persTransactions.filter(t=>t.type==='income').reduce((a,t)=>a+_fxu(t.amount,_txCurOf(t)),0);
 
   // ── SINGLE-REPRESENTATION period rule for income AND spending ───────────────
   // Every source is counted from the OCCURRENCES actually present in the window —
@@ -3312,16 +3376,22 @@ function _applyPersFilter(){
     if(seenSource.has(t.recurringProfileId)) return;   // dedupe: one scaled figure per source
     seenSource.add(t.recurringProfileId);
     const p=profById.get(t.recurringProfileId);
-    const scaled=_persMonthlyEquiv(p.amount,p.frequency)*monthsInWindow;
+    // Normalize the profile's native amount to USD BEFORE scaling to monthly-equiv.
+    const scaled=_persMonthlyEquiv(_fxu(p.amount,p.currency),p.frequency)*monthsInWindow;
     if((p.tx_type||'expense')==='income'){ recurIncome+=scaled; }
     else { const c=CAT_GROUP[p.category]||'Other'; catTotals[c]=(catTotals[c]||0)+scaled; }
   });
-  // One-time (and any unlinked) rows — actual amounts, counted once.
-  persTransactions.filter(t=>!isRecur(t)&&t.type==='expense').forEach(t=>{const c=CAT_GROUP[t.cat]||'Other';catTotals[c]=(catTotals[c]||0)+t.amount;});
+  // One-time (and any unlinked) rows — actual amounts (USD-normalized), counted once.
+  persTransactions.filter(t=>!isRecur(t)&&t.type==='expense').forEach(t=>{const c=CAT_GROUP[t.cat]||'Other';catTotals[c]=(catTotals[c]||0)+_fxu(t.amount,_txCurOf(t));});
   spending=Object.entries(catTotals).map(([label,amount])=>({label,amount,color:CAT_COLOR[label]||'var(--t3)',budget:0}));
-  const oneTimeIncome=persTransactions.filter(t=>!isRecur(t)&&t.type==='income').reduce((a,t)=>a+t.amount,0);
-  // Income = salary (base × months) + one-time income in window + scaled recurring income.
-  window._persPeriodIncome=basePersonalIncome*monthsInWindow+oneTimeIncome+recurIncome;
+  const oneTimeIncome=persTransactions.filter(t=>!isRecur(t)&&t.type==='income').reduce((a,t)=>a+_fxu(t.amount,_txCurOf(t)),0);
+  // UNIFIED income (USD-normalized): one-time income in-window + scaled recurring
+  // income. Salary is NO LONGER a separate term — it is a recurring income profile
+  // counted here like any other. Expose the split so the income-sources card and the
+  // tax estimate read the SAME figures the KPI does (consistency, no re-derivation).
+  window._persPeriodRecurIncome=recurIncome;
+  window._persPeriodOneTimeIncome=oneTimeIncome;
+  window._persPeriodIncome=oneTimeIncome+recurIncome;
   const totalInc=window._persPeriodIncome;
   const totalExp=spending.reduce((a,s)=>a+s.amount,0);
   baseNetWorth=Math.max(0,totalInc-totalExp);
@@ -3345,28 +3415,17 @@ async function loadPersonalFinance(){
       console.warn('[PersFinance] /api/personal-transactions returned',r.status,'— continuing without transactions');
     } else {
       const txs=await r.json();
-      window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,type:t.tx_type||'expense',date:(t.tx_date||t.created_at||'').slice(0,10),recurringProfileId:(t.recurring_profile_id!=null?Number(t.recurring_profile_id):null)}));
+      window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,currency:t.currency||'USD',type:t.tx_type||'expense',date:(t.tx_date||t.created_at||'').slice(0,10),recurringProfileId:(t.recurring_profile_id!=null?Number(t.recurring_profile_id):null)}));
     }
     // Active recurring profiles feed the period-KPI projection (base × months).
     try{
       const rr=await fetch('/api/recurring-personal-transactions',{credentials:'include'});
-      window._persRecurring = rr.ok ? ((await rr.json())||[]).map(p=>({id:p.id,description:p.description||'',category:p.category||'Other',amount:parseFloat(p.amount)||0,tx_type:p.tx_type||'expense',frequency:p.frequency||'Monthly',status:p.status||'active',end_date:p.end_date||null})) : (window._persRecurring||[]);
+      window._persRecurring = rr.ok ? ((await rr.json())||[]).map(p=>({id:p.id,description:p.description||'',category:p.category||'Other',amount:parseFloat(p.amount)||0,currency:p.currency||'USD',tx_type:p.tx_type||'expense',frequency:p.frequency||'Monthly',status:p.status||'active',end_date:p.end_date||null})) : (window._persRecurring||[]);
     }catch(_){ window._persRecurring=window._persRecurring||[]; }
-    try{
-      const prRes=await fetch('/api/personal-salary',{credentials:'include'});
-      const ownerRows=await prRes.json();
-      console.log('[PersFinance] ownerRows:',ownerRows);
-      if(Array.isArray(ownerRows)&&ownerRows.length>0){
-        basePersonalIncome=ownerRows.reduce((sum,r)=>{
-          const gross=parseFloat(r.gross)||0;
-          const tax=parseFloat(r.tax_rate)||0;
-          const net=Math.round(gross*(1-tax/100));
-          console.log('[PersFinance] owner row — gross:',gross,'tax:',tax,'net:',net);
-          return sum+net;
-        },0);
-        console.log('[PersFinance] basePersonalIncome set to:',basePersonalIncome);
-      }
-    }catch(prErr){console.warn('[Personal] Salary fetch failed:',prErr.message);}
+    // NOTE: owner salary is no longer a separate `basePersonalIncome` term. It is a
+    // linked recurring personal-income profile (created by the payroll sync), so it
+    // flows through the SAME occurrence-driven projection as any other recurring
+    // income in _applyPersFilter — one representation, no double-count, currency-aware.
     // Real assets/liabilities + net-worth snapshots.
     try{
       const aRes=await fetch('/api/personal-accounts',{credentials:'include'});
@@ -3495,9 +3554,13 @@ window.deletePersAccount=async function(id){
 };
 
 function renderPersonalSections(){
-  const salary=basePersonalIncome;
-  const sideIncome=window._persSideIncome||0;
-  const totalInc=salary+sideIncome;
+  // Income breakdown from the SAME period figures the KPI uses (USD-normalized).
+  // Recurring income (salary + any other recurring source, projected ×months) and
+  // one-time income in-window. No phantom doubled "side income": the salary lives in
+  // the recurring bucket, not duplicated as a separate base term.
+  const recurInc=window._persPeriodRecurIncome||0;
+  const oneTimeInc=window._persPeriodOneTimeIncome||0;
+  const totalInc=recurInc+oneTimeInc;
   const totalExp=spending.reduce((a,s)=>a+s.amount,0);
 
   // Income sources
@@ -3507,8 +3570,8 @@ function renderPersonalSections(){
       inEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No income recorded — add payroll or income transactions</div>';
     }else{
       const rows=[];
-      if(salary>0) rows.push({label:'Salary (payroll)',amount:salary,color:'var(--acc)'});
-      if(sideIncome>0) rows.push({label:'Side income / freelance',amount:sideIncome,color:'var(--green)'});
+      if(recurInc>0) rows.push({label:'Recurring income',amount:recurInc,color:'var(--acc)'});
+      if(oneTimeInc>0) rows.push({label:'One-time income',amount:oneTimeInc,color:'var(--green)'});
       inEl.innerHTML=rows.map(r=>`<div class="bar-row"><span class="bar-label">${r.label}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(r.amount/totalInc*100)}%;background:${r.color}"></div></div><span class="bar-val">${SP(r.amount)}</span></div>`).join('')
         +'<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total income</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)">'+SP(totalInc)+'</span></div>';
     }
@@ -3565,7 +3628,7 @@ function renderPersonalSections(){
   const catEl=document.getElementById('expense-cat-list');
   if(catEl){
     const rawCats={};
-    persTransactions.filter(t=>t.type==='expense').forEach(t=>{rawCats[t.cat]=(rawCats[t.cat]||0)+t.amount;});
+    persTransactions.filter(t=>t.type==='expense').forEach(t=>{rawCats[t.cat]=(rawCats[t.cat]||0)+_safeFX(t.amount,_txCurOf(t),'USD');});
     const catEntries=Object.entries(rawCats).sort((a,b)=>b[1]-a[1]);
     if(catEntries.length===0){
       catEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No expenses recorded yet</div>';
@@ -3582,10 +3645,16 @@ function renderPersonalSections(){
     if(typeof renderPersSpendDonut==='function') renderPersSpendDonut(catEntries);
   }
 
-  // Tax estimate
+  // Tax estimate — monthly income basis (USD-normalized), consistent with the KPI:
+  // monthly recurring income (period recurring ÷ months) + one-time income dated in
+  // the CURRENT calendar month. Recurring is annualized ×12; one-time is not scaled
+  // beyond the month it fell in (it isn't recurring).
   const taxEl=document.getElementById('tax-estimate-list');
   if(taxEl){
-    const monthlyInc=basePersonalIncome+(window._persSideIncome||0);
+    const _monthlyRecur=(window._persPeriodRecurIncome||0)/(window._persPeriodMonths||1);
+    const _mNow=new Date(); const _mKey=_mNow.getFullYear()+'-'+String(_mNow.getMonth()+1).padStart(2,'0');
+    const _oneTimeThisMonth=(window._allPersTxs||[]).filter(t=>t.type==='income'&&t.recurringProfileId==null&&String(t.date||'').slice(0,7)===_mKey).reduce((a,t)=>a+_safeFX(t.amount,_txCurOf(t),'USD'),0);
+    const monthlyInc=_monthlyRecur+_oneTimeThisMonth;
     if(monthlyInc===0){
       taxEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Add income to see tax estimate</div>';
     }else{

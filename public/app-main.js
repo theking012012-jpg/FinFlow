@@ -543,6 +543,14 @@ const ROLES = {
 let currentRole = 'owner';
 let currentUserPlan = 'pro';
 
+// Accessible "Retry" control for the scoped three-state (loading / empty / failed)
+// data cards. Returns a REAL <button> — natively focusable and Enter/Space-activatable
+// — styled as an inline link, so the failure state doesn't add a new a11y gap.
+// `onclick` is a JS expression string invoked in global scope.
+window._ffRetryBtn = function(onclick, label){
+  return '<button type="button" class="ff-retry" onclick="'+onclick+'">'+(label||'Retry')+'</button>';
+};
+
 function showLoginForm(){
   document.getElementById('login-form-panel').style.display='';
   document.getElementById('register-form-panel').style.display='none';
@@ -1775,6 +1783,10 @@ function refreshAllPeriodData(){
   const d=getPeriodData();
   // Update period label in topbar
   document.getElementById('period-label').textContent=d.label;
+  // Keep the month navigator label fresh too (previously only shiftMonth set it, so
+  // it could show a stale value on first entry into Month view).
+  const _mnl=document.getElementById('month-nav-label');
+  if(_mnl && typeof MONTH_FULL!=='undefined' && MONTH_FULL.length) _mnl.textContent=MONTH_FULL[currentMonthIdx];
   updateDashboard(d);
   updateCashflow(d);
   updateExpenses(d);
@@ -1782,6 +1794,28 @@ function refreshAllPeriodData(){
   updateCharts(d);
   updateAI(d);
 }
+
+// Text form of the active period's date range — for the AI suggested-prompt seed
+// (kept dynamic instead of a hardcoded "May 2025 – April 2026").
+window._ffPeriodRangeText = function(){
+  return (typeof MONTH_FULL!=='undefined' && MONTH_FULL.length) ? (MONTH_FULL[0]+' – '+MONTH_FULL[11]) : 'the current fiscal year';
+};
+// Populate the topbar + AI date labels from the COMPUTED fiscal range. Called on load
+// (so no stale hardcoded sample date ever shows before the first dashboard render) and
+// after a fiscal-year change. Safe pre-auth: only reads MONTH_FULL / currentPeriod.
+function _ffSyncPeriodLabels(){
+  try{
+    const d=getPeriodData();
+    const set=(id,v)=>{const el=document.getElementById(id); if(el && v!=null) el.textContent=v;};
+    set('period-label', d.label);
+    set('ai-period-label', d.label);
+    if(typeof MONTH_FULL!=='undefined' && MONTH_FULL.length)
+      set('month-nav-label', MONTH_FULL[typeof currentMonthIdx!=='undefined'?currentMonthIdx:0]);
+  }catch(_){}
+}
+window._ffSyncPeriodLabels=_ffSyncPeriodLabels;
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', _ffSyncPeriodLabels);
+else _ffSyncPeriodLabels();
 
 // ════════════════════════════════════════════
 // DASHBOARD
@@ -4161,6 +4195,11 @@ async function saveSettings(){
     await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(b) });
     if (window.CURRENT_USER && b.name) window.CURRENT_USER.name = b.name;
     notify('Settings saved ✦');
+    // A fiscal-year change must re-sync the computed month range everywhere (header,
+    // month nav, chart, AI) — otherwise MONTH_FULL only recomputes on the next entity
+    // load, so the header/chart lag until then.
+    if(typeof computeMonthFull==='function'){ MONTH_FULL=computeMonthFull(); MONTHS=MONTH_FULL.map(m=>m.split(' ')[0]); }
+    if(typeof refreshAllPeriodData==='function') refreshAllPeriodData(); else _ffSyncPeriodLabels();
   } catch(e) { notify('Failed to save settings'); }
 }
 

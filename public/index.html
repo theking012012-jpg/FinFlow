@@ -957,6 +957,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 .qa-desc:focus{border-color:var(--acc)}
 .qa-cur-sel{flex:0 0 auto;width:78px;padding:9px 6px;border:1px solid var(--bd2);border-radius:var(--radius);background:var(--bg1);color:var(--t1);font-size:12px;font-family:var(--font-mono);outline:none;cursor:pointer;transition:border-color .13s}
 .qa-cur-sel:focus{border-color:var(--acc)}
+/* Accessible inline "Retry" control for failed data-load states (real <button>). */
+.ff-retry{background:none;border:none;padding:0;margin:0;font:inherit;color:var(--acc);cursor:pointer;text-decoration:underline;border-radius:3px}
+.ff-retry:hover{color:var(--acc-light)}
+.ff-retry:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .qa-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:.6rem}
 .cat-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 9px 4px 8px;border:1px solid var(--bd2);border-radius:20px;font-size:11px;color:var(--t2);cursor:pointer;background:var(--bg1);transition:all .12s;white-space:nowrap;user-select:none;font-family:var(--font)}
 .cat-pill:hover{border-color:var(--t3);color:var(--t1)}
@@ -1224,12 +1228,12 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <svg viewBox="0 0 16 16"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
         </button>
         <span class="page-title" id="pageTitle">Dashboard</span>
-        <span class="period-label" id="period-label">Full Year · May 2025 – Apr 2026</span>
+        <span class="period-label" id="period-label">—</span>
       </div>
       <div class="topbar-right">
         <div class="month-nav" id="month-nav" style="display:none">
           <button onclick="shiftMonth(-1)">‹</button>
-          <span id="month-nav-label">Apr 2026</span>
+          <span id="month-nav-label">—</span>
           <button onclick="shiftMonth(1)" id="month-next">›</button>
         </div>
         <button class="btn btn-ghost" onclick="toggleTheme()" id="themeBtn">☀ Light</button>
@@ -2599,7 +2603,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- AI INSIGHTS -->
       <div class="page" id="page-ai">
         <div class="ai-box">
-          <div class="ai-head"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="8" y1="12.5" x2="8" y2="15"/><line x1="1" y1="8" x2="3.5" y2="8"/><line x1="12.5" y1="8" x2="15" y2="8"/></svg>AI insights — <span id="ai-period-label">Full Year 2025–2026</span></div>
+          <div class="ai-head"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="8" y1="12.5" x2="8" y2="15"/><line x1="1" y1="8" x2="3.5" y2="8"/><line x1="12.5" y1="8" x2="15" y2="8"/></svg>AI insights — <span id="ai-period-label">—</span></div>
           <div id="ai-insights-list">
             <div class="ai-insight" style="color:var(--t3)">Ask the AI below to generate insights based on your actual data.</div>
           </div>
@@ -2610,7 +2614,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div style="display:flex;flex-direction:column;gap:6px">
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('What are my biggest financial risks for the next quarter?')" style="text-align:left;font-size:12px;justify-content:flex-start">Biggest risks next quarter ↗</button>
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('How can I reduce business expenses without cutting headcount or salary?')" style="text-align:left;font-size:12px;justify-content:flex-start">Reduce expenses without cuts ↗</button>
-              <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('Generate a full annual financial health report with recommendations for May 2025 - April 2026')" style="text-align:left;font-size:12px;justify-content:flex-start">Generate annual health report ↗</button>
+              <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('Generate a full annual financial health report with recommendations for '+(window._ffPeriodRangeText?window._ffPeriodRangeText():'the current fiscal year'))" style="text-align:left;font-size:12px;justify-content:flex-start">Generate annual health report ↗</button>
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('Should I hire another employee given my current revenue and runway?')" style="text-align:left;font-size:12px;justify-content:flex-start">Should I hire another employee? ↗</button>
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('What is my optimal salary as a business owner given current revenue and expenses?')" style="text-align:left;font-size:12px;justify-content:flex-start">What salary should I pay myself? ↗</button>
             </div>

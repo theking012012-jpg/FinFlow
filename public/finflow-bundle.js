@@ -1503,9 +1503,35 @@
     // ════════════════════════════════════════════
     // BUDGET TARGETS — load + KPI wiring
     // ════════════════════════════════════════════
+    // Status-aware GET for the scoped three-state loaders — attaches the HTTP status
+    // so a genuine failure (5xx / network) is distinguishable from logged-out (401/403).
+    // Local to this scoped surface; the shared api() copies are left untouched.
+    async function apiGetStatus(path) {
+      const res = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
+      if (!res.ok) { const e = new Error('API error ' + res.status); e.status = res.status; throw e; }
+      return res.json();
+    }
+    // Budget KPI card three-state renderer. 'loaded'/'empty' come from the normal
+    // render below (real values / "No targets set"); this handles loading + failed.
+    function _budgetSetState(state) {
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      const sub = document.getElementById('budget-total-sub');
+      if (state === 'loading') {
+        ['budget-total', 'budget-spent', 'budget-remaining', 'budget-variance'].forEach(id => set(id, '…'));
+        if (sub) { sub.textContent = 'Loading…'; sub.className = 'mc-change neutral'; }
+      } else if (state === 'error') {
+        ['budget-total', 'budget-spent', 'budget-remaining', 'budget-variance'].forEach(id => set(id, '—'));
+        if (sub) {
+          sub.innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('window._loadBudgetFromDB&&window._loadBudgetFromDB()') : 'Retry');
+          sub.className = 'mc-change dn';
+        }
+      }
+    }
+
     async function loadBudgetFromDB() {
+      _budgetSetState('loading');
       try {
-        const res = await api('GET', '/api/budget-targets');
+        const res = await apiGetStatus('/api/budget-targets');
         if (!res || typeof res !== 'object') return;
         // Accept both shapes: flat {Rent:5000} or wrapped {targets:{Rent:5000}}
         const targets = (res.targets && typeof res.targets === 'object') ? res.targets : res;
@@ -1557,7 +1583,11 @@
 
         if (typeof renderBudget === 'function') renderBudget();
       } catch (e) {
+        // Logged-out (401/403) or pre-auth: stay silent — correct pre-login behavior.
+        // Only a genuinely authenticated failure surfaces the in-place error state.
+        if (!window._ffAuthed || e.status === 401 || e.status === 403) return;
         console.warn('[Budget] Load failed:', e.message);
+        _budgetSetState('error');
       }
     }
     window._loadBudgetFromDB = loadBudgetFromDB;
@@ -4520,13 +4550,38 @@ function clearAIChat(){
   // ══════════════════════════════════════════════════════
   // 3. REPORTS — enrich top metrics with live data
   // ══════════════════════════════════════════════════════
+  // Status-aware GET for this scoped surface — attaches HTTP status so a genuine
+  // failure (5xx / network) is distinguishable from logged-out (401/403). Local;
+  // the shared api() copies are left untouched.
+  async function apiGetStatus(path) {
+    const res = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) { const e = new Error('API error ' + res.status); e.status = res.status; throw e; }
+    return res.json();
+  }
+  // Reports KPI three-state renderer. 'loaded' is set inline below; this covers the
+  // loading and load-failed states over the #page-reports metric cards.
+  function _reportsSetState(state) {
+    const mcs  = document.querySelectorAll('#page-reports .mc-val');
+    const chgs = document.querySelectorAll('#page-reports .mc-change');
+    if (state === 'loading') {
+      [0, 1, 2].forEach(i => { if (mcs[i]) mcs[i].textContent = '…'; });
+      if (chgs[1]) { chgs[1].textContent = 'Loading…'; chgs[1].className = 'mc-change neutral'; }
+    } else if (state === 'error') {
+      [0, 1, 2].forEach(i => { if (mcs[i]) mcs[i].textContent = '—'; });
+      if (chgs[1]) {
+        chgs[1].innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('window.renderReports&&window.renderReports()') : 'Retry');
+        chgs[1].className = 'mc-change dn';
+      }
+    }
+  }
   const _origRenderReports = typeof renderReports === 'function' ? renderReports : null;
   window.renderReports = async function () {
     if (_origRenderReports) _origRenderReports();   // static lists render immediately
+    _reportsSetState('loading');
     try {
       const [invoices, expenses] = await Promise.all([
-        api('GET', '/api/invoices'),
-        api('GET', '/api/expenses'),
+        apiGetStatus('/api/invoices'),
+        apiGetStatus('/api/expenses'),
       ]);
       const revenue  = invoices.filter(i => i.status?.toLowerCase() === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
       const expTotal = expenses.reduce((s, ex) => s + (ex.amount || 0), 0);
@@ -4540,7 +4595,12 @@ function clearAIChat(){
       if (chgs[1]) { chgs[1].textContent = 'Paid revenue this period'; chgs[1].className = 'mc-change up'; }
       if (mcs[2])  mcs[2].textContent  = money(profit);
       if (chgs[2]) { chgs[2].textContent = profit >= 0 ? 'Net profit' : 'Net loss'; chgs[2].className = 'mc-change ' + (profit >= 0 ? 'up' : 'dn'); }
-    } catch (err) { /* static content still visible */ }
+    } catch (err) {
+      // Logged-out (401/403) or pre-auth: keep the static content, stay silent.
+      // Only a genuinely authenticated failure shows the in-place error state.
+      if (!window._ffAuthed || err.status === 401 || err.status === 403) return;
+      _reportsSetState('error');
+    }
   };
 
   // ══════════════════════════════════════════════════════
@@ -5271,16 +5331,44 @@ function clearAIChat(){
     set('inv-paid-pct',  pct + '% collected');
   }
 
+  // Status-aware GET for this scoped surface — attaches HTTP status so a genuine
+  // failure (5xx / network) is distinguishable from logged-out (401/403). Local;
+  // the shared api() copies are left untouched.
+  async function apiGetStatus(path) {
+    const res = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) { const e = new Error('API error ' + res.status); e.status = res.status; throw e; }
+    return res.json();
+  }
+  // Dashboard KPI three-state renderer. 'loaded' comes from updateKPIs/_forceKPIs on
+  // the success path; this covers loading + load-failed so an authenticated failure
+  // shows in-place instead of misleading $0s.
+  function _dashSetState(state) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const ids = ['d-rev', 'd-exp', 'd-profit', 'd-outstanding', 'd-invest'];
+    const chg = document.getElementById('d-rev-chg');
+    if (state === 'loading') {
+      ids.forEach(id => set(id, '…'));
+      if (chg) { chg.textContent = 'Loading…'; chg.className = 'mc-change'; }
+    } else if (state === 'error') {
+      ids.forEach(id => set(id, '—'));
+      if (chg) {
+        chg.innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('window._bootDashboardWiring&&window._bootDashboardWiring()') : 'Retry');
+        chg.className = 'mc-change dn';
+      }
+    }
+  }
+
   // ── Main boot: load data and wire everything ─────────────────────
   async function bootDashboardWiring() {
+    _dashSetState('loading');
     try {
       // Get active entity_id to filter correctly
       const activeEntity = (window.ENTITIES || []).find(e => e.active);
       const eid = activeEntity?._dbId;
       const eq = eid ? '?entity_id=' + eid : '';
       const [invoices, expenses] = await Promise.all([
-        api('GET', '/api/invoices' + eq),
-        api('GET', '/api/expenses' + eq),
+        apiGetStatus('/api/invoices' + eq),
+        apiGetStatus('/api/expenses' + eq),
       ]);
 
       // Store globally so period switching can re-use
@@ -5347,6 +5435,10 @@ function clearAIChat(){
       console.log('[Dashboard Wiring] ✅ Real data loaded — invoices:', invoices.length, 'expenses:', expenses.length);
     } catch (err) {
       console.warn('[Dashboard Wiring] Could not load real data:', err.message);
+      // Logged-out (401/403) or pre-auth: stay silent — correct pre-login behavior.
+      // Only a genuinely authenticated failure surfaces the in-place error state.
+      if (!window._ffAuthed || err.status === 401 || err.status === 403) return;
+      _dashSetState('error');
     }
   }
 

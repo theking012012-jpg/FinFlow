@@ -310,16 +310,44 @@
     set('inv-paid-pct',  pct + '% collected');
   }
 
+  // Status-aware GET for this scoped surface — attaches HTTP status so a genuine
+  // failure (5xx / network) is distinguishable from logged-out (401/403). Local;
+  // the shared api() copies are left untouched.
+  async function apiGetStatus(path) {
+    const res = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) { const e = new Error('API error ' + res.status); e.status = res.status; throw e; }
+    return res.json();
+  }
+  // Dashboard KPI three-state renderer. 'loaded' comes from updateKPIs/_forceKPIs on
+  // the success path; this covers loading + load-failed so an authenticated failure
+  // shows in-place instead of misleading $0s.
+  function _dashSetState(state) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const ids = ['d-rev', 'd-exp', 'd-profit', 'd-outstanding', 'd-invest'];
+    const chg = document.getElementById('d-rev-chg');
+    if (state === 'loading') {
+      ids.forEach(id => set(id, '…'));
+      if (chg) { chg.textContent = 'Loading…'; chg.className = 'mc-change'; }
+    } else if (state === 'error') {
+      ids.forEach(id => set(id, '—'));
+      if (chg) {
+        chg.innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('window._bootDashboardWiring&&window._bootDashboardWiring()') : 'Retry');
+        chg.className = 'mc-change dn';
+      }
+    }
+  }
+
   // ── Main boot: load data and wire everything ─────────────────────
   async function bootDashboardWiring() {
+    _dashSetState('loading');
     try {
       // Get active entity_id to filter correctly
       const activeEntity = (window.ENTITIES || []).find(e => e.active);
       const eid = activeEntity?._dbId;
       const eq = eid ? '?entity_id=' + eid : '';
       const [invoices, expenses] = await Promise.all([
-        api('GET', '/api/invoices' + eq),
-        api('GET', '/api/expenses' + eq),
+        apiGetStatus('/api/invoices' + eq),
+        apiGetStatus('/api/expenses' + eq),
       ]);
 
       // Store globally so period switching can re-use
@@ -386,6 +414,10 @@
       console.log('[Dashboard Wiring] ✅ Real data loaded — invoices:', invoices.length, 'expenses:', expenses.length);
     } catch (err) {
       console.warn('[Dashboard Wiring] Could not load real data:', err.message);
+      // Logged-out (401/403) or pre-auth: stay silent — correct pre-login behavior.
+      // Only a genuinely authenticated failure surfaces the in-place error state.
+      if (!window._ffAuthed || err.status === 401 || err.status === 403) return;
+      _dashSetState('error');
     }
   }
 

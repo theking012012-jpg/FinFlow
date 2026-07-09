@@ -228,13 +228,38 @@
   // ══════════════════════════════════════════════════════
   // 3. REPORTS — enrich top metrics with live data
   // ══════════════════════════════════════════════════════
+  // Status-aware GET for this scoped surface — attaches HTTP status so a genuine
+  // failure (5xx / network) is distinguishable from logged-out (401/403). Local;
+  // the shared api() copies are left untouched.
+  async function apiGetStatus(path) {
+    const res = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
+    if (!res.ok) { const e = new Error('API error ' + res.status); e.status = res.status; throw e; }
+    return res.json();
+  }
+  // Reports KPI three-state renderer. 'loaded' is set inline below; this covers the
+  // loading and load-failed states over the #page-reports metric cards.
+  function _reportsSetState(state) {
+    const mcs  = document.querySelectorAll('#page-reports .mc-val');
+    const chgs = document.querySelectorAll('#page-reports .mc-change');
+    if (state === 'loading') {
+      [0, 1, 2].forEach(i => { if (mcs[i]) mcs[i].textContent = '…'; });
+      if (chgs[1]) { chgs[1].textContent = 'Loading…'; chgs[1].className = 'mc-change neutral'; }
+    } else if (state === 'error') {
+      [0, 1, 2].forEach(i => { if (mcs[i]) mcs[i].textContent = '—'; });
+      if (chgs[1]) {
+        chgs[1].innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('window.renderReports&&window.renderReports()') : 'Retry');
+        chgs[1].className = 'mc-change dn';
+      }
+    }
+  }
   const _origRenderReports = typeof renderReports === 'function' ? renderReports : null;
   window.renderReports = async function () {
     if (_origRenderReports) _origRenderReports();   // static lists render immediately
+    _reportsSetState('loading');
     try {
       const [invoices, expenses] = await Promise.all([
-        api('GET', '/api/invoices'),
-        api('GET', '/api/expenses'),
+        apiGetStatus('/api/invoices'),
+        apiGetStatus('/api/expenses'),
       ]);
       const revenue  = invoices.filter(i => i.status?.toLowerCase() === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
       const expTotal = expenses.reduce((s, ex) => s + (ex.amount || 0), 0);
@@ -248,7 +273,12 @@
       if (chgs[1]) { chgs[1].textContent = 'Paid revenue this period'; chgs[1].className = 'mc-change up'; }
       if (mcs[2])  mcs[2].textContent  = money(profit);
       if (chgs[2]) { chgs[2].textContent = profit >= 0 ? 'Net profit' : 'Net loss'; chgs[2].className = 'mc-change ' + (profit >= 0 ? 'up' : 'dn'); }
-    } catch (err) { /* static content still visible */ }
+    } catch (err) {
+      // Logged-out (401/403) or pre-auth: keep the static content, stay silent.
+      // Only a genuinely authenticated failure shows the in-place error state.
+      if (!window._ffAuthed || err.status === 401 || err.status === 403) return;
+      _reportsSetState('error');
+    }
   };
 
   // ══════════════════════════════════════════════════════

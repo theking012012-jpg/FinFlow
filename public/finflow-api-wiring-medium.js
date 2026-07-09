@@ -1073,9 +1073,35 @@
     // ════════════════════════════════════════════
     // BUDGET TARGETS — load + KPI wiring
     // ════════════════════════════════════════════
+    // Status-aware GET for the scoped three-state loaders — attaches the HTTP status
+    // so a genuine failure (5xx / network) is distinguishable from logged-out (401/403).
+    // Local to this scoped surface; the shared api() copies are left untouched.
+    async function apiGetStatus(path) {
+      const res = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
+      if (!res.ok) { const e = new Error('API error ' + res.status); e.status = res.status; throw e; }
+      return res.json();
+    }
+    // Budget KPI card three-state renderer. 'loaded'/'empty' come from the normal
+    // render below (real values / "No targets set"); this handles loading + failed.
+    function _budgetSetState(state) {
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+      const sub = document.getElementById('budget-total-sub');
+      if (state === 'loading') {
+        ['budget-total', 'budget-spent', 'budget-remaining', 'budget-variance'].forEach(id => set(id, '…'));
+        if (sub) { sub.textContent = 'Loading…'; sub.className = 'mc-change neutral'; }
+      } else if (state === 'error') {
+        ['budget-total', 'budget-spent', 'budget-remaining', 'budget-variance'].forEach(id => set(id, '—'));
+        if (sub) {
+          sub.innerHTML = 'Unable to load · ' + (window._ffRetryBtn ? window._ffRetryBtn('window._loadBudgetFromDB&&window._loadBudgetFromDB()') : 'Retry');
+          sub.className = 'mc-change dn';
+        }
+      }
+    }
+
     async function loadBudgetFromDB() {
+      _budgetSetState('loading');
       try {
-        const res = await api('GET', '/api/budget-targets');
+        const res = await apiGetStatus('/api/budget-targets');
         if (!res || typeof res !== 'object') return;
         // Accept both shapes: flat {Rent:5000} or wrapped {targets:{Rent:5000}}
         const targets = (res.targets && typeof res.targets === 'object') ? res.targets : res;
@@ -1127,7 +1153,11 @@
 
         if (typeof renderBudget === 'function') renderBudget();
       } catch (e) {
+        // Logged-out (401/403) or pre-auth: stay silent — correct pre-login behavior.
+        // Only a genuinely authenticated failure surfaces the in-place error state.
+        if (!window._ffAuthed || e.status === 401 || e.status === 403) return;
         console.warn('[Budget] Load failed:', e.message);
+        _budgetSetState('error');
       }
     }
     window._loadBudgetFromDB = loadBudgetFromDB;

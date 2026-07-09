@@ -388,7 +388,7 @@ html{overflow-x:hidden}
 .main{background:var(--bg2);display:flex;flex-direction:column;overflow:hidden;height:100svh}
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.5rem;background:var(--bg1);border-bottom:1px solid var(--bd);flex-shrink:0;gap:8px;min-height:54px}
 .topbar-left{display:flex;align-items:center;gap:10px;min-width:0}
-.page-title{font-size:16px;font-weight:600;color:var(--t1);white-space:nowrap;font-family:var(--font-display);letter-spacing:.03em}
+.page-title{font-size:16px;font-weight:600;color:var(--t1);white-space:nowrap;font-family:var(--font-display);letter-spacing:.03em;margin:0}
 .period-label{font-size:10.5px;color:var(--t3);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;align-self:flex-end;padding-bottom:1px}
 .topbar-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
 /* BUTTONS */
@@ -429,7 +429,7 @@ html{overflow-x:hidden}
 /* CARDS */
 .card{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-lg);padding:1rem 1.25rem;margin-bottom:1.25rem}
 .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.9rem}
-.card-title{font-size:14px;font-weight:400;color:var(--t1);font-family:var(--font-display);letter-spacing:.04em}
+.card-title{font-size:14px;font-weight:400;color:var(--t1);font-family:var(--font-display);letter-spacing:.04em;margin:0}
 .card-sub{font-size:11px;color:var(--t3);margin-top:2px}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem}.page-settings .two-col,.page-pricing .two-col{align-items:start}
 /* BARS */
@@ -1080,10 +1080,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;font-size:11.5px" onclick="openAddBizModal(event)">+ Add business</button>
       </div>
     </div>
-    <div class="nav-item active" onclick="showPage('dashboard',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="6.5" height="6.5" rx="1.2"/><rect x="8.5" y="1" width="6.5" height="6.5" rx="1.2"/><rect x="1" y="8.5" width="6.5" height="6.5" rx="1.2"/><rect x="8.5" y="8.5" width="6.5" height="6.5" rx="1.2"/></svg>Dashboard</div>
-    <div class="nav-item" onclick="showPage('banking',this)"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M1 6l7-4 7 4"/><rect x="3" y="6" width="2.5" height="6"/><rect x="6.75" y="6" width="2.5" height="6"/><rect x="10.5" y="6" width="2.5" height="6"/><line x1="1" y1="12" x2="15" y2="12"/></svg>Banking</div>
-    <div class="nav-item" onclick="showPage('bank-rec',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="10" rx="1"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="8" y1="5" x2="8" y2="11"/></svg>Bank Rec</div>
-    <div class="nav-item" onclick="showPage('fx',this)"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="5" cy="8" r="4"/><circle cx="11" cy="8" r="4"/><path d="M7 6l2 2-2 2"/></svg>FX / Currency</div>
+    <div class="nav-item active" onclick="showPage('dashboard',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('dashboard',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="6.5" height="6.5" rx="1.2"/><rect x="8.5" y="1" width="6.5" height="6.5" rx="1.2"/><rect x="1" y="8.5" width="6.5" height="6.5" rx="1.2"/><rect x="8.5" y="8.5" width="6.5" height="6.5" rx="1.2"/></svg>Dashboard</div>
+    <div class="nav-item" onclick="showPage('banking',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('banking',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M1 6l7-4 7 4"/><rect x="3" y="6" width="2.5" height="6"/><rect x="6.75" y="6" width="2.5" height="6"/><rect x="10.5" y="6" width="2.5" height="6"/><line x1="1" y1="12" x2="15" y2="12"/></svg>Banking</div>
+    <div class="nav-item" onclick="showPage('bank-rec',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('bank-rec',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="10" rx="1"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="8" y1="5" x2="8" y2="11"/></svg>Bank Rec</div>
+    <div class="nav-item" onclick="showPage('fx',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('fx',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="5" cy="8" r="4"/><circle cx="11" cy="8" r="4"/><path d="M7 6l2 2-2 2"/></svg>FX / Currency</div>
 
     <!-- MONEY IN group -->
     <div class="nav-group-header" id="grp-sales" onclick="toggleGroup('sales')" role="button" aria-expanded="false" aria-controls="nav-group-sales" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleGroup('sales')}">
@@ -1092,13 +1092,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <svg class="nav-group-arrow" id="arr-sales" viewBox="0 0 10 10" aria-hidden="true"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </div>
     <div class="nav-group" id="nav-group-sales"><div class="nav-group-inner">
-      <div class="nav-item nav-sub" onclick="showPage('invoices',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="11" x2="9" y2="11"/></svg>Invoices<span class="nav-badge" id="badge-inv">2</span></div>
-      <div class="nav-item nav-sub" onclick="showPage('customers',this)"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="5.5" cy="5" r="2.5"/><path d="M1 13c0-2.5 2-4.5 4.5-4.5"/><circle cx="11.5" cy="5" r="2.5"/><path d="M15 13c0-2.5-2-4.5-4.5-4.5"/></svg>Customers</div>
-      <div class="nav-item nav-sub" onclick="showPage('quotes',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="8" y2="8"/><path d="M9 11l1.5 1.5 2.5-2.5"/></svg>Quotes</div>
-      <div class="nav-item nav-sub" onclick="showPage('payments-received',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="4" width="14" height="10" rx="1.2"/><line x1="1" y1="8" x2="15" y2="8"/><path d="M4 11h3"/><path d="M10 11l1 1 2-2"/></svg>Payments Received</div>
-      <div class="nav-item nav-sub" onclick="showPage('sales-receipts',this)"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M2 1h12v14l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5V1z"/><line x1="5" y1="6" x2="11" y2="6"/><line x1="5" y1="9" x2="9" y2="9"/></svg>Sales Receipts</div>
-      <div class="nav-item nav-sub" onclick="showPage('recurring-invoices',this)"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M13 8A5 5 0 113 8"/><polyline points="13,4 13,8 9,8"/></svg>Recurring Invoices</div>
-      <div class="nav-item nav-sub" onclick="showPage('credit-notes',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.2"/><path d="M5 8h6M8 5v6"/></svg>Credit Notes</div>
+      <div class="nav-item nav-sub" onclick="showPage('invoices',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('invoices',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="11" x2="9" y2="11"/></svg>Invoices<span class="nav-badge" id="badge-inv">2</span></div>
+      <div class="nav-item nav-sub" onclick="showPage('customers',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('customers',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="5.5" cy="5" r="2.5"/><path d="M1 13c0-2.5 2-4.5 4.5-4.5"/><circle cx="11.5" cy="5" r="2.5"/><path d="M15 13c0-2.5-2-4.5-4.5-4.5"/></svg>Customers</div>
+      <div class="nav-item nav-sub" onclick="showPage('quotes',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('quotes',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="8" y2="8"/><path d="M9 11l1.5 1.5 2.5-2.5"/></svg>Quotes</div>
+      <div class="nav-item nav-sub" onclick="showPage('payments-received',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('payments-received',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="4" width="14" height="10" rx="1.2"/><line x1="1" y1="8" x2="15" y2="8"/><path d="M4 11h3"/><path d="M10 11l1 1 2-2"/></svg>Payments Received</div>
+      <div class="nav-item nav-sub" onclick="showPage('sales-receipts',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('sales-receipts',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M2 1h12v14l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5V1z"/><line x1="5" y1="6" x2="11" y2="6"/><line x1="5" y1="9" x2="9" y2="9"/></svg>Sales Receipts</div>
+      <div class="nav-item nav-sub" onclick="showPage('recurring-invoices',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('recurring-invoices',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M13 8A5 5 0 113 8"/><polyline points="13,4 13,8 9,8"/></svg>Recurring Invoices</div>
+      <div class="nav-item nav-sub" onclick="showPage('credit-notes',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('credit-notes',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.2"/><path d="M5 8h6M8 5v6"/></svg>Credit Notes</div>
     </div></div>
 
     <!-- MONEY OUT group -->
@@ -1108,18 +1108,18 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <svg class="nav-group-arrow" id="arr-purchases" viewBox="0 0 10 10" aria-hidden="true"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </div>
     <div class="nav-group" id="nav-group-purchases"><div class="nav-group-inner">
-      <div class="nav-item nav-sub" onclick="showPage('expenses',this)"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M6 9.5c0 .83.67 1.5 2 1.5s2-.67 2-1.5S9 8 8 8s-2-.67-2-1.5S7 5 8 5s2 .67 2 1.5"/></svg>Expenses</div>
-      <div class="nav-item nav-sub" onclick="showPage('bills',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="11" y2="8"/><path d="M5 11h4"/></svg>Bills<span class="nav-badge" id="badge-bills">3</span></div>
-      <div class="nav-item nav-sub" onclick="showPage('vendors',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="7" width="12" height="8" rx="1"/><path d="M5 7V5a3 3 0 016 0v2"/><circle cx="8" cy="11" r="1"/></svg>Vendors</div>
-      <div class="nav-item nav-sub" onclick="showPage('payments-made',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="4" width="14" height="10" rx="1.2"/><line x1="1" y1="8" x2="15" y2="8"/><path d="M4 11h3"/></svg>Payments Made</div>
-      <div class="nav-item nav-sub" onclick="showPage('recurring-bills',this)"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M3 8A5 5 0 1113 8"/><polyline points="3,4 3,8 7,8"/></svg>Recurring Bills</div>
-      <div class="nav-item nav-sub" onclick="showPage('vendor-credits',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.2"/><path d="M10 8H6M8 6l-2 2 2 2"/></svg>Vendor Credits</div>
+      <div class="nav-item nav-sub" onclick="showPage('expenses',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('expenses',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M6 9.5c0 .83.67 1.5 2 1.5s2-.67 2-1.5S9 8 8 8s-2-.67-2-1.5S7 5 8 5s2 .67 2 1.5"/></svg>Expenses</div>
+      <div class="nav-item nav-sub" onclick="showPage('bills',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('bills',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="11" y2="8"/><path d="M5 11h4"/></svg>Bills<span class="nav-badge" id="badge-bills">3</span></div>
+      <div class="nav-item nav-sub" onclick="showPage('vendors',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('vendors',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="7" width="12" height="8" rx="1"/><path d="M5 7V5a3 3 0 016 0v2"/><circle cx="8" cy="11" r="1"/></svg>Vendors</div>
+      <div class="nav-item nav-sub" onclick="showPage('payments-made',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('payments-made',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="4" width="14" height="10" rx="1.2"/><line x1="1" y1="8" x2="15" y2="8"/><path d="M4 11h3"/></svg>Payments Made</div>
+      <div class="nav-item nav-sub" onclick="showPage('recurring-bills',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('recurring-bills',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M3 8A5 5 0 1113 8"/><polyline points="3,4 3,8 7,8"/></svg>Recurring Bills</div>
+      <div class="nav-item nav-sub" onclick="showPage('vendor-credits',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('vendor-credits',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.2"/><path d="M10 8H6M8 6l-2 2 2 2"/></svg>Vendor Credits</div>
     </div></div>
 
     <!-- PAYROLL & PEOPLE -->
-    <div class="nav-item" onclick="showPage('payroll',this)" id="nav-payroll"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="6" cy="5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/><path d="M10 9l1.5 1.5L14 8"/></svg>Payroll</div>
-    <div class="nav-item" onclick="showPage('inventory',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="6" width="14" height="9" rx="1.2"/><path d="M4 6V4a4 4 0 018 0v2"/></svg>Inventory<span class="nav-badge nav-badge-amber" id="badge-inv2">2</span></div>
-    <div class="nav-item" onclick="showPage('items',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="6" width="14" height="9" rx="1.2"/><path d="M4 6V4a4 4 0 018 0v2"/><line x1="5" y1="10" x2="11" y2="10"/></svg>Items</div>
+    <div class="nav-item" onclick="showPage('payroll',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('payroll',this)}" id="nav-payroll"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="6" cy="5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/><path d="M10 9l1.5 1.5L14 8"/></svg>Payroll</div>
+    <div class="nav-item" onclick="showPage('inventory',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('inventory',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="6" width="14" height="9" rx="1.2"/><path d="M4 6V4a4 4 0 018 0v2"/></svg>Inventory<span class="nav-badge nav-badge-amber" id="badge-inv2">2</span></div>
+    <div class="nav-item" onclick="showPage('items',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('items',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="6" width="14" height="9" rx="1.2"/><path d="M4 6V4a4 4 0 018 0v2"/><line x1="5" y1="10" x2="11" y2="10"/></svg>Items</div>
 
     <!-- TIME TRACKING group -->
     <div class="nav-group-header" id="grp-time" onclick="toggleGroup('time')" role="button" aria-expanded="false" aria-controls="nav-group-time" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleGroup('time')}">
@@ -1128,15 +1128,15 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <svg class="nav-group-arrow" id="arr-time" viewBox="0 0 10 10" aria-hidden="true"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </div>
     <div class="nav-group" id="nav-group-time"><div class="nav-group-inner">
-      <div class="nav-item nav-sub" onclick="showPage('projects',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="11" rx="1.2"/><path d="M5 3V2M11 3V2"/><line x1="1" y1="7" x2="15" y2="7"/></svg>Projects</div>
-      <div class="nav-item nav-sub" onclick="showPage('timesheet',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="1.2"/><line x1="5" y1="1" x2="5" y2="15"/><line x1="1" y1="6" x2="15" y2="6"/><line x1="1" y1="10" x2="15" y2="10"/></svg>Timesheet</div>
+      <div class="nav-item nav-sub" onclick="showPage('projects',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('projects',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="11" rx="1.2"/><path d="M5 3V2M11 3V2"/><line x1="1" y1="7" x2="15" y2="7"/></svg>Projects</div>
+      <div class="nav-item nav-sub" onclick="showPage('timesheet',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('timesheet',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="1.2"/><line x1="5" y1="1" x2="5" y2="15"/><line x1="1" y1="6" x2="15" y2="6"/><line x1="1" y1="10" x2="15" y2="10"/></svg>Timesheet</div>
     </div></div>
 
     <!-- INSIGHTS -->
-    <div class="nav-item" onclick="showPage('reports',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="1.2"/><polyline points="4,11 6,7 9,9 12,5"/></svg>Reports</div>
-    <div class="nav-item" onclick="showPage('budget',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="10" width="3" height="5" rx="1"/><rect x="6" y="6" width="3" height="9" rx="1"/><rect x="11" y="2" width="3" height="13" rx="1"/><line x1="1" y1="8" x2="15" y2="8" stroke-dasharray="2,2"/></svg>Budget</div>
-    <div class="nav-item" onclick="showPage('mrr',this)"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M1 12 Q4 4 8 7 Q11 10 15 3"/><circle cx="8" cy="7" r="1.5" fill="currentColor"/></svg>MRR / SaaS</div>
-    <div class="nav-item" onclick="showPage('biz-investments',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><polyline points="4,11 4,15"/><polyline points="12,11 12,15"/><line x1="1" y1="13" x2="7" y2="13"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="4" y1="7" x2="4" y2="11"/><line x1="12" y1="7" x2="12" y2="11"/></svg>Investments</div>
+    <div class="nav-item" onclick="showPage('reports',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('reports',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="1.2"/><polyline points="4,11 6,7 9,9 12,5"/></svg>Reports</div>
+    <div class="nav-item" onclick="showPage('budget',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('budget',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="10" width="3" height="5" rx="1"/><rect x="6" y="6" width="3" height="9" rx="1"/><rect x="11" y="2" width="3" height="13" rx="1"/><line x1="1" y1="8" x2="15" y2="8" stroke-dasharray="2,2"/></svg>Budget</div>
+    <div class="nav-item" onclick="showPage('mrr',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('mrr',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M1 12 Q4 4 8 7 Q11 10 15 3"/><circle cx="8" cy="7" r="1.5" fill="currentColor"/></svg>MRR / SaaS</div>
+    <div class="nav-item" onclick="showPage('biz-investments',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('biz-investments',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><polyline points="4,11 4,15"/><polyline points="12,11 12,15"/><line x1="1" y1="13" x2="7" y2="13"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="4" y1="7" x2="4" y2="11"/><line x1="12" y1="7" x2="12" y2="11"/></svg>Investments</div>
 
     <!-- ACCOUNTANT group -->
     <div class="nav-group-header" id="grp-accountant" onclick="toggleGroup('accountant')" role="button" aria-expanded="false" aria-controls="nav-group-accountant" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleGroup('accountant')}">
@@ -1145,30 +1145,30 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <svg class="nav-group-arrow" id="arr-accountant" viewBox="0 0 10 10" aria-hidden="true"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </div>
     <div class="nav-group" id="nav-group-accountant"><div class="nav-group-inner">
-      <div class="nav-item nav-sub" onclick="showPage('manual-journals',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="11" x2="11" y2="11"/></svg>Manual Journals</div>
-      <div class="nav-item nav-sub" onclick="showPage('chart-of-accounts',this)"><svg class="nav-icon" viewBox="0 0 16 16"><line x1="3" y1="4" x2="13" y2="4"/><line x1="3" y1="8" x2="13" y2="8"/><line x1="3" y1="12" x2="13" y2="12"/><line x1="1" y1="2" x2="1" y2="14"/></svg>Chart of Accounts</div>
-      <div class="nav-item nav-sub" onclick="showPage('transaction-locking',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="8" rx="1.2"/><path d="M5 7V5a3 3 0 016 0v2"/><circle cx="8" cy="11" r="1"/></svg>Transaction Locking</div>
+      <div class="nav-item nav-sub" onclick="showPage('manual-journals',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('manual-journals',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="11" x2="11" y2="11"/></svg>Manual Journals</div>
+      <div class="nav-item nav-sub" onclick="showPage('chart-of-accounts',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('chart-of-accounts',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><line x1="3" y1="4" x2="13" y2="4"/><line x1="3" y1="8" x2="13" y2="8"/><line x1="3" y1="12" x2="13" y2="12"/><line x1="1" y1="2" x2="1" y2="14"/></svg>Chart of Accounts</div>
+      <div class="nav-item nav-sub" onclick="showPage('transaction-locking',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('transaction-locking',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="8" rx="1.2"/><path d="M5 7V5a3 3 0 016 0v2"/><circle cx="8" cy="11" r="1"/></svg>Transaction Locking</div>
     </div></div>
 
     <!-- ADMIN -->
-    <div class="nav-item" onclick="showPage('documents',this)"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M4 1h6l4 4v10H4z"/><polyline points="9,1 9,5 14,5"/><line x1="6" y1="9" x2="10" y2="9"/><line x1="6" y1="12" x2="10" y2="12"/></svg>Documents</div>
-    <div class="nav-item" onclick="showPage('templates',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="10" rx="1.2"/><line x1="4" y1="14" x2="12" y2="14"/><line x1="8" y1="11" x2="8" y2="14"/></svg>Templates</div>
-    <div class="nav-item" onclick="showPage('connections',this)"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="4" cy="8" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><line x1="6" y1="7" x2="10" y2="5"/><line x1="6" y1="9" x2="10" y2="11"/></svg>API connections</div>
-    <div class="nav-item" onclick="showPage('entities',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.2"/></svg>Entities</div>
-    <div class="nav-item" onclick="showPage('team',this)"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="5.5" cy="5" r="2.5"/><path d="M1 13c0-2.5 2-4.5 4.5-4.5"/><circle cx="11.5" cy="5" r="2.5"/><path d="M15 13c0-2.5-2-4.5-4.5-4.5"/></svg>Team &amp; roles</div>
-    <div class="nav-item" onclick="showPage('audit',this)"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M2 2h12v12H2z" rx="1"/><line x1="5" y1="6" x2="11" y2="6"/><line x1="5" y1="9" x2="9" y2="9"/><circle cx="12" cy="12" r="3" fill="var(--bg1)" stroke="currentColor"/><path d="M11 12l.8.8 1.6-1.6"/></svg>Audit trail</div>
+    <div class="nav-item" onclick="showPage('documents',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('documents',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M4 1h6l4 4v10H4z"/><polyline points="9,1 9,5 14,5"/><line x1="6" y1="9" x2="10" y2="9"/><line x1="6" y1="12" x2="10" y2="12"/></svg>Documents</div>
+    <div class="nav-item" onclick="showPage('templates',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('templates',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="10" rx="1.2"/><line x1="4" y1="14" x2="12" y2="14"/><line x1="8" y1="11" x2="8" y2="14"/></svg>Templates</div>
+    <div class="nav-item" onclick="showPage('connections',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('connections',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="4" cy="8" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><line x1="6" y1="7" x2="10" y2="5"/><line x1="6" y1="9" x2="10" y2="11"/></svg>API connections</div>
+    <div class="nav-item" onclick="showPage('entities',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('entities',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.2"/></svg>Entities</div>
+    <div class="nav-item" onclick="showPage('team',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('team',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="5.5" cy="5" r="2.5"/><path d="M1 13c0-2.5 2-4.5 4.5-4.5"/><circle cx="11.5" cy="5" r="2.5"/><path d="M15 13c0-2.5-2-4.5-4.5-4.5"/></svg>Team &amp; roles</div>
+    <div class="nav-item" onclick="showPage('audit',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('audit',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M2 2h12v12H2z" rx="1"/><line x1="5" y1="6" x2="11" y2="6"/><line x1="5" y1="9" x2="9" y2="9"/><circle cx="12" cy="12" r="3" fill="var(--bg1)" stroke="currentColor"/><path d="M11 12l.8.8 1.6-1.6"/></svg>Audit trail</div>
     <div class="nav-divider"></div>
     <div class="nav-section-header nav-section-header--personal"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/></svg>Personal</div>
-    <div class="nav-item nav-item--personal" onclick="showPage('personal',this)"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M8 1.5l1.8 4.5H15l-3.9 2.9 1.5 4.6L8 11 3.4 13.5l1.5-4.6L1 6h5.2z"/></svg>Personal finance</div>
-    <div class="nav-item nav-item--personal" onclick="showPage('investments',this)"><svg class="nav-icon" viewBox="0 0 16 16"><polyline points="1,12 5,7 8.5,9.5 12,4 15,6"/><polyline points="12,4 15,4 15,7"/><line x1="1" y1="15" x2="15" y2="15"/></svg>Investments</div>
-    <div class="nav-item nav-item--personal" onclick="showPage('scenario',this)"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M1 13 Q4 8 8 10 Q11 12 15 4"/><line x1="3" y1="13" x2="3" y2="6" stroke-dasharray="2,2"/><line x1="8" y1="13" x2="8" y2="7" stroke-dasharray="2,2"/><line x1="13" y1="13" x2="13" y2="4" stroke-dasharray="2,2"/></svg>Scenario planner</div>
+    <div class="nav-item nav-item--personal" onclick="showPage('personal',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('personal',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M8 1.5l1.8 4.5H15l-3.9 2.9 1.5 4.6L8 11 3.4 13.5l1.5-4.6L1 6h5.2z"/></svg>Personal finance</div>
+    <div class="nav-item nav-item--personal" onclick="showPage('investments',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('investments',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><polyline points="1,12 5,7 8.5,9.5 12,4 15,6"/><polyline points="12,4 15,4 15,7"/><line x1="1" y1="15" x2="15" y2="15"/></svg>Investments</div>
+    <div class="nav-item nav-item--personal" onclick="showPage('scenario',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('scenario',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M1 13 Q4 8 8 10 Q11 12 15 4"/><line x1="3" y1="13" x2="3" y2="6" stroke-dasharray="2,2"/><line x1="8" y1="13" x2="8" y2="7" stroke-dasharray="2,2"/><line x1="13" y1="13" x2="13" y2="4" stroke-dasharray="2,2"/></svg>Scenario planner</div>
     <div class="nav-divider"></div>
     <div class="nav-section-header nav-section-header--intelligence"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="2.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="8" y1="12.5" x2="8" y2="15"/><line x1="1" y1="8" x2="3.5" y2="8"/><line x1="12.5" y1="8" x2="15" y2="8"/><line x1="3.1" y1="3.1" x2="4.9" y2="4.9"/><line x1="11.1" y1="11.1" x2="12.9" y2="12.9"/><line x1="12.9" y1="3.1" x2="11.1" y2="4.9"/><line x1="4.9" y1="11.1" x2="3.1" y2="12.9"/></svg>Intelligence</div>
-    <div class="nav-item nav-item--intelligence" onclick="showPage('ai',this)"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="8" y1="12.5" x2="8" y2="15"/><line x1="1" y1="8" x2="3.5" y2="8"/><line x1="12.5" y1="8" x2="15" y2="8"/><line x1="3.1" y1="3.1" x2="4.9" y2="4.9"/><line x1="11.1" y1="11.1" x2="12.9" y2="12.9"/><line x1="12.9" y1="3.1" x2="11.1" y2="4.9"/><line x1="4.9" y1="11.1" x2="3.1" y2="12.9"/></svg>AI insights</div>
-    <div class="nav-item nav-item--intelligence" onclick="showPage('autocat',this)"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4"/><polyline points="10,3 14,3 14,7"/></svg>Auto-categorise</div>
+    <div class="nav-item nav-item--intelligence" onclick="showPage('ai',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('ai',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="8" y1="12.5" x2="8" y2="15"/><line x1="1" y1="8" x2="3.5" y2="8"/><line x1="12.5" y1="8" x2="15" y2="8"/><line x1="3.1" y1="3.1" x2="4.9" y2="4.9"/><line x1="11.1" y1="11.1" x2="12.9" y2="12.9"/><line x1="12.9" y1="3.1" x2="11.1" y2="4.9"/><line x1="4.9" y1="11.1" x2="3.1" y2="12.9"/></svg>AI insights</div>
+    <div class="nav-item nav-item--intelligence" onclick="showPage('autocat',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('autocat',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4"/><polyline points="10,3 14,3 14,7"/></svg>Auto-categorise</div>
     <div class="nav-divider"></div>
     <div class="nav-section-header nav-section-header--clients"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.2"/><line x1="5" y1="3" x2="5" y2="13"/><line x1="1" y1="8" x2="5" y2="8"/></svg>Clients</div>
-    <div class="nav-item nav-item--clients" onclick="showPage('portal',this)"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="10" rx="1.2"/><line x1="5" y1="3" x2="5" y2="13"/><line x1="1" y1="8" x2="5" y2="8"/></svg>Client portal</div>
+    <div class="nav-item nav-item--clients" onclick="showPage('portal',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('portal',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="10" rx="1.2"/><line x1="5" y1="3" x2="5" y2="13"/><line x1="1" y1="8" x2="5" y2="8"/></svg>Client portal</div>
     <div class="sidebar-footer">
       <div class="user-avatar" id="sb-user-avatar"></div>
       <div class="user-info"><div class="user-name" id="sb-user-name">My Account</div><div class="user-plan" id="sb-user-plan">Pro plan</div></div>
@@ -1227,7 +1227,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <button class="mob-hamburger" id="mobHamburger" onclick="openSidebar()" aria-label="Open navigation">
           <svg viewBox="0 0 16 16"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>
         </button>
-        <span class="page-title" id="pageTitle">Dashboard</span>
+        <h1 class="page-title" id="pageTitle">Dashboard</h1>
         <span class="period-label" id="period-label">—</span>
       </div>
       <div class="topbar-right">
@@ -1275,19 +1275,19 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Investments</div><div class="mc-val" id="d-invest">—</div><div class="mc-change" id="d-invest-chg"></div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div><div class="card-title" id="d-chart-title">Revenue vs Expenses</div></div><div style="display:flex;gap:12px;font-size:11px;color:var(--t2)"><span><span style="display:inline-block;width:8px;height:8px;background:var(--acc);border-radius:2px;margin-right:4px"></span>Revenue</span><span><span style="display:inline-block;width:8px;height:8px;background:var(--bg4);border-radius:2px;margin-right:4px"></span>Expenses</span></div></div>
+          <div class="card-header"><div><h2 class="card-title" id="d-chart-title">Revenue vs Expenses</h2></div><div style="display:flex;gap:12px;font-size:11px;color:var(--t2)"><span><span style="display:inline-block;width:8px;height:8px;background:var(--acc);border-radius:2px;margin-right:4px"></span>Revenue</span><span><span style="display:inline-block;width:8px;height:8px;background:var(--bg4);border-radius:2px;margin-right:4px"></span>Expenses</span></div></div>
           <div class="canvas-wrap"><canvas id="overviewChart" role="img" aria-label="Bar chart showing revenue versus expenses by month">Monthly revenue vs expenses chart</canvas></div>
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Expense breakdown</div></div>
+            <div class="card-header"><h2 class="card-title">Expense breakdown</h2></div>
             <div class="bar-row"><span class="bar-label">Salaries</span><div class="bar-track"><div class="bar-fill" id="exp-sal-bar" style="width:72%;background:var(--acc)"></div></div><span class="bar-val" id="exp-sal">—</span></div>
             <div class="bar-row"><span class="bar-label">Rent</span><div class="bar-track"><div class="bar-fill" id="exp-rent-bar" style="width:18%;background:#c9a84c99"></div></div><span class="bar-val" id="exp-rent">—</span></div>
             <div class="bar-row"><span class="bar-label">Software</span><div class="bar-track"><div class="bar-fill" id="exp-sw-bar" style="width:8%;background:#c9a84c66"></div></div><span class="bar-val" id="exp-sw">—</span></div>
             <div class="bar-row"><span class="bar-label">Marketing</span><div class="bar-track"><div class="bar-fill" id="exp-mkt-bar" style="width:5%;background:#c9a84c44"></div></div><span class="bar-val" id="exp-mkt">—</span></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Business transactions</div></div>
+            <div class="card-header"><h2 class="card-title">Business transactions</h2></div>
             <div id="d-txns"><!-- rendered --></div>
           </div>
         </div>
@@ -1296,7 +1296,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="card" id="river-card" style="margin-bottom:0;margin-top:12px">
           <div class="card-header">
             <div>
-              <div class="card-title">Money flow</div>
+              <h2 class="card-title">Money flow</h2>
               <div class="card-sub" id="river-sub">Where every dollar goes</div>
             </div>
             <div style="display:flex;gap:10px;font-size:11px;color:var(--t3);align-items:center">
@@ -1312,7 +1312,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="card" style="margin-top:12px;margin-bottom:0">
           <div class="card-header">
             <div>
-              <div class="card-title">Stripe live feed</div>
+              <h2 class="card-title">Stripe live feed</h2>
               <div class="card-sub">Payments streaming in real time</div>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
@@ -1335,7 +1335,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="card">
           <div class="card-header">
-            <div class="card-title">Budget vs actuals</div>
+            <h2 class="card-title">Budget vs actuals</h2>
             <button class="btn btn-ghost btn-sm" onclick="openBudgetTargetsModal()">Edit targets</button>
           </div>
           <div style="display:grid;grid-template-columns:100px 1fr 95px 55px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
@@ -1344,7 +1344,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div id="budget-rows"></div>
         </div>
         <div class="card" style="margin-bottom:0">
-          <div class="card-header"><div class="card-title">AI budget insight</div></div>
+          <div class="card-header"><h2 class="card-title">AI budget insight</h2></div>
           <div class="ai-box" style="margin-bottom:0" id="budget-ai-box">
             <div class="ai-head">✦ Claude analysis</div>
             <div class="ai-insight" id="budget-ai-text">Analyzing your budget variance…</div>
@@ -1362,7 +1362,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">MRR breakdown</div></div>
+            <div class="card-header"><h2 class="card-title">MRR breakdown</h2></div>
             <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
               <div class="mrr-metric"><div class="mrr-val" id="mrr-new" style="color:var(--green)">—</div><div class="mrr-label">New MRR</div></div>
               <div class="mrr-metric"><div class="mrr-val" id="mrr-churned" style="color:var(--red)">—</div><div class="mrr-label">Churned MRR</div></div>
@@ -1371,12 +1371,12 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             </div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Revenue by customer</div></div>
+            <div class="card-header"><h2 class="card-title">Revenue by customer</h2></div>
             <div id="mrr-by-customer" style="font-size:12px;color:var(--t2);padding:8px 0">Loading…</div>
           </div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">MRR trend (12 months)</div></div>
+          <div class="card-header"><h2 class="card-title">MRR trend (12 months)</h2></div>
           <div class="canvas-wrap"><canvas id="mrrChart" role="img" aria-label="Line chart showing monthly recurring revenue trend">MRR trend chart</canvas></div>
         </div>
       </div>
@@ -1391,7 +1391,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="card">
           <div class="card-header">
-            <div><div class="card-title">Your entities</div><div class="card-sub">Each has a fully separate chart of accounts &amp; ledger</div></div>
+            <div><h2 class="card-title">Your entities</h2><div class="card-sub">Each has a fully separate chart of accounts &amp; ledger</div></div>
             <button class="btn btn-primary btn-sm" onclick="openAddEntityModal()">+ Add entity</button>
           </div>
           <div id="entity-list"></div>
@@ -1399,7 +1399,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="card" style="margin-bottom:0">
           <div class="card-header" style="flex-wrap:wrap;gap:8px">
             <div>
-              <div class="card-title">Consolidated P&amp;L</div>
+              <h2 class="card-title">Consolidated P&amp;L</h2>
               <span style="font-size:11px;color:var(--t3)" id="consol-fx-rate">No conversion · native currencies shown</span>
             </div>
             <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
@@ -1463,13 +1463,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
             <div class="card-header">
-              <div class="card-title">Team members</div>
+              <h2 class="card-title">Team members</h2>
               <button class="btn btn-primary btn-sm" onclick="openInviteModal()">+ Invite</button>
             </div>
             <div id="team-list"></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Role permissions</div></div>
+            <div class="card-header"><h2 class="card-title">Role permissions</h2></div>
             <div style="font-size:10.5px;color:var(--t3);padding:2px 0 8px;line-height:1.7">
               <b style="color:var(--t2)">O</b> Owner&nbsp;·&nbsp;<b style="color:var(--t2)">A</b> Admin&nbsp;·&nbsp;<b style="color:var(--t2)">Ac</b> Accountant&nbsp;·&nbsp;<b style="color:var(--t2)">V</b> Viewer
             </div>
@@ -1493,7 +1493,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="card">
           <div class="card-header">
-            <div><div class="card-title">Field-level change history</div><div class="card-sub">Every field change logged with old &amp; new value</div></div>
+            <div><h2 class="card-title">Field-level change history</h2><div class="card-sub">Every field change logged with old &amp; new value</div></div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <select class="finput" id="audit-filter-table" style="font-size:11px;padding:4px 8px;width:auto" onchange="loadAuditTrail()">
                 <option value="all">All tables</option>
@@ -1541,16 +1541,16 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Unmatched Bank Transactions</div></div>
+            <div class="card-header"><h2 class="card-title">Unmatched Bank Transactions</h2></div>
             <div id="brec-bank-list" style="font-size:12px"></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Unmatched Invoice Payments</div></div>
+            <div class="card-header"><h2 class="card-title">Unmatched Invoice Payments</h2></div>
             <div id="brec-pay-list" style="font-size:12px"></div>
           </div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Matched Pairs</div><button class="btn btn-ghost btn-sm" onclick="loadBankRec()">Refresh</button></div>
+          <div class="card-header"><h2 class="card-title">Matched Pairs</h2><button class="btn btn-ghost btn-sm" onclick="loadBankRec()">Refresh</button></div>
           <div id="brec-matched-list" style="font-size:12px"></div>
         </div>
       </div>
@@ -1564,14 +1564,14 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="two-col" style="margin-bottom:1.25rem">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">FX Rates</div><button class="btn btn-primary btn-sm" onclick="openModal('fx-rate-modal')">+ Add Rate</button></div>
+            <div class="card-header"><h2 class="card-title">FX Rates</h2><button class="btn btn-primary btn-sm" onclick="openModal('fx-rate-modal')">+ Add Rate</button></div>
             <div style="display:grid;grid-template-columns:60px 60px 90px 90px 40px;gap:6px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)">
               <span>From</span><span>To</span><span>Rate</span><span>Date</span><span></span>
             </div>
             <div id="fx-rates-list" style="font-size:12px"></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">FX Transactions</div><button class="btn btn-primary btn-sm" onclick="openModal('fx-tx-modal')">+ Add</button></div>
+            <div class="card-header"><h2 class="card-title">FX Transactions</h2><button class="btn btn-primary btn-sm" onclick="openModal('fx-tx-modal')">+ Add</button></div>
             <div style="overflow-x:auto">
               <table style="width:100%;border-collapse:collapse;font-size:11px">
                 <thead><tr style="border-bottom:1px solid var(--bd);color:var(--t3);font-size:10px;text-transform:uppercase;letter-spacing:.08em">
@@ -1600,7 +1600,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="two-col" style="margin-bottom:1.25rem">
           <div class="card" style="margin-bottom:0">
             <div class="card-header">
-              <div><div class="card-title">Asset allocation</div><div class="card-sub">By market value</div></div>
+              <div><h2 class="card-title">Asset allocation</h2><div class="card-sub">By market value</div></div>
               <button class="btn btn-ghost btn-sm" onclick="openRebalanceModal()">Rebalance ↗</button>
             </div>
             <div style="display:flex;gap:1.25rem;align-items:center">
@@ -1613,7 +1613,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
           <div class="card" style="margin-bottom:0">
             <div class="card-header">
-              <div><div class="card-title">Performance</div><div class="card-sub">Portfolio vs S&amp;P 500</div></div>
+              <div><h2 class="card-title">Performance</h2><div class="card-sub">Portfolio vs S&amp;P 500</div></div>
               <div style="display:flex;gap:4px">
                 <button class="btn btn-ghost btn-sm" id="inv-per-1m" onclick="setInvPeriod('1m',this)" style="background:var(--acc-bg);border-color:var(--acc);color:var(--acc)">1M</button>
                 <button class="btn btn-ghost btn-sm" id="inv-per-3m" onclick="setInvPeriod('3m',this)">3M</button>
@@ -1631,7 +1631,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="card">
           <div class="card-header">
-            <div><div class="card-title">Holdings</div><div class="card-sub">Your positions across all accounts</div></div>
+            <div><h2 class="card-title">Holdings</h2><div class="card-sub">Your positions across all accounts</div></div>
             <div style="display:flex;gap:6px">
               <button class="btn btn-ghost btn-sm" onclick="openAddHoldingModal()">+ Add holding</button>
               <button class="btn btn-primary btn-sm" onclick="openAIPanel();sendAIQuery('Analyze my investment portfolio — what should I rebalance or watch given my business financials?')">&#10022; AI analysis</button>
@@ -1650,7 +1650,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div class="ai-insight" id="inv-ai-3"></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Net worth impact</div></div>
+            <div class="card-header"><h2 class="card-title">Net worth impact</h2></div>
             <div style="display:flex;flex-direction:column;gap:10px">
               <div class="bar-row"><span class="bar-label">Cash &amp; savings</span><div class="bar-track"><div class="bar-fill" id="nw-cash-bar" style="width:0%;background:var(--acc)"></div></div><span class="bar-val" id="nw-cash-val">—</span></div>
               <div class="bar-row"><span class="bar-label">Portfolio</span><div class="bar-track"><div class="bar-fill" id="nw-port-bar" style="width:0%;background:var(--green)"></div></div><span class="bar-val" id="nw-port-val">—</span></div>
@@ -1866,7 +1866,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="two-col" style="margin-bottom:1.25rem">
           <div class="card" style="margin-bottom:0">
             <div class="card-header">
-              <div><div class="card-title">Asset allocation</div><div class="card-sub">By market value</div></div>
+              <div><h2 class="card-title">Asset allocation</h2><div class="card-sub">By market value</div></div>
               <button class="btn btn-ghost btn-sm" onclick="notify('Rebalance plan generated ✦')">Rebalance ↗</button>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
@@ -1878,7 +1878,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
           <div class="card" style="margin-bottom:0">
             <div class="card-header">
-              <div><div class="card-title">Performance</div><div class="card-sub">Portfolio vs benchmark</div></div>
+              <div><h2 class="card-title">Performance</h2><div class="card-sub">Portfolio vs benchmark</div></div>
               <div style="display:flex;gap:4px">
                 <button class="btn btn-ghost btn-sm" style="background:var(--acc-bg);border-color:var(--acc);color:var(--acc)">YTD</button>
                 <button class="btn btn-ghost btn-sm">1Y</button>
@@ -1904,7 +1904,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="card">
           <div class="card-header">
-            <div><div class="card-title">Holdings</div><div class="card-sub">Business investment positions</div></div>
+            <div><h2 class="card-title">Holdings</h2><div class="card-sub">Business investment positions</div></div>
             <div style="display:flex;gap:6px">
               <button class="btn btn-ghost btn-sm" onclick="openAddHoldingModal()">+ Add holding</button>
               <button class="btn btn-primary btn-sm" onclick="openAIPanel&&openAIPanel();sendAIQuery&&sendAIQuery('Analyse our business investment portfolio — flag concentration risks, tax efficiency, and how it aligns with our cash flow needs.')">&#10022; AI analysis</button>
@@ -1923,7 +1923,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div class="ai-insight">Add holdings to your portfolio to see AI-powered analysis and insights.</div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Upcoming income</div><div class="card-sub">Dividends &amp; distributions</div></div>
+            <div class="card-header"><h2 class="card-title">Upcoming income</h2><div class="card-sub">Dividends &amp; distributions</div></div>
             <div style="display:flex;flex-direction:column;gap:8px" id="upcoming-income-list">
               <div style="padding:1rem 0;text-align:center;color:var(--t3);font-size:12px">No upcoming income — add holdings with dividends to see scheduled payments</div>
             </div>
@@ -1955,16 +1955,16 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Avg Monthly</div><div class="mc-val" id="cf-avg">—</div><div class="mc-change up" id="cf-avg-lbl">Net profit</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title" id="cf-chart-title">Net Profit Trend</div><div style="display:flex;gap:12px;font-size:11px;color:var(--t2)"><span><span style="display:inline-block;width:8px;height:2px;background:var(--acc);margin-right:4px;vertical-align:middle"></span>Actual</span><span><span style="display:inline-block;width:8px;height:2px;background:var(--green);margin-right:4px;vertical-align:middle"></span>Forecast</span></div></div>
+          <div class="card-header"><h2 class="card-title" id="cf-chart-title">Net Profit Trend</h2><div style="display:flex;gap:12px;font-size:11px;color:var(--t2)"><span><span style="display:inline-block;width:8px;height:2px;background:var(--acc);margin-right:4px;vertical-align:middle"></span>Actual</span><span><span style="display:inline-block;width:8px;height:2px;background:var(--green);margin-right:4px;vertical-align:middle"></span>Forecast</span></div></div>
           <div class="canvas-wrap"><canvas id="cashChart" role="img" aria-label="Area chart showing cash flow over time">Cash flow chart</canvas></div>
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Top income sources</div></div>
+            <div class="card-header"><h2 class="card-title">Top income sources</h2></div>
             <div id="cf-sources"><!-- rendered --></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Burn rate</div></div>
+            <div class="card-header"><h2 class="card-title">Burn rate</h2></div>
             <div class="bar-row"><span class="bar-label">Fixed costs</span><div class="bar-track"><div class="bar-fill" style="width:74%;background:var(--red)"></div></div><span class="bar-val" id="cf-fixed">—</span></div>
             <div class="bar-row"><span class="bar-label">Variable costs</span><div class="bar-track"><div class="bar-fill" style="width:26%;background:#c46a5a99"></div></div><span class="bar-val" id="cf-variable">—</span></div>
             <div style="margin-top:12px;font-size:12px;color:var(--t2)">Runway: <span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)" id="cf-runway">—</span></div>
@@ -1980,7 +1980,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Lifetime Revenue</div><div class="mc-val" id="cust-revenue">—</div><div class="mc-change up">All customers</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div><div class="card-title">Customer directory</div><div class="card-sub">Click any row to edit</div></div><button class="btn btn-primary" onclick="openCustomerModal()">+ Add customer</button></div>
+          <div class="card-header"><div><h2 class="card-title">Customer directory</h2><div class="card-sub">Click any row to edit</div></div><button class="btn btn-primary" onclick="openCustomerModal()">+ Add customer</button></div>
           <div class="search-bar"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4.5"/><line x1="10" y1="10" x2="14" y2="14"/></svg><input type="text" placeholder="Search by name, email or company…" id="cust-search" oninput="filterCustomers()"></div>
           <div style="display:grid;grid-template-columns:34px 1fr 110px 85px 70px 80px;gap:10px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span></span><span>Customer</span><span>Company</span><span>Revenue</span><span>Status</span><span></span></div>
           <div id="customers-list"></div>
@@ -1996,7 +1996,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Overdue</div><div class="mc-val" id="inv-over">—</div><div class="mc-change dn" id="inv-over-cnt"></div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title" id="inv-table-title">Invoices</div>
+          <div class="card-header"><h2 class="card-title" id="inv-table-title">Invoices</h2>
             <div style="display:flex;gap:6px">
               <button class="btn btn-ghost btn-sm" onclick="showPage('expenses',document.querySelector('[onclick*=expenses]'))">⬆ Scan receipt</button>
               <button class="btn btn-primary btn-sm" onclick="openInvoiceModal()">+ New invoice</button>
@@ -2020,7 +2020,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="card-title">Receipt &amp; invoice scanner</div>
+              <h2 class="card-title">Receipt &amp; invoice scanner</h2>
               <div class="card-sub">Drop any receipt, bill or invoice — AI extracts vendor, amount, date &amp; category</div>
             </div>
             <span class="badge b-blue" style="flex-shrink:0">✦ AI-powered</span>
@@ -2058,14 +2058,14 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">By category</div></div>
+            <div class="card-header"><h2 class="card-title">By category</h2></div>
             <div class="bar-row"><span class="bar-label">Salaries</span><div class="bar-track"><div class="bar-fill" style="width:72%;background:var(--acc)"></div></div><span class="bar-val" id="ex-sal">—</span></div>
             <div class="bar-row"><span class="bar-label">Rent</span><div class="bar-track"><div class="bar-fill" style="width:18%;background:#c9a84c99"></div></div><span class="bar-val" id="ex-rent">—</span></div>
             <div class="bar-row"><span class="bar-label">Software</span><div class="bar-track"><div class="bar-fill" style="width:6%;background:#c9a84c66"></div></div><span class="bar-val" id="ex-sw2">—</span></div>
             <div class="bar-row"><span class="bar-label">Travel & other</span><div class="bar-track"><div class="bar-fill" style="width:4%;background:#c9a84c44"></div></div><span class="bar-val" id="ex-other">—</span></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Recent expenses</div><button class="btn btn-ghost btn-sm" onclick="openExpenseModal()">+ Add</button></div>
+            <div class="card-header"><h2 class="card-title">Recent expenses</h2><button class="btn btn-ghost btn-sm" onclick="openExpenseModal()">+ Add</button></div>
             <div id="expense-list"><!-- rendered --></div>
           </div>
         </div>
@@ -2101,7 +2101,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="card">
           <div class="card-header">
-            <div><div class="card-title">Team payroll</div></div>
+            <div><h2 class="card-title">Team payroll</h2></div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
               <select class="finput" id="payroll-jurisdiction" style="font-size:11px;padding:4px 8px;width:auto" onchange="this._userSet=true">
                 <option value="TT">T&amp;T (PAYE+NIS)</option>
@@ -2122,7 +2122,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div id="payroll-list"></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Tax Preview Calculator</div></div>
+          <div class="card-header"><h2 class="card-title">Tax Preview Calculator</h2></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:.75rem">
             <div class="field-wrap" style="margin:0"><label class="field-label" for="tax-prev-gross">Monthly Gross</label><input class="finput" id="tax-prev-gross" type="number" placeholder="5000" oninput="runTaxPreview()" style="width:120px"></div>
             <div class="field-wrap" style="margin:0"><label class="field-label" for="tax-prev-jur">Jurisdiction</label>
@@ -2138,7 +2138,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div id="tax-preview-result" style="font-size:12px;color:var(--t3)">Enter a gross amount to see the tax breakdown.</div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Payroll Run History</div></div>
+          <div class="card-header"><h2 class="card-title">Payroll Run History</h2></div>
           <div id="payroll-runs-list" style="font-size:12px;color:var(--t3)">No payroll runs yet.</div>
         </div>
         <div id="payroll-link-card" class="card" style="display:none;border-color:var(--green-bd);background:var(--green-bg)">
@@ -2159,13 +2159,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">COGS this month</div><div class="mc-val" id="inv-cogs">$0</div><div class="mc-change neutral">MAC method</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Stock levels</div><button class="btn btn-ghost btn-sm" onclick="openProductModal()">+ Add product</button></div>
+          <div class="card-header"><h2 class="card-title">Stock levels</h2><button class="btn btn-ghost btn-sm" onclick="openProductModal()">+ Add product</button></div>
           <div class="inv-item-row" style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>SKU</span><span>Product</span><span>In stock</span><span>Level</span><span>Value</span><span style="text-align:right">COGS</span><span></span></div>
           <div id="inventory-list"><!-- rendered --></div>
         </div>
         <div class="card">
           <div class="card-header">
-            <div><div class="card-title">COGS Summary</div><div class="card-sub">FIFO cost of goods sold</div></div>
+            <div><h2 class="card-title">COGS Summary</h2><div class="card-sub">FIFO cost of goods sold</div></div>
             <button class="btn btn-ghost btn-sm" onclick="loadCOGS()">Refresh</button>
           </div>
           <div class="metrics-grid-3" style="margin-bottom:.75rem">
@@ -2462,7 +2462,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <!-- Transactions — directly under the KPI cards (quick-add + list together) -->
         <div class="card">
-          <div class="card-header"><div class="card-title">Transaction history</div></div>
+          <div class="card-header"><h2 class="card-title">Transaction history</h2></div>
           <!-- PRIMARY: expense quick-add (expense by definition — no type toggle) -->
           <div class="qa-bar qa-bar-exp">
             <div class="qa-lead qa-lead-exp">Expense</div>
@@ -2502,17 +2502,17 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Spending breakdown</div></div>
+            <div class="card-header"><h2 class="card-title">Spending breakdown</h2></div>
             <div id="spending-bars"></div>
             <div id="spending-footer-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--t2)">Total spending</span><span style="color:var(--t1);font-weight:600;font-family:var(--font-mono)" id="pers-spend-total">$0</span></div>
           </div>
           <div style="display:flex;flex-direction:column;gap:12px">
             <div class="card" style="margin-bottom:0">
-              <div class="card-header"><div class="card-title">Savings goals</div><button class="btn btn-ghost btn-sm" onclick="openGoalModal()">+ Goal</button></div>
+              <div class="card-header"><h2 class="card-title">Savings goals</h2><button class="btn btn-ghost btn-sm" onclick="openGoalModal()">+ Goal</button></div>
               <div id="goals-list"></div>
             </div>
             <div class="card" style="margin-bottom:0">
-              <div class="card-header"><div class="card-title">Cash flow</div></div>
+              <div class="card-header"><h2 class="card-title">Cash flow</h2></div>
               <div style="display:flex;flex-direction:column;gap:8px">
                 <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Income (net pay)</span><span style="font-family:var(--font-mono);font-weight:600" id="p-cf-income">+$0</span></div>
                 <div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:var(--t2)">Total spending</span><span style="font-family:var(--font-mono);font-weight:600" id="p-cf-spend">-$0</span></div>
@@ -2526,23 +2526,23 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <!-- Income sources + Budget vs Actual -->
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Income sources</div></div>
+            <div class="card-header"><h2 class="card-title">Income sources</h2></div>
             <div id="income-sources-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No income recorded — add payroll or income transactions</div></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Budget vs actual</div><button class="btn btn-ghost btn-sm" onclick="showPage('settings',null)" style="font-size:11px">Edit budget</button></div>
+            <div class="card-header"><h2 class="card-title">Budget vs actual</h2><button class="btn btn-ghost btn-sm" onclick="showPage('settings',null)" style="font-size:11px">Edit budget</button></div>
             <div id="budget-vs-actual-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Set a budget in Settings and add transactions to track</div></div>
           </div>
         </div>
         <!-- Net worth breakdown -->
         <div class="card">
-          <div class="card-header"><div class="card-title">Net worth breakdown</div><div class="card-sub" id="nw-sub">—</div></div>
+          <div class="card-header"><h2 class="card-title">Net worth breakdown</h2><div class="card-sub" id="nw-sub">—</div></div>
           <div id="nw-breakdown-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No accounts yet — add assets &amp; liabilities below to track net worth</div></div>
         </div>
         <!-- Assets & liabilities (real net worth inputs) -->
         <div class="card">
           <div class="card-header">
-            <div><div class="card-title">Assets &amp; liabilities</div><div class="card-sub">Add what you own and owe — your net worth is computed from these</div></div>
+            <div><h2 class="card-title">Assets &amp; liabilities</h2><div class="card-sub">Add what you own and owe — your net worth is computed from these</div></div>
             <div style="display:flex;gap:6px">
               <button class="btn btn-ghost btn-sm" onclick="openAccountModal('asset')">+ Asset</button>
               <button class="btn btn-ghost btn-sm" onclick="openAccountModal('liability')">+ Liability</button>
@@ -2553,14 +2553,14 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <!-- Expense categories breakdown + Tax estimate -->
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Spending by category</div></div>
+            <div class="card-header"><h2 class="card-title">Spending by category</h2></div>
             <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
               <div style="position:relative;width:112px;height:112px;flex-shrink:0"><canvas id="persSpendDonut" width="112" height="112"></canvas></div>
               <div id="expense-cat-list" style="flex:1;min-width:170px"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">No expenses recorded yet</div></div>
             </div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Tax estimate</div><div class="card-sub" style="font-size:10px;color:var(--t3)">Estimate only</div></div>
+            <div class="card-header"><h2 class="card-title">Tax estimate</h2><div class="card-sub" style="font-size:10px;color:var(--t3)">Estimate only</div></div>
             <div id="tax-estimate-list"><div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Add income to see tax estimate</div></div>
             <div style="margin-top:10px;font-size:10.5px;color:var(--t3);font-style:italic">Estimate only — consult a tax professional</div>
           </div>
@@ -2568,7 +2568,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <!-- Personal salary entry (moved to bottom: set-once) -->
         <div class="card" id="pers-salary-card" style="margin-bottom:.85rem">
           <div class="card-header" id="pers-salary-header" style="cursor:pointer;margin-bottom:0" onclick="togglePersSalaryEdit()" role="button" aria-expanded="true" aria-controls="pers-salary-editor" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePersSalaryEdit()}">
-            <div class="card-title">Monthly salary</div>
+            <h2 class="card-title">Monthly salary</h2>
             <div style="display:flex;align-items:center;gap:9px;margin-left:auto">
               <span id="pers-salary-sync-label" style="display:none;font-size:11px;color:var(--green)">Synced from payroll ✓</span>
               <svg id="pers-salary-caret" width="11" height="11" viewBox="0 0 10 10" style="transition:transform .15s cubic-bezier(.4,0,.2,1);stroke:var(--t2)" aria-hidden="true"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -2610,7 +2610,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Ask the AI</div></div>
+            <div class="card-header"><h2 class="card-title">Ask the AI</h2></div>
             <div style="display:flex;flex-direction:column;gap:6px">
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('What are my biggest financial risks for the next quarter?')" style="text-align:left;font-size:12px;justify-content:flex-start">Biggest risks next quarter ↗</button>
               <button class="btn btn-ghost" onclick="openAIPanel();sendAIQuery('How can I reduce business expenses without cutting headcount or salary?')" style="text-align:left;font-size:12px;justify-content:flex-start">Reduce expenses without cuts ↗</button>
@@ -2620,7 +2620,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             </div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Financial health score</div></div>
+            <div class="card-header"><h2 class="card-title">Financial health score</h2></div>
             <div style="text-align:center;padding:.75rem 0 1rem"><div id="health-score" style="font-size:52px;font-weight:400;font-family:var(--font-display);background:linear-gradient(135deg,var(--acc),var(--acc-light));-webkit-background-clip:text;-webkit-text-fill-color:transparent">—</div><div style="font-size:12px;color:var(--t2);letter-spacing:.06em;text-transform:uppercase" id="health-label">Loading…</div></div>
             <div class="bar-row"><span class="bar-label">Cash flow</span><div class="bar-track"><div class="bar-fill" id="hs-cf" style="width:91%;background:var(--green)"></div></div><span class="bar-val" id="hs-cf-v">91/100</span></div>
             <div class="bar-row"><span class="bar-label">Profitability</span><div class="bar-track"><div class="bar-fill" id="hs-pr" style="width:86%;background:var(--green)"></div></div><span class="bar-val" id="hs-pr-v">86/100</span></div>
@@ -2695,7 +2695,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <!-- COMPETITOR COMPARISON -->
         <div class="card" style="margin-bottom:1.25rem">
           <div class="card-header">
-            <div class="card-title">How we compare</div>
+            <h2 class="card-title">How we compare</h2>
             <span style="font-size:11px;color:var(--t3)">At Business tier · per month</span>
           </div>
           <div style="overflow-x:auto">
@@ -2716,7 +2716,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 
         <!-- FAQ -->
         <div class="card" style="margin-bottom:0">
-          <div class="card-header"><div class="card-title">Common questions</div></div>
+          <div class="card-header"><h2 class="card-title">Common questions</h2></div>
           <div id="faq-list"></div>
         </div>
 
@@ -2731,7 +2731,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Avg Margin</div><div class="mc-val" id="items-margin">—</div><div class="mc-change up">Across all products</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Items &amp; Products</div><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="filterItems('all')">All</button><button class="btn btn-ghost btn-sm" onclick="filterItems('product')">Products</button><button class="btn btn-ghost btn-sm" onclick="filterItems('service')">Services</button><button class="btn btn-primary btn-sm" onclick="openNewItemModal()">+ New item</button></div></div>
+          <div class="card-header"><h2 class="card-title">Items &amp; Products</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="filterItems('all')">All</button><button class="btn btn-ghost btn-sm" onclick="filterItems('product')">Products</button><button class="btn btn-ghost btn-sm" onclick="filterItems('service')">Services</button><button class="btn btn-primary btn-sm" onclick="openNewItemModal()">+ New item</button></div></div>
           <div class="search-bar"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg><input type="text" placeholder="Search items…" oninput="filterItemsBySearch(this.value)"></div>
           <div style="display:grid;grid-template-columns:1fr 80px 80px 70px 80px 60px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Name</span><span>Type</span><span>Price</span><span>Stock</span><span>Status</span><span></span></div>
           <div id="items-list"></div>
@@ -2748,11 +2748,11 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Bank Accounts</div><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="openReconcileModal()">⇌ Reconcile</button><button class="btn btn-primary btn-sm" onclick="openAddAccountModal()">+ Add Account</button></div></div>
+            <div class="card-header"><h2 class="card-title">Bank Accounts</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="openReconcileModal()">⇌ Reconcile</button><button class="btn btn-primary btn-sm" onclick="openAddAccountModal()">+ Add Account</button></div></div>
             <div id="bank-accounts-list"></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Recent Transactions</div><button class="btn btn-ghost btn-sm" onclick="openAddTxnModal()">+ Add</button></div>
+            <div class="card-header"><h2 class="card-title">Recent Transactions</h2><button class="btn btn-ghost btn-sm" onclick="openAddTxnModal()">+ Add</button></div>
             <div id="bank-txns-list"></div>
           </div>
         </div>
@@ -2767,7 +2767,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Value (open)</div><div class="mc-val" id="qt-value">—</div><div class="mc-change up">Potential revenue</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Quotes</div><button class="btn btn-primary btn-sm" onclick="openNewQuoteModal()">+ New Quote</button></div>
+          <div class="card-header"><h2 class="card-title">Quotes</h2><button class="btn btn-primary btn-sm" onclick="openNewQuoteModal()">+ New Quote</button></div>
           <div style="display:grid;grid-template-columns:1fr 100px 80px 80px 70px 50px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Client</span><span>Quote #</span><span>Amount</span><span>Expiry</span><span>Status</span><span></span></div>
           <div id="quotes-list"></div>
         </div>
@@ -2782,7 +2782,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Refunds</div><div class="mc-val" style="color:var(--red)">$0</div><div class="mc-change neutral">Refunds issued</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Sales Receipts</div><button class="btn btn-primary btn-sm" onclick="openNewReceiptModal()">+ New Receipt</button></div>
+          <div class="card-header"><h2 class="card-title">Sales Receipts</h2><button class="btn btn-primary btn-sm" onclick="openNewReceiptModal()">+ New Receipt</button></div>
           <div style="display:grid;grid-template-columns:1fr 100px 80px 80px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Customer</span><span>Receipt #</span><span>Amount</span><span>Date</span><span>Method</span></div>
           <div id="receipts-list"></div>
         </div>
@@ -2797,7 +2797,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Avg Days to Pay</div><div class="mc-val">—</div><div class="mc-change neutral">No data yet</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Payments Received</div><button class="btn btn-primary btn-sm" onclick="openRecordPaymentModal()">+ Record Payment</button></div>
+          <div class="card-header"><h2 class="card-title">Payments Received</h2><button class="btn btn-primary btn-sm" onclick="openRecordPaymentModal()">+ Record Payment</button></div>
           <div style="display:grid;grid-template-columns:1fr 100px 80px 80px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Customer</span><span>Invoice #</span><span>Amount</span><span>Date</span><span>Method</span></div>
           <div id="payments-recv-list"></div>
         </div>
@@ -2812,7 +2812,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">YTD Generated</div><div class="mc-val">$0</div><div class="mc-change neutral">From recurring</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Recurring Invoice Profiles</div><button class="btn btn-primary btn-sm" onclick="openNewRecurringModal()">+ New Profile</button></div>
+          <div class="card-header"><h2 class="card-title">Recurring Invoice Profiles</h2><button class="btn btn-primary btn-sm" onclick="openNewRecurringModal()">+ New Profile</button></div>
           <div id="recurring-inv-list"></div>
         </div>
       </div>
@@ -2826,7 +2826,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">0</div><div class="mc-change neutral">Credits issued</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Credit Notes</div><button class="btn btn-primary btn-sm" onclick="openNewCreditNoteModal()">+ New Credit Note</button></div>
+          <div class="card-header"><h2 class="card-title">Credit Notes</h2><button class="btn btn-primary btn-sm" onclick="openNewCreditNoteModal()">+ New Credit Note</button></div>
           <div style="display:grid;grid-template-columns:1fr 90px 80px 80px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Customer</span><span>Credit #</span><span>Amount</span><span>Date</span><span>Status</span></div>
           <div id="credit-notes-list"></div>
         </div>
@@ -2841,7 +2841,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Paid</div><div class="mc-val">$0</div><div class="mc-change neutral">This month</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Vendors</div><button class="btn btn-primary btn-sm" onclick="openNewVendorModal()">+ New Vendor</button></div>
+          <div class="card-header"><h2 class="card-title">Vendors</h2><button class="btn btn-primary btn-sm" onclick="openNewVendorModal()">+ New Vendor</button></div>
           <div class="search-bar"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg><input type="text" placeholder="Search vendors…" oninput="filterVendorsBySearch(this.value)"></div>
           <div id="vendors-list"></div>
         </div>
@@ -2856,7 +2856,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Paid</div><div class="mc-val">$0</div><div class="mc-change neutral">This month</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Bills</div><button class="btn btn-primary btn-sm" onclick="openNewBillModal()">+ New Bill</button></div>
+          <div class="card-header"><h2 class="card-title">Bills</h2><button class="btn btn-primary btn-sm" onclick="openNewBillModal()">+ New Bill</button></div>
           <div style="display:grid;grid-template-columns:1fr 100px 80px 80px 70px 80px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Vendor</span><span>Bill #</span><span>Amount</span><span>Due Date</span><span>Status</span><span></span></div>
           <div id="bills-list"></div>
         </div>
@@ -2871,7 +2871,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Avg Payment</div><div class="mc-val">$0</div><div class="mc-change neutral">Per vendor</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Payments Made</div><button class="btn btn-primary btn-sm" onclick="openMakePaymentModal()">+ Make Payment</button></div>
+          <div class="card-header"><h2 class="card-title">Payments Made</h2><button class="btn btn-primary btn-sm" onclick="openMakePaymentModal()">+ Make Payment</button></div>
           <div style="display:grid;grid-template-columns:1fr 100px 80px 80px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Vendor</span><span>Ref #</span><span>Amount</span><span>Date</span><span>Method</span></div>
           <div id="payments-made-list"></div>
         </div>
@@ -2886,7 +2886,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">YTD Total</div><div class="mc-val">$0</div><div class="mc-change neutral">Recurring spend</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Recurring Bill Profiles</div><button class="btn btn-primary btn-sm" onclick="openNewRecurringBillModal()">+ New Profile</button></div>
+          <div class="card-header"><h2 class="card-title">Recurring Bill Profiles</h2><button class="btn btn-primary btn-sm" onclick="openNewRecurringBillModal()">+ New Profile</button></div>
           <div id="recurring-bills-list"></div>
         </div>
       </div>
@@ -2900,7 +2900,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">This Month</div><div class="mc-val">0</div><div class="mc-change neutral">Credits received</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Vendor Credits</div><button class="btn btn-primary btn-sm" onclick="openNewVendorCreditModal()">+ New Credit</button></div>
+          <div class="card-header"><h2 class="card-title">Vendor Credits</h2><button class="btn btn-primary btn-sm" onclick="openNewVendorCreditModal()">+ New Credit</button></div>
           <div style="display:grid;grid-template-columns:1fr 90px 80px 80px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Vendor</span><span>Credit #</span><span>Amount</span><span>Date</span><span>Status</span></div>
           <div id="vendor-credits-list"></div>
         </div>
@@ -2915,7 +2915,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Unbilled</div><div class="mc-val" style="color:var(--amber)" id="proj-unbilled">$0</div><div class="mc-change dn">Pending invoice</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Projects</div><button class="btn btn-primary btn-sm" onclick="openNewProjectModal()">+ New Project</button></div>
+          <div class="card-header"><h2 class="card-title">Projects</h2><button class="btn btn-primary btn-sm" onclick="openNewProjectModal()">+ New Project</button></div>
           <div id="projects-list"></div>
         </div>
       </div>
@@ -2929,7 +2929,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Avg per Day</div><div class="mc-val" id="ts-avg">0h</div><div class="mc-change neutral">Across team</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title" id="timesheet-title">Timesheet</div><button class="btn btn-primary btn-sm" onclick="openLogTimeModal()">+ Log Time</button></div>
+          <div class="card-header"><h2 class="card-title" id="timesheet-title">Timesheet</h2><button class="btn btn-primary btn-sm" onclick="openLogTimeModal()">+ Log Time</button></div>
           <div style="display:grid;grid-template-columns:1fr 100px 80px 70px 70px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Employee</span><span>Project</span><span>Date</span><span>Hours</span><span>Billable</span><span>Rate</span></div>
           <div id="timesheet-list"></div>
         </div>
@@ -2944,7 +2944,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Draft Entries</div><div class="mc-val" id="jnl-drafts" style="color:var(--amber)">0</div><div class="mc-change dn">Pending review</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Manual Journal Entries</div><button class="btn btn-primary btn-sm" onclick="openNewJournalModal()">+ New Entry</button></div>
+          <div class="card-header"><h2 class="card-title">Manual Journal Entries</h2><button class="btn btn-primary btn-sm" onclick="openNewJournalModal()">+ New Entry</button></div>
           <div style="display:grid;grid-template-columns:90px 1fr 80px 80px 80px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Date</span><span>Notes</span><span>Ref #</span><span>Debit</span><span>Credit</span><span>Status</span></div>
           <div id="journals-list"></div>
         </div>
@@ -2959,7 +2959,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Net Equity</div><div class="mc-val" id="coa-equity" style="color:var(--green)">$0</div><div class="mc-change up">Owner's equity</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Chart of Accounts</div><button class="btn btn-primary btn-sm" onclick="openNewAccountModal()">+ New Account</button></div>
+          <div class="card-header"><h2 class="card-title">Chart of Accounts</h2><button class="btn btn-primary btn-sm" onclick="openNewAccountModal()">+ New Account</button></div>
           <div id="coa-list"></div>
         </div>
       </div>
@@ -2967,7 +2967,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <!-- TRANSACTION LOCKING -->
       <div class="page" id="page-transaction-locking">
         <div class="card">
-          <div class="card-header"><div class="card-title">Transaction Locking</div></div>
+          <div class="card-header"><h2 class="card-title">Transaction Locking</h2></div>
           <div style="font-size:13px;color:var(--t2);margin-bottom:1.25rem">Lock transactions before a certain date to prevent accidental edits. Locked periods require a password to modify.</div>
           <div class="setting-row" style="padding:1rem 0">
             <div><div class="setting-label">Enable transaction locking</div><div class="setting-desc">Prevent edits to transactions before the lock date</div></div>
@@ -2986,7 +2986,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Lock History</div></div>
+          <div class="card-header"><h2 class="card-title">Lock History</h2></div>
           <div id="lock-history"></div>
         </div>
       </div>
@@ -3000,11 +3000,11 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Business Reports</div></div>
+            <div class="card-header"><h2 class="card-title">Business Reports</h2></div>
             <div id="reports-list"></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Tax Reports</div></div>
+            <div class="card-header"><h2 class="card-title">Tax Reports</h2></div>
             <div id="tax-reports-list"></div>
           </div>
         </div>
@@ -3019,7 +3019,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Added this month</div><div class="mc-val" id="docs-added">0</div><div class="mc-change up">New this month</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div class="card-title">Documents</div><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="filterDocs('all')">All</button><button class="btn btn-ghost btn-sm" onclick="filterDocs('invoice')">Invoices</button><button class="btn btn-ghost btn-sm" onclick="filterDocs('receipt')">Receipts</button><button class="btn btn-primary btn-sm" onclick="openUploadModal()">↑ Upload</button></div></div>
+          <div class="card-header"><h2 class="card-title">Documents</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="filterDocs('all')">All</button><button class="btn btn-ghost btn-sm" onclick="filterDocs('invoice')">Invoices</button><button class="btn btn-ghost btn-sm" onclick="filterDocs('receipt')">Receipts</button><button class="btn btn-primary btn-sm" onclick="openUploadModal()">↑ Upload</button></div></div>
           <div class="search-bar"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg><input type="text" placeholder="Search documents…"></div>
           <div id="documents-list"></div>
         </div>
@@ -3034,11 +3034,11 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Invoice &amp; Quote Templates</div><button class="btn btn-primary btn-sm" onclick="openNewTemplateModal()">+ New Template</button></div>
+            <div class="card-header"><h2 class="card-title">Invoice &amp; Quote Templates</h2><button class="btn btn-primary btn-sm" onclick="openNewTemplateModal()">+ New Template</button></div>
             <div id="inv-templates-list"></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Email Templates</div><button class="btn btn-primary btn-sm" onclick="openNewEmailTemplateModal()">+ New Email</button></div>
+            <div class="card-header"><h2 class="card-title">Email Templates</h2><button class="btn btn-primary btn-sm" onclick="openNewEmailTemplateModal()">+ New Email</button></div>
             <div id="email-templates-list"></div>
           </div>
         </div>
@@ -5560,7 +5560,7 @@ window.resetScanner=function(){
       <div class="two-col">
         <div class="card" style="margin-bottom:0">
           <div class="card-header">
-            <div><div class="card-title">What-if scenario builder</div><div class="card-sub">Drag sliders to model different futures</div></div>
+            <div><h2 class="card-title">What-if scenario builder</h2><div class="card-sub">Drag sliders to model different futures</div></div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button class="scenario-preset-btn active-preset" id="preset-base" onclick="applyPreset('base')">Baseline</button>
               <button class="scenario-preset-btn" id="preset-hire" onclick="applyPreset('hire')">🧑‍💻 Hire 2 devs</button>
@@ -5603,11 +5603,11 @@ window.resetScanner=function(){
 
         <div style="display:flex;flex-direction:column;gap:12px">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">Cash runway projection</div></div>
+            <div class="card-header"><h2 class="card-title">Cash runway projection</h2></div>
             <div class="canvas-wrap" style="height:160px"><canvas id="scenarioChart" role="img" aria-label="Line chart comparing financial scenarios">Scenario comparison chart</canvas></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><div class="card-title">✦ AI scenario analysis</div></div>
+            <div class="card-header"><h2 class="card-title">✦ AI scenario analysis</h2></div>
             <div class="ai-insight" id="scenario-ai-text" style="font-size:12.5px;color:var(--t2);line-height:1.6">Adjust the sliders to model your scenario. Claude will analyse the impact and give a recommendation.</div>
             <button class="btn btn-ghost btn-sm" style="margin-top:.75rem" onclick="getScenarioAI()">✦ Ask Claude to analyse this scenario</button>
           </div>
@@ -5627,7 +5627,7 @@ window.resetScanner=function(){
       </div>
       <div class="card">
         <div class="card-header">
-          <div><div class="card-title">Transactions awaiting categorisation</div><div class="card-sub">Run keyword rules (free) or ask AI to suggest a category, then approve to apply</div></div>
+          <div><h2 class="card-title">Transactions awaiting categorisation</h2><div class="card-sub">Run keyword rules (free) or ask AI to suggest a category, then approve to apply</div></div>
           <div style="display:flex;gap:6px">
             <button class="btn btn-ghost btn-sm" onclick="runAutocatRules()">▶ Run rules</button>
             <button class="btn btn-ghost btn-sm" id="autocat-ai-btn" onclick="runAutocatAI()">✦ Suggest with AI</button>
@@ -5640,7 +5640,7 @@ window.resetScanner=function(){
         <div id="autocat-list"></div>
       </div>
       <div class="card" style="margin-bottom:0">
-        <div class="card-header"><div class="card-title">Categorisation rules</div><div class="card-sub">Auto-approve future transactions matching these patterns</div></div>
+        <div class="card-header"><h2 class="card-title">Categorisation rules</h2><div class="card-sub">Auto-approve future transactions matching these patterns</div></div>
         <div id="autocat-rules-list"></div>
         <button class="btn btn-ghost btn-sm" style="margin-top:.75rem" onclick="openAddRuleModal()">+ Add custom rule</button>
       </div>`;

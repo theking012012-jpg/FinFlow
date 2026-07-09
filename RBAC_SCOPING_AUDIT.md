@@ -100,5 +100,23 @@ Team/permission/entity code is split across **`index.html` (inline)** + **`finfl
 4. **Frontend gating** *(medium)* — hide/disable by `req.role`/matrix; ⚠️ *route through the `renderTeam`/`saveOwnerPayroll` overrides, don't reintroduce the two-engine bug.*
 5. **Harden** — viewer can't mutate via direct API; member can't escalate role; entity ownership checks use `accountId`.
 
+---
+
+## Phase 2 build log
+
+### Step 1 — DONE (membership spine + account resolver)
+`server.js` only, zero migration, owner behavior provably unchanged (zero membership rows today → resolver returns nothing → `req.accountId === req.session.userId`, byte-identical at all 74 `scopeId(req)` sites).
+- Evolved `team_members` **in place**: `user_id` = `account_owner_id`; added JSONB `member_user_id` (absent until accept) + `status` (`pending`/`active`). Display-only rows never match the resolver.
+- **Account resolver** registered immediately before the entity resolver (must precede it — the entity resolver calls `scopeId(req)`). Airtight: active-only match, text-compare (no `::int` throw), `!== uid` self-ref guard, fail-safe to own id, no session cache.
+- Wired `scopeId(req)` → `return req.accountId`.
+- **Accountant unification decision (approved):** ONE membership concept — accountants are first-class members with `role:'accountant'` resolving through the identical resolver. Legacy `accountant_clients` + `req.session.accountantId` portal stays live/untouched in Step 1 and **converges in Step 2** (commitment below).
+
+### Step 2 — TRACKED COMMITMENTS (load-bearing, not optional)
+1. **Functional index** `idx_team_members_member_user_id ON team_members((data->>'member_user_id'))` — add in `database.js` when Step 2 starts populating membership rows (deferred from Step 1 because zero rows exist to index).
+2. **Accountant convergence** — Step 2 MUST migrate invited accountants onto the unified membership model (write a `team_members` membership row with `role:'accountant'`), NOT leave `accountant_clients` as a permanent parallel path. This is load-bearing for "every user type gets the same experience": a parallel legacy path that never converges is exactly how second-class users become permanent. **Commitment, not a maybe.**
+
+### Step 4 — TRACKED COMMITMENT
+3. **`checkPlan` account-plan gating** — `checkPlan` (server.js) currently gates on the acting user's OWN trial (`req.session.userId`). Latent gap: an invited member on an expired personal trial could be blocked from a paid owner's account. Fix by gating on the account's plan (`req.accountId`). Also: the coarse role middleware and future `requirePerm` must read `req.accountRole` (set inert in Step 1) rather than `req.session.userRole`.
+
 ### (e) Honest size
 **2–3 weeks** for a solid, tested build (phases 1–5), dominated by phase 2's ~146 rethread-and-classify sites and phase 1's auth correctness. A **coarse MVP (~1 week)** is viable if you (i) reuse `accountant_clients`' pattern wholesale, (ii) enforce at role granularity via one `requirePerm` layer instead of per-row-persisted matrix, and (iii) ship frontend gating for polish. The scattered scoping is the tax — if it were centralized this would be a 3–5 day job; it isn't, so it's weeks.

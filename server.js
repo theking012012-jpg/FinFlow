@@ -468,6 +468,42 @@ app.use('/api', (req, res, next) => {
   checkPlan(req, res, next);
 });
 
+// ── ACCOUNT RESOLVER (RBAC Phase 2, Step 1) ────────────────────────────────────
+// Sets req.accountId = the effective data-scope account for this request.
+//   Owner / brand-new signup / no active membership → own user_id (UNCHANGED).
+//   Active member/accountant → account_owner_id from their membership row.
+// Airtight: a user resolves to another account ONLY via an ACTIVE membership;
+// pending/revoked/absent → falls through to own id (never escalates). Registered
+// BEFORE the entity resolver below because that resolver calls scopeId(req), which
+// now returns req.accountId — so req.accountId must already be set. Resolved fresh
+// each request (no session cache) so a revoked membership loses access immediately.
+app.use('/api', async (req, res, next) => {
+  const uid = req.session?.userId;
+  if (!uid) { req.accountId = undefined; return next(); }  // logged out: parity w/ old scopeId
+  req.accountId   = uid;                                    // default: owner of own account
+  req.accountRole = req.session.userRole || 'owner';        // inert spine until Step 4 enforcement
+  try {
+    const { rows } = await pool.query(
+      `SELECT user_id AS account_owner_id, data->>'role' AS role
+         FROM team_members
+        WHERE data->>'member_user_id' = $1::text
+          AND data->>'status'         = 'active'
+        ORDER BY id ASC
+        LIMIT 1`,
+      [String(uid)]
+    );
+    const m = rows[0];
+    if (m && m.account_owner_id && m.account_owner_id !== uid) {
+      req.accountId   = m.account_owner_id;                 // scope to the account they joined
+      req.accountRole = m.role || 'viewer';                 // role within that account
+    }
+  } catch (e) {
+    req.accountId   = uid;                                  // fail-safe: own id, never escalate
+    req.accountRole = req.session.userRole || 'owner';
+  }
+  next();
+});
+
 // ── ENTITY + RBAC MIDDLEWARE ──────────────────────────────────────────────────
 // Sets req.entityId from session so routes can scope data to the active entity.
 app.use('/api', async (req, res, next) => {
@@ -527,11 +563,13 @@ app.use('/api', (req, res, next) => {
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 // scopeId(req) — the single indirection point for data-scope resolution.
-// Phase 1: returns req.session.userId unchanged (pure no-op groundwork). A later
-// RBAC phase swaps this for the effective account id so invited members resolve to
-// the owner's data. Use for "data belonging to this account" reads/writes; keep
-// req.session.userId for actor identity / audit / the acting user's own record.
-function scopeId(req) { return req.session.userId; }
+// Phase 2: returns req.accountId, resolved by the account resolver middleware above.
+// For an owner (and every user with no active membership) req.accountId === their
+// own req.session.userId, so behavior is unchanged; an active invited member/
+// accountant resolves to the owner's account. Use for "data belonging to this
+// account" reads/writes; keep req.session.userId for actor identity / audit / the
+// acting user's own record.
+function scopeId(req) { return req.accountId; }
 
 async function ownedBy(table, id, userId) {
   const { rows } = await pool.query(

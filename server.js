@@ -1855,8 +1855,14 @@ app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
     [Number(req.params.id), scopeId(req)]
   );
   if (!_rblr) return res.status(404).json({ error: 'not found' });
-  const { vendor, amount, frequency, next_run, status } = req.body;
-  await db.updateById('recurring_bills', Number(req.params.id), { vendor, amount: Number(amount), frequency, next_run, status });
+  const { vendor, amount, frequency, next_run, status } = req.body || {};
+  const patch = {};
+  if (vendor != null) patch.vendor = String(vendor).trim().slice(0, 200);
+  if (amount != null) patch.amount = Number(amount);
+  if (frequency != null) patch.frequency = frequency;
+  if (next_run != null) patch.next_run = next_run;
+  if (status != null) patch.status = status;
+  await db.updateById('recurring_bills', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
 app.delete('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
@@ -1927,8 +1933,14 @@ app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
     [Number(req.params.id), scopeId(req)]
   );
   if (!_rinvr) return res.status(404).json({ error: 'not found' });
-  const { client, amount, frequency, next_run, status } = req.body;
-  await db.updateById('recurring_invoices', Number(req.params.id), { client, amount: Number(amount), frequency, next_run, status });
+  const { client, amount, frequency, next_run, status } = req.body || {};
+  const patch = {};
+  if (client != null) patch.client = String(client).trim().slice(0, 200);
+  if (amount != null) patch.amount = Number(amount);
+  if (frequency != null) patch.frequency = frequency;
+  if (next_run != null) patch.next_run = next_run;
+  if (status != null) patch.status = status;
+  await db.updateById('recurring_invoices', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
 app.delete('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
@@ -2081,14 +2093,15 @@ app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
     `SELECT id FROM payments_made WHERE id = $1 AND user_id = $2 LIMIT 1`,
     [Number(req.params.id), scopeId(req)]
   );
-  if (_pmchk) await db.updateById('payments_made', _pmchk.id, {
-    vendor: (vendor || '').trim().slice(0, 200),
-    amount: parseFloat(amount) || 0,
-    date: date || new Date().toISOString().slice(0, 10),
-    method: (method || '').slice(0, 50),
-    notes: (notes || '').slice(0, 500),
-    ref: (ref || '').slice(0, 100),
-  });
+  if (!_pmchk) return res.json({ ok: true });
+  const patch = {};
+  if (vendor != null) patch.vendor = String(vendor).trim().slice(0, 200);
+  if (amount != null) patch.amount = parseFloat(amount) || 0;
+  if (date != null) patch.date = date;
+  if (method != null) patch.method = String(method).slice(0, 50);
+  if (notes != null) patch.notes = String(notes).slice(0, 500);
+  if (ref != null) patch.ref = String(ref).slice(0, 100);
+  await db.updateById('payments_made', _pmchk.id, patch);
   res.json({ ok: true });
 }));
 app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {

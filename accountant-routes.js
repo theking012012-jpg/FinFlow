@@ -84,13 +84,6 @@ function generateReferralCode(firstName, lastName) {
   return prefix + suffix;
 }
 
-/** Determine referral months based on how many clients the accountant currently has */
-function referralMonthsForTier(clientCount) {
-  if (clientCount >= 500) return 12;  // Elite
-  if (clientCount >= 50)  return 3;   // Growth
-  return 1;                            // Starter
-}
-
 /** Require the session to be an authenticated accountant */
 function requireAccountant(req, res, next) {
   if (!req.session.accountantId) {
@@ -437,13 +430,10 @@ If you cannot find a field, use null. Be concise.`;
       return res.status(403).json({ error: 'Your account must be verified before accessing client books.' });
     }
 
-    // Verify access: join table (active only — pending clients haven't approved yet) OR JSONB accountant_id field
+    // Verify access SOLELY via a consented, active client relationship (F1).
     const access = await pool.query(
       `SELECT ac.access_level FROM accountant_clients ac
        WHERE ac.accountant_id = $1 AND ac.user_id = $2 AND ac.status = 'active'
-       UNION
-       SELECT 'view' AS access_level FROM users
-       WHERE id = $2 AND (data->>'accountant_id')::int = $1
        LIMIT 1`,
       [req.session.accountantId, userId]
     );
@@ -548,7 +538,7 @@ If you cannot find a field, use null. Be concise.`;
     const { userId } = req.params;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const access = await pool.query(
-      `SELECT notes FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      `SELECT notes FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
@@ -560,7 +550,7 @@ If you cannot find a field, use null. Be concise.`;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const { note } = req.body || {};
     const access = await pool.query(
-      `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
@@ -577,7 +567,7 @@ If you cannot find a field, use null. Be concise.`;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const { type, ref, message } = req.body || {};
     const access = await pool.query(
-      `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
@@ -634,47 +624,13 @@ If you cannot find a field, use null. Be concise.`;
   }));
 
 
-  // ── 8. LINK CLIENT AFTER SIGNUP (called when user registers with ?ref=code) ─
-  app.post('/api/accountants/link-client', requireAccountant, wrap(async (req, res) => {
-    const { referralCode, ref, accountantId: accountantIdParam, userId } = req.body || {};
-    const refCode = ref || referralCode;
-    if (!refCode && !accountantIdParam) return res.status(400).json({ error: 'Missing referral code or accountant ID.' });
-    if (!userId) return res.status(400).json({ error: 'Missing user ID.' });
-
-    let accountant;
-    if (accountantIdParam) {
-      const { rows } = await pool.query('SELECT * FROM accountants WHERE id = $1 AND status = $2', [accountantIdParam, 'verified']);
-      accountant = rows[0];
-    } else {
-      const { rows } = await pool.query('SELECT * FROM accountants WHERE referral_code = $1 AND status = $2', [refCode, 'verified']);
-      accountant = rows[0];
-    }
-    if (!accountant) return res.status(404).json({ error: 'Accountant not found.' });
-
-    const accountantId = accountant.id;
-
-    // Count current clients to determine referral tier
-    const countResult = await pool.query(
-      `SELECT COUNT(*) FROM accountant_clients WHERE accountant_id = $1 AND status = 'active'`,
-      [accountantId]
-    );
-    const currentCount = parseInt(countResult.rows[0].count) || 0;
-    const months = referralMonthsForTier(currentCount);
-
-    await pool.query(`
-      INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total)
-      VALUES ($1, $2, 'pending', $3)
-      ON CONFLICT (accountant_id, user_id) DO NOTHING
-    `, [accountantId, userId, months]);
-
-    // Write accountant_id into user's data JSONB for direct lookup
-    await pool.query(
-      `UPDATE users SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{accountant_id}', $1::text::jsonb) WHERE id = $2`,
-      [accountantId, userId]
-    ).catch(e => console.error('[link-client] JSONB update failed:', e.message));
-
-    return res.json({ success: true, referralMonths: months });
-  }));
+  // ── 8. LINK CLIENT — REMOVED (F1 cross-tenant breach) ──────────────────────
+  // This route was the sole writer of users.data.accountant_id and let any verified
+  // accountant self-link to an arbitrary user with no consent, then read their books
+  // via the JSONB access branch below. It was also unreachable from the UI. The
+  // legitimate referral link (a status='pending' accountant_clients row) is created
+  // server-side by the register route (server.js) when a user signs up via ?ref=code;
+  // access is granted only after that relationship reaches status='active'.
 
 
   // ── 9. ACTIVATE CLIENT (called when client completes payment/trial) ────────
@@ -911,8 +867,7 @@ If you cannot find a field, use null. Be concise.`;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const { message } = req.body || {};
     const access = await pool.query(
-      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
-       UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
@@ -928,8 +883,7 @@ If you cannot find a field, use null. Be concise.`;
     const { userId } = req.params;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const access = await pool.query(
-      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
-       UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
@@ -985,17 +939,11 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const { userId } = req.params;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const r = await pool.query(
-      `SELECT checklist FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      `SELECT checklist FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
       [req.session.accountantId, userId]
     );
-    if (!r.rows[0]) {
-      const fb = await pool.query(
-        `SELECT 1 FROM users WHERE id = $1 AND (data->>'accountant_id')::int = $2`,
-        [userId, req.session.accountantId]
-      );
-      if (!fb.rows[0]) return res.status(403).json({ error: 'No access.' });
-    }
-    return res.json({ checklist: r.rows[0]?.checklist || {} });
+    if (!r.rows[0]) return res.status(403).json({ error: 'No access.' });
+    return res.json({ checklist: r.rows[0].checklist || {} });
   }));
 
   app.post('/api/accountants/clients/:userId/checklist', requireAccountant, wrap(async (req, res) => {
@@ -1006,7 +954,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       return res.status(400).json({ error: 'checklist must be an object' });
     }
     const r = await pool.query(
-      `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2`,
+      `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
       [req.session.accountantId, userId]
     );
     if (!r.rows[0]) return res.status(403).json({ error: 'No access.' });
@@ -1030,8 +978,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const { userId } = req.params;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const access = await pool.query(
-      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
-       UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
@@ -1049,8 +996,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const { message } = req.body || {};
     if (!message?.trim()) return res.status(400).json({ error: 'Message required.' });
     const access = await pool.query(
-      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
-       UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
@@ -1067,8 +1013,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const { userId } = req.params;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const access = await pool.query(
-      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
-       UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
@@ -1086,8 +1031,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const content = String(req.body.content || req.body.message || '').trim().slice(0, 2000);
     if (!content) return res.status(400).json({ error: 'Message required.' });
     const access = await pool.query(
-      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2
-       UNION SELECT 1 FROM users WHERE id = $2 AND (data->>'accountant_id')::int = $1 LIMIT 1`,
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });

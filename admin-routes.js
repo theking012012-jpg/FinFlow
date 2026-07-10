@@ -458,14 +458,9 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       WHERE ac.accountant_id = $1
       ORDER BY ac.invited_at DESC LIMIT 50
     `, [id]);
-    const jsonbClients = await pool.query(`
-      SELECT u.id, u.data->>'name' AS name, u.data->>'email' AS email, 'jsonb' AS status
-      FROM users u
-      WHERE (u.data->>'accountant_id')::int = $1
-        AND u.id NOT IN (SELECT user_id FROM accountant_clients WHERE accountant_id = $1)
-      LIMIT 50
-    `, [id]);
-    return res.json({ ...accRes.rows[0], clients: [...clients.rows, ...jsonbClients.rows] });
+    // F1: the legacy users.data.accountant_id link is no longer authoritative;
+    // list only the real consented accountant_clients relationships.
+    return res.json({ ...accRes.rows[0], clients: clients.rows });
   }));
 
   // ── FLAGGED TRANSACTIONS ──────────────────────────────────────────────────

@@ -2529,12 +2529,10 @@ app.get('/favicon.ico', (req, res) => {
 // (Express matches middleware in registration order — placing the /api
 // 404 here would short-circuit any routes defined further down.)
 
-// ── GLOBAL ERROR HANDLER ──────────────────────────────────────────────────────
-// eslint-disable-next-line no-unused-vars
-app.use((err, req, res, _next) => {
-  console.error('[Unhandled Error]', err);
-  res.status(500).json({ error: 'An unexpected error occurred. Please try again.' });
-});
+// NOTE: The global error handler is registered at the very BOTTOM of this file
+// (after all routes + the /api 404 + the * fallback), NOT here. Express routes an
+// error only to handlers registered AFTER the throwing route, so placing it here
+// would miss the ~940 lines of routes below (they'd leak HTML/stack — F4).
 
 // ── RECURRING SCHEDULER ───────────────────────────────────────────────────────
 function nextRunDate(currentDate, frequency) {
@@ -3581,6 +3579,17 @@ app.use('/api', (req, res) => {
 });
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+
+// ── GLOBAL ERROR HANDLER ──────────────────────────────────────────────────────
+// MUST be the very last app.use: Express routes an error only to error handlers
+// registered AFTER the throwing route, so this position catches errors from every
+// route above. (Previously it sat mid-file at ~2534, leaving ~42 later routes to
+// fall through to Express's default handler and return HTML/stack instead of JSON.)
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  console.error('[Unhandled Error]', err);
+  res.status(500).json({ error: 'An unexpected error occurred. Please try again.' });
 });
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────

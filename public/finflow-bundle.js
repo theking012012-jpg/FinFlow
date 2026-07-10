@@ -97,7 +97,7 @@
       window.inventory=res[3].map(function(r){return{_dbId:r.id,id:r.id,sku:r.sku,name:r.name,units:r.units,max:r.max_units,cost:r.cost,low:r.low_stock===1};});
 
     if(typeof window.payrollEmployees!=='undefined')
-      window.payrollEmployees=res[4].filter(function(r){return!r.is_owner;}).map(function(r){return{_dbId:r.id,id:r.id,fname:r.fname,lname:r.lname,role:r.role,type:r.emp_type,gross:r.gross,taxRate:r.tax_rate,initials:(r.fname[0]||'')+(r.lname[0]||''),avClass:r.av_class};});
+      window.payrollEmployees=res[4].filter(function(r){return!r.is_owner;}).map(function(r){return{_dbId:r.id,id:r.id,fname:r.fname,lname:r.lname,role:r.role,type:r.emp_type,gross:r.gross,deductions:r.deductions||[],net:(window.netFromDeductions?window.netFromDeductions(r.gross,r.deductions):r.gross),initials:(r.fname[0]||'')+(r.lname[0]||''),avClass:r.av_class};});
 
     if(typeof window.goals!=='undefined')
       window.goals=res[5].map(function(r){return{_dbId:r.id,id:r.id,name:r.name,current:r.current_val,target:r.target_val,monthly:r.monthly_contrib,color:r.color};});
@@ -994,10 +994,10 @@
       const set     = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 
       const totalGross = allEmps.reduce((a, e) => a + (parseFloat(e.gross)   || 0), 0);
-      const totalTax   = allEmps.reduce((a, e) => a + Math.round((parseFloat(e.gross)||0) * (parseFloat(e.taxRate)||0) / 100), 0);
+      const totalDed   = allEmps.reduce((a, e) => a + (window.dedTotal ? window.dedTotal(e.gross, e.deductions) : 0), 0);
       set('pr-total',    sm(totalGross));
       set('pr-headcount', allEmps.length + ' employee' + (allEmps.length !== 1 ? 's' : ''));
-      set('pr-tax',      sm(totalTax));
+      set('pr-tax',      sm(totalDed));
 
       if (op) {
         set('pr-owner-net',   sm(op.net));
@@ -1020,8 +1020,8 @@
       const list = document.getElementById('payroll-list');
       if (!list) return;
       list.innerHTML = allEmps.map(e => {
-        const net      = Math.round((parseFloat(e.gross)||0) * (1 - (parseFloat(e.taxRate)||0) / 100));
-        const tax      = Math.round((parseFloat(e.gross)||0) * (parseFloat(e.taxRate)||0) / 100);
+        const net      = window.netFromDeductions ? window.netFromDeductions(e.gross, e.deductions) : (parseFloat(e.gross)||0);
+        const tax      = window.dedTotal ? window.dedTotal(e.gross, e.deductions) : 0;
         const initials = e.initials || (typeof getInitials === 'function' ? getInitials(e.fname, e.lname) : ((e.fname||'')[0] + ((e.lname||'')[0]||'')).toUpperCase());
         return `<div class="payroll-row">
           <div class="emp-info">
@@ -1030,7 +1030,7 @@
           </div>
           <span style="color:var(--t2);font-size:12px">${fn(e.role||'')}</span>
           <span style="font-family:var(--font-mono)">${sm(e.gross)}</span>
-          <span style="color:var(--red);font-family:var(--font-mono)">${(parseFloat(e.taxRate)||0) > 0 ? '-' + sm(tax) : '—'}</span>
+          <span style="color:var(--red);font-family:var(--font-mono)">${tax > 0 ? '-' + sm(tax) : '—'}</span>
           <span style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${sm(net)}</span>
           ${e.isOwner ? `<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>` : '<span></span>'}
         </div>`;
@@ -1063,7 +1063,7 @@
               role:      op.role,
               emp_type:  op.type,
               gross:     op.gross,
-              tax_rate:  op.taxRate,
+              deductions: op.deductions || [],
               av_class:  op.avClass || 'av-blue',
               entity_id: entityDbId,
             });
@@ -1076,7 +1076,7 @@
               role:      op.role     || 'CEO / Founder',
               emp_type:  op.type     || 'owner',
               gross:     op.gross,
-              tax_rate:  op.taxRate,
+              deductions: op.deductions || [],
               av_class:  op.avClass  || 'av-blue',
               is_owner:  true,
               entity_id: entityDbId,
@@ -1118,8 +1118,7 @@
             const entityName = entity?.name || 'Business';
             const curCode = op.currency || entity?.currency || 'USD';
             const gross = parseFloat(op.gross) || 0;
-            const taxRate = parseFloat(op.taxRate) || 0;
-            const net = Math.round(gross * (1 - taxRate / 100));   // entity currency
+            const net = window.netFromDeductions(gross, op.deductions);   // gross − Σ deductions, entity currency
             if (net <= 0) continue;
             const description = `Owner salary — ${entityName}`;
             const profileBody = {

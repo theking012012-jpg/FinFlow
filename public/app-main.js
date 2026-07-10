@@ -755,8 +755,8 @@ window.exportAllCSV = function(){
     filename = 'expenses.csv';
   } else if (activePage.includes('payroll')) {
     const emps = [...(window.ownerPayroll ? [{...window.ownerPayroll, isOwner:true}] : []), ...(window.payrollEmployees||[])];
-    rows = [['Name','Role','Type','Gross','Tax Rate','Net Pay'],
-      ...emps.map(e => [(e.fname||'')+' '+(e.lname||''), e.role||'', e.type||e.emp_type||'', Number(e.gross||0).toFixed(2), (e.taxRate||e.tax_rate||0)+'%', Math.round((e.gross||0)*(1-(e.taxRate||e.tax_rate||0)/100))])];
+    rows = [['Name','Role','Type','Gross','Deductions','Net Pay'],
+      ...emps.map(e => [(e.fname||'')+' '+(e.lname||''), e.role||'', e.type||e.emp_type||'', Number(e.gross||0).toFixed(2), dedTotal(e.gross, e.deductions).toFixed(2), netFromDeductions(e.gross, e.deductions)])];
     filename = 'payroll.csv';
   } else if (activePage.includes('customer')) {
     const custs = window.customers || customers || [];
@@ -1314,7 +1314,7 @@ async function loadEntityData(idx){
     // Update payroll — always reset employees per entity (no stale cross-entity rows)
     payrollEmployees = (payroll||[]).filter(r=>!r.is_owner).map(r=>({
       _dbId:r.id, fname:r.fname, lname:r.lname, role:r.role||'', type:r.emp_type||'Full-time',
-      gross:r.gross, taxRate:r.tax_rate, net:Math.round(r.gross*(1-r.tax_rate/100)),
+      gross:r.gross, deductions:r.deductions||[], net:netFromDeductions(r.gross, r.deductions),
       initials:((r.fname||'')[0]+((r.lname||'')[0]||'')).toUpperCase(), avClass:r.av_class||'av-blue', isOwner:false,
     }));
     window.payrollEmployees = payrollEmployees;
@@ -1331,8 +1331,8 @@ async function loadEntityData(idx){
         role:     ownerRow.role || 'CEO / Founder',
         type:     ownerRow.emp_type || 'owner',
         gross:    parseFloat(ownerRow.gross) || 0,
-        taxRate:  parseFloat(ownerRow.tax_rate) || 0,
-        net:      Math.round((parseFloat(ownerRow.gross)||0)*(1-(parseFloat(ownerRow.tax_rate)||0)/100)),
+        deductions: ownerRow.deductions || [],
+        net:      netFromDeductions(ownerRow.gross, ownerRow.deductions),
         initials: ((ownerRow.fname||'')[0]+((ownerRow.lname||'')[0]||'')).toUpperCase(),
         avClass:  ownerRow.av_class || 'av-blue',
         currency: _entity?.currency || 'USD',
@@ -2141,14 +2141,64 @@ function saveProduct(){
 // ════════════════════════════════════════════
 // PAYROLL
 // ════════════════════════════════════════════
+// ── USER-DEFINED DEDUCTIONS (FinFlow performs NO tax calculation) ─────────────
+// Each record carries deduction rows { label, value, type:'percent'|'fixed' }.
+// percent → gross×value/100 ; fixed → value. net = gross − Σ. Zero tax knowledge.
+const DED_DISCLAIMER = "You define these deductions. FinFlow does not calculate, determine, or verify any tax or deduction — it only subtracts the percentages and amounts you enter. You are responsible for confirming every figure with your accountant or the relevant tax authority.";
+const DED_DISCLAIMER_OUTPUT = "Estimate only, based on the deductions you entered. FinFlow performs no tax calculation and is not responsible for tax accuracy.";
+function _dedList(d){ return Array.isArray(d) ? d : []; }
+function dedTotal(gross, deductions){
+  const g = parseFloat(gross)||0;
+  return Math.round(_dedList(deductions).reduce((s,d)=>{
+    const v = parseFloat(d && d.value)||0;
+    return s + (d && d.type==='fixed' ? v : g*v/100);
+  },0)*100)/100;
+}
+function netFromDeductions(gross, deductions){
+  return Math.round(((parseFloat(gross)||0) - dedTotal(gross, deductions))*100)/100;
+}
+function dedRowHTML(d, previewFn){
+  d = d || {label:'',value:'',type:'percent'};
+  const pv = previewFn ? previewFn+'()' : '';
+  const valAttr = (d.value!=null && d.value!=='') ? d.value : '';
+  return '<div class="ded-row" style="display:flex;gap:6px;align-items:center;margin-bottom:5px">'
+    + '<input class="finput ded-label" placeholder="Label (e.g. PAYE, NIS, CPP)" value="'+esc(d.label||'')+'" oninput="'+pv+'" style="flex:1;min-width:0">'
+    + '<input class="finput ded-value" type="number" step="0.01" min="0" placeholder="0" value="'+valAttr+'" oninput="'+pv+'" style="width:82px">'
+    + '<select class="finput ded-type" onchange="'+pv+'" style="width:74px"><option value="percent"'+(d.type==='fixed'?'':' selected')+'>%</option><option value="fixed"'+(d.type==='fixed'?' selected':'')+'>fixed</option></select>'
+    + '<button type="button" onclick="this.closest(\'.ded-row\').remove();'+pv+'" title="Remove deduction" style="border:none;background:none;color:var(--t3);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px">✕</button>'
+    + '</div>';
+}
+function setDedRows(containerId, previewFn, deductions){
+  const c = document.getElementById(containerId);
+  if(!c) return;
+  c.innerHTML = _dedList(deductions).map(d=>dedRowHTML(d, previewFn)).join('');
+}
+function addDedRow(containerId, previewFn, d){
+  const c = document.getElementById(containerId);
+  if(!c) return;
+  c.insertAdjacentHTML('beforeend', dedRowHTML(d, previewFn));
+  if(previewFn && typeof window[previewFn]==='function') window[previewFn]();
+}
+function readDedRows(containerId){
+  const c = document.getElementById(containerId);
+  if(!c) return [];
+  return Array.from(c.querySelectorAll('.ded-row')).map(r=>({
+    label: (r.querySelector('.ded-label')?.value||'').trim(),
+    value: parseFloat(r.querySelector('.ded-value')?.value)||0,
+    type: r.querySelector('.ded-type')?.value==='fixed'?'fixed':'percent',
+  })).filter(d=>d.label || d.value);
+}
+window.dedTotal=dedTotal; window.netFromDeductions=netFromDeductions; window.dedRowHTML=dedRowHTML;
+window.setDedRows=setDedRows; window.addDedRow=addDedRow; window.readDedRows=readDedRows;
+window.DED_DISCLAIMER=DED_DISCLAIMER; window.DED_DISCLAIMER_OUTPUT=DED_DISCLAIMER_OUTPUT;
+
 function renderPayroll(){
-  if(typeof autoSetPayrollJurisdiction==='function') autoSetPayrollJurisdiction();
   const allEmps=ownerPayroll?[{...ownerPayroll,isOwner:true},...(payrollEmployees||[])]:( payrollEmployees||[]);
   const totalGross=allEmps.reduce((a,e)=>a+(parseFloat(e.gross)||0),0);
-  const totalTax=allEmps.reduce((a,e)=>a+Math.round((parseFloat(e.gross)||0)*(parseFloat(e.taxRate)||0)/100),0);
+  const totalDed=allEmps.reduce((a,e)=>a+dedTotal(e.gross, e.deductions),0);
   document.getElementById('pr-total').textContent=S(totalGross);
   document.getElementById('pr-headcount').textContent=allEmps.length+' employee'+(allEmps.length!==1?'s':'');
-  document.getElementById('pr-tax').textContent=S(totalTax);
+  document.getElementById('pr-tax').textContent=S(totalDed);
   if(ownerPayroll){
     document.getElementById('pr-owner-net').textContent=S(ownerPayroll.net);
     document.getElementById('pr-owner-label').textContent='Your net salary';
@@ -2162,8 +2212,8 @@ function renderPayroll(){
     document.getElementById('payroll-link-card').style.display='none';
   }
   document.getElementById('payroll-list').innerHTML=allEmps.map(e=>{
-    const net=Math.round(e.gross*(1-e.taxRate/100));
-    const tax=Math.round(e.gross*e.taxRate/100);
+    const net=netFromDeductions(e.gross, e.deductions);
+    const tax=dedTotal(e.gross, e.deductions);
     return`<div class="payroll-row">
       <div class="emp-info">
         <div class="emp-init ${e.avClass||'av-blue'}">${e.initials||getInitials(e.fname,e.lname)}</div>
@@ -2171,7 +2221,7 @@ function renderPayroll(){
       </div>
       <span style="color:var(--t2);font-size:12px">${esc(e.role)}</span>
       <span style="font-family:var(--font-mono)">${S(e.gross)}</span>
-      <span style="color:var(--red);font-family:var(--font-mono)">${e.taxRate>0?'-'+S(tax):'—'}</span>
+      <span style="color:var(--red);font-family:var(--font-mono)">${tax>0?'-'+S(tax):'—'}</span>
       <span style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${S(net)}</span>
       ${e.isOwner
         ?`<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`
@@ -2181,10 +2231,10 @@ function renderPayroll(){
 }
 function previewOwnerNet(){
   const g=Number(document.getElementById('own-gross').value)||0;
-  const t=Number(document.getElementById('own-taxrate').value)||0;
+  const deds=readDedRows('own-deductions-rows');
   const entity = ENTITIES[activeOwnerEntityIdx];
   const sym = entity ? (window.CURRENCIES[entity.currency]?.symbol||'$') : '$';
-  document.getElementById('own-net-preview').value=g>0?(sym+Math.round(g*(1-t/100)).toLocaleString()):'—';
+  document.getElementById('own-net-preview').value=g>0?(sym+Math.round(netFromDeductions(g, deds)).toLocaleString()):'—';
   updateOwnerEntitySummary();
 }
 
@@ -2209,12 +2259,12 @@ function updateOwnerEntitySummary(){
 
   // Get current unsaved value for active entity
   const pendingGross = Number(document.getElementById('own-gross')?.value)||0;
-  const pendingTax = Number(document.getElementById('own-taxrate')?.value)||0;
-  const pendingNet = pendingGross > 0 ? Math.round(pendingGross*(1-pendingTax/100)) : 0;
+  const pendingDeds = readDedRows('own-deductions-rows');
+  const pendingNet = pendingGross > 0 ? Math.round(netFromDeductions(pendingGross, pendingDeds)) : 0;
 
   summaryEl.innerHTML = ENTITIES.map((e,i)=>{
     const ep = i === activeOwnerEntityIdx && pendingNet > 0
-      ? {net: pendingNet, gross: pendingGross, taxRate: pendingTax}
+      ? {net: pendingNet, gross: pendingGross, deductions: pendingDeds}
       : ownerPayrollByEntity[i];
     const cur = window.CURRENCIES[e.currency] || {symbol:'$'};
     const netUSD = ep ? Math.round(_safeFX(ep.net, e.currency, 'USD')) : 0;
@@ -2268,7 +2318,7 @@ window.switchOwnerEntityTab = function(idx){
   const curFname = document.getElementById('own-fname')?.value?.trim()||'';
   const curLname = document.getElementById('own-lname')?.value?.trim()||'';
   const curGross = Number(document.getElementById('own-gross')?.value||0);
-  const curTax   = Number(document.getElementById('own-taxrate')?.value||0);
+  const curDeds  = readDedRows('own-deductions-rows');
   const curRole  = document.getElementById('own-role')?.value||'CEO / Founder';
   const curType  = document.getElementById('own-type')?.value||'owner';
 
@@ -2279,8 +2329,8 @@ window.switchOwnerEntityTab = function(idx){
       _dbId: existing._dbId,
       fname: curFname, lname: curLname,
       role: curRole, type: curType,
-      gross: curGross, taxRate: curTax,
-      net: Math.round(curGross*(1-curTax/100)),
+      gross: curGross, deductions: curDeds,
+      net: netFromDeductions(curGross, curDeds),
       currency: curEntity?.currency||'USD',
       initials: getInitials(curFname,curLname),
       avClass: 'av-blue',
@@ -2299,7 +2349,7 @@ window.switchOwnerEntityTab = function(idx){
     document.getElementById('own-role').value   = ep.role;
     document.getElementById('own-type').value   = ep.type;
     document.getElementById('own-gross').value  = ep.gross;
-    document.getElementById('own-taxrate').value = ep.taxRate;
+    setDedRows('own-deductions-rows','previewOwnerNet', ep.deductions);
     document.getElementById('owner-remove-btn').style.display = 'inline-flex';
   } else {
     // Carry over name and role from previous tab — only clear the salary
@@ -2308,6 +2358,7 @@ window.switchOwnerEntityTab = function(idx){
     document.getElementById('own-role').value   = curRole;
     document.getElementById('own-type').value   = curType;
     document.getElementById('own-gross').value  = '';
+    setDedRows('own-deductions-rows','previewOwnerNet', []);
     document.getElementById('own-net-preview').value = '—';
     document.getElementById('owner-remove-btn').style.display = 'none';
   }
@@ -2337,7 +2388,7 @@ function openOwnerPayrollModal(){
     document.getElementById('own-role').value    = ep.role;
     document.getElementById('own-type').value    = ep.type;
     document.getElementById('own-gross').value   = ep.gross;
-    document.getElementById('own-taxrate').value = ep.taxRate;
+    setDedRows('own-deductions-rows','previewOwnerNet', ep.deductions);
     document.getElementById('owner-remove-btn').style.display = 'inline-flex';
   } else {
     document.getElementById('own-fname').value   = defaultFirst;
@@ -2346,7 +2397,7 @@ function openOwnerPayrollModal(){
     document.getElementById('own-type').value    = 'owner';
     document.getElementById('own-gross').value   = '';
     document.getElementById('own-net-preview').value = '—';
-    document.getElementById('own-taxrate').value = '20';
+    setDedRows('own-deductions-rows','previewOwnerNet', []);
     document.getElementById('owner-remove-btn').style.display = 'none';
   }
 
@@ -2360,7 +2411,7 @@ function saveOwnerPayroll(){
   const fname   = document.getElementById('own-fname')?.value?.trim()||'';
   const lname   = document.getElementById('own-lname')?.value?.trim()||'';
   const gross   = Number(document.getElementById('own-gross')?.value||0);
-  const taxRate = Number(document.getElementById('own-taxrate')?.value||0);
+  const deductions = readDedRows('own-deductions-rows');
   const role    = document.getElementById('own-role')?.value||'CEO / Founder';
   const type    = document.getElementById('own-type')?.value||'owner';
 
@@ -2373,8 +2424,8 @@ function saveOwnerPayroll(){
     ownerPayrollByEntity[activeOwnerEntityIdx] = {
       _dbId: existing._dbId, // preserve so medium.js does PUT, not POST (no dupes)
       fname, lname, role, type,
-      gross, taxRate,
-      net: Math.round(gross*(1-taxRate/100)),
+      gross, deductions,
+      net: netFromDeductions(gross, deductions),
       currency: entity?.currency||'USD',
       initials: getInitials(fname,lname),
       avClass: 'av-blue',
@@ -2417,19 +2468,7 @@ function removeOwnerFromPayroll(){
   notify(`Removed from ${entity?.name||'entity'} payroll ✦`);
 }
 
-function autoSetPayrollJurisdiction(){
-  const active = (window.ENTITIES||ENTITIES||[]).find(e=>e.active);
-  const cur = (active?.currency||'USD').toUpperCase();
-  const MAP = {USD:'US',GBP:'GB',EUR:'OTHER',CAD:'CA',AUD:'OTHER',NZD:'OTHER',SGD:'OTHER',TTD:'TT',ZAR:'OTHER',JMD:'JM',BBD:'BB',MXN:'MX',COP:'CO'};
-  const jur = MAP[cur] || 'US';
-  ['payroll-jurisdiction','tax-prev-jur'].forEach(id=>{
-    const sel = document.getElementById(id);
-    if (sel && !sel._userSet) {
-      const opt = Array.from(sel.options).find(o=>o.value===jur);
-      if (opt) sel.value = jur;
-    }
-  });
-}
+// (Removed autoSetPayrollJurisdiction — FinFlow no longer has jurisdictions.)
 
 window.openEditEmployee = function(id){
   const emp = (window.payrollEmployees||[]).find(e=>(e._dbId||e.id)===id);
@@ -2439,12 +2478,17 @@ window.openEditEmployee = function(id){
   document.getElementById('edit-emp-role').value = emp.role||'';
   document.getElementById('edit-emp-type').value = emp.type||emp.emp_type||'Full-time';
   document.getElementById('edit-emp-gross').value = emp.gross||0;
-  document.getElementById('edit-emp-tax').value = emp.taxRate||emp.tax_rate||0;
+  setDedRows('edit-emp-deductions-rows','previewEditEmpNet', emp.deductions);
   document.getElementById('modal-edit-employee').style.display='flex';
 };
 
 window.closeEditEmployee = function(){
   document.getElementById('modal-edit-employee').style.display='none';
+};
+window.previewEditEmpNet = function(){
+  const gross = parseFloat(document.getElementById('edit-emp-gross')?.value)||0;
+  const el = document.getElementById('edit-emp-net-preview');
+  if(el) el.textContent = gross>0 ? '$'+netFromDeductions(gross, readDedRows('edit-emp-deductions-rows')).toLocaleString() : '—';
 };
 
 window.saveEditEmployee = async function(){
@@ -2452,7 +2496,7 @@ window.saveEditEmployee = async function(){
   const role = (document.getElementById('edit-emp-role').value||'').trim().slice(0,100);
   const emp_type = document.getElementById('edit-emp-type').value;
   const gross = parseFloat(document.getElementById('edit-emp-gross').value)||0;
-  const tax_rate = parseFloat(document.getElementById('edit-emp-tax').value)||0;
+  const deductions = readDedRows('edit-emp-deductions-rows');
   if(!id) return;
   const btn = document.querySelector('#modal-edit-employee .btn-primary');
   btn.disabled=true; btn.textContent='Saving…';
@@ -2460,11 +2504,11 @@ window.saveEditEmployee = async function(){
     const res = await fetch('/api/payroll/'+id,{
       method:'PUT', credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({role,emp_type,gross,tax_rate})
+      body:JSON.stringify({role,emp_type,gross,deductions})
     });
     if(!res.ok) throw new Error(await res.text());
     const emp = (window.payrollEmployees||[]).find(e=>(e._dbId||e.id)===id);
-    if(emp){ emp.role=role; emp.type=emp_type; emp.gross=gross; emp.taxRate=tax_rate; }
+    if(emp){ emp.role=role; emp.type=emp_type; emp.gross=gross; emp.deductions=deductions; emp.net=netFromDeductions(gross, deductions); }
     window.closeEditEmployee();
     if(typeof renderPayroll==='function') renderPayroll();
     notify('Employee updated ✦');
@@ -3088,8 +3132,7 @@ async function _persCommitTx({desc,amount,cat,type,date,editId,recurringProfileI
 // ── Personal salary card ──────────────────────────────────────────────
 function persPreviewNet(){
   const gross=parseFloat(document.getElementById('pers-sal-gross')?.value)||0;
-  const tax=parseFloat(document.getElementById('pers-sal-tax')?.value)||20;
-  const net=Math.round(gross*(1-tax/100));
+  const net=netFromDeductions(gross, readDedRows('pers-sal-deductions-rows'));
   const el=document.getElementById('pers-sal-net-preview');
   if(el) el.textContent=gross>0?SP(net)+'/mo':'—';
 }
@@ -3114,29 +3157,28 @@ function prefillPersSalaryCard(){
   const ep=activeIdx>=0?(ownerPayrollByEntity[activeIdx]||null):null;
   const syncLabel=document.getElementById('pers-salary-sync-label');
   const grossEl=document.getElementById('pers-sal-gross');
-  const taxEl=document.getElementById('pers-sal-tax');
   if(ep&&ep.gross>0){
     if(grossEl) grossEl.value=ep.gross;
-    if(taxEl) taxEl.value=ep.taxRate||20;
+    setDedRows('pers-sal-deductions-rows','persPreviewNet', ep.deductions);
     if(syncLabel) syncLabel.style.display='';
   }else{
+    setDedRows('pers-sal-deductions-rows','persPreviewNet', []);
     if(syncLabel) syncLabel.style.display='none';
   }
   persPreviewNet();
   // Collapsible state: default collapsed to a summary when a salary is set,
   // expanded when it's empty so the user knows to fill it in.
   const grossVal=parseFloat(grossEl?.value)||0;
-  const taxVal=parseFloat(taxEl?.value)||20;
   const sg=document.getElementById('pers-salary-summary-gross');
   const sn=document.getElementById('pers-salary-summary-net');
   if(sg) sg.textContent=grossVal>0?SP(grossVal):'—';
-  if(sn) sn.textContent=grossVal>0?SP(Math.round(grossVal*(1-taxVal/100)))+'/mo':'—';
+  if(sn) sn.textContent=grossVal>0?SP(netFromDeductions(grossVal, readDedRows('pers-sal-deductions-rows')))+'/mo':'—';
   togglePersSalaryEdit(grossVal<=0);
 }
 
 async function savePersonalSalary(){
   const gross=parseFloat(document.getElementById('pers-sal-gross')?.value)||0;
-  const taxRate=parseFloat(document.getElementById('pers-sal-tax')?.value)||20;
+  const deductions=readDedRows('pers-sal-deductions-rows');
   if(!gross){notify('Please enter a salary amount');return;}
   const activeIdx=typeof ENTITIES!=='undefined'?ENTITIES.findIndex(e=>e.active):-1;
   const entity=activeIdx>=0?ENTITIES[activeIdx]:null;
@@ -3144,7 +3186,7 @@ async function savePersonalSalary(){
   const parts=rawName.split(' ');
   const fname=parts[0]||'Owner';
   const lname=parts.slice(1).join(' ')||'';
-  const payload={fname,lname,gross,tax_rate:taxRate,is_owner:true,entity_id:entity?._dbId||null,role:'CEO / Founder',emp_type:'owner',av_class:'av-blue'};
+  const payload={fname,lname,gross,deductions,is_owner:true,entity_id:entity?._dbId||null,role:'CEO / Founder',emp_type:'owner',av_class:'av-blue'};
   try{
     // Always fetch fresh DB state — in-memory ownerPayrollByEntity may be stale after page load
     let existingId=null;
@@ -3165,8 +3207,8 @@ async function savePersonalSalary(){
     if(activeIdx>=0){
       ownerPayrollByEntity[activeIdx]={
         _dbId:saved.id,fname,lname,
-        gross,taxRate,
-        net:Math.round(gross*(1-taxRate/100)),
+        gross,deductions,
+        net:netFromDeductions(gross, deductions),
         currency:entity?.currency||'USD',
         initials:((fname[0]||'')+(lname[0]||'')).toUpperCase(),
         avClass:'av-blue',
@@ -3188,8 +3230,7 @@ async function savePersonalSalary(){
 
 function payrollCardPreviewNet(){
   const gross=parseFloat(document.getElementById('payroll-cta-gross')?.value)||0;
-  const tax=parseFloat(document.getElementById('payroll-cta-tax')?.value)||20;
-  const net=Math.round(gross*(1-tax/100));
+  const net=netFromDeductions(gross, readDedRows('cta-deductions-rows'));
   const el=document.getElementById('payroll-cta-net');
   if(el) el.textContent=gross>0?'Net: '+S(net)+'/mo':'';
 }
@@ -3198,14 +3239,14 @@ async function saveOwnerPayrollCard(){
   const fname=(document.getElementById('payroll-cta-fname')?.value||'').trim();
   const lname=(document.getElementById('payroll-cta-lname')?.value||'').trim();
   const gross=parseFloat(document.getElementById('payroll-cta-gross')?.value)||0;
-  const taxRate=parseFloat(document.getElementById('payroll-cta-tax')?.value)||20;
+  const deductions=readDedRows('cta-deductions-rows');
   const role=(document.getElementById('payroll-cta-role')?.value||'Owner').trim();
   if(!fname){notify('Please enter your first name');return;}
   if(!gross){notify('Please enter your monthly salary');return;}
   const activeIdx=typeof ENTITIES!=='undefined'?ENTITIES.findIndex(e=>e.active):-1;
   const entity=activeIdx>=0?ENTITIES[activeIdx]:null;
   const existing=activeIdx>=0?(ownerPayrollByEntity[activeIdx]||null):null;
-  const payload={fname,lname,gross,tax_rate:taxRate,is_owner:true,entity_id:entity?._dbId||null,role,emp_type:'owner',av_class:'av-blue'};
+  const payload={fname,lname,gross,deductions,is_owner:true,entity_id:entity?._dbId||null,role,emp_type:'owner',av_class:'av-blue'};
   try{
     let saved;
     if(existing?._dbId){
@@ -3220,8 +3261,8 @@ async function saveOwnerPayrollCard(){
     if(activeIdx>=0){
       ownerPayrollByEntity[activeIdx]={
         _dbId:saved.id,fname,lname,role,
-        gross,taxRate,
-        net:Math.round(gross*(1-taxRate/100)),
+        gross,deductions,
+        net:netFromDeductions(gross, deductions),
         currency:entity?.currency||'USD',
         initials:((fname[0]||'')+(lname[0]||'')).toUpperCase(),
         avClass:'av-blue',
@@ -3242,7 +3283,8 @@ async function saveOwnerPayrollCard(){
 function openAddEmployeeModal(){
   const _sv=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
   _sv('emp-fname',''); _sv('emp-lname',''); _sv('emp-jobtitle','');
-  _sv('emp-type','Full-time'); _sv('emp-gross',''); _sv('emp-taxrate','20'); _sv('emp-startdate','');
+  _sv('emp-type','Full-time'); _sv('emp-gross',''); _sv('emp-startdate','');
+  setDedRows('emp-deductions-rows','previewEmpNet', []);
   const prev=document.getElementById('emp-net-preview');
   if(prev) prev.textContent='—';
   openModal('add-employee-modal');
@@ -3250,8 +3292,7 @@ function openAddEmployeeModal(){
 
 function previewEmpNet(){
   const gross=parseFloat(document.getElementById('emp-gross')?.value)||0;
-  const tax=parseFloat(document.getElementById('emp-taxrate')?.value)||0;
-  const net=Math.round(gross*(1-tax/100));
+  const net=netFromDeductions(gross, readDedRows('emp-deductions-rows'));
   const el=document.getElementById('emp-net-preview');
   if(el) el.textContent=gross>0?'$'+net.toLocaleString():'—';
 }
@@ -3262,7 +3303,7 @@ async function saveNewEmployee(){
   const role=(document.getElementById('emp-jobtitle')?.value||'').trim();
   const empType=document.getElementById('emp-type')?.value||'Full-time';
   const gross=parseFloat(document.getElementById('emp-gross')?.value)||0;
-  const taxRate=parseFloat(document.getElementById('emp-taxrate')?.value)||0;
+  const deductions=readDedRows('emp-deductions-rows');
   if(!fname){notify('First name is required');return;}
   if(!gross){notify('Monthly gross salary is required');return;}
   const colors=['av-blue','av-green','av-purple','av-amber','av-teal'];
@@ -3271,12 +3312,12 @@ async function saveNewEmployee(){
   const entity=activeIdx>=0?ENTITIES[activeIdx]:null;
   try{
     const r=await fetch('/api/payroll',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
-      body:JSON.stringify({fname,lname,role,emp_type:empType,gross,tax_rate:taxRate,is_owner:false,av_class:avClass,entity_id:entity?._dbId||null})});
+      body:JSON.stringify({fname,lname,role,emp_type:empType,gross,deductions,is_owner:false,av_class:avClass,entity_id:entity?._dbId||null})});
     if(!r.ok) throw new Error((await r.json()).error||'Failed to save');
     const saved=await r.json();
-    const net=Math.round(gross*(1-taxRate/100));
+    const net=netFromDeductions(gross, deductions);
     const initials=((fname[0]||'')+(lname[0]||'')).toUpperCase();
-    payrollEmployees.push({_dbId:saved.id,fname,lname,role,type:empType,gross,taxRate,net,initials,avClass,isOwner:false});
+    payrollEmployees.push({_dbId:saved.id,fname,lname,role,type:empType,gross,deductions,net,initials,avClass,isOwner:false});
     window.payrollEmployees=payrollEmployees;
     closeModal('add-employee-modal');
     renderPayroll();
@@ -3689,21 +3730,8 @@ function renderPersonalSections(){
     const _mNow=new Date(); const _mKey=_mNow.getFullYear()+'-'+String(_mNow.getMonth()+1).padStart(2,'0');
     const _oneTimeThisMonth=(window._allPersTxs||[]).filter(t=>t.type==='income'&&t.recurringProfileId==null&&String(t.date||'').slice(0,7)===_mKey).reduce((a,t)=>a+_safeFX(t.amount,_txCurOf(t),'USD'),0);
     const monthlyInc=_monthlyRecur+_oneTimeThisMonth;
-    if(monthlyInc===0){
-      taxEl.innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:.75rem">Add income to see tax estimate</div>';
-    }else{
-      const taxRate=parseFloat(document.getElementById('own-taxrate')?.value)||20;
-      const annualGross=monthlyInc*12;
-      const estTax=Math.round(annualGross*taxRate/100);
-      const netAfterTax=annualGross-estTax;
-      const monthlyTakeHome=Math.round(netAfterTax/12);
-      taxEl.innerHTML=`
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">Gross annual income</span><span style="font-family:var(--font-mono);font-weight:600;color:var(--t1)">${SP(annualGross)}</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">Est. tax (${taxRate}%)</span><span style="font-family:var(--font-mono);font-weight:600;color:var(--red)">-${SP(estTax)}</span></div>
-        <div style="height:1px;background:var(--bd);margin:8px 0"></div>
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">Net after tax</span><span style="font-family:var(--font-mono);font-weight:600;color:var(--green)">${SP(netAfterTax)}</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0 3px"><span style="color:var(--t1);font-weight:600">Monthly take-home</span><span style="font-family:var(--font-mono);font-weight:700;color:var(--acc)">${SP(monthlyTakeHome)}</span></div>`;
-    }
+    // FinFlow performs NO tax calculation (F8) — the flat-rate tax estimate was removed.
+    taxEl.innerHTML='<div style="font-size:12px;color:var(--t3);line-height:1.6;padding:.5rem 0">'+DED_DISCLAIMER_OUTPUT+'</div>';
   }
 }
 
@@ -4033,7 +4061,7 @@ function updateAI(d=getPeriodData()){
     (()=>{ const _cats=_bd?Object.entries(_bd.byCategory).concat(_bd.payroll>0?[['Payroll',_bd.payroll]]:[]).concat(_bd.paymentsMade>0?[['Bill payments',_bd.paymentsMade]]:[]).filter(c=>c[1]>0).sort((a,b)=>b[1]-a[1]):[]; const _top=_cats[0]; return `Expenses this month: ${S(_exp)}.${(_top&&_exp>0)?` Largest cost: ${_top[0]} at ${S(_top[1])} (${Math.round(_top[1]/_exp*100)}%).`:''}`; })(),
     `Net profit: ${S(_profit)} — ${currentMonthIdx>0?`${pct(d.profit,PROFIT[currentMonthIdx-1])>0?'up':'down'} ${Math.abs(pct(d.profit,PROFIT[currentMonthIdx-1]))}% vs last month (operating)`:'first month on record'}.`,
     _topClients.length ? `Top client this month: ${_topClients[0].label} at ${S(_topClients[0].total)} (${_rev>0?Math.round(_topClients[0].total/_rev*100):0}% of revenue).` : `Add invoices to track client revenue.`,
-    (()=>{ const _pay=(window.ownerPayroll?[window.ownerPayroll]:[]).concat(window.payrollEmployees||[]); const _wh=_pay.reduce((s,p)=>s+((parseFloat(p.gross)||0)*(parseFloat(p.taxRate!=null?p.taxRate:p.tax_rate)||0)/100),0); return _wh>0?`Payroll tax withheld this month: ${S(Math.round(_wh))}, computed from each employee's tax rate.`:`Add payroll with tax rates to see withholding.`; })(),
+    (()=>{ const _pay=(window.ownerPayroll?[window.ownerPayroll]:[]).concat(window.payrollEmployees||[]); const _wh=_pay.reduce((s,p)=>s+dedTotal(p.gross, p.deductions),0); return _wh>0?`Payroll deductions this month: ${S(Math.round(_wh))}, from the deduction rows you entered.`:`Add payroll with deduction rows to see totals.`; })(),
     (()=>{ const _low=(inventory||[]).filter(i=>i.low); return _low.length?`Inventory alert: ${_low.length} item${_low.length>1?'s':''} low on stock — ${_low.slice(0,3).map(i=>i.name).join(', ')}${_low.length>3?'…':''}.`:`No low-stock items — inventory healthy.`; })(),
   ];
   document.getElementById('ai-insights-list').innerHTML=insights.map(t=>`<div class="ai-insight">${esc(t)}</div>`).join('');

@@ -18,8 +18,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
 <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
-<link rel="preload" href="/app-main.min.js" as="script">
-<link rel="preload" href="/finflow-bundle.min.js" as="script">
+<link rel="preload" href="/app-main.js" as="script">
+<link rel="preload" href="/finflow-bundle.js" as="script">
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'">
 <script>window._appReady=false;</script>
 <!-- ════════════════════════════════════════
@@ -430,6 +430,7 @@ html{overflow-x:hidden}
 .card{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-lg);padding:1rem 1.25rem;margin-bottom:1.25rem}
 .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.9rem}
 .card-title{font-size:14px;font-weight:400;color:var(--t1);font-family:var(--font-display);letter-spacing:.04em;margin:0}
+.ded-disclaimer{font-size:10.5px;color:var(--t3);line-height:1.5;margin-top:6px;padding:6px 8px;background:var(--bg2);border:1px solid var(--bd);border-radius:6px}
 .card-sub{font-size:11px;color:var(--t3);margin-top:2px}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem}.page-settings .two-col,.page-pricing .two-col{align-items:start}
 /* BARS */
@@ -2076,7 +2077,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="metrics-grid">
           <div class="mc"><div class="mc-label">Monthly payroll</div><div class="mc-val" id="pr-total">—</div><div class="mc-change neutral" id="pr-headcount">5 employees</div></div>
           <div class="mc"><div class="mc-label">Next run date</div><div class="mc-val">—</div><div class="mc-change neutral">No upcoming run</div></div>
-          <div class="mc"><div class="mc-label">Tax withheld</div><div class="mc-val" id="pr-tax">—</div><div class="mc-change neutral">This month</div></div>
+          <div class="mc"><div class="mc-label">Deductions</div><div class="mc-val" id="pr-tax">—</div><div class="mc-change neutral">This month</div></div>
           <div class="mc"><div class="mc-label">Your net pay</div><div class="mc-val" id="pr-owner-net" style="color:var(--acc)">—</div><div class="mc-change neutral" id="pr-owner-label">Not on payroll</div></div>
         </div>
         <div id="owner-cta" class="card" style="background:linear-gradient(135deg,var(--acc-bg),rgba(30,24,8,.4));border-color:var(--acc2);margin-bottom:1.25rem">
@@ -2086,10 +2087,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div class="field-wrap"><label class="field-label" for="payroll-cta-fname">First name</label><input class="finput" id="payroll-cta-fname" placeholder="First name"></div>
             <div class="field-wrap"><label class="field-label" for="payroll-cta-lname">Last name</label><input class="finput" id="payroll-cta-lname" placeholder="Last name"></div>
           </div>
-          <div class="field-group" style="margin-bottom:.6rem">
-            <div class="field-wrap"><label class="field-label" for="payroll-cta-gross">Monthly gross (USD)</label><input class="finput" id="payroll-cta-gross" type="number" placeholder="e.g. 5000" oninput="payrollCardPreviewNet()"></div>
-            <div class="field-wrap"><label class="field-label" for="payroll-cta-tax">Tax rate (%)</label><input class="finput" id="payroll-cta-tax" type="number" value="20" min="0" max="60" step="0.5" oninput="payrollCardPreviewNet()"></div>
+          <div class="field-wrap" style="margin-bottom:.6rem"><label class="field-label" for="payroll-cta-gross">Monthly gross (USD)</label><input class="finput" id="payroll-cta-gross" type="number" placeholder="e.g. 5000" oninput="payrollCardPreviewNet()"></div>
+          <div class="field-wrap" style="margin-bottom:.35rem">
+            <label class="field-label">Deductions</label>
+            <div id="cta-deductions-rows"></div>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="addDedRow('cta-deductions-rows','payrollCardPreviewNet')" style="margin-top:2px">+ Add deduction</button>
           </div>
+          <div class="ded-disclaimer" style="margin-bottom:.6rem">You define these deductions. FinFlow does not calculate, determine, or verify any tax or deduction — it only subtracts the percentages and amounts you enter. You are responsible for confirming every figure with your accountant or the relevant tax authority.</div>
           <div class="field-wrap" style="margin-bottom:.85rem"><label class="field-label" for="payroll-cta-role">Role</label><input class="finput" id="payroll-cta-role" placeholder="e.g. Owner" value="Owner"></div>
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
             <span id="payroll-cta-net" style="font-size:12.5px;color:var(--green);font-family:var(--font-mono);font-weight:600"></span>
@@ -2103,39 +2107,12 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="card-header">
             <div><h2 class="card-title">Team payroll</h2></div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-              <select class="finput" id="payroll-jurisdiction" style="font-size:11px;padding:4px 8px;width:auto" onchange="this._userSet=true">
-                <option value="TT">T&amp;T (PAYE+NIS)</option>
-                <option value="BB">Barbados</option>
-                <option value="JM">Jamaica</option>
-                <option value="CA">Canada</option>
-                <option value="US">USA</option>
-                <option value="GB">UK</option>
-                <option value="MX">Mexico</option>
-                <option value="CO">Colombia</option>
-                <option value="OTHER">Other (20%)</option>
-              </select>
               <button class="btn btn-ghost btn-sm" onclick="openAddEmployeeModal()">+ Add employee</button>
               <button class="btn btn-primary btn-sm" onclick="openRunPayrollModal()">Run Payroll</button>
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 90px 80px 70px 80px 36px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Employee</span><span>Role</span><span>Gross</span><span>Tax</span><span>Net pay</span><span></span></div>
+          <div style="display:grid;grid-template-columns:1fr 90px 80px 70px 80px 36px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Employee</span><span>Role</span><span>Gross</span><span>Deductions</span><span>Net pay</span><span></span></div>
           <div id="payroll-list"></div>
-        </div>
-        <div class="card">
-          <div class="card-header"><h2 class="card-title">Tax Preview Calculator</h2></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:.75rem">
-            <div class="field-wrap" style="margin:0"><label class="field-label" for="tax-prev-gross">Monthly Gross</label><input class="finput" id="tax-prev-gross" type="number" placeholder="5000" oninput="runTaxPreview()" style="width:120px"></div>
-            <div class="field-wrap" style="margin:0"><label class="field-label" for="tax-prev-jur">Jurisdiction</label>
-              <select class="finput" id="tax-prev-jur" style="width:140px" onchange="this._userSet=true;runTaxPreview()">
-                <option value="TT">T&amp;T</option><option value="BB">Barbados</option><option value="JM">Jamaica</option>
-                <option value="CA">Canada</option><option value="US">USA</option><option value="GB">UK</option>
-                <option value="MX">Mexico</option><option value="CO">Colombia</option><option value="OTHER">Other</option>
-              </select>
-            </div>
-            <div class="field-wrap" style="margin:0"><label class="field-label" for="tax-prev-bonus">Bonus</label><input class="finput" id="tax-prev-bonus" type="number" placeholder="0" oninput="runTaxPreview()" style="width:90px"></div>
-            <div class="field-wrap" style="margin:0"><label class="field-label" for="tax-prev-overtime">Overtime</label><input class="finput" id="tax-prev-overtime" type="number" placeholder="0" oninput="runTaxPreview()" style="width:90px"></div>
-          </div>
-          <div id="tax-preview-result" style="font-size:12px;color:var(--t3)">Enter a gross amount to see the tax breakdown.</div>
         </div>
         <div class="card">
           <div class="card-header"><h2 class="card-title">Payroll Run History</h2></div>
@@ -2580,10 +2557,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           </div>
           <!-- Expanded editor -->
           <div id="pers-salary-editor">
-            <div class="field-group" style="margin-bottom:.6rem;margin-top:.75rem">
-              <div class="field-wrap"><label class="field-label" for="pers-sal-gross">Gross salary (USD / mo)</label><input class="finput" id="pers-sal-gross" type="number" placeholder="e.g. 5000" oninput="persPreviewNet()"></div>
-              <div class="field-wrap"><label class="field-label" for="pers-sal-tax">Tax rate (%)</label><input class="finput" id="pers-sal-tax" type="number" value="20" min="0" max="60" step="0.5" oninput="persPreviewNet()"></div>
+            <div class="field-wrap" style="margin-bottom:.5rem;margin-top:.75rem"><label class="field-label" for="pers-sal-gross">Gross salary (USD / mo)</label><input class="finput" id="pers-sal-gross" type="number" placeholder="e.g. 5000" oninput="persPreviewNet()"></div>
+            <div class="field-wrap" style="margin-bottom:.35rem">
+              <label class="field-label">Deductions</label>
+              <div id="pers-sal-deductions-rows"></div>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="addDedRow('pers-sal-deductions-rows','persPreviewNet')" style="margin-top:2px">+ Add deduction</button>
             </div>
+            <div class="ded-disclaimer" style="margin-bottom:.6rem">You define these deductions. FinFlow does not calculate, determine, or verify any tax or deduction — it only subtracts the percentages and amounts you enter. You are responsible for confirming every figure with your accountant or the relevant tax authority.</div>
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
               <div style="font-size:12.5px;color:var(--t2)">Net take-home: <span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="pers-sal-net-preview">—</span></div>
               <button class="btn btn-primary btn-sm" onclick="savePersonalSalary()">Save salary</button>
@@ -3289,10 +3269,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="own-fname">First name</label><input class="finput" id="own-fname"></div><div class="field-wrap"><label class="field-label" for="own-lname">Last name</label><input class="finput" id="own-lname"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="own-role">Job title</label><input class="finput" id="own-role" value="CEO / Founder"></div><div class="field-wrap"><label class="field-label" for="own-type">Type</label><select class="finput" id="own-type"><option value="owner">Owner / Director</option><option value="fulltime">Full-time</option><option value="parttime">Part-time</option><option value="contractor">Contractor</option></select></div></div>
     <div class="field-wrap"><label class="field-label" for="own-gross">Monthly gross salary <span id="own-currency-sym" style="color:var(--acc)">($)</span></label><input class="finput" id="own-gross" type="number" placeholder="e.g. 8000" oninput="previewOwnerNet()"></div>
-    <div class="field-group">
-      <div class="field-wrap"><label class="field-label" for="own-taxrate">Tax rate (%)</label><input class="finput" id="own-taxrate" type="number" value="20" min="0" max="60" step="0.5" oninput="previewOwnerNet()"></div>
-      <div class="field-wrap"><label class="field-label" for="own-net-preview">Net pay (preview)</label><input class="finput" id="own-net-preview" readonly style="color:var(--acc);font-family:var(--font-mono);font-weight:600"></div>
+    <div class="field-wrap" style="margin-bottom:.35rem">
+      <label class="field-label">Deductions</label>
+      <div id="own-deductions-rows"></div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addDedRow('own-deductions-rows','previewOwnerNet')" style="margin-top:2px">+ Add deduction</button>
     </div>
+    <div class="ded-disclaimer">You define these deductions. FinFlow does not calculate, determine, or verify any tax or deduction — it only subtracts the percentages and amounts you enter. You are responsible for confirming every figure with your accountant or the relevant tax authority.</div>
+    <div class="field-wrap"><label class="field-label" for="own-net-preview">Net pay (preview)</label><input class="finput" id="own-net-preview" readonly style="color:var(--acc);font-family:var(--font-mono);font-weight:600"></div>
 
     <!-- Per-entity summary -->
     <div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:.75rem;margin-top:.25rem">
@@ -3333,10 +3316,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <option value="Contractor">Contractor</option>
       </select>
     </div>
-    <div class="field-group" style="margin-bottom:.6rem">
-      <div class="field-wrap"><label class="field-label" for="emp-gross">Monthly gross (USD)</label><input class="finput" id="emp-gross" type="number" placeholder="e.g. 4000" min="0" step="100" oninput="previewEmpNet()"></div>
-      <div class="field-wrap"><label class="field-label" for="emp-taxrate">Tax rate (%)</label><input class="finput" id="emp-taxrate" type="number" value="20" min="0" max="60" step="0.5" oninput="previewEmpNet()"></div>
+    <div class="field-wrap" style="margin-bottom:.6rem"><label class="field-label" for="emp-gross">Monthly gross (USD)</label><input class="finput" id="emp-gross" type="number" placeholder="e.g. 4000" min="0" step="100" oninput="previewEmpNet()"></div>
+    <div class="field-wrap" style="margin-bottom:.35rem">
+      <label class="field-label">Deductions</label>
+      <div id="emp-deductions-rows"></div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="addDedRow('emp-deductions-rows','previewEmpNet')" style="margin-top:2px">+ Add deduction</button>
     </div>
+    <div class="ded-disclaimer" style="margin-bottom:.6rem">You define these deductions. FinFlow does not calculate, determine, or verify any tax or deduction — it only subtracts the percentages and amounts you enter. You are responsible for confirming every figure with your accountant or the relevant tax authority.</div>
     <div class="field-wrap" style="margin-bottom:.85rem"><label class="field-label" for="emp-startdate">Start date</label><input class="finput" id="emp-startdate" type="date"></div>
     <div style="font-size:12.5px;color:var(--t2);padding:.4rem 0 .85rem">Net pay: <span id="emp-net-preview" style="color:var(--green);font-family:var(--font-mono);font-weight:600">—</span></div>
     <div class="modal-footer">
@@ -3494,7 +3480,7 @@ function loadChartJS(callback){
   document.head.appendChild(s);
 }
 </script>
-<script src="/app-main.min.js"></script>
+<script src="/app-main.js"></script>
 <script>(function(){var p=new URLSearchParams(window.location.search);if(p.get('signup')==='1'&&typeof showRegister==='function')showRegister();})();</script>
 
 <!-- ── MOBILE SIDEBAR JS ───────────────────────────────────────────────── -->
@@ -4278,34 +4264,7 @@ async function unmatchBankRec(recId){
 }
 
 // ── FEATURE 3: PAYROLL RUNS ───────────────────────────────────────────────────
-function runTaxPreview(){
-  const gross=parseFloat(document.getElementById('tax-prev-gross')?.value||0);
-  const jur=document.getElementById('tax-prev-jur')?.value||'TT';
-  const bonus=parseFloat(document.getElementById('tax-prev-bonus')?.value||0);
-  const overtime=parseFloat(document.getElementById('tax-prev-overtime')?.value||0);
-  const resultEl=document.getElementById('tax-preview-result');
-  if(!resultEl)return;
-  if(!gross||gross<=0){resultEl.innerHTML='<span style="color:var(--t3)">Enter a gross amount to see the tax breakdown.</span>';return;}
-  fetch(`/api/payroll/preview?gross=${gross}&jurisdiction=${jur}&bonus=${bonus}&overtime=${overtime}`,{credentials:'include'})
-    .then(r=>r.json())
-    .then(d=>{
-      if(d.error){resultEl.innerHTML='<span style="color:var(--red)">'+esc(d.error)+'</span>';return;}
-      resultEl.innerHTML=`
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-          <div class="mc" style="margin:0"><div class="mc-label">Total Gross</div><div class="mc-val" style="font-size:16px">${S(d.totalGross)}</div></div>
-          <div class="mc" style="margin:0"><div class="mc-label">Total Deductions</div><div class="mc-val" style="font-size:16px;color:var(--red)">${S(d.totalDeductions)}</div></div>
-          <div class="mc" style="margin:0"><div class="mc-label">Net Pay</div><div class="mc-val" style="font-size:16px;color:var(--green)">${S(d.netPay)}</div></div>
-        </div>
-        <div style="margin-top:.6rem;font-size:11.5px;color:var(--t2);display:flex;gap:12px;flex-wrap:wrap">
-          ${d.tax1>0?`<span>${esc(d.tax1_label)}: <strong style="color:var(--t1)">${S(d.tax1)}</strong></span>`:''}
-          ${d.tax2>0?`<span>${esc(d.tax2_label)}: <strong style="color:var(--t1)">${S(d.tax2)}</strong></span>`:''}
-          ${d.tax3>0?`<span>${esc(d.tax3_label)}: <strong style="color:var(--t1)">${S(d.tax3)}</strong></span>`:''}
-          ${d.bonus>0?`<span>Bonus: <strong style="color:var(--t1)">${S(d.bonus)}</strong></span>`:''}
-          ${d.overtime>0?`<span>Overtime: <strong style="color:var(--t1)">${S(d.overtime)}</strong></span>`:''}
-        </div>`;
-    })
-    .catch(()=>{if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Preview unavailable</span>';});
-}
+// (Removed runTaxPreview + the Tax Preview Calculator — FinFlow performs no tax calc.)
 
 async function loadPayrollRuns(){
   const el=document.getElementById('payroll-runs-list');
@@ -4318,7 +4277,7 @@ async function loadPayrollRuns(){
     el.innerHTML=rows.map(r=>`
       <div class="tx-row" style="align-items:flex-start">
         <div style="flex:1">
-          <div class="tx-name">${esc(r.period)} — ${esc(r.jurisdiction||'TT')}</div>
+          <div class="tx-name">${esc(r.period)}</div>
           <div class="tx-cat">${esc(r.run_date||'')} · Gross: ${S(parseFloat(r.total_gross||0))} · Net: ${S(parseFloat(r.total_net||0))}</div>
         </div>
         <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
@@ -4339,15 +4298,15 @@ function openRunPayrollModal(){
   if(notesEl)notesEl.value='';
   const preview=document.getElementById('prm-preview');
   if(preview){
-    const jur=document.getElementById('payroll-jurisdiction')?.value||'TT';
     const emps=window.payrollEmployees||[];
     const owner=window.ownerPayroll;
     const all=owner?[owner,...emps]:emps;
     if(!all.length){preview.innerHTML='<span style="color:var(--t3)">No employees on payroll yet.</span>';return;}
     preview.innerHTML=all.map(e=>{
-      const net=Math.round((parseFloat(e.gross)||0)*(1-(parseFloat(e.taxRate)||20)/100));
+      const net=netFromDeductions(e.gross, e.deductions);
       return`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--t1)">${esc(e.fname||'')} ${esc(e.lname||'')}</span><span style="font-family:var(--font-mono);color:var(--green)">${S(net)} net</span></div>`;
-    }).join('');
+    }).join('')
+      + '<div class="ded-disclaimer" style="margin-top:8px">Estimate only, based on the deductions you entered. FinFlow performs no tax calculation and is not responsible for tax accuracy.</div>';
   }
   openModal('run-payroll-modal');
 }
@@ -4356,7 +4315,6 @@ async function submitPayrollRun(){
   const period=document.getElementById('prm-period')?.value?.trim();
   const runDate=document.getElementById('prm-date')?.value;
   const notes=document.getElementById('prm-notes')?.value||'';
-  const jur=document.getElementById('payroll-jurisdiction')?.value||'TT';
   if(!period){notify('Enter a pay period',true);return;}
   if(!runDate){notify('Select a run date',true);return;}
   const emps=window.payrollEmployees||[];
@@ -4373,7 +4331,7 @@ async function submitPayrollRun(){
     const res=await fetch('/api/payroll-runs',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({period,jurisdiction:jur,run_date:runDate,notes,lines}),
+      body:JSON.stringify({period,run_date:runDate,notes,lines}),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
@@ -4837,8 +4795,8 @@ async function loadEntitiesFromDB(){
             role:     ownerRow.role || 'CEO / Founder',
             type:     ownerRow.emp_type || 'owner',
             gross:    parseFloat(ownerRow.gross) || 0,
-            taxRate:  parseFloat(ownerRow.tax_rate) || 0,
-            net:      Math.round((parseFloat(ownerRow.gross)||0)*(1-(parseFloat(ownerRow.tax_rate)||0)/100)),
+            deductions: ownerRow.deductions || [],
+            net:      netFromDeductions(ownerRow.gross, ownerRow.deductions),
             initials: ((ownerRow.fname||'')[0]+((ownerRow.lname||'')[0]||'')).toUpperCase(),
             avClass:  ownerRow.av_class || 'av-blue',
             currency: e.currency || 'USD',
@@ -6281,7 +6239,7 @@ document.addEventListener('click', e=>{
 <!-- Single bundled wiring script — generated by `node bundle.js` from the
      10 individual finflow-api*.js files. To regenerate after edits, run
      `node bundle.js` in the project root. -->
-<script src="/finflow-bundle.min.js" defer></script>
+<script src="/finflow-bundle.js" defer></script>
 
 <!-- ══ MODAL OPEN ALIASES — keep button onclicks resolvable regardless of naming convention ══ -->
 <script>
@@ -6643,16 +6601,17 @@ document.addEventListener('click', e=>{
           <option>Full-time</option><option>Part-time</option><option>Contractor</option>
         </select>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div>
-          <label class="field-label" for="edit-emp-gross">Monthly gross</label>
-          <input class="finput" id="edit-emp-gross" type="number" min="0" step="100" placeholder="5000">
-        </div>
-        <div>
-          <label class="field-label" for="edit-emp-tax">Tax rate (%)</label>
-          <input class="finput" id="edit-emp-tax" type="number" min="0" max="100" step="1" placeholder="20">
-        </div>
+      <div style="margin-bottom:10px">
+        <label class="field-label" for="edit-emp-gross">Monthly gross</label>
+        <input class="finput" id="edit-emp-gross" type="number" min="0" step="100" placeholder="5000" oninput="previewEditEmpNet()">
       </div>
+      <div style="margin-bottom:6px">
+        <label class="field-label">Deductions</label>
+        <div id="edit-emp-deductions-rows"></div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="addDedRow('edit-emp-deductions-rows','previewEditEmpNet')" style="margin-top:2px">+ Add deduction</button>
+      </div>
+      <div class="ded-disclaimer">You define these deductions. FinFlow does not calculate, determine, or verify any tax or deduction — it only subtracts the percentages and amounts you enter. You are responsible for confirming every figure with your accountant or the relevant tax authority.</div>
+      <div style="font-size:12.5px;color:var(--t2);padding:.5rem 0 0">Net pay: <span id="edit-emp-net-preview" style="color:var(--green);font-family:var(--font-mono);font-weight:600">—</span></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeEditEmployee()">Cancel</button>

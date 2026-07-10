@@ -96,7 +96,7 @@
       window.inventory=res[3].map(function(r){return{_dbId:r.id,id:r.id,sku:r.sku,name:r.name,units:r.units,max:r.max_units,cost:r.cost,low:r.low_stock===1};});
 
     if(typeof window.payrollEmployees!=='undefined')
-      window.payrollEmployees=res[4].filter(function(r){return!r.is_owner;}).map(function(r){return{_dbId:r.id,id:r.id,fname:r.fname,lname:r.lname,role:r.role,type:r.emp_type,gross:r.gross,taxRate:r.tax_rate,initials:(r.fname[0]||'')+(r.lname[0]||''),avClass:r.av_class};});
+      window.payrollEmployees=res[4].filter(function(r){return!r.is_owner;}).map(function(r){return{_dbId:r.id,id:r.id,fname:r.fname,lname:r.lname,role:r.role,type:r.emp_type,gross:r.gross,deductions:r.deductions||[],net:(window.netFromDeductions?window.netFromDeductions(r.gross,r.deductions):r.gross),initials:(r.fname[0]||'')+(r.lname[0]||''),avClass:r.av_class};});
 
     if(typeof window.goals!=='undefined')
       window.goals=res[5].map(function(r){return{_dbId:r.id,id:r.id,name:r.name,current:r.current_val,target:r.target_val,monthly:r.monthly_contrib,color:r.color};});

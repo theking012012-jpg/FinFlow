@@ -307,6 +307,9 @@ async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_payroll_run_lines_run ON payroll_run_lines(run_id)`);
+    // User-defined deduction rows [{label,value,type}] per line. FinFlow computes no
+    // tax; the legacy tax1/2/3 columns are left inert (defaulted 0, no destructive drop).
+    await client.query(`ALTER TABLE payroll_run_lines ADD COLUMN IF NOT EXISTS deductions JSONB DEFAULT '[]'`);
 
     // ── FEATURE 4: INVENTORY MOVEMENTS (FIFO COGS) ──────────────────────────────
     await client.query(`

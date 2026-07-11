@@ -4453,18 +4453,21 @@ async function loadCOGS(){
     const revEl=document.getElementById('cogs-revenue');
     const gpEl=document.getElementById('cogs-gross-profit');
     const bdEl=document.getElementById('cogs-breakdown');
-    if(totalEl)totalEl.textContent=S(parseFloat(data.total_cogs||0));
+    if(totalEl)totalEl.textContent=S(parseFloat(data.totalCOGS||0));
     if(revEl)revEl.textContent=S(parseFloat(data.revenue||0));
     if(gpEl){
-      const gp=parseFloat(data.gross_profit||0);
+      const gp=parseFloat(data.grossProfit||0);
       gpEl.textContent=S(gp);
       gpEl.style.color=gp>=0?'var(--green)':'var(--red)';
     }
     const breakdown=data.breakdown||[];
     if(bdEl){
-      bdEl.innerHTML=breakdown.length?breakdown.map(b=>`
+      const warn=parseInt(data.uncoveredItems||0)>0
+        ?`<div style="padding:7px 9px;margin-bottom:6px;border:1px solid var(--red);border-radius:6px;background:rgba(200,60,60,.08);color:var(--red);font-size:11px">⚠ ${data.uncoveredItems} item(s) sold beyond purchase history — those units have no cost basis (FIFO). COGS excludes them, so gross profit is overstated until you record the matching purchases.</div>`
+        :'';
+      bdEl.innerHTML=breakdown.length?warn+breakdown.map(b=>`
         <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--bd);font-size:12px">
-          <span style="color:var(--t1)">${esc(b.name||b.inventory_id||'Item')}</span>
+          <span style="color:var(--t1)">${esc(b.name||b.inventory_id||'Item')}${b.no_cost_basis?` <span style="color:var(--red);font-size:10px">⚠ ${b.uncovered_units} unit(s) no cost basis</span>`:''}</span>
           <span style="font-family:var(--font-mono);color:var(--t2)">${S(parseFloat(b.cogs||0))}</span>
         </div>`).join('')
         :'<div style="padding:1rem;color:var(--t3);text-align:center;font-size:12px">No COGS recorded yet. Record stock out movements to calculate.</div>';

@@ -2740,23 +2740,22 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     const netProfit = revenue - totalExp;
     const margin = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;
 
-    // COGS from inventory movements
-    let totalCOGS = 0;
+    // COGS from inventory movements — FIFO (single costing method app-wide).
+    let totalCOGS = 0, cogsUncoveredItems = 0;
     try {
-      const { rows: cogsRows } = await pool.query(
-        `SELECT im.inventory_id,
-                SUM(CASE WHEN im.type='sale' THEN im.quantity ELSE 0 END) AS units_sold,
-                SUM(CASE WHEN im.type='purchase' THEN im.quantity*im.unit_cost ELSE 0 END) AS purchase_total,
-                SUM(CASE WHEN im.type='purchase' THEN im.quantity ELSE 0 END) AS units_purchased
-         FROM inventory_movements im WHERE im.user_id = $1 AND (im.entity_id IS NULL OR ($2::int IS NOT NULL AND im.entity_id = $2)) GROUP BY im.inventory_id`,
+      const { rows: cogsItems } = await pool.query(
+        `SELECT DISTINCT im.inventory_id FROM inventory_movements im
+         WHERE im.user_id = $1 AND im.type = 'sale'
+           AND (im.entity_id IS NULL OR ($2::int IS NOT NULL AND im.entity_id = $2))`,
         [scopeId(req), eid]
       );
-      for (const r of cogsRows) {
-        const unitCost = parseFloat(r.purchase_total) / Math.max(parseFloat(r.units_purchased), 1);
-        totalCOGS += parseFloat(r.units_sold) * unitCost;
+      for (const it of cogsItems) {
+        const f = await fifoItemTotal(pool, it.inventory_id);
+        totalCOGS += f.cogs;
+        if (f.uncovered > 0) cogsUncoveredItems++;
       }
       totalCOGS = Math.round(totalCOGS * 100) / 100;
-    } catch (_) { totalCOGS = 0; }
+    } catch (_) { totalCOGS = 0; cogsUncoveredItems = 0; }
 
     // FX gain/loss
     let fxRealised = 0, fxUnrealised = 0;
@@ -2777,7 +2776,9 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       invoiceCount: invoices.length,
       expenseCount: expenses.length,
       cogs: totalCOGS,
-      grossProfit: revenue - totalCOGS,
+      grossProfit: Math.round((revenue - totalCOGS) * 100) / 100,
+      cogsMethod: 'fifo',
+      cogsUncoveredItems,
       fx_realised: fxRealised,
       fx_unrealised: fxUnrealised,
     });
@@ -3202,26 +3203,56 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, wrap(async (req, res) =>
 // ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 4 — INVENTORY COGS (FIFO)
 // ════════════════════════════════════════════════════════════════════════════════
-async function calculateFIFOCOGS(pool, inventoryId, quantitySold) {
-  const { rows: purchases } = await pool.query(
+// FIFO is the single costing method across FinFlow (point-of-sale + every aggregate).
+// fifoConsume walks purchase layers oldest-first: skip `skipUnits` already consumed by
+// prior sales, then cost `sellUnits`. `uncovered` = units sold with no purchase layer to
+// draw from → NO COST BASIS (never silently costed at $0; surfaced so gross profit isn't
+// quietly overstated).
+function fifoConsume(purchases, skipUnits, sellUnits) {
+  let skip = Math.max(0, skipUnits), toSell = Math.max(0, sellUnits), cogs = 0;
+  for (const b of purchases) {
+    let avail = parseFloat(b.quantity) || 0;
+    if (skip > 0) { const s = Math.min(skip, avail); skip -= s; avail -= s; }
+    if (avail <= 0 || toSell <= 0) continue;
+    const used = Math.min(avail, toSell);
+    cogs += used * (parseFloat(b.unit_cost) || 0);
+    toSell -= used;
+    if (toSell <= 0) break;
+  }
+  return { cogs: Math.round(cogs * 100) / 100, uncovered: Math.round(Math.max(0, toSell) * 100) / 100 };
+}
+
+async function _purchaseLayers(pool, inventoryId) {
+  const { rows } = await pool.query(
     `SELECT quantity, unit_cost FROM inventory_movements WHERE inventory_id=$1 AND type='purchase' ORDER BY moved_at ASC`,
     [inventoryId]
   );
+  return rows;
+}
+
+// Point-of-sale FIFO: cost the NEW quantity, skipping layers consumed by prior sales.
+async function calculateFIFOCOGS(pool, inventoryId, quantitySold) {
+  const purchases = await _purchaseLayers(pool, inventoryId);
   const { rows: [{ sold }] } = await pool.query(
     `SELECT COALESCE(SUM(quantity),0) AS sold FROM inventory_movements WHERE inventory_id=$1 AND type='sale'`,
     [inventoryId]
   );
-  let alreadySold = parseFloat(sold), toSell = quantitySold, cogs = 0;
-  for (const b of purchases) {
-    const avail = parseFloat(b.quantity) - alreadySold;
-    if (avail <= 0) { alreadySold -= parseFloat(b.quantity); continue; }
-    alreadySold = 0;
-    const used = Math.min(avail, toSell);
-    cogs += used * parseFloat(b.unit_cost);
-    toSell -= used;
-    if (toSell <= 0) break;
-  }
-  return Math.round(cogs * 100) / 100;
+  return fifoConsume(purchases, parseFloat(sold), quantitySold).cogs;
+}
+
+// Aggregate FIFO for reports/dashboards: total COGS of ALL units ever sold for one item,
+// plus how many of those units have no cost basis. Recomputed from raw movements (does not
+// trust any stored per-sale unit_cost), so it reconciles by construction with the sum of
+// the point-of-sale FIFO figures the user saw at each sale.
+async function fifoItemTotal(pool, inventoryId) {
+  const purchases = await _purchaseLayers(pool, inventoryId);
+  const { rows: [{ sold }] } = await pool.query(
+    `SELECT COALESCE(SUM(quantity),0) AS sold FROM inventory_movements WHERE inventory_id=$1 AND type='sale'`,
+    [inventoryId]
+  );
+  const unitsSold = parseFloat(sold) || 0;
+  const { cogs, uncovered } = fifoConsume(purchases, 0, unitsSold);
+  return { cogs, unitsSold, uncovered };
 }
 
 app.get('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
@@ -3266,30 +3297,37 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
 
 app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
-  const { rows: movements } = await pool.query(
-    `SELECT im.inventory_id, i.data->>'name' AS name, i.data->>'sku' AS sku,
-            SUM(CASE WHEN im.type='sale' THEN im.quantity ELSE 0 END) AS units_sold,
-            SUM(CASE WHEN im.type='purchase' THEN im.quantity * im.unit_cost ELSE 0 END) AS purchase_total,
-            SUM(CASE WHEN im.type='purchase' THEN im.quantity ELSE 0 END) AS units_purchased
+  const { rows: items } = await pool.query(
+    `SELECT DISTINCT im.inventory_id, i.data->>'name' AS name, i.data->>'sku' AS sku
      FROM inventory_movements im
      JOIN inventory i ON i.id = im.inventory_id
-     WHERE im.user_id = $1
-     GROUP BY im.inventory_id, i.data`,
+     WHERE im.user_id = $1 AND im.type = 'sale'`,
     [scopeId(req)]
   );
 
-  let totalCOGS = 0;
+  let totalCOGS = 0, uncoveredItems = 0;
   const breakdown = [];
-  for (const row of movements) {
-    const unitsCost = parseFloat(row.purchase_total) / Math.max(parseFloat(row.units_purchased), 1);
-    const cogs = Math.round(parseFloat(row.units_sold) * unitsCost * 100) / 100;
-    totalCOGS += cogs;
-    breakdown.push({ inventory_id: row.inventory_id, name: row.name, sku: row.sku, units_sold: parseFloat(row.units_sold), cogs });
+  for (const it of items) {
+    // FIFO per item (single costing method); flag units with no purchase layer.
+    const f = await fifoItemTotal(pool, it.inventory_id);
+    if (f.unitsSold <= 0) continue;
+    totalCOGS += f.cogs;
+    if (f.uncovered > 0) uncoveredItems++;
+    breakdown.push({
+      inventory_id: it.inventory_id, name: it.name, sku: it.sku,
+      units_sold: f.unitsSold, cogs: f.cogs,
+      uncovered_units: f.uncovered,
+      no_cost_basis: f.uncovered > 0,
+    });
   }
+  totalCOGS = Math.round(totalCOGS * 100) / 100;
 
   const invoices = await db.allByUser('invoices', uid);
   const revenue = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-  res.json({ totalCOGS, grossProfit: revenue - totalCOGS, revenue, breakdown });
+  res.json({
+    totalCOGS, grossProfit: Math.round((revenue - totalCOGS) * 100) / 100, revenue,
+    breakdown, uncoveredItems, cogsMethod: 'fifo',
+  });
 }));
 
 app.post('/api/cogs/calculate', requireAuth, wrap(async (req, res) => {

@@ -34,6 +34,7 @@
 | F19 | 🟢 Low | DB pool `ssl.rejectUnauthorized:false` in prod (MITM risk); fabricated `${fname}.${lname}@company.com` team emails shown as real | `database.js:20`; `server.js:2199` | Use provider CA + `rejectUnauthorized:true`; show blank email | both |
 | F20 | 🟢 Low | 6 dead `db.*` helpers (`get/all/update/delete/upsert/getByUser`, 0 callers) carrying full-table-scan pattern; `42P01→_ensureTable→[]` swallows typos (hides F14) | `database.js:562-726` | Delete unused helpers; log loudly on `42P01` for known tables | agent |
 | **F23** | 🟢 Low | **`banking` rows use `type`/`date`** while the rest of `personal_transactions` uses `tx_type`/`tx_date` — same table, two schemas; date/type filters skip banking rows | `server.js:2623` | Standardize on `tx_date`/`tx_type` | **chat add** |
+| **F24** | 🟡 Medium | **Multi-entity Consolidated P&L is not wired to real data.** The table only ever populates the *active* entity's figures — other entities show $0 on every line (need per-entity fetches). And even for the active entity, COGS is **hardcoded `cogs:0, grossProfit:totalRev`**, so the Consolidated P&L ignores the FIFO COGS the rest of the app now computes → gross profit shown = revenue. Both live in the same `renderConsolPL` population path. | `finflow-api-wiring-medium.js:1029-1038` (hardcode at `1033`); `FOLLOW-UP` comment at `1027` | One fix: **wire up multi-entity P&L properly** — fetch per-entity revenue/COGS/opex (COGS via `/api/cogs` or `/api/reports`, now FIFO) for *all* entities, not just the active one, and drop the `cogs:0` hardcode. **Tracked, not fixed** (surfaced during F6). | **agent add (F6)** |
 
 **Withdrawn:** chat "C1 — stale served bundle (Critical)." Bundles verified in sync by byte-exact re-minify. Residual risk retained as F13.
 
@@ -50,7 +51,7 @@ SQL injection (allow-listed table/field names, parameterized values, `ILIKE … 
 2. ~~**F2** — silent data corruption on every partial edit.~~ ✅ **FIXED** (+ payments_made, same class).
 3. ~~**F4** — cheap; unblocks correct JSON errors for 42 endpoints (do before/with F14/F15).~~ ✅ **FIXED.**
 4. **F3, ~~F6~~, ~~F8~~** — money is wrong on screen (FX P/L, ~~COGS/gross profit~~, ~~payroll tax~~). Add tests. (**F6 ✅ fixed — standardized on FIFO everywhere, no-cost-basis flagged. F8 ✅ resolved by removing the tax engine.**)
-5. **F7, F9, F14, F15** — reconcile revenue/expense/report into one entity-scoped source.
+5. **F7, F9, F14, F15, F24** — reconcile revenue/expense/report into one entity-scoped source (F24: wire the multi-entity Consolidated P&L to real per-entity figures incl. FIFO COGS).
 6. **F10, F11, F5, F16, F17, F12, F21** — repair or remove the accountant/RBAC/broadcast funnel end-to-end (interdependent; decide whether the marketplace ships at all before fixing piecemeal).
 7. **F13, F18, F22, F19, F20, F23** — hardening: build pipeline, AI cap, CSRF (verify live), DB TLS, dead-code/error hygiene, banking field names.
 

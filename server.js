@@ -2757,16 +2757,21 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       totalCOGS = Math.round(totalCOGS * 100) / 100;
     } catch (_) { totalCOGS = 0; cogsUncoveredItems = 0; }
 
-    // FX gain/loss
+    // FX gain/loss — realised from settled positions; unrealised COMPUTED at read time for
+    // open positions with a current rate (never the dead unrealised_gain_loss column).
     let fxRealised = 0, fxUnrealised = 0;
     try {
-      const { rows: fxRows } = await pool.query(
-        `SELECT COALESCE(SUM(CASE WHEN status='settled' THEN realised_gain_loss ELSE 0 END),0) AS realised,
-                COALESCE(SUM(CASE WHEN status='open' THEN unrealised_gain_loss ELSE 0 END),0) AS unrealised
-         FROM fx_transactions WHERE user_id=$1 AND (entity_id IS NULL OR ($2::int IS NOT NULL AND entity_id = $2))`, [scopeId(req), eid]
+      const { rows: fxTxs } = await pool.query(
+        `SELECT * FROM fx_transactions WHERE user_id=$1 AND (entity_id IS NULL OR ($2::int IS NOT NULL AND entity_id = $2))`,
+        [scopeId(req), eid]
       );
-      fxRealised = parseFloat(fxRows[0]?.realised) || 0;
-      fxUnrealised = parseFloat(fxRows[0]?.unrealised) || 0;
+      const rateMap = await latestFxRates(pool, scopeId(req));
+      for (const t of fxTxs) {
+        if (t.status === 'settled') fxRealised += parseFloat(t.realised_gain_loss) || 0;
+        else { const u = computeUnrealised(t, rateMap); if (u != null) fxUnrealised += u; }
+      }
+      fxRealised = Math.round(fxRealised * 100) / 100;
+      fxUnrealised = Math.round(fxUnrealised * 100) / 100;
     } catch (_) {}
 
     res.json({
@@ -3342,6 +3347,33 @@ app.post('/api/cogs/calculate', requireAuth, wrap(async (req, res) => {
 // ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 5 — FX GAIN/LOSS TRACKING
 // ════════════════════════════════════════════════════════════════════════════════
+// Latest user-entered rate per currency pair → { 'EUR>USD': 1.20, ... }. This feature
+// has its OWN rate store (fx_rates); it does NOT reuse the frontend's static _safeFX
+// snapshot rates, which are a personal-finance display convenience, not the user's real
+// current rates.
+async function latestFxRates(pool, userId) {
+  const { rows } = await pool.query(
+    `SELECT from_currency, to_currency, rate FROM fx_rates WHERE user_id=$1 ORDER BY rate_date DESC, created_at DESC`,
+    [userId]
+  );
+  const map = {};
+  for (const r of rows) {
+    const key = `${r.from_currency}>${r.to_currency}`;
+    if (!(key in map)) map[key] = parseFloat(r.rate); // first row per pair is the latest
+  }
+  return map;
+}
+
+// Unrealised P/L for an OPEN position, in base currency, computed at read time from the
+// current rate for its pair. Returns null when no current rate is available — NEVER a
+// fabricated $0 (that phantom zero was the whole of F3).
+function computeUnrealised(tx, rateMap) {
+  if (tx.status !== 'open') return null;
+  const cur = rateMap[`${tx.foreign_currency}>${tx.base_currency || 'USD'}`];
+  if (cur == null || !isFinite(cur)) return null;
+  return Math.round((cur - parseFloat(tx.rate_at_transaction)) * parseFloat(tx.foreign_amount) * 100) / 100;
+}
+
 app.get('/api/fx-rates', requireAuth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT * FROM fx_rates WHERE user_id=$1 ORDER BY rate_date DESC, created_at DESC LIMIT 200`,
@@ -3368,6 +3400,11 @@ app.get('/api/fx-transactions', requireAuth, wrap(async (req, res) => {
     `SELECT * FROM fx_transactions WHERE user_id=$1 AND (entity_id IS NULL OR ($2::int IS NOT NULL AND entity_id = $2)) ORDER BY created_at DESC LIMIT 200`,
     [scopeId(req), eid]
   );
+  // Compute unrealised P/L for open positions at read time (null when no current rate).
+  const rateMap = await latestFxRates(pool, scopeId(req));
+  for (const t of rows) {
+    if (t.status === 'open') t.unrealised_gain_loss = computeUnrealised(t, rateMap);
+  }
   res.json(rows);
 }));
 
@@ -3407,19 +3444,38 @@ app.post('/api/fx-transactions/:id/settle', requireAuth, wrap(async (req, res) =
 
 app.get('/api/fx-summary', requireAuth, wrap(async (req, res) => {
   const eid = req.entityId || null;
-  const { rows } = await pool.query(
-    `SELECT
-       COALESCE(SUM(CASE WHEN status='settled' THEN realised_gain_loss ELSE 0 END), 0) AS total_realised,
-       COALESCE(SUM(CASE WHEN status='open' THEN unrealised_gain_loss ELSE 0 END), 0) AS total_unrealised,
-       foreign_currency,
-       COUNT(*) AS count
-     FROM fx_transactions WHERE user_id=$1 AND (entity_id IS NULL OR ($2::int IS NOT NULL AND entity_id = $2))
-     GROUP BY foreign_currency`,
+  const { rows: txs } = await pool.query(
+    `SELECT * FROM fx_transactions WHERE user_id=$1 AND (entity_id IS NULL OR ($2::int IS NOT NULL AND entity_id = $2))`,
     [scopeId(req), eid]
   );
-  const totalRealised = rows.reduce((s, r) => s + parseFloat(r.total_realised), 0);
-  const totalUnrealised = rows.reduce((s, r) => s + parseFloat(r.total_unrealised), 0);
-  res.json({ totalRealised, totalUnrealised, netFX: totalRealised + totalUnrealised, byCurrency: rows });
+  const rateMap = await latestFxRates(pool, scopeId(req));
+
+  // Realised = settled positions. Unrealised = COMPUTED for open positions that have a
+  // current rate; positions with no rate are excluded (never counted as 0) and tallied
+  // separately so the UI can be honest that they're unmeasured, not break-even.
+  let totalRealised = 0, totalUnrealised = 0, openWithoutRate = 0;
+  const byCurrency = {};
+  for (const t of txs) {
+    const cur = t.foreign_currency;
+    byCurrency[cur] = byCurrency[cur] || { foreign_currency: cur, count: 0, total_realised: 0, total_unrealised: 0 };
+    byCurrency[cur].count++;
+    if (t.status === 'settled') {
+      const r = parseFloat(t.realised_gain_loss) || 0;
+      totalRealised += r; byCurrency[cur].total_realised += r;
+    } else {
+      const u = computeUnrealised(t, rateMap);
+      if (u == null) openWithoutRate++;
+      else { totalUnrealised += u; byCurrency[cur].total_unrealised += u; }
+    }
+  }
+  totalRealised = Math.round(totalRealised * 100) / 100;
+  totalUnrealised = Math.round(totalUnrealised * 100) / 100;
+  res.json({
+    totalRealised, totalUnrealised,
+    netFX: Math.round((totalRealised + totalUnrealised) * 100) / 100,
+    openWithoutRate,
+    byCurrency: Object.values(byCurrency),
+  });
 }));
 
 // ── STOCK PRICE PROXY (server-side, avoids CORS / tracking-prevention issues) ─

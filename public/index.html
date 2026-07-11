@@ -4494,16 +4494,21 @@ async function loadFXData(){
     const rates=await ratesRes.json();
     const txs=await txRes.json();
 
-    const unrel=parseFloat(summary.unrealised||0);
-    const rel=parseFloat(summary.realised||0);
-    const net=unrel+rel;
+    const unrel=parseFloat(summary.totalUnrealised||0);
+    const rel=parseFloat(summary.totalRealised||0);
+    const net=parseFloat(summary.netFX!=null?summary.netFX:unrel+rel);
+    const noRate=parseInt(summary.openWithoutRate||0);
     const fmtFX=v=>(v>=0?'+':'')+S(Math.abs(v));
     const colFX=v=>v>=0?'var(--green)':'var(--red)';
 
     const uEl=document.getElementById('fx-unrealised');
     const rEl=document.getElementById('fx-realised');
     const nEl=document.getElementById('fx-net');
-    if(uEl){uEl.textContent=fmtFX(unrel);uEl.style.color=colFX(unrel);}
+    if(uEl){
+      uEl.textContent=fmtFX(unrel);uEl.style.color=colFX(unrel);
+      // Honest about open positions we couldn't measure (no current rate entered).
+      uEl.title=noRate>0?`${noRate} open position(s) excluded — no current rate entered for their currency. Add a rate under FX Rates to include them.`:'';
+    }
     if(rEl){rEl.textContent=fmtFX(rel);rEl.style.color=colFX(rel);}
     if(nEl){nEl.textContent=fmtFX(net);nEl.style.color=colFX(net);}
 
@@ -4522,13 +4527,18 @@ async function loadFXData(){
     const txList=document.getElementById('fx-tx-list');
     if(txList){
       txList.innerHTML=(txs.length?txs:[]).map(t=>{
-        const gl=parseFloat(t.status==='settled'?t.realised_gain_loss:t.unrealised_gain_loss)||0;
-        const glColor=gl>=0?'var(--green)':'var(--red)';
+        // Open positions carry a COMPUTED unrealised (null if no current rate); settled carry realised.
+        const raw=t.status==='settled'?t.realised_gain_loss:t.unrealised_gain_loss;
+        const hasGL=raw!=null;
+        const gl=parseFloat(raw)||0;
+        const glColor=!hasGL?'var(--t3)':(gl>=0?'var(--green)':'var(--red)');
+        const glText=!hasGL?'—':`${gl>=0?'+':''}${S(Math.abs(gl))}`;
+        const glTitle=!hasGL?' title="No current rate entered for this currency — add one under FX Rates to see unrealised P/L"':'';
         return`<tr style="border-bottom:1px solid var(--bd)">
           <td style="padding:5px 6px;font-family:var(--font-mono)">${esc(t.foreign_currency)}</td>
           <td style="padding:5px 6px;font-family:var(--font-mono)">${S(parseFloat(t.foreign_amount))}</td>
           <td style="padding:5px 6px;font-family:var(--font-mono);color:var(--t2)">${parseFloat(t.rate_at_transaction||0).toFixed(4)}</td>
-          <td style="padding:5px 6px;font-family:var(--font-mono);color:${glColor}">${gl>=0?'+':''}${S(Math.abs(gl))}</td>
+          <td style="padding:5px 6px;font-family:var(--font-mono);color:${glColor}"${glTitle}>${glText}</td>
           <td style="padding:5px 6px"><span class="badge ${t.status==='settled'?'b-green':'b-amber'}" style="font-size:9px">${esc(t.status)}</span></td>
           <td style="padding:5px 6px">${t.status!=='settled'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="settleFXTransaction(${t.id})">Settle</button>`:''}</td>
         </tr>`;

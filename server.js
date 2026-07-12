@@ -3260,6 +3260,84 @@ async function fifoItemTotal(pool, inventoryId) {
   return { cogs, unitsSold, uncovered };
 }
 
+// ════════════════════════════════════════════════════════════════════════════════
+// CANONICAL BOOKS — single entity-scoped source of truth for revenue / COGS / OpEx /
+// profit. Mirrors the frontend canonical helpers exactly (computeRevenue R1 +
+// computeExpenseBreakdown E1, "year/default" basis) so the dashboard, the report
+// routes, and the accountant /books view all reconcile to the same numbers.
+//
+//   Revenue     = paid invoices + sales receipts + payments received
+//   OpEx        = expenses + payments made + payroll (monthly gross × elapsed months)
+//   COGS        = FIFO (fifoItemTotal, from F6)
+//   GrossProfit = Revenue − COGS
+//   NetProfit   = Revenue − COGS − OpEx
+//
+// NOTE (F25): "year" here = all-time revenue/expenses + YTD-accrued payroll, mirroring
+//   the frontend canonical faithfully — NOT a true fiscal-year window (tracked as F25).
+// NOTE (F26): sales_receipts / payments_received have no entity_id, so they are always
+//   user-level; for multi-entity users they attribute to whichever entity is viewed
+//   (tracked as F26). Every other source is entity-scoped.
+async function computeBooks(userId, entityId = null) {
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const num = v => parseFloat(v) || 0;
+  const sum = (arr, f) => (arr || []).reduce((s, x) => s + f(x), 0);
+  // entityId null → all entities (accountant "all" view); set → that entity + unassigned rows.
+  const ent = r => entityId == null || r.entity_id == null || r.entity_id === entityId;
+
+  const [invoices, expenses, paymentsMade, payroll, receipts, paymentsIn] = await Promise.all([
+    db.allByUser('invoices', userId, ent),
+    db.allByUser('expenses', userId, ent),
+    db.allByUser('payments_made', userId, ent),
+    db.allByUser('payroll', userId, ent),
+    db.allByUser('sales_receipts', userId),      // user-scoped (no entity_id) — F26
+    db.allByUser('payments_received', userId),   // user-scoped (no entity_id) — F26
+  ]);
+
+  // ── Revenue (mirrors frontend computeRevenue / R1) ──
+  const paidInvoices     = sum(invoices.filter(i => (i.status || '').toLowerCase() === 'paid'), i => num(i.amount));
+  const salesReceipts    = sum(receipts,   x => num(x.amount));
+  const paymentsReceived = sum(paymentsIn, x => num(x.amount));
+  const revenue = r2(paidInvoices + salesReceipts + paymentsReceived);
+
+  // ── OpEx (mirrors frontend computeExpenseBreakdown / E1) ──
+  const expensesTotal     = sum(expenses, e => num(e.amount));
+  const paymentsMadeTotal = sum(paymentsMade, p => num(p.amount));
+  const months = new Date().getMonth() + 1;      // YTD elapsed months (F25 quirk, faithful)
+  const monthlyPayroll = sum(payroll, p => num(p.gross));
+  const payrollTotal = r2(monthlyPayroll * months);
+  const opex = r2(expensesTotal + paymentsMadeTotal + payrollTotal);
+
+  // ── COGS (FIFO, F6) for items sold in this entity ──
+  let cogs = 0, cogsUncoveredItems = 0;
+  try {
+    const { rows: items } = await pool.query(
+      `SELECT DISTINCT im.inventory_id FROM inventory_movements im
+       WHERE im.user_id = $1 AND im.type = 'sale'
+         AND ($2::int IS NULL OR im.entity_id IS NULL OR im.entity_id = $2)`,
+      [userId, entityId]
+    );
+    for (const it of items) {
+      const f = await fifoItemTotal(pool, it.inventory_id);
+      cogs += f.cogs;
+      if (f.uncovered > 0) cogsUncoveredItems++;
+    }
+    cogs = r2(cogs);
+  } catch (_) { cogs = 0; cogsUncoveredItems = 0; }
+
+  const outstanding = r2(sum(invoices.filter(i => (i.status || '').toLowerCase() !== 'paid'), i => num(i.amount)));
+  const grossProfit = r2(revenue - cogs);
+  const netProfit   = r2(revenue - cogs - opex);
+
+  return {
+    revenue, cogs, grossProfit, opex, netProfit, outstanding,
+    parts: {
+      paidInvoices: r2(paidInvoices), salesReceipts: r2(salesReceipts), paymentsReceived: r2(paymentsReceived),
+      expenses: r2(expensesTotal), paymentsMade: r2(paymentsMadeTotal), payroll: payrollTotal,
+      monthlyPayroll: r2(monthlyPayroll), months, cogsUncoveredItems,
+    },
+  };
+}
+
 app.get('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
   const { inventory_id } = req.query;
   let q = `SELECT * FROM inventory_movements WHERE user_id = $1`;

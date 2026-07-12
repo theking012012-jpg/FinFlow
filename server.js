@@ -3279,12 +3279,13 @@ async function fifoItemTotal(pool, inventoryId) {
 // NOTE (F26): sales_receipts / payments_received have no entity_id, so they are always
 //   user-level; for multi-entity users they attribute to whichever entity is viewed
 //   (tracked as F26). Every other source is entity-scoped.
-async function computeBooks(userId, entityId = null) {
+async function computeBooks(userId, entityId = null, period = 'year') {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const num = v => parseFloat(v) || 0;
   const sum = (arr, f) => (arr || []).reduce((s, x) => s + f(x), 0);
   // entityId null → all entities (accountant "all" view); set → that entity + unassigned rows.
   const ent = r => entityId == null || r.entity_id == null || r.entity_id === entityId;
+  period = (period === 'month' || period === 'quarter') ? period : 'year'; // 'all' → 'year'
 
   const [invoices, expenses, paymentsMade, payroll, receipts, paymentsIn] = await Promise.all([
     db.allByUser('invoices', userId, ent),
@@ -3295,21 +3296,48 @@ async function computeBooks(userId, entityId = null) {
     db.allByUser('payments_received', userId),   // user-scoped (no entity_id) — F26
   ]);
 
+  // Period windows mirror the frontend R1/E1 branches EXACTLY (incl. their date-field
+  // precedence), so server and client agree at every period. 'year' = all records (F25).
+  const now = new Date(), y = now.getFullYear(), mo = now.getMonth(), q = Math.floor(mo / 3) * 3;
+  const _d = v => { const d = v ? new Date(v) : null; return (d && !isNaN(d)) ? d : null; };
+  const inMonth   = d => !!d && d.getMonth() === mo && d.getFullYear() === y;
+  const inQuarter = d => !!d && d.getFullYear() === y && d.getMonth() >= q && d.getMonth() < q + 3;
+
   // ── Revenue (mirrors frontend computeRevenue / R1) ──
-  const paidInvoices     = sum(invoices.filter(i => (i.status || '').toLowerCase() === 'paid'), i => num(i.amount));
-  const salesReceipts    = sum(receipts,   x => num(x.amount));
-  const paymentsReceived = sum(paymentsIn, x => num(x.amount));
+  const paidInv = invoices.filter(i => (i.status || '').toLowerCase() === 'paid');
+  let paidInvoices, salesReceipts, paymentsReceived;
+  if (period === 'month') {
+    paidInvoices     = sum(paidInv.filter(i => inMonth(_d(i.date || i.due_date || i.created_at))), i => num(i.amount));
+    salesReceipts    = sum(receipts.filter(x => inMonth(_d(x.date))), x => num(x.amount));
+    paymentsReceived = sum(paymentsIn.filter(x => inMonth(_d(x.date))), x => num(x.amount));
+  } else if (period === 'quarter') {
+    paidInvoices     = sum(paidInv.filter(i => inQuarter(_d(i.due_date))), i => num(i.amount));
+    salesReceipts    = sum(receipts.filter(x => inQuarter(_d(x.date))), x => num(x.amount));
+    paymentsReceived = sum(paymentsIn.filter(x => inQuarter(_d(x.date))), x => num(x.amount));
+  } else { // year — all records (F25)
+    paidInvoices     = sum(paidInv, i => num(i.amount));
+    salesReceipts    = sum(receipts, x => num(x.amount));
+    paymentsReceived = sum(paymentsIn, x => num(x.amount));
+  }
   const revenue = r2(paidInvoices + salesReceipts + paymentsReceived);
 
   // ── OpEx (mirrors frontend computeExpenseBreakdown / E1) ──
-  const expensesTotal     = sum(expenses, e => num(e.amount));
-  const paymentsMadeTotal = sum(paymentsMade, p => num(p.amount));
-  const months = new Date().getMonth() + 1;      // YTD elapsed months (F25 quirk, faithful)
+  const inPeriod = v => {
+    if (period === 'year') return true;
+    const d = _d(v); if (!d) return false;
+    return period === 'month' ? inMonth(d) : inQuarter(d);
+  };
+  const expensesTotal     = sum(expenses.filter(e => inPeriod(e.expense_date || e.date || e.created_at)), e => num(e.amount));
+  const paymentsMadeTotal = sum(paymentsMade.filter(p => inPeriod(p.date || p.created_at)), p => num(p.amount));
+  const months = period === 'month' ? 1 : period === 'quarter' ? (mo - q + 1) : (mo + 1); // elapsed months in period
   const monthlyPayroll = sum(payroll, p => num(p.gross));
   const payrollTotal = r2(monthlyPayroll * months);
   const opex = r2(expensesTotal + paymentsMadeTotal + payrollTotal);
 
   // ── COGS (FIFO, F6) for items sold in this entity ──
+  // COGS and outstanding (AR) are all-time snapshots, NOT period-scoped — matching the
+  // client dashboard, which subtracts the all-time FIFO total and shows all unpaid AR at
+  // every period. (Period-scoped COGS is a future refinement, tied to F25.)
   let cogs = 0, cogsUncoveredItems = 0;
   try {
     const { rows: items } = await pool.query(
@@ -3331,7 +3359,7 @@ async function computeBooks(userId, entityId = null) {
   const netProfit   = r2(revenue - cogs - opex);
 
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, period,
     parts: {
       paidInvoices: r2(paidInvoices), salesReceipts: r2(salesReceipts), paymentsReceived: r2(paymentsReceived),
       expenses: r2(expensesTotal), paymentsMade: r2(paymentsMadeTotal), payroll: payrollTotal,

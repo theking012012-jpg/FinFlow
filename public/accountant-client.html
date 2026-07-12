@@ -493,7 +493,7 @@
       </div>
       <div class="card">
         <table class="data-table">
-          <thead><tr><th>Employee</th><th>Role</th><th>Type</th><th>Gross Pay</th><th>Tax Rate</th><th>Net Pay</th></tr></thead>
+          <thead><tr><th>Employee</th><th>Role</th><th>Type</th><th>Gross Pay</th><th>Deductions</th><th>Net Pay</th></tr></thead>
           <tbody id="payroll-list"></tbody>
         </table>
         <div class="payroll-summary" id="payroll-summary" style="display:none">
@@ -760,15 +760,30 @@ function setClientInfo() {
   document.getElementById('dash-title').textContent = _clientName + "'s Dashboard";
 }
 
+// Build the /books URL scoped to the active entity + period. The server returns a canonical
+// summary (computeBooks) already scoped, so every KPI reconciles with the client dashboard
+// for the same entity AND period. 'all' aliases 'year' (all records), matching the client.
+function booksUrl() {
+  const p = new URLSearchParams();
+  if (_activeEntity && _activeEntity !== 'all') p.set('entity_id', _activeEntity);
+  p.set('period', _period === 'all' ? 'year' : _period);
+  return `/api/accountants/clients/${_userId}/books?${p.toString()}`;
+}
+
+async function fetchBooks() {
+  const res = await fetch(booksUrl(), {credentials:'include'});
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    document.getElementById('sb-client-meta').textContent = errData.error || 'Failed to load client data';
+    return false;
+  }
+  _data = await res.json();
+  return true;
+}
+
 async function loadData() {
   try {
-    const res = await fetch(`/api/accountants/clients/${_userId}/books`, {credentials:'include'});
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      document.getElementById('sb-client-meta').textContent = errData.error || 'Failed to load client data';
-      return;
-    }
-    _data = await res.json();
+    if (!(await fetchBooks())) return;
     document.getElementById('sb-client-meta').textContent = (_data.allInvoices?.length||0) + ' invoices · ' + (_data.allExpenses?.length||0) + ' expenses';
     if (_data.accessLevel) {
       document.getElementById('sb-access-badge').innerHTML = `<i class="ti ti-shield-check" style="font-size:11px"></i> ${esc(_data.accessLevel)} access`;
@@ -794,20 +809,22 @@ function buildEntityTabs() {
   document.getElementById('topbar-entity-name').textContent = 'All entities';
 }
 
-function switchEntity(id, el) {
+async function switchEntity(id, el) {
   _activeEntity = id;
   document.querySelectorAll('.entity-item').forEach(i=>i.classList.remove('active'));
   if (el) el.classList.add('active');
   const name = el?.textContent?.trim() || 'All entities';
   document.getElementById('topbar-entity-name').textContent = name;
+  await fetchBooks();   // re-fetch: canonical summary is scoped server-side per entity+period
   renderAll();
 }
 
 // ── PERIOD ─────────────────────────────────────────────────────────────────
-function setPeriod(el) {
+async function setPeriod(el) {
   document.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   _period = el.dataset.period;
+  await fetchBooks();   // re-fetch canonical summary for the new period
   renderAll();
 }
 
@@ -822,9 +839,9 @@ function getFiltered() {
   }
   const now = new Date();
   const filterDate = d => {
-    if (!d || _period === 'all') return true;
+    // 'year' = all records (matches the client dashboard + server computeBooks, F25), same as 'all'.
+    if (!d || _period === 'all' || _period === 'year') return true;
     const pd = new Date(d); if(isNaN(pd)) return true;
-    if (_period === 'year') return pd.getFullYear() === now.getFullYear();
     if (_period === 'quarter') {
       const q = Math.floor(now.getMonth()/3)*3;
       return pd.getFullYear()===now.getFullYear() && pd.getMonth()>=q && pd.getMonth()<q+3;
@@ -868,16 +885,20 @@ function renderDashboard(invoices, expenses) {
   const paid     = invoices.filter(i=>i.status==='paid');
   const pending  = invoices.filter(i=>i.status==='pending');
   const overdue  = invoices.filter(i=>i.status==='overdue');
-  const revenue  = paid.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-  const totalExp = expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
-  const profit   = revenue - totalExp;
-  const outstanding = invoices.filter(i=>i.status!=='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  // Headline KPIs come from the canonical server summary (computeBooks), scoped to the active
+  // entity + period — so they reconcile with the client dashboard. Revenue = paid invoices +
+  // receipts + payments received; Expenses = canonical OpEx (incl payroll); Profit = Net (incl COGS).
+  const S = _data.summary || {};
+  const revenue     = parseFloat(S.revenue)||0;
+  const totalExp    = parseFloat(S.opex)||0;
+  const profit      = parseFloat(S.netProfit)||0;
+  const outstanding = parseFloat(S.outstanding)||0;
 
   set('d-revenue', fmt(revenue));
   set('d-expenses', fmt(totalExp));
   set('d-profit', fmt(profit));
   set('d-outstanding', fmt(outstanding));
-  set('d-margin', profit ? ((profit/Math.max(revenue,1)*100).toFixed(1)+'% margin') : '0% margin');
+  set('d-margin', revenue ? ((profit/revenue*100).toFixed(1)+'% margin') : '0% margin');
   set('s-paid', paid.length+' · '+fmt(paid.reduce((s,i)=>s+(parseFloat(i.amount)||0),0)));
   set('s-pending', pending.length+' · '+fmt(pending.reduce((s,i)=>s+(parseFloat(i.amount)||0),0)));
   set('s-overdue', overdue.length+' · '+fmt(overdue.reduce((s,i)=>s+(parseFloat(i.amount)||0),0)));
@@ -981,16 +1002,22 @@ function renderExpensesPage(expenses) {
 
 // ── P&L PAGE ───────────────────────────────────────────────────────────────
 function renderPnL(invoices, expenses) {
-  const revenue = invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-  const totalExp = expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
-  const profit = revenue - totalExp;
+  // Canonical P&L from the server summary (computeBooks), scoped to entity + period.
+  const S = _data.summary || {};
+  const revenue = parseFloat(S.revenue)||0;
+  const cogs = parseFloat(S.cogs)||0;
+  const grossProfit = parseFloat(S.grossProfit)||0;
+  const opex = parseFloat(S.opex)||0;
+  const profit = parseFloat(S.netProfit)||0;
   const cats = {};
   expenses.forEach(e=>{const c=e.category||'Other';cats[c]=(cats[c]||0)+(parseFloat(e.amount)||0);});
   const sorted = Object.entries(cats).sort((a,b)=>b[1]-a[1]);
   const maxC = sorted[0]?.[1]||1;
   document.getElementById('pnl-statement').innerHTML = `
-    <div class="pl-row"><span class="pl-label">Gross Revenue</span><span style="color:var(--green)">${fmt(revenue)}</span></div>
-    <div class="pl-row"><span class="pl-label">Total Expenses</span><span style="color:var(--red)">${fmt(totalExp)}</span></div>
+    <div class="pl-row"><span class="pl-label">Revenue</span><span style="color:var(--green)">${fmt(revenue)}</span></div>
+    <div class="pl-row"><span class="pl-label">Cost of Goods Sold</span><span style="color:var(--red)">− ${fmt(cogs)}</span></div>
+    <div class="pl-row"><span class="pl-label">Gross Profit</span><span>${fmt(grossProfit)}</span></div>
+    <div class="pl-row"><span class="pl-label">Operating Expenses</span><span style="color:var(--red)">− ${fmt(opex)}</span></div>
     <div class="pl-row"><span>Net Profit</span><span class="pl-total" style="color:${profit>=0?'var(--gold)':'var(--red)'}">${fmt(profit)}</span></div>
     <div style="font-size:11px;color:var(--text3);margin-top:8px">Profit margin · ${revenue?(profit/revenue*100).toFixed(1):0}%</div>`;
   document.getElementById('pnl-categories').innerHTML = sorted.map(([c,a],i)=>`
@@ -1020,16 +1047,19 @@ function renderBalanceSheet() {
 
 // ── CASH FLOW ──────────────────────────────────────────────────────────────
 function renderCashFlow(invoices, expenses) {
-  const cashIn = invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-  const cashOut = expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
-  const payrollOut = (_data?.allPayroll||[]).reduce((s,p)=>s+(parseFloat(p.gross)||0),0);
-  const ar = invoices.filter(i=>i.status!=='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-  const netOp = cashIn - cashOut - payrollOut;
+  // CASH basis (period-scoped), from canonical parts — deliberately DISTINCT from Net Profit:
+  // cash in = paid invoices + receipts + payments received; cash out = expenses + payments
+  // made. Accrual payroll and COGS are NOT cash events, so they're excluded (a cash-flow
+  // statement is not the P&L). Payroll cash isn't separately tracked in the data model.
+  const S = _data.summary || {}, P = S.parts || {};
+  const cashIn  = parseFloat(S.revenue)||0;
+  const cashOut = (parseFloat(P.expenses)||0) + (parseFloat(P.paymentsMade)||0);
+  const ar = parseFloat(S.outstanding)||0;
+  const netOp = Math.round((cashIn - cashOut)*100)/100;
   const el = document.getElementById('cf-operating');
   if (el) el.innerHTML = `
-    <div class="pl-row"><span class="pl-label">Cash receipts (paid invoices)</span><span style="color:var(--green)">${fmt(cashIn)}</span></div>
-    <div class="pl-row"><span class="pl-label">Cash payments (expenses)</span><span style="color:var(--red)">− ${fmt(cashOut)}</span></div>
-    <div class="pl-row"><span class="pl-label">Payroll paid</span><span style="color:var(--red)">− ${fmt(payrollOut)}</span></div>
+    <div class="pl-row"><span class="pl-label">Cash receipts (paid invoices + receipts)</span><span style="color:var(--green)">${fmt(cashIn)}</span></div>
+    <div class="pl-row"><span class="pl-label">Cash payments (expenses + bill payments)</span><span style="color:var(--red)">− ${fmt(cashOut)}</span></div>
     <div class="pl-row"><span class="pl-label">A/R outstanding (not yet cash)</span><span style="color:var(--amber)">${fmt(ar)}</span></div>
     <div class="pl-row"><span class="pl-label" style="font-weight:500">Net operating cash flow</span><span style="color:${netOp>=0?'var(--green)':'var(--red)'};font-weight:500">${fmt(netOp)}</span></div>`;
   set('cf-net', fmt(netOp));
@@ -1043,16 +1073,25 @@ function renderPayroll() {
   const list = document.getElementById('payroll-list');
   if (!payroll.length) { list.innerHTML = `<tr><td colspan="6" class="empty">No payroll records</td></tr>`; return; }
   const total = payroll.reduce((s,p)=>s+(parseFloat(p.gross)||0),0);
+  // Deduction model (F8): net = gross − Σ(deductions); percent → gross×value/100, fixed → value.
+  // (Previously read p.tax_rate — a field F8 deleted — so net was computed off a dead field.)
+  const dedTotal = p => {
+    const g = parseFloat(p.gross)||0;
+    return (Array.isArray(p.deductions)?p.deductions:[]).reduce((s,d)=>{
+      const v = parseFloat(d.value)||0;
+      return s + (d.type==='percent' ? g*v/100 : v);
+    }, 0);
+  };
   list.innerHTML = payroll.map(p=>{
     const gross = parseFloat(p.gross)||0;
-    const rate = parseFloat(p.tax_rate)||0;
-    const net = Math.round(gross*(1-rate/100));
+    const ded = Math.round(dedTotal(p)*100)/100;
+    const net = Math.round((gross-ded)*100)/100;
     return `<tr>
       <td class="primary">${esc((p.fname||'')+' '+(p.lname||''))}</td>
       <td>${esc(p.role||'—')}</td>
       <td>${esc(p.emp_type||'Full-time')}</td>
       <td class="amount">${fmt(gross)}</td>
-      <td style="color:var(--text3)">${rate}%</td>
+      <td style="color:var(--text3)">${fmt(ded)}</td>
       <td class="amount income">${fmt(net)}</td>
     </tr>`;}).join('');
   document.getElementById('payroll-summary').style.display='flex';
@@ -1108,7 +1147,9 @@ function renderJournals() {
 
 // ── TAX ────────────────────────────────────────────────────────────────────
 function renderTax(invoices, expenses) {
-  const revenue = invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  // Revenue from the canonical summary (entity + period scoped); deductibles from the
+  // period-filtered expense rows.
+  const revenue = parseFloat((_data.summary||{}).revenue)||0;
   const dedFull = expenses.filter(e=>e.deductible==='yes').reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
   const dedHalf = expenses.filter(e=>e.deductible==='half').reduce((s,e)=>s+(parseFloat(e.amount)||0)*0.5,0);
   const totalDed = dedFull+dedHalf;

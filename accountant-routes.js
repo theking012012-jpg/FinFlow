@@ -453,19 +453,22 @@ If you cannot find a field, use null. Be concise.`;
 
     const taxRate = parseFloat(settings.rows[0]?.data?.tax_rate || 0);
 
-    // Optional entity scope (?entity_id=). Default: all entities (the accountant "all" view).
+    // Optional entity scope (?entity_id=) + period (?period=month|quarter|year; 'all'→year).
+    // Default: all entities, year. Both mirror the client dashboard so totals reconcile at
+    // the same entity AND the same period.
     const entParam = req.query.entity_id;
     const entityId = entParam != null && /^[1-9][0-9]*$/.test(String(entParam)) ? parseInt(entParam) : null;
+    const period = ['month', 'quarter', 'year'].includes(req.query.period) ? req.query.period : 'year';
     const entMatch = eid => eid == null || eid === entityId || entityId == null;
 
     // Canonical, entity-scoped books (F9) — the SAME computeBooks the client dashboard uses,
     // so the accountant's totals reconcile. Revenue = paid invoices + sales receipts +
     // payments received (fixes the old "count UNPAID invoices as income" bug); OpEx includes
     // payments made + payroll accrual; NetProfit subtracts FIFO COGS.
-    const books = await computeBooks(userId, entityId);
-    // Per-entity canonical summaries so the portal's entity tabs get reconciling numbers.
+    const books = await computeBooks(userId, entityId, period);
+    // Per-entity canonical summaries (same period) so the portal's entity tabs reconcile.
     const summariesByEntity = {};
-    for (const er of entities.rows) summariesByEntity[er.id] = await computeBooks(userId, er.id);
+    for (const er of entities.rows) summariesByEntity[er.id] = await computeBooks(userId, er.id, period);
 
     // Accounts payable (unpaid bills), entity-scoped to match the selected view.
     const unpaidBills = bills.rows
@@ -476,6 +479,7 @@ If you cannot find a field, use null. Be concise.`;
       accessLevel: access.rows[0].access_level,
       taxRate,
       entityId, // echoes the scope applied (null = all entities)
+      period,   // echoes the period applied (month|quarter|year)
       summary: {
         // Canonical values (F9). Legacy keys kept as aliases so nothing breaks.
         revenue:       books.revenue.toFixed(2),

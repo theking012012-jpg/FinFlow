@@ -1007,35 +1007,27 @@
           })
           .catch(() => { window._entRevFetching = false; });
       }
-      const totalRev = _invSrc
-        .filter(i => i.status?.toLowerCase() === 'paid')
-        .reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-      const totalExp = (window._realExpenses||[]).reduce((s,e)=>s+Number(e.amount||0),0);
-      const _payAll = [...(Array.isArray(window.payrollEmployees)?window.payrollEmployees:[]), ...(window.ownerPayroll?[window.ownerPayroll]:[])];
-      const payrollExp = _payAll.reduce((s,p)=>s+Number(p.gross||p.salary||0),0);
-      const consolidatedProfit = totalRev - totalExp - payrollExp;
-      set('ent-consol-rev', S(totalRev));
-      set('ent-consol-profit', S(consolidatedProfit));
-      if (totalRev > 0) {
-        const margin = Math.round(consolidatedProfit / totalRev * 100);
-        set('ent-consol-margin', margin + '% margin');
+      // F24: populate EVERY entity's canonical P&L from /api/reports?entity_id= (computeBooks —
+      // the same basis as the dashboard / books / report routes, incl. FIFO COGS + payroll
+      // accrual), then re-render the consolidated view. Previously only the ACTIVE entity got
+      // real figures and COGS was hardcoded 0 (so gross profit == revenue). The consolidated
+      // KPI cards (ent-consol-rev/profit/margin) are then set by the original renderEntities
+      // from getConsolTotal(e.data). Guarded so a re-render we trigger doesn't loop/refetch.
+      if (!window._consolFetching && ents.length) {
+        window._consolFetching = true;
+        Promise.all(ents.map(e => {
+          const _id = e._dbId || e.id;
+          if (!_id) return Promise.resolve();
+          return fetch('/api/reports?entity_id=' + _id, { credentials: 'same-origin' })
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d) e.data = { rev: d.revenue || 0, cogs: d.cogs || 0, grossProfit: d.grossProfit || 0, opex: d.expenses || 0, netProfit: d.netProfit || 0 }; })
+            .catch(() => {});
+        })).then(() => {
+          window._consolFetching = false;
+          if (typeof _medOrigRenderEntities === 'function') _medOrigRenderEntities(); // recompute KPI cards from real e.data
+          if (typeof renderConsolPL === 'function') renderConsolPL();                 // fill the consolidated table
+        });
       }
-      // Fill the ACTIVE entity's P&L figures from the real numbers we just
-      // computed, then re-render the Consolidated P&L table. The table reads
-      // e.data (rev/cogs/grossProfit/opex/netProfit), which loadEntityData never
-      // populates — so without this it shows $0 on every line while the KPI cards
-      // above show real totals. FOLLOW-UP: multi-entity — only the active entity
-      // gets real figures here (the others need per-entity fetches).
-      try {
-        const _act = ents.find(e => e.active) || ents[0];
-        if (_act) {
-          _act.data = {
-            rev: totalRev, cogs: 0, grossProfit: totalRev,
-            opex: totalExp + payrollExp, netProfit: consolidatedProfit,
-          };
-          if (typeof renderConsolPL === 'function') renderConsolPL();
-        }
-      } catch (e) {}
     };
 
     // ── Document KPI cards: update after renderDocuments() ────────────

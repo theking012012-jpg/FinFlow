@@ -4449,6 +4449,10 @@ async function loadCOGS(){
   try{
     const res=await fetch('/api/cogs',{credentials:'include'});
     const data=await res.json();
+    // Stash the entity-scoped FIFO total for the canonical Net (Revenue − COGS − OpEx) used by
+    // the dashboard / AI / health score, then re-render them so COGS flows through immediately.
+    window._cogsTotal=parseFloat(data.totalCOGS)||0;
+    ['updateDashboard','updateAI','updateHealthScore'].forEach(fn=>{if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}}});
     const totalEl=document.getElementById('cogs-total');
     const revEl=document.getElementById('cogs-revenue');
     const gpEl=document.getElementById('cogs-gross-profit');

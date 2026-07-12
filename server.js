@@ -2732,32 +2732,22 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     const uid = req.session.userId;
     const eid = req.entityId || null;
     const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
-    const invoices = (await db.allByUser('invoices', uid, matchEnt)) || [];
-    const expenses = (await db.allByUser('expenses', uid, matchEnt)) || [];
-
-    const revenue = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const outstanding = invoices.filter(i => i.status !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const overdue = invoices.filter(i => i.status === 'overdue').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const totalExp = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-    const netProfit = revenue - totalExp;
+    // Canonical figures from computeBooks (the single source shared with the dashboard,
+    // /books and the report routes) so every surface reconciles. Revenue/expenses/net all
+    // include receipts, payments, payroll accrual + FIFO COGS.
+    const [books, invoices, expenses] = await Promise.all([
+      computeBooks(uid, eid, 'year'),
+      db.allByUser('invoices', uid, matchEnt),
+      db.allByUser('expenses', uid, matchEnt),
+    ]);
+    const revenue = books.revenue;
+    const outstanding = books.outstanding;
+    const overdue = (invoices || []).filter(i => (i.status || '').toLowerCase() === 'overdue').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    const totalExp = books.opex;
+    const netProfit = books.netProfit;
     const margin = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;
-
-    // COGS from inventory movements — FIFO (single costing method app-wide).
-    let totalCOGS = 0, cogsUncoveredItems = 0;
-    try {
-      const { rows: cogsItems } = await pool.query(
-        `SELECT DISTINCT im.inventory_id FROM inventory_movements im
-         WHERE im.user_id = $1 AND im.type = 'sale'
-           AND (im.entity_id IS NULL OR ($2::int IS NOT NULL AND im.entity_id = $2))`,
-        [scopeId(req), eid]
-      );
-      for (const it of cogsItems) {
-        const f = await fifoItemTotal(pool, it.inventory_id);
-        totalCOGS += f.cogs;
-        if (f.uncovered > 0) cogsUncoveredItems++;
-      }
-      totalCOGS = Math.round(totalCOGS * 100) / 100;
-    } catch (_) { totalCOGS = 0; cogsUncoveredItems = 0; }
+    const totalCOGS = books.cogs;
+    const cogsUncoveredItems = books.parts.cogsUncoveredItems;
 
     // FX gain/loss — realised from settled positions; unrealised COMPUTED at read time for
     // open positions with a current rate (never the dead unrealised_gain_loss column).
@@ -3436,12 +3426,16 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
 
 app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
+  const eid = req.entityId || null;
+  // Entity-scoped so the total matches computeBooks / the dashboard (the frontend stashes
+  // it as window._cogsTotal for the canonical net). $2 NULL → all entities.
   const { rows: items } = await pool.query(
     `SELECT DISTINCT im.inventory_id, i.data->>'name' AS name, i.data->>'sku' AS sku
      FROM inventory_movements im
      JOIN inventory i ON i.id = im.inventory_id
-     WHERE im.user_id = $1 AND im.type = 'sale'`,
-    [scopeId(req)]
+     WHERE im.user_id = $1 AND im.type = 'sale'
+       AND ($2::int IS NULL OR im.entity_id IS NULL OR im.entity_id = $2)`,
+    [scopeId(req), eid]
   );
 
   let totalCOGS = 0, uncoveredItems = 0;

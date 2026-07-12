@@ -186,9 +186,10 @@
     const overdueAmt = overdue.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
 
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    set('d-rev',    money(rev));
-    set('d-exp',    money(exp));
-    set('d-profit', money(profit));
+    // d-rev / d-exp / d-profit are written ONLY by app-main updateDashboard (canonical R1/E1
+    // − COGS), so this wiring can't overwrite them with a divergent basis (root of F7). This
+    // function still owns the non-conflicting cards below. rev/exp/profit are still computed
+    // above for the returned object (used by _refreshDashboardUI's other cards).
     set('d-outstanding', money(outstanding));
     if (overdue.length > 0) {
       set('d-outstanding-chg', `${overdue.length} overdue · ${money(overdueAmt)}`);
@@ -354,6 +355,11 @@
       window._realInvoices = invoices || [];
       window._realExpenses = expenses || [];
 
+      // Stash the entity-scoped FIFO COGS total for the canonical Net (Revenue − COGS − OpEx)
+      // that app-main updateDashboard / AI / health score subtract. Non-inventory → 0.
+      try { const _c = await apiGetStatus('/api/cogs' + eq); window._cogsTotal = parseFloat(_c && _c.totalCOGS) || 0; }
+      catch (e) { window._cogsTotal = window._cogsTotal || 0; }
+
       // Build monthly chart data
       const { months, revByMonth, expByMonth } = buildMonthlyArrays(window._realInvoices, window._realExpenses);
       updateOverviewChart(revByMonth, expByMonth, months);
@@ -383,33 +389,10 @@
       if (!window.charts?.overview && typeof buildCharts === 'function') buildCharts();
       if (typeof window._refreshDashboardUI === 'function') window._refreshDashboardUI();
 
-      // Belt-and-suspenders: write KPI cards directly in case updateKPIs
-      // IDs or the DOM aren't ready when _refreshDashboardUI runs above.
-      (function _forceKPIs() {
-        const inv = window._realInvoices || [];
-        const exps = window._realExpenses || [];
-        const rev = inv.filter(i => (i.status||'').toLowerCase() === 'paid')
-                       .reduce((s, i) => s + (Number(i.amount) || 0), 0);
-        let exp = exps.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-        // Include payroll gross in expenses
-        const payroll = window.payrollEmployees || [];
-        if (window.ownerPayroll) payroll.unshift(window.ownerPayroll);
-        exp += payroll.reduce((s, e) => s + (Number(e.gross) || 0), 0);
-        const outstanding = inv.filter(i => (i.status||'').toLowerCase() !== 'paid')
-                              .reduce((s, i) => s + (Number(i.amount) || 0), 0);
-        const fmt = n => {
-          const v = Math.abs(n);
-          const sign = n < 0 ? '-' : '';
-          if (v >= 1000000) return sign + '$' + (v / 1000000).toFixed(1) + 'M';
-          if (v >= 1000)    return sign + '$' + (v / 1000).toFixed(1) + 'K';
-          return sign + '$' + v.toFixed(0);
-        };
-        const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-        set('d-rev',         fmt(rev));
-        set('d-exp',         fmt(exp));
-        set('d-profit',      fmt(rev - exp));
-        set('d-outstanding', fmt(outstanding));
-      })();
+      // Canonical writer owns d-rev/d-exp/d-profit — call it LAST at boot so those cards show
+      // the single canonical Net (Revenue − COGS − OpEx). Replaces the old _forceKPIs IIFE
+      // that wrote a divergent paid-only/no-COGS basis — the root of the F7 last-writer flicker.
+      if (typeof window.updateDashboard === 'function') { try { window.updateDashboard(); } catch (e) {} }
 
       console.log('[Dashboard Wiring] ✅ Real data loaded — invoices:', invoices.length, 'expenses:', expenses.length);
     } catch (err) {
@@ -467,21 +450,10 @@
       window.charts.overview.data.datasets[1].data = _safe(expByMonth);
       window.charts.overview.update();
     }
-    const kpis = updateKPIs(invs, exps, period);
-
-    // Add owner payroll gross to expense/profit KPIs so adding payroll
-    // immediately reflects in dashboard totals without requiring a page refresh.
-    const _op    = window.ownerPayroll;
-    const _emps  = window.payrollEmployees || [];
-    const _all   = _op ? [_op, ..._emps] : _emps;
-    const _payrollTotal = _all.reduce((s, e) => s + (parseFloat(e.gross) || 0), 0);
-    if (_payrollTotal > 0 && kpis) {
-      const _totalExp    = (kpis.exp    || 0) + _payrollTotal;
-      const _totalProfit = (kpis.rev    || 0) - _totalExp;
-      const _set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-      _set('d-exp',    money(_totalExp));
-      _set('d-profit', money(_totalProfit));
-    }
+    updateKPIs(invs, exps, period);
+    // (Removed the payroll patch that re-wrote d-exp/d-profit here — those cards are now
+    // owned solely by app-main updateDashboard, which refreshFinancials calls right after
+    // this. computeExpenseBreakdown already accrues payroll into the canonical OpEx.)
 
     updateExpenseBars(exps);
     updateTransactions(invs, exps);

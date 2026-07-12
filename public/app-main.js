@@ -1827,7 +1827,10 @@ function updateDashboard(d=getPeriodData()){
   const _ddBd = (typeof computeExpenseBreakdown==='function') ? computeExpenseBreakdown() : null;
   const _ddExp = _ddBd ? _ddBd.total : (d.exp||0);
   const _ddRev = (typeof computeRevenue==='function') ? computeRevenue() : (d.rev||0);
-  const _ddProfit = _ddRev - _ddExp;
+  // Canonical Net = Revenue − COGS − OpEx. COGS is the entity-scoped FIFO total stashed by
+  // loadCOGS/boot (window._cogsTotal); non-inventory businesses → 0 → net == rev − opex.
+  const _ddCogs = parseFloat(window._cogsTotal)||0;
+  const _ddProfit = _ddRev - _ddCogs - _ddExp;
   document.getElementById('d-rev').textContent=S(_ddRev);
   document.getElementById('d-exp').textContent=S(_ddExp);
   document.getElementById('d-profit').textContent=S(_ddProfit);
@@ -4042,7 +4045,7 @@ function updateAI(d=getPeriodData()){
   const _bd = (typeof computeExpenseBreakdown==='function') ? computeExpenseBreakdown() : null;
   const _exp = _bd ? _bd.total : (d.exp||0);
   const _rev = (typeof computeRevenue==='function') ? computeRevenue() : (d.rev||0);
-  const _profit = _rev - _exp;
+  const _profit = _rev - (parseFloat(window._cogsTotal)||0) - _exp;  // canonical Net (incl COGS)
   const margin = _rev > 0 ? Math.round(_profit/_rev*100) : 0;
   const insights=currentPeriod==='year'?[
     (()=>{ const _g=REV[0]>0?Math.round((REV[11]-REV[0])/REV[0]*100):null; return _g!==null?`Full year revenue: ${S(_rev)} — ${_g>=0?"+":""}${_g}% growth vs ${MONTH_FULL[0]}.`:`Full year revenue: ${S(_rev)} — First year on record, no prior comparison.`; })(),
@@ -4079,7 +4082,7 @@ function updateHealthScore(savingsRate=0,income=0,surplus=0){
   const _bd = (typeof computeExpenseBreakdown==='function') ? computeExpenseBreakdown() : null;
   const _exp = _bd ? _bd.total : (d.exp||0);
   const _rev = (typeof computeRevenue==='function') ? computeRevenue() : (d.rev||0);
-  const _profit = _rev - _exp;
+  const _profit = _rev - (parseFloat(window._cogsTotal)||0) - _exp;  // canonical Net (incl COGS)
   const throughput=_rev+_exp;
   const margin = _rev>0 ? _profit/_rev*100 : 0;
   // Cash flow — real net relative to total money moved this period.

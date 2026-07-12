@@ -2795,80 +2795,106 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
   }
 }));
 
-// POST /api/reports/profit-loss — monthly P&L breakdown
+// POST /api/reports/profit-loss — monthly P&L breakdown (entity-scoped).
+// Monthly rows show DATED cash activity (paid invoices + receipts + payments received in;
+// expenses + payments made out). The TOTALS come from computeBooks so the bottom line is
+// canonical — it additionally includes payroll accrual (a monthly rate, surfaced as its own
+// line) and FIFO COGS (an aggregate). Sorted by YYYY-MM key, labelled at render (F15).
 app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
-  const [invoices, expenses] = await Promise.all([
-    db.allByUser('invoices', uid),
-    db.allByUser('expenses', uid),
+  const eid = req.entityId || null;
+  const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
+  const [invoices, expenses, paymentsMade, receipts, paymentsIn] = await Promise.all([
+    db.allByUser('invoices', uid, matchEnt),
+    db.allByUser('expenses', uid, matchEnt),
+    db.allByUser('payments_made', uid, matchEnt),
+    db.allByUser('sales_receipts', uid),      // user-level (no entity_id) — F26
+    db.allByUser('payments_received', uid),   // user-level (no entity_id) — F26
   ]);
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const toMonth = d => { const dt = new Date(d); return isNaN(dt) ? 'Unknown' : `${_MO[dt.getMonth()]} '${String(dt.getFullYear()).slice(-2)}`; };
+  const keyOf = d => { const dt = new Date(d); return isNaN(dt) ? 'Unknown' : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
+  const labelOf = k => { if (k === 'Unknown') return 'Unknown'; const [y, m] = k.split('-'); return `${_MO[+m - 1]} '${y.slice(-2)}`; };
   const monthMap = {};
-  (invoices || []).filter(i => i.status === 'paid').forEach(i => {
-    const m = toMonth(i.created_at || i.due_date || i.date);
-    if (!monthMap[m]) monthMap[m] = { revenue: 0, expenses: 0 };
-    monthMap[m].revenue += parseFloat(i.amount) || 0;
-  });
-  (expenses || []).forEach(e => {
-    const m = toMonth(e.expense_date || e.date || e.created_at);
-    if (!monthMap[m]) monthMap[m] = { revenue: 0, expenses: 0 };
-    monthMap[m].expenses += parseFloat(e.amount) || 0;
-  });
-  const rows = Object.keys(monthMap).sort().map(m => ({
-    month: m, revenue: monthMap[m].revenue, expenses: monthMap[m].expenses,
-    netProfit: monthMap[m].revenue - monthMap[m].expenses,
+  const bump = (d, field, amt) => { const k = keyOf(d); (monthMap[k] || (monthMap[k] = { revenue: 0, expenses: 0 }))[field] += parseFloat(amt) || 0; };
+  invoices.filter(i => (i.status || '').toLowerCase() === 'paid').forEach(i => bump(i.created_at || i.due_date || i.date, 'revenue', i.amount));
+  receipts.forEach(r => bump(r.date, 'revenue', r.amount));
+  paymentsIn.forEach(p => bump(p.date, 'revenue', p.amount));
+  expenses.forEach(e => bump(e.expense_date || e.date || e.created_at, 'expenses', e.amount));
+  paymentsMade.forEach(p => bump(p.date || p.created_at, 'expenses', p.amount));
+  // Sort by YYYY-MM key ('Unknown' sorts last); format the label at render (F15).
+  const rows = Object.keys(monthMap).sort().map(k => ({
+    month: labelOf(k), key: k, revenue: monthMap[k].revenue, expenses: monthMap[k].expenses,
+    netProfit: monthMap[k].revenue - monthMap[k].expenses,
   }));
-  const totalRevenue  = rows.reduce((s, r) => s + r.revenue, 0);
-  const totalExpenses = rows.reduce((s, r) => s + r.expenses, 0);
-  res.json({ rows, totalRevenue, totalExpenses, netProfit: totalRevenue - totalExpenses });
+  // Canonical totals — the reconciling bottom line (adds payroll accrual + COGS).
+  const books = await computeBooks(uid, eid, 'year');
+  res.json({
+    rows,
+    totalRevenue:  books.revenue,
+    cogs:          books.cogs,
+    grossProfit:   books.grossProfit,
+    payroll:       books.parts.payroll,
+    totalExpenses: books.opex,
+    netProfit:     books.netProfit,
+  });
 }));
 
-// POST /api/reports/balance-sheet — assets vs liabilities snapshot
+// POST /api/reports/balance-sheet — assets vs liabilities snapshot (entity-scoped).
+// AR + the cash proxy come from canonical computeBooks so they reconcile with the P&L;
+// AP = unpaid bills (entity-scoped). No real cash-account model, so cash is a retained-
+// earnings proxy (max(0, netProfit)) — noted, not a tracked balance.
 app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
-  const [invoices, expenses, bills] = await Promise.all([
-    db.allByUser('invoices', uid),
-    db.allByUser('expenses', uid),
-    db.allByUser('bills', uid).catch(() => []),
+  const eid = req.entityId || null;
+  const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
+  const [books, bills] = await Promise.all([
+    computeBooks(uid, eid, 'year'),
+    db.allByUser('bills', uid, matchEnt),
   ]);
-  const paidRev  = (invoices || []).filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-  const totalExp = (expenses || []).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-  const cash     = Math.max(0, paidRev - totalExp);
-  const ar       = (invoices || []).filter(i => i.status !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-  const ap       = (bills   || []).filter(b => b.status !== 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
-  const totalAssets      = cash + ar;
-  const totalLiabilities = ap;
-  res.json({ cash, accountsReceivable: ar, totalAssets, accountsPayable: ap, totalLiabilities, equity: totalAssets - totalLiabilities });
+  const cash = Math.max(0, books.netProfit);          // proxy: no cash account is tracked
+  const ar   = books.outstanding;                     // canonical unpaid AR
+  const ap   = (bills || []).filter(b => b.status !== 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+  const totalAssets      = Math.round((cash + ar) * 100) / 100;
+  const totalLiabilities = Math.round(ap * 100) / 100;
+  res.json({ cash, accountsReceivable: ar, totalAssets, accountsPayable: totalLiabilities, totalLiabilities, equity: Math.round((totalAssets - totalLiabilities) * 100) / 100 });
 }));
 
-// POST /api/reports/cash-flow — monthly inflows vs outflows
+// POST /api/reports/cash-flow — monthly inflows vs outflows (entity-scoped, CASH basis).
+// Stays a pure cash statement (decision #2): NO COGS, NO payroll accrual — cash in = paid
+// invoices + sales receipts + payments received; cash out = expenses + payments made.
+// Real table names (sales_receipts / payments_made) — the previous 'receipts'/'payments'
+// were non-existent and the .catch(()=>[]) silently returned empty legs; removed so a bad
+// table name now throws loudly. Sorted by YYYY-MM key, labelled at render (F15).
 app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
-  const [receipts, payments, invoices, expenses] = await Promise.all([
-    db.allByUser('receipts', uid).catch(() => []),
-    db.allByUser('payments', uid).catch(() => []),
-    db.allByUser('invoices', uid),
-    db.allByUser('expenses', uid),
+  const eid = req.entityId || null;
+  const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
+  const [invoices, expenses, paymentsMade, receipts, paymentsIn] = await Promise.all([
+    db.allByUser('invoices', uid, matchEnt),
+    db.allByUser('expenses', uid, matchEnt),
+    db.allByUser('payments_made', uid, matchEnt),
+    db.allByUser('sales_receipts', uid),      // user-level (no entity_id) — F26
+    db.allByUser('payments_received', uid),   // user-level (no entity_id) — F26
   ]);
+  const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const keyOf = d => { const dt = new Date(d); return isNaN(dt) ? 'Unknown' : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
+  const labelOf = k => { if (k === 'Unknown') return 'Unknown'; const [y, m] = k.split('-'); return `${_MO[+m - 1]} '${y.slice(-2)}`; };
   const monthMap = {};
-  const _MO2 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const add = (date, field, amount) => {
-    if (!date) return;
-    const dt = new Date(date);
-    const m = isNaN(dt) ? 'Unknown' : `${_MO2[dt.getMonth()]} '${String(dt.getFullYear()).slice(-2)}`;
-    if (!monthMap[m]) monthMap[m] = { inflow: 0, outflow: 0 };
-    monthMap[m][field] += parseFloat(amount) || 0;
-  };
-  (receipts || []).forEach(r => add(r.date, 'inflow', r.amount));
-  (invoices || []).filter(i => i.status === 'paid').forEach(i => add(i.created_at || i.due_date || i.date, 'inflow', i.amount));
-  (payments || []).forEach(p => add(p.date, 'outflow', p.amount));
-  (expenses || []).forEach(e => add(e.expense_date || e.date || e.created_at, 'outflow', e.amount));
-  const rows = Object.keys(monthMap).sort().map(m => ({
-    month: m, inflow: monthMap[m].inflow, outflow: monthMap[m].outflow,
-    net: monthMap[m].inflow - monthMap[m].outflow,
+  const add = (date, field, amount) => { const k = keyOf(date); (monthMap[k] || (monthMap[k] = { inflow: 0, outflow: 0 }))[field] += parseFloat(amount) || 0; };
+  invoices.filter(i => (i.status || '').toLowerCase() === 'paid').forEach(i => add(i.created_at || i.due_date || i.date, 'inflow', i.amount));
+  receipts.forEach(r => add(r.date, 'inflow', r.amount));
+  paymentsIn.forEach(p => add(p.date, 'inflow', p.amount));
+  expenses.forEach(e => add(e.expense_date || e.date || e.created_at, 'outflow', e.amount));
+  paymentsMade.forEach(p => add(p.date || p.created_at, 'outflow', p.amount));
+  const rows = Object.keys(monthMap).sort().map(k => ({
+    month: labelOf(k), key: k, inflow: monthMap[k].inflow, outflow: monthMap[k].outflow,
+    net: monthMap[k].inflow - monthMap[k].outflow,
   }));
-  res.json({ rows, totalInflow: rows.reduce((s, r) => s + r.inflow, 0), totalOutflow: rows.reduce((s, r) => s + r.outflow, 0) });
+  res.json({
+    rows,
+    totalInflow:  Math.round(rows.reduce((s, r) => s + r.inflow, 0) * 100) / 100,
+    totalOutflow: Math.round(rows.reduce((s, r) => s + r.outflow, 0) * 100) / 100,
+  });
 }));
 
 // GET /api/tax-filing — quarterly tax estimates from paid invoices and

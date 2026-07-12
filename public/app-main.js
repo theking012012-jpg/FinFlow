@@ -4835,11 +4835,15 @@ async function generateReport(name,revenue,expenses,profit){
   try{
     if(name==='Profit & Loss Statement'){
       const d=await fetch('/api/reports/profit-loss',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());
-      const rows=(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${esc(r.month||'')}</span><span style="font-family:var(--font-mono);color:${r.netProfit>=0?'var(--green)':'var(--red)'}">${fmt(r.netProfit)}</span></div>`).join('');
+      // Monthly rows show dated cash activity; totals are canonical (computeBooks) — they add
+      // FIFO COGS and payroll accrual (a monthly rate) that aren't in the dated monthly detail.
       body.innerHTML=`${hdr('Revenue')}${(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${esc(r.month||'')}</span><span style="color:var(--green);font-family:var(--font-mono)">${fmt(r.revenue)}</span></div>`).join('')}
         <div style="${rowStyle};font-weight:600"><span>Total Revenue</span><span style="color:var(--green);font-family:var(--font-mono)">${fmt(d.totalRevenue)}</span></div>
-        ${hdr('Expenses')}${(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${esc(r.month||'')}</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(r.expenses)}</span></div>`).join('')}
-        <div style="${rowStyle};font-weight:600"><span>Total Expenses</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(d.totalExpenses)}</span></div>
+        <div style="${rowStyle}"><span style="color:var(--t2)">Cost of Goods Sold (FIFO)</span><span style="color:var(--red);font-family:var(--font-mono)">− ${fmt(d.cogs)}</span></div>
+        <div style="${rowStyle};font-weight:600"><span>Gross Profit</span><span style="font-family:var(--font-mono)">${fmt(d.grossProfit)}</span></div>
+        ${hdr('Operating Expenses')}${(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${esc(r.month||'')}</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(r.expenses)}</span></div>`).join('')}
+        <div style="${rowStyle}"><span style="color:var(--t2)">Payroll (accrued)</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(d.payroll)}</span></div>
+        <div style="${rowStyle};font-weight:600"><span>Total Operating Expenses</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(d.totalExpenses)}</span></div>
         <div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Net Profit</span><span style="color:${(d.netProfit||0)>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt(d.netProfit)}</span></div>`;
     } else if(name==='Balance Sheet'){
       const d=await fetch('/api/reports/balance-sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());

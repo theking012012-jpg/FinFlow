@@ -146,7 +146,7 @@ async function lookupMembership(body, membershipNumber) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient) {
+module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient, computeBooks) {
 
   // ── 1. REGISTER AS ACCOUNTANT ─────────────────────────────────────────────
   app.post('/api/accountants/register', authLimiter, wrap(async (req, res) => {
@@ -448,30 +448,47 @@ If you cannot find a field, use null. Be concise.`;
       pool.query(`SELECT data FROM payroll WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT data FROM journals WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
       pool.query(`SELECT data FROM customers WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
-      pool.query(`SELECT data FROM bills WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+      pool.query(`SELECT id, entity_id, data FROM bills WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
     ]);
 
     const taxRate = parseFloat(settings.rows[0]?.data?.tax_rate || 0);
-    const totalIncome   = invoices.rows.reduce((sum, r) => sum + (parseFloat(r.data?.amount) || 0), 0);
-    const totalExpenses = expenses.rows.reduce((sum, r) => sum + (parseFloat(r.data?.amount) || 0), 0);
-    const totalPayroll  = payroll.rows.reduce((sum, r) => sum + (parseFloat(r.data?.gross) || 0), 0);
 
-    // Balance sheet components
-    const outstanding = invoices.rows
-      .filter(r => r.data?.status !== 'paid')
-      .reduce((s, r) => s + (parseFloat(r.data?.amount) || 0), 0);
+    // Optional entity scope (?entity_id=). Default: all entities (the accountant "all" view).
+    const entParam = req.query.entity_id;
+    const entityId = entParam != null && /^[1-9][0-9]*$/.test(String(entParam)) ? parseInt(entParam) : null;
+    const entMatch = eid => eid == null || eid === entityId || entityId == null;
+
+    // Canonical, entity-scoped books (F9) — the SAME computeBooks the client dashboard uses,
+    // so the accountant's totals reconcile. Revenue = paid invoices + sales receipts +
+    // payments received (fixes the old "count UNPAID invoices as income" bug); OpEx includes
+    // payments made + payroll accrual; NetProfit subtracts FIFO COGS.
+    const books = await computeBooks(userId, entityId);
+    // Per-entity canonical summaries so the portal's entity tabs get reconciling numbers.
+    const summariesByEntity = {};
+    for (const er of entities.rows) summariesByEntity[er.id] = await computeBooks(userId, er.id);
+
+    // Accounts payable (unpaid bills), entity-scoped to match the selected view.
     const unpaidBills = bills.rows
-      .filter(r => r.data?.status === 'unpaid')
+      .filter(r => r.data?.status === 'unpaid' && entMatch(r.entity_id))
       .reduce((s, r) => s + (parseFloat(r.data?.amount) || 0), 0);
 
     return res.json({
       accessLevel: access.rows[0].access_level,
       taxRate,
+      entityId, // echoes the scope applied (null = all entities)
       summary: {
-        totalIncome:   totalIncome.toFixed(2),
-        totalExpenses: totalExpenses.toFixed(2),
-        netProfit:     (totalIncome - totalExpenses).toFixed(2),
+        // Canonical values (F9). Legacy keys kept as aliases so nothing breaks.
+        revenue:       books.revenue.toFixed(2),
+        cogs:          books.cogs.toFixed(2),
+        grossProfit:   books.grossProfit.toFixed(2),
+        opex:          books.opex.toFixed(2),
+        netProfit:     books.netProfit.toFixed(2),
+        outstanding:   books.outstanding.toFixed(2),
+        totalIncome:   books.revenue.toFixed(2),  // legacy alias → now paid-only canonical revenue
+        totalExpenses: books.opex.toFixed(2),      // legacy alias → now canonical OpEx
+        parts:         books.parts,
       },
+      summariesByEntity,
       entities:    entities.rows.map(r => ({ id: r.id, name: r.name, color: r.color || '#c9a84c', currency: r.currency || 'USD' })),
       allInvoices: invoices.rows.map(r => ({ ...r.data, id: r.id, entity_id: r.entity_id })),
       allExpenses: expenses.rows.map(r => ({ ...r.data, id: r.id, entity_id: r.entity_id })),
@@ -479,9 +496,9 @@ If you cannot find a field, use null. Be concise.`;
       allJournals: journals.rows.map(r => r.data),
       allCustomers: customers.rows.map(r => r.data),
       balanceSheet: {
-        accountsReceivable: outstanding.toFixed(2),
+        accountsReceivable: books.outstanding.toFixed(2),
         accountsPayable:    unpaidBills.toFixed(2),
-        totalPayroll:       totalPayroll.toFixed(2),
+        totalPayroll:       books.parts.payroll.toFixed(2),
       },
       recentInvoices: invoices.rows.map(r => r.data).slice(0, 10),
       recentExpenses: expenses.rows.map(r => r.data).slice(0, 10),

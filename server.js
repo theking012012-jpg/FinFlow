@@ -2417,7 +2417,9 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
 
 // ── ACCOUNTANT MARKETPLACE ROUTES ────────────────────────────────────────────
 const registerAccountantRoutes = require('./accountant-routes');
-registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient);
+// computeBooks is a hoisted declaration (defined below) closing over db+pool — pass it so
+// the accountant /books view shares the one canonical, entity-scoped basis (F9).
+registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient, computeBooks);
 
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.

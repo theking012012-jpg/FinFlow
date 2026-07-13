@@ -625,7 +625,11 @@ async function doRegister(){
   const btn = document.getElementById('register-btn');
   if(btn){ btn.disabled=true; btn.textContent='Creating account…'; }
   try{
-    const res = await fetch('/api/auth/register',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password:pw})});
+    // F10: forward the accountant referral code (from /register?ref=CODE → /app?...&ref=CODE)
+    // so the backend links this signup to the referring accountant. Same URL-read
+    // pattern as `plan` below. Omitted when absent so nothing changes for normal signups.
+    const ref = new URLSearchParams(window.location.search).get('ref');
+    const res = await fetch('/api/auth/register',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password:pw,referralCode:ref||undefined})});
     const data = await res.json();
     if(!res.ok){ if(errEl) errEl.textContent=data.error||'Registration failed.'; return; }
     const plan = new URLSearchParams(window.location.search).get('plan');

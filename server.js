@@ -2722,6 +2722,19 @@ app.get('/team-accept.html', (req, res) => {
 app.get('/join', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accountant-register.html'));
 });
+// F10: accountant referral funnel. The shared link is /register?ref=CODE. With no
+// /register route it fell through to the catch-all (landing.html) and the ref was
+// silently dropped. Redirect into the app's existing signup flow, forwarding ?ref=
+// (and a valid plan) so doRegister() attaches the referral to /api/auth/register.
+// Registered before app.get('*') so it isn't swallowed by the catch-all.
+app.get('/register', (req, res) => {
+  const params = new URLSearchParams({ signup: '1' });
+  const ref = String(req.query.ref || req.query.referralCode || '').slice(0, 50);
+  if (ref) params.set('ref', ref);
+  const plan = String(req.query.plan || '');
+  if (plan === 'pro' || plan === 'business') params.set('plan', plan);
+  res.redirect('/app?' + params.toString());
+});
 app.get('/accountant', (req, res) => {
   if (!req.session?.accountantId) return res.redirect('/accountant-login');
   res.sendFile(path.join(__dirname, 'public', 'accountant-dashboard.html'));

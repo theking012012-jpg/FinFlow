@@ -517,29 +517,43 @@
       <div class="table-card" style="margin-bottom:0">
         <table>
           <thead>
-            <tr><th>Tier</th><th>Clients needed</th><th>Commission duration</th><th>Max per client</th><th>Status</th></tr>
+            <tr><th>Tier</th><th>Active paying clients</th><th>Referral months ($10/mo)</th><th>Service commission</th><th>Status</th></tr>
           </thead>
           <tbody>
             <tr>
-              <td class="primary">Starter</td>
-              <td>1 – 50</td>
-              <td>1 month</td>
-              <td class="gold">$10</td>
-              <td><span class="badge badge-green" id="tier-starter-badge">—</span></td>
+              <td class="primary">Bronze</td>
+              <td>1 – 24</td>
+              <td>3 months</td>
+              <td class="gold">10%</td>
+              <td><span class="badge" id="tier-badge-bronze">—</span></td>
             </tr>
             <tr>
-              <td class="primary">Growth</td>
-              <td>50 – 500</td>
-              <td>3 months</td>
-              <td class="gold">$30</td>
-              <td><span class="badge badge-amber" id="tier-growth-badge">—</span></td>
+              <td class="primary">Silver</td>
+              <td>25 – 49</td>
+              <td>6 months</td>
+              <td class="gold">8%</td>
+              <td><span class="badge" id="tier-badge-silver">—</span></td>
+            </tr>
+            <tr>
+              <td class="primary">Gold</td>
+              <td>50 – 99</td>
+              <td>9 months</td>
+              <td class="gold">6%</td>
+              <td><span class="badge" id="tier-badge-gold">—</span></td>
+            </tr>
+            <tr>
+              <td class="primary">Platinum</td>
+              <td>100 – 249</td>
+              <td>12 months</td>
+              <td class="gold">4%</td>
+              <td><span class="badge" id="tier-badge-platinum">—</span></td>
             </tr>
             <tr>
               <td class="primary">Elite</td>
-              <td>500+</td>
+              <td>250+</td>
               <td>12 months</td>
-              <td class="gold">$120</td>
-              <td><span class="badge" id="tier-elite-badge">—</span></td>
+              <td class="gold">2%</td>
+              <td><span class="badge" id="tier-badge-elite">—</span></td>
             </tr>
           </tbody>
         </table>
@@ -689,8 +703,9 @@
     </div>
     <div id="bill-breakdown" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-top:4px;font-size:12px;color:var(--text2)">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Client pays</span><span id="bill-total" style="color:var(--text)">—</span></div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>FinFlow fee (4%)</span><span id="bill-fee" style="color:var(--amber)">—</span></div>
-      <div style="display:flex;justify-content:space-between;font-weight:500"><span>You receive</span><span id="bill-receive" style="color:var(--green)">—</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Est. Stripe fee</span><span id="bill-stripe" style="color:var(--amber)">—</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span id="bill-fee-label">FinFlow commission</span><span id="bill-fee" style="color:var(--amber)">—</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:500"><span>You receive (est.)</span><span id="bill-receive" style="color:var(--green)">—</span></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="document.getElementById('bill-modal').classList.remove('open')">Cancel</button>
@@ -944,6 +959,8 @@
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
+<!-- F17: shared tier definition (same file the backend require()s) — one source of truth -->
+<script src="/tier-config.js"></script>
 <script>
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let accountant = null;
@@ -1195,36 +1212,37 @@ function updateStats() {
 }
 
 function updateTierWidget() {
-  const active = clients.filter(c => c.status === 'active').length;
-  let tierName, progress, label, nextMilestone;
+  // F17: "active client" = consented AND paying (subscriptionStatus='active'),
+  // matching the backend. Tiers come from the shared /tier-config.js — one source.
+  const T = window.FinFlowTiers;
+  const active = clients.filter(c => c.status === 'active' && c.subscription_status === 'active').length;
+  const tiers = T.TIERS;
+  const current = T.tierForAccountant(active);
 
-  if (active >= 500) {
-    tierName = 'Elite'; progress = 100;
-    label = `${active} active clients — maximum tier`;
-    document.getElementById('tier-elite-badge').textContent = 'Current';
-    document.getElementById('tier-elite-badge').className = 'badge badge-green';
-    document.getElementById('tier-growth-badge').textContent = '✓ Achieved';
-    document.getElementById('tier-starter-badge').textContent = '✓ Achieved';
-  } else if (active >= 50) {
-    tierName = 'Growth'; progress = ((active - 50) / 450) * 100;
-    label = `${active} clients · ${500 - active} to Elite`;
-    document.getElementById('tier-growth-badge').textContent = 'Current';
-    document.getElementById('tier-growth-badge').className = 'badge badge-green';
-    document.getElementById('tier-starter-badge').textContent = '✓ Achieved';
-    document.getElementById('tier-elite-badge').textContent = `${500 - active} to go`;
-    document.getElementById('tier-elite-badge').className = 'badge';
+  // Per-tier badges: '✓ Achieved' below current, 'Current', or 'N to go' above.
+  tiers.forEach(t => {
+    const badge = document.getElementById('tier-badge-' + t.name.toLowerCase());
+    if (!badge) return;
+    if (t.name === current.name) { badge.textContent = 'Current'; badge.className = 'badge badge-green'; }
+    else if (active > t.max)     { badge.textContent = '✓ Achieved'; badge.className = 'badge badge-green'; }
+    else { badge.textContent = `${Math.max(0, t.min - active)} to go`; badge.className = 'badge'; }
+  });
+
+  // Progress toward the next tier (or full bar at the top tier).
+  const idx = tiers.findIndex(t => t.name === current.name);
+  const next = tiers[idx + 1];
+  let progress, label;
+  if (!next) {
+    progress = 100;
+    label = `${active} paying clients — maximum tier`;
   } else {
-    tierName = 'Starter'; progress = (active / 50) * 100;
-    label = `${active} clients · ${50 - active} to Growth`;
-    document.getElementById('tier-starter-badge').textContent = 'Current';
-    document.getElementById('tier-starter-badge').className = 'badge badge-green';
-    document.getElementById('tier-growth-badge').textContent = `${50 - active} to go`;
-    document.getElementById('tier-elite-badge').textContent = '500 clients';
-    document.getElementById('tier-elite-badge').className = 'badge';
+    const span = next.min - current.min;
+    progress = span > 0 ? ((active - current.min) / span) * 100 : 0;
+    label = `${active} paying · ${next.min - active} to ${next.name}`;
   }
 
-  document.getElementById('tier-name').textContent = tierName;
-  document.getElementById('tier-bar').style.width = Math.min(progress, 100) + '%';
+  document.getElementById('tier-name').textContent = current.name;
+  document.getElementById('tier-bar').style.width = Math.min(Math.max(progress, 0), 100) + '%';
   document.getElementById('tier-label').innerHTML = `<span>${label}</span>`;
 }
 
@@ -1834,11 +1852,20 @@ document.addEventListener('input', function(e) {
   if (e.target.id === 'bill-amount') {
     const amt = parseFloat(e.target.value) || 0;
     if (amt >= 50) {
-      const fee = (amt * 0.04).toFixed(2);
-      const receive = (amt * 0.96).toFixed(2);
-      document.getElementById('bill-total').textContent = '$' + amt.toFixed(2);
-      document.getElementById('bill-fee').textContent = '$' + fee;
-      document.getElementById('bill-receive').textContent = '$' + receive;
+      // F17: LIVE tier commission from the shared /tier-config.js — the same split
+      // the backend applies (Stripe fee off the top → commission → you net the rest).
+      // First 3 active paying clients are commission-free.
+      const T = window.FinFlowTiers;
+      const activeCount = clients.filter(c => c.status === 'active' && c.subscription_status === 'active').length;
+      const rate = T.commissionRateFor(activeCount);
+      const cents = Math.round(amt * 100);
+      const split = T.splitBilling(cents, rate, T.estimateStripeFeeCents(cents));
+      const fmt = c => '$' + (c / 100).toFixed(2);
+      document.getElementById('bill-total').textContent = fmt(split.billedCents);
+      document.getElementById('bill-stripe').textContent = '−' + fmt(split.stripeFeeCents);
+      document.getElementById('bill-fee-label').textContent = `FinFlow commission (${(rate * 100).toFixed(0)}%)`;
+      document.getElementById('bill-fee').textContent = '−' + fmt(split.commissionCents);
+      document.getElementById('bill-receive').textContent = fmt(split.accountantNetCents);
       document.getElementById('bill-breakdown').style.display = 'block';
     } else {
       document.getElementById('bill-breakdown').style.display = 'none';

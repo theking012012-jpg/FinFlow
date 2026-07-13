@@ -194,6 +194,16 @@ async function initDB() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_earnings_accountant ON accountant_earnings(accountant_id)`);
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS stripe_account_id TEXT`);
     await client.query(`ALTER TABLE accountant_earnings ADD COLUMN IF NOT EXISTS client_id INTEGER`);
+    // F17 money-split ledger: a service_commission row records the full breakdown of a
+    // client bill. amount_cents = the accountant's NET (billed − Stripe fee − FinFlow
+    // commission); the two columns below record the other legs so the split is auditable.
+    // billed_cents = gross the client paid. Referral rows leave these NULL (full to accountant).
+    await client.query(`ALTER TABLE accountant_earnings ADD COLUMN IF NOT EXISTS billed_cents     INTEGER`);
+    await client.query(`ALTER TABLE accountant_earnings ADD COLUMN IF NOT EXISTS commission_cents INTEGER`);
+    await client.query(`ALTER TABLE accountant_earnings ADD COLUMN IF NOT EXISTS stripe_fee_cents INTEGER`);
+    // Stripe PaymentIntent id — lets the payment_intent.succeeded webhook find the row
+    // and reconcile the estimated Stripe fee to the real balance-transaction fee.
+    await client.query(`ALTER TABLE accountant_earnings ADD COLUMN IF NOT EXISTS payment_intent_id TEXT`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_reviews (

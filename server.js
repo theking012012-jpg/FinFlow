@@ -9,6 +9,7 @@ const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
 const { db, initDB, pool, rowToObj } = require('./database');
+const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
 const pgSession = require('connect-pg-simple')(session);
 
 let resendClient = null;
@@ -82,6 +83,36 @@ app.use(cors({
   origin: process.env.ALLOWED_ORIGIN || (process.env.NODE_ENV === 'production' ? false : 'http://localhost:3000'),
   credentials: true,
 }));
+// ── F11: subscription lifecycle → users.subscriptionStatus + accountant_clients ─
+// The referral payout cron gates on users.data.subscriptionStatus — which, before
+// this, was written NOWHERE, so the cron paid nobody. These helpers write it from
+// Stripe webhook events and keep the accountant_clients relationship in sync. They
+// operate by userId (a webhook has no accountant session), affecting every accountant
+// linked to that client.
+async function setSubscriptionStatus(userId, status) {
+  if (!userId) return;
+  await pool.query(
+    `UPDATE users SET data = data || jsonb_build_object('subscriptionStatus', $1::text) WHERE id = $2`,
+    [String(status || ''), userId]
+  ).catch(e => console.error('[Stripe] setSubscriptionStatus failed:', e.message));
+}
+async function suspendClientForUser(userId) {
+  if (!userId) return;
+  await pool.query(
+    `UPDATE accountant_clients SET status = 'suspended' WHERE user_id = $1 AND status = 'active'`,
+    [userId]
+  ).catch(e => console.error('[Stripe] suspendClientForUser failed:', e.message));
+}
+async function reactivateClientForUser(userId) {
+  if (!userId) return;
+  // Only while referral months remain — a cancelled stretch is not extended.
+  await pool.query(
+    `UPDATE accountant_clients SET status = 'active'
+      WHERE user_id = $1 AND status = 'suspended' AND referral_month < referral_months_total`,
+    [userId]
+  ).catch(e => console.error('[Stripe] reactivateClientForUser failed:', e.message));
+}
+
 // ── STRIPE WEBHOOK ────────────────────────────────────────────────────────────
 // Must be before express.json() middleware — needs raw body
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -131,6 +162,46 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       );
       console.log(`[Stripe] User ${upgradeUserId} upgraded to plan: ${planUpgrade}`);
     }
+    // F11: a completed subscription checkout means the client is now paying —
+    // record it and reactivate any suspended referral relationship.
+    if (upgradeUserId && session.mode === 'subscription') {
+      await setSubscriptionStatus(upgradeUserId, 'active');
+      await reactivateClientForUser(upgradeUserId);
+    }
+  }
+
+  // F11: subscription lifecycle — the authoritative source for subscriptionStatus.
+  if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
+    const sub = event.data.object;
+    const subUserId = parseInt(sub.metadata?.userId, 10);
+    if (subUserId) {
+      await setSubscriptionStatus(subUserId, sub.status);
+      if (sub.status === 'active') await reactivateClientForUser(subUserId);
+      else if (['canceled', 'unpaid', 'past_due', 'incomplete_expired'].includes(sub.status)) await suspendClientForUser(subUserId);
+    }
+  }
+
+  // F17: reconcile the estimated Stripe fee on a service bill to the REAL fee from
+  // the charge's balance transaction, recompute the accountant's net, and mark paid.
+  if (event.type === 'payment_intent.succeeded') {
+    const pi = event.data.object;
+    let realFee = null;
+    try {
+      const chargeId = pi.latest_charge || pi.charges?.data?.[0]?.id;
+      if (chargeId) {
+        const charge = await stripe.charges.retrieve(chargeId, { expand: ['balance_transaction'] });
+        realFee = charge.balance_transaction?.fee ?? null;
+      }
+    } catch (e) { console.error('[Stripe] fee reconcile lookup failed:', e.message); }
+    await pool.query(`
+      UPDATE accountant_earnings
+         SET status           = 'paid',
+             stripe_fee_cents = COALESCE($2::int, stripe_fee_cents),
+             amount_cents     = GREATEST(0, COALESCE(billed_cents, amount_cents)
+                                            - COALESCE($2::int, stripe_fee_cents, 0)
+                                            - COALESCE(commission_cents, 0))
+       WHERE payment_intent_id = $1
+    `, [pi.id, realFee]).catch(e => console.error('[Stripe] earnings reconcile failed:', e.message));
   }
 
   if (event.type === 'customer.subscription.deleted') {
@@ -142,7 +213,10 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
         `UPDATE users SET data = data || jsonb_build_object('plan', 'trial'::text) WHERE id = $1`,
         [cancelUserId]
       );
-      console.log(`[Stripe] User ${cancelUserId} subscription cancelled — plan set to trial`);
+      // F11: mark not-paying and stop the referral payout immediately.
+      await setSubscriptionStatus(cancelUserId, 'canceled');
+      await suspendClientForUser(cancelUserId);
+      console.log(`[Stripe] User ${cancelUserId} subscription cancelled — plan set to trial, referral suspended`);
     }
   }
 
@@ -170,6 +244,12 @@ app.get('/', (req, res) => {
 });
 app.get('/app', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+// F17: serve the single tier definition to the browser (accountant-dashboard.html
+// loads it). Same file the Node backend require()s — one source of truth.
+app.get('/tier-config.js', (req, res) => {
+  res.type('application/javascript');
+  res.sendFile(path.join(__dirname, 'tier-config.js'));
 });
 
 // ── STATIC FILES — served before session so DB issues never block index.html ──
@@ -312,12 +392,16 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       ).then(async result => {
         if (!result.rows[0]) return;
         const accountantId = result.rows[0].id;
+        // F17: tier months from the shared ladder, counting only PAYING active
+        // clients (subscriptionStatus='active'; trial excluded). Provisional here —
+        // approve-request re-stamps the authoritative frozen value at approval.
         const countResult = await pool.query(
-          `SELECT COUNT(*) FROM accountant_clients WHERE accountant_id = $1 AND status = 'active'`,
+          `SELECT COUNT(*) FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
+            WHERE ac.accountant_id = $1 AND ac.status = 'active' AND u.data->>'subscriptionStatus' = 'active'`,
           [accountantId]
         );
         const count = parseInt(countResult.rows[0].count) || 0;
-        const months = count >= 500 ? 12 : count >= 50 ? 3 : 1;
+        const months = tierForAccountant(count).referralMonths;
         await pool.query(`
           INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total)
           VALUES ($1, $2, 'pending', $3)

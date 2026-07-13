@@ -69,6 +69,7 @@
 
 const crypto = require('crypto');
 const { db, pool: _dbPool, rowToObj: _rowToObj } = require('./database');
+const { tierForAccountant, commissionRateFor, splitBilling, estimateStripeFeeCents } = require('./tier-config'); // F17 — single tier source
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 
@@ -427,6 +428,7 @@ If you cannot find a field, use null. Be concise.`;
              u.data->>'email' AS client_email,
              u.data->>'name'  AS client_name,
              u.data->>'plan'  AS client_plan,
+             u.data->>'subscriptionStatus' AS subscription_status,
              ac.status,
              ac.invited_at AS created_at,
              ac.referral_month,
@@ -755,22 +757,34 @@ If you cannot find a field, use null. Be concise.`;
   }));
 
 
-  // ── 11. RECORD SERVICE COMMISSION (call from payment flow) ────────────────
-  // When an accountant charges a client for work via FinFlow, call this.
+  // ── 11. RECORD SERVICE COMMISSION (non-Stripe / manual ledger path) ───────
+  // The live billing path is bill-client (Stripe). This route records the same
+  // money split for a manually-collected bill. F17: the rate is the LIVE tier rate
+  // (no hardcoded 4%), and the row records the full split via the shared helper.
   app.post('/api/accountants/record-commission', requireAccountant, wrap(async (req, res) => {
     const accountantId = req.session.accountantId;
     const { userId, billedAmountCents, description } = req.body || {};
     if (!accountantId || !billedAmountCents) return res.status(400).json({ error: 'Missing fields.' });
 
-    const commissionCents = Math.round(billedAmountCents * 0.04); // 4%
+    const countRes = await pool.query(
+      `SELECT COUNT(*) FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
+        WHERE ac.accountant_id = $1 AND ac.status = 'active' AND u.data->>'subscriptionStatus' = 'active'`,
+      [accountantId]
+    );
+    const activeCount = parseInt(countRes.rows[0].count) || 0;
+    const rate  = commissionRateFor(activeCount);
+    const split = splitBilling(billedAmountCents, rate, estimateStripeFeeCents(billedAmountCents));
 
     await pool.query(`
       INSERT INTO accountant_earnings
-        (accountant_id, client_id, type, amount_cents, description, status, period_month)
-      VALUES ($1, $2, 'service_commission', $3, $4, 'pending', date_trunc('month', NOW()))
-    `, [accountantId, userId || null, commissionCents, description || 'Service commission']);
+        (accountant_id, client_id, type, amount_cents, billed_cents, commission_cents,
+         stripe_fee_cents, description, status, period_month)
+      VALUES ($1,$2,'service_commission',$3,$4,$5,$6,$7,'pending', date_trunc('month', NOW()))
+    `, [accountantId, userId || null, split.accountantNetCents, split.billedCents,
+        split.commissionCents, split.stripeFeeCents, description || 'Service commission']);
 
-    return res.json({ success: true, commissionCents, commissionFormatted: '$' + (commissionCents / 100).toFixed(2) });
+    return res.json({ success: true, commissionRate: rate, ...split,
+      commissionFormatted: '$' + (split.commissionCents / 100).toFixed(2) });
   }));
 
 
@@ -804,10 +818,10 @@ If you cannot find a field, use null. Be concise.`;
         JOIN users u ON u.id = ac.user_id
         WHERE ac.status = 'active'
           AND ac.referral_month < ac.referral_months_total
-          AND u.data->>'subscriptionStatus' IN ('active', 'trialing')
+          AND u.data->>'subscriptionStatus' = 'active'
       `);
-      // Clients whose subscriptionStatus is 'canceled', 'past_due', 'unpaid', or missing
-      // are excluded from the query above — no commission is created for them this month.
+      // F17: pay only on PAYING clients (subscriptionStatus='active'). Trialing,
+      // canceled, past_due, unpaid, or missing are excluded — no commission this month.
 
       let payoutsCreated = 0;
       let payoutsSkipped = 0;
@@ -839,7 +853,7 @@ If you cannot find a field, use null. Be concise.`;
         JOIN users u ON u.id = ac.user_id
         WHERE ac.status = 'active'
           AND ac.referral_month < ac.referral_months_total
-          AND u.data->>'subscriptionStatus' NOT IN ('active', 'trialing')
+          AND u.data->>'subscriptionStatus' IS DISTINCT FROM 'active'
       `);
       payoutsSkipped = parseInt(skippedResult.rows[0].count) || 0;
 
@@ -1272,13 +1286,16 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
 
     const conn = await pool.connect();
     try {
-      // Tier-based months based on current active count
+      // F17: referral months FROZEN here at approval, from the shared tier ladder.
+      // "Active client" = consented AND paying (subscriptionStatus='active'); trial
+      // clients do NOT count toward tier.
       const countRes = await conn.query(
-        `SELECT COUNT(*) FROM accountant_clients WHERE accountant_id = $1 AND status = 'active'`,
+        `SELECT COUNT(*) FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
+          WHERE ac.accountant_id = $1 AND ac.status = 'active' AND u.data->>'subscriptionStatus' = 'active'`,
         [req.session.accountantId]
       );
       const count  = parseInt(countRes.rows[0].count) || 0;
-      const months = count >= 500 ? 12 : count >= 50 ? 3 : 1;
+      const months = tierForAccountant(count).referralMonths;
 
       // Activate the pending record
       const upd = await conn.query(`
@@ -1408,11 +1425,25 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       const stripeAccountId = accRows[0]?.stripe_account_id;
       if (!stripeAccountId) return res.status(400).json({ error: 'Connect your Stripe account first' });
       const amountCents = Math.round(parseFloat(amount) * 100);
-      const platformFeeCents = Math.round(amountCents * 0.04);
+
+      // F17: LIVE tier commission (was a flat hardcoded 4%). "Active client" =
+      // consented AND paying (subscriptionStatus='active'); the accountant's first 3
+      // such clients are commission-free (onboarding hook, applied by commissionRateFor).
+      const countRes = await pool.query(
+        `SELECT COUNT(*) FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
+          WHERE ac.accountant_id = $1 AND ac.status = 'active' AND u.data->>'subscriptionStatus' = 'active'`,
+        [req.session.accountantId]
+      );
+      const activeCount = parseInt(countRes.rows[0].count) || 0;
+      const rate   = commissionRateFor(activeCount);
+      const feeEst = estimateStripeFeeCents(amountCents);
+      const split  = splitBilling(amountCents, rate, feeEst);
+
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amountCents,
         currency,
-        application_fee_amount: platformFeeCents,
+        application_fee_amount: split.commissionCents,   // FinFlow's tier commission
+        on_behalf_of: stripeAccountId,                    // accountant is settlement merchant → bears the Stripe fee
         transfer_data: { destination: stripeAccountId },
         metadata: {
           accountant_id: req.session.accountantId,
@@ -1420,17 +1451,28 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
           description: description || 'Accounting services'
         }
       });
+
+      // Ledger records the FULL split: amount_cents = accountant NET (billed − Stripe
+      // fee − commission), with the fee an ESTIMATE. The payment_intent.succeeded
+      // webhook reconciles to the real balance-transaction fee and flips status→'paid'.
       await pool.query(
-        `INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, status, created_at)
-         VALUES ($1, $2, 'service_fee', $3, $4, 'pending', NOW())
+        `INSERT INTO accountant_earnings
+           (accountant_id, client_id, type, amount_cents, billed_cents, commission_cents,
+            stripe_fee_cents, payment_intent_id, description, status, created_at)
+         VALUES ($1,$2,'service_commission',$3,$4,$5,$6,$7,$8,'pending',NOW())
          ON CONFLICT DO NOTHING`,
-        [req.session.accountantId, clientId, amountCents, description || 'Accounting services']
+        [req.session.accountantId, clientId, split.accountantNetCents, split.billedCents,
+         split.commissionCents, split.stripeFeeCents, paymentIntent.id, description || 'Accounting services']
       );
+
       res.json({
         clientSecret: paymentIntent.client_secret,
         paymentIntentId: paymentIntent.id,
         amount: amountCents,
-        platformFee: platformFeeCents
+        commissionRate: rate,
+        commissionCents: split.commissionCents,
+        estStripeFeeCents: split.stripeFeeCents,
+        accountantNetCents: split.accountantNetCents
       });
     } catch (e) {
       res.status(500).json({ error: e.message });

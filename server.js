@@ -215,6 +215,12 @@ app.use(session({
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
 const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 200 });
+// RBAC Phase 2, Step A — invite/accept. Invites: an owner onboarding a team sends
+// several, so a wider hourly cap; accept is a public, token-guarded surface, held
+// to the tight auth cadence to cap brute-force/enumeration even though the 32-byte
+// token is unguessable.
+const inviteLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 30 });
+const acceptLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
 
 app.use('/api', apiLimiter);
 
@@ -2257,6 +2263,220 @@ app.delete('/api/team/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── TEAM INVITE / ACCEPT (RBAC Phase 2, Step A) ────────────────────────────────
+// Real multi-user invites. An invite is a team_members row in 'pending' state
+// carrying a sha256-hashed, single-use, 7-day token (raw token lives only in the
+// emailed link). Accept resolves/creates the invitee's real users row and flips
+// the row to 'active' with member_user_id set — exactly what the account resolver
+// at the top of this file matches on, so access begins only once active.
+//
+// SECURITY — the role and the target account come SOLELY from the invite row
+// (looked up by token hash), NEVER from the accept request body. There is no path
+// by which a caller can POST a role or an account id and have it honored, so an
+// invitee cannot self-escalate. Revoke = the owner's DELETE /api/team/:id above
+// (removes the row → token lookup fails → resolver never matches).
+const INVITE_ROLES     = ['admin', 'accountant', 'viewer'];      // 'owner' deliberately excluded
+const hashInviteToken  = t => crypto.createHash('sha256').update(String(t)).digest('hex');
+
+app.post('/api/team/invite', inviteLimiter, requireAuth, wrap(async (req, res) => {
+  // Only an owner/admin OF THIS ACCOUNT may invite. accountRole is set per-request
+  // by the account resolver; a viewer/accountant member cannot invite.
+  if (!['owner', 'admin'].includes(req.accountRole)) {
+    return res.status(403).json({ error: 'Only an account owner or admin can invite members.' });
+  }
+  const ownerId = scopeId(req);   // invite INTO this account (the resolved owner id)
+  const { email, role = 'viewer', name = '' } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'Email required.' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email.' });
+  if (!INVITE_ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role.' });  // rejects 'owner'
+  const emailLc  = email.toLowerCase().slice(0, 200);
+  const dispName = (name || '').trim().slice(0, 100) || emailLc;
+
+  // Can't invite the account owner's own email.
+  const { rows: [ownerRow] } = await pool.query(`SELECT data->>'email' AS email FROM users WHERE id = $1 LIMIT 1`, [ownerId]);
+  if (ownerRow && (ownerRow.email || '').toLowerCase() === emailLc) {
+    return res.status(400).json({ error: 'That email already owns this account.' });
+  }
+
+  // Already an ACTIVE member of this account → nothing to do.
+  const { rows: [activeMember] } = await pool.query(
+    `SELECT id FROM team_members WHERE user_id = $1 AND lower(data->>'email') = $2 AND data->>'status' = 'active' LIMIT 1`,
+    [ownerId, emailLc]
+  );
+  if (activeMember) return res.status(409).json({ error: 'That person is already a member of this account.' });
+
+  const token     = crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashInviteToken(token);
+  const expires   = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Re-invite: refresh an existing PENDING invite in place (fresh token+expiry),
+  // else insert a new pending row. Never stacks duplicate pending invites.
+  const { rows: [pending] } = await pool.query(
+    `SELECT id FROM team_members WHERE user_id = $1 AND lower(data->>'email') = $2 AND data->>'status' = 'pending' LIMIT 1`,
+    [ownerId, emailLc]
+  );
+  if (pending) {
+    await pool.query(
+      `UPDATE team_members SET data = data || jsonb_build_object(
+         'name', $2::text, 'role', $3::text,
+         'invite_token_hash', $4::text, 'invite_expires', $5::text, 'invited_by', $6::text
+       ) WHERE id = $1`,
+      [pending.id, dispName, role, tokenHash, expires, String(req.session.userId)]
+    );
+  } else {
+    await db.insert('team_members', {
+      user_id: ownerId,
+      email:   emailLc,
+      name:    dispName,
+      role,
+      status:  'pending',
+      invite_token_hash: tokenHash,
+      invite_expires:    expires,
+      invited_by:        String(req.session.userId),
+    });
+  }
+
+  // Email the accept link — same helper/pattern as password reset. When Resend is
+  // unconfigured the URL is logged so the flow is fully verifiable without keys.
+  const APP_URL   = process.env.APP_URL || `http://localhost:${PORT}`;
+  const acceptUrl = `${APP_URL}/team-accept.html?token=${token}`;
+  const roleEsc   = role.replace(/[^a-z]/gi, '');
+  if (resendClient) {
+    try {
+      await resendClient.emails.send({
+        from:    process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
+        to:      emailLc,
+        subject: 'You have been invited to a FinFlow account',
+        html:    `<p>You have been invited to join a FinFlow account as <b>${roleEsc}</b>.</p>
+                  <p><a href="${acceptUrl}">Accept your invitation</a> — this link expires in 7 days.</p>
+                  <p>If you were not expecting this, you can safely ignore this email.</p>`,
+      });
+    } catch (e) { console.error('[Invite] email failed:', e.message); }
+  } else {
+    console.log(`[Invite] (Resend not configured) accept URL for ${emailLc}: ${acceptUrl}`);
+  }
+
+  res.status(201).json({ ok: true, email: emailLc, role });
+}));
+
+// GET — invite metadata for the accept page to render. Read-only; never consumes.
+app.get('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
+  const token = req.query.token;
+  if (!token) return res.status(400).json({ error: 'This invitation is invalid or has expired.' });
+  const { rows: [inv] } = await pool.query(
+    `SELECT tm.data->>'email' AS email, tm.data->>'role' AS role, tm.data->>'invite_expires' AS expires,
+            ou.data->>'name'  AS owner_name, ou.data->>'email' AS owner_email
+       FROM team_members tm
+       LEFT JOIN users ou ON ou.id = tm.user_id
+      WHERE tm.data->>'invite_token_hash' = $1 AND tm.data->>'status' = 'pending' LIMIT 1`,
+    [hashInviteToken(token)]
+  );
+  if (!inv || !inv.expires || new Date(inv.expires) < new Date()) {
+    return res.status(400).json({ error: 'This invitation is invalid or has expired.' });
+  }
+  const { rows: [existing] } = await pool.query(
+    `SELECT id FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [inv.email]
+  );
+  res.json({
+    email:           inv.email,
+    role:            inv.role,
+    accountName:     inv.owner_name || inv.owner_email || 'a FinFlow account',
+    emailHasAccount: !!existing,
+  });
+}));
+
+// POST — consume the invite. Transactional + row lock to serialize double-accept.
+app.post('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
+  const { token, name, password } = req.body || {};
+  if (!token) return res.status(400).json({ error: 'This invitation is invalid or has expired.' });
+  const tokenHash = hashInviteToken(token);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Lock the pending invite row so two concurrent accepts can't both consume it.
+    const { rows: [inv] } = await client.query(
+      `SELECT id, user_id AS owner_id, data->>'email' AS email,
+              data->>'role' AS role, data->>'invite_expires' AS expires
+         FROM team_members
+        WHERE data->>'invite_token_hash' = $1 AND data->>'status' = 'pending'
+        FOR UPDATE`,
+      [tokenHash]
+    );
+    if (!inv || !inv.expires || new Date(inv.expires) < new Date()) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'This invitation is invalid or has expired.' });
+    }
+
+    // Does a users row already exist for the invited email?
+    const { rows: [existRow] } = await client.query(
+      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [inv.email]
+    );
+
+    let memberUserId, memberName;
+    if (existRow) {
+      // EMAIL COLLISION — require proof of identity before linking. A leaked token
+      // must never grant access to an existing account: the invitee must already be
+      // logged in as that user, or supply its password. Password is NEVER overwritten.
+      const existing = rowToObj(existRow);
+      const authed = req.session.userId === existing.id
+        || (!!password && bcrypt.compareSync(password, existing.password));
+      if (!authed) {
+        await client.query('ROLLBACK');
+        return res.status(401).json({ error: 'existing_account',
+          message: 'An account with this email already exists. Enter its password to accept.' });
+      }
+      memberUserId = existing.id;
+      memberName   = existing.name || inv.email;
+    } else {
+      // NEW USER — create a real users row (their own global identity is 'owner';
+      // their role WITHIN this account comes from the invite row, via the resolver).
+      if (!password || password.length < 8) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+      }
+      memberName = (name || '').trim().slice(0, 100) || inv.email;
+      const hash = bcrypt.hashSync(password, 12);
+      const ins  = await client.query(
+        `INSERT INTO users (user_id, entity_id, data) VALUES (NULL, NULL, $1) RETURNING id`,
+        [{ email: inv.email, password: hash, name: memberName, plan: 'trial',
+           trial_ends: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner' }]
+      );
+      memberUserId = ins.rows[0].id;
+    }
+
+    // An owner accepting their own account's invite would orphan the resolver's
+    // self-reference guard — reject it explicitly.
+    if (memberUserId === inv.owner_id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'You cannot accept an invitation into your own account.' });
+    }
+
+    // Flip to active membership and DELETE the token fields (single-use). member_user_id
+    // stored as text so it compares byte-for-byte with the resolver's $1::text.
+    await client.query(
+      `UPDATE team_members
+          SET data = (data - 'invite_token_hash' - 'invite_expires')
+                     || jsonb_build_object('member_user_id', $2::text, 'status', 'active', 'name', $3::text)
+        WHERE id = $1`,
+      [inv.id, String(memberUserId), memberName]
+    );
+    await client.query('COMMIT');
+
+    // Log them into the account they just joined.
+    req.session.userId    = memberUserId;
+    req.session.userRole  = 'owner';   // own-identity session role; account role comes from resolver
+    req.session.userEmail = inv.email;
+    return res.json({ ok: true, role: inv.role });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('[Accept] failed:', e.message);
+    return res.status(500).json({ error: 'Could not accept invitation. Please try again.' });
+  } finally {
+    client.release();
+  }
+}));
+
 // ── AI CHAT ───────────────────────────────────────────────────────────────────
 // Words that signal a complex query requiring Sonnet; everything else uses Haiku.
 const COMPLEX_QUERY_RE = /\b(analyze|recommend|explain|forecast|compare|predict|strategy|insight|report|why)\b|how should/i;
@@ -2482,6 +2702,9 @@ If you cannot read a field clearly, use null. Do not invent data.`;
 // ── STATIC / SPA ──────────────────────────────────────────────────────────────
 app.get('/reset-password.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
+});
+app.get('/team-accept.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'team-accept.html'));
 });
 app.get('/join', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accountant-register.html'));

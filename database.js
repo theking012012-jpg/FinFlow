@@ -59,6 +59,15 @@ async function initDB() {
       await client.query(`CREATE INDEX IF NOT EXISTS idx_${table}_entity_id ON ${table}(entity_id)`);
     }
 
+    // ── RBAC Phase 2, Step 2 — membership functional indexes ────────────────────
+    // The per-request account resolver (server.js) matches team_members on
+    // data->>'member_user_id'; the invite-accept flow looks up pending invites on
+    // data->>'invite_token_hash'. These functional indexes keep both off a seq
+    // scan now that real membership/invite rows exist (the member_user_id index was
+    // deferred from Step 1 as a tracked commitment when zero rows existed to index).
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_team_members_member_user_id ON team_members ((data->>'member_user_id'))`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_team_members_invite_token   ON team_members ((data->>'invite_token_hash'))`);
+
     // Holdings entity isolation — the generic loop above already creates the
     // entity_id column, but run an explicit idempotent migration so any holdings
     // table that predates entity_id (legacy deployments) gets it safely. No

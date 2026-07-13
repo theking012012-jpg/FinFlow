@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accept Invitation — FinFlow</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg0:#0e0b08;--bg1:#141210;--bg2:#1c1916;
+      --bd:#2a2520;--t1:#e8e0d4;--t2:#8a7f74;--t3:#5a5248;
+      --acc:#c9a84c;--acc2:#a87e3a;--acc-light:#e0c070;--acc-glow:rgba(201,168,76,.25);
+      --radius:8px;--radius-xl:16px;
+      --font:'Inter',system-ui,sans-serif;
+      --font-display:'Georgia',serif;
+      --green:#5aaa6a;--red:#e05454;
+    }
+    body{background:var(--bg0);color:var(--t1);font-family:var(--font);min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1.5rem;padding:1rem}
+    .card{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-xl);padding:1.75rem;width:100%;max-width:360px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+    .logo{text-align:center;margin-bottom:.5rem}
+    .logo-icon{width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 24px var(--acc-glow);margin-bottom:1rem}
+    .logo-name{font-family:var(--font-display);font-size:26px;color:var(--acc-light);font-style:italic;letter-spacing:.04em}
+    .logo-sub{font-size:11px;color:var(--t2);margin-top:4px;letter-spacing:.08em;text-transform:uppercase}
+    label{display:block;font-size:11.5px;color:var(--t2);font-weight:500;margin-bottom:5px;margin-top:1rem}
+    input{width:100%;padding:9px 12px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);color:var(--t1);font-family:var(--font);font-size:13px;outline:none;transition:border-color .15s}
+    input:focus{border-color:var(--acc)}
+    input:disabled{opacity:.6;cursor:not-allowed}
+    .btn{display:block;width:100%;padding:10px;margin-top:1.25rem;background:var(--acc);color:#0e0b08;border:none;border-radius:var(--radius);font-size:13px;font-weight:700;font-family:var(--font);cursor:pointer;transition:opacity .15s}
+    .btn:hover{opacity:.88}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .msg{font-size:12px;min-height:18px;margin-top:.5rem;text-align:center}
+    .back{text-align:center;margin-top:1rem;font-size:11.5px;color:var(--t2)}
+    .back a{color:var(--acc);text-decoration:none}
+    .invite-summary{background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:11px 13px;margin-bottom:.5rem;font-size:12.5px;color:var(--t2);line-height:1.5}
+    .invite-summary b{color:var(--t1)}
+    .role-chip{display:inline-block;background:var(--acc-glow);color:var(--acc-light);border-radius:100px;padding:1px 9px;font-size:11px;font-weight:600;text-transform:capitalize}
+    #success-panel{display:none;text-align:center;padding:1rem 0}
+    #success-panel .icon{font-size:40px;margin-bottom:.75rem}
+    #loading-panel{text-align:center;padding:1.5rem 0;color:var(--t2);font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="#0e0b08" stroke-width="1.8" stroke-linecap="round">
+        <polyline points="1,11 5,6 8,9 11,4 15,7"/><line x1="1" y1="14" x2="15" y2="14"/>
+      </svg>
+    </div>
+    <div class="logo-name">FinFlow</div>
+    <div class="logo-sub">Accept your invitation</div>
+  </div>
+
+  <div class="card">
+    <!-- Loading -->
+    <div id="loading-panel">Checking your invitation…</div>
+
+    <!-- Accept form -->
+    <div id="accept-panel" style="display:none">
+      <div class="invite-summary" id="invite-summary"></div>
+
+      <!-- New-user fields (name + password) -->
+      <div id="new-user-fields" style="display:none">
+        <label for="acc-name">Your name</label>
+        <input type="text" id="acc-name" placeholder="Full name">
+        <label for="acc-pw">Choose a password</label>
+        <input type="password" id="acc-pw" placeholder="At least 8 characters">
+        <label for="acc-pw2">Confirm password</label>
+        <input type="password" id="acc-pw2" placeholder="Repeat password" onkeydown="if(event.key==='Enter')doAccept()">
+      </div>
+
+      <!-- Existing-account fields (password only, to prove identity) -->
+      <div id="existing-user-fields" style="display:none">
+        <label for="acc-existing-pw">Password for <span id="existing-email"></span></label>
+        <input type="password" id="acc-existing-pw" placeholder="Your existing FinFlow password" onkeydown="if(event.key==='Enter')doAccept()">
+        <div style="font-size:11px;color:var(--t3);margin-top:6px">This email already has a FinFlow account. Confirm its password to join — your password is never changed.</div>
+      </div>
+
+      <div class="msg" id="accept-msg"></div>
+      <button class="btn" id="accept-btn" onclick="doAccept()">Accept invitation →</button>
+      <div class="back"><a href="/app">← Back to sign in</a></div>
+    </div>
+
+    <!-- Invalid token -->
+    <div id="invalid-panel" style="display:none;text-align:center;padding:1rem 0">
+      <div style="font-size:32px;margin-bottom:.75rem">⚠️</div>
+      <div style="font-size:14px;font-weight:600;color:var(--t1);margin-bottom:.5rem">Invalid or expired invitation</div>
+      <div style="font-size:12px;color:var(--t2);margin-bottom:1.25rem">This invitation link has already been used or has expired. Ask the account owner to send a new one.</div>
+      <a href="/app" style="color:var(--acc);font-size:13px;text-decoration:none">← Back to sign in</a>
+    </div>
+
+    <!-- Success -->
+    <div id="success-panel">
+      <div class="icon">✅</div>
+      <div style="font-size:14px;font-weight:600;color:var(--t1);margin-bottom:.5rem">You're in!</div>
+      <div style="font-size:12px;color:var(--t2);margin-bottom:1.25rem">Your membership is active. Taking you to the app…</div>
+      <a href="/app" style="display:inline-block;padding:10px 24px;background:var(--acc);color:#0e0b08;border-radius:var(--radius);font-weight:700;font-size:13px;text-decoration:none">Go to FinFlow →</a>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token  = params.get('token');
+    let emailHasAccount = false;
+
+    const show = id => { document.getElementById(id).style.display = ''; };
+    const hide = id => { document.getElementById(id).style.display = 'none'; };
+    const esc  = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+    if (!token) {
+      hide('loading-panel'); show('invalid-panel');
+    } else {
+      loadInvite();
+    }
+
+    async function loadInvite() {
+      try {
+        const res  = await fetch('/api/team/accept?token=' + encodeURIComponent(token));
+        const data = await res.json();
+        if (!res.ok) { hide('loading-panel'); show('invalid-panel'); return; }
+
+        emailHasAccount = !!data.emailHasAccount;
+        document.getElementById('invite-summary').innerHTML =
+          'You have been invited to join <b>' + esc(data.accountName) + '</b> as ' +
+          '<span class="role-chip">' + esc(data.role) + '</span><br>' +
+          '<span style="color:var(--t3)">for ' + esc(data.email) + '</span>';
+
+        if (emailHasAccount) {
+          document.getElementById('existing-email').textContent = data.email;
+          show('existing-user-fields');
+        } else {
+          show('new-user-fields');
+        }
+        hide('loading-panel'); show('accept-panel');
+      } catch (e) {
+        hide('loading-panel'); show('invalid-panel');
+      }
+    }
+
+    async function doAccept() {
+      const msgEl = document.getElementById('accept-msg');
+      const btn   = document.getElementById('accept-btn');
+      msgEl.style.color = 'var(--red)';
+      msgEl.textContent = '';
+
+      const body = { token };
+      if (emailHasAccount) {
+        const pw = document.getElementById('acc-existing-pw').value;
+        if (!pw) { msgEl.textContent = 'Enter your existing password.'; return; }
+        body.password = pw;
+      } else {
+        const name = document.getElementById('acc-name').value.trim();
+        const pw1  = document.getElementById('acc-pw').value;
+        const pw2  = document.getElementById('acc-pw2').value;
+        if (!name)                 { msgEl.textContent = 'Enter your name.'; return; }
+        if (!pw1 || pw1.length < 8) { msgEl.textContent = 'Password must be at least 8 characters.'; return; }
+        if (pw1 !== pw2)           { msgEl.textContent = 'Passwords do not match.'; return; }
+        body.name = name; body.password = pw1;
+      }
+
+      btn.disabled = true; btn.textContent = 'Joining…';
+      try {
+        const res  = await fetch('/api/team/accept', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(body),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          if (res.status === 400 && /invalid|expired/i.test(data.error || '')) {
+            hide('accept-panel'); show('invalid-panel'); return;
+          }
+          msgEl.textContent = data.message || data.error || 'Could not accept. Please try again.';
+          return;
+        }
+
+        hide('accept-panel'); show('success-panel');
+        setTimeout(() => { window.location.href = '/app'; }, 1200);
+      } catch (e) {
+        msgEl.textContent = 'Network error. Please try again.';
+      } finally {
+        btn.disabled = false; btn.textContent = 'Accept invitation →';
+      }
+    }
+  </script>
+</body>
+</html>

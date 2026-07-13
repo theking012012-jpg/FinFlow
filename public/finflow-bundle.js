@@ -4943,9 +4943,11 @@ function clearAIChat(){
     if (!name || !email) { tip('Name and email are required', true); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { tip('Invalid email address', true); return; }
     try {
-      await api('POST', '/api/team', { name, email, role });
+      // Real RBAC invite (Step A): creates a pending membership + emails a secure,
+      // single-use accept link. Role/account are bound to the invite row server-side.
+      await api('POST', '/api/team/invite', { name, email, role });
       document.getElementById('invite-modal').classList.add('hidden');
-      tip(`Invite sent to ${e(email)}`);
+      tip(`Invitation emailed to ${e(email)}`);
       if (typeof window.renderTeam === 'function') window.renderTeam();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not invite — ' + err.message, true); }

@@ -558,11 +558,8 @@
         </div>
         <div class="form-group">
           <label for="membership-num">Membership number <span class="req">*</span></label>
-          <div class="membership-lookup">
-            <input type="text" id="membership-num" placeholder="e.g. AB12345678">
-            <button class="lookup-btn" onclick="lookupMembership()" id="lookup-btn">Verify →</button>
-          </div>
-          <div class="lookup-result" id="lookup-result"></div>
+          <input type="text" id="membership-num" placeholder="e.g. AB12345678">
+          <div class="lookup-result pending" style="display:block;">A FinFlow admin will verify your membership with the professional body before your profile goes live. This is a manual review — no automatic approval.</div>
         </div>
       </div>
 
@@ -919,35 +916,11 @@
     document.getElementById('verify-institution').style.display = method === 'institution' ? 'block' : 'none';
   }
 
-  // ── MEMBERSHIP LOOKUP SIMULATION ──
-  function lookupMembership() {
-    const body = document.getElementById('prof-body').value;
-    const num = document.getElementById('membership-num').value.trim();
-    const result = document.getElementById('lookup-result');
-    const btn = document.getElementById('lookup-btn');
-
-    if (!body || !num) { alert('Please select a professional body and enter your membership number.'); return; }
-
-    btn.classList.add('loading');
-    btn.textContent = 'Checking...';
-    result.style.display = 'none';
-
-    // Simulate API call — in production this calls POST /api/accountants/verify-membership
-    setTimeout(() => {
-      btn.classList.remove('loading');
-      btn.textContent = 'Verify →';
-      result.style.display = 'block';
-
-      // Simulate: numbers starting with valid prefix pass
-      if (num.length >= 6) {
-        result.className = 'lookup-result success';
-        result.textContent = `✓ Membership confirmed — ${body} member in good standing. Verified automatically.`;
-      } else {
-        result.className = 'lookup-result error';
-        result.textContent = `✗ Membership number not found in ${body} registry. Check the number or choose employer verification instead.`;
-      }
-    }, 1800);
-  }
+  // ── MEMBERSHIP: no automated verification (F16) ──
+  // The old client-side "instant verify" was a simulation — any 6+ char number
+  // "passed" and showed "Verified automatically." That was a fake. Verification is
+  // now a manual admin review with no auto-approve; the honest pending note is
+  // rendered statically under the membership field, so there is no lookup handler.
 
   // ── FORM SUBMISSION ──
   async function submitForm() {

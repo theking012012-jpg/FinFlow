@@ -2461,6 +2461,19 @@ app.post('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
         WHERE id = $1`,
       [inv.id, String(memberUserId), memberName]
     );
+
+    // Accountant convergence (RBAC Step B): if the accepted email belongs to a
+    // marketplace accountant, link their professional profile to this real users
+    // identity via the pre-existing accountants.user_id bridge (set-once). From here
+    // an accountant authenticates as a user and resolves into the account through
+    // unified membership (role:'accountant'), not the legacy accountant_clients-only
+    // path. Same transaction, so identity + membership commit atomically.
+    await client.query(
+      `UPDATE accountants SET user_id = $1, updated_at = NOW()
+        WHERE lower(email) = lower($2) AND user_id IS NULL`,
+      [memberUserId, inv.email]
+    );
+
     await client.query('COMMIT');
 
     // Log them into the account they just joined.

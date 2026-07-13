@@ -84,12 +84,25 @@ function generateReferralCode(firstName, lastName) {
   return prefix + suffix;
 }
 
-/** Require the session to be an authenticated accountant */
-function requireAccountant(req, res, next) {
+/** Require the session to be an authenticated AND admin-approved accountant.
+ *  F16: status is re-checked from the DB on every request (not trusted from the
+ *  session) so an admin suspend/reject revokes access immediately — a session
+ *  alone is never sufficient; only status='verified' passes. Uses the module-level
+ *  pool (_dbPool) since this helper is defined outside registerAccountantRoutes. */
+async function requireAccountant(req, res, next) {
   if (!req.session.accountantId) {
     return res.status(401).json({ error: 'Accountant login required.' });
   }
-  next();
+  try {
+    const { rows } = await _dbPool.query(`SELECT status FROM accountants WHERE id = $1`, [req.session.accountantId]);
+    if (!rows[0] || rows[0].status !== 'verified') {
+      return res.status(403).json({ error: 'Your accountant account is pending review or is not active.' });
+    }
+    next();
+  } catch (e) {
+    console.error('[requireAccountant] status check failed:', e.message);
+    return res.status(500).json({ error: 'Server error.' });
+  }
 }
 
 /** Require the session to be an authenticated admin */
@@ -119,12 +132,10 @@ async function lookupMembership(body, membershipNumber) {
   if (!api) return { verified: false, name: null, status: 'Unknown body' };
 
   if (api.mock) {
-    // Mock: numbers with 6+ chars pass. Replace with real API in production.
-    await new Promise(r => setTimeout(r, 300)); // simulate latency
-    if (membershipNumber.length >= 6) {
-      return { verified: true, name: `${body} Member`, status: 'Active member in good standing' };
-    }
-    return { verified: false, name: null, status: 'Not found in registry' };
+    // F16: NO fake automated verification. There is no live registry integration,
+    // so we never claim a membership is "verified" — every application is reviewed
+    // manually by a FinFlow admin. Record the attempt honestly for the admin queue.
+    return { verified: false, name: null, status: 'Pending manual review by FinFlow' };
   }
 
   // Real API call (example pattern — each body differs):
@@ -251,15 +262,15 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
         console.log(`[Register] New application from ${firstName} ${lastName} (${firm}) — configure RESEND_API_KEY to enable email notifications`);
       }
 
-      // Start session
-      req.session.accountantId = accountantId;
-
+      // F16: NO session at signup. The application is 'pending' until an admin
+      // approves it — no session, no access, not listed. A pre-approval session
+      // was the hole that let unverified accountants straight into the portal.
       return res.status(201).json({
         success: true,
         accountantId,
         referralCode: refCode,
-        status: verification.method === 'membership' ? 'auto-checked' : 'pending-manual',
-        message: 'Application received. You will be notified when verification is complete.',
+        status: 'pending-review',
+        message: 'Application received. A FinFlow admin will review your credentials; you will be notified when your profile is approved. You can log in once approved.',
       });
 
     } finally {
@@ -340,15 +351,17 @@ If you cannot find a field, use null. Be concise.`;
     }
   }));
 
-  // ── 2. MEMBERSHIP LOOKUP (called from frontend verify button) ─────────────
+  // ── 2. MEMBERSHIP CHECK ───────────────────────────────────────────────────
+  // F16: there is NO automated verification. This endpoint no longer returns a
+  // "verified" verdict (the old ≥6-char mock was a fake). It only acknowledges the
+  // number and states, honestly, that a FinFlow admin will review it manually.
   app.post('/api/accountants/verify-membership', authLimiter, wrap(async (req, res) => {
-    if (!req.session.accountantId && !req.session.userId) return res.status(401).json({ error: 'Not authenticated.' });
     const { profBody, membershipNumber } = req.body || {};
     if (!profBody || !membershipNumber) {
       return res.status(400).json({ error: 'Professional body and membership number are required.' });
     }
-    const result = await lookupMembership(profBody, membershipNumber);
-    return res.json(result);
+    return res.json({ verified: false, pending: true, status: 'Pending manual review by FinFlow',
+      message: 'Your membership will be verified manually by FinFlow before your profile goes live.' });
   }));
 
 
@@ -363,6 +376,18 @@ If you cannot find a field, use null. Be concise.`;
 
     const match = require('bcryptjs').compareSync(password, acc.password_hash);
     if (!match) return res.status(401).json({ error: 'Invalid credentials.' });
+
+    // F16: only an admin-approved (status='verified') accountant gets a session.
+    // Pending/rejected/suspended authenticate correctly but receive NO session and
+    // NO access — an honest status-specific message instead.
+    if (acc.status !== 'verified') {
+      const msg = acc.status === 'pending'
+        ? 'Your application is still under review. You will be able to log in once a FinFlow admin approves your credentials.'
+        : acc.status === 'rejected'
+        ? 'Your application was not approved. Please contact support or reapply with updated credentials.'
+        : 'Your accountant account is currently suspended. Please contact support.';
+      return res.status(403).json({ error: msg, status: acc.status });
+    }
 
     req.session.accountantId = acc.id;
     await new Promise((resolve, reject) => {

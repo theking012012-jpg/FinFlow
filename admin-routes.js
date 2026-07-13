@@ -410,7 +410,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       SELECT u.id, u.data->>'name' AS name, u.data->>'email' AS email,
              u.data->>'plan' AS plan, u.data->>'subscriptionStatus' AS sub_status,
              u.data->>'suspended' AS suspended, u.data->>'last_login' AS last_login,
-             u.data->>'trialEnds' AS trial_ends, u.created_at,
+             u.data->>'trial_ends' AS trial_ends, u.created_at,  -- F12: was 'trialEnds' (never written) → always blank
              a.first_name AS accountant_first, a.last_name AS accountant_last,
              a.firm AS accountant_firm, a.email AS accountant_email
       FROM users u
@@ -484,23 +484,55 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   }));
 
   // ── BROADCAST ─────────────────────────────────────────────────────────────
+  // F21: previously counted the audience, logged, and returned `sent: N` while
+  // sending nothing. Now it actually delivers via Resend and reports the TRUE
+  // counts. When Resend isn't configured it says so honestly (logged only, sent:0)
+  // instead of claiming a delivery that never happened.
   app.post('/api/admin/broadcast', requireAdmin, wrap(async (req, res) => {
     const { audience, subject, message } = req.body || {};
-    const countQueries = {
-      all_users:      `SELECT COUNT(*) FROM users WHERE data->>'deleted' IS DISTINCT FROM 'true'`,
-      all_accountants:`SELECT COUNT(*) FROM accountants WHERE status = 'verified'`,
-      pro_users:      `SELECT COUNT(*) FROM users WHERE data->>'plan' = 'pro'`,
-      business_users: `SELECT COUNT(*) FROM users WHERE data->>'plan' = 'business'`,
-      trial_users:    `SELECT COUNT(*) FROM users WHERE (data->>'plan' = 'trial' OR data->>'plan' IS NULL)`,
+    if (!subject || !message) return res.status(400).json({ error: 'Subject and message are required.' });
+
+    // Recipient emails per audience (was COUNT(*); now selects addresses to send to).
+    const recipientQueries = {
+      all_users:      `SELECT data->>'email' AS email FROM users WHERE data->>'deleted' IS DISTINCT FROM 'true' AND data->>'email' IS NOT NULL`,
+      all_accountants:`SELECT email FROM accountants WHERE status = 'verified' AND email IS NOT NULL`,
+      pro_users:      `SELECT data->>'email' AS email FROM users WHERE data->>'plan' = 'pro' AND data->>'deleted' IS DISTINCT FROM 'true' AND data->>'email' IS NOT NULL`,
+      business_users: `SELECT data->>'email' AS email FROM users WHERE data->>'plan' = 'business' AND data->>'deleted' IS DISTINCT FROM 'true' AND data->>'email' IS NOT NULL`,
+      trial_users:    `SELECT data->>'email' AS email FROM users WHERE (data->>'plan' = 'trial' OR data->>'plan' IS NULL) AND data->>'deleted' IS DISTINCT FROM 'true' AND data->>'email' IS NOT NULL`,
     };
-    const q = countQueries[audience] || countQueries.all_users;
-    const countRes = await pool.query(q);
-    const count = parseInt(countRes.rows[0].count);
+    const q = recipientQueries[audience] || recipientQueries.all_users;
+    const rows = (await pool.query(q)).rows;
+    const recipients = [...new Set(rows.map(r => r.email).filter(Boolean))];
+    const total = recipients.length;
+
+    // No Resend key → honest "logged only", never a fake `sent`.
+    if (!resendClient) {
+      await pool.query(
+        `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('broadcast','system',$1,NOW())`,
+        [`${audience} (LOGGED ONLY — email not configured; ${total} would receive): ${subject}`]
+      ).catch(() => {});
+      return res.json({ ok: true, sent: 0, failed: 0, total, logged: true,
+        message: `Email is not configured — nothing was sent. ${total} recipient(s) logged only.` });
+    }
+
+    // Deliver in chunks so a large audience doesn't fire thousands of calls at once.
+    const from = process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>';
+    const html = `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow</h2><div style="white-space:pre-wrap;line-height:1.6">${String(message).replace(/[<>]/g, c => (c === '<' ? '&lt;' : '&gt;'))}</div></div>`;
+    let sent = 0, failed = 0;
+    const CHUNK = 20;
+    for (let i = 0; i < recipients.length; i += CHUNK) {
+      const batch = recipients.slice(i, i + CHUNK);
+      const results = await Promise.allSettled(
+        batch.map(to => resendClient.emails.send({ from, to, subject, html }))
+      );
+      for (const r of results) (r.status === 'fulfilled' ? sent++ : failed++);
+    }
+
     await pool.query(
       `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('broadcast','system',$1,NOW())`,
-      [`${audience}: ${subject} — ${(message||'').slice(0,200)}`]
+      [`${audience} (sent ${sent}/${total}, ${failed} failed): ${subject}`]
     ).catch(() => {});
-    return res.json({ ok: true, sent: count });
+    return res.json({ ok: true, sent, failed, total });
   }));
 
   // ── PLATFORM HEALTH ───────────────────────────────────────────────────────

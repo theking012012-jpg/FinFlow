@@ -1253,7 +1253,13 @@ async function sendBroadcast() {
   });
   const data = await res.json();
   if (data.error) { toast(data.error,'error'); return; }
-  toast(`Broadcast sent to ${data.sent} recipients`,'success');
+  // F21: honest result — distinguish real delivery from logged-only (no email configured).
+  if (data.logged) {
+    toast(data.message || `Logged only — email not configured (${data.total} recipients).`, 'error');
+    return;  // keep the draft so the admin can resend once email is configured
+  }
+  const failMsg = data.failed ? ` · ${data.failed} failed` : '';
+  toast(`Broadcast sent to ${data.sent}/${data.total} recipients${failMsg}`,'success');
   document.getElementById('bc-subject').value = '';
   document.getElementById('bc-message').value = '';
 }

@@ -541,6 +541,18 @@
         </div>
       </div>
 
+      <!-- CREDENTIAL PROOF UPLOAD (Step F — persisted for manual admin review) -->
+      <div style="margin-top:18px;">
+        <label style="display:block;font-size:13px;color:var(--text);font-weight:500;margin-bottom:6px">Upload credential proof <span style="color:var(--text3);font-weight:400">(recommended)</span></label>
+        <div class="resume-box" style="margin-bottom:8px">
+          <input type="file" id="credential-file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" onchange="handleCredentialUpload(this.files[0])">
+          <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:3px">Attach your certificate, practising licence or membership card</div>
+          <div style="font-size:12px;color:var(--text3)">PDF, image, or Word · max 5 MB</div>
+        </div>
+        <div class="resume-status" id="credential-status"></div>
+        <div style="font-size:11px;color:var(--text3);line-height:1.5">A FinFlow admin reviews this document <strong>manually</strong> before your profile goes live — it is not auto-verified, and it is never shown to clients. Used only to confirm your credentials.</div>
+      </div>
+
       <!-- MEMBERSHIP LOOKUP -->
       <div id="verify-membership" style="display:none;">
         <div class="form-group">
@@ -916,6 +928,39 @@
     document.getElementById('verify-institution').style.display = method === 'institution' ? 'block' : 'none';
   }
 
+  // ── CREDENTIAL PROOF UPLOAD (Step F — persisted for manual admin review) ──
+  window._credentialDoc = null;
+  const CRED_MAX_BYTES = 5 * 1024 * 1024;
+  const CRED_TYPES = ['application/pdf','image/jpeg','image/png','image/webp','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+  async function handleCredentialUpload(file) {
+    const status = document.getElementById('credential-status');
+    if (!file) { window._credentialDoc = null; status.style.display = 'none'; return; }
+    if (!CRED_TYPES.includes(file.type)) {
+      window._credentialDoc = null;
+      status.className = 'resume-status error'; status.textContent = '✗ Unsupported file type — use PDF, image (JPG/PNG/WebP), or Word.';
+      return;
+    }
+    if (file.size > CRED_MAX_BYTES) {
+      window._credentialDoc = null;
+      status.className = 'resume-status error'; status.textContent = '✗ File too large — maximum 5 MB.';
+      return;
+    }
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result.split(',')[1]);
+        r.onerror = () => rej(new Error('read failed'));
+        r.readAsDataURL(file);
+      });
+      window._credentialDoc = { base64, fileName: file.name, mediaType: file.type };
+      status.className = 'resume-status success';
+      status.textContent = '✓ ' + file.name + ' attached — a FinFlow admin will review it.';
+    } catch (e) {
+      window._credentialDoc = null;
+      status.className = 'resume-status error'; status.textContent = '✗ Could not read the file — please try again.';
+    }
+  }
+
   // ── MEMBERSHIP: no automated verification (F16) ──
   // The old client-side "instant verify" was a simulation — any 6+ char number
   // "passed" and showed "Verified automatically." That was a fake. Verification is
@@ -944,6 +989,7 @@
         referralCode:  document.getElementById('referral').value.trim(),
         credentials:   window._resumeCredentials || '',
         memberships:   window._resumeMemberships || '',
+        credentialDoc: window._credentialDoc || undefined,   // Step F — persisted credential proof
         ...collectPricing(),
         verification: {
           method:           selectedVerify,

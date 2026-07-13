@@ -190,6 +190,39 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     return res.json({ success: true, status: newStatus });
   }));
 
+  // Step F — accountant credential documents. Metadata list (file_data stripped)
+  // and a download that streams the file so the admin can view the real proof
+  // before approving/rejecting. Scoped by accountant_id so the doc id can't be
+  // used to fetch another accountant's document.
+  app.get('/api/admin/accountants/:id/documents', requireAdmin, wrap(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!id || id <= 0) return res.status(400).json({ error: 'Invalid id.' });
+    const { rows } = await pool.query(
+      `SELECT id, doc_type, file_name, media_type, size_bytes, uploaded_at
+         FROM accountant_documents WHERE accountant_id = $1 ORDER BY uploaded_at DESC`,
+      [id]
+    );
+    return res.json(rows);
+  }));
+
+  app.get('/api/admin/accountants/:id/documents/:docId/download', requireAdmin, wrap(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const docId = parseInt(req.params.docId, 10);
+    if (!id || id <= 0 || !docId || docId <= 0) return res.status(400).json({ error: 'Invalid id.' });
+    const { rows } = await pool.query(
+      `SELECT file_name, media_type, file_data FROM accountant_documents WHERE id = $1 AND accountant_id = $2`,
+      [docId, id]
+    );
+    const row = rows[0];
+    if (!row || !row.file_data) return res.status(404).json({ error: 'Document not found.' });
+    const buf = Buffer.from(row.file_data, 'base64');
+    const safeName = (row.file_name || 'credential').replace(/[^\w\s.\-]/g, '_');
+    res.setHeader('Content-Type', row.media_type || 'application/octet-stream');
+    // inline so PDFs/images open in a tab for review (still downloadable)
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(safeName)}`);
+    res.send(buf);
+  }));
+
   // Toggle Preferred Partner badge manually
   app.post('/api/admin/accountants/:id/preferred-partner', requireAdmin, wrap(async (req, res) => {
     const id = parseInt(req.params.id, 10);

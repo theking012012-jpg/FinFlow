@@ -228,6 +228,24 @@ async function initDB() {
       )
     `);
 
+    // Accountant credential proof (Step F). Base64-in-Postgres, mirroring the
+    // documents table pattern but ACCOUNTANT-scoped. Kept in its own table so the
+    // multi-MB file_data never bloats the frequently-SELECTed accountants row /
+    // verification_data (admin lists, directory). Fetched only on explicit review.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accountant_documents (
+        id            SERIAL PRIMARY KEY,
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
+        doc_type      VARCHAR(50) DEFAULT 'credential_proof',
+        file_name     VARCHAR(255),
+        media_type    VARCHAR(100),
+        size_bytes    INTEGER,
+        file_data     TEXT,
+        uploaded_at   TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_docs_accountant ON accountant_documents(accountant_id)`);
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS admin_log (
         id          SERIAL PRIMARY KEY,

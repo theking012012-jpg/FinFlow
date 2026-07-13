@@ -269,7 +269,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // Conditional ensures the global parser doesn't 413 a large body before its route runs.
 const bigJson = express.json({ limit: '10mb' });
 const smallJson = express.json({ limit: '500kb' });
-const LARGE_PAYLOAD_PATHS = ['/api/ai/scan', '/api/documents', '/api/ai/extract-document', '/api/accountants/extract-resume'];
+const LARGE_PAYLOAD_PATHS = ['/api/ai/scan', '/api/documents', '/api/ai/extract-document', '/api/accountants/extract-resume', '/api/accountants/register'];
 app.use((req, res, next) => (LARGE_PAYLOAD_PATHS.includes(req.path) ? bigJson : smallJson)(req, res, next));
 app.use(express.urlencoded({ extended: false, limit: '500kb' }));
 app.set('trust proxy', 1);

@@ -873,6 +873,7 @@ function openReview(accountant) {
     ${vData.institution ? `<div class="detail-row"><span class="detail-label">Institution</span><span class="detail-val">${esc(vData.institution)} · ${esc(vData.degree || '')}</span></div>` : ''}
     ${accountant.credentials ? `<div class="detail-row"><span class="detail-label">Credentials</span><span class="detail-val">${esc(accountant.credentials)}</span></div>` : ''}
     ${accountant.memberships ? `<div class="detail-row"><span class="detail-label">Memberships</span><span class="detail-val">${esc(accountant.memberships)}</span></div>` : ''}
+    <div class="detail-row"><span class="detail-label">Credential proof</span><span class="detail-val" id="modal-documents">Loading…</span></div>
     <div class="detail-row"><span class="detail-label">Applied</span><span class="detail-val">${new Date(accountant.created_at).toLocaleString()}</span></div>
   `;
 
@@ -880,6 +881,30 @@ function openReview(accountant) {
   document.getElementById('modal-approve-btn').onclick = () => doModalAction('approve');
   document.getElementById('modal-reject-btn').onclick = () => doModalAction('reject');
   document.getElementById('review-modal').classList.add('open');
+  loadReviewDocuments(accountant.id);   // Step F — surface the uploaded credential document
+}
+
+// Step F — fetch and render the accountant's credential document(s) as View links.
+// The download streams inline (opens in a new tab); the admin's session cookie
+// authorizes it. Shows an explicit warning when no proof was uploaded.
+async function loadReviewDocuments(id) {
+  const el = document.getElementById('modal-documents');
+  if (!el) return;
+  try {
+    const res = await fetch(`/api/admin/accountants/${id}/documents`, { credentials: 'include' });
+    const docs = await res.json();
+    if (!Array.isArray(docs) || !docs.length) {
+      el.innerHTML = '<span style="color:var(--red)">⚠ No document uploaded</span>';
+      return;
+    }
+    el.innerHTML = docs.map(d => {
+      const kb = d.size_bytes ? Math.round(d.size_bytes / 1024) + ' KB' : '';
+      const url = `/api/admin/accountants/${id}/documents/${d.id}/download`;
+      return `<a href="${url}" target="_blank" rel="noopener" style="color:var(--acc);text-decoration:none">📄 ${esc(d.file_name || 'document')}</a> <span style="color:var(--t3);font-size:11px">${esc(kb)}</span>`;
+    }).join('<br>');
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--t3)">Could not load document</span>';
+  }
 }
 
 async function doModalAction(action) {

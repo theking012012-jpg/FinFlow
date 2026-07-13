@@ -71,6 +71,25 @@ const crypto = require('crypto');
 const { db, pool: _dbPool, rowToObj: _rowToObj } = require('./database');
 const { tierForAccountant, commissionRateFor, splitBilling, estimateStripeFeeCents } = require('./tier-config'); // F17 — single tier source
 
+// Step F — accountant credential-proof upload (base64-in-Postgres, accountant-scoped).
+const CREDENTIAL_MAX_BYTES = 5 * 1024 * 1024; // 5 MB decoded
+const CREDENTIAL_ALLOWED_TYPES = new Set([
+  'application/pdf', 'image/jpeg', 'image/png', 'image/webp',
+  'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+/** Validate an optional credential document from the register payload.
+ *  → { present:false } if none; { present:true, error } if invalid;
+ *    { present:true, ok:true, bytes } if valid. Absent is allowed (not required). */
+function validateCredentialDoc(doc) {
+  if (!doc || !doc.base64) return { present: false };
+  if (typeof doc.base64 !== 'string' || !CREDENTIAL_ALLOWED_TYPES.has(doc.mediaType)) {
+    return { present: true, error: 'Credential document must be a PDF, image (JPG/PNG/WebP), or Word document.' };
+  }
+  const bytes = Math.ceil(doc.base64.length * 0.75);
+  if (bytes > CREDENTIAL_MAX_BYTES) return { present: true, error: 'Credential document too large. Maximum size is 5 MB.' };
+  return { present: true, ok: true, bytes };
+}
+
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 
 /** Wraps async route handlers so thrown errors go to Express error handler */
@@ -187,6 +206,14 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
       return res.status(400).json({ error: 'Verification method is required.' });
     }
 
+    // Step F: validate the optional credential document BEFORE creating anything, so
+    // a present-but-invalid file fails the whole submission (never silently dropped —
+    // that would leave the accountant believing they submitted proof when they didn't).
+    const credDoc = validateCredentialDoc(req.body.credentialDoc);
+    if (credDoc.present && credDoc.error) {
+      return res.status(400).json({ error: credDoc.error });
+    }
+
     const client = await pool.connect();
     try {
       // Check for existing accountant with this email
@@ -223,6 +250,23 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
       ]);
 
       const accountantId = result.rows[0].id;
+
+      // Step F: persist the credential proof (if supplied), accountant-scoped, in the
+      // same transaction so the document and the accountant row commit atomically.
+      // Base64-in-Postgres, mirroring the documents system; admin views it at review.
+      if (credDoc.present && credDoc.ok) {
+        const cd = req.body.credentialDoc;
+        await client.query(
+          `INSERT INTO accountant_documents (accountant_id, doc_type, file_name, media_type, size_bytes, file_data)
+           VALUES ($1, 'credential_proof', $2, $3, $4, $5)`,
+          [accountantId, String(cd.fileName || 'credential').slice(0, 255), cd.mediaType, credDoc.bytes, cd.base64]
+        );
+        await client.query(
+          `INSERT INTO admin_log (action, target_type, target_id, notes, created_at)
+           VALUES ('credential_upload', 'accountant', $1, $2, NOW())`,
+          [accountantId, `Credential proof uploaded at registration (${cd.mediaType}, ${Math.round(credDoc.bytes / 1024)} KB)`]
+        ).catch(() => {});
+      }
 
       // Save credentials extracted from CV
       if (req.body.credentials || req.body.memberships) {

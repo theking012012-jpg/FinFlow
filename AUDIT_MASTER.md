@@ -67,6 +67,9 @@ Items verified in a substitute environment (pg-mem / logic harness) that must be
   - **End-to-end money flow** — a live subscription flips `subscriptionStatus='active'` → the monthly cron pays that client → cancellation flips to `canceled` and the next cron stops.
   - **Harness caveats (pg-mem gaps, both standard Postgres):** the payout skipped-count uses `IS DISTINCT FROM 'active'` and the `subscriptionStatus` write uses `jsonb ||` — both emulated in the pg-mem harness; confirm they run natively on the deployed Postgres.
   - **Schema migration** — the new `accountant_earnings` columns (`billed_cents`, `commission_cents`, `stripe_fee_cents`, `payment_intent_id`) land via `ALTER TABLE ADD COLUMN IF NOT EXISTS` in `initDB()` on deploy; confirm they apply on the live DB.
+- **Step F / Step G — schema migrations that only land on boot (a silent failure is a landmine).** Confirm each applied to the live Postgres after the deploy:
+  - **`accountant_documents` table** (Step F) — `CREATE TABLE IF NOT EXISTS` + `idx_acc_docs_accountant` in `initDB()`; without it, credential upload throws on insert and the admin review modal can't list/download. Also confirm `/api/accountants/register` is in `LARGE_PAYLOAD_PATHS` so the base64 body isn't rejected as too large.
+  - **`accountants.confirmed_credentials` column** (Step G) — `ALTER TABLE ADD COLUMN IF NOT EXISTS`; without it the approve UPDATE and the `/directory` SELECT both reference a missing column → 500 (approve breaks, marketplace fail-softs to empty). Verify the column exists and the approve→directory round-trip works live.
 
 ---
 

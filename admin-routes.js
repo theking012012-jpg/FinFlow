@@ -124,7 +124,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     let query = `
       SELECT a.id, a.first_name, a.last_name, a.email, a.firm, a.country,
              a.specialisation, a.experience, a.status, a.verification_method,
-             a.verification_data, a.credentials, a.memberships, a.avg_rating, a.preferred_partner,
+             a.verification_data, a.credentials, a.memberships, a.confirmed_credentials, a.avg_rating, a.preferred_partner,
              a.review_count, a.stripe_onboarded, a.created_at, a.verified_at,
              COUNT(ac.id) AS client_count,
              COALESCE(SUM(ae.amount_cents),0) AS total_earnings_cents
@@ -151,9 +151,18 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     const statusMap = { approve: 'verified', reject: 'rejected', suspend: 'suspended', reinstate: 'verified' };
     const newStatus = statusMap[action];
 
+    // Step G (F28): on approve/reinstate the admin records what they CONFIRMED from the
+    // reviewed credential document — this is the only credential text clients ever see.
+    // Null on reject/suspend (and on approve with no text) → COALESCE keeps the prior value.
+    const confirmed = (action === 'approve' || action === 'reinstate') && typeof req.body.confirmedCredentials === 'string'
+      ? req.body.confirmedCredentials.trim().slice(0, 300)
+      : null;
+
     await pool.query(
-      `UPDATE accountants SET status = $1, verified_at = $2, updated_at = NOW() WHERE id = $3`,
-      [newStatus, action === 'approve' || action === 'reinstate' ? new Date() : null, (parseInt(req.params.id, 10) || 0)]
+      `UPDATE accountants SET status = $1, verified_at = $2,
+         confirmed_credentials = COALESCE($3, confirmed_credentials), updated_at = NOW()
+       WHERE id = $4`,
+      [newStatus, action === 'approve' || action === 'reinstate' ? new Date() : null, confirmed, (parseInt(req.params.id, 10) || 0)]
     );
 
     // Log admin action

@@ -155,6 +155,11 @@ async function initDB() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_accountants_referral ON accountants(referral_code)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_accountants_status   ON accountants(status)`);
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS preferred_partner BOOLEAN DEFAULT FALSE`);
+    // Step G (F28): admin-CONFIRMED credentials, written at approval from the reviewed
+    // document — distinct from the self-declared `credentials`/`memberships`/`verification_data`.
+    // This is the ONLY credential text shown to clients; the raw self-declared fields are
+    // admin-only. Empty string until an admin approves with a confirmed value.
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS confirmed_credentials TEXT DEFAULT ''`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_clients (

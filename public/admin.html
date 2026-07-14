@@ -599,6 +599,11 @@ td.amber{color:var(--amber)}
     <p id="modal-sub">Review details before approving or declining</p>
     <div id="modal-details"></div>
     <div class="modal-field">
+      <label for="modal-confirmed">Credentials confirmed from the document (shown to clients on approval)</label>
+      <input id="modal-confirmed" type="text" maxlength="300" placeholder="e.g. ACCA member #1234567 — confirmed">
+      <div style="font-size:11px;color:var(--t3);margin-top:4px">Only what you verified against the uploaded proof. This is the ONLY credential text clients see — the applicant's self-declared claims above are never shown to them.</div>
+    </div>
+    <div class="modal-field">
       <label for="modal-notes">Notes (optional — sent to accountant by email)</label>
       <textarea id="modal-notes" rows="3" placeholder="e.g. Could not verify membership number. Please reapply with updated credentials."></textarea>
     </div>
@@ -821,13 +826,13 @@ async function loadAccountants(search='', status='') {
   } catch(e) { console.error('Accountants error', e); }
 }
 
-async function verifyAction(id, action, notes) {
+async function verifyAction(id, action, notes, confirmedCredentials) {
   if (notes === undefined) notes = '';
   try {
     const res = await fetch(`/api/admin/accountants/${id}/verify`, {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, notes }),
+      body: JSON.stringify({ action, notes, confirmedCredentials }),
     });
     const data = await res.json();
     if (data.error) { toast(data.error, 'error'); return; }
@@ -878,6 +883,7 @@ function openReview(accountant) {
   `;
 
   document.getElementById('modal-notes').value = '';
+  document.getElementById('modal-confirmed').value = accountant.confirmed_credentials || '';
   document.getElementById('modal-approve-btn').onclick = () => doModalAction('approve');
   document.getElementById('modal-reject-btn').onclick = () => doModalAction('reject');
   document.getElementById('review-modal').classList.add('open');
@@ -909,9 +915,11 @@ async function loadReviewDocuments(id) {
 
 async function doModalAction(action) {
   const notes = document.getElementById('modal-notes').value;
+  // Step G — only meaningful on approve; sent verbatim so the admin can also correct it on reinstate.
+  const confirmedCredentials = document.getElementById('modal-confirmed').value;
   const id = currentModal.id;
   closeModal();
-  await verifyAction(id, action, notes);
+  await verifyAction(id, action, notes, confirmedCredentials);
 }
 
 function closeModal() {

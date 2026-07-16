@@ -287,8 +287,13 @@ app.use(session({
   cookie: {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    // 'none' required for cross-origin embeds (Stripe); ALLOWED_ORIGIN must be the exact domain
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    // F22: 'lax' kills the CSRF-write vector. The SPA and API are same-origin (this Express app
+    // serves both; the frontend uses relative /api paths), so 'lax' still sends the cookie on all
+    // same-site use AND on the top-level GET redirect back from Stripe Checkout — but NOT on a
+    // cross-site <form> POST, which is how the forged write was authenticating. 'none' was set for
+    // a cross-origin frontend that isn't in use (app.finflow.io has no DNS). No embed needs the
+    // session cookie cross-site (the Stripe webhook is server-to-server, cookieless).
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000,
   },
 }));
@@ -303,6 +308,33 @@ const inviteLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 30 });
 const acceptLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
 
 app.use('/api', apiLimiter);
+
+// ── F22 defense-in-depth (belt & braces on top of sameSite:'lax') ──────────────
+// Runs before auth/resolvers so forged requests are rejected early. Does NOT touch
+// the Stripe webhook (registered earlier at /api/stripe/webhook, raw application/json).
+//  1) Content-type gate — the API is JSON-only in practice (no route reads urlencoded
+//     or multipart). Rejecting the CORS "simple" content-types removes the exact
+//     property that lets a cross-site <form> POST skip preflight. Empty content-type
+//     (bodyless DELETE/POST) is allowed; a cross-site form can't send an empty type.
+//  2) Origin gate — reject any mutation that explicitly declares a foreign Origin.
+//     Missing Origin is allowed so server-to-server callers (Stripe webhook, the
+//     payout cron, native/mobile) keep working; browser CSRF form posts always send it.
+app.use('/api', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  const ct = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  if (ct !== '' && ct !== 'application/json') {
+    return res.status(415).json({ error: 'Unsupported Media Type — this API accepts application/json only.' });
+  }
+  const origin = req.headers.origin;
+  if (origin) {
+    const allowed = new Set([
+      `https://${req.headers.host}`, `http://${req.headers.host}`,
+      process.env.ALLOWED_ORIGIN, process.env.APP_URL,
+    ].filter(Boolean));
+    if (!allowed.has(origin)) return res.status(403).json({ error: 'Cross-origin request blocked.' });
+  }
+  return next();
+});
 
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorised — please log in.' });

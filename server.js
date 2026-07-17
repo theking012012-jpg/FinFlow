@@ -12,6 +12,7 @@ const { db, initDB, pool, rowToObj } = require('./database');
 const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
 const aiCap = require('./ai-cap');                        // F18 — central AI cost caps
 const { appUrl, warnIfUnset } = require('./app-url');     // F29 — single source of truth for app links
+const { requirePerm } = require('./rbac');                // F5 Step 4 — per-route RBAC (matrix in rbac.js)
 const pgSession = require('connect-pg-simple')(session);
 
 let resendClient = null;
@@ -672,14 +673,22 @@ app.use('/api', async (req, res, next) => {
   next();
 });
 
-// Role-based access: viewer=read-only, accountant=no DELETE, admin/owner=all.
+// ── COARSE METHOD GATE (RBAC catch-all) ────────────────────────────────────────
+// viewer = read-only; DELETE = owner/admin only (accountant + viewer excluded).
+// Keyed on req.accountRole — the RESOLVED membership role — NOT req.session.userRole
+// (which is the actor's OWN account role, always 'owner' for a normal signup, so it
+// let invited members bypass every check). This is the safety net for any route not
+// explicitly mapped by requirePerm; owner (incl. every own-account user) is unaffected.
+// READ_ONLY_POST: computations that use POST only to carry body params — they are
+// reads, so a viewer must be allowed through to them.
+const READ_ONLY_POST = new Set(['/reports/profit-loss', '/reports/balance-sheet', '/reports/cash-flow']);
 app.use('/api', (req, res, next) => {
   if (!req.session.userId) return next(); // unauthenticated — let requireAuth handle it
-  if (req.path.startsWith('/auth/')) return next(); // auth routes are exempt
-  const role = req.session.userRole || 'owner';
+  if (req.path.startsWith('/auth/')) return next(); // auth routes are exempt (self-service)
+  const role = req.accountRole || 'viewer'; // resolved membership role; fail closed if unset
   if (req.method === 'DELETE' && !['admin', 'owner'].includes(role))
     return res.status(403).json({ error: 'Only admin or owner can delete records.' });
-  if (['POST', 'PUT', 'PATCH'].includes(req.method) && role === 'viewer')
+  if (['POST', 'PUT', 'PATCH'].includes(req.method) && role === 'viewer' && !READ_ONLY_POST.has(req.path))
     return res.status(403).json({ error: 'Viewer role is read-only.' });
   next();
 });
@@ -782,7 +791,7 @@ async function isLocked(userId, date) {
 app.get('/api/entities', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('entities', req.session.userId, null, (a, b) => a.sort_order - b.sort_order));
 }));
-app.post('/api/entities', requireAuth, wrap(async (req, res) => {
+app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const { name, currency = 'USD', color = '#c9a84c' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Name is required.' });
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + name).
@@ -791,7 +800,7 @@ app.post('/api/entities', requireAuth, wrap(async (req, res) => {
   const { row } = await db.insert('entities', { user_id: req.session.userId, name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0 });
   res.status(201).json(row);
 }));
-app.put('/api/entities/:id', requireAuth, wrap(async (req, res) => {
+app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const row = await ownedBy('entities', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const { name, currency, color } = req.body || {};
@@ -799,12 +808,12 @@ app.put('/api/entities/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_er] } = await pool.query(`SELECT * FROM entities WHERE id = $1 LIMIT 1`, [row.id]);
   res.json(_er ? rowToObj(_er) : {});
 }));
-app.delete('/api/entities/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   if (!(await ownedBy('entities', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('entities', parseInt(req.params.id));
   res.json({ ok: true });
 }));
-app.post('/api/entities/:id/activate', requireAuth, wrap(async (req, res) => {
+app.post('/api/entities/:id/activate', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const uid = req.session.userId;
   const eid = parseInt(req.params.id);
   await pool.query(
@@ -1032,7 +1041,7 @@ app.get('/api/payroll', requireAuth, wrap(async (req, res) => {
   })).sort((a, b) => (b.is_owner ? 1 : 0) - (a.is_owner ? 1 : 0) || a.id - b.id);
   res.json(normalised);
 }));
-app.post('/api/payroll', requireAuth, wrap(async (req, res) => {
+app.post('/api/payroll', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.fname) return res.status(400).json({ error: 'fname required.' });
   const _peid = b.entity_id || null;
@@ -1042,7 +1051,7 @@ app.post('/api/payroll', requireAuth, wrap(async (req, res) => {
   const { row } = await db.insert('payroll', { user_id: req.session.userId, entity_id: _peid, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, deductions: Array.isArray(b.deductions) ? computeDeductions(parseFloat(b.gross)||0, b.deductions).rows.map(({label,value,type})=>({label,value,type})) : [], av_class: b.av_class||'av-blue', is_owner: b.is_owner ? true : false, salary_profile_id: b.salary_profile_id != null ? Number(b.salary_profile_id) : null });
   res.status(201).json(row);
 }));
-app.put('/api/payroll/:id', requireAuth, wrap(async (req, res) => {
+app.put('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   const row = await ownedBy('payroll', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
@@ -1058,7 +1067,7 @@ app.put('/api/payroll/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_payr] } = await pool.query(`SELECT * FROM payroll WHERE id = $1 LIMIT 1`, [row.id]);
   res.json(_payr ? rowToObj(_payr) : {});
 }));
-app.delete('/api/payroll/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   if (!(await ownedBy('payroll', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('payroll', parseInt(req.params.id));
   res.json({ ok: true });
@@ -1379,7 +1388,7 @@ app.get('/api/settings', requireAuth, wrap(async (req, res) => {
   );
   res.json(_sr ? rowToObj(_sr) : {});
 }));
-app.put('/api/settings', requireAuth, wrap(async (req, res) => {
+app.put('/api/settings', requireAuth, requirePerm('settings:manage'), wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
   // Read current settings for audit diff
@@ -1486,7 +1495,7 @@ app.get('/api/lock-settings', requireAuth, wrap(async (req, res) => {
   const s = _lsGet ? rowToObj(_lsGet) : null;
   res.json(s || { enabled: 0, lock_date: null });
 }));
-app.post('/api/lock-settings', requireAuth, wrap(async (req, res) => {
+app.post('/api/lock-settings', requireAuth, requirePerm('settings:manage'), wrap(async (req, res) => {
   const { enabled, lock_date, password } = req.body || {};
   const uid = req.session.userId;
   const patch = { enabled: enabled ? 1 : 0, lock_date: lock_date || null };
@@ -1579,7 +1588,7 @@ app.delete('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
 }));
 
 // ── AUDIT LOG ─────────────────────────────────────────────────────────────────
-app.get('/api/audit-log', requireAuth, wrap(async (req, res) => {
+app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
   const { page = 1, limit = 50, type } = req.query;
   let rows = await db.allByUser('audit_log', req.session.userId, null, (a,b) => b.id - a.id);
   if (type && type !== 'all') rows = rows.filter(r => r.table_name === type);
@@ -2350,7 +2359,7 @@ app.get('/api/team', requireAuth, wrap(async (req, res) => {
   ];
   res.json(members);
 }));
-app.post('/api/team', requireAuth, wrap(async (req, res) => {
+app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
   const { name, email, role = 'viewer' } = req.body || {};
   if (!name || !email) return res.status(400).json({ error: 'name and email required.' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email.' });
@@ -2365,7 +2374,7 @@ app.post('/api/team', requireAuth, wrap(async (req, res) => {
   });
   res.status(201).json(row);
 }));
-app.put('/api/team/:id', requireAuth, wrap(async (req, res) => {
+app.put('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
   const row = await ownedBy('team_members', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const { role } = req.body || {};
@@ -2374,7 +2383,7 @@ app.put('/api/team/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_tmr] } = await pool.query(`SELECT * FROM team_members WHERE id = $1 LIMIT 1`, [row.id]);
   res.json(_tmr ? rowToObj(_tmr) : {});
 }));
-app.delete('/api/team/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
   if (!(await ownedBy('team_members', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('team_members', parseInt(req.params.id));
   res.json({ ok: true });
@@ -2395,7 +2404,7 @@ app.delete('/api/team/:id', requireAuth, wrap(async (req, res) => {
 const INVITE_ROLES     = ['admin', 'accountant', 'viewer'];      // 'owner' deliberately excluded
 const hashInviteToken  = t => crypto.createHash('sha256').update(String(t)).digest('hex');
 
-app.post('/api/team/invite', inviteLimiter, requireAuth, wrap(async (req, res) => {
+app.post('/api/team/invite', inviteLimiter, requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
   // Only an owner/admin OF THIS ACCOUNT may invite. accountRole is set per-request
   // by the account resolver; a viewer/accountant member cannot invite.
   if (!['owner', 'admin'].includes(req.accountRole)) {
@@ -3057,7 +3066,7 @@ app.get('/api/permissions', requireAuth, wrap(async (req, res) => {
   const _pr0 = _permRows[0] ? rowToObj(_permRows[0]) : null;
   res.json(_pr0?.value ? JSON.parse(_pr0.value) : null);
 }));
-app.post('/api/permissions', requireAuth, wrap(async (req, res) => {
+app.post('/api/permissions', requireAuth, requirePerm('permissions:manage'), wrap(async (req, res) => {
   const data = JSON.stringify(req.body || []);
   const { rows: [_perme] } = await pool.query(
     `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'permissions' LIMIT 1`,
@@ -3351,7 +3360,7 @@ app.get('/api/connections', requireAuth, wrap(async (req, res) => {
     res.json({});
   }
 }));
-app.post('/api/connections', requireAuth, wrap(async (req, res) => {
+app.post('/api/connections', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   try {
     const data = JSON.stringify(req.body || {});
     const { rows: [_conne] } = await pool.query(
@@ -3380,7 +3389,7 @@ async function auditLog(pool, { userId, entityId, table, recordId, action, field
   } catch (e) { console.error('auditLog error:', e.message); }
 }
 
-app.get('/api/audit-trail', requireAuth, wrap(async (req, res) => {
+app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
   const { table, action } = req.query;
   let q = `SELECT * FROM audit_trail WHERE user_id = $1`;
   const params = [scopeId(req)];
@@ -3532,7 +3541,7 @@ app.get('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.post('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
+app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   const { period, bonus_overrides = {}, overtime_overrides = {}, notes = '' } = req.body || {};
   if (!period) return res.status(400).json({ error: 'period required' });
   const uid = req.session.userId;
@@ -3585,7 +3594,7 @@ app.get('/api/payroll-runs/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ...run, lines });
 }));
 
-app.put('/api/payroll-runs/:id/approve', requireAuth, wrap(async (req, res) => {
+app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   const { rows } = await pool.query(
     `UPDATE payroll_runs SET status='approved' WHERE id=$1 AND user_id=$2 RETURNING *`,
     [parseInt(req.params.id), scopeId(req)]
@@ -3594,7 +3603,7 @@ app.put('/api/payroll-runs/:id/approve', requireAuth, wrap(async (req, res) => {
   res.json(rows[0]);
 }));
 
-app.put('/api/payroll-runs/:id/mark-paid', requireAuth, wrap(async (req, res) => {
+app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   const { rows } = await pool.query(
     `UPDATE payroll_runs SET status='paid' WHERE id=$1 AND user_id=$2 RETURNING *`,
     [parseInt(req.params.id), scopeId(req)]

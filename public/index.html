@@ -1473,14 +1473,12 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div class="card-header"><h2 class="card-title">Role permissions</h2></div>
             <div style="font-size:10.5px;color:var(--t3);padding:2px 0 8px;line-height:1.7">
               <b style="color:var(--t2)">O</b> Owner&nbsp;·&nbsp;<b style="color:var(--t2)">A</b> Admin&nbsp;·&nbsp;<b style="color:var(--t2)">Ac</b> Accountant&nbsp;·&nbsp;<b style="color:var(--t2)">V</b> Viewer
+              <div style="margin-top:4px;color:var(--t3)">These are the role defaults enforced across the app. Per-account customization is coming soon.</div>
             </div>
             <div style="display:grid;grid-template-columns:1fr repeat(4,32px);gap:6px;padding:0 0 6px;font-size:9px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--bd);align-items:center">
               <span>Permission</span><span style="text-align:center" title="Owner">O</span><span style="text-align:center" title="Admin">A</span><span style="text-align:center" title="Accountant">Ac</span><span style="text-align:center" title="Viewer">V</span>
             </div>
             <div id="perm-list"></div>
-            <div style="margin-top:.75rem;display:flex;justify-content:flex-end">
-              <button class="btn btn-primary btn-sm" onclick="savePermissions()">Save permissions</button>
-            </div>
           </div>
         </div>
       </div>
@@ -5028,7 +5026,7 @@ const PERMS=[
   {label:'Manage team',desc:'Invite, remove, change roles',o:true,a:true,ac:false,v:false},
   {label:'Bank connections',desc:'Link & manage bank accounts',o:true,a:false,ac:false,v:false},
   {label:'Entity management',desc:'Add/remove business entities',o:true,a:false,ac:false,v:false},
-  {label:'Audit log',desc:'View full change history',o:true,a:true,ac:true,v:false},
+  {label:'Audit log',desc:'View full change history',o:true,a:true,ac:false,v:false},
   {label:'API access',desc:'Generate API keys',o:true,a:false,ac:false,v:false},
 ];
 window.renderTeam=function(){
@@ -5054,34 +5052,16 @@ window.renderTeam=function(){
   }
 
   const pl=document.getElementById('perm-list');
+  // Read-only reference: shows the role defaults enforced server-side by rbac.js.
+  // Every cell is disabled — per-account customization is a tracked follow-up.
   if(pl)pl.innerHTML=PERMS.map((p,pi)=>{
-    const chk=(role,on,disabled)=>`<input type="checkbox" data-pi="${pi}" data-role="${role}" ${on?'checked':''} ${disabled?'disabled':''} onchange="window._onPermChange(this)" style="width:16px;height:16px;accent-color:var(--acc);cursor:${disabled?'default':'pointer'};margin:0 auto;display:block">`;
+    const chk=(on)=>`<input type="checkbox" ${on?'checked':''} disabled style="width:16px;height:16px;accent-color:var(--acc);cursor:default;margin:0 auto;display:block">`;
     return `<div class="perm-row" style="display:grid;grid-template-columns:1fr repeat(4,32px);gap:6px;align-items:center">
       <div><div class="perm-label">${p.label}</div><div class="perm-desc">${p.desc}</div></div>
-      ${chk('o',p.o,true)}${chk('a',p.a,false)}${chk('ac',p.ac,false)}${chk('v',p.v,false)}
+      ${chk(p.o)}${chk(p.a)}${chk(p.ac)}${chk(p.v)}
     </div>`;
   }).join('');
 };
-window._onPermChange=function(cb){
-  const pi=parseInt(cb.dataset.pi);const role=cb.dataset.role;
-  if(PERMS[pi])PERMS[pi][role]=cb.checked;
-};
-window.savePermissions=async function(){
-  const state=PERMS.map(p=>({a:p.a,ac:p.ac,v:p.v}));
-  try{
-    await fetch('/api/permissions',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
-    notify('Role permissions saved ✦');
-  }catch(e){notify('Could not save permissions',true);}
-};
-window.addEventListener('ff:authed',async function(){
-  try{
-    const res=await fetch('/api/permissions',{credentials:'same-origin'});
-    if(!res.ok)return;
-    const saved=await res.json();
-    if(!saved||!Array.isArray(saved))return;
-    saved.forEach((s,i)=>{if(PERMS[i]){if(s.a!=null)PERMS[i].a=!!s.a;if(s.ac!=null)PERMS[i].ac=!!s.ac;if(s.v!=null)PERMS[i].v=!!s.v;}});
-  }catch(e){}
-},{once:true});
 
 // ── AUDIT TRAIL — all data from DB via /api/audit-log ──────────────────────
 const AUDIT_EVENTS=[]; // intentionally empty — no hardcoded demo data

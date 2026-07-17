@@ -71,6 +71,7 @@ const crypto = require('crypto');
 const { db, pool: _dbPool, rowToObj: _rowToObj } = require('./database');
 const { tierForAccountant, commissionRateFor, splitBilling, estimateStripeFeeCents } = require('./tier-config'); // F17 — single tier source
 const aiCap = require('./ai-cap'); // F18 — central AI cost caps
+const { appUrl } = require('./app-url'); // F29 — single source of truth for app links
 
 // Step F — accountant credential-proof upload (base64-in-Postgres, accountant-scoped).
 const CREDENTIAL_MAX_BYTES = 5 * 1024 * 1024; // 5 MB decoded
@@ -297,7 +298,7 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
             from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
             to: adminEmail,
             subject: `New accountant application from ${firstName} ${lastName} (${firm})`,
-            html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow Admin</h2><p>New accountant application received:</p><ul style="margin:12px 0;padding-left:20px;line-height:1.8"><li><strong>Name:</strong> ${firstName} ${lastName}</li><li><strong>Firm:</strong> ${firm}</li><li><strong>Email:</strong> ${email}</li><li><strong>Country:</strong> ${country}</li><li><strong>Specialisation:</strong> ${specialisation}</li><li><strong>Verification:</strong> ${verification.method}</li></ul><a href="${process.env.APP_URL || 'https://finflow-production-8e57.up.railway.app'}/admin" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:8px">Review in Admin Panel →</a></div>`,
+            html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow Admin</h2><p>New accountant application received:</p><ul style="margin:12px 0;padding-left:20px;line-height:1.8"><li><strong>Name:</strong> ${firstName} ${lastName}</li><li><strong>Firm:</strong> ${firm}</li><li><strong>Email:</strong> ${email}</li><li><strong>Country:</strong> ${country}</li><li><strong>Specialisation:</strong> ${specialisation}</li><li><strong>Verification:</strong> ${verification.method}</li></ul><a href="${appUrl()}/admin" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:8px">Review in Admin Panel →</a></div>`,
           }).catch(e => console.error('[Register] Admin notification failed:', e.message));
         } else {
           // TODO: set ADMIN_EMAIL env var to enable admin email notifications
@@ -702,7 +703,7 @@ If you cannot find a field, use null. Be concise.`;
     }
 
     const accountant = acc.rows[0];
-    const refUrl = `${process.env.APP_URL || 'https://finflow.app'}/register?ref=${accountant.referral_code}`;
+    const refUrl = `${appUrl()}/register?ref=${accountant.referral_code}`;
 
     // Send email via Resend (reuse existing resendClient)
     if (resendClient) {
@@ -1328,7 +1329,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
         html: `<p>Hi ${accFirst},</p>
                <p><strong>${clientName}</strong> (${clientEmail}) has requested to link with you on FinFlow.</p>
                <p>Log in to your accountant dashboard to review and approve or decline the request.</p>
-               <p><a href="${process.env.APP_URL || 'https://app.finflow.io'}/accountant">Review request →</a></p>`,
+               <p><a href="${appUrl()}/accountant">Review request →</a></p>`,
       }).catch(() => {});
     }
 
@@ -1404,7 +1405,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
           html: `<p>Hi ${uRes.rows[0]?.name || 'there'},</p>
                  <p><strong>${accName}</strong> from <strong>${firm}</strong> has approved your request on FinFlow.</p>
                  <p>They now have read access to your books and can help manage your accounts.</p>
-                 <p><a href="${process.env.APP_URL || 'https://app.finflow.io'}">Log in to FinFlow →</a></p>`,
+                 <p><a href="${appUrl()}">Log in to FinFlow →</a></p>`,
         }).catch(() => {});
       }
 
@@ -1471,11 +1472,11 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
         stripeAccountId = stripeAcct.id;
         await pool.query('UPDATE accountants SET stripe_account_id = $1 WHERE id = $2', [stripeAccountId, acct.id]);
       }
-      const appUrl = process.env.APP_URL || 'https://finflow-production-0817.up.railway.app';
+      const base = appUrl();
       const accountLink = await stripe.accountLinks.create({
         account: stripeAccountId,
-        refresh_url: `${appUrl}/accountant?stripe=refresh`,
-        return_url: `${appUrl}/accountant?stripe=success`,
+        refresh_url: `${base}/accountant?stripe=refresh`,
+        return_url: `${base}/accountant?stripe=success`,
         type: 'account_onboarding'
       });
       res.json({ url: accountLink.url });

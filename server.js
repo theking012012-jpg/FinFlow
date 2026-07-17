@@ -11,6 +11,7 @@ const crypto       = require('crypto');
 const { db, initDB, pool, rowToObj } = require('./database');
 const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
 const aiCap = require('./ai-cap');                        // F18 — central AI cost caps
+const { appUrl, warnIfUnset } = require('./app-url');     // F29 — single source of truth for app links
 const pgSession = require('connect-pg-simple')(session);
 
 let resendClient = null;
@@ -508,8 +509,7 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
     await pool.query(`DELETE FROM password_resets WHERE user_id = $1`, [user.id]);
     await db.insert('password_resets', { user_id: user.id, token, expires });
 
-    const APP_URL  = process.env.APP_URL || `http://localhost:${PORT}`;
-    const resetUrl = `${APP_URL}/reset-password.html?token=${token}`;
+    const resetUrl = `${appUrl()}/reset-password.html?token=${token}`;
 
     const _htmlEsc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     if (resendClient) {
@@ -2455,8 +2455,7 @@ app.post('/api/team/invite', inviteLimiter, requireAuth, wrap(async (req, res) =
 
   // Email the accept link — same helper/pattern as password reset. When Resend is
   // unconfigured the URL is logged so the flow is fully verifiable without keys.
-  const APP_URL   = process.env.APP_URL || `http://localhost:${PORT}`;
-  const acceptUrl = `${APP_URL}/team-accept.html?token=${token}`;
+  const acceptUrl = `${appUrl()}/team-accept.html?token=${token}`;
   const roleEsc   = role.replace(/[^a-z]/gi, '');
   if (resendClient) {
     try {
@@ -4037,6 +4036,7 @@ app.use((err, req, res, _next) => {
 initDB().then(() => {
   if (require.main === module) {
     app.listen(PORT, () => {
+      warnIfUnset(); // F29 — loud one-time warning if APP_URL is unset
       console.log(`\n  ✦ FinFlow backend running → http://localhost:${PORT}`);
       console.log(`  ✦ Point Lighthouse at:    http://localhost:${PORT}\n`);
     });

@@ -4,6 +4,10 @@
   "description": "FinFlow full-stack backend",
   "main": "server.js",
   "scripts": {
+    "build": "node bundle.js",
+    "prestart": "node bundle.js",
+    "bundle:check": "node bundle.js --check",
+    "postinstall": "node scripts/install-hooks.js",
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
@@ -19,8 +23,5 @@
     "pg": "^8.20.0",
     "resend": "^3.2.0",
     "stripe": "^14.0.0"
-  },
-  "devDependencies": {
-    "terser": "^5.48.0"
   }
 }

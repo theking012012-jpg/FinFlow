@@ -1,0 +1,10 @@
+#!/bin/sh
+# F13 — bundle-sync guard. Regenerate finflow-bundle.js from its 10 wiring sources
+# and re-stage it, so a commit can never carry a stale bundle (the "edit a wiring
+# source, forget node bundle.js, fix silently reverts" hole). Auto-fix, never block.
+node bundle.js || {
+  echo "[pre-commit] bundle.js failed — aborting commit." >&2
+  exit 1
+}
+git add public/finflow-bundle.js
+exit 0

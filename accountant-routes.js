@@ -70,6 +70,7 @@
 const crypto = require('crypto');
 const { db, pool: _dbPool, rowToObj: _rowToObj } = require('./database');
 const { tierForAccountant, commissionRateFor, splitBilling, estimateStripeFeeCents } = require('./tier-config'); // F17 — single tier source
+const aiCap = require('./ai-cap'); // F18 — central AI cost caps
 
 // Step F — accountant credential-proof upload (base64-in-Postgres, accountant-scoped).
 const CREDENTIAL_MAX_BYTES = 5 * 1024 * 1024; // 5 MB decoded
@@ -337,6 +338,22 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
     if (!ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI service not configured.' });
 
+    // F18 — resume/CV parse is document extraction → the scan budget. Gate BEFORE the
+    // Anthropic call, by whichever identity is calling. Fail-closed. Record after success.
+    const _uid = req.session.userId, _accId = req.session.accountantId;
+    let _plan = null;
+    if (_uid) {
+      const pr = await pool.query(`SELECT data->>'plan' AS plan FROM users WHERE id = $1`, [_uid]).catch(() => null);
+      _plan = pr?.rows?.[0]?.plan || 'trial';
+    }
+    const gate = _uid
+      ? await aiCap.checkUserCap(pool, _uid, _plan, 'scan')
+      : await aiCap.checkAccountantCap(pool, _accId, 'scan');
+    if (!gate.ok) {
+      if (gate.failClosed) return res.status(503).json({ error: 'AI temporarily unavailable — please retry.' });
+      return res.status(402).json({ error: 'Monthly AI scan limit reached.', code: 'AI_CAP_REACHED', used: gate.used, cap: gate.cap });
+    }
+
     const prompt = `You are a professional CV/resume parser. Extract information from this CV/resume and respond ONLY with a valid JSON object — no markdown, no explanation, no backticks.
 
 {
@@ -383,6 +400,10 @@ If you cannot find a field, use null. Be concise.`;
         console.error('[Resume Extract] Anthropic error:', err);
         return res.status(502).json({ error: 'AI service unavailable.' });
       }
+
+      // F18 — count the successful call against the scan budget (matching identity).
+      if (_uid) aiCap.recordUser(pool, _uid, 'scan', 1);
+      else       aiCap.recordAccountant(pool, _accId, 'scan', 1);
 
       const data = await response.json();
       const raw = data.content?.map(b => b.text || '').join('').trim();
@@ -1009,6 +1030,13 @@ If you cannot find a field, use null. Be concise.`;
     const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
     if (!apiKey) return res.status(503).json({ error: 'AI not configured (ANTHROPIC_API_KEY missing).' });
 
+    // F18 — insights is cheap text → the accountant shared budget. Gate BEFORE the call. Fail-closed.
+    const gate = await aiCap.checkAccountantCap(pool, req.session.accountantId, 'shared');
+    if (!gate.ok) {
+      if (gate.failClosed) return res.status(503).json({ error: 'AI temporarily unavailable — please retry.' });
+      return res.status(402).json({ error: 'Monthly AI limit reached.', code: 'AI_CAP_REACHED', used: gate.used, cap: gate.cap });
+    }
+
     const prompt = `You are a professional accountant reviewing a client's financial data. Give 5 concise insights (one per line, no numbering or bullet symbols) covering: outstanding invoice risk, expense patterns, tax filing readiness, cash flow health, and your top recommendation.
 
 Client data:
@@ -1034,6 +1062,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       }),
     });
     if (!aiRes.ok) return res.status(502).json({ error: 'AI service unavailable.' });
+    aiCap.recordAccountant(pool, req.session.accountantId, 'shared', 1);   // F18 — count the successful call
     const aiData = await aiRes.json();
     return res.json({ insights: aiData.content?.[0]?.text || '' });
   }));

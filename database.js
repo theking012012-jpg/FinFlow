@@ -286,6 +286,22 @@ async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_ai_usage_user_month ON ai_usage(user_id, billing_month)`);
+    // F18 — second per-account monthly AI budget: query_count = shared (chat/autocat/
+    // insights), scan_count = document/vision extraction (receipt scan + resume parse).
+    await client.query(`ALTER TABLE ai_usage ADD COLUMN IF NOT EXISTS scan_count INTEGER NOT NULL DEFAULT 0`);
+    // F18 — accountants have no plan tier, so their AI spend is tracked separately
+    // with a fixed monthly ceiling (see ai-cap.js CAPS.accountant).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accountant_ai_usage (
+        id            SERIAL PRIMARY KEY,
+        accountant_id INTEGER NOT NULL,
+        billing_month DATE NOT NULL DEFAULT date_trunc('month', NOW()),
+        shared_count  INTEGER NOT NULL DEFAULT 0,
+        scan_count    INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(accountant_id, billing_month)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_acct_ai_usage_month ON accountant_ai_usage(accountant_id, billing_month)`);
 
     // ── FEATURE 1: FIELD-LEVEL AUDIT TRAIL ──────────────────────────────────────
     await client.query(`

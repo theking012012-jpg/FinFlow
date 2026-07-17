@@ -10,6 +10,7 @@ const path         = require('path');
 const crypto       = require('crypto');
 const { db, initDB, pool, rowToObj } = require('./database');
 const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
+const aiCap = require('./ai-cap');                        // F18 — central AI cost caps
 const pgSession = require('connect-pg-simple')(session);
 
 let resendClient = null;
@@ -1707,8 +1708,8 @@ app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
 // approves via PUT /api/expenses/:id. Requires ANTHROPIC_API_KEY (502 if unset).
 const STD_EXPENSE_CATS = ['Software & SaaS','Travel','Meals & Entertainment','Office Supplies','Salaries','Marketing','Professional Services','Rent','Utilities','Insurance','Bank Transfer','Cost of Goods','Other'];
 const AI_CAT_BATCH     = 40;      // expenses per Claude call
-const AI_CAT_CAP_TRIAL = 300;     // AI classifications / user / month (trial/free)
-const AI_CAT_CAP_PAID  = 5000;    // high ceiling for paid tiers
+// F18 — cap now comes from the shared AI budget in ai-cap.js (single source), so
+// auto-categorize draws from the same per-plan monthly pool as chat + insights.
 function _acNorm(s) { return String(s || '').toLowerCase().replace(/[0-9#*]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120); }
 
 app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => {
@@ -1774,14 +1775,14 @@ app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => 
     return res.status(502).json({ error: 'AI categorization unavailable. Add ANTHROPIC_API_KEY to enable.', suggestions, counts: counts() });
   }
   const plan = req.userPlan || 'trial';
-  const cap  = (plan === 'trial' || plan === 'free') ? AI_CAT_CAP_TRIAL : AI_CAT_CAP_PAID;
+  const cap  = aiCap.capFor(plan, 'shared');   // F18 — shared monthly AI budget
   const usedRow = await pool.query(
     `SELECT query_count FROM ai_usage WHERE user_id = $1 AND billing_month = date_trunc('month', NOW())`, [scopeId(req)]
   );
   const used   = usedRow.rows[0]?.query_count || 0;
   const budget = cap - used;
   if (budget <= 0) {
-    return res.status(402).json({ error: 'Monthly AI categorization limit reached — upgrade for unlimited.', code: 'AI_CAP_REACHED', suggestions, counts: counts() });
+    return res.status(402).json({ error: 'Monthly AI limit reached — upgrade for more.', code: 'AI_CAP_REACHED', suggestions, counts: counts() });
   }
 
   const toSend = uncached.slice(0, budget);          // unique descriptions within budget
@@ -2627,7 +2628,14 @@ app.post('/api/ai', requireAuth, async (req, res) => {
     );
     if (cached.rows.length > 0) {
       const { answer, model } = cached.rows[0];
-      return res.json({ reply: answer, model, cached: true });
+      return res.json({ reply: answer, model, cached: true });   // cache hit → free, no cap consumed
+    }
+
+    // F18 — cost cap BEFORE any Anthropic call (cache miss only). Fail-closed.
+    const gate = await aiCap.checkUserCap(pool, scopeId(req), req.userPlan, 'shared');
+    if (!gate.ok) {
+      if (gate.failClosed) return res.status(503).json({ error: 'AI temporarily unavailable — please retry.' });
+      return res.status(402).json({ error: 'Monthly AI limit reached — upgrade for more.', code: 'AI_CAP_REACHED', used: gate.used, cap: gate.cap });
     }
 
     // Gather financial context in parallel
@@ -2698,6 +2706,8 @@ Overdue Invoices: ${invoices.filter(i => i.status === 'overdue').length}`;
 
     const data = await response.json();
     const reply = data.content?.[0]?.text || 'No response from AI.';
+
+    aiCap.recordUser(pool, scopeId(req), 'shared', 1);   // F18 — count the successful call
 
     // Persist to cache (fire-and-forget — don't let a cache write failure block the response)
     pool.query(
@@ -2777,6 +2787,13 @@ app.post('/api/ai/scan', requireAuth, async (req, res) => {
     const { base64, mediaType, isPDF } = req.body || {};
     if (!base64 || !mediaType) return res.status(400).json({ error: 'base64 and mediaType are required.' });
 
+    // F18 — scan is the expensive Sonnet-vision path; gate it on the tighter scan budget. Fail-closed.
+    const gate = await aiCap.checkUserCap(pool, scopeId(req), req.userPlan, 'scan');
+    if (!gate.ok) {
+      if (gate.failClosed) return res.status(503).json({ error: 'AI temporarily unavailable — please retry.' });
+      return res.status(402).json({ error: 'Monthly AI scan limit reached — upgrade for more.', code: 'AI_CAP_REACHED', used: gate.used, cap: gate.cap });
+    }
+
     const contentBlock = isPDF
       ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
       : { type: 'image',    source: { type: 'base64', media_type: mediaType,           data: base64 } };
@@ -2814,6 +2831,8 @@ If you cannot read a field clearly, use null. Do not invent data.`;
       console.error('Anthropic scan error:', err);
       return res.status(502).json({ error: 'AI service unavailable.' });
     }
+
+    aiCap.recordUser(pool, scopeId(req), 'scan', 1);   // F18 — count the successful scan call
 
     const data = await response.json();
     if (data.error) throw new Error(data.error.message);

@@ -425,7 +425,14 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         `SELECT id FROM accountants WHERE referral_code = $1 AND status = 'verified'`,
         [refCode]
       ).then(async result => {
-        if (!result.rows[0]) return;
+        if (!result.rows[0]) {
+          // S3: distinguish a DEAD referral code (invalid or unverified accountant)
+          // from a valid one that simply has no referrals yet. Signup still succeeds
+          // (a bad ?ref= must never block registration), but the broken link is now
+          // surfaced instead of silently swallowed as if it had worked.
+          console.warn(`[Referral] ref code "${refCode}" not found or not verified — signup for user ${userId} proceeded WITHOUT a referral link.`);
+          return;
+        }
         const accountantId = result.rows[0].id;
         // F17: tier months from the shared ladder, counting only PAYING active
         // clients (subscriptionStatus='active'; trial excluded). Provisional here —

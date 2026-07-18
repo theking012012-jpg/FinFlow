@@ -418,6 +418,12 @@ function flashTopbar(color){
 function openAddBizModal(e){
   if(e) e.stopPropagation();
   document.getElementById('biz-menu').style.display='none';
+  // Same plan gate as openAddEntityModal — the sidebar "+ Add business" button
+  // must not bypass the multi-entity limit. (Server-side enforcement is separate.)
+  if(currentUserPlan==='pro'&&typeof ENTITIES!=='undefined'&&ENTITIES.length>=1){
+    if(typeof showUpgradeModal==='function') showUpgradeModal('entity');
+    return;
+  }
   openCreateBusinessPage('dashboard');
 }
 
@@ -2227,7 +2233,7 @@ function renderPayroll(){
         <div><div class="emp-name">${esc(e.fname)} ${esc(e.lname)}${e.isOwner?` <span class="badge b-blue" style="font-size:9px">You</span>`:''}</div><div class="emp-role">${esc(e.type||'Full-time')}</div></div>
       </div>
       <span style="color:var(--t2);font-size:12px">${esc(e.role)}</span>
-      <span style="font-family:var(--font-mono)">${S(e.gross)}</span>
+      <span style="font-family:var(--font-mono);color:var(--t1)">${S(e.gross)}</span>
       <span style="color:var(--red);font-family:var(--font-mono)">${tax>0?'-'+S(tax):'—'}</span>
       <span style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${S(net)}</span>
       ${e.isOwner

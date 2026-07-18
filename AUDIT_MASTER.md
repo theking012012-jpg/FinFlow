@@ -50,7 +50,39 @@
 
 | **F30** | 🟢 Low | **Permissions matrix UI is display-only.** The owner-facing role-permissions grid (`public/index.html`) reads/writes `/api/permissions` (persisted to `user_settings`) but **nothing enforces the saved per-account edits** — server-side RBAC (F5 Step 4) enforces a **fixed code matrix** in `rbac.js`. To avoid shipping a cosmetic lie, the grid was relabeled **read-only "role defaults"** (checkboxes disabled, Save removed) as the honest interim. | `public/index.html`; `server.js` `/api/permissions`; `rbac.js` | **Make the UI genuinely functional:** have `requirePerm` merge the account's saved `/api/permissions` overrides **over** the `rbac.js` code defaults (owner always all; unknown/missing → code default; fail-closed on read error), then re-enable editing. Needs the 9 UI rows mapped 1:1 onto the code capabilities so a toggle actually changes enforcement. | **agent add (F5 Step 4 follow-up)** |
 
+| **F32** | 🔴 **CRITICAL — OPEN** | **Revenue is DOUBLE-COUNTED in the canonical basis.** `computeBooks` (`server.js:3741`) and the frontend `computeRevenue` (`app-main.js:1638-1647`) both compute `revenue = paid invoices + sales receipts + payments received`. A `payments_received` row is the **settlement** of an invoice (which also marks it paid), so a $1,000 paid invoice is counted once as a paid invoice **and again** as its payment → **$2,000 recognized for one $1,000 sale**. Because F9/F14 made `computeBooks` the single source for dashboard / AI / health / `/api/reports` / `/books` / accountant portal, the double-count propagates to **every money surface**. (= PRE_LAUNCH_FIX_PLAN Issue #1.) | `server.js:3741`; `public/app-main.js:1636-1647` (+ bundle copies) | Pick ONE basis, recognize each dollar **once**: **accrual** = paid/issued invoices + cash sales receipts; payments-received are AR **settlement** (Dr Cash / Cr AR), NOT revenue. **Cash** = receipts + payments only; drop paid-invoice recognition. Fix in `computeBooks` AND all frontend compute copies (two-engine). **Test:** $1,000 invoice → mark paid → record its payment → revenue must rise **$1,000, not $2,000**. | **agent-VERIFIED this session (code-read), = PRE_LAUNCH #1** |
+
+| **F33** | 🔴 **CRITICAL — OPEN (reported live; root cause not yet isolated)** | **Dashboard revenue not period-filtering.** Observed live: the Month / Quarter / Year toggle changes the **expense** KPIs but **revenue stays identical** across all three. Code-level, both `computeBooks` (`server.js:3728-3740`) and frontend `computeRevenue` (`app-main.js:1636-1647`) **do** branch by period — so this is **not** a simple missing filter. Likely one of: the revenue KPI not re-derived on period change (wiring), invoices missing the `due_date` the quarter branch filters on, or the under-count from unset `_receipts`/`_paymentsReceived` globals (PRE_LAUNCH #1). | dashboard period wiring; `app-main.js computeRevenue`; `computeBooks` | Repro live with dated test data spanning >1 month; confirm the period toggle re-invokes revenue compute and that `date`/`due_date` are populated; fix the failing layer. **Do not assume missing-filter — the branches exist in code.** | **REPORTED (live), NOT yet agent-verified** |
+
 | **F31** | ✅ **FIXED** (was 🟠 High) | **Reporting routes return fabricated `$0` on a query failure — "wrong money on screen" (F3/F7/F14 class).** `/api/cashflow`, `/api/reports`, `/api/tax-filing` each `catch → res.json({...:0})`, so a thrown query error (post-F20, the DB layer throws on a bad table) was re-masked as legitimate zeros on the three most important financial reports. A failure-induced `$0` is indistinguishable from a real `$0`. **Also relocated to the client:** the F24 consolidated P&L left `e.data` unset on `!r.ok` → the table rendered `$0` for a failed entity. | `server.js` (3 catch blocks); `public/finflow-api-wiring-medium.js` (F24 fetch); `public/index.html` (`getConsolTotal`/`fmtTotal`/`renderConsolPL`/`renderEntities`) | **Done (server + client):** the 3 routes now `res.status(500)` instead of fabricated `$0` — the separation is structural (a genuinely-empty period returns real `$0` from the `try`; only a thrown error reaches the `catch`). Client F24: `!r.ok`/failed fetch → `e.data={unavailable:true}` → the entity renders **"—"** + "Failed to load" (F3's honest-missing language, never `$0`); `getConsolTotal`→`null` if any entity is unavailable → consolidated total + KPI cards render **"—"** (a silent partial sum is the same lie); a genuinely-empty entity still shows honest `$0`. Verified: server 3/3 (empty→200+zeros, throw→500, no fabricated revenue), client 9/9 (empty→$0, failed→"—", siblings unaffected, incomplete total→"—"). Bundle regenerated + in sync. | **agent add (F20 follow-up)** |
+
+---
+
+## Pre-launch backlog — `PRE_LAUNCH_FIX_PLAN.md` (separate accounting-grade audit, 15 issues)
+
+A separate debugging-session audit (`PRE_LAUNCH_FIX_PLAN.md`, now tracked in-repo) catalogues 15 issues + foundations. **It was NOT investigated during the F1–F31 work** — reconciled here so AUDIT_MASTER stays the source of truth. Its root theme (Foundation #1): KPIs are summed ad-hoc in three files instead of derived from a double-entry ledger — the same drift F7 fought, un-rooted.
+
+| PRE_LAUNCH issue | Sev | Status | Maps to |
+|---|---|---|---|
+| #1 Revenue double-count (+ under-count from unset `_receipts` globals) | P0 | 🔴 **OPEN** | **F32** (verified) / **F33** (period symptom) |
+| #11 Tax Filing shows fabricated figures (flat 25% + hard-coded `ytdPaid = liability × 0.75`) | P0 | 🔴 **OPEN** | frontend `calcAndRenderTax` (F31 fixed only the server `/api/tax-filing` catch, NOT this fabrication) |
+| #2 Boot race — data only appears after manual refresh (4 uncoordinated boot paths) | P0 | 🔴 **OPEN** | overlaps Step 6 (loaders firing 6–8×) |
+| #4 Audit Trail reads wrong/near-empty table (`audit_trail`, 2 of 132 endpoints) vs real `audit_log` | P1 | 🟠 **OPEN** | related to F5 (RBAC `audit:read` gated, but coverage/immutability unaddressed) |
+| #3 Multi-entity paywall bypassable / unenforced server-side | P1 | 🟡 **PARTIAL** | `2a70564` "close entity-gate bypass on Add Business" (confirm server `POST /api/entities` 402/403 still needed) |
+| #7 Team members fabricated from payroll (fake emails + auto-roles) | P1 | ✅ **FIXED** | **F19** (dropped payroll from roster) |
+| #9 Payroll gross column renders black/invisible | P2 | ✅ **FIXED** | `2a70564` "legible payroll gross color" |
+| #5 Quotes don't convert to invoices; 3 conflicting quote wirings | P1 | 🟠 **OPEN** | — |
+| #6 FX "Settle" button dead (`settleFXTransaction` returns early) | P1 | 🟠 **OPEN** | backend route works; UI unwired |
+| #10 Credit/vendor credits not applied as contra; recurring items inert | P2 | 🟠 **OPEN** | — |
+| #8 Items/Inventory two parallel systems; reorder point absent | P2 | 🟠 **OPEN** | — |
+| #12 Banking "Coming Soon" placeholder | P2 | 🟠 **OPEN** | overlaps Step 7 (honesty pass) |
+| #13 Templates static mockup (no persistence) | P2 | 🟠 **OPEN** | overlaps Step 7 |
+| #14 Client Portal vaporware (no backend, fake shareable links) | P1 | 🟠 **OPEN** | overlaps Step 7 |
+| #15 API Connections static catalog ("Connect" doesn't connect) | P2 | 🟠 **OPEN** | overlaps Step 7 |
+
+**Non-negotiable-before-"accounting product" (per that plan):** revenue recognized once (#1 → F32), no fabricated tax figures (#11), complete immutable audit trail (#4).
+
+---
 
 **Withdrawn:** chat "C1 — stale served bundle (Critical)." Bundles verified in sync by byte-exact re-minify. Residual risk retained as F13.
 

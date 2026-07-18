@@ -4851,14 +4851,19 @@ function fmtConsol(valueUSD_native, fromCurrency){
 }
 
 function getConsolTotal(rowKey){
-  // Sum all entities converted to consolCurrency
+  // F31: if ANY entity's data failed to load, we cannot honestly consolidate —
+  // return null so callers render "—" (same principle as F3's missing FX rate:
+  // never fabricate a figure from incomplete data). A genuinely-empty entity
+  // ($0 from a 200) is NOT unavailable and still counts as a real 0.
+  if (ENTITIES.some(e => e.data && e.data.unavailable)) return null;
   return ENTITIES.reduce((sum, e) => {
-    const val = e.data[rowKey] || 0;
+    const val = (e.data && e.data[rowKey]) || 0;
     return sum + fxConvert(val, e.currency, consolCurrency);
   }, 0);
 }
 
 function fmtTotal(val){
+  if (val === null) return '—';   // F31: incomplete consolidation → honest dash, never $0
   const sym = (window.CURRENCIES[consolCurrency]||{symbol:'$'}).symbol;
   const abs = Math.abs(val);
   return sym + (abs >= 1000 ? (abs/1000).toFixed(1)+'K' : Math.round(abs).toLocaleString());
@@ -4908,15 +4913,17 @@ function renderConsolPL(){
   }
 
   pl.innerHTML = CONSOL_ROW_DEFS.map(row=>{
-    const entityVals = ENTITIES.map(e=>`
-      <span style="text-align:right;color:var(--t2);font-family:var(--font-mono)">${fmtConsol(e.data[row.key], e.currency)}</span>`
-    ).join('');
+    const entityVals = ENTITIES.map(e=>{
+      // F31: an entity whose data failed to load shows "—", never a fabricated $0.
+      const cell = (e.data && e.data.unavailable) ? '—' : fmtConsol(e.data[row.key], e.currency);
+      return `<span style="text-align:right;color:var(--t2);font-family:var(--font-mono)">${cell}</span>`;
+    }).join('');
     const total = getConsolTotal(row.key);
     return `
       <div style="display:grid;grid-template-columns:${cols};gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);align-items:center;font-size:12px">
         <span style="color:var(--t1);font-weight:500">${row.label}</span>
         ${entityVals}
-        <span style="text-align:right;font-family:var(--font-mono);font-weight:600;color:${total===0?'var(--t2)':row.color}">${fmtTotal(total)}</span>
+        <span style="text-align:right;font-family:var(--font-mono);font-weight:600;color:${(total===0||total===null)?'var(--t2)':row.color}">${fmtTotal(total)}</span>
       </div>`;
   }).join('');
 }
@@ -4939,8 +4946,9 @@ window.renderEntities=function(){
 
   const el=document.getElementById('entity-list');
   if(el)el.innerHTML=ENTITIES.map((e,i)=>{
-    const revConverted = fmtConsol(e.data.rev, e.currency);
-    const margin = e.data.rev ? Math.round(e.data.netProfit/e.data.rev*100*10)/10 : null;
+    const _unavail = e.data && e.data.unavailable;   // F31: failed fetch → honest "—", not $0
+    const revConverted = _unavail ? '—' : fmtConsol(e.data.rev, e.currency);
+    const margin = (!_unavail && e.data.rev) ? Math.round(e.data.netProfit/e.data.rev*100*10)/10 : null;
     return `
     <div class="entity-card${e.active?' active-entity':''}" onclick="switchEntity(${i})">
       <div class="entity-logo" style="background:${e.color}">${e.name.slice(0,2).toUpperCase()}</div>
@@ -4950,7 +4958,7 @@ window.renderEntities=function(){
       </div>
       <div class="entity-stat">
         <div class="entity-stat-val">${revConverted}</div>
-        <div class="entity-stat-lbl">${margin!==null?'Revenue · '+margin+'% margin':'—'}</div>
+        <div class="entity-stat-lbl">${_unavail ? 'Failed to load' : (margin!==null?'Revenue · '+margin+'% margin':'—')}</div>
       </div>
       ${e.active?`<span class="badge b-green" style="flex-shrink:0">Active</span>`:`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();switchEntity(${i})">Switch</button>`}
     </div>`;

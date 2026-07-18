@@ -1019,9 +1019,13 @@
           const _id = e._dbId || e.id;
           if (!_id) return Promise.resolve();
           return fetch('/api/reports?entity_id=' + _id, { credentials: 'same-origin' })
-            .then(r => r.ok ? r.json() : null)
-            .then(d => { if (d) e.data = { rev: d.revenue || 0, cogs: d.cogs || 0, grossProfit: d.grossProfit || 0, opex: d.expenses || 0, netProfit: d.netProfit || 0 }; })
-            .catch(() => {});
+            // F31: a 200 with real figures (incl. an honest $0 for a genuinely empty
+            // entity) populates e.data; a 500 / failed fetch marks the entity UNAVAILABLE
+            // so the consolidated view renders "—", never a fabricated $0 for data that
+            // actually failed to load (the report layer now throws instead of faking $0).
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(d => { e.data = { rev: d.revenue || 0, cogs: d.cogs || 0, grossProfit: d.grossProfit || 0, opex: d.expenses || 0, netProfit: d.netProfit || 0 }; })
+            .catch(() => { e.data = { unavailable: true }; });
         })).then(() => {
           window._consolFetching = false;
           if (typeof _medOrigRenderEntities === 'function') _medOrigRenderEntities(); // recompute KPI cards from real e.data

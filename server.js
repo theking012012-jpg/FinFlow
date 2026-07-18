@@ -3117,8 +3117,11 @@ app.get('/api/cashflow', requireAuth, wrap(async (req, res) => {
 
     res.json({ in: inflow, out: outflow, net: inflow - outflow, monthly });
   } catch (e) {
+    // F31: a thrown query error must NOT be disguised as a legitimate $0 cash flow.
+    // A real business with no transactions returns real zeros from the try above;
+    // only a genuine failure reaches here — surface it instead of fabricating money.
     console.error('[GET /api/cashflow]', e.message);
-    res.json({ in: 0, out: 0, net: 0, monthly: [] });
+    res.status(500).json({ error: 'Could not load cash flow. Please try again.' });
   }
 }));
 
@@ -3176,8 +3179,10 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       fx_unrealised: fxUnrealised,
     });
   } catch (e) {
+    // F31: surface the failure instead of fabricating $0 KPIs. A real empty period
+    // returns real zeros from the try above; only a thrown error reaches here.
     console.error('[GET /api/reports]', e.message);
-    res.json({ revenue: 0, outstanding: 0, overdue: 0, expenses: 0, netProfit: 0, margin: 0, invoiceCount: 0, expenseCount: 0 });
+    res.status(500).json({ error: 'Could not load report data. Please try again.' });
   }
 }));
 
@@ -3310,8 +3315,10 @@ app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
       rate: 0.25,
     });
   } catch (e) {
+    // F31: don't disguise a query failure as a $0 tax estimate. Real empty period
+    // returns real zeros from the try above; only a thrown error reaches here.
     console.error('[GET /api/tax-filing]', e.message);
-    res.json({ revenue: 0, deductible: 0, taxableIncome: 0, estimatedTax: 0, quarterly: 0, rate: 0.25 });
+    res.status(500).json({ error: 'Could not load tax estimate. Please try again.' });
   }
 }));
 

@@ -15,9 +15,30 @@
 
 const { Pool } = require('pg');
 
+// ── F19: DB TLS ────────────────────────────────────────────────────────────────
+// In production we connect over TLS. By default the server certificate is NOT
+// verified (`rejectUnauthorized: false`) because Railway/Supabase present a
+// self-signed / private-CA cert, and verifying against it WITHOUT the matching CA
+// makes pg refuse the connection → the pool can't connect → the app crashes on
+// boot. So the default is intentionally permissive (traffic still encrypted; MITM
+// risk is bounded when the DB link rides the provider's private network).
+//
+// To turn on real verification (recommended once you have the CA): set
+// DATABASE_CA_CERT to the provider's CA certificate in PEM form (Supabase offers a
+// downloadable cert). With it present we verify the chain; without it, behavior is
+// exactly as before — additive and non-breaking, never a deploy-time crash.
+function dbSsl() {
+  if (process.env.NODE_ENV !== 'production') return false;         // dev: no TLS (unchanged)
+  const ca = process.env.DATABASE_CA_CERT;
+  if (ca && ca.trim()) return { ca, rejectUnauthorized: true };    // opt-in: real verification
+  console.warn('⚠️  [F19] DB TLS is ENCRYPTED BUT UNVERIFIED (rejectUnauthorized:false). '
+    + 'Set DATABASE_CA_CERT (provider CA, PEM) to enable certificate verification.');
+  return { rejectUnauthorized: false };                            // default: unchanged from before
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: dbSsl(),
   max: 10,
   keepAlive: true,
   keepAliveInitialDelayMillis: 10000,

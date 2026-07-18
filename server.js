@@ -2335,18 +2335,15 @@ app.get('/api/team', requireAuth, wrap(async (req, res) => {
   const uid  = req.session.userId;
   const { rows: [_tmu] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [uid]);
   const user = _tmu ? rowToObj(_tmu) : null;
-  const pay  = await db.allByUser('payroll', uid);
+  // F19: the roster is people with ACTUAL account access — the owner + real invited
+  // members (rows in team_members). Payroll employees are NOT portal users: they have
+  // no membership row, no login, and no email on file. They used to be injected here
+  // with a fabricated `firstname.lastname@company.com` address AND an RBAC role badge
+  // (viewer/accountant) — after Step-1 enforcement that badge was an outright lie about
+  // access. They belong on the Payroll page, not the Team/RBAC roster.
   const invited = await db.allByUser('team_members', uid);
   const members = [
     { id: 'u0', name: user?.name || user?.email || 'You', email: user?.email || '', role: 'owner', emp_type: 'Owner', lastSeen: 'Now' },
-    ...pay.map(p => ({
-      id:       `p${p.id}`,
-      name:     `${p.fname} ${p.lname}`.trim(),
-      email:    `${(p.fname||'').replace(/[^a-z0-9]/gi,'').toLowerCase()}.${(p.lname||'user').replace(/[^a-z0-9]/gi,'').toLowerCase()}@company.com`,
-      role:     p.is_owner ? 'owner' : (p.emp_type === 'Contractor' ? 'viewer' : 'accountant'),
-      emp_type: p.emp_type,
-      lastSeen: 'Recently',
-    })),
     ...invited.map(m => ({
       id:       `tm${m.id}`,
       _tmId:    m.id,

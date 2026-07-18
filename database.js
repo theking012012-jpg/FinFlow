@@ -565,25 +565,27 @@ async function initDB() {
 // or when a route references a table that hasn't been provisioned yet.
 async function _ensureTable(table) {
   // Allowlist: only auto-create tables we know about (don't let arbitrary
-  // table names from SQL strings create rogue tables).
-  if (!TABLES.includes(table)) return;
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ${table} (
-        id         SERIAL PRIMARY KEY,
-        user_id    INTEGER,
-        entity_id  INTEGER,
-        data       JSONB NOT NULL DEFAULT '{}',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_${table}_user_id ON ${table}(user_id)`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_${table}_entity_id ON ${table}(entity_id)`);
-    console.log(`[DB] Auto-created missing table: ${table}`);
-  } catch (e) {
-    console.error(`[DB] Failed to auto-create table ${table}:`, e.message);
-  }
+  // table names from SQL strings create rogue tables). Returns TRUE if the table
+  // now exists (known name → created here), FALSE if the name is NOT allowlisted —
+  // in which case the caller MUST rethrow the 42P01 rather than silently return an
+  // empty result. That "silently succeed as empty when the query actually failed"
+  // is the F14-class bug (a missing/renamed/typo'd table hidden as "no data").
+  // A genuine CREATE failure now THROWS (no inner swallow) so it surfaces too.
+  if (!TABLES.includes(table)) return false;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${table} (
+      id         SERIAL PRIMARY KEY,
+      user_id    INTEGER,
+      entity_id  INTEGER,
+      data       JSONB NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_${table}_user_id ON ${table}(user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_${table}_entity_id ON ${table}(entity_id)`);
+  console.warn(`⚠️  [DB] table "${table}" was MISSING and has been auto-created — a schema migration likely did not run on this deploy. Investigate.`);
+  return true;
 }
 
 // ── Row serialisation helpers ─────────────────────────────────────────────────
@@ -629,8 +631,9 @@ const db = {
     try {
       res = await doInsert();
     } catch (err) {
-      if (err.code === '42P01') {
-        await _ensureTable(table);
+      // 42P01 on a KNOWN table → create it and retry once. A non-allowlisted table
+      // (or any other error) falls through to throw — never silently swallowed.
+      if (err.code === '42P01' && await _ensureTable(table)) {
         res = await doInsert();
       } else {
         throw err;
@@ -638,61 +641,6 @@ const db = {
     }
     const inserted = rowToObj(res.rows[0]);
     return { lastInsertRowid: inserted.id, row: inserted };
-  },
-
-  // get() — tries SQL first for common id/user_id lookups, falls back to JS filter
-  async get(table, filterFn) {
-    try {
-      const res = await pool.query(
-        `SELECT * FROM ${table} ORDER BY id`
-      );
-      const row = res.rows.map(rowToObj).find(filterFn);
-      return row || null;
-    } catch (err) {
-      if (err.code === '42P01') {
-        // Relation does not exist — try to create it on-the-fly so we can
-        // serve a clean empty result instead of throwing a 500.
-        await _ensureTable(table);
-        return null;
-      }
-      throw err;
-    }
-  },
-
-  // get by user_id — uses index directly
-  async getByUser(table, userId, filterFn) {
-    try {
-      const res = await pool.query(
-        `SELECT * FROM ${table} WHERE user_id = $1 ORDER BY id`,
-        [userId]
-      );
-      const rows = res.rows.map(rowToObj);
-      return filterFn ? (rows.find(filterFn) || null) : (rows[0] || null);
-    } catch (err) {
-      if (err.code === '42P01') { await _ensureTable(table); return null; }
-      throw err;
-    }
-  },
-
-  // all() — scoped by user_id using index; optional JS filter for remaining predicates
-  async all(table, filterFn, sortFn) {
-    // Extract user_id from filterFn if it's a simple user_id check to use index
-    // For backward compat we still support arbitrary filterFn
-    try {
-      const res = await pool.query(`SELECT * FROM ${table}`);
-      let rows = res.rows.map(rowToObj);
-      if (filterFn) rows = rows.filter(filterFn);
-      if (sortFn) rows.sort(sortFn);
-      return rows;
-    } catch (err) {
-      if (err.code === '42P01') {
-        // Table missing — auto-create the JSONB schema and return [] so
-        // freshly-deployed instances don't 500 on first read.
-        await _ensureTable(table);
-        return [];
-      }
-      throw err;
-    }
   },
 
   // allByUser() — always uses the user_id index; optional extra JS filter
@@ -707,48 +655,11 @@ const db = {
       if (sortFn) rows.sort(sortFn);
       return rows;
     } catch (err) {
-      if (err.code === '42P01') { await _ensureTable(table); return []; }
+      // 42P01 on a KNOWN table → self-heal and return the (genuinely empty) set.
+      // Unknown/typo'd/renamed table (or a creation failure) → THROW. Returning []
+      // here is exactly the silent-empty-on-failure bug that hid F14's dead tables.
+      if (err.code === '42P01' && await _ensureTable(table)) return [];
       throw err;
-    }
-  },
-
-  // allByEntity() — scoped by both user_id and entity_id
-  async allByEntity(table, userId, entityId, filterFn, sortFn) {
-    try {
-      const res = await pool.query(
-        `SELECT * FROM ${table} WHERE user_id = $1 AND entity_id = $2 ORDER BY created_at DESC`,
-        [userId, entityId]
-      );
-      let rows = res.rows.map(rowToObj);
-      if (filterFn) rows = rows.filter(filterFn);
-      if (sortFn) rows.sort(sortFn);
-      return rows;
-    } catch (err) {
-      if (err.code === '42P01') { await _ensureTable(table); return []; }
-      throw err;
-    }
-  },
-
-  async update(table, filterFn, patch) {
-    // Optimised: if filterFn targets a single id, use WHERE id = $1
-    let res;
-    try {
-      res = await pool.query(`SELECT * FROM ${table}`);
-    } catch (err) {
-      if (err.code === '42P01') { await _ensureTable(table); return; }
-      throw err;
-    }
-    const toUpdate = res.rows.map(rowToObj).filter(filterFn);
-    for (const row of toUpdate) {
-      const applied = typeof patch === 'function' ? patch(row) : patch;
-      const { user_id, entity_id, id, created_at, updated_at, ...rest } = row;
-      const newData = { ...objToData(rest), ...objToData(applied) };
-      const newUserId = applied.user_id !== undefined ? applied.user_id : user_id;
-      const newEntityId = applied.entity_id !== undefined ? applied.entity_id : entity_id;
-      await pool.query(
-        `UPDATE ${table} SET data=$1, user_id=$2, entity_id=$3, updated_at=NOW() WHERE id=$4`,
-        [newData, newUserId, newEntityId, id]
-      );
     }
   },
 
@@ -765,19 +676,6 @@ const db = {
     );
   },
 
-  async delete(table, filterFn) {
-    let res;
-    try {
-      res = await pool.query(`SELECT * FROM ${table}`);
-    } catch (err) {
-      if (err.code === '42P01') { await _ensureTable(table); return; }
-      throw err;
-    }
-    const toDelete = res.rows.map(rowToObj).filter(filterFn).map(r => r.id);
-    if (toDelete.length === 0) return;
-    await pool.query(`DELETE FROM ${table} WHERE id = ANY($1::int[])`, [toDelete]);
-  },
-
   // deleteById() — single row, uses PK
   async deleteById(table, id) {
     await pool.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
@@ -786,25 +684,6 @@ const db = {
   // deleteByUser() — wipe all rows for a user (used on account delete)
   async deleteByUser(table, userId) {
     await pool.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
-  },
-
-  async upsert(table, keyField, keyVal, patch) {
-    let res;
-    try {
-      res = await pool.query(`SELECT * FROM ${table}`);
-    } catch (err) {
-      if (err.code === '42P01') {
-        await _ensureTable(table);
-        return db.insert(table, { [keyField]: keyVal, ...patch });
-      }
-      throw err;
-    }
-    const existing = res.rows.map(rowToObj).find(r => r[keyField] === keyVal);
-    if (existing) {
-      await db.update(table, r => r[keyField] === keyVal, patch);
-    } else {
-      await db.insert(table, { [keyField]: keyVal, ...patch });
-    }
   },
 };
 

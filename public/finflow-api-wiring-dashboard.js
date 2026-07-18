@@ -57,10 +57,10 @@
     const expByMonth  = new Array(12).fill(0);
 
     invoices.forEach(inv => {
-      const d = parseDate(inv.date || inv.due_date || inv.created_at);
+      const d = parseDate(inv.created_at || inv.date);   // issue date, NOT due_date (F32)
       if (!d) return;
       const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
-      if (idx >= 0 && inv.status?.toLowerCase() === 'paid') revByMonth[idx] += parseFloat(inv.amount) || 0;
+      if (idx >= 0 && ['pending','overdue','partial','paid'].includes(inv.status?.toLowerCase())) revByMonth[idx] += parseFloat(inv.amount) || 0;
     });
 
     expenses.forEach(exp => {
@@ -70,18 +70,13 @@
       if (idx >= 0) expByMonth[idx] += parseFloat(exp.amount) || 0;
     });
 
-    // Include sales receipts + payments received in revenue
-    (window._receipts || []).forEach(r => {
+    // Include cash sales receipts in revenue. payments_received is NOT revenue (F32).
+    // Reads window.receipts (the name the loader sets; window._receipts was never assigned).
+    (window.receipts || []).forEach(r => {
       const d = parseDate(r.date);
       if (!d) return;
       const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
       if (idx >= 0) revByMonth[idx] += parseFloat(r.amount) || 0;
-    });
-    (window._paymentsReceived || []).forEach(p => {
-      const d = parseDate(p.date);
-      if (!d) return;
-      const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
-      if (idx >= 0) revByMonth[idx] += parseFloat(p.amount) || 0;
     });
 
     // Include payments made in expenses
@@ -142,43 +137,28 @@
     const now = new Date();
     let rev = 0, exp = 0;
 
-    // Extra revenue sources: sales receipts + payments received
-    const receipts  = window._receipts         || [];
-    const paymentsIn = window._paymentsReceived || [];
-    // Extra expense sources: payments made
-    const paymentsMade = window._paymentsMade  || [];
-
-    if (period === 'month') {
-      const { rev: r, exp: e } = calcMTD(invoices, expenses);
-      rev = r; exp = e;
-      // Add MTD receipts
-      const m = now.getMonth(), y = now.getFullYear();
-      receipts.forEach(r => { const d = parseDate(r.date); if (d && d.getMonth()===m && d.getFullYear()===y) rev += parseFloat(r.amount)||0; });
-      paymentsIn.forEach(p => { const d = parseDate(p.date); if (d && d.getMonth()===m && d.getFullYear()===y) rev += parseFloat(p.amount)||0; });
-      paymentsMade.forEach(p => { const d = parseDate(p.date); if (d && d.getMonth()===m && d.getFullYear()===y) exp += parseFloat(p.amount)||0; });
-    } else if (period === 'quarter') {
-      const q = Math.floor(now.getMonth() / 3) * 3;
-      const paidInv = invoices.filter(i => {
-        const d = parseDate(i.due_date);
-        return d && d.getMonth() >= q && d.getMonth() < q + 3 && d.getFullYear() === now.getFullYear() && i.status?.toLowerCase() === 'paid';
-      });
-      const qExp = expenses.filter(e => {
-        const d = parseDate(e.expense_date);
-        return d && d.getMonth() >= q && d.getMonth() < q + 3 && d.getFullYear() === now.getFullYear();
-      });
-      rev = paidInv.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-      exp = qExp.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-      receipts.forEach(r => { const d = parseDate(r.date); if (d && d.getMonth()>=q && d.getMonth()<q+3 && d.getFullYear()===now.getFullYear()) rev += parseFloat(r.amount)||0; });
-      paymentsIn.forEach(p => { const d = parseDate(p.date); if (d && d.getMonth()>=q && d.getMonth()<q+3 && d.getFullYear()===now.getFullYear()) rev += parseFloat(p.amount)||0; });
-      paymentsMade.forEach(p => { const d = parseDate(p.date); if (d && d.getMonth()>=q && d.getMonth()<q+3 && d.getFullYear()===now.getFullYear()) exp += parseFloat(p.amount)||0; });
-    } else {
-      // Year (default) — all records
-      rev = invoices.filter(i => i.status?.toLowerCase() === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-      exp = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-      rev += receipts.reduce((s, r) => s + (parseFloat(r.amount)||0), 0);
-      rev += paymentsIn.reduce((s, p) => s + (parseFloat(p.amount)||0), 0);
-      exp += paymentsMade.reduce((s, p) => s + (parseFloat(p.amount)||0), 0);
-    }
+    // Revenue: issue-based accrual (F32) — issued invoices (recognized statuses) at FULL
+    // amount by ISSUE date (created_at, NOT due_date) + cash sales receipts. NO
+    // payments_received leg. Expenses keep their existing basis (real expenses + payments
+    // made). Reads window.receipts (window._receipts was never assigned). This rev is NOT
+    // written to d-rev — app-main updateDashboard owns that (F7); it only feeds the returned
+    // object's non-conflicting cards.
+    const RECOGNIZED = ['pending','overdue','partial','paid'];
+    const isIssued = i => RECOGNIZED.includes(i.status?.toLowerCase());
+    const issueD   = i => parseDate(i.created_at || i.date);
+    const receipts     = window.receipts      || [];
+    const paymentsMade = window._paymentsMade || [];
+    const m = now.getMonth(), y = now.getFullYear(), q = Math.floor(m / 3) * 3;
+    const inP = d => {
+      if (!d) return false;
+      if (period === 'month')   return d.getMonth()===m && d.getFullYear()===y;
+      if (period === 'quarter') return d.getMonth()>=q && d.getMonth()<q+3 && d.getFullYear()===y;
+      return true; // year — all records
+    };
+    rev  = invoices.filter(i => isIssued(i) && inP(issueD(i))).reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+    rev += receipts.filter(r => inP(parseDate(r.date))).reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
+    exp  = expenses.filter(e => inP(parseDate(e.expense_date || e.date || e.created_at))).reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+    exp += paymentsMade.filter(p => inP(parseDate(p.date || p.created_at))).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
 
     const profit = rev - exp;
     const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);

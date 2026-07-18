@@ -1629,24 +1629,29 @@ function computeRevenue(period){
   period = period || (typeof currentPeriod !== 'undefined' ? currentPeriod : (window.currentPeriod || 'year'));
   const now = new Date();
   const _pd = v => { const d = v ? new Date(v) : null; return (d && !isNaN(d)) ? d : null; };
-  const invoices  = window._realInvoices    || [];
-  const receipts  = window._receipts        || [];
-  const paymentsIn= window._paymentsReceived|| [];
+  // Issue-based accrual (F32): recognize every ISSUED invoice at its FULL amount, in the
+  // period of its ISSUE date (created_at — NOT due_date), plus cash sales receipts.
+  // Settlements are not revenue → there is no payments_received leg. Statuses outside the
+  // recognized allowlist are not counted. Mirrors server computeBooks EXACTLY.
+  // Reads window.receipts (the name the loader actually sets) — the old window._receipts /
+  // window._paymentsReceived were assigned NOWHERE, silently zeroing these legs (F32).
+  const RECOGNIZED = ['pending','overdue','partial','paid'];
+  const isIssued = i => RECOGNIZED.includes((i.status||'').toLowerCase());
+  const issueD   = i => _pd(i.created_at || i.date);
+  const invoices = window._realInvoices || [];
+  const receipts = window.receipts      || [];
   let rev = 0;
   if(period==='month'){
     const m=now.getMonth(), y=now.getFullYear();
-    invoices.forEach(i=>{ const d=_pd(i.date||i.due_date||i.created_at); if(d&&d.getMonth()===m&&d.getFullYear()===y&&(i.status||'').toLowerCase()==='paid') rev+=parseFloat(i.amount)||0; });
+    invoices.forEach(i=>{ const d=issueD(i); if(d&&d.getMonth()===m&&d.getFullYear()===y&&isIssued(i)) rev+=parseFloat(i.amount)||0; });
     receipts.forEach(r=>{ const d=_pd(r.date); if(d&&d.getMonth()===m&&d.getFullYear()===y) rev+=parseFloat(r.amount)||0; });
-    paymentsIn.forEach(p=>{ const d=_pd(p.date); if(d&&d.getMonth()===m&&d.getFullYear()===y) rev+=parseFloat(p.amount)||0; });
   } else if(period==='quarter'){
     const q=Math.floor(now.getMonth()/3)*3, y=now.getFullYear();
-    invoices.forEach(i=>{ const d=_pd(i.due_date); if(d&&d.getMonth()>=q&&d.getMonth()<q+3&&d.getFullYear()===y&&(i.status||'').toLowerCase()==='paid') rev+=parseFloat(i.amount)||0; });
+    invoices.forEach(i=>{ const d=issueD(i); if(d&&d.getMonth()>=q&&d.getMonth()<q+3&&d.getFullYear()===y&&isIssued(i)) rev+=parseFloat(i.amount)||0; });
     receipts.forEach(r=>{ const d=_pd(r.date); if(d&&d.getMonth()>=q&&d.getMonth()<q+3&&d.getFullYear()===y) rev+=parseFloat(r.amount)||0; });
-    paymentsIn.forEach(p=>{ const d=_pd(p.date); if(d&&d.getMonth()>=q&&d.getMonth()<q+3&&d.getFullYear()===y) rev+=parseFloat(p.amount)||0; });
   } else { // year — all records
-    rev += invoices.filter(i=>(i.status||'').toLowerCase()==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+    rev += invoices.filter(isIssued).reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
     rev += receipts.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
-    rev += paymentsIn.reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
   }
   return rev;
 }

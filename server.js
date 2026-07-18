@@ -3195,21 +3195,23 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const eid = req.entityId || null;
   const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
-  const [invoices, expenses, paymentsMade, receipts, paymentsIn] = await Promise.all([
+  const [invoices, expenses, paymentsMade, receipts] = await Promise.all([
     db.allByUser('invoices', uid, matchEnt),
     db.allByUser('expenses', uid, matchEnt),
     db.allByUser('payments_made', uid, matchEnt),
     db.allByUser('sales_receipts', uid),      // user-level (no entity_id) — F26
-    db.allByUser('payments_received', uid),   // user-level (no entity_id) — F26
+    // payments_received dropped: it settles AR, it is not revenue (F32).
   ]);
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const keyOf = d => { const dt = new Date(d); return isNaN(dt) ? 'Unknown' : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
   const labelOf = k => { if (k === 'Unknown') return 'Unknown'; const [y, m] = k.split('-'); return `${_MO[+m - 1]} '${y.slice(-2)}`; };
   const monthMap = {};
   const bump = (d, field, amt) => { const k = keyOf(d); (monthMap[k] || (monthMap[k] = { revenue: 0, expenses: 0 }))[field] += parseFloat(amt) || 0; };
-  invoices.filter(i => (i.status || '').toLowerCase() === 'paid').forEach(i => bump(i.created_at || i.due_date || i.date, 'revenue', i.amount));
+  // Issue-based accrual (F32): recognize every ISSUED invoice at its issue month (created_at),
+  // full amount, any recognized status — not just 'paid'. payments_received is not revenue.
+  const _REC = new Set(['pending', 'overdue', 'partial', 'paid']);
+  invoices.filter(i => _REC.has((i.status || '').toLowerCase())).forEach(i => bump(i.created_at || i.date, 'revenue', i.amount));
   receipts.forEach(r => bump(r.date, 'revenue', r.amount));
-  paymentsIn.forEach(p => bump(p.date, 'revenue', p.amount));
   expenses.forEach(e => bump(e.expense_date || e.date || e.created_at, 'expenses', e.amount));
   paymentsMade.forEach(p => bump(p.date || p.created_at, 'expenses', p.amount));
   // Sort by YYYY-MM key ('Unknown' sorts last); format the label at render (F15).
@@ -3706,13 +3708,13 @@ async function computeBooks(userId, entityId = null, period = 'year') {
   const ent = r => entityId == null || r.entity_id == null || r.entity_id === entityId;
   period = (period === 'month' || period === 'quarter') ? period : 'year'; // 'all' → 'year'
 
-  const [invoices, expenses, paymentsMade, payroll, receipts, paymentsIn] = await Promise.all([
+  const [invoices, expenses, paymentsMade, payroll, receipts] = await Promise.all([
     db.allByUser('invoices', userId, ent),
     db.allByUser('expenses', userId, ent),
     db.allByUser('payments_made', userId, ent),
     db.allByUser('payroll', userId, ent),
     db.allByUser('sales_receipts', userId),      // user-scoped (no entity_id) — F26
-    db.allByUser('payments_received', userId),   // user-scoped (no entity_id) — F26
+    // payments_received is NO LONGER a revenue leg (F32): it settles AR, it is not revenue.
   ]);
 
   // Period windows mirror the frontend R1/E1 branches EXACTLY (incl. their date-field
@@ -3722,23 +3724,31 @@ async function computeBooks(userId, entityId = null, period = 'year') {
   const inMonth   = d => !!d && d.getMonth() === mo && d.getFullYear() === y;
   const inQuarter = d => !!d && d.getFullYear() === y && d.getMonth() >= q && d.getMonth() < q + 3;
 
-  // ── Revenue (mirrors frontend computeRevenue / R1) ──
-  const paidInv = invoices.filter(i => (i.status || '').toLowerCase() === 'paid');
-  let paidInvoices, salesReceipts, paymentsReceived;
+  // ── Revenue — ISSUE-BASED ACCRUAL (F32). Recognize every ISSUED invoice at its FULL
+  // amount, in the period of its ISSUE date (created_at — NOT due_date), plus cash sales
+  // receipts. Settlements (invoice_payments / legacy payments_received) draw down AR and
+  // are NEVER revenue, so payments_received is no longer a revenue leg. Statuses outside
+  // the recognized allowlist are FLAGGED (surfaced as unrecognizedStatusCount), never
+  // silently counted or dropped. Mirrors frontend computeRevenue.
+  const RECOGNIZED = new Set(['pending', 'overdue', 'partial', 'paid']);
+  let unrecognizedStatusCount = 0;
+  const issuedInv = invoices.filter(i => {
+    if (RECOGNIZED.has((i.status || '').toLowerCase())) return true;
+    unrecognizedStatusCount++; return false;
+  });
+  const issueDate = i => _d(i.created_at || i.date);   // issue date, NOT due_date (F32)
+  let issuedInvoices, salesReceipts;
   if (period === 'month') {
-    paidInvoices     = sum(paidInv.filter(i => inMonth(_d(i.date || i.due_date || i.created_at))), i => num(i.amount));
-    salesReceipts    = sum(receipts.filter(x => inMonth(_d(x.date))), x => num(x.amount));
-    paymentsReceived = sum(paymentsIn.filter(x => inMonth(_d(x.date))), x => num(x.amount));
+    issuedInvoices = sum(issuedInv.filter(i => inMonth(issueDate(i))), i => num(i.amount));
+    salesReceipts  = sum(receipts.filter(x => inMonth(_d(x.date))), x => num(x.amount));
   } else if (period === 'quarter') {
-    paidInvoices     = sum(paidInv.filter(i => inQuarter(_d(i.due_date))), i => num(i.amount));
-    salesReceipts    = sum(receipts.filter(x => inQuarter(_d(x.date))), x => num(x.amount));
-    paymentsReceived = sum(paymentsIn.filter(x => inQuarter(_d(x.date))), x => num(x.amount));
+    issuedInvoices = sum(issuedInv.filter(i => inQuarter(issueDate(i))), i => num(i.amount));
+    salesReceipts  = sum(receipts.filter(x => inQuarter(_d(x.date))), x => num(x.amount));
   } else { // year — all records (F25)
-    paidInvoices     = sum(paidInv, i => num(i.amount));
-    salesReceipts    = sum(receipts, x => num(x.amount));
-    paymentsReceived = sum(paymentsIn, x => num(x.amount));
+    issuedInvoices = sum(issuedInv, i => num(i.amount));
+    salesReceipts  = sum(receipts, x => num(x.amount));
   }
-  const revenue = r2(paidInvoices + salesReceipts + paymentsReceived);
+  const revenue = r2(issuedInvoices + salesReceipts);
 
   // ── OpEx (mirrors frontend computeExpenseBreakdown / E1) ──
   const inPeriod = v => {
@@ -3773,16 +3783,23 @@ async function computeBooks(userId, entityId = null, period = 'year') {
     cogs = r2(cogs);
   } catch (_) { cogs = 0; cogsUncoveredItems = 0; }
 
-  const outstanding = r2(sum(invoices.filter(i => (i.status || '').toLowerCase() !== 'paid'), i => num(i.amount)));
+  // AR = Σ(amount − amount_paid) over recognized, non-paid invoices. amount_paid is written
+  // ONLY by Store B (invoice_payments/recalcInvoiceStatus), which is UI-unreachable until
+  // F35 lands — so today it is null everywhere and this equals Σ(amount). Coded correct;
+  // the partial-AR draw-down becomes active with F35.
+  const outstanding = r2(sum(
+    issuedInv.filter(i => (i.status || '').toLowerCase() !== 'paid'),
+    i => num(i.amount) - num(i.amount_paid)
+  ));
   const grossProfit = r2(revenue - cogs);
   const netProfit   = r2(revenue - cogs - opex);
 
   return {
     revenue, cogs, grossProfit, opex, netProfit, outstanding, period,
     parts: {
-      paidInvoices: r2(paidInvoices), salesReceipts: r2(salesReceipts), paymentsReceived: r2(paymentsReceived),
+      issuedInvoices: r2(issuedInvoices), salesReceipts: r2(salesReceipts),
       expenses: r2(expensesTotal), paymentsMade: r2(paymentsMadeTotal), payroll: payrollTotal,
-      monthlyPayroll: r2(monthlyPayroll), months, cogsUncoveredItems,
+      monthlyPayroll: r2(monthlyPayroll), months, cogsUncoveredItems, unrecognizedStatusCount,
     },
   };
 }
@@ -4070,3 +4087,6 @@ initDB().then(() => {
 });
 
 module.exports = app;
+// Test hook: expose the canonical books calculator for harness verification (no behavior
+// change in prod — the app is still the default export).
+module.exports.computeBooks = computeBooks;

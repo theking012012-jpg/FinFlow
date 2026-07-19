@@ -46,10 +46,16 @@
   function buildMonthlyArrays(invoices, expenses) {
     window._buildMonthlyArrays = buildMonthlyArrays; // expose globally
     const now = new Date();
-    // Build array of last 12 month labels and start dates
+    // FISCAL-YEAR indexed (F33): index i = the i-th month of the current fiscal year, so
+    // REV[i]/EXP[i] align with MONTH_FULL[i] (labels) and the stepper's currentMonthIdx.
+    // (Was rolling-last-12, which put label and data on different months.)
+    const _fym = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const _fyName = (typeof document !== 'undefined' && (document.getElementById('s-fy')||{}).value) || 'January';
+    const _fyStartIdx = Math.max(0, _fym.indexOf(_fyName));
+    const _fyStartYear = (now.getMonth() >= _fyStartIdx) ? now.getFullYear() : now.getFullYear() - 1;
     const months = [];
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(_fyStartYear, _fyStartIdx + i, 1);
       months.push({ year: d.getFullYear(), month: d.getMonth(), label: d.toLocaleString('en-US', { month: 'short' }) });
     }
 

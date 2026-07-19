@@ -1378,35 +1378,19 @@ async function loadEntityData(idx){
     window._realInvoices = invoices || [];
     window._realExpenses = expenses || [];
 
-    // Rebuild monthly chart arrays from real data — aligned to fiscal year
-    const _fyMonths=['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const _fyName=(document.getElementById('s-fy')||{}).value||'January';
-    const _fyStartIdx=Math.max(0,_fyMonths.indexOf(_fyName));
-    const _today=new Date();
-    const _fyStartYear=(_today.getMonth()>=_fyStartIdx)?_today.getFullYear():_today.getFullYear()-1;
-    const monthlyRev = new Array(12).fill(0);
-    const monthlyExp = new Array(12).fill(0);
-    invoices.forEach(inv => {
-      if(inv.status !== 'paid') return;
-      const d = inv.due_date ? new Date(inv.due_date) : null;
-      if(!d) return;
-      const mIdx = (d.getMonth() - _fyStartIdx) + (d.getFullYear() - _fyStartYear) * 12;
-      if(mIdx >= 0 && mIdx < 12) monthlyRev[mIdx] += parseFloat(inv.amount)||0;
-    });
-    expenses.forEach(exp => {
-      const d = exp.expense_date ? new Date(exp.expense_date) : null;
-      if(!d) return;
-      const mIdx = (d.getMonth() - _fyStartIdx) + (d.getFullYear() - _fyStartYear) * 12;
-      if(mIdx >= 0 && mIdx < 12) monthlyExp[mIdx] += parseFloat(exp.amount)||0;
-    });
-    // NOTE: payroll (owner + employees) is NOT injected into EXP[] here.
-    // It is added once, consistently, by computeExpenseBreakdown() — the single
-    // canonical expense-total used by both the dashboard and the Expenses page.
-    // EXP[] holds real expense rows only, so the monthly chart matches reality.
-
-    REV.splice(0,12,...monthlyRev);
-    EXP.splice(0,12,...monthlyExp);
-    for(let i=0;i<12;i++) PROFIT[i] = REV[i]-EXP[i];
+    // Monthly chart arrays come from the SINGLE canonical fiscal builder (the dashboard
+    // wiring's window._buildMonthlyArrays) on the F32 issue-based basis (issued invoices by
+    // created_at + receipts). The old paid-only/due_date builder that used to live here was
+    // DELETED — it was a second, divergent basis that Stage 1 missed (logged as a Stage-1
+    // gap under F32/F33). If the wiring hasn't loaded yet, _refreshDashboardUI fills REV[]
+    // once it does. Payroll is NOT in EXP[] — computeExpenseBreakdown adds it once (canonical).
+    if(typeof window._buildMonthlyArrays==='function'){
+      const _mb=window._buildMonthlyArrays(invoices, expenses);
+      if(_mb && _mb.revByMonth){
+        REV.splice(0,12,..._mb.revByMonth); EXP.splice(0,12,..._mb.expByMonth);
+        for(let i=0;i<12;i++) PROFIT[i] = REV[i]-EXP[i];
+      }
+    }
 
     const _safeRender = (fn) => { try { if(typeof fn==='function') fn(); } catch(e) { console.warn('render error:', e.message); } };
     _safeRender(renderInvoices);
@@ -1473,7 +1457,9 @@ let nextInvId = 100;
 let darkMode = true;
 let currentPeriod = 'year';
 window.currentPeriod = 'year'; // mirrored to window so the bundle's KPI engine reads the same period
-let currentMonthIdx = 11; // April
+// Default the month stepper to the CURRENT fiscal month, not a fixed index 11 (which was
+// December under a January fiscal year — the QA "selected period showed Dec 2026" bug).
+let currentMonthIdx = (function(){ try { return _fyContext().curFyIdx; } catch(_){ return 11; } })();
 let charts = {};
 let currencySymbol = '$';
 
@@ -1540,14 +1526,17 @@ function getPeriodData(){
       months:1, label:MONTH_FULL[i]
     };
   } else if(currentPeriod==='quarter'){
-    const s=9,e=12,ps=6,pe=9;
+    // The ACTUAL current fiscal quarter (F33) — not a hardcoded Q4. Indices are fiscal-year
+    // positions into REV[]/EXP[] (which the unified fiscal builder fills), so chart + label
+    // track the real quarter.
+    const qs=Math.floor(_fyContext().curFyIdx/3)*3, e=qs+3, ps=Math.max(0,qs-3), pe=qs;
     return{
-      rev:sum(REV,s,e),exp:sum(EXP,s,e),profit:sum(PROFIT,s,e),
+      rev:sum(REV,qs,e),exp:sum(EXP,qs,e),profit:sum(PROFIT,qs,e),
       prevRev:sum(REV,ps,pe),prevExp:sum(EXP,ps,pe),prevProfit:sum(PROFIT,ps,pe),
-      labels:MONTHS.slice(s,e),revArr:REV.slice(s,e),expArr:EXP.slice(s,e),
-      sal:sum(EXP_SAL,s,e),rent:EXP_RENT[0]*3,sw:sum(EXP_SW,s,e),mkt:sum(EXP_MKT,s,e),
+      labels:MONTHS.slice(qs,e),revArr:REV.slice(qs,e),expArr:EXP.slice(qs,e),
+      sal:sum(EXP_SAL,qs,e),rent:EXP_RENT[0]*3,sw:sum(EXP_SW,qs,e),mkt:sum(EXP_MKT,qs,e),
       srcRC:0,srcTS:0,srcST:0,srcCO:0,
-      months:3, label:'Q4 · '+MONTH_FULL[9]+' – '+MONTH_FULL[11]
+      months:3, label:(typeof _periodWindow==='function'?_periodWindow('quarter').label:'Quarter')
     };
   } else {
     return{
@@ -1570,24 +1559,16 @@ function getPeriodData(){
 // (window._paymentsMade) and entity payroll (window.ownerPayroll +
 // window.payrollEmployees), it returns totals that are identical on every
 // screen for the same entity + period. No fabricated ratios anywhere.
-function computeExpenseBreakdown(period){
+function computeExpenseBreakdown(period, monthIdx){
   period = period || (typeof currentPeriod !== 'undefined' ? currentPeriod : (window.currentPeriod || 'year'));
-  const now = new Date();
-  // Payroll accrues per ELAPSED month, never forward-projected — count months
-  // elapsed-to-date in the selected period from the real current date, so
-  // salary isn't ×12'd mid-year against actuals-to-date revenue.
-  let months;
-  if(period==='month') months = 1;
-  else if(period==='quarter'){ const _qs=Math.floor(now.getMonth()/3)*3; months = now.getMonth()-_qs+1; }
-  else months = now.getMonth()+1; // year: calendar months elapsed so far
-  const inPeriod = (val)=>{
-    if(period==='year') return true; // year = all recorded rows
-    const d = val ? new Date(val) : null;
-    if(!d || isNaN(d)) return false;
-    if(period==='month') return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
-    const q = Math.floor(now.getMonth()/3)*3;
-    return d.getFullYear()===now.getFullYear() && d.getMonth()>=q && d.getMonth()<q+3;
-  };
+  // Period window is the SAME canonical resolver the revenue engine + server use (F33/F25),
+  // so expenses, revenue and payroll all bound to one window. Payroll accrues per ELAPSED
+  // month within that window (never forward-projected): month = 1 (if started), quarter =
+  // months of the quarter started, year = elapsed fiscal months (min(now, fyEnd)) — Year is
+  // now a real fiscal year, not calendar-YTD payroll against all-time rows (F25).
+  const w = _periodWindow(period, monthIdx);
+  const months = w.elapsedMonths;
+  const inPeriod = (val)=> w.inWin(val);
   // Real expense rows in the period
   const rows = (window._realExpenses || []).filter(e=>inPeriod(e.expense_date || e.date || e.created_at));
   const realExpenses = rows.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
@@ -1625,34 +1606,72 @@ window.computeExpenseBreakdown = computeExpenseBreakdown;
 // Mirrors the dashboard's revenue basis exactly: paid invoices + sales receipts
 // + payments received, period-scoped. The dashboard, AI insights and health
 // score all call THIS, so every screen agrees on revenue (and therefore profit).
-function computeRevenue(period){
+// ════════════════════════════════════════════
+// CANONICAL PERIOD WINDOW  (single source of truth — F33/F25)
+// ════════════════════════════════════════════
+// Resolves the SELECTED period to a concrete calendar window, honoring the fiscal-year
+// start (s-fy, default January) and the month stepper (currentMonthIdx, a FISCAL-year
+// index 0..11 into MONTH_FULL). Both KPI engines (computeRevenue / computeExpenseBreakdown)
+// AND the server (computeBooks, via ?start&end&elapsedMonths) filter to the SAME window,
+// so the value never silently follows `new Date()` regardless of the selected month (F33).
+//   month   → the one fiscal-index month; elapsedMonths = 1 if it has started, else 0.
+//   quarter → the fiscal quarter containing the anchor month (NOT a hardcoded Q4).
+//   year    → the whole fiscal year [fyStart, fyStart+12mo); payroll × elapsed fiscal
+//             months (min(now, fyEnd)) — Year is now internally consistent (F25), no
+//             longer all-time revenue mixed with calendar-YTD payroll.
+// Single source of fiscal-year context (start month, start year, elapsed months, and the
+// fiscal-year index of "now") — shared by the window resolver and the delta baseline so the
+// two can't drift (drift between two period sources is exactly what produced F33).
+function _fyContext(){
+  const mNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const fyName=(typeof document!=='undefined' && (document.getElementById('s-fy')||{}).value) || (window._fyStart||'January');
+  const fyStartIdx=Math.max(0,mNames.indexOf(fyName));
+  const now=new Date();
+  const fyStartYear=(now.getMonth()>=fyStartIdx)?now.getFullYear():now.getFullYear()-1;
+  const monthsInFY=Math.min(12,Math.max(1,(now.getFullYear()-fyStartYear)*12+(now.getMonth()-fyStartIdx)+1));
+  return { fyStartIdx, fyStartYear, monthsInFY, curFyIdx:Math.min(11,Math.max(0,monthsInFY-1)), now };
+}
+window._fyContext = _fyContext;
+
+function _periodWindow(period, monthIdx){
+  const { fyStartIdx, fyStartYear, monthsInFY, curFyIdx, now } = _fyContext();
+  const _pd=v=>{const d=v?new Date(v):null;return(d&&!isNaN(d))?d:null;};
+  const mkLabel=(y,m)=>new Date(y,m,1).toLocaleString('en-US',{month:'short',year:'numeric'});
+  if(period==='month'){
+    const idx=(monthIdx==null)?(typeof currentMonthIdx!=='undefined'?currentMonthIdx:curFyIdx):monthIdx;
+    const start=new Date(fyStartYear,fyStartIdx+idx,1), end=new Date(fyStartYear,fyStartIdx+idx+1,1);
+    return { inWin:d=>{const x=_pd(d);return !!x&&x>=start&&x<end;}, elapsedMonths:(start<=now?1:0),
+             label:start.toLocaleString('en-US',{month:'short',year:'numeric'}), start, end };
+  }
+  if(period==='quarter'){
+    const anchor=(monthIdx==null)?curFyIdx:monthIdx;
+    const q=Math.floor(anchor/3);                       // fiscal quarter of the anchor
+    const start=new Date(fyStartYear,fyStartIdx+q*3,1), end=new Date(fyStartYear,fyStartIdx+q*3+3,1);
+    const elapsed=Math.min(3,Math.max(0,curFyIdx-q*3+1)); // months of this quarter that have started
+    return { inWin:d=>{const x=_pd(d);return !!x&&x>=start&&x<end;}, elapsedMonths:elapsed,
+             label:'Q'+(((q%4)+4)%4+1)+' · '+mkLabel(start.getFullYear(),start.getMonth())+' – '+mkLabel(end.getFullYear(),end.getMonth()-1), start, end };
+  }
+  // year — the whole fiscal year, every leg (F25)
+  const start=new Date(fyStartYear,fyStartIdx,1), end=new Date(fyStartYear,fyStartIdx+12,1);
+  return { inWin:d=>{const x=_pd(d);return !!x&&x>=start&&x<end;}, elapsedMonths:monthsInFY,
+           label:'Fiscal Year · '+mkLabel(start.getFullYear(),start.getMonth())+' – '+mkLabel(end.getFullYear(),end.getMonth()-1), start, end };
+}
+window._periodWindow = _periodWindow;
+
+function computeRevenue(period, monthIdx){
   period = period || (typeof currentPeriod !== 'undefined' ? currentPeriod : (window.currentPeriod || 'year'));
-  const now = new Date();
-  const _pd = v => { const d = v ? new Date(v) : null; return (d && !isNaN(d)) ? d : null; };
-  // Issue-based accrual (F32): recognize every ISSUED invoice at its FULL amount, in the
-  // period of its ISSUE date (created_at — NOT due_date), plus cash sales receipts.
-  // Settlements are not revenue → there is no payments_received leg. Statuses outside the
-  // recognized allowlist are not counted. Mirrors server computeBooks EXACTLY.
-  // Reads window.receipts (the name the loader actually sets) — the old window._receipts /
-  // window._paymentsReceived were assigned NOWHERE, silently zeroing these legs (F32).
+  // Issue-based accrual (F32) over the SELECTED period window (F33/F25): recognize every
+  // ISSUED invoice at its FULL amount in the period of its ISSUE date (created_at), plus
+  // cash sales receipts in the window. No new Date()-only window; the stepper's month is
+  // honored via _periodWindow. Reads window.receipts (the name the loader sets).
+  const w = _periodWindow(period, monthIdx);
   const RECOGNIZED = ['pending','overdue','partial','paid'];
   const isIssued = i => RECOGNIZED.includes((i.status||'').toLowerCase());
-  const issueD   = i => _pd(i.created_at || i.date);
   const invoices = window._realInvoices || [];
   const receipts = window.receipts      || [];
   let rev = 0;
-  if(period==='month'){
-    const m=now.getMonth(), y=now.getFullYear();
-    invoices.forEach(i=>{ const d=issueD(i); if(d&&d.getMonth()===m&&d.getFullYear()===y&&isIssued(i)) rev+=parseFloat(i.amount)||0; });
-    receipts.forEach(r=>{ const d=_pd(r.date); if(d&&d.getMonth()===m&&d.getFullYear()===y) rev+=parseFloat(r.amount)||0; });
-  } else if(period==='quarter'){
-    const q=Math.floor(now.getMonth()/3)*3, y=now.getFullYear();
-    invoices.forEach(i=>{ const d=issueD(i); if(d&&d.getMonth()>=q&&d.getMonth()<q+3&&d.getFullYear()===y&&isIssued(i)) rev+=parseFloat(i.amount)||0; });
-    receipts.forEach(r=>{ const d=_pd(r.date); if(d&&d.getMonth()>=q&&d.getMonth()<q+3&&d.getFullYear()===y) rev+=parseFloat(r.amount)||0; });
-  } else { // year — all records
-    rev += invoices.filter(isIssued).reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-    rev += receipts.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
-  }
+  invoices.forEach(i => { if(isIssued(i) && w.inWin(i.created_at || i.date)) rev += parseFloat(i.amount)||0; });
+  receipts.forEach(r => { if(w.inWin(r.date)) rev += parseFloat(r.amount)||0; });
   return rev;
 }
 window.computeRevenue = computeRevenue;
@@ -1850,9 +1869,23 @@ function updateDashboard(d=getPeriodData()){
   document.getElementById('d-exp').textContent=S(_ddExp);
   document.getElementById('d-profit').textContent=S(_ddProfit);
   document.getElementById('d-chart-title').textContent='Revenue vs Expenses — '+d.label;
-  const rc=chg(_ddRev,d.prevRev);
-  const ec=chg(_ddExp,d.prevExp,true);
-  const pc=chg(_ddProfit,d.prevProfit);
+  // Prior-period baseline from the SAME windowed compute (same basis, payroll included) — NOT
+  // the old getPeriodData REV[]/EXP[] arrays, which used a different (payroll-excluded) basis
+  // and a stepper-varying index against a now-pinned numerator → the F33 ↑700%/↓39% deltas.
+  let _pRev=null,_pExp=null,_pProfit=null;
+  if(currentPeriod==='month'){
+    _pRev = computeRevenue('month', currentMonthIdx-1);
+    _pExp = computeExpenseBreakdown('month', currentMonthIdx-1).total;
+    _pProfit = _pRev - _pExp;                       // COGS is an all-time snapshot, not period-delta'd
+  } else if(currentPeriod==='quarter'){
+    const _priorQ = _fyContext().curFyIdx - 3;      // one fiscal quarter before the current one
+    _pRev = computeRevenue('quarter', _priorQ);
+    _pExp = computeExpenseBreakdown('quarter', _priorQ).total;
+    _pProfit = _pRev - _pExp;
+  } // year → null baseline → chg() shows the neutral "Full year total"
+  const rc=chg(_ddRev,_pRev);
+  const ec=chg(_ddExp,_pExp,true);
+  const pc=chg(_ddProfit,_pProfit);
   set('d-rev-chg',rc.txt,rc.cls);
   set('d-exp-chg',ec.txt,ec.cls);
   set('d-profit-chg',pc.txt,pc.cls);

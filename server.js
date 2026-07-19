@@ -3131,11 +3131,26 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     const uid = req.session.userId;
     const eid = req.entityId || null;
     const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
+    // F33/F25: optional explicit window (?start=YYYY-MM-DD&end=YYYY-MM-DD&elapsedMonths=N),
+    // resolved client-side from the fiscal-year setting + selected month so the dashboard and
+    // this endpoint reconcile at EVERY period. No params → legacy 'year' (backward compatible:
+    // the accountant portal + consolidated P&L call this with no window). Params present →
+    // validated strictly — a financial endpoint must never trust an arbitrary client window.
+    let bookPeriod = 'year';
+    const { start, end, elapsedMonths } = req.query;
+    if (start != null || end != null || elapsedMonths != null) {
+      const ws = new Date(start), we = new Date(end), em = parseInt(elapsedMonths, 10), DAY = 86400000;
+      const okDates = start && end && !isNaN(ws) && !isNaN(we) && we > ws;
+      const okRange = okDates && (we - ws) <= 366 * DAY && ws.getFullYear() >= 2000 && we.getFullYear() <= 2100;
+      const okElapsed = Number.isInteger(em) && em >= 0 && em <= 12;
+      if (!okRange || !okElapsed) return res.status(400).json({ error: 'Invalid period window.' });
+      bookPeriod = { start: ws.toISOString(), end: we.toISOString(), elapsedMonths: em };
+    }
     // Canonical figures from computeBooks (the single source shared with the dashboard,
     // /books and the report routes) so every surface reconciles. Revenue/expenses/net all
     // include receipts, payments, payroll accrual + FIFO COGS.
     const [books, invoices, expenses] = await Promise.all([
-      computeBooks(uid, eid, 'year'),
+      computeBooks(uid, eid, bookPeriod),
       db.allByUser('invoices', uid, matchEnt),
       db.allByUser('expenses', uid, matchEnt),
     ]);
@@ -3706,7 +3721,20 @@ async function computeBooks(userId, entityId = null, period = 'year') {
   const sum = (arr, f) => (arr || []).reduce((s, x) => s + f(x), 0);
   // entityId null → all entities (accountant "all" view); set → that entity + unassigned rows.
   const ent = r => entityId == null || r.entity_id == null || r.entity_id === entityId;
-  period = (period === 'month' || period === 'quarter') ? period : 'year'; // 'all' → 'year'
+  // F33/F25: an explicit window { start, end, elapsedMonths } (resolved client-side from the
+  // fiscal-year setting + selected month) overrides the legacy string period. A string period
+  // keeps EXACTLY the prior behavior — the accountant portal / consolidated P&L call
+  // computeBooks('year'|'month'|'quarter') and must not change (backward compatible).
+  let winMode = false, winInc = null, winElapsed = 0;
+  if (period && typeof period === 'object' && period.start && period.end) {
+    const ws = new Date(period.start), we = new Date(period.end);
+    if (!isNaN(ws) && !isNaN(we) && we > ws) {
+      winMode = true;
+      winInc = v => { const d = v ? new Date(v) : null; return !!d && !isNaN(d) && d >= ws && d < we; };
+      winElapsed = Math.max(0, Math.min(12, parseInt(period.elapsedMonths, 10) || 0));
+    }
+  }
+  period = winMode ? 'window' : ((period === 'month' || period === 'quarter') ? period : 'year'); // 'all' → 'year'
 
   const [invoices, expenses, paymentsMade, payroll, receipts] = await Promise.all([
     db.allByUser('invoices', userId, ent),
@@ -3738,7 +3766,10 @@ async function computeBooks(userId, entityId = null, period = 'year') {
   });
   const issueDate = i => _d(i.created_at || i.date);   // issue date, NOT due_date (F32)
   let issuedInvoices, salesReceipts;
-  if (period === 'month') {
+  if (winMode) {
+    issuedInvoices = sum(issuedInv.filter(i => winInc(i.created_at || i.date)), i => num(i.amount));
+    salesReceipts  = sum(receipts.filter(x => winInc(x.date)), x => num(x.amount));
+  } else if (period === 'month') {
     issuedInvoices = sum(issuedInv.filter(i => inMonth(issueDate(i))), i => num(i.amount));
     salesReceipts  = sum(receipts.filter(x => inMonth(_d(x.date))), x => num(x.amount));
   } else if (period === 'quarter') {
@@ -3752,13 +3783,15 @@ async function computeBooks(userId, entityId = null, period = 'year') {
 
   // ── OpEx (mirrors frontend computeExpenseBreakdown / E1) ──
   const inPeriod = v => {
+    if (winMode) return winInc(v);
     if (period === 'year') return true;
     const d = _d(v); if (!d) return false;
     return period === 'month' ? inMonth(d) : inQuarter(d);
   };
   const expensesTotal     = sum(expenses.filter(e => inPeriod(e.expense_date || e.date || e.created_at)), e => num(e.amount));
   const paymentsMadeTotal = sum(paymentsMade.filter(p => inPeriod(p.date || p.created_at)), p => num(p.amount));
-  const months = period === 'month' ? 1 : period === 'quarter' ? (mo - q + 1) : (mo + 1); // elapsed months in period
+  const months = winMode ? winElapsed
+    : period === 'month' ? 1 : period === 'quarter' ? (mo - q + 1) : (mo + 1); // elapsed months in period
   const monthlyPayroll = sum(payroll, p => num(p.gross));
   const payrollTotal = r2(monthlyPayroll * months);
   const opex = r2(expensesTotal + paymentsMadeTotal + payrollTotal);

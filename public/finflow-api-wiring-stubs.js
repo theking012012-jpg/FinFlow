@@ -391,6 +391,7 @@
   window.openNewBillModal = function () {
     _billEditId = null;
     setField('bill-vendor', ''); setField('bill-amount', '');
+    setField('bill-issue', (typeof todayLocal==='function'?todayLocal():todayStr())); // F36: default issue date = today (local)
     setField('bill-due', ''); setField('bill-status', 'unpaid');
     setField('bill-notes', '');
     const title = document.querySelector('#bill-modal .modal-title');
@@ -406,6 +407,7 @@
     _billEditId = id;
     setField('bill-vendor', b.vendor);
     setField('bill-amount', b.amount);
+    setField('bill-issue',  b.issue_date || '');   // F36: populate editable issue date
     setField('bill-due',    b.due_date);
     setField('bill-status', b.status);
     setField('bill-notes',  b.notes);
@@ -420,18 +422,19 @@
     const vendor   = fieldVal('bill-vendor').trim();
     const amount   = parseFloat(fieldVal('bill-amount')) || 0;
     const due_date = fieldVal('bill-due');
+    const issue_date = fieldVal('bill-issue') || (typeof todayLocal==='function'?todayLocal():todayStr()); // F36/F38
     const status   = fieldVal('bill-status') || 'unpaid';
     const notes    = fieldVal('bill-notes');
     if (!vendor || !amount) { showNotify('Vendor and amount required.', true); return; }
     try {
       if (_billEditId) {
-        await api('PUT', `/api/bills/${_billEditId}`, { vendor, amount, due_date, status, notes });
+        await api('PUT', `/api/bills/${_billEditId}`, { vendor, amount, due_date, issue_date, status, notes });
         const idx = _bills.findIndex(x => x.id === _billEditId);
-        if (idx > -1) _bills[idx] = { ..._bills[idx], vendor, amount, due_date, status, notes };
+        if (idx > -1) _bills[idx] = { ..._bills[idx], vendor, amount, due_date, issue_date, status, notes };
         showNotify('Bill updated ✦');
       } else {
         const _eidBS = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
-        const row = await api('POST', '/api/bills', { vendor, amount, due_date, status, notes, entity_id: _eidBS });
+        const row = await api('POST', '/api/bills', { vendor, amount, due_date, issue_date, status, notes, entity_id: _eidBS });
         _bills.unshift(row);
         showNotify('Bill created ✦');
       }

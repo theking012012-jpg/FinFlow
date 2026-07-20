@@ -840,14 +840,18 @@ app.get('/api/invoices', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('invoices', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
-  const { client, amount, due_date, status = 'pending', notes = '', entity_id } = req.body || {};
+  const { client, amount, due_date, status = 'pending', notes = '', entity_id, issue_date } = req.body || {};
   if (!client || amount == null) return res.status(400).json({ error: 'client and amount required.' });
   const eid = entity_id || req.entityId || null;
   if (await isLocked(req.session.userId, due_date)) return res.status(403).json({ error: 'Period is locked.' });
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + entity_id + client + amount).
   const _dup = await findRecentDuplicate('invoices', req.session.userId, eid, { textMatch: { client: client.trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('invoices', { user_id: req.session.userId, entity_id: eid, client: client.trim().slice(0,200), amount: parseFloat(amount)||0, due_date: due_date||null, status, notes: notes.slice(0,500) });
+  // F36: issue_date is the user-editable business issue date recognition keys on (Step 2).
+  // Store only when supplied — legacy/API rows with no issue_date fall back to created_at at
+  // recognition time. Not defaulted server-side (server "today" is UTC; the UI sends a LOCAL
+  // date), so we never fabricate a UTC issue date that could differ from the user's day.
+  const { row } = await db.insert('invoices', { user_id: req.session.userId, entity_id: eid, client: client.trim().slice(0,200), amount: parseFloat(amount)||0, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null });
   logAudit(req, 'CREATE', 'invoices', row.id, null, row);
   res.status(201).json(row);
 }));
@@ -856,12 +860,13 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
-  const { client, amount, due_date, status, notes } = req.body || {};
+  const { client, amount, due_date, status, notes, issue_date } = req.body || {};
   if (client != null) patch.client = client;
   if (amount != null) patch.amount = parseFloat(amount);
   if (due_date != null) patch.due_date = due_date;
   if (status != null) patch.status = status.toLowerCase();
   if (notes != null) patch.notes = notes;
+  if (issue_date != null) patch.issue_date = issue_date;   // F36: editable business issue date
   await db.updateById('invoices', row.id, patch);
   const { rows: [_iur] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [row.id]);
   const updated = _iur ? rowToObj(_iur) : {};
@@ -1940,13 +1945,15 @@ app.get('/api/bills', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('bills', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/bills', requireAuth, wrap(async (req, res) => {
-  const { vendor, amount, due_date, status = 'unpaid', notes = '' } = req.body;
+  const { vendor, amount, due_date, status = 'unpaid', notes = '', issue_date } = req.body;
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
   const entity = await activeEntity(req.session.userId);
   const num = 'BILL-' + String(Date.now()).slice(-4);
   const _dup = await findRecentDuplicate('bills', req.session.userId, entity?.id || null, { textMatch: { vendor: String(vendor) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('bills', { user_id: req.session.userId, entity_id: entity?.id, vendor, num, amount: Number(amount), due_date, status, notes });
+  // F36/F38: issue_date is the business issue date the (Step 4) expense-accrual leg keys on;
+  // stored only when supplied, legacy rows fall back to created_at at recognition time.
+  const { row } = await db.insert('bills', { user_id: req.session.userId, entity_id: entity?.id, vendor, num, amount: Number(amount), due_date, status, notes, issue_date: issue_date || null });
   res.json(row);
 }));
 app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
@@ -1958,11 +1965,12 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   if (!row) return res.status(404).json({ error: 'not found' });
   const patch = {};
   const b = req.body || {};
-  if (b.vendor   != null) patch.vendor   = b.vendor;
-  if (b.amount   != null) patch.amount   = Number(b.amount);
-  if (b.due_date != null) patch.due_date = b.due_date;
-  if (b.status   != null) patch.status   = b.status;
-  if (b.notes    != null) patch.notes    = b.notes;
+  if (b.vendor     != null) patch.vendor     = b.vendor;
+  if (b.amount     != null) patch.amount     = Number(b.amount);
+  if (b.due_date   != null) patch.due_date   = b.due_date;
+  if (b.status     != null) patch.status     = b.status;
+  if (b.notes      != null) patch.notes      = b.notes;
+  if (b.issue_date != null) patch.issue_date = b.issue_date;   // F36/F38: editable issue date
   await db.updateById('bills', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
@@ -3238,7 +3246,7 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   // Issue-based accrual (F32): recognize every ISSUED invoice at its issue month (created_at),
   // full amount, any recognized status — not just 'paid'. payments_received is not revenue.
   const _REC = new Set(['pending', 'overdue', 'partial', 'paid']);
-  invoices.filter(i => _REC.has((i.status || '').toLowerCase())).forEach(i => bump(i.created_at || i.date, 'revenue', i.amount));
+  invoices.filter(i => _REC.has((i.status || '').toLowerCase())).forEach(i => bump(i.issue_date || i.created_at || i.date, 'revenue', i.amount));   // F36: issue_date, created_at fallback (transition — see computeBooks issueDate)
   receipts.forEach(r => bump(r.date, 'revenue', r.amount));
   expenses.forEach(e => bump(e.expense_date || e.date || e.created_at, 'expenses', e.amount));
   paymentsMade.forEach(p => bump(p.date || p.created_at, 'expenses', p.amount));
@@ -3777,10 +3785,17 @@ async function computeBooks(userId, entityId = null, period = 'year') {
     if (RECOGNIZED.has((i.status || '').toLowerCase())) return true;
     unrecognizedStatusCount++; return false;
   });
-  const issueDate = i => _d(i.created_at || i.date);   // issue date, NOT due_date (F32)
+  // F36: recognize on the editable business issue_date; fall back to created_at for rows that
+  // predate the field. ⚠️ TRANSITION FALLBACK — TIME-BOXED, NOT CORRECT-FOREVER: created_at is
+  // a UTC insert timestamp. This account sits at a NEGATIVE UTC offset (todayLocal 2026-07-19
+  // vs UTC 2026-07-20), so a legacy row created in the first hours of UTC on the 1st of a month
+  // belongs to the PRIOR month locally, and keying off created_at misassigns its period. Today's
+  // invoices are mid-month (Jul 2–3, 02:34Z/21:46Z/21:25Z) so none is misassigned — but once
+  // every live row carries issue_date this fallback should be retired, not trusted indefinitely.
+  const issueDate = i => _d(i.issue_date || i.created_at || i.date);   // issue date, NOT due_date (F32/F36)
   let issuedInvoices, salesReceipts;
   if (winMode) {
-    issuedInvoices = sum(issuedInv.filter(i => winInc(i.created_at || i.date)), i => num(i.amount));
+    issuedInvoices = sum(issuedInv.filter(i => winInc(i.issue_date || i.created_at || i.date)), i => num(i.amount));
     salesReceipts  = sum(receipts.filter(x => winInc(x.date)), x => num(x.amount));
   } else if (period === 'month') {
     issuedInvoices = sum(issuedInv.filter(i => inMonth(issueDate(i))), i => num(i.amount));

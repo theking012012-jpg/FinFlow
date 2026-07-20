@@ -3349,7 +3349,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
   <div class="modal modal-wide">
     <div class="modal-header"><div><div class="modal-title">New invoice</div><div class="modal-sub">Create and track a new client invoice</div></div><button class="modal-close" onclick="closeModal('invoice-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-client">Client name *</label><input class="finput" id="inv-client" placeholder="Client or company name"></div><div class="field-wrap"><label class="field-label" for="inv-amount">Amount ($) *</label><input class="finput" id="inv-amount" type="number" placeholder="0.00"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-due">Due date</label><input class="finput" id="inv-due" type="date"></div><div class="field-wrap"><label class="field-label" for="inv-status">Status</label><select class="finput" id="inv-status"><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-issue">Issue date</label><input class="finput" id="inv-issue" type="date"></div><div class="field-wrap"><label class="field-label" for="inv-due">Due date</label><input class="finput" id="inv-due" type="date"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-status">Status</label><select class="finput" id="inv-status"><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></div></div>
     <div class="field-wrap"><label class="field-label" for="inv-desc">Description</label><textarea class="finput" id="inv-desc" placeholder="Services rendered…"></textarea></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('invoice-modal')">Cancel</button><button class="btn btn-primary" onclick="saveInvoice()">Create invoice</button></div>
   </div>
@@ -6371,7 +6372,10 @@ document.addEventListener('click', e=>{
       <div class="field-wrap"><label class="field-label" for="bill-amount">Amount ($) *</label><input class="finput" id="bill-amount" type="number" placeholder="0.00"></div>
     </div>
     <div class="field-group">
+      <div class="field-wrap"><label class="field-label" for="bill-issue">Issue date</label><input class="finput" id="bill-issue" type="date"></div>
       <div class="field-wrap"><label class="field-label" for="bill-due">Due Date</label><input class="finput" id="bill-due" type="date"></div>
+    </div>
+    <div class="field-group">
       <div class="field-wrap"><label class="field-label" for="bill-status">Status</label>
         <select class="finput" id="bill-status">
           <option value="unpaid">Unpaid</option>

@@ -620,6 +620,7 @@
 
     window.openNewBillModal = function () {
       ['bill-vendor','bill-amount','bill-notes','bill-end-date'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      const iss = document.getElementById('bill-issue'); if (iss) iss.value = (typeof todayLocal==='function'?todayLocal():todayStr()); // F36: default issue date = today (local)
       const d = document.getElementById('bill-due'); if (d) d.value = '';
       const s = document.getElementById('bill-status'); if (s) s.value = 'unpaid';
       const rc = document.getElementById('bill-recurring'); if (rc) rc.checked = false;
@@ -644,6 +645,7 @@
       if (!vendor) { notify('Vendor name required', true); return; }
       if (!amount || amount <= 0) { notify('Valid amount required', true); return; }
       const due_date = document.getElementById('bill-due')?.value    || null;
+      const issue_date = document.getElementById('bill-issue')?.value || (typeof todayLocal==='function'?todayLocal():todayStr()); // F36/F38
       const status   = document.getElementById('bill-status')?.value || 'unpaid';
       const notes    = document.getElementById('bill-notes')?.value?.trim() || '';
       const recurring = !!document.getElementById('bill-recurring')?.checked;
@@ -651,7 +653,7 @@
       const endDate   = document.getElementById('bill-end-date')?.value || null;
       try {
         const _eidBNew = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
-        const saved = await api('POST', '/api/bills', { vendor, amount, due_date, status, notes, entity_id: _eidBNew });
+        const saved = await api('POST', '/api/bills', { vendor, amount, due_date, issue_date, status, notes, entity_id: _eidBNew });
         _billsData.unshift(saved.row || saved);
         window.bills = _billsData;
         // Recurring: this bill IS the current occurrence; also create a recurring

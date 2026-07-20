@@ -63,7 +63,7 @@
     const expByMonth  = new Array(12).fill(0);
 
     invoices.forEach(inv => {
-      const d = parseDate(inv.created_at || inv.date);   // issue date, NOT due_date (F32)
+      const d = parseDate(inv.issue_date || inv.created_at || inv.date);   // F36 issue_date; created_at fallback is a time-boxed transition (UTC — see server computeBooks issueDate)
       if (!d) return;
       const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
       if (idx >= 0 && ['pending','overdue','partial','paid'].includes(inv.status?.toLowerCase())) revByMonth[idx] += parseFloat(inv.amount) || 0;
@@ -151,7 +151,7 @@
     // object's non-conflicting cards.
     const RECOGNIZED = ['pending','overdue','partial','paid'];
     const isIssued = i => RECOGNIZED.includes(i.status?.toLowerCase());
-    const issueD   = i => parseDate(i.created_at || i.date);
+    const issueD   = i => parseDate(i.issue_date || i.created_at || i.date);   // F36 issue_date; created_at fallback (transition)
     const receipts     = window.receipts      || [];
     const paymentsMade = window._paymentsMade || [];
     const m = now.getMonth(), y = now.getFullYear(), q = Math.floor(m / 3) * 3;

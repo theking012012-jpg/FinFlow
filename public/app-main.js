@@ -1685,7 +1685,10 @@ function computeRevenue(period, monthIdx){
   const invoices = window._realInvoices || [];
   const receipts = window.receipts      || [];
   let rev = 0;
-  invoices.forEach(i => { if(isIssued(i) && w.inWin(i.created_at || i.date)) rev += parseFloat(i.amount)||0; });
+  // F36: recognize on issue_date; created_at fallback is a TIME-BOXED transition (created_at is
+  // UTC; at a negative UTC offset a first-of-month row can misassign locally — see server
+  // computeBooks issueDate). Retire the fallback once every row carries issue_date.
+  invoices.forEach(i => { if(isIssued(i) && w.inWin(i.issue_date || i.created_at || i.date)) rev += parseFloat(i.amount)||0; });
   receipts.forEach(r => { if(w.inWin(r.date)) rev += parseFloat(r.amount)||0; });
   return rev;
 }
@@ -2053,6 +2056,7 @@ function openInvoiceModal(){
   const _sv=(id,v)=>{const el=document.getElementById(id); if(el) el.value=v;};
   _sv('inv-client','');
   _sv('inv-amount','');
+  _sv('inv-issue', (typeof todayLocal==='function'?todayLocal():'')); // F36: default issue date = today (LOCAL, F37), backdatable
   _sv('inv-due','');
   _sv('inv-status','pending');
   _sv('inv-desc','');

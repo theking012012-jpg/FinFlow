@@ -529,6 +529,8 @@
       const due    = document.getElementById('inv-due')?.value;
       const status = document.getElementById('inv-status')?.value || 'pending';
       const notes  = document.getElementById('inv-desc')?.value?.trim() || '';
+      // F36: business issue date (default today, backdatable). Recognition keys on this.
+      const issue_date = document.getElementById('inv-issue')?.value || (typeof todayLocal==='function'?todayLocal():null);
       const dueStr = due ? new Date(due).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'TBD';
 
       try {
@@ -540,6 +542,7 @@
           client,
           amount:   amountRaw,
           due_date: due || null,
+          issue_date,
           status,
           notes,
           entity_id: _entityId,
@@ -2497,6 +2500,7 @@
   window.openNewBillModal = function () {
     _billEditId = null;
     setField('bill-vendor', ''); setField('bill-amount', '');
+    setField('bill-issue', (typeof todayLocal==='function'?todayLocal():todayStr())); // F36: default issue date = today (local)
     setField('bill-due', ''); setField('bill-status', 'unpaid');
     setField('bill-notes', '');
     const title = document.querySelector('#bill-modal .modal-title');
@@ -2512,6 +2516,7 @@
     _billEditId = id;
     setField('bill-vendor', b.vendor);
     setField('bill-amount', b.amount);
+    setField('bill-issue',  b.issue_date || '');   // F36: populate editable issue date
     setField('bill-due',    b.due_date);
     setField('bill-status', b.status);
     setField('bill-notes',  b.notes);
@@ -2526,18 +2531,19 @@
     const vendor   = fieldVal('bill-vendor').trim();
     const amount   = parseFloat(fieldVal('bill-amount')) || 0;
     const due_date = fieldVal('bill-due');
+    const issue_date = fieldVal('bill-issue') || (typeof todayLocal==='function'?todayLocal():todayStr()); // F36/F38
     const status   = fieldVal('bill-status') || 'unpaid';
     const notes    = fieldVal('bill-notes');
     if (!vendor || !amount) { showNotify('Vendor and amount required.', true); return; }
     try {
       if (_billEditId) {
-        await api('PUT', `/api/bills/${_billEditId}`, { vendor, amount, due_date, status, notes });
+        await api('PUT', `/api/bills/${_billEditId}`, { vendor, amount, due_date, issue_date, status, notes });
         const idx = _bills.findIndex(x => x.id === _billEditId);
-        if (idx > -1) _bills[idx] = { ..._bills[idx], vendor, amount, due_date, status, notes };
+        if (idx > -1) _bills[idx] = { ..._bills[idx], vendor, amount, due_date, issue_date, status, notes };
         showNotify('Bill updated ✦');
       } else {
         const _eidBS = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
-        const row = await api('POST', '/api/bills', { vendor, amount, due_date, status, notes, entity_id: _eidBS });
+        const row = await api('POST', '/api/bills', { vendor, amount, due_date, issue_date, status, notes, entity_id: _eidBS });
         _bills.unshift(row);
         showNotify('Bill created ✦');
       }
@@ -3947,6 +3953,7 @@ function clearAIChat(){
 
     window.openNewBillModal = function () {
       ['bill-vendor','bill-amount','bill-notes','bill-end-date'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      const iss = document.getElementById('bill-issue'); if (iss) iss.value = (typeof todayLocal==='function'?todayLocal():todayStr()); // F36: default issue date = today (local)
       const d = document.getElementById('bill-due'); if (d) d.value = '';
       const s = document.getElementById('bill-status'); if (s) s.value = 'unpaid';
       const rc = document.getElementById('bill-recurring'); if (rc) rc.checked = false;
@@ -3971,6 +3978,7 @@ function clearAIChat(){
       if (!vendor) { notify('Vendor name required', true); return; }
       if (!amount || amount <= 0) { notify('Valid amount required', true); return; }
       const due_date = document.getElementById('bill-due')?.value    || null;
+      const issue_date = document.getElementById('bill-issue')?.value || (typeof todayLocal==='function'?todayLocal():todayStr()); // F36/F38
       const status   = document.getElementById('bill-status')?.value || 'unpaid';
       const notes    = document.getElementById('bill-notes')?.value?.trim() || '';
       const recurring = !!document.getElementById('bill-recurring')?.checked;
@@ -3978,7 +3986,7 @@ function clearAIChat(){
       const endDate   = document.getElementById('bill-end-date')?.value || null;
       try {
         const _eidBNew = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
-        const saved = await api('POST', '/api/bills', { vendor, amount, due_date, status, notes, entity_id: _eidBNew });
+        const saved = await api('POST', '/api/bills', { vendor, amount, due_date, issue_date, status, notes, entity_id: _eidBNew });
         _billsData.unshift(saved.row || saved);
         window.bills = _billsData;
         // Recurring: this bill IS the current occurrence; also create a recurring
@@ -5084,7 +5092,7 @@ function clearAIChat(){
     const expByMonth  = new Array(12).fill(0);
 
     invoices.forEach(inv => {
-      const d = parseDate(inv.created_at || inv.date);   // issue date, NOT due_date (F32)
+      const d = parseDate(inv.issue_date || inv.created_at || inv.date);   // F36 issue_date; created_at fallback is a time-boxed transition (UTC — see server computeBooks issueDate)
       if (!d) return;
       const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
       if (idx >= 0 && ['pending','overdue','partial','paid'].includes(inv.status?.toLowerCase())) revByMonth[idx] += parseFloat(inv.amount) || 0;
@@ -5172,7 +5180,7 @@ function clearAIChat(){
     // object's non-conflicting cards.
     const RECOGNIZED = ['pending','overdue','partial','paid'];
     const isIssued = i => RECOGNIZED.includes(i.status?.toLowerCase());
-    const issueD   = i => parseDate(i.created_at || i.date);
+    const issueD   = i => parseDate(i.issue_date || i.created_at || i.date);   // F36 issue_date; created_at fallback (transition)
     const receipts     = window.receipts      || [];
     const paymentsMade = window._paymentsMade || [];
     const m = now.getMonth(), y = now.getFullYear(), q = Math.floor(m / 3) * 3;

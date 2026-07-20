@@ -99,6 +99,8 @@
       const due    = document.getElementById('inv-due')?.value;
       const status = document.getElementById('inv-status')?.value || 'pending';
       const notes  = document.getElementById('inv-desc')?.value?.trim() || '';
+      // F36: business issue date (default today, backdatable). Recognition keys on this.
+      const issue_date = document.getElementById('inv-issue')?.value || (typeof todayLocal==='function'?todayLocal():null);
       const dueStr = due ? new Date(due).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'TBD';
 
       try {
@@ -110,6 +112,7 @@
           client,
           amount:   amountRaw,
           due_date: due || null,
+          issue_date,
           status,
           notes,
           entity_id: _entityId,

@@ -131,7 +131,11 @@ function renderPaymentsReceived(){
   });
 }
 
-function openRecordPaymentModal(){
+// F35 Step 5: renamed off the colliding `openRecordPaymentModal` name — that name is now
+// exclusively the invoice Store-B opener (index.html:4160). This is the Store-A received-payment
+// opener for the Payments-Received page. (pages.js also defines window.openPaymentReceivedModal
+// and wins by load order; this decl is the same Store-A intent.)
+function openPaymentReceivedModal(){
   _st('pr-modal-title','Record Payment Received');
   _sv('pr-id','');
   _sv('pr-customer','');

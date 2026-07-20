@@ -2790,7 +2790,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Avg Days to Pay</div><div class="mc-val">—</div><div class="mc-change neutral">No data yet</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><h2 class="card-title">Payments Received</h2><button class="btn btn-primary btn-sm" onclick="openRecordPaymentModal()">+ Record Payment</button></div>
+          <div class="card-header"><h2 class="card-title">Payments Received</h2><button class="btn btn-primary btn-sm" onclick="openPaymentReceivedModal()">+ Record Payment</button></div>
           <div style="display:grid;grid-template-columns:1fr 100px 80px 80px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Customer</span><span>Invoice #</span><span>Amount</span><span>Date</span><span>Method</span></div>
           <div id="payments-recv-list"></div>
         </div>
@@ -6292,7 +6292,7 @@ document.addEventListener('click', e=>{
   window.openProjectModal           = window.openProjectModal           || function(){ (window.openNewProjectModal         || _modal('project-modal'))(); };
   window.openTimesheetModal         = window.openTimesheetModal         || function(){ (window.openLogTimeModal            || _modal('timesheet-modal'))(); };
   window.openReceiptModal           = window.openReceiptModal           || function(){ (window.openNewReceiptModal         || _modal('modal-receipt'))(); };
-  window.openPaymentReceivedModal   = window.openPaymentReceivedModal   || function(){ (window.openRecordPaymentModal      || _modal('modal-payment-received'))(); };
+  window.openPaymentReceivedModal   = window.openPaymentReceivedModal   || function(){ _modal('modal-payment-received')(); };  // F35 Step 5: fallback no longer references openRecordPaymentModal (that is now the invoice Store-B opener)
   window.openPaymentMadeModal       = window.openPaymentMadeModal       || function(){ (window.openMakePaymentModal        || _modal('modal-payment-made'))(); };
   window.openRecurringInvoiceModal  = window.openRecurringInvoiceModal  || function(){ (window.openNewRecurringModal       || _modal('recurring-inv-modal'))(); };
   window.openRecurringBillModal     = window.openRecurringBillModal     || function(){ (window.openNewRecurringBillModal   || _modal('recurring-bill-modal'))(); };

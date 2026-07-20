@@ -5127,7 +5127,7 @@ function clearAIChat(){
 
     // Include ONLY orphan payments (bill_id IS NULL) in expenses. A bill-linked payment settles
     // AP (Dr AP / Cr Cash), it is not a fresh expense — counting it double-counts the bill leg.
-    (window._paymentsMade || []).filter(p => p.bill_id == null).forEach(p => {
+    (window.paymentsMade || []).filter(p => p.bill_id == null).forEach(p => {
       const d = parseDate(p.date);
       if (!d) return;
       const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
@@ -5194,7 +5194,7 @@ function clearAIChat(){
     const isIssued = i => RECOGNIZED.includes(i.status?.toLowerCase());
     const issueD   = i => parseDate(i.issue_date || i.created_at || i.date);   // F36 issue_date; created_at fallback (transition)
     const receipts     = window.receipts      || [];
-    const paymentsMade = window._paymentsMade || [];
+    const paymentsMade = window.paymentsMade || [];
     const m = now.getMonth(), y = now.getFullYear(), q = Math.floor(m / 3) * 3;
     const inP = d => {
       if (!d) return false;

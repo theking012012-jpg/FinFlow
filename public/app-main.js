@@ -1571,7 +1571,7 @@ function getPeriodData(){
 // Both the dashboard Expenses/Net-Profit KPIs and the Expenses-page
 // Total/Business/Tax-deductible KPIs call THIS function. Given the active
 // entity's real expense rows (window._realExpenses), issued bills accrued as
-// expense (window.bills — F38 Step 4), orphan bill payments (window._paymentsMade,
+// expense (window.bills — F38 Step 4), orphan bill payments (window.paymentsMade,
 // bill_id IS NULL) and entity payroll (window.ownerPayroll + window.payrollEmployees),
 // it returns totals that are identical on every screen for the same entity + period.
 // No fabricated ratios anywhere.
@@ -1607,7 +1607,7 @@ function computeExpenseBreakdown(period, monthIdx){
     .reduce((s,b)=>s+(parseFloat(b.amount)||0),0);
   // Only ORPHAN payments (bill_id IS NULL) stay expense — a bill-linked payment is a settlement
   // (Dr AP / Cr Cash), not a fresh expense; counting it double-counts the issued-bill leg.
-  const pmade = (window._paymentsMade || []).filter(p=>p.bill_id==null && inPeriod(p.date||p.created_at));
+  const pmade = (window.paymentsMade || []).filter(p=>p.bill_id==null && inPeriod(p.date||p.created_at));
   const paymentsMade = pmade.reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
   // Payroll for the ACTIVE entity (owner + employees), monthly gross × months.
   // Build a NEW array — never mutate window.payrollEmployees.

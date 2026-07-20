@@ -2223,9 +2223,12 @@ app.get('/api/payments-made', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('payments_made', req.session.userId));
 }));
 app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
-  const { vendor, amount, date, method, notes, ref } = req.body || {};
+  const { vendor, amount, date, method, notes, ref, bill_id } = req.body || {};
   const _dup = await findRecentDuplicate('payments_made', req.session.userId, req.entityId || null, { textMatch: { vendor: (vendor || '').trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
   if (_dup) return res.json(_dup);
+  // F38 Step 3: bill_id links this payment to a bill (nullable). A LINKED payment settles AP
+  // (Step 4 excludes it from expense); an UNLINKED (bill_id null) payment stays a direct expense.
+  const _billId = (bill_id != null && bill_id !== '') ? Number(bill_id) : null;
   const { row } = await db.insert('payments_made', {
     user_id: req.session.userId,
     entity_id: req.entityId || null,
@@ -2235,16 +2238,19 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
     method: (method || '').slice(0, 50),
     notes: (notes || '').slice(0, 500),
     ref: (ref || '').slice(0, 100),
+    bill_id: _billId,
   });
+  if (_billId != null) await recalcBillStatus(pool, _billId, req.session.userId);
   res.json(row);
 }));
 app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
-  const { vendor, amount, date, method, notes, ref } = req.body || {};
+  const { vendor, amount, date, method, notes, ref, bill_id } = req.body || {};
   const { rows: [_pmchk] } = await pool.query(
-    `SELECT id FROM payments_made WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    `SELECT * FROM payments_made WHERE id = $1 AND user_id = $2 LIMIT 1`,
     [Number(req.params.id), scopeId(req)]
   );
   if (!_pmchk) return res.json({ ok: true });
+  const _oldBillId = _pmchk.data && _pmchk.data.bill_id != null ? Number(_pmchk.data.bill_id) : null;
   const patch = {};
   if (vendor != null) patch.vendor = String(vendor).trim().slice(0, 200);
   if (amount != null) patch.amount = parseFloat(amount) || 0;
@@ -2252,11 +2258,20 @@ app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
   if (method != null) patch.method = String(method).slice(0, 50);
   if (notes != null) patch.notes = String(notes).slice(0, 500);
   if (ref != null) patch.ref = String(ref).slice(0, 100);
+  let _newBillId = _oldBillId;
+  if (bill_id !== undefined) { _newBillId = (bill_id != null && bill_id !== '') ? Number(bill_id) : null; patch.bill_id = _newBillId; }
   await db.updateById('payments_made', _pmchk.id, patch);
+  // F38 Step 3: recalc every bill this payment touched — the old link and the new one (deduped),
+  // so amount/link changes redraw AP on both the previous and current bill.
+  for (const b of new Set([_oldBillId, _newBillId])) { if (b != null) await recalcBillStatus(pool, b, req.session.userId); }
   res.json({ ok: true });
 }));
 app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
+  // F38 Step 3: capture the linked bill BEFORE deleting so its AP is redrawn afterward.
+  const { rows: [_pmrow] } = await pool.query('SELECT * FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  const _billId = _pmrow && _pmrow.data && _pmrow.data.bill_id != null ? Number(_pmrow.data.bill_id) : null;
   await pool.query('DELETE FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  if (_billId != null) await recalcBillStatus(pool, _billId, req.session.userId);
   res.json({ ok: true });
 }));
 
@@ -3282,7 +3297,13 @@ app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
   ]);
   const cash = Math.max(0, books.netProfit);          // proxy: no cash account is tracked
   const ar   = books.outstanding;                     // canonical unpaid AR
-  const ap   = (bills || []).filter(b => b.status !== 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+  // F38 Step 3: AP = Σ(amount − amount_paid) over RECOGNIZED, non-paid bills — the payables
+  // mirror of the AR drawdown in computeBooks. amount_paid is written by recalcBillStatus; for
+  // bills with no linked payments it is absent → 0, so this equals Σ(amount) as before (no-op
+  // until payments_made rows carry a bill_id). Unknown statuses are excluded, not counted.
+  const ap   = (bills || [])
+    .filter(b => { const s = (b.status || '').toLowerCase(); return RECOGNIZED_BILL.has(s) && s !== 'paid'; })
+    .reduce((s, b) => s + ((parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
   const totalAssets      = Math.round((cash + ar) * 100) / 100;
   const totalLiabilities = Math.round(ap * 100) / 100;
   res.json({ cash, accountsReceivable: ar, totalAssets, accountsPayable: totalLiabilities, totalLiabilities, equity: Math.round((totalAssets - totalLiabilities) * 100) / 100 });
@@ -3467,6 +3488,35 @@ async function recalcInvoiceStatus(pool, invoiceId, userId) {
   const status = paid >= total ? 'paid' : paid > 0 ? 'partial' : invRow.status;
   await db.updateById('invoices', invoiceId, { status, amount_paid: paid });
 }
+
+// F38 Step 3 — the payables mirror of recalcInvoiceStatus. Sums the payments_made LINKED to a
+// bill (data->>'bill_id') and writes the bill's amount_paid + status. payments_made is a JSONB
+// table (amount/bill_id live in `data`), so the sum casts data->>'amount'; the link matches on
+// data->>'bill_id' as text. Same status rule as invoices: paid≥total→paid, >0→partial, else keep
+// prior (a shared quirk: deleting the last payment leaves 'partial' with amount_paid 0 — harmless,
+// AP uses amount−amount_paid so the money is still correct). RECOGNIZED_BILL (below) is the
+// recognition allowlist Step 4's expense leg and the balance-sheet AP both key on.
+async function recalcBillStatus(pool, billId, userId) {
+  const { rows: [_blR] } = await pool.query(
+    `SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]
+  );
+  const billRow = _blR ? rowToObj(_blR) : null;
+  if (!billRow) return;
+  const { rows } = await pool.query(
+    `SELECT COALESCE(SUM((data->>'amount')::numeric),0) AS paid
+       FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2`,
+    [userId, String(billId)]
+  );
+  const paid = parseFloat(rows[0].paid) || 0;
+  const total = parseFloat(billRow.amount) || 0;
+  const status = paid >= total ? 'paid' : paid > 0 ? 'partial' : billRow.status;
+  await db.updateById('bills', billId, { status, amount_paid: paid });
+}
+
+// F38: recognized bill statuses — the payables analog of the invoice RECOGNIZED set. An 'unpaid'
+// bill is the analog of a 'pending' invoice: issued and unsettled, so it IS an expense + AP.
+// Unknown statuses are excluded (Step 4 flags them), never silently counted.
+const RECOGNIZED_BILL = new Set(['unpaid', 'due_soon', 'overdue', 'partial', 'paid']);
 
 app.get('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   const { invoice_id } = req.query;

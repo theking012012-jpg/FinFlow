@@ -1812,6 +1812,21 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
       </div>
 
+      <!-- SETTLE FX TRANSACTION MODAL (PL#6) -->
+      <div class="modal-overlay hidden" id="fx-settle-modal">
+        <div class="modal">
+          <div class="modal-header">
+            <div><div class="modal-title">Settle FX Transaction</div><div class="modal-sub">Enter the exchange rate at settlement</div></div>
+            <button class="modal-close" onclick="closeModal('fx-settle-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+          </div>
+          <div class="field-wrap"><label class="field-label" for="fx-settle-rate">Rate at Settlement</label><input class="finput" id="fx-settle-rate" type="number" placeholder="e.g. 0.1495" step="any"></div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('fx-settle-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="saveFXSettlement()">Settle →</button>
+          </div>
+        </div>
+      </div>
+
       <!-- ADD HOLDING MODAL -->
       <div class="modal-overlay hidden" id="holding-modal">
         <div class="modal">
@@ -4594,14 +4609,18 @@ async function addFXTransaction(){
   }catch(e){notify('Could not save transaction',true);}
 }
 
-async function settleFXTransaction(id){
-  // TODO: Replace with modal input — prompt() removed per audit Finding 34
-  if(!confirm('Settle this FX transaction? You can update the rate in the transaction detail view.')) return;
-  notify('Open the FX transaction detail to enter the settlement rate.', true); return;
-  const rateStr=null; // unreachable — replaced above
-  if(!rateStr)return;
-  const rate=parseFloat(rateStr);
-  if(!rate||rate<=0){notify('Invalid rate',true);return;}
+// PL#6: settlement rate is collected via #fx-settle-modal (prompt() was removed per audit).
+let _fxSettleId=null;
+function settleFXTransaction(id){
+  _fxSettleId=id;
+  const el=document.getElementById('fx-settle-rate'); if(el) el.value='';
+  openModal('fx-settle-modal');
+}
+async function saveFXSettlement(){
+  const id=_fxSettleId;
+  if(id==null){closeModal('fx-settle-modal');return;}
+  const rate=parseFloat(document.getElementById('fx-settle-rate')?.value);
+  if(!rate||rate<=0){notify('Enter a valid settlement rate',true);return;}
   try{
     const res=await fetch('/api/fx-transactions/'+id+'/settle',{
       method:'POST',credentials:'include',
@@ -4610,6 +4629,8 @@ async function settleFXTransaction(id){
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
+    closeModal('fx-settle-modal');
+    _fxSettleId=null;
     const gl=parseFloat(data.transaction?.realised_gain_loss||0);
     notify('✓ Settled · Gain/Loss: '+(gl>=0?'+':'')+S(Math.abs(gl)));
     loadFXData();
@@ -6435,8 +6456,11 @@ document.addEventListener('click', e=>{
       </div>
       <div class="field-wrap"><label class="field-label" for="ri-next">Next Run</label><input class="finput" id="ri-next" type="date"></div>
     </div>
-    <div class="field-wrap"><label class="field-label" for="ri-status">Status</label>
-      <select class="finput" id="ri-status"><option value="active">Active</option><option value="paused">Paused</option></select>
+    <div class="field-group">
+      <div class="field-wrap"><label class="field-label" for="ri-end">End Date (optional)</label><input class="finput" id="ri-end" type="date"></div>
+      <div class="field-wrap"><label class="field-label" for="ri-status">Status</label>
+        <select class="finput" id="ri-status"><option value="active">Active</option><option value="paused">Paused</option></select>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="document.getElementById('recurring-inv-modal').classList.add('hidden')">Cancel</button>

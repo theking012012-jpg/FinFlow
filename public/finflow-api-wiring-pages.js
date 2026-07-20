@@ -344,7 +344,7 @@
     };
 
     window.openNewRecurringModal = function () {
-      ['ri-client','ri-amount'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      ['ri-client','ri-amount','ri-end'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const f = document.getElementById('ri-freq'); if (f) f.value = 'Monthly';
       const n = document.getElementById('ri-next'); if (n) n.value = todayStr();
       const s = document.getElementById('ri-status'); if (s) s.value = 'active';
@@ -359,8 +359,9 @@
       const frequency = document.getElementById('ri-freq')?.value   || 'Monthly';
       const next_run  = document.getElementById('ri-next')?.value   || todayStr();
       const status    = document.getElementById('ri-status')?.value || 'active';
+      const end_date  = document.getElementById('ri-end')?.value    || null;
       try {
-        const saved = await api('POST', '/api/recurring-invoices', { client, amount, frequency, next_run, status });
+        const saved = await api('POST', '/api/recurring-invoices', { client, amount, frequency, next_run, status, end_date });
         _recurringInvData.unshift(saved.row || saved);
         window.recurringInvoices = _recurringInvData;
         closeModal('recurring-inv-modal');

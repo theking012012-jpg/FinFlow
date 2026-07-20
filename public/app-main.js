@@ -6,6 +6,21 @@ if(typeof sendPrompt==='undefined'){
 }
 
 // ════════════════════════════════════════════
+// LOCAL DATE HELPER (F37)
+// ════════════════════════════════════════════
+// new Date().toISOString() emits a UTC calendar date — for users behind or
+// ahead of UTC it rolls over near midnight and defaults date fields to the
+// wrong day. Format from LOCAL components so "today" means the user's today.
+function toLocalYMD(d){
+  d = d || new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function todayLocal(){ return toLocalYMD(new Date()); }
+
+// ════════════════════════════════════════════
 // MULTI-CURRENCY ENGINE
 // ════════════════════════════════════════════
 // ── ALL WORLD CURRENCIES (rates vs USD, Apr 2026) ─────────────────────────
@@ -836,7 +851,7 @@ window.exportAuditCSV = async function(){
     const csv = rows.map(r => r.map(q).join(',')).join('\r\n');
     const blob = new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
-    const filename = 'finflow-audit-' + new Date().toISOString().slice(0,10) + '.csv';
+    const filename = 'finflow-audit-' + todayLocal() + '.csv';
     const a = Object.assign(document.createElement('a'), {href:url, download:filename});
     document.body.appendChild(a);
     a.click();
@@ -962,7 +977,7 @@ function openJournalEntryModal(){
   // Restore lines to 2 blank rows
   window._jeLines = [{code:'',dr:0,cr:0},{code:'',dr:0,cr:0}];
   renderJELines();
-  document.getElementById('je-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('je-date').value = todayLocal();
   document.getElementById('je-notes').value = '';
   updateJETotals();
   document.getElementById('journal-entry-modal').classList.remove('hidden');
@@ -2995,7 +3010,7 @@ async function persQuickAdd(){
   const desc=(document.getElementById('qa-desc')?.value||'').trim()||cat;
   const currency=document.getElementById('qa-currency')?.value||persCurrency;
   try{
-    await _persCommitTx({desc,amount,cat,type:'expense',date:new Date().toISOString().slice(0,10),currency});
+    await _persCommitTx({desc,amount,cat,type:'expense',date:todayLocal(),currency});
     const a=document.getElementById('qa-amount'); if(a) a.value='';
     const d=document.getElementById('qa-desc');   if(d) d.value='';
     if(a) a.focus();
@@ -3028,7 +3043,7 @@ async function persIncomeAdd(){
   const desc=(document.getElementById('qai-desc')?.value||'').trim()||cat;
   const currency=document.getElementById('qai-currency')?.value||persCurrency;
   try{
-    await _persCommitTx({desc,amount,cat,type:'income',date:new Date().toISOString().slice(0,10),currency});
+    await _persCommitTx({desc,amount,cat,type:'income',date:todayLocal(),currency});
     const a=document.getElementById('qai-amount'); if(a) a.value='';
     const d=document.getElementById('qai-desc');   if(d) d.value='';
     if(a) a.focus();
@@ -3062,7 +3077,7 @@ function openTransactionModal(type,editTx){
   // Carry over anything already typed in the quick-add bar for a smooth handoff.
   setV('tx-amount', isEdit?editTx.amount:(document.getElementById('qa-amount')?.value||''));
   setV('tx-desc',   isEdit?editTx.desc:(document.getElementById('qa-desc')?.value||''));
-  setV('tx-date',   isEdit?(editTx.date||new Date().toISOString().slice(0,10)):new Date().toISOString().slice(0,10));
+  setV('tx-date',   isEdit?(editTx.date||todayLocal()):todayLocal());
   // Currency picker: populate options, then default (new → view currency; edit →
   // the transaction's OWN stored currency so it shows and can be changed).
   _ensureTxCurrencyOptions();
@@ -3107,7 +3122,7 @@ async function _prefillRecurringForEdit(editTx){
 }
 // Next occurrence for a recurring personal transaction (mirrors server nextRunDate).
 function _txNextRun(dateStr,freq){
-  const d=new Date(dateStr||new Date().toISOString().slice(0,10));
+  const d=new Date(dateStr||todayLocal());
   if(freq==='Weekly')         d.setDate(d.getDate()+7);
   else if(freq==='Quarterly') d.setMonth(d.getMonth()+3);
   else if(freq==='Yearly')    d.setFullYear(d.getFullYear()+1);
@@ -3120,7 +3135,7 @@ async function saveTransaction(){
   if(!desc||!amount||amount<=0){notify('Description and a valid amount are required',true);return;}
   const cat=window._txmCat||'Other';
   const type=window._txmType||'expense';
-  const date=document.getElementById('tx-date')?.value||new Date().toISOString().slice(0,10);
+  const date=document.getElementById('tx-date')?.value||todayLocal();
   const currency=document.getElementById('tx-currency')?.value||persCurrency;
   const editId=document.getElementById('tx-edit-id')?.value||'';
   const recurring=!!document.getElementById('tx-recurring')?.checked;
@@ -3806,7 +3821,7 @@ function calcPortfolio(){
   // REAL day change = current value − most recent PRIOR-day snapshot. null when
   // there's no prior-day snapshot yet (shown as "—"). No simulated figure.
   const _snaps=(window._portSnapshots||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
-  const _today=new Date().toISOString().slice(0,10);
+  const _today=todayLocal();
   const _prior=_snaps.filter(s=>s.date && s.date<_today).pop();
   const dayChg = _prior ? (totalValue - (parseFloat(_prior.value)||0)) : null;
   return{totalValue,totalCost,totalGain:totalValue-totalCost,totalDiv,dayChg};
@@ -4559,14 +4574,19 @@ async function loadBankingFromDB(){
     const res = await fetch('/api/banking',{credentials:'include'});
     if(!res.ok) return;
     const rows = await res.json();
-    bankTxns = rows.map(r=>({
-      _dbId: r.id,
-      desc: r.description,
-      amount: Math.abs(r.amount),
-      type: r.type==='credit'?'credit':'debit',
-      date: r.date ? new Date(r.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'Today',
-      cat: r.category||'Other',
-    }));
+    bankTxns = rows.map(r=>{
+      // F23: read canonical tx_type/tx_date, falling back to legacy type/date rows.
+      const _iso = (r.tx_date || r.date) || '';
+      return {
+        _dbId: r.id,
+        desc: r.description,
+        amount: Math.abs(r.amount),
+        type: (r.tx_type || r.type)==='credit'?'credit':'debit',
+        _iso,   // raw YYYY-MM-DD for month filtering (display `date` below is localized)
+        date: _iso ? new Date(_iso).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'Today',
+        cat: r.category||'Other',
+      };
+    });
     if(typeof renderBanking==='function') renderBanking();
   } catch(e){ console.warn('[Banking] Load failed:',e.message); }
 }
@@ -4574,7 +4594,7 @@ async function loadBankingFromDB(){
 async function saveBankTxn(desc, amount, type, cat){
   try {
     const res = await fetch('/api/banking',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({desc, amount, type, cat, date:new Date().toISOString().slice(0,10)})});
+      body:JSON.stringify({desc, amount, type, cat, date:todayLocal()})});
     if(!res.ok) throw new Error('Save failed');
     await loadBankingFromDB();
     window.finflow?.refresh(['banking','dashboard','reports']);
@@ -4585,7 +4605,7 @@ function renderBanking(){
   const _bkSet = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   const _bkTotal = (bankAccounts||[]).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
   const _now = new Date(), _ym = _now.getFullYear()+'-'+String(_now.getMonth()+1).padStart(2,'0');
-  const _bkMtd = (bankTxns||[]).filter(t => (t.date||'').startsWith(_ym));
+  const _bkMtd = (bankTxns||[]).filter(t => (t._iso||'').startsWith(_ym));
   const _bkIn  = _bkMtd.filter(t => t.type==='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkOut = _bkMtd.filter(t => t.type!=='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkUncat = (bankTxns||[]).filter(t => !t.cat || /uncategor/i.test(t.cat)).length;

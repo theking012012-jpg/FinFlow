@@ -610,7 +610,7 @@
     _riEditId = null;
     setField('ri-client', ''); setField('ri-amount', '');
     setField('ri-freq', 'Monthly'); setField('ri-next', '');
-    setField('ri-status', 'active');
+    setField('ri-end', ''); setField('ri-status', 'active');
     const title = document.querySelector('#recurring-inv-modal .modal-title');
     if (title) title.textContent = 'New Recurring Invoice';
     const btn = document.querySelector('#recurring-inv-modal .ff-save-btn');
@@ -626,6 +626,7 @@
     setField('ri-amount', r.amount);
     setField('ri-freq',   r.frequency);
     setField('ri-next',   r.next_run);
+    setField('ri-end',    r.end_date || '');
     setField('ri-status', r.status);
     const title = document.querySelector('#recurring-inv-modal .modal-title');
     if (title) title.textContent = 'Edit Recurring Invoice';
@@ -640,15 +641,16 @@
     const frequency = fieldVal('ri-freq') || 'Monthly';
     const next_run  = fieldVal('ri-next');
     const status    = fieldVal('ri-status') || 'active';
+    const end_date  = fieldVal('ri-end') || null;
     if (!client || !amount) { showNotify('Client and amount required.', true); return; }
     try {
       if (_riEditId) {
-        await api('PUT', `/api/recurring-invoices/${_riEditId}`, { client, amount, frequency, next_run, status });
+        await api('PUT', `/api/recurring-invoices/${_riEditId}`, { client, amount, frequency, next_run, status, end_date });
         const idx = _recurringInvoices.findIndex(x => x.id === _riEditId);
-        if (idx > -1) _recurringInvoices[idx] = { ..._recurringInvoices[idx], client, amount, frequency, next_run, status };
+        if (idx > -1) _recurringInvoices[idx] = { ..._recurringInvoices[idx], client, amount, frequency, next_run, status, end_date };
         showNotify('Profile updated ✦');
       } else {
-        const row = await api('POST', '/api/recurring-invoices', { client, amount, frequency, next_run, status });
+        const row = await api('POST', '/api/recurring-invoices', { client, amount, frequency, next_run, status, end_date });
         _recurringInvoices.push(row);
         showNotify('Recurring invoice added ✦');
       }

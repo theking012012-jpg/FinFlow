@@ -2716,7 +2716,7 @@
     _riEditId = null;
     setField('ri-client', ''); setField('ri-amount', '');
     setField('ri-freq', 'Monthly'); setField('ri-next', '');
-    setField('ri-status', 'active');
+    setField('ri-end', ''); setField('ri-status', 'active');
     const title = document.querySelector('#recurring-inv-modal .modal-title');
     if (title) title.textContent = 'New Recurring Invoice';
     const btn = document.querySelector('#recurring-inv-modal .ff-save-btn');
@@ -2732,6 +2732,7 @@
     setField('ri-amount', r.amount);
     setField('ri-freq',   r.frequency);
     setField('ri-next',   r.next_run);
+    setField('ri-end',    r.end_date || '');
     setField('ri-status', r.status);
     const title = document.querySelector('#recurring-inv-modal .modal-title');
     if (title) title.textContent = 'Edit Recurring Invoice';
@@ -2746,15 +2747,16 @@
     const frequency = fieldVal('ri-freq') || 'Monthly';
     const next_run  = fieldVal('ri-next');
     const status    = fieldVal('ri-status') || 'active';
+    const end_date  = fieldVal('ri-end') || null;
     if (!client || !amount) { showNotify('Client and amount required.', true); return; }
     try {
       if (_riEditId) {
-        await api('PUT', `/api/recurring-invoices/${_riEditId}`, { client, amount, frequency, next_run, status });
+        await api('PUT', `/api/recurring-invoices/${_riEditId}`, { client, amount, frequency, next_run, status, end_date });
         const idx = _recurringInvoices.findIndex(x => x.id === _riEditId);
-        if (idx > -1) _recurringInvoices[idx] = { ..._recurringInvoices[idx], client, amount, frequency, next_run, status };
+        if (idx > -1) _recurringInvoices[idx] = { ..._recurringInvoices[idx], client, amount, frequency, next_run, status, end_date };
         showNotify('Profile updated ✦');
       } else {
-        const row = await api('POST', '/api/recurring-invoices', { client, amount, frequency, next_run, status });
+        const row = await api('POST', '/api/recurring-invoices', { client, amount, frequency, next_run, status, end_date });
         _recurringInvoices.push(row);
         showNotify('Recurring invoice added ✦');
       }
@@ -3669,7 +3671,7 @@ function clearAIChat(){
     };
 
     window.openNewRecurringModal = function () {
-      ['ri-client','ri-amount'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      ['ri-client','ri-amount','ri-end'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const f = document.getElementById('ri-freq'); if (f) f.value = 'Monthly';
       const n = document.getElementById('ri-next'); if (n) n.value = todayStr();
       const s = document.getElementById('ri-status'); if (s) s.value = 'active';
@@ -3684,8 +3686,9 @@ function clearAIChat(){
       const frequency = document.getElementById('ri-freq')?.value   || 'Monthly';
       const next_run  = document.getElementById('ri-next')?.value   || todayStr();
       const status    = document.getElementById('ri-status')?.value || 'active';
+      const end_date  = document.getElementById('ri-end')?.value    || null;
       try {
-        const saved = await api('POST', '/api/recurring-invoices', { client, amount, frequency, next_run, status });
+        const saved = await api('POST', '/api/recurring-invoices', { client, amount, frequency, next_run, status, end_date });
         _recurringInvData.unshift(saved.row || saved);
         window.recurringInvoices = _recurringInvData;
         closeModal('recurring-inv-modal');

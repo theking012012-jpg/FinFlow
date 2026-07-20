@@ -2059,12 +2059,12 @@ app.get('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('recurring_invoices', req.session.userId));
 }));
 app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
-  const { client, amount, frequency = 'Monthly', next_run, status = 'active' } = req.body;
+  const { client, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req.session.userId);
   const _dup = await findRecentDuplicate('recurring_invoices', req.session.userId, entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('recurring_invoices', { user_id: req.session.userId, entity_id: entity?.id, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status });
+  const { row } = await db.insert('recurring_invoices', { user_id: req.session.userId, entity_id: entity?.id, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });
   res.json(row);
 }));
 app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
@@ -2073,13 +2073,14 @@ app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
     [Number(req.params.id), scopeId(req)]
   );
   if (!_rinvr) return res.status(404).json({ error: 'not found' });
-  const { client, amount, frequency, next_run, status } = req.body || {};
+  const { client, amount, frequency, next_run, status, end_date } = req.body || {};
   const patch = {};
   if (client != null) patch.client = String(client).trim().slice(0, 200);
   if (amount != null) patch.amount = Number(amount);
   if (frequency != null) patch.frequency = frequency;
   if (next_run != null) patch.next_run = next_run;
   if (status != null) patch.status = status;
+  if (end_date != null) patch.end_date = end_date;
   await db.updateById('recurring_invoices', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
@@ -2099,6 +2100,7 @@ app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('sales_receipts', {
     user_id: req.session.userId,
+    entity_id: req.entityId || null,
     customer: String(customer).trim().slice(0, 200),
     num: String(num || 'SR-' + String(Date.now()).slice(-4)).slice(0, 30),
     amount: parseFloat(amount) || 0,
@@ -2137,6 +2139,7 @@ app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('payments_received', {
     user_id: req.session.userId,
+    entity_id: req.entityId || null,
     customer: String(customer).trim().slice(0, 200),
     invoice_ref: String(invoice_ref || '').slice(0, 50),
     amount: parseFloat(amount) || 0,
@@ -2959,12 +2962,20 @@ async function runRecurringScheduler() {
     );
     const recInvoices = _recInvRows.map(r => ({ id: r.id, user_id: r.user_id, entity_id: r.entity_id, ...r.data }));
     for (const r of recInvoices) {
+      // Respect optional end_date: once the schedule has passed it, stop (mirrors recurring bills).
+      if (r.end_date && r.next_run > r.end_date) {
+        await db.updateById('recurring_invoices', r.id, { status: 'completed' });
+        continue;
+      }
       await db.insert('invoices', {
         user_id: r.user_id, entity_id: r.entity_id || null,
         client: r.client, amount: r.amount, due_date: r.next_run,
         status: 'pending', notes: `Auto-generated from recurring schedule`,
       });
-      await db.updateById('recurring_invoices', r.id, { next_run: nextRunDate(r.next_run, r.frequency) });
+      const _nextRun = nextRunDate(r.next_run, r.frequency);
+      const _patch = { next_run: _nextRun };
+      if (r.end_date && _nextRun > r.end_date) _patch.status = 'completed';
+      await db.updateById('recurring_invoices', r.id, _patch);
     }
 
     // Recurring bills
@@ -3025,7 +3036,7 @@ async function runRecurringScheduler() {
 
 // ── BANKING TRANSACTIONS ──────────────────────────────────────────────────────
 app.get('/api/banking', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('personal_transactions', req.session.userId, r => r.source === 'banking' && (!req.entityId || r.entity_id === req.entityId || r.entity_id == null), (a, b) => new Date(b.date) - new Date(a.date)));
+  res.json(await db.allByUser('personal_transactions', req.session.userId, r => r.source === 'banking' && (!req.entityId || r.entity_id === req.entityId || r.entity_id == null), (a, b) => new Date(b.tx_date || b.date) - new Date(a.tx_date || a.date)));
 }));
 app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   const { desc, amount, type, date, cat } = req.body || {};
@@ -3034,7 +3045,9 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
     user_id: req.session.userId,
     entity_id: req.entityId || null,
     description: desc, amount: parseFloat(amount) || 0,
-    type: type || 'debit', date: date || new Date().toISOString().slice(0, 10),
+    // F23: standardize on tx_type/tx_date to match the rest of personal_transactions
+    // (legacy rows written as type/date are still read via fallback below and on GET).
+    tx_type: type || 'debit', tx_date: date || new Date().toISOString().slice(0, 10),
     category: cat || 'Other', source: 'banking',
   });
   res.status(201).json(row);

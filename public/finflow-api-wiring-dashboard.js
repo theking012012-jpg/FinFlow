@@ -85,8 +85,20 @@
       if (idx >= 0) revByMonth[idx] += parseFloat(r.amount) || 0;
     });
 
-    // Include payments made in expenses
-    (window._paymentsMade || []).forEach(p => {
+    // F38 Step 4: issued bills accrue as expense in their ISSUE month (mirror of the invoice
+    // revenue leg above) — RECOGNIZED_BILL statuses, FULL amount, keyed on issue_date.
+    const _RECBILL = ['unpaid','due_soon','overdue','partial','paid'];
+    (window.bills || []).forEach(b => {
+      if (!_RECBILL.includes((b.status || '').toLowerCase())) return;
+      const d = parseDate(b.issue_date || b.created_at || b.due_date);
+      if (!d) return;
+      const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
+      if (idx >= 0) expByMonth[idx] += parseFloat(b.amount) || 0;
+    });
+
+    // Include ONLY orphan payments (bill_id IS NULL) in expenses. A bill-linked payment settles
+    // AP (Dr AP / Cr Cash), it is not a fresh expense — counting it double-counts the bill leg.
+    (window._paymentsMade || []).filter(p => p.bill_id == null).forEach(p => {
       const d = parseDate(p.date);
       if (!d) return;
       const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
@@ -164,7 +176,12 @@
     rev  = invoices.filter(i => isIssued(i) && inP(issueD(i))).reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
     rev += receipts.filter(r => inP(parseDate(r.date))).reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
     exp  = expenses.filter(e => inP(parseDate(e.expense_date || e.date || e.created_at))).reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
-    exp += paymentsMade.filter(p => inP(parseDate(p.date || p.created_at))).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
+    // F38 Step 4: issued bills accrue as expense by ISSUE date — RECOGNIZED_BILL, FULL amount.
+    const _RECBILL = ['unpaid','due_soon','overdue','partial','paid'];
+    exp += (window.bills || []).filter(b => _RECBILL.includes((b.status||'').toLowerCase()) && inP(issueD(b))).reduce((s,b)=>s+(parseFloat(b.amount)||0),0);
+    // Only ORPHAN payments (bill_id IS NULL) stay expense — a linked payment settles AP, it is
+    // not a fresh expense (would double-count the issued-bill leg). Sole double-count guard.
+    exp += paymentsMade.filter(p => p.bill_id == null && inP(parseDate(p.date || p.created_at))).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
 
     const profit = rev - exp;
     const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);

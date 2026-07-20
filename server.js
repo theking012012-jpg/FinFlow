@@ -3246,11 +3246,12 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const eid = req.entityId || null;
   const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
-  const [invoices, expenses, paymentsMade, receipts] = await Promise.all([
+  const [invoices, expenses, paymentsMade, receipts, bills] = await Promise.all([
     db.allByUser('invoices', uid, matchEnt),
     db.allByUser('expenses', uid, matchEnt),
     db.allByUser('payments_made', uid, matchEnt),
     db.allByUser('sales_receipts', uid),      // user-level (no entity_id) — F26
+    db.allByUser('bills', uid, matchEnt),     // F38 Step 4: issued bills = accrued expense
     // payments_received dropped: it settles AR, it is not revenue (F32).
   ]);
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -3264,7 +3265,12 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   invoices.filter(i => _REC.has((i.status || '').toLowerCase())).forEach(i => bump(i.issue_date || i.created_at || i.date, 'revenue', i.amount));   // F36: issue_date, created_at fallback (transition — see computeBooks issueDate)
   receipts.forEach(r => bump(r.date, 'revenue', r.amount));
   expenses.forEach(e => bump(e.expense_date || e.date || e.created_at, 'expenses', e.amount));
-  paymentsMade.forEach(p => bump(p.date || p.created_at, 'expenses', p.amount));
+  // F38 Step 4: issued bills accrue as expense in their ISSUE month (mirror of the invoice
+  // revenue leg above) — RECOGNIZED_BILL allowlist, FULL amount, keyed on issue_date.
+  bills.filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase())).forEach(b => bump(b.issue_date || b.created_at || b.due_date, 'expenses', b.amount));
+  // Only ORPHAN payments (bill_id IS NULL) stay expense; a bill-linked payment is a settlement
+  // (Dr AP / Cr Cash), not a fresh expense — would double-count the issued-bill leg. Sole guard.
+  paymentsMade.filter(p => p.bill_id == null).forEach(p => bump(p.date || p.created_at, 'expenses', p.amount));
   // Sort by YYYY-MM key ('Unknown' sorts last); format the label at render (F15).
   const rows = Object.keys(monthMap).sort().map(k => ({
     month: labelOf(k), key: k, revenue: monthMap[k].revenue, expenses: monthMap[k].expenses,
@@ -3297,13 +3303,16 @@ app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
   ]);
   const cash = Math.max(0, books.netProfit);          // proxy: no cash account is tracked
   const ar   = books.outstanding;                     // canonical unpaid AR
-  // F38 Step 3: AP = Σ(amount − amount_paid) over RECOGNIZED, non-paid bills — the payables
-  // mirror of the AR drawdown in computeBooks. amount_paid is written by recalcBillStatus; for
-  // bills with no linked payments it is absent → 0, so this equals Σ(amount) as before (no-op
-  // until payments_made rows carry a bill_id). Unknown statuses are excluded, not counted.
+  // F38 Step 4 (AP amendment): AP = Σ max(0, amount − amount_paid) over ALL RECOGNIZED_BILL
+  // bills — payables now ARITHMETIC-driven, not status-driven. Excluding 'paid' bought nothing
+  // (a truly paid bill has amount_paid == amount → contributes 0 anyway) but let a WRONGLY-set
+  // 'paid' status hide a real liability (reachable via a direct PUT /api/bills {status:'paid'} —
+  // the mark-paid path Step 5 fixes). The max(0, …) floor stops an overpayment (amount_paid >
+  // amount) driving AP negative. amount_paid is written by recalcBillStatus (Step 3). Unknown
+  // statuses are still excluded, never counted.
   const ap   = (bills || [])
-    .filter(b => { const s = (b.status || '').toLowerCase(); return RECOGNIZED_BILL.has(s) && s !== 'paid'; })
-    .reduce((s, b) => s + ((parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
+    .filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()))
+    .reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
   const totalAssets      = Math.round((cash + ar) * 100) / 100;
   const totalLiabilities = Math.round(ap * 100) / 100;
   res.json({ cash, accountsReceivable: ar, totalAssets, accountsPayable: totalLiabilities, totalLiabilities, equity: Math.round((totalAssets - totalLiabilities) * 100) / 100 });
@@ -3776,7 +3785,9 @@ async function fifoItemTotal(pool, inventoryId) {
 // routes, and the accountant /books view all reconcile to the same numbers.
 //
 //   Revenue     = paid invoices + sales receipts + payments received
-//   OpEx        = expenses + payments made + payroll (monthly gross × elapsed months)
+//   OpEx        = expenses + issued bills (RECOGNIZED_BILL, full amount, by issue_date — F38
+//                 Step 4) + orphan payments made (bill_id IS NULL; linked ones settle AP) +
+//                 payroll (monthly gross × elapsed months)
 //   COGS        = FIFO (fifoItemTotal, from F6)
 //   GrossProfit = Revenue − COGS
 //   NetProfit   = Revenue − COGS − OpEx
@@ -3807,12 +3818,13 @@ async function computeBooks(userId, entityId = null, period = 'year') {
   }
   period = winMode ? 'window' : ((period === 'month' || period === 'quarter') ? period : 'year'); // 'all' → 'year'
 
-  const [invoices, expenses, paymentsMade, payroll, receipts] = await Promise.all([
+  const [invoices, expenses, paymentsMade, payroll, receipts, bills] = await Promise.all([
     db.allByUser('invoices', userId, ent),
     db.allByUser('expenses', userId, ent),
     db.allByUser('payments_made', userId, ent),
     db.allByUser('payroll', userId, ent),
     db.allByUser('sales_receipts', userId),      // user-scoped (no entity_id) — F26
+    db.allByUser('bills', userId, ent),          // F38 Step 4: issued bills = accrued expense
     // payments_received is NO LONGER a revenue leg (F32): it settles AR, it is not revenue.
   ]);
 
@@ -3867,12 +3879,26 @@ async function computeBooks(userId, entityId = null, period = 'year') {
     return period === 'month' ? inMonth(d) : inQuarter(d);
   };
   const expensesTotal     = sum(expenses.filter(e => inPeriod(e.expense_date || e.date || e.created_at)), e => num(e.amount));
-  const paymentsMadeTotal = sum(paymentsMade.filter(p => inPeriod(p.date || p.created_at)), p => num(p.amount));
+  // F38 Step 4 — EXPENSE-side accrual, the mirror of the F32 revenue accrual. An ISSUED bill is
+  // an expense when ISSUED (Dr Expense / Cr AP), at FULL amount, keyed on its issue_date
+  // (created_at fallback — the same time-boxed transition as the invoice issueDate above).
+  // RECOGNIZED_BILL is the status allowlist; unknown statuses are excluded, never counted
+  // (mirrors the revenue RECOGNIZED allowlist). issue_date so server == client at every period.
+  const issuedBillsTotal  = sum((bills || []).filter(b =>
+    RECOGNIZED_BILL.has((b.status || '').toLowerCase()) && inPeriod(b.issue_date || b.created_at || b.due_date)
+  ), b => num(b.amount));
+  // payments_made: a payment LINKED to a bill (bill_id set) is a SETTLEMENT (Dr AP / Cr Cash),
+  // NEVER a fresh expense — counting it would double-count against the issued-bill leg above.
+  // ONLY orphan payments (bill_id IS NULL) — a direct disbursement with no bill — stay expense.
+  // This bill_id-IS-NULL predicate is the SOLE double-count guard.
+  const paymentsMadeTotal = sum(paymentsMade.filter(p =>
+    p.bill_id == null && inPeriod(p.date || p.created_at)
+  ), p => num(p.amount));
   const months = winMode ? winElapsed
     : period === 'month' ? 1 : period === 'quarter' ? (mo - q + 1) : (mo + 1); // elapsed months in period
   const monthlyPayroll = sum(payroll, p => num(p.gross));
   const payrollTotal = r2(monthlyPayroll * months);
-  const opex = r2(expensesTotal + paymentsMadeTotal + payrollTotal);
+  const opex = r2(expensesTotal + issuedBillsTotal + paymentsMadeTotal + payrollTotal);
 
   // ── COGS (FIFO, F6) for items sold in this entity ──
   // COGS and outstanding (AR) are all-time snapshots, NOT period-scoped — matching the
@@ -3909,7 +3935,7 @@ async function computeBooks(userId, entityId = null, period = 'year') {
     revenue, cogs, grossProfit, opex, netProfit, outstanding, period,
     parts: {
       issuedInvoices: r2(issuedInvoices), salesReceipts: r2(salesReceipts),
-      expenses: r2(expensesTotal), paymentsMade: r2(paymentsMadeTotal), payroll: payrollTotal,
+      expenses: r2(expensesTotal), issuedBills: r2(issuedBillsTotal), paymentsMade: r2(paymentsMadeTotal), payroll: payrollTotal,
       monthlyPayroll: r2(monthlyPayroll), months, cogsUncoveredItems, unrecognizedStatusCount,
     },
   };

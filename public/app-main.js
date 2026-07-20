@@ -1570,10 +1570,11 @@ function getPeriodData(){
 // ════════════════════════════════════════════
 // Both the dashboard Expenses/Net-Profit KPIs and the Expenses-page
 // Total/Business/Tax-deductible KPIs call THIS function. Given the active
-// entity's real expense rows (window._realExpenses), bill payments
-// (window._paymentsMade) and entity payroll (window.ownerPayroll +
-// window.payrollEmployees), it returns totals that are identical on every
-// screen for the same entity + period. No fabricated ratios anywhere.
+// entity's real expense rows (window._realExpenses), issued bills accrued as
+// expense (window.bills — F38 Step 4), orphan bill payments (window._paymentsMade,
+// bill_id IS NULL) and entity payroll (window.ownerPayroll + window.payrollEmployees),
+// it returns totals that are identical on every screen for the same entity + period.
+// No fabricated ratios anywhere.
 function computeExpenseBreakdown(period, monthIdx){
   period = period || (typeof currentPeriod !== 'undefined' ? currentPeriod : (window.currentPeriod || 'year'));
   // Period window is the SAME canonical resolver the revenue engine + server use (F33/F25),
@@ -1596,8 +1597,17 @@ function computeExpenseBreakdown(period, monthIdx){
   // Category breakdown from REAL rows only
   const byCategory = {};
   rows.forEach(e=>{ const c=e.category||e.cat||'Other'; byCategory[c]=(byCategory[c]||0)+(parseFloat(e.amount)||0); });
-  // Bill payments made in the period (kept consistent with the dashboard ledger)
-  const pmade = (window._paymentsMade || []).filter(p=>inPeriod(p.date||p.created_at));
+  // F38 Step 4 — issued bills accrue as expense (mirror of the F32 revenue accrual): every
+  // RECOGNIZED bill at its FULL amount, keyed on its issue_date (created_at fallback — the same
+  // time-boxed transition as invoices), in the window. window.bills is entity-scoped by its
+  // loader (GET /api/bills). Uses the SAME _periodWindow as revenue so server == client.
+  const RECOGNIZED_BILL = ['unpaid','due_soon','overdue','partial','paid'];
+  const issuedBills = (window.bills || [])
+    .filter(b=>RECOGNIZED_BILL.includes((b.status||'').toLowerCase()) && inPeriod(b.issue_date||b.created_at||b.due_date))
+    .reduce((s,b)=>s+(parseFloat(b.amount)||0),0);
+  // Only ORPHAN payments (bill_id IS NULL) stay expense — a bill-linked payment is a settlement
+  // (Dr AP / Cr Cash), not a fresh expense; counting it double-counts the issued-bill leg.
+  const pmade = (window._paymentsMade || []).filter(p=>p.bill_id==null && inPeriod(p.date||p.created_at));
   const paymentsMade = pmade.reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
   // Payroll for the ACTIVE entity (owner + employees), monthly gross × months.
   // Build a NEW array — never mutate window.payrollEmployees.
@@ -1607,8 +1617,8 @@ function computeExpenseBreakdown(period, monthIdx){
   const monthlyPayroll = allPay.reduce((s,e)=>s+(parseFloat(e.gross)||0),0);
   const payroll = monthlyPayroll * months;
   return {
-    total: realExpenses + paymentsMade + payroll,
-    realExpenses, paymentsMade, payroll,
+    total: realExpenses + issuedBills + paymentsMade + payroll,
+    realExpenses, issuedBills, paymentsMade, payroll,
     business: realExpenses,   // data model has no personal/business split — all recorded rows are business
     deductible, byCategory, months, period,
   };

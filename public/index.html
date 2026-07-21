@@ -1203,15 +1203,15 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       <div class="mob-nav-badge">2</div>
     </div>
     <div class="mob-nav-item-wrap">
-      <button class="mob-nav-item" id="mbn-banking" onclick="showPage('banking',null);mobNavActive('mbn-banking')">
-        <svg viewBox="0 0 16 16"><path d="M1 6l7-4 7 4"/><rect x="3" y="6" width="2.5" height="6"/><rect x="6.75" y="6" width="2.5" height="6"/><rect x="10.5" y="6" width="2.5" height="6"/><line x1="1" y1="12" x2="15" y2="12"/></svg>
-        <span>Banking</span>
+      <button class="mob-nav-item" id="mbn-expenses" onclick="showPage('expenses',null);mobNavActive('mbn-expenses')">
+        <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M6 9.5c0 .83.67 1.5 2 1.5s2-.67 2-1.5S9 8 8 8s-2-.67-2-1.5S7 5 8 5s2 .67 2 1.5"/></svg>
+        <span>Expenses</span>
       </button>
     </div>
     <div class="mob-nav-item-wrap">
-      <button class="mob-nav-item" id="mbn-ai" onclick="toggleAIPanel();mobNavActive('mbn-ai')">
-        <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="8" y1="12.5" x2="8" y2="15"/><line x1="1" y1="8" x2="3.5" y2="8"/><line x1="12.5" y1="8" x2="15" y2="8"/></svg>
-        <span>Ask AI</span>
+      <button class="mob-nav-item" id="mbn-banking" onclick="showPage('banking',null);mobNavActive('mbn-banking')">
+        <svg viewBox="0 0 16 16"><path d="M1 6l7-4 7 4"/><rect x="3" y="6" width="2.5" height="6"/><rect x="6.75" y="6" width="2.5" height="6"/><rect x="10.5" y="6" width="2.5" height="6"/><line x1="1" y1="12" x2="15" y2="12"/></svg>
+        <span>Banking</span>
       </button>
     </div>
     <div class="mob-nav-item-wrap">
@@ -4773,7 +4773,12 @@ window.mobNavActive=function(id){
   // Mobile fix: swipe only across the three core pages, and read the LIVE active page each time
   // (the old handler tracked a local currentPageIdx that drifted out of sync the moment the user
   // navigated via the bottom nav / sidebar, jumping to the wrong page on the next swipe).
-  const PAGES=['dashboard','invoices','banking'];
+  const PAGES=['dashboard','invoices','expenses','banking'];
+  // Every swipe page has a matching bottom-bar button — keep the two in lock-step so the
+  // highlight never goes blank (showPage alone doesn't touch the bar; the buttons pair it
+  // with mobNavActive, so the swipe must too).
+  const NAV={dashboard:'mbn-dashboard',invoices:'mbn-invoices',expenses:'mbn-expenses',banking:'mbn-banking'};
+  const _go=p=>{ showPage(p,null); if(NAV[p]) mobNavActive(NAV[p]); };
   let touchStartX=0,touchStartY=0;
   const _activePage=()=>{ const el=document.querySelector('.page.active'); return el?(el.id||'').replace('page-',''):'dashboard'; };
   document.addEventListener('touchstart',e=>{touchStartX=e.touches[0].clientX;touchStartY=e.touches[0].clientY;},{passive:true});
@@ -4783,8 +4788,8 @@ window.mobNavActive=function(id){
     if(Math.abs(dx)<60||dy>50)return;
     const idx=PAGES.indexOf(_activePage());
     if(idx<0)return;                                  // not on a swipeable page — ignore
-    if(dx<0&&idx<PAGES.length-1) showPage(PAGES[idx+1],null);
-    else if(dx>0&&idx>0) showPage(PAGES[idx-1],null);
+    if(dx<0&&idx<PAGES.length-1) _go(PAGES[idx+1]);
+    else if(dx>0&&idx>0) _go(PAGES[idx-1]);
   },{passive:true});
 })();
 

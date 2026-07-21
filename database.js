@@ -96,6 +96,26 @@ async function initDB() {
     await client.query(`ALTER TABLE holdings ADD COLUMN IF NOT EXISTS entity_id INTEGER`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_holdings_entity_id ON holdings(entity_id)`);
 
+    // F48 follow-up — AR is now arithmetic: Σ max(0, amount − amount_paid) over ALL recognized
+    // invoices (the status!=='paid' filter was dropped, mirroring AP). Before this, invoices could be
+    // marked 'paid' with amount_paid 0/NULL (bare status flip), so those rows must be backfilled to
+    // amount_paid = amount or they'd resurrect as AR the instant the filter drops. Atomic-with-deploy
+    // for ALL users (no standalone script → no AR-flip-before-script sequencing hazard).
+    //
+    // NOTE: invoices is a generic JSONB table — amount/amount_paid/status live in `data`, NOT typed
+    // columns, so this is a jsonb_set (a typed-column ALTER/UPDATE would throw "column does not
+    // exist" and abort initDB). NULL-safe: guards jsonb_typeof(data->'amount')='number' and copies
+    // the amount JSON number straight into amount_paid, so a paid row with a NULL/absent amount_paid
+    // (invisible to a naive amount_paid < amount) is still backfilled. Idempotent: the WHERE clause
+    // makes a re-run over already-backfilled rows a no-op.
+    await client.query(`
+      UPDATE invoices
+         SET data = jsonb_set(data, '{amount_paid}', data->'amount')
+       WHERE lower(data->>'status') = 'paid'
+         AND jsonb_typeof(data->'amount') = 'number'
+         AND COALESCE((data->>'amount_paid')::numeric, 0) < (data->>'amount')::numeric
+    `);
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)

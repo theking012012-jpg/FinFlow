@@ -84,7 +84,7 @@
     ]);
 
     if(typeof window.userInvoices!=='undefined')
-      window.userInvoices=res[0].map(function(r){return{_dbId:r.id,id:r.id,client:r.client,amount:r.amount,due:r.due_date||'—',color:r.status==='overdue'?'var(--red)':'var(--t2)',status:r.status,notes:r.notes||''};});
+      window.userInvoices=res[0].map(function(r){return{_dbId:r.id,id:r.id,client:r.client,amount:r.amount,amount_paid:r.amount_paid,due:r.due_date||'—',color:r.status==='overdue'?'var(--red)':'var(--t2)',status:r.status,notes:r.notes||''};});
 
     if(typeof window.bizExpenses!=='undefined')
       window.bizExpenses=res[1].map(function(r){return{_dbId:r.id,id:r.id,desc:r.description,cat:r.category,amount:r.amount,ded:r.deductible,date:r.expense_date};});

@@ -3948,13 +3948,17 @@ async function computeBooks(userId, entityId = null, period = 'year') {
   // ONLY by Store B (invoice_payments/recalcInvoiceStatus), which is UI-unreachable until
   // F35 lands — so today it is null everywhere and this equals Σ(amount). Coded correct;
   // the partial-AR draw-down becomes active with F35.
-  // F48 #4: floor AR at 0 (mirror of the Step 4 AP amendment) so an over-credited invoice can
-  // never subtract from receivables. The status!=='paid' filter is KEPT (unlike AP): invoices can
-  // be manually marked 'paid' with amount_paid 0 via markInvoicePaid, so dropping the filter would
-  // resurrect them as AR — the arithmetic-driven AR follow-up is logged (F48) pending that path
-  // writing amount_paid.
+  // F48 follow-up — AR is now fully arithmetic, the exact mirror of AP (Step 4): Σ max(0, amount −
+  // amount_paid) over ALL recognized invoices, with NO status filter. A truly-paid invoice has
+  // amount_paid == amount → contributes 0 on its own, so the status!=='paid' filter is redundant and
+  // was masking a real bug: an invoice marked 'paid' with amount_paid 0 (the old bare-status-flip
+  // markInvoicePaid) was silently dropped from AR by the filter rather than by the money. That flip
+  // now writes a settling invoice_payment (amount_paid = amount), and existing status-only-'paid'
+  // rows are backfilled at boot (database.js), so this equals the filtered result on correct data —
+  // but is now driven by amount_paid, not a status flag. The max(0, …) floor keeps an over-credited
+  // invoice from ever subtracting from receivables.
   const outstanding = r2(sum(
-    issuedInv.filter(i => (i.status || '').toLowerCase() !== 'paid'),
+    issuedInv,
     i => Math.max(0, num(i.amount) - num(i.amount_paid))
   ));
   const grossProfit = r2(revenue - cogs);

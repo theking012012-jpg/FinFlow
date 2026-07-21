@@ -85,7 +85,7 @@
     ]);
 
     if(typeof window.userInvoices!=='undefined')
-      window.userInvoices=res[0].map(function(r){return{_dbId:r.id,id:r.id,client:r.client,amount:r.amount,due:r.due_date||'—',color:r.status==='overdue'?'var(--red)':'var(--t2)',status:r.status,notes:r.notes||''};});
+      window.userInvoices=res[0].map(function(r){return{_dbId:r.id,id:r.id,client:r.client,amount:r.amount,amount_paid:r.amount_paid,due:r.due_date||'—',color:r.status==='overdue'?'var(--red)':'var(--t2)',status:r.status,notes:r.notes||''};});
 
     if(typeof window.bizExpenses!=='undefined')
       window.bizExpenses=res[1].map(function(r){return{_dbId:r.id,id:r.id,desc:r.description,cat:r.category,amount:r.amount,ded:r.deductible,date:r.expense_date};});
@@ -571,13 +571,34 @@
       }
     };
 
-    // Patch markInvoicePaid to also update DB
+    // Patch markInvoicePaid to also update DB.
+    // F48 follow-up: "mark paid" must create a REAL settling invoice_payment for the outstanding
+    // balance — mirror of markBillPaid — NOT a bare status flip. AR is now arithmetic (Σ max(0,
+    // amount − amount_paid) over ALL recognized invoices, no status filter), so a status-only flip
+    // would leave amount_paid 0 and the invoice would still count toward AR. The server's
+    // recalcInvoiceStatus sums the payments and writes amount_paid = amount + status = 'paid', so AR
+    // drops to 0 arithmetically. We settle only the REMAINING balance (amount − amount_paid) so a
+    // PARTIALLY-paid invoice isn't overpaid → rejected by the server overpayment guard (400).
     window.markInvoicePaid = async function (idx) {
       const inv = window.userInvoices[idx];
       if (!inv) return;
       try {
         if (inv._dbId) {
-          await api('PUT', `/api/invoices/${inv._dbId}`, { status: 'paid' });
+          const amt  = parseFloat(inv.amount) || 0;
+          const paid = parseFloat(inv.amount_paid) || 0;
+          const remaining = Math.round((amt - paid) * 100) / 100;
+          if (remaining > 0) {
+            // recalcInvoiceStatus (server) sets amount_paid + status='paid' from the linked payments.
+            const _d = new Date();
+            const today = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
+            await api('POST', '/api/invoice-payments', {
+              invoice_id: inv._dbId, amount: remaining, payment_date: today,
+              method: 'other', notes: 'Invoice marked paid',
+            });
+          } else {
+            // Already fully covered (or zero-amount) — just ensure the status reflects it.
+            await api('PUT', `/api/invoices/${inv._dbId}`, { status: 'paid' });
+          }
         }
         window.userInvoices[idx].status = 'paid';
         window.userInvoices[idx].color  = 'var(--t2)';

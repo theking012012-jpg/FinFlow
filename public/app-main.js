@@ -1318,6 +1318,7 @@ async function loadEntityData(idx){
     // Replace userInvoices
     userInvoices = invoices.map(r=>({
       _dbId:r.id, client:r.client, amount:r.amount,
+      amount_paid: r.amount_paid,   // F48 follow-up: carry so markInvoicePaid settles only the REMAINING balance (partials don't overpay→400)
       due: r.due_date ? new Date(r.due_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'TBD',
       due_date:r.due_date, status:r.status, notes:r.notes||'',
       color: r.status?.toLowerCase()==='overdue'?'var(--red)':'var(--t2)',

@@ -1284,11 +1284,12 @@ async function loadEntityData(idx){
   if (_loadEntityDataRunning) { console.warn('[Entity] loadEntityData already running, skipping'); return; }
   _loadEntityDataRunning = true;
   activeEntityIdx = idx;
-  // Zero out chart data immediately so stale data doesn't show
-  const z = new Array(12).fill(0);
-  if(typeof REV !== 'undefined') REV.splice(0,12,...z);
-  if(typeof EXP !== 'undefined') EXP.splice(0,12,...z);
-  if(typeof PROFIT !== 'undefined') PROFIT.splice(0,12,...z);
+  // F50 Step 1 (flash fix): do NOT zero REV/EXP/PROFIT here. The old entry-zeroing opened a $0
+  // window — any render firing between here and the refill (line ~1406) painted all-zero KPIs, and
+  // in the boot race a render could land in that window with nothing to correct it (the $0-until-
+  // manual-refresh bug). The refill below already replaces all three arrays ATOMICALLY via splice,
+  // so the previous (real) values stay visible until the new data lands — stale-but-real for a beat
+  // beats a $0 flash. On a genuine entity SWITCH the atomic swap likewise avoids any zero frame.
 
   const _clrEl = id => { const el = document.getElementById(id); if(el) el.innerHTML = ''; };
 

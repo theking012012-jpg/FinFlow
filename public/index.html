@@ -3628,6 +3628,81 @@ window.addEventListener('resize',function(){if(window.innerWidth>768)closeSideba
 })();
 </script>
 
+<!-- ── PWA REFRESH SAFETY NET: installed PWAs have no reload button, so resume-from-background and
+     a pull-to-refresh gesture stand in for one. Belt-and-suspenders behind the cold-boot race fix. -->
+<script>
+(function(){
+  'use strict';
+  // Force a fresh, COMPLETE reload of the active entity + dashboard. Gated on auth (never fires on
+  // the login screen) and debounced so a burst of focus/visibility events triggers at most one load.
+  var _last = 0;
+  function _refresh(reason){
+    if(!window._ffAuthed) return;
+    var now = Date.now();
+    if(now - _last < 2500) return;                     // debounce
+    _last = now;
+    if(typeof window.loadEntitiesFromDB === 'function'){
+      try{ window.loadEntitiesFromDB(true); }catch(e){}  // force: bypass the boot memo → real reload
+    }
+  }
+
+  // 1. Resume-from-background — the natural PWA "refresh". visibilitychange fires when the app is
+  //    foregrounded; focus covers desktop tab/window return.
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible') _refresh('visible');
+  });
+  window.addEventListener('focus', function(){ _refresh('focus'); });
+
+  // 2. Pull-to-refresh — only when the scroll container is at the very top, and only for a
+  //    dominantly-VERTICAL downward drag. The horizontal swipe-nav owns |dx|>=60 with small dy, so
+  //    the two never fight; body has overscroll-behavior:none (no native bounce), so this gesture is
+  //    ours to define. A light indicator tracks the pull and confirms the refresh.
+  var scroller = function(){ return document.querySelector('.content') || document.scrollingElement || document.documentElement; };
+  var startY = 0, startX = 0, armed = false, THRESH = 70, MAXPULL = 110;
+
+  var ind = document.createElement('div');
+  ind.setAttribute('aria-hidden','true');
+  ind.style.cssText = 'position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:center;'
+    + 'height:0;overflow:hidden;z-index:600;pointer-events:none;color:var(--acc,#c9a84c);font-size:12px;'
+    + 'font-weight:500;letter-spacing:.04em;transition:none;background:transparent';
+  ind.textContent = '↓ Pull to refresh';
+  function _addIndicator(){ if(!ind.parentNode && document.body) document.body.appendChild(ind); }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _addIndicator); else _addIndicator();
+
+  document.addEventListener('touchstart', function(e){
+    var c = scroller();
+    armed = !!c && c.scrollTop <= 0 && e.touches.length === 1;   // only at the very top, single finger
+    if(armed){ startY = e.touches[0].clientY; startX = e.touches[0].clientX; }
+  }, {passive:true});
+
+  document.addEventListener('touchmove', function(e){
+    if(!armed) return;
+    var dy = e.touches[0].clientY - startY;
+    var dx = Math.abs(e.touches[0].clientX - startX);
+    if(dy <= 0 || dx > Math.abs(dy)){ ind.style.height = '0'; return; }  // upward or horizontal → not us
+    var pull = Math.min(dy, MAXPULL);
+    ind.style.height = pull + 'px';
+    ind.textContent = pull >= THRESH ? '↑ Release to refresh' : '↓ Pull to refresh';
+  }, {passive:true});
+
+  document.addEventListener('touchend', function(e){
+    if(!armed){ ind.style.height = '0'; return; }
+    armed = false;
+    var dy = e.changedTouches[0].clientY - startY;
+    var dx = Math.abs(e.changedTouches[0].clientX - startX);
+    var fire = dy > THRESH && Math.abs(dy) > dx && dx < 50;   // vertical-only, downward, past threshold
+    if(fire){
+      ind.style.transition = 'height .18s ease'; ind.style.height = '26px'; ind.textContent = '⟳ Refreshing…';
+      _refresh('pull');
+      setTimeout(function(){ ind.style.height = '0'; setTimeout(function(){ ind.style.transition='none'; }, 200); }, 900);
+    } else {
+      ind.style.transition = 'height .15s ease'; ind.style.height = '0';
+      setTimeout(function(){ ind.style.transition='none'; }, 160);
+    }
+  }, {passive:true});
+})();
+</script>
+
 <!-- ── ONBOARDING FLOW ─────────────────────────────────────────────────── -->
 <style>
 .ob-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:2000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);animation:obFadeIn .25s ease}
@@ -5028,10 +5103,42 @@ async function _loadEntitiesFromDBImpl(){
 //   catch swallows), so the memoized promise always resolves — no rejection-poisoning.
 function loadEntitiesFromDB(force){
   if(!force && window._ffBootPromise) return window._ffBootPromise;
-  window._ffBootPromise = _loadEntitiesFromDBImpl();
-  return window._ffBootPromise;
+  var p = _loadEntitiesFromDBImpl();
+  window._ffBootPromise = p;
+  // F50 REOPEN (cold-boot race): the dashboard's monthly-array builder window._buildMonthlyArrays
+  // lives in the DEFERRED bundle. On cold boot this load is kicked off by initEnhancements' tiny
+  // /api/me, which frequently resolves BEFORE the 304KB deferred bundle has executed — so
+  // loadEntityData finds the builder undefined, never fills REV[]/EXP[]/PROFIT[], and paints $0.
+  // Pre-fix the memo latched that empty load forever. Un-latch a load that ran WITHOUT the builder
+  // so a later trigger re-runs a COMPLETE one; a load that HAD the builder stays latched, so the
+  // F50 boot-dedupe is fully intact for the normal (bundle-ready) case. _loadEntitiesFromDBImpl
+  // never rejects (its outer catch swallows), so this .then always runs.
+  p.then(function(){
+    if(typeof window._buildMonthlyArrays !== 'function' && window._ffBootPromise === p){
+      window._ffBootPromise = null;   // incomplete → don't hand this empty load to the next caller
+    }
+  });
+  return p;
 }
 window.loadEntitiesFromDB = loadEntitiesFromDB;
+
+// F50 REOPEN part 2 — deterministic COMPLETE re-fire. Deferred scripts finish executing BEFORE
+// DOMContentLoaded, so by then window._buildMonthlyArrays is guaranteed present. Ensure exactly one
+// complete boot load has happened: if an earlier /api/me-triggered load un-latched itself (part 1
+// above) the memo is null and this re-runs it — now with the builder available, so it paints real
+// data. If a complete load already latched, the memo dedupes and this is a no-op (no redundant
+// reload). Gated on _ffAuthed: initEnhancements sets it true synchronously BEFORE it ever calls
+// loadEntitiesFromDB, so whenever an incomplete boot load exists, _ffAuthed is already true.
+function _ffEnsureCompleteBoot(){
+  if(typeof window._buildMonthlyArrays !== 'function') return;   // bundle not ready yet — a later net covers it
+  if(window._ffAuthed && !window._ffBootPromise && typeof window.loadEntitiesFromDB === 'function'){
+    window.loadEntitiesFromDB();   // through the memo → complete load latches
+  }
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _ffEnsureCompleteBoot);
+else _ffEnsureCompleteBoot();
+window.addEventListener('load', _ffEnsureCompleteBoot);   // final net for slow bundles / late /api/me
+window.addEventListener('ff:authed', function(){ setTimeout(_ffEnsureCompleteBoot, 0); });  // net if auth lands after the bundle
 
 // window.CURRENCIES is already set from the full CURRENCIES const above.
 

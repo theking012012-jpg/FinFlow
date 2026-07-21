@@ -3199,8 +3199,12 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     // Canonical figures from computeBooks (the single source shared with the dashboard,
     // /books and the report routes) so every surface reconciles. Revenue/expenses/net all
     // include receipts, payments, payroll accrual + FIFO COGS.
+    // F34 Path B: optional ?display=CCY converts every leg to that currency at each leg's recognition
+    // date (default omitted ⇒ entity-native ⇒ identity). fxCoverage travels with the response.
+    const _display = (req.query.display || '').toUpperCase();
+    const display = /^[A-Z]{3}$/.test(_display) ? _display : null;
     const [books, invoices, expenses] = await Promise.all([
-      computeBooks(uid, eid, bookPeriod),
+      computeBooks(uid, eid, bookPeriod, display),
       db.allByUser('invoices', uid, matchEnt),
       db.allByUser('expenses', uid, matchEnt),
     ]);
@@ -3242,6 +3246,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       cogsUncoveredItems,
       fx_realised: fxRealised,
       fx_unrealised: fxUnrealised,
+      fxCoverage: books.fxCoverage,   // F34: null-flag coverage — complete=false ⇒ figures are a partial (converted) P&L
     });
   } catch (e) {
     // F31: surface the failure instead of fabricating $0 KPIs. A real empty period
@@ -3291,7 +3296,11 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
     netProfit: monthMap[k].revenue - monthMap[k].expenses,
   }));
   // Canonical totals — the reconciling bottom line (adds payroll accrual + COGS).
-  const books = await computeBooks(uid, eid, 'year');
+  // F34 Path B: ?display=CCY converts the totals (default omitted ⇒ native ⇒ identity). The monthly
+  // `rows` above stay native this step — they get server-converted buckets in Step 3.
+  const _display = (req.query.display || '').toUpperCase();
+  const display = /^[A-Z]{3}$/.test(_display) ? _display : null;
+  const books = await computeBooks(uid, eid, 'year', display);
   res.json({
     rows,
     totalRevenue:  books.revenue,
@@ -3300,6 +3309,7 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
     payroll:       books.parts.payroll,
     totalExpenses: books.opex,
     netProfit:     books.netProfit,
+    fxCoverage:    books.fxCoverage,   // F34
   });
 }));
 
@@ -3835,7 +3845,7 @@ async function fifoItemTotal(pool, inventoryId) {
 // NOTE (F26): sales_receipts / payments_received have no entity_id, so they are always
 //   user-level; for multi-entity users they attribute to whichever entity is viewed
 //   (tracked as F26). Every other source is entity-scoped.
-async function computeBooks(userId, entityId = null, period = 'year') {
+async function computeBooks(userId, entityId = null, period = 'year', display = null) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const num = v => parseFloat(v) || 0;
   const sum = (arr, f) => (arr || []).reduce((s, x) => s + f(x), 0);
@@ -3866,6 +3876,47 @@ async function computeBooks(userId, entityId = null, period = 'year') {
     // payments_received is NO LONGER a revenue leg (F32): it settles AR, it is not revenue.
   ]);
 
+  // ── F34 Path B (Step 1a) — historical FX conversion layer ──────────────────────────────────
+  // Every P&L leg converts entity.currency → display at ITS OWN recognition date (≡ the accrual
+  // date used above), sourced from fx_rates via pickRate (carry-forward, missing→null). Default
+  // display = the viewed entity's native currency ⇒ from===to ⇒ rate 1 ⇒ IDENTITY (byte-for-byte
+  // today's numbers). Conversion only engages when a single entity is viewed AND an explicit
+  // display ≠ native is requested. entityId==null (accountant "all") stays native this step — the
+  // per-row multi-entity currency mapping is deferred to Step 4 (F24). A leg with any row that has
+  // no rate is flagged in fxCoverage and EXCLUDED (never summed native into a converted total).
+  const _entRows = await db.allByUser('entities', userId);
+  const entCur = {}; for (const e of _entRows) entCur[e.id] = (e.currency || 'USD');
+  const viewedCur = (entityId != null ? entCur[entityId] : null) || 'USD';
+  const _disp = (typeof display === 'string' && /^[A-Z]{3}$/.test(display)) ? display : null;
+  const canConvert = entityId != null;                 // single-entity only this step
+  const displayCur = (canConvert && _disp && _disp !== viewedCur) ? _disp : null; // null ⇒ native identity path
+  const fxCoverage = { display: displayCur || viewedCur, complete: true, unconvertible: [], convertedRows: 0, totalRows: 0 };
+  let _fxRows = [];
+  if (displayCur) { _fxRows = (await pool.query(`SELECT from_currency, to_currency, rate, rate_date FROM fx_rates WHERE user_id=$1`, [userId])).rows; }
+  // sumFX: period-filtered rows already passed in. Native path (displayCur null) = plain Σ (identity,
+  // no coverage tracking). Converting path: per-row rate at dateFn(row); null → flag + exclude.
+  const sumFX = (rows, amountFn, dateFn, leg) => {
+    let total = 0;
+    for (const r of (rows || [])) {
+      const amt = num(amountFn(r));
+      if (!displayCur) { total += amt; continue; }     // native identity
+      if (amt === 0) continue;                          // zero rows don't affect coverage
+      fxCoverage.totalRows++;
+      const from = entCur[r.entity_id] != null ? entCur[r.entity_id] : viewedCur; // user-scoped rows → viewed entity
+      const rate = (from === displayCur) ? 1 : pickRate(_fxRows, from, displayCur, dateFn(r));
+      if (rate == null) { fxCoverage.complete = false; fxCoverage.unconvertible.push({ leg, id: r.id != null ? r.id : null, date: dateFn(r) || null, from, to: displayCur }); continue; }
+      total += amt * rate; fxCoverage.convertedRows++;
+    }
+    return total;
+  };
+  // Accrual legs with no clean per-row date (payroll rate×time, COGS FIFO aggregate) convert in
+  // Step 1b. Until then: native display = identity (unchanged); a CONVERTING display flags them
+  // unconvertible rather than summing native into a converted total.
+  const _flagAccrualLeg = (leg, amount, from) => {
+    if (displayCur && r2(amount) !== 0) { fxCoverage.complete = false; fxCoverage.unconvertible.push({ leg, id: null, date: null, from, to: displayCur }); return true; }
+    return false;
+  };
+
   // Period windows mirror the frontend R1/E1 branches EXACTLY (incl. their date-field
   // precedence), so server and client agree at every period. 'year' = all records (F25).
   const now = new Date(), y = now.getFullYear(), mo = now.getMonth(), q = Math.floor(mo / 3) * 3;
@@ -3893,19 +3944,23 @@ async function computeBooks(userId, entityId = null, period = 'year') {
   // invoices are mid-month (Jul 2–3, 02:34Z/21:46Z/21:25Z) so none is misassigned — but once
   // every live row carries issue_date this fallback should be retired, not trusted indefinitely.
   const issueDate = i => _d(i.issue_date || i.created_at || i.date);   // issue date, NOT due_date (F32/F36)
+  // F34: recognition dates per leg = the same fields the period filters key on (conversion date ≡
+  // recognition date). invoices: issue_date||created_at||date; receipts: date.
+  const _invDate  = i => i.issue_date || i.created_at || i.date;
+  const _rcptDate = x => x.date;
   let issuedInvoices, salesReceipts;
   if (winMode) {
-    issuedInvoices = sum(issuedInv.filter(i => winInc(i.issue_date || i.created_at || i.date)), i => num(i.amount));
-    salesReceipts  = sum(receipts.filter(x => winInc(x.date)), x => num(x.amount));
+    issuedInvoices = sumFX(issuedInv.filter(i => winInc(i.issue_date || i.created_at || i.date)), i => i.amount, _invDate, 'invoices');
+    salesReceipts  = sumFX(receipts.filter(x => winInc(x.date)), x => x.amount, _rcptDate, 'sales_receipts');
   } else if (period === 'month') {
-    issuedInvoices = sum(issuedInv.filter(i => inMonth(issueDate(i))), i => num(i.amount));
-    salesReceipts  = sum(receipts.filter(x => inMonth(_d(x.date))), x => num(x.amount));
+    issuedInvoices = sumFX(issuedInv.filter(i => inMonth(issueDate(i))), i => i.amount, _invDate, 'invoices');
+    salesReceipts  = sumFX(receipts.filter(x => inMonth(_d(x.date))), x => x.amount, _rcptDate, 'sales_receipts');
   } else if (period === 'quarter') {
-    issuedInvoices = sum(issuedInv.filter(i => inQuarter(issueDate(i))), i => num(i.amount));
-    salesReceipts  = sum(receipts.filter(x => inQuarter(_d(x.date))), x => num(x.amount));
+    issuedInvoices = sumFX(issuedInv.filter(i => inQuarter(issueDate(i))), i => i.amount, _invDate, 'invoices');
+    salesReceipts  = sumFX(receipts.filter(x => inQuarter(_d(x.date))), x => x.amount, _rcptDate, 'sales_receipts');
   } else { // year — all records (F25)
-    issuedInvoices = sum(issuedInv, i => num(i.amount));
-    salesReceipts  = sum(receipts, x => num(x.amount));
+    issuedInvoices = sumFX(issuedInv, i => i.amount, _invDate, 'invoices');
+    salesReceipts  = sumFX(receipts, x => x.amount, _rcptDate, 'sales_receipts');
   }
   const revenue = r2(issuedInvoices + salesReceipts);
 
@@ -3916,26 +3971,32 @@ async function computeBooks(userId, entityId = null, period = 'year') {
     const d = _d(v); if (!d) return false;
     return period === 'month' ? inMonth(d) : inQuarter(d);
   };
-  const expensesTotal     = sum(expenses.filter(e => inPeriod(e.expense_date || e.date || e.created_at)), e => num(e.amount));
+  const _expDate = e => e.expense_date || e.date || e.created_at;
+  const expensesTotal     = sumFX(expenses.filter(e => inPeriod(_expDate(e))), e => e.amount, _expDate, 'expenses');
   // F38 Step 4 — EXPENSE-side accrual, the mirror of the F32 revenue accrual. An ISSUED bill is
   // an expense when ISSUED (Dr Expense / Cr AP), at FULL amount, keyed on its issue_date
   // (created_at fallback — the same time-boxed transition as the invoice issueDate above).
   // RECOGNIZED_BILL is the status allowlist; unknown statuses are excluded, never counted
   // (mirrors the revenue RECOGNIZED allowlist). issue_date so server == client at every period.
-  const issuedBillsTotal  = sum((bills || []).filter(b =>
-    RECOGNIZED_BILL.has((b.status || '').toLowerCase()) && inPeriod(b.issue_date || b.created_at || b.due_date)
-  ), b => num(b.amount));
+  const _billDate = b => b.issue_date || b.created_at || b.due_date;
+  const issuedBillsTotal  = sumFX((bills || []).filter(b =>
+    RECOGNIZED_BILL.has((b.status || '').toLowerCase()) && inPeriod(_billDate(b))
+  ), b => b.amount, _billDate, 'bills');
   // payments_made: a payment LINKED to a bill (bill_id set) is a SETTLEMENT (Dr AP / Cr Cash),
   // NEVER a fresh expense — counting it would double-count against the issued-bill leg above.
   // ONLY orphan payments (bill_id IS NULL) — a direct disbursement with no bill — stay expense.
   // This bill_id-IS-NULL predicate is the SOLE double-count guard.
-  const paymentsMadeTotal = sum(paymentsMade.filter(p =>
-    p.bill_id == null && inPeriod(p.date || p.created_at)
-  ), p => num(p.amount));
+  const _pmDate = p => p.date || p.created_at;
+  const paymentsMadeTotal = sumFX(paymentsMade.filter(p =>
+    p.bill_id == null && inPeriod(_pmDate(p))
+  ), p => p.amount, _pmDate, 'payments_made');
   const months = winMode ? winElapsed
     : period === 'month' ? 1 : period === 'quarter' ? (mo - q + 1) : (mo + 1); // elapsed months in period
   const monthlyPayroll = sum(payroll, p => num(p.gross));
-  const payrollTotal = r2(monthlyPayroll * months);
+  // Payroll (rate×time accrual, no per-row date) converts per-elapsed-month in Step 1b. Step 1a:
+  // native = identity; a converting display flags it unconvertible (not native-summed).
+  let payrollTotal = r2(monthlyPayroll * months);
+  if (_flagAccrualLeg('payroll', payrollTotal, viewedCur)) payrollTotal = 0;
   const opex = r2(expensesTotal + issuedBillsTotal + paymentsMadeTotal + payrollTotal);
 
   // ── COGS (FIFO, F6) for items sold in this entity ──
@@ -3957,6 +4018,9 @@ async function computeBooks(userId, entityId = null, period = 'year') {
     }
     cogs = r2(cogs);
   } catch (_) { cogs = 0; cogsUncoveredItems = 0; }
+  // COGS (FIFO all-time aggregate, no per-sale date here) converts per sale-movement date in Step
+  // 1b. Step 1a: native = identity; a converting display flags it unconvertible (not native-summed).
+  if (_flagAccrualLeg('cogs', cogs, viewedCur)) cogs = 0;
 
   // AR = Σ(amount − amount_paid) over recognized, non-paid invoices. amount_paid is written
   // ONLY by Store B (invoice_payments/recalcInvoiceStatus), which is UI-unreachable until
@@ -3971,15 +4035,18 @@ async function computeBooks(userId, entityId = null, period = 'year') {
   // rows are backfilled at boot (database.js), so this equals the filtered result on correct data —
   // but is now driven by amount_paid, not a status flag. The max(0, …) floor keeps an over-credited
   // invoice from ever subtracting from receivables.
-  const outstanding = r2(sum(
+  // AR converts at each invoice's issue date (same recognition date as the revenue leg).
+  const outstanding = r2(sumFX(
     issuedInv,
-    i => Math.max(0, num(i.amount) - num(i.amount_paid))
+    i => Math.max(0, num(i.amount) - num(i.amount_paid)),
+    _invDate, 'ar'
   ));
   const grossProfit = r2(revenue - cogs);
   const netProfit   = r2(revenue - cogs - opex);
 
   return {
     revenue, cogs, grossProfit, opex, netProfit, outstanding, period,
+    fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     parts: {
       issuedInvoices: r2(issuedInvoices), salesReceipts: r2(salesReceipts),
       expenses: r2(expensesTotal), issuedBills: r2(issuedBillsTotal), paymentsMade: r2(paymentsMadeTotal), payroll: payrollTotal,
@@ -4083,6 +4150,34 @@ app.post('/api/cogs/calculate', requireAuth, wrap(async (req, res) => {
 // has its OWN rate store (fx_rates); it does NOT reuse the frontend's static _safeFX
 // snapshot rates, which are a personal-finance display convenience, not the user's real
 // current rates.
+// F34 Path B — historical FX: the rate for from>to effective on/before `date` (carry-forward the
+// most-recent prior rate, standard accounting). from===to short-circuits to 1 BEFORE any lookup, so
+// native display is always identity even for users who have FX rates stored. No row on/before the
+// date → null (NEVER 0, NEVER the static frontend table) — the caller flags the figure, never fabricates.
+// pickRate is the pure matcher (over pre-fetched rows) so computeBooks can convert many rows without
+// N queries; rateAsOf is the single-lookup entry point (harness + external callers).
+function pickRate(rows, from, to, date) {
+  if (from === to) return 1;
+  const d = date ? new Date(date) : null;
+  if (!d || isNaN(d)) return null;              // no recognition date → cannot date a conversion → null
+  let best = null, bestDate = null;
+  for (const r of rows || []) {
+    if (r.from_currency !== from || r.to_currency !== to) continue;
+    const rd = new Date(r.rate_date);
+    if (isNaN(rd) || rd > d) continue;          // only rates effective on/before the txn date
+    if (bestDate == null || rd > bestDate) { bestDate = rd; best = parseFloat(r.rate); }
+  }
+  return (best != null && isFinite(best)) ? best : null;
+}
+async function rateAsOf(pool, userId, from, to, date) {
+  if (from === to) return 1;                    // short-circuit before any DB hit
+  const { rows } = await pool.query(
+    `SELECT from_currency, to_currency, rate, rate_date FROM fx_rates WHERE user_id=$1 AND from_currency=$2 AND to_currency=$3`,
+    [userId, from, to]
+  );
+  return pickRate(rows, from, to, date);
+}
+
 async function latestFxRates(pool, userId) {
   const { rows } = await pool.query(
     `SELECT from_currency, to_currency, rate FROM fx_rates WHERE user_id=$1 ORDER BY rate_date DESC, created_at DESC`,

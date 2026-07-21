@@ -3826,6 +3826,26 @@ async function fifoItemTotal(pool, inventoryId) {
   return { cogs, unitsSold, uncovered };
 }
 
+// F34 Step 1b — per-SALE FIFO COGS with the sale's movement date, so each sale can convert at its
+// own historical rate. Walks sales in date order, costing each against the FIFO layers consumed by
+// all prior sales. Σ of the per-sale cogs equals fifoItemTotal's aggregate (FIFO is associative over
+// consecutive slices), so the native (unconverted) total reconciles by construction.
+async function fifoItemSales(pool, inventoryId) {
+  const purchases = await _purchaseLayers(pool, inventoryId);
+  const { rows: sales } = await pool.query(
+    `SELECT quantity, moved_at FROM inventory_movements WHERE inventory_id=$1 AND type='sale' ORDER BY moved_at ASC, id ASC`,
+    [inventoryId]
+  );
+  const out = []; let consumed = 0;
+  for (const s of sales) {
+    const q = parseFloat(s.quantity) || 0;
+    const { cogs, uncovered } = fifoConsume(purchases, consumed, q);
+    out.push({ date: s.moved_at, cogs, uncovered });
+    consumed += q;
+  }
+  return out;
+}
+
 // ════════════════════════════════════════════════════════════════════════════════
 // CANONICAL BOOKS — single entity-scoped source of truth for revenue / COGS / OpEx /
 // profit. Mirrors the frontend canonical helpers exactly (computeRevenue R1 +
@@ -3855,13 +3875,14 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // fiscal-year setting + selected month) overrides the legacy string period. A string period
   // keeps EXACTLY the prior behavior — the accountant portal / consolidated P&L call
   // computeBooks('year'|'month'|'quarter') and must not change (backward compatible).
-  let winMode = false, winInc = null, winElapsed = 0;
+  let winMode = false, winInc = null, winElapsed = 0, winStart = null;
   if (period && typeof period === 'object' && period.start && period.end) {
     const ws = new Date(period.start), we = new Date(period.end);
     if (!isNaN(ws) && !isNaN(we) && we > ws) {
       winMode = true;
       winInc = v => { const d = v ? new Date(v) : null; return !!d && !isNaN(d) && d >= ws && d < we; };
       winElapsed = Math.max(0, Math.min(12, parseInt(period.elapsedMonths, 10) || 0));
+      winStart = ws;   // F34 Step 1b: window start → per-month payroll dating
     }
   }
   period = winMode ? 'window' : ((period === 'month' || period === 'quarter') ? period : 'year'); // 'all' → 'year'
@@ -3909,12 +3930,17 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     }
     return total;
   };
-  // Accrual legs with no clean per-row date (payroll rate×time, COGS FIFO aggregate) convert in
-  // Step 1b. Until then: native display = identity (unchanged); a CONVERTING display flags them
-  // unconvertible rather than summing native into a converted total.
-  const _flagAccrualLeg = (leg, amount, from) => {
-    if (displayCur && r2(amount) !== 0) { fxCoverage.complete = false; fxCoverage.unconvertible.push({ leg, id: null, date: null, from, to: displayCur }); return true; }
-    return false;
+  // F34 Step 1b — accrual legs with no clean per-row date. Payroll (rate×time) converts each
+  // elapsed month at that month's first-day rate; COGS (FIFO) converts each sale at its movement
+  // date. Same rule as sumFX: a null rate flags + excludes, never native-sums into a converted total.
+  const _fxAccrual = (amount, date, leg, from) => {   // returns converted amount, or 0 (flagged) if no rate
+    if (!displayCur) return amount;
+    if (num(amount) === 0) return 0;
+    fxCoverage.totalRows++;
+    const rate = (from === displayCur) ? 1 : pickRate(_fxRows, from, displayCur, date);
+    if (rate == null) { fxCoverage.complete = false; fxCoverage.unconvertible.push({ leg, id: null, date: date ? String(date).slice(0, 10) : null, from, to: displayCur }); return 0; }
+    fxCoverage.convertedRows++;
+    return amount * rate;
   };
 
   // Period windows mirror the frontend R1/E1 branches EXACTLY (incl. their date-field
@@ -3993,10 +4019,26 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const months = winMode ? winElapsed
     : period === 'month' ? 1 : period === 'quarter' ? (mo - q + 1) : (mo + 1); // elapsed months in period
   const monthlyPayroll = sum(payroll, p => num(p.gross));
-  // Payroll (rate×time accrual, no per-row date) converts per-elapsed-month in Step 1b. Step 1a:
-  // native = identity; a converting display flags it unconvertible (not native-summed).
-  let payrollTotal = r2(monthlyPayroll * months);
-  if (_flagAccrualLeg('payroll', payrollTotal, viewedCur)) payrollTotal = 0;
+  // Payroll (rate×time accrual, no per-row date). Native ⇒ monthlyPayroll × elapsed months (exactly
+  // as before). Converting ⇒ convert EACH elapsed month's slice at that month's first-day rate (F34
+  // Step 1b), so a rate that moved mid-period is honoured per month; a month with no rate flags +
+  // excludes that slice. The month first-days match the `months` count for every period branch.
+  const _payrollMonthDates = () => {
+    const out = [];
+    if (winMode) { const s = winStart ? new Date(winStart) : null; if (s && !isNaN(s)) for (let k = 0; k < winElapsed; k++) out.push(new Date(s.getFullYear(), s.getMonth() + k, 1)); }
+    else if (period === 'month')   out.push(new Date(y, mo, 1));
+    else if (period === 'quarter') { for (let m = q; m <= mo; m++) out.push(new Date(y, m, 1)); }
+    else { for (let m = 0; m <= mo; m++) out.push(new Date(y, m, 1)); } // year
+    return out;
+  };
+  let payrollTotal;
+  if (!displayCur) {
+    payrollTotal = r2(monthlyPayroll * months);
+  } else {
+    let conv = 0;
+    for (const md of _payrollMonthDates()) conv += _fxAccrual(monthlyPayroll, md, 'payroll', viewedCur);
+    payrollTotal = r2(conv);
+  }
   const opex = r2(expensesTotal + issuedBillsTotal + paymentsMadeTotal + payrollTotal);
 
   // ── COGS (FIFO, F6) for items sold in this entity ──
@@ -4012,15 +4054,22 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
       [userId, entityId]
     );
     for (const it of items) {
-      const f = await fifoItemTotal(pool, it.inventory_id);
-      cogs += f.cogs;
-      if (f.uncovered > 0) cogsUncoveredItems++;
+      if (!displayCur) {
+        const f = await fifoItemTotal(pool, it.inventory_id);
+        cogs += f.cogs;
+        if (f.uncovered > 0) cogsUncoveredItems++;
+      } else {
+        // F34 Step 1b: convert each SALE's FIFO cost at its movement date (per-sale dating). The
+        // per-sale slices sum to the same aggregate fifoItemTotal returns (FIFO is associative over
+        // consecutive slices), so native reconciles by construction; a sale with no rate flags+excludes.
+        const sales = await fifoItemSales(pool, it.inventory_id);
+        let itemUncovered = 0;
+        for (const s of sales) { cogs += _fxAccrual(s.cogs, s.date, 'cogs', viewedCur); if (s.uncovered > 0) itemUncovered = 1; }
+        cogsUncoveredItems += itemUncovered;
+      }
     }
     cogs = r2(cogs);
   } catch (_) { cogs = 0; cogsUncoveredItems = 0; }
-  // COGS (FIFO all-time aggregate, no per-sale date here) converts per sale-movement date in Step
-  // 1b. Step 1a: native = identity; a converting display flags it unconvertible (not native-summed).
-  if (_flagAccrualLeg('cogs', cogs, viewedCur)) cogs = 0;
 
   // AR = Σ(amount − amount_paid) over recognized, non-paid invoices. amount_paid is written
   // ONLY by Store B (invoice_payments/recalcInvoiceStatus), which is UI-unreachable until

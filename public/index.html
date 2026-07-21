@@ -5,6 +5,13 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <!-- PWA (install / full-screen) — no service worker here; that is a separate gated step -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0e0b08">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="FinFlow">
   
   
 <meta charset="UTF-8">
@@ -171,6 +178,8 @@ html{overflow-x:hidden}
   .metrics-grid-3{grid-template-columns:repeat(2,1fr)}
   .two-col{grid-template-columns:1fr}
   .field-group{grid-template-columns:1fr}
+  /* #6 keyboard: >=16px stops iOS auto-zooming on focus (inputs otherwise inherit body 13px) */
+  input,select,textarea{font-size:16px}
   .page-title{font-size:14px}
   .mc-val{font-size:26px}
   .topbar-right .btn-ghost:not(.btn-icon){display:none}
@@ -3517,6 +3526,106 @@ function closeSidebar(){
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSidebar();});
 // Close on resize to desktop
 window.addEventListener('resize',function(){if(window.innerWidth>768)closeSidebar();});
+</script>
+
+<!-- ── #6b / #3 PWA BACK-BUTTON: Android back / iOS swipe-back dismisses the topmost overlay ──
+     before leaving the app. Keeps exactly ONE sentinel history entry on the stack while any
+     overlay is open, and self-consumes it when the app closes the last overlay (X / Cancel /
+     Esc), so we never accumulate entries or fight the swipe-nav handler. -->
+<script>
+(function(){
+  'use strict';
+  // Topmost-first precedence: open modal → sidebar drawer → AI panel → notif panel.
+  function _openModalEl(){ return document.querySelector('.modal-overlay:not(.hidden)'); }
+  function _topmost(){
+    if(_openModalEl()) return 'modal';
+    if(document.body.classList.contains('sidebar-open')) return 'sidebar';
+    if(document.querySelector('.ai-panel.open')) return 'ai';
+    if(document.querySelector('.notif-panel.open')) return 'notif';
+    return null;
+  }
+  var _guard = false;    // is our sentinel history entry currently on the stack?
+  var _popping = false;  // re-entrancy flag while we self-consume the sentinel via history.back()
+
+  // Keep exactly one sentinel entry on the stack while ANY overlay is open; remove it when the
+  // last overlay closes by the app's own handlers. (Guards against history loops: never pushes
+  // a second sentinel while one is already present.)
+  function _sync(){
+    var open = _topmost() !== null;
+    if(open && !_guard){
+      _guard = true;
+      try{ history.pushState({ffOverlay:1}, ''); }catch(e){}
+    } else if(!open && _guard && !_popping){
+      _guard = false; _popping = true;
+      try{ history.back(); }catch(e){ _popping = false; }
+    }
+  }
+  // Wrap the app's own open/close entry points so opening arms the sentinel and closing
+  // (via X / Cancel / Esc) consumes it — without touching those functions' definitions.
+  function _wrap(name){
+    if(typeof window[name] !== 'function') return;
+    var orig = window[name];
+    window[name] = function(){ var r = orig.apply(this, arguments); setTimeout(_sync, 0); return r; };
+  }
+  ['openModal','closeModal','openSidebar','closeSidebar','toggleAIPanel','toggleNotifPanel'].forEach(_wrap);
+
+  function _closeTopmost(){
+    var t = _topmost();
+    if(t === 'modal'){ var m = _openModalEl(); if(m){ (typeof window.closeModal==='function') ? window.closeModal(m.id) : m.classList.add('hidden'); } }
+    else if(t === 'sidebar'){ (typeof window.closeSidebar==='function') ? window.closeSidebar() : document.body.classList.remove('sidebar-open'); }
+    else if(t === 'ai'){ var a=document.querySelector('.ai-panel.open'); if(a) a.classList.remove('open'); }
+    else if(t === 'notif'){ var n=document.querySelector('.notif-panel.open'); if(n) n.classList.remove('open'); }
+  }
+
+  window.addEventListener('popstate', function(){
+    if(_popping){ _popping = false; return; }   // our own history.back() — swallow, don't re-handle
+    if(_topmost()){                             // back/swipe-back pressed with an overlay open
+      _guard = false;                           // the sentinel was just popped by the browser
+      _closeTopmost();                          // dismiss topmost; wrapped close re-arms a sentinel if more remain
+    }
+    // else: nothing open → allow normal navigation (do nothing)
+  });
+})();
+</script>
+
+<!-- ── #6 KEYBOARD POLISH: enterkeyhint labels + keep the focused field above the keyboard ── -->
+<script>
+(function(){
+  'use strict';
+  var _isMobile = function(){ return window.matchMedia('(max-width:768px)').matches; };
+
+  // Give the on-screen keyboard's action key a sensible label. Single-line fields get "done"
+  // (the AI composer gets "send"); checkboxes/buttons/file inputs are skipped. Textareas keep
+  // their default newline behaviour.
+  function _applyHints(root){
+    var sel = 'input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=file]):not([type=range])';
+    (root||document).querySelectorAll(sel).forEach(function(el){
+      if(el.hasAttribute('enterkeyhint')) return;
+      el.setAttribute('enterkeyhint', el.id==='ai-input' ? 'send' : 'done');
+    });
+  }
+  _applyHints(document);
+  // Re-apply for on-demand inputs (modal/list content rendered later). Debounced; only sets a
+  // missing attribute (no reflow, no observer feedback — attribute writes aren't childList).
+  if('MutationObserver' in window){
+    var _pending = false;
+    new MutationObserver(function(){
+      if(_pending) return; _pending = true;
+      setTimeout(function(){ _pending = false; _applyHints(document); }, 400);
+    }).observe(document.body, {childList:true, subtree:true});
+  }
+
+  // Scroll the focused field above the on-screen keyboard (mobile only). The delay lets the
+  // keyboard finish animating in before we measure/scroll.
+  document.addEventListener('focusin', function(e){
+    if(!_isMobile()) return;
+    var el = e.target;
+    if(!el || !/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName || '')) return;
+    setTimeout(function(){
+      try{ el.scrollIntoView({block:'center', behavior:'smooth'}); }catch(_){ try{ el.scrollIntoView(); }catch(__){} }
+    }, 300);
+  });
+})();
 </script>
 
 <!-- ── ONBOARDING FLOW ─────────────────────────────────────────────────── -->

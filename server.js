@@ -72,7 +72,7 @@ app.use((req, res, next) => {
     "style-src 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src https://fonts.gstatic.com; " +
     "img-src 'self' data: blob:; " +
-    "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com ws: wss:; " +
+    "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com; " +   // F49: dropped dead ws:/wss: — FinFlow opens no socket, so a stray socket now hits a documented CSP block
     "frame-ancestors 'none'; " +
     "object-src 'none'; " +
     "base-uri 'self';"
@@ -804,6 +804,15 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + name).
   const _dup = await findRecentDuplicate('entities', req.session.userId, null, { textMatch: { name: name.trim().slice(0,100) } });
   if (_dup) return res.status(200).json(_dup);
+  // PL#3: enforce the plan's entity cap SERVER-SIDE — RBAC (entities:manage) governs WHO may manage
+  // entities, not HOW MANY. Without this a direct API call bypasses the UI gate and creates unlimited
+  // entities past the plan. req.userPlan is attached by the trial-expiry middleware. Dedupe runs
+  // first so a retried duplicate is never counted against the cap. (Dedupe short-circuits above.)
+  const ENTITY_LIMITS = { trial: 1, pro: 1, business: 5 };
+  const _entCount = (await db.allByUser('entities', req.session.userId)).length;
+  if (_entCount >= (ENTITY_LIMITS[req.userPlan] ?? 1)) {
+    return res.status(402).json({ error: 'Entity limit reached for your plan.' });
+  }
   const { row } = await db.insert('entities', { user_id: req.session.userId, name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0 });
   res.status(201).json(row);
 }));
@@ -3064,6 +3073,11 @@ app.get('/api/banking', requireAuth, wrap(async (req, res) => {
 app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   const { desc, amount, type, date, cat } = req.body || {};
   if (!desc || amount == null) return res.status(400).json({ error: 'desc and amount required.' });
+  // F46: allowlist tx_type. An EXPLICIT unknown value (e.g. a typo, or a credit sent as anything but
+  // 'credit') must 400 — not silently fall through to 'debit' and book an inflow as an outflow. A
+  // null/omitted type keeps the legacy-compatible 'debit' default below.
+  const TX_TYPES = ['credit', 'debit'];
+  if (type != null && !TX_TYPES.includes(type)) return res.status(400).json({ error: "tx_type must be 'credit' or 'debit'." });
   const { row } = await db.insert('personal_transactions', {
     user_id: req.session.userId,
     entity_id: req.entityId || null,

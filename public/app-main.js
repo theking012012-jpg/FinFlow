@@ -435,7 +435,7 @@ function openAddBizModal(e){
   document.getElementById('biz-menu').style.display='none';
   // Same plan gate as openAddEntityModal — the sidebar "+ Add business" button
   // must not bypass the multi-entity limit. (Server-side enforcement is separate.)
-  if(currentUserPlan==='pro'&&typeof ENTITIES!=='undefined'&&ENTITIES.length>=1){
+  if(_entityCapReached()){
     if(typeof showUpgradeModal==='function') showUpgradeModal('entity');
     return;
   }
@@ -563,6 +563,14 @@ const ROLES = {
 };
 let currentRole = 'owner';
 let currentUserPlan = 'pro';
+// PL#3: client-side entity cap — MUST mirror the server ENTITY_LIMITS (server.js POST /api/entities).
+// The server is the real enforcer (returns 402); this just shows the upgrade modal instead of a
+// failed create. business now caps at 5 (was silently unbounded on the client).
+const ENTITY_LIMITS = { trial: 1, pro: 1, business: 5 };
+function _entityCapReached(){
+  if(typeof ENTITIES === 'undefined') return false;
+  return ENTITIES.length >= (ENTITY_LIMITS[currentUserPlan] ?? 1);
+}
 
 // Accessible "Retry" control for the scoped three-state (loading / empty / failed)
 // data cards. Returns a REAL <button> — natively focusable and Enter/Space-activatable
@@ -4313,7 +4321,7 @@ async function saveSettings(){
 }
 
 function openAddEntityModal(){
-  if(currentUserPlan==='pro'&&typeof ENTITIES!=='undefined'&&ENTITIES.length>=1){
+  if(_entityCapReached()){
     if(typeof showUpgradeModal==='function') showUpgradeModal('entity');
     return;
   }
@@ -4607,13 +4615,19 @@ async function loadBankingFromDB(){
 }
 
 async function saveBankTxn(desc, amount, type, cat){
+  // F46: reject an unknown tx_type here instead of letting it fall through to 'debit' server-side
+  // (which would silently book an inflow as an outflow). Only 'credit'/'debit' are valid.
+  if(type != null && type !== 'credit' && type !== 'debit'){
+    if(typeof notify==='function') notify("Transaction type must be 'credit' or 'debit'", true);
+    return;
+  }
   try {
     const res = await fetch('/api/banking',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({desc, amount, type, cat, date:todayLocal()})});
-    if(!res.ok) throw new Error('Save failed');
+    if(!res.ok){ const d=await res.json().catch(()=>({})); throw new Error(d.error||'Save failed'); }
     await loadBankingFromDB();
     window.finflow?.refresh(['banking','dashboard','reports']);
-  } catch(e){ if(typeof notify==='function') notify('Error saving transaction'); }
+  } catch(e){ if(typeof notify==='function') notify('Error saving transaction — '+(e.message||''), true); }
 }
 function renderBanking(){
   // KPI cards: Total Balance · Inflow (MTD) · Outflow (MTD) · Uncategorized

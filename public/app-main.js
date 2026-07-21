@@ -5910,65 +5910,13 @@ taxPage.id = 'page-tax-filing';
 taxPage.innerHTML = '<div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem"><div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#127963;</div><div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Tax Filing &#8212; Coming Soon</div><div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Direct e-file to IRS, HMRC, and other tax authorities. Auto-calculate quarterly estimates, generate W-2s and 1099s, and file in minutes.</div><span class="badge b-amber" style="font-size:11px;padding:4px 12px">Requires tax API integration</span></div>';
 document.querySelector('.content')?.appendChild(taxPage);
 
-window.selectJurisdiction = function(el, name){
-  document.querySelectorAll('.tax-jurisdiction').forEach(j=>j.classList.remove('selected'));
-  el.classList.add('selected');
-  const t = document.getElementById('tax-jurisdiction-title');
-  if(t) t.textContent = name;
-};
-window.startTaxFiling = function(){
-  notify('Preparing your tax return — AI pre-filling from FinFlow data… ✦');
-  setTimeout(()=>{
-    const steps = document.querySelectorAll('#tax-steps-list .tax-step');
-    steps.forEach((s,i)=>{ s.classList.remove('done','active','pending'); if(i<3) s.classList.add('done'); else if(i===3) s.classList.add('active'); else s.classList.add('pending'); });
-    notify('Review your pre-filled return and add your eSign PIN');
-  }, 1800);
-};
-
-// ── REAL TAX CALCULATION ENGINE ──────────────────────────────────────────
-function calcAndRenderTax(){
-  // Pull live data from the app's financial arrays
-  const annualRev   = typeof sum==='function' && typeof REV!=='undefined'  ? sum(REV,0,12)      : 0;
-  const annualSal   = typeof sum==='function' && typeof EXP_SAL!=='undefined' ? sum(EXP_SAL,0,12) : 0;
-  const annualRent  = typeof EXP_RENT!=='undefined' ? (EXP_RENT[0]||0)*12  : 0;
-  const annualSW    = typeof sum==='function' && typeof EXP_SW!=='undefined'  ? sum(EXP_SW,0,12)  : 0;
-  const annualMkt   = typeof sum==='function' && typeof EXP_MKT!=='undefined' ? sum(EXP_MKT,0,12) : 0;
-
-  const totalDeductible = annualSal + annualRent + annualSW + annualMkt;
-  const taxableIncome   = Math.max(0, annualRev - totalDeductible);
-  const TAX_RATE        = 0.25;
-  const annualLiability = Math.round(taxableIncome * TAX_RATE);
-  // YTD paid = 3 of 4 quarterly payments (75%)
-  const ytdPaid         = Math.round(annualLiability * 0.75);
-  const amountDue       = annualLiability - ytdPaid;
-
-  // Format helpers
-  const fmt = v => '$' + Math.abs(Math.round(v)).toLocaleString();
-  const pct = (part, total) => total > 0 ? Math.round(part / total * 100) : 0;
-
-  const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
-  set('tax-liability',       fmt(annualLiability));
-  set('tax-paid-ytd',        fmt(ytdPaid));
-  set('tax-due',             fmt(amountDue));
-  set('tax-val-sal',         fmt(annualSal));
-  set('tax-val-rent',        fmt(annualRent));
-  set('tax-val-sw',          fmt(annualSW));
-  set('tax-val-mkt',         fmt(annualMkt));
-  set('tax-total-deductible',fmt(totalDeductible));
-  set('tax-saving',          fmt(totalDeductible * TAX_RATE));
-
-  // Update bar widths relative to largest category
-  const maxCat = Math.max(annualSal, annualRent, annualSW, annualMkt);
-  const setBar = (id, v) => { const el=document.getElementById(id); if(el) el.style.width = pct(v, maxCat)+'%'; };
-  setBar('tax-bar-sal',  annualSal);
-  setBar('tax-bar-rent', annualRent);
-  setBar('tax-bar-sw',   annualSW);
-  setBar('tax-bar-mkt',  annualMkt);
-
-  // Update filing step 3 with real numbers
-  const step3Detail = document.querySelector('#tax-steps-list .tax-step.active div div:last-child');
-  if(step3Detail) step3Detail.textContent = fmt(annualLiability)+' federal · '+fmt(amountDue)+' Q4 balance due';
-}
+// PL#11 (Path A): the interactive tax page these three functions drove was replaced by the
+// "Coming Soon" placeholder above, so their target elements (tax-liability/tax-paid-ytd/tax-due/
+// tax-val-*/tax-bar-*/#tax-steps-list) no longer exist anywhere in the main app — every write was a
+// silent no-op. calcAndRenderTax also FABRICATED figures (ytdPaid = liability × 0.75, with no
+// tax-payment ledger backing it) off the stale pre-F32 category arrays. Removed at the source so the
+// fabrication can never resurrect. A real canonical tax estimator (issue-based net × rate, ytdPaid
+// "Not tracked") is logged as a separate future feature in the F51 placeholder-honesty track.
 
 
 // ── 4. INTEGRATION MARKETPLACE UPGRADE ──────────────────────────────────
@@ -5998,7 +5946,7 @@ window.showPage = function(id, el){
   const extra = {'advisors':'Advisor Network','tax-filing':'Tax Filing'};
   if(extra[id]) document.getElementById('pageTitle').textContent = extra[id];
   if(id==='advisors') requestAnimationFrame(renderAdvisors);
-  if(id==='tax-filing') requestAnimationFrame(calcAndRenderTax);
+  // PL#11: tax-filing is a static "Coming Soon" placeholder — no render hook (calcAndRenderTax removed).
 };
 
 // ── 6. PATCH showPage to close sidebar on mobile ──────────────────────────

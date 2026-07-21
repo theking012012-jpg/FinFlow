@@ -5766,7 +5766,7 @@ function clearAIChat(){
         'reports':            () => { if (typeof window.renderReports           === 'function') window.renderReports(); },
         'budget':             () => { if (typeof window.renderBudget            === 'function') window.renderBudget(); },
         'cashflow':           () => { if (typeof window.renderCashflow          === 'function') window.renderCashflow(); },
-        'tax-filing':         () => { if (typeof window.calcAndRenderTax        === 'function') window.calcAndRenderTax(); },
+        // PL#11: tax-filing is a static placeholder — no render hook (calcAndRenderTax removed).
       };
 
       const _pgFn = _renderDispatch[_curPage];
@@ -5777,11 +5777,6 @@ function clearAIChat(){
         window._refreshDashboardUI();
       } else if (typeof window.updateDashboard === 'function') {
         window.updateDashboard();
-      }
-
-      // ── Refresh tax filing if it's the active page ──────────────────
-      if (_curPage === 'tax-filing' && typeof window.calcAndRenderTax === 'function') {
-        window.calcAndRenderTax();
       }
 
       // ── Refresh journal and COA KPI cards if on those pages ────────
@@ -5924,7 +5919,7 @@ function clearAIChat(){
       'chart-of-accounts':  () => { if (typeof window.renderCOA              === 'function') window.renderCOA(); },
       'reports':            () => { if (typeof window.renderReports           === 'function') window.renderReports(); },
       'cashflow':           () => { if (typeof window.renderCashflow          === 'function') window.renderCashflow(); },
-      'tax-filing':         () => { if (typeof window.calcAndRenderTax        === 'function') window.calcAndRenderTax(); },
+      // PL#11: tax-filing is a static placeholder — no render hook (calcAndRenderTax removed).
       'time-tracking':      () => { if (typeof window.renderTimesheet         === 'function') window.renderTimesheet(); },
       'investments':        () => { if (typeof window.renderInvestments       === 'function') window.renderInvestments(); },
       'documents':          () => { if (typeof window.renderDocuments         === 'function') window.renderDocuments(); },

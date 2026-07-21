@@ -6,3 +6,7 @@ finflow.db
 finflow.db.json
 fix-*.js
 nuclear-nav.js
+
+# IDE-session scratch artifacts (never meant to be tracked)
+.s5h/
+.s5v/

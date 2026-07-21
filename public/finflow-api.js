@@ -104,8 +104,14 @@
     if(typeof window.holdings!=='undefined')
       window.holdings=res[6].map(function(r){return{_dbId:r.id,id:r.id,ticker:r.ticker,name:r.name,type:r.asset_type,shares:r.shares,cost:r.cost_per,price:r.price,div:r.dividend,color:r.color};});
 
+    // F50 Step 3: do NOT paint the dashboard from here. ffLoadData loads NON-entity-scoped data
+    // (all invoices/expenses across entities) and never builds REV[]/EXP[] monthly arrays, so its
+    // updateDashboard was the main source of the redundant/$0 dashboard paint in the boot race.
+    // The entity path (loadEntityData → _buildMonthlyArrays → updateDashboard) is now the SOLE owner
+    // of the dashboard paint. Other list renders below are kept — they're harmless and give the list
+    // pages an initial paint before the entity load resolves.
     ['renderInvoices','renderExpenses','renderCustomers','renderInventory',
-     'renderPayroll','renderPersonal','renderInvestments','updateDashboard','updateAI'
+     'renderPayroll','renderPersonal','renderInvestments','updateAI'
     ].forEach(function(fn){ if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}} });
   }
 

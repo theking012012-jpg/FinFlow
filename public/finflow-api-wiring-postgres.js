@@ -321,8 +321,10 @@
     // Wrap loadEntitiesFromDB to also reload vendors/bills after entity switch
     const _origLoadEnt = (typeof loadEntitiesFromDB === 'function') ? loadEntitiesFromDB : null;
     if (_origLoadEnt) {
-      window.loadEntitiesFromDB = async function () {
-        await _origLoadEnt();
+      // F50 Step 2: forward `force` so a user-initiated reload (create-business/login/register)
+      // bypasses the boot-dedupe memo through this wrapper instead of getting the cached promise.
+      window.loadEntitiesFromDB = async function (force) {
+        await _origLoadEnt(force);
         if (typeof window._loadVendorsFromDB === 'function') try { await window._loadVendorsFromDB(); } catch(e) {}
         if (typeof window._loadBillsFromDB   === 'function') try { await window._loadBillsFromDB();   } catch(e) {}
       };

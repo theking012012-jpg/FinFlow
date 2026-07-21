@@ -513,7 +513,7 @@ async function submitCreateBusiness(){
       if(_up) profile.phone = _up;
     }
     await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(profile)});
-    if(typeof loadEntitiesFromDB==='function') await loadEntitiesFromDB();
+    if(typeof loadEntitiesFromDB==='function') await loadEntitiesFromDB(true); // F50 Step 2: force — a new entity must bypass the boot memo
     notify('Business "'+esc(name)+'" created ✦');
     showPage('dashboard', null);
   } catch(e){ notify('Error: '+(e.message||'Failed to create business')); }
@@ -635,7 +635,7 @@ async function doLogin(){
     window._ffAuthed = true;
     window.dispatchEvent(new Event('ff:authed'));
     if(typeof bootFinFlowAPI === 'function') bootFinFlowAPI();
-    await loadEntitiesFromDB();
+    await loadEntitiesFromDB(true); // F50 Step 2: force — explicit login must load fresh, not a stale boot memo
     if(typeof loadBankingFromDB === 'function') await loadBankingFromDB();
   }catch(e){
     if(errEl) errEl.textContent='Network error — is the server running?';
@@ -686,7 +686,7 @@ async function doRegister(){
     window._ffAuthed = true;
     window.dispatchEvent(new Event('ff:authed'));
     if(typeof bootFinFlowAPI === 'function') bootFinFlowAPI();
-    await loadEntitiesFromDB();
+    await loadEntitiesFromDB(true); // F50 Step 2: force — a just-registered account must load fresh, not a stale boot memo
     if(typeof loadBankingFromDB === 'function') await loadBankingFromDB();
   }catch(e){
     if(errEl) errEl.textContent='Network error — is the server running?';

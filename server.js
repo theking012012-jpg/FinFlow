@@ -3488,23 +3488,33 @@ async function recalcInvoiceStatus(pool, invoiceId, userId) {
   );
   const invRow = _invR ? rowToObj(_invR) : null;
   if (!invRow) return;
+  // F48 #1: SCOPE the sum by user_id. An invoice_payments row injected by another user against
+  // this invoice_id must NEVER contribute to this owner's amount_paid (cross-tenant AR corruption).
   const { rows } = await pool.query(
-    `SELECT COALESCE(SUM(amount),0) AS paid FROM invoice_payments WHERE invoice_id = $1`,
-    [invoiceId]
+    `SELECT COALESCE(SUM(amount),0) AS paid FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2`,
+    [invoiceId, userId]
   );
   const paid = parseFloat(rows[0].paid) || 0;
   const total = parseFloat(invRow.amount) || 0;
-  const status = paid >= total ? 'paid' : paid > 0 ? 'partial' : invRow.status;
+  // F48 #1 (delete-revert): when paid drops to 0 (last payment removed), REVERT a payment-derived
+  // status ('partial'/'paid') to the natural unpaid state — NOT the stale current status, which
+  // would strand the invoice at 'partial' with amount_paid 0. A manually-set non-payment status is
+  // preserved. (Live-reproduced: paid → delete all → stuck 'partial', AR incoherent.)
+  let status;
+  if (paid >= total) status = 'paid';
+  else if (paid > 0) status = 'partial';
+  else status = (invRow.status === 'partial' || invRow.status === 'paid') ? 'pending' : invRow.status;
   await db.updateById('invoices', invoiceId, { status, amount_paid: paid });
 }
 
 // F38 Step 3 — the payables mirror of recalcInvoiceStatus. Sums the payments_made LINKED to a
 // bill (data->>'bill_id') and writes the bill's amount_paid + status. payments_made is a JSONB
 // table (amount/bill_id live in `data`), so the sum casts data->>'amount'; the link matches on
-// data->>'bill_id' as text. Same status rule as invoices: paid≥total→paid, >0→partial, else keep
-// prior (a shared quirk: deleting the last payment leaves 'partial' with amount_paid 0 — harmless,
-// AP uses amount−amount_paid so the money is still correct). RECOGNIZED_BILL (below) is the
-// recognition allowlist Step 4's expense leg and the balance-sheet AP both key on.
+// data->>'bill_id' as text. Same status rule as invoices, INCLUDING the revert (F48 #1): when the
+// last payment is removed (paid → 0) a payment-derived status reverts to 'unpaid' rather than
+// stranding the bill at 'partial'. (AP is arithmetic-driven so the money was already correct, but
+// a 'partial' bill with amount_paid 0 is an incoherent status the UI keys on — fixed here too.)
+// RECOGNIZED_BILL (below) is the allowlist Step 4's expense leg and the balance-sheet AP key on.
 async function recalcBillStatus(pool, billId, userId) {
   const { rows: [_blR] } = await pool.query(
     `SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]
@@ -3518,7 +3528,10 @@ async function recalcBillStatus(pool, billId, userId) {
   );
   const paid = parseFloat(rows[0].paid) || 0;
   const total = parseFloat(billRow.amount) || 0;
-  const status = paid >= total ? 'paid' : paid > 0 ? 'partial' : billRow.status;
+  let status;
+  if (paid >= total) status = 'paid';
+  else if (paid > 0) status = 'partial';
+  else status = (billRow.status === 'partial' || billRow.status === 'paid') ? 'unpaid' : billRow.status;
   await db.updateById('bills', billId, { status, amount_paid: paid });
 }
 
@@ -3539,11 +3552,22 @@ app.get('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
 
 app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   const { invoice_id, amount, payment_date, method, reference, notes } = req.body || {};
-  if (!invoice_id || !amount) return res.status(400).json({ error: 'invoice_id and amount required' });
+  if (!invoice_id) return res.status(400).json({ error: 'invoice_id and amount required' });
+  // F48 #3: validate amount server-side — `!amount` let -500 / NaN through, inflating AR.
+  const amt = parseFloat(amount);
+  if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'A valid positive amount is required.' });
+  // F48 #2: the invoice MUST belong to the caller. Without this, a payment injected against a
+  // foreign/nonexistent invoice_id is accepted (was 201) and corrupts that owner's AR.
+  const inv = await ownedBy('invoices', invoice_id, req.session.userId);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
+  // Overpayment: no credit/refund model exists, so reject a payment beyond the remaining balance
+  // rather than book cash the system can't represent. (Epsilon guards float rounding.)
+  const remaining = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
+  if (amt > remaining + 0.005) return res.status(400).json({ error: `Payment exceeds the remaining balance of ${remaining.toFixed(2)}.` });
   const { rows } = await pool.query(
     `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [req.session.userId, req.entityId || null, parseInt(invoice_id), parseFloat(amount),
+    [req.session.userId, req.entityId || null, parseInt(invoice_id), amt,
      payment_date || new Date().toISOString().slice(0, 10), method || 'Bank Transfer', reference || null, notes || null]
   );
   await recalcInvoiceStatus(pool, parseInt(invoice_id), req.session.userId);
@@ -3924,9 +3948,14 @@ async function computeBooks(userId, entityId = null, period = 'year') {
   // ONLY by Store B (invoice_payments/recalcInvoiceStatus), which is UI-unreachable until
   // F35 lands — so today it is null everywhere and this equals Σ(amount). Coded correct;
   // the partial-AR draw-down becomes active with F35.
+  // F48 #4: floor AR at 0 (mirror of the Step 4 AP amendment) so an over-credited invoice can
+  // never subtract from receivables. The status!=='paid' filter is KEPT (unlike AP): invoices can
+  // be manually marked 'paid' with amount_paid 0 via markInvoicePaid, so dropping the filter would
+  // resurrect them as AR — the arithmetic-driven AR follow-up is logged (F48) pending that path
+  // writing amount_paid.
   const outstanding = r2(sum(
     issuedInv.filter(i => (i.status || '').toLowerCase() !== 'paid'),
-    i => num(i.amount) - num(i.amount_paid)
+    i => Math.max(0, num(i.amount) - num(i.amount_paid))
   ));
   const grossProfit = r2(revenue - cogs);
   const netProfit   = r2(revenue - cogs - opex);

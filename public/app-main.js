@@ -5797,7 +5797,8 @@ document.addEventListener('mouseleave',()=>{
 const mobileCSS = document.createElement('style');
 mobileCSS.textContent = `
 @media (max-width: 700px) {
-  .sidebar { display: none !important; }
+  /* Mobile fix: removed the sidebar display:none rule — it overrode the off-canvas drawer and made
+     the hamburger appear dead. The drawer opens via .sidebar.open (openSidebar in index.html). */
   .topbar-right #themeBtn { display: none; }
   #currency-picker-wrap { display: none; }
   #pMonth,#pQ,#pY { display: none; }
@@ -5812,21 +5813,9 @@ mobileCSS.textContent = `
   .page-title { font-size: 14px; }
   .period-label { display: none; }
   .field-group { grid-template-columns: 1fr !important; }
-  #mobile-bottom-nav {
-    display: flex !important;
-    position: fixed; bottom: 0; left: 0; right: 0; height: 60px;
-    background: var(--bg1); border-top: 1px solid var(--bd2);
-    z-index: 500; align-items: stretch;
-    padding-bottom: env(safe-area-inset-bottom, 0);
-  }
-  .mob-nav-item {
-    flex: 1; display: flex; flex-direction: column; align-items: center;
-    justify-content: center; gap: 3px; cursor: pointer; color: #9e8f7a;
-    font-size: 9.5px; font-weight: 500; letter-spacing: .04em;
-    transition: color .13s; border: none; background: none; padding: 0;
-  }
-  .mob-nav-item.active { color: var(--acc); }
-  .mob-nav-item svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  /* Mobile fix: removed the injected mobile-bottom-nav display:flex bar + its mob-nav-item styling —
+     it was a SECOND bottom nav duplicating index.html's canonical mob-bottom-nav. The injected bar
+     is no longer appended (appendChild commented below). */
   .mobile-fab {
     position: fixed; bottom: 72px; right: 16px; width: 48px; height: 48px;
     border-radius: 50%; background: var(--acc); color: #0e0b08; border: none;
@@ -5869,7 +5858,9 @@ bottomNav.innerHTML = `
     AI
   </button>
 `;
-document.body.appendChild(bottomNav);
+// Mobile fix: do NOT inject this second bottom nav — index.html ships the canonical `.mob-bottom-nav`.
+// (Was active in the repo; commented so the injected `#mobile-bottom-nav` stays un-injected.)
+// document.body.appendChild(bottomNav);
 
 window.setMobActive = function(id){
   document.querySelectorAll('.mob-nav-item').forEach(b => b.classList.remove('active'));

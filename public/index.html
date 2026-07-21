@@ -351,6 +351,8 @@ html{overflow-x:hidden}
 }
 /* ── MOBILE BOTTOM NAV ───────────────────────── */
 .mob-bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:60px;background:var(--bg1);border-top:1px solid var(--bd);z-index:400;align-items:stretch;justify-content:space-around;padding:0 4px;padding-bottom:env(safe-area-inset-bottom)}
+/* Mobile fix: while the off-canvas drawer is open, hide the bottom nav + FAB so they don't overlap it. */
+body.sidebar-open .mob-bottom-nav,body.sidebar-open .mobile-fab{display:none!important}
 .mob-nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex:1;cursor:pointer;padding:6px 4px;border-radius:var(--radius);transition:all .13s;color:#9a8a72;border:none;background:none;font-family:var(--font)}
 .mob-nav-item:active{background:var(--bg2);transform:scale(.93)}
 .mob-nav-item.active{color:var(--acc)}
@@ -3502,11 +3504,13 @@ function loadChartJS(callback){
 function openSidebar(){
   document.getElementById('sidebar').classList.add('open');
   document.getElementById('sidebarOverlay').classList.add('open');
+  document.body.classList.add('sidebar-open');   // Mobile fix: hides the bottom nav + FAB while the drawer is open
   document.body.style.overflow='hidden';
 }
 function closeSidebar(){
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebarOverlay').classList.remove('open');
+  document.body.classList.remove('sidebar-open');
   document.body.style.overflow='';
 }
 // Close on ESC
@@ -4766,15 +4770,21 @@ window.mobNavActive=function(id){
 
 // ── SWIPE GESTURE NAVIGATION ────────────────────────────────────────────────
 (function(){
-  const PAGES=['dashboard','banking','invoices','cashflow','budget','mrr'];
-  let touchStartX=0,touchStartY=0,currentPageIdx=0;
+  // Mobile fix: swipe only across the three core pages, and read the LIVE active page each time
+  // (the old handler tracked a local currentPageIdx that drifted out of sync the moment the user
+  // navigated via the bottom nav / sidebar, jumping to the wrong page on the next swipe).
+  const PAGES=['dashboard','invoices','banking'];
+  let touchStartX=0,touchStartY=0;
+  const _activePage=()=>{ const el=document.querySelector('.page.active'); return el?(el.id||'').replace('page-',''):'dashboard'; };
   document.addEventListener('touchstart',e=>{touchStartX=e.touches[0].clientX;touchStartY=e.touches[0].clientY;},{passive:true});
   document.addEventListener('touchend',e=>{
     const dx=e.changedTouches[0].clientX-touchStartX;
     const dy=Math.abs(e.changedTouches[0].clientY-touchStartY);
     if(Math.abs(dx)<60||dy>50)return;
-    if(dx<0&&currentPageIdx<PAGES.length-1){currentPageIdx++;showPage(PAGES[currentPageIdx],null);}
-    else if(dx>0&&currentPageIdx>0){currentPageIdx--;showPage(PAGES[currentPageIdx],null);}
+    const idx=PAGES.indexOf(_activePage());
+    if(idx<0)return;                                  // not on a swipeable page — ignore
+    if(dx<0&&idx<PAGES.length-1) showPage(PAGES[idx+1],null);
+    else if(dx>0&&idx>0) showPage(PAGES[idx-1],null);
   },{passive:true});
 })();
 

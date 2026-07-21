@@ -1717,6 +1717,22 @@ window.computeRevenue = computeRevenue;
 // ════════════════════════════════════════════
 // NAVIGATION
 // ════════════════════════════════════════════
+// Mobile quick-add FAB — single source of the pages where the "+" has an action. On every
+// other page (dashboard/banking/reports/budget/mrr/…) the FAB used to just toast a useless
+// "choose a section", so it's hidden there. showPage syncs it on each page change; the FAB
+// onclick reuses this same set to dispatch.
+const FAB_PAGES = ['invoices','expenses','customers','personal'];
+window.FAB_PAGES = FAB_PAGES;
+function _syncMobileFab(id){
+  const f = document.querySelector('.mobile-fab');
+  if(!f) return;
+  // Inline display toggles only the MOBILE case: '' falls back to the @media(max-width:700px)
+  // .mobile-fab display:flex; 'none' hides it. The @media(min-width:701px) !important rule keeps
+  // it hidden on desktop regardless, so this never resurfaces the FAB there.
+  f.style.display = FAB_PAGES.includes(id) ? '' : 'none';
+}
+window._syncMobileFab = _syncMobileFab;
+
 function showPage(id, el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -1738,6 +1754,7 @@ function showPage(id, el){
     'create-business':'Create Business',
   };
   document.getElementById('pageTitle').textContent=titles[id]||id;
+  _syncMobileFab(id);   // hide the mobile quick-add FAB on pages with no add action
   // Page-specific renders — every call typeof-guarded so a missing wiring
   // file (or a render function loaded later via deferred IIFE) never throws
   // ReferenceError and crashes the rest of showPage. The cascade-fail was
@@ -5875,13 +5892,15 @@ fab.title = 'Quick add';
 fab.onclick = () => {
   const page = document.querySelector('.page.active');
   const id = page?.id?.replace('page-', '') || 'dashboard';
+  if(!FAB_PAGES.includes(id)) return;   // FAB is hidden on these pages anyway — no useless toast
   if(id==='invoices') openInvoiceModal();
   else if(id==='expenses') openExpenseModal();
   else if(id==='customers') openCustomerModal();
   else if(id==='personal') openTransactionModal();
-  else notify('Quick add — choose a section');
 };
 document.body.appendChild(fab);
+// Correct on first paint (dashboard = hidden); showPage syncs it on every change thereafter.
+_syncMobileFab((document.querySelector('.page.active')?.id || 'page-dashboard').replace('page-',''));
 
 
 // ── 2. ADVISOR NETWORK PAGE ──────────────────────────────────────────────

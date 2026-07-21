@@ -1906,6 +1906,10 @@ function updateDashboard(d=getPeriodData()){
   document.getElementById('d-rev').textContent=S(_ddRev);
   document.getElementById('d-exp').textContent=S(_ddExp);
   document.getElementById('d-profit').textContent=S(_ddProfit);
+  // F34 Step 2: if a non-native display currency is active, overlay the server-converted figures
+  // (historical per-transaction FX). Native shown first (above) so there's no blank flash; the async
+  // fetch overwrites with the converted values. The chart still renders native until Step 3.
+  if(window._displayCurrency) _applyConvertedKPIs(window._displayCurrency);
   document.getElementById('d-chart-title').textContent='Revenue vs Expenses — '+d.label;
   // Prior-period baseline from the SAME windowed compute (same basis, payroll included) — NOT
   // the old getPeriodData REV[]/EXP[] arrays, which used a different (payroll-excluded) basis
@@ -4283,10 +4287,41 @@ function deleteCustomer(){
 function updateBrandName(){document.getElementById('sb-brand-name').textContent=document.getElementById('s-biz-name').value||'FinFlow'}
 function updateUserName(){document.getElementById('sb-user-name').textContent=document.getElementById('s-user-name').value||'User'}
 function updateUserAvatar(){document.getElementById('sb-user-avatar').textContent=document.getElementById('s-user-initials').value.toUpperCase()||'?'}
+// F34 Step 2: the display currency the dashboard renders business figures in. null ⇒ native (the
+// active entity's own currency) ⇒ no ?display= param ⇒ server returns native (identity, Step 1).
+window._displayCurrency = window._displayCurrency || null;
+function _activeEntityCurrency(){
+  try { const a=(typeof ENTITIES!=='undefined'?ENTITIES:(window.ENTITIES||[])).find(e=>e.active); return (a&&a.currency)||'USD'; } catch(e){ return 'USD'; }
+}
 function updateCurrency(){
+  const code=document.getElementById('s-currency').value;
   const map={USD:'$',EUR:'€',GBP:'£',TTD:'TT$',CAD:'C$',AUD:'A$'};
-  currencySymbol=map[document.getElementById('s-currency').value]||'$';
-  refreshAllPeriodData();notify('Currency updated to '+document.getElementById('s-currency').value);
+  currencySymbol=map[code]||(window.CURRENCIES&&window.CURRENCIES[code]&&window.CURRENCIES[code].symbol)||'$';
+  // Selecting the active entity's OWN currency ⇒ null ⇒ identity (native). A non-native currency ⇒
+  // the dashboard KPIs + entity cards re-fetch /api/reports?display=<CCY> and render the
+  // server-converted figures (historical per-transaction FX). No client-side conversion math.
+  window._displayCurrency=(code && code!==_activeEntityCurrency())?code:null;
+  refreshAllPeriodData();
+  notify('Currency updated to '+code);
+}
+// F34 Step 2: overlay the server-converted canonical KPIs for the active period+entity. Uses the
+// SAME _periodWindow the client filters on so server==client at every period; a stale response
+// (currency changed mid-flight) is dropped. Native/identity path never calls this.
+async function _applyConvertedKPIs(ccy){
+  try{
+    const period=(typeof currentPeriod!=='undefined')?currentPeriod:'year';
+    const w=(typeof _periodWindow==='function')?_periodWindow(period, period==='month'?currentMonthIdx:null):null;
+    const qs=new URLSearchParams({display:ccy});
+    if(w&&w.start&&w.end){ qs.set('start',w.start.toISOString()); qs.set('end',w.end.toISOString()); qs.set('elapsedMonths',String(w.elapsedMonths||0)); }
+    const r=await fetch('/api/reports?'+qs.toString(),{credentials:'include'});
+    if(!r.ok) return;
+    const j=await r.json();
+    if(window._displayCurrency!==ccy) return; // currency changed while in flight — drop stale
+    const set=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=S(v);};
+    set('d-rev', j.revenue||0);
+    set('d-exp', j.expenses||0);
+    set('d-profit', j.netProfit||0);
+  }catch(e){}
 }
 function toggleCompact(){
   document.getElementById('sidebar').classList.toggle('compact',document.getElementById('s-compact').checked);

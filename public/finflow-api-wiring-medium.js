@@ -1042,7 +1042,9 @@
         Promise.all(ents.map(e => {
           const _id = e._dbId || e.id;
           if (!_id) return Promise.resolve();
-          return fetch('/api/reports?entity_id=' + _id, { credentials: 'same-origin' })
+          // F34 Step 2: thread the active display currency so each entity card converts too.
+          const _fxDisp = window._displayCurrency ? ('&display=' + encodeURIComponent(window._displayCurrency)) : '';
+          return fetch('/api/reports?entity_id=' + _id + _fxDisp, { credentials: 'same-origin' })
             // F31: a 200 with real figures (incl. an honest $0 for a genuinely empty
             // entity) populates e.data; a 500 / failed fetch marks the entity UNAVAILABLE
             // so the consolidated view renders "—", never a fabricated $0 for data that

@@ -4356,10 +4356,25 @@ async function _applyConvertedKPIs(ccy){
     if(!r.ok) return;
     const j=await r.json();
     if(window._displayCurrency!==ccy) return; // currency changed while in flight — drop stale
-    const set=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=S(v);};
-    set('d-rev', j.revenue||0);
-    set('d-exp', j.expenses||0);
-    set('d-profit', j.netProfit||0);
+    const cov=j.fxCoverage||{};
+    const set =(id,v)=>{const el=document.getElementById(id); if(el){el.textContent=S(v); el.title='';}};
+    const dash=(id,hint)=>{const el=document.getElementById(id); if(el){el.textContent='—'; el.title=hint||'';}};
+    if(cov.complete===false){
+      // F34 Step 6 honesty: no FX rate exists for this currency pair, so every business figure would
+      // be a fabricated $0/relabel. Show "—" + a hint instead — NEVER a silent zero or mislabeled money.
+      const from=(cov.unconvertible&&cov.unconvertible[0]&&cov.unconvertible[0].from)||_activeEntityCurrency();
+      const hint='No FX rate for '+from+'→'+ccy+'. Add one under FX / Currency to convert.';
+      ['d-rev','d-exp','d-profit','d-outstanding'].forEach(id=>dash(id,hint));
+    } else {
+      // Server-converted canonical figures (historical per-transaction FX). No client conversion math.
+      set('d-rev', j.revenue||0);
+      set('d-exp', j.expenses||0);
+      set('d-profit', j.netProfit||0);
+      set('d-outstanding', j.outstanding||0);   // Outstanding/AR converts at each invoice's issue date
+    }
+    // Investments (personal holdings) do NOT route through computeBooks and are NOT yet FX-converted.
+    // Show "—" rather than a relabeled-but-unconverted USD figure (honest; holdings conversion pending).
+    dash('d-invest','Investments are not yet FX-converted — switch to your base currency to view.');
   }catch(e){}
 }
 function toggleCompact(){

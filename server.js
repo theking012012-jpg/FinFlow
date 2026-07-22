@@ -4207,16 +4207,33 @@ app.post('/api/cogs/calculate', requireAuth, wrap(async (req, res) => {
 // N queries; rateAsOf is the single-lookup entry point (harness + external callers).
 function pickRate(rows, from, to, date) {
   if (from === to) return 1;
-  const d = date ? new Date(date) : null;
-  if (!d || isNaN(d)) return null;              // no recognition date → cannot date a conversion → null
-  let best = null, bestDate = null;
+  // Collect the usable rates for this pair once (numeric rate + valid rate_date).
+  const pair = [];
   for (const r of rows || []) {
     if (r.from_currency !== from || r.to_currency !== to) continue;
-    const rd = new Date(r.rate_date);
-    if (isNaN(rd) || rd > d) continue;          // only rates effective on/before the txn date
-    if (bestDate == null || rd > bestDate) { bestDate = rd; best = parseFloat(r.rate); }
+    const rd = new Date(r.rate_date), rate = parseFloat(r.rate);
+    if (!isNaN(rd) && isFinite(rate)) pair.push({ rd, rate });
   }
-  return (best != null && isFinite(best)) ? best : null;
+  if (pair.length === 0) return null;           // pair has ZERO rates → null (never fabricate)
+  const d = date ? new Date(date) : null;
+  // Preferred: the most-recent rate effective ON/BEFORE the recognition date (carry-forward — keeps
+  // historical accuracy when several rates exist, standard accounting).
+  if (d && !isNaN(d)) {
+    let best = null, bestDate = null;
+    for (const r of pair) {
+      if (r.rd > d) continue;
+      if (bestDate == null || r.rd > bestDate) { bestDate = r.rd; best = r.rate; }
+    }
+    if (best != null) return best;
+  }
+  // Nearest-available fallback (A): no rate on/before the date (or no usable date) → the EARLIEST
+  // rate that exists for the pair (carry-backward). Lets a single rate convert the whole history,
+  // while multiple rates still date each txn to its own on/before rate above. Non-empty ⇒ non-null.
+  let earliest = null, earliestDate = null;
+  for (const r of pair) {
+    if (earliestDate == null || r.rd < earliestDate) { earliestDate = r.rd; earliest = r.rate; }
+  }
+  return earliest;
 }
 async function rateAsOf(pool, userId, from, to, date) {
   if (from === to) return 1;                    // short-circuit before any DB hit

@@ -4797,8 +4797,8 @@ async function loadFXData(){
           <span style="font-family:var(--font-mono)">${esc(r.from_currency)}</span>
           <span style="font-family:var(--font-mono)">${esc(r.to_currency)}</span>
           <span style="font-family:var(--font-mono)">${parseFloat(r.rate).toFixed(4)}</span>
-          <span style="color:var(--t3)">${esc(r.rate_date||'')}</span>
-          <span><button onclick="deleteFXRate(${r.id})" title="Delete rate" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:13px;line-height:1;padding:0" onmouseenter="this.style.color='var(--red)'" onmouseleave="this.style.color='var(--t3)'">✕</button></span>
+          <span style="color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.rate_date||'')}</span>
+          <span style="text-align:right"><button onclick="deleteFXRate(${r.id})" title="Delete rate" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:13px;line-height:1;padding:2px 0 2px 8px" onmouseenter="this.style.color='var(--red)'" onmouseleave="this.style.color='var(--t3)'">✕</button></span>
         </div>`).join('')||'<div style="padding:1rem;color:var(--t3);font-size:12px;text-align:center">No rates yet</div>';
     }
 
@@ -4848,8 +4848,33 @@ async function addFXRate(btn){
   finally{ if(btn) btn.disabled=false; }
 }
 
+// In-app confirm modal (styled like the app; no native "railway.app says" dialog). Returns a
+// Promise<boolean>. Reusable — other native confirm() sites can migrate to it later.
+window._confirmModal=function(message, opts){
+  opts=opts||{};
+  return new Promise(function(resolve){
+    var ex=document.getElementById('_confirm-overlay'); if(ex) ex.remove();
+    var overlay=document.createElement('div');
+    overlay.id='_confirm-overlay';
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:10000;display:flex;align-items:center;justify-content:center;padding:1rem';
+    var done=function(v){ overlay.remove(); document.removeEventListener('keydown',onKey); resolve(v); };
+    function onKey(e){ if(e.key==='Escape') done(false); else if(e.key==='Enter') done(true); }
+    overlay.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-lg);padding:1.5rem;max-width:340px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,.5)">'
+      +'<div style="font-size:13.5px;color:var(--t1);line-height:1.5;margin-bottom:1.25rem">'+esc(message)+'</div>'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end">'
+      +'<button class="btn btn-ghost" id="_confirm-no" style="font-size:12px">'+esc(opts.cancelText||'Cancel')+'</button>'
+      +'<button class="btn btn-primary" id="_confirm-yes" style="font-size:12px'+(opts.danger?';background:var(--red);border-color:var(--red)':'')+'">'+esc(opts.okText||'Confirm')+'</button>'
+      +'</div></div>';
+    overlay.addEventListener('click',function(e){ if(e.target===overlay) done(false); });
+    document.body.appendChild(overlay);
+    document.getElementById('_confirm-no').onclick=function(){ done(false); };
+    document.getElementById('_confirm-yes').onclick=function(){ done(true); };
+    document.addEventListener('keydown',onKey);
+  });
+};
+
 async function deleteFXRate(id){
-  if(!confirm('Delete this FX rate?')) return;
+  if(!(await _confirmModal('Delete this FX rate? This cannot be undone.', {okText:'Delete', danger:true}))) return;
   try{
     const res=await fetch('/api/fx-rates/'+id,{method:'DELETE',credentials:'include'});
     if(!res.ok){notify('Could not delete rate',true);return;}

@@ -31,7 +31,8 @@ One week to launch. This list is deliberately short and deliberately not padded.
 |---|---|---|---|
 | ~~**B1**~~ | ✅ **DONE** `e1a8f3e` — **F55** Dashboard KPIs never repainted after a save or delete | harness 16/16; owner live-check outstanding | ~~15 min~~ |
 | **B2** | **F64** — every money figure ≥ $1,000 renders abbreviated to 1 decimal (`$1.2K`), including itemized invoice/expense/bill rows; sub-$1K rounds to whole dollars; the "Show cents" setting does nothing | An accounting product that will not show you the exact amount of an invoice is not an accounting product. | 2–3 h |
-| **B3** | **F56 + F57** — Outstanding/AR and the whole Cash Flow page disagree with the Dashboard and `/api/reports` | Two adjacent screens show different numbers for the same thing. This is the exact class F7/F9/F14 were opened for. | 3–4 h |
+| **B3** | ✅ **F56 DONE** `0756960` (5 AR surfaces unified) · **F57 still open** — Cash Flow page uses a different basis from the Dashboard | Two adjacent screens show different numbers for the same thing. | ~2 h left |
+| **B11** | **F71** — payroll accrues with no effective dating: today's roster is applied retroactively to every past month | Owner-surfaced. Adding an employee today silently changes last January's expenses. **Needs an owner ruling on the basis before coding.** | 0.5 d |
 | **B4** | **F58** — credit notes and vendor credits are never applied as contra | Revenue and AP are **overstated** by the full value of every credit note issued. Wrong money, silently. | 4–6 h |
 | ~~**B5**~~ | ✅ **DONE** `57ca8b2` — **F60** rolling-vs-fiscal axis mismatch + fabricated Rent, **F61** period-blind bars (+ a stale-row bug found in the same code) | harness 13/13; owner live-check outstanding | ~~1–2 h~~ |
 | ~~**B6**~~ | ✅ **DONE** `f36ca7b` — **F62** 9 server GETs fabricated empty results on failure, **F67** client turned failed fetches into empty arrays | harness 42/42; class **C7 closed**; owner live-check outstanding | ~~2–3 h~~ |
@@ -305,8 +306,20 @@ else if (typeof window.updateDashboard === 'function') { window.updateDashboard(
 
 ---
 
-### F56 🟠 HIGH — Outstanding / AR disagrees across three surfaces — **NEW**
-**Status:** OPEN, verified.
+### F56 ✅ **FIXED** (`0756960`, 2026-07-22) — was 🟠 HIGH — Outstanding / AR disagreed across five surfaces
+**Status:** ✅ **FIXED & harness-verified.** Surfaced by the owner: *Outstanding **$1.4K**, subtitle **"All invoices paid"**.*
+
+**Two defects.** The subtitle only checked whether anything was **overdue** and printed "All invoices paid" whenever nothing was — so a card with real money outstanding was captioned as settled. And `d-outstanding` had **two writers** with **different formulas** (app-main's year-only block + the wiring's `updateKPIs`) — the F7 defect class, regrown.
+
+**What changed.** One canonical `arOutstanding()` (`app-main.js`, exported as `window._arOutstanding`) mirroring the server's `computeBooks` AR leg exactly: `Σ max(0, amount − amount_paid)` over recognized statuses, returning counts too. Applied to **all five** drifted surfaces — dashboard card, invoice stats panel, Invoices page, Payments Received page, customer-detail modal. app-main no longer writes the card at all; the wiring owns it, matching the ownership split already documented there. Subtitle is three-way: *N overdue* / *N unpaid* / *All invoices paid*, amounts suppressed under a display currency.
+
+**Also fixed while here.** `refreshFinancials`' invoice mapper **dropped `amount_paid`** (which `loadEntityData` carries), so after *any* refresh `userInvoices` lost it — and `markInvoicePaid`, which settles `amount − amount_paid`, would try to pay the full amount again on a partially-paid invoice and be rejected **400** by the server's overpayment guard.
+
+**How it was verified.** 30/30. The client helper is compared **case-by-case against a transcription of the server's own AR leg** — fully unpaid, fully paid, partially paid, overdue partial, draft, void, over-credited, legacy status-paid-without-`amount_paid`, mixed book — so the two are checked against *each other*, not against my assumption of the server. Plus: the old formula asserted to genuinely differ, "All invoices paid" unreachable with a non-zero count, app-main writing neither value nor subtitle, every surface calling the one helper, both mappers carrying `amount_paid`.
+
+**Still to confirm live (owner):** record a $400 payment against a $1,000 invoice → dashboard, Invoices page and `/api/reports` all read **$600**, subtitle reads "1 unpaid invoice".
+
+**Original finding (for the record):**
 
 **What's wrong.** Three different formulas write "Outstanding":
 
@@ -568,6 +581,34 @@ So switching currency from Settings or the mobile drawer set `_displayCurrency`,
 **How it was verified.** Harness runs the real `_applyDisplayCurrency`: non-native switch updates `activeCurrency` + symbol + arms the overlay · selecting the native currency disarms the overlay **and** restores the symbol · idempotent on the header-pill path · exactly one repaint per switch.
 
 **Still to confirm live (owner, ~1 min):** change currency from **Settings** (not the header pill) → the figures and the symbol must both change together.
+
+---
+
+### F71 🟠 HIGH — Payroll accrues with **no effective dating** — today's roster applied to every past month — **NEW (owner-surfaced, 2026-07-22)**
+**Status:** OPEN, verified in code. Awaiting an owner decision on the basis (below).
+
+**How it surfaced.** Owner: *"this is June month, why are there expenses when nothing is logged for that month?"* Answer: `computeExpenseBreakdown` adds `monthlyPayroll × elapsedMonths` (`app-main.js:1656`, mirrored server-side at `server.js:4041-4066`). For any month that has started `elapsedMonths` is 1, so **every** month shows a full month of payroll whether or not anything was logged in it.
+
+**Why it's a defect, not just a surprise.** The accrual itself is defensible — payroll is a rate × time expense. But it multiplies the **current** roster by elapsed months with **no start date on the employee record**. So today's salaries are applied retroactively to every month of the fiscal year, including months before an employee was hired, before a raise, or before the owner set any salary at all. Add one employee today and last January's expenses change.
+
+**Course of action — needs an owner ruling first.** Three options, in ascending cost:
+1. **Effective-date the record.** Add `start_date` (and optionally `end_date`) to payroll rows — `payroll` is JSONB, so **no migration** — and count a month only if it falls inside the employment window. Needs a UI field on the payroll modal and the same predicate in both engines. *Correct; ~half a day.*
+2. **Proxy with `created_at`.** Accrue only from the month the payroll record was created. No UI change, but wrong the other way: a business entering existing staff today would show zero payroll for months they genuinely paid.
+3. **Leave it, label it.** Caption the Expenses card "includes payroll accrual" so the figure is at least explicable. *Not a fix.*
+
+**Recommendation: (1).** It is the only one that produces a defensible number, and JSONB means the storage cost is zero.
+**Done when:** an employee with a start date of 1 June contributes payroll to June and July but **nothing** to January–May, on the dashboard, `/api/reports` and `/books` alike.
+
+---
+
+### F72 🟡 MEDIUM — AP / payables overstated for partially-paid bills — **NEW (found while fixing F56)**
+**Status:** OPEN, verified. The exact mirror of F56 on the payables side.
+
+`finflow-api-wiring-pages.js:517` (Vendors page) and `finflow-api-wiring-stubs.js:337` (Bills page) both compute payables as `Σ amount` over `status !== 'paid'` — the same formula F56 just removed from the AR side. A bill with `amount_paid` set still reports its **full** face value as owed. F38 Step 3 added `recalcBillStatus` and `bills.amount_paid`, so the data to do this correctly already exists.
+
+**Not folded into the F56 commit deliberately:** bills use a different status vocabulary (`unpaid`/`due_soon`/`overdue`/`partial`/`paid`) than invoices, so the invoice-shaped `arOutstanding` helper does not apply — it needs its own `apPayables()` sibling rather than a bodge.
+**Course of action:** add `apPayables(bills)` = `Σ max(0, amount − amount_paid)` over the bill status allowlist; use it at both sites and anywhere `computeBooks` reports AP.
+**Done when:** a $1,000 bill with $400 paid reports **$600** payable on the Vendors page, the Bills page and `/api/reports`.
 
 ---
 

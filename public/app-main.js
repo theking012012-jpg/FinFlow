@@ -4621,7 +4621,7 @@ function buildCharts(){
       },
       scales:{
         x:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'}},border:{display:false}},
-        y:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'},callback:v=>'$'+Math.round(v/1000)+'k'},border:{display:false}}
+        y:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'},callback:v=>_fmtMoney(v,'$')},border:{display:false}}
       }
     }
   });
@@ -4669,7 +4669,7 @@ function buildCashChart(){
       },
       scales:{
         x:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'}},border:{display:false}},
-        y:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'},callback:v=>'$'+Math.round(v/1000)+'k'},border:{display:false}}
+        y:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'},callback:v=>_fmtMoney(v,'$')},border:{display:false}}
       }
     }
   });

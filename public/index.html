@@ -4175,14 +4175,14 @@ function renderBudget(){
     const over=r.actual>r.budget;
     const variance=r.budget-r.actual;
     const varColor=over?'var(--red)':'var(--green)';
-    const varStr=(over?'-':'+')+'$'+(Math.abs(variance)/1000).toFixed(1)+'K';
+    const varStr=(over?'-':'+')+window._fmtMoney(Math.abs(variance),'$');
     return `<div class="budget-row" style="margin-top:8px">
       <span class="budget-label">${r.cat}</span>
       <div class="budget-track">
         <div class="budget-actual" style="width:${pct}%;background:${over?'var(--red)':r.color}"></div>
         <div class="budget-marker" style="left:100%"></div>
       </div>
-      <span class="budget-vals" style="font-family:var(--font-mono);font-size:11px">$${(r.actual/1000).toFixed(1)}K / $${(r.budget/1000).toFixed(0)}K</span>
+      <span class="budget-vals" style="font-family:var(--font-mono);font-size:11px">${window._fmtMoney(r.actual,'$')} / ${window._fmtMoney(r.budget,'$')}</span>
       <span class="budget-variance" style="color:${varColor}">${varStr}</span>
     </div>`;
   }).join('');
@@ -4211,7 +4211,7 @@ async function loadMRRData(){
     // Update MRR metric cards
     const els = {
       'mrr-val': '$'+Math.round(monthlyTotal).toLocaleString(),
-      'arr-val': '$'+Math.round(arr/1000)+'K',
+      'arr-val': window._fmtMoney(arr,'$'),
     };
     Object.entries(els).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.textContent=val; });
   } catch(e){ console.warn('[MRR] Load failed:',e.message); }
@@ -4235,7 +4235,7 @@ function renderMRRChart(){
     }]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{x:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10}}},
-              y:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10},callback:v=>'$'+(v/1000).toFixed(0)+'K'}}}}
+              y:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10},callback:v=>window._fmtMoney(v,'$')}}}}
   });
 }
 // ── 6. PLAID BANKING ────────────────────────────────────────────────────────
@@ -5230,8 +5230,7 @@ function fmtConsol(valueUSD_native, fromCurrency){
   // Convert from native currency to consolCurrency
   const converted = fxConvert(valueUSD_native, fromCurrency, consolCurrency);
   const sym = (window.CURRENCIES[consolCurrency]||{symbol:'$'}).symbol;
-  const abs = Math.abs(converted);
-  return sym + (abs >= 1000 ? (abs/1000).toFixed(1)+'K' : Math.round(abs).toLocaleString());
+  return window._fmtMoney(converted, sym);   // shared K→M→B rollover in the consol currency
 }
 
 function getConsolTotal(rowKey){
@@ -5249,8 +5248,7 @@ function getConsolTotal(rowKey){
 function fmtTotal(val){
   if (val === null) return '—';   // F31: incomplete consolidation → honest dash, never $0
   const sym = (window.CURRENCIES[consolCurrency]||{symbol:'$'}).symbol;
-  const abs = Math.abs(val);
-  return sym + (abs >= 1000 ? (abs/1000).toFixed(1)+'K' : Math.round(abs).toLocaleString());
+  return window._fmtMoney(val, sym);   // shared K→M→B rollover in the consol currency
 }
 
 const CONSOL_ROW_DEFS=[
@@ -6081,9 +6079,9 @@ window.updateScenario = function(){
   const set = (id,v)=>{ const el=document.getElementById(id); if(el)el.textContent=v; };
   set('lbl-rev-growth', (revGrowth>=0?'+':'')+Math.round(revGrowth*100)+'%');
   set('lbl-headcount', headcount+' hire'+(headcount===1?'':'s'));
-  set('lbl-salary', '$'+Math.round(salary/1000)+'K');
+  set('lbl-salary', window._fmtMoney(salary,'$'));
   set('lbl-churn', (churn*100).toFixed(1)+'%');
-  set('lbl-invest', '$'+Math.round(invest/1000)+'K');
+  set('lbl-invest', window._fmtMoney(invest,'$'));
   set('lbl-efficiency', (efficiency>=0?'+':'')+Math.round(efficiency*100)+'%');
 
   const projRev = Math.round(BASE.rev * (1 + revGrowth) * (1 - churn));
@@ -6093,7 +6091,7 @@ window.updateScenario = function(){
   const newBurn = Math.max(0, Math.round((projExp - projRev/12)/12));
   const runway = newBurn > 0 ? Math.round(BASE.cash / newBurn) : 99;
 
-  const S = v => '$'+(Math.abs(v)>=1000?((v/1000).toFixed(0)+'K'):(v));
+  const S = v => window._fmtMoney(v, '$');   // shared K→M→B rollover (was K-only)
   const delta = (now, base) => {
     const d = now-base;
     const col = d>=0?'var(--green)':'var(--red)';
@@ -6140,7 +6138,7 @@ function renderScenarioChart(projRev, projExp){
     }]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{x:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9}}},
-              y:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9},callback:v=>'$'+(v/1000).toFixed(0)+'K'}}}}
+              y:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9},callback:v=>window._fmtMoney(v,'$')}}}}
   });
 }
 
@@ -6539,11 +6537,11 @@ document.addEventListener('click', e=>{
           <div style="font-size:11px;color:var(--t3)">${esc(h.type||'Stock')} · ${esc(String(shares))} units</div>
         </div>
         <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$${price.toFixed(2)}</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$${(val/1000).toFixed(1)}K</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">$${(cost/1000).toFixed(1)}K</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${window._fmtMoney(val,'$')}</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${window._fmtMoney(cost,'$')}</div>
         <div style="text-align:right;font-family:var(--font-mono);color:${pos?'var(--green)':'var(--red)'}">${pos?'+':''}${glPct}%</div>
         <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">
-          ${inc>0?'$'+(inc/1000).toFixed(1)+'K':'—'}
+          ${inc>0?window._fmtMoney(inc,'$'):'—'}
           ${h.id!=null?`<div style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">
             <button class="btn btn-ghost" style="padding:1px 7px;font-size:10px" title="Edit holding" onclick="event.stopPropagation();editHolding(${h.id})">Edit</button>
             <button class="btn btn-ghost" style="padding:1px 6px;font-size:10px;color:var(--red)" title="Remove holding" onclick="event.stopPropagation();deleteHolding(${h.id})">✕</button>

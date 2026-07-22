@@ -34,7 +34,7 @@ One week to launch. This list is deliberately short and deliberately not padded.
 | **B3** | **F56 + F57** — Outstanding/AR and the whole Cash Flow page disagree with the Dashboard and `/api/reports` | Two adjacent screens show different numbers for the same thing. This is the exact class F7/F9/F14 were opened for. | 3–4 h |
 | **B4** | **F58** — credit notes and vendor credits are never applied as contra | Revenue and AP are **overstated** by the full value of every credit note issued. Wrong money, silently. | 4–6 h |
 | **B5** | **F60** — dashboard expense bars read a rolling-12-month index against fiscal-year data (currently off by 5 months), and quarterly/annual **Rent is fabricated** as `EXP_RENT[0] × 3` / `× 12` | A fabricated figure on the main dashboard. | 1–2 h |
-| **B6** | **F62 + F67** — 9 server GETs return `[]`/`{}` on a query error, and client entity fetches turn a failed response into an empty array | A DB blip silently zeroes Investments, Net Worth and the whole dashboard with no error state. Same class as F31, which was only fixed on 3 routes. | 2–3 h |
+| ~~**B6**~~ | ✅ **DONE** `f36ca7b` — **F62** 9 server GETs fabricated empty results on failure, **F67** client turned failed fetches into empty arrays | harness 42/42; class **C7 closed**; owner live-check outstanding | ~~2–3 h~~ |
 | ~~**B7**~~ | ✅ **DONE** `c9d2d16` — **F59** silent FX failure left native money under a foreign label, **+ F70** (found during the fix) 2 of 3 currency controls stamped the *previous* symbol on converted figures | harness 20/20; owner live-check outstanding | ~~30 min~~ |
 | **B8** | **C1-money-7** — the 7 money-bearing create routes with **no** server dedupe guard (banking, invoice-payments, payroll-runs, inventory-movements, fx-transactions, inventory restock, snapshots) | A double-click books a payment twice / runs payroll twice / corrupts FIFO COGS. The other 27 create routes are already guarded — this is finishing an existing pattern. | 2 h |
 | **B9** | **F54** — team-member data scope is incoherent: reads and creates are actor-scoped, updates/deletes on 9 tables are account-scoped | An invited member logs in to an **empty app**, and everything they create is invisible to the owner. **Alternative that also unblocks: disable team invites for launch** (hide the invite UI, 403 the route). | 1 d, or 30 min to disable |
@@ -202,7 +202,11 @@ Read all 45. **Not** a uniform defect.
 
 ---
 
-### C7 — Fail-soft fabrication on server GETs — 9 sites 🔴 (F31's unswept remainder)
+### C7 — Fail-soft fabrication on server GETs ✅ **CLOSED** (`f36ca7b`, 2026-07-22) — was 9 sites 🔴
+All 9 now return 500 + a route-specific message (see **F62**). Verified by a whole-file scan: the only surviving bare-empty response is `server.js:2819` ("no accountant linked"), a legitimate result. **Regression guard:** `grep -n "res.json(\[\])\|res.json({})" server.js` must return exactly that one line.
+
+<details><summary>Original instance list</summary>
+
 | Route | server.js | Returns on error | Money? |
 |---|---|---|---|
 | `GET /api/holdings` | 1339 | `[]` — comment literally says *"fail-soft: empty list keeps the frontend happy"* | ⚠️ zeroes Investments + Net Worth |
@@ -217,6 +221,7 @@ Read all 45. **Not** a uniform defect.
 
 **Course of action:** replace each with the F31 pattern already in `/api/cashflow` (`server.js:3185-3188`) — `console.error` + `res.status(500).json({error:…})`. A genuinely empty account already returns real `[]` from the success path; only a thrown error reaches the catch.
 **Done when:** renaming a table produces 500 + a visible error state, not silent zeros. → tracked as **F62**.
+</details>
 
 ---
 
@@ -387,8 +392,18 @@ year:    rent: EXP_RENT[0]*12     // app-main.js:1592
 
 ---
 
-### F62 🟠 HIGH — 9 server GETs fabricate empty/zero on a query error — **NEW** (class **C7**; F31's unswept remainder)
-**Status:** OPEN, verified. Full instance list in **C7** above.
+### F62 ✅ **FIXED** (`f36ca7b`, 2026-07-22) — was 🟠 HIGH — 9 server GETs fabricated empty/zero on a query error (class **C7**; F31's unswept remainder)
+**Status:** ✅ **FIXED & harness-verified.** Class **C7 CLOSED.**
+
+**What changed.** All 9 routes now return **500** with a route-specific message instead of `[]`/`{}`, keeping their existing `console.error` diagnostics (user id + pg error code): personal-transactions, goals, projects, holdings, recurring-bills, recurring-personal-transactions, vendor-credits, scenario, connections.
+**Fresh-install safety was checked before changing them** — `db.allByUser` already self-heals a known-but-missing table via `_ensureTable` and returns a genuinely empty `[]` (`database.js:681`), so a first-boot missing table never reaches these catches. Only real failures do. Asserted in the harness, not assumed.
+The only bare empty response left in `server.js` is the documented "no accountant linked" case at `:2819` — a legitimate result, not a failure path.
+
+**How it was verified.** 27 route-level assertions (each of the 9 × returns 500 / no fabricated empty / still logs) + a whole-file scan proving the single legitimate exception + the `42P01` self-heal guard. Part of the **42/42** green F62/F67 harness.
+
+**Still to confirm live (owner, ~3 min):** rename the `holdings` table in the DB → the Investments card must show an error state with a Retry, **not** `$0`. Rename it back.
+
+**Original finding (for the record):**
 
 The `/api/holdings` case is the sharpest: `server.js:1336-1340` catches, logs, and returns `[]` with the comment *"fail-soft: empty list keeps the frontend happy."* A transient DB error therefore renders **Investments $0** and **Net Worth minus the whole portfolio** — indistinguishable from a real empty portfolio. F31 established that this is unacceptable on money surfaces and fixed it on three report routes; the class was never swept.
 
@@ -462,8 +477,16 @@ Honest by comparison: "Export as PDF coming soon ✦" (`app-main.js:5116`) — t
 
 ---
 
-### F67 🟡 MEDIUM — Client turns failed entity fetches into empty arrays — **NEW**
-**Status:** OPEN, verified.
+### F67 ✅ **FIXED** (`f36ca7b`, 2026-07-22) — was 🟡 MEDIUM — Client turned failed entity fetches into empty arrays
+**Status:** ✅ **FIXED & harness-verified.**
+
+**What changed.** `loadEntityData`'s `res.ok ? json : []` across all five entity fetches is replaced by a `_pick(res, label)` helper that distinguishes the two cases the old ternary conflated: **401/403 is genuinely nothing** (logged out / no access) and still yields `[]`; **anything else throws**. The catch escalates `console.warn` → `console.error` and paints the shared dashboard error state (`_dashSetState('error')`, now exported from the dashboard wiring rather than duplicated), gated on `window._ffAuthed` so no error state appears pre-login.
+
+**How it was verified.** `_pick` extracted and exercised against ok / null-body / 401 / 403 / 400 / 500 / 502; catch-block assertions for the error paint, the log escalation and the auth gate; plus a regression guard that the old ternary is gone. Part of the **42/42** green harness.
+
+**Still to confirm live (owner, ~1 min):** block `/api/invoices` in DevTools and switch entity → dashboard shows the error state with a Retry, not `$0`.
+
+**Original finding (for the record):**
 
 `loadEntityData` (`app-main.js:1330-1335`): `const invoices = invRes.ok ? (await invRes.json() || []) : [];` — repeated for expenses, customers, inventory, payroll. A 500 becomes `[]`, which flows into `_realInvoices`/`_realExpenses`, into `buildMonthlyArrays`, into `computeRevenue`, and paints a **$0 dashboard with no error state**. The client-side mirror of C7/F62. The correct pattern already exists in the same tree (`apiGetStatus` + `_dashSetState('error')`, `finflow-api-wiring-dashboard.js:340-380`).
 

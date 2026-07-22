@@ -3253,6 +3253,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       fxCoverage: books.fxCoverage,   // F34: null-flag coverage — complete=false ⇒ figures are a partial (converted) P&L
       monthly: books.monthly,         // F34 B: converted overview-chart buckets (client basis; native = identity)
       expenseBreakdown: books.expenseBreakdown,  // F34 B: converted expense-by-category (client updateExpenseBars basis)
+      transactions: books.transactions,          // F34 B: converted recent-transactions preview (per-row; null ⇒ "—")
     });
   } catch (e) {
     // F31: surface the failure instead of fabricating $0 KPIs. A real empty period
@@ -4153,8 +4154,24 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     complete: breakdownComplete,
   };
 
+  // ── F34 B (surface 3) — CONVERTED recent business transactions (mirrors the client
+  // updateTransactions preview: recent recognized invoices + expenses). Each row's amount converts at
+  // its OWN recognition date (invoice issue_date / expense expense_date) via pickRate; no rate ⇒
+  // amount:null ⇒ the client renders "—". native ⇒ identity (rate 1). Preview only (not a reconciled
+  // total) — a shown row's converted amount == its contribution to the converted KPI at the same rate.
+  const _txAmt = (amount, date, from) => {
+    const a = num(amount);
+    if (!displayCur) return r2(a);
+    const rate = (from === displayCur) ? 1 : pickRate(_fxRows, from, displayCur, date);
+    return rate == null ? null : r2(a * rate);
+  };
+  const _txByDate = (a, b) => (new Date(b._d) - new Date(a._d)) || 0;
+  const _invTx = issuedInv.map(i => ({ name: i.client || 'Invoice', cat: 'Revenue · ' + (i.status || ''), type: 'income', _d: _invDate(i), amount: _txAmt(i.amount, _invDate(i), _fromOf(i)) })).sort(_txByDate).slice(0, 5);
+  const _expTx = expenses.map(e => ({ name: e.description || e.category || 'Expense', cat: 'Expense · ' + (e.category || 'Other'), type: 'expense', _d: _expDate(e), amount: _txAmt(e.amount, _expDate(e), _fromOf(e)) })).sort(_txByDate).slice(0, 5);
+  const transactions = [..._invTx, ..._expTx].sort(_txByDate).slice(0, 6).map(t => ({ name: t.name, cat: t.cat, type: t.type, amount: t.amount }));
+
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, period, monthly, expenseBreakdown,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, period, monthly, expenseBreakdown, transactions,
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     parts: {
       issuedInvoices: r2(issuedInvoices), salesReceipts: r2(salesReceipts),

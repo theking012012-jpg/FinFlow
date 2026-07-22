@@ -4377,6 +4377,7 @@ async function _applyConvertedKPIs(ccy){
       set('d-outstanding', j.outstanding||0);   // Outstanding/AR converts at each invoice's issue date
       _applyConvertedChart(j.monthly);          // F34 B surface 1 — overview chart from server buckets
       _applyConvertedBreakdown(j.expenseBreakdown); // F34 B surface 2 — expense breakdown from server
+      _applyConvertedTxns(j.transactions);      // F34 B surface 3 — transactions list from server (per-row)
     }
     // Investments (personal holdings) do NOT route through computeBooks and are NOT yet FX-converted.
     // Show "—" rather than a relabeled-but-unconverted USD figure (honest; holdings conversion pending).
@@ -4412,6 +4413,23 @@ function _applyConvertedBreakdown(bd){
     if(b){ const w=Math.round(r.amount/total*100)+'%'; b.style.setProperty('width',w,'important'); b.style.setProperty('--bar-w',w); }
     if(l) l.textContent=r.category;
   });
+}
+// F34 B surface 3 — overlay the recent-transactions list with the server's per-row CONVERTED amounts
+// (same #d-txns row markup as the bundle updateTransactions; amount via S(), or "—" if that row's pair
+// has no rate). Only runs for a non-native display, so native list stays byte-identical → no bundle change.
+function _applyConvertedTxns(txns){
+  const el=document.getElementById('d-txns');
+  if(!el || !Array.isArray(txns) || !txns.length) return;
+  const _e=s=>String(s==null?'':s).replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  el.innerHTML=txns.map(t=>{
+    const inc=t.type==='income';
+    const icon=inc?'<polyline points="1,8 6,3 10,7 15,2"/><polyline points="10,2 15,2 15,7"/>':'<polyline points="1,5 5,10 9,7 15,13"/><polyline points="10,13 15,13 15,8"/>';
+    const amt=(t.amount==null)?'—':((inc?'+':'-')+S(t.amount));
+    return '<div class="tx-row"><div class="tx-left"><div class="tx-icon '+(inc?'av-green':'av-red')+'">'
+      +'<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">'+icon+'</svg></div>'
+      +'<div><div class="tx-name">'+_e(t.name)+'</div><div class="tx-cat">'+_e(t.cat)+'</div></div></div>'
+      +'<div class="tx-amt '+(inc?'up':'dn')+'">'+amt+'</div></div>';
+  }).join('');
 }
 function toggleCompact(){
   document.getElementById('sidebar').classList.toggle('compact',document.getElementById('s-compact').checked);

@@ -5513,9 +5513,14 @@ function clearAIChat(){
       window.charts.overview.update();
     }
     updateKPIs(invs, exps, period);
-    // (Removed the payroll patch that re-wrote d-exp/d-profit here — those cards are now
-    // owned solely by app-main updateDashboard, which refreshFinancials calls right after
-    // this. computeExpenseBreakdown already accrues payroll into the canonical OpEx.)
+    // (Removed the payroll patch that re-wrote d-exp/d-profit here — those cards are owned
+    // solely by app-main updateDashboard, the canonical Revenue − COGS − OpEx writer.
+    // computeExpenseBreakdown already accrues payroll into the canonical OpEx.)
+    // ⚠️ F55: this function does NOT write d-rev/d-exp/d-profit. Every caller MUST call
+    // window.updateDashboard() after it, or those three cards never repaint. Callers today:
+    // bootDashboardWiring (below, :398-400) and refreshFinancials (finflow-api-wiring-postgres.js).
+    // An earlier version of this comment claimed refreshFinancials already did — it did not,
+    // because the call sat behind an `else if` that could never be reached. That was F55.
 
     updateExpenseBars(exps);
     updateTransactions(invs, exps);
@@ -5751,10 +5756,20 @@ function clearAIChat(){
       if (_pgFn) _pgFn();
 
       // ── Always rebuild dashboard KPIs + charts ─────────────────────
-      if (typeof window._refreshDashboardUI === 'function') {
-        window._refreshDashboardUI();
-      } else if (typeof window.updateDashboard === 'function') {
-        window.updateDashboard();
+      // F55: these are TWO SEQUENTIAL STEPS, not alternatives. _refreshDashboardUI rebuilds the
+      // chart + the non-canonical cards but deliberately does NOT write d-rev/d-exp/d-profit —
+      // only app-main's updateDashboard (the canonical Revenue − COGS − OpEx writer) does. The
+      // old `else if` made that second call UNREACHABLE, because the dashboard wiring always
+      // defines _refreshDashboardUI — so the KPI trio never repainted after a save or delete and
+      // stayed stale until a period switch or reload. This now mirrors the BOOT path exactly
+      // (finflow-api-wiring-dashboard.js:398-400 — _refreshDashboardUI() then updateDashboard()
+      // LAST), so the mutation path and the boot path paint the same cards the same way.
+      if (typeof window._refreshDashboardUI === 'function') window._refreshDashboardUI();
+      if (typeof window.updateDashboard === 'function') {
+        // Guarded so a KPI render error can't abort the personal-finance/budget refreshes below.
+        // LOGGED, never swallowed (audit class C6).
+        try { window.updateDashboard(); }
+        catch (e) { console.error('[FinFlow] updateDashboard failed during refresh:', e.message); }
       }
 
       // ── Refresh journal and COA KPI cards if on those pages ────────

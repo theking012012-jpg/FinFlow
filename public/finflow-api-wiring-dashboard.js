@@ -456,9 +456,14 @@
       window.charts.overview.update();
     }
     updateKPIs(invs, exps, period);
-    // (Removed the payroll patch that re-wrote d-exp/d-profit here — those cards are now
-    // owned solely by app-main updateDashboard, which refreshFinancials calls right after
-    // this. computeExpenseBreakdown already accrues payroll into the canonical OpEx.)
+    // (Removed the payroll patch that re-wrote d-exp/d-profit here — those cards are owned
+    // solely by app-main updateDashboard, the canonical Revenue − COGS − OpEx writer.
+    // computeExpenseBreakdown already accrues payroll into the canonical OpEx.)
+    // ⚠️ F55: this function does NOT write d-rev/d-exp/d-profit. Every caller MUST call
+    // window.updateDashboard() after it, or those three cards never repaint. Callers today:
+    // bootDashboardWiring (below, :398-400) and refreshFinancials (finflow-api-wiring-postgres.js).
+    // An earlier version of this comment claimed refreshFinancials already did — it did not,
+    // because the call sat behind an `else if` that could never be reached. That was F55.
 
     updateExpenseBars(exps);
     updateTransactions(invs, exps);

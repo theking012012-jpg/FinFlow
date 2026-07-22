@@ -222,7 +222,12 @@ const COUNTRY_CURRENCY = {
 let activeCurrency = 'USD';
 let _currencySearch = '';
 
-function toggleCurrencyMenu(){
+function toggleCurrencyMenu(e){
+  // BLOCKER FIX: without stopPropagation the SAME click bubbles to the document-level
+  // closeAllDropdowns listener (:536) which sets #currency-menu back to display:none, so the
+  // menu opened then instantly re-closed — the header pill's setCurrency was never reachable.
+  // (The sibling toggleBizMenu already does exactly this; the currency toggle was missing it.)
+  if(e && e.stopPropagation) e.stopPropagation();
   const m = document.getElementById('currency-menu');
   const isOpen = m.style.display !== 'none';
   closeAllDropdowns();
@@ -234,7 +239,7 @@ function buildCurrencyMenu(search){
   const entries = Object.entries(CURRENCIES)
     .filter(([code,c])=> !search ||
       code.toLowerCase().includes(search.toLowerCase()) ||
-      c.name.toLowerCase().includes(search.toLowerCase())
+      (c.name||'').toLowerCase().includes(search.toLowerCase())
     )
     .sort(([a],[b])=>{
       // Pin active to top, then common currencies, then alphabetical
@@ -259,8 +264,8 @@ function buildCurrencyMenu(search){
       >
         <span style="font-size:14px;width:20px;text-align:center;flex-shrink:0">${c.flag}</span>
         <span style="font-weight:600;color:var(--t1);width:36px;flex-shrink:0">${code}</span>
-        <span style="color:var(--t3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</span>
-        <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--t3);flex-shrink:0">${code==='USD'?'base':'×'+c.rate.toFixed(2)}</span>
+        <span style="color:var(--t3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name||''}</span>
+        <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--t3);flex-shrink:0">${code==='USD'?'base':(typeof c.rate==='number'?'×'+c.rate.toFixed(2):'')}</span>
         ${activeCurrency===code?'<span style="color:var(--acc);font-size:12px;flex-shrink:0">✓</span>':''}
       </div>`).join('')}
     ${entries.length===0?'<div style="padding:12px;text-align:center;color:var(--t3);font-size:12px">No currencies found</div>':''}

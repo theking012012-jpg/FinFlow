@@ -4261,13 +4261,35 @@ app.get('/api/fx-rates', requireAuth, wrap(async (req, res) => {
 app.post('/api/fx-rates', requireAuth, wrap(async (req, res) => {
   const { from_currency, to_currency, rate, rate_date } = req.body || {};
   if (!from_currency || !to_currency || !rate) return res.status(400).json({ error: 'from_currency, to_currency, rate required' });
+  const _from = from_currency.toUpperCase(), _to = to_currency.toUpperCase();
+  const _rate = parseFloat(rate), _date = rate_date || new Date().toISOString().slice(0, 10);
+  // Recent-duplicate guard (mirrors findRecentDuplicate's 5s spirit, on fx_rates' TYPED columns —
+  // findRecentDuplicate only matches the JSONB data model). A rapid re-submit of the same
+  // from/to/rate/date is returned idempotently instead of inserting a dupe; with the client's
+  // disable-on-submit this ends the 3× identical-row problem.
+  const { rows: dup } = await pool.query(
+    `SELECT * FROM fx_rates WHERE user_id=$1 AND entity_id IS NOT DISTINCT FROM $2
+       AND from_currency=$3 AND to_currency=$4 AND rate=$5 AND rate_date=$6
+       AND created_at > NOW() - INTERVAL '5 seconds' ORDER BY id DESC LIMIT 1`,
+    [req.session.userId, req.entityId || null, _from, _to, _rate, _date]
+  );
+  if (dup[0]) return res.status(201).json(dup[0]);
   const { rows: [row] } = await pool.query(
     `INSERT INTO fx_rates (user_id, entity_id, from_currency, to_currency, rate, rate_date)
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [req.session.userId, req.entityId || null, from_currency.toUpperCase(), to_currency.toUpperCase(),
-     parseFloat(rate), rate_date || new Date().toISOString().slice(0, 10)]
+    [req.session.userId, req.entityId || null, _from, _to, _rate, _date]
   );
   res.status(201).json(row);
+}));
+
+app.delete('/api/fx-rates/:id', requireAuth, wrap(async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  const { rowCount } = await pool.query(
+    `DELETE FROM fx_rates WHERE id=$1 AND user_id=$2`, [id, scopeId(req)]
+  );
+  if (!rowCount) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true });
 }));
 
 app.get('/api/fx-transactions', requireAuth, wrap(async (req, res) => {
@@ -4292,6 +4314,15 @@ app.post('/api/fx-transactions', requireAuth, wrap(async (req, res) => {
   const fAmt = parseFloat(foreign_amount);
   const rate = parseFloat(rate_at_transaction);
   const baseAmount = Math.round(fAmt * rate * 100) / 100;
+  // Recent-duplicate guard (same 5s recent-dup spirit, typed columns) — a rapid re-submit of the
+  // same currency/amount/rate returns the existing row instead of inserting a dupe.
+  const { rows: dupTx } = await pool.query(
+    `SELECT * FROM fx_transactions WHERE user_id=$1 AND entity_id IS NOT DISTINCT FROM $2
+       AND foreign_currency=$3 AND foreign_amount=$4 AND rate_at_transaction=$5
+       AND created_at > NOW() - INTERVAL '5 seconds' ORDER BY id DESC LIMIT 1`,
+    [req.session.userId, req.entityId || null, foreign_currency.toUpperCase(), fAmt, rate]
+  );
+  if (dupTx[0]) return res.status(201).json(dupTx[0]);
   const { rows: [row] } = await pool.query(
     `INSERT INTO fx_transactions (user_id, entity_id, reference_id, reference_type, foreign_currency, foreign_amount, base_amount, rate_at_transaction)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,

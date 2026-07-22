@@ -424,6 +424,10 @@
   // bootDashboardWiring is now called by loadEntityData — no separate boot needed
   // Expose it so loadEntityData can call it after entities are loaded
   window._bootDashboardWiring = bootDashboardWiring;
+  // F67: exported so app-main's loadEntityData can surface the SAME dashboard error state when an
+  // entity fetch fails, instead of maintaining a second copy of the error-paint logic (or, as
+  // before, warning to console and leaving fabricated $0 cards on screen).
+  window._dashSetState = _dashSetState;
 
   // Direct UI refresh — called by refreshFinancials() after it updates
   // _realInvoices/_realExpenses. Bypasses the updateDashboard patch so it

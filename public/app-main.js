@@ -1329,11 +1329,26 @@ async function loadEntityData(idx){
       fetch('/api/inventory'+_eq,  {credentials:'include'}),
       fetch('/api/payroll'+_eq,    {credentials:'include'}),
     ]);
-    const invoices   = invRes.ok   ? (await invRes.json()  || []) : [];
-    const expenses   = expRes.ok   ? (await expRes.json()  || []) : [];
-    const custs      = custRes.ok  ? (await custRes.json() || []) : [];
-    const invt       = invtRes.ok  ? (await invtRes.json() || []) : [];
-    const payroll    = payRes.ok   ? (await payRes.json()  || []) : [];
+    // F67 (F31/F62 class, client side): a failed response must NOT become an empty array. The old
+    // `res.ok ? json : []` turned a 500 into "this business has no invoices" and painted a $0
+    // dashboard with no error state — indistinguishable from a genuinely empty account. A 401/403
+    // IS legitimately empty here (logged out / no access), so only 5xx-and-network failures are
+    // treated as errors. Any failure on the two MONEY collections (invoices, expenses) aborts the
+    // load and surfaces the dashboard's error state rather than painting fabricated zeros.
+    const _pick = (res, label) => {
+      if (res.ok) return res.json().then(j => j || []);
+      if (res.status === 401 || res.status === 403) return [];   // not authorised ⇒ genuinely nothing
+      const err = new Error(label + ' failed (HTTP ' + res.status + ')');
+      err.status = res.status; err.label = label;
+      throw err;
+    };
+    const [invoices, expenses, custs, invt, payroll] = await Promise.all([
+      _pick(invRes,  'invoices'),
+      _pick(expRes,  'expenses'),
+      _pick(custRes, 'customers'),
+      _pick(invtRes, 'inventory'),
+      _pick(payRes,  'payroll'),
+    ]);
 
     // Atomically swap global arrays now that all data has arrived
     userInvoices.length = 0;
@@ -1467,7 +1482,16 @@ async function loadEntityData(idx){
       .map(([label,total])=>({label,total}));
 
     console.log('[Entity] Loaded real data — invoices:'+invoices.length+' expenses:'+expenses.length+' top clients:'+_topClients.length);
-  } catch(e){ console.warn('[Entity] loadEntityData failed:', e.message); } finally {
+  } catch(e){
+    // F67: an authenticated load failure must be VISIBLE. Previously this warned to console and
+    // left whatever was on screen — which, on a cold boot, was a full set of $0 cards the user
+    // had no way to tell apart from real data. 401/403 never reaches here (handled as genuinely
+    // empty above), so anything landing here is a real failure worth showing.
+    console.error('[Entity] loadEntityData failed:', e.message);
+    if(window._ffAuthed && typeof window._dashSetState==='function'){
+      try{ window._dashSetState('error'); }catch(_){}
+    }
+  } finally {
     MONTH_FULL=computeMonthFull();
     MONTHS=MONTH_FULL.map(function(m){return m.split(' ')[0];});
     _loadEntityDataRunning=false;

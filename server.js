@@ -1111,8 +1111,11 @@ app.get('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
   try {
     res.json(await db.allByUser('personal_transactions', req.session.userId, null, (a,b) => b.id - a.id));
   } catch (e) {
+    // F62 (F31 class): a query failure must NOT be disguised as "no transactions" — that
+    // silently zeroes personal income/expense and Net Worth. db.allByUser already self-heals a
+    // known-but-missing table and returns a genuinely empty [], so only a REAL failure lands here.
     console.error('[GET /api/personal-transactions] failed for user', req.session.userId, ':', e.code, e.message);
-    res.json([]);
+    res.status(500).json({ error: 'Could not load transactions. Please try again.' });
   }
 }));
 app.post('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
@@ -1239,8 +1242,9 @@ app.get('/api/goals', requireAuth, wrap(async (req, res) => {
   try {
     res.json(await db.allByUser('goals', req.session.userId, null, (a,b) => a.id - b.id));
   } catch (e) {
+    // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/goals] failed for user', req.session.userId, ':', e.code, e.message);
-    res.json([]);
+    res.status(500).json({ error: 'Could not load goals. Please try again.' });
   }
 }));
 app.post('/api/goals', requireAuth, wrap(async (req, res) => {
@@ -1277,8 +1281,9 @@ app.get('/api/projects', requireAuth, wrap(async (req, res) => {
     const rows = await db.allByUser('projects', req.session.userId, null, (a, b) => b.id - a.id);
     res.json(rows);
   } catch (e) {
+    // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/projects] failed for user', req.session.userId, ':', e.code, e.message);
-    res.json([]);
+    res.status(500).json({ error: 'Could not load projects. Please try again.' });
   }
 }));
 app.post('/api/projects', requireAuth, wrap(async (req, res) => {
@@ -1335,8 +1340,11 @@ app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
     const rows = await db.allByUser('holdings', req.session.userId, filter, (a,b) => a.id - b.id);
     res.json(rows);
   } catch (e) {
+    // F62 (F31 class): the old "fail-soft: empty list keeps the frontend happy" comment described
+    // the bug exactly — a DB error rendered Investments $0 and dropped the whole portfolio out of
+    // Net Worth, indistinguishable from a genuinely empty portfolio. Money must fail loudly.
     console.error('[GET /api/holdings] failed for user', req.session.userId, ':', e.code, e.message);
-    res.json([]); // fail-soft: empty list keeps the frontend happy
+    res.status(500).json({ error: 'Could not load holdings. Please try again.' });
   }
 }));
 app.post('/api/holdings', requireAuth, wrap(async (req, res) => {
@@ -2008,8 +2016,9 @@ app.get('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   try {
     res.json(await db.allByUser('recurring_bills', req.session.userId));
   } catch (e) {
+    // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/recurring-bills] failed for user', req.session.userId, ':', e.code, e.message);
-    res.json([]);
+    res.status(500).json({ error: 'Could not load recurring bills. Please try again.' });
   }
 }));
 app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
@@ -2049,8 +2058,9 @@ app.get('/api/recurring-personal-transactions', requireAuth, wrap(async (req, re
   try {
     res.json(await db.allByUser('recurring_personal_transactions', req.session.userId));
   } catch (e) {
+    // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/recurring-personal-transactions] failed for user', req.session.userId, ':', e.code, e.message);
-    res.json([]);
+    res.status(500).json({ error: 'Could not load recurring transactions. Please try again.' });
   }
 }));
 app.post('/api/recurring-personal-transactions', requireAuth, wrap(async (req, res) => {
@@ -2304,8 +2314,9 @@ app.get('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   try {
     res.json(await db.allByUser('vendor_credits', req.session.userId));
   } catch (e) {
+    // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/vendor-credits] failed for user', req.session.userId, ':', e.code, e.message);
-    res.json([]);
+    res.status(500).json({ error: 'Could not load vendor credits. Please try again.' });
   }
 }));
 app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
@@ -3452,8 +3463,9 @@ app.get('/api/scenario', requireAuth, wrap(async (req, res) => {
     const row = _scn ? rowToObj(_scn) : null;
     res.json(row?.value ? JSON.parse(row.value) : {});
   } catch (e) {
+    // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/scenario]', e.message);
-    res.json({});
+    res.status(500).json({ error: 'Could not load scenario. Please try again.' });
   }
 }));
 app.put('/api/scenario', requireAuth, wrap(async (req, res) => {
@@ -3485,8 +3497,9 @@ app.get('/api/connections', requireAuth, wrap(async (req, res) => {
     const row = _connr ? rowToObj(_connr) : null;
     res.json(row?.value ? JSON.parse(row.value) : {});
   } catch (e) {
+    // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/connections]', e.message);
-    res.json({});
+    res.status(500).json({ error: 'Could not load connections. Please try again.' });
   }
 }));
 app.post('/api/connections', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {

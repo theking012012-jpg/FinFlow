@@ -540,6 +540,26 @@ function closeAllDropdowns(){
 // Close dropdowns on outside click
 document.addEventListener('click', closeAllDropdowns);
 
+// ── SINGLE money formatter — the one K→M→B rollover every abbreviating formatter delegates
+// to (window.S / S2 / SP / SPfrom / S2b), so thresholds can't drift apart again. The
+// "$35179.8K" bug was a K-only formatter with no M rollover; this is the same class as the
+// KPI-math duplication the audit already fought. Handles sub-$1K exact, K/M/B, negatives, zero,
+// and takes the currency symbol from the caller so both F34 display-currency and persCurrency work.
+function _fmtMoney(value, symbol){
+  const sym = (symbol == null ? '$' : symbol);
+  let n = Number(value);
+  if(!isFinite(n)) n = 0;
+  const sign = n < 0 ? '-' : '';
+  const a = Math.abs(n);
+  let body;
+  if(a >= 1e9)      body = (a/1e9).toFixed(1) + 'B';
+  else if(a >= 1e6) body = (a/1e6).toFixed(1) + 'M';
+  else if(a >= 1e3) body = (a/1e3).toFixed(1) + 'K';
+  else              body = Math.round(a).toLocaleString('en-US');
+  return sign + sym + body;
+}
+window._fmtMoney = _fmtMoney;
+
 // ════════════════════════════════════════════
 // PATCH S() to apply FX conversion
 // (runs after original S() is defined at bottom of script)
@@ -551,12 +571,7 @@ function patchSFormatter(){
     const converted = typeof fxConvert === 'function' ? fxConvert(n) : (parseFloat(n)||0);
     // Use CURRENCIES symbol instead of currencySymbol so it stays in sync
     const sym = CURRENCIES[activeCurrency]?.symbol || '$';
-    const abs = Math.abs(converted);
-    let fmt;
-    if(abs>=1000000)      fmt=sym+(converted/1000000).toFixed(1)+'M';
-    else if(abs>=1000)    fmt=sym+(converted/1000).toFixed(1)+'K';
-    else                  fmt=sym+Math.round(converted).toLocaleString();
-    return fmt;
+    return _fmtMoney(converted, sym);
   };
 }
 
@@ -2772,11 +2787,7 @@ function SP(usdAmount){
   const _cur_map = (typeof CURRENCIES !== 'undefined' ? CURRENCIES : null) || window.CURRENCIES || {};
   const cur = _cur_map[persCurrency] || {symbol:'$', rate:1};
   const converted = usdAmount * cur.rate;
-  const abs = Math.abs(converted);
-  const formatted = abs >= 1000
-    ? cur.symbol + (abs/1000).toFixed(1) + 'K'
-    : cur.symbol + Math.round(abs).toLocaleString();
-  return formatted;
+  return _fmtMoney(converted, cur.symbol);   // K→M→B rollover + sign via the shared formatter
 }
 
 // Format a NATIVE-currency amount for display: convert fromCur → persCurrency and
@@ -2787,8 +2798,7 @@ function SPfrom(amount, fromCur){
   const _m = (typeof CURRENCIES !== 'undefined' ? CURRENCIES : null) || window.CURRENCIES || {};
   const cur = _m[persCurrency] || {symbol:'$'};
   const conv = _safeFX(amount, fromCur || 'USD', persCurrency);
-  const abs = Math.abs(conv);
-  return abs >= 1000 ? cur.symbol + (abs/1000).toFixed(1) + 'K' : cur.symbol + Math.round(abs).toLocaleString();
+  return _fmtMoney(conv, cur.symbol);   // K→M→B rollover + sign via the shared formatter
 }
 // Full (non-abbreviated) native-amount display — used in the transaction ledger so
 // a same-currency viewer reads the exact figure (e.g. TT$11,250, not TT$11.3K).
@@ -2867,7 +2877,8 @@ function renderPersonal(){
   const target = parseInt(document.getElementById('s-savings-target')?.value)||40;
   const savingsRate = incomeUSD>0 ? Math.round(surplusUSD/incomeUSD*100) : 0;
   // REAL net worth = manual assets + live portfolio − manual liabilities.
-  const nwUSD = Math.round(computePersNetWorth().netWorth);
+  const _pnw = computePersNetWorth();
+  const nwUSD = Math.round(_pnw.netWorth);
 
   document.getElementById('pers-income').textContent = SP(incomeUSD);
   document.getElementById('pers-spend').textContent  = SP(totalSpendUSD);
@@ -2879,6 +2890,16 @@ function renderPersonal(){
   document.getElementById('pers-savings-vs').textContent = (savingsRate>=target?'Above ':'Below ')+target+'% target';
   document.getElementById('pers-savings-vs').className = 'mc-change '+(savingsRate>=target?'up':'dn');
   document.getElementById('pers-nw').textContent   = SP(nwUSD);
+  // Personal Investments — the live portfolio value (entity_id IS NULL holdings) that folds into
+  // Net Worth above (netWorth = assets + portfolio − liabs), surfaced on its own personal card.
+  const _piEl = document.getElementById('pers-invest');
+  if(_piEl) _piEl.textContent = SP(_pnw.portfolio);
+  const _picEl = document.getElementById('pers-invest-chg');
+  if(_picEl){
+    const _n = (typeof holdings!=='undefined'?holdings:[]).length;
+    _picEl.textContent = _n ? (_n+' holding'+(_n!==1?'s':'')) : 'No holdings';
+    _picEl.className = 'mc-change neutral';
+  }
   // Real month-over-month delta from snapshots (≥2 needed); else honest "—".
   const _nwChg = personalNetWorthChange();
   const _chgEl = document.getElementById('pers-nw-chg');
@@ -3861,7 +3882,7 @@ let invPeriod='1m';
 let invPerfChart=null;
 let invDonutChart=null;
 
-function S2(n){if(n>=1e6)return'$'+(n/1e6).toFixed(2)+'M';if(n>=1e3)return'$'+(n/1e3).toFixed(1)+'K';return'$'+Math.round(n).toLocaleString();}
+function S2(n){return _fmtMoney(n, '$');}   // personal-investments '$' figures — shared rollover
 
 function calcPortfolio(){
   let totalValue=0,totalCost=0,totalDiv=0;

@@ -2483,6 +2483,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label" id="mc-income-label">Monthly income</div><div class="mc-val" id="pers-income">$0</div><div class="mc-change neutral" id="pers-income-src">After tax</div></div>
           <div class="mc"><div class="mc-label" id="mc-spend-label">Monthly spending</div><div class="mc-val" id="pers-spend">$0</div><div class="mc-change neutral">—</div></div>
           <div class="mc"><div class="mc-label">Savings rate</div><div class="mc-val" id="pers-savings">0%</div><div class="mc-change neutral" id="pers-savings-vs">—</div></div>
+          <div class="mc"><div class="mc-label">Investments</div><div class="mc-val" id="pers-invest">$0</div><div class="mc-change neutral" id="pers-invest-chg">—</div></div>
           <div class="mc"><div class="mc-label">Net worth</div><div class="mc-val" id="pers-nw">$0</div><div class="mc-change neutral" id="pers-nw-chg">—</div></div>
         </div>
         <!-- Transactions — directly under the KPI cards (quick-add + list together) -->
@@ -6511,7 +6512,7 @@ document.addEventListener('click', e=>{
     if(!list) return;
     const hs = window.bizHoldings || [];
     const bizEl = (id, val) => { const e=document.getElementById(id); if(e) e.textContent=val; };
-    const S2b = n => n>=1e6?'$'+(n/1e6).toFixed(2)+'M':n>=1e3?'$'+(n/1e3).toFixed(1)+'K':'$'+Math.round(n).toLocaleString();
+    const S2b = n => (window._fmtMoney ? window._fmtMoney(n, '$') : '$'+Math.round(n).toLocaleString());
     if(!hs.length){
       list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--t3)">No holdings yet — click + Add holding to get started</div>';
       ['biz-inv-total','biz-inv-gain','biz-inv-daychg'].forEach(id => bizEl(id,'$0'));

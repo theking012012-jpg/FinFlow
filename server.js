@@ -764,6 +764,33 @@ async function findRecentDuplicate(table, userId, entityId, { textMatch = {}, nu
   return rows[0] ? rowToObj(rows[0]) : null;
 }
 
+// findRecentDuplicateTyped — the TYPED-COLUMN sibling of findRecentDuplicate above.
+// findRecentDuplicate matches on JSONB (`data->>'field'`), so on a typed table it compares
+// against NULL and can NEVER match: applying it there looks like a guard while doing nothing.
+// These tables are typed, not JSONB: invoice_payments, payroll_runs, inventory_movements,
+// fx_transactions, fx_rates. Same 5s window and same idempotent-return contract as the JSONB
+// version. `cols` keys are code-controlled constants (never user input) and values are bound
+// parameters — identical injection posture to findRecentDuplicate. A null value uses IS NOT
+// DISTINCT FROM so NULL matches NULL rather than dropping the predicate.
+// `tsCol` — NOT every typed table names its timestamp `created_at`: inventory_movements uses
+// `moved_at` and has no created_at at all, so a hardcoded column name would throw 42703 on every
+// insert. Callers pass the right one; it is a code-controlled constant, never user input.
+async function findRecentDuplicateTyped(table, userId, entityId, cols = {}, windowSec = 5, tsCol = 'created_at') {
+  const w = parseInt(windowSec) || 5;
+  const conds = ['user_id = $1', 'entity_id IS NOT DISTINCT FROM $2', `${tsCol} > NOW() - INTERVAL '${w} seconds'`];
+  const params = [userId, entityId];
+  let i = 3;
+  for (const [k, v] of Object.entries(cols)) {
+    conds.push(v == null ? `${k} IS NULL` : `${k} IS NOT DISTINCT FROM $${i}`);
+    if (v != null) { params.push(v); i++; }
+  }
+  const { rows } = await pool.query(
+    `SELECT * FROM ${table} WHERE ${conds.join(' AND ')} ORDER BY id DESC LIMIT 1`,
+    params
+  );
+  return rows[0] || null;
+}
+
 // ── AUDIT LOG HELPER ──────────────────────────────────────────────────────────
 async function logAudit(req, action, tableName, recordId, oldData, newData) {
   try {
@@ -992,8 +1019,21 @@ app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('inventory', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const qty = Math.max(1, Math.min(parseInt(req.body.qty)||0, 100000));
+  // B8/C1: restock is an UPDATE (units += qty), not an INSERT, so there is no row for either
+  // duplicate matcher to compare against — a double-click simply added the quantity twice with
+  // nothing to detect it. Guard with a marker on the row itself: an identical qty within 5s is
+  // treated as the same click and returns the CURRENT row without re-applying. inventory is a
+  // JSONB table, so this is just two more fields in `data` — no migration.
+  const _now = Date.now();
+  const _lastQty = parseInt(row.last_restock_qty);
+  const _lastAt  = parseInt(row.last_restock_at);
+  if (Number.isFinite(_lastQty) && Number.isFinite(_lastAt) && _lastQty === qty && (_now - _lastAt) < 5000) {
+    const { rows: [_dupr] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
+    return res.json(_dupr ? rowToObj(_dupr) : {});
+  }
   const newUnits = row.units + qty;
-  await db.updateById('inventory', row.id, { units: newUnits, low_stock: newUnits < row.max_units * 0.1 ? 1 : 0 });
+  await db.updateById('inventory', row.id, { units: newUnits, low_stock: newUnits < row.max_units * 0.1 ? 1 : 0,
+    last_restock_qty: qty, last_restock_at: _now });
   const { rows: [_rstk] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
   res.json(_rstk ? rowToObj(_rstk) : {});
 }));
@@ -3104,6 +3144,10 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   // null/omitted type keeps the legacy-compatible 'debit' default below.
   const TX_TYPES = ['credit', 'debit'];
   if (type != null && !TX_TYPES.includes(type)) return res.status(400).json({ error: "tx_type must be 'credit' or 'debit'." });
+  // B8/C1: dedupe guard — personal_transactions is a JSONB table, so the JSONB matcher applies.
+  const _bDup = await findRecentDuplicate('personal_transactions', req.session.userId, req.entityId || null,
+    { textMatch: { description: String(desc) }, numMatch: { amount: parseFloat(amount) || 0 } });
+  if (_bDup) return res.status(201).json(_bDup);
   const { row } = await db.insert('personal_transactions', {
     user_id: req.session.userId,
     entity_id: req.entityId || null,
@@ -3627,6 +3671,13 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   // rather than book cash the system can't represent. (Epsilon guards float rounding.)
   const remaining = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
   if (amt > remaining + 0.005) return res.status(400).json({ error: `Payment exceeds the remaining balance of ${remaining.toFixed(2)}.` });
+  // B8/C1: dedupe guard (TYPED table). The overpayment check above only catches a duplicate that
+  // would push past the balance — two rapid PARTIAL payments both fit inside it and both booked,
+  // silently settling the invoice twice. Guard on invoice+amount+date.
+  const _pDate = payment_date || new Date().toISOString().slice(0, 10);
+  const _ipDup = await findRecentDuplicateTyped('invoice_payments', req.session.userId, req.entityId || null,
+    { invoice_id: parseInt(invoice_id), amount: amt, payment_date: _pDate });
+  if (_ipDup) return res.status(201).json(_ipDup);
   const { rows } = await pool.query(
     `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
@@ -3744,6 +3795,11 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(as
 
   const employees = await db.allByUser('payroll', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
   if (!employees.length) return res.status(400).json({ error: 'No employees found for this entity.' });
+  // B8/C1: dedupe guard (TYPED table). A double-click ran payroll twice for the same period —
+  // duplicate run + duplicate payroll_run_lines, doubling recorded gross/net. Keyed on `period`,
+  // which is the run's identity: two runs for the same period seconds apart is always a mis-click.
+  const _prDup = await findRecentDuplicateTyped('payroll_runs', uid, eid, { period: String(period) });
+  if (_prDup) return res.status(201).json(_prDup);
 
   // Net is pure arithmetic on the deduction rows the user defined on each record.
   // No tax calculation — percent rows apply to the period gross (gross+bonus+overtime).
@@ -4232,6 +4288,17 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
   if (!item) return res.status(404).json({ error: 'Inventory item not found.' });
 
   const qty = parseFloat(quantity);
+  // B8/C1: dedupe guard (TYPED table; timestamp column is `moved_at`, NOT created_at). This is the
+  // highest-consequence duplicate in the app: a double-clicked 'sale' movement books the units out
+  // twice AND consumes FIFO layers twice, permanently corrupting COGS and therefore gross profit.
+  // Guarded BEFORE calculateFIFOCOGS so a duplicate never touches the FIFO ledger at all.
+  const _imDup = await findRecentDuplicateTyped('inventory_movements', req.session.userId, req.entityId || null,
+    { inventory_id: parseInt(inventory_id), type, quantity: qty }, 5, 'moved_at');
+  // Return the ORIGINAL row in the SAME shape as the success path ({...movement, cogs}) so a
+  // deduped re-submit is indistinguishable to the client. cogs is null: the duplicate consumed
+  // no FIFO layers, and re-reporting the original's COGS would double-count it in any caller
+  // that sums the field.
+  if (_imDup) return res.status(201).json({ ..._imDup, cogs: null });
   let cogs = null;
   if (type === 'sale') {
     cogs = await calculateFIFOCOGS(pool, parseInt(inventory_id), qty);

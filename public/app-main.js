@@ -4379,13 +4379,14 @@ async function _applyConvertedKPIs(ccy){
       _applyConvertedBreakdown(j.expenseBreakdown); // F34 B surface 2 — expense breakdown from server
       _applyConvertedTxns(j.transactions);      // F34 B surface 3 — transactions list from server (per-row)
     }
-    // Investments (personal holdings, USD-priced) — converted EXPLICITLY via the server's rateAsOf
-    // (USD→display, today). Portfolio value uses the SAME Σ shares×(price||cost) formula as the bundle
-    // (dashboard wiring), so display=native ⇒ investRate 1 ⇒ byte-identical to today. No USD→display
-    // rate ⇒ investRate null ⇒ "—" + hint (never a relabel).
+    // Investments (BUSINESS positions, USD-priced) — converted EXPLICITLY via the server's rateAsOf
+    // (USD→display, today). Reads window.bizHoldings (same source as the dashboard wiring, post
+    // cross-wire fix — NOT personal window.holdings), with the SAME Σ shares×(price||…) formula, so
+    // display=native ⇒ investRate 1 ⇒ byte-identical to the native card. No USD→display rate ⇒
+    // investRate null ⇒ "—" + hint (never a relabel).
     if(j.investRate!=null){
-      const _hold = window.holdingsData || window.holdings || [];
-      const _usd = _hold.reduce((s,h)=> s + (parseFloat(h.shares)||0)*(parseFloat(h.price)||parseFloat(h.cost)||0), 0);
+      const _hold = window.bizHoldings || [];
+      const _usd = _hold.reduce((s,h)=> s + (parseFloat(h.shares)||0)*(parseFloat(h.price)||parseFloat(h._lastPrice)||parseFloat(h.costPer)||parseFloat(h.cost)||0), 0);
       set('d-invest', _usd * j.investRate);
     } else {
       dash('d-invest','No FX rate for USD→'+ccy+'. Add one under FX / Currency to convert investments.');

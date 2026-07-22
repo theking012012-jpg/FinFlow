@@ -200,12 +200,14 @@
       if (chgEl) chgEl.className = 'mc-change dn';
     }
 
-    // ── Investments: total portfolio value from window.holdings ─────
-    // Each holding has { shares, price, cost }. Value = shares × current price.
-    // Cost basis is shown as the change line so the user sees unrealized P/L.
-    const holdings = window.holdingsData || window.holdings || [];
-    const portfolio = holdings.reduce((s, h) => s + (parseFloat(h.shares) || 0) * (parseFloat(h.price) || parseFloat(h.cost) || 0), 0);
-    const basis     = holdings.reduce((s, h) => s + (parseFloat(h.shares) || 0) * (parseFloat(h.cost)  || 0), 0);
+    // ── Investments: total value of the BUSINESS investment positions ─────
+    // Reads window.bizHoldings (business dataset), NOT window.holdings — that personal
+    // portfolio was the cross-wire that leaked personal holdings onto the business card.
+    // Business positions are empty today ⇒ $0. Value = shares × current price; the field
+    // fallbacks tolerate both the personal ({price,cost}) and biz ({_lastPrice,costPer}) shapes.
+    const holdings = window.bizHoldings || [];
+    const portfolio = holdings.reduce((s, h) => s + (parseFloat(h.shares) || 0) * (parseFloat(h.price) || parseFloat(h._lastPrice) || parseFloat(h.costPer) || parseFloat(h.cost) || 0), 0);
+    const basis     = holdings.reduce((s, h) => s + (parseFloat(h.shares) || 0) * (parseFloat(h.costPer) || parseFloat(h.cost)  || 0), 0);
     set('d-invest', money(portfolio));
     const invChgEl = document.getElementById('d-invest-chg');
     if (invChgEl) {

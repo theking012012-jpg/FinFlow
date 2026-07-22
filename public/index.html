@@ -6427,6 +6427,11 @@ document.addEventListener('click', e=>{
   // Business portfolio tickers are declared here.
   const BIZ_HOLDINGS = [];
   const BIZ_STATIC = [];
+  // Expose the BUSINESS investment positions as the canonical source for the business
+  // dashboard's Investments card (d-invest) and its F34 conversion. Same array reference,
+  // so it stays in sync as business holdings are added. Empty today ⇒ business shows $0.
+  // This is what stops the personal `window.holdings` from leaking onto the business card.
+  window.bizHoldings = BIZ_HOLDINGS;
 
   // ── Status pill helpers ────────────────────────────────────────
   function setLiveStatus(pageId, state, text){

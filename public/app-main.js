@@ -1677,16 +1677,31 @@ function computeExpenseBreakdown(period, monthIdx){
   // (Dr AP / Cr Cash), not a fresh expense; counting it double-counts the issued-bill leg.
   const pmade = (window.paymentsMade || []).filter(p=>p.bill_id==null && inPeriod(p.date||p.created_at));
   const paymentsMade = pmade.reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
-  // Payroll for the ACTIVE entity (owner + employees), monthly gross × months.
-  // Build a NEW array — never mutate window.payrollEmployees.
+  // ── PAYROLL — BASIS C: payroll runs are the SINGLE SOURCE OF TRUTH ───────────────────────
+  // Mirrors the server (computeBooks): Σ run LINES whose parent run_date falls in the window.
+  // A payroll run is the event that creates the expense, exactly as an issued invoice creates
+  // revenue (F32). Replaces `monthlyPayroll × elapsedMonths` — today's ROSTER × time — which had
+  // no effective dating (hiring someone today changed last January), double-counted against any
+  // salary logged as an expense row, and put payroll on a cash-ish basis while revenue was
+  // accrual. The roster is now a TEMPLATE for creating a run; NO total reads from it.
+  const runs = window.payrollRuns || [];
+  let payroll = 0, payrollRunCount = 0;
+  runs.forEach(r=>{
+    if(!inPeriod(r.run_date)) return;
+    payrollRunCount++;
+    (r.lines||[]).forEach(l=>{
+      payroll += (parseFloat(l.gross)||0) + (parseFloat(l.bonus)||0) + (parseFloat(l.overtime)||0);
+    });
+  });
+  // Roster cost — INFORMATIONAL ONLY, for the Payroll page template + empty state. Not in a total.
   const op = window.ownerPayroll;
   const emps = window.payrollEmployees || [];
   const allPay = op ? [op, ...emps] : [...emps];
-  const monthlyPayroll = allPay.reduce((s,e)=>s+(parseFloat(e.gross)||0),0);
-  const payroll = monthlyPayroll * months;
+  const rosterMonthlyCost = allPay.reduce((s,e)=>s+(parseFloat(e.gross)||0),0);
   return {
     total: realExpenses + issuedBills + paymentsMade + payroll,
     realExpenses, issuedBills, paymentsMade, payroll,
+    payrollRunCount, rosterMonthlyCost,
     business: realExpenses,   // data model has no personal/business split — all recorded rows are business
     deductible, byCategory, months, period,
   };

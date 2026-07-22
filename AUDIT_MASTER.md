@@ -584,20 +584,37 @@ So switching currency from Settings or the mobile drawer set `_displayCurrency`,
 
 ---
 
-### F71 🟠 HIGH — Payroll accrues with **no effective dating** — today's roster applied to every past month — **NEW (owner-surfaced, 2026-07-22)**
-**Status:** OPEN, verified in code. Awaiting an owner decision on the basis (below).
+### F71 ✅ **FIXED via basis C** (`<pending>`, 2026-07-22) — was 🟠 HIGH — Payroll accrued with no effective dating; roster×time was also double-counted against manual salary rows
+**Status:** ✅ **FIXED & golden-master-verified.** Owner ruled **basis C** (payroll_runs = single source of truth) over the three options originally listed — a stronger fix than the effective-dating option (1) below, because it removes the retroactivity, the double-count **and** a cash/accrual mismatch in one move.
 
-**How it surfaced.** Owner: *"this is June month, why are there expenses when nothing is logged for that month?"* Answer: `computeExpenseBreakdown` adds `monthlyPayroll × elapsedMonths` (`app-main.js:1656`, mirrored server-side at `server.js:4041-4066`). For any month that has started `elapsedMonths` is 1, so **every** month shows a full month of payroll whether or not anything was logged in it.
+**What was wrong (as surfaced by the owner: "why does June show expenses when nothing is logged for that month?").** `computeExpenseBreakdown` (client) and `computeBooks` (server) added `monthlyPayroll × elapsedMonths` — the **current** roster × time, with no start date on the employee record. Three defects: (1) **retroactive** — hiring someone today changed last January's expenses; (2) **double-count** — a salary logged as a manual expense row landed in `expensesTotal` **and** was counted again in the payroll leg, identically on both engines so every reconciliation check passed while the number was wrong; (3) **cash/accrual mismatch** against the F32 revenue basis.
 
-**Why it's a defect, not just a surprise.** The accrual itself is defensible — payroll is a rate × time expense. But it multiplies the **current** roster by elapsed months with **no start date on the employee record**. So today's salaries are applied retroactively to every month of the fiscal year, including months before an employee was hired, before a raise, or before the owner set any salary at all. Add one employee today and last January's expenses change.
+**What changed (basis C).** Payroll expense leg, both engines = **Σ `payroll_run_lines` whose parent `run_date` ∈ period**, via `sumFX` (so it converts like every other leg). A payroll *run* is the event that creates the expense, exactly as an issued invoice creates revenue (F32). The synthetic `monthlyPayroll × elapsedMonths` accrual is **deleted** from both engines. The **roster is demoted to a template** — `rosterMonthlyCost` is reported for the Payroll page but feeds **no** total. **"Salaries" removed** from the manual expense dropdown (Contractors / Professional Fees added — non-payroll comp keeps a home as general expense) so the double-count cannot be re-entered by hand. No effective-dating needed: a run line is already dated.
 
-**Course of action — needs an owner ruling first.** Three options, in ascending cost:
-1. **Effective-date the record.** Add `start_date` (and optionally `end_date`) to payroll rows — `payroll` is JSONB, so **no migration** — and count a month only if it falls inside the employment window. Needs a UI field on the payroll modal and the same predicate in both engines. *Correct; ~half a day.*
-2. **Proxy with `created_at`.** Accrue only from the month the payroll record was created. No UI change, but wrong the other way: a business entering existing staff today would show zero payroll for months they genuinely paid.
-3. **Leave it, label it.** Caption the Expenses card "includes payroll accrual" so the figure is at least explicable. *Not a fix.*
+**Empty-state UX.** Payroll expense is now a legitimate **$0** until a run exists. Rather than a bare $0, the Payroll page shows *"No payroll runs recorded — payroll expense currently shows $0, that is correct not a missing number. Set up a run from your roster to record it,"* with the roster surfaced as the template. `parts.payrollRunCount` distinguishes "no runs → real 0" from "a run totalling 0".
 
-**Recommendation: (1).** It is the only one that produces a defensible number, and JSONB means the storage cost is zero.
-**Done when:** an employee with a start date of 1 June contributes payroll to June and July but **nothing** to January–May, on the dashboard, `/api/reports` and `/books` alike.
+**History was clean — no migration.** The read-only inventory (`scripts/payroll-basis-inventory.js`, run against live Supabase) reported **0 manual salary rows, 0 payroll_runs, 0 overlap**. The double-count was architectural, never realised in data, so there is nothing to backfill or reclassify. Backfilling past months as runs is a separate owner-directed step; nothing was auto-created.
+
+**How it was verified.** Golden master (`tests/golden-master-payroll-basisC.js`) — **executes both engines** against one fixed seed with roster R=5000 and a June run of X=4200 (X ≠ R, X ≠ R×elapsed, so the assertion proves *which source was read*). All 16 payroll assertions + 3 structural (accrual deleted both engines; Salaries gone) green; revenue/AR/AP and all 12 cross-engine checks stayed green; full regression suite green. (The 6 red F25 assertions in the same file are the separate period-scoped-COGS commit's target, not C.)
+
+**Spawned:** **F73** (client leg reads a LIMIT-50 endpoint — theoretical undercount at >50 lifetime runs; deferred to the client-recompute rework).
+
+**Superseded options (for the record — C was chosen over all three):**
+1. *Effective-date the roster record* (`start_date`, JSONB, no migration) — fixes retroactivity but leaves the double-count and the cash/accrual mismatch.
+2. *Proxy with `created_at`* — wrong the other way.
+3. *Label it* — not a fix.
+
+---
+
+### F73 🟢 LOW — Client payroll leg reads a LIMIT-50 endpoint; >50 lifetime runs undercounts until the server figure lands — **NEW (found while implementing basis C)**
+**Status:** OPEN, verified. Do **not** fix in isolation — belongs with the client-recompute rework (same class as **F7**, **F56**).
+
+**What's wrong.** Under basis C (`532390b`… see the payroll commit), the payroll expense leg = Σ `payroll_run_lines` whose parent `run_date` ∈ period, on **both** engines. The **server** leg (`computeBooks`) issues a **direct, unlimited** JOIN, so `/api/reports` / `/books` are authoritative and correct at any run count. The **client** leg reads `window.payrollRuns`, populated from `GET /api/payroll-runs` — which is capped: `... ORDER BY pr.created_at DESC LIMIT 50` (`server.js:3778`). So a user with **>50 lifetime payroll runs** gets a client dashboard that **undercounts** payroll (misses the oldest runs) until the async `/api/reports` fetch overwrites the cards with the server's figure.
+
+**Why it's Low, not Med.** (a) It self-heals on every dashboard paint — the server figure lands within the same interaction and is correct; the window is a brief undercount, not a persisted wrong number. (b) It requires >50 runs to trigger at all — a business runs payroll ~12–24×/year, so this is a ~2–4-year horizon, and **zero** runs exist in the data today. (c) It is the exact class the client-recompute rework exists to kill: two engines computing the same figure, the client one working off a truncated dataset — **F7** (duplicate KPI formulas) and **F56** (divergent AR) are the same shape.
+
+**Course of action (with the client-recompute rework, not now).** Either raise/remove the `LIMIT` on the run-history endpoint, or give the dashboard a dedicated unlimited (or server-computed) payroll figure so the client never recomputes off a truncated list. The single-source-of-truth direction the audit already favours (client reads server totals rather than recomputing) closes this by construction.
+**Done when:** a user with 60 runs shows the same payroll figure on the dashboard's first paint as `/api/reports` returns — no undercount-then-correct flicker.
 
 ---
 

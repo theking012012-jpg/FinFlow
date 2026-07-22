@@ -4113,27 +4113,44 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   ), p => p.amount, _pmDate, 'payments_made');
   const months = winMode ? winElapsed
     : period === 'month' ? 1 : period === 'quarter' ? (mo - q + 1) : (mo + 1); // elapsed months in period
-  const monthlyPayroll = sum(payroll, p => num(p.gross));
-  // Payroll (rate×time accrual, no per-row date). Native ⇒ monthlyPayroll × elapsed months (exactly
-  // as before). Converting ⇒ convert EACH elapsed month's slice at that month's first-day rate (F34
-  // Step 1b), so a rate that moved mid-period is honoured per month; a month with no rate flags +
-  // excludes that slice. The month first-days match the `months` count for every period branch.
-  const _payrollMonthDates = () => {
-    const out = [];
-    if (winMode) { const s = winStart ? new Date(winStart) : null; if (s && !isNaN(s)) for (let k = 0; k < winElapsed; k++) out.push(new Date(s.getFullYear(), s.getMonth() + k, 1)); }
-    else if (period === 'month')   out.push(new Date(y, mo, 1));
-    else if (period === 'quarter') { for (let m = q; m <= mo; m++) out.push(new Date(y, m, 1)); }
-    else { for (let m = 0; m <= mo; m++) out.push(new Date(y, m, 1)); } // year
-    return out;
-  };
-  let payrollTotal;
-  if (!displayCur) {
-    payrollTotal = r2(monthlyPayroll * months);
-  } else {
-    let conv = 0;
-    for (const md of _payrollMonthDates()) conv += _fxAccrual(monthlyPayroll, md, 'payroll', viewedCur);
-    payrollTotal = r2(conv);
-  }
+  // ── PAYROLL — BASIS C: payroll_runs are the SINGLE SOURCE OF TRUTH ────────────────────────
+  // A payroll RUN is the event that creates the expense, exactly as an ISSUED INVOICE creates
+  // revenue (F32) and an ISSUED BILL creates an expense (F38). That keeps payroll on the SAME
+  // accrual basis as everything else — the previous basis did not.
+  //
+  // WHAT THIS REPLACES (F71 / basis decision, 2026-07-22): the old leg was
+  // `monthlyPayroll × elapsedMonths` — today's ROSTER multiplied by time. It was wrong three ways:
+  //   1. NO EFFECTIVE DATING. The current roster was applied retroactively to every past month, so
+  //      hiring someone today silently changed last January's expenses.
+  //   2. DOUBLE-COUNT. A salary logged as an expense row landed in expensesTotal AND was counted
+  //      again here. Both engines did it identically, so every reconciliation check passed while
+  //      the number was wrong — agreement proving nothing.
+  //   3. CASH/ACCRUAL MISMATCH against the F32 revenue basis.
+  // The roster is now a TEMPLATE for creating a run. NO total reads from it.
+  //
+  // Each line is dated by its parent run's run_date, so it converts through sumFX at that date
+  // like every other leg — and needs no effective-dating, because a run line is already dated.
+  let runLines = [];
+  try {
+    const { rows } = await pool.query(
+      `SELECT prl.gross, prl.bonus, prl.overtime, pr.run_date, pr.entity_id, pr.id AS run_id
+         FROM payroll_run_lines prl
+         JOIN payroll_runs pr ON pr.id = prl.run_id
+        WHERE pr.user_id = $1
+          AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)`,
+      [userId, entityId]
+    );
+    runLines = rows;
+  } catch (_) { runLines = []; }
+  const _runDate = l => l.run_date;
+  const payrollTotal = r2(sumFX(
+    runLines.filter(l => inPeriod(_runDate(l))),
+    l => num(l.gross) + num(l.bonus) + num(l.overtime),
+    _runDate, 'payroll'
+  ));
+  // Roster headcount cost — reported for the Payroll page's "create a run from your roster"
+  // template and its empty state. INFORMATIONAL ONLY: it is deliberately NOT part of opex.
+  const rosterMonthlyCost = r2(sum(payroll, p => num(p.gross)));
   const opex = r2(expensesTotal + issuedBillsTotal + paymentsMadeTotal + payrollTotal);
 
   // ── COGS (FIFO, F6) for items sold in this entity ──
@@ -4264,7 +4281,11 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     parts: {
       issuedInvoices: r2(issuedInvoices), salesReceipts: r2(salesReceipts),
       expenses: r2(expensesTotal), issuedBills: r2(issuedBillsTotal), paymentsMade: r2(paymentsMadeTotal), payroll: payrollTotal,
-      monthlyPayroll: r2(monthlyPayroll), months, cogsUncoveredItems, unrecognizedStatusCount,
+      // Basis C: payrollRunCount lets a caller distinguish "no payroll expense because no runs
+      // exist yet" from "a run exists and totals zero" — the difference between an empty state
+      // and a real zero. rosterMonthlyCost is the TEMPLATE figure; it feeds no total.
+      payrollRunCount: new Set(runLines.map(l => l.run_id)).size,
+      rosterMonthlyCost, months, cogsUncoveredItems, unrecognizedStatusCount,
     },
   };
 }

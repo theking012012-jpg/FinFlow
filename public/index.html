@@ -2162,6 +2162,24 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div style="display:grid;grid-template-columns:1fr 90px 80px 70px 80px 36px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Employee</span><span>Role</span><span>Gross</span><span>Deductions</span><span>Net pay</span><span></span></div>
           <div id="payroll-list"></div>
         </div>
+        <!-- Basis C empty state: payroll expense comes ONLY from runs, so with no runs the figure
+             is a legitimate 0. Say that explicitly — an unexplained $0 on a money surface is the
+             "why is this number weird" confusion this whole change came out of. -->
+        <div class="card" id="payroll-empty-state" style="display:none;border-color:var(--acc2);background:var(--acc-bg)">
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="width:32px;height:32px;border-radius:8px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px">&#128197;</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:600;color:var(--acc-light);margin-bottom:3px">No payroll runs recorded</div>
+              <div style="font-size:12.5px;color:var(--t2);line-height:1.6">
+                Payroll expense is recorded by a <strong>payroll run</strong>, so your reports currently show
+                <strong>$0</strong> of payroll &mdash; that is correct, not a missing number.
+                Set up a run from your roster to record it.
+              </div>
+              <div id="payroll-empty-roster" style="font-size:11.5px;color:var(--t3);margin-top:6px"></div>
+            </div>
+            <button class="btn btn-primary btn-sm" style="flex-shrink:0" onclick="openRunPayrollModal()">Run Payroll</button>
+          </div>
+        </div>
         <div class="card">
           <div class="card-header"><h2 class="card-title">Payroll Run History</h2></div>
           <div id="payroll-runs-list" style="font-size:12px;color:var(--t3)">No payroll runs yet.</div>
@@ -3396,7 +3414,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Add expense</div><div class="modal-sub">Log a business expense</div></div><button class="modal-close" onclick="closeModal('expense-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-desc">Description *</label><input class="finput" id="bexp-desc" placeholder="e.g. Office rent"></div><div class="field-wrap"><label class="field-label" for="bexp-amount">Amount ($) *</label><input class="finput" id="bexp-amount" type="number" placeholder="0.00"></div></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-cat">Category</label><select class="finput" id="bexp-cat"><option>Salaries</option><option>Rent</option><option>Software</option><option>Marketing</option><option>Travel</option><option>Equipment</option><option>Meals</option><option>Other</option></select></div><div class="field-wrap"><label class="field-label" for="bexp-ded">Deductible?</label><select class="finput" id="bexp-ded"><option value="yes">Yes — 100%</option><option value="half">Yes — 50%</option><option value="no">No</option></select></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-cat">Category</label><!-- Basis C: "Salaries" removed. Payroll expense comes ONLY from a payroll run; a hand-entered
+             salary row would rebuild the exact double-count C exists to remove. Non-payroll
+             compensation keeps a home under Contractors / Professional Fees, which are general
+             expenses and are NOT part of the payroll leg. --><select class="finput" id="bexp-cat"><option>Rent</option><option>Software</option><option>Marketing</option><option>Travel</option><option>Equipment</option><option>Meals</option><option>Contractors</option><option>Professional Fees</option><option>Other</option></select></div><div class="field-wrap"><label class="field-label" for="bexp-ded">Deductible?</label><select class="finput" id="bexp-ded"><option value="yes">Yes — 100%</option><option value="half">Yes — 50%</option><option value="no">No</option></select></div></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('expense-modal')">Cancel</button><button class="btn btn-primary" onclick="saveExpense()">Add expense</button></div>
   </div>
 </div>
@@ -4541,12 +4562,40 @@ async function unmatchBankRec(recId){
 // ── FEATURE 3: PAYROLL RUNS ───────────────────────────────────────────────────
 // (Removed runTaxPreview + the Tax Preview Calculator — FinFlow performs no tax calc.)
 
+// Basis C empty state. Shown ONLY when no runs exist — a real 0 with an explanation, never a
+// bare $0. Names the roster as the template so the next action is obvious.
+function _renderPayrollEmptyState(rows){
+  const box=document.getElementById('payroll-empty-state');
+  if(!box)return;
+  const has=Array.isArray(rows)&&rows.length>0;
+  box.style.display=has?'none':'';
+  if(has)return;
+  const info=document.getElementById('payroll-empty-roster');
+  if(!info)return;
+  const op=window.ownerPayroll, emps=window.payrollEmployees||[];
+  const all=op?[op,...emps]:[...emps];
+  const cost=all.reduce((s,e)=>s+(parseFloat(e.gross)||0),0);
+  info.textContent = all.length
+    ? `Your roster: ${all.length} ${all.length===1?'person':'people'} · ${S(cost)}/month — used as the template for a run.`
+    : 'Add someone to your roster first, then run payroll.';
+}
+window._renderPayrollEmptyState=_renderPayrollEmptyState;
+
 async function loadPayrollRuns(){
   const el=document.getElementById('payroll-runs-list');
-  if(!el)return;
+  // Basis C: run lines are now the SOLE source of payroll expense, so this data has to reach the
+  // KPI engine even when the Payroll page has never been opened. Fetch and stash first; only the
+  // list rendering below depends on the DOM element existing.
+  let rows=[];
   try{
     const res=await fetch('/api/payroll-runs',{credentials:'include'});
-    const rows=await res.json();
+    if(res.ok) rows=await res.json()||[];
+    window.payrollRuns=rows;                       // read by computeExpenseBreakdown (basis C)
+    _renderPayrollEmptyState(rows);
+    if(typeof window.refreshFinancials==='function') window.refreshFinancials('none');
+  }catch(e){ /* leave window.payrollRuns as-is; the empty state below reports honestly */ }
+  if(!el)return;
+  try{
     if(!rows.length){el.innerHTML='<div style="padding:1rem;color:var(--t3);text-align:center;font-size:12px">No payroll runs yet.</div>';return;}
     const statusBadge={draft:'b-amber',approved:'b-blue',paid:'b-green'};
     el.innerHTML=rows.map(r=>`

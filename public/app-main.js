@@ -4376,6 +4376,7 @@ async function _applyConvertedKPIs(ccy){
       set('d-profit', j.netProfit||0);
       set('d-outstanding', j.outstanding||0);   // Outstanding/AR converts at each invoice's issue date
       _applyConvertedChart(j.monthly);          // F34 B surface 1 — overview chart from server buckets
+      _applyConvertedBreakdown(j.expenseBreakdown); // F34 B surface 2 — expense breakdown from server
     }
     // Investments (personal holdings) do NOT route through computeBooks and are NOT yet FX-converted.
     // Show "—" rather than a relabeled-but-unconverted USD figure (honest; holdings conversion pending).
@@ -4395,6 +4396,22 @@ function _applyConvertedChart(monthly){
   chart.data.datasets[0].data = safe(monthly.revByMonth);
   chart.data.datasets[1].data = safe(monthly.expByMonth);
   try{ chart.update('none'); }catch(e){ try{ chart.update(); }catch(_){} }
+}
+// F34 B surface 2 — overlay the expense-breakdown bars with the server's CONVERTED per-category
+// totals (same top-4 rows + width% as the bundle updateExpenseBars, but values via S() in the
+// display currency). No rate ⇒ leave native (KPIs already show "—"). Writes the same DOM as the
+// bundle renderer, so NO bundle source changes.
+function _applyConvertedBreakdown(bd){
+  if(!bd || bd.complete===false || !bd.rows) return;
+  const total = bd.rows.reduce((s,r)=>s+(r.amount||0),0) || 1;
+  const ids=[['exp-sal','exp-sal-bar','exp-sal-lbl'],['exp-rent','exp-rent-bar','exp-rent-lbl'],['exp-sw','exp-sw-bar','exp-sw-lbl'],['exp-mkt','exp-mkt-bar','exp-mkt-lbl']];
+  bd.rows.slice(0,4).forEach((r,i)=>{
+    const [vId,bId,lId]=ids[i];
+    const v=document.getElementById(vId), b=document.getElementById(bId), l=document.getElementById(lId);
+    if(v) v.textContent=S(r.amount);
+    if(b){ const w=Math.round(r.amount/total*100)+'%'; b.style.setProperty('width',w,'important'); b.style.setProperty('--bar-w',w); }
+    if(l) l.textContent=r.category;
+  });
 }
 function toggleCompact(){
   document.getElementById('sidebar').classList.toggle('compact',document.getElementById('s-compact').checked);

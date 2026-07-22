@@ -3252,6 +3252,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       fx_unrealised: fxUnrealised,
       fxCoverage: books.fxCoverage,   // F34: null-flag coverage — complete=false ⇒ figures are a partial (converted) P&L
       monthly: books.monthly,         // F34 B: converted overview-chart buckets (client basis; native = identity)
+      expenseBreakdown: books.expenseBreakdown,  // F34 B: converted expense-by-category (client updateExpenseBars basis)
     });
   } catch (e) {
     // F31: surface the failure instead of fabricating $0 KPIs. A real empty period
@@ -4130,8 +4131,30 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   paymentsMade.filter(p => p.bill_id == null).forEach(p => addBucket(expByMonth, p.amount, _pmDate(p), _fromOf(p)));
   const monthly = { labels: _fyMonths.map(x => x.label), revByMonth: revByMonth.map(r2), expByMonth: expByMonth.map(r2), complete: monthlyComplete };
 
+  // ── F34 B (surface 2) — CONVERTED expense breakdown by category ──────────────────────────────
+  // Mirrors the client updateExpenseBars basis: the raw expense ROWS binned by category (NOT bills/
+  // payroll/COGS), all-time (as the client passes _realExpenses). Each row converts at its own
+  // expense_date rate; a row with no rate is excluded and flags complete=false. native ⇒ identity.
+  // Σ(breakdown) reconciles with the converted expenses LEG (parts.expenses, all-time == the sum of
+  // these same rows), not the period-scoped opex KPI (which also carries bills/payroll/COGS).
+  const _catTotals = {}; let breakdownComplete = true;
+  for (const e of expenses) {
+    const cat = e.category || 'Other';
+    const a = num(e.amount);
+    if (!displayCur) { _catTotals[cat] = (_catTotals[cat] || 0) + a; continue; }
+    if (a === 0) { if (!(cat in _catTotals)) _catTotals[cat] = 0; continue; }
+    const from = _fromOf(e);
+    const rate = (from === displayCur) ? 1 : pickRate(_fxRows, from, displayCur, _expDate(e));
+    if (rate == null) { breakdownComplete = false; continue; }
+    _catTotals[cat] = (_catTotals[cat] || 0) + a * rate;
+  }
+  const expenseBreakdown = {
+    rows: Object.entries(_catTotals).map(([category, amount]) => ({ category, amount: r2(amount) })).sort((a, b) => b.amount - a.amount),
+    complete: breakdownComplete,
+  };
+
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, period, monthly,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, period, monthly, expenseBreakdown,
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     parts: {
       issuedInvoices: r2(issuedInvoices), salesReceipts: r2(salesReceipts),

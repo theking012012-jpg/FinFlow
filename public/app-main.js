@@ -1335,19 +1335,26 @@ async function loadEntityData(idx){
     // IS legitimately empty here (logged out / no access), so only 5xx-and-network failures are
     // treated as errors. Any failure on the two MONEY collections (invoices, expenses) aborts the
     // load and surfaces the dashboard's error state rather than painting fabricated zeros.
-    const _pick = (res, label) => {
+    // FATAL vs DEGRADE. invoices and expenses drive every money figure on the dashboard — if
+    // either fails we must NOT paint, because a partial set renders as smaller (wrong) totals with
+    // no indication anything is missing. customers/inventory/payroll are list surfaces: losing one
+    // empties that list but corrupts no money, so it degrades to [] and warns rather than taking
+    // the whole dashboard down with it. (An earlier revision of this fix made all five fatal,
+    // which turned a failed customers fetch into a dead dashboard — worse than the bug.)
+    const _pick = (res, label, fatal) => {
       if (res.ok) return res.json().then(j => j || []);
       if (res.status === 401 || res.status === 403) return [];   // not authorised ⇒ genuinely nothing
+      if (!fatal) { console.warn('[Entity] ' + label + ' failed (HTTP ' + res.status + ') — list will be empty'); return []; }
       const err = new Error(label + ' failed (HTTP ' + res.status + ')');
       err.status = res.status; err.label = label;
       throw err;
     };
     const [invoices, expenses, custs, invt, payroll] = await Promise.all([
-      _pick(invRes,  'invoices'),
-      _pick(expRes,  'expenses'),
-      _pick(custRes, 'customers'),
-      _pick(invtRes, 'inventory'),
-      _pick(payRes,  'payroll'),
+      _pick(invRes,  'invoices',  true),    // money — fatal
+      _pick(expRes,  'expenses',  true),    // money — fatal
+      _pick(custRes, 'customers', false),
+      _pick(invtRes, 'inventory', false),
+      _pick(payRes,  'payroll',   false),
     ]);
 
     // Atomically swap global arrays now that all data has arrived

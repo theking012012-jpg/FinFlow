@@ -3921,6 +3921,10 @@ function renderInvestments(){
       <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${S2(cost)}</div>
       <div style="text-align:right">
         <span class="inv-perf-chip ${pos?'inv-perf-up':'inv-perf-dn'}">${pos?'▲':'▼'} ${Math.abs(glPct)}%</span>
+        ${h.id!=null?`<div class="inv-row-actions" style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">
+          <button class="btn btn-ghost" style="padding:1px 7px;font-size:10px" title="Edit holding" onclick="event.stopPropagation();editHolding(${h.id})">Edit</button>
+          <button class="btn btn-ghost" style="padding:1px 6px;font-size:10px;color:var(--red)" title="Remove holding" onclick="event.stopPropagation();deleteHolding(${h.id})">✕</button>
+        </div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -4104,6 +4108,12 @@ function updateNetWorthPanel(portValue){
 
 function openAddHoldingModal(){
   ['h-ticker','h-name','h-shares','h-cost','h-price','h-div'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  // Clear any edit state so this is a fresh ADD — otherwise the patched saveHolding
+  // (which routes on #holding-edit-id) would PUT-update the last-edited holding.
+  const _eid=document.getElementById('holding-edit-id'); if(_eid) _eid.value='';
+  const _modal=document.getElementById('holding-modal');
+  if(_modal){ const _t=_modal.querySelector('.modal-title'); if(_t) _t.textContent='Add holding';
+    const _b=_modal.querySelector('button[onclick*="saveHolding"]'); if(_b) _b.textContent='Add holding'; }
   openModal('holding-modal');
 }
 function saveHolding(){

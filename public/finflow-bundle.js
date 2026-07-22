@@ -1990,13 +1990,14 @@
         return;
       }
 
-      const ticker    = document.getElementById('hold-ticker')?.value?.trim().toUpperCase();
-      const name      = document.getElementById('hold-name')?.value?.trim();
-      const assetType = document.getElementById('hold-type')?.value || 'Stock';
-      const shares    = parseFloat(document.getElementById('hold-shares')?.value) || 0;
-      const costPer   = parseFloat(document.getElementById('hold-cost')?.value)   || 0;
-      const price     = parseFloat(document.getElementById('hold-price')?.value)  || costPer;
-      const dividend  = parseFloat(document.getElementById('hold-div')?.value)    || 0;
+      // Live modal uses h-* field ids (not hold-*).
+      const ticker    = document.getElementById('h-ticker')?.value?.trim().toUpperCase();
+      const name      = document.getElementById('h-name')?.value?.trim();
+      const assetType = document.getElementById('h-type')?.value || 'Stock';
+      const shares    = parseFloat(document.getElementById('h-shares')?.value) || 0;
+      const costPer   = parseFloat(document.getElementById('h-cost')?.value)   || 0;
+      const price     = parseFloat(document.getElementById('h-price')?.value)  || costPer;
+      const dividend  = parseFloat(document.getElementById('h-div')?.value)    || 0;
 
       if (!ticker || !shares) { notify('Ticker and shares required.', true); return; }
 
@@ -2008,13 +2009,14 @@
         const list = window.holdings || window.portfolioHoldings;
         if (list) {
           const idx = list.findIndex(h => h.id === Number(editId));
-          if (idx > -1) list[idx] = { ...list[idx], ticker, name: name||ticker, asset_type: assetType, shares, cost_per: costPer, price, dividend };
+          // Mirror the client holding shape (type/cost/div) so the re-render reflects the edit
+          // immediately — the object exposes those, not asset_type/cost_per/dividend.
+          if (idx > -1) list[idx] = { ...list[idx], ticker, name: name||ticker, type: assetType, asset_type: assetType, shares, cost: costPer, cost_per: costPer, price, div: dividend, dividend };
         }
         if (typeof closeModal === 'function') closeModal('holding-modal');
-        if (typeof renderHoldings === 'function') renderHoldings();
-        else if (typeof renderPortfolio === 'function') renderPortfolio();
+        if (typeof renderInvestments === 'function') renderInvestments();
         notify('Holding updated ✦');
-        document.getElementById('holding-edit-id').value = '';
+        const _eid = document.getElementById('holding-edit-id'); if (_eid) _eid.value = '';
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
       } catch (e) {
         notify('Could not update holding — ' + e.message, true);
@@ -2031,8 +2033,7 @@
         await api('DELETE', `/api/holdings/${dbId}`);
         if (window.holdings) window.holdings = window.holdings.filter(h => h.id !== id);
         if (window.portfolioHoldings) window.portfolioHoldings = window.portfolioHoldings.filter(h => h.id !== id);
-        if (typeof renderHoldings === 'function') renderHoldings();
-        else if (typeof renderPortfolio === 'function') renderPortfolio();
+        if (typeof renderInvestments === 'function') renderInvestments();
         notify('Holding removed');
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
       } catch (e) {
@@ -2048,14 +2049,16 @@
       const modal = document.getElementById('holding-modal');
       if (!modal) return;
 
+      // The live modal uses h-* field ids; the holding object (loaded from the DB, finflow-api.js)
+      // exposes type/cost/div — NOT asset_type/cost_per/dividend. Populate the real fields/props.
       const f = (fieldId, val) => { const el = document.getElementById(fieldId); if (el) el.value = val ?? ''; };
-      f('hold-ticker',  h.ticker);
-      f('hold-name',    h.name);
-      f('hold-type',    h.asset_type);
-      f('hold-shares',  h.shares);
-      f('hold-cost',    h.cost_per);
-      f('hold-price',   h.price);
-      f('hold-div',     h.dividend);
+      f('h-ticker',  h.ticker);
+      f('h-name',    h.name);
+      f('h-type',    h.type ?? h.asset_type);
+      f('h-shares',  h.shares);
+      f('h-cost',    h.cost ?? h.cost_per);
+      f('h-price',   h.price);
+      f('h-div',     h.div ?? h.dividend);
 
       // Inject hidden field
       let hiddenEl = document.getElementById('holding-edit-id');
@@ -2069,64 +2072,18 @@
 
       const title = modal.querySelector('.modal-title');
       if (title) title.textContent = 'Edit Holding';
+      const saveBtn = modal.querySelector('button[onclick*="saveHolding"]');
+      if (saveBtn) saveBtn.textContent = 'Save changes';
 
       if (typeof openModal === 'function') openModal('holding-modal');
       else modal.classList.remove('hidden');
     };
 
-    // Patch renderHoldings to inject Edit + Delete buttons
-    setTimeout(() => {
-      const origRender = window.renderHoldings || window.renderPortfolio;
-      const renderKey  = window.renderHoldings ? 'renderHoldings' : 'renderPortfolio';
-      if (typeof origRender === 'function') {
-        window[renderKey] = function (...args) {
-          origRender(...args);
-          // Inject edit/delete buttons into holding rows
-          document.querySelectorAll('#holdings-list tr, #holdings-list .holding-row, #portfolio-list tr').forEach(row => {
-            if (row.querySelector('.ff-edit-hold')) return;
-            // Find the delete button if it exists
-            const delBtn = row.querySelector('button[onclick*="deleteHolding"]');
-            // Try to find holding id from existing delete or from data
-            let hId;
-            if (delBtn) {
-              hId = Number((delBtn.getAttribute('onclick') || '').match(/\d+/)?.[0]);
-            } else {
-              // Try to identify from ticker text in the row
-              const list = window.holdings || window.portfolioHoldings || [];
-              const tickerEl = row.querySelector('td:first-child, .ticker');
-              if (tickerEl) {
-                const ticker = tickerEl.textContent.trim();
-                const h = list.find(h => h.ticker === ticker);
-                if (h) hId = h.id;
-              }
-            }
-            if (!hId) return;
-
-            const td = delBtn ? delBtn.parentNode : row.lastElementChild;
-            if (!td) return;
-
-            // Add edit button
-            const editBtn = document.createElement('button');
-            editBtn.className = 'btn btn-ghost ff-edit-hold';
-            editBtn.style.cssText = 'padding:2px 8px;font-size:11px;margin-right:4px';
-            editBtn.textContent = 'Edit';
-            editBtn.onclick = () => editHolding(hId);
-            td.insertBefore(editBtn, td.firstChild);
-
-            // Add delete button if not already there
-            if (!delBtn) {
-              const newDelBtn = document.createElement('button');
-              newDelBtn.className = 'btn btn-ghost';
-              newDelBtn.style.cssText = 'padding:2px 8px;font-size:11px;color:var(--red,#e05454)';
-              newDelBtn.textContent = '✕';
-              newDelBtn.title = 'Remove holding';
-              newDelBtn.onclick = () => deleteHolding(hId);
-              td.appendChild(newDelBtn);
-            }
-          });
-        };
-      }
-    }, 600);
+    // NOTE: Edit/✕ buttons are now rendered directly inside renderInvestments()'s row markup
+    // (app-main.js), calling editHolding(h.id)/deleteHolding(h.id). The previous setTimeout patch
+    // here targeted window.renderHoldings/renderPortfolio + #holdings-list — none of which exist in
+    // the shipped app (the real renderer is renderInvestments, the list is #inv-holdings-list) — so
+    // it silently no-op'd and no buttons ever appeared. Removed as the root cause of the edit gap.
 
     console.log('[FinFlow Final Wiring] ✅ Session restore, expense edit, holdings edit/delete patched');
   })()

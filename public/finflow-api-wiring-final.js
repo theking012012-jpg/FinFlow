@@ -228,51 +228,57 @@
 
       if (!ticker || !shares) { notify('Ticker and shares required.', true); return; }
 
-      const h    = (window.holdings || window.portfolioHoldings || []).find(h => h.id === Number(editId));
+      // Look up the row in whichever portfolio it belongs to (personal or business).
+      const _scope = window._holdingScope === 'business' ? 'business' : 'personal';
+      const _list  = _scope === 'business' ? (window.bizHoldings || []) : (window.holdings || window.portfolioHoldings || []);
+      const h    = _list.find(h => h.id === Number(editId));
       const dbId = h?._dbId || editId;
 
       try {
         await api('PUT', `/api/holdings/${dbId}`, { ticker, name: name||ticker, asset_type: assetType, shares, cost_per: costPer, price, dividend });
-        const list = window.holdings || window.portfolioHoldings;
-        if (list) {
-          const idx = list.findIndex(h => h.id === Number(editId));
-          // Mirror the client holding shape (type/cost/div) so the re-render reflects the edit
-          // immediately — the object exposes those, not asset_type/cost_per/dividend.
-          if (idx > -1) list[idx] = { ...list[idx], ticker, name: name||ticker, type: assetType, asset_type: assetType, shares, cost: costPer, cost_per: costPer, price, div: dividend, dividend };
-        }
         if (typeof closeModal === 'function') closeModal('holding-modal');
-        if (typeof renderInvestments === 'function') renderInvestments();
         notify('Holding updated ✦');
         const _eid = document.getElementById('holding-edit-id'); if (_eid) _eid.value = '';
+        // Reload + repaint the CORRECT list (+ dashboard d-invest) from the DB — no manual reload.
+        if (typeof window._refreshHoldings === 'function') window._refreshHoldings(_scope);
+        else if (typeof renderInvestments === 'function') renderInvestments();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
       } catch (e) {
         notify('Could not update holding — ' + e.message, true);
       }
     };
 
-    // deleteHolding — new function
+    // deleteHolding — resolves the row's portfolio (personal or business) and repaints that one.
     window.deleteHolding = async function (id) {
       if (!confirm('Remove this holding? This cannot be undone.')) return;
-      const list = window.holdings || window.portfolioHoldings || [];
-      const h    = list.find(h => h.id === id);
+      let h = (window.holdings || window.portfolioHoldings || []).find(x => x.id === id);
+      let scope = 'personal';
+      if (!h) { h = (window.bizHoldings || []).find(x => x.id === id); if (h) scope = 'business'; }
       const dbId = h?._dbId || id;
       try {
         await api('DELETE', `/api/holdings/${dbId}`);
-        if (window.holdings) window.holdings = window.holdings.filter(h => h.id !== id);
-        if (window.portfolioHoldings) window.portfolioHoldings = window.portfolioHoldings.filter(h => h.id !== id);
-        if (typeof renderInvestments === 'function') renderInvestments();
+        if (scope === 'business') {
+          if (window.bizHoldings) window.bizHoldings = window.bizHoldings.filter(x => x.id !== id);
+        } else {
+          if (window.holdings) window.holdings = window.holdings.filter(x => x.id !== id);
+          if (window.portfolioHoldings) window.portfolioHoldings = window.portfolioHoldings.filter(x => x.id !== id);
+        }
         notify('Holding removed');
+        if (typeof window._refreshHoldings === 'function') window._refreshHoldings(scope);
+        else if (typeof renderInvestments === 'function') renderInvestments();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
       } catch (e) {
         notify('Could not remove holding — ' + e.message, true);
       }
     };
 
-    // editHolding — populate modal
+    // editHolding — populate modal from whichever portfolio the row lives in
     window.editHolding = function (id) {
-      const list = window.holdings || window.portfolioHoldings || [];
-      const h = list.find(h => h.id === id);
+      let h = (window.holdings || window.portfolioHoldings || []).find(x => x.id === id);
+      let scope = 'personal';
+      if (!h) { h = (window.bizHoldings || []).find(x => x.id === id); if (h) scope = 'business'; }
       if (!h) return;
+      window._holdingScope = scope;   // so the Save (edit) path repaints the right list
       const modal = document.getElementById('holding-modal');
       if (!modal) return;
 

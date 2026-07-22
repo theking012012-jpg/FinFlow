@@ -1667,7 +1667,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="card-header">
             <div><h2 class="card-title">Holdings</h2><div class="card-sub">Your positions across all accounts</div></div>
             <div style="display:flex;gap:6px">
-              <button class="btn btn-ghost btn-sm" onclick="openAddHoldingModal()">+ Add holding</button>
+              <button class="btn btn-ghost btn-sm" onclick="openAddHoldingModal('personal')">+ Add holding</button>
               <button class="btn btn-primary btn-sm" onclick="openAIPanel();sendAIQuery('Analyze my investment portfolio — what should I rebalance or watch given my business financials?')">&#10022; AI analysis</button>
             </div>
           </div>
@@ -1955,7 +1955,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="card-header">
             <div><h2 class="card-title">Holdings</h2><div class="card-sub">Business investment positions</div></div>
             <div style="display:flex;gap:6px">
-              <button class="btn btn-ghost btn-sm" onclick="openAddHoldingModal()">+ Add holding</button>
+              <button class="btn btn-ghost btn-sm" onclick="openAddHoldingModal('business')">+ Add holding</button>
               <button class="btn btn-primary btn-sm" onclick="openAIPanel&&openAIPanel();sendAIQuery&&sendAIQuery('Analyse our business investment portfolio — flag concentration risks, tax efficiency, and how it aligns with our cash flow needs.')">&#10022; AI analysis</button>
             </div>
           </div>
@@ -6424,14 +6424,11 @@ document.addEventListener('click', e=>{
 
   // ── Ticker registries ──────────────────────────────────────────
   // Personal portfolio tickers come from the live `holdings` array.
-  // Business portfolio tickers are declared here.
-  const BIZ_HOLDINGS = [];
-  const BIZ_STATIC = [];
-  // Expose the BUSINESS investment positions as the canonical source for the business
-  // dashboard's Investments card (d-invest) and its F34 conversion. Same array reference,
-  // so it stays in sync as business holdings are added. Empty today ⇒ business shows $0.
-  // This is what stops the personal `window.holdings` from leaking onto the business card.
-  window.bizHoldings = BIZ_HOLDINGS;
+  // Business investment positions are real, entity-scoped DB rows loaded into
+  // window.bizHoldings (loadBizHoldingsFromDB below). This is also the canonical source
+  // for the business dashboard's Investments card (d-invest) + its F34 conversion, so the
+  // personal `window.holdings` never leaks onto the business card.
+  window.bizHoldings = window.bizHoldings || [];
 
   // ── Status pill helpers ────────────────────────────────────────
   function setLiveStatus(pageId, state, text){
@@ -6506,75 +6503,108 @@ document.addEventListener('click', e=>{
     return updated;
   }
 
-  // ── Apply quotes to business portfolio & re-render ─────────────
-  function applyBizQuotes(quotes){
+  // ── Render the BUSINESS portfolio (#biz-inv-holdings-list) from window.bizHoldings ─
+  // Entity-scoped DB rows (DB shape: id/ticker/name/type/shares/cost/price/div/color).
+  // Includes Edit/✕ per row (calls the same editHolding/deleteHolding used by personal).
+  function renderBizInvestments(){
     const list = document.getElementById('biz-inv-holdings-list');
     if(!list) return;
-
-    let totalValue = BIZ_STATIC.reduce((s, r) => s + r.value, 0);
-    let totalCost  = BIZ_STATIC.reduce((s, r) => s + r.value, 0); // cost ≈ value for static
-    let totalIncome = BIZ_STATIC.reduce((s, r) => s + r.income, 0);
-    let totalDayChg = 0;
-    let totalGain   = 0;
-
-    const rows = BIZ_HOLDINGS.map(h => {
-      const q = quotes[h.ticker];
-      const price  = q ? q.price    : (h._lastPrice || h.costPer);
-      const dayChg = q ? q.dayChange : 0;
-      if(q) h._lastPrice = price;
-      const val   = price * h.shares;
-      const cost  = h.costPer * h.shares;
-      const gl    = val - cost;
-      const div   = q?.dividend ?? 0;
-      const inc   = div * h.shares;
-      totalValue  += val;
-      totalCost   += cost;
-      totalGain   += gl;
-      totalIncome += inc;
-      totalDayChg += dayChg * h.shares;
-      const pos = gl >= 0;
-      const glPct = cost > 0 ? (gl / cost * 100).toFixed(1) : '0.0';
-      const sym3 = esc(h.ticker.slice(0, 3));
+    const hs = window.bizHoldings || [];
+    const bizEl = (id, val) => { const e=document.getElementById(id); if(e) e.textContent=val; };
+    const S2b = n => n>=1e6?'$'+(n/1e6).toFixed(2)+'M':n>=1e3?'$'+(n/1e3).toFixed(1)+'K':'$'+Math.round(n).toLocaleString();
+    if(!hs.length){
+      list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--t3)">No holdings yet — click + Add holding to get started</div>';
+      ['biz-inv-total','biz-inv-gain','biz-inv-daychg'].forEach(id => bizEl(id,'$0'));
+      bizEl('biz-inv-income','$0/yr');
+      return;
+    }
+    const palette=['#c9a84c','#5aaa9e','#9e8fbf','#7db87d','#d4964a','#c46a5a','#5a4e3a'];
+    let totalValue=0, totalCost=0, totalIncome=0, totalDayChg=0, totalGain=0, haveDay=false;
+    const rows = hs.map((h,i) => {
+      const shares  = parseFloat(h.shares)||0;
+      const price   = parseFloat(h.price)||parseFloat(h.cost)||0;
+      const costPer = parseFloat(h.cost)||0;
+      const val=price*shares, cost=costPer*shares, gl=val-cost;
+      const inc=(parseFloat(h.div)||0)*shares;
+      if(typeof h._dayChg==='number'){ totalDayChg+=h._dayChg*shares; haveDay=true; }
+      totalValue+=val; totalCost+=cost; totalGain+=gl; totalIncome+=inc;
+      const pos=gl>=0; const glPct=cost>0?(gl/cost*100).toFixed(1):'0.0';
+      const color=h.color||palette[i%palette.length];
+      const sym3=esc((h.ticker||'').slice(0,3));
       return `<div style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
-        <div style="width:30px;height:30px;border-radius:7px;background:${esc(h.color)}22;border:1px solid ${esc(h.color)}44;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${esc(h.color)}">${sym3}</div>
+        <div style="width:30px;height:30px;border-radius:7px;background:${color}22;border:1px solid ${color}44;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${color}">${sym3}</div>
         <div>
           <div style="font-weight:500;color:var(--t1)">${esc(h.ticker)}</div>
-          <div style="font-size:11px;color:var(--t3)">${esc(h.type)} · ${esc(String(h.shares))} units</div>
+          <div style="font-size:11px;color:var(--t3)">${esc(h.type||'Stock')} · ${esc(String(shares))} units</div>
         </div>
         <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$${price.toFixed(2)}</div>
         <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$${(val/1000).toFixed(1)}K</div>
         <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">$${(cost/1000).toFixed(1)}K</div>
-        <div style="text-align:right;font-family:var(--font-mono);color:${pos?'var(--green)':'var(--red)'}">
-          ${pos?'+':''}${glPct}%
+        <div style="text-align:right;font-family:var(--font-mono);color:${pos?'var(--green)':'var(--red)'}">${pos?'+':''}${glPct}%</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">
+          ${inc>0?'$'+(inc/1000).toFixed(1)+'K':'—'}
+          ${h.id!=null?`<div style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">
+            <button class="btn btn-ghost" style="padding:1px 7px;font-size:10px" title="Edit holding" onclick="event.stopPropagation();editHolding(${h.id})">Edit</button>
+            <button class="btn btn-ghost" style="padding:1px 6px;font-size:10px;color:var(--red)" title="Remove holding" onclick="event.stopPropagation();deleteHolding(${h.id})">✕</button>
+          </div>`:''}
         </div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--teal)">${inc>0?'$'+(inc/1000).toFixed(1)+'K':'—'}</div>
       </div>`;
     });
-
     list.innerHTML = rows.join('');
-
-    // Update metric cards
-    function bizEl(id, val){ const e=document.getElementById(id); if(e) e.textContent=val; }
-    const S2b = n => n>=1e6?'$'+(n/1e6).toFixed(2)+'M':n>=1e3?'$'+(n/1e3).toFixed(1)+'K':'$'+Math.round(n).toLocaleString();
-    bizEl('biz-inv-total',    S2b(totalValue));
-    bizEl('biz-inv-gain',     (totalGain>=0?'+':'')+S2b(totalGain));
-    bizEl('biz-inv-income',   S2b(totalIncome)+'/yr');
-    bizEl('biz-inv-daychg',   (totalDayChg>=0?'+':'')+S2b(totalDayChg));
-
-    const gainPos = totalGain >= 0;
-    const gainPct = totalCost > 0 ? (totalGain/totalCost*100).toFixed(1) : '0.0';
-    const dayPct  = totalValue > 0 ? (totalDayChg/totalValue*100).toFixed(2) : '0.00';
-    function bizChg(id, txt, cls){ const e=document.getElementById(id); if(e){e.textContent=txt;e.className='mc-change '+cls;} }
-    bizChg('biz-inv-total-chg',  (gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% all time',  gainPos?'up':'dn');
-    bizChg('biz-inv-gain-chg',   (gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% return',    gainPos?'up':'dn');
-    bizChg('biz-inv-daychg-chg', (totalDayChg>=0?'▲ ':'▼ ')+Math.abs(dayPct)+'% today', totalDayChg>=0?'up':'dn');
+    bizEl('biz-inv-total',  S2b(totalValue));
+    bizEl('biz-inv-gain',   (totalGain>=0?'+':'')+S2b(totalGain));
+    bizEl('biz-inv-income', S2b(totalIncome)+'/yr');
+    bizEl('biz-inv-daychg', haveDay?((totalDayChg>=0?'+':'')+S2b(totalDayChg)):'—');
+    const gainPos=totalGain>=0;
+    const gainPct=totalCost>0?(totalGain/totalCost*100).toFixed(1):'0.0';
+    const dayPct=(haveDay&&totalValue>0)?(totalDayChg/totalValue*100).toFixed(2):'0.00';
+    const bizChg=(id,txt,cls)=>{ const e=document.getElementById(id); if(e){e.textContent=txt;e.className='mc-change '+cls;} };
+    bizChg('biz-inv-total-chg', (gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% all time', gainPos?'up':'dn');
+    bizChg('biz-inv-gain-chg',  (gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% return',   gainPos?'up':'dn');
+    if(haveDay) bizChg('biz-inv-daychg-chg', (totalDayChg>=0?'▲ ':'▼ ')+Math.abs(dayPct)+'% today', totalDayChg>=0?'up':'dn');
   }
+
+  // Apply live quotes into window.bizHoldings, then repaint.
+  function applyBizQuotes(quotes){
+    (window.bizHoldings||[]).forEach(h => {
+      const q = quotes[h.ticker];
+      if(!q) return;
+      h.price = q.price;
+      h._dayChg = q.dayChange;
+      if(q.dividend > 0) h.div = q.dividend;
+    });
+    renderBizInvestments();
+  }
+
+  // Load entity-scoped business holdings from the DB (scope=business → active entity).
+  async function loadBizHoldingsFromDB(){
+    try{
+      const res = await fetch('/api/holdings?scope=business', { credentials:'include' });
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const rows = await res.json();
+      window.bizHoldings = (rows||[]).map(r => ({
+        _dbId:r.id, id:r.id, ticker:r.ticker, name:r.name, type:r.asset_type,
+        shares:r.shares, cost:r.cost_per, price:r.price, div:r.dividend, color:r.color,
+      }));
+      renderBizInvestments();
+      if(typeof window._refreshDashboardUI === 'function') window._refreshDashboardUI();
+    }catch(err){ console.warn('[BizHoldings]', err.message); }
+  }
+
+  // Repaint the CORRECT portfolio + dashboard after a mutation (add/edit/delete).
+  window._refreshHoldings = function(scope){
+    if(scope === 'business') loadBizHoldingsFromDB();
+    else if(typeof window._loadHoldingsFromDB === 'function') window._loadHoldingsFromDB();
+    if(typeof window._refreshDashboardUI === 'function') window._refreshDashboardUI();
+  };
+  window._loadBizHoldingsFromDB = loadBizHoldingsFromDB;
+  window.renderBizInvestments   = renderBizInvestments;
 
   // ── Main refresh loop ──────────────────────────────────────────
   async function refreshAll(){
     // Collect all unique tickers (skip CASH — not exchange-traded)
     const personalTickers = holdings.map(h=>h.ticker).filter(t=>t!=='CASH');
-    const bizTickers      = BIZ_HOLDINGS.map(h=>h.ticker);
+    const bizTickers      = (window.bizHoldings||[]).map(h=>h.ticker).filter(t=>t && t!=='CASH');
     const allTickers      = [...new Set([...personalTickers, ...bizTickers])];
 
     ['investments','biz-investments'].forEach(id => setLiveStatus(id, 'loading', 'Fetching quotes…'));
@@ -6612,6 +6642,7 @@ document.addEventListener('click', e=>{
   function init(){
     injectStatusPill('investments');
     injectStatusPill('biz-investments');
+    loadBizHoldingsFromDB();          // load real entity-scoped business positions on boot
     refreshAll();
     setInterval(refreshAll, 60000); // refresh every 60 s
   }

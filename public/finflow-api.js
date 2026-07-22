@@ -21,7 +21,7 @@
     getInventory: function()      { return api('GET','/api/inventory'); },
     getPayroll:   function()      { return api('GET','/api/payroll'); },
     getGoals:     function()      { return api('GET','/api/goals'); },
-    getHoldings:  function()      { return api('GET','/api/holdings'); },
+    getHoldings:  function()      { return api('GET','/api/holdings?scope=personal'); },
   };
 
   function showAuthGate() {

@@ -292,7 +292,7 @@
   // ══════════════════════════════════════════════════════
   async function loadHoldingsFromDB() {
     try {
-      const rows = await api('GET', '/api/holdings');
+      const rows = await api('GET', '/api/holdings?scope=personal');   // personal = entity_id NULL only
       const mapped = (rows || []).map(r => ({
         _dbId: r.id, id: r.id, ticker: r.ticker, name: r.name,
         type: r.asset_type, shares: r.shares, cost: r.cost_per,
@@ -572,13 +572,17 @@
     const div    = parseFloat(document.getElementById('h-div')?.value) || 0;
     const type   = document.getElementById('h-type')?.value || 'Stock';
     if (!ticker || !shares) { tip('Ticker and shares are required', true); return; }
+    // Scope the write to the page the modal was opened from (personal vs business entity).
+    const scope = window._holdingScope === 'business' ? 'business' : 'personal';
     try {
       await api('POST', '/api/holdings', {
-        ticker, name, asset_type: type, shares, cost_per: cost, price, dividend: div,
+        ticker, name, asset_type: type, shares, cost_per: cost, price, dividend: div, scope,
       });
       if (typeof closeModal === 'function') closeModal('holding-modal');
       tip(`${e(ticker)} added to portfolio`);
-      await loadHoldingsFromDB();
+      // Repaint the CORRECT list (+ dashboard d-invest) — no manual reload.
+      if (typeof window._refreshHoldings === 'function') window._refreshHoldings(scope);
+      else await loadHoldingsFromDB();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not save holding — ' + err.message, true); }
   };
@@ -678,6 +682,7 @@
           else { renderTimesheetList(); updateTimesheetMetrics(); }
         }
         if (id === 'investments') loadHoldingsFromDB();
+        if (id === 'biz-investments' && typeof window._loadBizHoldingsFromDB === 'function') window._loadBizHoldingsFromDB();
         if (id === 'personal') window.loadPersonalFinance().catch(() => {});
         if (id === 'projects') {
           if (!_projectsFetched) loadProjects();

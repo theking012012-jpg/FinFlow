@@ -4106,7 +4106,10 @@ function updateNetWorthPanel(portValue){
   // NOTE: pers-nw is owned by renderPersonal (real accounts+portfolio−liab) — not clobbered here.
 }
 
-function openAddHoldingModal(){
+function openAddHoldingModal(scope){
+  // Context: 'personal' (default) writes entity_id NULL rows; 'business' writes rows scoped
+  // to the active entity. The Add buttons on each page pass their own scope.
+  window._holdingScope = (scope==='business') ? 'business' : 'personal';
   ['h-ticker','h-name','h-shares','h-cost','h-price','h-div'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   // Clear any edit state so this is a fresh ADD — otherwise the patched saveHolding
   // (which routes on #holding-edit-id) would PUT-update the last-edited holding.

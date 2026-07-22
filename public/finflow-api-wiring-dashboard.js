@@ -193,9 +193,16 @@
     // − COGS), so this wiring can't overwrite them with a divergent basis (root of F7). This
     // function still owns the non-conflicting cards below. rev/exp/profit are still computed
     // above for the returned object (used by _refreshDashboardUI's other cards).
-    set('d-outstanding', money(outstanding));
+    // F59: when a non-native display currency is active, _applyConvertedKPIs OWNS d-outstanding
+    // and d-invest (it paints server-converted values, or "—" + hint). This function runs AFTER
+    // it in the patched updateDashboard, so writing here would stamp NATIVE amounts under the
+    // foreign symbol until the async overlay landed — a visible native→converted flip, and a
+    // permanent mislabel on the overlay's failure path. Native path is unchanged.
+    const _fxOwned = !!window._displayCurrency;
+    if (!_fxOwned) set('d-outstanding', money(outstanding));
     if (overdue.length > 0) {
-      set('d-outstanding-chg', `${overdue.length} overdue · ${money(overdueAmt)}`);
+      // Count/label only — no converted amount, so this is safe under any display currency.
+      set('d-outstanding-chg', `${overdue.length} overdue${_fxOwned ? '' : ' · ' + money(overdueAmt)}`);
       const chgEl = document.getElementById('d-outstanding-chg');
       if (chgEl) chgEl.className = 'mc-change dn';
     }
@@ -208,14 +215,19 @@
     const holdings = window.bizHoldings || [];
     const portfolio = holdings.reduce((s, h) => s + (parseFloat(h.shares) || 0) * (parseFloat(h.price) || parseFloat(h._lastPrice) || parseFloat(h.costPer) || parseFloat(h.cost) || 0), 0);
     const basis     = holdings.reduce((s, h) => s + (parseFloat(h.shares) || 0) * (parseFloat(h.costPer) || parseFloat(h.cost)  || 0), 0);
-    set('d-invest', money(portfolio));
+    if (!_fxOwned) set('d-invest', money(portfolio));   // F59: overlay owns this under a display currency
     const invChgEl = document.getElementById('d-invest-chg');
     if (invChgEl) {
-      if (basis > 0) {
+      if (basis > 0 && !_fxOwned) {
         const pl  = portfolio - basis;
         const pct = Math.round(pl / basis * 100);
         invChgEl.textContent = (pl >= 0 ? '+' : '') + money(pl) + ' · ' + (pct >= 0 ? '+' : '') + pct + '%';
         invChgEl.className   = 'mc-change ' + (pl >= 0 ? 'up' : 'dn');
+      } else if (basis > 0 && _fxOwned) {
+        // P/L % is currency-agnostic; the absolute amount is not — show the ratio only.
+        const pct = Math.round((portfolio - basis) / basis * 100);
+        invChgEl.textContent = (pct >= 0 ? '+' : '') + pct + '%';
+        invChgEl.className   = 'mc-change ' + (pct >= 0 ? 'up' : 'dn');
       } else {
         invChgEl.textContent = holdings.length ? holdings.length + ' holding' + (holdings.length !== 1 ? 's' : '') : 'No holdings';
         invChgEl.className   = 'mc-change neutral';

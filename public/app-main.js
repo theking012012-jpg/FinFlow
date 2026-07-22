@@ -1942,13 +1942,17 @@ function updateDashboard(d=getPeriodData()){
   // loadCOGS/boot (window._cogsTotal); non-inventory businesses → 0 → net == rev − opex.
   const _ddCogs = parseFloat(window._cogsTotal)||0;
   const _ddProfit = _ddRev - _ddCogs - _ddExp;
-  document.getElementById('d-rev').textContent=S(_ddRev);
-  document.getElementById('d-exp').textContent=S(_ddExp);
-  document.getElementById('d-profit').textContent=S(_ddProfit);
-  // F34 Step 2: if a non-native display currency is active, overlay the server-converted figures
-  // (historical per-transaction FX). Native shown first (above) so there's no blank flash; the async
-  // fetch overwrites with the converted values. The chart still renders native until Step 3.
-  if(window._displayCurrency) _applyConvertedKPIs(window._displayCurrency);
+  // F34 Step 2 / F59: with a non-native display currency active, do NOT paint the native figures
+  // first. S() stamps the DISPLAY currency's symbol, so a native value written here renders under
+  // a foreign sign for the whole fetch — mislabelled money, and permanently so if the fetch failed
+  // (pre-F59 it returned silently). Paint an honest loading dash instead; _applyConvertedKPIs fills
+  // in the server-converted figures, or "—" + a hint when it cannot. Honest-empty over
+  // confidently-wrong. Native path is unchanged — byte-identical to before.
+  const _fxPending = !!window._displayCurrency;
+  document.getElementById('d-rev').textContent    = _fxPending ? '…' : S(_ddRev);
+  document.getElementById('d-exp').textContent    = _fxPending ? '…' : S(_ddExp);
+  document.getElementById('d-profit').textContent = _fxPending ? '…' : S(_ddProfit);
+  if(_fxPending) _applyConvertedKPIs(window._displayCurrency);
   document.getElementById('d-chart-title').textContent='Revenue vs Expenses — '+d.label;
   // Prior-period baseline from the SAME windowed compute (same basis, payroll included) — NOT
   // the old getPeriodData REV[]/EXP[] arrays, which used a different (payroll-excluded) basis
@@ -4359,6 +4363,14 @@ function _activeEntityCurrency(){
 function _applyDisplayCurrency(code){
   const map={USD:'$',EUR:'€',GBP:'£',TTD:'TT$',CAD:'C$',AUD:'A$'};
   currencySymbol=map[code]||(window.CURRENCIES&&window.CURRENCIES[code]&&window.CURRENCIES[code].symbol)||'$';
+  // F70: activeCurrency IS the display currency — the patched S() stamps its symbol on EVERY
+  // figure (app-main.js:573). Set it HERE, in the single funnel all three currency controls
+  // route through, not in one caller. Previously only setCurrency() (the header pill) assigned
+  // it, so switching from Settings (#s-currency → updateCurrency) or the mobile drawer
+  // (#smc-currency → updateCurrency) converted the VALUES via the server but left S() stamping
+  // the PREVIOUS currency's symbol — converted money under the wrong sign, on 2 of the 3
+  // controls. Assignment is idempotent for setCurrency, which already sets it before calling us.
+  activeCurrency=code;
   window._displayCurrency=(code && code!==_activeEntityCurrency())?code:null;
   refreshAllPeriodData();
 }
@@ -4381,6 +4393,13 @@ function updateCurrency(){
 // SAME _periodWindow the client filters on so server==client at every period; a stale response
 // (currency changed mid-flight) is dropped. Native/identity path never calls this.
 async function _applyConvertedKPIs(ccy){
+  // F59: these two helpers live OUTSIDE the try so the catch can reach them. Previously the whole
+  // body was inside a `try{...}catch(e){}` with an `if(!r.ok) return;` — so a failed or errored
+  // conversion left the NATIVE figures on screen under the newly-relabelled foreign currency.
+  // That is mislabelled money: the exact defect F34 was opened for, alive on the failure path.
+  const set =(id,v)=>{const el=document.getElementById(id); if(el){el.textContent=S(v); el.title='';}};
+  const dash=(id,hint)=>{const el=document.getElementById(id); if(el){el.textContent='—'; el.title=hint||'';}};
+  const _FX_CARDS=['d-rev','d-exp','d-profit','d-outstanding','d-invest'];
   try{
     const period=(typeof currentPeriod!=='undefined')?currentPeriod:'year';
     const w=(typeof _periodWindow==='function')?_periodWindow(period, period==='month'?currentMonthIdx:null):null;
@@ -4391,12 +4410,10 @@ async function _applyConvertedKPIs(ccy){
     const _fyNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
     qs.set('fyStart', String(Math.max(0,_fyNames.indexOf((document.getElementById('s-fy')||{}).value||'January'))));
     const r=await fetch('/api/reports?'+qs.toString(),{credentials:'include'});
-    if(!r.ok) return;
+    if(!r.ok) throw new Error('HTTP '+r.status);   // F59: fall through to the honest "—" handler
     const j=await r.json();
     if(window._displayCurrency!==ccy) return; // currency changed while in flight — drop stale
     const cov=j.fxCoverage||{};
-    const set =(id,v)=>{const el=document.getElementById(id); if(el){el.textContent=S(v); el.title='';}};
-    const dash=(id,hint)=>{const el=document.getElementById(id); if(el){el.textContent='—'; el.title=hint||'';}};
     if(cov.complete===false){
       // F34 Step 6 honesty: no FX rate exists for this currency pair, so every business figure would
       // be a fabricated $0/relabel. Show "—" + a hint instead — NEVER a silent zero or mislabeled money.
@@ -4425,7 +4442,14 @@ async function _applyConvertedKPIs(ccy){
     } else {
       dash('d-invest','No FX rate for USD→'+ccy+'. Add one under FX / Currency to convert investments.');
     }
-  }catch(e){}
+  }catch(e){
+    // F59: a conversion failure must NEVER leave native figures under a foreign currency label.
+    // Blank them to "—" with a hint. Honest-empty beats confidently-wrong money (class C6/C7).
+    if(window._displayCurrency!==ccy) return;   // stale — a newer call owns the cards now
+    console.error('[FX] display-currency conversion to '+ccy+' failed:', e && e.message);
+    const hint='Could not convert to '+ccy+'. Figures unavailable — check your connection, then switch currency again to retry.';
+    _FX_CARDS.forEach(id=>dash(id,hint));
+  }
 }
 // F34 B surface 1 — overlay the overview chart with the server's CONVERTED monthly buckets. Updates
 // the Chart.js datasets ONLY (never REV/EXP/MONTHS globals, so native period surfaces stay native and

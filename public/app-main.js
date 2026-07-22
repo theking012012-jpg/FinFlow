@@ -1751,6 +1751,33 @@ function _periodWindow(period, monthIdx){
 }
 window._periodWindow = _periodWindow;
 
+// ════════════════════════════════════════════
+// CANONICAL OUTSTANDING / AR  (single source of truth — F56)
+// ════════════════════════════════════════════
+// Mirrors the server's computeBooks AR leg EXACTLY (server.js ~4110):
+//   Σ max(0, amount − amount_paid) over RECOGNIZED statuses.
+// NOT "Σ amount where status !== 'paid'", which three separate client surfaces used and which
+// was wrong twice over: it counted the FULL amount of a partially-paid invoice (ignoring what
+// had already been collected), and it counted rows in non-recognized statuses (draft/void) that
+// the server excludes. A fully-paid invoice has amount_paid == amount, so it contributes 0 on
+// its own — no status filter is needed, and the max(0, …) floor stops an over-credited invoice
+// subtracting from receivables. Returns the counts too so callers never re-derive them.
+// AR is an all-time balance-sheet figure by design — it does NOT take a period window.
+function arOutstanding(invoices){
+  const RECOGNIZED = ['pending','overdue','partial','paid'];
+  let total=0, count=0, overdueTotal=0, overdueCount=0;
+  (invoices||[]).forEach(i=>{
+    const st=(i.status||'').toLowerCase();
+    if(!RECOGNIZED.includes(st)) return;
+    const due=Math.max(0,(parseFloat(i.amount)||0)-(parseFloat(i.amount_paid)||0));
+    if(due<=0) return;
+    total+=due; count++;
+    if(st==='overdue'){ overdueTotal+=due; overdueCount++; }
+  });
+  return { total, count, overdueTotal, overdueCount };
+}
+window._arOutstanding = arOutstanding;
+
 function computeRevenue(period, monthIdx){
   period = period || (typeof currentPeriod !== 'undefined' ? currentPeriod : (window.currentPeriod || 'year'));
   // Issue-based accrual (F32) over the SELECTED period window (F33/F25): recognize every
@@ -2010,16 +2037,13 @@ function updateDashboard(d=getPeriodData()){
   set('d-rev-chg',rc.txt,rc.cls);
   set('d-exp-chg',ec.txt,ec.cls);
   set('d-profit-chg',pc.txt,pc.cls);
-  // Outstanding — show month vs year context
-  if(currentPeriod==='year'){
-    // Outstanding from real invoices
-    const _outstanding = (window.userInvoices||[]).filter(i=>i.status?.toLowerCase()!=='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-    const _overdue = (window.userInvoices||[]).filter(i=>i.status?.toLowerCase()==='overdue');
-    const _overdueAmt = _overdue.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-    document.getElementById('d-outstanding').textContent=S(_outstanding);
-    const _odEl = document.getElementById('d-outstanding-chg');
-    if(_odEl){ _odEl.textContent = _overdue.length ? _overdue.length+' overdue · '+S(_overdueAmt) : 'All invoices paid'; _odEl.className = _overdue.length ? 'mc-change dn' : 'mc-change up'; }
-  }
+  // F56: the Outstanding card is owned SOLELY by updateKPIs (finflow-api-wiring-dashboard.js),
+  // matching the ownership split already documented there for the other non-canonical cards.
+  // The duplicate that used to live here was wrong three ways: it only ran on the 'year' period
+  // (so Month/Quarter showed a stale figure), it used a divergent formula (Σ amount over
+  // status !== 'paid', overstating every partially-paid invoice), and its subtitle printed
+  // "All invoices paid" whenever nothing was OVERDUE — which is how a $1.4K Outstanding card
+  // ended up captioned "All invoices paid". Two writers on one card is the F7 defect class.
   // Expense bars
   const maxE=d.sal;
   document.getElementById('exp-sal').textContent=S(d.sal);

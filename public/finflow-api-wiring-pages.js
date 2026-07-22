@@ -247,8 +247,12 @@
       // payment shape (no paid_at vs due_date), so it stays as the "—" placeholder.
       const _prTotal = _paymentsRecvData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _prInvs = window._realInvoices || [];
-      const _prOut = _prInvs.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-      const _prOver = _prInvs.filter(i => i.status?.toLowerCase() === 'overdue').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      // F56: same canonical AR definition as the dashboard card, the Invoices page and the
+      // server — otherwise this page showed a different Outstanding than the dashboard did.
+      const _prAr = (typeof window._arOutstanding === 'function')
+        ? window._arOutstanding(_prInvs) : { total: 0, overdueTotal: 0 };
+      const _prOut = _prAr.total;
+      const _prOver = _prAr.overdueTotal;
       setKpiCards('page-payments-received', [S(_prTotal), S(_prOut), S(_prOver), null]);
       window._refreshDashboardUI?.();
     };

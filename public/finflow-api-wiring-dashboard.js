@@ -184,9 +184,11 @@
     exp += paymentsMade.filter(p => p.bill_id == null && inP(parseDate(p.date || p.created_at))).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
 
     const profit = rev - exp;
-    const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const overdue = invoices.filter(i => i.status?.toLowerCase() === 'overdue');
-    const overdueAmt = overdue.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    // F56: one canonical AR definition, mirroring the server (app-main.js arOutstanding).
+    const _ar = (typeof window._arOutstanding === 'function')
+      ? window._arOutstanding(invoices)
+      : { total: 0, count: 0, overdueTotal: 0, overdueCount: 0 };
+    const outstanding = _ar.total;
 
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     // d-rev / d-exp / d-profit are written ONLY by app-main updateDashboard (canonical R1/E1
@@ -200,11 +202,22 @@
     // permanent mislabel on the overlay's failure path. Native path is unchanged.
     const _fxOwned = !!window._displayCurrency;
     if (!_fxOwned) set('d-outstanding', money(outstanding));
-    if (overdue.length > 0) {
-      // Count/label only — no converted amount, so this is safe under any display currency.
-      set('d-outstanding-chg', `${overdue.length} overdue${_fxOwned ? '' : ' · ' + money(overdueAmt)}`);
-      const chgEl = document.getElementById('d-outstanding-chg');
-      if (chgEl) chgEl.className = 'mc-change dn';
+    // F56: THREE-way subtitle. It previously only wrote when something was overdue, so with
+    // nothing overdue the card kept whatever app-main had left — "All invoices paid" — even
+    // with real money outstanding. Amounts are omitted under a display currency (they'd be
+    // native figures under a foreign symbol, F59); counts are currency-agnostic and always safe.
+    const chgEl = document.getElementById('d-outstanding-chg');
+    if (chgEl) {
+      if (_ar.overdueCount > 0) {
+        chgEl.textContent = `${_ar.overdueCount} overdue${_fxOwned ? '' : ' · ' + money(_ar.overdueTotal)}`;
+        chgEl.className = 'mc-change dn';
+      } else if (_ar.count > 0) {
+        chgEl.textContent = `${_ar.count} unpaid invoice${_ar.count === 1 ? '' : 's'}`;
+        chgEl.className = 'mc-change neutral';
+      } else {
+        chgEl.textContent = 'All invoices paid';
+        chgEl.className = 'mc-change up';
+      }
     }
 
     // ── Investments: total value of the BUSINESS investment positions ─────
@@ -334,10 +347,12 @@
 
   // ── Update invoice stats panel ────────────────────────────────────
   function updateInvoiceStats(invoices) {
-    const paid       = invoices.filter(i => i.status?.toLowerCase() === 'paid');
-    const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid');
-    const outAmt     = outstanding.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const paidAmt    = paid.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    // F56: same canonical AR definition as the dashboard card — Σ max(0, amount − amount_paid)
+    // over recognized statuses. "Collected" is its mirror: Σ amount_paid, so out + collected
+    // equals total billed and the percentage is honest for partially-paid invoices too (which
+    // the old paid-vs-unpaid split counted entirely on one side or the other).
+    const outAmt  = ((typeof window._arOutstanding === 'function') ? window._arOutstanding(invoices).total : 0);
+    const paidAmt = invoices.reduce((s, i) => s + (parseFloat(i.amount_paid) || 0), 0);
     const total      = paidAmt + outAmt || 1;
     const pct        = Math.round(paidAmt / total * 100);
 

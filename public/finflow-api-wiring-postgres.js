@@ -133,6 +133,11 @@
           _dbId:    r.id,
           client:   r.client,
           amount:   r.amount,
+          // F56: carry amount_paid — loadEntityData already does, but this mapper dropped it, so
+          // after ANY refresh userInvoices lost it. markInvoicePaid settles `amount − amount_paid`,
+          // so on a partially-paid invoice it would then try to pay the FULL amount again and be
+          // rejected 400 by the server's overpayment guard. Also feeds the canonical AR figure.
+          amount_paid: r.amount_paid,
           due:      r.due_date
             ? new Date(r.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
             : 'TBD',
@@ -270,12 +275,19 @@
     const set    = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     const period = d || (typeof getPeriodData === 'function' ? getPeriodData() : { label: 'All time' });
 
+    // F56: the Invoices page must use the SAME AR definition as the dashboard card and the
+    // server — Σ max(0, amount − amount_paid) over recognized statuses. The old paid-vs-unpaid
+    // split put a partially-paid invoice ENTIRELY on one side, so Billed / Collected /
+    // Outstanding did not reconcile with each other or with /api/reports.
+    const _arP = (typeof window._arOutstanding === 'function')
+      ? window._arOutstanding(invs)
+      : { total: 0, count: 0, overdueTotal: 0, overdueCount: 0 };
     const totalBilled  = invs.reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const collected    = invs.filter(i => i.status?.toLowerCase() === 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const outstanding  = invs.filter(i => i.status?.toLowerCase() !== 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const overdue      = invs.filter(i => i.status?.toLowerCase() === 'overdue').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const overdueCount = invs.filter(i => i.status?.toLowerCase() === 'overdue').length;
-    const outCount     = invs.filter(i => i.status?.toLowerCase() !== 'paid').length;
+    const collected    = invs.reduce((a, i) => a + (parseFloat(i.amount_paid) || 0), 0);
+    const outstanding  = _arP.total;
+    const overdue      = _arP.overdueTotal;
+    const overdueCount = _arP.overdueCount;
+    const outCount     = _arP.count;
     const pctCollected = totalBilled > 0 ? Math.round(collected / totalBilled * 100) : 0;
 
     set('inv-billed',     money(totalBilled));

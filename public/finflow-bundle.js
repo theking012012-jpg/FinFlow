@@ -3576,8 +3576,12 @@ function clearAIChat(){
       // payment shape (no paid_at vs due_date), so it stays as the "—" placeholder.
       const _prTotal = _paymentsRecvData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _prInvs = window._realInvoices || [];
-      const _prOut = _prInvs.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-      const _prOver = _prInvs.filter(i => i.status?.toLowerCase() === 'overdue').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      // F56: same canonical AR definition as the dashboard card, the Invoices page and the
+      // server — otherwise this page showed a different Outstanding than the dashboard did.
+      const _prAr = (typeof window._arOutstanding === 'function')
+        ? window._arOutstanding(_prInvs) : { total: 0, overdueTotal: 0 };
+      const _prOut = _prAr.total;
+      const _prOver = _prAr.overdueTotal;
       setKpiCards('page-payments-received', [S(_prTotal), S(_prOut), S(_prOver), null]);
       window._refreshDashboardUI?.();
     };
@@ -4872,7 +4876,11 @@ function clearAIChat(){
       const revenue   = paid.reduce((s, i) => s + (i.amount || 0), 0);
       const expTotal  = expenses.reduce((s, ex) => s + (ex.amount || 0), 0);
       const profit    = revenue - expTotal;
-      const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
+      // F56: canonical AR definition (Σ max(0, amount − amount_paid) over recognized statuses),
+      // so a customer's outstanding balance agrees with the dashboard and the Invoices page.
+      const outstanding = (typeof window._arOutstanding === 'function')
+        ? window._arOutstanding(invoices).total
+        : invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
       const catTotals = {};
       expenses.forEach(ex => { catTotals[ex.category] = (catTotals[ex.category] || 0) + (ex.amount || 0); });
       const catRows = Object.entries(catTotals).sort((a, b) => b[1] - a[1])
@@ -5241,9 +5249,11 @@ function clearAIChat(){
     exp += paymentsMade.filter(p => p.bill_id == null && inP(parseDate(p.date || p.created_at))).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
 
     const profit = rev - exp;
-    const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const overdue = invoices.filter(i => i.status?.toLowerCase() === 'overdue');
-    const overdueAmt = overdue.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    // F56: one canonical AR definition, mirroring the server (app-main.js arOutstanding).
+    const _ar = (typeof window._arOutstanding === 'function')
+      ? window._arOutstanding(invoices)
+      : { total: 0, count: 0, overdueTotal: 0, overdueCount: 0 };
+    const outstanding = _ar.total;
 
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     // d-rev / d-exp / d-profit are written ONLY by app-main updateDashboard (canonical R1/E1
@@ -5257,11 +5267,22 @@ function clearAIChat(){
     // permanent mislabel on the overlay's failure path. Native path is unchanged.
     const _fxOwned = !!window._displayCurrency;
     if (!_fxOwned) set('d-outstanding', money(outstanding));
-    if (overdue.length > 0) {
-      // Count/label only — no converted amount, so this is safe under any display currency.
-      set('d-outstanding-chg', `${overdue.length} overdue${_fxOwned ? '' : ' · ' + money(overdueAmt)}`);
-      const chgEl = document.getElementById('d-outstanding-chg');
-      if (chgEl) chgEl.className = 'mc-change dn';
+    // F56: THREE-way subtitle. It previously only wrote when something was overdue, so with
+    // nothing overdue the card kept whatever app-main had left — "All invoices paid" — even
+    // with real money outstanding. Amounts are omitted under a display currency (they'd be
+    // native figures under a foreign symbol, F59); counts are currency-agnostic and always safe.
+    const chgEl = document.getElementById('d-outstanding-chg');
+    if (chgEl) {
+      if (_ar.overdueCount > 0) {
+        chgEl.textContent = `${_ar.overdueCount} overdue${_fxOwned ? '' : ' · ' + money(_ar.overdueTotal)}`;
+        chgEl.className = 'mc-change dn';
+      } else if (_ar.count > 0) {
+        chgEl.textContent = `${_ar.count} unpaid invoice${_ar.count === 1 ? '' : 's'}`;
+        chgEl.className = 'mc-change neutral';
+      } else {
+        chgEl.textContent = 'All invoices paid';
+        chgEl.className = 'mc-change up';
+      }
     }
 
     // ── Investments: total value of the BUSINESS investment positions ─────
@@ -5391,10 +5412,12 @@ function clearAIChat(){
 
   // ── Update invoice stats panel ────────────────────────────────────
   function updateInvoiceStats(invoices) {
-    const paid       = invoices.filter(i => i.status?.toLowerCase() === 'paid');
-    const outstanding = invoices.filter(i => i.status?.toLowerCase() !== 'paid');
-    const outAmt     = outstanding.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const paidAmt    = paid.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    // F56: same canonical AR definition as the dashboard card — Σ max(0, amount − amount_paid)
+    // over recognized statuses. "Collected" is its mirror: Σ amount_paid, so out + collected
+    // equals total billed and the percentage is honest for partially-paid invoices too (which
+    // the old paid-vs-unpaid split counted entirely on one side or the other).
+    const outAmt  = ((typeof window._arOutstanding === 'function') ? window._arOutstanding(invoices).total : 0);
+    const paidAmt = invoices.reduce((s, i) => s + (parseFloat(i.amount_paid) || 0), 0);
     const total      = paidAmt + outAmt || 1;
     const pct        = Math.round(paidAmt / total * 100);
 
@@ -5732,6 +5755,11 @@ function clearAIChat(){
           _dbId:    r.id,
           client:   r.client,
           amount:   r.amount,
+          // F56: carry amount_paid — loadEntityData already does, but this mapper dropped it, so
+          // after ANY refresh userInvoices lost it. markInvoicePaid settles `amount − amount_paid`,
+          // so on a partially-paid invoice it would then try to pay the FULL amount again and be
+          // rejected 400 by the server's overpayment guard. Also feeds the canonical AR figure.
+          amount_paid: r.amount_paid,
           due:      r.due_date
             ? new Date(r.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
             : 'TBD',
@@ -5869,12 +5897,19 @@ function clearAIChat(){
     const set    = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     const period = d || (typeof getPeriodData === 'function' ? getPeriodData() : { label: 'All time' });
 
+    // F56: the Invoices page must use the SAME AR definition as the dashboard card and the
+    // server — Σ max(0, amount − amount_paid) over recognized statuses. The old paid-vs-unpaid
+    // split put a partially-paid invoice ENTIRELY on one side, so Billed / Collected /
+    // Outstanding did not reconcile with each other or with /api/reports.
+    const _arP = (typeof window._arOutstanding === 'function')
+      ? window._arOutstanding(invs)
+      : { total: 0, count: 0, overdueTotal: 0, overdueCount: 0 };
     const totalBilled  = invs.reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const collected    = invs.filter(i => i.status?.toLowerCase() === 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const outstanding  = invs.filter(i => i.status?.toLowerCase() !== 'paid').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const overdue      = invs.filter(i => i.status?.toLowerCase() === 'overdue').reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const overdueCount = invs.filter(i => i.status?.toLowerCase() === 'overdue').length;
-    const outCount     = invs.filter(i => i.status?.toLowerCase() !== 'paid').length;
+    const collected    = invs.reduce((a, i) => a + (parseFloat(i.amount_paid) || 0), 0);
+    const outstanding  = _arP.total;
+    const overdue      = _arP.overdueTotal;
+    const overdueCount = _arP.overdueCount;
+    const outCount     = _arP.count;
     const pctCollected = totalBilled > 0 ? Math.round(collected / totalBilled * 100) : 0;
 
     set('inv-billed',     money(totalBilled));

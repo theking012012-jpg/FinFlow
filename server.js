@@ -4483,24 +4483,103 @@ app.get('/api/fx-summary', requireAuth, wrap(async (req, res) => {
   });
 }));
 
-// ── STOCK PRICE PROXY (server-side, avoids CORS / tracking-prevention issues) ─
+// ── MARKET DATA PROXY — Finnhub (stocks) + CoinGecko (crypto), server-side & keyed ─
+// The client calls GET /api/stock-price?symbol=X. Keys come from Railway env vars
+// (FINNHUB_API_KEY, COINGECKO_API_KEY) — NEVER hardcoded; a missing key returns a
+// clear error, not a crash. Results are cached per symbol (~60s) and each provider
+// gets a 429 cooldown so a refresh cannot hammer either free-tier API. All calls are
+// server-side, so no CSP connect-src entry is needed.
+const CRYPTO_IDS = {
+  BTC:'bitcoin', ETH:'ethereum', SOL:'solana', ADA:'cardano', XRP:'ripple',
+  DOGE:'dogecoin', DOT:'polkadot', MATIC:'matic-network', LTC:'litecoin',
+  LINK:'chainlink', AVAX:'avalanche-2', UNI:'uniswap', ATOM:'cosmos', XLM:'stellar',
+  ALGO:'algorand', BCH:'bitcoin-cash', BNB:'binancecoin', TRX:'tron', SHIB:'shiba-inu',
+  USDT:'tether', USDC:'usd-coin',
+};
+const _quoteCache   = new Map();          // SYMBOL -> { data, ts }
+const _QUOTE_TTL_MS = 60 * 1000;          // 60s freshness
+const _provCooldown = { finnhub: 0, coingecko: 0 }; // epoch ms until which we back off
+
+// F31-class guard: reject implausible feed output so a bad quote can never surface a
+// fabricated number (the "+3,513,999,900%" astronomical-value bug). Bad → null, never a guess.
+function _saneQuote(q) {
+  const price = Number(q.price);
+  if (!isFinite(price) || price <= 0 || price > 1e9) return { ...q, price: null };
+  let pct = q.dayChangePct == null ? null : Number(q.dayChangePct);
+  let chg = q.dayChange == null ? null : Number(q.dayChange);
+  if (pct != null && (!isFinite(pct) || Math.abs(pct) > 1000)) { pct = null; chg = null; }
+  if (chg != null && !isFinite(chg)) chg = null;
+  return { ...q, price, dayChange: chg, dayChangePct: pct };
+}
+
 app.get('/api/stock-price', requireAuth, async (req, res) => {
-  const { symbol } = req.query;
+  const symbol = (req.query.symbol || '').toString().trim().toUpperCase();
   if (!symbol) return res.status(400).json({ error: 'symbol required' });
+
+  // Serve a fresh cached quote without touching the upstream API.
+  const cached = _quoteCache.get(symbol);
+  if (cached && Date.now() - cached.ts < _QUOTE_TTL_MS) return res.json(cached.data);
+
+  const isCrypto = Object.prototype.hasOwnProperty.call(CRYPTO_IDS, symbol);
+  const now = Date.now();
   try {
-    const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    const data = await response.json();
-    const meta = data?.chart?.result?.[0]?.meta;
-    const price = meta?.regularMarketPrice ?? meta?.previousClose ?? null;
-    const prevClose = meta?.chartPreviousClose ?? meta?.previousClose ?? price;
-    const dayChange = price != null && prevClose != null ? price - prevClose : null;
-    const dayChangePct = prevClose ? (dayChange / prevClose) * 100 : null;
-    const dividend = meta?.trailingAnnualDividendRate ?? 0;
-    res.json({ symbol, price, prevClose, dayChange, dayChangePct, dividend });
-  } catch(e) {
-    res.json({ symbol, price: null, error: e.message });
+    let out;
+    if (isCrypto) {
+      const key = process.env.COINGECKO_API_KEY;
+      if (!key) return res.json({ symbol, price: null, error: 'COINGECKO_API_KEY not set' });
+      if (now < _provCooldown.coingecko) {
+        return res.json(cached ? cached.data : { symbol, price: null, error: 'rate-limited (CoinGecko); retry shortly' });
+      }
+      const id = CRYPTO_IDS[symbol];
+      // Demo (free) key → public base + x-cg-demo-api-key header. NOT pro-api (rejects demo keys → 401).
+      const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`, {
+        headers: { 'x-cg-demo-api-key': key, accept: 'application/json' },
+      });
+      if (r.status === 429) {
+        _provCooldown.coingecko = now + 60 * 1000;
+        return res.json(cached ? cached.data : { symbol, price: null, error: 'rate-limited (CoinGecko)' });
+      }
+      if (!r.ok) return res.json({ symbol, price: null, error: 'CoinGecko HTTP ' + r.status });
+      const d = await r.json();
+      const row = d && d[id];
+      const price = row && row.usd != null ? row.usd : null;
+      const pct = row && row.usd_24h_change != null ? row.usd_24h_change : null;
+      const prevClose = price != null && pct != null ? price / (1 + pct / 100) : price;
+      const dayChange = price != null && prevClose != null ? price - prevClose : null;
+      out = { symbol, price, prevClose, dayChange, dayChangePct: pct, dividend: 0 };
+    } else {
+      const key = process.env.FINNHUB_API_KEY;
+      if (!key) return res.json({ symbol, price: null, error: 'FINNHUB_API_KEY not set' });
+      if (now < _provCooldown.finnhub) {
+        return res.json(cached ? cached.data : { symbol, price: null, error: 'rate-limited (Finnhub); retry shortly' });
+      }
+      const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(key)}`, {
+        headers: { accept: 'application/json' },
+      });
+      if (r.status === 429) {
+        _provCooldown.finnhub = now + 60 * 1000;
+        return res.json(cached ? cached.data : { symbol, price: null, error: 'rate-limited (Finnhub)' });
+      }
+      if (!r.ok) return res.json({ symbol, price: null, error: 'Finnhub HTTP ' + r.status });
+      const d = await r.json();
+      // Finnhub returns c:0 for an unknown/unresolvable ticker → treat as no price (client flags it).
+      const price = d && d.c ? d.c : null;
+      out = {
+        symbol,
+        price,
+        prevClose: d && d.pc ? d.pc : price,
+        dayChange: d && d.d != null ? d.d : null,
+        dayChangePct: d && d.dp != null ? d.dp : null,
+        dividend: 0,
+      };
+    }
+    out = _saneQuote(out);
+    if (out.price != null) _quoteCache.set(symbol, { data: out, ts: Date.now() });
+    return res.json(out);
+  } catch (e) {
+    // Transient network error → serve stale cache if we have it, else a clean error.
+    if (cached) return res.json(cached.data);
+    return res.json({ symbol, price: null, error: e.message });
   }
 });
 

@@ -1605,7 +1605,11 @@ function getPeriodData(){
       rev:sum(REV,qs,e),exp:sum(EXP,qs,e),profit:sum(PROFIT,qs,e),
       prevRev:sum(REV,ps,pe),prevExp:sum(EXP,ps,pe),prevProfit:sum(PROFIT,ps,pe),
       labels:MONTHS.slice(qs,e),revArr:REV.slice(qs,e),expArr:EXP.slice(qs,e),
-      sal:sum(EXP_SAL,qs,e),rent:EXP_RENT[0]*3,sw:sum(EXP_SW,qs,e),mkt:sum(EXP_MKT,qs,e),
+      // F60: rent is SUMMED over the quarter like every other category. It used to be
+      // EXP_RENT[0]*3 — one month's rent multiplied out, a fabricated figure (and, before the
+      // fiscal-index fix, not even the right month). If rent was recorded once, this invented
+      // three months of it; if it varied, it reported a number that was never spent.
+      sal:sum(EXP_SAL,qs,e),rent:sum(EXP_RENT,qs,e),sw:sum(EXP_SW,qs,e),mkt:sum(EXP_MKT,qs,e),
       srcRC:0,srcTS:0,srcST:0,srcCO:0,
       months:3, label:(typeof _periodWindow==='function'?_periodWindow('quarter').label:'Quarter')
     };
@@ -1614,7 +1618,8 @@ function getPeriodData(){
       rev:sum(REV,0,12),exp:sum(EXP,0,12),profit:sum(PROFIT,0,12),
       prevRev:null,prevExp:null,prevProfit:null,
       labels:MONTHS,revArr:REV,expArr:EXP,
-      sal:sum(EXP_SAL,0,12),rent:EXP_RENT[0]*12,sw:sum(EXP_SW,0,12),mkt:sum(EXP_MKT,0,12),
+      // F60: summed over the fiscal year, not EXP_RENT[0]*12 (see the quarter branch above).
+      sal:sum(EXP_SAL,0,12),rent:sum(EXP_RENT,0,12),sw:sum(EXP_SW,0,12),mkt:sum(EXP_MKT,0,12),
       srcRC:0,srcTS:0,srcST:0,srcCO:0,
       months:12, label:'Full Year · '+MONTH_FULL[0]+' – '+MONTH_FULL[11]
     };

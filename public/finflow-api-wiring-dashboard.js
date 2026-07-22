@@ -239,8 +239,20 @@
 
   // ── Update expense breakdown bars ────────────────────────────────
   function updateExpenseBars(expenses) {
+    // F61: period-scope the rows. This function runs LAST in the patched updateDashboard, so it
+    // is the final writer for the four bars — and it used to aggregate ALL-TIME categories with no
+    // date filter, which made the expense breakdown ignore the period selector entirely: switching
+    // to Month or Quarter changed every other card but not these. Filter through the SAME canonical
+    // _periodWindow both KPI engines and the server use (F33/F25), so the bars agree with the
+    // Expenses KPI above them. currentPeriod/currentMonthIdx are top-level `let`s in app-main.js —
+    // shared global lexical scope across classic scripts — hence the typeof guards rather than
+    // window.* lookups, which would be undefined.
+    const _p = (typeof currentPeriod !== 'undefined') ? currentPeriod : (window.currentPeriod || 'year');
+    const _w = (typeof window._periodWindow === 'function') ? window._periodWindow(_p) : null;
+    const rows = _w ? (expenses || []).filter(e => _w.inWin(e.expense_date || e.date || e.created_at))
+                    : (expenses || []);
     const cats = {};
-    expenses.forEach(e => {
+    rows.forEach(e => {
       const cat = e.category || 'Other';
       cats[cat] = (cats[cat] || 0) + (parseFloat(e.amount) || 0);
     });
@@ -257,18 +269,24 @@
     ];
     const labelIds = ['exp-sal-lbl', 'exp-rent-lbl', 'exp-sw-lbl', 'exp-mkt-lbl'];
 
-    sorted.slice(0, 4).forEach(([cat, amt], i) => {
+    // F61: CLEAR all four rows before painting. The loop below only writes as many rows as there
+    // are categories, so a period with fewer than 4 used to leave the surplus rows showing the
+    // PREVIOUS period's amounts and labels — stale money presented as current. Now an absent row
+    // reads "—" / no bar, which is honest and obviously empty.
+    const _paint = (i, cat, amt) => {
       const valEl = document.getElementById(barIds[i][0]);
       const barEl = document.getElementById(barIds[i][1]);
       const lblEl = document.getElementById(labelIds[i]);
-      if (valEl) valEl.textContent = money(amt);
+      if (valEl) valEl.textContent = (amt == null) ? '—' : money(amt);
       if (barEl) {
-        const w = Math.round(amt / total * 100) + '%';
+        const w = (amt == null) ? '0%' : Math.round(amt / total * 100) + '%';
         barEl.style.setProperty('width', w, 'important');
         barEl.style.setProperty('--bar-w', w);
       }
-      if (lblEl) lblEl.textContent = cat;
-    });
+      if (lblEl && cat != null) lblEl.textContent = cat;
+    };
+    for (let i = 0; i < 4; i++) _paint(i, null, null);          // clear
+    sorted.slice(0, 4).forEach(([cat, amt], i) => _paint(i, cat, amt));   // then paint
   }
 
   // ── Update business transactions list ────────────────────────────
@@ -439,12 +457,23 @@
     const period = window.currentPeriod || 'year';
     const { months, revByMonth, expByMonth } = buildMonthlyArrays(invs, exps);
 
-    // Populate EXP_SAL/RENT/SW/MKT per-month so getPeriodData() has real values
+    // Populate EXP_SAL/RENT/SW/MKT per-month so getPeriodData() has real values.
+    // F60: these MUST be indexed on the FISCAL year, exactly like buildMonthlyArrays above and
+    // like REV[]/EXP[]/MONTH_FULL[]/currentMonthIdx. They previously used a ROLLING last-12-months
+    // index (new Date(now.getMonth() - i)), while getPeriodData() sliced them with FISCAL indices —
+    // so the two axes disagreed by (fiscal-start → 12-months-ago) months. With a January fiscal
+    // year in July 2026 that is a 5-month offset: the Salaries/Rent/Software/Marketing figures,
+    // the river diagram and the AI payroll insight all read the WRONG month's data. Reuse the same
+    // month list buildMonthlyArrays builds so the two can never drift apart again.
     if (typeof window.EXP_SAL !== 'undefined') {
+      const _fym = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const _fyName = (typeof document !== 'undefined' && (document.getElementById('s-fy') || {}).value) || 'January';
+      const _fyStartIdx = Math.max(0, _fym.indexOf(_fyName));
       const _n = new Date();
+      const _fyStartYear = (_n.getMonth() >= _fyStartIdx) ? _n.getFullYear() : _n.getFullYear() - 1;
       const _ms = [];
-      for (let _i = 11; _i >= 0; _i--) {
-        const _d = new Date(_n.getFullYear(), _n.getMonth() - _i, 1);
+      for (let _i = 0; _i < 12; _i++) {
+        const _d = new Date(_fyStartYear, _fyStartIdx + _i, 1);
         _ms.push({ year: _d.getFullYear(), month: _d.getMonth() });
       }
       window.EXP_SAL.fill(0); window.EXP_RENT.fill(0); window.EXP_SW.fill(0); window.EXP_MKT.fill(0);

@@ -4379,9 +4379,17 @@ async function _applyConvertedKPIs(ccy){
       _applyConvertedBreakdown(j.expenseBreakdown); // F34 B surface 2 — expense breakdown from server
       _applyConvertedTxns(j.transactions);      // F34 B surface 3 — transactions list from server (per-row)
     }
-    // Investments (personal holdings) do NOT route through computeBooks and are NOT yet FX-converted.
-    // Show "—" rather than a relabeled-but-unconverted USD figure (honest; holdings conversion pending).
-    dash('d-invest','Investments are not yet FX-converted — switch to your base currency to view.');
+    // Investments (personal holdings, USD-priced) — converted EXPLICITLY via the server's rateAsOf
+    // (USD→display, today). Portfolio value uses the SAME Σ shares×(price||cost) formula as the bundle
+    // (dashboard wiring), so display=native ⇒ investRate 1 ⇒ byte-identical to today. No USD→display
+    // rate ⇒ investRate null ⇒ "—" + hint (never a relabel).
+    if(j.investRate!=null){
+      const _hold = window.holdingsData || window.holdings || [];
+      const _usd = _hold.reduce((s,h)=> s + (parseFloat(h.shares)||0)*(parseFloat(h.price)||parseFloat(h.cost)||0), 0);
+      set('d-invest', _usd * j.investRate);
+    } else {
+      dash('d-invest','No FX rate for USD→'+ccy+'. Add one under FX / Currency to convert investments.');
+    }
   }catch(e){}
 }
 // F34 B surface 1 — overlay the overview chart with the server's CONVERTED monthly buckets. Updates

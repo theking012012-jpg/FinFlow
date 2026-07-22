@@ -3250,6 +3250,10 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       cogsUncoveredItems,
       fx_realised: fxRealised,
       fx_unrealised: fxUnrealised,
+      // F34 B surface 4: Investments are the personal holdings path (USD-priced) — NOT in computeBooks.
+      // Convert them EXPLICITLY via rateAsOf(USD→display, today) [nearest-rate A]. null (no display, or
+      // no USD→display rate) ⇒ the client shows "—", never a relabel.
+      investRate: display ? await rateAsOf(pool, scopeId(req), 'USD', display, new Date().toISOString().slice(0, 10)) : null,
       fxCoverage: books.fxCoverage,   // F34: null-flag coverage — complete=false ⇒ figures are a partial (converted) P&L
       monthly: books.monthly,         // F34 B: converted overview-chart buckets (client basis; native = identity)
       expenseBreakdown: books.expenseBreakdown,  // F34 B: converted expense-by-category (client updateExpenseBars basis)

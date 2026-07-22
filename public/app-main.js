@@ -4352,6 +4352,10 @@ async function _applyConvertedKPIs(ccy){
     const w=(typeof _periodWindow==='function')?_periodWindow(period, period==='month'?currentMonthIdx:null):null;
     const qs=new URLSearchParams({display:ccy});
     if(w&&w.start&&w.end){ qs.set('start',w.start.toISOString()); qs.set('end',w.end.toISOString()); qs.set('elapsedMonths',String(w.elapsedMonths||0)); }
+    // F34 B: fiscal-year start month (matches the client overview-chart indexing) so the server's
+    // converted monthly buckets align with the chart's fiscal months.
+    const _fyNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    qs.set('fyStart', String(Math.max(0,_fyNames.indexOf((document.getElementById('s-fy')||{}).value||'January'))));
     const r=await fetch('/api/reports?'+qs.toString(),{credentials:'include'});
     if(!r.ok) return;
     const j=await r.json();
@@ -4371,11 +4375,26 @@ async function _applyConvertedKPIs(ccy){
       set('d-exp', j.expenses||0);
       set('d-profit', j.netProfit||0);
       set('d-outstanding', j.outstanding||0);   // Outstanding/AR converts at each invoice's issue date
+      _applyConvertedChart(j.monthly);          // F34 B surface 1 — overview chart from server buckets
     }
     // Investments (personal holdings) do NOT route through computeBooks and are NOT yet FX-converted.
     // Show "—" rather than a relabeled-but-unconverted USD figure (honest; holdings conversion pending).
     dash('d-invest','Investments are not yet FX-converted — switch to your base currency to view.');
   }catch(e){}
+}
+// F34 B surface 1 — overlay the overview chart with the server's CONVERTED monthly buckets. Updates
+// the Chart.js datasets ONLY (never REV/EXP/MONTHS globals, so native period surfaces stay native and
+// there's no double-conversion). No rate for the pair (monthly.complete false) ⇒ leave the native
+// chart (the KPIs already show "—" + hint) rather than paint fabricated zeros.
+function _applyConvertedChart(monthly){
+  if(!monthly || monthly.complete===false) return;
+  const chart = window.charts && window.charts.overview;
+  if(!chart || !chart.data || !chart.data.datasets) return;
+  const safe = a => (a||[]).map(v=>Math.max(0, v||0));
+  chart.data.labels = monthly.labels || chart.data.labels;
+  chart.data.datasets[0].data = safe(monthly.revByMonth);
+  chart.data.datasets[1].data = safe(monthly.expByMonth);
+  try{ chart.update('none'); }catch(e){ try{ chart.update(); }catch(_){} }
 }
 function toggleCompact(){
   document.getElementById('sidebar').classList.toggle('compact',document.getElementById('s-compact').checked);

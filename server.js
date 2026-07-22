@@ -3203,8 +3203,12 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     // date (default omitted ⇒ entity-native ⇒ identity). fxCoverage travels with the response.
     const _display = (req.query.display || '').toUpperCase();
     const display = /^[A-Z]{3}$/.test(_display) ? _display : null;
+    // F34 B: fiscal-year start month (0-11) for the converted overview-chart buckets. Client sends the
+    // resolved #s-fy index; invalid/absent → January (0), matching the client default.
+    const _fy = parseInt(req.query.fyStart, 10);
+    const fyStartIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
     const [books, invoices, expenses] = await Promise.all([
-      computeBooks(uid, eid, bookPeriod, display),
+      computeBooks(uid, eid, bookPeriod, display, fyStartIdx),
       db.allByUser('invoices', uid, matchEnt),
       db.allByUser('expenses', uid, matchEnt),
     ]);
@@ -3247,6 +3251,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       fx_realised: fxRealised,
       fx_unrealised: fxUnrealised,
       fxCoverage: books.fxCoverage,   // F34: null-flag coverage — complete=false ⇒ figures are a partial (converted) P&L
+      monthly: books.monthly,         // F34 B: converted overview-chart buckets (client basis; native = identity)
     });
   } catch (e) {
     // F31: surface the failure instead of fabricating $0 KPIs. A real empty period
@@ -3865,7 +3870,7 @@ async function fifoItemSales(pool, inventoryId) {
 // NOTE (F26): sales_receipts / payments_received have no entity_id, so they are always
 //   user-level; for multi-entity users they attribute to whichever entity is viewed
 //   (tracked as F26). Every other source is entity-scoped.
-async function computeBooks(userId, entityId = null, period = 'year', display = null) {
+async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const num = v => parseFloat(v) || 0;
   const sum = (arr, f) => (arr || []).reduce((s, x) => s + f(x), 0);
@@ -4093,8 +4098,40 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const grossProfit = r2(revenue - cogs);
   const netProfit   = r2(revenue - cogs - opex);
 
+  // ── F34 B (surface 1) — CONVERTED monthly buckets for the overview chart ────────────────────
+  // Mirrors the client buildMonthlyArrays basis EXACTLY (so native = identity byte-for-byte and the
+  // period sum reconciles): revenue = recognized invoices@issue_date + receipts@date; expense =
+  // expenses@expense_date + issued bills@issue_date + orphan payments@date. NO payroll/COGS (the
+  // chart never included them). 12 fiscal months from fyStartIdx of the current fiscal year, all rows
+  // (not period-filtered — the chart shows the whole FY). Converted per-row at each row's own date via
+  // pickRate; a row with no rate is EXCLUDED from its bucket (never native-summed) and flags
+  // monthly.complete=false — honest, never a fabricated 0.
+  const _fy0 = Number.isInteger(fyStartIdx) && fyStartIdx >= 0 && fyStartIdx <= 11 ? fyStartIdx : 0;
+  const _fyY = (now.getMonth() >= _fy0) ? now.getFullYear() : now.getFullYear() - 1;
+  const _fyMonths = [];
+  for (let i = 0; i < 12; i++) { const d = new Date(_fyY, _fy0 + i, 1); _fyMonths.push({ y: d.getFullYear(), m: d.getMonth(), label: d.toLocaleString('en-US', { month: 'short' }) }); }
+  const revByMonth = new Array(12).fill(0), expByMonth = new Array(12).fill(0);
+  let monthlyComplete = true;
+  const _bIdx = v => { const d = _d(v); if (!d) return -1; return _fyMonths.findIndex(x => x.y === d.getFullYear() && x.m === d.getMonth()); };
+  const _fromOf = row => (entCur[row.entity_id] != null ? entCur[row.entity_id] : viewedCur);
+  const addBucket = (arr, amount, date, from) => {
+    const idx = _bIdx(date); if (idx < 0) return;
+    const a = num(amount);
+    if (!displayCur) { arr[idx] += a; return; }        // native identity
+    if (a === 0) return;
+    const rate = (from === displayCur) ? 1 : pickRate(_fxRows, from, displayCur, date);
+    if (rate == null) { monthlyComplete = false; return; }   // no rate → exclude + flag (never fake 0)
+    arr[idx] += a * rate;
+  };
+  issuedInv.forEach(i => addBucket(revByMonth, i.amount, _invDate(i), _fromOf(i)));
+  receipts.forEach(x => addBucket(revByMonth, x.amount, _rcptDate(x), _fromOf(x)));
+  expenses.forEach(e => addBucket(expByMonth, e.amount, _expDate(e), _fromOf(e)));
+  (bills || []).filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase())).forEach(b => addBucket(expByMonth, b.amount, _billDate(b), _fromOf(b)));
+  paymentsMade.filter(p => p.bill_id == null).forEach(p => addBucket(expByMonth, p.amount, _pmDate(p), _fromOf(p)));
+  const monthly = { labels: _fyMonths.map(x => x.label), revByMonth: revByMonth.map(r2), expByMonth: expByMonth.map(r2), complete: monthlyComplete };
+
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, period,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, period, monthly,
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     parts: {
       issuedInvoices: r2(issuedInvoices), salesReceipts: r2(salesReceipts),

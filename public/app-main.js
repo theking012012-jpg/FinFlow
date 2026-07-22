@@ -343,17 +343,19 @@ document.addEventListener('click', e=>{
 function setCurrency(code){
   activeCurrency = code;
   const c = CURRENCIES[code];
-  currencySymbol = c.symbol;
-  document.getElementById('currency-flag').textContent = c.flag;
-  document.getElementById('currency-code-label').textContent = code;
+  // F34 fix: route the header pill through the SAME display-currency path so it CONVERTS (sets
+  // _displayCurrency → _applyConvertedKPIs), not just relabels. Previously it set currencySymbol +
+  // refreshAllPeriodData but never _displayCurrency, so the conversion overlay never ran.
+  _applyDisplayCurrency(code);
   // Update per-business default currency display
   const biz = businesses.find(b=>b.id===activeBizId);
   if(biz) biz.displayCurrency = code;
   // display-currency preference is in-memory only; entities are persisted via API
   document.getElementById('currency-menu').style.display='none';
-  // Also sync personal finance display currency
+  _syncCurrencyControls(code);   // mirror into Settings / mobile-drawer / header-pill flag+label
+  // Personal finance display currency stays a SEPARATE path — business figures only go through
+  // _displayCurrency; don't cross business/personal FX.
   if(typeof setPersCurrency === 'function') setPersCurrency(code);
-  refreshAllPeriodData();
   notify(`Display currency: ${c.flag} ${code}`);
 }
 
@@ -4310,15 +4312,30 @@ window._displayCurrency = window._displayCurrency || null;
 function _activeEntityCurrency(){
   try { const a=(typeof ENTITIES!=='undefined'?ENTITIES:(window.ENTITIES||[])).find(e=>e.active); return (a&&a.currency)||'USD'; } catch(e){ return 'USD'; }
 }
-function updateCurrency(){
-  const code=document.getElementById('s-currency').value;
+// F34 core — the ONE display-currency path. Every currency control (header pill, Settings, mobile
+// drawer) routes through this so they genuinely CONVERT, not just relabel: selecting the active
+// entity's OWN currency ⇒ _displayCurrency=null ⇒ identity/native (no ?display= param); a non-native
+// currency ⇒ _displayCurrency=code ⇒ refreshAllPeriodData → updateDashboard → _applyConvertedKPIs
+// re-fetches /api/reports?display=<CCY> and renders the server-converted figures. No client FX math.
+function _applyDisplayCurrency(code){
   const map={USD:'$',EUR:'€',GBP:'£',TTD:'TT$',CAD:'C$',AUD:'A$'};
   currencySymbol=map[code]||(window.CURRENCIES&&window.CURRENCIES[code]&&window.CURRENCIES[code].symbol)||'$';
-  // Selecting the active entity's OWN currency ⇒ null ⇒ identity (native). A non-native currency ⇒
-  // the dashboard KPIs + entity cards re-fetch /api/reports?display=<CCY> and render the
-  // server-converted figures (historical per-transaction FX). No client-side conversion math.
   window._displayCurrency=(code && code!==_activeEntityCurrency())?code:null;
   refreshAllPeriodData();
+}
+// Keep every currency control reflecting the same active display currency, both directions, so
+// changing one updates the others' displayed value. Called by updateCurrency() AND setCurrency().
+function _syncCurrencyControls(code){
+  const s=document.getElementById('s-currency');   if(s && s.value!==code) s.value=code;   // Settings
+  const m=document.getElementById('smc-currency'); if(m && m.value!==code) m.value=code;   // mobile drawer
+  const lbl=document.getElementById('currency-code-label'); if(lbl) lbl.textContent=code;  // header pill label
+  const c=(window.CURRENCIES||{})[code]; const flag=document.getElementById('currency-flag');
+  if(flag && c && c.flag) flag.textContent=c.flag;                                          // header pill flag
+}
+function updateCurrency(){
+  const code=document.getElementById('s-currency').value;
+  _applyDisplayCurrency(code);
+  _syncCurrencyControls(code);
   notify('Currency updated to '+code);
 }
 // F34 Step 2: overlay the server-converted canonical KPIs for the active period+entity. Uses the

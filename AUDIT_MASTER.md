@@ -1313,7 +1313,51 @@ It is invisible in source. Reading `_periodWindow` tells you a timezone is invol
 
 ---
 
+### F95 🔴 CRITICAL — Two disjoint money-in stores; Cash Flow is BLIND to one of them, and a real payment's cash timing depends on the entry path — **NEW (2026-07-23, read-only verified)**
+**Status:** OPEN. Live. Same class as **F84** (the entry path decides whether the figure is right) and entangled with **F92** (`recalcInvoiceStatus` side-effect). Answers the F86 live question: **yes, a real payment can vanish from — or be mistimed in — Cash Flow depending on how it was entered.**
+
+#### Two money-in stores, two entry paths
+
+| Store | Written by (UI) | Server route |
+|---|---|---|
+| **`invoice_payments`** (typed) | **"Mark invoice paid"** — `markInvoicePaid` (`finflow-api-wiring-medium.js:164`), pays the **full remaining** balance | `POST /api/invoice-payments` (`server.js:3660`), then `recalcInvoiceStatus` flips the invoice to `paid` |
+| **`payments_received`** (JSONB) | **Payments Received page** — `savePaymentReceived` (`finflow-api-wiring-pages.js:271`) | `POST /api/payments-received` (`server.js:2217`) |
+
+The **only** client writer of `invoice_payments` is the full-balance "mark paid" button — **there is no partial-payment UI**. The Payments Received page reads back **only** `payments_received` (`loadPaymentsReceived`), so an invoice payment never appears on it, and vice versa.
+
+#### What the Cash Flow page actually reads
+
+The Cash Flow page calls `POST /api/reports/cash-flow` (`app-main.js:5309`). Its cash-in leg (`server.js:3449-3451`):
+```js
+invoices.filter(i => (i.status||'').toLowerCase() === 'paid')
+        .forEach(i => add(i.created_at || i.due_date || i.date, 'inflow', i.amount));  // FULL amount, at the INVOICE date
+receipts.forEach(r => add(r.date, 'inflow', r.amount));           // sales_receipts
+paymentsIn.forEach(p => add(p.date, 'inflow', p.amount));         // paymentsIn = payments_received
+```
+**`invoice_payments` is not read by any cash-in leg** (confirmed: its only readers are `recalcInvoiceStatus`, the per-invoice `GET`, delete, and an AR sum — never a cash surface). Three consequences follow, all live:
+
+**(A) Invoice payments are recognised at the WRONG DATE.** A "mark paid" creates an `invoice_payments` row at *today* and flips the invoice to `paid`. Cash Flow then books the invoice's **full amount at the invoice's `created_at`/`due_date`, not the payment date**. An invoice issued in May and paid in July shows the cash **in May**.
+
+**(B) A genuinely partial invoice payment is INVISIBLE to cash-in.** If an `invoice_payments` row exists but the invoice is still `partial` (not `paid`), the paid-invoice leg skips it, `invoice_payments` is not read, and it is not in `payments_received`. The cash is nowhere. Through today's UI this only arises via the API/import (no partial UI) — **but it is exactly how the seed is built, and it is a latent defect the instant a partial-payment path ships.**
+
+**(C) Double-count is reachable.** The paid-invoice leg counts *every* `paid` invoice at full amount, unconditionally. So if a user records a receipt on the Payments Received page (`payments_received`, counted at payment date) **and** marks the invoice paid (`invoice_payments` → invoice `paid`, counted again at invoice date), the same cash is counted **twice** in Cash Flow.
+
+#### Proven against the seed
+
+The seed records money-in as `invoice_payments` (INV-1 1,000 on 05-15; INV-2 500 on 06-20). Under the current `/api/reports/cash-flow`:
+- INV-1 is `paid` → counted at full 1,000 at INV-1's date (May) → May cash-in 1,000. Expected 1,000 — **right by accident** (full payment, same month).
+- INV-2 is `partial` → **invisible** → June cash-in from INV-2 = **0**. Expected **500**. → **A7.9–11 June cash-in FAILS**, and it fails for reason (B), not a seed error.
+
+**Limits:** established by reading the routes, the client callers and the modal set. Not executed end-to-end (the client cash-in surface is step-4 work). No production data read.
+**Course of action:** owner-gated design. The two stores must be reconciled into one cash-in truth: either the cash-in leg reads `invoice_payments` at `payment_date` (and stops counting paid invoices at full amount, which double-counts and mistimes), or invoice settlements are mirrored into the single store the cash leg reads. This is part of the money-engine consolidation, not a patch — the cash-in leg lives on `/api/reports/cash-flow`, and `/books`/`computeBooks` must be checked for the same split before any fix.
+**Done when:** the same customer payment produces the same Cash Flow cash-in, at the payment date, regardless of which screen recorded it; and no invoice can be counted both as a paid-invoice and as a separate receipt.
+
+> **Stale comment noted:** `server.js:4191` says `amount_paid` "is written ONLY by Store B (invoice_payments/recalcInvoiceStatus), which is **UI-unreachable until F35 lands** — so today it is null everywhere." That is **out of date** — `markInvoicePaid` reaches `invoice_payments` today, and `recalcInvoiceStatus` writes `amount_paid`. A future reader trusting that comment would mis-reason about AR. Flagged, not fixed (it is a comment on a money path; the fix belongs with the consolidation).
+
+---
+
 ### F86 ⬜ OWNER DECISION — A7.4 "Payments Received" is ambiguous: two different tables could satisfy it — **NEW (2026-07-23, found by the step-3 probe)**
+**Update 2026-07-23:** the live question underneath A7.4 is now answered — see **F95**. The two stores are disjoint and the cash-in leg reads only one. The A7.4 *seed* decision still needs an owner ruling (settlements vs the Payments Received page total), but it should be made **together with the F95 consolidation**, not before it — deciding what A7.4 asserts while the two stores don't reconcile would lock in a target against a broken model.
 **Status:** OPEN — blocks A7.4, and possibly the Cash Flow "cash in" checks (A7.9–11). **Not a product defect; a specification ambiguity in `VERIFICATION.md`.** Logged rather than guessed, because guessing the source is exactly the seed-fidelity error caught on the holdings scope.
 
 Money-in lives in **two unrelated tables**:

@@ -65,8 +65,19 @@ const seed = {
   ],
   bills: [{ id: 41, user_id: 1, entity_id: ENTITY, vendor: 'V', amount: 3000, amount_paid: 0, status: 'unpaid', issue_date: '2026-06-08' }],
   paymentsMade: [{ id: 51, user_id: 1, entity_id: ENTITY, amount: 700, bill_id: null, date: '2026-06-12' }],
-  movements: [ // FIFO: buy 10 @100 in May; sell 4 in June (=400), sell 2 in July (=200)
-    { id: 61, user_id: 1, entity_id: ENTITY, inventory_id: 5, type: 'purchase', quantity: 10, unit_cost: 100, moved_at: '2026-05-01' },
+  // FIFO DISTINGUISHING SEED (per reviewer): TWO layers at DIFFERENT unit costs so that a
+  // correct full-history-FIFO-then-period-filter and a wrong filter-sales-to-period-then-FIFO
+  // produce DIFFERENT numbers — a uniform-cost layer cannot tell them apart.
+  //   Buy 4 @ $100 (2026-05-01) then 10 @ $200 (2026-05-02) — both before any sale, FIFO order
+  //   is the $100 layer then the $200 layer.
+  //   June sells 4 → exhausts the cheap layer               = 4 × $100 = 400.
+  //   July sells 2 → cheap layer already gone, draws the $200 = 2 × $200 = 400.
+  // Correct impl: July = 400 (the June sale consumed the cheap layer first, across the period
+  // boundary). Filter-first BUG: July would re-draw the cheap layer = 2 × $100 = 200. The
+  // assertions below DEMAND 400, so a filter-first regression fails loudly.
+  movements: [
+    { id: 60, user_id: 1, entity_id: ENTITY, inventory_id: 5, type: 'purchase', quantity: 4,  unit_cost: 100, moved_at: '2026-05-01' },
+    { id: 61, user_id: 1, entity_id: ENTITY, inventory_id: 5, type: 'purchase', quantity: 10, unit_cost: 200, moved_at: '2026-05-02' },
     { id: 62, user_id: 1, entity_id: ENTITY, inventory_id: 5, type: 'sale',     quantity: 4,  unit_cost: 0,   moved_at: '2026-06-10' },
     { id: 63, user_id: 1, entity_id: ENTITY, inventory_id: 5, type: 'sale',     quantity: 2,  unit_cost: 0,   moved_at: '2026-07-03' },
   ],
@@ -74,10 +85,10 @@ const seed = {
 
 // ── EXPECTED (hand-derived from the seed; basis C + period-scoped COGS) ─────
 const EXP = {
-  june:    { revenue: 11500, cogs: 400, payroll: X, opex: 2000 + 3000 + 700 + X, ar: 13500 },
-  july:    { revenue: 6000,  cogs: 200, payroll: 0, opex: 500 + 0 + 0 + 0,       ar: 13500 },
-  quarter: { revenue: 6000,  cogs: 200, payroll: 0, opex: 500,                   ar: 13500 }, // Q3 = Jul-Sep
-  year:    { revenue: 17500, cogs: 600, payroll: X, opex: 2500 + 3000 + 700 + X, ar: 13500 },
+  june:    { revenue: 11500, cogs: 400, payroll: X, opex: 2000 + 3000 + 700 + X, ar: 13500 }, // 4 @ $100 (cheap layer)
+  july:    { revenue: 6000,  cogs: 400, payroll: 0, opex: 500 + 0 + 0 + 0,       ar: 13500 }, // 2 @ $200 (cheap layer already consumed by June — the distinguishing assertion)
+  quarter: { revenue: 6000,  cogs: 400, payroll: 0, opex: 500,                   ar: 13500 }, // Q3 = Jul-Sep → just the July sale
+  year:    { revenue: 17500, cogs: 800, payroll: X, opex: 2500 + 3000 + 700 + X, ar: 13500 }, // 400 + 400
 };
 for (const k of Object.keys(EXP)) EXP[k].netProfit = EXP[k].revenue - EXP[k].cogs - EXP[k].opex;
 const AP_EXPECTED = 3000;   // Σ max(0, amount − amount_paid) over recognized bill statuses
@@ -213,6 +224,63 @@ function loadClientEngine() {
     t('cross', `${k}: revenue client == server`, cli[k].rev, srv[k].revenue);
     t('cross', `${k}: payroll client == server`, cli[k].bd.payroll, srv[k].parts.payroll);
     t('cross', `${k}: opex client == server`, cli[k].bd.total, srv[k].opex);
+  }
+
+  console.log('\n════ F25 — /api/cogs endpoint must be period-aware and reconcile with computeBooks ════\n');
+  {
+    // Execute the REAL /api/cogs handler body against the same stubbed pool, once per period
+    // window, and assert its totalCOGS equals what computeBooks reports for the same window. This
+    // proves the dashboard's COGS source (the endpoint) matches the P&L engine — no new divergence.
+    // Capture the REAL handler by executing the actual app.get(...) registration against a fake
+    // app/wrap — no string-slicing of the handler body (that fragile approach is exactly what has
+    // bitten this harness before). The function object we run IS the shipped route handler.
+    // Paren-balanced extraction of the whole `app.get(...)` call. Count parens on a SANITIZED
+    // copy — comments and string/template bodies blanked — so a `)` inside a comment (this route
+    // has "[start,end)." in one) or a string can't throw the balance off. Slice from the ORIGINAL.
+    const sanitize = s => s
+      .replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length))            // block comments
+      .replace(/\/\/[^\n]*/g, m => ' '.repeat(m.length))                  // line comments
+      .replace(/`(?:\\.|[^`\\])*`/g, m => ' '.repeat(m.length))           // template strings
+      .replace(/'(?:\\.|[^'\\])*'/g, m => ' '.repeat(m.length))           // single-quoted
+      .replace(/"(?:\\.|[^"\\])*"/g, m => ' '.repeat(m.length));          // double-quoted
+    const clean = sanitize(serverSrc);
+    const gStart = serverSrc.indexOf("app.get('/api/cogs',");
+    const pOpen = clean.indexOf('(', gStart);
+    let pj = pOpen, pd = 0, routeSrc = '';
+    for (; pj < clean.length; pj++) { const c = clean[pj]; if (c === '(') pd++; else if (c === ')') { pd--; if (!pd) { routeSrc = serverSrc.slice(gStart, pj + 1) + ';'; break; } } }
+    if (!routeSrc) throw new Error('could not paren-balance app.get(/api/cogs)');
+    const fifoSrc2 = ['function fifoConsume', 'async function _purchaseLayers', 'async function fifoItemSales']
+      .map(h => extractFn(serverSrc, h)).join('\n');
+    const poolC = {
+      query: async (sql, params) => {
+        if (/DISTINCT/i.test(sql) && /inventory_movements/i.test(sql)) {
+          return { rows: [...new Set(seed.movements.filter(m => m.type === 'sale').map(m => m.inventory_id))].map(id => ({ inventory_id: id, name: 'Widget', sku: 'W1' })) };
+        }
+        if (/type='purchase'/i.test(sql)) return { rows: seed.movements.filter(m => m.type === 'purchase' && m.inventory_id === params[0]).sort((a,b)=>String(a.moved_at).localeCompare(String(b.moved_at))) };
+        if (/type='sale'/i.test(sql)) return { rows: seed.movements.filter(m => m.type === 'sale' && m.inventory_id === params[0]).sort((a,b)=>String(a.moved_at).localeCompare(String(b.moved_at))) };
+        return { rows: [] };
+      },
+    };
+    const dbC = { allByUser: async () => seed.invoices.map(r => ({ ...r })) };
+    let handler = null;
+    const app = { get: (path, ...mws) => { handler = mws[mws.length - 1]; } };
+    new Function('app', 'wrap', 'requireAuth', 'pool', 'db', 'scopeId', 'fifoItemTotal', 'Date',
+      fifoSrc2 + '\n' + routeSrc)(app, fn => fn, null, poolC, dbC, () => 1, null, FixedDate);
+
+    for (const [k, v] of Object.entries(views)) {
+      const q = v.win === undefined ? {} : v.win;
+      let out = null;
+      const req = { session: { userId: 1 }, entityId: ENTITY, query: (k === 'year' ? {} : { start: v.win.start, end: v.win.end, elapsedMonths: String(v.win.elapsedMonths) }) };
+      const res = { status: () => res, json: o => { out = o; return res; } };
+      await handler(req, res);
+      t('F25-endpoint', `${k}: /api/cogs totalCOGS == computeBooks COGS`, out && out.totalCOGS, srv[k].cogs);
+    }
+    // Backward-compat: no window params ⇒ all-time (== year here), so the COGS page and any
+    // un-migrated caller are unchanged.
+    let outAll = null;
+    const resAll = { status: () => resAll, json: o => { outAll = o; return resAll; } };
+    await handler({ session: { userId: 1 }, entityId: ENTITY, query: {} }, resAll);
+    t('F25-endpoint', 'no window ⇒ all-time COGS (backward compatible)', outAll && outAll.totalCOGS, 800);
   }
 
   console.log('\n════ AR / AP ════\n');

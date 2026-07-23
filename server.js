@@ -3935,7 +3935,7 @@ async function fifoItemSales(pool, inventoryId) {
   for (const s of sales) {
     const q = parseFloat(s.quantity) || 0;
     const { cogs, uncovered } = fifoConsume(purchases, consumed, q);
-    out.push({ date: s.moved_at, cogs, uncovered });
+    out.push({ date: s.moved_at, cogs, uncovered, quantity: q });   // quantity added for F25 period-scoped units_sold; existing callers read only date/cogs/uncovered
     consumed += q;
   }
   return out;
@@ -4153,10 +4153,17 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const rosterMonthlyCost = r2(sum(payroll, p => num(p.gross)));
   const opex = r2(expensesTotal + issuedBillsTotal + paymentsMadeTotal + payrollTotal);
 
-  // ── COGS (FIFO, F6) for items sold in this entity ──
-  // COGS and outstanding (AR) are all-time snapshots, NOT period-scoped — matching the
-  // client dashboard, which subtracts the all-time FIFO total and shows all unpaid AR at
-  // every period. (Period-scoped COGS is a future refinement, tied to F25.)
+  // ── COGS (FIFO, F6) — PERIOD-SCOPED (F25) ──
+  // COGS is a P&L figure, so it must match revenue's period: Month/Quarter show only that
+  // window's cost of goods sold, not the all-time FIFO total. (AR stays an all-time snapshot —
+  // it is a balance-sheet figure, and that is correct; the two used to be lumped together in one
+  // "all-time snapshots" comment, which is how the wrong one hid behind the right one.)
+  //
+  // Both branches now walk fifoItemSales (per-sale {date, cogs, uncovered}) and count only sales
+  // whose movement date ∈ period. FIFO layer consumption is still evaluated over ALL sales in date
+  // order (a June sale's cost depends on May's purchases), so each sale's cost is correct; we
+  // simply sum the subset in the window. Σ over the whole year still equals the old all-time total,
+  // so Year is unchanged and the native/aggregate reconciliation the FX path relied on is intact.
   let cogs = 0, cogsUncoveredItems = 0;
   try {
     const { rows: items } = await pool.query(
@@ -4166,19 +4173,16 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
       [userId, entityId]
     );
     for (const it of items) {
-      if (!displayCur) {
-        const f = await fifoItemTotal(pool, it.inventory_id);
-        cogs += f.cogs;
-        if (f.uncovered > 0) cogsUncoveredItems++;
-      } else {
-        // F34 Step 1b: convert each SALE's FIFO cost at its movement date (per-sale dating). The
-        // per-sale slices sum to the same aggregate fifoItemTotal returns (FIFO is associative over
-        // consecutive slices), so native reconciles by construction; a sale with no rate flags+excludes.
-        const sales = await fifoItemSales(pool, it.inventory_id);
-        let itemUncovered = 0;
-        for (const s of sales) { cogs += _fxAccrual(s.cogs, s.date, 'cogs', viewedCur); if (s.uncovered > 0) itemUncovered = 1; }
-        cogsUncoveredItems += itemUncovered;
+      const sales = await fifoItemSales(pool, it.inventory_id);
+      let itemUncovered = 0;
+      for (const s of sales) {
+        if (!inPeriod(s.date)) continue;                    // F25: period-scope
+        // Native ⇒ raw per-sale FIFO cost. Converting ⇒ convert at the sale's own movement date
+        // (F34 Step 1b); a sale with no rate flags + excludes, never native-summed into a total.
+        cogs += displayCur ? _fxAccrual(s.cogs, s.date, 'cogs', viewedCur) : s.cogs;
+        if (s.uncovered > 0) itemUncovered = 1;
       }
+      cogsUncoveredItems += itemUncovered;
     }
     cogs = r2(cogs);
   } catch (_) { cogs = 0; cogsUncoveredItems = 0; }
@@ -4344,6 +4348,19 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
 app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const eid = req.entityId || null;
+  // F25: optional period window (?start=&end=&elapsedMonths=), validated identically to
+  // /api/reports so the dashboard gets a PERIOD-SCOPED COGS that reconciles with computeBooks.
+  // No params ⇒ all-time (backward compatible: the COGS page and any un-migrated caller are
+  // unchanged). A window ⇒ per-item COGS counts only sales whose movement date ∈ [start,end).
+  let inWin = () => true;
+  const { start, end, elapsedMonths } = req.query;
+  if (start != null || end != null || elapsedMonths != null) {
+    const ws = new Date(start), we = new Date(end), DAY = 86400000;
+    const okRange = start && end && !isNaN(ws) && !isNaN(we) && we > ws
+      && (we - ws) <= 366 * DAY && ws.getFullYear() >= 2000 && we.getFullYear() <= 2100;
+    if (!okRange) return res.status(400).json({ error: 'Invalid period window.' });
+    inWin = v => { const d = v ? new Date(v) : null; return !!d && !isNaN(d) && d >= ws && d < we; };
+  }
   // Entity-scoped so the total matches computeBooks / the dashboard (the frontend stashes
   // it as window._cogsTotal for the canonical net). $2 NULL → all entities.
   const { rows: items } = await pool.query(
@@ -4358,16 +4375,24 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   let totalCOGS = 0, uncoveredItems = 0;
   const breakdown = [];
   for (const it of items) {
-    // FIFO per item (single costing method); flag units with no purchase layer.
-    const f = await fifoItemTotal(pool, it.inventory_id);
-    if (f.unitsSold <= 0) continue;
-    totalCOGS += f.cogs;
-    if (f.uncovered > 0) uncoveredItems++;
+    // Per-sale FIFO (same associativity as computeBooks): layers consume over ALL sales in date
+    // order, then we sum only the sales in the window. All-time (no window) reproduces
+    // fifoItemTotal exactly, so the COGS page is byte-for-byte unchanged.
+    const sales = await fifoItemSales(pool, it.inventory_id);
+    let itemCogs = 0, itemUnits = 0, itemUncovered = 0;
+    for (const s of sales) {
+      if (!inWin(s.date)) continue;
+      itemCogs += s.cogs; itemUnits += (parseFloat(s.quantity) || 0);
+      if (s.uncovered > 0) itemUncovered += s.uncovered;
+    }
+    if (itemUnits <= 0 && itemCogs === 0) continue;
+    totalCOGS += itemCogs;
+    if (itemUncovered > 0) uncoveredItems++;
     breakdown.push({
       inventory_id: it.inventory_id, name: it.name, sku: it.sku,
-      units_sold: f.unitsSold, cogs: f.cogs,
-      uncovered_units: f.uncovered,
-      no_cost_basis: f.uncovered > 0,
+      units_sold: Math.round(itemUnits * 10000) / 10000, cogs: Math.round(itemCogs * 100) / 100,
+      uncovered_units: itemUncovered,
+      no_cost_basis: itemUncovered > 0,
     });
   }
   totalCOGS = Math.round(totalCOGS * 100) / 100;

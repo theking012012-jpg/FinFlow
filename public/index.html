@@ -4771,7 +4771,11 @@ async function submitStockOut(){
 }
 async function loadCOGS(){
   try{
-    const res=await fetch('/api/cogs',{credentials:'include'});
+    // F25: fetch the CURRENT PERIOD's COGS (same window the dashboard uses), so opening the COGS
+    // page on a Month/Quarter view no longer clobbers window._cogsTotal back to the all-time figure
+    // and silently re-breaks the dashboard Net. Falls back to all-time if the helper isn't loaded.
+    const _q=(typeof window._cogsPeriodParams==='function')?('?'+window._cogsPeriodParams().toString()):'';
+    const res=await fetch('/api/cogs'+_q,{credentials:'include'});
     const data=await res.json();
     // Stash the entity-scoped FIFO total for the canonical Net (Revenue − COGS − OpEx) used by
     // the dashboard / AI / health score, then re-render them so COGS flows through immediately.

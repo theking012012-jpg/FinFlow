@@ -584,7 +584,7 @@ So switching currency from Settings or the mobile drawer set `_displayCurrency`,
 
 ---
 
-### F71 ✅ **FIXED via basis C** (`<pending>`, 2026-07-22) — was 🟠 HIGH — Payroll accrued with no effective dating; roster×time was also double-counted against manual salary rows
+### F71 ✅ **FIXED via basis C** (`8bb47a7`, 2026-07-22) — was 🟠 HIGH — Payroll accrued with no effective dating; roster×time was also double-counted against manual salary rows
 **Status:** ✅ **FIXED & golden-master-verified.** Owner ruled **basis C** (payroll_runs = single source of truth) over the three options originally listed — a stronger fix than the effective-dating option (1) below, because it removes the retroactivity, the double-count **and** a cash/accrual mismatch in one move.
 
 **What was wrong (as surfaced by the owner: "why does June show expenses when nothing is logged for that month?").** `computeExpenseBreakdown` (client) and `computeBooks` (server) added `monthlyPayroll × elapsedMonths` — the **current** roster × time, with no start date on the employee record. Three defects: (1) **retroactive** — hiring someone today changed last January's expenses; (2) **double-count** — a salary logged as a manual expense row landed in `expensesTotal` **and** was counted again in the payroll leg, identically on both engines so every reconciliation check passed while the number was wrong; (3) **cash/accrual mismatch** against the F32 revenue basis.
@@ -641,10 +641,22 @@ So switching currency from Settings or the mobile drawer set `_displayCurrency`,
 
 ---
 
-### F25 🟡 MEDIUM — "Year" fiscal-window consistency
-**Status:** OPEN but **substantially reduced** by the F33 period-window unit. `_periodWindow('year')` is now a true fiscal year on both engines with `elapsedMonths` driving payroll accrual (`app-main.js:1711-1714`, `server.js:4041-4046`). Residual: **COGS and AR are all-time snapshots at every period** by design (`server.js:4073-4075`, `4100`), so Gross Profit and Net at Month/Quarter subtract an all-time COGS figure.
-**Course of action:** period-scope FIFO COGS via `inventory_movements.date` inside the window; leave AR all-time (that is correct for a balance-sheet item) but **label the card "as of today"** so it is not read as a period figure.
-**Done when:** Month-view Gross Profit uses only that month's COGS, and the AR card says "as of today".
+### F25 ✅ **COGS period-scoped** (`<pending>`, 2026-07-22) — was 🟡 MEDIUM — "Year" fiscal-window consistency
+**Status:** ✅ **COGS FIXED & golden-master-verified.** The fiscal-window half was already closed by the F33 unit; this closes the COGS residual the owner surfaced ("why does June's Net subtract COGS from every sale I've ever made?").
+
+**What was wrong.** COGS was an **all-time** FIFO total at every period — on the server (`computeBooks`) and on the client (`window._cogsTotal`, fetched once from `/api/cogs` with no window). So Gross Profit and Net at Month/Quarter subtracted every sale's cost ever recorded. A comment lumped "COGS and AR are all-time snapshots" together, which is how the wrong one hid behind the right one — AR *is* correctly all-time (balance-sheet), COGS is not (P&L).
+
+**What changed.**
+- **`computeBooks`** (server): both COGS branches now walk `fifoItemSales` (per-sale `{date, cogs, uncovered, quantity}`) and count only sales whose movement date ∈ period. FIFO layer consumption is still evaluated over **all** sales in date order (a June sale's cost depends on May's purchases), so each sale's cost is correct; only the summed subset is period-scoped. Σ over the year still equals the old all-time total, so **Year is unchanged**.
+- **`GET /api/cogs`** (server): accepts the same `?start&end&elapsedMonths` window as `/api/reports` (identical validation), period-scoping its per-item FIFO the same way. **No params ⇒ all-time**, so the COGS page and any un-migrated caller are byte-for-byte unchanged.
+- **Client**: COGS is now handled exactly like its siblings `computeRevenue` / `computeExpenseBreakdown` — period-aware, not frozen at all-time. `_loadPeriodCOGS()` refetches the period figure on every period/month switch and repaints (paint-then-correct, like the FX overlay); the COGS page (`loadCOGS`) uses the same window so opening it on a Month view no longer clobbers `_cogsTotal` back to all-time. **This is not the SSOT rework** — net is still computed client-side; only the one frozen COGS input is brought in line with the already-period-aware rev/exp inputs. On failure it keeps the prior value (never fabricates $0 — F62 class).
+- **`fifoItemSales`** gained a `quantity` field (additive; existing callers read only date/cogs/uncovered).
+
+**AR deliberately untouched** — it is correctly all-time (balance-sheet). Labelling it "as of today" is a separate cosmetic task, not part of this commit.
+
+**How it was verified.** Golden master (`tests/golden-master-payroll-basisC.js`) — the 6 previously-red F25 assertions (3 COGS + 3 net-profit) now green (June COGS=400, July=200, Quarter=200, Year=600, computed against a FIFO seed), **plus** 5 new endpoint assertions proving `/api/cogs` per-period **equals** `computeBooks` COGS at every window and that no-window ⇒ all-time. Everything basis-C turned green stayed green; full regression suite green (F55/F56/F59/F60/F62/B8).
+
+**Verify live (owner):** on an inventory business, switch dashboard to Month → Net Profit subtracts only that month's COGS, not the all-time figure; open the COGS page on Month view → it shows that month; switch to Year → COGS matches the old all-time number.
 
 ---
 

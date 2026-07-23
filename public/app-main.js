@@ -1982,6 +1982,11 @@ function refreshAllPeriodData(){
   updateInvoices(d);
   updateCharts(d);
   updateAI(d);
+  // F25: COGS is period-scoped like revenue/expenses. updateDashboard above paints Net with the
+  // PREVIOUS period's cached COGS (correct for year, where COGS == all-time); this async refetch
+  // corrects it for month/quarter and repaints only if it changed (paint-then-correct, exactly as
+  // the FX overlay does). Skipped when computeExpenseBreakdown-style data isn't ready yet.
+  if(typeof _loadPeriodCOGS==='function') _loadPeriodCOGS();
 }
 
 // Text form of the active period's date range — for the AI suggested-prompt seed
@@ -4464,6 +4469,42 @@ function updateCurrency(){
   _syncCurrencyControls(code);
   notify('Currency updated to '+code);
 }
+// F25: build the entity + period-window query for /api/cogs, so the client asks the server for a
+// PERIOD-SCOPED COGS instead of caching an all-time figure. Shared by _loadPeriodCOGS (dashboard)
+// and loadCOGS (the COGS page) so the two can never ask for different windows. COGS is now handled
+// exactly like its siblings computeRevenue / computeExpenseBreakdown — period-aware — rather than
+// being the one leg frozen at all-time (F25).
+function _cogsPeriodParams(){
+  const qs=new URLSearchParams();
+  const eid=(window.ENTITIES||[]).find(e=>e.active)?._dbId;
+  if(eid) qs.set('entity_id', eid);
+  const period=(typeof currentPeriod!=='undefined')?currentPeriod:'year';
+  const w=(typeof _periodWindow==='function')?_periodWindow(period, period==='month'?currentMonthIdx:null):null;
+  if(w&&w.start&&w.end){ qs.set('start',w.start.toISOString()); qs.set('end',w.end.toISOString()); qs.set('elapsedMonths',String(w.elapsedMonths||0)); }
+  return qs;
+}
+window._cogsPeriodParams=_cogsPeriodParams;
+
+// F25: refetch the period-scoped COGS and repaint the cards that subtract it. Called on every
+// period/month switch. On failure it LEAVES the prior value (never fabricates $0 — F62 class) and
+// skips the repaint when the figure is unchanged, so a period with the same COGS causes no churn.
+let _cogsInFlight=false;
+async function _loadPeriodCOGS(){
+  if(_cogsInFlight) return; _cogsInFlight=true;
+  try{
+    const r=await fetch('/api/cogs?'+_cogsPeriodParams().toString(),{credentials:'include'});
+    if(!r.ok) return;                                   // keep prior _cogsTotal; honest-stale > fake-zero
+    const j=await r.json();
+    const next=parseFloat(j&&j.totalCOGS)||0;
+    if(next===(parseFloat(window._cogsTotal)||0)) return;   // unchanged → no repaint
+    window._cogsTotal=next;
+    if(typeof updateDashboard==='function') updateDashboard();
+    if(typeof updateAI==='function') updateAI();
+  }catch(e){ /* leave _cogsTotal as-is */ }
+  finally{ _cogsInFlight=false; }
+}
+window._loadPeriodCOGS=_loadPeriodCOGS;
+
 // F34 Step 2: overlay the server-converted canonical KPIs for the active period+entity. Uses the
 // SAME _periodWindow the client filters on so server==client at every period; a stale response
 // (currency changed mid-flight) is dropped. Native/identity path never calls this.

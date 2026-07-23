@@ -641,7 +641,7 @@ So switching currency from Settings or the mobile drawer set `_displayCurrency`,
 
 ---
 
-### F25 ✅ **COGS period-scoped** (`<pending>`, 2026-07-22) — was 🟡 MEDIUM — "Year" fiscal-window consistency
+### F25 ✅ **COGS period-scoped** (`c2bcdb1`, 2026-07-22) — was 🟡 MEDIUM — "Year" fiscal-window consistency
 **Status:** ✅ **COGS FIXED & golden-master-verified.** The fiscal-window half was already closed by the F33 unit; this closes the COGS residual the owner surfaced ("why does June's Net subtract COGS from every sale I've ever made?").
 
 **What was wrong.** COGS was an **all-time** FIFO total at every period — on the server (`computeBooks`) and on the client (`window._cogsTotal`, fetched once from `/api/cogs` with no window). So Gross Profit and Net at Month/Quarter subtracted every sale's cost ever recorded. A comment lumped "COGS and AR are all-time snapshots" together, which is how the wrong one hid behind the right one — AR *is* correctly all-time (balance-sheet), COGS is not (P&L).

@@ -63,19 +63,29 @@ const PURCHASES = [
   { key: 'P1', date: '2026-04-01', qty: 4,  unit_cost: 100 },
   { key: 'P2', date: '2026-04-15', qty: 10, unit_cost: 200 },
 ];
+// S2/S3 quantities changed 2→1 and 3→4 so that adjacent-period COGS values DIFFER
+// (May 400 · Jun 200 · Jul 800). They were both 400 before, which masks a one-month shift
+// exactly as equal rent amounts did — and COGS is the leg where F25 already hid once,
+// having been fixed for revenue but not here. FY COGS (1,400) and all-time (1,650) are
+// unchanged, so A7.8 and every FY row hold.
 const SALES = [
   { key: 'S0', date: '2025-12-05', qty: 5, expect_cogs: 250 },
   { key: 'S1', date: '2026-05-20', qty: 4, expect_cogs: 400 },
-  { key: 'S2', date: '2026-06-10', qty: 2, expect_cogs: 400 },
-  { key: 'S3', date: '2026-07-12', qty: 3, expect_cogs: 600 },
+  { key: 'S2', date: '2026-06-10', qty: 1, expect_cogs: 200 },
+  { key: 'S3', date: '2026-07-12', qty: 4, expect_cogs: 800 },
 ];
 
 // ── Manual expenses (VERIFICATION § Manual expenses) ─────────────────────────
 // July deliberately has NO rent — a phantom accrual shows immediately.
+// Rent DIFFERS month to month (600 / 650) so a one-month shift changes the number. Equal
+// adjacent amounts mask it perfectly: May's rent leaves for April while June's arrives, and
+// the total still reads correct (Rule 4). Software is 100 rather than 150 so the FY manual
+// total stays 1,600 and May's opex stays 600 — which keeps May's net profit at EXACTLY ZERO,
+// the only check that exercises zero-vs-empty rendering.
 const EXPENSES = [
   { date: '2026-05-01', category: 'Rent',      amount: 600, description: 'Rent May' },
-  { date: '2026-06-01', category: 'Rent',      amount: 600, description: 'Rent June' },
-  { date: '2026-06-10', category: 'Software',  amount: 150, description: 'Software June' },
+  { date: '2026-06-01', category: 'Rent',      amount: 650, description: 'Rent June' },
+  { date: '2026-06-10', category: 'Software',  amount: 100, description: 'Software June' },
   { date: '2026-07-03', category: 'Marketing', amount: 250, description: 'Marketing July' },
 ];
 

@@ -13,10 +13,12 @@ not from what someone notices, and it does not grow while work is in progress.
 
 **Issues are not enumerable. Checks are. Run the checks; the failures are the issue list.**
 
-- **Part A — Figures:** **86** checks. Every number the app displays, per period view.
-  *(15 + 6 + 3 + 3 + 18 + 18 + 23. Was stated as "~84" with an A7 header reading 21 against 23
-  enumerated rows — corrected under **F81**. "Done = every check green" needs an unambiguous
-  denominator.)*
+- **Part A — Figures:** **104** checks. Every number the app displays, per period view.
+  *(A1 15 + A2 6 + A3 3 + A4 3 + A5 18 + A6 18 + A7 23 + A8 18 = 104. Was "~84" with an A7 header
+  reading 21 against 23 enumerated rows — corrected under **F81**; then **A8 VIEWER INDEPENDENCE**
+  added at 6 and widened to 18 (timezone 6 + fiscal-year 6 + display-currency 6). "Done = every
+  check green" needs an unambiguous denominator, so this is recounted whenever a subsection
+  changes.)*
 - **Part B — Actions:** ~22 checks. Every mutating action, including double-submit and
   navigation-order behaviour.
 
@@ -161,8 +163,8 @@ check that makes them reconcile.
 |---|---|---|---|---|
 | S0 | 2025-12-05 | 5 | P0 | 250 |
 | S1 | 2026-05-20 | 4 | P1 | 400 |
-| S2 | 2026-06-10 | 2 | P2 | 400 |
-| S3 | 2026-07-12 | 3 | P2 | 600 |
+| S2 | 2026-06-10 | 1 | P2 | 200 |
+| S3 | 2026-07-12 | 4 | P2 | 800 |
 
 *Discriminates:* three layers at different unit costs, with an earlier sale exhausting the
 cheaper one. A **filter-sales-to-period-then-run-FIFO** bug gives Jun = 200 and Jul = 300
@@ -173,8 +175,8 @@ so the "all-time COGS at every period" bug is caught at Year view too, not only 
 | date | category | amount |
 |---|---|---|
 | 2026-05-01 | Rent | 600 |
-| 2026-06-01 | Rent | 600 |
-| 2026-06-10 | Software | 150 |
+| 2026-06-01 | Rent | **650** |
+| 2026-06-10 | Software | **100** |
 | 2026-07-03 | Marketing | 250 |
 
 *Discriminates:* July deliberately has **no rent** — any phantom accrual shows immediately.
@@ -264,10 +266,10 @@ produces a different number rather than the same 6,000.
 | Period | Revenue | COGS | Manual exp | Bills issued | Payroll |
 |---|---|---|---|---|---|
 | May 2026 | 1,000 | 400 | 600 | 0 | 0 |
-| **Jun 2026** | **5,000** | **400** | **750** | **800** | **4,200** |
-| **Jul 2026** | **4,000** | **600** | **250** | **500** | **1,100** |
-| Q2 (Apr–Jun) | 6,000 | 800 | 1,350 | 800 | 4,200 |
-| Q3 (Jul–Sep) | 4,000 | 600 | 250 | 500 | 1,100 |
+| **Jun 2026** | **5,000** | **200** | **750** | **800** | **4,200** |
+| **Jul 2026** | **4,000** | **800** | **250** | **500** | **1,100** |
+| Q2 (Apr–Jun) | 6,000 | 600 | 1,350 | 800 | 4,200 |
+| Q3 (Jul–Sep) | 4,000 | 800 | 250 | 500 | 1,100 |
 | **FY 2026** | **10,000** | **1,400** | **1,600** | **1,300** | **5,300** |
 
 **AR Outstanding (all-time, balance-sheet — deliberately ignores the period selector): 8,500**
@@ -279,10 +281,10 @@ produces a different number rather than the same 6,000.
 | Period | Gross Profit | Expenses (opex) | Net Profit |
 |---|---|---|---|
 | May 2026 | 600 | 600 | **0** |
-| Jun 2026 | 4,600 | 5,750 | **−1,150** |
-| Jul 2026 | 3,400 | 1,850 | **1,550** |
-| Q2 | 5,200 | 6,350 | **−1,150** |
-| Q3 | 3,400 | 1,850 | **1,550** |
+| Jun 2026 | 4,800 | 5,750 | **−950** |
+| Jul 2026 | 3,200 | 1,850 | **1,350** |
+| Q2 | 5,400 | 6,350 | **−950** |
+| Q3 | 3,200 | 1,850 | **1,350** |
 | FY 2026 | 8,600 | 8,200 | **400** |
 
 *Deliberate:* June is a **loss** and May is exactly **zero** — both test sign handling and
@@ -394,6 +396,84 @@ Client-displayed figure **==** server figure, six figures × three periods.
 >
 > This check does **not** require the figure to be displayed. It is a guard against a number
 > reappearing without a source, not a request to build the surface.
+
+## A8 · VIEWER INDEPENDENCE — 18
+
+**Every Part A figure must be IDENTICAL regardless of who is looking. Any figure that moves is
+a FAIL.**
+
+The books belong to the entity. Nothing about the *reader* — where they are, how their own
+fiscal year is configured, what currency they prefer — may change a number. Three axes:
+
+### A8a · Timezone — 6
+
+Run the identical seed and probe under **at least three viewers spanning the sign boundary**.
+Harness: `node tests/harness/tz-matrix.js`.
+
+> ⚠️ **The matrix MUST include a positive (east-of-UTC) offset.** UTC-4 and UTC-8 are both west
+> and misfile **identically**, so a western-only matrix goes green on the exact bug it exists to
+> catch. This already produced one false negative. Required minimum:
+> `America/Los_Angeles` (UTC-8/-7), `America/Port_of_Spain` (UTC-4), `Asia/Kolkata` (UTC+5:30 —
+> the half-hour offset also catches whole-hour assumptions). `Europe/London` recommended as a
+> fourth.
+
+| # | Figure | Expected | Result |
+|---|---|---|---|
+| A8a.1 | revenue — identical across all viewers | no difference | |
+| A8a.2 | cogs | no difference | |
+| A8a.3 | grossProfit | no difference | |
+| A8a.4 | opex | no difference | |
+| A8a.5 | netProfit | no difference | |
+| A8a.6 | outstanding | no difference | |
+
+### A8b · Fiscal-year setting — 6
+
+Same seed, same entity, read by two users whose **own** `fiscal_year` settings differ (January
+vs April). Every figure must be identical: the fiscal year belongs to the **books**, not the
+reader. Year-end is where this hurts most — a January-FY client viewed by an April-FY accountant
+would otherwise get different YEAR boundaries on the same data.
+
+| # | Figure | Expected | Result |
+|---|---|---|---|
+| A8b.1–6 | revenue / cogs / grossProfit / opex / netProfit / outstanding | no difference | |
+
+### A8c · Display currency — 6
+
+Same seed, read with the viewer's display currency set to the entity's native currency vs a
+foreign one, then converted back at the stated rate. Figures must reconcile exactly and
+consistently. If conversion is driven by the viewer's preference at read time, accountant and
+client see figures that do not reconcile — and do not reconcile *differently each day*, since
+rates move.
+
+| # | Figure | Expected | Result |
+|---|---|---|---|
+| A8c.1–6 | revenue / cogs / grossProfit / opex / netProfit / outstanding | reconciles exactly | |
+
+---
+
+**Why this is on the permanent list.** FinFlow has an accountant marketplace: an accountant and
+their client read **one** database from **two** places. If a period total depends on where the
+reader is sitting or how their own preferences are set, the two of them are looking at different
+books and neither can tell. That is a correctness property of a multi-tenant product, not a
+formatting detail.
+
+**Why no amount of source reading establishes it.** Reading `_periodWindow` tells you a timezone
+is involved. It does not tell you whether any row falls in the gap between two viewers'
+boundaries, and therefore whether any figure moves. Only execution answers that.
+
+> ### ⚠️ A GREEN A8 AGAINST A DATE-ONLY SEED IS WORTHLESS
+>
+> A8 proves no *seeded row* falls in an inter-viewer gap. It does **not** prove the boundaries
+> are viewer-independent — they can differ while every figure still agrees.
+>
+> This is not hypothetical: the **first run of this check reported zero differences and was a
+> false negative.** Every seeded row carried a date-only string, which `new Date()` places at
+> `00:00Z` — before *every* western boundary — so all viewers were wrong identically and nothing
+> moved. It only became measurable once a row was timestamped **inside** the gap.
+>
+> **The seed must therefore retain at least one row carrying a real time-of-day inside a
+> plausible inter-viewer gap**, and the window-comparison half of `tz-matrix.js` output must be
+> read alongside the figures. Rule 4, applied to timezone.
 
 ---
 

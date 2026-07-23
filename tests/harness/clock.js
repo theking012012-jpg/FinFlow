@@ -25,7 +25,9 @@
  */
 
 // ── 1 · Timezone ─────────────────────────────────────────────────────────────
-const TZ = 'America/Port_of_Spain';
+// Default is the owner's zone. HARNESS_TZ overrides it so the SAME seed can be read as a
+// different VIEWER — the timezone-independence probe (tz-matrix.js) varies only this.
+const TZ = process.env.HARNESS_TZ || 'America/Port_of_Spain';
 process.env.TZ = TZ;
 
 // ── 2 · Pinned instant ───────────────────────────────────────────────────────
@@ -39,12 +41,31 @@ if (!Number.isFinite(PINNED_MS)) {
 // Assert the timezone actually took. process.env.TZ is honoured at runtime by modern Node,
 // but it is platform-sensitive; if it silently fails we would compute every local-date
 // boundary against the host zone and report confidently wrong period totals. Fail loudly.
+// Assert the zone took, by OFFSET rather than by name.
+//
+// Comparing `Intl.DateTimeFormat().resolvedOptions().timeZone` to TZ is wrong: IANA zone names
+// have aliases, and ICU canonicalises them. Asking for "Asia/Kolkata" resolves to
+// "Asia/Calcutta" — the same zone under its older name. A string comparison rejects a
+// correctly-applied timezone, which is exactly the false failure this assertion must not
+// produce. The offset at the pinned instant is the fact that actually matters.
+function offsetForZone(tz, atMs) {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  const p = Object.fromEntries(dtf.formatToParts(new RealDate(atMs)).map((x) => [x.type, x.value]));
+  const asUtc = RealDate.UTC(+p.year, +p.month - 1, +p.day, (+p.hour) % 24, +p.minute, +p.second);
+  return -(asUtc - atMs) / 60000;          // minutes WEST of UTC, matching getTimezoneOffset()
+}
+
 const offsetMin = new RealDate(PINNED_MS).getTimezoneOffset();
-if (offsetMin !== 240) {
+const wantOffset = offsetForZone(TZ, PINNED_MS);
+if (offsetMin !== wantOffset) {
   throw new Error(
-    `[clock] TZ did not take. Expected getTimezoneOffset() === 240 (UTC-4) for ${TZ}, got ${offsetMin} `
-    + `(host zone is UTC${offsetMin > 0 ? '-' : '+'}${Math.abs(offsetMin) / 60}). `
-    + `Every local-date boundary would be wrong. Set TZ=${TZ} in the environment before node starts.`
+    `[clock] TZ did not take. Asked for "${TZ}" (offset ${wantOffset} min west at the pinned `
+    + `instant) but the process resolved ${offsetMin}. Every local-date boundary would be `
+    + `computed in the wrong zone. Set TZ=${TZ} in the environment before node starts.`
   );
 }
 
@@ -123,6 +144,7 @@ for (const mod of ['http', 'https']) {
 
 module.exports = {
   TZ,
+  OFFSET_MIN: offsetMin,          // minutes WEST of UTC at the pinned instant (240 = UTC-4)
   PINNED_ISO,
   PINNED_MS,
   RealDate,

@@ -873,6 +873,305 @@ It becomes **wrong** the moment the harness is used as a regression gate — in 
 
 ---
 
+### F90 🔴 CRITICAL — There is NO audit trail. The table exists and is empty by construction — **NEW (2026-07-23, read-only verified, two-axis enumeration)**
+**Status:** OPEN. **PRE-LAUNCH.** Scoped, not fixed.
+
+#### Premise confirmed before scoping (2.1)
+
+A `grep` for `auditLog()` alone would miss a database trigger or a generic middleware. Both were checked:
+
+- **No database triggers, no `plpgsql`, no `CREATE FUNCTION`** anywhere in `database.js`, `server.js`, `accountant-routes.js`, `admin-routes.js`.
+- **The only `INSERT INTO audit_trail` in the codebase** is at `server.js:3571`, inside `auditLog()` itself.
+- **No middleware logs writes.** All 16 `app.use` handlers were inspected; the `/api` ones are rate limiting, content-type/CSRF gating, plan checking (`:595`), account resolution (`:611`), entity/RBAC (`:640`, `:692`), 404 and error handling.
+- **No other history/changelog/events table** is written on any path.
+
+#### 2.2 · This is an ABSENCE, not partial coverage
+
+`auditLog()` is called **twice** in the entire application — `invoice_payments` CREATE (`server.js:3688`) and `payroll_runs` CREATE (`:3835`) — and **zero** times in `accountant-routes.js`. No UPDATE is logged anywhere. No DELETE is logged anywhere.
+
+**A schema with an empty table is not an audit trail.** Calling this "partial coverage" would imply a foundation exists to extend; it does not.
+
+#### 2.3 · Enumeration from the ROUTES
+
+**68 money-touching write routes. 2 logged. 66 unlogged (97%).**
+
+| Record type | Routes (POST/PUT/DELETE) | Logged |
+|---|---|---|
+| invoices | `:878`, `:894`, `:912` | ✗ none |
+| invoice_payments | `:3660` CREATE, `:3692` DELETE | **CREATE only** |
+| expenses | `:925`, `:938`, `:955` | ✗ none |
+| bills | `:2019`, `:2031`, `:2049` | ✗ none |
+| payments_made | `:2299`, `:2320`, `:2343` | ✗ none |
+| payments_received | `:2217`, `:2233`, `:2248` | ✗ none |
+| sales_receipts | `:2178`, `:2194`, `:2208` | ✗ none |
+| payroll_runs | `:3790` CREATE, `:3848` approve, `:3857` mark-paid | **CREATE only** |
+| payroll (roster) | `:1105`, `:1115`, `:1131` | ✗ none |
+| inventory_movements | `:4307` | ✗ none |
+| inventory | `:996`, `:1005`, `:1018` restock, `:1040` | ✗ none |
+| **holdings** | `:1390`, `:1405`, `:1416` | ✗ none |
+| credit_notes / vendor_credits | `:2257`–`:2290`, `:2362`–`:2395` | ✗ none |
+| entities | `:828`, `:846`, `:854`, `:859` activate | ✗ none |
+| customers / vendors / items | `:968`…, `:1983`…, `:1050`… | ✗ none |
+| user_settings (fiscal year, currency) | `:1475` | ✗ none |
+| lock_settings (period close) | `:1582` | ✗ none |
+| fx_rates / fx_transactions | `:4500`, `:4524`, `:4548`, `:4574` | ✗ none |
+| journals / recurring-* | `:1600`…, `:2064`…, `:2143`… | ✗ none |
+
+**Two silent-mutation paths carry no route of their own and are invisible even in principle:** `recalcInvoiceStatus` (`:3614`) and `recalcBillStatus` (`:3642`) rewrite `status` and `amount_paid` as a side effect of a payment. So even the ONE logged event — `invoice_payments` CREATE — does not record the invoice-status change it caused.
+
+**The two status transitions that RECOGNISE payroll expense under decision 2** (`approve`, `mark-paid`) are bare `UPDATE payroll_runs SET status=…` with no logging. The moment an expense enters the P&L is unrecorded.
+
+#### 2.4 · Enumeration from the DASHBOARD — acceptance test "why did this number change?"
+
+| Displayed figure | Fed by | Answerable today? |
+|---|---|---|
+| Revenue | invoices, sales_receipts | **NO** |
+| Expenses | expenses, bills, payments_made, payroll_run_lines | **NO** |
+| Net Profit | all of the above + inventory_movements | **NO** |
+| Outstanding / AR | invoices, invoice_payments (+ silent recalc) | **NO** |
+| Investments | holdings | **NO** |
+| Expense breakdown bars | expenses, bills, payments_made, payroll_run_lines | **NO** |
+| Revenue-vs-Expenses chart | as Revenue + Expenses | **NO** |
+| Transactions list | invoices, expenses, bills, payments | **NO** |
+| COGS (A7.7/7.8) | inventory_movements | **NO** |
+| Cash in / out / net (A7.9–17) | invoice_payments, payments_received, payments_made, expenses, payroll | **NO** |
+| AP outstanding (A7.20) | bills, payments_made | **NO** |
+| Payroll card (A7.21) | payroll roster | **NO** |
+
+**Count of figures where "why did this number change?" cannot be answered: ALL OF THEM.**
+
+Not one figure in `VERIFICATION.md` Part A has an answerable change history. The two logged CREATEs are the *creation* of a payroll run and of an invoice payment — neither tells you why a **total moved**, because the edits, deletions, status transitions and silent recalcs that move totals are all unlogged.
+
+#### 2.5 · Reconciling the two lists
+
+**The route axis was INCOMPLETE, and the dashboard axis caught it.** `holdings` feeds the Investments KPI (A1.13–15) but was absent from the first route enumeration — the money-route filter did not include it. Corrected: 65 → **68 routes**. This is Rule 13 working exactly as intended; the code-side list alone would have shipped a scope that silently omitted a dashboard figure.
+
+**Reverse direction — logged routes feeding nothing displayed:** none. Both logged routes (`invoice_payments`, `payroll_runs` CREATE) do feed displayed figures. So there is no wasted coverage; there is simply almost none.
+
+After correction the two lists reconcile: every record type reachable from a Part A figure appears in the route enumeration, and every money route writes a type that reaches a figure.
+
+#### 2.6 · What a correct record requires, and what the schema supports
+
+| Requirement | Existing column | Status |
+|---|---|---|
+| CREATE / UPDATE / DELETE | `action TEXT` | ✅ supported |
+| Table + record identity | `table_name`, `record_id` | ✅ supported |
+| **BEFORE and AFTER values** | `old_value`, `new_value` (TEXT) | ⚠️ **shape exists, but single-field only** — `field_name`/`old_value`/`new_value` model ONE field per row. A multi-field edit needs N rows, or a JSONB before/after pair. *"Was edited"* without *"from what to what"* answers nothing. |
+| Actor | `user_id` | ⚠️ present, but must be the **acting** user (`req.session.userId`), not `scopeId` — otherwise an accountant's edit is attributed to the owner |
+| Timestamp | `changed_at TIMESTAMPTZ DEFAULT NOW()` | ✅ supported (note F87: this is an instant; rendering it needs the entity timezone) |
+| Origin | `ip_address` | ⚠️ present; no user-agent / session / API-vs-UI origin |
+| Entity scope | `entity_id` | ✅ supported |
+
+**Schema changes needed:** a JSONB `before`/`after` pair (or an accepted N-rows-per-edit cost), and an `actor_user_id` distinct from the account owner. Everything else the table already carries.
+
+#### 2.7 · The structural guarantee (proposed, not built)
+
+Per-route logging decays exactly as per-button dedupe did (Rule 9) — the next money route ships without it and nobody notices for months. Options, in ascending strength:
+
+1. **Shared write path.** Route every mutation through `db.insert` / `db.updateById` / `db.deleteById`, and log inside those. Strongest, because logging becomes impossible to omit — you cannot write without it. Requires the two raw-`pool.query` mutation paths (`payroll_runs` status transitions, `recalcInvoice/BillStatus`) to be brought onto it.
+2. **Commit-time check**, in the shape of the existing F13 bundle hook: a pre-commit scan that fails if a new `app.post|put|delete('/api/…')` touching a money table lacks a logged write. Catches drift at the point of authorship.
+3. **Middleware** on `/api` for mutating verbs. Cheapest, but it sees the request, not the row — it cannot record before/after values, so it satisfies the letter and not the point.
+
+**Recommendation: 1 as the mechanism, 2 as the guard against regression.** 3 alone would produce a log that says *"something was edited"* — the failure mode 2.6 identifies.
+
+#### 2.8 · Rating — PRE-LAUNCH. Agreed, and the reasoning is asymmetric
+
+**I agree with the owner's read.** Retrofitting after launch means every record created before the switch has **no history and can never acquire one**. An audit trail is not a feature that improves over time from the moment it is added; it is a property of the data from the moment the data exists. Adding it in month six leaves months one to five permanently unexplainable — and those are precisely the records an accountant will be asked to justify first.
+
+The cost is also asymmetric in the other direction: doing it now is one shared-write-path change while there are 68 routes and no users; doing it later is the same change plus a migration, plus a permanent gap in the record. There is no version of this that is cheaper later.
+
+Additional weight specific to this product: FinFlow is **accounting software with an accountant marketplace**. A professional signing off on figures is expected to be able to show why a number changed. Combined with F87 (two viewers already see different totals) and F90 (no record of who changed what), a disputed figure currently has **no forensic answer at all**.
+**Course of action:** owner decision on sequencing. Scoped here; not designed in detail and not built.
+**Done when:** every one of the 68 money-touching write paths records CREATE/UPDATE/DELETE with before/after values and the acting user, via a shared mechanism a new route cannot bypass — and the two silent recalc paths are included.
+
+---
+
+### F89 🟠 HIGH — Period boundaries are derived from the BROWSER clock; the server does not disagree — **NEW (2026-07-23, read-only verified)**
+**Status:** OPEN. Its own finding, adjacent to F87.
+
+`_fyContext()` (`app-main.js:1721`) derives the entire fiscal calendar from the client machine's clock:
+```js
+const now = new Date();
+const fyStartYear = (now.getMonth() >= fyStartIdx) ? now.getFullYear() : now.getFullYear() - 1;
+const monthsInFY  = Math.min(12, Math.max(1, (now.getFullYear()-fyStartYear)*12 + (now.getMonth()-fyStartIdx) + 1));
+return { fyStartIdx, fyStartYear, monthsInFY, curFyIdx: …, now };
+```
+`_periodWindow` builds every window from that context and the client sends the resolved instants to `/api/reports`. The server validates the window only for **plausibility** — both dates parse, `end > start`, span ≤ 366 days, years 2000–2100 (`server.js:3264-3266`) — and otherwise **trusts it**.
+
+**Consequence:** a user whose system clock is wrong gets wrong period boundaries, wrong "current month", and a wrong fiscal year, with **no server-side disagreement**. The books depend on an untrusted clock. Note this is a correctness/consistency issue, not a billing one — trial expiry is server-authoritative (see below), so it is not exploitable for entitlement.
+**Course of action:** fold into the F87 consolidation via the architectural change under investigation — the client sends *intent* ("current month", "month index 5") and the **server** resolves the window from the server clock plus the entity timezone.
+**Done when:** no period boundary reaching a money figure originates from `new Date()` on the client.
+
+---
+
+### F88 🟠 HIGH — The viewer-dependence CLASS: per-user settings applied to per-entity books — **NEW (2026-07-23, read-only survey)**
+**Status:** OPEN — survey, for the consolidation spec. F87 is one instance; this records the shape and the other candidates.
+
+**The pattern:** any setting stored **per USER** but applied to **per-ENTITY books** produces figures that depend on who is reading. The books belong to the entity; nothing about the reader should change a number.
+
+| # | Setting | STORED | APPLIED | Exposure |
+|---|---|---|---|---|
+| 2a | **Fiscal year start** | `user_settings`, keyed `user_id` only — **no `entity_id`** (`server.js:1469`) | **Client-side**, read from the DOM `#s-fy` (`app-main.js:1735`, `:4550`; `wiring-dashboard.js:53`, `:485`) | **MITIGATED, not fixed** — `/api/settings` reads via `scopeId(req)` = `req.accountId`, which resolves an invited member/accountant to the **owner's** account (`server.js:~3540`), so a member is served the owner's FY. The per-user *shape* is still there, and the mitigation depends entirely on `scopeId` continuing to resolve that way. **The separate accountant-portal path (`accountant-routes.js`) has NOT been checked.** |
+| 2b | **Display currency** | **NOWHERE server-side** — `window._displayCurrency` is a browser global (`app-main.js:4457`); no `display_currency` column or field exists | Conversion applied at **read time** via `/api/reports?display=CCY` at each leg's recognition-date rate | Two viewers with different display settings see different figures for the same books. Labelled with the currency, so less silent than F87 — but they reconcile only through a rate that moves, so the same two views do not reconcile *the same way tomorrow*. |
+| 2c | **Timezone** | nowhere — implicit in the browser | Client builds boundaries at viewer-local midnight | **F87 — confirmed by execution.** |
+
+#### 2e · Does the ENTITY carry a timezone? **NO — confirmed absent**
+A case-insensitive search for `timezone` / `time_zone` / `tz_offset` across `server.js`, `database.js` and `accountant-routes.js` returns **nothing** (excluding `timestamptz` and the harness's own `log_timezone`). Entities have `name`, `currency`, `color`, `is_active`, `sort_order` — no timezone.
+
+**This is the gap, and it is the other half of the Rule 10 fix.** Calendar dates are fixed by comparing strings. But genuine timestamps (`run_date`, `created_at`) are real instants, and assigning an instant to a month *requires* choosing whose month. That choice belongs to the **business**. With no entity timezone there is nowhere to put the answer, so the code falls back to the reader's zone by default.
+
+#### 2f · Audit trail — a general mechanism EXISTS, but is almost entirely unused
+`audit_trail` is a **general-purpose** table (`database.js:349-358`), not accountant-portal-specific:
+`user_id, entity_id, table_name, record_id, action, field_name, old_value, new_value, changed_at, ip_address`, indexed on `(user_id, changed_at DESC)`.
+
+**Coverage is the problem.** `auditLog()` is called from exactly **two** places in `server.js` — `invoice_payments` CREATE (`:3688`) and `payroll_runs` CREATE (`:3835`) — and **zero** places in `accountant-routes.js`. So across ~40 tables it records two CREATE events and no UPDATE or DELETE at all. Invoice edits, expense edits, bill status changes, entity changes and settings changes are **not** recorded.
+*Reported rather than assumed, as asked: the mechanism is real, the coverage is ~nil.*
+
+#### 2g · Period close / lock — a concept EXISTS
+`lock_settings` (in the `TABLES` array, `database.js:498`) with `isLocked(userId, date)` (`server.js:~3620`):
+```js
+const s = rows[0] ? rowToObj(rows[0]) : null;
+if (!s || !s.lock_date) return false;
+return date <= s.lock_date;
+```
+Enforced on expense and invoice create/update, returning `403 Period is locked`.
+
+Two observations. **First, this comparison is already the right shape** — `date <= s.lock_date` compares **date STRINGS**, not `Date` objects, so it is timezone-free. It is the pattern F87's fix should generalise. **Second, it is keyed on `user_id`, not `entity_id`** — the same per-user-vs-per-entity shape as the rest of this finding.
+
+**On retroactive restatement (2g):** the data model currently supports **only** a single flat `lock_date` per user. There is no effective-dating anywhere, and no history of setting changes (see 2f — the audit trail would not record a timezone change either, since settings writes are not logged). So if an entity timezone were added and made editable, changing it would silently re-file every boundary-adjacent timestamp, **including inside locked periods** — `isLocked` gates *writes*, it does not freeze *computed figures*. A previously exported report would stop reproducing, and nothing would record why. **The model cannot support retroactive restatement safely today.** Effective-dating (prospective only) would need a new table or a versioned field; the payroll `start_date` shape is the closest existing precedent.
+
+#### 2h · Trial expiry — SERVER-authoritative, confirmed
+Not inferred. The gate runs server-side on the server's own clock:
+```js
+// server.js:354-360
+const trialEnds = u.trial_ends ? new Date(u.trial_ends) : null;
+if (plan === 'trial' && trialEnds && trialEnds < new Date()) {
+  return res.status(402).json({ error: '…', code: 'TRIAL_EXPIRED' });
+}
+```
+The only client-side use of `trial_ends` is the countdown **banner** (`index.html:4272-4275`, `Math.ceil((trialEnd - Date.now())/86400000)`). Setting the system clock back changes the banner text and nothing else — the 402 still fires. **No usage cap or plan limit is computed from the client clock.**
+
+#### 2i · Feasibility of server-resolved windows — CONFIRMED FEASIBLE
+Client sites that build a period window: **6** — `app-main.js:1621`, `:1653`, `:1802`, `:4505`, `:4544`, and `wiring-dashboard.js:264`, all routing through the single helper `_periodWindow` (`app-main.js:1744`), itself fed by the single helper `_fyContext` (`:1721`).
+
+**Two chokepoints, not scattered logic.** The change is therefore tractable: `/api/reports` already accepts an explicit window, so it gains an *intent* form (`?period=month&monthIndex=5`) resolved server-side from the server clock plus the entity timezone; `_periodWindow` stops computing instants and passes intent through; the 6 call sites keep their signatures. That removes browser-clock dependence (F89), viewer-timezone dependence (F87) and the client-recompute divergence class in one move.
+*Feasibility only — not built, not designed in detail, per instruction.*
+
+**Course of action:** carry 2a/2b/2e into the consolidation spec. Decide whether fiscal year and timezone become **entity** fields. `scopeId`-based mitigation should not be relied on as the design.
+**Done when:** every setting that affects a money figure is resolved from the entity, not the viewer, and A8 is green on all three axes.
+
+---
+
+### F87 🔴 CRITICAL — The same books show DIFFERENT TOTALS to viewers in different timezones — **NEW (2026-07-23, PROVEN BY EXECUTION)**
+**Status:** OPEN. Multi-tenant. Affects the accountant marketplace directly. **Structural — belongs with the money-engine consolidation, NOT a patch now.**
+
+Distinct from the 1st-of-month misfiling (same root cause, different blast radius): that one is wrong for *everybody equally*; this one makes two people **disagree about the same database**.
+
+#### The measurement — FOUR viewers spanning the sign boundary
+
+Identical seed, identical pinned instant, identical UTC cluster, seeded and read four times. **The only variable was the process timezone.** Harness: `node tests/harness/tz-matrix.js`.
+
+| Period | Figure | LA (UTC-7) | POS (UTC-4) | LON (UTC+1) | IST (UTC+5:30) |
+|---|---|---|---|---|---|
+| May | opex | **1,377** | 600 | 600 | 600 |
+| May | netProfit | **−777** | 0 | 0 | 0 |
+| Jun | opex | **5,650** | **6,427** | 6,527 | 6,527 |
+| Jun | netProfit | **−1,050** | **−1,827** | −1,927 | −1,927 |
+| Jul | opex | **4,650** | **4,650** | 5,150 | 5,150 |
+| Q2 | opex | **7,627** | **7,627** | 7,127 | 7,127 |
+| Q3 | opex | **4,650** | **4,650** | 5,150 | 5,150 |
+
+**10 figures differ across viewers of the same database.**
+
+Boundaries differ at every period. June starts `2026-06-01T07:00Z` (LA), `04:00Z` (POS), `2026-05-31T23:00Z` (LON), `2026-05-31T18:30Z` (IST). The fiscal year starts `2026-01-01T08:00Z` for LA and `2025-12-31T18:30Z` for IST — **different calendar years**.
+
+#### ⚠️ CORRECTION — the error is ASYMMETRIC, not universal
+
+An earlier draft of this finding said a row dated the 1st is misfiled *"for every viewer, in every timezone."* **That was wrong**, and the four-viewer matrix disproves it.
+
+June's window opens at the viewer's local midnight. West of UTC that instant is *later* than `00:00Z`; east of UTC it is *earlier*. A date-only row parses to `00:00Z`, so it falls **before** a western boundary (→ previous month, WRONG) and **after** an eastern one (→ correct month, RIGHT).
+
+Measured, on the July column:
+
+- **B2 is a bill issued `2026-07-01`, amount 500.**
+- LA and POS (west): July = 4,650 — B2 **excluded**, misfiled into June.
+- LON and IST (east): July = 5,150 — B2 **correctly** in July.
+
+**A London user sees correct figures. A New York user does not. Same books, same instant.** With markets in both Europe and North America this is a live split, not a curiosity. Eastern viewers are currently getting the *right* answer by accident of longitude.
+
+#### 1d · Production blast radius — which fields carry a TIME, not a DATE
+
+Date-only fields misfile **uniformly for western viewers** (everyone west is wrong the same way). Viewer-*dependence* — two real users disagreeing **right now** — needs a value carrying a real time-of-day that lands in an inter-viewer gap. Those fields are:
+
+| Field | Source | Carries time? | Notes |
+|---|---|---|---|
+| `payroll_runs.run_date` | `NOW()` (`server.js:3822`) | **YES — full instant** | The highest-risk field. Also F85. |
+| `created_at` on every generic JSONB table | `DEFAULT NOW()` | **YES — full instant** | Used as the period key whenever the explicit date field is absent: `_expDate = e => e.expense_date || e.date || e.created_at` (`server.js:4095`), and the same fallback on invoices and bills. |
+| `invoice_payments.payment_date` | client value, else `new Date().toISOString().slice(0,10)` (`server.js:3677`) | date-only | Truncated to a day — uniform misfile, not viewer-dependent. |
+| `payments_made.date` | same shape (`server.js:2313`) | date-only | As above. |
+| `invoices.issue_date`, `bills.issue_date`, `expenses.expense_date` | user-entered | date-only | As above. |
+| `audit_trail.changed_at`, `fx_transactions.settled_at` | `NOW()` | YES | Not on a P&L recognition path today. |
+
+**So the live viewer-dependent surface is: payroll runs, plus any row created through the app whose explicit date field was left empty and which therefore falls back to `created_at`.** A payroll run created between 20:00 and 24:00 local on month-end, or any `created_at`-keyed row in the inter-viewer gap, is filed into different months by different users **today**.
+
+#### Root cause — stated precisely
+
+**An accounting date is a CALENDAR DATE, not an instant.** `'2026-06-01'` has no time and no timezone; it is a label on a square in a calendar.
+
+The system converts it to a moment, and converting a date to a moment *forces a timezone to be chosen*, which makes the answer depend on who is asking:
+
+```js
+// app-main.js:1744 — the boundary is built at the VIEWER'S local midnight
+const start = new Date(fyStartYear, fyStartIdx + idx, 1);
+qs.set('start', w.start.toISOString());          // → 04:00Z for GMT-4, 07:00Z for PDT
+
+// server.js:3978 — and compared as instant-vs-instant
+winInc = v => { const d = v ? new Date(v) : null; return !!d && !isNaN(d) && d >= ws && d < we; };
+```
+
+Two conversions, two different zones, one comparison. `new Date('2026-06-01')` yields UTC midnight; `new Date(2026, 5, 1)` yields *local* midnight. They are compared as if they were the same kind of thing. They are not.
+
+#### The fix is NOT a better timezone
+
+Not UTC, not the entity's zone, not the viewer's. Any choice still makes an accounting date depend on a timezone, and every choice is wrong for somebody.
+
+**The fix is to remove timezone from the comparison entirely: compare DATE STRINGS to DATE STRINGS, never `Date` objects to `Date` objects.** A period becomes `'2026-06-01' <= d && d < '2026-07-01'` on a normalised `YYYY-MM-DD`, which is a total order on calendar dates and has no zone. Then `new Date` never appears on a recognition path.
+
+That touches every period-filtered leg on both client and server, so it is a consolidation, not a patch. Patching one leg would leave the mirrors divergent — the F55 pattern.
+
+#### Why no audit found this
+
+It is invisible in source. Reading `_periodWindow` tells you a timezone is involved; it does **not** tell you whether any row falls in the gap, and therefore whether any figure moves. Only executing it under two timezones answers that.
+
+**Note on the first run of this experiment: it showed NO difference and was a false negative.** Every seeded row carried a date-only string, which `new Date()` puts at 00:00Z — before *both* viewers' boundaries — so both were wrong identically and nothing moved. The seed could not discriminate (`CLAUDE.md` Rule 4). It only became measurable once a row was timestamped inside the inter-viewer gap. **A green timezone check against a date-only seed proves nothing**; `VERIFICATION.md` A8 carries that warning.
+**Course of action:** no fix during the sweep (scope frozen). Carry into the money-engine consolidation as a hard requirement: one date comparison helper, string-based, shared by every leg on both sides. **Permanent check added as `VERIFICATION.md` A8 (6 checks).**
+**Done when:** `tz-matrix.js` reports zero differing figures with the boundary row present, and no recognition path calls `new Date()` on a period boundary.
+
+---
+
+### F86 ⬜ OWNER DECISION — A7.4 "Payments Received" is ambiguous: two different tables could satisfy it — **NEW (2026-07-23, found by the step-3 probe)**
+**Status:** OPEN — blocks A7.4, and possibly the Cash Flow "cash in" checks (A7.9–11). **Not a product defect; a specification ambiguity in `VERIFICATION.md`.** Logged rather than guessed, because guessing the source is exactly the seed-fidelity error caught on the holdings scope.
+
+Money-in lives in **two unrelated tables**:
+
+| Table | Written by | Read by |
+|---|---|---|
+| `invoice_payments` (typed) | `POST /api/invoice-payments` — settles a specific invoice, drives `recalcInvoiceStatus` | `GET /api/invoice-payments?invoice_id=…` — **per-invoice only**, 400 without it (`server.js:3660`) |
+| `payments_received` (JSONB) | `POST /api/payments-received` — free-standing customer receipt | the **Payments Received page** (`finflow-api-wiring-pages.js:219`), and `computeBooks` (`server.js:3441`) |
+
+The seed populates **`invoice_payments`** — VERIFICATION's "Payment events" table describes them as *"INV-1 payment received"* / *"INV-2 partial received"*, i.e. settlements against named invoices, and 1,500 is the sum of exactly those two.
+
+But the check is named for the **Payments Received page**, and that page reads `payments_received`, which the seed leaves **empty**. So as written, A7.4 measured against the page would read **0**, not 1,500.
+
+**The decision needed:** does A7.4 mean
+1. *"total settlements against invoices"* — source `invoice_payments`, seed is correct, and the check should be renamed so it stops pointing at a page it does not describe; or
+2. *"the Payments Received page total"* — source `payments_received`, and the seed must populate that table too.
+
+⚠️ These are **not interchangeable**. `computeBooks` reads `payments_received` at `server.js:3441`, so if the Cash Flow "cash in" leg keys on that table, the current seed would make A7.9–11 read 0 while `invoice_payments` holds the money. Option 2 also raises a double-count question — whether a receipt in both tables would be counted twice — which must be resolved before seeding both.
+**Course of action:** owner picks the source. If option 2, the seed gains `payments_received` rows and the cash-in expectations are re-derived. Until then A7.4 is **BLOCKED, not failed** — the harness cannot assert a figure whose source is undecided.
+
+---
+
 ### F84 🔴 CRITICAL — A bill paid through the Payments Made form is counted **twice** as expense; the UI offers no way to link it — **NEW (2026-07-23, read-only verified)**
 **Status:** OPEN. Live decision-1 violation reachable through ordinary UI use. Found while writing a seed note; it is not a seed note.
 

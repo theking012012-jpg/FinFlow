@@ -203,17 +203,45 @@ without it. Per-button patches are the failure mode, not the fix.
 
 ---
 
-## Rule 10 — Dates: UTC vs local
+## Rule 10 — An accounting date is a calendar date, not an instant
 
-`run_date` is stamped `NOW()` — Postgres UTC. Period windows are computed client-side in
-local time (owner is GMT-4). A record created 22 July 20:00 local is stored as 23 July UTC.
+'2026-06-01' has no time and no timezone. Converting it to an instant forces a timezone to be
+chosen, and that choice makes the answer depend on WHO IS ASKING.
 
-Inside a month this is invisible. **At a month boundary it files the record into the wrong
-period's totals.** Local-date helpers (`todayLocal`, `toLocalYMD`) exist but are client-side
-and inconsistently applied.
+Confirmed by execution (F87). Period windows are built at the VIEWER'S local midnight
+(app-main.js:1744, `new Date(fyStartYear, fyStartIdx + idx, 1)`) and compared instant-to-instant
+against `new Date(value)` (server.js:3978), where a date-only string parses to UTC midnight.
+Consequences:
 
-Any date written to or filtered from the database must compare like with like. State which
-convention you are using.
+- Two users in different timezones see DIFFERENT TOTALS for the same books. In the accountant
+  marketplace, accountant and client disagree on the same period.
+- The error is ASYMMETRIC. West of UTC a row dated the 1st falls before the local-midnight
+  boundary and files into the previous month. East of UTC it does not. A London user sees
+  correct figures; a New York user does not.
+- A row dated 1 January misfiles into the PREVIOUS FISCAL YEAR.
+
+The fix is not a better timezone — not UTC, not the entity's. Every choice still makes an
+accounting date depend on a zone, and every choice is wrong for somebody. The fix is removing
+timezone from the comparison: compare date strings to date strings, never Date to Date.
+
+GENUINE TIMESTAMPS ARE THE OTHER HALF. A value like run_date = NOW() is a real instant, not a
+calendar date, and assigning an instant to a month still requires choosing whose month. That
+choice belongs to the BUSINESS, not the reader: books have a timezone, viewers don't. Genuine
+timestamps resolve against the entity's timezone. Better still, an event that belongs to a
+period by intent (a June payroll run) should carry that period explicitly rather than being
+inferred from when a button was clicked — see F85.
+
+TESTING COROLLARY: a timezone matrix must span the SIGN boundary — at least one positive offset.
+UTC-4 and UTC-8 misfile identically, so a western-only matrix goes green on the bug it exists to
+catch. This already produced one false negative.
+
+SEED COROLLARY: a date-only seed cannot detect viewer dependence at all — every row lands before
+every western boundary, so all viewers are wrong identically and nothing moves. Detecting it
+requires a row timestamped inside the inter-viewer gap. Rule 4, applied to timezone.
+
+UNDER INVESTIGATION: timezone may be one instance of a broader class — any setting stored
+PER-USER but applied to PER-ENTITY books yields viewer-dependent figures. Fiscal-year start and
+display currency are being checked as the same shape.
 
 ---
 
@@ -239,6 +267,29 @@ deleted and must not return in any form.
 Note: `payroll_runs.total_gross` (header) and `Σ payroll_run_lines` are stored independently
 and can disagree. Basis C reads **the lines**. A header/lines divergence is a finding — it
 means something wrote one of them wrong — not something to reconcile silently.
+
+---
+
+## Rule 13 — No finding is complete until its class is enumerated
+
+Every finding starts as one instance someone happened to notice. Before it is logged, ask: what
+class does this belong to, and where else does it apply? Report the full set, not the sighting.
+
+This codebase's defining failure is fixing the instance instead of the class. B8 dedupe was
+patched on two buttons rather than made an invariant, and resurfaced on Run Payroll and Approve.
+F25 was fixed for revenue but not COGS. Basis C updated the KPI path but not the breakdown,
+chart or transactions list. Each was a correct fix to an incomplete scope.
+
+Enumerate from BOTH directions. Code-side ("where is this called") finds what exists.
+Surface-side ("what does the user see, and what feeds it") finds what matters. Neither alone is
+complete, and the two lists reconciling is the evidence that the enumeration is whole.
+
+The rule binds review as much as implementation. "Period windows use local time (owner is
+GMT-4)" recorded the instance and buried the class — that parenthetical was F87. "auditLog() is
+called twice" recorded a count without asking "out of how many", which is the difference between
+a gap and an absence.
+
+A finding that names one surface when the defect spans six is not a finding. It is a sighting.
 
 ---
 

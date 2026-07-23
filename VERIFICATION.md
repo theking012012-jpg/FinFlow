@@ -13,12 +13,12 @@ not from what someone notices, and it does not grow while work is in progress.
 
 **Issues are not enumerable. Checks are. Run the checks; the failures are the issue list.**
 
-- **Part A — Figures:** **104** checks. Every number the app displays, per period view.
-  *(A1 15 + A2 6 + A3 3 + A4 3 + A5 18 + A6 18 + A7 23 + A8 18 = 104. Was "~84" with an A7 header
-  reading 21 against 23 enumerated rows — corrected under **F81**; then **A8 VIEWER INDEPENDENCE**
-  added at 6 and widened to 18 (timezone 6 + fiscal-year 6 + display-currency 6). "Done = every
-  check green" needs an unambiguous denominator, so this is recounted whenever a subsection
-  changes.)*
+- **Part A — Figures:** **108** checks. Every number the app displays, per period view.
+  *(A1 15 + A2 6 + A3 3 + A4 3 + A5 18 + A6 18 + A7 23 + A8 18 + A9 4 = 108. Was "~84" with an A7
+  header reading 21 against 23 enumerated rows — corrected under **F81**; then **A8 VIEWER
+  INDEPENDENCE** added at 6 and widened to 18 (timezone 6 + fiscal-year 6 + display-currency 6);
+  then **A9 future-dated exclusion** added at 4 under decision **D2**. "Done = every check green"
+  needs an unambiguous denominator, so this is recounted whenever a subsection changes.)*
 - **Part B — Actions:** ~22 checks. Every mutating action, including double-submit and
   navigation-order behaviour.
 
@@ -385,12 +385,12 @@ during the sweep.
 ## A5 · Server engine — `/api/reports` and `/books` — 18
 | # | Figure | Jun | Jul | FY | Result |
 |---|---|---|---|---|---|
-| A5.1–3 | revenue | 5,000 | 4,000 | 10,000 | PASS (2026-07-23) |
-| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (2026-07-23) |
-| A5.7–9 | grossProfit | 4,800 | 3,200 | 8,600 | PASS (2026-07-23) |
-| A5.10–12 | opex | 5,750 | 1,850 | 8,200 | **FAIL** — actual 5,600 / 4,650 / 11,500 (2026-07-23) |
-| A5.13–15 | netProfit | −950 | 1,350 | 400 | **FAIL** — actual -800 / -1,450 / -2,900 (2026-07-23) |
-| A5.16–18 | outstanding | 8,500 | 8,500 | 8,500 | PASS (2026-07-23) |
+| A5.1–3 | revenue | 5,000 | 4,000 | 10,000 | PASS (2026-07-23 · seed c882b311) |
+| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (2026-07-23 · seed c882b311) |
+| A5.7–9 | grossProfit | 4,800 | 3,200 | 8,600 | PASS (2026-07-23 · seed c882b311) |
+| A5.10–12 | opex | 5,750 | 1,850 | 8,200 | **FAIL** — actual 5,600 / 4,650 / 11,500 (2026-07-23 · seed c882b311) |
+| A5.13–15 | netProfit | −950 | 1,350 | 400 | **FAIL** — actual -800 / -1,450 / -2,900 (2026-07-23 · seed c882b311) |
+| A5.16–18 | outstanding | 8,500 | 8,500 | 8,500 | PASS (2026-07-23 · seed c882b311) |
 ## A6 · Cross-engine reconciliation — 18
 Client-displayed figure **==** server figure, six figures × three periods.
 
@@ -508,6 +508,31 @@ boundaries, and therefore whether any figure moves. Only execution answers that.
 > **The seed must therefore retain at least one row carrying a real time-of-day inside a
 > plausible inter-viewer gap**, and the window-comparison half of `tz-matrix.js` output must be
 > read alongside the figures. Rule 4, applied to timezone.
+
+## A9 · Future-dated documents are not recognised — 4
+
+**Standing decision D2:** a document dated in the future is *scheduled*, not issued, and
+contributes **ZERO to every figure — including Year — until its date arrives.**
+
+Requires a seed row that does not exist yet: **INV-6, a future-dated invoice** dated after the
+pinned clock (2026-07-25) but inside FY2026 — proposed `2026-09-01`, amount `5,000`, assigned to
+a customer. Folded into the held seed revision (F91 + D2c); expected values below assume the
+**correct** (D2) behaviour, so a green A9 requires recognition to be withheld.
+
+| # | Check | Expected | Result |
+|---|---|---|---|
+| A9.1 | Future invoice contributes 0 to **FY** revenue | FY revenue unchanged (10,000, not 15,000) | ⬜ seed row pending |
+| A9.2 | Contributes 0 to its **quarter** (Q3, Jul–Sep) | Q3 revenue unchanged (4,000, not 9,000) | ⬜ seed row pending |
+| A9.3 | Contributes 0 to **AR outstanding** | 8,500, not 13,500 | ⬜ seed row pending |
+| A9.4 | Appears in a visible **scheduled** state — excluded from totals but NOT invisible | labelled, not vanished (**F94**) | ⬜ seed row pending |
+
+> ⚠️ **A9 currently FAILS by design.** The app has no upper date bound and no scheduled state
+> (D2 consequences a and F94), and the recognition legs have no "not after today" filter — so the
+> present code *recognises* INV-6 and A9.1–3 fail. A9.4 fails because no scheduled state exists.
+> These failures are the **discriminator**: they go on the sweep's failure list and are cleared
+> only when D2 is implemented. **D2 itself is blocked on server-side period resolution** (F88/2i,
+> F89) — "future relative to whose clock?" is undefined while the boundary is the viewer's
+> browser clock (F87).
 
 ---
 

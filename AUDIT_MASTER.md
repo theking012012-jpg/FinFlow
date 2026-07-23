@@ -57,6 +57,23 @@ The intended shape:
 
 > **Explicitly not recorded as history:** an earlier session was *believed* to have made this decision, but a search of `AUDIT_MASTER.md`, the archive, `PRE_LAUNCH_FIX_PLAN.md` and the full git log found **no record of it**. Rather than reconstruct an undocumented decision as though it had been minuted, it is recorded here as a decision **made on 2026-07-23**.
 
+### D2 · Future-dated documents are NOT recognised until their date arrives (decided 2026-07-23)
+
+**A future-dated invoice, bill or expense contributes ZERO to every figure — including Year — until its own date is reached.** (Moved here from open finding F93 on the owner's ruling.)
+
+**Rationale.** The basis is accrual, **ISSUE-BASED** (F32 / Rule 11). Revenue is recognised when an invoice is *issued*; a document dated in the future has not been issued, it is **scheduled**. The same applies to bills on the expense side. Beyond the accounting principle there is an integrity one: if future-dated documents were recognised, anyone could inflate a current period by post-dating, which an accounting product must not permit.
+
+**Three consequences — to check and log, NOT to fix now:**
+
+**(a) The app currently ALLOWS future dates, with no bound and no scheduled state.** Verified read-only 2026-07-23:
+- `POST /api/invoices` (`server.js:878`), `/api/expenses` (`:925`), `/api/bills` (`:2019`) apply **no upper-bound date validation** — only `isLocked`, which guards the *past*. A row dated 2027 inserts cleanly.
+- Client: **zero `max=` attributes** across all 21 `type="date"` inputs (`public/index.html`) — `inv-issue`, `bill-issue`, `exp-date` included.
+- So implementing D2 will make future-dated documents **disappear from every figure**. Without a visible **SCHEDULED** state they will look deleted, and a user who post-dated an invoice will report it as a data-loss bug. **The scheduled state is part of the fix, not a later nicety** — logged as **F94**.
+
+**(b) "Future" relative to WHOSE clock — this decision is not safely implementable until period resolution is server-side.** Under F87 "now" is currently the **viewer's** browser clock, so the same document could be scheduled for a New York reader and recognised for a London one. A recognition boundary that depends on the reader is exactly the F87 defect. **D2 therefore has a hard dependency on F88/2i** (server-resolved windows, entity-scoped) and on F89 (the boundary must not come from an untrusted client clock). Sequenced into the same structural batch; implementing D2 before that batch would bake viewer-dependence into the recognition cutoff itself.
+
+**(c) A Part A check is required and the seed needs a future-dated row.** The current seed has no future-dated document, so this decision is **untested**. Added as check **A9** in `VERIFICATION.md`; the seed row (a future-dated invoice after the pinned clock but inside FY2026) is folded into the held seed revision and re-derived there. Expected: it contributes **0** to Month, Quarter **and** Year, and to AR — so a green A9 requires the correct behaviour, and the current code (which recognises it) will **FAIL** A9 until D2 is built.
+
 ---
 
 ## ⬜ OPEN DECISIONS — awaiting an owner ruling
@@ -73,11 +90,12 @@ the decision**, and nobody ever ruled on it.
 
 | # | Decision needed | Blocks | Default if unruled |
 |---|---|---|---|
-| **F93** | Should a **future-dated** invoice or bill be recognised, or excluded until its date arrives? | future-dated behaviour is unverified in both directions | recognised — inherited, never chosen |
 | **F86** | Does A7.4 "Payments Received" mean `invoice_payments` (settlements) or `payments_received` (the page's own table)? | A7.4, and possibly Cash Flow cash-in A7.9–11 | the seed's current choice, unexamined |
 | **D1 scope** | Which taxes a combined figure would cover (corporation tax, VAT, PAYE, NIS) | the D1 implementation | — |
 | **F91 seed** | Add April and Aug/Sep rows to kill the remaining maskers, accepting re-derived Q2/Q3/FY expectations? | strength of every Q2/Q3 check | maskers persist |
 | **F90 sequencing** | Audit trail before launch, as rated? | launch order | — |
+
+*(F93 — future-dated recognition — was decided 2026-07-23 and is now **STANDING DECISION D2**.)*
 
 ---
 
@@ -912,19 +930,22 @@ It becomes **wrong** the moment the harness is used as a regression gate — in 
 
 ---
 
-### F93 ⬜ OWNER DECISION — Should a FUTURE-DATED invoice or bill be recognised? — **NEW (2026-07-23, raised in session, undecided)**
-**Status:** OPEN — no decision made. Recorded because an undecided question that lives only in conversation gets silently decided by whatever the code already does.
+### F93 ✅ DECIDED (2026-07-23) → moved to STANDING DECISION **D2**
+**Status:** DECIDED. Future-dated documents are **not** recognised until their date arrives — see **D2** at the top of this file for the ruling, rationale, and the three consequences (a/b/c). Implementation is owner-gated and depends on the F87/F88/F89 structural batch (D2 consequence b). The seed row and Part A check **A9** are tracked under D2(c); the missing scheduled-state UI is **F94**.
 
-Nothing in the recognition legs bounds the *upper* end of a period window against "today". An invoice issued `2026-12-01`, entered today, is recognised in December — and appears in FY 2026 revenue immediately, because the FY window runs to the end of the fiscal year, not to now.
+---
 
-**The question:** is that correct? Two defensible answers, and the system has not chosen one — it has merely inherited one.
+### F94 🟠 HIGH — No SCHEDULED state: implementing D2 would make future-dated documents vanish — **NEW (2026-07-23, prerequisite for D2)**
+**Status:** OPEN. A direct consequence of decision **D2**, logged separately because it is a UI gap, not the recognition rule itself (Rule 13 — the rule and its surface are different work).
 
-- **Recognise it.** Accrual is date-based; a dated document belongs to its date. Consistent with decisions 1 and 2.
-- **Exclude it until its date arrives.** A period-to-date figure that includes the future is not a period-to-date figure, and a FY total containing unearned December revenue overstates the year.
+D2 says a future-dated document contributes 0 until its date arrives. But the app offers **no way to see a document that exists-but-is-not-yet-recognised**:
+- future dates are accepted with no bound (D2 consequence a — no server validation, zero client `max=`);
+- there is no `scheduled` status in any vocabulary (invoices: `draft`/`pending`/`overdue`/`partial`/`paid`; bills: `unpaid`/`due_soon`/`overdue`/`partial`/`paid`);
+- no list view filters or labels a future-dated row.
 
-**Interacts with `elapsedMonths`**, which the client already sends and which exists to express "how much of this period has actually happened" — evidence the codebase half-acknowledges the distinction without settling it.
-**Also interacts with F82:** the pinned clock was moved *because* two seeded rows sat in the future, and the harness has never asserted future-dated behaviour in either direction.
-**Course of action:** owner decision. Then a `VERIFICATION.md` check per answer — a future-dated invoice in the seed, asserted present or absent. Until decided, **future-dated behaviour is unverified, not correct.**
+So the moment D2 is implemented, a post-dated invoice drops out of every total **with no on-screen trace**. The user who entered it will report it as data loss — the invoice is in the database, correct, and invisible. **A recognised-vs-scheduled distinction must be visible before recognition is withheld**, or D2 trades a correctness bug for a "my invoice disappeared" bug.
+**Course of action:** part of the D2 implementation, not separate — a `scheduled` state (or a derived "not yet issued" label), excluded from figures but present and labelled in the relevant lists. Owner-gated with D2.
+**Done when:** a future-dated document is visibly marked scheduled, excluded from every figure, and transitions to recognised when its date arrives.
 
 ---
 

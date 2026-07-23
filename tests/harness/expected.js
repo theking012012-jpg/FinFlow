@@ -1,4 +1,9 @@
 'use strict';
+
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
 /**
  * expected.js — THE single source of every expected value in the sweep.
  *
@@ -111,6 +116,29 @@ if (identityErrors.length) {
   );
 }
 
+/**
+ * SEED FINGERPRINT — a short hash of the seed inputs AND the expected outputs.
+ *
+ * Stamped onto every result written into VERIFICATION.md. A Result cell measured against a
+ * superseded seed is WORSE than an empty one: it reads as authoritative and is not. The
+ * fingerprint makes staleness detectable — if the seed or the expectations change and the gate
+ * is not re-run, the cell's stamp no longer matches, and verification-sync flags it.
+ *
+ * BOTH files feed the hash, deliberately:
+ *   · seedData.js  — change the seed and prior measurements are of a different dataset.
+ *   · expected.js  — change an expectation and a prior PASS/FAIL verdict may now mean the
+ *                    opposite, even though the measured actual is unchanged.
+ * The DateStyle/prose of VERIFICATION.md is NOT hashed — only the numbers that define what was
+ * measured and what it was measured against.
+ */
+function seedFingerprint() {
+  const h = crypto.createHash('sha256');
+  for (const f of ['seedData.js', 'expected.js']) {
+    h.update(fs.readFileSync(path.join(__dirname, f)));
+  }
+  return h.digest('hex').slice(0, 8);
+}
+
 /** The six A5 figures for one period, in the shape the server returns them. */
 function serverFigures(period) {
   return {
@@ -123,4 +151,4 @@ function serverFigures(period) {
   };
 }
 
-module.exports = { PERIODS, LABELS, COMPONENTS, PL, CASHFLOW, BALANCES, serverFigures };
+module.exports = { PERIODS, LABELS, COMPONENTS, PL, CASHFLOW, BALANCES, serverFigures, seedFingerprint };

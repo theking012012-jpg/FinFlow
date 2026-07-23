@@ -228,7 +228,11 @@ async function main() {
       revenue: 'A5.1–3', cogs: 'A5.4–6', grossProfit: 'A5.7–9',
       opex: 'A5.10–12', netProfit: 'A5.13–15', outstanding: 'A5.16–18',
     };
+    // Every written cell carries the run date AND the seed fingerprint. A result measured
+    // against a superseded seed is worse than an empty cell — it looks authoritative. The
+    // fingerprint lets verification-sync flag it the moment the seed or expectations change.
     const stamp = new clock.RealDate().toISOString().slice(0, 10);
+    const fp = EXPECTED.seedFingerprint();
     const fmtN = (v) => (typeof v === 'number' ? v.toLocaleString('en-US') : String(v));
     const toWrite = {};
     for (const [field, rowId] of Object.entries(A5_ROWS)) {
@@ -237,8 +241,8 @@ async function main() {
       const want = ['jun', 'jul', 'fy'].map((k) => EXPECT[k][field]);
       const ok = got.every((v, i) => typeof v === 'number' && Math.abs(v - want[i]) < 0.005);
       toWrite[rowId] = ok
-        ? `PASS (${stamp})`
-        : `**FAIL** — actual ${got.map(fmtN).join(' / ')} (${stamp})`;
+        ? `PASS (${stamp} · seed ${fp})`
+        : `**FAIL** — actual ${got.map(fmtN).join(' / ')} (${stamp} · seed ${fp})`;
     }
     const written = writeResults(toWrite);
     console.log(`  ${written.length} Result cell(s) updated: ${written.join(', ') || '(none matched)'}`);

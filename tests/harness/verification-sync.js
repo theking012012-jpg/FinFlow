@@ -84,8 +84,32 @@ function emptyResults(md) {
   const empty = [];
   const re = /^\|\s*(A\d+[a-z]?\.[\d–\-]+)\s*\|(.*)\|\s*\|\s*$/gm;
   let m;
-  while ((m = re.exec(md))) empty.push(m[1].trim());
+  while ((m = re.exec(md))) {
+    // The final cell is empty only if there is no content between the last two pipes.
+    const cells = m[0].split('|');
+    const last = cells[cells.length - 2];
+    if (last !== undefined && last.trim() === '') empty.push(m[1].trim());
+  }
   return empty;
+}
+
+/**
+ * Result cells stamped with a seed fingerprint that no longer matches the current one.
+ * A stale-fingerprint cell is worse than an empty one: it reads as authoritative while
+ * describing a dataset that has since changed. Returns [{id, stamped, current}].
+ */
+function staleResults(md, currentFp) {
+  const stale = [];
+  // Match the check id, then the fingerprint anywhere later in the row. NOT anchored to the
+  // trailing pipe: the stamp reads "… seed c882b311) |" and requiring `seed <hex>\s*|` misses
+  // the closing paren and never fires — a stale-detector that is silently blind, caught only
+  // because its negative test failed to detect an injected seed change.
+  const re = /^\|\s*(A\d+[a-z]?\.[\d–\-]+)\b.*\bseed ([0-9a-f]{6,})\b/gm;
+  let m;
+  while ((m = re.exec(md))) {
+    if (m[2] !== currentFp) stale.push({ id: m[1].trim(), stamped: m[2], current: currentFp });
+  }
+  return stale;
 }
 
 /**
@@ -114,14 +138,29 @@ function main() {
   const md = fs.readFileSync(DOC, 'utf8');
   const args = process.argv.slice(2);
 
+  const currentFp = EXPECTED.seedFingerprint();
+
   if (args.includes('--report')) {
     const empty = emptyResults(md);
+    const stale = staleResults(md, currentFp);
+    console.log(`[verification-sync] seed fingerprint: ${currentFp}`);
     console.log(`[verification-sync] ${empty.length} check(s) have an empty Result cell.`);
     if (empty.length) console.log('  ' + empty.join(', '));
+    console.log(`[verification-sync] ${stale.length} result(s) measured against a SUPERSEDED seed.`);
+    for (const s of stale) console.log(`  ${s.id}: stamped seed ${s.stamped}, current is ${s.current} — RE-RUN`);
     return;
   }
 
-  // --check (default)
+  // --check (default). Stale-fingerprint results are WARNED (non-blocking): a seed change
+  // legitimately supersedes results, and the fix is to re-run the gate, not to abandon the
+  // commit. Expected-value DRIFT is a different animal and blocks below.
+  const stale = staleResults(md, currentFp);
+  if (stale.length) {
+    console.error(`[verification-sync] WARNING — ${stale.length} Result cell(s) measured against a superseded seed (current ${currentFp}):`);
+    for (const s of stale) console.error(`  · ${s.id}: stamped seed ${s.stamped} — re-run the gate to refresh`);
+    console.error('');
+  }
+
   const drift = reconcile(md);
   if (!drift.length) {
     console.log('[verification-sync] OK — VERIFICATION.md and expected.js agree.');
@@ -145,4 +184,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { reconcile, writeResults, emptyResults, readA5Table, parseMoney, DOC };
+module.exports = { reconcile, writeResults, emptyResults, staleResults, readA5Table, parseMoney, DOC };

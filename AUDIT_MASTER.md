@@ -873,6 +873,65 @@ It becomes **wrong** the moment the harness is used as a regression gate — in 
 
 ---
 
+### F93 ⬜ OWNER DECISION — Should a FUTURE-DATED invoice or bill be recognised? — **NEW (2026-07-23, raised in session, undecided)**
+**Status:** OPEN — no decision made. Recorded because an undecided question that lives only in conversation gets silently decided by whatever the code already does.
+
+Nothing in the recognition legs bounds the *upper* end of a period window against "today". An invoice issued `2026-12-01`, entered today, is recognised in December — and appears in FY 2026 revenue immediately, because the FY window runs to the end of the fiscal year, not to now.
+
+**The question:** is that correct? Two defensible answers, and the system has not chosen one — it has merely inherited one.
+
+- **Recognise it.** Accrual is date-based; a dated document belongs to its date. Consistent with decisions 1 and 2.
+- **Exclude it until its date arrives.** A period-to-date figure that includes the future is not a period-to-date figure, and a FY total containing unearned December revenue overstates the year.
+
+**Interacts with `elapsedMonths`**, which the client already sends and which exists to express "how much of this period has actually happened" — evidence the codebase half-acknowledges the distinction without settling it.
+**Also interacts with F82:** the pinned clock was moved *because* two seeded rows sat in the future, and the harness has never asserted future-dated behaviour in either direction.
+**Course of action:** owner decision. Then a `VERIFICATION.md` check per answer — a future-dated invoice in the seed, asserted present or absent. Until decided, **future-dated behaviour is unverified, not correct.**
+
+---
+
+### F92 🟠 HIGH — Money-bearing fields are mutated as SIDE EFFECTS of other routes, not by routes of their own — **NEW (2026-07-23, the class behind F90's silent-recalc note)**
+**Status:** OPEN. This is the CLASS; F90 recorded two instances of it. Logged separately per Rule 13 — a finding that names one surface when the defect spans several is a sighting.
+
+**The shape:** a function writes a money-bearing field on a record the caller did not name, triggered by an action on a *different* record. It has no route, no request, and no obvious owner. Consequences compound:
+
+1. **It is invisible to any route-based audit** — F90's enumeration walks routes, so a side-effect writer is not on the list by construction. This is why the audit-trail scope needed a second axis.
+2. **It is invisible to any route-based permission check** — RBAC middleware (`server.js:692`) gates on `req.method` and `req.path`. A side-effect write happens *inside* an already-authorised request, so it is never separately checked.
+3. **It is invisible to double-submit protection** — Rule 9's dedupe keys on the *incoming* row, not on what that row causes downstream.
+
+**Known members (enumerated from the recognition legs, NOT exhaustive — see below):**
+
+| Function | Writes | Triggered by | Logged |
+|---|---|---|---|
+| `recalcInvoiceStatus` (`server.js:3614`) | `invoices.status`, `invoices.amount_paid` | `POST`/`DELETE /api/invoice-payments` | ✗ |
+| `recalcBillStatus` (`server.js:3642`) | `bills.status`, `bills.amount_paid` | `POST`/`PUT`/`DELETE /api/payments-made` | ✗ |
+| `initDB` backfill (`database.js:110-116`) | `invoices.data->amount_paid` | **module import** (F78) | ✗ |
+| `markBillPaid` → `recalcBillStatus` | as above, plus creates a `payments_made` row | a UI button on a *different* page | ✗ |
+
+Both `status` and `amount_paid` are **directly load-bearing**: `status` drives the `RECOGNIZED`/`RECOGNIZED_BILL` allowlists (revenue and expense recognition), and `amount_paid` drives AR and AP outstanding. So these functions move headline figures without appearing in any route enumeration of what moves headline figures.
+
+⚠️ **This enumeration is NOT complete.** It was derived from the recognition legs only. A full sweep — every write to a money-bearing column that does not originate in the route handling that column — has **not** been done, and is the work this finding names.
+**Course of action:** complete the enumeration, then fold into the F90 shared-write-path fix — routing side-effect writers through the same logged path is what makes them visible. Until then, treat any route-based inventory of money writes as a lower bound.
+**Done when:** every side-effect writer of a money-bearing field is enumerated, logged, and reachable from the same audited write path as a direct route write.
+
+---
+
+### F91 🟡 MEDIUM — Three seed maskers remain: Q3 is indistinguishable from July, and two Q2 legs from June — **NEW (2026-07-23, found by the adjacent-period sweep)**
+**Status:** OPEN — a **known limitation of `VERIFICATION.md`**, recorded so a green Q2/Q3 is not read as more than it is. Also written into `VERIFICATION.md` beside the seed.
+
+After the Rule 4 revision every leg differs month to month (revenue 1,000/5,000/4,000 · COGS 400/200/800 · manual 600/750/250 · bills 0/800/500 · payroll 0/4,200/1,100 · cash in 1,000/500/0 · cash out 600/750/1,850). Three equalities survive:
+
+| # | Masker | Value | Why it exists | What it hides |
+|---|---|---|---|---|
+| 1 | **Q3 == Jul on ALL SIX figures** | rev 4,000 · COGS 800 · manual 250 · bills 500 · payroll 1,100 · cash out 1,850 | Aug and Sep carry **no seeded rows**, so Q3 contains only July | A "return the anchor month instead of the quarter" bug is **completely undetectable at Q3** |
+| 2 | Q2 bills == Jun bills | 800 | no April or May bills | quarter-vs-month confusion in the AP leg |
+| 3 | Q2 payroll == Jun payroll | 4,200 | no April or May payroll runs | quarter-vs-month confusion in the payroll leg |
+
+Masker 1 is the serious one: **all six** Q3 figures are identical to July's, so the entire Q3 column is satisfied by code that ignores quarters.
+**Course of action:** add at least one row in **August or September** (fixes 1) and one in **April** (fixes 2 and 3). Both change Q2/Q3/FY expected values, so this is a seed revision requiring re-derivation — owner-gated, not done.
+**Done when:** no adjacent-period or quarter-vs-month pair shares a value in any leg, and the expected values are re-derived and re-verified.
+
+---
+
 ### F90 🔴 CRITICAL — There is NO audit trail. The table exists and is empty by construction — **NEW (2026-07-23, read-only verified, two-axis enumeration)**
 **Status:** OPEN. **PRE-LAUNCH.** Scoped, not fixed.
 

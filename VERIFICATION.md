@@ -26,6 +26,27 @@ not from what someone notices, and it does not grow while work is in progress.
 
 ---
 
+## Sequencing — agreed order of work
+
+Recorded because an agreed plan that lives only in conversation is re-litigated or quietly
+abandoned. This is the order; it is not a menu.
+
+1. **Harness** — real Postgres, real schema, real server, real HTTP. *Steps 1–3 done; step 4
+   (client surfaces via jsdom) and `/books` outstanding.*
+2. **One full COLD sweep** — run **every** check in Parts A and B before fixing anything.
+   Fix-as-you-find guarantees an endless drip (sweep rule 1).
+3. **FREEZE the failure list.** That batch is the round. Anything found later goes on a separate
+   list for the next round (sweep rule 2).
+4. **Then, as ONE structural batch** — not three separate patches, because they share a root and
+   patching them individually is the instance-not-class failure Rule 13 names:
+   - **audit trail** (F90) via a shared write path a new route cannot bypass, including the
+     side-effect writers (F92);
+   - **money-engine consolidation** — one date comparison helper, string-based, shared by every
+     leg on both client and server (F87);
+   - **server-side period resolution** — the client sends *intent*, the server resolves the
+     window from the server clock and the entity timezone (F89, F88/2i).
+5. **Re-run every check** after the batch, not only the ones that failed (sweep rule 3).
+
 ## Rules of a sweep
 
 1. **Run every check before fixing anything.** Fix-as-you-find guarantees an endless drip —
@@ -272,6 +293,20 @@ produces a different number rather than the same 6,000.
 | Q3 (Jul–Sep) | 4,000 | 800 | 250 | 500 | 1,100 |
 | **FY 2026** | **10,000** | **1,400** | **1,600** | **1,300** | **5,300** |
 
+> ### ⚠️ KNOWN SEED LIMITATION — Q3 and July are indistinguishable (F91)
+>
+> Aug and Sep carry **no seeded rows**, so Q3 contains only July and **all six Q3 figures are
+> identical to July** (rev 4,000 · COGS 800 · manual 250 · bills 500 · payroll 1,100 · cash out
+> 1,850). A "return the anchor month instead of the quarter" bug is therefore **completely
+> undetectable at Q3** — the whole column is satisfied by code that ignores quarters.
+>
+> Two smaller cases: **Q2 bills == Jun bills (800)** and **Q2 payroll == Jun payroll (4,200)**,
+> because April and May carry no bills and no payroll runs.
+>
+> **A green Q2 or Q3 is weaker than a green Jun or Jul.** Fixing this needs a row in Aug or Sep
+> and one in April, which moves the Q2/Q3/FY expected values — a seed revision requiring
+> re-derivation, tracked as **F91** and not yet done.
+
 **AR Outstanding (all-time, balance-sheet — deliberately ignores the period selector): 8,500**
 **AP Outstanding (all-time): 800**
 
@@ -319,7 +354,7 @@ during the sweep.
 |---|---|---|---|
 | A1.1–3 | Revenue | 5,000 / 4,000 / 10,000 | |
 | A1.4–6 | Expenses | 5,750 / 1,850 / 8,200 | |
-| A1.7–9 | Net Profit | −1,150 / 1,550 / 400 | |
+| A1.7–9 | Net Profit | −950 / 1,350 / 400 | |
 | A1.10–12 | Outstanding | 8,500 all three (all-time by design) | |
 | A1.13–15 | Investments | **6,000** — identical all three (balance, not a period figure) | |
 
@@ -327,8 +362,8 @@ during the sweep.
 | # | Check | Expected | Result |
 |---|---|---|---|
 | A2.1 | Bars sum to the Expenses KPI | 5,750 (Jun) | |
-| A2.2 | Rent bar labelled "Rent" | 600 (Jun) | |
-| A2.3 | Software bar labelled "Software" | 150 (Jun) | |
+| A2.2 | Rent bar labelled "Rent" | 650 (Jun) | |
+| A2.3 | Software bar labelled "Software" | 100 (Jun) | |
 | A2.4 | Payroll appears as its own bar | 4,200 (Jun) | |
 | A2.5 | Each label matches its own value (not top-N sorted into static labels) | — | |
 | A2.6 | Categories with no spend render "—", not 0 or blank | — | |
@@ -350,12 +385,12 @@ during the sweep.
 ## A5 · Server engine — `/api/reports` and `/books` — 18
 | # | Figure | Jun | Jul | FY | Result |
 |---|---|---|---|---|---|
-| A5.1–3 | revenue | 5,000 | 4,000 | 10,000 | |
-| A5.4–6 | cogs | 400 | 600 | 1,400 | |
-| A5.7–9 | grossProfit | 4,600 | 3,400 | 8,600 | |
-| A5.10–12 | opex | 5,750 | 1,850 | 8,200 | |
-| A5.13–15 | netProfit | −1,150 | 1,550 | 400 | |
-| A5.16–18 | outstanding | 8,500 | 8,500 | 8,500 | |
+| A5.1–3 | revenue | 5,000 | 4,000 | 10,000 | PASS (2026-07-23) |
+| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (2026-07-23, discriminating seed) |
+| A5.7–9 | grossProfit | 4,800 | 3,200 | 8,600 | PASS (2026-07-23) |
+| A5.10–12 | opex | 5,750 | 1,850 | 8,200 | **FAIL** — actual 5,650 / 4,650 / 11,500 (2026-07-23 probe) |
+| A5.13–15 | netProfit | −950 | 1,350 | 400 | **FAIL** — actual −1,050 / −1,250 / −2,900 (2026-07-23 probe) |
+| A5.16–18 | outstanding | 8,500 | 8,500 | 8,500 | PASS (2026-07-23) |
 
 ## A6 · Cross-engine reconciliation — 18
 Client-displayed figure **==** server figure, six figures × three periods.
@@ -372,7 +407,7 @@ Client-displayed figure **==** server figure, six figures × three periods.
 | A7.4 | Payments Received | total received | 1,500 | |
 | A7.5 | Customer detail | per-customer balance | **A = 1,500 · B = 7,000 · A+B = 8,500 (== AR)** | |
 | A7.6 | Expenses page | period total | 750 (Jun) | |
-| A7.7 | COGS page | period COGS | 400 (Jun) | |
+| A7.7 | COGS page | period COGS | 200 (Jun) | |
 | A7.8 | COGS page | no-period call | 1,650 all-time | |
 | A7.9–11 | Cash Flow | cash in — Jun/Jul/FY | 500 / 0 / 1,500 | |
 | A7.12–14 | Cash Flow | cash out — Jun/Jul/FY | 750 / 1,850 / 3,200 | |

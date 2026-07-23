@@ -37,6 +37,31 @@ Working rules for changing this codebase live in [`CLAUDE.md`](CLAUDE.md) — th
 
 ---
 
+## ⚙️ LOAD-BEARING INFRASTRUCTURE CONFIG — do not "clean up"
+
+Configuration whose current value is deliberate and whose removal would break something with no obvious cause. Recorded because none of this is reconstructable from memory, and the failure would surface months later at deploy time, not at edit time.
+
+### `nixpacks.toml` → `npm install --production` is LOAD-BEARING (2026-07-23)
+
+```toml
+[phases.install]
+cmds = ["npm install --production"]
+```
+
+**Why it must stay `--production`.** The test harness added `embedded-postgres` (a real PostgreSQL 17.10 binary, ~tens of MB per platform) as a **devDependency**. `--production` (≡ `--omit=dev`) means Railway never installs devDependencies, so `embedded-postgres` and its `@embedded-postgres/*` platform packages are **not fetched on deploy at all**.
+
+**What breaks if someone drops the flag** (or adds a build step that installs devDeps, or an npm version changes the default): Railway's build would resolve the `@embedded-postgres/linux-x64` optional dependency and pull its tarball — a bundled Linux Postgres binary. It would **not fail the build** and would **not error** — it would silently add a large binary to every deploy image and lengthen every build, with nothing pointing at the cause. A future engineer debugging slow deploys would have no reason to suspect a test dependency.
+
+**The two things that together keep it safe — both must hold:**
+1. `embedded-postgres` stays in `devDependencies`, never `dependencies` (check `package.json`).
+2. `nixpacks.toml` keeps `--production`.
+
+Neither alone is a guarantee people would question in review; the pairing is the guard. If you ever need the harness to run *on* Railway (it should not — Rule 3: scratch only, never near production infra), that is a separate, deliberate decision, not a side effect of dropping a flag.
+
+*(The binary itself ships inside the platform tarball — there is no postinstall network download; the platform `postinstall` only hydrates symlinks. So the risk is image bloat and build time, not a failed fetch. Still worth preventing.)*
+
+---
+
 ## 📐 STANDING DECISIONS
 
 Decisions recorded **as decisions**, not as history. Each is dated at the point it was made and states the intended shape so it cannot be re-litigated or half-built later. A decision here is **not** a claim that anything is implemented — implementation status is tracked by its finding row.

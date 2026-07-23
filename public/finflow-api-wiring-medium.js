@@ -623,10 +623,20 @@
             <div><div class="emp-name">${fn(e.fname)} ${fn(e.lname)}${e.isOwner ? ' <span class="badge b-blue" style="font-size:9px">You</span>' : ''}</div><div class="emp-role">${fn(e.type||'Full-time')}</div></div>
           </div>
           <span style="color:var(--t2);font-size:12px">${fn(e.role||'')}</span>
-          <span style="font-family:var(--font-mono)">${sm(e.gross)}</span>
+          <!-- PL#9 root fix: this override is the RUNTIME renderPayroll (it shadows the app-main
+               copy the earlier 2a70564 fix patched, so that fix never rendered). Gross was missing
+               a color token and inherited a near-black default — invisible on the dark table while
+               its Net sibling (which sets color) stayed legible. Themed via --t1 (legible in BOTH
+               light and dark), matching Net. -->
+          <span style="font-family:var(--font-mono);color:var(--t1)">${sm(e.gross)}</span>
           <span style="color:var(--red);font-family:var(--font-mono)">${tax > 0 ? '-' + sm(tax) : '—'}</span>
           <span style="font-weight:600;font-family:var(--font-mono);color:${e.isOwner?'var(--acc)':'var(--t1)'}">${sm(net)}</span>
-          ${e.isOwner ? `<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>` : '<span></span>'}
+          ${e.isOwner
+            ? `<button class="btn-icon" onclick="openOwnerModal()" title="Edit" style="border:none;background:none;color:var(--acc)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>`
+            : `<span style="display:inline-flex;gap:2px;align-items:center">
+                 <button class="btn-icon" onclick="openEditEmployee(${e._dbId||e.id||0})" title="Edit employee" style="border:none;background:none;color:var(--t3);cursor:pointer;padding:4px"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M11 2l3 3L5 14H2v-3z"/></svg></button>
+                 <button class="btn-icon" onclick="deleteEmployee(${e._dbId||e.id||0})" title="Remove employee" style="border:none;background:none;color:var(--red);cursor:pointer;padding:4px;opacity:.75"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 4h11M6 4V2.5h4V4M5 4l.7 9.5h4.6L15 4z" transform="scale(0.9) translate(1,0)"/></svg></button>
+               </span>`}
         </div>`;
       }).join('');
     };

@@ -2736,6 +2736,29 @@ window.saveEditEmployee = async function(){
   }
 };
 
+// Delete an employee. The server route (DELETE /api/payroll/:id, payroll:write) already existed;
+// only the client handler was missing — which is why non-owner rows had no delete control (the
+// runtime renderPayroll override rendered an empty <span> there). Mirrors saveEditEmployee's shape
+// (raw fetch, in-memory update, repaint) and the delete convention used across the app.
+window.deleteEmployee = async function(id){
+  const emp = (window.payrollEmployees||[]).find(e=>(e._dbId||e.id)===id);
+  if(!emp) return;
+  const nm = ((emp.fname||'')+' '+(emp.lname||'')).trim() || 'this employee';
+  if(!confirm(`Delete ${nm} from payroll? This cannot be undone.`)) return;
+  try{
+    const res = await fetch('/api/payroll/'+id,{method:'DELETE',credentials:'include'});
+    if(!res.ok) throw new Error((await res.text())||('HTTP '+res.status));
+    window.payrollEmployees = (window.payrollEmployees||[]).filter(e=>(e._dbId||e.id)!==id);
+    if(typeof payrollEmployees!=='undefined') payrollEmployees = window.payrollEmployees;   // keep the module binding in sync with the window one
+    if(typeof renderPayroll==='function') renderPayroll();
+    if(typeof syncAllPayrollsToPersonal==='function'){ try{ syncAllPayrollsToPersonal(); }catch(_){}}
+    notify('Employee removed');
+    if(typeof window.refreshFinancials==='function') window.refreshFinancials('none');
+  }catch(e){
+    notify('Could not remove employee — '+e.message, true);
+  }
+};
+
 function syncAllPayrollsToPersonal(){
   const entries = Object.entries(ownerPayrollByEntity);
   const totalUSD = calcTotalOwnerNetUSD();   // banner/breakdown display only (not an income term)

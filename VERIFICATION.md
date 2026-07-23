@@ -277,7 +277,20 @@ Client-displayed figure **==** server figure, six figures × three periods.
 | A7.20 | Bills / AP | outstanding | 800 | |
 | A7.21 | Payroll | Monthly Payroll card | 5,000 (roster = template, informational only) | |
 | A7.22 | Payroll | run history dates | formatted, correct **local** day | |
-| A7.23 | Tax | YTD paid | ⬜ blocked — see Appendix C | |
+| A7.23 | Tax | YTD paid | **absent, or the literal text "Not tracked". ANY number = FAIL** (see below) | |
+
+> **A7.23 — how to judge it.** Tax paid has **no source in the system** (Appendix C.2: no table, no
+> category, no response field), so under decision **D1** the only honest outcomes are *nothing* or
+> *"Not tracked"*. **Both of these PASS:**
+> - the figure is **not displayed at all** — the current state, since `calcAndRenderTax` was removed
+>   under PL#11 and Tax Filing is the F51 "Coming Soon" placeholder;
+> - the figure **is** displayed and reads **"Not tracked"** (or equivalent non-numeric text).
+>
+> **Any computed, inferred, estimated or placeholder NUMBER FAILS** — including `$0`, `—` presented
+> as a value, or a percentage of the liability (the removed `liability × 0.75` fabrication).
+>
+> This check does **not** require the figure to be displayed. It is a guard against a number
+> reappearing without a source, not a request to build the surface.
 
 ---
 
@@ -360,18 +373,45 @@ selected. Kept separate so the base paper arithmetic stays hand-computable. Chec
 convert, symbols match the figures, and a blocked FX rate yields "—" rather than a native
 number presented as converted.
 
-# Appendix C — Still open
+# Appendix C — Answered / still open
 
-Two **code questions** for Code (read-only), not owner decisions:
+## ✅ 1. ANSWERED — expenses carry NO paid date
 
-1. **Do manual expenses carry a paid date** separate from the expense date? Required for
-   Cash Flow out (decision 3). If not, that is the finding — expenses cannot be cash-scoped.
-2. **Does a tax payment record type exist**, or is tax merely an expense category? If it is
-   only a category, the Tax YTD figure has **no source** — that is the finding, not a broken
-   calculation.
+The only date field on an expense is **`expense_date`**. `POST` and `PUT /api/expenses` write
+exactly `description`, `category`, `amount`, `deductible`, `expense_date` — and nothing else.
+There is no `paid_date`/`payment_date` on expenses anywhere; every `payment_date` in the
+codebase belongs to `invoice_payments`, `payments_made` or `payments_received`.
 
-One **owner decision**, deferred until (2) is answered:
+**Consequence — "expense date = paid date" is FORCED BY THE SCHEMA, not a modelling choice we
+made.** Therefore, under decision 3 (Cash Flow is genuine cash basis):
 
-3. Which taxes should "Tax YTD paid" cover — corporation tax, VAT, PAYE, NIS are separate
-   obligations on different periods. One combined figure may not be useful; splitting them
-   is a feature, not a fix.
+- **EXACT** for bills and payroll — both have real payment events (`payments_made`, the payroll
+  `paid` transition), so their cash timing is recorded data.
+- **ASSUMED** for manual expense rows — the expense date is used as the payment date because
+  no other date exists.
+
+The expected Cash Flow values in this document hold under that assumption. **If true expense
+cash-timing is ever wanted, that is a schema change, not a fix** — and every Cash Flow figure
+involving expense rows would need re-deriving.
+
+## ✅ 2. ANSWERED — tax paid has no source of any kind
+
+Not a broken calculation; there is nothing to calculate *from*:
+
+- **No `tax_payments` table** — no typed tax table of any kind exists.
+- **Not in the 35-table `TABLES` array** (`database.js:51-62`).
+- **Not even an expense category** — `bexp-cat` is Rent, Software, Marketing, Travel,
+  Equipment, Meals, Contractors, Professional Fees, Other. There is no "Tax".
+- **No `ytdPaid` field on the response** — `GET /api/tax-filing` returns only
+  `{revenue, deductible, taxableIncome, estimatedTax, quarterly, rate}`.
+
+Tax paid is not merely un-aggregated — it is **unrecordable**. This is why the prior
+`ytdPaid = liability × 0.75` was pure fabrication (removed under PL#11), and it matches
+**decision D1** in `AUDIT_MASTER.md`: no tax payment tracking exists, so the figure must read
+*"Not tracked"* and never a computed number. Endpoint staleness is tracked separately as **F76**.
+
+## ⬜ 3. STILL OPEN — owner decision
+
+Which taxes should a combined "tax" figure cover — corporation tax, VAT, PAYE and NIS are
+separate obligations on different periods. One combined figure may not be useful; splitting
+them is a feature, not a fix. Deferred alongside the D1 implementation, and carried on D1.

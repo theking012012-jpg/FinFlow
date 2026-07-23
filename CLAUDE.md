@@ -145,6 +145,13 @@ permitted but must be **explicitly labelled as structural** so their weight is v
 Corollary: extracting functions by slicing source text is fragile by construction — it has
 failed four times. Prefer making functions importable over improving the extractor.
 
+Corollary: **`git log -L :funcname:file` OVER-REPORTS.** Its function-range detection sweeps in
+adjacent lines, so a commit that only touched a neighbouring comment block is attributed to the
+function. It attributed `469fd1a` to `saveProduct` that way — reported as a confirmed dead-copy
+edit, and it was a false positive that cost a round trip. **Any commit `-L` flags must be
+confirmed against the actual diff hunk before being called confirmed — it is "suspect" until
+then.** The same caution applies to every line-range or text-proximity heuristic.
+
 ---
 
 ## Rule 6 — Agreement is not correctness
@@ -249,6 +256,12 @@ into the current commit, and do not leave it as a sentence in a chat message.
 
 State the limits of what you verified. "I confirmed X by reading the code" and "I confirmed
 X by executing it against real data" are different claims and must not sound alike.
+
+**Correcting your own findings rows with results you have already verified is always in scope
+and never needs asking.** If you verify something that changes a row — a suspect cleared, a
+count corrected, a claim withdrawn — update the row in the same turn. Do not ask permission to
+record what you just proved. Verified results that live only in a chat message are exactly how
+`F55` survived three audits.
 
 ---
 

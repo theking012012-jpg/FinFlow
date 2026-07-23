@@ -37,6 +37,28 @@ Working rules for changing this codebase live in [`CLAUDE.md`](CLAUDE.md) — th
 
 ---
 
+## 📐 STANDING DECISIONS
+
+Decisions recorded **as decisions**, not as history. Each is dated at the point it was made and states the intended shape so it cannot be re-litigated or half-built later. A decision here is **not** a claim that anything is implemented — implementation status is tracked by its finding row.
+
+### D1 · Business taxation — SELF-INPUTTED ESTIMATOR (decided 2026-07-23)
+
+**FinFlow performs NO tax calculation.** Business taxation follows the identical principle already applied to payroll in **F8** (`469fd1a`, which removed the multi-jurisdiction payroll tax engine and replaced it with user-defined deduction rows).
+
+The intended shape:
+- **The owner supplies their own rate.** No jurisdiction logic, no bracket tables, no rate inference. FinFlow holds no tax knowledge and must never appear to.
+- **The app projects an estimate off the canonical F32 accrual basis** — the same issue-based revenue every other figure uses. Not paid-only, not a second basis.
+- **No tax payment tracking exists.** There is no tax-payment record type and none is planned under this decision. Any "tax paid / YTD" figure therefore has **no source** and must render as *"Not tracked"* — never a computed, inferred or fabricated number. (The prior `ytdPaid = liability × 0.75` fabrication was removed under **PL#11**.)
+- **Filing is out of scope.** No submission, no forms, no deadlines-as-obligations.
+
+**Implementation is DEFERRED.** This records the target so a future session cannot (a) rebuild a taxation engine, (b) re-derive a different basis, or (c) ship a half-estimator. The current `GET /api/tax-filing` does **not** implement this decision — see **F76**.
+
+**Scope note:** which taxes a combined estimate would even cover (corporation tax, VAT, PAYE, NIS — separate obligations on different periods) remains an **open owner question**, deferred with the implementation. One combined figure may not be useful; splitting is a feature, not a fix.
+
+> **Explicitly not recorded as history:** an earlier session was *believed* to have made this decision, but a search of `AUDIT_MASTER.md`, the archive, `PRE_LAUNCH_FIX_PLAN.md` and the full git log found **no record of it**. Rather than reconstruct an undocumented decision as though it had been minuted, it is recorded here as a decision **made on 2026-07-23**.
+
+---
+
 ## 🚨 LAUNCH BLOCKERS
 
 One week to launch. This list is deliberately short and deliberately not padded. Each item is here because a paying user hits it in normal use, or because it puts a wrong number on screen.
@@ -653,10 +675,76 @@ So switching currency from Settings or the mobile drawer set `_displayCurrency`,
 - **`renderPayroll`** — `2a70564` (gross colour) **and** `3bdae44` (the non-owner edit pencil) **both** landed on the dead app-main copy; the runtime override had neither until `85c8384` today. **Two** wasted fixes on one function. This is the confirmed root of the PL#9/F74 "recurrence."
 - **`renderItems` / `filterItemsBySearch`** — `614d29c` added XSS escaping to the dead app-main copy. **No live vulnerability** — verified the runtime override independently escapes (`esc(i.name)`, `medium.js:859`) — but the app-main effort was wasted.
 
-**Blast radius (enumerated).** **28** functions are defined in app-main **and** overridden by a wiring `window.NAME=`. **23 are REPLACEMENT** (app-main copy is dead); **5 are wrappers** (app-main edits live — e.g. `updateDashboard`, which is why the verified F56/F59 fixes there worked). **4** are shadowed by **≥2** wiring files (intra-bundle order decides the winner). Of the 23 replacements, **6** have had their dead copy edited by a targeted commit: `renderPayroll` (✅ resolved), `renderItems`/`filterItemsBySearch` (no live harm), and **3 unverified suspects** — `restockItem` (`4286f7f`, a security commit), `loadPersistedData` (`3bdae44`), `saveProduct` (`469fd1a`). Full machine-generated list in the session report.
+**Blast radius (enumerated).** **28** functions are defined in app-main **and** overridden by a wiring `window.NAME=`. **23 are REPLACEMENT** (app-main copy is dead); **5 are wrappers** (app-main edits live — e.g. `updateDashboard`, which is why the verified F56/F59 fixes there worked). **4** are shadowed by **≥2** wiring files (intra-bundle order decides the winner). Full machine-generated list in the session report.
+
+**Dead-copy edits — verification status (updated 2026-07-23).** Of the 23 replacements, targeted commits hit the dead copy in these cases:
+
+| Function | Commit | Verdict |
+|---|---|---|
+| `renderPayroll` | `2a70564`, `3bdae44` | ✅ **Resolved** (`85c8384`) — two wasted fixes, now on the runtime path |
+| `renderItems` | `614d29c` (XSS) | ✅ **Wasted effort, no live hole** — override escapes independently (`esc()` throughout `renderItemRow`, `medium.js:857`) |
+| `filterItemsBySearch` | `614d29c` (XSS) | ✅ **Wasted effort, no live hole** — delegates to `renderItemRow`, which escapes every string field; `price`/`stock` are unescaped but numerically coerced server-side (`parseFloat`/`parseInt`, `server.js` items POST/PUT) so they cannot carry markup |
+| `restockItem` | `4286f7f` (security) | ✅ **Wasted effort, no live hole** — override opens a modal not `prompt()` (`medium.js:451`), `saveRestock` rejects `qty<=0` (`medium.js:466`), server clamps `Math.max(1,…)` |
+| `saveProduct` | ~~`469fd1a`~~ | ⬜ **FALSE POSITIVE — withdrawn.** `469fd1a` did **not** touch `saveProduct`'s body; the `git log -L :saveProduct:` function-range heuristic swept in an adjacent comment block the commit added nearby. Only `6a3608d` (original file extraction) is content-bearing. Separately checked: the override carries equivalent validation (`sanitizeText`, `validateAmount`, clamps) **and** actually persists via `POST /api/inventory`, which the app-main copy never did |
+| `loadPersistedData` | `3bdae44` | 🔶 **UNVERIFIED** — the one remaining suspect |
+
+**Net so far: 4 confirmed wasted fixes, 0 live security holes, 1 false positive withdrawn, 1 unverified.** The `-L` heuristic over-reports — a flagged commit must be confirmed against the actual hunk before it is called a dead-copy edit.
 
 **Course of action (owner to prioritise — do NOT batch-reconcile blindly).** (1) Verify the 3 suspects — does the runtime override carry the fix the dead copy got? (2) For each confirmed-dead pair, either delete the app-main copy (forcing all edits onto the real one) or make the override a thin wrapper that delegates. (3) Add the **guard** below so a future fix to a shadowed copy fails loudly.
 **Done when:** no function has a silently-dead second definition, and CI fails if one is introduced.
+
+---
+
+### F76 🟡 MEDIUM — `GET /api/tax-filing` is stale on three counts — **NEW (2026-07-23, read-only verified)**
+**Status:** OPEN, verified by code read. **Not currently user-facing** (see urgency note) — that lowers urgency, it does **not** make it correct.
+
+Three defects in one endpoint (`server.js:3464-3492`), reported together because they share a cause: the endpoint predates both the F32 recognition decision and **D1**, and was never revisited.
+
+**1. Hardcoded rate, not owner-configurable.**
+```js
+const estimatedTax = Math.round(taxableIncome * 0.25);   // server.js:3482
+…
+rate: 0.25,                                              // server.js:3488 — returned as if authoritative
+```
+A flat 25% is baked in and echoed back in the response as `rate`, presenting a FinFlow-chosen number as though it were the user's. Directly contradicts **D1**, under which the rate is owner-supplied and FinFlow holds no tax knowledge.
+
+**2. Revenue uses the PRE-F32 paid-only basis — this endpoint disagrees with every other revenue figure in the app.**
+```js
+const revenue = invoices.filter(i => i.status === 'paid')…   // server.js:3475
+```
+F32 (18 July, owner decision) moved recognition to **ACCRUAL, ISSUE-BASED** — allowlist `pending`/`overdue`/`partial`/`paid` — across `computeBooks`, `computeRevenue`, `/api/reports`, `/books`, the monthly buckets and the accountant portal. **This endpoint was missed.** It is the last surviving consumer of the superseded basis, so its `revenue`, `taxableIncome`, `estimatedTax` and `quarterly` are all computed from a number no other surface reports. Same multi-writer class as **F7**/**F56** (`CLAUDE.md` failure mode 2).
+
+**3. No `ytdPaid` source of any kind.** The full response is `{revenue, deductible, taxableIncome, estimatedTax, quarterly, rate}` (`server.js:3486-3489`) — there is **no** `paid`/`ytdPaid` field. Nor is there anywhere for one to come from: **no** `tax_payments` table, no tax entry in the 35-table `TABLES` array (`database.js:51-62`), and **not even a "Tax" expense category** (`bexp-cat`: Rent, Software, Marketing, Travel, Equipment, Meals, Contractors, Professional Fees, Other). Tax paid is not merely un-aggregated — it is **unrecordable**. **This confirms `VERIFICATION.md` check A7.23 ("Tax YTD paid") is correctly blocked**, and under **D1** the correct rendering is *"Not tracked"*, not a computed figure.
+
+**Urgency — why this is Medium, not High.** The Tax Filing page is the **F51** static "Coming Soon" placeholder (`app-main.js:6104`); `calcAndRenderTax` was deleted under **PL#11** (`7be0a1d`), so nothing in the main app renders this endpoint's output today. It is live and reachable but unconsumed. The risk is a future surface wiring itself to it and silently importing the pre-F32 basis.
+
+**Course of action.** Do **not** patch the rate in isolation — that would half-build **D1**, which is the failure this finding exists to prevent. Either (a) implement D1 properly: owner-supplied rate parameter, revenue from the canonical `computeBooks` accrual figure (not a fourth private recompute), `ytdPaid` omitted or explicitly `null` with a "Not tracked" contract; or (b) **delete the endpoint** until D1 is implemented, so nothing can wire to a stale basis in the meantime. (b) is cheaper and strictly safer pre-launch.
+**Done when:** the endpoint either does not exist, or its revenue equals `/api/reports` revenue for the same period and its rate comes from owner input — and A7.23 renders "Not tracked" rather than a number.
+
+---
+
+### F77 🟠 HIGH — The payroll basis-C golden master is stub-based and violates `CLAUDE.md` Rule 3 — **NEW (2026-07-23; self-reported test debt)**
+**Status:** OPEN. **Its green result is NOT evidence of correctness** and must not be cited as such until rebuilt.
+
+**What's wrong.** `tests/golden-master-payroll-basisC.js` asserts against a **hand-written pool stub**, not a real Postgres instance with the real schema. `CLAUDE.md` Rule 3 forbids exactly this for money paths: *"A stub is a second implementation of your database written by the person trying to prove their code correct. It will agree with them."*
+
+**This is not hypothetical — it is the direct cause of defects that shipped.** The stub let the seed use `status:'final'` for a payroll run. **That value cannot exist in the schema** (`payroll_runs.status` vocabulary is `draft` / `approved` / `paid`, `database.js:388`); a real `INSERT` would have been the only thing that could reject it. Because nothing in either engine filters run status, the invalid value was never exercised — and the suite went **62 green** while three real defects shipped:
+
+- the **payroll KPI double-count** (2× a single run's value),
+- the **ignored status filter** (a `draft` run contributing its full line total instead of 0),
+- the **load-timing defect** (`window.payrollRuns` populated only after visiting the Payroll page, so the Expenses KPI depended on navigation order).
+
+None of the three is visible in source. All three would have been caught by a seed inserted through the real schema and read back through the real endpoints. This is `CLAUDE.md` failure mode 3 in its purest form: **tests that pass against fabricated reality.**
+
+**Related stub-fidelity failures in the same file** (each cost a round trip): an `async` keyword stripped during source extraction; a stub returning `undefined` that silently became `0`; a new `payroll_run_lines` JOIN the stub did not serve (returning 0 payroll and looking like a code bug); and a paren-counter tripped by a `)` inside a code comment.
+
+**Course of action.** Rebuild against a **scratch Postgres** with the real schema, seeded by real `INSERT`s, exercised through the real HTTP endpoints — per `VERIFICATION.md`'s Environment section, which already mandates this ("Real schema, real server, real endpoints, real HTTP. **No pool stubs**"). Part of the structural work, not a quick patch. The existing assertions and the discriminating seed design (Rule 4) are worth keeping; it is the **substrate** that must change.
+
+**Interim handling.** Until rebuilt, the file may be used as a fast regression signal for *structural* regressions only, and every report citing it must state that it is stub-based. **A green run does not satisfy any `VERIFICATION.md` check.**
+**Done when:** the golden master runs against real Postgres with the real schema, a seed containing an invalid status value is **rejected by the database**, and the three defects above are each proven caught by a failing assertion before the fix and a passing one after.
+
+---
+
 ### F72 🟡 MEDIUM — AP / payables overstated for partially-paid bills — **NEW (found while fixing F56)**
 **Status:** OPEN, verified. The exact mirror of F56 on the payables side.
 

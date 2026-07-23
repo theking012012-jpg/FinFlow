@@ -741,7 +741,226 @@ None of the three is visible in source. All three would have been caught by a se
 **Course of action.** Rebuild against a **scratch Postgres** with the real schema, seeded by real `INSERT`s, exercised through the real HTTP endpoints — per `VERIFICATION.md`'s Environment section, which already mandates this ("Real schema, real server, real endpoints, real HTTP. **No pool stubs**"). Part of the structural work, not a quick patch. The existing assertions and the discriminating seed design (Rule 4) are worth keeping; it is the **substrate** that must change.
 
 **Interim handling.** Until rebuilt, the file may be used as a fast regression signal for *structural* regressions only, and every report citing it must state that it is stub-based. **A green run does not satisfy any `VERIFICATION.md` check.**
-**Done when:** the golden master runs against real Postgres with the real schema, a seed containing an invalid status value is **rejected by the database**, and the three defects above are each proven caught by a failing assertion before the fix and a passing one after.
+**Done when:** the golden master runs against real Postgres with the real schema, a seed containing an invalid status value is **rejected before it can be inserted**, and the three defects above are each proven caught by a failing assertion before the fix and a passing one after.
+
+> ### ⚠️ CORRECTION to this row — 2026-07-23 (read-only verified, while building the harness)
+>
+> The original wording of "Done when" read *"a seed containing an invalid status value is **rejected by the database**"*. **That is not achievable against this schema, and the premise behind it was wrong.**
+>
+> This row asserted that a real `INSERT` "would have been the only thing that could reject" `status:'final'`. It would not have rejected it. `payroll_runs.status` is a bare column with no constraint:
+> ```
+> database.js:388     run_date DATE, status TEXT DEFAULT 'draft',
+> ```
+> and a scan of the whole schema finds exactly **one** CHECK constraint across ~40 tables:
+> ```
+> $ grep -n "CHECK\|ENUM\|CREATE TYPE" database.js
+> 259:        rating        INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+> ```
+> `INSERT INTO payroll_runs (status) VALUES ('final')` **succeeds** on real Postgres. Invoice and bill statuses are worse still — they live inside the JSONB `data` column, where a column constraint is not even expressible.
+>
+> **Consequence for the rebuild:** moving to real Postgres removes the *stub*, but it does **not** restore the guard this row assumed the database would provide. The harness must therefore carry its own explicit status-vocabulary gate over the seed (Rule 11 vocabularies, asserted in code, aborting the seed on an unknown value). Without that, the rebuilt harness reproduces the exact F77 trap on a real database — which would be worse, because it would look authoritative.
+>
+> Tracked as **F79**. Verified by reading `database.js`; not by execution.
+
+---
+
+### F78 🔴 CRITICAL — `require('./server.js')` fires DDL **and a data-modifying UPDATE** at import time, against whatever `DATABASE_URL` is set — **NEW (2026-07-23, read-only verified while building the harness)**
+**Status:** OPEN. Not a harness problem — a property of the shipped server that any tool, test or script inherits.
+
+Importing the server is not inert. `server.js:11` requires `./database`, and `server.js:4750` calls `initDB()` **at module scope, unawaited**:
+```
+server.js:4750   initDB().then(() => {
+server.js:4751     if (require.main === module) {      ← only the LISTENER is guarded
+server.js:4752       app.listen(PORT, ...
+```
+The `require.main` guard covers `app.listen` and the recurring scheduler. **It does not cover `initDB()`**, which runs unconditionally on import. `initDB()` executes `CREATE TABLE` / `CREATE INDEX` / `ALTER TABLE` across ~40 tables **and** a data-modifying backfill:
+```
+database.js:110-116
+    UPDATE invoices
+       SET data = jsonb_set(data, '{amount_paid}', data->'amount')
+     WHERE lower(data->>'status') = 'paid'
+       AND jsonb_typeof(data->'amount') = 'number'
+       AND COALESCE((data->>'amount_paid')::numeric, 0) < (data->>'amount')::numeric
+```
+So `node -e "require('./server.js')"` with a production `DATABASE_URL` in the environment **writes to the owner's live books** before a single line of the calling script runs. Nothing downstream can prevent it; by the time your code executes, the UPDATE has committed.
+
+This is precisely the hazard `CLAUDE.md` Rule 7 names — *"`require('../database.js')` executes that module… merely importing it would fire `CREATE TABLE` / `ALTER TABLE` DDL at production. A scan of the script's own SQL would not catch that."* Rule 7 anticipated it for `database.js`. `database.js` is in fact **clean on import** (`database.js:39` only constructs a lazy `Pool`; `initDB` is not self-invoking). It is `server.js` that has the side effect, and it is worse than DDL because of the `UPDATE`.
+
+**Mitigated for the harness, not fixed in the product.** `tests/harness/guard.js` never reads `DATABASE_URL`, scrubs any inherited value from the environment before any module loads, and installs a loopback-only scratch URL — so the harness cannot trigger this. **That protects the harness; it does not protect the next script someone writes.**
+**Course of action:** move `initDB()` inside the `require.main === module` guard, or export an explicit `start()` the entrypoint calls. Import must be inert.
+**Done when:** `node -e "require('./server.js')"` against a database with a known row count performs **zero** writes, proven by comparing `pg_stat_database` write counters (or an audit trigger) before and after.
+
+---
+
+### F79 🟠 HIGH — Status vocabularies are unenforced: **one** CHECK constraint in ~40 tables, and JSONB statuses cannot be constrained at all — **NEW (2026-07-23, read-only verified)**
+**Status:** OPEN. Corrects the premise of **F77** (see the correction block on that row).
+
+`CLAUDE.md` Rule 11 treats status vocabularies as real and checkable. The database does not enforce a single one of them.
+```
+$ grep -n "CHECK\|ENUM\|CREATE TYPE" database.js
+259:        rating        INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+```
+One CHECK, on `accountant_reviews.rating`. Specifically:
+- `payroll_runs.status` is `TEXT DEFAULT 'draft'` (`database.js:388`) — no CHECK. `INSERT … status='final'` **succeeds**.
+- Invoice and bill statuses live inside the JSONB `data` column (generic `id/user_id/entity_id/data` tables, `database.js:63-83`), where a column-level constraint is not expressible at all.
+
+> **Scope of this finding — read it precisely.** This is **not** "the schema has no constraints". Referential integrity is present and deliberately built: `database.js:478-528` carries a *"FOREIGN KEYS: single source of truth"* block that adds `fk_<table>_user` and `fk_<table>_entity` across the tables, with `ON DELETE CASCADE`, plus in-line `REFERENCES` on the accountant and payroll-lines tables. That machinery works — it rejected a harness insert carrying a non-existent `user_id` during the step-2 build, which is how it was found.
+>
+> The gap is narrower and more specific: **no VALUE-DOMAIN constraint exists on any status column.** FKs answer "does this row point at something real"; nothing answers "is this a status the product recognises". That second question is the one F77 turned on.
+
+**Why this matters beyond tidiness.** F77's stated fix — rebuild the golden master on real Postgres — was justified partly on the belief that a real `INSERT` would have rejected the impossible `status:'final'` seed. It would not have. Real Postgres removes the *stub*, but supplies **no** vocabulary guard. A rebuilt harness that assumes otherwise reproduces the F77 trap on a real database, where it will look far more authoritative than it did on a stub.
+
+**Course of action (two independent halves, do not conflate):**
+1. **Harness:** an explicit vocabulary gate over the seed, asserting every status against the Rule 11 allowlists and **aborting** on an unknown value. This is the harness's own guard and is in scope for the harness build.
+2. **Product:** decide whether to add CHECK constraints on typed status columns, and a validation layer for JSONB statuses. Owner-gated, separate commit, not part of the harness.
+**Done when:** (1) the harness refuses to seed `status:'final'` and says why; (2) the product half has an owner decision recorded, implemented or explicitly deferred.
+
+---
+
+### F80 🟠 HIGH — Server payroll leg has **no status filter**; `draft` runs are recognised as expense — **NEW (2026-07-23, read-only verified; not yet executed)**
+**Status:** OPEN. Contradicts `VERIFICATION.md` decision 2 and `CLAUDE.md` Rule 12.
+
+`computeBooks` sources payroll from `payroll_run_lines` joined to `payroll_runs` (basis C, correct), but filters only on user and entity:
+```sql
+-- server.js:4136-4141
+SELECT prl.gross, prl.bonus, prl.overtime, pr.run_date, pr.entity_id, pr.id AS run_id
+  FROM payroll_run_lines prl
+  JOIN payroll_runs pr ON pr.id = prl.run_id
+ WHERE pr.user_id = $1
+   AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)
+```
+There is no `pr.status` predicate anywhere in the leg. Every run contributes its full line total regardless of status, so a **draft** run — explicitly worth 0 under decision 2 — is recognised as expense.
+
+`VERIFICATION.md`'s seed is built to expose exactly this: R1 `approved` 4,200 (Jun), R2 **`draft` 3,300** (Jul), R3 `paid` 1,100 (Jul), all three totals distinct so a leak identifies *which* status leaked. Against that seed this leg should report **July payroll = 4,400** (3,300 + 1,100) where decision 2 requires **1,100**.
+
+Note the required predicate is `status IN ('approved','paid')`, **not** `status = 'approved'` — see the ⚠️ IMPLEMENTATION TRAP on decision 2: `paid` is downstream of `approved`, so filtering to `approved` alone would make the expense **disappear** when a run is marked paid. Check B4.3 exists to catch that.
+
+**Limits of this finding:** confirmed by **reading the query**, not by executing it. The predicted 4,400 is derived from the code and the seed, not measured. The harness (steps 2-3) will measure it.
+**Course of action:** do not fix during the sweep. `VERIFICATION.md` rule 1 — run every check first, freeze the failure list, then fix as a batch. Also enumerate the client-side mirror before fixing either (Rule 2): the same figure is recomputed client-side and fixing one surface is how F7/F56 regrew.
+**Done when:** A5.10-12 and A1.4-6 report the decision-2 values on real seeded data, and B4.1/B4.2/B4.3 pass — draft 0, approve adds Σ lines once, mark-paid leaves it unchanged.
+
+---
+
+### F81 🟢 LOW — `VERIFICATION.md` check counts are internally inconsistent — **NEW (2026-07-23)**
+**Status:** ✅ **FIXED** in the harness commit (documentation-only).
+
+Part A's header said *"~84 checks"*; the A7 section header said *"Page-level figures — 21"* while enumerating rows A7.1 through **A7.23**. Recounting the enumerated rows: A1 15 + A2 6 + A3 3 + A4 3 + A5 18 + A6 18 + A7 23 = **86**.
+
+Minor, but the file's whole purpose is to be a *finite list* whose size does not drift — "done = every check green" needs an unambiguous denominator. Corrected to 23 and 86.
+
+---
+
+### F82 🟡 MEDIUM — Seed/clock conflict: the pinned clock predated two seeded payroll events — **NEW (2026-07-23)**
+**Status:** ✅ **RESOLVED by owner decision** (2026-07-23), applied in the harness commit.
+
+`VERIFICATION.md` pinned the clock to **2026-07-15**, but seeded R3 with `run_date` **2026-07-20** and its payment event on **2026-07-22** — both in the *future* relative to "now". Expected July payroll (1,100) and July cash out (1,850) rest entirely on R3.
+
+The risk was a **false failure**: any surface that bounds its window at the current date (the client resolves `_periodWindow` with `elapsedMonths` off `min(now, fyEnd)`) would drop R3, report July payroll as 0, and look exactly like a code defect — sending a sweep chasing a bug that was really a seed artefact.
+
+**Resolution:** the clock moves to **2026-07-25T12:00:00-04:00**; R3 does **not** move, because its date is what discriminates. July remains an incomplete month (so partial-period behaviour is still exercised) and every other seeded date is unaffected. Implemented in `tests/harness/clock.js`.
+
+---
+
+### F83 🟢 LOW — Harness exits 0 even when checks fail — **deliberate for now, tracked commitment** (2026-07-23)
+**Status:** OPEN by design. Recorded so it is a decision with an expiry, not an oversight that calcifies.
+
+The harness sets `process.exitCode = 0` unconditionally. That is correct **while it is an instrument**: during a sweep the artefact is the *report* — actual vs expected for every check — and a non-zero exit that truncated output or tripped a wrapper would cost more than it gained. `VERIFICATION.md` rule 1 (run every check before fixing anything) depends on a full run always completing and always being readable.
+
+It becomes **wrong** the moment the harness is used as a regression gate — in a pre-commit hook, in CI, or anywhere a machine reads the exit status. At that point a silently-zero exit means failures ship green, which is F77's failure mode in a new location.
+
+**Course of action:** add `--strict` (non-zero exit on any FAIL) and make that the mode any automated caller uses, leaving bare invocation exit-0 for interactive sweeps.
+**Done when:** `--strict` exists, is used by whatever automation adopts the harness, and a deliberately failing check is shown to return a non-zero status.
+
+---
+
+### F84 🔴 CRITICAL — A bill paid through the Payments Made form is counted **twice** as expense; the UI offers no way to link it — **NEW (2026-07-23, read-only verified)**
+**Status:** OPEN. Live decision-1 violation reachable through ordinary UI use. Found while writing a seed note; it is not a seed note.
+
+**The guard is sound. The UI cannot satisfy it.** `computeBooks` excludes bill-linked payments from opex on one predicate, which the code itself calls the only one:
+```js
+// server.js:4106-4113
+// payments_made: a payment LINKED to a bill (bill_id set) is a SETTLEMENT (Dr AP / Cr Cash),
+// NEVER a fresh expense — counting it would double-count against the issued-bill leg above.
+// ONLY orphan payments (bill_id IS NULL) — a direct disbursement with no bill — stay expense.
+// This bill_id-IS-NULL predicate is the SOLE double-count guard.
+const paymentsMadeTotal = sumFX(paymentsMade.filter(p =>
+  p.bill_id == null && inPeriod(_pmDate(p))
+), p => p.amount, _pmDate, 'payments_made');
+```
+`bill_id` is taken verbatim from the request body (`server.js:2299`, `2305`) and defaults to `null`. So the guard holds only if the client sends it.
+
+**Enumeration of every write path that creates a `payments_made` row:**
+
+| # | Path | Sends `bill_id`? | Result |
+|---|---|---|---|
+| 1 | `markBillPaid()` — Bills page "Pay" button (`finflow-api-wiring-pages.js:709`) | ✅ yes | correct — settlement, excluded from expense |
+| 2 | `savePaymentMade()` — Payments Made "Make Payment" (`finflow-api-wiring-pages.js:796`) | ❌ **no** | counted as a fresh expense |
+| 3 | `savePaymentMade()` — older copy (`finflow-api-wiring-final5.js:322`) | ❌ **no** | shadowed; see below |
+| 4 | `PUT /api/payments-made/:id` (`server.js:2319`) | only if supplied | can relink, but nothing surfaces the need |
+
+Path 3 is dead code: the bundle loads `final5.js` at line 2832 and `pages.js` at 3339, and `pages.js:786` does `window.savePaymentMade = …`, so the **pages.js copy wins at runtime** (Rule 1 applied — both were checked rather than assumed). It makes no difference to the outcome: neither copy sends `bill_id`.
+
+**The modal has no bill field.** `#modal-payment-made` contains exactly `pm-vendor`, `pm-amount`, `pm-date`, `pm-method`, `pm-notes` — no bill selector, no invoice-style picker. And the Bills page offers exactly one payment action:
+```html
+<!-- finflow-api-wiring-pages.js:606 -->
+<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>
+```
+— which pays the **full outstanding balance**. There is no partial-bill-payment path anywhere that sets `bill_id`.
+
+**Two ordinary user journeys therefore double-count:**
+1. **Paying a bill from the Payments Made page** instead of the Bills page. The bill was already recognised as expense at issue; the payment adds the same amount again. The bill also stays `unpaid`, so AP is overstated too — the money is counted twice as expense and still shown as owed.
+2. **Paying a bill in instalments.** "Pay" is all-or-nothing, so a part payment can only be recorded through the unlinked form. Same double count.
+
+**Client mirrors the same predicate** (`app-main.js:1678`, `finflow-api-wiring-dashboard.js:101` and `:184`), so client and server agree — while both double count. `CLAUDE.md` Rule 6: agreement is not correctness.
+
+> ### ⚠️ THIS IS NOT A USER-ERROR PATH — THE UI OFFERS NO WAY TO LINK
+>
+> It would be easy to read the above as "the user should have clicked Pay on the Bills page". They could not have done anything else. **The Make Payment modal has no bill field at all** — `#modal-payment-made` contains exactly:
+>
+> `pm-vendor` · `pm-amount` · `pm-date` · `pm-method` · `pm-notes`
+>
+> No bill selector, no picker, no free-text bill reference. There is no input through which a user *could* express "this payment settles that bill", however carefully they worked.
+>
+> **And partial bill payments have no linked path in the application whatsoever.** `markBillPaid` computes `outstanding = amount − amount_paid` and pays that full balance in one row (`finflow-api-wiring-pages.js:701-711`); the Bills page exposes only that one button (`:606`). A user paying a bill in two instalments has no correct route available — the unlinked form is the only thing that will accept a part amount, and it double-counts.
+>
+> **Consequence for the fix: this is a UI change, not just a predicate change.** The predicate at `server.js:4111` is already right. Nothing is repaired by editing it. What is missing is the affordance — a bill selector on the Make Payment modal and a partial-payment path from the Bills page, both sending `bill_id` — plus the client mirrors moving in lockstep (Rule 2). A fix that only touches computation would leave the defect exactly where it is.
+
+**Limits:** confirmed by reading the source and the modal markup. Not executed — no production row counts were taken, and it is unknown whether the owner has actually recorded any bill payment this way. **That is an existing-data question (Rule 8) and is separate from the code fix.**
+**Course of action:** do not fix during the sweep (`VERIFICATION.md` rule 2 — freeze scope). The fix is a bill selector on the Make Payment modal plus a partial-payment path from the Bills page, both sending `bill_id`; note Rule 2 — the predicate exists on 3+ surfaces and all must move together. Then, separately and owner-gated, enumerate existing unlinked `payments_made` rows whose vendor and amount match an unpaid bill and report them for a decision.
+**Done when:** a payment recorded against a bill from either page sets `bill_id`, opex counts it once, AP drops by the payment; and the existing-row question has an owner decision.
+
+---
+
+### F85 🟠 HIGH — Payroll runs are recognised on `run_date` (creation time), not the period they are FOR — **NEW (2026-07-23, read-only verified)**
+**Status:** OPEN. Found while auditing `NOW()` usage for the harness.
+
+`POST /api/payroll-runs` takes a client-supplied `period` (e.g. `"2026-06"`) which is the run's **identity** — the dedupe guard keys on it (`server.js:3801`). But the row's date is stamped by the database:
+```sql
+-- server.js:3821-3823
+INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, ...)
+VALUES ($1,$2,$3,NOW(),$4,...)
+```
+and `computeBooks` filters payroll **by `run_date`, never by `period`**:
+```js
+// server.js:4145-4147
+const _runDate = l => l.run_date;
+const payrollTotal = r2(sumFX(runLines.filter(l => inPeriod(_runDate(l))), ...));
+```
+So June's payroll, run on 2 July, is recognised as a **July** expense. June understates payroll by the full run; July overstates by the same.
+
+> ### ⚠️ `period` IS DECORATIVE
+>
+> State this plainly, because the shape of the API implies the opposite. `POST /api/payroll-runs` **requires** `period`, rejects the request without it (`server.js:3792`), stores it on the row, uses it as the run's dedupe identity (`server.js:3801`), and displays it back in the run history. Everything about it presents as the authoritative answer to "which month is this payroll for".
+>
+> **It has no accounting effect.** The expense is filed by `run_date` — `NOW()` at the moment the button was pressed. Selecting period `2026-06` and pressing Run Payroll on 2 July produces a June-labelled run that lands entirely in July's figures. No warning, no divergence indicator; the run history shows "2026-06" while the P&L counts it in July.
+>
+> A field that looks authoritative and is not is how the next person assumes it works, writes a fix on top of that assumption, and produces a clean diff that changes nothing — the F75 pattern in a different register.
+
+This is the accrual question, not a rounding one: under decisions 1 and 2 an expense belongs to the period it relates to. It also compounds Rule 10 — `run_date` is `NOW()` in Postgres **UTC** while period windows are computed client-side in local time (GMT-4), so a run created between 20:00 and 24:00 local on the last day of a month is stamped into the next month in UTC and misfiles even when run on time.
+
+**Interaction with the harness:** this is why `VERIFICATION.md`'s seed specifies `run_date` per run and the harness writes it explicitly. It also means Part B cannot assert absolute period placement for a run it creates — see the `NOW()` drift decision.
+**Course of action:** owner decision on the intended basis — recognise on the `period` the run covers (accrual, likely correct), or keep `run_date` (creation-time). If `period`, the leg filters on it and `run_date` becomes metadata. Either way `run_date` should stop being `NOW()` and become explicit, which also removes the harness's only uncontrollable timestamp.
+**Done when:** the basis is decided and recorded here, the payroll leg filters on the decided field, and a run created for a prior period lands in that period's totals.
 
 ---
 

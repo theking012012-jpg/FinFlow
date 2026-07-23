@@ -13,7 +13,10 @@ not from what someone notices, and it does not grow while work is in progress.
 
 **Issues are not enumerable. Checks are. Run the checks; the failures are the issue list.**
 
-- **Part A — Figures:** ~84 checks. Every number the app displays, per period view.
+- **Part A — Figures:** **86** checks. Every number the app displays, per period view.
+  *(15 + 6 + 3 + 3 + 18 + 18 + 23. Was stated as "~84" with an A7 header reading 21 against 23
+  enumerated rows — corrected under **F81**. "Done = every check green" needs an unambiguous
+  denominator.)*
 - **Part B — Actions:** ~22 checks. Every mutating action, including double-submit and
   navigation-order behaviour.
 
@@ -33,12 +36,32 @@ not from what someone notices, and it does not grow while work is in progress.
 
 ## Environment
 
-- **Scratch Postgres only.** Never seed or test against production.
+- **Scratch Postgres only.** Never seed or test against production. Enforced mechanically by
+  `tests/harness/guard.js`, not by intention: the harness never reads `DATABASE_URL`, scrubs
+  any inherited value, and refuses anything that is not a loopback database whose name says
+  it is scratch. (This is not paranoia — see **F78**: importing `server.js` runs DDL *and* a
+  data-modifying `UPDATE` before any caller's code executes.)
 - Real schema, real server, real endpoints, real HTTP. **No pool stubs** (see `CLAUDE.md`
   Rule 3 — the stub seeded `status:'final'`, a value that cannot exist, and passed).
-- Clock pinned to **2026-07-15**, timezone **GMT-4**, fiscal year starting **January**.
+  Substrate: embedded PostgreSQL **17.10**; production is PostgreSQL **17.6.1** (Supabase).
+  Printed in the run header every run.
+  ⚠️ Note **F79**: the schema has exactly **one** CHECK constraint in ~40 tables, and JSONB
+  statuses cannot be constrained at all — so a real `INSERT` would *not* have rejected
+  `status:'final'` either. The harness carries its own status-vocabulary gate; the database
+  provides none.
+- Clock pinned to **2026-07-25T12:00:00-04:00**, timezone **America/Port_of_Spain**
+  (GMT-4, no DST), fiscal year starting **January**.
+  *Was 2026-07-15 — moved under **F82**, because R3 (`run_date` 2026-07-20) and its payment
+  (2026-07-22) sat in the future, so any window bounded at "now" would drop them and report a
+  false failure. R3's date is a discriminator and did not move; the clock did. July is still
+  an incomplete month.*
+  The pin is **node-side only** — Postgres `NOW()` remains the real clock, so every seeded
+  date is written explicitly and nothing relies on a database default (Rule 10).
 - Single entity, currency **USD** (FX has its own pass — see Appendix B).
-- **Investment price feed frozen** to a fixed cached value for the duration of the sweep.
+- **Investment price feed frozen** — prices are supplied by the harness and never fetched.
+  All outbound network is blocked; any attempt is recorded and printed in the run report
+  (the app swallows its own fetch failures, so a blocked call must be surfaced by the harness
+  or it would be invisible).
 
 ---
 
@@ -77,17 +100,34 @@ number** — see `CLAUDE.md` Rule 4.
 Basis: **ACCRUAL, ISSUE-BASED.** Recognised: `pending`, `overdue`, `partial`, `paid`.
 `draft` excluded.
 
-| ID | issue_date | amount | status | amount_paid |
-|---|---|---|---|---|
-| INV-1 | 2026-05-10 | 1,000 | paid | 1,000 |
-| INV-2 | 2026-06-15 | 2,000 | partial | 500 |
-| INV-3 | 2026-06-20 | 3,000 | pending | 0 |
-| INV-4 | 2026-06-25 | **9,999** | **draft** | 0 |
-| INV-5 | 2026-07-05 | 4,000 | overdue | 0 |
+| ID | issue_date | amount | status | amount_paid | customer |
+|---|---|---|---|---|---|
+| INV-1 | 2026-05-10 | 1,000 | paid | 1,000 | Customer A |
+| INV-2 | 2026-06-15 | 2,000 | partial | 500 | Customer A |
+| INV-3 | 2026-06-20 | 3,000 | pending | 0 | Customer B |
+| INV-4 | 2026-06-25 | **9,999** | **draft** | 0 | Customer A |
+| INV-5 | 2026-07-05 | 4,000 | overdue | 0 | Customer B |
 
 *Discriminates:* INV-4 is a large draft — a status leak makes June read 14,999 instead of
 5,000. INV-2 is partial, so the old buggy AR formula (full amount, drafts included) gives
 18,999 against a correct 8,500.
+
+## Customers (added 2026-07-23 — unblocks A7.5)
+
+| Customer | Invoices | Expected balance |
+|---|---|---|
+| Customer A | INV-1, INV-2, INV-4 (draft) | **1,500** |
+| Customer B | INV-3, INV-5 | **7,000** |
+
+*Discriminates:* Customer A carries all three hard cases at once — a settled invoice
+(INV-1, contributes 0 because `amount_paid == amount`), a partial (INV-2, contributes the
+**500 balance**, not its 2,000 face value), and a large draft (INV-4, excluded entirely).
+Each of the three plausible bugs gives a different, recognisable number: counting face value
+→ 3,000; leaking the draft → 11,499; counting only unsettled-by-status → 2,000.
+
+**A + B must equal AR Outstanding (8,500).** That cross-check is the point of the split —
+per-customer balances and the AR total are computed by different code, and this is the only
+check that makes them reconcile.
 
 ## Payment events (required for Cash Flow — decision 3)
 | Event | date | amount | direction |
@@ -96,6 +136,19 @@ Basis: **ACCRUAL, ISSUE-BASED.** Recognised: `pending`, `overdue`, `partial`, `p
 | INV-2 partial received | 2026-06-20 | 500 | in |
 | B2 bill payment made | 2026-07-05 | 500 | out |
 | R3 payroll paid | 2026-07-22 | 1,100 | out |
+
+> ⚠️ **SEED FIDELITY — the B2 payment MUST carry `bill_id` pointing at B2.** This is forced by
+> the code, not a modelling choice. `computeBooks` excludes bill-linked payments from opex:
+> ```js
+> // server.js:4111-4113 — "This bill_id-IS-NULL predicate is the SOLE double-count guard."
+> const paymentsMadeTotal = sumFX(paymentsMade.filter(p =>
+>   p.bill_id == null && inPeriod(_pmDate(p))
+> ), ...);
+> ```
+> Seeding this payment **unlinked** would make it an orphan disbursement, add a second 500 to
+> July opex, and manufacture a double-count that does not exist — a self-inflicted failure
+> that would look exactly like decision 1 being violated. The seed must exercise the guard,
+> not bypass it.
 
 ## Inventory — FIFO
 | Purchases | date | qty | unit cost |
@@ -151,6 +204,56 @@ months would be ~35,000 — unmissable. R3 being `paid` is what catches the trap
 |---|---|---|---|
 | B1 | 2026-06-05 | 800 | unpaid |
 | B2 | 2026-07-01 | 500 | paid (paid 2026-07-05) |
+
+## Investments / holdings (added 2026-07-23 — unblocks A1.13-15)
+
+Prices are **supplied by the harness**, never fetched. The live feed reaches CoinGecko /
+Finnhub over the network (`server.js:4676`, `4697`); the harness blocks all outbound traffic,
+so a frozen price is the only way this figure can be asserted at all.
+
+| Symbol | units | frozen unit price | value |
+|---|---|---|---|
+| TESTCO | 100 | 50.00 | 5,000 |
+| TESTCOIN | 10 | 100.00 | 1,000 |
+
+**Expected Investments = 6,000, IDENTICAL at Month, Quarter and Year.**
+
+### Scope: seeded as BUSINESS holdings, and why that is the faithful path
+
+Holdings are seeded with `entity_id` **set** (business scope), not `NULL` (personal). This was
+checked rather than assumed, because seeding the wrong scope would make A1.13–15 pass while
+measuring a path production never uses — the seed-fidelity failure class, one level up from
+`status:'final'`.
+
+`window.bizHoldings` has exactly three assignments in the codebase: initialised empty
+(`index.html:6483`), loaded from `GET /api/holdings?scope=business` (`index.html:6637`), and
+filtered on delete (`finflow-api-wiring-final.js:261`). **No path populates it from personal
+holdings — there is no fallback.** Both writers of the `d-invest` card read it exclusively
+(`finflow-api-wiring-dashboard.js:231` and the FX overlay at `app-main.js:4580`), each with an
+explicit comment that it is *not* `window.holdings`, since that cross-wire was fixed once
+already under F59.
+
+⚠️ The comment at `finflow-api-wiring-dashboard.js:227` — *"Business positions are empty today
+⇒ $0"* — is **STALE**. The owner's production dashboard displays a six-figure Investments
+value, and since no fallback exists, that number can only come from populated business-scope
+rows. Do not treat that comment as current state.
+
+### What A1.13–15 actually asserts
+
+**`shares × the stored `price` column`** — not live pricing.
+
+In production, `refreshAll()` (`index.html`) overwrites `h.price` with live quotes from
+`/api/stock-price` before the card is painted. Under the harness that fetch fails (the server's
+outbound call is blocked), so the seeded stored price stands. That is precisely the "price feed
+frozen" requirement, and it is the only way an exact value can be asserted — but it means a
+green A1.13–15 says nothing about whether live price refresh works. That surface is
+**unverified**, and belongs in Appendix A.
+
+*Discriminates:* this is a **balance**, not a period figure — a holding is not "earned" inside
+a window. A value that moves with the period selector is a **FAIL**, not a rounding
+difference. Two holdings at different unit prices, and units ≠ price in both rows, so a
+units/price transposition (10 × 100 vs 100 × 10) or a summed-units-instead-of-value bug
+produces a different number rather than the same 6,000.
 
 ---
 
@@ -216,7 +319,7 @@ during the sweep.
 | A1.4–6 | Expenses | 5,750 / 1,850 / 8,200 | |
 | A1.7–9 | Net Profit | −1,150 / 1,550 / 400 | |
 | A1.10–12 | Outstanding | 8,500 all three (all-time by design) | |
-| A1.13–15 | Investments | frozen seed value, identical all three | |
+| A1.13–15 | Investments | **6,000** — identical all three (balance, not a period figure) | |
 
 ## A2 · Dashboard expense breakdown bars — 6
 | # | Check | Expected | Result |
@@ -258,14 +361,14 @@ Client-displayed figure **==** server figure, six figures × three periods.
 > Passing A6 while failing A5 means both engines are wrong *together*. Agreement is not
 > correctness (`CLAUDE.md` Rule 6) — A5 is the authority; A6 only detects divergence.
 
-## A7 · Page-level figures — 21
+## A7 · Page-level figures — 23
 | # | Page | Figure | Expected | Result |
 |---|---|---|---|---|
 | A7.1 | Invoices | total outstanding | 8,500 | |
 | A7.2 | Invoices | count excludes draft | 4 of 5 | |
 | A7.3 | Invoices | subtitle wording | "1 overdue" (never "All invoices paid") | |
 | A7.4 | Payments Received | total received | 1,500 | |
-| A7.5 | Customer detail | per-customer balance | ⬜ owner (depends on assignment) | |
+| A7.5 | Customer detail | per-customer balance | **A = 1,500 · B = 7,000 · A+B = 8,500 (== AR)** | |
 | A7.6 | Expenses page | period total | 750 (Jun) | |
 | A7.7 | COGS page | period COGS | 400 (Jun) | |
 | A7.8 | COGS page | no-period call | 1,650 all-time | |

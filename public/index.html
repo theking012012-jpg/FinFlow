@@ -5111,9 +5111,23 @@ const ENTITIES=window.ENTITIES=[];
 
 // ── Load real entities from API on boot ──────────────────────────
 async function _loadEntitiesFromDBImpl(){
+  // F98: clear the dashboard error latch at the START of every attempt. It is re-set to true
+  // ONLY in the catch below (genuine failure). The two success returns — "no active entity"
+  // (empty account) and normal completion — leave it false, so a brand-new user with zero
+  // entities is NEVER shown "Unable to load". Genuine-failure vs successful-empty is therefore
+  // distinguished by exactly one thing: the flag is set true only where an exception was thrown.
+  window._dashLoadError = false;
   try {
     const res = await fetch('/api/entities', {credentials:'include'});
-    if(!res.ok) return;
+    // F96 (F67 class): a non-ok response must NOT silently leave ENTITIES empty and paint a
+    // "Create a business" dashboard indistinguishable from a real new account. 401/403 = genuinely
+    // logged out (the auth gate owns that); anything else is a real failure — throw so the outer
+    // catch surfaces the dashboard error state. Returning true here latches the memo (F97): a
+    // logged-out answer is definitive, not a transient failure to retry.
+    if(!res.ok){
+      if(res.status === 401 || res.status === 403) return true;
+      const _e = new Error('entities failed (HTTP '+res.status+')'); _e.status = res.status; throw _e;
+    }
     const rows = await res.json();
     // Sort by id — consistent order always
     rows.sort((a,b) => a.id - b.id);
@@ -5162,7 +5176,7 @@ async function _loadEntitiesFromDBImpl(){
       // Highlight the + Add business button
       const addBizBtn = document.querySelector('#biz-menu button');
       if(addBizBtn){ addBizBtn.classList.remove('btn-ghost'); addBizBtn.classList.add('btn-primary'); }
-      return;
+      return true;   // F97: a genuinely-empty account (0 entities) is a COMPLETE load — latch it
     }
 
     // Activate in session FIRST, then load data
@@ -5213,7 +5227,27 @@ async function _loadEntitiesFromDBImpl(){
       }
       console.log('[Entities] Bulk-loaded owner payroll for', Object.keys(window.ownerPayrollByEntity).length, 'entities');
     } catch (e) { console.warn('[Entities] Bulk payroll load failed:', e.message); }
-  } catch(e){ console.warn('[Entities] Boot load failed:', e.message); }
+    return true;   // F97: a complete, successful load — latch the memo
+  } catch(e){
+    // F96/F67: an authenticated boot-load failure must be VISIBLE, not a silent empty dashboard.
+    // The old `console.warn`-only path left a full set of $0/empty surfaces the user could not
+    // tell apart from real data. Paint the shared dashboard error state (gated on _ffAuthed, same
+    // as loadEntityData at app-main.js:1498).
+    console.error('[Entities] Boot load failed:', e.message);
+    // F98: latch the error BEFORE painting, so any updateDashboard that runs afterwards sees it
+    // and refuses to repaint a fabricated $0 over the error state (the multi-writer overwrite the
+    // plain _dashSetState('error') call could not survive on its own).
+    window._dashLoadError = true;
+    if(window._ffAuthed && typeof window._dashSetState === 'function'){
+      try{ window._dashSetState('error'); }catch(_){}
+    }
+    // F98 (req 2): the SIDEBAR must not read "Create a business" on a load FAILURE — that tells the
+    // user their business is gone. That text is the genuinely-empty-account state (set on the
+    // success path above); a failure is different and must say so.
+    const _nb = document.getElementById('sb-brand-name');
+    if(_nb) _nb.textContent = 'Unable to load';
+    return false;   // F97: signal an incomplete load so the boot memo (below) does not latch it
+  }
 }
 
 // F50 Step 2 — dedupe the boot loader storm. FOUR paths trigger an entities load within ~1s of
@@ -5240,9 +5274,17 @@ function loadEntitiesFromDB(force){
   // so a later trigger re-runs a COMPLETE one; a load that HAD the builder stays latched, so the
   // F50 boot-dedupe is fully intact for the normal (bundle-ready) case. _loadEntitiesFromDBImpl
   // never rejects (its outer catch swallows), so this .then always runs.
-  p.then(function(){
-    if(typeof window._buildMonthlyArrays !== 'function' && window._ffBootPromise === p){
-      window._ffBootPromise = null;   // incomplete → don't hand this empty load to the next caller
+  p.then(function(ok){
+    // F97: un-latch on ANY incomplete load, not just a missing builder. Incomplete =
+    //   (a) the load FAILED — _loadEntitiesFromDBImpl resolved false (fetch non-ok), so ENTITIES
+    //       was never populated. Previously this stayed latched forever when the bundle was
+    //       present, and only a hard refresh recovered; OR
+    //   (b) the deferred builder wasn't ready, so REV[]/EXP[] never filled (the original F50
+    //       cold-boot case).
+    // A genuinely-empty account is a COMPLETE load (ok===true) and latches normally.
+    var incomplete = (ok === false) || (typeof window._buildMonthlyArrays !== 'function');
+    if(incomplete && window._ffBootPromise === p){
+      window._ffBootPromise = null;   // incomplete → don't hand this dead load to the next caller
     }
   });
   return p;

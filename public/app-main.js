@@ -2015,6 +2015,18 @@ else _ffSyncPeriodLabels();
 // DASHBOARD
 // ════════════════════════════════════════════
 function updateDashboard(d=getPeriodData()){
+  // F98: a failed entities load latches window._dashLoadError. SAME SHAPE as the _fxPending guard
+  // a few lines down (comment "Honest-empty over confidently-wrong") — a second boolean flag on
+  // the paint, not a new mechanism. updateDashboard is the canonical writer of d-rev/d-exp/d-profit
+  // (and _applyConvertedKPIs, its only other writer, is called from here), so guarding here is what
+  // makes the error state STICK instead of being overwritten by a fabricated $0 computed from the
+  // empty client stores. Delegates to the shared error renderer and paints nothing else.
+  // The flag is set ONLY on genuine failure (never on a successful-but-empty load), so a brand-new
+  // user with zero entities never lands here.
+  if(window._dashLoadError){
+    if(typeof window._dashSetState==='function'){ try{ window._dashSetState('error'); }catch(_){} }
+    return;
+  }
   // Expenses/Profit use the canonical total (real expenses + bill payments +
   // elapsed-month payroll) so this matches the Expenses page, AI insights and
   // health score even if the bundle's KPI engine hasn't run yet.

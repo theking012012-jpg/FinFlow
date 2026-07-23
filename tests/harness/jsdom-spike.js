@@ -93,8 +93,23 @@ async function main() {
     // jsdom has no fetch; the app uses it for every /api call. Route relative URLs to the
     // server with the session cookie, using Node's fetch.
     const nodeFetch = global.fetch;
+    const failEntities = process.env.FAIL_ENTITIES === '1';
     window.fetch = (input, init = {}) => {
       const url = typeof input === 'string' ? input : (input && input.url) || String(input);
+      // Failure injection for F96/F97 verification: force the /api/entities LIST (not /activate)
+      // to 500, to prove the fix paints the dashboard error state instead of a silent empty one.
+      if (failEntities && /\/api\/entities(\?|$)/.test(url)) {
+        return Promise.resolve(new Response('{"error":"injected 500"}', {
+          status: 500, headers: { 'Content-Type': 'application/json' },
+        }));
+      }
+      // EMPTY_ENTITIES: a SUCCESSFUL but empty account (200 + []). Proves F98 req 1 — this must
+      // NOT show the error state: d-rev is a plain $0, sidebar "Create a business", never "—".
+      if (process.env.EMPTY_ENTITIES === '1' && /\/api\/entities(\?|$)/.test(url)) {
+        return Promise.resolve(new Response('[]', {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        }));
+      }
       const abs = url.startsWith('http') ? url : origin + (url.startsWith('/') ? url : '/' + url);
       const headers = Object.assign({}, init.headers, { Cookie: cookiePair });
       return nodeFetch(abs, Object.assign({}, init, { headers }));
@@ -110,25 +125,29 @@ async function main() {
     // time.) Record the full TRAJECTORY of distinct values so a transient "$0" before real data
     // arrives is distinguishable from a settled figure — grabbing the first change would lie.
     const trajectory = [];
-    let firstNonPlaceholderIter = null;
-    for (let i = 0; i < 50; i++) {
-      await new Promise((r) => setTimeout(r, 500));
+    for (let i = 0; i < 250; i++) {
+      await new Promise((r) => setTimeout(r, 100));
       const t = readable();
       if (trajectory.length === 0 || trajectory[trajectory.length - 1] !== t) trajectory.push(t);
-      if (firstNonPlaceholderIter == null && t && t !== '—' && t !== '') firstNonPlaceholderIter = i;
     }
+    const authedAtEnd = !!window._ffAuthed;
+    const dashSetStateIsFn = typeof window._dashSetState === 'function';
     const settled = readable();
+    const chgEl = window.document.getElementById(KPI_ID + '-chg');
+    const chg = chgEl ? (chgEl.textContent || '').trim() : null;
+    const brand = (window.document.getElementById('sb-brand-name') || {}).textContent;
+    const latched = window._ffBootPromise != null;   // F97: false = un-latched (correct after a failed load)
 
     console.log('');
     console.log('═'.repeat(70));
-    console.log(`  SPIKE RESULT: #${KPI_ID}`);
-    console.log(`    trajectory : ${trajectory.map((v) => JSON.stringify(v)).join(' → ')}`);
-    console.log(`    settled    : ${JSON.stringify(settled)}`);
-    if (settled && settled !== '—' && settled !== '') {
-      console.log('    → the SPA booted in jsdom and the KPI populated from the DOM.');
-    } else {
-      console.log('    → the KPI never left its placeholder.');
-    }
+    console.log(`  SPIKE RESULT: #${KPI_ID}   ${failEntities ? '[FAIL_ENTITIES injected]' : '[normal boot]'}`);
+    console.log(`    trajectory    : ${trajectory.map((v) => JSON.stringify(v)).join(' → ')}`);
+    console.log(`    settled       : ${JSON.stringify(settled)}`);
+    console.log(`    d-rev-chg     : ${JSON.stringify(chg)}`);
+    console.log(`    sidebar brand : ${JSON.stringify(brand)}`);
+    console.log(`    _ffBootPromise: ${latched ? 'LATCHED' : 'un-latched (null)'}`);
+    console.log(`    _ffAuthed     : ${authedAtEnd}   _dashSetState is fn: ${dashSetStateIsFn}`);
+    console.log(`    saw "—" ever  : ${trajectory.includes('—')}   (error state = d-rev "—")`);
     console.log('═'.repeat(70));
 
     if (consoleErrors.length) {

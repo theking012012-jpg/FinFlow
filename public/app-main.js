@@ -3293,9 +3293,23 @@ function openTransactionModal(type,editTx){
 // match on description+type+amount — the same fields the create flow copies) and
 // reflect its state in the modal. Async; guards against a stale/reopened modal.
 async function _prefillRecurringForEdit(editTx){
+  // F96 class — DATA LOSS, not cosmetic: if this prefill fails, the "recurring" toggle stays at its
+  // unchecked default; saveTransaction would then commit recurring_profile_id = null and
+  // _persCommitTx UNLINKS the occurrence ("On edit, null unlinks") — silently converting a
+  // recurring transaction to one-time from a failed READ. The flag below makes saveTransaction
+  // LEAVE the recurring link untouched when the state was never loaded (the server PUT preserves an
+  // omitted recurring_profile_id), so a failed read can no longer destroy the setting.
+  window._txRecurringUnknown = false;
   try{
     const r=await fetch('/api/recurring-personal-transactions',{credentials:'include'});
-    if(!r.ok) return;
+    if(!r.ok){
+      if(r.status !== 401 && r.status !== 403){
+        console.error('[Recurring] prefill failed (HTTP '+r.status+') — recurring status will be left unchanged');
+        window._txRecurringUnknown = true;
+        if(typeof notify === 'function') notify('Could not load recurring status — it will be left unchanged on save', true);
+      }
+      return;
+    }
     const profs=await r.json();
     const match=(profs||[]).find(p=>
       (p.description||'').trim()===(editTx.desc||'').trim() &&
@@ -3310,7 +3324,15 @@ async function _prefillRecurringForEdit(editTx){
     const ro=document.getElementById('tx-recurring-opts'); if(ro) ro.style.display='';
     const rf=document.getElementById('tx-freq'); if(rf) rf.value=match.frequency||'Monthly';
     const re=document.getElementById('tx-end-date'); if(re) re.value=(match.end_date||'').slice(0,10);
-  }catch(_){}
+  }catch(e){
+    // F96 class — the NETWORK-failure path (fetch rejected) lands HERE, not in the !r.ok branch
+    // above, and this catch used to be silent — so a dropped connection left the recurring state
+    // unloaded AND unflagged, and a save would then unlink the profile (data loss). Flag it here
+    // too so saveTransaction preserves the link on a network failure exactly as on a 500.
+    console.error('[Recurring] prefill errored — recurring status will be left unchanged:', e && e.message);
+    window._txRecurringUnknown = true;
+    if(typeof notify === 'function') notify('Could not load recurring status — it will be left unchanged on save', true);
+  }
 }
 // Next occurrence for a recurring personal transaction (mirrors server nextRunDate).
 function _txNextRun(dateStr,freq){
@@ -3341,7 +3363,14 @@ async function saveTransaction(){
     // row isn't duplicated), or cancel it if the toggle was cleared. The resulting
     // profileId is stamped onto the occurrence so the period-KPI math can exclude
     // this materialised row and project the profile instead (no double-count).
+    // F96 class: if the recurring state was never loaded (prefill fetch failed on an edit), do NOT
+    // touch the profile OR the link. `undefined` makes _persCommitTx omit recurring_profile_id, and
+    // the server PUT preserves an omitted field (server.js:1184) — so the existing recurrence
+    // survives a failed read instead of being silently cleared.
     let profileId = recurring ? (recurringId ? Number(recurringId) : null) : null;
+    if(editId && window._txRecurringUnknown){
+      profileId = undefined;   // leave the link exactly as it is
+    } else {
     try{
       if(recurring){
         const _body={description:desc,category:cat,amount,tx_type:type,frequency,status:'active',end_date:endDate,currency};
@@ -3362,6 +3391,7 @@ async function saveTransaction(){
         profileId=null;
       }
     }catch(re){notify('Saved, but recurring setup failed — '+(re.message||''),true);}
+    }
     // Commit the occurrence, linking it to (profileId) or clearing it from (null) the profile.
     await _persCommitTx({desc,amount,cat,type,date,editId:editId||null,recurringProfileId:profileId,currency});
     closeModal('transaction-modal');
@@ -4957,7 +4987,15 @@ let bankTxns=[];
 async function loadBankingFromDB(){
   try {
     const res = await fetch('/api/banking',{credentials:'include'});
-    if(!res.ok) return;
+    // F96 class: a non-ok response must NOT silently leave the Banking page empty, which reads as
+    // a genuinely empty banking history (money surface). 401/403 = logged out (auth gate owns it);
+    // anything else is a real failure — make it visible rather than fabricating emptiness.
+    if(!res.ok){
+      if(res.status === 401 || res.status === 403) return;
+      console.error('[Banking] load failed (HTTP '+res.status+')');
+      if(typeof notify === 'function') notify('Could not load banking — check your connection and retry', true);
+      return;
+    }
     const rows = await res.json();
     bankTxns = rows.map(r=>{
       // F23: read canonical tx_type/tx_date, falling back to legacy type/date rows.
@@ -4973,7 +5011,12 @@ async function loadBankingFromDB(){
       };
     });
     if(typeof renderBanking==='function') renderBanking();
-  } catch(e){ console.warn('[Banking] Load failed:',e.message); }
+  } catch(e){
+    // F96 class — NETWORK-failure path (fetch rejected). Same visibility as the !res.ok branch
+    // above: a dropped connection must not read as an empty banking history.
+    console.error('[Banking] load failed:', e && e.message);
+    if(typeof notify === 'function') notify('Could not load banking — check your connection and retry', true);
+  }
 }
 
 async function saveBankTxn(desc, amount, type, cat){

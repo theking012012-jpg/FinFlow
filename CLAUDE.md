@@ -293,6 +293,25 @@ A finding that names one surface when the defect spans six is not a finding. It 
 
 ---
 
+## Rule 14 — A fix is not verified until its failure path is executed
+
+Reasoning about what a fix will do is not verification. In this codebase, every conclusion
+reached by reasoning rather than execution has eventually been wrong: a null-entity clause called
+a double-count that wasn't; a timezone matrix that reported zero differences because the seed
+could not discriminate; a stale-detector whose regex never matched; four boot-fetch treatments
+shipped as pattern-mirrors.
+
+Mirroring a verified pattern is a reasonable way to WRITE a fix. It is not evidence the fix
+works. The pattern may not fit, the wiring may differ, the call site may not be reached.
+
+If executing a failure path is expensive, that expense is a TOOLING GAP to close, not a reason to
+skip the test. Generic failure injection exists precisely so this excuse cannot recur.
+
+Where a fix genuinely cannot be executed, it ships labelled UNEXECUTED — in the commit message
+and in the finding — so nobody later cites it as verified.
+
+---
+
 ## Reporting to the owner
 
 **Evidence, not conclusions.** "Neither leg filters status" is a claim that must be

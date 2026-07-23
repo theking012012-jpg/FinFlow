@@ -4219,7 +4219,15 @@ async function loadMRRData(){
   try {
     // Calculate MRR from real recurring invoices
     const res = await fetch('/api/recurring-invoices',{credentials:'include'});
-    if(!res.ok) return;
+    // F96 class: a non-ok response must NOT silently leave MRR/ARR reading $0, which looks like
+    // "no subscriptions" (money surface). 401/403 = logged out; anything else is a real failure —
+    // surface it and leave the cards on their prior/placeholder value rather than a fabricated $0.
+    if(!res.ok){
+      if(res.status === 401 || res.status === 403) return;
+      console.error('[MRR] load failed (HTTP '+res.status+')');
+      if(typeof notify === 'function') notify('Could not load MRR — check your connection and retry', true);
+      return;
+    }
     const rows = await res.json();
     const monthlyTotal = rows.filter(r=>r.status==='active').reduce((s,r)=>{
       const amt = parseFloat(r.amount)||0;
@@ -4235,7 +4243,12 @@ async function loadMRRData(){
       'arr-val': window._fmtMoney(arr,'$'),
     };
     Object.entries(els).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.textContent=val; });
-  } catch(e){ console.warn('[MRR] Load failed:',e.message); }
+  } catch(e){
+    // F96 class — NETWORK-failure path (fetch rejected). Same visibility as the !res.ok branch:
+    // a dropped connection must not read as "no subscriptions" ($0).
+    console.error('[MRR] load failed:', e && e.message);
+    if(typeof notify === 'function') notify('Could not load MRR — check your connection and retry', true);
+  }
 }
 
 let mrrChartInst=null;
@@ -7412,7 +7425,13 @@ function renderLinkedAccountant() {
 window.loadAccountantMessages = async function() {
   try {
     const res = await fetch('/api/accountant-messages', {credentials:'include'});
-    if (!res.ok) return;
+    // F96 class (lighter — not a money surface): don't swallow a real failure silently. 401/403 =
+    // logged out; anything else is logged so a failed load is diagnosable rather than looking like
+    // "no messages".
+    if (!res.ok){
+      if (res.status !== 401 && res.status !== 403) console.error('[AccountantMessages] load failed (HTTP '+res.status+')');
+      return;
+    }
     const msgs = await res.json();
     const el = document.getElementById('acct-chat-thread');
     const panel = document.getElementById('acct-chat-panel');

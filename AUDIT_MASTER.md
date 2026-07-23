@@ -1313,6 +1313,74 @@ It is invisible in source. Reading `_periodWindow` tells you a timezone is invol
 
 ---
 
+### F98 🟠 HIGH — The dashboard error state does not STICK: unguarded d-rev writers overwrite `_dashSetState('error')` — **NEW (2026-07-23, found while verifying the F96 fix)**
+**Status:** ✅ FIXED (`b4e8d81`) + VERIFIED by execution. `updateDashboard` now respects a `window._dashLoadError` latch (same shape as the adjacent `_fxPending` guard) and delegates to the error renderer instead of repainting `$0`. Verified in jsdom (`jsdom-spike.js`, `FAIL_ENTITIES`): d-rev settles on `—` and stays; happy path settles `$15.0K`; a successful-but-empty 200 shows "Create a business", never the error state.
+
+Verifying the F96 entities fix in jsdom with an injected `/api/entities` 500 showed, at 100 ms polling, the d-rev trajectory **`"—" → "$0"`** with `_ffAuthed === true` and `typeof _dashSetState === 'function'`. So `_dashSetState('error')` **does fire and does paint `—`** — and is then **overwritten** by a later render.
+
+The overwriters are unguarded: `updateDashboard` writes `d-rev` unconditionally from `computeRevenue()` (`app-main.js:2035`), and the FX overlay writes it at `:4564`. **No error-latch exists** — a grep for `_dashError`/`_dashState`/`dashboardError` finds nothing — so any render that runs after the error paint repaints `$0` from the (empty) client stores, with no awareness that a load failed.
+
+**Consequence:** the F67 pattern (`_dashSetState('error')`) works at the *end* of a data pipeline (loadEntityData, where nothing repaints after) but **not** at boot, where the whole render pipeline runs afterward. So F96's prescribed fix is necessary but insufficient on its own.
+**Course of action:** an error-latch every d-rev writer respects — e.g. `window._dashLoadError = true` on a failed load (cleared on success), checked by `updateDashboard` and the FX overlay so they paint/keep `—` instead of `$0` while it is set. Touches ~3 render sites, so it is a scoped multi-writer change, not a one-liner — hence held for a decision rather than folded silently into the F96 fix.
+**Done when:** with a failed entities load, d-rev stays `—` (error state) and does not get repainted to `$0` by any dashboard render.
+
+---
+
+### F96 🔴 CRITICAL — Silent `if(!res.ok) return` paints a complete, empty, error-free dashboard — a CLASS (owner-identified, confirmed) — **NEW (2026-07-23)**
+**Status:** ✅ FIXED + VERIFIED across the class (5 of 6 sites; `_loadPeriodCOGS` was already correct). Entities instance: `b4e8d81` (see F97/F98). Class treatments — banking, MRR, accountant, recurring-prefill: fixed this commit and **EXECUTED**, not pattern-mirrored, via `tests/harness/boot-failures-gate.js` (**19/19**), each failed on BOTH the status (`!res.ok`) and network (`catch`) paths — the network path was a real gap reasoning had missed (the prefill catch was silent, so it would still have lost data on a dropped connection). The prefill test drives the real modal+save and asserts against the DATABASE that `recurring_profile_id` is unchanged and that the PUT body omits the field.
+
+> ⚠️ **Correction to this row's earlier wording** (which called the four treatments "pattern-mirrors, not individually failure-injected"): they are now each executed. Generic failure injection (`jsdomBoot.js`, one line per endpoint, status or network) closed the tooling gap — see **Rule 14**.
+
+**The pattern:** a client loader does `const res = await fetch(...); if(!res.ok) return;`. A non-ok response is **not** an exception, so the surrounding `try/catch` never fires and **nothing is logged**. The loader returns as if there were simply no data. The user sees an empty surface indistinguishable from a genuinely empty account, with no error and no retry.
+
+**The worst instance — `_loadEntitiesFromDBImpl` (`index.html:5116`).** If `/api/entities` returns non-ok:
+- `ENTITIES` stays empty;
+- `loadEntityData()` (line 5176) is never reached, so **no financial data loads at all**;
+- `sb-brand-name` (line 5157) is never written, so the sidebar keeps its **static HTML default** — the literal text **"Create a business"** (`index.html:1091`);
+- the outer `catch` (5216) only `console.warn`s, and only on a thrown exception — a non-ok response doesn't throw, so **nothing is logged**.
+
+Result: a complete, normal-looking, **totally empty** dashboard that is indistinguishable from a brand-new account — for a user who may have a full set of books. This is the F31/F62/F67 class (fake-zero vs honest-error), client side.
+
+#### The class — all six sites, and what the user sees when the fetch fails
+
+| Site | Loader | Endpoint | User sees on non-ok | Money? |
+|---|---|---|---|---|
+| `index.html:5116` | `_loadEntitiesFromDBImpl` | `/api/entities` | **entire dashboard empty + "Create a business" sidebar** | ⚠️ all |
+| `app-main.js:4948` | `loadBankingFromDB` | `/api/banking` | Banking page shows no transactions; in/out/net read empty — looks like a genuinely empty banking history | ⚠️ yes |
+| `index.html:4222` | `loadMRRData` | `/api/recurring-invoices` | MRR/ARR cards read $0/stale — looks like "no subscriptions" | ⚠️ yes |
+| `index.html:7373` | `loadAccountantMessages` | `/api/accountant-messages` | chat panel stays hidden (the `display='block'` is after the return); looks like no messages / no accountant | no |
+| `app-main.js:3286` | `_prefillRecurringForEdit` | `/api/recurring-personal-transactions` | edit modal's "recurring" toggle defaults to OFF — a failed fetch looks identical to "not recurring"; user may silently un-recur a transaction | no (but misleading) |
+
+**The correct pattern, for contrast — `_loadPeriodCOGS` (`app-main.js:4519`).** `if(!r.ok) return;` here is **right**, and its comment says why: *"keep prior `_cogsTotal`; honest-stale > fake-zero."* It preserves the last good value rather than fabricating a zero, and repaints nothing. This is the intended shape when a refresh fails: **stale-but-true, never fake-empty.** Leave it.
+
+**The distinction that decides treatment:** a loader that would render an **empty state indistinguishable from real emptiness** on failure needs the failure made visible (throw → `console.error` → a surface-appropriate error state). A loader that **keeps the prior true value** (4519) is already correct. The instrument differs per surface — `_dashSetState('error')` fits the dashboard (entities); Banking and MRR need their own error affordance, not the dashboard's; the accountant panel and the recurring-prefill modal warrant at least a `console.error` and, for the modal, arguably nothing more since it fabricates no figure.
+**Course of action:** fix entities now (with F97). Report the other four for an owner treatment decision — which is this row. Do **not** blanket-convert all five: the recurring-prefill (3286) fabricates no money figure and the accountant panel (7373) is not a money surface, so they may warrant lighter handling than the money surfaces (4948, 4222).
+**Done when:** every loader that would paint a fake-empty money surface on failure makes the failure visible and distinguishable from real emptiness; 4519's stale-preserving pattern is left intact.
+
+---
+
+### F97 🔴 CRITICAL — The boot memo latches a FAILED entities load forever; only a hard refresh recovers — **NEW (2026-07-23, owner-identified, confirmed)**
+**Status:** ✅ FIXED (`b4e8d81`) + VERIFIED by execution. `loadEntitiesFromDB` now un-latches on any incomplete load (the impl resolves `true`=complete / `false`=failed), not only a missing builder. Verified in jsdom: after an injected `/api/entities` 500, `window._ffBootPromise` is `null` (un-latched) so the next trigger re-fetches. Rule 1 confirmed against `wiring-postgres.js:347` — the wrapper delegates to this copy.
+
+`loadEntitiesFromDB` (`index.html:5231`) memoizes the first boot load in `window._ffBootPromise` (the F50 loader-storm dedupe). It un-latches an incomplete load so a later trigger can re-run a complete one — but the un-latch condition is:
+```js
+// index.html:5243-5247
+p.then(function(){
+  if(typeof window._buildMonthlyArrays !== 'function' && window._ffBootPromise === p){
+    window._ffBootPromise = null;   // incomplete → don't hand this empty load to the next caller
+  }
+});
+```
+It un-latches **only when the deferred builder was missing**. A load that failed because the **fetch failed** (F96: `if(!res.ok) return`), with the bundle already present (`_buildMonthlyArrays` is a function), does **not** meet the condition — so the dead, empty promise **stays latched**. Every subsequent `loadEntitiesFromDB()` returns the memoized empty promise and never re-fetches. That is why the empty state persists until a hard refresh.
+
+The comment directly above it (*"Pre-fix the memo latched that empty load forever"*) records that this was fixed for **one** cause (builder missing) and not the **other** (fetch failed) — the instance-not-class pattern (Rule 13), in the very code that was meant to fix it.
+
+**Rule 1 note (verified, not assumed):** `window.loadEntitiesFromDB` is reassigned at `finflow-api-wiring-postgres.js:348`, which loads after `index.html`. It is a **wrapper**, not a replacement — `const _origLoadEnt = loadEntitiesFromDB; window.loadEntitiesFromDB = async f => { await _origLoadEnt(f); …vendors/bills }` — so the memo in the `index.html` copy **is** on the live path (one of the 5-of-28 wrapper overrides where editing the original takes effect). Editing `index.html:5231` is correct here; this was checked against the wiring source before proposing the fix, precisely because editing a shadowed copy is this repo's most expensive trap.
+**Course of action:** un-latch on **any** incomplete load, not just a missing builder — if the load did not populate `ENTITIES`, the memo must not latch. Requires F96's impl to signal success vs failure (it now returns `true`/`false`).
+**Done when:** a failed entities load un-latches the memo, so the next trigger re-fetches instead of returning the dead promise; a genuinely-empty account (a real, complete load) still latches normally.
+
+---
+
 ### F95 🔴 CRITICAL — Two disjoint money-in stores; Cash Flow is BLIND to one of them, and a real payment's cash timing depends on the entry path — **NEW (2026-07-23, read-only verified)**
 **Status:** OPEN. Live. Same class as **F84** (the entry path decides whether the figure is right) and entangled with **F92** (`recalcInvoiceStatus` side-effect). Answers the F86 live question: **yes, a real payment can vanish from — or be mistimed in — Cash Flow depending on how it was entered.**
 

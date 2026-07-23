@@ -35,6 +35,12 @@ const INVOICES = [
   { key: 'INV-3', issue_date: '2026-06-20', amount: 3000, status: 'pending', amount_paid: 0,    client: 'Customer B' },
   { key: 'INV-4', issue_date: '2026-06-25', amount: 9999, status: 'draft',   amount_paid: 0,    client: 'Customer A' },
   { key: 'INV-5', issue_date: '2026-07-05', amount: 4000, status: 'overdue', amount_paid: 0,    client: 'Customer B' },
+  // INV-6 — FUTURE-DATED (after the pinned clock 2026-07-25, inside FY2026, inside Q3). Under
+  // decision D2 it is SCHEDULED, not issued: it must contribute 0 to every figure and to AR,
+  // and Customer B's balance must stay 7,000. The current code has no "not after today" filter,
+  // so it recognises INV-6 — that is the A9 discriminator (buggy: FY 15,000 / Q3 9,000 / AR
+  // 13,500 / Customer B 12,000). Recognised status so the leak, if present, is unambiguous.
+  { key: 'INV-6', issue_date: '2026-09-01', amount: 5000, status: 'pending', amount_paid: 0,    client: 'Customer B' },
 ];
 
 // ── Payment events (VERIFICATION § Payment events) ───────────────────────────
@@ -106,6 +112,10 @@ const ROSTER = [
 //      independently and a divergence is a FINDING; VERIFICATION specifies no divergence test,
 //      so the neutral choice is agreement. If they ever disagree in a run, that is real.
 const PAYROLL_RUNS = [
+  // R0 — an APRIL run (approved, so recognised) so Q2 payroll (5,100) != Jun payroll (4,200),
+  // which were equal before because no run sat in Apr/May. Approved but not paid ⇒ no cash out,
+  // so cash flow is unchanged. Σlines 900, distinct from every other run total.
+  { key: 'R0', period: '2026-04', run_date: '2026-04-30', status: 'approved', lines: [{ gross: 900 }] },
   { key: 'R1', period: '2026-06', run_date: '2026-06-30', status: 'approved', lines: [{ gross: 4200 }] },
   { key: 'R2', period: '2026-07', run_date: '2026-07-15', status: 'draft',    lines: [{ gross: 3300 }] },
   { key: 'R3', period: '2026-07', run_date: '2026-07-20', status: 'paid',     lines: [{ gross: 1100 }] },
@@ -113,6 +123,10 @@ const PAYROLL_RUNS = [
 
 // ── Bills / AP (VERIFICATION § Bills / AP) ───────────────────────────────────
 const BILLS = [
+  // B0 — an APRIL bill so Q2 bills (1,100) != Jun bills (800), which were equal before because
+  // no bill sat in Apr/May. Unpaid, so it adds to AP and to Q2/FY expense but produces no cash
+  // out (Rule 4: distinguishes quarter-vs-month in the AP leg). Amount 300, distinct from 800/500.
+  { key: 'B0', issue_date: '2026-04-10', amount: 300, status: 'unpaid', amount_paid: 0,   vendor: 'Vendor Zero' },
   { key: 'B1', issue_date: '2026-06-05', amount: 800, status: 'unpaid', amount_paid: 0,   vendor: 'Vendor One' },
   { key: 'B2', issue_date: '2026-07-01', amount: 500, status: 'paid',   amount_paid: 500, vendor: 'Vendor Two' },
 ];
@@ -135,16 +149,19 @@ const HOLDINGS = [
 // Transcribed from VERIFICATION § EXPECTED VALUES. These are NOT asserted against the app here
 // (that is step 3) — the step-2 gate only proves the SEED matches the document.
 const EXPECTED = {
-  invoiceCount: 5,
-  invoiceTotal: 1000 + 2000 + 3000 + 9999 + 4000,
-  arOutstanding: 8500,          // Σ max(0, amount − amount_paid) over recognised (draft excluded)
-  customerBalances: { A: 1500, B: 7000 },
+  invoiceCount: 6,              // INV-1..6 (INV-6 future-dated, present in the table)
+  invoiceTotal: 1000 + 2000 + 3000 + 9999 + 4000 + 5000,
+  // AR is computed the D2-CORRECT way: future-dated INV-6 is scheduled, not issued, so it is
+  // excluded (Σ max(0, amount − amount_paid) over recognised, non-draft, non-future). The app
+  // does NOT yet implement that exclusion — that gap is the A9 discriminator in step 3.
+  arOutstanding: 8500,
+  customerBalances: { A: 1500, B: 7000 },   // INV-6 (Customer B) contributes 0 under D2
   expenseCount: 4,
   expenseTotal: 1600,
-  billCount: 2,
-  apOutstanding: 800,
-  payrollRunCount: 3,
-  payrollLineTotal: 4200 + 3300 + 1100,
+  billCount: 3,                // B0, B1, B2
+  apOutstanding: 1100,         // B0 300 (unpaid) + B1 800 (unpaid); B2 paid ⇒ 0
+  payrollRunCount: 4,          // R0, R1, R2, R3
+  payrollLineTotal: 900 + 4200 + 3300 + 1100,
   movementCount: PURCHASES.length + SALES.length,
   holdingsValue: 6000,
   rosterMonthly: 5000,

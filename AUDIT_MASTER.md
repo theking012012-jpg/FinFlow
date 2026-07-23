@@ -92,10 +92,9 @@ the decision**, and nobody ever ruled on it.
 |---|---|---|---|
 | **F86** | Does A7.4 "Payments Received" mean `invoice_payments` (settlements) or `payments_received` (the page's own table)? | A7.4, and possibly Cash Flow cash-in A7.9–11 | the seed's current choice, unexamined |
 | **D1 scope** | Which taxes a combined figure would cover (corporation tax, VAT, PAYE, NIS) | the D1 implementation | — |
-| **F91 seed** | Add April and Aug/Sep rows to kill the remaining maskers, accepting re-derived Q2/Q3/FY expectations? | strength of every Q2/Q3 check | maskers persist |
 | **F90 sequencing** | Audit trail before launch, as rated? | launch order | — |
 
-*(F93 — future-dated recognition — was decided 2026-07-23 and is now **STANDING DECISION D2**.)*
+*(F93 — future-dated recognition — decided 2026-07-23, now **STANDING DECISION D2**. F91 seed revision — Apr rows + INV-6 — **approved and applied 2026-07-23**.)*
 
 ---
 
@@ -107,7 +106,7 @@ read as stronger evidence than it is, which is the failure `VERIFICATION.md` exi
 
 | # | Limitation | What a green result does NOT prove |
 |---|---|---|
-| **F91** | Aug/Sep carry no seeded rows, so **Q3 == Jul on all six figures**; Q2 bills == Jun bills and Q2 payroll == Jun payroll | that quarter logic works at all — the entire Q3 column is satisfied by code that ignores quarters |
+| **F91** | **Q3 == Jul on all six figures** — Aug/Sep are future (D2), so Q3 legitimately holds only July. (Q2-vs-Jun maskers were FIXED by the Apr rows.) | that a quarter with later-month activity aggregates correctly — but Q2 now tests that. Q3==Jul is correct here, and load-bearing for A9.2 |
 | **F83** | The harness exits 0 even when checks fail | nothing about CI; a red run and a green run are indistinguishable to any automated caller |
 | **Seed via SQL** | The seed is written by direct SQL, not the POST endpoints (forced by `run_date = NOW()`, F85) | that invoice/expense/bill **creation** works — the seed exercises the schema, not the write paths |
 | **A1.13–15** | Investments asserts `shares × stored price`; production overwrites with live quotes before painting | that live price refresh works |
@@ -989,20 +988,27 @@ Stating this explicitly, because "incomplete" without a completion method is an 
 
 ---
 
-### F91 🟡 MEDIUM — Three seed maskers remain: Q3 is indistinguishable from July, and two Q2 legs from June — **NEW (2026-07-23, found by the adjacent-period sweep)**
-**Status:** OPEN — a **known limitation of `VERIFICATION.md`**, recorded so a green Q2/Q3 is not read as more than it is. Also written into `VERIFICATION.md` beside the seed.
+### F91 🟢 LOW — Seed maskers: two FIXED by the Apr rows; Q3==Jul RECLASSIFIED as correct under D2 — **UPDATED 2026-07-23 (seed revision applied + approved)**
+**Status:** RESOLVED as far as it can be. Maskers 2 and 3 are fixed. Masker 1 is no longer a masker — see the reclassification. Downgraded 🟡→🟢.
 
-After the Rule 4 revision every leg differs month to month (revenue 1,000/5,000/4,000 · COGS 400/200/800 · manual 600/750/250 · bills 0/800/500 · payroll 0/4,200/1,100 · cash in 1,000/500/0 · cash out 600/750/1,850). Three equalities survive:
+The adjacent-period sweep found three surviving equalities. Their disposition after the approved seed revision (B0 Apr bill 300, R0 Apr run 900, INV-6 future invoice):
 
-| # | Masker | Value | Why it exists | What it hides |
-|---|---|---|---|---|
-| 1 | **Q3 == Jul on ALL SIX figures** | rev 4,000 · COGS 800 · manual 250 · bills 500 · payroll 1,100 · cash out 1,850 | Aug and Sep carry **no seeded rows**, so Q3 contains only July | A "return the anchor month instead of the quarter" bug is **completely undetectable at Q3** |
-| 2 | Q2 bills == Jun bills | 800 | no April or May bills | quarter-vs-month confusion in the AP leg |
-| 3 | Q2 payroll == Jun payroll | 4,200 | no April or May payroll runs | quarter-vs-month confusion in the payroll leg |
+| # | Masker | Was | Disposition |
+|---|---|---|---|
+| 2 | Q2 bills == Jun bills | both 800 | **FIXED** — B0 (Apr, 300) makes Q2 bills 1,100 ≠ Jun 800 |
+| 3 | Q2 payroll == Jun payroll | both 4,200 | **FIXED** — R0 (Apr, approved 900) makes Q2 payroll 5,100 ≠ Jun 4,200 |
+| 1 | Q3 == Jul on all six | — | **RECLASSIFIED — correct under D2, not a masker** |
 
-Masker 1 is the serious one: **all six** Q3 figures are identical to July's, so the entire Q3 column is satisfied by code that ignores quarters.
-**Course of action:** add at least one row in **August or September** (fixes 1) and one in **April** (fixes 2 and 3). Both change Q2/Q3/FY expected values, so this is a seed revision requiring re-derivation — owner-gated, not done.
-**Done when:** no adjacent-period or quarter-vs-month pair shares a value in any leg, and the expected values are re-derived and re-verified.
+#### Masker 1 reclassified — Q3 == Jul is the RIGHT answer at this clock
+
+The obvious fix — a recognised row in Aug or Sep to make Q3 ≠ Jul — is **impossible under decision D2**. The pinned clock is 2026-07-25, so Aug and Sep are in the **future**, and a future-dated document contributes 0 (scheduled, not issued). There is no recognised activity to place in Aug/Sep, so **Q3 genuinely contains only July** and Q3 == Jul is the correct result, not a bug being hidden.
+
+Two things make this a clean disposition rather than a gap left open:
+1. **The quarter-vs-month bug is now caught at Q2**, which discriminates in every leg once B0/R0 land (Q2 ≠ Jun for bills, payroll, opex and net).
+2. **With INV-6 present, Q3 == Jul becomes a live assertion, not an artifact.** Correct D2 behaviour gives Q3 revenue = 4,000 (= Jul); the D2 *violation* gives Q3 = 9,000 (≠ Jul). So the equality now tests something real — a divergence would signal the future-recognition bug (A9.2).
+
+Moving Q3's later months into the past would require a different pinned clock, which conflicts with F82 (July must remain an incomplete month). At this clock, Q3 == Jul is a property to preserve, not remove.
+**Done:** maskers 2 and 3 eliminated; masker 1 reclassified as correct-under-D2 and load-bearing for A9.2. No further seed change sought for this finding.
 
 ---
 

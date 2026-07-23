@@ -205,18 +205,25 @@ async function main() {
 
     // ── 6 · Derived seed arithmetic ──────────────────────────────────────────
     console.log('\n── 6 · Seed arithmetic (the seed itself, not the app) ────────────────────');
+    // D2-CORRECT AR: exclude drafts AND future-dated (scheduled, not issued) invoices. The
+    // future filter compares DATE STRINGS — issue_date <= the pinned 'today' — which is also
+    // the Rule-10-correct comparison (no Date objects, no timezone). This is the harness
+    // computing AR the RIGHT way; the app does not, and step 3's A9 catches that divergence.
     const { rows: [ar] } = await c.query(`
       SELECT COALESCE(SUM(GREATEST(0, (data->>'amount')::numeric
                                     - COALESCE((data->>'amount_paid')::numeric,0))),0) AS ar
-        FROM invoices WHERE lower(data->>'status') <> 'draft'`);
-    check('AR outstanding = Σ max(0, amount − paid) over non-draft', num(ar.ar), D.EXPECTED.arOutstanding);
+        FROM invoices
+       WHERE lower(data->>'status') <> 'draft'
+         AND (data->>'issue_date') <= $1`, [D.TODAY_LOCAL]);
+    check('AR outstanding = Σ max(0, amount − paid) over non-draft, non-future (D2)', num(ar.ar), D.EXPECTED.arOutstanding);
 
     for (const [key, expected] of Object.entries(D.EXPECTED.customerBalances)) {
       const { rows: [cb] } = await c.query(`
         SELECT COALESCE(SUM(GREATEST(0, (data->>'amount')::numeric
                                       - COALESCE((data->>'amount_paid')::numeric,0))),0) AS bal
           FROM invoices
-         WHERE data->>'client' = $1 AND lower(data->>'status') <> 'draft'`, [`Customer ${key}`]);
+         WHERE data->>'client' = $1 AND lower(data->>'status') <> 'draft'
+           AND (data->>'issue_date') <= $2`, [`Customer ${key}`, D.TODAY_LOCAL]);
       check(`Customer ${key} balance`, num(cb.bal), expected);
     }
     check('Customer A + B == AR outstanding (the cross-check)',

@@ -164,8 +164,8 @@ async function main() {
       const ar = rows.filter(r => RECOGNIZED.has(String(r.status || '').toLowerCase()))
         .reduce((s, r) => s + Math.max(0, (parseFloat(r.amount) || 0) - (parseFloat(r.amount_paid) || 0)), 0);
       check('A7.1', 'invoices total outstanding', Math.round(ar * 100) / 100, 8500);
-      check('A7.2', 'invoice rows returned (all 5 stored; draft excluded from revenue not the list)',
-        rows.length, 5);
+      check('A7.2', 'invoice rows returned (all 6 stored; draft excluded from revenue not the list)',
+        rows.length, 6);
       check('A7.3', 'exactly one overdue invoice (subtitle must not read "all paid")',
         rows.filter(r => String(r.status).toLowerCase() === 'overdue').length, 1);
     } else {
@@ -176,7 +176,7 @@ async function main() {
     if (bills.status === 200) {
       const ap = (bills.json || []).reduce(
         (s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
-      check('A7.20', 'bills / AP outstanding', Math.round(ap * 100) / 100, 800);
+      check('A7.20', 'bills / AP outstanding', Math.round(ap * 100) / 100, 1100);
     } else {
       check('A7.20', 'GET /api/bills', `HTTP ${bills.status}`, 200);
     }

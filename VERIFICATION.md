@@ -130,6 +130,7 @@ Basis: **ACCRUAL, ISSUE-BASED.** Recognised: `pending`, `overdue`, `partial`, `p
 | INV-3 | 2026-06-20 | 3,000 | pending | 0 | Customer B |
 | INV-4 | 2026-06-25 | **9,999** | **draft** | 0 | Customer A |
 | INV-5 | 2026-07-05 | 4,000 | overdue | 0 | Customer B |
+| INV-6 | **2026-09-01** | 5,000 | pending | 0 | Customer B |
 
 *Discriminates:* INV-4 is a large draft — a status leak makes June read 14,999 instead of
 5,000. INV-2 is partial, so the old buggy AR formula (full amount, drafts included) gives
@@ -140,7 +141,7 @@ Basis: **ACCRUAL, ISSUE-BASED.** Recognised: `pending`, `overdue`, `partial`, `p
 | Customer | Invoices | Expected balance |
 |---|---|---|
 | Customer A | INV-1, INV-2, INV-4 (draft) | **1,500** |
-| Customer B | INV-3, INV-5 | **7,000** |
+| Customer B | INV-3, INV-5, INV-6 (future) | **7,000** |
 
 *Discriminates:* Customer A carries all three hard cases at once — a settled invoice
 (INV-1, contributes 0 because `amount_paid == amount`), a partial (INV-2, contributes the
@@ -214,6 +215,7 @@ contribute **zero**.
 
 | Run | run_date | status | Σ lines |
 |---|---|---|---|
+| R0 | 2026-04-30 | **approved** | 900 |
 | R1 | 2026-06-30 | **approved** | 4,200 |
 | R2 | 2026-07-15 | **draft** | 3,300 |
 | R3 | 2026-07-20 | **paid** | 1,100 |
@@ -225,6 +227,7 @@ months would be ~35,000 — unmissable. R3 being `paid` is what catches the trap
 ## Bills / AP
 | ID | date | amount | status |
 |---|---|---|---|
+| B0 | 2026-04-10 | 300 | unpaid |
 | B1 | 2026-06-05 | 800 | unpaid |
 | B2 | 2026-07-01 | 500 | paid (paid 2026-07-05) |
 
@@ -289,26 +292,27 @@ produces a different number rather than the same 6,000.
 | May 2026 | 1,000 | 400 | 600 | 0 | 0 |
 | **Jun 2026** | **5,000** | **200** | **750** | **800** | **4,200** |
 | **Jul 2026** | **4,000** | **800** | **250** | **500** | **1,100** |
-| Q2 (Apr–Jun) | 6,000 | 600 | 1,350 | 800 | 4,200 |
+| Q2 (Apr–Jun) | 6,000 | 600 | 1,350 | 1,100 | 5,100 |
 | Q3 (Jul–Sep) | 4,000 | 800 | 250 | 500 | 1,100 |
-| **FY 2026** | **10,000** | **1,400** | **1,600** | **1,300** | **5,300** |
+| **FY 2026** | **10,000** | **1,400** | **1,600** | **1,600** | **6,200** |
 
-> ### ⚠️ KNOWN SEED LIMITATION — Q3 and July are indistinguishable (F91)
+> ### ℹ️ Q3 == Jul is CORRECT under D2, not a masker (F91, resolved 2026-07-23)
 >
-> Aug and Sep carry **no seeded rows**, so Q3 contains only July and **all six Q3 figures are
-> identical to July** (rev 4,000 · COGS 800 · manual 250 · bills 500 · payroll 1,100 · cash out
-> 1,850). A "return the anchor month instead of the quarter" bug is therefore **completely
-> undetectable at Q3** — the whole column is satisfied by code that ignores quarters.
+> All six Q3 figures equal July's (rev 4,000 · COGS 800 · manual 250 · bills 500 · payroll 1,100
+> · cash out 1,850). This is **not** a seed weakness. The pinned clock is 2026-07-25, so Aug and
+> Sep are in the **future**, and under decision **D2** a future-dated document contributes 0. Q3
+> therefore legitimately holds only July's recognised activity.
 >
-> Two smaller cases: **Q2 bills == Jun bills (800)** and **Q2 payroll == Jun payroll (4,200)**,
-> because April and May carry no bills and no payroll runs.
+> The quarter-vs-month aggregation bug it *could* mask is instead caught at **Q2** (Apr–Jun, all
+> past), which discriminates in every leg after the Apr seed rows: **Q2 bills 1,100 ≠ Jun 800**
+> and **Q2 payroll 5,100 ≠ Jun 4,200** (B0 and R0). And with INV-6 present, Q3 == Jul is now a
+> live assertion — a D2 violation would make Q3 revenue read 9,000 instead of 4,000 (**A9.2**).
 >
-> **A green Q2 or Q3 is weaker than a green Jun or Jul.** Fixing this needs a row in Aug or Sep
-> and one in April, which moves the Q2/Q3/FY expected values — a seed revision requiring
-> re-derivation, tracked as **F91** and not yet done.
+> Making Q3 ≠ Jul would require moving the clock so Aug/Sep are past, which conflicts with **F82**
+> (July must stay incomplete). At this clock, Q3 == Jul is a property to keep.
 
 **AR Outstanding (all-time, balance-sheet — deliberately ignores the period selector): 8,500**
-**AP Outstanding (all-time): 800**
+**AP Outstanding (all-time): 1,100**  *(B0 300 + B1 800; B2 paid)*
 
 ## P&L (accrual) — decisions 1 and 2
 `opex = manual expenses + bills issued + payroll` — payments made excluded (settlement).
@@ -318,9 +322,9 @@ produces a different number rather than the same 6,000.
 | May 2026 | 600 | 600 | **0** |
 | Jun 2026 | 4,800 | 5,750 | **−950** |
 | Jul 2026 | 3,200 | 1,850 | **1,350** |
-| Q2 | 5,400 | 6,350 | **−950** |
+| Q2 | 5,400 | 7,550 | **−2,150** |
 | Q3 | 3,200 | 1,850 | **1,350** |
-| FY 2026 | 8,600 | 8,200 | **400** |
+| FY 2026 | 8,600 | 9,400 | **−800** |
 
 *Deliberate:* June is a **loss** and May is exactly **zero** — both test sign handling and
 zero-vs-empty rendering, which an all-positive seed never exercises.
@@ -385,12 +389,12 @@ during the sweep.
 ## A5 · Server engine — `/api/reports` and `/books` — 18
 | # | Figure | Jun | Jul | FY | Result |
 |---|---|---|---|---|---|
-| A5.1–3 | revenue | 5,000 | 4,000 | 10,000 | PASS (2026-07-23 · seed c882b311) |
-| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (2026-07-23 · seed c882b311) |
-| A5.7–9 | grossProfit | 4,800 | 3,200 | 8,600 | PASS (2026-07-23 · seed c882b311) |
-| A5.10–12 | opex | 5,750 | 1,850 | 8,200 | **FAIL** — actual 5,600 / 4,650 / 11,500 (2026-07-23 · seed c882b311) |
-| A5.13–15 | netProfit | −950 | 1,350 | 400 | **FAIL** — actual -800 / -1,450 / -2,900 (2026-07-23 · seed c882b311) |
-| A5.16–18 | outstanding | 8,500 | 8,500 | 8,500 | PASS (2026-07-23 · seed c882b311) |
+| A5.1–3 | revenue | 5,000 | 4,000 | 10,000 | **FAIL** — actual 5,000 / 4,000 / 15,000 (2026-07-23 · seed 69071491) |
+| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (2026-07-23 · seed 69071491) |
+| A5.7–9 | grossProfit | 4,800 | 3,200 | 8,600 | **FAIL** — actual 4,800 / 3,200 / 13,600 (2026-07-23 · seed 69071491) |
+| A5.10–12 | opex | 5,750 | 1,850 | 9,400 | **FAIL** — actual 5,600 / 4,650 / 12,700 (2026-07-23 · seed 69071491) |
+| A5.13–15 | netProfit | −950 | 1,350 | −800 | **FAIL** — actual -800 / -1,450 / 900 (2026-07-23 · seed 69071491) |
+| A5.16–18 | outstanding | 8,500 | 8,500 | 8,500 | **FAIL** — actual 13,500 / 13,500 / 13,500 (2026-07-23 · seed 69071491) |
 ## A6 · Cross-engine reconciliation — 18
 Client-displayed figure **==** server figure, six figures × three periods.
 
@@ -413,7 +417,7 @@ Client-displayed figure **==** server figure, six figures × three periods.
 | A7.15–17 | Cash Flow | net — Jun/Jul/FY | −250 / −1,850 / −1,700 | |
 | A7.18 | Cash Flow | FY cash out != FY opex | 3,200 != 8,200 | |
 | A7.19 | Banking | in/out/net for **selected period** (no MTD card) | matches A7.9–17 for that period | |
-| A7.20 | Bills / AP | outstanding | 800 | |
+| A7.20 | Bills / AP | outstanding | 1,100 | |
 | A7.21 | Payroll | Monthly Payroll card | 5,000 (roster = template, informational only) | |
 | A7.22 | Payroll | run history dates | formatted, correct **local** day | |
 | A7.23 | Tax | YTD paid | **absent, or the literal text "Not tracked". ANY number = FAIL** (see below) | |
@@ -514,17 +518,18 @@ boundaries, and therefore whether any figure moves. Only execution answers that.
 **Standing decision D2:** a document dated in the future is *scheduled*, not issued, and
 contributes **ZERO to every figure — including Year — until its date arrives.**
 
-Requires a seed row that does not exist yet: **INV-6, a future-dated invoice** dated after the
-pinned clock (2026-07-25) but inside FY2026 — proposed `2026-09-01`, amount `5,000`, assigned to
-a customer. Folded into the held seed revision (F91 + D2c); expected values below assume the
-**correct** (D2) behaviour, so a green A9 requires recognition to be withheld.
+The seed now carries **INV-6** — a future-dated invoice, `2026-09-01`, amount `5,000`, Customer B
+(applied 2026-07-23). Expected values below assume the **correct** (D2) behaviour, so a green A9
+requires recognition to be withheld. **A9 is not yet automated in the gate** — the step-3 probe
+covers A5/A7, and INV-6's leak already surfaces there (FY revenue and AR read high); dedicated
+A9 assertions come with the client probe.
 
 | # | Check | Expected | Result |
 |---|---|---|---|
-| A9.1 | Future invoice contributes 0 to **FY** revenue | FY revenue unchanged (10,000, not 15,000) | ⬜ seed row pending |
-| A9.2 | Contributes 0 to its **quarter** (Q3, Jul–Sep) | Q3 revenue unchanged (4,000, not 9,000) | ⬜ seed row pending |
-| A9.3 | Contributes 0 to **AR outstanding** | 8,500, not 13,500 | ⬜ seed row pending |
-| A9.4 | Appears in a visible **scheduled** state — excluded from totals but NOT invisible | labelled, not vanished (**F94**) | ⬜ seed row pending |
+| A9.1 | Future invoice contributes 0 to **FY** revenue | FY revenue unchanged (10,000, not 15,000) | ⬜ not yet automated |
+| A9.2 | Contributes 0 to its **quarter** (Q3, Jul–Sep) | Q3 revenue unchanged (4,000, not 9,000) | ⬜ not yet automated |
+| A9.3 | Contributes 0 to **AR outstanding** | 8,500, not 13,500 | ⬜ not yet automated |
+| A9.4 | Appears in a visible **scheduled** state — excluded from totals but NOT invisible | labelled, not vanished (**F94**) | ⬜ not yet automated |
 
 > ⚠️ **A9 currently FAILS by design.** The app has no upper date bound and no scheduled state
 > (D2 consequences a and F94), and the recognition legs have no "not after today" filter — so the

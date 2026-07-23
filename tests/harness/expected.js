@@ -40,13 +40,17 @@ const LABELS = {
 };
 
 // ── Components (VERIFICATION.md § EXPECTED VALUES → Components) ──────────────
+// Seed revision 2026-07-23 (F91 + D2c): added B0 (Apr bill 300, unpaid), R0 (Apr payroll run
+// 900, approved) and INV-6 (future-dated invoice, contributes 0 under D2). Only Q2 and FY move —
+// every monthly figure is unchanged. Q2 bills 800→1,100 and payroll 4,200→5,100 (April rows now
+// distinct from June); FY bills 1,300→1,600 and payroll 5,300→6,200.
 const COMPONENTS = {
   may: { revenue: 1000, cogs: 400, manualExpenses: 600, billsIssued: 0, payroll: 0 },
   jun: { revenue: 5000, cogs: 200, manualExpenses: 750, billsIssued: 800, payroll: 4200 },
   jul: { revenue: 4000, cogs: 800, manualExpenses: 250, billsIssued: 500, payroll: 1100 },
-  q2: { revenue: 6000, cogs: 600, manualExpenses: 1350, billsIssued: 800, payroll: 4200 },
+  q2: { revenue: 6000, cogs: 600, manualExpenses: 1350, billsIssued: 1100, payroll: 5100 },
   q3: { revenue: 4000, cogs: 800, manualExpenses: 250, billsIssued: 500, payroll: 1100 },
-  fy: { revenue: 10000, cogs: 1400, manualExpenses: 1600, billsIssued: 1300, payroll: 5300 },
+  fy: { revenue: 10000, cogs: 1400, manualExpenses: 1600, billsIssued: 1600, payroll: 6200 },
 };
 
 // ── P&L, accrual (VERIFICATION.md § P&L) ────────────────────────────────────
@@ -54,9 +58,9 @@ const PL = {
   may: { grossProfit: 600, opex: 600, netProfit: 0 },
   jun: { grossProfit: 4800, opex: 5750, netProfit: -950 },
   jul: { grossProfit: 3200, opex: 1850, netProfit: 1350 },
-  q2: { grossProfit: 5400, opex: 6350, netProfit: -950 },
+  q2: { grossProfit: 5400, opex: 7550, netProfit: -2150 },
   q3: { grossProfit: 3200, opex: 1850, netProfit: 1350 },
-  fy: { grossProfit: 8600, opex: 8200, netProfit: 400 },
+  fy: { grossProfit: 8600, opex: 9400, netProfit: -800 },
 };
 
 // ── Cash flow, genuine cash basis (decision 3) ───────────────────────────────
@@ -71,15 +75,15 @@ const CASHFLOW = {
 
 // ── Balance-sheet / all-time figures (no period window by design) ────────────
 const BALANCES = {
-  arOutstanding: 8500,
-  apOutstanding: 800,
+  arOutstanding: 8500,           // INV-6 (future) excluded under D2
+  apOutstanding: 1100,           // B0 300 + B1 800 (both unpaid); B2 paid ⇒ 0
   customerA: 1500,
-  customerB: 7000,
+  customerB: 7000,               // INV-3 3,000 + INV-5 4,000; INV-6 future ⇒ 0
   investments: 6000,
   rosterMonthly: 5000,
   allTimeCogs: 1650,
   paymentsReceivedTotal: 1500,   // ⚠️ source undecided — see F86
-  invoiceCount: 5,
+  invoiceCount: 6,               // INV-1..6
   overdueCount: 1,
 };
 

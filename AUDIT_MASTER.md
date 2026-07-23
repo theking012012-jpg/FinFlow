@@ -618,6 +618,31 @@ So switching currency from Settings or the mobile drawer set `_displayCurrency`,
 
 ---
 
+### F74 ✅ **FIXED** (`85c8384`, 2026-07-22) — was 🟠 — No edit/delete control on non-owner employee rows
+**Status:** ✅ **FIXED & harness-verified.** Owner-surfaced alongside PL#9.
+
+**What was wrong.** The runtime `renderPayroll` override (`finflow-api-wiring-medium.js:582`) rendered a literal `<span></span>` for every non-owner row — no edit, no delete — so an employee (e.g. "Maria Garcia") could not be modified or removed. **Not intentional gating**: a rendering gap. The `openEditEmployee` handler already existed (`app-main.js`) but was unreachable because the override never emitted a button calling it; a client `deleteEmployee` did not exist at all, though the server route (`DELETE /api/payroll/:id`, `payroll:write`) did.
+
+**What changed.** Non-owner rows now render edit (`openEditEmployee`) + delete (`deleteEmployee`) controls; the owner row keeps its single pencil and gets no delete. New `window.deleteEmployee(id)` confirms, calls the pre-existing server route, updates the in-memory array (keeping the `let payrollEmployees` binding in sync with `window.`), repaints, and throws (not fake success) on a non-ok response.
+
+**Verified:** 12/12 executing the real override against a stubbed DOM. Same root cause as PL#9 (→ **F75**): both were defects on a shadowed function whose maintained copy lived in the dead app-main version.
+**Live check (owner):** the Maria row shows edit + delete; delete prompts, removes the row, and the employee is gone after reload.
+
+---
+
+### F75 🟠 HIGH — Root cause: fixes applied to shadowed (dead) functions — **NEW (systemic; root cause of the PL#9 recurrence)**
+**Status:** OPEN (class). **Enumeration complete** (read-only, 2026-07-22); reconciliation not started — awaiting owner prioritisation.
+
+**The pattern.** `app-main.js` defines a function, then a wiring source does `window.NAME = function(){…}`, and the bundle loads **after** app-main, so the override wins at runtime. When the override is a **replacement** (does not call the original), the app-main copy is **dead code** — and a fix applied to it renders **nothing**, while passing review because the source *looks* patched. This is distinct from a **wrapper** override (saves and calls the original), where app-main edits DO take effect.
+
+**Confirmed instances (this defect has already wasted real fixes):**
+- **`renderPayroll`** — `2a70564` (gross colour) **and** `3bdae44` (the non-owner edit pencil) **both** landed on the dead app-main copy; the runtime override had neither until `85c8384` today. **Two** wasted fixes on one function. This is the confirmed root of the PL#9/F74 "recurrence."
+- **`renderItems` / `filterItemsBySearch`** — `614d29c` added XSS escaping to the dead app-main copy. **No live vulnerability** — verified the runtime override independently escapes (`esc(i.name)`, `medium.js:859`) — but the app-main effort was wasted.
+
+**Blast radius (enumerated).** **28** functions are defined in app-main **and** overridden by a wiring `window.NAME=`. **23 are REPLACEMENT** (app-main copy is dead); **5 are wrappers** (app-main edits live — e.g. `updateDashboard`, which is why the verified F56/F59 fixes there worked). **4** are shadowed by **≥2** wiring files (intra-bundle order decides the winner). Of the 23 replacements, **6** have had their dead copy edited by a targeted commit: `renderPayroll` (✅ resolved), `renderItems`/`filterItemsBySearch` (no live harm), and **3 unverified suspects** — `restockItem` (`4286f7f`, a security commit), `loadPersistedData` (`3bdae44`), `saveProduct` (`469fd1a`). Full machine-generated list in the session report.
+
+**Course of action (owner to prioritise — do NOT batch-reconcile blindly).** (1) Verify the 3 suspects — does the runtime override carry the fix the dead copy got? (2) For each confirmed-dead pair, either delete the app-main copy (forcing all edits onto the real one) or make the override a thin wrapper that delegates. (3) Add the **guard** below so a future fix to a shadowed copy fails loudly.
+**Done when:** no function has a silently-dead second definition, and CI fails if one is introduced.
 ### F72 🟡 MEDIUM — AP / payables overstated for partially-paid bills — **NEW (found while fixing F56)**
 **Status:** OPEN, verified. The exact mirror of F56 on the payables side.
 
@@ -799,7 +824,7 @@ Compact. Full fix narratives live in `AUDIT_MASTER_ARCHIVE_2026-07-22.md`.
 | PL#4 | 🟠 wrong audit table | `7be0a1d`, `index.html:4366` | ✅ verified |
 | PL#6 | 🟡 FX Settle dead | `e1319ef` | ⚠️ **structurally present, never exercised end-to-end** — settle a real FX transaction and confirm `realised_gain_loss` before calling it done |
 | PL#7 | 🟡 fabricated team members | → F19 | ✅ |
-| PL#9 | 🟢 invisible payroll gross | `2a70564` | ⚠️ external commit, **not agent-verified** — 30-second visual check outstanding |
+| PL#9 | 🟢 invisible payroll gross | ✅ **`85c8384`** | ✅ **NOW GENUINELY FIXED on the runtime path.** `2a70564` had patched the SHADOWED app-main `renderPayroll` (dead code); the runtime winner is the `finflow-api-wiring-medium.js` override, whose gross span had no color token. Fixed there with `color:var(--t1)` (themed, legible light+dark). Root cause of the "recurrence" → **F75**. |
 | PL#11 | 🟠 fabricated tax figures | `7be0a1d` | ✅ verified |
 
 ---

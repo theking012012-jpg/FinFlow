@@ -7,6 +7,20 @@
 
 ---
 
+## 📍 THIS FILE IS A LEDGER, NOT A PROOF OF CORRECTNESS
+
+**Correctness is established by [`VERIFICATION.md`](VERIFICATION.md), not by this document.**
+
+`AUDIT_MASTER.md` records what someone happened to *notice* — findings, root causes, decisions, fix history. It is inherently a sampling method: audit by reading twice and you get two different lists. It can never state that a figure is *correct*, only that no one has reported it wrong. Every defect that actually cost production time here (the payroll double-count, the load-order-dependent KPI, the decoupled breakdown labels, the ignored status filter) was **behavioural** — invisible in source at any depth of reading.
+
+`VERIFICATION.md` is the finite counterpart: every figure the app displays and every mutating action it performs, each asserted against an **owner-supplied expected value** on a real seeded database. It does not grow while work is in progress.
+
+**Done = every check in `VERIFICATION.md` green.** Anything not on that list is explicitly *unverified* — not assumed correct. A ✅ row in this file means "this finding was addressed and verified as described in its row"; it does **not** mean the surrounding figure is proven right.
+
+Working rules for changing this codebase live in [`CLAUDE.md`](CLAUDE.md) — the three failure modes and twelve rules, each traced to a defect that already shipped here. Read it before touching anything.
+
+---
+
 ## ⛔ STANDING RULE — TICK-OFF DISCIPLINE (mandatory, from now on)
 
 > **Every fix that is completed and verified MUST be ticked off in this file in the very next prompt/commit — not later, not batched.**

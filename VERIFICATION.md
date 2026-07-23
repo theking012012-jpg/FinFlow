@@ -386,12 +386,11 @@ during the sweep.
 | # | Figure | Jun | Jul | FY | Result |
 |---|---|---|---|---|---|
 | A5.1–3 | revenue | 5,000 | 4,000 | 10,000 | PASS (2026-07-23) |
-| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (2026-07-23, discriminating seed) |
+| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (2026-07-23) |
 | A5.7–9 | grossProfit | 4,800 | 3,200 | 8,600 | PASS (2026-07-23) |
-| A5.10–12 | opex | 5,750 | 1,850 | 8,200 | **FAIL** — actual 5,650 / 4,650 / 11,500 (2026-07-23 probe) |
-| A5.13–15 | netProfit | −950 | 1,350 | 400 | **FAIL** — actual −1,050 / −1,250 / −2,900 (2026-07-23 probe) |
+| A5.10–12 | opex | 5,750 | 1,850 | 8,200 | **FAIL** — actual 5,600 / 4,650 / 11,500 (2026-07-23) |
+| A5.13–15 | netProfit | −950 | 1,350 | 400 | **FAIL** — actual -800 / -1,450 / -2,900 (2026-07-23) |
 | A5.16–18 | outstanding | 8,500 | 8,500 | 8,500 | PASS (2026-07-23) |
-
 ## A6 · Cross-engine reconciliation — 18
 Client-displayed figure **==** server figure, six figures × three periods.
 

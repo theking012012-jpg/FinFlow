@@ -7,4 +7,29 @@ node bundle.js || {
   exit 1
 }
 git add public/finflow-bundle.js
+
+# ── Expected-value reconciliation guard ──────────────────────────────────────
+# VERIFICATION.md and tests/harness/expected.js hold the SAME numbers. They were
+# hand-maintained in parallel and drifted inside a single commit: a seed revision
+# updated the P&L table and the gate but not the Part A rows, leaving the document
+# self-contradictory — the multi-writer class, in the document built to catch it.
+#
+# The next drift could be the other way round: a stale GATE and a correct document,
+# so a real failure reports green. That is the one that costs production time.
+#
+# BLOCKS rather than auto-fixing. Unlike the bundle there is no way to know which
+# side is right — expected.js may be correct and the document stale, or the owner
+# may have deliberately changed an expectation in the document first. Guessing
+# would silently overwrite a real decision.
+if [ -f tests/harness/verification-sync.js ]; then
+  node tests/harness/verification-sync.js --check || {
+    echo "" >&2
+    echo "[pre-commit] BLOCKED — VERIFICATION.md and expected.js disagree (see above)." >&2
+    echo "[pre-commit] Reconcile them, then commit. Do not bypass with --no-verify: while" >&2
+    echo "[pre-commit] they disagree, the sweep measures against an expectation nobody" >&2
+    echo "[pre-commit] agreed to." >&2
+    exit 1
+  }
+fi
+
 exit 0

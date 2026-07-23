@@ -59,6 +59,45 @@ The intended shape:
 
 ---
 
+## ⬜ OPEN DECISIONS — awaiting an owner ruling
+
+**Why this section exists.** A ledger with only one shape — "finding" — forces everything else
+to be homeless, and homeless items stay in chat. A reconciliation on 2026-07-23 found five items
+living only in conversation; every one of them was a *class*, a *limitation*, a *plan* or an
+*open question* — never a finding. Those shapes now have rows, so having nowhere to write
+something is the exception rather than the norm.
+
+**An open decision is not a finding.** Nothing is broken; a choice has not been made. The danger
+is different and quieter: while it stays open, **the code's current behaviour silently becomes
+the decision**, and nobody ever ruled on it.
+
+| # | Decision needed | Blocks | Default if unruled |
+|---|---|---|---|
+| **F93** | Should a **future-dated** invoice or bill be recognised, or excluded until its date arrives? | future-dated behaviour is unverified in both directions | recognised — inherited, never chosen |
+| **F86** | Does A7.4 "Payments Received" mean `invoice_payments` (settlements) or `payments_received` (the page's own table)? | A7.4, and possibly Cash Flow cash-in A7.9–11 | the seed's current choice, unexamined |
+| **D1 scope** | Which taxes a combined figure would cover (corporation tax, VAT, PAYE, NIS) | the D1 implementation | — |
+| **F91 seed** | Add April and Aug/Sep rows to kill the remaining maskers, accepting re-derived Q2/Q3/FY expectations? | strength of every Q2/Q3 check | maskers persist |
+| **F90 sequencing** | Audit trail before launch, as rated? | launch order | — |
+
+---
+
+## ⚠️ KNOWN LIMITATIONS — true, accepted, and not going to be fixed today
+
+**Why this section exists.** Same reconciliation. A limitation is not a defect in the product —
+it is a **boundary on what a green run proves**. Recording it is what stops a passing check being
+read as stronger evidence than it is, which is the failure `VERIFICATION.md` exists to prevent.
+
+| # | Limitation | What a green result does NOT prove |
+|---|---|---|
+| **F91** | Aug/Sep carry no seeded rows, so **Q3 == Jul on all six figures**; Q2 bills == Jun bills and Q2 payroll == Jun payroll | that quarter logic works at all — the entire Q3 column is satisfied by code that ignores quarters |
+| **F83** | The harness exits 0 even when checks fail | nothing about CI; a red run and a green run are indistinguishable to any automated caller |
+| **Seed via SQL** | The seed is written by direct SQL, not the POST endpoints (forced by `run_date = NOW()`, F85) | that invoice/expense/bill **creation** works — the seed exercises the schema, not the write paths |
+| **A1.13–15** | Investments asserts `shares × stored price`; production overwrites with live quotes before painting | that live price refresh works |
+| **A8 vs date-only seed** | A date-only seed cannot detect viewer dependence — all viewers are wrong identically | timezone independence, unless a row sits inside the inter-viewer gap |
+| **Part B drift** | Eight Part B checks are BLOCKED at a month boundary (F85/`run_date = NOW()`) | those behaviours, on any run where the tripwire fires |
+
+---
+
 ## 🚨 LAUNCH BLOCKERS
 
 One week to launch. This list is deliberately short and deliberately not padded. Each item is here because a paying user hits it in normal use, or because it puts a wrong number on screen.
@@ -909,7 +948,21 @@ Nothing in the recognition legs bounds the *upper* end of a period window agains
 
 Both `status` and `amount_paid` are **directly load-bearing**: `status` drives the `RECOGNIZED`/`RECOGNIZED_BILL` allowlists (revenue and expense recognition), and `amount_paid` drives AR and AP outstanding. So these functions move headline figures without appearing in any route enumeration of what moves headline figures.
 
-⚠️ **This enumeration is NOT complete.** It was derived from the recognition legs only. A full sweep — every write to a money-bearing column that does not originate in the route handling that column — has **not** been done, and is the work this finding names.
+⚠️ **This enumeration is NOT complete, and route-based scanning CANNOT complete it.** The list above was derived by reading the recognition legs — which finds the members those legs happen to call, and nothing else. A side-effect writer is invisible to route-based scanning **by definition**: it has no route, so walking routes cannot reach it.
+
+#### What method WOULD find them all
+
+Stating this explicitly, because "incomplete" without a completion method is an excuse rather than a plan. Three approaches, weakest to strongest:
+
+1. **Write-site enumeration (static, tractable now).** Invert the axis: instead of starting from routes, start from the **columns**. Enumerate every call site that writes a money-bearing field — `db.updateById`, `db.insert`, and every raw `pool.query` containing `UPDATE`/`INSERT` against a money table — then classify each as *direct* (inside the route that owns that table) or *side effect* (anywhere else). The side-effect set is the answer. This is complete with respect to the **source**, and it is finite: the write helpers are few and raw `pool.query` mutations can be listed exhaustively.
+   *Caveat:* it cannot see a write assembled dynamically (`db.updateById(tableVar, …)`), so any dynamic table name must be resolved by hand.
+
+2. **Database-level capture (behavioural, complete with respect to RUNTIME).** Enable `pgaudit` or an `AFTER INSERT OR UPDATE OR DELETE` trigger on the money tables **in the scratch cluster only**, drive Part B through the real UI, and record every row actually mutated per request. Any mutation not attributable to the route being exercised is a side-effect writer. This catches what static reading misses — including dynamic writes — and needs no production change, since the harness already owns a disposable real Postgres. **This is the method that closes the list.**
+   *Caveat:* it only finds paths the harness actually exercises, so its completeness is bounded by Part B's coverage — which is precisely why Part B must be complete first.
+
+3. **Structural elimination (the fix, which makes the question moot).** Route every mutation through the shared logged write path proposed in F90 §2.7. Once no code can write a money field except through that path, "which writers are side effects" stops being a question anyone has to answer — the log lists them, continuously, by construction.
+
+**Recommended order: 1 now (cheap, immediate, bounds the problem), 2 during the Part B sweep (closes the list), 3 as the fix.** Reporting the F92 list as closed on the strength of 1 alone would repeat the mistake this finding is about.
 **Course of action:** complete the enumeration, then fold into the F90 shared-write-path fix — routing side-effect writers through the same logged path is what makes them visible. Until then, treat any route-based inventory of money writes as a lower bound.
 **Done when:** every side-effect writer of a money-bearing field is enumerated, logged, and reachable from the same audited write path as a direct route write.
 

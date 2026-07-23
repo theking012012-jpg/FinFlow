@@ -29,6 +29,8 @@ const { HarnessHttp } = require('./httpClient.js');
 const { PERIODS, toQuery } = require('./periods.js');
 const { measureDrift, reportDrift } = require('./drift.js');
 const { printSubstrateHeader, printBlockedRequests } = require('./substrate.js');
+const EXPECTED = require('./expected.js');
+const { writeResults } = require('./verification-sync.js');
 
 const KEEP = process.argv.includes('--keep');
 const LOGIN = { email: 'seed@finflow.test', password: 'harness-password-not-a-secret' };
@@ -53,16 +55,14 @@ function check(id, name, got, want) {
   }
 }
 
-// ── VERIFICATION.md § EXPECTED VALUES, transcribed ──────────────────────────
-// Updated for the Rule 4 seed revision (2026-07-23): S2/S3 quantities 2→1 and 3→4 so adjacent
-// COGS differs (Jun 200, Jul 800, was 400/400); June rent 650 and Software 100 so adjacent rent
-// differs while FY manual stays 1,600 and May's net profit stays exactly 0.
-// FY and opex are UNCHANGED by both edits — only cogs/grossProfit/netProfit move, and only in
-// Jun and Jul.
+// Expected values come from the SINGLE SOURCE. This file previously held its own transcribed
+// copy — the third of three, and the one the Rule 4 seed revision missed. A local copy here is
+// the most dangerous of the three: a stale GATE reports a real failure as green, whereas a
+// stale document merely misleads a reader.
 const EXPECT = {
-  jun: { revenue: 5000, cogs: 200, grossProfit: 4800, opex: 5750, netProfit: -950, outstanding: 8500 },
-  jul: { revenue: 4000, cogs: 800, grossProfit: 3200, opex: 1850, netProfit: 1350, outstanding: 8500 },
-  fy: { revenue: 10000, cogs: 1400, grossProfit: 8600, opex: 8200, netProfit: 400, outstanding: 8500 },
+  jun: EXPECTED.serverFigures('jun'),
+  jul: EXPECTED.serverFigures('jul'),
+  fy: EXPECTED.serverFigures('fy'),
 };
 // A5 numbering: A5.1-3 revenue, .4-6 cogs, .7-9 grossProfit, .10-12 opex, .13-15 netProfit,
 // .16-18 outstanding — each triple ordered Jun / Jul / FY.
@@ -124,6 +124,7 @@ async function main() {
     // ── A5 · /api/reports, three periods ────────────────────────────────────
     console.log('\n── A5 · Server engine — GET /api/reports (real HTTP) ─────────────────────');
     const responses = {};
+    const measured = {};
     for (const key of ['jun', 'jul', 'fy']) {
       const p = PERIODS[key];
       const url = `/api/reports?${toQuery(p)}`;
@@ -145,6 +146,7 @@ async function main() {
         revenue: j.revenue, cogs: j.cogs, grossProfit: j.grossProfit,
         opex: j.expenses, netProfit: j.netProfit, outstanding: j.outstanding,
       };
+      measured[key] = actual;
       for (const f of Object.keys(A5_BASE)) {
         check(`A5.${A5_BASE[f] + PERIOD_OFFSET[key]}`, `${f} (${p.label})`,
           typeof actual[f] === 'number' ? actual[f] : (actual[f] ?? null), EXPECT[key][f]);
@@ -215,6 +217,31 @@ async function main() {
       check('A6.s4', 'FY revenue >= Jun + Jul revenue (May and earlier are also in FY)',
         j.fy.json.revenue >= j.jun.json.revenue + j.jul.json.revenue, true);
     }
+
+    // ── Write the measured results INTO VERIFICATION.md ─────────────────────
+    // Not a manual step afterwards. Results that live in a terminal while the document shows
+    // an empty Result column is F55's mechanism, and it already happened once this session:
+    // A5.10-15's failures were reported in chat and a commit message while the document
+    // recorded nothing had been run.
+    console.log('\n── Writing results into VERIFICATION.md ──────────────────────────────────');
+    const A5_ROWS = {
+      revenue: 'A5.1–3', cogs: 'A5.4–6', grossProfit: 'A5.7–9',
+      opex: 'A5.10–12', netProfit: 'A5.13–15', outstanding: 'A5.16–18',
+    };
+    const stamp = new clock.RealDate().toISOString().slice(0, 10);
+    const fmtN = (v) => (typeof v === 'number' ? v.toLocaleString('en-US') : String(v));
+    const toWrite = {};
+    for (const [field, rowId] of Object.entries(A5_ROWS)) {
+      if (!measured.jun || !measured.jul || !measured.fy) break;
+      const got = ['jun', 'jul', 'fy'].map((k) => measured[k][field]);
+      const want = ['jun', 'jul', 'fy'].map((k) => EXPECT[k][field]);
+      const ok = got.every((v, i) => typeof v === 'number' && Math.abs(v - want[i]) < 0.005);
+      toWrite[rowId] = ok
+        ? `PASS (${stamp})`
+        : `**FAIL** — actual ${got.map(fmtN).join(' / ')} (${stamp})`;
+    }
+    const written = writeResults(toWrite);
+    console.log(`  ${written.length} Result cell(s) updated: ${written.join(', ') || '(none matched)'}`);
   } finally {
     console.log('');
     printBlockedRequests();

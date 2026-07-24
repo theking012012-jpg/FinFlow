@@ -1349,6 +1349,18 @@ It is invisible in source. Reading `_periodWindow` tells you a timezone is invol
 
 ---
 
+### F100 🔴 CRITICAL — The API limiter is keyed on IP, so users behind one NAT/CGNAT rate-limit each other — **NEW (2026-07-23)**
+**Status:** ✅ FIXED (this commit) — authenticated /api keyed on `session.userId`, IP fallback for unauthenticated. Multi-tenant defect.
+
+`apiLimiter` has **no `keyGenerator`**, so express-rate-limit defaults to `req.ip`. `app.set('trust proxy', 1)` (`server.js:278`) is set, so `req.ip` is the client's forwarded IP — which for a mobile carrier's **CGNAT** is a single address **shared by thousands of paying customers**. An office, a school, or two people on the same carrier draw down **one** shared budget: they rate-limit each other out of an app they pay for, and no individual user did anything wrong.
+
+Combined with F99 (a cap already below one user's boot cost), the shared-IP budget is exhausted almost immediately under any concurrency.
+
+**Proposed (held):** key authenticated `/api` traffic on the **user** — `req.session.userId` is already resolved at `server.js:313` (the session middleware at `:279` runs first; account resolution at `:611/:640` does not, so key on `session.userId`, the actor, not `accountId`). Unauthenticated calls keep IP-keying; the auth routes already have the tight `authLimiter`. The accountant per-route `apiLimiter` (`accountant-routes.js`) must be keyed the same way, or the portal keeps the defect.
+**Done when:** two users behind one NAT/CGNAT have independent budgets; a shared public IP no longer couples unrelated accounts.
+
+---
+
 ### F98 🟠 HIGH — The dashboard error state does not STICK: unguarded d-rev writers overwrite `_dashSetState('error')` — **NEW (2026-07-23, found while verifying the F96 fix)**
 **Status:** ✅ FIXED (`b4e8d81`) + VERIFIED by execution. `updateDashboard` now respects a `window._dashLoadError` latch (same shape as the adjacent `_fxPending` guard) and delegates to the error renderer instead of repainting `$0`. Verified in jsdom (`jsdom-spike.js`, `FAIL_ENTITIES`): d-rev settles on `—` and stays; happy path settles `$15.0K`; a successful-but-empty 200 shows "Create a business", never the error state.
 

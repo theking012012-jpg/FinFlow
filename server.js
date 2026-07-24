@@ -309,7 +309,20 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
 // paying customers). session.userId is already resolved here — the session middleware above runs
 // first; account resolution (req.accountId) does NOT run until later, so key on the actor id.
 // Unauthenticated calls keep IP-keying; the auth routes carry the tight authLimiter already.
-const _rlKey = (req) => (req.session && req.session.userId) ? 'u:' + req.session.userId : 'ip:' + (req.ip || 'unknown');
+//
+// F103 — the `|| 'unknown'` fallback reintroduced F100's OWN defect. req.ip is undefined only when
+// req.socket.remoteAddress is undefined (a destroyed socket: express 4.19.2 → proxy-addr →
+// forwarded() puts the socket address at element 0, so a live request always has it) — rare, not
+// impossible. Under the old fallback EVERY such request keyed to the SINGLE bucket 'ip:unknown' and
+// they collectively drained one 600/300 budget, locking each other out: the shared-budget defect
+// F100 exists to eliminate, reintroduced through the degrade path. An unidentifiable request must get
+// its OWN bucket (unique key ⇒ count of 1 ⇒ never limited) — degrade, never share. Rare + windowMs
+// TTL ⇒ negligible store growth; not attacker-usable (forcing req.ip undefined needs a destroyed
+// socket, which drops the request rather than delivering it under a shared key).
+const _rlKey = (req) =>
+  (req.session && req.session.userId) ? 'u:' + req.session.userId
+  : req.ip ? 'ip:' + req.ip
+  : 'anon:' + crypto.randomUUID();
 
 // F99 — split idempotent READS from mutating WRITES, and size reads for the app's OWN boot cost.
 // A cold dashboard boot is ~69 requests (66 GET / 3 write; MEASURED — tests/harness/

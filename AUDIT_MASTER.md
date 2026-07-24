@@ -1313,6 +1313,17 @@ It is invisible in source. Reading `_periodWindow` tells you a timezone is invol
 
 ---
 
+### F103 🟠 HIGH — The rate-limiter key's `|| 'unknown'` fallback reintroduces F100's OWN shared-budget defect through the degrade path — **NEW (2026-07-23, found while re-reading the F100 fix)**
+**Status:** ✅ FIXED (this commit) — follow-up to **F100**.
+
+`_rlKey` (`server.js:312`) was `(req.session?.userId) ? 'u:'+userId : 'ip:'+(req.ip || 'unknown')`. `req.ip` is undefined only when `req.socket.remoteAddress` is undefined — a destroyed socket (express 4.19.2 → proxy-addr → `forwarded()` puts the socket address at element 0, so a live request always carries it). Rare, not impossible. Under the fallback, EVERY such request keyed to the single bucket `'ip:unknown'` and they collectively drained one 600/300 budget, locking each other out — **the exact shared-budget defect F100 exists to eliminate, reintroduced through the fallback.**
+
+**Fix:** an unidentifiable request gets its OWN bucket — `'anon:' + crypto.randomUUID()` (unique key ⇒ count of 1 ⇒ never limited). Degrade, never share. `crypto` is already imported (`server.js:10`); rare + `windowMs` TTL ⇒ negligible store growth; not attacker-usable (forcing `req.ip` undefined needs a destroyed socket, which drops the request rather than delivering it under a shared key). One edit to `_rlKey` covers all four limiters that use it (read/write/api/invite); accountant-routes has no separate key generator (only a TODO at `accountant-routes.js:330`), so nothing else needs it.
+**Verification:** logic verified by inspection; `server.js` boots clean (exercised by the real server under the F102 harness). The destroyed-socket trigger is **UNEXECUTED** — it cannot be readily induced without tearing down a live socket mid-request.
+**Done when:** committed. ✅
+
+---
+
 ### F99 🔴 CRITICAL — The rate limiter is below the app's OWN cold-boot cost, and reads share a write-sized budget — the ROOT CAUSE behind F96/F97/F98 — **NEW (2026-07-23, MEASURED)**
 **Status:** ✅ FIXED (this commit) — rate-limiter read/write split, read 600 / write 300. Per-user keying is **F100** (next commit). The duplicate-fetch half is step-4 work (see below).
 

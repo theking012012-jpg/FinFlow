@@ -105,10 +105,13 @@ async function bootSpaInJsdom(opts = {}) {
   // through here.
   const nodeFetch = global.fetch;
   const wireLog = [];
+  const reqLog = [];     // EVERY request (method + path), for boot-cost measurement
   const injected = [];
+  const t0 = clock.RealDate.now();
   window.fetch = (input, init = {}) => {
     const url = typeof input === 'string' ? input : (input && input.url) || String(input);
     const p = pathOf(url);
+    reqLog.push({ method: (init.method || 'GET').toUpperCase(), path: p, at: clock.RealDate.now() - t0 });
     if (Object.prototype.hasOwnProperty.call(failMap, p)) {
       const v = failMap[p];
       injected.push({ path: p, as: v });
@@ -147,7 +150,7 @@ async function bootSpaInJsdom(opts = {}) {
 
   return {
     window, http, origin, scratch, client: c, userId,
-    consoleErrors, consoleWarns, consoleLogs, wireLog, injected,
+    consoleErrors, consoleWarns, consoleLogs, wireLog, reqLog, injected,
     settle, text, toast, stop,
   };
 }

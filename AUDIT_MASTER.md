@@ -1313,6 +1313,42 @@ It is invisible in source. Reading `_periodWindow` tells you a timezone is invol
 
 ---
 
+### F99 🔴 CRITICAL — The rate limiter is below the app's OWN cold-boot cost, and reads share a write-sized budget — the ROOT CAUSE behind F96/F97/F98 — **NEW (2026-07-23, MEASURED)**
+**Status:** ✅ FIXED (this commit) — rate-limiter read/write split, read 600 / write 300. Per-user keying is **F100** (next commit). The duplicate-fetch half is step-4 work (see below).
+
+**F96/F97/F98 are how the app REPORTS a failed `GET /api/entities`. This is WHY the fetch fails.**
+
+`apiLimiter = rateLimit({ windowMs: 60_000, max: 200 })` applied globally at `server.js:313`, shared by every `/api` method.
+
+**Measured cold-boot cost (not estimated).** `tests/harness/measure-boot-requests.js` counts at the fetch layer via `jsdomBoot`:
+
+| metric | value |
+|---|---|
+| total `/api` requests per cold boot | **69** |
+| unique method+path | 38 |
+| **redundant (duplicate) fetches** | **31** |
+| arriving within 2s | 44 |
+| GET / non-GET | 66 / 3 |
+
+> ⚠️ **69 IS A FLOOR, NOT A CEILING.** The harness counts only what the SPA's JS requests in jsdom on a dashboard-only boot: page-specific loaders that fire when their tab is opened (MRR, accountant, banking, etc.) do not run, and jsdom fetches no images / fonts / charts. A real browser boot — and any boot that lands on a non-dashboard page, or navigates — is **≥ 69**. Do not size the cap to 69 as if it were the maximum. *(Corroborates the owner's HAR: 38 unique, ~65 total, ~27 redundant.)*
+
+**The arithmetic.** 200 ÷ 69 ≈ **2.9 boots per minute** before `429`. A user who reloads three times, opens the app in three tabs, or navigates a few pages within 60s is locked out — and the failed `GET /api/entities` renders the empty "Create a business" dashboard (F96). The owner's HAR showed 17×`429` on one boot because that boot began with the budget already ~3/4 spent by prior activity in the window.
+
+**Two distinct defects in one limiter:**
+1. **Cap below boot cost.** 200/min cannot absorb the app's own boot, let alone reloads.
+2. **Reads share a write-sized budget.** A boot is 66 idempotent GETs + 3 writes. A cap exists to bound *mutation* abuse; sizing reads to it throttles normal use. GETs should not share a budget with POST/PUT/DELETE.
+
+**Proposed (held):** split into a per-user **read** limiter (GET/HEAD, **600**/min ≈ 10 boots) and a per-user **write** limiter (**300**/min). Keying is F100.
+
+**Write cap — settled against real usage (owner flagged, checked per Rule 13).** The write budget must survive a bookkeeping BURST, not just a lone action:
+- **Bank reconciliation** — `POST /api/bank-reconciliation/match` (`server.js:3754`) is strictly **one POST per item, no batch endpoint** (F101). `matchBankRec` (`index.html:4551`) fires one POST per click; a busy month is 100–300 matches and a fast reconciler rapid-confirms at 2–3/sec = **120–180/min**. A 100/min cap would lock a paying user out **mid-reconciliation** — the exact self-inflicted lockout, on a different surface. **300/min** covers ~5/sec (beyond any human) and still trips a runaway retry-storm/script (orders of magnitude more).
+- **Other per-item write loops (swept, Rule 13):** the only client `Promise.all` write-ish burst (`finflow-api-wiring-medium.js:1052`, consolidated-entities) fires `GET /api/reports?entity_id=` per entity — **reads**, covered by the 600 read budget, not writes. No CSV/import write-per-row loop exists. Manual expense/invoice/transaction entry is form-paced (single-digit writes/min), nowhere near the cap. So reconciliation is the binding write surface, and 300 accommodates it.
+
+> ⚠️ **The 31 duplicate fetches are NOT fixed here.** Raising the cap treats the symptom; the app re-fetching `/api/invoices` 7× and `/api/expenses` 7× per boot is the disease, and it belongs to the **money-engine consolidation / server-side period resolution in step 4 of `VERIFICATION.md`'s sequencing plan** — NOT this immediate unblock. Recorded so raising the limit is not mistaken for fixing the redundancy.
+**Done when:** a cold boot + reasonable reloads never 429; and (separately, step 4) the duplicate fetches are eliminated so the boot costs ~38, not 69.
+
+---
+
 ### F98 🟠 HIGH — The dashboard error state does not STICK: unguarded d-rev writers overwrite `_dashSetState('error')` — **NEW (2026-07-23, found while verifying the F96 fix)**
 **Status:** ✅ FIXED (`b4e8d81`) + VERIFIED by execution. `updateDashboard` now respects a `window._dashLoadError` latch (same shape as the adjacent `_fxPending` guard) and delegates to the error renderer instead of repainting `$0`. Verified in jsdom (`jsdom-spike.js`, `FAIL_ENTITIES`): d-rev settles on `—` and stays; happy path settles `$15.0K`; a successful-but-empty 200 shows "Create a business", never the error state.
 
@@ -1330,6 +1366,8 @@ The overwriters are unguarded: `updateDashboard` writes `d-rev` unconditionally 
 **Status:** ✅ FIXED + VERIFIED across the class (5 of 6 sites; `_loadPeriodCOGS` was already correct). Entities instance: `b4e8d81` (see F97/F98). Class treatments — banking, MRR, accountant, recurring-prefill: fixed this commit and **EXECUTED**, not pattern-mirrored, via `tests/harness/boot-failures-gate.js` (**19/19**), each failed on BOTH the status (`!res.ok`) and network (`catch`) paths — the network path was a real gap reasoning had missed (the prefill catch was silent, so it would still have lost data on a dropped connection). The prefill test drives the real modal+save and asserts against the DATABASE that `recurring_profile_id` is unchanged and that the PUT body omits the field.
 
 > ⚠️ **Correction to this row's earlier wording** (which called the four treatments "pattern-mirrors, not individually failure-injected"): they are now each executed. Generic failure injection (`jsdomBoot.js`, one line per endpoint, status or network) closed the tooling gap — see **Rule 14**.
+
+**Root cause link:** F96/F97/F98 make a failed fetch VISIBLE and recoverable; **F99 (rate cap below boot cost) and F100 (IP-keyed budget) are WHY the fetch fails** in production. This finding is the report surface; those two are the disease.
 
 **The pattern:** a client loader does `const res = await fetch(...); if(!res.ok) return;`. A non-ok response is **not** an exception, so the surrounding `try/catch` never fires and **nothing is logged**. The loader returns as if there were simply no data. The user sees an empty surface indistinguishable from a genuinely empty account, with no error and no retry.
 

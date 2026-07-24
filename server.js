@@ -302,7 +302,27 @@ app.use(session({
 }));
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
-const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 200 });
+
+// F99 — split idempotent READS from mutating WRITES, and size reads for the app's OWN boot cost.
+// A cold dashboard boot is ~69 requests (66 GET / 3 write; MEASURED — tests/harness/
+// measure-boot-requests.js, a FLOOR: jsdom skips page-loaders/images/charts, so a browser is
+// higher). The old single 200/min GET+write budget allowed < 3 boots/min and throttled reads
+// with a cap only writes need.
+//   READ 600/min ≈ 10 boots — a generous budget for reloads / tabs / navigation.
+//   WRITE 300/min — sized for a real bookkeeping BURST, not a lone action. Bank reconciliation
+//     (POST /api/bank-reconciliation/match) is strictly one-POST-per-item with no batch endpoint
+//     (F101); rapid-confirming a busy month runs 2-3 matches/sec (120-180/min), so a 100 cap
+//     would lock a paying user out MID-RECONCILIATION. 300 covers ~5/sec (beyond any human)
+//     while still tripping a runaway retry-storm or script.
+// NOTE: this raises the ceiling; it does NOT fix the 31 duplicate fetches per boot — that is the
+// money-engine consolidation in step 4 of VERIFICATION.md's sequencing plan.
+// Keying is req.ip here (express-rate-limit default); the per-user fix is F100, the next commit.
+const readLimiter  = rateLimit({ windowMs: 60 * 1000, max: 600 });
+const writeLimiter = rateLimit({ windowMs: 60 * 1000, max: 300 });
+// Accountant-routes reuse a per-route `apiLimiter` (8 POSTs + a couple GETs — not bulk loading;
+// client books go through the global /api mount). Its own instance so it does not double-count
+// against the global writeLimiter.
+const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 300 });
 // RBAC Phase 2, Step A — invite/accept. Invites: an owner onboarding a team sends
 // several, so a wider hourly cap; accept is a public, token-guarded surface, held
 // to the tight auth cadence to cap brute-force/enumeration even though the 32-byte
@@ -310,7 +330,9 @@ const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 200 });
 const inviteLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 30 });
 const acceptLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
 
-app.use('/api', apiLimiter);
+// F99 — reads and writes each to their own limiter.
+app.use('/api', (req, res, next) =>
+  (req.method === 'GET' || req.method === 'HEAD') ? readLimiter(req, res, next) : writeLimiter(req, res, next));
 
 // ── F22 defense-in-depth (belt & braces on top of sameSite:'lax') ──────────────
 // Runs before auth/resolvers so forged requests are rejected early. Does NOT touch

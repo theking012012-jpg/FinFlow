@@ -24,6 +24,10 @@ that made `VERIFICATION.md` contradict itself when expected values lived in thre
 3. **No unrequested prompts** — default to conversation; one prompt per turn, only when asked.
 4. **Answer the question asked** — not the surrounding context.
 5. **Enumerate the class** — one instance is a sighting, not a finding (`CLAUDE.md` Rule 13).
+6. **Verify before stating, not after being challenged** — nothing reaches the owner unverified.
+   Where a thing cannot be verified, say so *at the point of claiming*. Revising a figure or a
+   conclusion because the owner asked "are you sure?" is a failure, not diligence: it means the
+   check was always available and was skipped.
 
 ## Why they exist
 
@@ -36,13 +40,20 @@ Each traces to a specific failure during the audit:
   instance and burying the class — were wrong.
 - Two consecutive Claude Code prompts investigated how the dashboard should *render* a failed
   fetch. Neither asked why the fetches were failing. The cause was an API rate limiter at
-  `server.js:305` combined with fifteen loaders firing eagerly at boot — both readable at any
-  time. Findings F96, F97 and F98 are real, but all downstream of it.
+  `server.js:305` combined with loaders firing eagerly at boot — both readable at any time.
+  Findings F96, F97 and F98 are real, but all downstream of it.
 - Prompts issued reflexively, several per turn, superseding each other mid-flight, forced the
   owner to ask which one to send.
+- Rule 6 has its own case. A prompt was sent stating the boot cost "~52 requests" and framing
+  eager loaders as the fix. Both were wrong: the boot is 65 requests, and duplication accounts
+  for 27 of them against 7 for removable eager loaders — roughly four times the weight. A
+  further claim of "third or fourth page load" was loose where the arithmetic gives the fourth.
+  Every correction came *after* the owner asked whether the work had been verified. The checks
+  took four commands and were available before the prompt was written.
 
-Rule 1 is the load-bearing one because it is the only one that is *checkable*: a claim about
-the code without a file and line number is inference, and should be treated as worthless.
+Rules 1 and 6 are the load-bearing ones because they are the only *checkable* ones: a claim
+about the code without a file and line number is inference and should be treated as worthless,
+and a correction that arrives only under challenge means the verification was skipped.
 
 ## Relationship to the other documents
 

@@ -1349,6 +1349,16 @@ It is invisible in source. Reading `_periodWindow` tells you a timezone is invol
 
 ---
 
+### F101 🟡 MEDIUM — Bank reconciliation matches one POST per item, with no batch endpoint — forces a high write cap — **NEW (2026-07-23, found while sizing the F99 write cap)**
+**Status:** OPEN. Not fixed here; it is *why* the F99 write cap must be 300 rather than tighter.
+
+`POST /api/bank-reconciliation/match` (`server.js:3754`) accepts a single `{ banking_id, invoice_payment_id }`. Reconciling a busy month is therefore 100–300 separate POSTs, one per click. This is the reason the write limiter cannot be tightened to a value that would otherwise be ample for mutation-abuse protection: a legitimate reconciliation session is indistinguishable, by request count, from a runaway loop.
+
+A **batch match endpoint** (`POST …/match` accepting an array of pairs, one transaction) would collapse a whole reconciliation into a handful of requests, let the write cap drop back toward human-action cadence, and remove the burst entirely. It is a small, self-contained server+client change — but it is a **feature change, not the immediate unblock**, so it is logged for the step-4 pass, not done now.
+**Done when:** a full reconciliation costs a bounded, small number of requests regardless of item count, and the write cap can be revisited downward.
+
+---
+
 ### F100 🔴 CRITICAL — The API limiter is keyed on IP, so users behind one NAT/CGNAT rate-limit each other — **NEW (2026-07-23)**
 **Status:** ✅ FIXED (this commit) — authenticated /api keyed on `session.userId`, IP fallback for unauthenticated. Multi-tenant defect.
 

@@ -898,8 +898,16 @@ One CHECK, on `accountant_reviews.rating`. Specifically:
 
 ---
 
-### F80 🟠 HIGH — Server payroll leg has **no status filter**; `draft` runs are recognised as expense — **NEW (2026-07-23, read-only verified; not yet executed)**
-**Status:** OPEN. Contradicts `VERIFICATION.md` decision 2 and `CLAUDE.md` Rule 12.
+### F80 🟠 HIGH — Payroll leg has **no status filter**; `draft` runs are recognised as expense — on **BOTH** engines — **NEW (2026-07-23, read-only) → EXECUTED + FIX HELD (2026-07-24)**
+**Status:** FIX HELD (diff ready, awaiting owner approval) — **both legs, mirrored; verified by execution.** Lands together with **F102** as one change (see the UPDATE below). Contradicts `VERIFICATION.md` decision 2 and `CLAUDE.md` Rule 12.
+
+> **UPDATE 2026-07-24 — client mirror located, defect executed, fix held (mirrored).**
+> - **The client half (the "enumerate before fixing" this row asked for).** `computeExpenseBreakdown` recomputes the same leg at **`app-main.js:1699-1707`** and had the identical gap — no `status` predicate. So the defect spanned BOTH engines, not just the server. Fixing the server alone would have left the dashboard/Expenses/AI/health surfaces still counting draft (the F7/F56 regrowth pattern). Both are fixed as one mirrored change: server predicate `status IN ('approved','paid')` (added `pr.status` to the `computeBooks` query, `server.js:4179`), client allowlist `['approved','paid']` (`app-main.js:1706-1711`). Both keep the `paid`-included form, per the ⚠️ implementation trap.
+> - **Now EXECUTED, not just read** (this row was "not yet executed"). `tests/harness/verify-f102-payroll-boot.js` on real seeded Postgres: FY opex = **9,400** = `expected.js` (was 12,700 with draft counted). Server sweep **A5.12 (FY opex) flips FAIL→PASS**. The Jul draft run (3,300) is now excluded — Jul payroll drops to the decision-2 value 1,100.
+> - **Why bundled with F102 (not fixed alone).** Verifying either fix requires the other: with payroll missing (F102) opex reads 3,200; with draft counted (F80) it reads 12,700; only both together give 9,400. The probe asserts the card is 9,400 and is NEITHER bug value; Rule-14 controls confirm it goes red if either fix is removed.
+> - **VISIBILITY checked (F94 class): excluded from the BOOKS ≠ invisible in the UI.** The change touches only the money computation (client `computeExpenseBreakdown` sum, server `payrollTotal`). Executed at boot, the draft run R2 (3,300) is EXCLUDED from d-exp/Expenses/AI/health/`/api/reports`/`/books` (books = 9,400) **and** remains VISIBLE in Payroll Run History with its `draft` badge and **Approve** button (asserted on the rendered `payroll-runs-list` DOM); the empty-state still counts it (not empty); `breakdown.payrollRunCount` still counts every in-period run (I gated only the sum, not the count). So the "unapproved run waiting" affordance is preserved — no visibility was removed to fix the accounting.
+> - **Residual (NOT F80).** Sweep A5.10 (Jun opex −150) and A5.11 (Jul opex −500) remain red; both are **non-payroll** and **pre-existing** (bill/expense month-boundary drift from the clock pin, same class as the INV-6 revenue/AR pollution). They wash out at FY scope (A5.12 green) and are unrelated to this fix.
+> - **F104 was a duplicate of THIS row, withdrawn.** A finding logged in the same session re-opened Decision 2 as if it were open. It never committed. See the F104 tombstone. Process cause + the reconciliation check that would have caught it: **F105**.
 
 `computeBooks` sources payroll from `payroll_run_lines` joined to `payroll_runs` (basis C, correct), but filters only on user and entity:
 ```sql
@@ -1310,6 +1318,32 @@ It is invisible in source. Reading `_periodWindow` tells you a timezone is invol
 **Note on the first run of this experiment: it showed NO difference and was a false negative.** Every seeded row carried a date-only string, which `new Date()` puts at 00:00Z — before *both* viewers' boundaries — so both were wrong identically and nothing moved. The seed could not discriminate (`CLAUDE.md` Rule 4). It only became measurable once a row was timestamped inside the inter-viewer gap. **A green timezone check against a date-only seed proves nothing**; `VERIFICATION.md` A8 carries that warning.
 **Course of action:** no fix during the sweep (scope frozen). Carry into the money-engine consolidation as a hard requirement: one date comparison helper, string-based, shared by every leg on both sides. **Permanent check added as `VERIFICATION.md` A8 (6 checks).**
 **Done when:** `tz-matrix.js` reports zero differing figures with the boundary row present, and no recognition path calls `new Date()` on a period boundary.
+
+---
+
+### F104 — WITHDRAWN (duplicate of F80). Number retired, do not reuse.
+Logged in error on 2026-07-24 re-opening a **settled** decision (`VERIFICATION.md` Decision 2: draft payroll contributes 0). The draft-payroll-recognition defect is **F80** (now updated to cover both the server and client legs). This finding never committed. Root-cause of the double-log and the guard that would prevent it: **F105**.
+
+---
+
+### F102 🟠 HIGH — Dashboard Expenses/Profit OMIT payroll on a cold boot; a payroll action fixes it, a refresh breaks it again — load-order dependence — **NEW (2026-07-23, owner-reported) → EXECUTED + FIX HELD (2026-07-24)**
+**Status:** FIX HELD (diff ready, awaiting owner approval — not committed). **Lands as ONE change with the F80 draft filter** (verifying either requires the other). VERIFIED BY EXECUTION.
+
+**Which figure the card shows (the owner's first question).** In NATIVE currency `d-exp` is the CLIENT figure: `updateDashboard` writes `S(computeExpenseBreakdown().total)` (`app-main.js:2048`), and that engine reads `window.payrollRuns || []`. The SERVER's `computeBooks` opex is painted onto `d-exp` ONLY under a non-native display currency (FX overlay, `app-main.js:4607`). So in native currency the client engine is authoritative and was un-cross-checked.
+
+**The bug.** `loadPayrollRuns` (`index.html:4597`) fired only after create/approve/mark-paid and on Payroll-page nav — **never at boot**. So `window.payrollRuns` was empty on a cold boot → the payroll leg was 0 → Expenses/Profit understated on every client surface until a payroll action populated it; a refresh emptied it again.
+
+**Root, not symptom.** Every sibling money store already loads at boot (`_realExpenses` in `loadEntityData`; `bills`/`paymentsMade` from the pages-wiring boot IIFE — confirmed in the bundle at `3929`/`4091`). Payroll runs were the lone omission. Fix: fire `loadPayrollRuns()` from `loadEntityData` (`app-main.js:1490`) so the runs load at boot AND on every entity switch. `loadEntityData` is the runtime winner (exposed once at `app-main.js:1507`; `bundle.js` concatenates only the 10 wiring files, not `app-main.js`, so there is no shadow copy).
+
+**Not the money-engine consolidation.** The client still recomputes what the server computes — two implementations of one figure. That consolidation is step-4 work; A6's client cross-engine probe will guard it once built. Until then this is verified AD HOC by the probe below.
+
+**Verification — `tests/harness/verify-f102-payroll-boot.js` (jsdomBoot, real seeded Postgres), oracle = `expected.js` (Rule 6, NOT the other engine):**
+```
+client d-exp  "$9.4K"   server opex 9400   expected.js FY opex 9400   → all three agree ✅ (7/7 green)
+bug values: payroll-missing 3,200 ("$3.2K")  |  draft-counted 12,700 ("$12.7K")  — d-exp is neither ✅
+```
+Rule-14 controls (each fix removed in turn, EXECUTED): with boot-load off → d-exp "$3.2K" (3 fail); with draft filter off → d-exp "$12.7K" == server "$12.7K" (client==server still PASSES, oracle assertion FAILS — the Rule-6 trap made visible). Proves both fixes are load-bearing and the probe is not a tautology.
+**Done when:** committed (with the F80 filter, one commit), and A6's client cross-engine check exists so this is no longer verified ad hoc.
 
 ---
 

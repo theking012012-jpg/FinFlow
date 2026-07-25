@@ -1476,6 +1476,18 @@ async function loadEntityData(idx){
     }
     // Also refresh banking for this entity
     if(typeof loadBankingFromDB==='function') loadBankingFromDB();
+    // F102 — payroll runs are the basis-C source of the payroll OpEx leg (computeExpenseBreakdown
+    // reads window.payrollRuns). Their loader only fired on a Payroll-page visit or a payroll mutation,
+    // so on a cold boot window.payrollRuns was empty and Expenses/Profit OMITTED payroll until the page
+    // was opened — then a refresh reset it. Every SIBLING money store already loads at boot: expenses
+    // above, bills/paymentsMade from the pages wiring's boot IIFE; payroll runs were the lone omission.
+    // Fire the SAME loader here so the KPI engine has the runs at boot AND on every entity switch.
+    // Fire-and-forget: loadPayrollRuns() stashes window.payrollRuns then calls refreshFinancials()
+    // itself, repainting on arrival exactly like loadBankingFromDB above. This does NOT remove the
+    // second (client) implementation of the payroll leg — the client still recomputes what the server
+    // already computes in computeBooks; that consolidation is the money-engine work in step 4 of
+    // VERIFICATION.md's sequencing, which A6's client cross-engine probe will then guard automatically.
+    if(typeof loadPayrollRuns==='function') loadPayrollRuns();
 
     // Build _topClients from real paid invoices grouped by client name
     const _clientTotals = {};
@@ -1685,10 +1697,18 @@ function computeExpenseBreakdown(period, monthIdx){
   // salary logged as an expense row, and put payroll on a cash-ish basis while revenue was
   // accrual. The roster is now a TEMPLATE for creating a run; NO total reads from it.
   const runs = window.payrollRuns || [];
+  // F80 / VERIFICATION.md ACCOUNTING BASIS decision 2: a payroll run is recognised as expense at
+  // `approved`; `draft` contributes 0; `paid` adds nothing further (already recognised at approved).
+  // MUST be IN ('approved','paid'), NOT ='approved' — a paid run was approved first, so approved-only
+  // would make the expense DISAPPEAR when a run is marked paid (the ⚠️ implementation trap on decision 2).
+  // Mirror of the server predicate in computeBooks (server.js). payrollRunCount still counts every
+  // in-period run (unchanged) — the status gate applies to the recognised EXPENSE only.
+  const PAYROLL_RECOGNIZED = ['approved','paid'];
   let payroll = 0, payrollRunCount = 0;
   runs.forEach(r=>{
     if(!inPeriod(r.run_date)) return;
     payrollRunCount++;
+    if(!PAYROLL_RECOGNIZED.includes(String(r.status||'').toLowerCase())) return;   // draft ⇒ 0
     (r.lines||[]).forEach(l=>{
       payroll += (parseFloat(l.gross)||0) + (parseFloat(l.bonus)||0) + (parseFloat(l.overtime)||0);
     });

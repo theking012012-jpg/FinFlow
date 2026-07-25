@@ -4176,7 +4176,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   let runLines = [];
   try {
     const { rows } = await pool.query(
-      `SELECT prl.gross, prl.bonus, prl.overtime, pr.run_date, pr.entity_id, pr.id AS run_id
+      `SELECT prl.gross, prl.bonus, prl.overtime, pr.run_date, pr.status, pr.entity_id, pr.id AS run_id
          FROM payroll_run_lines prl
          JOIN payroll_runs pr ON pr.id = prl.run_id
         WHERE pr.user_id = $1
@@ -4186,8 +4186,15 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     runLines = rows;
   } catch (_) { runLines = []; }
   const _runDate = l => l.run_date;
+  // F80 / VERIFICATION.md decision 2: recognise the payroll expense at `approved`; `draft` contributes
+  // 0; `paid` adds nothing further (already recognised at approved). MUST be IN ('approved','paid'),
+  // NOT ='approved' — a paid run was approved first, so approved-only would DROP the expense on
+  // mark-paid (the ⚠️ implementation trap on decision 2). Mirror of the client filter in
+  // computeExpenseBreakdown (app-main.js). Applies to the recognised EXPENSE only; payrollRunCount
+  // below still counts every run.
+  const PAYROLL_RECOGNIZED = new Set(['approved', 'paid']);
   const payrollTotal = r2(sumFX(
-    runLines.filter(l => inPeriod(_runDate(l))),
+    runLines.filter(l => inPeriod(_runDate(l)) && PAYROLL_RECOGNIZED.has(String(l.status || '').toLowerCase())),
     l => num(l.gross) + num(l.bonus) + num(l.overtime),
     _runDate, 'payroll'
   ));

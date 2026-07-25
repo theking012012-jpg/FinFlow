@@ -3860,11 +3860,36 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(as
   const totalDeductions = lines.reduce((s, l) => s + l.totalDeductions, 0);
   const totalNet = lines.reduce((s, l) => s + l.netPay, 0);
 
-  const { rows: [run] } = await pool.query(
-    `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net, notes)
-     VALUES ($1,$2,$3,NOW(),$4,$5,$6,$7,$8) RETURNING *`,
-    [uid, eid, period, 'draft', totalGross, totalDeductions, totalNet, notes]
-  );
+  // C1 durable fix (PILOT): the JS pre-check at :3844 is a non-atomic TOCTOU race (two concurrent
+  // submits both pass it before either INSERT is visible — see AUDIT_MASTER C1 UPDATE). The
+  // un-bypassable guarantee is a DB UNIQUE constraint; this handler makes the violation graceful.
+  // On 23505 (a concurrent/duplicate submit lost the race at the DB), return the EXISTING run
+  // idempotently with 200 — NEVER a 500, and NEVER fall through to insert orphan lines against a run
+  // that was not created. Recovery SELECT is keyed to the natural key (user_id, entity_id, period);
+  // a token-based table would instead select by the idempotency token. NOTE: inert until the UNIQUE
+  // index exists (no index ⇒ no 23505 ⇒ byte-identical to prior behaviour), so it is safe to ship
+  // ahead of the migration.
+  let run;
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net, notes)
+       VALUES ($1,$2,$3,NOW(),$4,$5,$6,$7,$8) RETURNING *`,
+      [uid, eid, period, 'draft', totalGross, totalDeductions, totalNet, notes]
+    );
+    run = rows[0];
+  } catch (e) {
+    if (e.code === '23505') {
+      const { rows } = await pool.query(
+        `SELECT * FROM payroll_runs WHERE user_id=$1 AND entity_id IS NOT DISTINCT FROM $2 AND period=$3 ORDER BY id ASC LIMIT 1`,
+        [uid, eid, period]
+      );
+      if (rows[0]) {
+        const { rows: existingLines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id=$1`, [rows[0].id]);
+        return res.status(200).json({ ...rows[0], lines: existingLines });
+      }
+    }
+    throw e;
+  }
 
   for (const l of lines) {
     await pool.query(

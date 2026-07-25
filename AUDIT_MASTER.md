@@ -218,7 +218,19 @@ A class is only a class if it has a full instance list. Each has one.
 >    - **What changed:** the UNIQUE index on `(user_id, COALESCE(entity_id,0), period)` is the un-bypassable guarantee (`COALESCE` so NULL-entity dups collide); the 23505 handler returns the existing run idempotently (200, never 500 / never orphan lines); the racy pre-check at `server.js:3844` stays as the fast path.
 >    - **How verified:** `tests/harness/verify-c1-payroll-pilot.js` on scratch — `Promise.all` race → ONE row; raw-insert control → 2nd rejected 23505; NULL-entity → COALESCE rejects (8/8 + control). Plus production: pre-check returned zero rows; index confirmed via `pg_indexes`.
 >    - **NOT executed (UNEXECUTED):** a behavioural double-submit against production — no test payroll was written to prod. The prod guarantee rests on the index (confirmed present) + the scratch behavioural proof.
-> 3. **Durable rollout across the other ~29 create routes — OPEN.** Pending the owner's per-table duplicate-semantics rulings (hard unique constraint vs idempotency token): customers, vendors, items, chart_of_accounts, entities, budget_targets, autocat_rules still need a ruling.
+> 3. **Durable rollout across the remaining create routes — OPEN (full per-table plan; keys confirmed against source this session).**
+>    - **Wave 1 — hard UNIQUE constraint (ship now, the payroll one-shot pattern). Each index needs a live-data `GROUP BY <key> HAVING COUNT(*)>1` pre-check first; owner-gated reconcile if dirty.**
+>      - `payroll_runs` — `(user_id, COALESCE(entity_id,0), period)` — ✅ DONE (this session).
+>      - `holdings` — `(user_id, COALESCE(entity_id,0), ticker)`; 23505 → blend/upsert into the existing lot.
+>      - `autocat_rules` — `(user_id, keyword, match_type)`; 23505 → reject-and-edit.
+>      - `team_members` — `(user_id, lower(email))`.
+>      - `chart_of_accounts` — `(user_id, COALESCE(entity_id,0), code)`.
+>      - `fx_rates` — `(user_id, from_currency, to_currency, rate_date)` (already has an inline typed guard; the constraint makes it un-bypassable).
+>      - `budget_targets` — `(user_id, COALESCE(entity_id,0))` — already an upsert; the constraint closes its first-write TOCTOU.
+>    - **Wave 1b — `entities`** — hard UNIQUE `(user_id, lower(name), jurisdiction)`, GATED on the jurisdiction attribute (**F108**).
+>    - **Already safe (no constraint needed):** `snapshots` (period-key upsert), `fx_transactions` (inline typed guard), `connections` (upsert).
+>    - **Wave 2 — idempotency TOKEN (blocked on token infra; the ONE shared mechanism, applied to every remaining create route).** Priority first (compounding): `recurring_invoices` / `recurring_bills` / `recurring_personal_transactions`. Then: invoices, expenses, bills, invoice_payments, payments_made, payments_received, sales_receipts, credit_notes, vendor_credits, inventory_movements, inventory/items, restock, customers, vendors, quotes, projects, timesheet, journals, goals, personal_transactions, personal_accounts, banking, bank-reconciliation/match, documents, templates, payroll (roster), accountant-messages. **Verified this session:** no create route outside Wave 1 has a clean natural key (vendors/quotes/inventory/personal_accounts checked — name-only, no reliable key), so none was wrongly dropped into token.
+>    - **PREREQUISITE for all of Wave 2:** build token infra — server `idempotency_key` column + persistence + partial UNIQUE index (the client already mints/sends the token, state 4). This one build unblocks the entire wave.
 > 4. **Client idempotency token (`public/index.html`) — HELD / deferred, currently INERT.** The submit handler mints+sends `idempotency_key`, but the server has no `idempotency_key` column, so the token is dropped — it becomes operative only when the token column + partial unique index + server persistence ship (part of the token-table rollout, state 3).
 >
 > **Harness reconciliation owed:** `tests/harness/seed.js` seeds two `2026-07` runs (R2 draft + R3 paid) — same `(user_id, entity_id, period)` — which VIOLATE the new key. The harness seed must be reconciled (move them to distinct periods, update `expected.js`) before the index is ever adopted in `initDB` / the shared seed.
@@ -1360,6 +1372,36 @@ It is invisible in source. Reading `_periodWindow` tells you a timezone is invol
 **Note on the first run of this experiment: it showed NO difference and was a false negative.** Every seeded row carried a date-only string, which `new Date()` puts at 00:00Z — before *both* viewers' boundaries — so both were wrong identically and nothing moved. The seed could not discriminate (`CLAUDE.md` Rule 4). It only became measurable once a row was timestamped inside the inter-viewer gap. **A green timezone check against a date-only seed proves nothing**; `VERIFICATION.md` A8 carries that warning.
 **Course of action:** no fix during the sweep (scope frozen). Carry into the money-engine consolidation as a hard requirement: one date comparison helper, string-based, shared by every leg on both sides. **Permanent check added as `VERIFICATION.md` A8 (6 checks).**
 **Done when:** `tz-matrix.js` reports zero differing figures with the boundary row present, and no recognition path calls `new Date()` on a period boundary.
+
+---
+
+### F109 🟢 LOW (FEATURE) — Investments have no CLOSE-POSITION / realized-gain path — **NEW (2026-07-25, owner-requested)**
+**Status:** OPEN — feature, owner-gated. No code.
+
+Holdings are stored as an aggregate position (average cost; there is **no sell/close path** today — a position can only be added to or deleted wholesale, so a realized gain can never be recorded).
+
+**Proposed:**
+- A **full and partial close**: `realized_gain = shares_closed × (close_price − avg_cost)`.
+- Persist a **realized-gains record**: `ticker, shares_closed, close_price, avg_cost, gain, date, scope` (business vs personal).
+- Surface it as its **OWN investment-income line** — **NOT** folded into operating Net Profit (investment income is not operating revenue), and **personal-scope closes are excluded from the business books** (entity-scope separation).
+- Labelled **tracking, not tax** (mirrors the app's existing no-tax-calculation disclaimers).
+- **Cash-flow integration is a follow-on**, not part of the first cut.
+**Done when:** a position can be fully/partially closed, the realized gain is computed and persisted, and it shows on a dedicated investment-income line without touching operating Net Profit or the business books for personal scope.
+
+---
+
+### F108 🟡 MEDIUM (DESIGN/DATA) — Entities have no JURISDICTION attribute — blocks a real `(name, jurisdiction)` uniqueness key and jurisdiction-aware accounting — **NEW (2026-07-25, owner-identified)**
+**Status:** OPEN — design + owner-supplied backfill required. No code. **Prerequisite for C1 Wave 1b** (the `entities` unique key).
+
+An entity today has a display name but **no structured jurisdiction**. Consequences: `entities` cannot take a meaningful hard unique key (name alone is not unique across jurisdictions — see C1 Wave 1b), and no leg can be jurisdiction-aware.
+
+**Proposed:**
+- A **structured, canonical** jurisdiction: **country + region/sub-national code** (e.g. ISO country + region), not free text.
+- Enables the C1 Wave 1b constraint `UNIQUE (user_id, lower(name), jurisdiction)` and jurisdiction-aware accounting.
+- This is a **registration / identity attribute**. It is **explicitly NOT a revival of the removed payroll tax engine (F8)** — no tax computation is implied or added.
+- **Address is metadata, not the key** — the key is the canonical jurisdiction code, not a postal address string.
+- **Requires owner-supplied backfill** of the existing entity's jurisdiction before the Wave 1b uniqueness constraint can be built (an un-backfilled NULL jurisdiction would weaken the key).
+**Done when:** entities carry a canonical jurisdiction, the existing entity is backfilled, and C1 Wave 1b's `(user_id, lower(name), jurisdiction)` constraint can be applied.
 
 ---
 

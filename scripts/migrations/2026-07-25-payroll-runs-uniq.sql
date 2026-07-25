@@ -1,0 +1,45 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 2026-07-25-payroll-runs-uniq.sql
+-- ONE-SHOT production migration — payroll_runs double-submit durable fix (C1).
+--
+-- WHAT IT DOES
+--   Adds the un-bypassable DB guarantee against duplicate payroll runs: a UNIQUE
+--   index on (user_id, COALESCE(entity_id,0), period). A second run for the same
+--   (user, entity, period) is never legitimate (owner ruling), so this is the
+--   natural key. COALESCE(entity_id,0) is load-bearing — a plain UNIQUE treats
+--   SQL NULLs as distinct, so two NULL-entity runs for the same period would slip
+--   through; coalescing NULL→0 makes them collide (0 is safe: SERIAL ids start at 1).
+--   This matches the server's recovery predicate `entity_id IS NOT DISTINCT FROM $2`.
+--
+-- HOW / WHEN IT RAN
+--   Run once against PRODUCTION via the Supabase SQL editor on 2026-07-25, gated on
+--   the zero-duplicate pre-check below (returned zero rows), and confirmed afterward
+--   via pg_indexes. The paired graceful-violation handler shipped in commit 577b280
+--   (POST /api/payroll-runs: on 23505, return the existing run 200, never 500/orphan
+--   lines). The handler was inert until this index existed.
+--
+-- WHY ONE-SHOT, NOT IN database.js / initDB
+--   initDB wraps its whole schema build in a single transaction (database.js:66 BEGIN
+--   → :534 COMMIT; any error → ROLLBACK → throw). A CREATE UNIQUE INDEX placed there
+--   would, if a duplicate existed, abort the transaction and BRICK BOOT (the app would
+--   fail to start, not just payroll). Kept out of the boot path: a failed one-shot
+--   fails only the migration (visible, recoverable), never boot. The build is also
+--   atomically self-checking — it succeeds iff no duplicate exists at that instant, so
+--   a race between the pre-check and the build cannot brick anything; it just fails.
+--
+-- ROLLBACK
+--   DROP INDEX IF EXISTS idx_payroll_runs_uniq;
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- PRE-FLIGHT CHECK — MUST return zero rows before running the DDL below.
+-- (Detects any (user_id, entity_id, period) group with >1 row — the exact thing the
+--  index would reject. A plain COUNT(*) on the table does NOT detect period-level dups.)
+--
+--   SELECT user_id, COALESCE(entity_id,0), period, COUNT(*)
+--   FROM payroll_runs
+--   GROUP BY 1, 2, 3
+--   HAVING COUNT(*) > 1;
+
+-- THE DDL THAT RAN (idempotent):
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payroll_runs_uniq
+  ON payroll_runs (user_id, COALESCE(entity_id, 0), period);

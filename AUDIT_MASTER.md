@@ -208,7 +208,49 @@ F25, F30, F32 (residual `/api/cashflow` reconciliation + Store A row), F33-C, F3
 
 A class is only a class if it has a full instance list. Each has one.
 
-### C1 — Duplicate-submit — server side ✅ **CLOSED for money** (`532390b`, 2026-07-22); client-side guards still open
+### C1 — Duplicate-submit — 🟠 **PARTIAL** — durable DB-level fix DONE for `payroll_runs` (pilot); interim heuristic still backs the other money routes; ~29-route rollout + client token OPEN
+
+> **STATUS — four states (2026-07-25). PARTIAL per the tick-off corollary: a fix covering part of a class says PARTIAL and lists what's left. C1 stays the single home for the double-submit class — no new F-number.**
+>
+> 1. **Interim heuristic (in place).** `findRecentDuplicate` / `findRecentDuplicateTyped` (`532390b`, 2026-07-22) — the 5s-window pre-check backs the money create routes. Non-atomic (see the 2026-07-24 UPDATE below): a fast-path, not a guarantee.
+> 2. **Durable DB-level fix — ✅ DONE, `payroll_runs` PILOT ONLY.**
+>    - **Commits:** graceful 23505 handler `577b280`; the UNIQUE index `idx_payroll_runs_uniq` applied as a **one-shot production migration on 2026-07-25** by the owner via the Supabase SQL editor (recorded in `scripts/migrations/2026-07-25-payroll-runs-uniq.sql`) — deliberately NOT in `initDB` (a failed unique build inside the transactional initDB would ROLLBACK and brick boot).
+>    - **What changed:** the UNIQUE index on `(user_id, COALESCE(entity_id,0), period)` is the un-bypassable guarantee (`COALESCE` so NULL-entity dups collide); the 23505 handler returns the existing run idempotently (200, never 500 / never orphan lines); the racy pre-check at `server.js:3844` stays as the fast path.
+>    - **How verified:** `tests/harness/verify-c1-payroll-pilot.js` on scratch — `Promise.all` race → ONE row; raw-insert control → 2nd rejected 23505; NULL-entity → COALESCE rejects (8/8 + control). Plus production: pre-check returned zero rows; index confirmed via `pg_indexes`.
+>    - **NOT executed (UNEXECUTED):** a behavioural double-submit against production — no test payroll was written to prod. The prod guarantee rests on the index (confirmed present) + the scratch behavioural proof.
+> 3. **Durable rollout across the other ~29 create routes — OPEN.** Pending the owner's per-table duplicate-semantics rulings (hard unique constraint vs idempotency token): customers, vendors, items, chart_of_accounts, entities, budget_targets, autocat_rules still need a ruling.
+> 4. **Client idempotency token (`public/index.html`) — HELD / deferred, currently INERT.** The submit handler mints+sends `idempotency_key`, but the server has no `idempotency_key` column, so the token is dropped — it becomes operative only when the token column + partial unique index + server persistence ship (part of the token-table rollout, state 3).
+>
+> **Harness reconciliation owed:** `tests/harness/seed.js` seeds two `2026-07` runs (R2 draft + R3 paid) — same `(user_id, entity_id, period)` — which VIOLATE the new key. The harness seed must be reconciled (move them to distinct periods, update `expected.js`) before the index is ever adopted in `initDB` / the shared seed.
+
+> **⚠️ UPDATE 2026-07-24 — the "CLOSED for money" claim is CONTRADICTED for `payroll_runs`: production has duplicate runs across MULTIPLE periods. The guard is a non-atomic race, not a real dedup.**
+>
+> **Mechanism (read-only code analysis, no DB access needed).** `POST /api/payroll-runs` is a check-then-insert with NO transaction, lock, or unique constraint:
+> - `findRecentDuplicateTyped('payroll_runs', uid, eid, {period})` is a plain `SELECT` (`server.js:3844`, def `:821`), followed by a separate `INSERT` (`server.js:3863`). Both are `await`ed with nothing around them.
+> - So two near-simultaneous POSTs (a real double-fire) interleave: A's SELECT and B's SELECT both run **before either INSERT is visible** → both see "no recent dup" → both INSERT. Classic TOCTOU. The 5-second window is irrelevant to the concurrent case; it only ever helped slow-sequential clicks, and a resubmit >5s apart defeats even that (Rule 9's "slow double-submit").
+> - **No `UNIQUE(user_id, entity_id, period)`** exists on `payroll_runs` (`database.js:385`) to catch the second insert at the write — nothing backstops the race.
+> - Separately, the run INSERT (`:3863`) and its line INSERTs (`:3869`) are not in one transaction — a crash between leaves a run with partial/no lines, which can make a run look "different" in a cleanup diff when it is really a torn write.
+>
+> **Which mode produced the EXISTING rows** is decided by each duplicate pair's `created_at` delta: `< 5s` ⇒ the TOCTOU race fired (in-window and still missed — a guard BUG); `> 5s` ⇒ window too short (guard INSUFFICIENT). Both modes are live regardless of which one fired.
+>
+> **Consequence for the cleanup:** deleting the duplicates does NOT stop recurrence — the next Run Payroll click can double-fire identically. Per **Rule 9** the fix is idempotency at the WRITE, but the mechanism is an owner decision and is **not designed or built here**: a hard `UNIQUE(user_id,entity_id,period)` would also forbid a legitimate correction/second run for a period; an idempotency key, `INSERT ... ON CONFLICT`, or a single-transaction `SELECT ... FOR UPDATE` would not. **Cleanup is safe to perform, but is not durable until the guard is replaced.**
+
+> **⚠️ UPDATE 2026-07-25 — CORRECTED DESIGN + PROVEN PILOT (payroll_runs). Enforcement moves to the DATABASE. SHIPPED for payroll (see STATUS above); token + other routes held.**
+>
+> **Why not the JS layer.** `db.insert` is NOT the single insert path — 15 routes use raw `pool.query` INSERT, including the pilot itself (`payroll_runs` at `server.js:3864`). A `db.insert` chokepoint would not even cover the route being piloted. The guarantee must live where no code path can bypass it — a **DB UNIQUE constraint**.
+>
+> **Mechanism (two layers):**
+> - **Natural-key tables** → UNIQUE on the business key. payroll_runs = `(user_id, entity_id, period)` (owner ruling: a second run for the same period is never legitimate). DDL, idempotent + NULL-safe: `CREATE UNIQUE INDEX IF NOT EXISTS idx_payroll_runs_uniq ON payroll_runs (user_id, COALESCE(entity_id,0), period)`. `COALESCE` is load-bearing — a plain UNIQUE treats NULLs as distinct and would let NULL-entity dups through (proven). Named-constraint alt (PG15+): `ALTER TABLE ... ADD CONSTRAINT ... UNIQUE NULLS NOT DISTINCT (...)` inside a `DO`/`EXCEPTION WHEN duplicate_object` block for idempotency.
+> - **Token tables** (identical rows can be legitimate) → an `idempotency_key` column + partial UNIQUE index; the client mints a token at ACTION INTENT (not form-open — that doesn't exist for shortcuts/bulk/API) and REUSES it while the intent is in-flight, so a double-click carries one token (`index.html submitPayrollRun`). payroll gets BOTH (belt-and-suspenders); the token becomes operative when the server persists it at the migration step.
+> - **Graceful violation:** on 23505 the handler (`server.js:3864`) returns the EXISTING row (200/201), never a 500. `findRecentDuplicateTyped` stays a fast-path; the DB constraint is the guarantee behind it.
+>
+> **PROVEN BY EXECUTION** — `tests/harness/verify-c1-payroll-pilot.js` (real server + scratch Postgres): two concurrent identical POSTs → exactly ONE run (+2 lines, both 2xx, same id); two different periods → TWO runs; 23505 → existing row. **Rule-14 control (no index):** the raw duplicate is ACCEPTED → two rows, deterministically proving the constraint is what closes the gap (the endpoint race is timing-dependent on localhost → reported, not asserted). 8/8 with the index; control green.
+>
+> **Scope:** ~30 mutating create routes; payroll_runs is the proven pilot. Per-table natural-key-vs-token classification drafted; **ROLLOUT PENDING the owner's per-table duplicate-semantics rulings** (customers, vendors, items, chart_of_accounts, entities, budget_targets, autocat_rules still need a ruling).
+>
+> **Shipped vs held (2026-07-25):** SHIPPED for payroll — 23505 handler `577b280`; `idx_payroll_runs_uniq` applied one-shot to production (NOT added to `initDB` — boot-brick avoided), gated on the zero-duplicate pre-check. STILL HELD: server persistence of the client token (state 4) and the ~29-route rollout (state 3). (F107 cross-account remains its own separate open finding.)
+>
+> **Numbering note:** the owner referenced this as "F107", but **F107 is already the cross-account visibility defect** (2026-07-24, uncommitted). To avoid the F104-class collision, this design is recorded here under **C1** — its true home. If a standalone number is wanted, the next free is **F108** (not F107).
 
 > **⚠️ TWO CORRECTIONS to this row's original list — recorded because both would have produced a fix that looked right and did nothing.**
 >
@@ -1318,6 +1360,43 @@ It is invisible in source. Reading `_periodWindow` tells you a timezone is invol
 **Note on the first run of this experiment: it showed NO difference and was a false negative.** Every seeded row carried a date-only string, which `new Date()` puts at 00:00Z — before *both* viewers' boundaries — so both were wrong identically and nothing moved. The seed could not discriminate (`CLAUDE.md` Rule 4). It only became measurable once a row was timestamped inside the inter-viewer gap. **A green timezone check against a date-only seed proves nothing**; `VERIFICATION.md` A8 carries that warning.
 **Course of action:** no fix during the sweep (scope frozen). Carry into the money-engine consolidation as a hard requirement: one date comparison helper, string-based, shared by every leg on both sides. **Permanent check added as `VERIFICATION.md` A8 (6 checks).**
 **Done when:** `tz-matrix.js` reports zero differing figures with the boundary row present, and no recognition path calls `new Date()` on a period boundary.
+
+---
+
+### F107 🔴 CRITICAL — A login cannot see which accounts it can ACCESS: Team & Roles reads the owner axis, the account resolver reads the member axis — a membership that scopes your session into another account is structurally invisible — **NEW (2026-07-24, owner-reported, VERIFIED IN CODE)**
+**Status:** OPEN — CRITICAL. **No code, no DB writes.** Structural defect verified from source; the specific production row (if any) is under read-only investigation (owner-run, since this checkout has no DB access). Log stands regardless of that outcome.
+
+**The two axes point opposite ways (verified):**
+- **Account resolver** (`server.js:660-667`) — `SELECT user_id AS account_owner_id FROM team_members WHERE data->>'member_user_id' = $1 AND data->>'status' = 'active'`. Reads rows where **you are the MEMBER**. If one exists, `req.accountId = account_owner_id` (`:671`), and `scopeId(req)` returns that — so **every `/api` data query silently scopes your session INTO that other account's books.**
+- **Team & Roles page** (`GET /api/team`, `server.js:2486` + `:2495`) — `uid = req.session.userId`, then `db.allByUser('team_members', uid)` = `WHERE user_id = $1` (`database.js:670`). Reads rows where **you are the OWNER** (people you invited).
+- **No endpoint anywhere selects `data->>'member_user_id' = uid` for DISPLAY.** So a user cannot see the memberships that grant *their* login access to *other* accounts.
+
+**Consequence.** A user can be logged into their own login yet operating entirely inside another account's financial data (the resolver scopes silently, no UI indicator), with **no way to discover the membership** — it appears on nobody's screen: not the member's Team page (wrong axis) and, because `GET /api/team` keys on `req.session.userId` rather than `scopeId(req)`, not as the joined account's roster either. The member sees the *data* of the joined account but the *own* (empty) roster — doubly concealing the link. The resolver is fail-safe against *escalation* (absent/pending/revoked → own id, never more), but it does nothing about *visibility*: an active row is invisible to the person it grants access to.
+
+**Why no audit caught it.** RBAC Phase 2 built the resolver (member axis) and the roster page (owner axis) separately; each is internally correct, and neither review asked "can a user enumerate the memberships that scope THEM elsewhere?" Same shape as F87 — the class lived in the gap between two correct-looking halves.
+
+**Related / not yet determined (owner-run, read-only):** whether an ACTIVE `team_members` row currently links `theking012012@gmail.com` (login) as a member of the `luxurythebrand01@gmail.com` account — which would explain a session reading the other account's payroll. If such a row exists AND its `data` blob does not match the invite→accept shape (`status:'pending'`→`'active'` with `invited_by`, `invite_token_hash`, `invite_expires`, `member_user_id` set on accept — `server.js:2555-2611` + accept flow), that is a **second, more serious finding (how did an active cross-account grant get written outside the invite flow?)** — but that requires the data and is NOT asserted here.
+**Course of action (owner-gated, not built):** (1) a "Accounts you can access" view that selects `member_user_id = uid` (the missing axis); (2) an active-session banner when `req.accountId !== req.session.userId` so a scoped session is never silent; (3) ensure membership creation/flip is audit-logged (**F90**). Depends on the data investigation for the incident half.
+**Done when:** a user can see, in the UI, every account their login can access; a session scoped into another account shows that fact; and the origin of any existing active cross-account row is explained.
+
+---
+
+### F106 🟡 MEDIUM — No way to delete or VOID a payroll run — once created, a run is permanent from the UI — **NEW (2026-07-24, owner-reported, verified against main)**
+**Status:** OPEN — design question for the owner. **No code; do not build the fix.** This is the flip side of **C1** (duplicate-submit): the app can CREATE a duplicate run and offers no way to UNDO one.
+
+**Verified facts (main):**
+- **No `DELETE /api/payroll-runs/:id` route.** The payroll-run routes are only `GET /api/payroll-runs`, `POST`, `GET /:id`, `PUT /:id/approve`, `PUT /:id/mark-paid` (`server.js:3808-3887`). No delete, no void.
+- **Run History renders no remove/void control** — only Approve (draft) and Mark Paid (approved) buttons (`index.html:4614-4625`).
+- The one `app.delete` that looks related, `DELETE /api/payroll/:id` (`server.js:1174`), targets an **employee/roster row** (`payroll` table), **not** a run (`payroll_runs`). Different vocabulary (Rule 11-adjacent): payroll ≠ payroll_runs.
+- **Consequence:** a double-fire (C1 gap #3 — `POST /api/payroll-runs` is unguarded, `server.js:3726`/§C1), a wrong-period run, or a test run **cannot be removed without direct DB access** — which is exactly why this session's Part-1 cleanup is a hand-run SQL transaction against live data.
+
+**Open design question (owner decides — DO NOT implement):**
+- **Hard DELETE vs VOID?** For `approved`/`paid` financial records, **void** (a reversing entry, or `status='voided'`) is usually the correct accounting pattern. A hard delete leaves no trace, which conflicts with the audit-trail direction (**F90**).
+- **Should a `paid` run be removable/voidable at all**, or only reversible by a compensating entry?
+- Whatever the mechanism: it **must be audit-logged** (**F90**) and **must not silently restate a closed period** (**F87**/**F94** class — excluded/reversed from the books must remain visible and dated, never a silent figure change).
+
+**Links:** flip side of **C1** (duplicate-submit — creation half; `POST /api/payroll-runs` is C1 unguarded gap #3). Depends on **F90** (audit trail) for the void mechanism, and is constrained by **F87**/**F94** (no silent period restatement). **Rating 🟡 MEDIUM** — a missing remediation capability, not an active wrong-figure bug (the corruption source is C1); escalates in practice because the paired create route writes money and is unguarded.
+**Done when:** the owner has decided delete-vs-void and the paid-run policy; only then does it leave OPEN for a scoped fix.
 
 ---
 

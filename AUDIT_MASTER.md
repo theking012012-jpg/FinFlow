@@ -1321,6 +1321,24 @@ It is invisible in source. Reading `_periodWindow` tells you a timezone is invol
 
 ---
 
+### F105 🟠 HIGH (PROCESS) — A finding was double-logged and a settled decision re-opened, because the ledger was searched positionally, not by topic — **NEW (2026-07-24)**
+**Status:** OPEN — reconciliation check PROPOSED (design only, not built), per owner sequencing. This is a process defect: the ledger failed at the one thing it exists to do.
+
+**What happened (honest account).** While logging F102/F103 I:
+1. **Searched the ledger positionally, not semantically.** I grepped `F99|F100|F101` to find where to *insert* new rows — I never searched the ledger by TOPIC (`payroll`, `draft`, `status filter`). So **F80** — the identical defect, logged the day before — never surfaced, and I logged it again as F104.
+2. **Read the seed, not the decisions.** I read `expected.js`/`seedData.js` to get expected numbers, but never opened `VERIFICATION.md`'s **ACCOUNTING BASIS — DECIDED** table. So **Decision 2** (draft contributes 0 — settled) was invisible to me, and F104 posed it as an open question.
+3. **Let the engines grade their own homework.** Because I hadn't read Decision 2, my F102 probe used the *other engine* as its oracle (client == server) and went green on 12,700 — a number wrong by decision. Exactly Rule 6.
+
+**Why the ledger did not catch it.** Nothing mechanically links a NEW finding to (a) existing findings on the same code anchor, or (b) a settled decision on the same topic. `verification-sync.js` already reconciles `expected.js` ↔ `VERIFICATION.md` at pre-commit; there is no equivalent reconciliation for the ledger itself.
+
+**Proposed check (design only — DO NOT BUILD until sequenced) — extend the pre-commit reconciliation, same shape as `verification-sync` + `bundle:check`:**
+- **(a) Anchor-collision guard.** Every finding declares the code anchors it concerns (`file:line`/function — most already cite them inline). A gate greps every finding's anchors and **fails the commit when two DISTINCT finding numbers claim the same anchor** without one citing the other. F104 named `server.js:4189` **and** `app-main.js:1699` — both already owned by F80's fix scope → collision → flagged. This is mechanical (exact strings), not semantic; buildable now.
+- **(b) Decision-citation guard.** `VERIFICATION.md` decisions get stable ids (Decision 1..5 already exist). Any finding whose body contains decision language (`decision needed`, `held for owner`, `does X accrue`, `open question`) MUST cite `Decision N` or assert "no decision exists". The gate extracts each decision's keywords and, if a decision-flavoured finding overlaps a decided topic it does **not** cite, **fails with a pointer to that decision** — so a settled decision cannot be silently re-opened.
+- Both run in the existing pre-commit hook and print the offending anchor/decision, like `[verification-sync] OK` does.
+**Done when:** the check exists, and re-adding an F104-shaped duplicate (or a finding re-opening Decision 2) fails the commit with a pointer to F80 / Decision 2.
+
+---
+
 ### F104 — WITHDRAWN (duplicate of F80). Number retired, do not reuse.
 Logged in error on 2026-07-24 re-opening a **settled** decision (`VERIFICATION.md` Decision 2: draft payroll contributes 0). The draft-payroll-recognition defect is **F80** (now updated to cover both the server and client legs). This finding never committed. Root-cause of the double-log and the guard that would prevent it: **F105**.
 

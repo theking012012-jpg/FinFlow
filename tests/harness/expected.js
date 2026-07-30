@@ -138,7 +138,12 @@ if (identityErrors.length) {
 function seedFingerprint() {
   const h = crypto.createHash('sha256');
   for (const f of ['seedData.js', 'expected.js']) {
-    h.update(fs.readFileSync(path.join(__dirname, f)));
+    // H6: read as utf8 and normalize line endings before hashing. Read as a raw Buffer, a
+    // CRLF/LF flip on a core.autocrlf=true checkout changed the fingerprint while the CONTENT was
+    // identical — firing a phantom "superseded seed" warning that, always firing, gets ignored.
+    // Content identifies the seed, not line endings. Same normalization as bundle.js norm(). What
+    // is hashed is unchanged: both files still feed the hash.
+    h.update(fs.readFileSync(path.join(__dirname, f), 'utf8').replace(/\r\n/g, '\n'));
   }
   return h.digest('hex').slice(0, 8);
 }

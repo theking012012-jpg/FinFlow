@@ -461,8 +461,17 @@ Removed the footnote (`"(a FAIL on check 1 is EXPECTED…)"`) and the header EXP
 
 ---
 
-### H6 🟢 LOW — seed fingerprint is line-ending sensitive — **NEW (2026-07-30), OPEN**
-`expected.js:138` (`seedFingerprint`) hashes `fs.readFileSync()` with no encoding — raw bytes including `\r`. On a `core.autocrlf=true` checkout an EOL flip changes the fingerprint while the content is identical, so `verification-sync` reports staleness that does not exist (observed while running H2/H3: a step3 run flipped the VERIFICATION.md stamp `69071491`→`bd876b69` with no value change). Warnings that always fire get ignored. **Fix:** normalize (strip `\r`) before hashing, as `bundle.js` `norm()` already does. Own commit when scheduled.
+### H6 🟢 LOW — seed fingerprint was line-ending sensitive — **NEW (2026-07-30) → ✅ FIXED (this commit)**
+`expected.js` `seedFingerprint()` hashed `fs.readFileSync()` with no encoding, i.e. raw bytes including `\r`, so an EOL flip on a `core.autocrlf=true` checkout changed the fingerprint while content was identical. It misfired live during commit `519fe32`. Now read as utf8 and normalized (`\r\n`→`\n`) before hashing, matching `bundle.js` `norm()`. **Proven both directions:** identical across an EOL flip (old algo `4f1e2cba` vs `d93acf2c`; new algo `d93acf2c` both), and still moves on a real seed change (Marketing 250→251 → `a4d77df0`). VERIFICATION.md restamped `69071491` → `d93acf2c`, stamps only — no figure or date. `verification-sync --check` now prints OK with no warning.
+
+---
+
+### F110 🟡 MEDIUM — harness re-pin hazard: the clock pin and `seedData.TODAY_LOCAL` must move together — **NEW (2026-07-30), OPEN**
+The node clock pin (`clock.js` `PINNED_ISO`) and `seedData.TODAY_LOCAL` must move in lockstep. Moving the pin alone relocates D2's "today" and reclassifies seed rows: **demonstrated** by moving the pin to `2026-06-25`, which reclassified INV-5 (`2026-07-05`) as future under D2 and drove step3 to **17/17**. Nothing enforces the pairing.
+
+**Not to be confused with the month-straddle.** On `2026-08-01` the pin does NOT move, D2 still resolves against it (every `resolvedToday` call passes `new Date()` = pinned, not Postgres `NOW()`), and no gate figure changes. The only `NOW()`-fed money write is `payroll_runs.run_date` (server.js:3893, Part B); `drift.js` warns and marks Part B checks BLOCKED, and the four gates run none. **The straddle is benign; re-pinning is the hazard.** Proven: under an artificial straddle step2 stayed 63/0 (it keys D2 off `TODAY_LOCAL`, immune to the node clock).
+
+**Agreed next step:** a pin↔seed consistency assertion so a half-done re-pin fails once, clearly, instead of as 17 scattered figure failures. Compare the pinned instant's **UTC** date (what `resolvedToday` keys on via `_utcYmd`) against `seedData.TODAY_LOCAL` — NOT its local date, which varies across the four viewer zones under tz-matrix. The four re-pin strategy options (advance the pin+seed · seed relative to the pin · freeze the DB clock · drift check fails loudly) remain an open owner decision; each trades against an existing decision or principle (see the session analysis).
 
 ---
 

@@ -430,6 +430,22 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### H1 🟠 HIGH — pre-commit bundle guard built from the working tree, not the index — could ship unreviewed code — **NEW (2026-07-30, found during F87-batch review)**
+**Status:** ✅ **FIXED (this commit)** — proven by execution. **Severity: HIGH.** Live on `main` from the hook's introduction until this commit. **Exposure:** any commit with a dirty or partially-staged wiring source.
+
+The hook regenerated `finflow-bundle.js` from the working tree and staged it. `index.html` loads only the bundle, so the committed bundle is the shipped artifact — unreviewed working-tree code could deploy to Railway while the reviewed source diff looked clean.
+
+Not caught by any gate. The gates test app behaviour; this was a defect in the tooling that assembles what ships. Found during review of the F87 batch, after the `index.html` split on 2026-07-30 turned out to be a partial stage — it missed only because `index.html` is not a bundle source.
+
+**What changed (mechanism).** New `bundle.js --from-index` mode reads each source via `git show :public/<file>` and, if the rebuilt bundle differs from the staged one, writes it into the **index only** (`git hash-object -w --path` + `git update-index --cacheinfo`), leaving the working tree untouched. The hook calls that mode and no longer `git add`s the working-tree bundle. Default and `--check` behaviour unchanged for manual dev use.
+
+**How verified.** `tests/h1-from-index.test.sh` — on a scratch branch it partially stages a wiring source (index = edit1, working tree = edit1+edit2) and commits, then reads the **committed** bundle (`git show HEAD:`): it **FAILS against the old hook** (bundle carries the unstaged edit2) and **PASSES against the fixed hook** (bundle carries only the staged edit1). Both runs executed. The test refuses to run against uncommitted work in the files it manipulates. Gates unchanged: step2 63/0, step3 32/1 (A7.4 pre-existing), step4 18/18 all viewers, tz-matrix identical.
+
+**Class: tooling that mutates the commit after review. Check for others** — anything under `.githooks/` or a build step that rewrites staged content from an unstaged source. Currently only two: this bundle write (now index-sourced) and `verification-sync.js` (read-only `--check`, blocks rather than mutating — correct as written).
+**Done when:** committed. ✅
+
+---
+
 ### F54 🟠 HIGH — Team-member data scope is incoherent (reads actor-scoped, writes account-scoped) — **NEW**
 **Status:** OPEN, verified in code. Reachable — the invite/accept flow is live and writes `member_user_id` (`server.js:2637-2642`).
 

@@ -4653,6 +4653,16 @@ function openRunPayrollModal(){
   openModal('run-payroll-modal');
 }
 
+// C1 durable fix — the idempotency token is minted at ACTION INTENT, not at form-open (form-open
+// doesn't exist for shortcuts/bulk/API). It is minted ONCE and REUSED for any retry of the same
+// in-flight intent — a double-click, a re-fired shortcut — so every copy carries ONE token and the
+// server's UNIQUE(idempotency_key) collapses them to a single row. Cleared only when the intent
+// resolves, so the NEXT distinct run mints a fresh token. (Payroll ALSO has the natural-key
+// constraint (user_id,entity_id,period) as the primary guarantee; this token is the general
+// mechanism/belt-and-suspenders — it becomes operative once the server persists it in the migration
+// step. Sent now so the client plumbing is in place and identical across every mutating action.)
+let _payrollSubmitToken=null;
+function _mintToken(){ try{ return crypto.randomUUID(); }catch(_){ return 'k_'+Date.now()+'_'+Math.random().toString(36).slice(2); } }
 async function submitPayrollRun(){
   const period=document.getElementById('prm-period')?.value?.trim();
   const runDate=document.getElementById('prm-date')?.value;
@@ -4669,18 +4679,22 @@ async function submitPayrollRun(){
     bonus:0,overtime:0,
     payroll_id:null,
   }));
+  // Mint at intent; reuse the same token if this intent is retried before it resolves.
+  if(!_payrollSubmitToken) _payrollSubmitToken=_mintToken();
+  const idempotency_key=_payrollSubmitToken;
   try{
     const res=await fetch('/api/payroll-runs',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({period,run_date:runDate,notes,lines}),
+      body:JSON.stringify({period,run_date:runDate,notes,lines,idempotency_key}),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
+    _payrollSubmitToken=null;                      // intent resolved — next run mints fresh
     closeModal('run-payroll-modal');
     notify('✓ Payroll run created — '+data.run?.period);
     loadPayrollRuns();
-  }catch(e){notify('Could not create payroll run',true);}
+  }catch(e){ _payrollSubmitToken=null; notify('Could not create payroll run',true);}
 }
 
 async function approvePayrollRun(id){

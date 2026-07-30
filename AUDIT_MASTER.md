@@ -446,6 +446,26 @@ Not caught by any gate. The gates test app behaviour; this was a defect in the t
 
 ---
 
+### H2 🟠 HIGH — step4-client-gate could not fail — **NEW (2026-07-30) → ✅ FIXED (this commit)**
+Check 2 computed per-viewer match counts and only `console.log`'d them; `A()` was never called, so a viewer at 5/18 still printed "ALL GREEN — 1 passed, 0 failed". `process.exitCode` was unconditionally 0. Now one assertion per viewer (naming the viewer and its misses) and a conditional exit code (`fail === 0 ? 0 : 1`). **Proven:** perturbing one shared seed input (July Marketing 250→350) drives check 2 red across all four viewers, names each viewer and miss, and exits non-zero; step4 goes 1 → 5 passed on a clean run. Same class as **H1** — a guard that cannot fail.
+
+---
+
+### H3 🟠 HIGH — A7.22b passed trivially — **NEW (2026-07-30) → ✅ FIXED (this commit)**
+The probe bill POST (`step3-gate.js`, future-dated bill for the AP-D2 check) was never status-checked, so a failed insert produced a green AP-unchanged assertion — AP was unchanged because nothing was added, not because D2 filtered it. New named check `A7.22-insert` asserts 2xx **and** a non-null id BEFORE A7.22b runs. **Proven:** pointing the probe at a bad endpoint yields `A7.22-insert` FAIL (`HTTP 404, id undefined`) while `A7.22b` still reported PASS — the trivial-green hole demonstrated, not asserted. step3 goes 32/1 → 33/1; A7.4 remains the only red.
+
+---
+
+### H5 🟢 LOW — stale expectation text in step4 — **NEW (2026-07-30) → ✅ FIXED (this commit)**
+Removed the footnote (`"(a FAIL on check 1 is EXPECTED…)"`) and the header EXPECTATION comment, both asserting a red step4 was expected. Both predate F87 landing; against a now-green run they directly contradicted the result.
+
+---
+
+### H6 🟢 LOW — seed fingerprint is line-ending sensitive — **NEW (2026-07-30), OPEN**
+`expected.js:138` (`seedFingerprint`) hashes `fs.readFileSync()` with no encoding — raw bytes including `\r`. On a `core.autocrlf=true` checkout an EOL flip changes the fingerprint while the content is identical, so `verification-sync` reports staleness that does not exist (observed while running H2/H3: a step3 run flipped the VERIFICATION.md stamp `69071491`→`bd876b69` with no value change). Warnings that always fire get ignored. **Fix:** normalize (strip `\r`) before hashing, as `bundle.js` `norm()` already does. Own commit when scheduled.
+
+---
+
 ### F54 🟠 HIGH — Team-member data scope is incoherent (reads actor-scoped, writes account-scoped) — **NEW**
 **Status:** OPEN, verified in code. Reachable — the invite/accept flow is live and writes `member_user_id` (`server.js:2637-2642`).
 

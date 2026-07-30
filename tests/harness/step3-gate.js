@@ -203,6 +203,12 @@ async function main() {
     const _bsBefore = await http.post('/api/reports/balance-sheet', {});
     check('A7.22a', 'balance-sheet AP baseline (no future bill)', _bsBefore.json && _bsBefore.json.accountsPayable, 1100);
     const _futBill = await http.post('/api/bills', { vendor: 'FUTURE PROBE D2', amount: 4242, status: 'unpaid', issue_date: '2027-03-15' });
+    // H3: assert the insert ACTUALLY happened before trusting A7.22b. If this POST fails, no bill is
+    // created and A7.22b passes trivially — AP is unchanged because nothing was added, not because D2
+    // filtered it. Check 2xx + a non-null id FIRST, so a failed insert reports as a failed insert.
+    const _futCreated = _futBill.status >= 200 && _futBill.status < 300 && _futBill.json && _futBill.json.id != null;
+    check('A7.22-insert', 'probe future-dated bill was actually created (2xx + non-null id)',
+      _futCreated ? true : `HTTP ${_futBill.status}, id ${_futBill.json && _futBill.json.id}`, true);
     const _bsAfter = await http.post('/api/reports/balance-sheet', {});
     check('A7.22b', 'future-dated bill contributes 0 to AP (D2)', _bsAfter.json && _bsAfter.json.accountsPayable, 1100);
     if (_futBill.json && _futBill.json.id != null) await http.del('/api/bills/' + _futBill.json.id);

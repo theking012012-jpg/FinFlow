@@ -22,9 +22,9 @@
  * parent asserts every client figure is identical across viewers. The clock INSTANT is pinned
  * (2026-07-25T16:00Z) for all viewers; only the process TZ differs, so any difference is F87.
  *
- * EXPECTATION (this run): the client engine still has F87, so the cross-TZ assertions FAIL — that
- * failure is the proof the probe detects the bug (Rule 4). A probe that can't fail on the bug proves
- * nothing.
+ * EXPECTATION: F87 has landed, so both checks now PASS. The probe still earns its place by being
+ * able to FAIL — check 1 goes red if viewer-independence regresses (F87), check 2 goes red per viewer
+ * if a client figure drifts from VERIFICATION. A probe that can't fail on the bug proves nothing (Rule 4).
  */
 
 const fs = require('fs');
@@ -169,7 +169,10 @@ if (viewerDependent.length) {
   }
 }
 
-// ── 2 · vs VERIFICATION expected (per viewer) — shows the F87 asymmetry (east correct, west wrong) ──
+// ── 2 · vs VERIFICATION expected (per viewer) — ONE ASSERTION PER VIEWER ──
+// H2: this comparison used to compute vp/vf and only console.log() them — A() was never called,
+// so a viewer at 5/18 still counted as green. Each viewer now routes through A(): a drift in any
+// client figure fails the gate, naming the viewer and listing every miss.
 console.log('\n── 2 · Client figures vs VERIFICATION expected (per viewer) ──');
 for (const x of flats) {
   let vp = 0, vf = 0; const misses = [];
@@ -180,11 +183,16 @@ for (const x of flats) {
       if (Math.abs(got - want) < 0.005) vp++; else { vf++; misses.push(k + '.' + field + ' got ' + got + ' want ' + want); }
     }
   }
-  const tag = x.tz.split('/')[1].padEnd(16);
-  console.log('     ' + tag + vp + '/' + (vp + vf) + ' match' + (vf ? '   miss: ' + misses.join(' · ') : '  ✓ all VERIFICATION values'));
+  const viewer = x.tz.split('/')[1];
+  const total = vp + vf;
+  A(viewer.padEnd(16) + vp + '/' + total + ' VERIFICATION figures match',
+    vf === 0,
+    vf ? vf + ' miss: ' + misses.join(' · ') : '');
 }
 console.log('     (FY revenue 10000 & Q3 4000 EXCLUDE future-dated INV-6 — D2 now applied client-side too; viewer-INDEPENDENT.)');
 
-console.log('\n' + (fail === 0 ? '  ALL GREEN' : '  ' + fail + ' FAILED') + ' — ' + pass + ' passed, ' + fail + ' failed');
-console.log('  (For THIS run a FAIL on check 1 is EXPECTED and correct: it proves the probe detects F87.)\n');
-process.exitCode = 0;
+// H2b: signal failure through the exit code so CI/the caller can see a red run.
+// H5: the old "(a FAIL on check 1 is EXPECTED…)" footnote was true only while the probe was red by
+// design; F87 has landed, so a FAIL is now a real regression, not the expected state. Removed.
+console.log('\n' + (fail === 0 ? '  ALL GREEN' : '  ' + fail + ' FAILED') + ' — ' + pass + ' passed, ' + fail + ' failed\n');
+process.exitCode = fail === 0 ? 0 : 1;

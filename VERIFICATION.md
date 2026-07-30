@@ -389,12 +389,12 @@ during the sweep.
 ## A5 · Server engine — `/api/reports` and `/books` — 18
 | # | Figure | Jun | Jul | FY | Result |
 |---|---|---|---|---|---|
-| A5.1–3 | revenue | 5,000 | 4,000 | 10,000 | **FAIL** — actual 5,000 / 4,000 / 15,000 (2026-07-23 · seed 69071491) |
-| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (2026-07-23 · seed 69071491) |
-| A5.7–9 | grossProfit | 4,800 | 3,200 | 8,600 | **FAIL** — actual 4,800 / 3,200 / 13,600 (2026-07-23 · seed 69071491) |
-| A5.10–12 | opex | 5,750 | 1,850 | 9,400 | **FAIL** — actual 5,600 / 4,650 / 12,700 (2026-07-23 · seed 69071491) |
-| A5.13–15 | netProfit | −950 | 1,350 | −800 | **FAIL** — actual -800 / -1,450 / 900 (2026-07-23 · seed 69071491) |
-| A5.16–18 | outstanding | 8,500 | 8,500 | 8,500 | **FAIL** — actual 13,500 / 13,500 / 13,500 (2026-07-23 · seed 69071491) |
+| A5.1–3 | revenue | 5,000 | 4,000 | 10,000 | PASS (2026-07-30 · seed 69071491) |
+| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (2026-07-30 · seed 69071491) |
+| A5.7–9 | grossProfit | 4,800 | 3,200 | 8,600 | PASS (2026-07-30 · seed 69071491) |
+| A5.10–12 | opex | 5,750 | 1,850 | 9,400 | PASS (2026-07-30 · seed 69071491) |
+| A5.13–15 | netProfit | −950 | 1,350 | −800 | PASS (2026-07-30 · seed 69071491) |
+| A5.16–18 | outstanding | 8,500 | 8,500 | 8,500 | PASS (2026-07-30 · seed 69071491) |
 ## A6 · Cross-engine reconciliation — 18
 Client-displayed figure **==** server figure, six figures × three periods.
 

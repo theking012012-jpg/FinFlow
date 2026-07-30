@@ -161,7 +161,13 @@ async function main() {
     if (inv.status === 200) {
       const rows = inv.json || [];
       const RECOGNIZED = new Set(['pending', 'overdue', 'partial', 'paid']);
+      // D2 — VERIFICATION's AR formula is "recognised, non-draft, NON-FUTURE" (seedData.js:154).
+      // INV-6 (2026-09-01) is scheduled, not issued, so it is excluded — the SAME exclusion the
+      // server applies to computeBooks.outstanding (A5.16-18). This clause was missing here.
+      const _fd = require('../../public/finflow-dates.js');
+      const _today = _fd.resolvedToday(new Date());
       const ar = rows.filter(r => RECOGNIZED.has(String(r.status || '').toLowerCase()))
+        .filter(r => { const d = _fd._toYmd(r.issue_date || r.created_at || r.date); return d != null && d <= _today; })
         .reduce((s, r) => s + Math.max(0, (parseFloat(r.amount) || 0) - (parseFloat(r.amount_paid) || 0)), 0);
       check('A7.1', 'invoices total outstanding', Math.round(ar * 100) / 100, 8500);
       check('A7.2', 'invoice rows returned (all 6 stored; draft excluded from revenue not the list)',
@@ -189,6 +195,17 @@ async function main() {
     } else {
       check('A7.4', 'GET /api/invoice-payments', `HTTP ${ip.status}`, 200);
     }
+
+    // A7.22 — AP-D2 (balance-sheet AP leg): a FUTURE-dated bill is SCHEDULED, not yet payable, and
+    // must contribute 0 to AP, exactly as INV-6 does to AR (A7.1). The seed has no future bill, so
+    // insert a transient one via the API, confirm the server-computed AP is unchanged, then remove
+    // it. Without the D2 filter this 4242 bill would inflate AP to 5342.
+    const _bsBefore = await http.post('/api/reports/balance-sheet', {});
+    check('A7.22a', 'balance-sheet AP baseline (no future bill)', _bsBefore.json && _bsBefore.json.accountsPayable, 1100);
+    const _futBill = await http.post('/api/bills', { vendor: 'FUTURE PROBE D2', amount: 4242, status: 'unpaid', issue_date: '2027-03-15' });
+    const _bsAfter = await http.post('/api/reports/balance-sheet', {});
+    check('A7.22b', 'future-dated bill contributes 0 to AP (D2)', _bsAfter.json && _bsAfter.json.accountsPayable, 1100);
+    if (_futBill.json && _futBill.json.id != null) await http.del('/api/bills/' + _futBill.json.id);
 
     // A7.21 — the roster is a TEMPLATE. Basis C: it must produce no expense figure. The card
     // itself is informational and should read 5,000.

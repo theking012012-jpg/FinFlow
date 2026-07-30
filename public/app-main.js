@@ -1754,35 +1754,37 @@ function _fyContext(){
   const mNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
   const fyName=(typeof document!=='undefined' && (document.getElementById('s-fy')||{}).value) || (window._fyStart||'January');
   const fyStartIdx=Math.max(0,mNames.indexOf(fyName));
-  const now=new Date();
-  const fyStartYear=(now.getMonth()>=fyStartIdx)?now.getFullYear():now.getFullYear()-1;
-  const monthsInFY=Math.min(12,Math.max(1,(now.getFullYear()-fyStartYear)*12+(now.getMonth()-fyStartIdx)+1));
-  return { fyStartIdx, fyStartYear, monthsInFY, curFyIdx:Math.min(11,Math.max(0,monthsInFY-1)), now };
+  // F87: derive the fiscal-year context from the CALENDAR date (UTC via resolvedToday), NOT from
+  // local getMonth/getFullYear — so "which fiscal month is it" never depends on the viewer's TZ.
+  const today=window.FinFlowDates.resolvedToday(new Date());   // 'YYYY-MM-DD' (phase 1 = UTC)
+  const ty=parseInt(today.slice(0,4),10), tm0=parseInt(today.slice(5,7),10)-1;
+  const fyStartYear=(tm0>=fyStartIdx)?ty:ty-1;
+  const monthsInFY=Math.min(12,Math.max(1,(ty-fyStartYear)*12+(tm0-fyStartIdx)+1));
+  return { fyStartIdx, fyStartYear, monthsInFY, curFyIdx:Math.min(11,Math.max(0,monthsInFY-1)), today };
 }
 window._fyContext = _fyContext;
 
 function _periodWindow(period, monthIdx){
-  const { fyStartIdx, fyStartYear, monthsInFY, curFyIdx, now } = _fyContext();
-  const _pd=v=>{const d=v?new Date(v):null;return(d&&!isNaN(d))?d:null;};
-  const mkLabel=(y,m)=>new Date(y,m,1).toLocaleString('en-US',{month:'short',year:'numeric'});
-  if(period==='month'){
-    const idx=(monthIdx==null)?(typeof currentMonthIdx!=='undefined'?currentMonthIdx:curFyIdx):monthIdx;
-    const start=new Date(fyStartYear,fyStartIdx+idx,1), end=new Date(fyStartYear,fyStartIdx+idx+1,1);
-    return { inWin:d=>{const x=_pd(d);return !!x&&x>=start&&x<end;}, elapsedMonths:(start<=now?1:0),
-             label:start.toLocaleString('en-US',{month:'short',year:'numeric'}), start, end };
-  }
-  if(period==='quarter'){
-    const anchor=(monthIdx==null)?curFyIdx:monthIdx;
-    const q=Math.floor(anchor/3);                       // fiscal quarter of the anchor
-    const start=new Date(fyStartYear,fyStartIdx+q*3,1), end=new Date(fyStartYear,fyStartIdx+q*3+3,1);
-    const elapsed=Math.min(3,Math.max(0,curFyIdx-q*3+1)); // months of this quarter that have started
-    return { inWin:d=>{const x=_pd(d);return !!x&&x>=start&&x<end;}, elapsedMonths:elapsed,
-             label:'Q'+(((q%4)+4)%4+1)+' · '+mkLabel(start.getFullYear(),start.getMonth())+' – '+mkLabel(end.getFullYear(),end.getMonth()-1), start, end };
-  }
-  // year — the whole fiscal year, every leg (F25)
-  const start=new Date(fyStartYear,fyStartIdx,1), end=new Date(fyStartYear,fyStartIdx+12,1);
-  return { inWin:d=>{const x=_pd(d);return !!x&&x>=start&&x<end;}, elapsedMonths:monthsInFY,
-           label:'Fiscal Year · '+mkLabel(start.getFullYear(),start.getMonth())+' – '+mkLabel(end.getFullYear(),end.getMonth()-1), start, end };
+  // F87: boundaries come from the canonical resolver as 'YYYY-MM-DD' STRINGS, inWin is a STRING
+  // compare + D2 (never recognise a row dated after today) — identical to the server. No
+  // new Date(y,m,1) local midnight anywhere; `start`/`end` are strings now (callers send intent).
+  const { fyStartIdx, curFyIdx } = _fyContext();
+  const today=window.FinFlowDates.resolvedToday(new Date());
+  const _MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const _lbl=ymd=>_MN[parseInt(ymd.slice(5,7),10)-1]+' '+ymd.slice(0,4);              // 'YYYY-MM-DD' → 'Mon YYYY'
+  const _absOf=ymd=>parseInt(ymd.slice(0,4),10)*12+(parseInt(ymd.slice(5,7),10)-1);
+  const _lastLbl=end=>{const a=_absOf(end)-1;return _MN[a%12]+' '+Math.floor(a/12);};   // last INCLUDED month (end is exclusive)
+  const kind=(period==='month'||period==='quarter')?period:'year';
+  const idx=(kind==='month')?((monthIdx==null)?(typeof currentMonthIdx!=='undefined'?currentMonthIdx:curFyIdx):monthIdx)
+          :(kind==='quarter')?((monthIdx==null)?curFyIdx:monthIdx):null;
+  const rp=window.FinFlowDates.resolvePeriod({ period:kind, monthIdx:idx, fyStartMonth:fyStartIdx, today });
+  const start=rp.start, end=rp.end;                                                    // half-open [start,end) strings
+  const inWin=d=>{const y=window.FinFlowDates._toYmd(d);return y!=null&&y<=today&&y>=start&&y<end;};
+  let label;
+  if(kind==='month') label=_lbl(start);
+  else if(kind==='quarter'){ const q=Math.floor(idx/3); label='Q'+(((q%4)+4)%4+1)+' · '+_lbl(start)+' – '+_lastLbl(end); }
+  else label='Fiscal Year · '+_lbl(start)+' – '+_lastLbl(end);
+  return { inWin, elapsedMonths:rp.elapsedMonths, label, start, end };
 }
 window._periodWindow = _periodWindow;
 
@@ -1800,10 +1802,14 @@ window._periodWindow = _periodWindow;
 // AR is an all-time balance-sheet figure by design — it does NOT take a period window.
 function arOutstanding(invoices){
   const RECOGNIZED = ['pending','overdue','partial','paid'];
+  // D2 — a future-dated invoice is SCHEDULED, not yet receivable (mirrors the server AR leg).
+  const _arToday = window.FinFlowDates.resolvedToday(new Date());
   let total=0, count=0, overdueTotal=0, overdueCount=0;
   (invoices||[]).forEach(i=>{
     const st=(i.status||'').toLowerCase();
     if(!RECOGNIZED.includes(st)) return;
+    const _dy=window.FinFlowDates._toYmd(i.issue_date||i.created_at||i.date);
+    if(_dy==null||_dy>_arToday) return;   // D2: exclude scheduled (future) invoices
     const due=Math.max(0,(parseFloat(i.amount)||0)-(parseFloat(i.amount_paid)||0));
     if(due<=0) return;
     total+=due; count++;
@@ -4563,9 +4569,13 @@ function _cogsPeriodParams(){
   const qs=new URLSearchParams();
   const eid=(window.ENTITIES||[]).find(e=>e.active)?._dbId;
   if(eid) qs.set('entity_id', eid);
+  // F87: send INTENT (period + monthIdx + fyStart); the server resolves the calendar window, so
+  // no local-midnight window crosses the wire. Mirrors the /api/reports contract.
   const period=(typeof currentPeriod!=='undefined')?currentPeriod:'year';
-  const w=(typeof _periodWindow==='function')?_periodWindow(period, period==='month'?currentMonthIdx:null):null;
-  if(w&&w.start&&w.end){ qs.set('start',w.start.toISOString()); qs.set('end',w.end.toISOString()); qs.set('elapsedMonths',String(w.elapsedMonths||0)); }
+  qs.set('period', period);
+  if(period!=='year' && typeof currentMonthIdx!=='undefined') qs.set('monthIdx', String(currentMonthIdx));
+  const _fyNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  qs.set('fyStart', String(Math.max(0,_fyNames.indexOf((document.getElementById('s-fy')||{}).value||'January'))));
   return qs;
 }
 window._cogsPeriodParams=_cogsPeriodParams;
@@ -4603,9 +4613,10 @@ async function _applyConvertedKPIs(ccy){
   const _FX_CARDS=['d-rev','d-exp','d-profit','d-outstanding','d-invest'];
   try{
     const period=(typeof currentPeriod!=='undefined')?currentPeriod:'year';
-    const w=(typeof _periodWindow==='function')?_periodWindow(period, period==='month'?currentMonthIdx:null):null;
     const qs=new URLSearchParams({display:ccy});
-    if(w&&w.start&&w.end){ qs.set('start',w.start.toISOString()); qs.set('end',w.end.toISOString()); qs.set('elapsedMonths',String(w.elapsedMonths||0)); }
+    // F87: send INTENT; the server resolves the window (no local-midnight window on the wire).
+    qs.set('period', period);
+    if(period!=='year' && typeof currentMonthIdx!=='undefined') qs.set('monthIdx', String(currentMonthIdx));
     // F34 B: fiscal-year start month (matches the client overview-chart indexing) so the server's
     // converted monthly buckets align with the chart's fiscal months.
     const _fyNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -5058,7 +5069,10 @@ function renderBanking(){
   // KPI cards: Total Balance · Inflow (MTD) · Outflow (MTD) · Uncategorized
   const _bkSet = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   const _bkTotal = (bankAccounts||[]).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
-  const _now = new Date(), _ym = _now.getFullYear()+'-'+String(_now.getMonth()+1).padStart(2,'0');
+  // F87: the MTD month key comes from the CALENDAR date (UTC via resolvedToday), not local
+  // getMonth — so Inflow/Outflow (MTD) don't shift by the viewer's timezone. Row side is a
+  // string prefix match on the row's own 'YYYY-MM-DD'.
+  const _ym = window.FinFlowDates.resolvedToday(new Date()).slice(0,7);
   const _bkMtd = (bankTxns||[]).filter(t => (t._iso||'').startsWith(_ym));
   const _bkIn  = _bkMtd.filter(t => t.type==='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkOut = _bkMtd.filter(t => t.type!=='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);

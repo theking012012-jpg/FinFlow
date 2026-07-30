@@ -45,65 +45,37 @@
   // ── Build 12-month arrays (last 12 months) from flat rows ────────
   function buildMonthlyArrays(invoices, expenses) {
     window._buildMonthlyArrays = buildMonthlyArrays; // expose globally
-    const now = new Date();
-    // FISCAL-YEAR indexed (F33): index i = the i-th month of the current fiscal year, so
-    // REV[i]/EXP[i] align with MONTH_FULL[i] (labels) and the stepper's currentMonthIdx.
-    // (Was rolling-last-12, which put label and data on different months.)
+    // FISCAL-YEAR indexed (F33): index i = the i-th month of the current fiscal year. F87: the 12
+    // buckets are ABSOLUTE-MONTH string keys (no new Date(y,m,1) local midnight) and each row
+    // buckets by its calendar month via _toYmd(...).slice(0,7) — so no bucket depends on the
+    // viewer's timezone. Legs unchanged (invoices@issue + receipts + expenses + issued bills +
+    // orphan payments).
+    const FD = window.FinFlowDates;
+    const _MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const _fym = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     const _fyName = (typeof document !== 'undefined' && (document.getElementById('s-fy')||{}).value) || 'January';
     const _fyStartIdx = Math.max(0, _fym.indexOf(_fyName));
-    const _fyStartYear = (now.getMonth() >= _fyStartIdx) ? now.getFullYear() : now.getFullYear() - 1;
+    const _fyWin = FD.resolvePeriod({ period: 'year', fyStartMonth: _fyStartIdx, today: FD.resolvedToday(new Date()) });
+    const _baseAbs = parseInt(_fyWin.start.slice(0,4),10)*12 + (parseInt(_fyWin.start.slice(5,7),10)-1);
     const months = [];
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(_fyStartYear, _fyStartIdx + i, 1);
-      months.push({ year: d.getFullYear(), month: d.getMonth(), label: d.toLocaleString('en-US', { month: 'short' }) });
-    }
+    for (let i = 0; i < 12; i++) { const _a = _baseAbs + i; months.push({ ym: Math.floor(_a/12)+'-'+String((_a%12)+1).padStart(2,'0'), label: _MN[_a%12] }); }
+    const _idxOf = v => { const y = FD._toYmd(v); if (y == null) return -1; const k = y.slice(0,7); return months.findIndex(m => m.ym === k); };
 
     const revByMonth  = new Array(12).fill(0);
     const expByMonth  = new Array(12).fill(0);
 
     invoices.forEach(inv => {
-      const d = parseDate(inv.issue_date || inv.created_at || inv.date);   // F36 issue_date; created_at fallback is a time-boxed transition (UTC — see server computeBooks issueDate)
-      if (!d) return;
-      const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
+      const idx = _idxOf(inv.issue_date || inv.created_at || inv.date);   // F36 issue_date; created_at fallback (transition)
       if (idx >= 0 && ['pending','overdue','partial','paid'].includes(inv.status?.toLowerCase())) revByMonth[idx] += parseFloat(inv.amount) || 0;
     });
-
-    expenses.forEach(exp => {
-      const d = parseDate(exp.expense_date);
-      if (!d) return;
-      const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
-      if (idx >= 0) expByMonth[idx] += parseFloat(exp.amount) || 0;
-    });
-
-    // Include cash sales receipts in revenue. payments_received is NOT revenue (F32).
-    // Reads window.receipts (the name the loader sets; window._receipts was never assigned).
-    (window.receipts || []).forEach(r => {
-      const d = parseDate(r.date);
-      if (!d) return;
-      const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
-      if (idx >= 0) revByMonth[idx] += parseFloat(r.amount) || 0;
-    });
-
-    // F38 Step 4: issued bills accrue as expense in their ISSUE month (mirror of the invoice
-    // revenue leg above) — RECOGNIZED_BILL statuses, FULL amount, keyed on issue_date.
+    // Cash sales receipts count as revenue; payments_received is NOT revenue (F32).
+    (window.receipts || []).forEach(r => { const idx = _idxOf(r.date); if (idx >= 0) revByMonth[idx] += parseFloat(r.amount) || 0; });
+    expenses.forEach(exp => { const idx = _idxOf(exp.expense_date); if (idx >= 0) expByMonth[idx] += parseFloat(exp.amount) || 0; });
+    // F38 Step 4: issued bills accrue as expense in their ISSUE month — RECOGNIZED_BILL, FULL amount.
     const _RECBILL = ['unpaid','due_soon','overdue','partial','paid'];
-    (window.bills || []).forEach(b => {
-      if (!_RECBILL.includes((b.status || '').toLowerCase())) return;
-      const d = parseDate(b.issue_date || b.created_at || b.due_date);
-      if (!d) return;
-      const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
-      if (idx >= 0) expByMonth[idx] += parseFloat(b.amount) || 0;
-    });
-
-    // Include ONLY orphan payments (bill_id IS NULL) in expenses. A bill-linked payment settles
-    // AP (Dr AP / Cr Cash), it is not a fresh expense — counting it double-counts the bill leg.
-    (window.paymentsMade || []).filter(p => p.bill_id == null).forEach(p => {
-      const d = parseDate(p.date);
-      if (!d) return;
-      const idx = months.findIndex(m => m.year === d.getFullYear() && m.month === d.getMonth());
-      if (idx >= 0) expByMonth[idx] += parseFloat(p.amount) || 0;
-    });
+    (window.bills || []).forEach(b => { if (!_RECBILL.includes((b.status || '').toLowerCase())) return; const idx = _idxOf(b.issue_date || b.created_at || b.due_date); if (idx >= 0) expByMonth[idx] += parseFloat(b.amount) || 0; });
+    // ONLY orphan payments (bill_id IS NULL) — a linked payment settles AP, not a fresh expense.
+    (window.paymentsMade || []).filter(p => p.bill_id == null).forEach(p => { const idx = _idxOf(p.date); if (idx >= 0) expByMonth[idx] += parseFloat(p.amount) || 0; });
 
     return { months: months.map(m => m.label), revByMonth, expByMonth };
   }
@@ -152,36 +124,30 @@
 
   // ── Update KPI cards ─────────────────────────────────────────────
   function updateKPIs(invoices, expenses, period) {
-    const now = new Date();
     let rev = 0, exp = 0;
 
-    // Revenue: issue-based accrual (F32) — issued invoices (recognized statuses) at FULL
-    // amount by ISSUE date (created_at, NOT due_date) + cash sales receipts. NO
-    // payments_received leg. Expenses keep their existing basis (real expenses + payments
-    // made). Reads window.receipts (window._receipts was never assigned). This rev is NOT
-    // written to d-rev — app-main updateDashboard owns that (F7); it only feeds the returned
-    // object's non-conflicting cards.
+    // Revenue: issue-based accrual (F32) — issued invoices (recognized statuses) at FULL amount by
+    // ISSUE date + cash sales receipts. Expenses = real expenses + issued bills + orphan payments.
+    // F87: filter through the CANONICAL string-compare window (_periodWindow), NOT local getMonth/
+    // getFullYear — pass RAW date values; inWin reduces to calendar dates and carries D2. Current
+    // month/quarter tracked by currentMonthIdx (the stepper), matching the dashboard. This rev is
+    // NOT written to d-rev (app-main updateDashboard owns that, F7); it feeds the returned object.
     const RECOGNIZED = ['pending','overdue','partial','paid'];
     const isIssued = i => RECOGNIZED.includes(i.status?.toLowerCase());
-    const issueD   = i => parseDate(i.issue_date || i.created_at || i.date);   // F36 issue_date; created_at fallback (transition)
     const receipts     = window.receipts      || [];
     const paymentsMade = window.paymentsMade || [];
-    const m = now.getMonth(), y = now.getFullYear(), q = Math.floor(m / 3) * 3;
-    const inP = d => {
-      if (!d) return false;
-      if (period === 'month')   return d.getMonth()===m && d.getFullYear()===y;
-      if (period === 'quarter') return d.getMonth()>=q && d.getMonth()<q+3 && d.getFullYear()===y;
-      return true; // year — all records
-    };
-    rev  = invoices.filter(i => isIssued(i) && inP(issueD(i))).reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-    rev += receipts.filter(r => inP(parseDate(r.date))).reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
-    exp  = expenses.filter(e => inP(parseDate(e.expense_date || e.date || e.created_at))).reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+    const _mi = (period === 'year') ? null : (typeof currentMonthIdx !== 'undefined' ? currentMonthIdx : null);
+    const _w  = (typeof _periodWindow === 'function') ? _periodWindow(period, _mi) : { inWin: () => true };
+    const inP = v => _w.inWin(v);
+    rev  = invoices.filter(i => isIssued(i) && inP(i.issue_date || i.created_at || i.date)).reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+    rev += receipts.filter(r => inP(r.date)).reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
+    exp  = expenses.filter(e => inP(e.expense_date || e.date || e.created_at)).reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
     // F38 Step 4: issued bills accrue as expense by ISSUE date — RECOGNIZED_BILL, FULL amount.
     const _RECBILL = ['unpaid','due_soon','overdue','partial','paid'];
-    exp += (window.bills || []).filter(b => _RECBILL.includes((b.status||'').toLowerCase()) && inP(issueD(b))).reduce((s,b)=>s+(parseFloat(b.amount)||0),0);
-    // Only ORPHAN payments (bill_id IS NULL) stay expense — a linked payment settles AP, it is
-    // not a fresh expense (would double-count the issued-bill leg). Sole double-count guard.
-    exp += paymentsMade.filter(p => p.bill_id == null && inP(parseDate(p.date || p.created_at))).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
+    exp += (window.bills || []).filter(b => _RECBILL.includes((b.status||'').toLowerCase()) && inP(b.issue_date || b.created_at || b.due_date)).reduce((s,b)=>s+(parseFloat(b.amount)||0),0);
+    // Only ORPHAN payments (bill_id IS NULL) stay expense — a linked payment settles AP, not a
+    // fresh expense (would double-count the issued-bill leg). Sole double-count guard.
+    exp += paymentsMade.filter(p => p.bill_id == null && inP(p.date || p.created_at)).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
 
     const profit = rev - exp;
     // F56: one canonical AR definition, mirroring the server (app-main.js arOutstanding).
@@ -481,21 +447,22 @@
     // the river diagram and the AI payroll insight all read the WRONG month's data. Reuse the same
     // month list buildMonthlyArrays builds so the two can never drift apart again.
     if (typeof window.EXP_SAL !== 'undefined') {
+      // F87: same ABSOLUTE-MONTH string keys as buildMonthlyArrays (no local getMonth / new
+      // Date(y,m,1)), so these per-category monthly arrays bucket identically and never depend on
+      // the viewer's timezone. Mirror of the buildMonthlyArrays fix — kept in lockstep (F60).
+      const FD = window.FinFlowDates;
       const _fym = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       const _fyName = (typeof document !== 'undefined' && (document.getElementById('s-fy') || {}).value) || 'January';
       const _fyStartIdx = Math.max(0, _fym.indexOf(_fyName));
-      const _n = new Date();
-      const _fyStartYear = (_n.getMonth() >= _fyStartIdx) ? _n.getFullYear() : _n.getFullYear() - 1;
+      const _fyWin = FD.resolvePeriod({ period: 'year', fyStartMonth: _fyStartIdx, today: FD.resolvedToday(new Date()) });
+      const _baseAbs = parseInt(_fyWin.start.slice(0,4),10)*12 + (parseInt(_fyWin.start.slice(5,7),10)-1);
       const _ms = [];
-      for (let _i = 0; _i < 12; _i++) {
-        const _d = new Date(_fyStartYear, _fyStartIdx + _i, 1);
-        _ms.push({ year: _d.getFullYear(), month: _d.getMonth() });
-      }
+      for (let _i = 0; _i < 12; _i++) { const _a = _baseAbs + _i; _ms.push(Math.floor(_a/12)+'-'+String((_a%12)+1).padStart(2,'0')); }
       window.EXP_SAL.fill(0); window.EXP_RENT.fill(0); window.EXP_SW.fill(0); window.EXP_MKT.fill(0);
       exps.forEach(e => {
-        const _d2 = parseDate(e.expense_date || e.date || e.created_at);
-        if (!_d2) return;
-        const _ix = _ms.findIndex(m => m.year === _d2.getFullYear() && m.month === _d2.getMonth());
+        const _y2 = FD._toYmd(e.expense_date || e.date || e.created_at);
+        if (_y2 == null) return;
+        const _ix = _ms.indexOf(_y2.slice(0,7));
         if (_ix < 0) return;
         const _c = (e.category || '').toLowerCase();
         const _a = parseFloat(e.amount) || 0;

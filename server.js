@@ -9,6 +9,7 @@ const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
 const { db, initDB, pool, rowToObj } = require('./database');
+const FinFlowDates = require('./public/finflow-dates.js'); // F87 — canonical calendar-date/period resolver (Rule 10)
 const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
 const aiCap = require('./ai-cap');                        // F18 — central AI cost caps
 const { appUrl, warnIfUnset } = require('./app-url');     // F29 — single source of truth for app links
@@ -3262,13 +3263,17 @@ app.get('/api/cashflow', requireAuth, wrap(async (req, res) => {
     const inflow  = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
     const outflow = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
 
-    // Build last-12-month rolling buckets (oldest first).
-    const now = new Date();
+    // Build last-12-month rolling buckets (oldest first). F87: keyed by ABSOLUTE-MONTH string
+    // arithmetic off the server's UTC "today" — no local-midnight Date, so the bucket a row files
+    // into never depends on the viewer's timezone. The row match below stays a string slice.
+    const _cfToday = FinFlowDates.resolvedToday(new Date());
+    const _cfAbsNow = parseInt(_cfToday.slice(0, 4), 10) * 12 + (parseInt(_cfToday.slice(5, 7), 10) - 1);
+    const _CF_MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const monthly = [];
     for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = d.toISOString().slice(0, 7); // YYYY-MM
-      const label = d.toLocaleString('en-US', { month: 'short' });
+      const _abs = _cfAbsNow - i;
+      const key = Math.floor(_abs / 12) + '-' + String((_abs % 12) + 1).padStart(2, '0'); // YYYY-MM
+      const label = _CF_MO[_abs % 12];
       const mIn = invoices
         .filter(x => x.status === 'paid' && (x.due_date || '').slice(0, 7) === key)
         .reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
@@ -3299,15 +3304,23 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     // this endpoint reconcile at EVERY period. No params → legacy 'year' (backward compatible:
     // the accountant portal + consolidated P&L call this with no window). Params present →
     // validated strictly — a financial endpoint must never trust an arbitrary client window.
+    // F87 CONTRACT: the client sends INTENT (period + monthIdx + fyStart), NOT a resolved window,
+    // so no viewer's local midnight ever crosses the wire. The server resolves the calendar window
+    // itself (computeBooks → finflow-dates). No params ⇒ 'year' (backward compatible: the accountant
+    // portal / consolidated P&L call with no period). A financial endpoint validates strictly.
     let bookPeriod = 'year';
-    const { start, end, elapsedMonths } = req.query;
-    if (start != null || end != null || elapsedMonths != null) {
-      const ws = new Date(start), we = new Date(end), em = parseInt(elapsedMonths, 10), DAY = 86400000;
-      const okDates = start && end && !isNaN(ws) && !isNaN(we) && we > ws;
-      const okRange = okDates && (we - ws) <= 366 * DAY && ws.getFullYear() >= 2000 && we.getFullYear() <= 2100;
-      const okElapsed = Number.isInteger(em) && em >= 0 && em <= 12;
-      if (!okRange || !okElapsed) return res.status(400).json({ error: 'Invalid period window.' });
-      bookPeriod = { start: ws.toISOString(), end: we.toISOString(), elapsedMonths: em };
+    let monthIdxArg = null;
+    const { period: qPeriod, monthIdx: qMonthIdx } = req.query;
+    if (qPeriod != null) {
+      if (qPeriod !== 'year' && qPeriod !== 'month' && qPeriod !== 'quarter') {
+        return res.status(400).json({ error: 'Invalid period.' });
+      }
+      bookPeriod = qPeriod;
+      if (qPeriod !== 'year') {
+        const _mi = parseInt(qMonthIdx, 10);
+        if (!Number.isInteger(_mi) || _mi < 0 || _mi > 11) return res.status(400).json({ error: 'Invalid monthIdx.' });
+        monthIdxArg = _mi;
+      }
     }
     // Canonical figures from computeBooks (the single source shared with the dashboard,
     // /books and the report routes) so every surface reconciles. Revenue/expenses/net all
@@ -3321,7 +3334,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     const _fy = parseInt(req.query.fyStart, 10);
     const fyStartIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
     const [books, invoices, expenses] = await Promise.all([
-      computeBooks(uid, eid, bookPeriod, display, fyStartIdx),
+      computeBooks(uid, eid, bookPeriod, display, fyStartIdx, monthIdxArg),
       db.allByUser('invoices', uid, matchEnt),
       db.allByUser('expenses', uid, matchEnt),
     ]);
@@ -3398,7 +3411,7 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
     // payments_received dropped: it settles AR, it is not revenue (F32).
   ]);
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const keyOf = d => { const dt = new Date(d); return isNaN(dt) ? 'Unknown' : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
+  const keyOf = d => { const ymd = FinFlowDates._toYmd(d); return ymd == null ? 'Unknown' : ymd.slice(0, 7); }; // F87: calendar-date month key (string), no local-time getMonth
   const labelOf = k => { if (k === 'Unknown') return 'Unknown'; const [y, m] = k.split('-'); return `${_MO[+m - 1]} '${y.slice(-2)}`; };
   const monthMap = {};
   const bump = (d, field, amt) => { const k = keyOf(d); (monthMap[k] || (monthMap[k] = { revenue: 0, expenses: 0 }))[field] += parseFloat(amt) || 0; };
@@ -3458,8 +3471,12 @@ app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
   // the mark-paid path Step 5 fixes). The max(0, …) floor stops an overpayment (amount_paid >
   // amount) driving AP negative. amount_paid is written by recalcBillStatus (Step 3). Unknown
   // statuses are still excluded, never counted.
+  // D2 — a future-dated bill is SCHEDULED, not yet payable, exactly as INV-6 is not yet
+  // receivable (the AR leg, computeBooks). Same exclusion so a future bill can't inflate AP.
+  const _apToday = FinFlowDates.resolvedToday(new Date());
   const ap   = (bills || [])
     .filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()))
+    .filter(b => { const _y = FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date); return _y != null && _y <= _apToday; })
     .reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
   const totalAssets      = Math.round((cash + ar) * 100) / 100;
   const totalLiabilities = Math.round(ap * 100) / 100;
@@ -3484,7 +3501,7 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
     db.allByUser('payments_received', uid),   // user-level (no entity_id) — F26
   ]);
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const keyOf = d => { const dt = new Date(d); return isNaN(dt) ? 'Unknown' : `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
+  const keyOf = d => { const ymd = FinFlowDates._toYmd(d); return ymd == null ? 'Unknown' : ymd.slice(0, 7); }; // F87: calendar-date month key (string), no local-time getMonth
   const labelOf = k => { if (k === 'Unknown') return 'Unknown'; const [y, m] = k.split('-'); return `${_MO[+m - 1]} '${y.slice(-2)}`; };
   const monthMap = {};
   const add = (date, field, amount) => { const k = keyOf(date); (monthMap[k] || (monthMap[k] = { inflow: 0, outflow: 0 }))[field] += parseFloat(amount) || 0; };
@@ -4028,27 +4045,41 @@ async function fifoItemSales(pool, inventoryId) {
 // NOTE (F26): sales_receipts / payments_received have no entity_id, so they are always
 //   user-level; for multi-entity users they attribute to whichever entity is viewed
 //   (tracked as F26). Every other source is entity-scoped.
-async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0) {
+async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const num = v => parseFloat(v) || 0;
   const sum = (arr, f) => (arr || []).reduce((s, x) => s + f(x), 0);
   // entityId null → all entities (accountant "all" view); set → that entity + unassigned rows.
   const ent = r => entityId == null || r.entity_id == null || r.entity_id === entityId;
-  // F33/F25: an explicit window { start, end, elapsedMonths } (resolved client-side from the
-  // fiscal-year setting + selected month) overrides the legacy string period. A string period
-  // keeps EXACTLY the prior behavior — the accountant portal / consolidated P&L call
-  // computeBooks('year'|'month'|'quarter') and must not change (backward compatible).
-  let winMode = false, winInc = null, winElapsed = 0, winStart = null;
+  // ── F87 / Rule 10 — CANONICAL period resolution (finflow-dates) ─────────────────────────────
+  // An accounting date is a CALENDAR date, not an instant. The window and the "today" bound are
+  // 'YYYY-MM-DD' STRINGS and every date-in-period test below is a STRING comparison — never
+  // Date-to-Date (that Date-to-Date compare WAS F87). `period` is a string ('year'|'month'|
+  // 'quarter'), an explicit window object { start, end, elapsedMonths } (the golden-master still
+  // passes one), or default 'year'. The accountant portal / consolidated P&L call with a string
+  // and resolve here identically. `monthIdx` selects WHICH month/quarter (client intent); null →
+  // the current one, exactly as the old `now`-based path did.
+  const _today = FinFlowDates.resolvedToday(new Date());   // server clock → UTC calendar date (phase 1)
+  let periodKind, winStart = null, winEnd = null, winElapsed;
   if (period && typeof period === 'object' && period.start && period.end) {
-    const ws = new Date(period.start), we = new Date(period.end);
-    if (!isNaN(ws) && !isNaN(we) && we > ws) {
-      winMode = true;
-      winInc = v => { const d = v ? new Date(v) : null; return !!d && !isNaN(d) && d >= ws && d < we; };
-      winElapsed = Math.max(0, Math.min(12, parseInt(period.elapsedMonths, 10) || 0));
-      winStart = ws;   // F34 Step 1b: window start → per-month payroll dating
-    }
+    periodKind = 'window';
+    winStart   = FinFlowDates._toYmd(period.start);
+    winEnd     = FinFlowDates._toYmd(period.end);
+    winElapsed = Math.max(0, Math.min(12, parseInt(period.elapsedMonths, 10) || 0));
+  } else {
+    periodKind = (period === 'month' || period === 'quarter') ? period : 'year';
+    const _rp  = FinFlowDates.resolvePeriod({ period: periodKind, monthIdx, fyStartMonth: fyStartIdx, today: _today });
+    winStart = _rp.start; winEnd = _rp.end; winElapsed = _rp.elapsedMonths;  // 'year' = the FISCAL-YEAR window [fyStart, fyStart+12)
   }
-  period = winMode ? 'window' : ((period === 'month' || period === 'quarter') ? period : 'year'); // 'all' → 'year'
+  // inPeriod — half-open [winStart, winEnd) STRING compare, plus the D2 upper bound (never
+  // recognise a row dated after today) applied to EVERY period (Rule 13). D2 is why future-dated
+  // INV-6 is excluded from FY *and* Q3: Q3's window contains 1 Sep, but 1 Sep > today. 'year' is
+  // the fiscal-year window, so S0 (a 2025 sale) correctly stays OUT of FY 2026 COGS.
+  const inPeriod = v => {
+    const ymd = FinFlowDates._toYmd(v);
+    if (ymd == null || ymd > _today) return false;            // D2
+    return ymd >= winStart && ymd < winEnd;                    // bounded window (FY for 'year')
+  };
 
   const [invoices, expenses, paymentsMade, payroll, receipts, bills] = await Promise.all([
     db.allByUser('invoices', userId, ent),
@@ -4106,12 +4137,9 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     return amount * rate;
   };
 
-  // Period windows mirror the frontend R1/E1 branches EXACTLY (incl. their date-field
-  // precedence), so server and client agree at every period. 'year' = all records (F25).
-  const now = new Date(), y = now.getFullYear(), mo = now.getMonth(), q = Math.floor(mo / 3) * 3;
-  const _d = v => { const d = v ? new Date(v) : null; return (d && !isNaN(d)) ? d : null; };
-  const inMonth   = d => !!d && d.getMonth() === mo && d.getFullYear() === y;
-  const inQuarter = d => !!d && d.getFullYear() === y && d.getMonth() >= q && d.getMonth() < q + 3;
+  // Period resolution and the string-compare `inPeriod` filter are defined above (F87). The old
+  // now/inMonth/inQuarter/_d local-time helpers are gone — every leg files by CALENDAR date, so
+  // server and client agree at every period and no figure depends on the viewer's timezone.
 
   // ── Revenue — ISSUE-BASED ACCRUAL (F32). Recognize every ISSUED invoice at its FULL
   // amount, in the period of its ISSUE date (created_at — NOT due_date), plus cash sales
@@ -4132,34 +4160,18 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // belongs to the PRIOR month locally, and keying off created_at misassigns its period. Today's
   // invoices are mid-month (Jul 2–3, 02:34Z/21:46Z/21:25Z) so none is misassigned — but once
   // every live row carries issue_date this fallback should be retired, not trusted indefinitely.
-  const issueDate = i => _d(i.issue_date || i.created_at || i.date);   // issue date, NOT due_date (F32/F36)
   // F34: recognition dates per leg = the same fields the period filters key on (conversion date ≡
   // recognition date). invoices: issue_date||created_at||date; receipts: date.
   const _invDate  = i => i.issue_date || i.created_at || i.date;
   const _rcptDate = x => x.date;
-  let issuedInvoices, salesReceipts;
-  if (winMode) {
-    issuedInvoices = sumFX(issuedInv.filter(i => winInc(i.issue_date || i.created_at || i.date)), i => i.amount, _invDate, 'invoices');
-    salesReceipts  = sumFX(receipts.filter(x => winInc(x.date)), x => x.amount, _rcptDate, 'sales_receipts');
-  } else if (period === 'month') {
-    issuedInvoices = sumFX(issuedInv.filter(i => inMonth(issueDate(i))), i => i.amount, _invDate, 'invoices');
-    salesReceipts  = sumFX(receipts.filter(x => inMonth(_d(x.date))), x => x.amount, _rcptDate, 'sales_receipts');
-  } else if (period === 'quarter') {
-    issuedInvoices = sumFX(issuedInv.filter(i => inQuarter(issueDate(i))), i => i.amount, _invDate, 'invoices');
-    salesReceipts  = sumFX(receipts.filter(x => inQuarter(_d(x.date))), x => x.amount, _rcptDate, 'sales_receipts');
-  } else { // year — all records (F25)
-    issuedInvoices = sumFX(issuedInv, i => i.amount, _invDate, 'invoices');
-    salesReceipts  = sumFX(receipts, x => x.amount, _rcptDate, 'sales_receipts');
-  }
+  // Revenue recognition (F32, issue-based accrual) — ONE period filter for every period, incl.
+  // all-time 'year'. inPeriod carries the D2 upper bound, so a future-dated issued invoice is
+  // scheduled, not recognised.
+  const issuedInvoices = sumFX(issuedInv.filter(i => inPeriod(i.issue_date || i.created_at || i.date)), i => i.amount, _invDate, 'invoices');
+  const salesReceipts  = sumFX(receipts.filter(x => inPeriod(x.date)), x => x.amount, _rcptDate, 'sales_receipts');
   const revenue = r2(issuedInvoices + salesReceipts);
 
-  // ── OpEx (mirrors frontend computeExpenseBreakdown / E1) ──
-  const inPeriod = v => {
-    if (winMode) return winInc(v);
-    if (period === 'year') return true;
-    const d = _d(v); if (!d) return false;
-    return period === 'month' ? inMonth(d) : inQuarter(d);
-  };
+  // ── OpEx (mirrors frontend computeExpenseBreakdown / E1) — uses the SAME inPeriod as revenue ──
   const _expDate = e => e.expense_date || e.date || e.created_at;
   const expensesTotal     = sumFX(expenses.filter(e => inPeriod(_expDate(e))), e => e.amount, _expDate, 'expenses');
   // F38 Step 4 — EXPENSE-side accrual, the mirror of the F32 revenue accrual. An ISSUED bill is
@@ -4179,8 +4191,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const paymentsMadeTotal = sumFX(paymentsMade.filter(p =>
     p.bill_id == null && inPeriod(_pmDate(p))
   ), p => p.amount, _pmDate, 'payments_made');
-  const months = winMode ? winElapsed
-    : period === 'month' ? 1 : period === 'quarter' ? (mo - q + 1) : (mo + 1); // elapsed months in period
+  const months = winElapsed; // elapsed months in period (finflow-dates); returned only — no server surface reads it
   // ── PAYROLL — BASIS C: payroll_runs are the SINGLE SOURCE OF TRUTH ────────────────────────
   // A payroll RUN is the event that creates the expense, exactly as an ISSUED INVOICE creates
   // revenue (F32) and an ISSUED BILL creates an expense (F38). That keeps payroll on the SAME
@@ -4277,7 +4288,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // invoice from ever subtracting from receivables.
   // AR converts at each invoice's issue date (same recognition date as the revenue leg).
   const outstanding = r2(sumFX(
-    issuedInv,
+    issuedInv.filter(i => { const _y = FinFlowDates._toYmd(_invDate(i)); return _y != null && _y <= _today; }),  // D2: future-dated invoices are scheduled, not receivable
     i => Math.max(0, num(i.amount) - num(i.amount_paid)),
     _invDate, 'ar'
   ));
@@ -4293,12 +4304,17 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // pickRate; a row with no rate is EXCLUDED from its bucket (never native-summed) and flags
   // monthly.complete=false — honest, never a fabricated 0.
   const _fy0 = Number.isInteger(fyStartIdx) && fyStartIdx >= 0 && fyStartIdx <= 11 ? fyStartIdx : 0;
-  const _fyY = (now.getMonth() >= _fy0) ? now.getFullYear() : now.getFullYear() - 1;
+  // F87: the 12 fiscal-month buckets are built from ABSOLUTE-MONTH string arithmetic off the FY
+  // that contains today — no `new Date(y,m,1)` local midnight, so a row buckets by its calendar
+  // month regardless of the viewer's timezone. `ym` is the 'YYYY-MM' key; _bIdx string-matches it.
+  const _fyWin = FinFlowDates.resolvePeriod({ period: 'year', fyStartMonth: _fy0, today: _today });
+  const _fyBaseAbs = parseInt(_fyWin.start.slice(0, 4), 10) * 12 + (parseInt(_fyWin.start.slice(5, 7), 10) - 1);
+  const _MO_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const _fyMonths = [];
-  for (let i = 0; i < 12; i++) { const d = new Date(_fyY, _fy0 + i, 1); _fyMonths.push({ y: d.getFullYear(), m: d.getMonth(), label: d.toLocaleString('en-US', { month: 'short' }) }); }
+  for (let i = 0; i < 12; i++) { const _abs = _fyBaseAbs + i; _fyMonths.push({ ym: Math.floor(_abs / 12) + '-' + String((_abs % 12) + 1).padStart(2, '0'), label: _MO_SHORT[_abs % 12] }); }
   const revByMonth = new Array(12).fill(0), expByMonth = new Array(12).fill(0);
   let monthlyComplete = true;
-  const _bIdx = v => { const d = _d(v); if (!d) return -1; return _fyMonths.findIndex(x => x.y === d.getFullYear() && x.m === d.getMonth()); };
+  const _bIdx = v => { const ymd = FinFlowDates._toYmd(v); if (ymd == null) return -1; const _k = ymd.slice(0, 7); return _fyMonths.findIndex(x => x.ym === _k); };
   const _fromOf = row => (entCur[row.entity_id] != null ? entCur[row.entity_id] : viewedCur);
   const addBucket = (arr, amount, date, from) => {
     const idx = _bIdx(date); if (idx < 0) return;
@@ -4428,13 +4444,18 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   // No params ⇒ all-time (backward compatible: the COGS page and any un-migrated caller are
   // unchanged). A window ⇒ per-item COGS counts only sales whose movement date ∈ [start,end).
   let inWin = () => true;
-  const { start, end, elapsedMonths } = req.query;
-  if (start != null || end != null || elapsedMonths != null) {
-    const ws = new Date(start), we = new Date(end), DAY = 86400000;
-    const okRange = start && end && !isNaN(ws) && !isNaN(we) && we > ws
-      && (we - ws) <= 366 * DAY && ws.getFullYear() >= 2000 && we.getFullYear() <= 2100;
-    if (!okRange) return res.status(400).json({ error: 'Invalid period window.' });
-    inWin = v => { const d = v ? new Date(v) : null; return !!d && !isNaN(d) && d >= ws && d < we; };
+  // F87 CONTRACT: the client sends INTENT (period + monthIdx + fyStart); the server resolves the
+  // calendar window (finflow-dates) + D2. No params ⇒ all-time (the COGS page's default). Mirrors
+  // computeBooks so the period-scoped COGS reconciles with the dashboard net.
+  const { period: qPeriod, monthIdx: qMonthIdx, fyStart: qFy } = req.query;
+  if (qPeriod != null && qPeriod !== 'all') {
+    if (qPeriod !== 'year' && qPeriod !== 'month' && qPeriod !== 'quarter') return res.status(400).json({ error: 'Invalid period.' });
+    let _mi = null;
+    if (qPeriod !== 'year') { _mi = parseInt(qMonthIdx, 10); if (!Number.isInteger(_mi) || _mi < 0 || _mi > 11) return res.status(400).json({ error: 'Invalid monthIdx.' }); }
+    const _fy = parseInt(qFy, 10), _fyIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
+    const _cogsToday = FinFlowDates.resolvedToday(new Date());
+    const _rp = FinFlowDates.resolvePeriod({ period: qPeriod, monthIdx: _mi, fyStartMonth: _fyIdx, today: _cogsToday });
+    inWin = v => { const y = FinFlowDates._toYmd(v); return y != null && y <= _cogsToday && y >= _rp.start && y < _rp.end; };
   }
   // Entity-scoped so the total matches computeBooks / the dashboard (the frontend stashes
   // it as window._cogsTotal for the canonical net). $2 NULL → all entities.

@@ -25,6 +25,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
 <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+<link rel="preload" href="/finflow-dates.js" as="script">
 <link rel="preload" href="/app-main.js" as="script">
 <link rel="preload" href="/finflow-bundle.js" as="script">
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'">
@@ -3551,6 +3552,10 @@ function loadChartJS(callback){
   document.head.appendChild(s);
 }
 </script>
+<!-- F87: canonical calendar-date/period resolver. MUST load before app-main.js — app-main calls
+     _fyContext() (→ window.FinFlowDates) at load time (currentMonthIdx). The bundle loads after
+     app-main, so this cannot live there. -->
+<script src="/finflow-dates.js"></script>
 <script src="/app-main.js"></script>
 <script>(function(){var p=new URLSearchParams(window.location.search);if(p.get('signup')==='1'&&typeof showRegister==='function')showRegister();})();</script>
 

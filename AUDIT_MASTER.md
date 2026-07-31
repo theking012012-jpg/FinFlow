@@ -1459,8 +1459,8 @@ An entity today has a display name but **no structured jurisdiction**. Consequen
 
 ---
 
-### F107 🔴 CRITICAL — A login cannot see which accounts it can ACCESS: Team & Roles reads the owner axis, the account resolver reads the member axis — a membership that scopes your session into another account is structurally invisible — **NEW (2026-07-24, owner-reported, VERIFIED IN CODE)**
-**Status:** OPEN — CRITICAL. **No code, no DB writes.** Structural defect verified from source; the specific production row (if any) is under read-only investigation (owner-run, since this checkout has no DB access). Log stands regardless of that outcome.
+### F107 🟡 MEDIUM — A login cannot see which accounts it can ACCESS: Team & Roles reads the owner axis, the account resolver reads the member axis — a membership that scopes your session into another account is structurally invisible — **NEW (2026-07-24, owner-reported, VERIFIED IN CODE) · RE-RATED 🔴 CRITICAL → 🟡 MEDIUM 2026-07-30**
+**Status:** OPEN — 🟡 MEDIUM (re-rated 2026-07-30 from 🔴 CRITICAL, on code evidence verified from source at `b55d8f1`). **No code, no DB writes.** Structural defect verified from source; the specific production row (if any) is under read-only investigation (owner-run, since this checkout has no DB access). Log stands regardless of that outcome.
 
 **The two axes point opposite ways (verified):**
 - **Account resolver** (`server.js:660-667`) — `SELECT user_id AS account_owner_id FROM team_members WHERE data->>'member_user_id' = $1 AND data->>'status' = 'active'`. Reads rows where **you are the MEMBER**. If one exists, `req.accountId = account_owner_id` (`:671`), and `scopeId(req)` returns that — so **every `/api` data query silently scopes your session INTO that other account's books.**
@@ -1474,6 +1474,28 @@ An entity today has a display name but **no structured jurisdiction**. Consequen
 **Related / not yet determined (owner-run, read-only):** whether an ACTIVE `team_members` row currently links `theking012012@gmail.com` (login) as a member of the `luxurythebrand01@gmail.com` account — which would explain a session reading the other account's payroll. If such a row exists AND its `data` blob does not match the invite→accept shape (`status:'pending'`→`'active'` with `invited_by`, `invite_token_hash`, `invite_expires`, `member_user_id` set on accept — `server.js:2555-2611` + accept flow), that is a **second, more serious finding (how did an active cross-account grant get written outside the invite flow?)** — but that requires the data and is NOT asserted here.
 **Course of action (owner-gated, not built):** (1) a "Accounts you can access" view that selects `member_user_id = uid` (the missing axis); (2) an active-session banner when `req.accountId !== req.session.userId` so a scoped session is never silent; (3) ensure membership creation/flip is audit-logged (**F90**). Depends on the data investigation for the incident half.
 **Done when:** a user can see, in the UI, every account their login can access; a session scoped into another account shows that fact; and the origin of any existing active cross-account row is explained.
+
+---
+
+**⟶ RE-RATE RULING (2026-07-30, code evidence at `b55d8f1`) — the original finding above stands unedited; this is the ruling appended to it.**
+
+**Re-rate basis.** The defect is a **TRANSPARENCY** gap, not an access-control one. Verified in the current source:
+- The account resolver is **deny-by-default**. `req.accountId = uid` is set BEFORE the membership query (`server.js:658`); cross-account scoping needs a positive match on an active row whose owner is not the caller (`671-673`); and the catch path returns own id (`676`, *"fail-safe: own id, never escalate"*). Not permit-on-missing.
+- **No attacker-triggerable path to an active row.** Invite requires `requirePerm('team:manage')` AND owner/admin `accountRole`, and invites into `scopeId(req)` — the account already controlled (`2557-2562`). Accept requires a valid unexpired token plus, for a pre-existing email, session identity or bcrypt password proof (`2696-2698`). Self-accept is rejected (`2724`). A known entity id does not help: the override checks `WHERE id=$1 AND user_id=$2` against `scopeId(req)`, else 403 (`694-695`).
+- **The visibility gap itself is UNCHANGED.** The resolver reads the member axis (`data->>'member_user_id'`, `664`) while `GET /api/team` reads the owner axis (`allByUser`, `2496`). `member_user_id` appears in only four places in server.js — the resolver read, two comments, and the accept write (`2734`). There is no display endpoint on the member axis, so a membership that relocates a session appears on nobody's screen.
+
+**What MEDIUM covers:** a legitimately invited member can be operating inside another account's books with no on-screen indicator and no way to enumerate which accounts their login can reach. Real, and worth fixing — but not the "outsider reads your financials" that CRITICAL implies.
+
+**Public repo weighting, taken honestly:** readable source makes the gap trivially discoverable and the invite mechanics fully known. That argues for fixing the transparency gap promptly. It does not create an access primitive that is not there.
+
+**The rating rests on CODE**, deliberately not on "zero team_members rows" — that is live table state, it is not something the code depends on, and it stops being true the first time anyone is invited. A rating resting on it would expire silently.
+
+**STILL PARKED, needs the owner and a live DB — not assertable from source:** whether an ACTIVE `team_members` row currently links one login into another account, and whether it was produced by the invite→accept flow or written directly. A row of unknown provenance would be a separate finding at a higher grade. This is a query, not an analysis — worth running rather than leaving open indefinitely.
+
+---
+
+### F111 🟡 MEDIUM — no member-axis visibility for team memberships (the remediation half of F107) — **NEW (2026-07-30), OPEN**
+The remediation half of **F107**, logged separately because it is a feature, not a patch: (a) an endpoint and UI listing the accounts a login can access, reading the member axis the resolver already queries (`data->>'member_user_id' = uid`); (b) an indicator on any session scoped into an account the user does not own (`req.accountId !== req.session.userId`). F107 records the defect; F111 is the work.
 
 ---
 

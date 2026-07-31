@@ -10,3 +10,16 @@ nuclear-nav.js
 # IDE-session scratch artifacts (never meant to be tracked)
 .s5h/
 .s5v/
+.claude/
+_gate*.txt
+_review_diff.txt
+_residual.txt
+commit-msg*.txt
+
+# Local-only audit docs — ignored by EXPLICIT NAME, never a pattern.
+# AUDIT_MASTER.md is tracked and MUST stay tracked, and AUDIT_MASTER_ARCHIVE_2026-07-22.md
+# is one path segment away from it — a glob like AUDIT_*.md would be a landmine.
+AUDIT_2026-07-13.md
+AUDIT_CODE.md
+AUDIT_MASTER_ARCHIVE_2026-07-22.md
+CODE_AUDIT_2026-07-09.md

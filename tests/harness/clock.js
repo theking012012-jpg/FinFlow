@@ -78,6 +78,34 @@ class PinnedDate extends RealDate {
 }
 global.Date = PinnedDate;
 
+// ── 2b · Pin ↔ seed consistency (F110) ───────────────────────────────────────
+// The pinned instant and the seed's notion of "today" MUST agree. The server keys D2 off the
+// pinned instant's UTC calendar date (every resolvedToday(new Date()) → _utcYmd), and seedData was
+// hand-built around TODAY_LOCAL. Move one without the other and D2 reclassifies seed rows: moving
+// the pin alone to 2026-06-25 made INV-5 (2026-07-05) "future" and drove step3 to 17/17 scattered
+// figure failures with no named cause (F110). Fail ONCE, here, before any figure is computed.
+//
+// UTC, not local: _utcYmd is UTC, and the ambient TZ varies across the four viewer zones under
+// tz-matrix (HARNESS_TZ), so comparing local dates would false-fail for eastern viewers.
+//
+// seedData.js is pure data — no require()s, no module-scope new Date() — so requiring it here is
+// side-effect-free and introduces no load-order problem or cycle. Both files are harness-only; the
+// app loads neither (server.js / public never require them), so this guard cannot fire in the app.
+const pinnedUtcYmd = new RealDate(PINNED_MS).toISOString().slice(0, 10);   // === _utcYmd(PINNED_MS)
+const seedToday = require('./seedData.js').TODAY_LOCAL;
+if (pinnedUtcYmd !== seedToday) {
+  throw new Error(
+    `[clock] PIN ↔ SEED MISMATCH — refusing to run on an inconsistent harness.\n`
+    + `  pinned instant UTC date : ${pinnedUtcYmd}   (clock.js PINNED_ISO ${PINNED_ISO})\n`
+    + `  seedData.TODAY_LOCAL    : ${seedToday}   (tests/harness/seedData.js)\n`
+    + `  These MUST be the same date. The pin and the seed were built together; moving one without\n`
+    + `  the other relocates D2's "today" and silently reclassifies seed rows (F110 — a pin at\n`
+    + `  2026-06-25 makes INV-5 2026-07-05 "future" and drives step3 to 17/17).\n`
+    + `  Fix: move PINNED_ISO and EVERY seedData date in lockstep, or revert one to match the\n`
+    + `  other. See the re-pin procedure in tests/harness/drift.js.`
+  );
+}
+
 // ── 3 · Offline guard ────────────────────────────────────────────────────────
 // VERIFICATION requires the investment price feed frozen. It also requires determinism:
 // a run that reaches the network can differ between two runs of the same seed. So every

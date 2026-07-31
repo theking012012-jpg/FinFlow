@@ -466,12 +466,21 @@ Removed the footnote (`"(a FAIL on check 1 is EXPECTED…)"`) and the header EXP
 
 ---
 
-### F110 🟡 MEDIUM — harness re-pin hazard: the clock pin and `seedData.TODAY_LOCAL` must move together — **NEW (2026-07-30), OPEN**
+### H4 — A7.1 oracle change: ✅ RATIFIED (no revert) — **2026-07-30**
+During F87 the gate's own AR computation gained a D2 filter, turning A7.1 red→green. Verified the definition **pre-existed**: `"recognised, non-draft, non-future"` and `arOutstanding: 8500` entered `seedData.js` at **`03624f9` (2026-07-23)** — a strict ancestor of F87 (`34de981`, 2026-07-30), seven days earlier — and the comment there states the app had **not yet** implemented the exclusion, i.e. it was planted as a discriminator. VERIFICATION.md carries the same **8,500** (A9.3 `8,500 not 13,500`; Customer B `7,000`; A+B=8,500). F87 left the 8,500 target untouched and only added the missing non-future clause (which is why the gate was red at 13,500). **The gate was brought into line with an existing definition, not fitted to the server.**
+
+**Noted, not actioned:** A7.1's gate-side recomputation now mirrors the server's D2 rule, so it is less an *independent* re-derivation than before. Mitigated — the 8,500 anchor is hand-supplied and predates both, and A7.1 exercises the invoices row list while A5.16-18 exercises the reports engine. Whether A7.1 should stay independent of the server's filter is a separate question from "pre-existing vs invented" (which the evidence settles as pre-existing) and is left to the owner.
+
+---
+
+### F110 🟡 MEDIUM — harness re-pin hazard: the clock pin and `seedData.TODAY_LOCAL` must move together — **NEW (2026-07-30) → 🟠 GUARD LANDED (this commit); re-pin strategy still OPEN**
 The node clock pin (`clock.js` `PINNED_ISO`) and `seedData.TODAY_LOCAL` must move in lockstep. Moving the pin alone relocates D2's "today" and reclassifies seed rows: **demonstrated** by moving the pin to `2026-06-25`, which reclassified INV-5 (`2026-07-05`) as future under D2 and drove step3 to **17/17**. Nothing enforces the pairing.
 
 **Not to be confused with the month-straddle.** On `2026-08-01` the pin does NOT move, D2 still resolves against it (every `resolvedToday` call passes `new Date()` = pinned, not Postgres `NOW()`), and no gate figure changes. The only `NOW()`-fed money write is `payroll_runs.run_date` (server.js:3893, Part B); `drift.js` warns and marks Part B checks BLOCKED, and the four gates run none. **The straddle is benign; re-pinning is the hazard.** Proven: under an artificial straddle step2 stayed 63/0 (it keys D2 off `TODAY_LOCAL`, immune to the node clock).
 
-**Agreed next step:** a pin↔seed consistency assertion so a half-done re-pin fails once, clearly, instead of as 17 scattered figure failures. Compare the pinned instant's **UTC** date (what `resolvedToday` keys on via `_utcYmd`) against `seedData.TODAY_LOCAL` — NOT its local date, which varies across the four viewer zones under tz-matrix. The four re-pin strategy options (advance the pin+seed · seed relative to the pin · freeze the DB clock · drift check fails loudly) remain an open owner decision; each trades against an existing decision or principle (see the session analysis).
+**Guard LANDED (this commit).** A pin↔seed consistency assertion in `clock.js` section 2b compares the pinned instant's **UTC** date (`_utcYmd(PINNED_MS)`) against `seedData.TODAY_LOCAL` and throws at `-r` preload naming both values + the fix. UTC not local: `resolvedToday` keys on `_utcYmd`, and tz-matrix spawns four zones via `-r clock.js`, so a local compare would false-fail eastern viewers — **verified passing under Kolkata (+5:30) and London (+1)**. `seedData.js` is pure data (no requires, no module-scope `new Date()`), so requiring it from clock.js is side-effect-free; neither file is loaded by the app, so the guard cannot fire outside the harness. **Proven:** the pin moved alone to `2026-06-25` throws once, before step3 runs, rather than surfacing as 17/17.
+
+**STILL OPEN:** the four re-pin strategy options (advance the pin+seed in lockstep · make the seed relative to the pin · freeze the DB clock · fail the drift check loudly) remain an owner decision; the guard presupposes none of them.
 
 ---
 

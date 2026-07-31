@@ -500,6 +500,43 @@ Independent of **H6**. H6 stopped the seed **fingerprint** moving on EOL flips; 
 
 ---
 
+### F113 🟡 MEDIUM — Dead-but-built "Record Payment" modal on Invoices: a working feature, silenced by the shadowing pattern — **NEW (2026-07-31, source-verified), OPEN**
+**Status:** OPEN. Confirmed by source inspection, not execution — this is a structural absence (a button that doesn't exist), which inspection proves directly; no DB run adds anything.
+
+`openRecordPaymentModal` / `recordPayment` (`index.html:4460-4498`) are fully written and correctly wired to Store B: `recordPayment()` POSTs `{invoice_id, amount, payment_date, method, reference, notes}` to `POST /api/invoice-payments` — the real settlement route, with a real amount input (`rp-amount`), not a full-balance-only settle. **They are never reachable.** The only caller of `openRecordPaymentModal` anywhere in the repo is `app-main.js:2222`, itself inside `app-main.js`'s own `renderInvoices` (declared `app-main.js:2196`), which builds a per-row **"Record Payment"** button (`app-main.js:2212`) for any non-paid invoice. That entire function is shadowed: `finflow-api-wiring-medium.js:200` reassigns `window.renderInvoices` (confirmed the runtime winner — the bundle loads `app-main.js` synchronously first, then the deferred bundle containing `medium.js` runs after and overwrites the binding), and medium.js's replacement template (`finflow-api-wiring-medium.js:205-227`) renders only Remind / View / **Mark paid** / Delete — no "Record Payment" button, no equivalent affordance. The feature was built once, then a later "patch" file replaced its render function without carrying it forward — the exact dead-code-shadowing failure this codebase's own CLAUDE.md opens with.
+
+**Severity rationale:** MEDIUM, not HIGH/CRITICAL — by itself this is inert, unreachable code; nothing wrong is computed or written as a *direct* result of its absence. It is rated MEDIUM rather than LOW because its absence is the root cause of **F114** (a real, reachable capability gap with money consequences) — the two should be read together, and reviving F113 is very likely how F114 gets fixed.
+
+**Course of action:** decide whether to (a) restore a "Record Payment" button to `medium.js`'s live `renderInvoices` calling the existing, already-correct `openRecordPaymentModal`/`recordPayment`, or (b) formally retire the dead code in `index.html` if a different UI is preferred. Either way, `medium.js` is the file to edit — confirmed the live engine.
+**Done when:** a partial or full payment can be recorded against a specific invoice from the Invoices page, through a route that lets the user enter an amount, and it lands in `invoice_payments`.
+
+---
+
+### F114 🟠 HIGH — No partial-payment path exists in the reachable UI; "Mark paid" always settles the FULL remaining balance — **NEW (2026-07-31, source-verified), OPEN**
+**Status:** OPEN. Confirmed by source inspection — `window.markInvoicePaid` (`finflow-api-wiring-medium.js:152-181`) computes `remaining = amt − paid` and, when `remaining > 0`, POSTs `{invoice_id, amount: remaining, ...}` (`finflow-api-wiring-medium.js:164-167`) — **always the entire remaining balance, never a user-entered amount.** There is no amount input anywhere in the reachable "Mark paid" flow. The one UI element that *does* have an amount field — the dead modal from **F113** — is unreachable.
+
+**Consequence, not merely a missing feature.** A real customer who pays PART of an invoice cannot be recorded as a partial through any button in the live app. The owner's only reachable options are: do nothing (the invoice sits at its true status, understating cash actually received), or click "Mark paid" — which settles the FULL remaining balance regardless of what was actually received, writing an `invoice_payments` row for **more than the customer paid**. Since the F95 cash-flow fix (`fca024c`) now reads `invoice_payments.amount` at `payment_date` directly into Cash Flow's cash-in leg, an owner using "Mark paid" as a stand-in for a partial receipt would **overstate real cash-in for that period** — a live, reachable money-correctness risk, not a cosmetic gap.
+
+**Course of action:** reviving **F113**'s modal (which already has a real amount field and already posts to the correct route) closes this gap directly — fixing F113 is very likely the whole fix for F114, not a separate build.
+**Done when:** a user can record a payment for less than an invoice's full remaining balance, through the reachable UI, and the invoice correctly lands at `status: 'partial'` with the real amount reflected in `amount_paid` and in Cash Flow.
+
+---
+
+### F115 🟡 MEDIUM — `markInvoicePaid` dates the settlement from the VIEWER's local clock, not a resolved calendar date — cross-ref **C3** (same class, NOT one of its 35 catalogued sites) — **NEW (2026-07-31, source-verified), OPEN**
+**Status:** OPEN. Confirmed by source inspection:
+```js
+// finflow-api-wiring-medium.js:162-163
+const _d = new Date();
+const today = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
+```
+This builds `payment_date` from the **browser's local** `getFullYear()`/`getMonth()`/`getDate()` — a Rule 10 violation (an accounting date depending on who/where the viewer is) on a live path that now directly feeds `invoice_payments.payment_date`, which the F95 fix reads straight into Cash Flow's cash-in bucketing.
+
+**Distinct from C3, same root class.** `C3` (`AUDIT_MASTER.md:345`) catalogues 35 sites using `new Date().toISOString().slice(0,10)` — which yields the **UTC** date, wrong in the *other* direction. This line does not match that pattern (no `.toISOString()` at all — explicit local getters instead) and would **not** be caught by C3's own enumeration grep (`toISOString\(\)\.slice\(0, *10\)`), confirmed by re-running that pattern mentally against this line — it doesn't match. Notably, C3's own client site list already names **two other lines in this same file** (`finflow-api-wiring-medium.js:285, 703`) as catalogued UTC-pattern sites — so this function's file has both an already-catalogued UTC-direction defect elsewhere and this separate, uncatalogued local-direction one, on the money-dating path itself.
+**Course of action:** per C3's own prescribed fix direction for client sites — export/use the existing `todayLocal()` (`app-main.js:21`) is still a viewer-local date, so for a genuine settlement timestamp the correct fix is routing through the server-side canonical resolver (`FinFlowDates`/C3's course of action) rather than any client-computed date — do not let the client decide the calendar date for money that settles server-side.
+**Done when:** `payment_date` for a "Mark paid" settlement is resolved the same viewer-independent way period boundaries are (F87's fix), not from the browser's local clock.
+
+---
+
 ### F54 🟠 HIGH — Team-member data scope is incoherent (reads actor-scoped, writes account-scoped) — **NEW**
 **Status:** OPEN, verified in code. Reachable — the invite/accept flow is live and writes `member_user_id` (`server.js:2637-2642`).
 

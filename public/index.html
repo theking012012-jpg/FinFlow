@@ -2845,7 +2845,12 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Avg Days to Pay</div><div class="mc-val">—</div><div class="mc-change neutral">No data yet</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><h2 class="card-title">Payments Received</h2><button class="btn btn-primary btn-sm" onclick="openPaymentReceivedModal()">+ Record Payment</button></div>
+          <!-- F95 step 2/3: no "+ Record Payment" button — this page is a READ-ONLY ledger of
+               invoice_payments (Store B) settlements. Recording a payment happens on the
+               Invoices page via "Mark paid"; the Store-A record/edit modal this button used to
+               open still exists (modal-payment-received, below) but has no trigger left on this
+               page — see finflow-api-wiring-pages.js for the corresponding orphaned functions. -->
+          <div class="card-header"><h2 class="card-title">Payments Received</h2></div>
           <div style="display:grid;grid-template-columns:1fr 100px 80px 80px 70px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Customer</span><span>Invoice #</span><span>Amount</span><span>Date</span><span>Method</span></div>
           <div id="payments-recv-list"></div>
         </div>

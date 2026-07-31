@@ -3728,10 +3728,23 @@ const RECOGNIZED_BILL = new Set(['unpaid', 'due_soon', 'overdue', 'partial', 'pa
 
 app.get('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   const { invoice_id } = req.query;
-  if (!invoice_id) return res.status(400).json({ error: 'invoice_id required' });
+  if (invoice_id) {
+    const { rows } = await pool.query(
+      `SELECT * FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2 ORDER BY payment_date DESC`,
+      [parseInt(invoice_id), scopeId(req)]
+    );
+    return res.json(rows);
+  }
+  // F95 step 2: no invoice_id -> every settlement for this user (the Payments Received page's
+  // list). Deliberately NOT sourced from /api/bank-reconciliation's unmatchedPayments — that
+  // filters out anything already reconciled against a bank transaction, which is correct for
+  // reconciliation but would make a real, still-real settlement silently vanish from a page
+  // whose whole purpose is to keep showing it. Same scoping as the invoice_id branch above
+  // (user_id only) — this route has never been entity-scoped; unchanged here, not this step's
+  // job to fix.
   const { rows } = await pool.query(
-    `SELECT * FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2 ORDER BY payment_date DESC`,
-    [parseInt(invoice_id), scopeId(req)]
+    `SELECT * FROM invoice_payments WHERE user_id = $1 ORDER BY payment_date DESC`,
+    [scopeId(req)]
   );
   res.json(rows);
 }));

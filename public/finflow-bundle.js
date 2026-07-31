@@ -3558,9 +3558,15 @@ function clearAIChat(){
     // ════════════════════════════════════════════
     let _paymentsRecvData = [], _paymentsRecvFetched = false;
 
+    // F95 step 2/3: this page is now a READ-ONLY LEDGER of invoice_payments (Store B — real
+    // settlements, real payment_date), not payments_received (Store A — confirmed empty in
+    // production, F86). The no-invoice_id call hits the list branch added to
+    // GET /api/invoice-payments for exactly this page (server.js). Recording a payment happens
+    // on the Invoices page via "Mark paid" (which already writes Store B); this page no longer
+    // offers a way to record or delete a payment itself — see the orphaned functions below.
     async function loadPaymentsReceived() {
       try {
-        const rows = await api('GET', '/api/payments-received');
+        const rows = await api('GET', '/api/invoice-payments');
         _paymentsRecvFetched = true;
         _paymentsRecvData = rows || [];
         window.paymentsReceived = _paymentsRecvData;
@@ -3574,16 +3580,24 @@ function clearAIChat(){
       if (!_paymentsRecvFetched) { loadPaymentsReceived(); return; }
       const el = document.getElementById('payments-recv-list');
       if (!el) return;
+      // Store B rows carry invoice_id, not a customer name or a free-text invoice_ref — resolve
+      // both from window._realInvoices (already loaded below for the Outstanding/Overdue KPI;
+      // same array, same load-order assumption the KPI already relied on). A payment whose
+      // invoice isn't in that array yet (not loaded, or a different entity) falls back to '—'
+      // rather than guessing — same tolerance the KPI below already has for an empty array.
+      const _prInvById = new Map((window._realInvoices || []).map(inv => [inv.id, inv]));
       el.innerHTML = _paymentsRecvData.length
-        ? _paymentsRecvData.map(r => `
-          <div class="table-row" style="grid-template-columns:1fr 110px 80px 80px 90px 50px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
-            <span style="font-weight:500">${esc(r.customer || '')}</span>
-            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.invoice_ref || '—')}</span>
+        ? _paymentsRecvData.map(r => {
+            const _prInv = _prInvById.get(r.invoice_id);
+            return `
+          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span style="font-weight:500">${esc(_prInv?.client || '—')}</span>
+            <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.num || '—')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc(r.date || '')}</span>
+            <span style="color:var(--t2)">${esc(r.payment_date || '')}</span>
             <span style="color:var(--t2)">${esc(r.method || '')}</span>
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deletePaymentReceived(${r.id})">✕</button>
-          </div>`).join('')
+          </div>`;
+          }).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No payments received yet</div>';
       // KPI cards: total received · outstanding · overdue · avg days to pay
       // Outstanding/overdue are derived from window._realInvoices (set by the
@@ -3605,6 +3619,13 @@ function clearAIChat(){
     // `openRecordPaymentModal` name (which now belongs SOLELY to the invoice Store-B opener,
     // index.html:4160). The invoice "Record Payment" button therefore reaches Store B (real
     // invoice_id, flips status via recalcInvoiceStatus), not this blank received-payment form.
+    //
+    // F95 step 2/3: ORPHANED, PENDING ROUTE RETIREMENT. The "+ Record Payment" button that called
+    // this was removed from index.html (#page-payments-received) — this page no longer calls
+    // openPaymentReceivedModal/savePaymentReceived/deletePaymentReceived at all. Left defined,
+    // not deleted: the underlying Store-A routes (POST/PUT/DELETE /api/payments-received) are
+    // NOT gated yet — that's a separate, later step — so this function still works if invoked
+    // directly, it just has no remaining caller on this page.
     window.openPaymentReceivedModal = function () {
       ['pr-customer','pr-invoice-ref','pr-amount','pr-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const d = document.getElementById('pr-date'); if (d) d.value = todayStr();
@@ -3622,11 +3643,14 @@ function clearAIChat(){
       const method      = document.getElementById('pr-method')?.value || 'Bank Transfer';
       const notes       = document.getElementById('pr-notes')?.value?.trim() || '';
       try {
-        const saved = await api('POST', '/api/payments-received', { customer, invoice_ref, amount, date, method, notes });
-        _paymentsRecvData.unshift(saved.row || saved);
-        window.paymentsReceived = _paymentsRecvData;
+        // F95 step 2: the optimistic `_paymentsRecvData.unshift(saved Store-A row)` that used to
+        // sit here is REMOVED — _paymentsRecvData is Store-B-shaped now (invoice_id/payment_date,
+        // no customer/invoice_ref), so splicing a Store-A row into it rendered a garbled row for
+        // one frame before loadPaymentsReceived() below overwrote it anyway. This does NOT change
+        // where the payment is written (still POST /api/payments-received, still Store A, still
+        // step 3's job) — it only removes a now-incorrect render side effect of THIS step's change.
         closeModal('modal-payment-received');
-        renderPaymentsReceived();
+        await api('POST', '/api/payments-received', { customer, invoice_ref, amount, date, method, notes });
         notify(`Payment from ${esc(customer)} recorded ✦`);
         loadPaymentsReceived().catch(()=>{});
         window._refreshDashboardUI?.();
@@ -3634,6 +3658,12 @@ function clearAIChat(){
       } catch (e) { notify('Could not save — ' + e.message, true); }
     };
 
+    // F95 step 2: no longer called from the row template (the delete "✕" column was removed —
+    // deleting by `r.id` against Store A would be wrong/dangerous now that rows are Store-B
+    // invoice_payments; the two tables are independent SERIAL sequences, so an id collision could
+    // delete an unrelated Store-A row instead of 404ing safely). Left defined, unreferenced,
+    // pending the step-3 write-path decision — not deleted, so re-wiring it later is a one-line
+    // change, not a rewrite.
     window.deletePaymentReceived = async function (id) {
       if (!confirm('Delete this payment record? This cannot be undone.')) return;
       try {

@@ -99,7 +99,7 @@ async function main() {
       }]
     )).rows[0].id;
 
-    const { entityId } = await seed(c, userId);
+    const { entityId, ids } = await seed(c, userId);
 
     server = await bootServer(scratch.url);
     const http = new HarnessHttp(server.baseUrl);
@@ -191,20 +191,36 @@ async function main() {
     // production (the one test row was deleted); invoice_payments (Store B) is the canonical
     // "Payments Received" figure. Expected 1,500 = the seed's own INVOICE_PAYMENTS rows
     // (INV-1 1,000 + INV-2 500 — tests/harness/seedData.js), derived fresh, not reused blind.
-    //
-    // GET /api/invoice-payments REQUIRES invoice_id (server.js) and 400s without one — that was
-    // the old bug here (this check called it with none, so it always fell to the else branch).
-    // There is no no-arg aggregate route on that path. GET /api/bank-reconciliation already
-    // returns every one of the user's invoice_payments rows as `unmatchedPayments` whenever
-    // nothing is reconciled — true here, since this seed never inserts into
-    // bank_reconciliation — so it doubles as the aggregate read without a new route. Real HTTP,
-    // same as every other check in this file (Rule 6), not a direct DB read.
+    // Sourced via GET /api/bank-reconciliation's unmatchedPayments (a superset-when-nothing's-
+    // reconciled read of the same table, true for this seed — kept as an independent second
+    // path to the same figure, cross-checked against A7.4b below which hits the route the live
+    // page actually calls).
     const br = await http.get('/api/bank-reconciliation');
     if (br.status === 200) {
       const total = (br.json?.unmatchedPayments || []).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
       check('A7.4', 'invoice_payments total (Payments Received, Store B canonical)', Math.round(total * 100) / 100, 1500);
     } else {
       check('A7.4', 'GET /api/bank-reconciliation', `HTTP ${br.status}`, 200);
+    }
+
+    // A7.4b — F95 step 2: GET /api/invoice-payments (NO invoice_id) is the route the Payments
+    // Received page itself now calls (finflow-api-wiring-pages.js loadPaymentsReceived). This
+    // route used to REQUIRE invoice_id and 400 without one; a no-arg list branch was added
+    // specifically for this page. Verify by execution: exactly 2 rows (INV-1, INV-2), each
+    // invoice_id resolves to the REAL seeded invoice id (proves the client-side customer/num
+    // join in the page has something real to join against, not a coincidentally-matching
+    // number), and the total is the same seed-derived 1,500 as A7.4.
+    const ip = await http.get('/api/invoice-payments');
+    if (ip.status === 200) {
+      const ipRows = ip.json || [];
+      check('A7.4b', 'GET /api/invoice-payments (no arg) row count', ipRows.length, 2);
+      const invIds = new Set(ipRows.map(r => r.invoice_id));
+      check('A7.4b-join', 'every row\'s invoice_id resolves to a real seeded invoice',
+        invIds.has(ids.invoices['INV-1']) && invIds.has(ids.invoices['INV-2']), true);
+      const ipTotal = ipRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+      check('A7.4b-total', 'GET /api/invoice-payments (no arg) total', Math.round(ipTotal * 100) / 100, 1500);
+    } else {
+      check('A7.4b', 'GET /api/invoice-payments (no arg)', `HTTP ${ip.status}`, 200);
     }
 
     // A7.9-11 — Cash Flow cash-in (F95 fix). VERIFICATION.md:415 (decided pre-existing spec,

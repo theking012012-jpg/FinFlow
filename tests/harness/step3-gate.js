@@ -207,6 +207,25 @@ async function main() {
       check('A7.4', 'GET /api/bank-reconciliation', `HTTP ${br.status}`, 200);
     }
 
+    // A7.9-11 — Cash Flow cash-in (F95 fix). VERIFICATION.md:415 (decided pre-existing spec,
+    // never previously gated): Jun 500 / Jul 0 / FY 1,500. Derived fresh from the seed's own
+    // INVOICE_PAYMENTS (seedData.js:48-51) at payment_date: INV-1 1,000 on 2026-05-15 (May, not
+    // Jun/Jul, counts toward FY only) + INV-2 500 on 2026-06-20 (Jun and FY). sales_receipts is
+    // seeded empty this dataset, so it contributes 0 throughout. FY = sum of all months present
+    // (every seeded invoice_payments row falls in calendar 2026, so totalInflow == the FY figure
+    // with no separate windowing needed).
+    const cf = await http.post('/api/reports/cash-flow', {});
+    if (cf.status === 200) {
+      const rowFor = k => (cf.json?.rows || []).find(r => r.key === k);
+      const junInflow = rowFor('2026-06')?.inflow ?? 0;
+      const julInflow = rowFor('2026-07')?.inflow ?? 0;
+      check('A7.9',  'Cash Flow cash-in — Jun', Math.round(junInflow * 100) / 100, 500);
+      check('A7.10', 'Cash Flow cash-in — Jul', Math.round(julInflow * 100) / 100, 0);
+      check('A7.11', 'Cash Flow cash-in — FY',  Math.round((cf.json?.totalInflow ?? NaN) * 100) / 100, 1500);
+    } else {
+      check('A7.9',  'POST /api/reports/cash-flow', `HTTP ${cf.status}`, 200);
+    }
+
     // A7.22 — AP-D2 (balance-sheet AP leg): a FUTURE-dated bill is SCHEDULED, not yet payable, and
     // must contribute 0 to AP, exactly as INV-6 does to AR (A7.1). The seed has no future bill, so
     // insert a transient one via the API, confirm the server-computed AP is unchanged, then remove

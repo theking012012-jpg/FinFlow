@@ -3495,30 +3495,38 @@ app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
 }));
 
 // POST /api/reports/cash-flow — monthly inflows vs outflows (entity-scoped, CASH basis).
-// Stays a pure cash statement (decision #2): NO COGS, NO payroll accrual — cash in = paid
-// invoices + sales receipts + payments received; cash out = expenses + payments made.
-// Real table names (sales_receipts / payments_made) — the previous 'receipts'/'payments'
-// were non-existent and the .catch(()=>[]) silently returned empty legs; removed so a bad
-// table name now throws loudly. Sorted by YYYY-MM key, labelled at render (F15).
+// F95 fix: cash-in is genuine cash — invoice_payments (Store B: actual settlements, actual
+// payment_date, includes partials) + sales_receipts (walk-in cash sales, unchanged). The OLD
+// "paid invoice, full amount, at invoice date" line is REMOVED, not stacked alongside Store B —
+// it was an accrual figure masquerading as cash: it double-counted (an invoice settled via
+// invoice_payments was ALSO booked here again at full amount on a different date) and it made a
+// genuinely PARTIAL payment invisible (a 'partial' invoice never triggered this leg at all, so
+// its real cash was nowhere). payments_received (Store A) is dropped from this leg — F86
+// confirmed it empty in production and invoice_payments canonical.
+// Cash out is unchanged: expenses + payments made.
 app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const eid = req.entityId || null;
   const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
-  const [invoices, expenses, paymentsMade, receipts, paymentsIn] = await Promise.all([
-    db.allByUser('invoices', uid, matchEnt),
+  // invoice_payments is a TYPED table (no `data` JSONB column) — db.allByUser()/rowToObj() would
+  // silently drop amount/payment_date (rowToObj only ever spreads pgRow.data), so it's read via
+  // raw SQL exactly like every other invoice_payments route, then entity-filtered in JS the same
+  // way invoices/expenses/payments_made are elsewhere in this file — it carries a real entity_id
+  // (unlike sales_receipts, whose F26 user-level exception does not apply here).
+  const [ipRes, expenses, paymentsMade, receipts] = await Promise.all([
+    pool.query(`SELECT * FROM invoice_payments WHERE user_id = $1`, [uid]),
     db.allByUser('expenses', uid, matchEnt),
     db.allByUser('payments_made', uid, matchEnt),
     db.allByUser('sales_receipts', uid),      // user-level (no entity_id) — F26
-    db.allByUser('payments_received', uid),   // user-level (no entity_id) — F26
   ]);
+  const invoicePayments = ipRes.rows.filter(matchEnt);
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const keyOf = d => { const ymd = FinFlowDates._toYmd(d); return ymd == null ? 'Unknown' : ymd.slice(0, 7); }; // F87: calendar-date month key (string), no local-time getMonth
   const labelOf = k => { if (k === 'Unknown') return 'Unknown'; const [y, m] = k.split('-'); return `${_MO[+m - 1]} '${y.slice(-2)}`; };
   const monthMap = {};
   const add = (date, field, amount) => { const k = keyOf(date); (monthMap[k] || (monthMap[k] = { inflow: 0, outflow: 0 }))[field] += parseFloat(amount) || 0; };
-  invoices.filter(i => (i.status || '').toLowerCase() === 'paid').forEach(i => add(i.created_at || i.due_date || i.date, 'inflow', i.amount));
+  invoicePayments.forEach(p => add(p.payment_date, 'inflow', p.amount));
   receipts.forEach(r => add(r.date, 'inflow', r.amount));
-  paymentsIn.forEach(p => add(p.date, 'inflow', p.amount));
   expenses.forEach(e => add(e.expense_date || e.date || e.created_at, 'outflow', e.amount));
   paymentsMade.forEach(p => add(p.date || p.created_at, 'outflow', p.amount));
   const rows = Object.keys(monthMap).sort().map(k => ({

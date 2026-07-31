@@ -625,7 +625,10 @@ app.get('/api/auth/me', requireAuth, wrap(async (req, res) => {
   const { rows: [_mu] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [req.session.userId]);
   const user = _mu ? rowToObj(_mu) : null;
   if (!user) return res.status(401).json({ error: 'Session expired.' });
-  res.json({ user: safeUser(user) });
+  // F115: the server-resolved calendar date (Phase 1 — UTC, viewer-independent), for clients that
+  // need to default a money-dating field (e.g. Record Payment) WITHOUT reading the browser clock.
+  // Already-called on every boot, so this needs no new route or round-trip.
+  res.json({ user: safeUser(user), today: FinFlowDates.resolvedToday(new Date()) });
 }));
 // Alias used by frontend for session checks
 app.get('/api/me', requireAuth, wrap(async (req, res) => {

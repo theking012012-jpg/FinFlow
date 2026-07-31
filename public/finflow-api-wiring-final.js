@@ -48,6 +48,11 @@
     try {
       const data = await api('GET', '/api/auth/me');
       if (data && data.user) {
+        // F113/F115: the server-resolved calendar date, same lifecycle as window._realInvoices —
+        // set once at boot, read by the Record Payment modal to default its date field WITHOUT
+        // ever reading the browser clock (that was the F115 bug). No fallback to new Date() is
+        // wired anywhere for this — if it's not set yet, the modal blocks/shows loading instead.
+        if (data.today) window._serverToday = data.today;
         // Valid session — skip login screen
         const r = 'owner';
         window.currentRole = r;

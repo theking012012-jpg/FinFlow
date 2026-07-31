@@ -1700,7 +1700,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
       </div>
 
-      <!-- RECORD PAYMENT MODAL -->
+      <!-- RECORD PAYMENT MODAL — F113/F114/F115: the sole invoice-settle path (replaces Mark paid) -->
       <div class="modal-overlay hidden" id="record-payment-modal">
         <div class="modal">
           <div class="modal-header">
@@ -1708,10 +1708,22 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <button class="modal-close" onclick="closeModal('record-payment-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <input type="hidden" id="rp-invoice-id">
+          <div class="field-group" style="text-align:center;padding:8px 0;border-bottom:1px solid var(--bd);margin-bottom:10px">
+            <div class="field-wrap"><label class="field-label">Total</label><div class="finput" style="border:none;background:none;font-family:var(--font-mono)" id="rp-total">—</div></div>
+            <div class="field-wrap"><label class="field-label">Paid</label><div class="finput" style="border:none;background:none;font-family:var(--font-mono)" id="rp-paid">—</div></div>
+            <div class="field-wrap"><label class="field-label">Remaining</label><div class="finput" style="border:none;background:none;font-family:var(--font-mono);font-weight:600" id="rp-remaining">—</div></div>
+          </div>
           <div class="field-group">
-            <div class="field-wrap"><label class="field-label" for="rp-amount">Amount</label><input class="finput" id="rp-amount" type="number" placeholder="0.00" step="0.01"></div>
+            <div class="field-wrap">
+              <label class="field-label" for="rp-amount">Amount</label>
+              <div style="display:flex;gap:6px">
+                <input class="finput" id="rp-amount" type="number" placeholder="0.00" step="0.01" oninput="_rpCheckOverpay()">
+                <button type="button" class="btn btn-ghost btn-sm" onclick="_rpFillFull()">Full</button>
+              </div>
+            </div>
             <div class="field-wrap"><label class="field-label" for="rp-date">Date</label><input class="finput" id="rp-date" type="date"></div>
           </div>
+          <div id="rp-overpay-warn" class="hidden" style="color:var(--red);font-size:12px;margin:-4px 0 10px">⚠ Amount exceeds the remaining balance.</div>
           <div class="field-group">
             <div class="field-wrap"><label class="field-label" for="rp-method">Method</label>
               <select class="finput" id="rp-method">
@@ -1727,7 +1739,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="field-wrap"><label class="field-label" for="rp-notes">Notes</label><input class="finput" id="rp-notes" placeholder="Optional notes"></div>
           <div class="modal-footer">
             <button class="btn btn-ghost" onclick="closeModal('record-payment-modal')">Cancel</button>
-            <button class="btn btn-primary" onclick="recordPayment()">Save Payment</button>
+            <button class="btn btn-primary" id="rp-save-btn" onclick="recordPayment()">Save Payment</button>
           </div>
         </div>
       </div>
@@ -4460,23 +4472,56 @@ function exportAuditCSV(){
   a.click();
 }
 
-// ── FEATURE 2: PARTIAL PAYMENTS ───────────────────────────────────────────────
+// ── FEATURE 2: PARTIAL PAYMENTS — F113/F114/F115: the sole invoice-settle path ────
+// Replaces markInvoicePaid (deleted, finflow-api-wiring-medium.js). Opened with the FULL
+// invoice object (not bare id/client/amount strings) so Total/Paid/Remaining can be shown and
+// the overpayment guard can be checked inline, before the server ever sees the request.
 let _rpInvoiceId=null;
-function openRecordPaymentModal(invoiceId,client,amount){
-  _rpInvoiceId=invoiceId;
+let _rpRemaining=0;
+function openRecordPaymentModal(inv){
+  if(!inv) return;
+  _rpInvoiceId = inv._dbId ?? inv.id ?? null;
+  const total = parseFloat(inv.amount) || 0;
+  const paid  = parseFloat(inv.amount_paid) || 0;
+  _rpRemaining = Math.round((total - paid) * 100) / 100;
   const sub=document.getElementById('rp-sub');
-  if(sub)sub.textContent=(client?client+' — ':'')+(amount||'');
+  // inv.num is a seed-only field — real (UI-created) invoices never get one (server.js's
+  // POST /api/invoices accepts no `num`), so show client + total instead of relying on it.
+  if(sub) sub.textContent=[inv.client, S(total)].filter(Boolean).join(' — ');
+  const tEl=document.getElementById('rp-total');     if(tEl) tEl.textContent=S(total);
+  const pEl=document.getElementById('rp-paid');      if(pEl) pEl.textContent=S(paid);
+  const rEl=document.getElementById('rp-remaining'); if(rEl) rEl.textContent=S(_rpRemaining);
   const idEl=document.getElementById('rp-invoice-id');
-  if(idEl)idEl.value=invoiceId||'';
+  if(idEl)idEl.value=_rpInvoiceId||'';
   const amtEl=document.getElementById('rp-amount');
-  if(amtEl)amtEl.value='';
+  if(amtEl)amtEl.value = _rpRemaining>0 ? _rpRemaining : '';
+  // F115: date defaults ONLY from the server-resolved today (window._serverToday, set at boot
+  // from GET /api/auth/me). NEVER the browser clock — if it hasn't loaded yet, block the field
+  // and Save instead of falling back (locked decision).
   const dateEl=document.getElementById('rp-date');
-  if(dateEl)dateEl.value=new Date().toISOString().slice(0,10);
+  if(dateEl){
+    if(window._serverToday){ dateEl.value=window._serverToday; dateEl.disabled=false; dateEl.placeholder=''; }
+    else { dateEl.value=''; dateEl.disabled=true; dateEl.placeholder='Loading…'; }
+  }
   const refEl=document.getElementById('rp-reference');
   if(refEl)refEl.value='';
   const notesEl=document.getElementById('rp-notes');
   if(notesEl)notesEl.value='';
+  _rpCheckOverpay();
   openModal('record-payment-modal');
+}
+function _rpFillFull(){
+  const amtEl=document.getElementById('rp-amount');
+  if(amtEl) amtEl.value=_rpRemaining;
+  _rpCheckOverpay();
+}
+function _rpCheckOverpay(){
+  const amt=parseFloat(document.getElementById('rp-amount')?.value||0);
+  const over=amt > _rpRemaining + 0.005;
+  const warnEl=document.getElementById('rp-overpay-warn');
+  if(warnEl) warnEl.classList.toggle('hidden', !over);
+  const saveBtn=document.getElementById('rp-save-btn');
+  if(saveBtn) saveBtn.disabled = over || !window._serverToday;
 }
 async function recordPayment(){
   const invoiceId=document.getElementById('rp-invoice-id')?.value;
@@ -4487,7 +4532,8 @@ async function recordPayment(){
   const notes=document.getElementById('rp-notes')?.value||'';
   if(!invoiceId){notify('No invoice selected',true);return;}
   if(!amount||amount<=0){notify('Enter a valid amount',true);return;}
-  if(!date){notify('Select a payment date',true);return;}
+  if(!window._serverToday||!date){notify("Still loading today's date — try again in a moment",true);return;}
+  if(amount > _rpRemaining + 0.005){notify('Amount exceeds the remaining balance',true);return;}
   try{
     const res=await fetch('/api/invoice-payments',{
       method:'POST',credentials:'include',
@@ -4498,7 +4544,15 @@ async function recordPayment(){
     if(data.error){notify('⚠ '+data.error,true);return;}
     closeModal('record-payment-modal');
     notify('✓ Payment recorded');
-    if(typeof renderInvoices==='function')renderInvoices();
+    // F113/F114: the established live-refresh triple (finflow-api-wiring-pages.js's own save
+    // handlers already use this same sequence) — NOT window.finflow.refresh(), whose dispatch
+    // table has no working 'payments-received' entry. refreshFinancials('invoices') refetches
+    // /api/invoices, rebuilds window.userInvoices/_realInvoices, and re-renders whichever page
+    // is currently active (the invoice row flips paid/partial live); the other two force the
+    // ledger and dashboard to refresh even when they aren't the active page right now.
+    if(typeof window.refreshFinancials==='function') await window.refreshFinancials('invoices');
+    window._loadPaymentsRecvFromDB?.();
+    window._refreshDashboardUI?.();
   }catch(e){notify('Could not record payment',true);}
 }
 

@@ -441,7 +441,8 @@
 //
 // Covers all MEDIUM fixes from the checklist:
 //   ✅ saveInvoice()         → POST /api/invoices
-//   ✅ markInvoicePaid()     → PUT  /api/invoices/:id
+//   ✅ markInvoicePaid()     → DELETED (F113/F114/F115) — replaced by index.html's
+//                              Record Payment modal (openRecordPaymentModal/recordPayment)
 //   ✅ deleteInvoice()       → DELETE /api/invoices/:id  (new)
 //   ✅ Boot: load invoices   → GET  /api/invoices
 //   ✅ renderInvoices()      → patched to show delete button
@@ -577,44 +578,13 @@
       }
     };
 
-    // Patch markInvoicePaid to also update DB.
-    // F48 follow-up: "mark paid" must create a REAL settling invoice_payment for the outstanding
-    // balance — mirror of markBillPaid — NOT a bare status flip. AR is now arithmetic (Σ max(0,
-    // amount − amount_paid) over ALL recognized invoices, no status filter), so a status-only flip
-    // would leave amount_paid 0 and the invoice would still count toward AR. The server's
-    // recalcInvoiceStatus sums the payments and writes amount_paid = amount + status = 'paid', so AR
-    // drops to 0 arithmetically. We settle only the REMAINING balance (amount − amount_paid) so a
-    // PARTIALLY-paid invoice isn't overpaid → rejected by the server overpayment guard (400).
-    window.markInvoicePaid = async function (idx) {
-      const inv = window.userInvoices[idx];
-      if (!inv) return;
-      try {
-        if (inv._dbId) {
-          const amt  = parseFloat(inv.amount) || 0;
-          const paid = parseFloat(inv.amount_paid) || 0;
-          const remaining = Math.round((amt - paid) * 100) / 100;
-          if (remaining > 0) {
-            // recalcInvoiceStatus (server) sets amount_paid + status='paid' from the linked payments.
-            const _d = new Date();
-            const today = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
-            await api('POST', '/api/invoice-payments', {
-              invoice_id: inv._dbId, amount: remaining, payment_date: today,
-              method: 'other', notes: 'Invoice marked paid',
-            });
-          } else {
-            // Already fully covered (or zero-amount) — just ensure the status reflects it.
-            await api('PUT', `/api/invoices/${inv._dbId}`, { status: 'paid' });
-          }
-        }
-        window.userInvoices[idx].status = 'paid';
-        window.userInvoices[idx].color  = 'var(--t2)';
-        if (typeof renderInvoices === 'function') renderInvoices();
-        notify('Invoice marked as paid ✦');
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
-      } catch (e) {
-        notify('Could not update invoice — ' + e.message, true);
-      }
-    };
+    // F113/F114/F115: markInvoicePaid DELETED — replaced outright, not deferred, by the revived
+    // Record Payment modal (index.html openRecordPaymentModal/recordPayment), which does
+    // everything this used to do (settle via POST /api/invoice-payments, same server route,
+    // same recalcInvoiceStatus) plus the two things it never could: a genuine partial-amount
+    // path (F114) and a server-resolved payment_date instead of the browser's local clock
+    // (F115 — this function's `_d.getFullYear()/getMonth()/getDate()` construction was the bug).
+    // Confirmed no other caller exists (grepped the whole repo) before deleting.
 
     // New: deleteInvoice
     window.deleteInvoice = async function (idx) {
@@ -633,9 +603,15 @@
     };
 
     // Patch renderInvoices to add a delete button
+    // F114: 'partial' gains its own badge class (b-blue — distinct accent color, already defined
+    // in index.html's CSS, used elsewhere for badges) instead of falling through to the 'pending'
+    // amber default. F113/F114: 'Record Payment' replaces 'Mark paid' for BOTH pending AND
+    // partial invoices — partial previously had NO action button at all (only delete), which was
+    // the concrete gap F114 named. Passes the full invoice object (not idx/client/amount strings)
+    // so the modal can show Total/Paid/Remaining and check overpayment inline.
     window.renderInvoices = function () {
       if (typeof updateInvoices === 'function') updateInvoices();
-      const badgeCls = { paid: 'b-green', pending: 'b-amber', overdue: 'b-red' };
+      const badgeCls = { paid: 'b-green', pending: 'b-amber', partial: 'b-blue', overdue: 'b-red' };
       const el = document.getElementById('invoice-list');
       if (!el) return;
       el.innerHTML = (window.userInvoices||[]).map((inv, idx) => `
@@ -654,8 +630,8 @@
             ${inv.status?.toLowerCase() === 'paid'
               ? `<button class="btn btn-ghost btn-sm" onclick="viewInvoice(${idx})">View</button>`
               : ''}
-            ${inv.status?.toLowerCase() === 'pending'
-              ? `<button class="btn btn-ghost btn-sm" onclick="markInvoicePaid(${idx})">Mark paid</button>`
+            ${(inv.status?.toLowerCase() === 'pending' || inv.status?.toLowerCase() === 'partial')
+              ? `<button class="btn btn-ghost btn-sm" onclick="openRecordPaymentModal(window.userInvoices[${idx}])">Record Payment</button>`
               : ''}
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7"
               onclick="deleteInvoice(${idx})">✕</button>
@@ -1834,6 +1810,11 @@
     try {
       const data = await api('GET', '/api/auth/me');
       if (data && data.user) {
+        // F113/F115: the server-resolved calendar date, same lifecycle as window._realInvoices —
+        // set once at boot, read by the Record Payment modal to default its date field WITHOUT
+        // ever reading the browser clock (that was the F115 bug). No fallback to new Date() is
+        // wired anywhere for this — if it's not set yet, the modal blocks/shows loading instead.
+        if (data.today) window._serverToday = data.today;
         // Valid session — skip login screen
         const r = 'owner';
         window.currentRole = r;

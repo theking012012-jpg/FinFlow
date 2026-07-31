@@ -270,6 +270,65 @@ async function main() {
       check('A7.21', 'GET /api/payroll', `HTTP ${roster.status}`, 200);
     }
 
+    // A7.23-25 — Record Payment settle contract (F113/F114): the exact server behavior the
+    // revived modal now relies on for full payment, a stacking partial, and overpayment
+    // rejection. Each probe cleans up after itself (same discipline as A7.22's transient bill)
+    // so later checks — and any re-run — see the original seed state.
+
+    // A7.23 — full payment on a fresh pending invoice (INV-3: pending, 3000, 0 paid).
+    const _inv3Id = ids.invoices['INV-3'];
+    const _fullPay = await http.post('/api/invoice-payments', {
+      invoice_id: _inv3Id, amount: 3000, payment_date: '2026-07-20', method: 'bank_transfer',
+    });
+    const _fullCreated = _fullPay.status >= 200 && _fullPay.status < 300 && _fullPay.json && _fullPay.json.id != null;
+    check('A7.23-insert', 'full-payment probe was actually created (2xx + non-null id)',
+      _fullCreated ? true : `HTTP ${_fullPay.status}`, true);
+    const _inv3After = await http.get('/api/invoices');
+    const _inv3Row = (_inv3After.json || []).find(r => r.id === _inv3Id);
+    check('A7.23', 'full payment settles the invoice (status paid, amount_paid == total)',
+      _inv3Row ? `${_inv3Row.status}|${Math.round((parseFloat(_inv3Row.amount_paid) || 0) * 100) / 100}` : null,
+      'paid|3000');
+    if (_fullCreated) await http.del('/api/invoice-payments/' + _fullPay.json.id);
+
+    // A7.24 — a SECOND partial payment on an already-partial invoice (INV-2: partial, 2000
+    // total, 500 already paid via the seed) STACKS rather than replaces: status stays 'partial',
+    // amount_paid increments, and a second invoice_payments row exists. Amount/date deliberately
+    // differ from the seed's own INV-2 payment (500 on 2026-06-20) so the B8/C1 dedupe guard
+    // (invoice+amount+date) cannot mistake this for a duplicate of it.
+    const _inv2Id = ids.invoices['INV-2'];
+    const _partPay = await http.post('/api/invoice-payments', {
+      invoice_id: _inv2Id, amount: 300, payment_date: '2026-07-15', method: 'bank_transfer',
+    });
+    const _partCreated = _partPay.status >= 200 && _partPay.status < 300 && _partPay.json && _partPay.json.id != null;
+    check('A7.24-insert', 'second partial-payment probe was actually created (2xx + non-null id)',
+      _partCreated ? true : `HTTP ${_partPay.status}`, true);
+    const _inv2After = await http.get('/api/invoices');
+    const _inv2Row = (_inv2After.json || []).find(r => r.id === _inv2Id);
+    check('A7.24-status', 'second partial does NOT flip status to paid', _inv2Row ? _inv2Row.status : null, 'partial');
+    check('A7.24-amount', 'amount_paid INCREMENTS (500 + 300), not replaced',
+      _inv2Row ? Math.round((parseFloat(_inv2Row.amount_paid) || 0) * 100) / 100 : null, 800);
+    const _inv2Payments = await http.get('/api/invoice-payments?invoice_id=' + _inv2Id);
+    check('A7.24-rows', 'a SECOND invoice_payments row exists for INV-2 (stacked, not replaced)',
+      (_inv2Payments.json || []).length, 2);
+    if (_partCreated) await http.del('/api/invoice-payments/' + _partPay.json.id);
+
+    // A7.25 — overpayment rejected. INV-1 is already fully paid by the seed (1000/1000,
+    // remaining 0), so ANY positive amount overpays it — a clean, guaranteed case needing no
+    // computed "just over remaining" amount, and it touches no other check's invoice.
+    const _inv1Id = ids.invoices['INV-1'];
+    const _overPay = await http.post('/api/invoice-payments', {
+      invoice_id: _inv1Id, amount: 100, payment_date: '2026-07-20', method: 'bank_transfer',
+    });
+    check('A7.25', 'overpayment rejected with HTTP 400', _overPay.status, 400);
+    check('A7.25-msg', 'rejection names the remaining balance',
+      typeof _overPay.json?.error === 'string' && _overPay.json.error.includes('exceeds the remaining balance'), true);
+    const _inv1Payments = await http.get('/api/invoice-payments?invoice_id=' + _inv1Id);
+    check('A7.25-norow', 'no new row was written on rejection', (_inv1Payments.json || []).length, 1);
+    const _inv1After = await http.get('/api/invoices');
+    const _inv1RowAfter = (_inv1After.json || []).find(r => r.id === _inv1Id);
+    check('A7.25-unchanged', 'invoice amount_paid unchanged on rejection',
+      _inv1RowAfter ? Math.round((parseFloat(_inv1RowAfter.amount_paid) || 0) * 100) / 100 : null, 1000);
+
     // ── A6 (server half) · cross-period coherence ───────────────────────────
     console.log('\n── A6 · Server-side coherence ────────────────────────────────────────────');
     if (responses.jun.status === 200 && responses.jul.status === 200 && responses.fy.status === 200) {

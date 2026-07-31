@@ -2509,6 +2509,12 @@ app.get('/api/team', requireAuth, wrap(async (req, res) => {
   res.json(members);
 }));
 app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
+  // F54: no invite/token/email handshake — a bare team_members insert. No caller (client,
+  // server-to-server, or test harness — checked) uses this route; the real invite path is
+  // POST /api/team/invite, already gated for launch below. Same "coming soon" gate, same
+  // reason: this route is the second door into team_members and must close with the first.
+  // Reversible: remove this block to re-enable alongside /api/team/invite.
+  return res.status(403).json({ error: 'Team invites are coming soon. This feature is not yet available.' });
   const { name, email, role = 'viewer' } = req.body || {};
   if (!name || !email) return res.status(400).json({ error: 'name and email required.' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email.' });
@@ -2554,6 +2560,11 @@ const INVITE_ROLES     = ['admin', 'accountant', 'viewer'];      // 'owner' deli
 const hashInviteToken  = t => crypto.createHash('sha256').update(String(t)).digest('hex');
 
 app.post('/api/team/invite', inviteLimiter, requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
+  // F54: member invites are disabled for launch (accountant client-access — a SEPARATE
+  // flow, see /api/accountants/request-access — is untouched). Reversible: remove this
+  // block to re-enable. Existing pending/active team_members rows and the accept flow
+  // (/api/team/accept) are left alone on purpose — this only blocks CREATING new invites.
+  return res.status(403).json({ error: 'Team invites are coming soon. This feature is not yet available.' });
   // Only an owner/admin OF THIS ACCOUNT may invite. accountRole is set per-request
   // by the account resolver; a viewer/accountant member cannot invite.
   if (!['owner', 'admin'].includes(req.accountRole)) {

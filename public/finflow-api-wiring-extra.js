@@ -595,6 +595,12 @@
   // 11. TEAM INVITE — modal + POST /api/team
   // ══════════════════════════════════════════════════════
   window.openInviteModal = function () {
+    // F54: member invites disabled for launch (server also rejects POST /api/team/invite
+    // with 403 — this just avoids opening a modal that would fail). Accountant client-access
+    // (request-access / approve, accountant-routes.js) is a separate flow and is untouched.
+    // Reversible: delete this early return to re-enable.
+    if (typeof tip === 'function') tip('Team invites are coming soon.', true);
+    return;
     let modal = document.getElementById('invite-modal');
     if (!modal) {
       modal = document.createElement('div');

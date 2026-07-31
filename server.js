@@ -4843,8 +4843,13 @@ app.use((err, req, res, _next) => {
 });
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
-initDB().then(() => {
-  if (require.main === module) {
+// F78: initDB() (DDL + the invoices amount_paid backfill, database.js:63-117) must NEVER run
+// as a side effect of `require('./server.js')` — a test harness or any other importer would
+// write to whatever DATABASE_URL is set, including production. The entire boot sequence,
+// including initDB() itself, is therefore gated behind require.main === module so requiring
+// this file only builds the Express app and does zero DDL, zero writes, zero listening.
+if (require.main === module) {
+  initDB().then(() => {
     app.listen(PORT, () => {
       warnIfUnset(); // F29 — loud one-time warning if APP_URL is unset
       console.log(`\n  ✦ FinFlow backend running → http://localhost:${PORT}`);
@@ -4853,11 +4858,11 @@ initDB().then(() => {
     // Run scheduler on boot, then every hour
     runRecurringScheduler();
     setInterval(runRecurringScheduler, 60 * 60 * 1000);
-  }
-}).catch(err => {
-  console.error('Failed to init database:', err);
-  if (require.main === module) process.exit(1);
-});
+  }).catch(err => {
+    console.error('Failed to init database:', err);
+    process.exit(1);
+  });
+}
 
 module.exports = app;
 // Test hook: expose the canonical books calculator for harness verification (no behavior

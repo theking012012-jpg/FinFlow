@@ -187,13 +187,24 @@ async function main() {
       check('A7.20', 'GET /api/bills', `HTTP ${bills.status}`, 200);
     }
 
-    // A7.4 — payments received.
-    const ip = await http.get('/api/invoice-payments');
-    if (ip.status === 200) {
-      const total = (ip.json || []).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-      check('A7.4', 'payments received total', Math.round(total * 100) / 100, 1500);
+    // A7.4 — Payments Received. F86/F95: payments_received (Store A) is confirmed empty in
+    // production (the one test row was deleted); invoice_payments (Store B) is the canonical
+    // "Payments Received" figure. Expected 1,500 = the seed's own INVOICE_PAYMENTS rows
+    // (INV-1 1,000 + INV-2 500 — tests/harness/seedData.js), derived fresh, not reused blind.
+    //
+    // GET /api/invoice-payments REQUIRES invoice_id (server.js) and 400s without one — that was
+    // the old bug here (this check called it with none, so it always fell to the else branch).
+    // There is no no-arg aggregate route on that path. GET /api/bank-reconciliation already
+    // returns every one of the user's invoice_payments rows as `unmatchedPayments` whenever
+    // nothing is reconciled — true here, since this seed never inserts into
+    // bank_reconciliation — so it doubles as the aggregate read without a new route. Real HTTP,
+    // same as every other check in this file (Rule 6), not a direct DB read.
+    const br = await http.get('/api/bank-reconciliation');
+    if (br.status === 200) {
+      const total = (br.json?.unmatchedPayments || []).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+      check('A7.4', 'invoice_payments total (Payments Received, Store B canonical)', Math.round(total * 100) / 100, 1500);
     } else {
-      check('A7.4', 'GET /api/invoice-payments', `HTTP ${ip.status}`, 200);
+      check('A7.4', 'GET /api/bank-reconciliation', `HTTP ${br.status}`, 200);
     }
 
     // A7.22 — AP-D2 (balance-sheet AP leg): a FUTURE-dated bill is SCHEDULED, not yet payable, and

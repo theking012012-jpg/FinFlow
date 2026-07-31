@@ -1361,6 +1361,15 @@ Client sites that build a period window: **6** — `app-main.js:1621`, `:1653`, 
 ### F87 🔴 CRITICAL — The same books show DIFFERENT TOTALS to viewers in different timezones — **NEW (2026-07-23, PROVEN BY EXECUTION)**
 **Status:** OPEN. Multi-tenant. Affects the accountant marketplace directly. **Structural — belongs with the money-engine consolidation, NOT a patch now.**
 
+**⚠️ FLAGGED, not silently changed (2026-07-31) — this status line appears stale against the rest of the ledger; owner confirmation needed before it's rewritten.** As found: this line still reads OPEN / "NOT a patch now", but every downstream reference in this file already treats the fix as landed and green —
+- `34de981` ("resolve accounting periods server-side from intent, string-compare calendar dates") is **on `main`**, an ancestor of HEAD, landed 2026-07-30 — the exact fix this entry's own "The fix is NOT a better timezone" section prescribes.
+- `H2`/`H3`/`H5`/`H6` (this file) all say **"predate F87 landing"** / reference gates going green **after** it, in the past tense.
+- `H4` (this file): *"During F87 the gate's own AR computation gained a D2 filter, turning A7.1 red→green."*
+- The **"F87 peripheral instances"** entry (below H6 in this file) is marked **✅ CLOSED (this commit) — 2026-07-31**, and its own text ("route... through the canonical resolver") presupposes the core resolver already exists and works.
+- Session handover notes (not this file) report the gates this gate's own "Done when" clause names as satisfied: step4 viewer-independent 18/18 across all four viewers, tz-matrix identical with a discriminating boundary row present (not a weak-seed false green), step2 63/0, step3 32/1 (only the pre-existing, unrelated A7.4 red — since resolved, see F86 above).
+
+**What it should probably say** (proposed, not applied — this entry's text is otherwise left untouched pending your go): **Phase 1 — the date-only calendar-date defect this entry measures and the four-viewer matrix above proves — FIXED, verified by execution (`34de981`; gates as listed above).** **Phase 2 is explicitly NOT built**: the commit message itself says "Phase 2 (entity-timezone for genuine timestamps) is hooked, NOT built," and this entry's own §1d "production blast radius" table still lists `payroll_runs.run_date` (a genuine `NOW()` instant, not a calendar date) as the live viewer-dependent field with no fix applied. So a full "CLOSED" would overclaim — Phase 1 done, Phase 2 open, tracked as the same finding's second half, not a new one (Rule 13: enumerate the class, don't split off a piece to look more done than it is).
+
 Distinct from the 1st-of-month misfiling (same root cause, different blast radius): that one is wrong for *everybody equally*; this one makes two people **disagree about the same database**.
 
 #### The measurement — FOUR viewers spanning the sign boundary
@@ -1720,6 +1729,14 @@ The comment directly above it (*"Pre-fix the memo latched that empty load foreve
 ### F95 🔴 CRITICAL — Two disjoint money-in stores; Cash Flow is BLIND to one of them, and a real payment's cash timing depends on the entry path — **NEW (2026-07-23, read-only verified)**
 **Status:** OPEN. Live. Same class as **F84** (the entry path decides whether the figure is right) and entangled with **F92** (`recalcInvoiceStatus` side-effect). Answers the F86 live question: **yes, a real payment can vanish from — or be mistimed in — Cash Flow depending on how it was entered.**
 
+**Update 2026-07-31 — does NOT collapse; flagging rather than silently marking resolved (`REVIEW_RULES.md` Rule 6).** F86 was closed today: `payments_received` (Store A) is confirmed empty in production and `invoice_payments` (Store B) is now the owner-declared canonical "Payments Received" source. That is a **test/seed sourcing decision**, not a code change, and it does not touch any of this finding's three consequences:
+
+- Re-read `server.js:3503-3512` (current `POST /api/reports/cash-flow`) directly for this update: the cash-in leg still does `db.allByUser('payments_received', uid)` and sums it as `paymentsIn` — it still **never reads `invoice_payments`** anywhere in that route. The three-line snippet quoted below in this entry is unchanged today, line-for-line in substance (only line numbers drifted from other commits).
+- `POST /api/payments-received` and the Payments Received page are still fully live (`server.js:2261` et seq.) — "empty in prod" is today's row **count**, not an enforced invariant. Nothing in the code stops a new Store A row tomorrow, so **(C) double-count is still fully reachable**, not closed off.
+- **(A) wrong-date recognition** and **(B) invisible partial payment** for `invoice_payments`-based settlements are unaffected either way — the cash-in leg was never wired to that store at all, canonical-store decision or not.
+
+**Net effect of today's F86 decision on this finding: none.** If anything, declaring Store B canonical while cash-in continues to read only Store A makes the gap sharper, not smaller — the "canonical" money-in store is the one Cash Flow's cash-in leg doesn't look at. **Status stays OPEN**, unchanged severity. The consolidation this entry's "Course of action" describes is still the only fix.
+
 #### Two money-in stores, two entry paths
 
 | Store | Written by (UI) | Server route |
@@ -1760,9 +1777,18 @@ The seed records money-in as `invoice_payments` (INV-1 1,000 on 05-15; INV-2 500
 
 ---
 
-### F86 ⬜ OWNER DECISION — A7.4 "Payments Received" is ambiguous: two different tables could satisfy it — **NEW (2026-07-23, found by the step-3 probe)**
+### F86 ✅ RESOLVED — A7.4 "Payments Received" is ambiguous: two different tables could satisfy it — **NEW (2026-07-23, found by the step-3 probe) → RESOLVED (2026-07-31)**
 **Update 2026-07-23:** the live question underneath A7.4 is now answered — see **F95**. The two stores are disjoint and the cash-in leg reads only one. The A7.4 *seed* decision still needs an owner ruling (settlements vs the Payments Received page total), but it should be made **together with the F95 consolidation**, not before it — deciding what A7.4 asserts while the two stores don't reconcile would lock in a target against a broken model.
-**Status:** OPEN — blocks A7.4, and possibly the Cash Flow "cash in" checks (A7.9–11). **Not a product defect; a specification ambiguity in `VERIFICATION.md`.** Logged rather than guessed, because guessing the source is exactly the seed-fidelity error caught on the holdings scope.
+
+**Update 2026-07-31 — owner ruling.** `payments_received` (Store A) confirmed **empty in production** — the single test row (customer "king", $1,000, no `invoice_ref`) was deleted, count = 0. Owner decision: `invoice_payments` (Store B) is **canonical** "Payments Received." Option 1 from the original decision list below.
+
+`tests/harness/step3-gate.js` A7.4 rewritten accordingly, **verified by execution** — ran `node -r ./tests/harness/clock.js tests/harness/step3-gate.js` against a real embedded scratch PostgreSQL 17.10 cluster this session:
+- Expected value **1,500**, re-derived fresh from `tests/harness/seedData.js` `INVOICE_PAYMENTS` (not reused blind): `{invoice:'INV-1', amount:1000}` + `{invoice:'INV-2', amount:500}` = **1,500**. Confirmed by reading `tests/harness/seed.js:107-115` — a single un-duplicated insert loop over exactly these two rows, for the one seeded user, and `seed()` truncates (`reset()`) before every run, so no double-insert path exists.
+- Old check called `GET /api/invoice-payments` with no `invoice_id`; that route requires it (`server.js:3712`) and always 400s without one — the check could never pass as written, regardless of what Store B held. That was the actual defect, not the 1,500 figure.
+- Rewrite reads `GET /api/bank-reconciliation`'s `unmatchedPayments` array instead — it returns every one of the user's `invoice_payments` rows unfiltered whenever nothing is reconciled (true for this seed: no `bank_reconciliation` rows are ever seeded), so it doubles as the aggregate read with no new route, over real HTTP, matching every other check's convention in that file.
+- **Executed result: `PASS  A7.4  invoice_payments total (Payments Received, Store B canonical)`. Full run: STEP 3 GATE — 34 passed, 0 failed** (up from 33/1, the one prior red). The stamp-only side effect the run wrote into `VERIFICATION.md` (date `2026-07-30`→`2026-07-31` on the six A5 rows, no figures changed) was reverted with `git checkout -- VERIFICATION.md` per instruction — not left in the working tree.
+
+**Status:** RESOLVED, verified by execution. A7.4 now asserts the correct store, correct endpoint, correct figure, and passes for real against a live scratch database. **Does not resolve F95** — see the update on that entry; the two are related but distinct (F86 was a test/seed sourcing question, F95 is a live product code question).
 
 Money-in lives in **two unrelated tables**:
 

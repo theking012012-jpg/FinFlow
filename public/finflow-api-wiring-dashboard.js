@@ -102,25 +102,8 @@
     chart.update('none');
   }
 
-  // ── Calculate MTD (current month) totals ─────────────────────────
-  function calcMTD(invoices, expenses) {
-    const now = new Date();
-    const m = now.getMonth();
-    const y = now.getFullYear();
-
-    const mtdInv  = invoices.filter(i => {
-      const d = parseDate(i.date || i.due_date || i.created_at);
-      return d && d.getMonth() === m && d.getFullYear() === y && i.status?.toLowerCase() === 'paid';
-    });
-    const mtdExp  = expenses.filter(e => {
-      const d = parseDate(e.expense_date || e.date || e.created_at);
-      return d && d.getMonth() === m && d.getFullYear() === y;
-    });
-
-    const rev = mtdInv.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const exp = mtdExp.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-    return { rev, exp, profit: rev - exp };
-  }
+  // (calcMTD removed — F87-class dead code: current-month MTD via local getMonth/getFullYear,
+  // zero call sites repo-wide. Deleted rather than fixed since nothing invoked it.)
 
   // ── Update KPI cards ─────────────────────────────────────────────
   function updateKPIs(invoices, expenses, period) {

@@ -1083,11 +1083,14 @@
           return s + kb;
         }, 0);
         set('docs-storage', totalKB >= 1024 ? (totalKB / 1024).toFixed(1) + ' MB' : Math.round(totalKB) + ' KB');
-        const now = new Date();
+        // F87-class: "this month" by canonical UTC calendar month, not viewer-local
+        // getMonth/getFullYear. uploaded_at is a genuine timestamp → phase-1 resolves it in UTC
+        // (entity-timezone resolution for genuine timestamps is the unbuilt phase-2 hook).
+        const _docToday = window.FinFlowDates.resolvedToday(new Date());
         const thisMonth = cache.filter(d => {
           if (!d.uploaded_at) return false;
-          const u = new Date(d.uploaded_at);
-          return u.getFullYear() === now.getFullYear() && u.getMonth() === now.getMonth();
+          const _u = window.FinFlowDates._toYmd(d.uploaded_at);
+          return _u != null && _u.slice(0, 7) === _docToday.slice(0, 7);
         });
         set('docs-added', thisMonth.length);
       };

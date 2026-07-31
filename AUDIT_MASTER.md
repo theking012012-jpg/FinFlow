@@ -484,6 +484,22 @@ The node clock pin (`clock.js` `PINNED_ISO`) and `seedData.TODAY_LOCAL` must mov
 
 ---
 
+### F87 peripheral instances — ✅ CLOSED (this commit) — **2026-07-31**
+The same local-`getMonth` period-membership bug (F87 / Rule 10) on **non-recognition** surfaces: `inThisMonth` feeding the **credit-notes** and **vendor-credits** "this month" sums (`_cnMonthSum`/`_vcMonthSum`, wiring-pages.js), the **recurring-bills YTD** elapsed-month multiplier (`_rbYtd`, wiring-pages.js), and the **docs-this-month** count (wiring-medium.js). All routed through `window.FinFlowDates` (`_toYmd` / `resolvedToday`, UTC calendar-month **string** compare — no Date-to-Date comparison). Dead **`calcMTD`** deleted (wiring-dashboard.js) — zero call sites, re-confirmed repo-wide at `49638c1`.
+
+**Verified by INSPECTION, not execution.** These surfaces are **ungated**, so the four green gates (step2 63/0 · step3 33/1 · step4 5/0 · tz-matrix identical) prove **no regression only**. The fixes mirror the string-compare/UTC pattern whose viewer-independence **is** execution-proven for the recognition legs by step4 and tz-matrix (`arOutstanding`/`computeRevenue`). Per Rule 14 that mirroring is not itself execution.
+
+**Left OUT deliberately** (same shape, different category): the investments rolling chart (legitimately relative-to-now) and personal-finance `_pers*` (separately scoped); plus recurring `next_run` advances, payment-date insert-defaults, and month-label parsers/formatters — none is a period-membership recognition sum.
+
+**H1 note:** first live exercise of the `--from-index` WRITE path since `d83f7e7` — it took the write branch (rebuilt the bundle from the staged sources into the index), left the working tree untouched, and the committed bundle was verified to match the committed sources (fixes present, `calcMTD` absent).
+
+---
+
+### F112 🟢 LOW — VERIFICATION.md stamp date churns daily — **NEW (2026-07-31), OPEN**
+Independent of **H6**. H6 stopped the seed **fingerprint** moving on EOL flips; the stamp **DATE** still moves every calendar day the gate runs, so VERIFICATION.md shows modified after any gate run on a new day and someone must decide each time whether to commit a date bump. Observed 2026-07-31 (`07-30 → 07-31`). **Not a defect** — the date records when the figure was last verified. Open question whether the stamp needs a date at all, given the seed fingerprint already identifies *what* was verified. Owner's call; no fix built.
+
+---
+
 ### F54 🟠 HIGH — Team-member data scope is incoherent (reads actor-scoped, writes account-scoped) — **NEW**
 **Status:** OPEN, verified in code. Reachable — the invite/accept flow is live and writes `member_user_id` (`server.js:2637-2642`).
 

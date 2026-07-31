@@ -37,10 +37,12 @@
   }
   function inThisMonth(d) {
     if (!d) return false;
-    const dt = new Date(d);
-    if (isNaN(dt)) return false;
-    const now = new Date();
-    return dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth();
+    // F87-class: decide "this month" by CALENDAR month via the canonical resolver, not local
+    // getMonth/getFullYear — those pick the month in the VIEWER's timezone, so the same row lands
+    // in different months for viewers in different zones. Compare 'YYYY-MM' string prefixes (UTC).
+    const _dy = window.FinFlowDates._toYmd(d);
+    if (_dy == null) return false;
+    return _dy.slice(0, 7) === window.FinFlowDates.resolvedToday(new Date()).slice(0, 7);
   }
 
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
@@ -860,7 +862,11 @@
       const _rbActive = _recurringBillsData.filter(r => r.status?.toLowerCase() === 'active');
       const _rbMonthly = _rbActive.reduce((s, r) => s + monthlyEquiv(r.amount, r.frequency), 0);
       const _rbNext = _rbActive.map(r => r.next_run).filter(Boolean).sort()[0] || '—';
-      const _rbYtd = _rbMonthly * (new Date().getMonth() + 1);
+      // F87-class: months-elapsed from the canonical UTC calendar month, not viewer-local
+      // getMonth() (which flips at the month boundary per viewer). YTD basis unchanged
+      // (calendar-year, Jan=1 … current month).
+      const _rbElapsed = parseInt(window.FinFlowDates.resolvedToday(new Date()).slice(5, 7), 10);
+      const _rbYtd = _rbMonthly * _rbElapsed;
       setKpiCards('page-recurring-bills', [_rbActive.length, S(_rbMonthly), _rbNext, S(_rbYtd)]);
       window._refreshDashboardUI?.();
     };

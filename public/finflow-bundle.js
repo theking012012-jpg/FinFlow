@@ -1519,11 +1519,14 @@
           return s + kb;
         }, 0);
         set('docs-storage', totalKB >= 1024 ? (totalKB / 1024).toFixed(1) + ' MB' : Math.round(totalKB) + ' KB');
-        const now = new Date();
+        // F87-class: "this month" by canonical UTC calendar month, not viewer-local
+        // getMonth/getFullYear. uploaded_at is a genuine timestamp → phase-1 resolves it in UTC
+        // (entity-timezone resolution for genuine timestamps is the unbuilt phase-2 hook).
+        const _docToday = window.FinFlowDates.resolvedToday(new Date());
         const thisMonth = cache.filter(d => {
           if (!d.uploaded_at) return false;
-          const u = new Date(d.uploaded_at);
-          return u.getFullYear() === now.getFullYear() && u.getMonth() === now.getMonth();
+          const _u = window.FinFlowDates._toYmd(d.uploaded_at);
+          return _u != null && _u.slice(0, 7) === _docToday.slice(0, 7);
         });
         set('docs-added', thisMonth.length);
       };
@@ -3376,10 +3379,12 @@ function clearAIChat(){
   }
   function inThisMonth(d) {
     if (!d) return false;
-    const dt = new Date(d);
-    if (isNaN(dt)) return false;
-    const now = new Date();
-    return dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth();
+    // F87-class: decide "this month" by CALENDAR month via the canonical resolver, not local
+    // getMonth/getFullYear — those pick the month in the VIEWER's timezone, so the same row lands
+    // in different months for viewers in different zones. Compare 'YYYY-MM' string prefixes (UTC).
+    const _dy = window.FinFlowDates._toYmd(d);
+    if (_dy == null) return false;
+    return _dy.slice(0, 7) === window.FinFlowDates.resolvedToday(new Date()).slice(0, 7);
   }
 
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
@@ -4199,7 +4204,11 @@ function clearAIChat(){
       const _rbActive = _recurringBillsData.filter(r => r.status?.toLowerCase() === 'active');
       const _rbMonthly = _rbActive.reduce((s, r) => s + monthlyEquiv(r.amount, r.frequency), 0);
       const _rbNext = _rbActive.map(r => r.next_run).filter(Boolean).sort()[0] || '—';
-      const _rbYtd = _rbMonthly * (new Date().getMonth() + 1);
+      // F87-class: months-elapsed from the canonical UTC calendar month, not viewer-local
+      // getMonth() (which flips at the month boundary per viewer). YTD basis unchanged
+      // (calendar-year, Jan=1 … current month).
+      const _rbElapsed = parseInt(window.FinFlowDates.resolvedToday(new Date()).slice(5, 7), 10);
+      const _rbYtd = _rbMonthly * _rbElapsed;
       setKpiCards('page-recurring-bills', [_rbActive.length, S(_rbMonthly), _rbNext, S(_rbYtd)]);
       window._refreshDashboardUI?.();
     };
@@ -5177,25 +5186,8 @@ function clearAIChat(){
     chart.update('none');
   }
 
-  // ── Calculate MTD (current month) totals ─────────────────────────
-  function calcMTD(invoices, expenses) {
-    const now = new Date();
-    const m = now.getMonth();
-    const y = now.getFullYear();
-
-    const mtdInv  = invoices.filter(i => {
-      const d = parseDate(i.date || i.due_date || i.created_at);
-      return d && d.getMonth() === m && d.getFullYear() === y && i.status?.toLowerCase() === 'paid';
-    });
-    const mtdExp  = expenses.filter(e => {
-      const d = parseDate(e.expense_date || e.date || e.created_at);
-      return d && d.getMonth() === m && d.getFullYear() === y;
-    });
-
-    const rev = mtdInv.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const exp = mtdExp.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-    return { rev, exp, profit: rev - exp };
-  }
+  // (calcMTD removed — F87-class dead code: current-month MTD via local getMonth/getFullYear,
+  // zero call sites repo-wide. Deleted rather than fixed since nothing invoked it.)
 
   // ── Update KPI cards ─────────────────────────────────────────────
   function updateKPIs(invoices, expenses, period) {

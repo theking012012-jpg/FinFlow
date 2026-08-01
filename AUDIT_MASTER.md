@@ -551,6 +551,34 @@ This built `payment_date` from the **browser's local** `getFullYear()`/`getMonth
 
 ---
 
+### F117 🟠 HIGH — Duplicate invoice created for the same customer/amount, reachable via double-submit — **NEW (2026-07-31), OPEN**
+**Status:** OPEN. **Owner-reported from production, not independently verified this session** — this session has no database access and CLAUDE.md forbids querying production directly. Recorded as evidence supplied by the owner, per Rule 7 ("evidence, not conclusions" cuts both ways — the claim is logged with its source, not re-stated as something this session confirmed).
+
+Owner reports two invoices for customer "saige," identical amount (2,000), both present in production as **ids 8 and 9**. Consistent with a double-submit on invoice creation — the same class of gap already named for other mutating actions in this codebase (Rule 9: dedupe must be a single shared mechanism every mutating handler routes through, not a per-button patch; B8/C1 already documents this recurring on Run Payroll and Approve after being "fixed" once for Record Payment).
+
+**Not yet investigated this session:** whether `POST /api/invoices` has a dedupe guard at all (other creation routes in this codebase use `findRecentDuplicate`/`findRecentDuplicateTyped` — unconfirmed whether the invoice route does), and if it does, why two identical rows landed anyway (guard window too narrow, a genuinely different field defeating the match, or no guard present). This needs the same code-first investigation this session applied everywhere else — not yet done for this finding.
+
+**Course of action:** read `POST /api/invoices` (`server.js`) to confirm presence/absence of a dedupe guard before proposing a fix. Do not fix yet.
+**Done when:** the ids-8/9 mechanism is identified from source (not assumed), and creating an invoice twice in rapid succession for the same customer/amount either merges to one row or is explicitly rejected.
+
+---
+
+### F118 🟠 HIGH — Record Payment modal fires a false "exceeds remaining balance" warning on a valid full payment — corrects the prior session's diagnosis — **NEW (2026-07-31), OPEN**
+**Status:** OPEN. Root cause NOT YET PINNED to a line. Needs runtime diagnosis against the real running app — explicitly NOT another static/mock pass.
+
+**Confirmed real, by owner-supplied production data:** the "saige" invoice stores `amount = 2000`, `amount_paid = NULL`. A user entering exactly `2000` (the full, correct remaining balance) trips the inline overpayment warning and blocks Save. This is a **real defect**, not the display-precision explanation given earlier the same day.
+
+**The prior diagnosis in this session was wrong, and is superseded here.** That diagnosis concluded the warning was a *display* illusion — that `S()`/`_fmtMoney`'s K-abbreviation (`index.html:6280`, `app-main.js:548-560`) collapses any value from $1,950-$2,049 to the identical "$2.0K", so a user typing "2000" after reading an abbreviated display could be **legitimately** overpaying a *different*, more precise true balance. That reasoning was built and "verified" entirely against a **mocked** `inv` object in an isolated Node harness — clean hand-picked JS values for `inv.amount`/`inv.amount_paid`, never the real `GET /api/invoices` response shape. Re-run this session against the now-confirmed real shape (`amount: 2000` as a clean number, `amount_paid: null`, typed "2000", no "Full" click) — **the same mock still evaluates `over === false`, still fails to reproduce the bug.** That is the tell: the mock's assumed data shape is not what the real app is actually working with, and no amount of additional mock scenarios will find a bug that lives in the gap between the mock and reality. The earlier entry's conclusion (display-abbreviation illusion, not a real bug) is **withdrawn**.
+
+**Prime suspect, unconfirmed:** the `amount_paid === null` path. `parseFloat(null) || 0` should yield `0` in isolation (confirmed, trivially) — but the REAL `window.userInvoices[idx]` object the modal actually receives, or a coercion step between the real `GET /api/invoices` response and `openRecordPaymentModal(inv)`, is producing a different `_rpRemaining` than clean math predicts. Not yet identified which step.
+
+**What's needed, not done this session:** instrument the real, running app — log the actual `inv` object `openRecordPaymentModal` receives and the actual `_rpRemaining` value at the moment `_rpCheckOverpay` runs, against a real invoice with `amount_paid = NULL` — and read what comes back, rather than reasoning about it further. This is a code change (temporary logging) and is explicitly out of scope for this AUDIT_MASTER-only turn.
+
+**Course of action:** add temporary diagnostic logging (or use the browser devtools directly) against a real `amount_paid: NULL` invoice, capture the actual `inv` shape and `_rpRemaining` value, then locate the exact divergence from the mocked trace. Do not guess at a fix before that.
+**Done when:** the exact line/step producing a wrong `_rpRemaining` (or a wrong `amt`) for a `NULL`-`amount_paid` invoice is identified from a real captured value, not inferred.
+
+---
+
 ### F54 🟠 HIGH — Team-member data scope is incoherent (reads actor-scoped, writes account-scoped) — **NEW**
 **Status:** OPEN, verified in code. Reachable — the invite/accept flow is live and writes `member_user_id` (`server.js:2637-2642`).
 

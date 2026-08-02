@@ -560,6 +560,28 @@ function _fmtMoney(value, symbol){
 }
 window._fmtMoney = _fmtMoney;
 
+// F64: abbreviated, FX-aware (K/M/B) — for dashboard tiles + chart axes that must stay compact.
+function _fmtMoneyAbbr(n){
+  const converted = typeof fxConvert === 'function' ? fxConvert(n) : (parseFloat(n)||0);
+  const sym = CURRENCIES[activeCurrency]?.symbol || '$';
+  return _fmtMoney(converted, sym);
+}
+window._fmtMoneyAbbr = _fmtMoneyAbbr;
+
+// F64: EXACT, FX-aware — honours "Show cents" (#s-cents). General-purpose renderer for rows/detail.
+function _fmtMoneyExact(n){
+  const converted = typeof fxConvert === 'function' ? fxConvert(n) : (parseFloat(n)||0);
+  const sym = CURRENCIES[activeCurrency]?.symbol || '$';
+  const cents = document.getElementById('s-cents')?.checked;
+  const sign = converted < 0 ? '-' : '';
+  const abs = Math.abs(converted);
+  const body = cents
+    ? abs.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})
+    : Math.round(abs).toLocaleString('en-US');
+  return sign + sym + body;
+}
+window._fmtMoneyExact = _fmtMoneyExact;
+
 // ════════════════════════════════════════════
 // PATCH S() to apply FX conversion
 // (runs after original S() is defined at bottom of script)
@@ -567,12 +589,7 @@ window._fmtMoney = _fmtMoney;
 function patchSFormatter(){
   const origS = window.S;
   if(!origS) return;
-  window.S = function(n){
-    const converted = typeof fxConvert === 'function' ? fxConvert(n) : (parseFloat(n)||0);
-    // Use CURRENCIES symbol instead of currencySymbol so it stays in sync
-    const sym = CURRENCIES[activeCurrency]?.symbol || '$';
-    return _fmtMoney(converted, sym);
-  };
+  window.S = function(n){ return _fmtMoneyExact(n); };
 }
 
 
@@ -1215,6 +1232,9 @@ function initEnhancements(){
   }
   // Patch S() to apply FX
   patchSFormatter();
+  // F64: "Show cents" was read only by the ORIGINAL S(), which patchSFormatter overwrites — the
+  // toggle rendered nothing. _fmtMoneyExact reads it live, but nothing re-rendered on change.
+  document.getElementById('s-cents')?.addEventListener('change', ()=>{ try{ if(typeof updateDashboard==='function') updateDashboard(); if(typeof renderInvoices==='function') renderInvoices(); }catch(_){} });
   // Style login radio labels on change
   document.querySelectorAll('input[name="login-role"]').forEach(radio=>{
     radio.addEventListener('change',()=>{
@@ -2070,9 +2090,9 @@ function updateDashboard(d=getPeriodData()){
   // in the server-converted figures, or "—" + a hint when it cannot. Honest-empty over
   // confidently-wrong. Native path is unchanged — byte-identical to before.
   const _fxPending = !!window._displayCurrency;
-  document.getElementById('d-rev').textContent    = _fxPending ? '…' : S(_ddRev);
-  document.getElementById('d-exp').textContent    = _fxPending ? '…' : S(_ddExp);
-  document.getElementById('d-profit').textContent = _fxPending ? '…' : S(_ddProfit);
+  document.getElementById('d-rev').textContent    = _fxPending ? '…' : _fmtMoneyAbbr(_ddRev);
+  document.getElementById('d-exp').textContent    = _fxPending ? '…' : _fmtMoneyAbbr(_ddExp);
+  document.getElementById('d-profit').textContent = _fxPending ? '…' : _fmtMoneyAbbr(_ddProfit);
   if(_fxPending) _applyConvertedKPIs(window._displayCurrency);
   document.getElementById('d-chart-title').textContent='Revenue vs Expenses — '+d.label;
   // Prior-period baseline from the SAME windowed compute (same basis, payroll included) — NOT
@@ -2295,7 +2315,7 @@ function updateExpenses(d=getPeriodData()){
     .sort((a,b2)=>b2[1]-a[1]);
   const _exTopEl=document.getElementById('ex-top'); if(_exTopEl) _exTopEl.textContent = sorted[0]?.[0] || '—';
   const _exTopPctEl=document.getElementById('ex-top-pct');
-  if(_exTopPctEl) _exTopPctEl.textContent = (sorted[0] && b.total>0) ? S(sorted[0][1])+' · '+Math.round(sorted[0][1]/b.total*100)+'%' : '';
+  if(_exTopPctEl) _exTopPctEl.textContent = (sorted[0] && b.total>0) ? _fmtMoneyAbbr(sorted[0][1])+' · '+Math.round(sorted[0][1]/b.total*100)+'%' : '';
   const _maxAmt=sorted[0]?.[1]||1;
   [['ex-sal'],['ex-rent'],['ex-sw2'],['ex-other']].forEach(([elId],i)=>{
     const el=document.getElementById(elId); if(!el) return;
@@ -4608,7 +4628,7 @@ async function _applyConvertedKPIs(ccy){
   // body was inside a `try{...}catch(e){}` with an `if(!r.ok) return;` — so a failed or errored
   // conversion left the NATIVE figures on screen under the newly-relabelled foreign currency.
   // That is mislabelled money: the exact defect F34 was opened for, alive on the failure path.
-  const set =(id,v)=>{const el=document.getElementById(id); if(el){el.textContent=S(v); el.title='';}};
+  const set =(id,v)=>{const el=document.getElementById(id); if(el){el.textContent=_fmtMoney(v, CURRENCIES[ccy]?.symbol || '$'); el.title='';}};
   const dash=(id,hint)=>{const el=document.getElementById(id); if(el){el.textContent='—'; el.title=hint||'';}};
   const _FX_CARDS=['d-rev','d-exp','d-profit','d-outstanding','d-invest'];
   try{

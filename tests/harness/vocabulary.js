@@ -37,10 +37,29 @@ const PAYROLL_RUN_STATUSES = new Set(['draft', 'approved', 'paid']);
 // DISAPPEAR when a run is marked paid.
 const PAYROLL_RUN_RECOGNIZED = new Set(['approved', 'paid']);
 
+// Credit notes (F58). server.js:2307 (POST) and :2324 (PUT) —
+//   const validStatuses = ['Open', 'Applied', 'Void'];
+// A THIRD vocabulary, distinct from BOTH invoices and bills, and the only one stored
+// CAPITALIZED. The endpoint coerces anything outside the list to 'Open', so an invalid value
+// cannot reach the table through the API — but a seed writes directly, which is exactly the
+// hole this file exists to plug. Compared case-insensitively, like every other allowlist.
+// Open AND Applied both reduce revenue (an unapplied credit is still owed back); Void = 0.
+const CREDIT_NOTE_STATUSES   = new Set(['open', 'applied', 'void']);
+const CREDIT_NOTE_RECOGNIZED = new Set(['open', 'applied']);
+
+// Vendor credits (F58). server.js:2413 (POST) / :2429 (PUT) — the SAME three values as credit
+// notes, kept as their own constants rather than aliased: they are independent vocabularies in
+// the product and nothing guarantees they stay in step (Rule 11 — bills already differ from
+// invoices for exactly this reason).
+const VENDOR_CREDIT_STATUSES   = new Set(['open', 'applied', 'void']);
+const VENDOR_CREDIT_RECOGNIZED = new Set(['open', 'applied']);
+
 const VOCABULARIES = {
   invoice: { valid: INVOICE_STATUSES, source: 'server.js:4053 (RECOGNIZED) + draft' },
   bill: { valid: BILL_STATUSES, source: 'server.js:3389 (RECOGNIZED_BILL)' },
   payroll_run: { valid: PAYROLL_RUN_STATUSES, source: 'database.js:388 + VERIFICATION decision 2' },
+  credit_note: { valid: CREDIT_NOTE_STATUSES, source: 'server.js:2307 (validStatuses)' },
+  vendor_credit: { valid: VENDOR_CREDIT_STATUSES, source: 'server.js:2413 (validStatuses)' },
 };
 
 class VocabularyError extends Error {}
@@ -76,5 +95,7 @@ module.exports = {
   INVOICE_STATUSES, INVOICE_RECOGNIZED,
   BILL_STATUSES, BILL_RECOGNIZED,
   PAYROLL_RUN_STATUSES, PAYROLL_RUN_RECOGNIZED,
+  CREDIT_NOTE_STATUSES, CREDIT_NOTE_RECOGNIZED,
+  VENDOR_CREDIT_STATUSES, VENDOR_CREDIT_RECOGNIZED,
   assertStatus,
 };

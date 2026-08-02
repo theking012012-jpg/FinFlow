@@ -82,6 +82,11 @@ function loadClientEngine() {
     payrollRuns: SEED.PAYROLL_RUNS.map(r => ({ period: r.period, run_date: r.run_date, status: r.status, lines: r.lines.map(l => ({ gross: l.gross, bonus: 0, overtime: 0 })) })),
     ownerPayroll: (() => { const o = SEED.ROSTER.find(r => r.is_owner); return o ? { gross: o.gross, fname: o.fname, lname: o.lname } : null; })(),
     payrollEmployees: SEED.ROSTER.filter(r => !r.is_owner).map(e => ({ gross: e.gross, fname: e.fname, lname: e.lname })),
+    // F58 contra legs. Status kept CAPITALIZED exactly as the API stores it (server.js:2307),
+    // so the client's case-insensitive compare is genuinely exercised — seeding lowercase here
+    // would let a `status === 'open'` bug pass this gate and fail in production.
+    creditNotes: SEED.CREDIT_NOTES.map(c => ({ amount: c.amount, date: c.date, status: c.status, customer: c.customer })),
+    vendorCredits: SEED.VENDOR_CREDITS.map(v => ({ amount: v.amount, date: v.date, status: v.status, vendor: v.vendor })),
     bizHoldings: SEED.HOLDINGS.map(h => ({ ticker: h.ticker, shares: h.shares, price: h.price, costPer: h.cost_per })),
     holdings: [],
     _fyStart: 'January',
@@ -177,7 +182,12 @@ console.log('\n── 2 · Client figures vs VERIFICATION expected (per viewer) 
 for (const x of flats) {
   let vp = 0, vf = 0; const misses = [];
   for (const k of Object.keys(PERIODS)) {
-    const checks = [['revenue', EXPECTED.COMPONENTS[k].revenue], ['opex', EXPECTED.PL[k].opex], ['netProfit', EXPECTED.PL[k].netProfit]];
+    // F58: compare against serverFigures().revenue — the NET reported figure — NOT
+    // COMPONENTS.revenue, which is now GROSS invoiced revenue before the credit-note contra.
+    // Using COMPONENTS here was a FALSE PASS: with credit notes unseeded the client returned
+    // gross 5,000 and the expectation also read gross 5,000, so the two agreed while both were
+    // wrong (Rule 6 — agreement is not correctness).
+    const checks = [['revenue', EXPECTED.serverFigures(k).revenue], ['opex', EXPECTED.PL[k].opex], ['netProfit', EXPECTED.PL[k].netProfit]];
     for (const [field, want] of checks) {
       const got = x.f['fig.' + k + '.' + field];
       if (Math.abs(got - want) < 0.005) vp++; else { vf++; misses.push(k + '.' + field + ' got ' + got + ' want ' + want); }
@@ -189,7 +199,8 @@ for (const x of flats) {
     vf === 0,
     vf ? vf + ' miss: ' + misses.join(' · ') : '');
 }
-console.log('     (FY revenue 10000 & Q3 4000 EXCLUDE future-dated INV-6 — D2 now applied client-side too; viewer-INDEPENDENT.)');
+console.log('     (FY revenue ' + EXPECTED.serverFigures('fy').revenue + ' & Q3 ' + EXPECTED.serverFigures('q3').revenue
+  + ' EXCLUDE future-dated INV-6 — D2 client-side; FY is also NET of the F58 credit-note contra. Viewer-INDEPENDENT.)');
 
 // H2b: signal failure through the exit code so CI/the caller can see a red run.
 // H5: the old "(a FAIL on check 1 is EXPECTED…)" footnote was true only while the probe was red by

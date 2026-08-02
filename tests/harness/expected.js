@@ -45,22 +45,28 @@ const LABELS = {
 // every monthly figure is unchanged. Q2 bills 800→1,100 and payroll 4,200→5,100 (April rows now
 // distinct from June); FY bills 1,300→1,600 and payroll 5,300→6,200.
 const COMPONENTS = {
-  may: { revenue: 1000, cogs: 400, manualExpenses: 600, billsIssued: 0, payroll: 0 },
-  jun: { revenue: 5000, cogs: 200, manualExpenses: 750, billsIssued: 800, payroll: 4200 },
-  jul: { revenue: 4000, cogs: 800, manualExpenses: 250, billsIssued: 500, payroll: 1100 },
-  q2: { revenue: 6000, cogs: 600, manualExpenses: 1350, billsIssued: 1100, payroll: 5100 },
-  q3: { revenue: 4000, cogs: 800, manualExpenses: 250, billsIssued: 500, payroll: 1100 },
-  fy: { revenue: 10000, cogs: 1400, manualExpenses: 1600, billsIssued: 1600, payroll: 6200 },
+  // F58: `revenue` is GROSS invoiced revenue and `creditNotes` is the contra, kept as separate
+  // components rather than folded into one net figure. Folding would make the identity check
+  // below unable to see the contra at all — the reported figure would be an assertion instead
+  // of a derivation. creditNotes/vendorCredits are the RECOGNIZED sums (Open+Applied); CN-2 is
+  // Void and contributes 0, which is what makes it a discriminator rather than decoration.
+  may: { revenue: 1000, cogs: 400, manualExpenses: 600, billsIssued: 0, payroll: 0, creditNotes: 0, vendorCredits: 0 },
+  jun: { revenue: 5000, cogs: 200, manualExpenses: 750, billsIssued: 800, payroll: 4200, creditNotes: 1200, vendorCredits: 300 },
+  jul: { revenue: 4000, cogs: 800, manualExpenses: 250, billsIssued: 500, payroll: 1100, creditNotes: 0, vendorCredits: 0 },
+  q2: { revenue: 6000, cogs: 600, manualExpenses: 1350, billsIssued: 1100, payroll: 5100, creditNotes: 1200, vendorCredits: 300 },
+  q3: { revenue: 4000, cogs: 800, manualExpenses: 250, billsIssued: 500, payroll: 1100, creditNotes: 0, vendorCredits: 0 },
+  fy: { revenue: 10000, cogs: 1400, manualExpenses: 1600, billsIssued: 1600, payroll: 6200, creditNotes: 1200, vendorCredits: 300 },
 };
 
 // ── P&L, accrual (VERIFICATION.md § P&L) ────────────────────────────────────
 const PL = {
+  // F58: these are NET of the contra legs (what the server reports and the A5 table states).
   may: { grossProfit: 600, opex: 600, netProfit: 0 },
-  jun: { grossProfit: 4800, opex: 5750, netProfit: -950 },
+  jun: { grossProfit: 3600, opex: 5450, netProfit: -1850 },
   jul: { grossProfit: 3200, opex: 1850, netProfit: 1350 },
-  q2: { grossProfit: 5400, opex: 7550, netProfit: -2150 },
+  q2: { grossProfit: 4200, opex: 7250, netProfit: -3050 },
   q3: { grossProfit: 3200, opex: 1850, netProfit: 1350 },
-  fy: { grossProfit: 8600, opex: 9400, netProfit: -800 },
+  fy: { grossProfit: 7400, opex: 9100, netProfit: -1700 },
 };
 
 // ── Cash flow, genuine cash basis (decision 3) ───────────────────────────────
@@ -89,9 +95,11 @@ const BALANCES = {
 
 // ── Identity self-check ──────────────────────────────────────────────────────
 // The identities come from VERIFICATION.md's ACCOUNTING BASIS, not from server.js:
-//   grossProfit = revenue − cogs
-//   opex        = manual expenses + bills ISSUED + payroll     (decisions 1 and 2;
+//   netRevenue  = revenue − credit notes                        (F58 contra; Void excluded)
+//   grossProfit = netRevenue − cogs
+//   opex        = manual expenses + bills ISSUED + payroll      (decisions 1 and 2;
 //                 payments made are settlement and are excluded)
+//                 − vendor credits                              (F58 contra)
 //   netProfit   = grossProfit − opex
 //   cash net    = cash in − cash out                            (decision 3)
 //
@@ -103,11 +111,12 @@ const identityErrors = [];
 for (const p of PERIODS) {
   const c = COMPONENTS[p], l = PL[p], f = CASHFLOW[p];
   if (!c || !l || !f) { identityErrors.push(`${p}: missing a table entry`); continue; }
-  const gross = c.revenue - c.cogs;
-  const opex = c.manualExpenses + c.billsIssued + c.payroll;
+  const netRevenue = c.revenue - (c.creditNotes || 0);
+  const gross = netRevenue - c.cogs;
+  const opex = c.manualExpenses + c.billsIssued + c.payroll - (c.vendorCredits || 0);
   const net = gross - opex;
-  if (gross !== l.grossProfit) identityErrors.push(`${p}: grossProfit ${l.grossProfit} != revenue−cogs ${gross}`);
-  if (opex !== l.opex) identityErrors.push(`${p}: opex ${l.opex} != manual+bills+payroll ${opex}`);
+  if (gross !== l.grossProfit) identityErrors.push(`${p}: grossProfit ${l.grossProfit} != (revenue−creditNotes)−cogs ${gross}`);
+  if (opex !== l.opex) identityErrors.push(`${p}: opex ${l.opex} != manual+bills+payroll−vendorCredits ${opex}`);
   if (net !== l.netProfit) identityErrors.push(`${p}: netProfit ${l.netProfit} != gross−opex ${net}`);
   if (f.cashIn - f.cashOut !== f.net) identityErrors.push(`${p}: cash net ${f.net} != in−out ${f.cashIn - f.cashOut}`);
 }
@@ -151,7 +160,8 @@ function seedFingerprint() {
 /** The six A5 figures for one period, in the shape the server returns them. */
 function serverFigures(period) {
   return {
-    revenue: COMPONENTS[period].revenue,
+    // F58: the server reports revenue NET of credit notes, so that is what the A5 row states.
+    revenue: COMPONENTS[period].revenue - (COMPONENTS[period].creditNotes || 0),
     cogs: COMPONENTS[period].cogs,
     grossProfit: PL[period].grossProfit,
     opex: PL[period].opex,

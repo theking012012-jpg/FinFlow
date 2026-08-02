@@ -131,6 +131,32 @@ const BILLS = [
   { key: 'B2', issue_date: '2026-07-01', amount: 500, status: 'paid',   amount_paid: 500, vendor: 'Vendor Two' },
 ];
 
+// ── Credit notes / vendor credits — P&L CONTRA legs (F58) ────────────────────
+// Status is stored CAPITALIZED, exactly as server.js:2307 writes it. Deliberate: the engines
+// compare case-insensitively, so seeding lowercase would let a `status === 'open'` bug pass
+// here and fail in production. The seed imitates the product, not the comparison.
+//
+// RULE 4 — ATTRIBUTION. CN-1's amount is deliberately 1,200: a value no other seed row carries.
+// It was briefly 2,000, which is INV-2's amount on INV-2's own date for INV-2's own customer
+// (2026-06-15 / Customer A) — that made June revenue 3,000, but 3,000 is ALSO what you get if
+// INV-2 vanished entirely and credit notes were never read. The number could not identify which
+// leg produced it. At 1,200 June revenue is 3,800, which is reachable by exactly one path.
+const CREDIT_NOTES = [
+  // CN-1 — Open, June. THE contra discriminator: June revenue 5,000 → 3,800, FY 10,000 → 8,800.
+  { key: 'CN-1', date: '2026-06-15', amount: 1200, status: 'Open', customer: 'Customer A' },
+  // CN-2 — VOID, June. Must contribute 0. This is the status-gate discriminator: if Void were
+  // recognised, June revenue would read 3,300 instead of 3,800. Amount 500 ≠ CN-1's 1,200 so
+  // the two cannot be confused for one another.
+  { key: 'CN-2', date: '2026-06-20', amount: 500,  status: 'Void', customer: 'Customer A' },
+];
+
+const VENDOR_CREDITS = [
+  // VC-1 — Open, June. June opex 5,750 → 5,450; FY 9,400 → 9,100. 300 collides with B0's amount,
+  // but B0 is an APRIL bill on the expense side of a different period, so June opex 5,450 is
+  // still reachable by one path only.
+  { key: 'VC-1', date: '2026-06-10', amount: 300, status: 'Open', vendor: 'Vendor Two' },
+];
+
 // ── Investments / holdings (VERIFICATION § Investments) ──────────────────────
 // Prices are supplied here and NEVER fetched — the network is blocked, and the live path goes
 // to CoinGecko/Finnhub (server.js:4676, 4697).
@@ -167,10 +193,15 @@ const EXPECTED = {
   rosterMonthly: 5000,
   invoicePaymentTotal: 1500,
   paymentsMadeTotal: 500,
+  creditNoteCount: 2,           // CN-1 (Open), CN-2 (Void)
+  creditNoteRecognized: 1200,   // CN-1 only — CN-2 is Void ⇒ 0
+  vendorCreditCount: 1,         // VC-1 (Open)
+  vendorCreditRecognized: 300,
 };
 
 module.exports = {
   TODAY_LOCAL, ENTITY, CUSTOMERS, INVOICES, INVOICE_PAYMENTS, PAYMENTS_MADE,
   INVENTORY_ITEM, PURCHASES, SALES, EXPENSES, ROSTER, PAYROLL_RUNS, BILLS, HOLDINGS,
+  CREDIT_NOTES, VENDOR_CREDITS,
   EXPECTED,
 };

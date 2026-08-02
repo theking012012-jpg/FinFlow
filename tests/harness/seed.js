@@ -34,6 +34,7 @@ const SEEDED_TABLES = [
   'entities', 'user_settings', 'payments_made', 'payments_received', 'sales_receipts',
   'invoice_payments', 'payroll_runs', 'payroll_run_lines', 'inventory_movements',
   'fx_rates', 'fx_transactions', 'audit_trail', 'vendors', 'items', 'journals',
+  'credit_notes', 'vendor_credits',            // F58 — P&L contra legs
 ];
 
 /** ISO timestamp for a local YYYY-MM-DD at midday, so a timezone slip cannot cross a day. */
@@ -126,6 +127,33 @@ async function seed(client, userId) {
       due_date: b.issue_date,
       num: b.key,
       notes: `seed ${b.key}`,
+    });
+  }
+
+  // ── Credit notes / vendor credits — P&L contra legs (F58) ──────────────────
+  // assertStatus VALIDATES (throws on a value outside Open/Applied/Void) but its lowercased
+  // return is deliberately DISCARDED: the row stores the ORIGINAL capitalization, which is what
+  // server.js:2307 writes. Seeding lowercase would hide a case-sensitive comparison bug.
+  for (const c of D.CREDIT_NOTES) {
+    assertStatus('credit_note', c.status, c.key);
+    await insertJson(client, 'credit_notes', userId, entityId, c.date, {
+      customer: c.customer,
+      amount: c.amount,
+      date: c.date,
+      status: c.status,
+      num: c.key,
+      reason: `seed ${c.key}`,
+    });
+  }
+  for (const v of D.VENDOR_CREDITS) {
+    assertStatus('vendor_credit', v.status, v.key);
+    await insertJson(client, 'vendor_credits', userId, entityId, v.date, {
+      vendor: v.vendor,
+      amount: v.amount,
+      date: v.date,
+      status: v.status,
+      num: v.key,
+      reason: `seed ${v.key}`,
     });
   }
 

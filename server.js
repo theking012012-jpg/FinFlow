@@ -3416,13 +3416,15 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const eid = req.entityId || null;
   const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
-  const [invoices, expenses, paymentsMade, receipts, bills] = await Promise.all([
+  const [invoices, expenses, paymentsMade, receipts, bills, creditNotes, vendorCredits] = await Promise.all([
     db.allByUser('invoices', uid, matchEnt),
     db.allByUser('expenses', uid, matchEnt),
     db.allByUser('payments_made', uid, matchEnt),
     db.allByUser('sales_receipts', uid),      // user-level (no entity_id) — F26
     db.allByUser('bills', uid, matchEnt),     // F38 Step 4: issued bills = accrued expense
     // payments_received dropped: it settles AR, it is not revenue (F32).
+    db.allByUser('credit_notes', uid, matchEnt),    // F58: revenue contra
+    db.allByUser('vendor_credits', uid, matchEnt),  // F58: opex contra
   ]);
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const keyOf = d => { const ymd = FinFlowDates._toYmd(d); return ymd == null ? 'Unknown' : ymd.slice(0, 7); }; // F87: calendar-date month key (string), no local-time getMonth
@@ -3441,6 +3443,13 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   // Only ORPHAN payments (bill_id IS NULL) stay expense; a bill-linked payment is a settlement
   // (Dr AP / Cr Cash), not a fresh expense — would double-count the issued-bill leg. Sole guard.
   paymentsMade.filter(p => p.bill_id == null).forEach(p => bump(p.date || p.created_at, 'expenses', p.amount));
+  // F58: contra legs, bucketed on their OWN date so the monthly chart reconciles with the
+  // canonical totals from computeBooks. Negative bump = subtraction; Void contributes 0.
+  const _REC_CREDIT = new Set(['open', 'applied']);
+  creditNotes.filter(c => _REC_CREDIT.has((c.status || '').toLowerCase()))
+    .forEach(c => bump(c.date || c.created_at, 'revenue', -(parseFloat(c.amount) || 0)));
+  vendorCredits.filter(v => _REC_CREDIT.has((v.status || '').toLowerCase()))
+    .forEach(v => bump(v.date || v.created_at, 'expenses', -(parseFloat(v.amount) || 0)));
   // Sort by YYYY-MM key ('Unknown' sorts last); format the label at render (F15).
   const rows = Object.keys(monthMap).sort().map(k => ({
     month: labelOf(k), key: k, revenue: monthMap[k].revenue, expenses: monthMap[k].expenses,
@@ -4116,7 +4125,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     return ymd >= winStart && ymd < winEnd;                    // bounded window (FY for 'year')
   };
 
-  const [invoices, expenses, paymentsMade, payroll, receipts, bills] = await Promise.all([
+  const [invoices, expenses, paymentsMade, payroll, receipts, bills, creditNotes, vendorCredits] = await Promise.all([
     db.allByUser('invoices', userId, ent),
     db.allByUser('expenses', userId, ent),
     db.allByUser('payments_made', userId, ent),
@@ -4124,6 +4133,9 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     db.allByUser('sales_receipts', userId),      // user-scoped (no entity_id) — F26
     db.allByUser('bills', userId, ent),          // F38 Step 4: issued bills = accrued expense
     // payments_received is NO LONGER a revenue leg (F32): it settles AR, it is not revenue.
+    // F58: credit notes / vendor credits are P&L CONTRA legs — see the revenue and opex legs.
+    db.allByUser('credit_notes', userId, ent),
+    db.allByUser('vendor_credits', userId, ent),
   ]);
 
   // ── F34 Path B (Step 1a) — historical FX conversion layer ──────────────────────────────────
@@ -4204,7 +4216,21 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // scheduled, not recognised.
   const issuedInvoices = sumFX(issuedInv.filter(i => inPeriod(i.issue_date || i.created_at || i.date)), i => i.amount, _invDate, 'invoices');
   const salesReceipts  = sumFX(receipts.filter(x => inPeriod(x.date)), x => x.amount, _rcptDate, 'sales_receipts');
-  const revenue = r2(issuedInvoices + salesReceipts);
+  // F58 — CREDIT NOTES are a revenue CONTRA leg. A credit note reduces what was invoiced, so
+  // recognising the invoice at full amount and ignoring the credit OVERSTATES revenue by the
+  // credit's full value. Status vocabulary is its OWN (server.js:2307 validStatuses) —
+  // Open/Applied/Void, capitalized and stored as-is; compared case-insensitively like every
+  // other allowlist. Open and Applied both reduce revenue (an unapplied credit is still owed
+  // back to the customer); VOID contributes 0. Keyed on `date` — the same field the CRUD
+  // endpoint writes — so it converts through sumFX at its own recognition date like every leg.
+  // SCOPE (owner, F58): P&L contra ONLY. AR is a balance-sheet figure and is left unchanged —
+  // per-document contra-AR is the larger per-invoice-link change, deferred to after launch.
+  const RECOGNIZED_CREDIT = new Set(['open', 'applied']);
+  const _cnDate = c => c.date || c.created_at;
+  const creditNotesTotal = sumFX(creditNotes.filter(c =>
+    RECOGNIZED_CREDIT.has((c.status || '').toLowerCase()) && inPeriod(_cnDate(c))
+  ), c => c.amount, _cnDate, 'credit_notes');
+  const revenue = r2(issuedInvoices + salesReceipts - creditNotesTotal);
 
   // ── OpEx (mirrors frontend computeExpenseBreakdown / E1) — uses the SAME inPeriod as revenue ──
   const _expDate = e => e.expense_date || e.date || e.created_at;
@@ -4272,7 +4298,16 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // Roster headcount cost — reported for the Payroll page's "create a run from your roster"
   // template and its empty state. INFORMATIONAL ONLY: it is deliberately NOT part of opex.
   const rosterMonthlyCost = r2(sum(payroll, p => num(p.gross)));
-  const opex = r2(expensesTotal + issuedBillsTotal + paymentsMadeTotal + payrollTotal);
+  // F58 — VENDOR CREDITS are the OPEX CONTRA leg, the exact mirror of credit notes on revenue.
+  // A vendor credit reduces what a bill charged; recognising the bill at full amount and
+  // ignoring the credit OVERSTATES opex. Same vocabulary (server.js:2413 validStatuses):
+  // Open/Applied reduce opex, Void contributes 0. AP is left unchanged for the same
+  // balance-sheet reason as AR above.
+  const _vcDate = v => v.date || v.created_at;
+  const vendorCreditsTotal = sumFX(vendorCredits.filter(v =>
+    RECOGNIZED_CREDIT.has((v.status || '').toLowerCase()) && inPeriod(_vcDate(v))
+  ), v => v.amount, _vcDate, 'vendor_credits');
+  const opex = r2(expensesTotal + issuedBillsTotal + paymentsMadeTotal + payrollTotal - vendorCreditsTotal);
 
   // ── COGS (FIFO, F6) — PERIOD-SCOPED (F25) ──
   // COGS is a P&L figure, so it must match revenue's period: Month/Quarter show only that

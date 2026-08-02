@@ -76,6 +76,12 @@
     (window.bills || []).forEach(b => { if (!_RECBILL.includes((b.status || '').toLowerCase())) return; const idx = _idxOf(b.issue_date || b.created_at || b.due_date); if (idx >= 0) expByMonth[idx] += parseFloat(b.amount) || 0; });
     // ONLY orphan payments (bill_id IS NULL) — a linked payment settles AP, not a fresh expense.
     (window.paymentsMade || []).filter(p => p.bill_id == null).forEach(p => { const idx = _idxOf(p.date); if (idx >= 0) expByMonth[idx] += parseFloat(p.amount) || 0; });
+    // F58: contra legs, bucketed on their OWN date. Mirror of the server's monthly buckets in
+    // POST /api/reports/profit-loss, so the client chart and the server chart agree (Rule 6).
+    // Credit notes have their OWN vocabulary (Open/Applied/Void, server.js:2307) — Void = 0.
+    const _RECCREDIT = ['open','applied'];
+    (window.creditNotes || []).forEach(c => { if (!_RECCREDIT.includes((c.status || '').toLowerCase())) return; const idx = _idxOf(c.date || c.created_at); if (idx >= 0) revByMonth[idx] -= parseFloat(c.amount) || 0; });
+    (window.vendorCredits || []).forEach(v => { if (!_RECCREDIT.includes((v.status || '').toLowerCase())) return; const idx = _idxOf(v.date || v.created_at); if (idx >= 0) expByMonth[idx] -= parseFloat(v.amount) || 0; });
 
     return { months: months.map(m => m.label), revByMonth, expByMonth };
   }

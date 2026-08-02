@@ -1738,9 +1738,16 @@ function computeExpenseBreakdown(period, monthIdx){
   const emps = window.payrollEmployees || [];
   const allPay = op ? [op, ...emps] : [...emps];
   const rosterMonthlyCost = allPay.reduce((s,e)=>s+(parseFloat(e.gross)||0),0);
+  // F58 — VENDOR CREDITS reduce opex (contra leg), the mirror of credit notes on revenue.
+  // Same Open/Applied allowlist and same window as the server's vendorCreditsTotal in
+  // computeBooks (Rule 6). AP is deliberately NOT reduced — P&L contra only (F58 scope).
+  const RECOGNIZED_CREDIT = ['open','applied'];
+  const vendorCredits = (window.vendorCredits || [])
+    .filter(v=>RECOGNIZED_CREDIT.includes((v.status||'').toLowerCase()) && inPeriod(v.date||v.created_at))
+    .reduce((s,v)=>s+(parseFloat(v.amount)||0),0);
   return {
-    total: realExpenses + issuedBills + paymentsMade + payroll,
-    realExpenses, issuedBills, paymentsMade, payroll,
+    total: realExpenses + issuedBills + paymentsMade + payroll - vendorCredits,
+    realExpenses, issuedBills, paymentsMade, payroll, vendorCredits,
     payrollRunCount, rosterMonthlyCost,
     business: realExpenses,   // data model has no personal/business split — all recorded rows are business
     deductible, byCategory, months, period,
@@ -1856,6 +1863,15 @@ function computeRevenue(period, monthIdx){
   // computeBooks issueDate). Retire the fallback once every row carries issue_date.
   invoices.forEach(i => { if(isIssued(i) && w.inWin(i.issue_date || i.created_at || i.date)) rev += parseFloat(i.amount)||0; });
   receipts.forEach(r => { if(w.inWin(r.date)) rev += parseFloat(r.amount)||0; });
+  // F58 — CREDIT NOTES reduce revenue (contra leg). Mirror of the server's creditNotesTotal in
+  // computeBooks: same Open/Applied allowlist (credit notes have their OWN vocabulary — see
+  // server.js:2307 — NOT the invoice one), same `date` field, same window. Rule 6: this must
+  // agree with the server because they are two implementations of one figure.
+  // AR is deliberately NOT reduced — P&L contra only, per the F58 scope decision.
+  const RECOGNIZED_CREDIT = ['open','applied'];
+  (window.creditNotes || []).forEach(cn => {
+    if(RECOGNIZED_CREDIT.includes((cn.status||'').toLowerCase()) && w.inWin(cn.date || cn.created_at)) rev -= parseFloat(cn.amount)||0;
+  });
   return rev;
 }
 window.computeRevenue = computeRevenue;

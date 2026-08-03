@@ -1232,6 +1232,9 @@ function initEnhancements(){
   }
   // Patch S() to apply FX
   patchSFormatter();
+  // F57/D3: cache the cash-flow rows at BOOT so the dashboard cash card never depends on the
+  // Cash Flow report having been opened first. Fire-and-forget; it repaints when it resolves.
+  _loadCashMonthly();
   // F64: "Show cents" was read only by the ORIGINAL S(), which patchSFormatter overwrites — the
   // toggle rendered nothing. _fmtMoneyExact reads it live, but nothing re-rendered on change.
   document.getElementById('s-cents')?.addEventListener('change', ()=>{ try{ if(typeof updateDashboard==='function') updateDashboard(); if(typeof renderInvoices==='function') renderInvoices(); }catch(_){} });
@@ -1815,6 +1818,47 @@ function _periodWindow(period, monthIdx){
 }
 window._periodWindow = _periodWindow;
 
+// ── F57 / decision D3 — CASH-BASIS period summation ─────────────────────────────────────────
+// Sums the monthly rows from POST /api/reports/cash-flow (the SAME endpoint the Cash Flow
+// report reads) over a period window. Pure: rows in, totals out, no DOM and no fetch — so the
+// arithmetic is testable without booting the app (Rule 5: assert on executed values).
+//
+// Each row is a whole MONTH keyed 'YYYY-MM', so it is filed by its first day. That is correct
+// against _periodWindow's half-open [start,end) string compare: a month belongs to a period iff
+// its first day does. NOTE the D2 clause in inWin (`y <= today`) applies to that first day, not
+// to the events inside the row — the server's cash-flow endpoint applies no D2 of its own, so a
+// future-dated cash event inside the CURRENT month is included. That matches what the Cash Flow
+// report already shows (same rows, same source), and the seed has no future cash event, so it is
+// not exercised either way — recorded here because it is a real difference from the accrual
+// path's per-row D2, not a settled equivalence.
+function cashForPeriod(rows, period, monthIdx){
+  const w = _periodWindow(period, monthIdx);
+  let cin = 0, cout = 0;
+  (rows || []).forEach(r => {
+    if (w.inWin(r.key + '-01')) { cin += parseFloat(r.inflow) || 0; cout += parseFloat(r.outflow) || 0; }
+  });
+  return { in: cin, out: cout, net: cin - cout };
+}
+window.cashForPeriod = cashForPeriod;
+
+// Boot-time cache of the cash-flow rows. Populated once at init so the dashboard card does not
+// depend on the Cash Flow report having been opened first (the load-order trap, Rule 13 — the
+// same shape as the credit-note boot question in F58). Null = not yet loaded, which the card
+// renders as '…' rather than as a confident 0.
+window._cashMonthly = null;
+async function _loadCashMonthly(){
+  try{
+    const r = await fetch('/api/reports/cash-flow',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'});
+    if(!r.ok) return;
+    const d = await r.json();
+    window._cashMonthly = d.rows || [];
+    // Repaint: the boot fetch resolves AFTER the first paint, so without this the card keeps
+    // whatever it showed while loading (F55/F102 class — data landing with nothing re-reading it).
+    if(typeof updateCashflow==='function') updateCashflow();
+  }catch(_){ /* leave null → card shows '…', never a fabricated 0 */ }
+}
+window._loadCashMonthly = _loadCashMonthly;
+
 // ════════════════════════════════════════════
 // CANONICAL OUTSTANDING / AR  (single source of truth — F56)
 // ════════════════════════════════════════════
@@ -2173,15 +2217,35 @@ function set(id,txt,cls=''){const el=document.getElementById(id);if(el){el.textC
 // CASH FLOW
 // ════════════════════════════════════════════
 function updateCashflow(d=getPeriodData()){
-  document.getElementById('cf-in').textContent=S(d.rev);
-  document.getElementById('cf-out').textContent=S(d.exp);
-  document.getElementById('cf-net').textContent=S(d.profit);
-  document.getElementById('cf-avg').textContent=S(Math.round(d.profit/d.months));
+  // ── F57 / decision D3 — GENUINE CASH BASIS ────────────────────────────────────────────────
+  // These three cells used to read d.rev / d.exp / d.profit — the getPeriodData() ACCRUAL
+  // buckets. That was a cash-flow card showing accrual figures, and because those buckets also
+  // omit payroll and COGS it was a THIRD number disagreeing with both the dashboard KPIs and
+  // the Cash Flow report. Now sourced from the same POST /api/reports/cash-flow rows the report
+  // reads, summed over the SAME _periodWindow — so card == report == server by construction
+  // (Rule 6), not by two implementations happening to agree.
+  const _cash = (typeof cashForPeriod==='function' && window._cashMonthly)
+    ? cashForPeriod(window._cashMonthly, currentPeriod, currentMonthIdx) : null;
+  // Honest loading state: null means the boot fetch has not resolved (or failed). A cash card
+  // that renders 0 in that window is indistinguishable from a business with no cash movement.
+  document.getElementById('cf-in').textContent  = _cash ? S(_cash.in)  : '…';
+  document.getElementById('cf-out').textContent = _cash ? S(_cash.out) : '…';
+  document.getElementById('cf-net').textContent = _cash ? S(_cash.net) : '…';
+  // cf-avg and cf-runway derive from the NET, so they move to cash with it — leaving them on
+  // d.profit would reintroduce the accrual/cash mix inside a single card.
+  const _cashNet = _cash ? _cash.net : null;
+  document.getElementById('cf-avg').textContent = (_cashNet!=null && d.months>0) ? S(Math.round(_cashNet/d.months)) : '…';
   document.getElementById('cf-avg-lbl').textContent=d.months===1?'Net this month':'Avg monthly net';
   // Fixed vs variable from REAL categorised expense rows (no fabricated ratio).
   // Fixed = recurring-overhead categories; variable = everything else. Honest
   // empty state when there are no expense rows.
-  const _cfBd = (typeof computeExpenseBreakdown==='function') ? computeExpenseBreakdown() : null;
+  // ⚠️ F57 SCOPE FLAG: this split is an ACCRUAL expense-category mix living in a cash card, and
+  // it is NOT part of the cash In/Out/Net above. The period argument is now passed explicitly —
+  // previously it was called with NO arguments, so it silently defaulted to `currentPeriod`
+  // while the rest of the card was scoped by the caller's `d`; the two could describe different
+  // windows. Whether these cells belong here at all is an owner decision, deliberately not taken
+  // in this commit.
+  const _cfBd = (typeof computeExpenseBreakdown==='function') ? computeExpenseBreakdown(currentPeriod, currentMonthIdx) : null;
   const _fixedCats = ['Rent','Salaries','Software','Insurance','Utilities','Lease','Subscriptions'];
   let _cfFixed=0,_cfVar=0;
   if(_cfBd){ for(const [cat,amt] of Object.entries(_cfBd.byCategory)){ if(_fixedCats.includes(cat)) _cfFixed+=amt; else _cfVar+=amt; } }
@@ -2190,8 +2254,9 @@ function updateCashflow(d=getPeriodData()){
   document.getElementById('cf-variable').textContent=_cfHasExp?S(_cfVar):'—';
   // True runway = cash balance ÷ monthly burn. We don't track a cash balance,
   // so don't fabricate a number: report cash-flow status honestly instead.
-  const _monthlyNet = d.months>0 ? d.profit/d.months : d.profit;
-  document.getElementById('cf-runway').textContent = _monthlyNet>=0 ? 'Cash-flow positive' : '—';
+  // F57: runway is a CASH statement, so it reads the cash net, not the accrual profit.
+  const _monthlyNet = (_cashNet==null) ? null : (d.months>0 ? _cashNet/d.months : _cashNet);
+  document.getElementById('cf-runway').textContent = _monthlyNet==null ? '…' : (_monthlyNet>=0 ? 'Cash-flow positive' : '—');
   // Income sources bars
   // Income sources — built from real invoice data grouped by client
   const _src_colors = ['var(--green)','#7db87d','#7db87d99','#7db87d66'];
@@ -2200,9 +2265,16 @@ function updateCashflow(d=getPeriodData()){
   document.getElementById('cf-sources').innerHTML = _srcList.length
     ? _srcList.map((s,i)=>{const pct=d.rev>0?Math.round(s.total/d.rev*100):0;return`<div class="bar-row"><span class="bar-label">${esc(s.label)}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${_src_colors[i]||'var(--green)'}"></div></div><span class="bar-val">${S(s.total)}</span></div>`;}).join('')
     : '<div style="color:var(--t3);font-size:12px;padding:8px 0">No revenue data yet</div>';
-  // Change indicators
-  const ic=chg(d.rev,d.prevRev);const ec=chg(d.exp,d.prevExp,true);
-  set('cf-in-chg',ic.txt,ic.cls);set('cf-out-chg',ec.txt,ec.cls);
+  // Change indicators. F57: these read d.rev/d.prevRev — ACCRUAL deltas. With the cells above
+  // them now showing CASH, a delta computed on a different basis sitting under a cash figure is
+  // a mislabelled number, so it is cleared rather than shown wrong. Restoring it needs a
+  // prior-period CASH comparison (cashForPeriod over the preceding window); that is a real
+  // change, not a relabel, and is deliberately left for the owner rather than guessed at here.
+  set('cf-in-chg','','');set('cf-out-chg','','');
+  // cf-net-chg replaces the hardcoded "Healthy" that index.html rendered unconditionally — it
+  // read as a verdict on the books while being a literal string in the markup, true even when
+  // the period was cash-flow negative. This reflects the sign of the figure actually shown.
+  set('cf-net-chg', _cashNet==null ? '' : (_cashNet>=0 ? 'Positive' : 'Negative'), _cashNet==null ? '' : (_cashNet>=0 ? 'up' : 'dn'));
 }
 function renderCashflow(){updateCashflow()}
 
@@ -5431,7 +5503,13 @@ async function generateReport(name,revenue,expenses,profit){
         <div style="${rowStyle};font-weight:600"><span>Total Liabilities</span><span style="font-family:var(--font-mono);color:var(--red)">${fmt(d.totalLiabilities)}</span></div>
         <div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="color:${(d.equity||0)>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt(d.equity)}</span></div>`;
     } else if(name==='Cash Flow Statement'){
-      const d=await fetch('/api/reports/cash-flow',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());
+      // F57/D3: refresh the SHARED boot cache and render from it, so this report and the
+      // dashboard cash card are reading one array — they cannot drift into two numbers.
+      await _loadCashMonthly();
+      const _cfRows = window._cashMonthly || [];
+      const d = { rows: _cfRows,
+        totalInflow:  _cfRows.reduce((s,r)=>s+(parseFloat(r.inflow)||0),0),
+        totalOutflow: _cfRows.reduce((s,r)=>s+(parseFloat(r.outflow)||0),0) };
       const rows=(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${esc(r.month||'')}</span><span style="color:var(--t2);font-family:var(--font-mono)">${fmt(r.inflow)} in / ${fmt(r.outflow)} out</span><span style="font-family:var(--font-mono);color:${r.net>=0?'var(--green)':'var(--red)'}">${fmt(r.net)}</span></div>`).join('');
       body.innerHTML=`${hdr('Monthly Cash Flow')}${rows||'<div style="padding:8px 0;color:var(--t3);font-size:12px">No data yet</div>'}
         <div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:13px;font-weight:600"><span>Net Cash Flow</span><span style="color:${((d.totalInflow||0)-(d.totalOutflow||0))>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt((d.totalInflow||0)-(d.totalOutflow||0))}</span></div>`;

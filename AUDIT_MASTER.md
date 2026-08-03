@@ -556,15 +556,36 @@ This built `payment_date` from the **browser's local** `getFullYear()`/`getMonth
 
 Owner reports two invoices for customer "saige," identical amount (2,000), both present in production as **ids 8 and 9**. Consistent with a double-submit on invoice creation — the same class of gap already named for other mutating actions in this codebase (Rule 9: dedupe must be a single shared mechanism every mutating handler routes through, not a per-button patch; B8/C1 already documents this recurring on Run Payroll and Approve after being "fixed" once for Record Payment).
 
-**Not yet investigated this session:** whether `POST /api/invoices` has a dedupe guard at all (other creation routes in this codebase use `findRecentDuplicate`/`findRecentDuplicateTyped` — unconfirmed whether the invoice route does), and if it does, why two identical rows landed anyway (guard window too narrow, a genuinely different field defeating the match, or no guard present). This needs the same code-first investigation this session applied everywhere else — not yet done for this finding.
+**Mechanism identified from source (2026-07-31, read-only).** Two independent gaps, both live; the duplicate needs only either one to be closed, but the class needs the server one.
 
-**Course of action:** read `POST /api/invoices` (`server.js`) to confirm presence/absence of a dedupe guard before proposing a fix. Do not fix yet.
-**Done when:** the ids-8/9 mechanism is identified from source (not assumed), and creating an invoice twice in rapid succession for the same customer/amount either merges to one row or is explicitly rejected.
+- **Client — no in-flight lock (`finflow-bundle.js:524` `window.saveInvoice`, runtime winner; loads last via `defer`, shadows `app-main.js:2250`).** The Create button is a plain `onclick="saveInvoice()"` (`index.html:3427`) with no disable. `saveInvoice` is `async` and `await`s `POST /api/invoices` (`bundle:547`) with no `_saving` guard and no button-disable — so a double-click, or an impatient re-click during a slow request, re-enters and fires a **second** POST. Nothing on the client prevents it.
+- **Server — dedupe guard is non-atomic (`server.js:931-937`).** `POST /api/invoices` does `findRecentDuplicate(...)` (a plain `SELECT … created_at > NOW() - 5s … LIMIT 1`, `server.js:807-810`) then, if nothing matched, `INSERT`s — with **no transaction, no row lock, and no UNIQUE constraint**. Two near-simultaneous POSTs both run the SELECT *before* either INSERT commits → both see no duplicate → **both insert** (ids 8 & 9). This is a TOCTOU race: the header comment claims it guards "near-simultaneous double POST," but a SELECT-then-INSERT only stops *sequential* re-submits inside the window, never truly concurrent ones. Exactly Rule 9 ("idempotency at the write, not guards on the button") and the C1/B8 class.
+
+**Class (Rule 13) — this is NOT invoice-only.** `findRecentDuplicate` / `findRecentDuplicateTyped` is the sole create-dedupe on **~30 routes** (entities, expenses, customers, inventory, items, payroll, quotes, vendors, bills, recurring_*, sales_receipts, payments_received, credit_notes, payments_made, vendor_credits, timesheet, team_members, journals, chart_of_accounts, holdings, goals, projects, personal_*, invoice_payments, payroll_runs, inventory_movements, fx_*). Every one shares the same non-atomic SELECT-then-INSERT shape, so every one is defeatable by concurrent double-submit. The invoice is just the row that got noticed. The server-side inert idempotency-token hint at `server.js:3921` ("inert until the UNIQUE …") is the half-built C1 backstop.
+
+**Course of action (C1 rollout — HOLD for owner approval; not started).** The durable fix is idempotency **at the write**, shared by every mutating route: a UNIQUE constraint (or idempotency-key column with a UNIQUE index) so a duplicate INSERT is rejected atomically by Postgres regardless of timing, with the route catching the unique-violation and returning the original row (the 200-return contract `findRecentDuplicate` already implements). A client in-flight lock on `saveInvoice` is worth adding too but is **not sufficient alone** (two tabs, network retry, API replay still defeat it) — per Rule 9 it must not be the only fix. Data cleanup of the existing id 8/9 duplicate is a **separate, owner-gated commit** (Rule 8).
+**Done when:** creating an invoice twice concurrently for the same customer/amount yields exactly one row, proven by executing the concurrent double-POST against a real scratch DB (Rule 14 — the race path itself is run, not reasoned); and the same backstop covers the enumerated class, not just invoices.
 
 ---
 
-### F118 🟠 HIGH — Record Payment modal fires a false "exceeds remaining balance" warning on a valid full payment — corrects the prior session's diagnosis — **NEW (2026-07-31), OPEN**
-**Status:** OPEN. Root cause NOT YET PINNED to a line. Needs runtime diagnosis against the real running app — explicitly NOT another static/mock pass.
+### F118 ✅ CANNOT REPRODUCE on live (`adf05fb`, runtime-captured 2026-07-31) — was 🟠 HIGH — Record Payment modal false "exceeds remaining balance" warning on a valid full payment
+**Status:** ✅ NOT REPRODUCIBLE on the deployed app. Runtime-instrumented against the real running production instance (`finflow-production-dab2.up.railway.app`) with a read-only console probe wrapping the live `openRecordPaymentModal` — not a mock. The prior "`amount_paid = NULL` poisons `_rpRemaining`" theory is **disproven by execution**.
+
+**What was measured — clicking Record Payment on the real saige $2000 invoice (`_dbId: 9`, `status: pending`):**
+- real `inv` object: `{_dbId:9, client:"saige", amount:2000, due:"Jul 30", due_date:"2026-07-31", status:"pending", notes:"", color:"var(--t2)"}` — **no `amount_paid` key at all**.
+- `inv.amount = 2000` (number); `inv.amount_paid = undefined`.
+- `rp-remaining` cell = `$2.0K` (`_rpRemaining = 2000`); `rp-amount` input prefilled `2000`.
+- `_rpCheckOverpay`: `2000 > 2000 + 0.005` → `false` → **warning hidden, Save enabled.** No defect on this path.
+
+`parseFloat(undefined) || 0 = 0` (and `parseFloat(null) || 0 = 0`), so an unpaid invoice yields the **full** remaining — the opposite of a reduced/poisoned value. The live `openRecordPaymentModal` source captured by the probe is exactly `index.html:4481` with the `|| 0` guards.
+
+**Rule 1 winner confirmed:** live `renderInvoices` is the Medium-wiring copy (object-form button `onclick="openRecordPaymentModal(window.userInvoices[0])"`, `partial` badge present). The `app-main.js:2222` positional call site is dead/shadowed. The local `finflow-bundle.js` read this session was **stale** (lacked Medium's Record Payment button); the deployed bundle includes it (live boot log `[FinFlow API Wiring — Medium] … Invoices … patched`, `finflow-bundle.js:1755`).
+
+**Most likely explanation for the original sighting:** it predates one of the same-day Record Payment / modal fixes (2026-07-31); the deployed code no longer exhibits it. Which commit closed it is unconfirmed (no git/bash access this session).
+
+**Done when:** owner confirms the warning no longer appears on a full payment — OR supplies a specific invoice + typed value that still reproduces, captured the same way, in which case reopen with that exact object.
+
+**Original finding (superseded by the runtime capture above):**
 
 **Confirmed real, by owner-supplied production data:** the "saige" invoice stores `amount = 2000`, `amount_paid = NULL`. A user entering exactly `2000` (the full, correct remaining balance) trips the inline overpayment warning and blocks Save. This is a **real defect**, not the display-precision explanation given earlier the same day.
 
@@ -576,6 +597,111 @@ Owner reports two invoices for customer "saige," identical amount (2,000), both 
 
 **Course of action:** add temporary diagnostic logging (or use the browser devtools directly) against a real `amount_paid: NULL` invoice, capture the actual `inv` shape and `_rpRemaining` value, then locate the exact divergence from the mocked trace. Do not guess at a fix before that.
 **Done when:** the exact line/step producing a wrong `_rpRemaining` (or a wrong `amt`) for a `NULL`-`amount_paid` invoice is identified from a real captured value, not inferred.
+
+---
+
+### F119 🟡 MEDIUM — Live Record Payment invoice mapper drops `amount_paid` — over-collection risk on partial invoices (F56 class) — **NEW (2026-07-31), OPEN**
+**Status:** OPEN. Partially measured, partially UNEXECUTED. Surfaced while runtime-instrumenting F118.
+
+**Measured (runtime, production).** The invoice object the live Record Payment button hands to `openRecordPaymentModal(window.userInvoices[0])` has **no `amount_paid` key** — absent, not `null`: `{_dbId, client, amount, due, due_date, status, notes, color}`. So the mapper feeding live `window.userInvoices` on this path does not carry `amount_paid`. Same class as **F56** (`refreshFinancials`' mapper dropped `amount_paid`), whose verification asserted "both mappers carrying `amount_paid`" — so this is a **third** mapper F56 did not cover, or a repopulation path that overwrites the carried value. The shape (`due_date` raw + `due` formatted, `_dbId` but no `id`, no `amount_paid`) does not match the F56-fixed mapper shape.
+
+**Consequence — UNEXECUTED (Rule 14).** For a *fully unpaid* invoice, `amount_paid` absent vs `0` is indistinguishable (`parseFloat(undefined)||0 = 0`), so F118 was harmless. For a *partially-paid* invoice this mapper would report `paid = 0` → `_rpRemaining = full amount` → `rp-paid`/`rp-remaining` cells misreport AND the overpay guard is defeated in the **under-warn** direction (accepts more than the true remaining); `markInvoicePaid`, settling `amount − amount_paid`, would try the full amount → server **400**. This consequence is reasoned, NOT yet executed against a real partial invoice.
+
+**One dropping mapper confirmed by reading (2026-07-31):** `saveInvoice`'s optimistic `unshift` (`finflow-bundle.js:558-567`) builds `{_dbId, client, amount, due, due_date, status, notes, color}` with **no `amount_paid`** — the exact shape the F118 probe captured. Not yet confirmed whether the probed object came from this `unshift` or from `loadInvoicesFromDB`'s re-map that runs just after (`bundle:572`); both must be checked.
+
+**Course of action:** (1) enumerate **all** mappers feeding `window.userInvoices` (Rule 13) — at minimum `saveInvoice` unshift (`bundle:558`, confirmed dropping), `loadInvoicesFromDB` (`bundle:~497`), `refreshFinancials`/postgres mapper (F56-fixed), `finflow-api.js:87`/`bundle:88` — and confirm each carries `amount_paid`; (2) execute the partial case — record a partial payment against a real invoice, reopen Record Payment, capture `inv.amount_paid` + `rp-remaining` the same read-only way — before proposing a fix.
+**Done when:** every mapper feeding `window.userInvoices` carries `amount_paid`, verified by capturing a real partially-paid invoice object with `amount_paid` present and `rp-remaining = amount − amount_paid`.
+
+---
+
+### F120 🟡 MEDIUM — Chart Y-axis ticks hard-code `'$'` — axis and tiles disagree under a non-USD display currency (F34 class) — **NEW (2026-08-02), OPEN**
+**Status:** OPEN, confirmed by reading. Pre-existing; surfaced while implementing F64, NOT caused by it.
+
+**What's wrong.** Both overview-chart Y-axis tick callbacks pass a literal `'$'` as the symbol:
+
+```js
+// app-main.js:4880 and :4928 (identical)
+y:{ ... ticks:{ ..., callback:v=>_fmtMoney(v,'$') }, ...}
+```
+
+`_fmtMoney(value, symbol)` takes the symbol from its caller precisely so F34 display-currency and `persCurrency` both work (`app-main.js:543-560`). Every other money surface resolves it live — `CURRENCIES[activeCurrency]?.symbol` — but these two do not.
+
+**Consequence.** With a display currency set (F34 Path B), the dashboard tiles render `€35.2M` while the chart axis beside them renders `$35.2M` for the same figures. The *number* is correct — only the symbol is wrong — so this is mislabelled money, the exact defect class F34 was opened for, on a surface F34 did not enumerate. Not viewer-dependent and not a total error; severity is MEDIUM on that basis.
+
+**Enumeration (Rule 13).** Grep for the hard-coded form across the client returns exactly these two sites; chart *tooltips* (`:4875`, `:4923`, `:4951`) go through `S()` and are correctly FX-aware, as are all KPI tiles. So the class is two instances, both in `buildCharts`.
+
+**Course of action:** replace the literal with the same live lookup the tiles use, then execute the failure path — set a display currency and assert the axis string carries the target symbol (reasoning that "it mirrors the tile pattern" is not verification, Rule 14).
+**Done when:** with `display=EUR` active, an executed probe shows axis ticks and KPI tiles rendering the SAME currency symbol.
+
+---
+
+### F121 🟠 HIGH — step-4 client gate compared revenue against GROSS components — a false pass that survived because both sides were wrong (Rule 6 class) — **NEW (2026-08-02), FIXED in the F58 harness commit**
+**Status:** FIXED, verified by execution. Found while adding the F58 contra legs.
+
+**What was wrong.** `tests/harness/step4-client-gate.js:180` asserted client revenue against `EXPECTED.COMPONENTS[k].revenue`. Once F58 split COMPONENTS into GROSS invoiced revenue plus a separate `creditNotes` contra, that field stopped being the reported figure. With `window.creditNotes` also unseeded in the gate's jsdom `win` object, the client returned gross **5,000** and the expectation read gross **5,000** — so the check went **green while both sides were wrong**.
+
+**Why it matters more than the one line.** This is `CLAUDE.md` Rule 6 in the harness itself: "client and server agreeing proves only that they share an assumption." The gate that exists to catch divergence was structurally incapable of reporting this one, and it would have certified a completely absent contra leg as verified. Measured, not reasoned: the pre-fix engine run reported `A5.1 revenue (Jun) actual 5000 · expected 3000` on the SERVER gate while the client gate showed revenue PASSING — the two gates disagreeing is what exposed it.
+
+**Fix (both halves — either alone leaves the gate blind).** (1) compare against `EXPECTED.serverFigures(k).revenue`, the NET reported figure; (2) seed `creditNotes`/`vendorCredits` into the gate's `win` object, with status kept CAPITALIZED as `server.js:2307` stores it so the case-insensitive compare is genuinely exercised.
+
+**Generalisation to check next (Rule 13):** every other `EXPECTED.COMPONENTS.*` reference in a gate is the same shape — a raw component asserted where a derived figure is reported. `step4-client-gate.js:103` reads `COMPONENTS[k].cogs`, which is currently safe only because no contra applies to COGS. That safety is incidental, not structural.
+**Done when:** no gate asserts a *reported* figure against a raw COMPONENTS field; reported figures come from `serverFigures()` only.
+
+---
+
+### F122 ✅ **FIXED** (2026-08-02) — was 🔴 CRITICAL — `POST /api/reports/cash-flow` omits PAID PAYROLL from cash out — every Cash Flow figure understated outflow by the payroll it had actually paid
+**Status:** ✅ FIXED and gate-verified, including the failure path. Owner live-check outstanding.
+
+**What's wrong.** The endpoint (`server.js:3519`) builds its outflow from exactly two legs:
+
+```js
+expenses.forEach(e => add(e.expense_date || e.date || e.created_at, 'outflow', e.amount));
+paymentsMade.forEach(p => add(p.date || p.created_at, 'outflow', p.amount));
+```
+
+There is **no payroll leg**. `payroll_runs` / `payroll_run_lines` are never read. Under decision **D3** (*"recognised when money actually moves"*) paying employees is money moving, so a run marked `paid` is cash out and is currently invisible.
+
+**Measured (`tests/harness/f57-cash-card.js`, real Postgres, real HTTP, real seed):**
+
+```
+2026-05  in 1000  out  600  net  400
+2026-06  in  500  out  750  net -250
+2026-07  in    0  out  750  net -750     ← VERIFICATION A7.13 expects out 1,850
+```
+
+Jul short by **1,100**; FY out **2,100** against an expected **3,200** — short by the same 1,100. That 1,100 is exactly **R3**, the one seeded run with `status:'paid'` (`run_date` 2026-07-20, Σlines 1,100). Jun and May match to the penny, because their runs (R1 approved, R0 approved-not-paid) correctly produce no cash. The gap is precisely and only the paid run.
+
+**The seed was built to catch this and no gate ever ran it.** `seedData.js` R0's comment reads *"Approved but not paid ⇒ no cash out"*, and R3 is seeded `paid` specifically to generate payroll cash. `VERIFICATION.md:416-417` states A7.12–14 (cash out) and A7.15–17 (net) with the correct expectations — and **both rows have an empty Result column: never run.** `step3-gate.js` asserts only A7.9–11, cash **in**. The one leg with the defect is the one leg no gate touched. `B4.4` (*"Mark Paid → Cash Flow out increases by Σ lines"*) is also unrun and would have caught it directly.
+
+**Consequence (production).** For any business that runs payroll — the common case — Cash Flow out and net are understated by every paid run. Payroll is typically the LARGEST cash outflow, so the reported net is not slightly off, it is structurally optimistic: the report tells an owner they are cash-positive in a month they were not. Severity CRITICAL on that basis, not on the size of the seed's 1,100.
+
+**Not caused by F57's card work.** The card was rewired to this endpoint and agrees with it exactly; it faithfully mirrors a wrong server leg. Fixing the card cannot fix this — the number is wrong before the client sees it.
+
+**Course of action.** (1) Decide the recognition event with the owner — `status='paid'` at `run_date`, or a genuine payment/settlement date if one exists (the seed's F82 note mentions R3's payment dated 2026-07-22, which is NOT the run_date, so "paid at run_date" may itself be an approximation — this needs the owner, not a guess). (2) Add the leg to the endpoint, keyed on that date, `paid` only — **not** `approved`, which is accrual recognition and would double-count against the P&L's basis-C leg. (3) Enumerate the class (Rule 13): check whether `/books`, the balance sheet's cash proxy (`server.js:3479` uses `max(0, netProfit)`) and the Banking page share the same omission. (4) Then run A7.12–17 and B4.4, which have never executed.
+**Done when:** A7.12–14 and A7.15–17 execute green against the server (Jul out 1,850 / net −1,850; FY out 3,200 / net −1,700), and B4.4 executes — marking a run paid increases Cash Flow out by Σ lines.
+
+---
+
+**WHAT WAS DONE (2026-08-02).**
+
+**The fix.** A payroll cash-out leg on the route: paid runs joined to their lines, Σ(gross+bonus+overtime) per run, added at `run_date`. Filter is `LOWER(status) = 'paid'` **only** — deliberately NOT the P&L's `IN ('approved','paid')`. That divergence is the whole point: decision 2 recognises the *expense* at `approved`, but cash does not move until the run is paid, so reusing the P&L filter here would book cash for a run nobody has paid. Entity scoping and the JOIN mirror `computeBooks`' payroll query so the two legs cannot drift apart on scope.
+
+**Verified by execution, both directions.** With the leg, A7.9–17 all pass (step 3: 56 passed, 0 failed). With the leg removed:
+
+```
+A7.13  Cash Flow cash-out — Jul   actual  750  · expected 1850
+A7.14  Cash Flow cash-out — FY    actual 2100  · expected 3200
+A7.16  Cash Flow net — Jul        actual -750  · expected -1850
+A7.17  Cash Flow net — FY         actual -600  · expected -1700
+```
+
+So the new checks genuinely discriminate — they are not green because everything is green. July is the discriminating period: R3 is the only `paid` run, R0/R1 are approved-not-paid and R2 is draft, so all three contribute 0 and the 1,100 gap is attributable to exactly one row.
+
+**The gate gap is closed, and it was the actual root cause.** A7.12–17 were stated in `VERIFICATION.md:416-417` from the start with **empty Result columns — never executed**. Only cash-IN (A7.9–11) was gated. The one leg carrying the defect was the one leg no check touched. They now run in `step3-gate.js`. Net is asserted from each row's own `net` field rather than recomputed as in−out, so a row whose `net` disagrees with its own components is catchable rather than invisible.
+
+**⚠️ KNOWN APPROXIMATION — follow-up, ties to F85.** `mark-paid` writes **no paid date**. The schema has `run_date` (when the run was created) and a status, and nothing recording *when* payment happened. So a run created in June and paid in July books its cash in **June**. That is wrong whenever the two months differ, and it cannot be fixed at this call site — the date does not exist to read. Same shape as F85: an event that belongs to a period by intent, inferred from a different timestamp. Real fix is a `paid_date` column written by mark-paid; this leg then keys on it. Labelled in-code at the call site so it is not mistaken for settled behaviour.
+
+**Still open on this finding.** (1) **B4.4 has still never executed** — "mark a run paid → Cash Flow out increases by Σ lines" is the *transition*, which the static seed cannot exercise. (2) The class enumeration from the course of action is **not done**: whether `/books`, the balance-sheet cash proxy (`server.js:~3479`, `max(0, netProfit)`) and the Banking page share the same omission is unchecked. Both are follow-ups, not part of this commit.
 
 ---
 
@@ -658,8 +784,20 @@ Secondary: `app-main.js:1973` only writes `d-outstanding` when `currentPeriod===
 
 ---
 
-### F57 🟠 HIGH — Cash Flow page uses a different basis from the Dashboard — **NEW**
-**Status:** OPEN, verified.
+### F57 ✅ **FIXED** (2026-08-02) — was 🟠 HIGH — Cash Flow page uses a different basis from the Dashboard
+**Status:** ✅ FIXED and probe-verified, **unblocked by F122**. Owner live-check outstanding.
+
+**What changed.** The dashboard cash card's In/Out/Net now come from `POST /api/reports/cash-flow` — the same endpoint the Cash Flow report reads — summed over the period by the pure `cashForPeriod(rows, period, monthIdx)`. Rows are cached at boot in `window._cashMonthly`, so the card never depends on the report having been opened first (the load-order trap), and both surfaces read that one array, so they cannot drift into two numbers. Previously the card read `getPeriodData()`'s ACCRUAL buckets, which also omit payroll and COGS — a third figure disagreeing with both the KPIs and the report. `cf-avg` and `cf-runway` moved to cash with the net; `cf-in-chg`/`cf-out-chg` were CLEARED rather than left showing accrual deltas beneath cash figures. Label fixed: "Net Profit" → "Net Cash Flow", and the hardcoded "Healthy" indicator (true even in a cash-negative period) now reflects the sign.
+
+**Was blocked, now clear.** This fix was correct-but-unverifiable until **F122**: the card faithfully mirrored an endpoint that omitted paid payroll, so Jul/FY were wrong before the client ever saw them. With F122 fixed, `tests/harness/f57-cash-card.js` goes **14/14** — Jun 500/750/−250, Jul 0/1,850/−1,850, FY 1,500/3,200/−1,700, matching A7.9–17.
+
+**⚠️ DISCRIMINATION TRAP, recorded because it will mislead the next reader.** FY cash net (−1,700) is now numerically IDENTICAL to FY accrual netProfit (−1,700). The collision did not exist before F58 — accrual FY netProfit was −800, and the credit-note contra moved it onto the cash figure. **The FY net cannot distinguish cash basis from accrual**: a card still wired to the old source reads −1,700 there and looks right. June is the discriminating period (cash −250 vs accrual −1,850), and the probe anchors its failure-path assertions there and asserts the collision explicitly so a future seed change cannot silently remove the warning.
+
+**Deliberately NOT done (owner decision outstanding).** `cf-fixed`/`cf-variable` remain an ACCRUAL expense-category split living in a cash card and are not part of In/Out/Net. They now receive the period explicitly — previously called with no argument, so they silently used `currentPeriod` while the rest of the card was scoped by the caller, i.e. two windows in one card. Whether they belong here at all is unresolved.
+
+---
+
+**Original finding (for the record):**
 
 **What's wrong.** `updateCashflow` (`app-main.js:2017`) writes `cf-in`/`cf-out`/`cf-net` from `getPeriodData()` → the `REV[]`/`EXP[]`/`PROFIT[]` monthly buckets. Those buckets **exclude payroll and COGS** by construction (`server.js:4152` comment: *"NO payroll/COGS (the chart never included them)"*; `finflow-api-wiring-dashboard.js:46-108`). Meanwhile `updateDashboard` writes `d-exp` from `computeExpenseBreakdown().total`, which **includes** payroll, and `d-profit` subtracts COGS (`app-main.js:1937-1944`).
 
@@ -670,13 +808,30 @@ Compounding, inside the same function:
 - `computeExpenseBreakdown()` is called there with **no period argument**, so it silently defaults to `currentPeriod` while `d.exp` is period-scoped by the caller — two windows in one card.
 - Income-sources percentages divide `_topClients` (built from **paid-only** invoices, `app-main.js:1451-1457`) by `d.rev` (accrual) → percentages that don't sum sensibly (→ **F69**).
 
-**Course of action.** Rewire `updateCashflow` onto `computeRevenue(period)` / `computeExpenseBreakdown(period)` — the same canonical pair `updateDashboard` uses — and derive fixed/variable from the **full** breakdown (`realExpenses + issuedBills + paymentsMade + payroll`), not `byCategory` alone. If the intent is genuinely *cash* basis rather than accrual, then say so on the card and source it from `POST /api/reports/cash-flow` — but do not leave two accrual numbers disagreeing.
-**Done when:** Dashboard Net Profit == Cash Flow Net at month, quarter and year, on an account with payroll and inventory; and `cf-fixed + cf-variable == cf-out`.
+**Course of action — SUPERSEDED (2026-08-02).** The original text offered a choice between rewiring onto the accrual pair or onto cash. Standing decision **D3** settles it: Cash Flow is genuine CASH basis, so the card is sourced from `POST /api/reports/cash-flow` — the same endpoint the Cash Flow report reads — summed over the period by `cashForPeriod` (`app-main.js`). Rows are cached at boot in `window._cashMonthly` so the card does not depend on the report having been opened first, and both surfaces read that one array, so they cannot drift into two numbers (Rule 6).
+
+**Done when (CASH framing — replaces the accrual framing above):** the dashboard cash-flow card's In/Out/Net equal the Cash Flow report and the server for the same period — VERIFICATION **A7.9–17**: Jun 500 / 750 / −250 · Jul 0 / **1,850** / **−1,850** · FY 1,500 / **3,200** / **−1,700**.
+
+**⚠️ BLOCKED ON F122 — the Jul and FY figures are currently UNREACHABLE.** The card is wired and verified to agree with the endpoint, but the endpoint itself omits paid-payroll cash out, so it returns Jul out **750** / FY out **2,100**. The card faithfully mirrors a server leg that is wrong. Jun (500 / 750 / −250) passes today; Jul and FY cannot pass until F122 is fixed. Probe: `tests/harness/f57-cash-card.js`.
 
 ---
 
-### F58 🟠 HIGH — Credit notes and vendor credits are never applied as contra — **NEW severity** (was PL#10, 🟡)
-**Status:** OPEN, verified.
+### F58 ✅ **FIXED** (`8406c43` + `171e97a`, 2026-08-02) — was 🟠 HIGH — Credit notes and vendor credits are never applied as contra (was PL#10, 🟡)
+**Status:** ✅ FIXED and gate-verified on BOTH engines, including the failure path. Owner live-check outstanding.
+
+**What changed.** Credit notes are a revenue contra and vendor credits an opex contra, on the server (`computeBooks` + the monthly buckets behind `/api/reports/profit-loss`) and on the client (`computeRevenue`, `computeExpenseBreakdown`, `buildMonthlyArrays`) — the same allowlist and the same window on both sides, so they agree by construction rather than by coincidence (Rule 6). Status vocabulary is credit notes' OWN (`server.js:2307` — `Open`/`Applied`/`Void`, a THIRD vocabulary distinct from invoices and bills); `Open` and `Applied` reduce, `Void` contributes 0, compared case-insensitively.
+
+**SCOPE — P&L only, deliberately.** AR and AP are unchanged (8,500 / 1,100). Per-document contra-AR/AP is the larger per-invoice-link change and is **deferred, not done** — do not read this tick as balance-sheet coverage.
+
+**Verified by execution.** step 2 63/0 · step 3 50/0 (A5 revenue Jun 3,800 / FY 8,800) · step 4 5/0, 18/18 across four timezones spanning the UTC sign boundary, so client == server at every period. Failure path executed: the pre-fix engine reported `A5.1 revenue (Jun) actual 5000 · expected 3800`. Void discrimination executed on both engines independently: flipping CN-2 to `Open` moved June revenue 3,800 → 3,300.
+
+**Seed note (Rule 4).** CN-1 is 1,200 — an amount no other seed row carries. It was briefly 2,000, which is INV-2's amount on INV-2's date for INV-2's customer; that made June revenue 3,000, a figure ALSO reachable by "INV-2 vanished and credit notes were never read". The number could not identify its source. At 1,200 June revenue is 3,800, reachable one way only.
+
+**Related:** the harness commit also fixed **F121** — the step-4 gate was asserting revenue against GROSS `COMPONENTS.revenue`, which went green while both sides were wrong.
+
+---
+
+**Original finding (for the record):**
 
 **What's wrong.** `computeBooks` (`server.js:3915-3922`) loads exactly six collections: invoices, expenses, payments_made, payroll, sales_receipts, bills. **`credit_notes` and `vendor_credits` are read by neither engine.** They are pure CRUD — `server.js:2205-2241` and `2302-2345`, plus client render functions — and never touch a total.
 

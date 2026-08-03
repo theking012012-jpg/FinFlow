@@ -238,6 +238,34 @@ async function main() {
       check('A7.9',  'Cash Flow cash-in — Jun', Math.round(junInflow * 100) / 100, 500);
       check('A7.10', 'Cash Flow cash-in — Jul', Math.round(julInflow * 100) / 100, 0);
       check('A7.11', 'Cash Flow cash-in — FY',  Math.round((cf.json?.totalInflow ?? NaN) * 100) / 100, 1500);
+
+      // A7.12-17 — cash OUT and NET. VERIFICATION.md:416-417 stated these from the beginning and
+      // NOTHING EVER RAN THEM: both Result columns were empty while only cash-IN was gated. That
+      // gap is precisely why F122 (no payroll leg in the cash endpoint) survived — the one leg
+      // with the defect was the one leg no check touched. Adding them here closes it.
+      //
+      // Jun 750 = Rent 150 + Software 600 (expenses only; R1 is `approved`, NOT paid ⇒ no cash).
+      // Jul 1,850 = Marketing 250 + B2 payment 500 + R3 payroll 1,100. R3 is the sole `paid` run
+      //   (seedData.js), so it is the ONLY payroll contributing cash — R0/R1 approved-not-paid and
+      //   R2 draft all contribute 0. That makes Jul the discriminating period: without the F122
+      //   payroll leg it reads 750, and 750 != 1,850 unambiguously.
+      // FY 3,200 = May 600 + Jun 750 + Jul 1,850.
+      const junOut = rowFor('2026-06')?.outflow ?? 0;
+      const julOut = rowFor('2026-07')?.outflow ?? 0;
+      const fyOut  = cf.json?.totalOutflow ?? NaN;
+      check('A7.12', 'Cash Flow cash-out — Jun', Math.round(junOut * 100) / 100, 750);
+      check('A7.13', 'Cash Flow cash-out — Jul', Math.round(julOut * 100) / 100, 1850);
+      check('A7.14', 'Cash Flow cash-out — FY',  Math.round(fyOut * 100) / 100, 3200);
+      // Net is asserted from the ROW's own net field, not recomputed here as in−out: recomputing
+      // would only re-test the two checks above and could not catch a row whose `net` disagrees
+      // with its own inflow/outflow (the endpoint builds `net` separately, so that is a real
+      // possibility, not a hypothetical).
+      const junNet = rowFor('2026-06')?.net ?? NaN;
+      const julNet = rowFor('2026-07')?.net ?? NaN;
+      check('A7.15', 'Cash Flow net — Jun', Math.round(junNet * 100) / 100, -250);
+      check('A7.16', 'Cash Flow net — Jul', Math.round(julNet * 100) / 100, -1850);
+      check('A7.17', 'Cash Flow net — FY',
+        Math.round(((cf.json?.totalInflow ?? NaN) - (cf.json?.totalOutflow ?? NaN)) * 100) / 100, -1700);
     } else {
       check('A7.9',  'POST /api/reports/cash-flow', `HTTP ${cf.status}`, 200);
     }

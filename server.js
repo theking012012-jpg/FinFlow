@@ -3515,7 +3515,10 @@ app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
 // genuinely PARTIAL payment invisible (a 'partial' invoice never triggered this leg at all, so
 // its real cash was nowhere). payments_received (Store A) is dropped from this leg — F86
 // confirmed it empty in production and invoice_payments canonical.
-// Cash out is unchanged: expenses + payments made.
+// Cash out: expenses + payments made + PAID payroll runs (F122 — the payroll leg was missing
+// entirely, so cash out understated by every run the business had actually paid; on a real
+// account payroll is typically the largest outflow, making the reported net structurally
+// optimistic). Paid-only, deliberately NOT the P&L's approved-or-paid filter — see below.
 app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const eid = req.entityId || null;
@@ -3525,11 +3528,28 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   // raw SQL exactly like every other invoice_payments route, then entity-filtered in JS the same
   // way invoices/expenses/payments_made are elsewhere in this file — it carries a real entity_id
   // (unlike sales_receipts, whose F26 user-level exception does not apply here).
-  const [ipRes, expenses, paymentsMade, receipts] = await Promise.all([
+  // F122: PAID payroll runs are cash out. Σ run LINES (gross+bonus+overtime) — the same basis-C
+  // amount the P&L leg uses in computeBooks — for runs whose status is `paid` ONLY. This is the
+  // one place the cash filter DIVERGES from the P&L filter and the divergence is the point:
+  // the P&L recognises at `approved` (decision 2), cash moves only when the run is actually paid.
+  // Using IN ('approved','paid') here would book cash for a run that has not been paid.
+  // Entity scoping and the JOIN mirror computeBooks' payroll query exactly.
+  const [ipRes, expenses, paymentsMade, receipts, paidRunRes] = await Promise.all([
     pool.query(`SELECT * FROM invoice_payments WHERE user_id = $1`, [uid]),
     db.allByUser('expenses', uid, matchEnt),
     db.allByUser('payments_made', uid, matchEnt),
     db.allByUser('sales_receipts', uid),      // user-level (no entity_id) — F26
+    pool.query(
+      `SELECT pr.id AS run_id, pr.run_date, pr.entity_id,
+              COALESCE(SUM(COALESCE(prl.gross,0) + COALESCE(prl.bonus,0) + COALESCE(prl.overtime,0)), 0) AS run_total
+         FROM payroll_runs pr
+         LEFT JOIN payroll_run_lines prl ON prl.run_id = pr.id
+        WHERE pr.user_id = $1
+          AND LOWER(COALESCE(pr.status,'')) = 'paid'
+          AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)
+        GROUP BY pr.id, pr.run_date, pr.entity_id`,
+      [uid, eid]
+    ).catch(() => ({ rows: [] })),
   ]);
   const invoicePayments = ipRes.rows.filter(matchEnt);
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -3541,6 +3561,17 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   receipts.forEach(r => add(r.date, 'inflow', r.amount));
   expenses.forEach(e => add(e.expense_date || e.date || e.created_at, 'outflow', e.amount));
   paymentsMade.forEach(p => add(p.date || p.created_at, 'outflow', p.amount));
+  // F122: paid payroll → cash out, dated on run_date.
+  //
+  // ⚠️ KNOWN APPROXIMATION — F122 follow-up, ties to F85. `mark-paid` records NO paid date: the
+  // schema carries `run_date` (when the run was created) and a status, but nothing saying WHEN it
+  // was paid. So a run created in June and paid in July books its cash in JUNE. That is wrong
+  // whenever the two months differ, and no amount of care here can fix it — the date does not
+  // exist to read. This is the same shape as F85: an event that belongs to a period by intent is
+  // being inferred from a different timestamp. The real fix is a `paid_date` column written by
+  // mark-paid, at which point this line keys on it and the approximation disappears.
+  // NOT silently averaged or guessed — dated on the only real date available, and labelled.
+  (paidRunRes.rows || []).forEach(r => add(r.run_date, 'outflow', r.run_total));
   const rows = Object.keys(monthMap).sort().map(k => ({
     month: labelOf(k), key: k, inflow: monthMap[k].inflow, outflow: monthMap[k].outflow,
     net: monthMap[k].inflow - monthMap[k].outflow,

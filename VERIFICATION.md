@@ -586,7 +586,20 @@ visited, so the Expenses KPI depended on where you clicked first.
 | B4.1 | Draft run present | contributes 0 | |
 | B4.2 | Approve it | contributes exactly Σ lines, once | |
 | B4.3 | **Mark it Paid** | **expense UNCHANGED — must not disappear** (the decision-2 trap) | |
-| B4.4 | Mark Paid | Cash Flow **out** increases by Σ lines | |
+| B4.4 | Mark Paid | Cash Flow **out** increases by Σ lines | PASS (2026-08-03 · **first-ever run** — `tests/harness/b4-4-payroll-cash-transition.js`, 19/19) |
+
+> **B4.4 — how it is asserted, and why it is not in `step3-gate.js`.** A run created through the real
+> route takes `run_date = NOW()` (`server.js:3968`), which the node clock pin does not reach (F110), so
+> it lands in the REAL current month inside FY 2026 and would move the A5 opex and A7.12–17 cash
+> figures this document fixes as constants. It therefore has its own probe and every assertion is a
+> **delta** on the same endpoint in the same process — immune to the date it runs on and to the pin
+> moving. Measured: `draft` → no month's cash out changes; `approved` → still none (decision 2 is
+> accrual, decision 3 is cash, and this is the section that catches a cash leg wrongly reusing the
+> P&L's `IN ('approved','paid')` filter); `paid` → **exactly one** month changes, by **exactly Σ lines
+> (5,888)**, and cash IN is untouched. Σ lines is built from inputs the probe supplies (roster 3,000 +
+> bonus 777, roster 2,000 + overtime 111), never read back from the endpoint under test (Rule 6).
+> Failure paths executed (Rule 14): deleting the F122 payroll leg turns B4.4 red (4 failed); giving the
+> cash leg the P&L filter turns the `approved` step red (6 failed). See **F122** in `AUDIT_MASTER.md`.
 
 ## B5 · Cross-cutting — 3
 | # | Check | Expected | Result |

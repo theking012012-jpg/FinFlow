@@ -614,7 +614,39 @@ Owner reports two invoices for customer "saige," identical amount (2,000), both 
 
 ---
 
-### F120 🟡 MEDIUM — Chart Y-axis ticks hard-code `'$'` — axis and tiles disagree under a non-USD display currency (F34 class) — **NEW (2026-08-02), OPEN**
+### F120 ✅ **FIXED** (`baae74b`, 2026-08-03) — was 🟡 MEDIUM — Chart Y-axis ticks hard-code `'$'` — axis and tiles disagree under a non-USD display currency (F34 class)
+**Status:** ✅ FIXED and probe-verified, including the failure path. Owner **visual** check outstanding (see below — that limit is real and is not a formality).
+
+**What changed.** Both dashboard chart Y-axis tick callbacks (`app-main.js:4968` overview, `:5016` cash — line numbers re-confirmed against the current file, the `:4880`/`:4928` below had drifted) now resolve the symbol live:
+
+```js
+callback:v=>_fmtMoney(v, CURRENCIES[activeCurrency]?.symbol||'$')
+```
+
+**Deliberately NOT `_fmtMoneyAbbr`, and the reason is load-bearing.** The task-level instinct was to mirror the KPI tiles, which use `_fmtMoneyAbbr` (symbol lookup **+** `fxConvert`). Checked first, per the "confirm what currency the series is in" step: under a display currency the overview chart's datasets have **already been replaced with the SERVER-converted buckets** by `_applyConvertedChart` (`app-main.js:4778`, called from `_applyConvertedKPIs:4749`), and in the native path `activeCurrency` **is** the entity's own currency (`_applyDisplayCurrency:4652-4653` sets `_displayCurrency` to null exactly when the two coincide). So the axis value is *always already in `activeCurrency`* and must **never** be converted. `_fmtMoneyAbbr` is a no-op converter only because of the F59 landmine (`fxConvert(n)` called with one of three arguments hits its own `!rates[from]` guard); the day anyone "fixes" that arity, an `_fmtMoneyAbbr` axis would double-convert. The form used here is the same one `_applyConvertedKPIs`' own `set()` helper uses for already-converted server figures (`:4719`).
+
+**How it was verified.** `tests/harness/f120-chart-axis-currency.js` — **15/15**. It executes the real `buildCharts`/`buildCashChart` against a recording `Chart` (the chart *library* is stubbed; `_fmtMoney`, `CURRENCIES` and `activeCurrency` are the real source), captures the callback actually registered on `options.scales.y.ticks`, and calls it. `fxConvert` is made to **double** in the probe, so a converting axis renders `2.5K` instead of `1.2K` and cannot hide.
+
+**Failure path EXECUTED (Rule 14), not described.** Section 4 rebuilds the same spans with the callbacks textually reverted to `_fmtMoney(v,'$')` and runs them: under `activeCurrency='EUR'` the pre-fix code returns `"$1.2K"` where the fixed code returns `"€1.2K"`. Both strings are measured in the same run.
+
+**Rule 1 checked, not assumed.** `grep -rn "window.buildCharts *=\|window.buildCashChart *=" public/ --exclude=finflow-bundle.js` returns **nothing** — neither function is shadowed by a wiring override, so the `app-main.js` copies are the runtime path. (`app-main.js` is also not a bundle source; `bundle.js` concatenates only the 10 wiring files, so no bundle regeneration is involved.)
+
+**⚠️ Limit of what is proved.** The probe proves the *string the callback returns*. It does not render pixels — Chart.js is not loaded. **The final confirmation is visual and is outstanding:** set a non-USD display currency and check that the axis labels beside the KPI tiles carry the same symbol. The probe prints that caveat on every run so it cannot be quietly forgotten.
+
+**⚠️ THE ORIGINAL ENUMERATION WAS WRONG — corrected here.** The row below claimed *"Grep … returns exactly these two sites … the class is two instances, both in `buildCharts`."* Re-run this session:
+
+```
+$ grep -rn "ticks:{.*callback:v=>.*_fmtMoney(v,'\$')" public/ --include=*.js --include=*.html | grep -v finflow-bundle.js
+public/index.html:4294:  … callback:v=>window._fmtMoney(v,'$')   ← MRR/ARR chart
+public/index.html:6327:  … callback:v=>window._fmtMoney(v,'$')   ← Scenario-planner cash chart
+```
+
+**Four chart axes, not two.** The original grep missed the `window.` -prefixed form in `index.html`. Those two are **deliberately NOT fixed here**, and not because of scope discipline alone: on both pages the *sibling card values* hardcode `'$'` too (`index.html:4264-4265` `mrr-val`/`arr-val`; `:6280` a **local** `S` shadowing the global one, feeding `sc-rev`/`sc-exp`/`sc-profit`). Fixing only the axis on those pages would make the axis disagree with the cards beside it — trading one internal contradiction for another. They need a surface-level pass and are logged as **F124**, with the cash chart's unconverted series.
+
+---
+
+**Original finding (for the record):**
+
 **Status:** OPEN, confirmed by reading. Pre-existing; surfaced while implementing F64, NOT caused by it.
 
 **What's wrong.** Both overview-chart Y-axis tick callbacks pass a literal `'$'` as the symbol:
@@ -701,7 +733,121 @@ So the new checks genuinely discriminate — they are not green because everythi
 
 **⚠️ KNOWN APPROXIMATION — follow-up, ties to F85.** `mark-paid` writes **no paid date**. The schema has `run_date` (when the run was created) and a status, and nothing recording *when* payment happened. So a run created in June and paid in July books its cash in **June**. That is wrong whenever the two months differ, and it cannot be fixed at this call site — the date does not exist to read. Same shape as F85: an event that belongs to a period by intent, inferred from a different timestamp. Real fix is a `paid_date` column written by mark-paid; this leg then keys on it. Labelled in-code at the call site so it is not mistaken for settled behaviour.
 
-**Still open on this finding.** (1) **B4.4 has still never executed** — "mark a run paid → Cash Flow out increases by Σ lines" is the *transition*, which the static seed cannot exercise. (2) The class enumeration from the course of action is **not done**: whether `/books`, the balance-sheet cash proxy (`server.js:~3479`, `max(0, netProfit)`) and the Banking page share the same omission is unchecked. Both are follow-ups, not part of this commit.
+**Still open on this finding — BOTH CLOSED 2026-08-03, see below.** (1) **B4.4 has still never executed** — "mark a run paid → Cash Flow out increases by Σ lines" is the *transition*, which the static seed cannot exercise. (2) The class enumeration from the course of action is **not done**: whether `/books`, the balance-sheet cash proxy (`server.js:~3479`, `max(0, netProfit)`) and the Banking page share the same omission is unchecked. Both are follow-ups, not part of this commit.
+
+---
+
+**UPDATE 2026-08-03 — both follow-ups closed. (1) B4.4 EXECUTED. (2) Class ENUMERATED and CLOSED.**
+
+#### (1) B4.4 — executed for the first time (`6ebc85a`)
+
+`tests/harness/b4-4-payroll-cash-transition.js` — **19/19**, real server, real scratch Postgres, real HTTP. It creates a payroll run through the real route, walks `draft → approved → paid` through the real transition routes, and asserts on the **delta** in `POST /api/reports/cash-flow` at each step:
+
+```
+-- 2 - DRAFT      no month changed its cash out  → {}            totalOutflow Δ 0
+-- 3 - APPROVED   no month changed its cash out  → {}            totalOutflow Δ 0
+-- 4 - MARK-PAID  exactly ONE month changed      → 1
+                  …changed by exactly Σ lines    → 5888          totalOutflow Δ 5888
+                  cash IN untouched              → {}
+-- 5              changed month key == run_date month → "2026-08"
+```
+
+**Its own probe, deliberately not folded into step3.** A run created through the route takes `run_date = NOW()` (`server.js:3968`) — the one money write fed by the database clock, which the node pin does not reach (F110). It therefore lands in the real current month, inside FY 2026, and would move the A5 opex and A7.12–17 cash figures step3 asserts as constants. Every assertion is a delta, so the probe is immune to the calendar date it runs on and to the pin moving.
+
+**Rule 4 — the amount identifies its own source.** Σ lines = **5,888**, built through the route as Emp One 3,000 + bonus 777 and Emp Two 2,000 + overtime 111. Roster-only or gross-only reads 5,000; a dropped overtime leg 5,777; a dropped bonus leg 5,111; net-pay-instead-of-gross differs by the deductions. 5,888 collides with no seeded figure.
+
+**Rule 14 — BOTH failure paths executed, then reverted.**
+- **F122 leg deleted** (`server.js:3574` commented out) → **4 FAILED**: `exactly ONE month changed got 0 want 1` · `changed by exactly Σ lines got undefined want 5888 (deltas seen: {})` · `totalOutflow rose got 0 want 5888`. **So B4.4 is the F122 leg's guard**: remove the leg and it goes red.
+- **cash leg given the P&L filter** `IN ('approved','paid')` (`server.js:3548`) → **6 FAILED**, and critically it fails at **section 3** (`no month changed its cash out got {"2026-08":5888}`) — cash booked for a run nobody had paid. The two sections separate the two bugs instead of both firing on either.
+- `git checkout -- server.js` after each; re-verified 19/19 green. Neither control is left in the tree.
+
+#### (2) Class enumeration (Rule 13) — CLOSED. The omission was unique to `/api/reports/cash-flow`.
+
+Enumerated from BOTH directions, as the rule requires. **Code-side**, there is exactly one cash-out computation in the entire server:
+
+```
+$ grep -rn "'outflow'" server.js
+3562:  expenses.forEach(e => add(e.expense_date || e.date || e.created_at, 'outflow', e.amount));
+3563:  paymentsMade.forEach(p => add(p.date || p.created_at, 'outflow', p.amount));
+3574:  (paidRunRes.rows || []).forEach(r => add(r.run_date, 'outflow', r.run_total));   ← F122
+```
+
+**Surface-side**, every candidate the course of action named, plus the ones it did not:
+
+| Surface | What it actually computes | Same omission? |
+|---|---|---|
+| `POST /api/reports/cash-flow` (`server.js:3522`) | the only genuine cash engine — three outflow legs above | **YES — this was it. Fixed.** |
+| Dashboard cash card (`cf-in/out/net`) | `cashForPeriod(window._cashMonthly)` over the rows from that same endpoint (F57) | no — it is a consumer, not a second engine |
+| Cash Flow report page (`app-main.js:5525`) | same endpoint, same rows | no — same consumer |
+| `POST /api/reports/profit-loss` (`server.js:~3400`) | ACCRUAL. Monthly `rows` are revenue/expenses; totals from `computeBooks` | **no cash figure exists to omit from** |
+| Accountant `/books` (`accountant-routes.js:513`) | raw collections + `computeBooks` (`:561`, `:564`) — accrual | **no cash figure at all**; `grep -n cash accountant-routes.js` returns one hit, inside an AI prompt string |
+| `POST /api/reports/balance-sheet` (`server.js:3480`) | has a field named `cash` — but it is `Math.max(0, books.netProfit)` (`:3488`) | **no — and that is a different, worse defect → F123** |
+| Banking page (`GET /api/banking`, `server.js:3194`; `bank-outflow`, `app-main.js:5203`) | raw `personal_transactions WHERE source='banking'` — an imported bank-statement ledger | **no** — different data source entirely; a payroll run is not a bank transaction |
+
+**The two lists reconcile:** every surface that displays a cash-out figure traces to the one endpoint (or to a ledger that is not the books' cash engine), and the one endpoint's three legs are all accounted for. **Class closed.**
+
+**⚠️ ONE THING THIS DOES NOT CLOSE, stated rather than buried.** `VERIFICATION.md` **A7.19** asserts the Banking page's in/out/net *"matches A7.9–17 for that period"*. Banking is a bank-feed ledger and cash-flow is the books' cash engine; whether those two can ever be equal is a real question, and **A7.19 has never been run** (empty Result column — the same shape that hid F122 for as long as it did). Flagged here, not answered: it is a check to run, not a defect this row can claim.
+
+**Rating unchanged.** F122 stays ✅ FIXED; this update adds the execution and the enumeration its own "Course of action" asked for.
+
+---
+
+### F123 🟠 HIGH — The balance sheet's "Cash & Equivalents" is CLAMPED ACCRUAL NET PROFIT, and it is ON SCREEN — **NEW (2026-08-03, spun off the F122 class enumeration), OPEN**
+**Status:** OPEN, confirmed by reading. **Pre-existing and acknowledged in-code** — not a regression, and not something F122 introduced; the enumeration reached it and it needs a number rather than a sentence in a chat message.
+
+> **⚠️ RATED UP FROM THE LOW/MEDIUM IT WAS LOGGED AS — because the "unconsumed endpoint" premise is false.** The obvious defence for a low rating is that `POST /api/reports/balance-sheet` has no UI. It has one. Checked before writing this row rather than after being challenged:
+> ```
+> $ grep -rn "balance-sheet" public/ --include=*.js --include=*.html | grep -v finflow-bundle.js
+> public/app-main.js:5509:  const d=await fetch('/api/reports/balance-sheet',{method:'POST',…})
+> ```
+> and the very next line renders it under an explicit label:
+> ```js
+> // app-main.js:5511
+> <span style="color:var(--t2)">Cash & Equivalents</span> … ${fmt(d.cash)}
+> ```
+> Reports page → **Balance Sheet** → a figure captioned *"Cash & Equivalents"* that is not cash. It also propagates: `totalAssets = cash + ar` and `equity = totalAssets − totalLiabilities` (`server.js:3504-3506`), so **three** of the six lines on that report are wrong, not one. That is a wrong number on screen in ordinary use — the blocker criterion — so HIGH, not LOW.
+
+**What's wrong.** `POST /api/reports/balance-sheet` (`server.js:3480`) reports:
+
+```js
+// server.js:3488
+const cash = Math.max(0, books.netProfit);          // proxy: no cash account is tracked
+```
+
+`books.netProfit` is the **accrual** bottom line from `computeBooks` — revenue recognised at issue, expenses at issue/approval, minus COGS. It is not cash by any definition, and three separate things are wrong with using it as one:
+
+1. **Wrong basis.** Under decision 3 cash is *"recognised when money actually moves"*. Accrual net profit counts an unpaid invoice as revenue and an unpaid bill as expense. Against the harness seed, FY netProfit is **−1,700** while FY cash net is **also −1,700** — a collision, already flagged as a discrimination trap on F57 — but Jun is −1,850 accrual against −250 cash. They are not the same quantity and do not track each other.
+2. **Wrong shape — it is a FLOW presented as a BALANCE.** Net profit is a period figure; cash on a balance sheet is a position at a date. The call passes `'year'`, so what is labelled "cash" is one fiscal year's accrual profit.
+3. **The `Math.max(0, …)` floor silently deletes the loss case.** A business with a negative net profit reports cash **0**, not a negative figure and not an honest "not tracked". A loss-making account — precisely the one that needs to look at its balance sheet — is shown a zero that means nothing.
+
+**What mitigates it (and what does not).** The comment at the call site is honest, and the Reports page is not the dashboard — a user must open it deliberately. What does **not** mitigate it: nothing on screen says the figure is a proxy. The caption reads "Cash & Equivalents", in the assets column of a document whose entire purpose is to state a position.
+
+**Class (Rule 13).** This is the F31/PL#11 *fabrication* class, not the F122 *omission* class — the two were adjacent in the enumeration and are deliberately kept apart. Its siblings are the removed `ytdPaid = liability × 0.75` (PL#11) and the flat-25% tax rate (F76): a number with no source, computed anyway.
+
+**Enumerated both directions.** Within the route, `ar` is `books.outstanding` (canonical) and `ap` is arithmetic over recognised bills with the D2 future filter (`server.js:3500-3503`, F38 Step 4) — so **`cash` is the only fabricated input**, and `totalAssets`/`equity` are wrong only because they consume it. Across surfaces, there is a **second** balance sheet: the accountant portal's (`accountant-routes.js:595-599` → `public/accountant-client.html:1030`). It reports `accountsReceivable` / `accountsPayable` / `totalPayroll` and has **no cash line at all**, so it does not carry this defect — but it means the two balance sheets in this product have **different asset structures** (`assets = ar` in the portal, `assets = cash + ar` in the app) and therefore report different Total Assets and different Equity for the same books. Logged here as part of this row's enumeration rather than split off, because removing the fabricated `cash` line is also what reconciles the two.
+
+**Course of action.** Do **not** patch it into a different guess. In particular, `Σ inflow − Σ outflow` from `/api/reports/cash-flow` is **not** the fix: that is a *period flow*, so it would repeat mistake 2 with a better basis and look far more defensible while doing it. There is no cash-account concept in the schema — no bank-balance record type, and `personal_transactions source='banking'` is an imported statement feed, not a general-ledger cash account. The honest options are (a) return `cash: null` and render **"Not tracked"**, omitting it from `totalAssets` — the D1 pattern already ruled for tax, and it also makes the app's balance sheet structurally match the portal's; or (b) remove the Balance Sheet report until a cash account exists (the F76 (b) reasoning). Building a real cash account is a schema decision, owner-gated, and is not this finding.
+**Done when:** no clamped accrual figure is presented as cash anywhere — the line reads "Not tracked" or is absent, `totalAssets`/`equity` no longer consume it, and the app and portal balance sheets report the same Total Assets for the same books.
+
+---
+
+### F124 🟡 MEDIUM — Three client money surfaces are never FX-converted and/or hardcode `'$'` — the F34 Path B coverage gap — **NEW (2026-08-03, found while fixing F120), OPEN**
+**Status:** OPEN, confirmed by reading. All three **pre-date** F120 and none is caused by it.
+
+F120 fixed the two dashboard chart axes. The enumeration that produced it (see the correction on F120 — the original grep undercounted by half) turned up three further surfaces where the currency **label** and the currency the **value is actually in** can disagree. They are grouped because they share one root: **F34 Path B converted five surfaces and stopped** — KPI tiles, overview chart, expense breakdown, transactions list, investments. Anything else that renders business money was never enumerated.
+
+| # | Surface | Value is in | Label says | Site |
+|---|---|---|---|---|
+| a | Dashboard **cash chart** (`#cashChart`) | **native** — `PROFIT[]`, and `_applyConvertedChart` (`app-main.js:4778`) touches `charts.overview` **only** | `activeCurrency` — via `S()` in the tooltip (`:5011`) and, since F120, the axis too | `app-main.js:4974-5020` |
+| b | **MRR / ARR** page | native recurring-invoice amounts | hardcoded `'$'` on the cards **and** the chart axis | `index.html:4264-4265`, `:4294` |
+| c | **Scenario planner** | native, derived from `BASE` (itself on a stale basis — **F44**) | hardcoded `'$'` via a **local `S`** that shadows the global one | `index.html:6280`, `:6287-6295`, `:6327` |
+
+**(a) is the one with teeth, and F120 did not create it.** The cash chart's tooltip has stamped `activeCurrency` on native values since the F70 fix; F120 brought the axis into line with that tooltip, which is an improvement in the native case (entity currency TTD previously showed `TT$` tiles beside a `$` axis) and changes nothing about the underlying gap: **the series is never converted.** The fix is a converted series — extend `_applyConvertedChart` to `charts.cash`, or blank the chart under a display currency the way `_applyConvertedKPIs` blanks the tiles — **not** a different symbol. Recorded in-code at `app-main.js:5016` so the next reader does not mistake the F120 comment for coverage.
+
+**(b) and (c) are internally consistent today, which is why they must be fixed whole.** On both pages the cards and the axis hardcode the same `'$'`, so they agree with each other and disagree with the rest of the app. Fixing only the axis — the obvious reading of "finish F120" — would make the axis disagree with the cards beside it: one contradiction traded for another. Each page needs its cards and axis moved together, and (c) additionally needs its shadowing local `S` deleted rather than edited (it is a second money formatter, the exact class C4 closed).
+
+**Course of action.** Owner-gated, post-launch, one surface per commit: (a) convert the cash-chart series or blank it; (b) route MRR/ARR through the live symbol lookup, cards and axis in one change; (c) delete the local `S` at `index.html:6280` so the panel uses the global one, then the axis follows for free. Do **not** batch them — they are three different surfaces with three different data provenances, and (c) is entangled with F44.
+**Done when:** every client surface rendering business money either shows a figure in `activeCurrency` labelled with `activeCurrency`'s symbol, or shows `—` — and no surface carries its own private `'$'`.
 
 ---
 

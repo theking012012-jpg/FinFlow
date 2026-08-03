@@ -4965,7 +4965,13 @@ function buildCharts(){
       },
       scales:{
         x:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'}},border:{display:false}},
-        y:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'},callback:v=>_fmtMoney(v,'$')},border:{display:false}}
+        // F120: the symbol is resolved LIVE, not hardcoded '$'. The values on this axis are always
+        // already in `activeCurrency`: native ⇒ activeCurrency IS the entity's currency; a display
+        // currency ⇒ _applyConvertedChart has overwritten both datasets with the SERVER-converted
+        // buckets. So the axis needs the symbol only — deliberately NOT _fmtMoneyAbbr, whose
+        // fxConvert() call would double-convert a server-converted figure the day the F59 arity
+        // landmine is "fixed". Same shape as _applyConvertedKPIs' own set() helper (:4719).
+        y:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'},callback:v=>_fmtMoney(v, CURRENCIES[activeCurrency]?.symbol||'$')},border:{display:false}}
       }
     }
   });
@@ -5013,7 +5019,14 @@ function buildCashChart(){
       },
       scales:{
         x:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'}},border:{display:false}},
-        y:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'},callback:v=>_fmtMoney(v,'$')},border:{display:false}}
+        // F120: live symbol, as in buildCharts above — and here it also makes the axis agree with
+        // this chart's own tooltip, which already stamps activeCurrency via S() (:5011).
+        // ⚠️ SEPARATE, STILL OPEN (F124): unlike the overview chart, PROFIT[] is NEVER FX-converted
+        // — _applyConvertedChart touches charts.overview only. Under a display currency this chart
+        // therefore shows NATIVE values, and both the tooltip and now this axis label them with the
+        // display symbol. That mislabelling predates F120 (the tooltip has always done it) and is
+        // not fixed here; the fix is a converted series, not a different symbol.
+        y:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'},callback:v=>_fmtMoney(v, CURRENCIES[activeCurrency]?.symbol||'$')},border:{display:false}}
       }
     }
   });

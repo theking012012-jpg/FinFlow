@@ -29,7 +29,14 @@ const DRIFT_SENSITIVE_CHECKS = [
   'B3.3', // Payroll first → dashboard → same figure via both routes
   'B4.2', // Approve → contributes exactly Σ lines
   'B4.3', // Mark Paid → expense UNCHANGED
-  'B4.4', // Mark Paid → Cash Flow out increases by Σ lines
+  // B4.4 (Mark Paid → Cash Flow out increases by Σ lines) was here and is DELIBERATELY GONE.
+  // It now has its own probe — tests/harness/b4-4-payroll-cash-transition.js (6ebc85a) — which
+  // asserts the DELTA in POST /api/reports/cash-flow across draft→approved→paid in one process,
+  // never an absolute period figure. That is the drift-immune shape this list's own header
+  // describes, so B4.4 no longer belongs in it: printing "BLOCKED" beside a check that carries a
+  // PASS in VERIFICATION.md is the harness contradicting the document.
+  // B4.2/B4.3 STAY — they assert the P&L expense figure, still have no probe, and are genuinely
+  // drift-sensitive. Removing B4.4 is not a precedent for removing them.
 ];
 
 function localYmd(d) {

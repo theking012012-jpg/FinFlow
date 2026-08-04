@@ -3485,7 +3485,29 @@ app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
     computeBooks(uid, eid, 'year'),
     db.allByUser('bills', uid, matchEnt),
   ]);
-  const cash = Math.max(0, books.netProfit);          // proxy: no cash account is tracked
+  // F123: cash is NOT TRACKED, and is no longer fabricated.
+  //
+  // This was `Math.max(0, books.netProfit)` — the ACCRUAL bottom line, clamped at zero, returned
+  // as `cash` and rendered on the Reports page under the caption "Cash & Equivalents"
+  // (app-main.js). Three things were wrong at once: wrong basis (accrual counts an unpaid invoice
+  // as revenue; decision 3 says cash is money that actually moved), wrong shape (net profit is a
+  // period FLOW, cash on a balance sheet is a position at a date — and the call passes 'year'),
+  // and the max(0,…) floor silently reported 0 for any loss-making account, i.e. exactly the
+  // reader who most needs the number. It also propagated into totalAssets and equity, so three
+  // lines of a six-line report were wrong, not one.
+  //
+  // There is nothing to compute it from. The schema has no cash account: no bank-balance record
+  // type, and `personal_transactions source='banking'` is an imported statement feed, not a
+  // general-ledger cash account. Σ(inflow) − Σ(outflow) from /api/reports/cash-flow is NOT the
+  // substitute — that is a period flow too, so it would repeat the shape error with a better
+  // basis and look more defensible while doing it.
+  //
+  // So the honest answer is the one D1 already ruled for tax: report that it is not tracked, and
+  // never a number. `cash: null` + `cashTracked: false`; the client renders "Not tracked".
+  // totalAssets is AR ONLY and is labelled as excluding untracked cash — which also makes this
+  // balance sheet structurally match the accountant portal's (accountant-routes.js), whose assets
+  // have always been AR alone.
+  const cash = null;
   const ar   = books.outstanding;                     // canonical unpaid AR
   // F38 Step 4 (AP amendment): AP = Σ max(0, amount − amount_paid) over ALL RECOGNIZED_BILL
   // bills — payables now ARITHMETIC-driven, not status-driven. Excluding 'paid' bought nothing
@@ -3501,9 +3523,17 @@ app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
     .filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()))
     .filter(b => { const _y = FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date); return _y != null && _y <= _apToday; })
     .reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
-  const totalAssets      = Math.round((cash + ar) * 100) / 100;
+  // F123: AR only. `cash + ar` with cash === null would coerce to `0 + ar` and quietly report the
+  // same total while claiming cash is untracked — the arithmetic must state the exclusion, not
+  // rely on a coercion that reads like a bug to the next person.
+  const totalAssets      = Math.round(ar * 100) / 100;
   const totalLiabilities = Math.round(ap * 100) / 100;
-  res.json({ cash, accountsReceivable: ar, totalAssets, accountsPayable: totalLiabilities, totalLiabilities, equity: Math.round((totalAssets - totalLiabilities) * 100) / 100 });
+  res.json({
+    cash, cashTracked: false,
+    accountsReceivable: ar, totalAssets, totalAssetsExcludesCash: true,
+    accountsPayable: totalLiabilities, totalLiabilities,
+    equity: Math.round((totalAssets - totalLiabilities) * 100) / 100,
+  });
 }));
 
 // POST /api/reports/cash-flow — monthly inflows vs outflows (entity-scoped, CASH basis).

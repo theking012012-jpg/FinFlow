@@ -536,6 +536,11 @@
 
     // Patch saveInvoice to persist to API
     window.saveInvoice = async function () {
+      // F117 commit B: in-flight re-entry lock — a double-click / impatient re-click cannot fire a
+      // 2nd POST. This is a UX layer only; the durable guarantee is the DB idempotency index
+      // (commit A), which also covers two tabs / network replay the client lock can't (Rule 9).
+      if (window._savingInvoice) return;
+
       const client    = (typeof sanitizeText === 'function')
         ? sanitizeText(document.getElementById('inv-client')?.value, 200)
         : document.getElementById('inv-client')?.value?.trim();
@@ -553,6 +558,18 @@
       const issue_date = document.getElementById('inv-issue')?.value || (typeof todayLocal==='function'?todayLocal():null);
       const dueStr = due ? new Date(due).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'TBD';
 
+      // One idempotency token per submit-intent: minted lazily now, reused on any retry of THIS
+      // modal, and reset to null on modal open (openInvoiceModal) and on success below. So a
+      // double-submit of the same intent reuses it (→ DB dedupes, commit A) while a genuine
+      // re-invoice from a reopened modal gets a NEW token and is allowed. crypto.randomUUID with a
+      // non-crypto fallback (the token only needs to be unique per intent, not cryptographic).
+      window._invIdemKey = window._invIdemKey || (window.crypto?.randomUUID
+        ? window.crypto.randomUUID()
+        : 'inv-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+
+      window._savingInvoice = true;
+      const _saveBtn = document.querySelector('#invoice-modal .btn-primary');
+      if (_saveBtn) _saveBtn.disabled = true;
       try {
         // Get active entity_id from ENTITIES array
         const _activeEnt = (window.ENTITIES || []).find(e => e.active);
@@ -566,6 +583,7 @@
           status,
           notes,
           entity_id: _entityId,
+          idempotency_key: window._invIdemKey,   // F117 commit B — the token commit A's index enforces
         });
 
         if (!window.userInvoices) window.userInvoices = [];
@@ -580,6 +598,7 @@
           color:    status === 'overdue' ? 'var(--red)' : 'var(--t2)',
         });
 
+        window._invIdemKey = null;   // success → the next invoice mints a fresh token
         closeModal('invoice-modal');
         if (typeof renderInvoices === 'function') renderInvoices();
         notify(`Invoice created for ${client} ✦`);
@@ -587,7 +606,12 @@
         window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
       } catch (e) {
+        // Keep _invIdemKey so a manual retry of this SAME submit is idempotent: if the row did land
+        // server-side despite the error, the retry carries the same token → 23505 → original row, no dup.
         notify('Could not save invoice — ' + e.message, true);
+      } finally {
+        window._savingInvoice = false;
+        if (_saveBtn) _saveBtn.disabled = false;
       }
     };
 

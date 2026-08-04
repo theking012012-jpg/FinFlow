@@ -583,7 +583,7 @@ a 5-second window — a slow double-submit defeats it; `CLAUDE.md` Rule 9).
 
 | # | Action | Expected | Result |
 |---|---|---|---|
-| B1.1 | Create invoice | exactly one | |
+| B1.1 | Create invoice | exactly one | PASS (2026-08-04, commits A+B) — server DB idempotency index on a per-intent token + client in-flight lock. Same-intent double-submit (concurrent or slow >5s) → exactly one; reopened modal = new token → new invoice (correct). Executed: verify-c1-invoice-pilot.js 12/12 (+7/7 no-index control), verify-c1-invoice-client.js 8/8. |
 | B1.2 | Record payment | exactly one | |
 | B1.3 | Run Payroll | exactly one run | |
 | B1.4 | Approve payroll run | expense counted once | |

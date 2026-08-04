@@ -2386,6 +2386,10 @@ function markInvoicePaid(idx){
   notify('Invoice marked as paid');
 }
 function openInvoiceModal(){
+  // F117 commit B: a fresh invoice modal = a fresh submit-intent. Clear the idempotency token so
+  // the next Create mints a NEW one — two genuinely separate invoices carry DIFFERENT tokens and
+  // both land. saveInvoice also clears it on success; this covers reopen-after-a-failed-submit.
+  window._invIdemKey = null;
   const _sv=(id,v)=>{const el=document.getElementById(id); if(el) el.value=v;};
   _sv('inv-client','');
   _sv('inv-amount','');

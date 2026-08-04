@@ -552,7 +552,7 @@ This built `payment_date` from the **browser's local** `getFullYear()`/`getMonth
 
 ---
 
-### F117 🟠 HIGH — Duplicate invoice created for the same customer/amount, reachable via double-submit — **PARTIAL — server + migration + token-aware bypass shipped & executed (commit A, 2026-08-04); client in-flight lock + ~31-route class OPEN**
+### F117 🟠 HIGH — Duplicate invoice created for the same customer/amount, reachable via double-submit — **PARTIAL — server + migration + token-aware bypass (commit A) AND client in-flight lock + per-modal token (commit B) shipped & executed 2026-08-04; ~31-route class + ids 8 & 9 cleanup OPEN**
 
 > ### ✅ PARTIAL — commit A (2026-08-04): the DURABLE server-side guarantee is shipped and executed both ways (Rule 14).
 > **What changed (commit A).**
@@ -562,8 +562,11 @@ This built `payment_date` from the **browser's local** `getFullYear()`/`getMonth
 >
 > **How it was verified (executed both ways).** `tests/harness/verify-c1-invoice-pilot.js` — real scratch Postgres, real server, real HTTP to the real route. **WITH INDEX: 12/12** — concurrent same-token → 1 row, both 2xx, same id; slow >5 s same-token → 1 row; raw duplicate insert → 23505/1 row; different-token >5 s AND <5 s → 2 rows; no-token >5 s → 2 rows, no-token <5 s → 1 row. **NO-INDEX control: 7/7** — the same slow same-token re-click and raw duplicate produce **2 rows** (the failure path executed), proving the index — not the racy JS pre-check — is the guarantee.
 >
-> **STILL OPEN (not in commit A):**
-> - **Client in-flight lock + per-modal token** in `saveInvoice` (`finflow-api-wiring-medium.js`, the runtime winner) + fresh key on `openInvoiceModal` (`app-main.js`) — **commit B**. Until B ships, the live UI sends no token, so A is inert for real double-clicks (safe, byte-identical behaviour); the durable guarantee activates when B lands.
+> ### ✅ commit B (2026-08-04): the client in-flight lock + per-submit-intent token — the leg that makes commit A live.
+> **What changed (commit B).** `saveInvoice` (`finflow-api-wiring-medium.js`, the runtime winner) gains an in-flight re-entry lock (`window._savingInvoice`) + Create-button disable, and mints ONE idempotency token per submit-intent (`window._invIdemKey`) — sent as `idempotency_key`, cleared on success; `openInvoiceModal` (`app-main.js`, the unshadowed winner) resets the token on open so a reopened modal is a fresh intent. Rule 9: the client lock is UX only — the DB index (commit A) is the guarantee; two tabs / network replay still route through it.
+> **How it was verified (executed).** `tests/harness/verify-c1-invoice-client.js` boots the REAL SPA in jsdom against real seeded Postgres + real server and drives the real modal — **8/8**: a rapid double-click fires exactly ONE `POST /api/invoices` (lock held) carrying a non-empty `idempotency_key`, the DB holds exactly one row, the token clears on success, and a reopened modal mints a DIFFERENT token → a second invoice correctly lands (the B1.1 same-intent-vs-new-intent semantics, executed). VERIFICATION.md **B1.1** recorded PASS.
+>
+> **STILL OPEN:**
 > - **The ~31-route C1 class** — invoices is the only route converted; the rest are frozen for dedicated rollout rounds (natural-key Wave-1 gated on `c1-dup-precheck` returning CLEAN). See **F131** for the token-blind pre-check class.
 > - **Data cleanup of the existing ids 8 & 9** — separate owner-gated commit (Rule 8). A green test proves going-forward correctness only.
 

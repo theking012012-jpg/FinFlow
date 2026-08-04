@@ -4646,17 +4646,43 @@ function clearAIChat(){
         apiGetStatus('/api/invoices'),
         apiGetStatus('/api/expenses'),
       ]);
-      const revenue  = invoices.filter(i => i.status?.toLowerCase() === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
-      const expTotal = expenses.reduce((s, ex) => s + (ex.amount || 0), 0);
-      const profit   = revenue - expTotal;
+      // ── F128 (second half): DELEGATE, exactly as generateReport does. ────────────────────────
+      // This is the SAME defect as the report modal's, on the page BEHIND it: paid-only revenue
+      // (the pre-F32 basis), Σ-expenses-only opex (no bills, no payroll, no F58 contras) and no
+      // period window. The two were written separately and drifted together — which is why fixing
+      // one and not the other would have left the Reports PAGE contradicting the Reports MODAL
+      // launched from it, and both contradicting the dashboard.
+      //
+      // Rule 1 note: this function is a WRAPPER — it calls _origRenderReports() above (which paints
+      // the static report lists) and then overwrites the metric cards. So these three cards are the
+      // runtime-winning values; app-main's own paid-only recompute feeds only the onclick args that
+      // the replacement generateReport ignores. Fixing it there would have rendered nothing.
+      //
+      // Same three sources as the modal, so page, modal and dashboard cannot disagree (Rule 6).
+      if (typeof window.computeRevenue !== 'function' || typeof window.computeExpenseBreakdown !== 'function') {
+        // Honest failure, never a fabricated total: the engines read window._realInvoices /
+        // _realExpenses, so if they are absent a "0" here would read as a business with no revenue.
+        const _e = new Error('Report engine not ready'); _e.status = 0; throw _e;
+      }
+      const period   = (typeof currentPeriod !== 'undefined' && currentPeriod) ? currentPeriod : 'year';
+      const revenue  = window.computeRevenue(period);
+      const expTotal = window.computeExpenseBreakdown(period).total;
+      const cogs     = parseFloat(window._cogsTotal) || 0;
+      const profit   = revenue - cogs - expTotal;      // the dashboard's composition (app-main.js:2167)
+      // Native symbol: these come out of the engines unconverted (F124), and the shared money()
+      // helper routes through S(), which would stamp activeCurrency on an unconverted figure.
+      const _m = n => (typeof window._fmtMoneyNative === 'function') ? window._fmtMoneyNative(n) : money(n);
+      const PERIOD_LABEL = { month: 'this month', quarter: 'this quarter', year: 'this fiscal year' };
 
       const mcs  = document.querySelectorAll('#page-reports .mc-val');
       const chgs = document.querySelectorAll('#page-reports .mc-change');
       if (mcs[0])  mcs[0].textContent  = invoices.length + expenses.length;
       if (chgs[0]) chgs[0].textContent  = 'Invoices & expenses on file';
-      if (mcs[1])  mcs[1].textContent  = money(revenue);
-      if (chgs[1]) { chgs[1].textContent = 'Paid revenue this period'; chgs[1].className = 'mc-change up'; }
-      if (mcs[2])  mcs[2].textContent  = money(profit);
+      if (mcs[1])  mcs[1].textContent  = _m(revenue);
+      // The old caption read "Paid revenue this period" — wrong on BOTH counts once this is accrual
+      // AND period-scoped, and a stale caption on a corrected figure is its own defect.
+      if (chgs[1]) { chgs[1].textContent = 'Revenue issued, ' + (PERIOD_LABEL[period] || period); chgs[1].className = 'mc-change up'; }
+      if (mcs[2])  mcs[2].textContent  = _m(profit);
       if (chgs[2]) { chgs[2].textContent = profit >= 0 ? 'Net profit' : 'Net loss'; chgs[2].className = 'mc-change ' + (profit >= 0 ? 'up' : 'dn'); }
     } catch (err) {
       // Logged-out (401/403) or pre-auth: keep the static content, stay silent.
@@ -4901,19 +4927,73 @@ function clearAIChat(){
     modal.classList.remove('hidden');
 
     try {
-      const [invoices, expenses] = await Promise.all([api('GET', '/api/invoices'), api('GET', '/api/expenses')]);
-      const paid      = invoices.filter(i => i.status?.toLowerCase() === 'paid');
-      const revenue   = paid.reduce((s, i) => s + (i.amount || 0), 0);
-      const expTotal  = expenses.reduce((s, ex) => s + (ex.amount || 0), 0);
-      const profit    = revenue - expTotal;
-      // F56: canonical AR definition (Σ max(0, amount − amount_paid) over recognized statuses),
-      // so a customer's outstanding balance agrees with the dashboard and the Invoices page.
+      // ── F128: DELEGATE to the canonical client engines. Do NOT recompute. ────────────────────
+      //
+      // What was here: `invoices.filter(i => i.status === 'paid')` summed at full amount, plus
+      // `Σ expenses` alone, both unwindowed. Three defects in four lines:
+      //   · PAID-ONLY revenue is the PRE-F32 basis. F32 (owner decision, 18 July) moved
+      //     recognition to ACCRUAL, ISSUE-BASED — allowlist pending/overdue/partial/paid — across
+      //     computeBooks, computeRevenue, /api/reports, /books, the monthly buckets and the
+      //     accountant portal. This function was missed, so the Reports page reported a revenue
+      //     figure no other surface in the product agreed with. Same survival F76 records for
+      //     GET /api/tax-filing — except that endpoint is unconsumed and this button is not.
+      //   · EXPENSES omitted issued bills, orphan payments made and payroll entirely, so "Net
+      //     Profit" was revenue-minus-some-expenses.
+      //   · NO PERIOD. Both legs were all-time regardless of the period selector.
+      // Credit notes and vendor credits (F58) were absent from both legs as well.
+      //
+      // The fix is delegation, not better arithmetic. Rule 2: this figure already has four
+      // implementations (computeBooks, /api/reports, the client pair, and this) — writing a fifth
+      // correct one just moves the next divergence. computeRevenue / computeExpenseBreakdown are
+      // the canonical CLIENT pair the dashboard KPIs read, they carry every leg including the F58
+      // contras, and step 4 gates them against VERIFICATION across four timezones. Sourcing from
+      // them makes Reports agree with the dashboard BY CONSTRUCTION rather than by coincidence
+      // (Rule 6) — a future basis change lands on both at once, which is the whole point.
+      //
+      // PERIOD — stated, not assumed. This report follows the app's ACTIVE period selector, the
+      // same window every other money surface uses, and the modal now LABELS it. Previously it was
+      // silently all-time; changing that without saying so on screen would move a number the user
+      // had no way to explain. `currentPeriod` is a top-level `let` in app-main.js, so it lives in
+      // the shared global LEXICAL scope, not on `window` (see F125) — hence the bare read with a
+      // typeof guard, the pattern already used for it in the dashboard wiring.
+      const period = (typeof currentPeriod !== 'undefined' && currentPeriod) ? currentPeriod : 'year';
+      const PERIOD_LABEL = { month: 'this month', quarter: 'this quarter', year: 'this fiscal year' };
+      if (typeof window.computeRevenue !== 'function' || typeof window.computeExpenseBreakdown !== 'function') {
+        // Honest failure, never a fabricated total (class C6/C7): if the engines are not loaded
+        // there is no figure to report, and a zero here would read as a business with no revenue.
+        throw new Error('Report engine not ready — reload the page and try again.');
+      }
+      // F124 rule: these figures come out of the client engines NATIVE — nothing converts them —
+      // so they carry the ENTITY's symbol. The shared `money()` helper in this file routes through
+      // S(), which stamps activeCurrency, and would label an unconverted figure with the display
+      // currency under a non-native selection. Scoped to this function; the other `money()` call
+      // sites in this file are F129's sweep, not this commit's.
+      const money = n => (typeof window._fmtMoneyNative === 'function')
+        ? window._fmtMoneyNative(n)
+        : (typeof S === 'function' ? S(n) : '$' + (parseFloat(n) || 0).toFixed(2));
+      const revenue  = window.computeRevenue(period);
+      const breakdown = window.computeExpenseBreakdown(period);
+      const expTotal = breakdown.total;
+      // COGS is the THIRD leg of the canonical net, and leaving it out was the remaining way this
+      // report could disagree with the dashboard. `updateDashboard` composes d-profit as
+      // `revenue − COGS − opex` (app-main.js:2167), and the AI/insight surfaces use the identical
+      // line at :4502 and :4539. Reproduced here rather than approximated: on the seed, omitting it
+      // gives −300 where every other surface says −1,700 — the exact 1,400 of FY COGS.
+      // `window._cogsTotal` is the client's PERIOD-SCOPED COGS, refetched by _loadPeriodCOGS on
+      // every period switch (F25); a non-inventory business leaves it 0 and net == revenue − opex.
+      const cogs     = parseFloat(window._cogsTotal) || 0;
+      const profit   = revenue - cogs - expTotal;
+      // Outstanding stays as it was: already canonical via _arOutstanding (F56), and AR is an
+      // all-time balance-sheet figure by design — it deliberately does NOT take the period window.
+      const invoices = await api('GET', '/api/invoices');
       const outstanding = (typeof window._arOutstanding === 'function')
         ? window._arOutstanding(invoices).total
         : invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
-      const catTotals = {};
-      expenses.forEach(ex => { catTotals[ex.category] = (catTotals[ex.category] || 0) + (ex.amount || 0); });
-      const catRows = Object.entries(catTotals).sort((a, b) => b[1] - a[1])
+      // Category rows come from the same breakdown, so they are period-scoped and consistent with
+      // the total above them. NOTE they cover the manual-expense rows only — byCategory is built
+      // from those (app-main.js) — so they do not sum to expTotal, which also carries bills,
+      // payments made and payroll. Labelled in the heading rather than left to be discovered.
+      const catRows = Object.entries(breakdown.byCategory || {}).sort((a, b) => b[1] - a[1])
         .map(([cat, amt]) => `<tr><td style="padding:3px 0;color:var(--t2)">${e(cat)}</td><td style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${money(amt)}</td></tr>`).join('');
 
       document.getElementById('rpt-body').innerHTML = `
@@ -4921,12 +5001,12 @@ function clearAIChat(){
           <div style="background:var(--bg2);border-radius:6px;padding:10px">
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Revenue</div>
             <div style="font-size:16px;font-weight:600;color:var(--green)">${money(revenue)}</div>
-            <div style="font-size:10px;color:var(--t3)">${paid.length} paid invoice${paid.length !== 1 ? 's' : ''}</div>
+            <div style="font-size:10px;color:var(--t3)">issued, ${e(PERIOD_LABEL[period] || period)}</div>
           </div>
           <div style="background:var(--bg2);border-radius:6px;padding:10px">
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Expenses</div>
             <div style="font-size:16px;font-weight:600;color:var(--red)">${money(expTotal)}</div>
-            <div style="font-size:10px;color:var(--t3)">${expenses.length} expense${expenses.length !== 1 ? 's' : ''}</div>
+            <div style="font-size:10px;color:var(--t3)">incl. bills &amp; payroll</div>
           </div>
           <div style="background:var(--bg2);border-radius:6px;padding:10px">
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Net Profit</div>
@@ -4935,9 +5015,10 @@ function clearAIChat(){
           <div style="background:var(--bg2);border-radius:6px;padding:10px">
             <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Outstanding</div>
             <div style="font-size:16px;font-weight:600;color:var(--amber)">${money(outstanding)}</div>
+            <div style="font-size:10px;color:var(--t3)">all time</div>
           </div>
         </div>
-        ${catRows ? `<div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Expense Breakdown</div>
+        ${catRows ? `<div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Expense Breakdown — recorded expenses only</div>
         <table style="width:100%;border-collapse:collapse">${catRows}</table>` : ''}`;
     } catch (err) {
       document.getElementById('rpt-body').textContent = 'Could not load data: ' + err.message;

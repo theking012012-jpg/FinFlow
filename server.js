@@ -927,14 +927,43 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   if (!client || amount == null) return res.status(400).json({ error: 'client and amount required.' });
   const eid = entity_id || req.entityId || null;
   if (await isLocked(req.session.userId, due_date)) return res.status(403).json({ error: 'Period is locked.' });
-  // Layer 3: dedupe near-simultaneous duplicate creates (user_id + entity_id + client + amount).
-  const _dup = await findRecentDuplicate('invoices', req.session.userId, eid, { textMatch: { client: client.trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
-  if (_dup) return res.status(200).json(_dup);
+  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  // Layer 3 (fast path): the 5s findRecentDuplicate pre-check is TOKEN-BLIND — it matches on
+  // client+amount only, never the idempotency key. Run it ONLY for token-less requests (old
+  // clients / API callers), where it stays the near-simultaneous-dupe guard. When a token IS
+  // present, SKIP it and let the partial unique index be the SOLE arbiter — otherwise two
+  // legitimately DIFFERENT-token invoices for the same client+amount within 5s get wrongly
+  // collapsed into one (a dropped invoice / missing revenue). This token-blindness is a CLASS
+  // across all 31 findRecentDuplicate routes (F131); each adopts this bypass as it gains a token.
+  if (!idem) {
+    const _dup = await findRecentDuplicate('invoices', req.session.userId, eid, { textMatch: { client: client.trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    if (_dup) return res.status(200).json(_dup);
+  }
   // F36: issue_date is the user-editable business issue date recognition keys on (Step 2).
   // Store only when supplied — legacy/API rows with no issue_date fall back to created_at at
   // recognition time. Not defaulted server-side (server "today" is UTC; the UI sends a LOCAL
   // date), so we never fabricate a UTC issue date that could differ from the user's day.
-  const { row } = await db.insert('invoices', { user_id: req.session.userId, entity_id: eid, client: client.trim().slice(0,200), amount: parseFloat(amount)||0, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null });
+  //
+  // F117 / C1 durable backstop (PILOT SHAPE — mirrors POST /api/payroll-runs, server.js:~3985).
+  // For a token request the pre-check is skipped, so this index is the ONLY dedupe: a double-submit
+  // carries the SAME token → the 2nd INSERT throws 23505 → we recover and return the ORIGINAL row
+  // idempotently (200), never a 500 and never fall through. It also closes the concurrent-POST
+  // TOCTOU race and the slow (>5s) re-click the old window missed (Rule 9). Two genuinely separate
+  // invoices carry DIFFERENT tokens → both succeed. INERT until the index exists (no index ⇒ no
+  // 23505 ⇒ prior behaviour); a null token is excluded by the partial index → behaviour unchanged.
+  let row;
+  try {
+    ({ row } = await db.insert('invoices', { user_id: req.session.userId, entity_id: eid, client: client.trim().slice(0,200), amount: parseFloat(amount)||0, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null, idempotency_key: idem }));
+  } catch (e) {
+    if (e.code === '23505' && idem) {
+      const { rows } = await pool.query(
+        `SELECT * FROM invoices WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`,
+        [req.session.userId, idem]
+      );
+      if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
+    }
+    throw e;
+  }
   logAudit(req, 'CREATE', 'invoices', row.id, null, row);
   res.status(201).json(row);
 }));

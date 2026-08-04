@@ -116,6 +116,28 @@ async function initDB() {
          AND COALESCE((data->>'amount_paid')::numeric, 0) < (data->>'amount')::numeric
     `);
 
+    // F117 / C1 — durable idempotency backstop for POST /api/invoices. invoices is a generic
+    // JSONB table with NO natural key (two identical $2000 invoices are legitimate re-invoicing),
+    // so the enforcing key is a per-submit-intent IDEMPOTENCY TOKEN the client mints once and
+    // reuses on a double-submit. This PARTIAL expression index is the un-bypassable guarantee the
+    // 5s findRecentDuplicate pre-check cannot be (that pre-check is a non-atomic TOCTOU race and
+    // misses any slow >5s re-click — CLAUDE.md Rule 9). Keyed on (user_id, token): the token is a
+    // random UUID, globally unique per intent, so entity_id is not needed in the key.
+    //   PARTIAL on non-NULL keys → legacy rows (incl. the existing saige ids 8 & 9) carry no token
+    //   and are EXCLUDED, so the index builds cleanly with the current duplicate still present
+    //   (historical cleanup is a separate owner-gated commit, Rule 8). A NULL token from an old
+    //   client / API caller is likewise excluded → behaviour unchanged until a token is sent.
+    //   Non-CONCURRENTLY is correct here: it is transactional (safe inside this initDB BEGIN) and
+    //   the partial index covers zero rows at creation, so it is instant. If the invoices table
+    //   ever grows large before this ships, build the CONCURRENTLY variant once out-of-band instead.
+    // Import-safety (Rule 7): this lives inside initDB(), which already fires DDL at boot — it adds
+    // no NEW import side effect and is reached only via the existing initDB call path.
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_idem_key
+        ON invoices (user_id, (data->>'idempotency_key'))
+        WHERE data->>'idempotency_key' IS NOT NULL
+    `);
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)

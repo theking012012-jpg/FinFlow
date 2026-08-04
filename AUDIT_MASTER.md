@@ -552,8 +552,22 @@ This built `payment_date` from the **browser's local** `getFullYear()`/`getMonth
 
 ---
 
-### F117 🟠 HIGH — Duplicate invoice created for the same customer/amount, reachable via double-submit — **NEW (2026-07-31), OPEN**
-**Status:** OPEN. **Owner-reported from production, not independently verified this session** — this session has no database access and CLAUDE.md forbids querying production directly. Recorded as evidence supplied by the owner, per Rule 7 ("evidence, not conclusions" cuts both ways — the claim is logged with its source, not re-stated as something this session confirmed).
+### F117 🟠 HIGH — Duplicate invoice created for the same customer/amount, reachable via double-submit — **PARTIAL — server + migration + token-aware bypass shipped & executed (commit A, 2026-08-04); client in-flight lock + ~31-route class OPEN**
+
+> ### ✅ PARTIAL — commit A (2026-08-04): the DURABLE server-side guarantee is shipped and executed both ways (Rule 14).
+> **What changed (commit A).**
+> 1. **Migration** (`database.js` initDB): partial unique expression index `idx_invoices_idem_key ON invoices (user_id, (data->>'idempotency_key')) WHERE data->>'idempotency_key' IS NOT NULL`. Partial-on-non-null so legacy rows — including the saige ids 8 & 9 — carry no token, are excluded, and the index builds with the duplicate still present (cleanup stays a separate owner-gated commit, Rule 8). Non-CONCURRENTLY, inside the existing initDB `BEGIN`, over zero rows → instant.
+> 2. **Handler** (`server.js POST /api/invoices`): reads a per-submit-intent `idempotency_key`; on the insert's `23505` it recovers the ORIGINAL row by `(user_id, token)` and returns it 200 — the pilot shape, mirroring `POST /api/payroll-runs`. Inert until the index exists.
+> 3. **Token-aware pre-check bypass** (F131): the 5s `findRecentDuplicate` pre-check now runs only for token-less requests (`if (!idem)`); with a token the index is the sole arbiter, so two legitimate DIFFERENT-token same-client+amount invoices within 5 s are no longer collapsed into one (a dropped invoice / missing revenue).
+>
+> **How it was verified (executed both ways).** `tests/harness/verify-c1-invoice-pilot.js` — real scratch Postgres, real server, real HTTP to the real route. **WITH INDEX: 12/12** — concurrent same-token → 1 row, both 2xx, same id; slow >5 s same-token → 1 row; raw duplicate insert → 23505/1 row; different-token >5 s AND <5 s → 2 rows; no-token >5 s → 2 rows, no-token <5 s → 1 row. **NO-INDEX control: 7/7** — the same slow same-token re-click and raw duplicate produce **2 rows** (the failure path executed), proving the index — not the racy JS pre-check — is the guarantee.
+>
+> **STILL OPEN (not in commit A):**
+> - **Client in-flight lock + per-modal token** in `saveInvoice` (`finflow-api-wiring-medium.js`, the runtime winner) + fresh key on `openInvoiceModal` (`app-main.js`) — **commit B**. Until B ships, the live UI sends no token, so A is inert for real double-clicks (safe, byte-identical behaviour); the durable guarantee activates when B lands.
+> - **The ~31-route C1 class** — invoices is the only route converted; the rest are frozen for dedicated rollout rounds (natural-key Wave-1 gated on `c1-dup-precheck` returning CLEAN). See **F131** for the token-blind pre-check class.
+> - **Data cleanup of the existing ids 8 & 9** — separate owner-gated commit (Rule 8). A green test proves going-forward correctness only.
+
+**Status (original finding, for the record):** OPEN. **Owner-reported from production, not independently verified this session** — this session has no database access and CLAUDE.md forbids querying production directly. Recorded as evidence supplied by the owner, per Rule 7 ("evidence, not conclusions" cuts both ways — the claim is logged with its source, not re-stated as something this session confirmed).
 
 Owner reports two invoices for customer "saige," identical amount (2,000), both present in production as **ids 8 and 9**. Consistent with a double-submit on invoice creation — the same class of gap already named for other mutating actions in this codebase (Rule 9: dedupe must be a single shared mechanism every mutating handler routes through, not a per-button patch; B8/C1 already documents this recurring on Run Payroll and Approve after being "fixed" once for Record Payment).
 
@@ -1077,6 +1091,24 @@ So a user opening any report gets a revenue figure that disagrees with the dashb
 **Class (Rule 13).** Two classes intersect here and both are already named: **F75** (fixes applied to shadowed copies — 28 shadowed functions, 23 replacements; `generateReport` should be checked against that inventory, and if it is absent the inventory is incomplete) and the **pre-F32 basis survival** class with F76. Neither list currently contains this function.
 **Course of action:** owner-gated. Either revive the app-main bodies onto the runtime path (they are the better implementation — real per-report bodies, and the Cash Flow one already reads the canonical shared cache) and delete the wiring replacement, or fix the wiring copy's basis and accept one generic report. **Do not edit the app-main copy while it is shadowed** — that is the F75 trap, and F123 came within one edit of it. Whichever way it goes, F123's `cash: null` / `cashTracked: false` contract is what the Balance Sheet body must render as *"Not tracked"*.
 **Done when:** the Reports page renders per-report bodies from the canonical accrual figures, no `generateReport` copy is shadowed, and its revenue equals `/api/reports` revenue for the same period.
+
+---
+
+### F131 🟡 MEDIUM — The 5s `findRecentDuplicate` pre-check is TOKEN-BLIND: on a token-bucket route it collapses two legitimately different-token records into one (dropped record / missing money) — **NEW (2026-08-04); invoices instance FIXED & executed in commit A; class OPEN**
+**Status:** invoices instance FIXED and executed both ways (commit A, 2026-08-04). The class across the other token-bucket routes is OPEN and **frozen** for the C1 rollout — Rule 13: fix the in-scope instance, document the class; do not grow scope mid-round.
+
+**Mechanism.** Every C1 create route runs a fast pre-check — `findRecentDuplicate(table, user, entity, {business fields}, 5s)` — BEFORE the insert, matching on business columns (invoices: `client`+`amount`, server.js:790). The durable idempotency key a token-bucket route adopts is a DIFFERENT dimension: a per-submit-intent token. So the pre-check is **blind to the token**. Two POSTs with the SAME client+amount but DIFFERENT tokens within 5 s — genuine re-invoicing, or any legitimate same-value record — both match the pre-check → the second is returned as a "duplicate" and its row is **DROPPED**. On invoices that is missing revenue; on any money-row route it is a silently absent transaction.
+
+**Why it only bites once tokens exist.** With no token the pre-check IS the intended near-simultaneous-dupe guard and must stay. The conflict appears exactly when a route gains a token whose identity ≠ the pre-check's business-field match. The fix is a **token-aware bypass**: run the pre-check only when no token is present (`if (!idem)`); when a token is present the partial unique index is the sole arbiter, which handles concurrent, slow, and legitimate-different-token cases correctly.
+
+**Invoices instance — FIXED (commit A).** `POST /api/invoices` computes `idem` first and gates the pre-check on `if (!idem)` (server.js). Executed in `tests/harness/verify-c1-invoice-pilot.js`: **D2** (different tokens, same client+amount, <5 s) → **2 rows** with the bypass (a token-blind pre-check would give 1); **E2** (no token, <5 s) → **1 row**, proving the pre-check is preserved for token-less requests. 12/12 with index, 7/7 in the no-index control — D2/E2 pass in BOTH modes because the bypass is code-level, index-independent.
+
+**Class (Rule 13) — NOT touched this round.** The other token-bucket JSONB routes (expenses, customers, quotes, vendors, bills, recurring_bills/_invoices/_personal_transactions, sales_receipts, payments_received, credit_notes, payments_made, vendor_credits, timesheet, journals, goals, projects, inventory, items, personal_transactions/_accounts, banking) each carry the same token-blind pre-check and will inherit the same `if (!idem)` bypass **when they gain their durable token** in the C1 rollout — one verified commit per route, each with its own D2/E2-shaped case. See the full 31-route enumeration in **F117**.
+
+**Natural-key routes are NOT affected — checked, not assumed.** Where the pre-check's key EQUALS the durable key there is no blindness. The shipped `payroll_runs` pilot pre-checks on `period` (server.js:3966) and its unique index is `(user_id, COALESCE(entity_id,0), period)` — the SAME dimension — so two same-period runs are correctly merged and there is no legitimate-different-key case to drop. This **refines** the initial "including the payroll pilot" framing: payroll is in the pre-check family but has **no false-merge instance** and needs no bypass. Each future natural-key adopter is checked the same way: pre-check key == index key ⇒ no bypass; ≠ ⇒ bypass.
+
+**Course of action:** as each token-bucket route gains its token, add the `if (!idem)` bypass in the same commit and add a different-token-<5s → 2-rows case to its verifier. Never add a bypass to a natural-key route whose pre-check already matches its unique key.
+**Done when:** every token-bucket route carrying a durable token skips the token-blind pre-check for token requests, each proven by a different-token-<5s → 2-rows executed case.
 
 ---
 

@@ -6,7 +6,20 @@
     if (body !== undefined) opts.body = JSON.stringify(body);
     var res = await fetch(path, opts);
     var data = await res.json().catch(function() { return {}; });
-    if (!res.ok) throw new Error(data.error || res.status);
+    if (!res.ok) {
+      // F130: PRESERVE the response. `throw new Error(data.error || res.status)` discarded both the
+      // status and the machine-readable `code`, so every caller could only see a message string —
+      // and a 402 {code:'TRIAL_EXPIRED'} became indistinguishable from any other failure, landing in
+      // the generic "Unable to load" path. A caller cannot branch on information the thrower threw
+      // away. The message is unchanged, so nothing that reads err.message behaves differently.
+      var err = new Error(data.error || res.status);
+      err.status = res.status;
+      err.code = data.code;
+      if (data.code === 'TRIAL_EXPIRED' && typeof window._ffShowTrialExpired === 'function') {
+        window._ffShowTrialExpired(data.error);
+      }
+      throw err;
+    }
     return data;
   }
 

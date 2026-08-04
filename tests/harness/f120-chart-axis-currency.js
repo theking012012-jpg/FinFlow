@@ -68,6 +68,9 @@ function span(openLine) {
 const SPAN_FMT    = span('function _fmtMoney(value, symbol){');
 const SPAN_ABBR   = span('function _fmtMoneyAbbr(n){');
 const SPAN_DEF    = span('function chartDefaults(){');
+// F124 added _cashSeries and buildCashChart now delegates to it. Loaded here so the span set stays
+// runnable — a probe that throws on a refactor reports nothing, which is worse than reporting red.
+const SPAN_SERIES = span('function _cashSeries(profit){');
 const SPAN_BUILD  = span('function buildCharts(){');
 const SPAN_CASH   = span('function buildCashChart(){');
 
@@ -76,7 +79,7 @@ const SPAN_CASH   = span('function buildCashChart(){');
  * `mutate` lets section 3 hand back the PRE-FIX source; identity for the live run.
  */
 function loadCharts(mutate) {
-  const body = [SPAN_FMT, SPAN_ABBR, SPAN_DEF, mutate(SPAN_BUILD), mutate(SPAN_CASH)].join('\n');
+  const body = [SPAN_FMT, SPAN_ABBR, SPAN_DEF, SPAN_SERIES, mutate(SPAN_BUILD), mutate(SPAN_CASH)].join('\n');
   const captured = [];
   const gradient = { addColorStop() {} };
   const ctx2d = { createLinearGradient: () => gradient };

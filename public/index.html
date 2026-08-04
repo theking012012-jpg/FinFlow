@@ -4259,10 +4259,19 @@ async function loadMRRData(){
       return s+amt;
     },0);
     const arr = monthlyTotal*12;
-    // Update MRR metric cards
+    // Update MRR metric cards.
+    // F124: NATIVE symbol, not a hardcoded '$' and not activeCurrency. These figures are summed
+    // straight from GET /api/recurring-invoices with no ?display= param and no conversion, so they
+    // are in the ENTITY's own currency. '$' was simply wrong for any non-USD entity; activeCurrency
+    // would be worse under a display currency — a converted label on an unconverted number.
+    // Converting MRR needs FX wiring this endpoint does not have → held as F126, not half-done.
+    // Each card keeps EXACTLY the rounding it had — mrr-val exact, arr-val abbreviated. Only the
+    // symbol moves. (That the two disagree on abbreviation is pre-existing and left alone: it is a
+    // formatting question, and changing it inside a currency commit would hide one change behind
+    // another.)
     const els = {
-      'mrr-val': '$'+Math.round(monthlyTotal).toLocaleString(),
-      'arr-val': window._fmtMoney(arr,'$'),
+      'mrr-val': window._nativeSymbol()+Math.round(monthlyTotal).toLocaleString(),
+      'arr-val': window._fmtMoneyNative(arr),
     };
     Object.entries(els).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.textContent=val; });
   } catch(e){
@@ -4291,7 +4300,10 @@ function renderMRRChart(){
     }]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{x:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10}}},
-              y:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10},callback:v=>window._fmtMoney(v,'$')}}}}
+              // F124: native symbol — the series is window._mrrChartData, which is never FX-converted
+              // (F126) and, per F127, has no writer anywhere so it is always a flat zero line.
+              // Matches the MRR/ARR cards above.
+              y:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10},callback:v=>window._fmtMoneyNative(v)}}}}
   });
 }
 // ── 6. PLAID BANKING ────────────────────────────────────────────────────────
@@ -5217,6 +5229,20 @@ async function _loadEntitiesFromDBImpl(){
     // logged-out answer is definitive, not a transient failure to retry.
     if(!res.ok){
       if(res.status === 401 || res.status === 403) return true;
+      // F130: TRIAL EXPIRED — the server 402s every /api data read (checkPlan, server.js:400), and
+      // this is the FIRST one on a cold boot, so this is where the user's experience is decided.
+      // Render the paywall and return TRUE: the answer is definitive, exactly as 401/403 is, so the
+      // boot memo should latch it (F97) rather than re-fetching a 402 on every trigger. Returning
+      // false here would both retry pointlessly and mark the load "incomplete", which is what fed
+      // the "Unable to load" cards. An expired trial is a known, explainable state — not a failure.
+      if(res.status === 402){
+        const _b = await res.json().catch(()=>({}));
+        if(_b && _b.code === 'TRIAL_EXPIRED'){
+          console.warn('[Entities] trial expired — showing upgrade gate');
+          if(typeof window._ffShowTrialExpired === 'function') window._ffShowTrialExpired(_b.error);
+          return true;
+        }
+      }
       const _e = new Error('entities failed (HTTP '+res.status+')'); _e.status = res.status; throw _e;
     }
     const rows = await res.json();
@@ -6265,9 +6291,9 @@ window.updateScenario = function(){
   const set = (id,v)=>{ const el=document.getElementById(id); if(el)el.textContent=v; };
   set('lbl-rev-growth', (revGrowth>=0?'+':'')+Math.round(revGrowth*100)+'%');
   set('lbl-headcount', headcount+' hire'+(headcount===1?'':'s'));
-  set('lbl-salary', window._fmtMoney(salary,'$'));
+  set('lbl-salary', window._fmtMoneyNative(salary));
   set('lbl-churn', (churn*100).toFixed(1)+'%');
-  set('lbl-invest', window._fmtMoney(invest,'$'));
+  set('lbl-invest', window._fmtMoneyNative(invest));
   set('lbl-efficiency', (efficiency>=0?'+':'')+Math.round(efficiency*100)+'%');
 
   const projRev = Math.round(BASE.rev * (1 + revGrowth) * (1 - churn));
@@ -6277,7 +6303,12 @@ window.updateScenario = function(){
   const newBurn = Math.max(0, Math.round((projExp - projRev/12)/12));
   const runway = newBurn > 0 ? Math.round(BASE.cash / newBurn) : 99;
 
-  const S = v => window._fmtMoney(v, '$');   // shared K→M→B rollover (was K-only)
+  // F124: was `const S = v => window._fmtMoney(v, '$')` — a LOCAL S shadowing the global money
+  // renderer inside this function, so every scenario figure carried a hardcoded '$' regardless of
+  // the entity's currency. The shadow is deleted rather than edited (class C4: a second formatter
+  // is the thing that drifts). Scenario figures project from BASE, which is native and never
+  // FX-converted — and on a stale basis besides (F44) — so the NATIVE symbol is the honest one.
+  const S = v => window._fmtMoneyNative(v);
   const delta = (now, base) => {
     const d = now-base;
     const col = d>=0?'var(--green)':'var(--red)';
@@ -6324,7 +6355,9 @@ function renderScenarioChart(projRev, projExp){
     }]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{x:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9}}},
-              y:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9},callback:v=>window._fmtMoney(v,'$')}}}}
+              // F124: native symbol — cashData projects from BASE.cash, never FX-converted. Matches
+              // the sc-* cards this chart sits under.
+              y:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9},callback:v=>window._fmtMoneyNative(v)}}}}
   });
 }
 

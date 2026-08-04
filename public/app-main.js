@@ -582,6 +582,28 @@ function _fmtMoneyExact(n){
 }
 window._fmtMoneyExact = _fmtMoneyExact;
 
+// F124: NATIVE-currency renderer — the ENTITY's own symbol, deliberately NOT activeCurrency.
+//
+// Use this on any surface whose values are the entity's own money and are NOT FX-converted.
+// Under a display currency `activeCurrency` is the DISPLAY currency, so stamping it on an
+// unconverted figure is mislabelled money — the F34/F59/F70 defect, which is what a hardcoded
+// '$' also produces the moment the entity's currency is not USD. Both failure modes disappear by
+// matching the symbol to the currency the value is genuinely in.
+//
+// The rule for choosing between the three renderers:
+//   value already in activeCurrency (server-converted, or native-and-no-display-currency)
+//       → _fmtMoneyAbbr / _fmtMoneyExact / the CURRENCIES[activeCurrency] symbol lookup
+//   value in the ENTITY's currency with no conversion applied to it
+//       → _fmtMoneyNative  (this)
+// A surface that ought to be converted and is not is a FINDING, not a formatting choice —
+// see F126. This renderer makes such a surface HONEST, it does not make it converted.
+function _nativeSymbol(){
+  return CURRENCIES[_activeEntityCurrency()]?.symbol || '$';
+}
+function _fmtMoneyNative(n){ return _fmtMoney(n, _nativeSymbol()); }
+window._nativeSymbol   = _nativeSymbol;     // for sites that render exact, not abbreviated
+window._fmtMoneyNative = _fmtMoneyNative;
+
 // ════════════════════════════════════════════
 // PATCH S() to apply FX conversion
 // (runs after original S() is defined at bottom of script)
@@ -1367,6 +1389,20 @@ async function loadEntityData(idx){
     const _pick = (res, label, fatal) => {
       if (res.ok) return res.json().then(j => j || []);
       if (res.status === 401 || res.status === 403) return [];   // not authorised ⇒ genuinely nothing
+      // F130: an expired trial is not a load failure and must not be reported as one. Every /api
+      // read 402s at once, so this fires on whichever loader lands first; the paywall is idempotent
+      // and the flag short-circuits the error state below. Checked BEFORE the fatal/non-fatal split
+      // because it applies to both — a 402 on `customers` is the same event as a 402 on `invoices`.
+      if (res.status === 402) {
+        return res.json().catch(()=>({})).then(j => {
+          if (j && j.code === 'TRIAL_EXPIRED' && typeof window._ffShowTrialExpired === 'function') {
+            window._ffShowTrialExpired(j.error);
+          }
+          const err = new Error(label + ' blocked (HTTP 402)');
+          err.status = 402; err.code = (j && j.code) || 'PAYMENT_REQUIRED'; err.label = label;
+          throw err;
+        });
+      }
       if (!fatal) { console.warn('[Entity] ' + label + ' failed (HTTP ' + res.status + ') — list will be empty'); return []; }
       const err = new Error(label + ' failed (HTTP ' + res.status + ')');
       err.status = res.status; err.label = label;
@@ -1530,6 +1566,10 @@ async function loadEntityData(idx){
     // had no way to tell apart from real data. 401/403 never reaches here (handled as genuinely
     // empty above), so anything landing here is a real failure worth showing.
     console.error('[Entity] loadEntityData failed:', e.message);
+    // F130: the paywall OWNS the screen when the trial has expired — do not paint "Unable to load"
+    // underneath it. This is the short-circuit, not a cosmetic skip: the whole defect was an
+    // expired trial being reported as a broken app.
+    if(e && (e.code === 'TRIAL_EXPIRED' || window._ffTrialExpiredActive)) return;
     if(window._ffAuthed && typeof window._dashSetState==='function'){
       try{ window._dashSetState('error'); }catch(_){}
     }
@@ -4628,6 +4668,63 @@ function deleteCustomer(){
 function updateBrandName(){document.getElementById('sb-brand-name').textContent=document.getElementById('s-biz-name').value||'FinFlow'}
 function updateUserName(){document.getElementById('sb-user-name').textContent=document.getElementById('s-user-name').value||'User'}
 function updateUserAvatar(){document.getElementById('sb-user-avatar').textContent=document.getElementById('s-user-initials').value.toUpperCase()||'?'}
+// ════════════════════════════════════════════
+// F130 — TRIAL-EXPIRED PAYWALL
+// ════════════════════════════════════════════
+// On trial expiry the server 402s EVERY /api data read with {code:'TRIAL_EXPIRED'} (checkPlan,
+// server.js:400). Auth routes are exempt, so the user logs in fine, the app boots fine, and then
+// every money surface fails — landing in the F67/F96 "Unable to load" error state. The one piece of
+// trial UI is a countdown banner that bails on `daysLeft<=0` (index.html), i.e. it disappears at the
+// exact moment it is needed. Net effect: a paying-intent customer sees a BROKEN APP, with nothing
+// on screen saying the trial ended or offering a way to fix it.
+//
+// This renders ONE blocking, full-screen state instead. Deliberately:
+//   · IDEMPOTENT — five loaders can hit 402 in the same boot; they must not stack five overlays.
+//   · SHORT-CIRCUITS the per-card error path — the caller returns before _dashSetState('error'),
+//     so the user never sees "Unable to load" underneath a paywall. An expired trial is not a
+//     failure to load, and reporting it as one is what makes it look like a bug in the product.
+//   · Lives in app-main.js, which loads SYNCHRONOUSLY before index.html's inline scripts and before
+//     the deferred bundle — so every caller can reach it whenever the 402 lands.
+//   · Uses the existing showPage('pricing') route for the CTA, with a hard href fallback if the
+//     SPA router is not up yet (the whole point is that this fires when things are degraded).
+//
+// SCOPE, stated: this is the honest FAILURE state, not a product decision. Whether an expired trial
+// should hard-lock or drop to READ-ONLY (books visible, writes blocked) is an open owner question —
+// read-only is the friendlier answer and is what most accounting products do, since locking someone
+// out of their own books to sell them a plan is a poor trade. Not built here; flagged on F130.
+function _ffShowTrialExpired(message){
+  if(document.getElementById('ff-trial-gate')) return;   // idempotent
+  window._ffTrialExpiredActive = true;
+  const g = document.createElement('div');
+  g.id = 'ff-trial-gate';
+  g.setAttribute('role','dialog');
+  g.setAttribute('aria-modal','true');
+  g.setAttribute('aria-labelledby','ff-trial-gate-title');
+  g.style.cssText = 'position:fixed;inset:0;z-index:99998;display:flex;align-items:center;justify-content:center;'
+    + 'background:rgba(14,11,8,.92);backdrop-filter:blur(3px);font-family:Jost,system-ui,sans-serif;padding:24px';
+  const safe = String(message || 'Your free trial has ended.').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  g.innerHTML =
+     '<div style="max-width:420px;width:100%;background:var(--bg1,#16120d);border:1px solid var(--bd,rgba(201,168,76,.25));'
+   + 'border-radius:12px;padding:28px;text-align:center;box-shadow:0 18px 50px rgba(0,0,0,.45)">'
+   + '<div style="font-size:32px;margin-bottom:10px">&#9889;</div>'
+   + '<div id="ff-trial-gate-title" style="font-size:19px;font-weight:600;color:var(--t1,#f2e8d5);margin-bottom:8px">'
+   + 'Your free trial has ended</div>'
+   + '<div style="font-size:13px;color:var(--t2,#9e8e73);line-height:1.55;margin-bottom:20px">' + safe
+   + '<br><br>Your data is safe and untouched. Upgrade to pick up exactly where you left off.</div>'
+   + '<button id="ff-trial-upgrade" class="btn btn-primary" style="width:100%;padding:11px;font-size:14px;font-weight:600">'
+   + 'Upgrade &#8599;</button>'
+   + '<div style="margin-top:14px;font-size:11px;color:var(--t3,#6b5c42)">'
+   + 'Questions? <a href="mailto:support@finflow.app" style="color:var(--acc,#c9a84c)">support@finflow.app</a></div>'
+   + '</div>';
+  document.body.appendChild(g);
+  const btn = document.getElementById('ff-trial-upgrade');
+  if(btn) btn.onclick = function(){
+    if(typeof showPage === 'function'){ g.remove(); window._ffTrialExpiredActive=false; showPage('pricing', null); }
+    else { window.location.href = '/app#pricing'; }
+  };
+}
+window._ffShowTrialExpired = _ffShowTrialExpired;
+
 // F34 Step 2: the display currency the dashboard renders business figures in. null ⇒ native (the
 // active entity's own currency) ⇒ no ?display= param ⇒ server returns native (identity, Step 1).
 window._displayCurrency = window._displayCurrency || null;
@@ -4777,13 +4874,44 @@ async function _applyConvertedKPIs(ccy){
 // chart (the KPIs already show "—" + hint) rather than paint fabricated zeros.
 function _applyConvertedChart(monthly){
   if(!monthly || monthly.complete===false) return;
-  const chart = window.charts && window.charts.overview;
-  if(!chart || !chart.data || !chart.data.datasets) return;
   const safe = a => (a||[]).map(v=>Math.max(0, v||0));
-  chart.data.labels = monthly.labels || chart.data.labels;
-  chart.data.datasets[0].data = safe(monthly.revByMonth);
-  chart.data.datasets[1].data = safe(monthly.expByMonth);
-  try{ chart.update('none'); }catch(e){ try{ chart.update(); }catch(_){} }
+  // ⚠️ F125 — this read was `window.charts && window.charts.overview` and was ALWAYS UNDEFINED.
+  // `charts` is declared `let charts = {}` (:1598), and a top-level `let` in a classic script binds
+  // in the script scope, NOT on the global object — proven by execution in jsdom, not assumed. So
+  // this whole overlay has never run once: F34 Path B "surface 1 — overview chart from server
+  // buckets" has never rendered, and neither had the cash conversion below when it was written
+  // against the same dead guard. Using the script-scoped binding — the one every other line in this
+  // file already uses (`charts.overview`, `charts.cash`) — is what makes the overlay reachable.
+  // NOT fixed by exposing `window.charts` globally, which would ALSO wake 5 dead sites in
+  // finflow-api-wiring-dashboard.js, one of which (:465-472) writes these same two datasets — a
+  // second writer of one figure, this codebase's failure mode 2. That is F125's decision, not a
+  // side effect of a currency fix.
+  const chart = charts && charts.overview;
+  if(chart && chart.data && chart.data.datasets){
+    chart.data.labels = monthly.labels || chart.data.labels;
+    chart.data.datasets[0].data = safe(monthly.revByMonth);
+    chart.data.datasets[1].data = safe(monthly.expByMonth);
+    try{ chart.update('none'); }catch(e){ try{ chart.update(); }catch(_){} }
+  }
+  // F124: the CASH chart too. It was left native while its axis and tooltip both stamped
+  // activeCurrency, so under a display currency it showed the entity's own figures under a
+  // foreign symbol — F34's defect, on the one dashboard chart F34 never enumerated.
+  //
+  // No new FX wiring and no client rate math: monthly profit IS revenue − expenses (the native
+  // path computes PROFIT[i] = REV[i] − EXP[i] at :1483), so subtracting the two SERVER-converted
+  // buckets already in this payload gives the converted profit by the same arithmetic. Not
+  // clamped at 0 the way the bars are — a loss is a real value on this chart and Math.max would
+  // silently erase it (the seed's June loss is exactly that case).
+  const cash = charts && charts.cash;
+  if(cash && cash.data && cash.data.datasets){
+    const rev = monthly.revByMonth || [], exp = monthly.expByMonth || [];
+    const n = Math.max(rev.length, exp.length);
+    const profit = Array.from({length:n}, (_,i) => (rev[i]||0) - (exp[i]||0));
+    const {actual, forecast} = _cashSeries(profit);
+    cash.data.datasets[0].data = actual;
+    cash.data.datasets[1].data = forecast;
+    try{ cash.update('none'); }catch(e){ try{ cash.update(); }catch(_){} }
+  }
 }
 // F34 B surface 2 — overlay the expense-breakdown bars with the server's CONVERTED per-category
 // totals (same top-4 rows + width% as the bundle updateExpenseBars, but values via S() in the
@@ -4977,6 +5105,24 @@ function buildCharts(){
   });
 }
 
+// F124: the cash chart's two datasets, from ONE monthly-profit array. Extracted verbatim from
+// buildCashChart so the native path and the FX overlay build the series with the SAME code — a
+// second copy here would be the multi-writer class (failure mode 2) in miniature, and the two
+// would drift the first time the forecast rule changed.
+// Behaviour is byte-identical to the inline version it replaces, INCLUDING the forecast array
+// being one element longer than `labels` (12 nulls + 4 values against 15 labels). That is
+// pre-existing and deliberately NOT "tidied" here: changing it would alter the native chart in a
+// commit about currency labelling, and Chart.js ignores the surplus point. Logged, not fixed.
+function _cashSeries(profit){
+  const recent=profit.filter(v=>v!==0);
+  const has=recent.length>0;
+  const avg=has?recent.slice(-3).reduce((a,b)=>a+b,0)/Math.min(recent.slice(-3).length,3):0;
+  return {
+    actual:[...profit,null,null,null],
+    forecast:[...profit.map(()=>null),has?profit[11]:null,has?Math.round(avg*1.02):null,has?Math.round(avg*1.04):null,has?Math.round(avg*1.06):null],
+  };
+}
+
 function buildCashChart(){
   if(typeof Chart==='undefined'){console.warn('Chart.js not loaded — cash chart skipped');return;}
   const{tc,gc}=chartDefaults();
@@ -4984,12 +5130,8 @@ function buildCashChart(){
   if(!_cc||_cc.offsetWidth===0||_cc.offsetParent===null)return;
   const ctx=_cc.getContext('2d');
   if(!ctx)return;
-  const _recentProfit=PROFIT.filter(v=>v!==0);
-  const _hasData=_recentProfit.length>0;
-  const _avgP=_hasData?_recentProfit.slice(-3).reduce((a,b)=>a+b,0)/Math.min(_recentProfit.slice(-3).length,3):0;
   const labels=[...MONTHS,'May \'26*','Jun \'26*','Jul \'26*'];
-  const actual=[...PROFIT,null,null,null];
-  const forecast=[...PROFIT.map(()=>null),_hasData?PROFIT[11]:null,_hasData?Math.round(_avgP*1.02):null,_hasData?Math.round(_avgP*1.04):null,_hasData?Math.round(_avgP*1.06):null];
+  const {actual,forecast}=_cashSeries(PROFIT);
   // Gradient fill under profit line
   const profitGrad=ctx.createLinearGradient(0,0,0,160);
   profitGrad.addColorStop(0,'rgba(201,168,76,0.22)');
@@ -5019,13 +5161,12 @@ function buildCashChart(){
       },
       scales:{
         x:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'}},border:{display:false}},
-        // F120: live symbol, as in buildCharts above — and here it also makes the axis agree with
-        // this chart's own tooltip, which already stamps activeCurrency via S() (:5011).
-        // ⚠️ SEPARATE, STILL OPEN (F124): unlike the overview chart, PROFIT[] is NEVER FX-converted
-        // — _applyConvertedChart touches charts.overview only. Under a display currency this chart
-        // therefore shows NATIVE values, and both the tooltip and now this axis label them with the
-        // display symbol. That mislabelling predates F120 (the tooltip has always done it) and is
-        // not fixed here; the fix is a converted series, not a different symbol.
+        // F120: live symbol, as in buildCharts above — matching this chart's own tooltip, which
+        // already stamps activeCurrency via S().
+        // F124 (was flagged here as still open, now CLOSED): the series is FX-converted too.
+        // _applyConvertedChart replaces both datasets with rev−exp from the server's converted
+        // monthly buckets, and updateCharts restores the native series whenever no display
+        // currency is armed — so the value and the symbol are always the same currency.
         y:{grid:{color:gc},ticks:{color:tc,font:{size:11,family:'Jost'},callback:v=>_fmtMoney(v, CURRENCIES[activeCurrency]?.symbol||'$')},border:{display:false}}
       }
     }
@@ -5053,6 +5194,19 @@ function updateCharts(d=getPeriodData()){
   charts.overview.update();
   // Cash chart always shows full year + forecast
   if(charts.cash){
+    // F124: repaint the NATIVE series here, exactly as the overview chart is repainted from
+    // REV/EXP above. Without it the cash chart had no way back: _applyConvertedChart now writes
+    // converted data into it, nothing else ever rewrote those datasets, and switching back to the
+    // native currency would have left converted figures under the native symbol — the same
+    // mislabelling in the opposite direction. This runs BEFORE the async overlay lands (see
+    // refreshAllPeriodData: updateDashboard kicks the fetch off, updateCharts is synchronous), so
+    // native paints first and the overlay wins when a display currency is armed — the
+    // paint-then-correct order the KPI tiles already use.
+    if(charts.cash.data && charts.cash.data.datasets){
+      const _c=_cashSeries(PROFIT);
+      charts.cash.data.datasets[0].data=_c.actual;
+      charts.cash.data.datasets[1].data=_c.forecast;
+    }
     charts.cash.options.scales.x.ticks.color=tc;charts.cash.options.scales.y.ticks.color=tc;
     charts.cash.options.scales.x.grid.color=gc;charts.cash.options.scales.y.grid.color=gc;
     charts.cash.update();

@@ -389,12 +389,12 @@ during the sweep.
 ## A5 · Server engine — `/api/reports` and `/books` — 18
 | # | Figure | Jun | Jul | FY | Result |
 |---|---|---|---|---|---|
-| A5.1–3 | revenue | 3,800 | 4,000 | 8,800 | PASS (2026-08-03 · seed 3c322e0f) |
-| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (2026-08-03 · seed 3c322e0f) |
-| A5.7–9 | grossProfit | 3,600 | 3,200 | 7,400 | PASS (2026-08-03 · seed 3c322e0f) |
-| A5.10–12 | opex | 5,450 | 1,850 | 9,100 | PASS (2026-08-03 · seed 3c322e0f) |
-| A5.13–15 | netProfit | −1,850 | 1,350 | −1,700 | PASS (2026-08-03 · seed 3c322e0f) |
-| A5.16–18 | outstanding | 8,500 | 8,500 | 8,500 | PASS (2026-08-03 · seed 3c322e0f) |
+| A5.1–3 | revenue | 3,800 | 4,000 | 8,800 | PASS (2026-08-04 · seed 3c322e0f) |
+| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (2026-08-04 · seed 3c322e0f) |
+| A5.7–9 | grossProfit | 3,600 | 3,200 | 7,400 | PASS (2026-08-04 · seed 3c322e0f) |
+| A5.10–12 | opex | 5,450 | 1,850 | 9,100 | PASS (2026-08-04 · seed 3c322e0f) |
+| A5.13–15 | netProfit | −1,850 | 1,350 | −1,700 | PASS (2026-08-04 · seed 3c322e0f) |
+| A5.16–18 | outstanding | 8,500 | 8,500 | 8,500 | PASS (2026-08-04 · seed 3c322e0f) |
 ## A6 · Cross-engine reconciliation — 18
 Client-displayed figure **==** server figure, six figures × three periods.
 
@@ -416,11 +416,42 @@ Client-displayed figure **==** server figure, six figures × three periods.
 | A7.12–14 | Cash Flow | cash out — Jun/Jul/FY | 750 / 1,850 / 3,200 | PASS (2026-08-02 · seed 3c322e0f · **first-ever run**, F122) |
 | A7.15–17 | Cash Flow | net — Jun/Jul/FY | −250 / −1,850 / −1,700 | PASS (2026-08-02 · seed 3c322e0f · **first-ever run**, F122) |
 | A7.18 | Cash Flow | FY cash out != FY opex | 3,200 != 8,200 | |
-| A7.19 | Banking | in/out/net for **selected period** (no MTD card) | matches A7.9–17 for that period | |
+| A7.19 | Banking | in/out/net for **selected period** (no MTD card) | ⬜ **RE-SCOPED — see below. The old "matches A7.9–17" expectation is RETIRED, not failed.** | N/A pending a Banking-page spec |
 | A7.20 | Bills / AP | outstanding | 1,100 | |
 | A7.21 | Payroll | Monthly Payroll card | 5,000 (roster = template, informational only) | |
 | A7.22 | Payroll | run history dates | formatted, correct **local** day | |
 | A7.23 | Tax | YTD paid | **absent, or the literal text "Not tracked". ANY number = FAIL** (see below) | |
+
+> ### ⬜ A7.19 — RE-SCOPED 2026-08-03. The equality it asserted was never the right question.
+>
+> **What it said:** Banking's in/out/net *"matches A7.9–17 for that period"* — i.e. the Banking page
+> must equal the Cash Flow engine.
+>
+> **Why that is wrong.** They are two different things, and the check was written as though they
+> were one. Cash Flow (`POST /api/reports/cash-flow`) is the BOOKS' cash engine: invoice payments,
+> sales receipts, expenses, payments made, paid payroll. Banking (`GET /api/banking`,
+> `server.js:3194`) returns raw `personal_transactions` rows where `source='banking'` — an
+> **imported bank-statement ledger**, a record of what the bank saw. The two are bridged by
+> **reconciliation** (`POST /api/bank-reconciliation/match`), which exists precisely because they do
+> **not** match: matching is the work of pairing a bank line to a book entry, and the unmatched
+> remainder is the normal state, not a defect. A business also has book entries with no bank line
+> yet (an unpresented payment) and bank lines with no book entry (a fee nobody recorded). Demanding
+> equality would make a correctly-reconciling account FAIL.
+>
+> **And the seed cannot express it either way.** No `personal_transactions` row with
+> `source='banking'` is seeded, so Banking reads empty while Cash Flow reads real figures. As
+> written the check could only ever have failed, for a reason that says nothing about the code.
+>
+> **Disposition: N/A, pending a real Banking-page spec.** Retired rather than deleted, so nobody
+> re-derives the same equality from the page title. What SHOULD be checked here — once the page has
+> a specification — is reconciliation behaviour: that a matched pair links exactly one bank line to
+> one book entry, that the unmatched list shrinks by exactly one per match, and that neither total
+> is silently restated by matching. That is a different check with different seed rows, and it goes
+> on the next round's list, not this one.
+>
+> Raised during the **F122** class enumeration (`AUDIT_MASTER.md`), which asked whether the Banking
+> page shared the payroll cash-out omission. It does not — it shares no leg with the cash engine at
+> all, which is what exposed the mis-specification.
 
 > **A7.23 — how to judge it.** Tax paid has **no source in the system** (Appendix C.2: no table, no
 > category, no response field), so under decision **D1** the only honest outcomes are *nothing* or

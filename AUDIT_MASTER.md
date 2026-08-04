@@ -156,6 +156,7 @@ One week to launch. This list is deliberately short and deliberately not padded.
 | ~~**B7**~~ | ✅ **DONE** `c9d2d16` — **F59** silent FX failure left native money under a foreign label, **+ F70** (found during the fix) 2 of 3 currency controls stamped the *previous* symbol on converted figures | harness 20/20; owner live-check outstanding | ~~30 min~~ |
 | ~~**B8**~~ | ✅ **DONE** `532390b` — dedupe guards on the money-bearing create routes. ⚠️ **The audit's list was wrong twice** — see the C1 row | harness 34/34; owner live-check outstanding | ~~2 h~~ |
 | **B9** | **F54** — team-member data scope is incoherent: reads and creates are actor-scoped, updates/deletes on 9 tables are account-scoped | An invited member logs in to an **empty app**, and everything they create is invisible to the owner. **Alternative that also unblocks: disable team invites for launch** (hide the invite UI, 403 the route). | 1 d, or 30 min to disable |
+| ~~**B12**~~ | ✅ **DONE** `bb50d2f` — **F130** an expired trial rendered as a broken app ("Unable to load" on every card, no explanation, no way to pay) | Every trial user reaches this state by definition; it is the moment they decide whether to pay. Probe 21/21; owner visual check outstanding. **Read-only-vs-hard-lock still an open owner decision.** | ~~1–2 h~~ |
 | **B10** | **F51 + F65** — honesty pass: 5 placeholder surfaces presented as live features, a "750+ integrations" marketplace banner, and 8 buttons that report a completed action with no backend | Refund/chargeback and trust risk. This is a labelling and button-removal pass, not engineering. | 3–4 h |
 
 **Total blocker estimate: ~3 working days** (or ~2 if team invites are disabled rather than fixed).
@@ -631,6 +632,14 @@ callback:v=>_fmtMoney(v, CURRENCIES[activeCurrency]?.symbol||'$')
 
 **Rule 1 checked, not assumed.** `grep -rn "window.buildCharts *=\|window.buildCashChart *=" public/ --exclude=finflow-bundle.js` returns **nothing** — neither function is shadowed by a wiring override, so the `app-main.js` copies are the runtime path. (`app-main.js` is also not a bundle source; `bundle.js` concatenates only the 10 wiring files, so no bundle regeneration is involved.)
 
+> ### ⚠️ CORRECTION 2026-08-03 — this row's stated MECHANISM was not running when it shipped.
+>
+> The reasoning above says the overview axis is safe under a display currency *"because `_applyConvertedChart` has overwritten both datasets with the SERVER-converted buckets."* **That overlay had never executed.** It guarded on `window.charts`, and `charts` is `let charts = {}` (`app-main.js:1598`) — a top-level `let`, which never becomes a global-object property. Proven by execution; full enumeration on **F125**.
+>
+> **What that means for this fix, precisely.** The axis change is still right and the probe still measures what it says. But between `baae74b` and the F124 commit, the overview chart's values were NATIVE under a display currency while this axis stamped the display symbol on them — the mislabel this row exists to remove, in the one state it was meant to fix. It did not *introduce* the mislabel: the chart's tooltip (`S()`) had been stamping `activeCurrency` on those same native values since long before. F120 made the axis agree with an already-wrong tooltip and described a mechanism that was not yet real.
+>
+> **Now real** — F124 makes `_applyConvertedChart` reachable, so the premise holds from that commit onward. Recorded rather than quietly amended, because "the fix was correct but its stated reason was not yet true" is exactly the kind of thing that gets cited later as proof the surface was verified.
+
 **⚠️ Limit of what is proved.** The probe proves the *string the callback returns*. It does not render pixels — Chart.js is not loaded. **The final confirmation is visual and is outstanding:** set a non-USD display currency and check that the axis labels beside the KPI tiles carry the same symbol. The probe prints that caveat on every run so it cannot be quietly forgotten.
 
 **⚠️ THE ORIGINAL ENUMERATION WAS WRONG — corrected here.** The row below claimed *"Grep … returns exactly these two sites … the class is two instances, both in `buildCharts`."* Re-run this session:
@@ -786,26 +795,58 @@ $ grep -rn "'outflow'" server.js
 
 **The two lists reconcile:** every surface that displays a cash-out figure traces to the one endpoint (or to a ledger that is not the books' cash engine), and the one endpoint's three legs are all accounted for. **Class closed.**
 
-**⚠️ ONE THING THIS DOES NOT CLOSE, stated rather than buried.** `VERIFICATION.md` **A7.19** asserts the Banking page's in/out/net *"matches A7.9–17 for that period"*. Banking is a bank-feed ledger and cash-flow is the books' cash engine; whether those two can ever be equal is a real question, and **A7.19 has never been run** (empty Result column — the same shape that hid F122 for as long as it did). Flagged here, not answered: it is a check to run, not a defect this row can claim.
+**⚠️ ONE THING THIS DID NOT CLOSE — now RESOLVED, 2026-08-03: A7.19 was MIS-SPECIFIED and is RETIRED.** The flag left here read: A7.19 asserts the Banking page's in/out/net *"matches A7.9–17 for that period"*, Banking is a bank-feed ledger and cash-flow is the books' cash engine, and the check had never run.
+
+Answered: **the two are bridged by RECONCILIATION, not equality.** `POST /api/bank-reconciliation/match` exists precisely because they differ — matching is the work of pairing a bank line to a book entry, and an unmatched remainder is the normal state. A business legitimately has book entries with no bank line yet (an unpresented payment) and bank lines with no book entry (a fee nobody recorded). **Demanding equality would make a correctly-reconciling account FAIL.** The seed compounds it: no `source='banking'` row is seeded, so Banking reads empty against real cash-flow figures — as written the check could only ever have failed, for a reason that says nothing about the code.
+
+A7.19 is therefore **RETIRED and marked N/A pending a real Banking-page spec** (`VERIFICATION.md`, with the full reasoning). Retired rather than deleted, so nobody re-derives the same equality from the page title. What belongs there instead is reconciliation behaviour — one match links exactly one bank line to one book entry, the unmatched list shrinks by exactly one, neither total is silently restated — which needs different seed rows and goes on the next round's list.
+
+**This is a check being corrected, not a check being passed.** It moves nothing in Part A's denominator toward green; it removes an expectation nobody could have satisfied.
+
+**Also recorded here (harness bookkeeping):** `B4.4` was removed from `DRIFT_SENSITIVE_CHECKS` (`tests/harness/drift.js`). With its own delta-based probe it is no longer drift-sensitive, and printing `BLOCKED` beside a check that carries a PASS in `VERIFICATION.md` had the harness contradicting the document. `B4.2`/`B4.3` stay on that list — they assert the P&L expense figure, have no probe, and are genuinely drift-sensitive. Verified by running step 2: the blocked line now reads `B1.3, B1.4, B3.1, B3.2, B3.3, B4.2, B4.3`.
 
 **Rating unchanged.** F122 stays ✅ FIXED; this update adds the execution and the enumeration its own "Course of action" asked for.
 
 ---
 
-### F123 🟠 HIGH — The balance sheet's "Cash & Equivalents" is CLAMPED ACCRUAL NET PROFIT, and it is ON SCREEN — **NEW (2026-08-03, spun off the F122 class enumeration), OPEN**
-**Status:** OPEN, confirmed by reading. **Pre-existing and acknowledged in-code** — not a regression, and not something F122 introduced; the enumeration reached it and it needs a number rather than a sentence in a chat message.
+### F123 ✅ **FIXED** (`76ab6fa`, 2026-08-03) — was 🟡 MEDIUM (see the rating correction) — The balance sheet's `cash` was CLAMPED ACCRUAL NET PROFIT; it now reads "Not tracked"
+**Status:** ✅ FIXED at the source and probe-verified, including the failure path. **Pre-existing and acknowledged in-code** — not a regression, and not something F122 introduced; the enumeration reached it and it needed a number rather than a sentence in a chat message.
 
-> **⚠️ RATED UP FROM THE LOW/MEDIUM IT WAS LOGGED AS — because the "unconsumed endpoint" premise is false.** The obvious defence for a low rating is that `POST /api/reports/balance-sheet` has no UI. It has one. Checked before writing this row rather than after being challenged:
+> ## ⛔ RATING CORRECTION — I rated this HIGH on 2026-08-03 on a claim that is FALSE. Withdrawn here.
+>
+> **What I wrote when logging it** (commit `808175f`, pushed): *"RATED UP … because the 'unconsumed endpoint' premise is false … Reports page → Balance Sheet → a figure captioned 'Cash & Equivalents' that is not cash … three of the six lines on that report are wrong."*
+>
+> **That was wrong, and it was wrong for the reason `CLAUDE.md` opens with.** I ran `grep` for a fetch of the route, found one in `app-main.js`, and concluded it renders. **I did not apply Rule 1.** The renderer is `generateReport` (`app-main.js:5559`) — and `finflow-api-wiring-extra.js:488` does `window.generateReport = async function (name)`, a **REPLACEMENT** override with no `_orig` reference, in bundle source **#7**, which loads after `app-main.js`.
+>
+> **Confirmed by execution, not by reading:** loading the two in index.html's order and calling the global returns the wiring copy —
 > ```
-> $ grep -rn "balance-sheet" public/ --include=*.js --include=*.html | grep -v finflow-bundle.js
-> public/app-main.js:5509:  const d=await fetch('/api/reports/balance-sheet',{method:'POST',…})
+> after app-main.js  : APP-MAIN COPY
+> after the bundle   : WIRING COPY
 > ```
-> and the very next line renders it under an explicit label:
-> ```js
-> // app-main.js:5511
-> <span style="color:var(--t2)">Cash & Equivalents</span> … ${fmt(d.cash)}
-> ```
-> Reports page → **Balance Sheet** → a figure captioned *"Cash & Equivalents"* that is not cash. It also propagates: `totalAssets = cash + ar` and `equity = totalAssets − totalLiabilities` (`server.js:3504-3506`), so **three** of the six lines on that report are wrong, not one. That is a wrong number on screen in ordinary use — the blocker criterion — so HIGH, not LOW.
+> The live `generateReport` **ignores the report name entirely** and renders a generic revenue / expenses / net / outstanding summary. **It never calls `/api/reports/balance-sheet`.** So the app-main Balance Sheet body — and the P&L and Cash Flow bodies beside it — are **dead code**, and *"Cash & Equivalents"* has never been on anybody's screen.
+>
+> **Correct rating: 🟡 MEDIUM**, which is what the finding was originally logged as before I raised it. The exposure is the **F76 shape** — a live, authenticated endpoint returning a fabricated figure with no consumer, where the risk is a future surface wiring itself to it. That is worth fixing, and it is not a wrong number in front of a user.
+>
+> **Two things this cost, recorded because the cost is the point.** It put a false severity into a pushed commit; and it nearly produced a fix applied to a dead renderer — the F75 pattern, the single most expensive trap in this repo, avoided only because the Rule 1 check was finally run before editing. The shadowing itself is now its own finding, **F128**.
+
+**What changed (the fix).** `server.js:3510` — `cash` is `null`, with `cashTracked: false` and `totalAssetsExcludesCash: true` alongside it, and `totalAssets` is **AR alone**. The arithmetic states the exclusion rather than relying on `null + ar` coercing to `0 + ar`, which would have reported the same total while claiming cash was untracked. **The dead client renderer was deliberately NOT edited** (F75) — it is dead, and editing it would produce a clean diff that renders nothing. Reviving those report bodies is F128's work, and "Not tracked" belongs in that revival.
+
+**Why `null` and not a better number.** There is nothing to compute it from: no bank-balance record type, and `personal_transactions source='banking'` is an imported statement feed, not a general-ledger cash account. `Σ inflow − Σ outflow` from `/api/reports/cash-flow` is **not** the substitute — that is a period FLOW too, so it repeats the shape error with a better basis and looks more defensible while doing it. Decision **D1**'s discipline, applied: report that it is not tracked.
+
+**How it was verified.** `tests/harness/f123-balance-sheet-cash.js` — **13/13**, real server, real scratch Postgres, real HTTP, real seed. `cash: null`, `cashTracked: false`, AR 8,500, AP 1,100, totalAssets 8,500, equity 7,400.
+
+**⚠️ RULE 4 — what discriminates here, and what does NOT.** The seed's FY netProfit is **−1,700**, so the old clamp *already* produced `cash = 0` and `totalAssets` was **8,500 either way**. **totalAssets cannot tell the two implementations apart on this seed**; asserting it and calling the fix proven would be a green check that proves nothing. Only the `cash` FIELD discriminates. The probe asserts that collision explicitly so a future seed change cannot silently remove the warning.
+
+**Failure path EXECUTED (Rule 14).** The old formula was restored in `server.js` and the probe re-run:
+```
+response: {"cash":0,…,"totalAssets":8500,…,"equity":7400}
+FAIL  cash is null                     got 0     want null
+FAIL  cash is NOT a number of any kind  got true  want false
+PASS  totalAssets is AR alone           → 8500    ← UNCHANGED by the bug
+```
+Two assertions moved and `totalAssets` did not — the collision demonstrated rather than predicted. `server.js` restored, probe re-verified 13/13.
+
+**And this is what the old code told that user: cash 0, in a year they lost 1,700.** The `Math.max(0, …)` floor is not a rounding detail; it erases the loss case, which is the account most in need of the number.
 
 **What's wrong.** `POST /api/reports/balance-sheet` (`server.js:3480`) reports:
 
@@ -820,18 +861,61 @@ const cash = Math.max(0, books.netProfit);          // proxy: no cash account is
 2. **Wrong shape — it is a FLOW presented as a BALANCE.** Net profit is a period figure; cash on a balance sheet is a position at a date. The call passes `'year'`, so what is labelled "cash" is one fiscal year's accrual profit.
 3. **The `Math.max(0, …)` floor silently deletes the loss case.** A business with a negative net profit reports cash **0**, not a negative figure and not an honest "not tracked". A loss-making account — precisely the one that needs to look at its balance sheet — is shown a zero that means nothing.
 
-**What mitigates it (and what does not).** The comment at the call site is honest, and the Reports page is not the dashboard — a user must open it deliberately. What does **not** mitigate it: nothing on screen says the figure is a proxy. The caption reads "Cash & Equivalents", in the assets column of a document whose entire purpose is to state a position.
-
 **Class (Rule 13).** This is the F31/PL#11 *fabrication* class, not the F122 *omission* class — the two were adjacent in the enumeration and are deliberately kept apart. Its siblings are the removed `ytdPaid = liability × 0.75` (PL#11) and the flat-25% tax rate (F76): a number with no source, computed anyway.
 
 **Enumerated both directions.** Within the route, `ar` is `books.outstanding` (canonical) and `ap` is arithmetic over recognised bills with the D2 future filter (`server.js:3500-3503`, F38 Step 4) — so **`cash` is the only fabricated input**, and `totalAssets`/`equity` are wrong only because they consume it. Across surfaces, there is a **second** balance sheet: the accountant portal's (`accountant-routes.js:595-599` → `public/accountant-client.html:1030`). It reports `accountsReceivable` / `accountsPayable` / `totalPayroll` and has **no cash line at all**, so it does not carry this defect — but it means the two balance sheets in this product have **different asset structures** (`assets = ar` in the portal, `assets = cash + ar` in the app) and therefore report different Total Assets and different Equity for the same books. Logged here as part of this row's enumeration rather than split off, because removing the fabricated `cash` line is also what reconciles the two.
 
-**Course of action.** Do **not** patch it into a different guess. In particular, `Σ inflow − Σ outflow` from `/api/reports/cash-flow` is **not** the fix: that is a *period flow*, so it would repeat mistake 2 with a better basis and look far more defensible while doing it. There is no cash-account concept in the schema — no bank-balance record type, and `personal_transactions source='banking'` is an imported statement feed, not a general-ledger cash account. The honest options are (a) return `cash: null` and render **"Not tracked"**, omitting it from `totalAssets` — the D1 pattern already ruled for tax, and it also makes the app's balance sheet structurally match the portal's; or (b) remove the Balance Sheet report until a cash account exists (the F76 (b) reasoning). Building a real cash account is a schema decision, owner-gated, and is not this finding.
-**Done when:** no clamped accrual figure is presented as cash anywhere — the line reads "Not tracked" or is absent, `totalAssets`/`equity` no longer consume it, and the app and portal balance sheets report the same Total Assets for the same books.
+**Course of action — TAKEN (option a).** Owner ruling 2026-08-03: report it as not tracked. Option (b), removing the report until a cash account exists, was the alternative; it was not needed once the fabrication was removed at the source. Building a real cash account remains a schema decision, owner-gated, and is not this finding.
+**Done when — MET, with one part deferred to F128.** No clamped accrual figure is presented as cash: `cash` is `null`, `totalAssets`/`equity` no longer consume it, and the app's balance sheet now has the SAME asset structure as the portal's (AR alone), so the two report the same Total Assets for the same books. **Deferred:** rendering the literal words *"Not tracked"* in a UI — there is no live UI to render them in (the renderer is shadowed, F128). The response carries `cash: null` + `cashTracked: false` so that whatever revives the report has an unambiguous contract to render against.
 
 ---
 
-### F124 🟡 MEDIUM — Three client money surfaces are never FX-converted and/or hardcode `'$'` — the F34 Path B coverage gap — **NEW (2026-08-03, found while fixing F120), OPEN**
+### F124 ✅ **FIXED** (`bb50d2f`, 2026-08-03) — was 🟡 MEDIUM — Three client money surfaces were never FX-converted and/or hardcoded `'$'` — the F34 Path B coverage gap
+**Status:** ✅ FIXED and probe-verified, including the failure path. Owner **visual** check outstanding. All three pre-dated F120; none was caused by it.
+
+**The rule applied.** A figure's SYMBOL must name the currency the VALUE is genuinely in. Two ways to break it, both live here: a hardcoded `'$'` (wrong for any non-USD entity) and `activeCurrency` stamped on a figure nobody converted (the F34/F59/F70 defect). The fix picks per surface, on evidence, rather than applying one rule everywhere.
+
+**What changed, surface by surface.**
+
+| Surface | Values are | Treatment |
+|---|---|---|
+| Dashboard **cash chart** | were native, **now CONVERTED** | `_applyConvertedChart` extended to `charts.cash`; axis + tooltip keep `activeCurrency`, which is now true |
+| **MRR / ARR** page (cards + axis) | native, unconverted | new `_fmtMoneyNative` — the **entity's** symbol |
+| **Scenario planner** (cards + axis) | native, unconverted | same; the local `S` shadow deleted |
+
+**One new shared helper, not N hand-edits.** `_nativeSymbol()` / `_fmtMoneyNative(n)` (`app-main.js`, beside `_fmtMoneyAbbr`/`_fmtMoneyExact`) with the choosing rule written down at the definition: value already in `activeCurrency` → the abbr/exact pair; value in the ENTITY's currency with no conversion applied → `_fmtMoneyNative`. The scenario planner's `const S = v => window._fmtMoney(v,'$')` was **deleted, not edited** — a second local money formatter is exactly what class C4 closed.
+
+**The cash chart got a real fix, not a relabel.** No new FX wiring was needed and no client rate math was added: monthly profit **is** revenue − expenses (the native path does `PROFIT[i] = REV[i] − EXP[i]` at `app-main.js:1483`), so subtracting the two SERVER-converted buckets already in the overlay's payload gives converted profit by the same arithmetic. Not clamped at 0 the way the bars are — a loss is a real value here and `Math.max` would erase it. `updateCharts` now repaints the native series too, so switching back from a display currency has a way home; without it the chart would have kept converted figures under the native symbol — the same mislabelling, reversed. `_cashSeries()` was extracted so the native path and the overlay build the series from ONE implementation.
+
+> ### 🔴 WHAT THIS FIX UNCOVERED — `_applyConvertedChart` HAD NEVER RUN. Logged as **F125**.
+>
+> The cash conversion was first written against `window.charts`, copying the overview line beside it. It would have been a no-op, and so has the overview line always been. `charts` is declared `let charts = {}` (`app-main.js:1598`), and a top-level `let` in a classic script binds in the **script scope**, never on the global object — so `window.charts` is permanently `undefined`.
+>
+> **Proven by execution, not by citing the spec:**
+> ```
+> after a classic script declaring  let charts = {} :
+>   typeof window.charts  = undefined
+>   typeof window.alsoVar = object   (var, for contrast)
+> ```
+> **Consequence: F34 Path B "surface 1 — overview chart from server buckets" has never rendered once.** The overlay guarded on a binding that cannot exist. Fixed here by reading the script-scoped `charts` — the binding every other line in the file already uses — and NOT by exposing `window.charts` globally, which would also wake five dead sites in `finflow-api-wiring-dashboard.js`, one of which writes these same two datasets. That would be a second writer of one figure, this codebase's failure mode 2, and it is F125's decision rather than a side effect of a currency fix.
+>
+> **This also means F120 shipped on a premise that was not yet true.** `baae74b`'s comment says the overview axis is safe because the datasets are already server-converted. They were not — the overlay was dead — so between `baae74b` and this commit the overview axis stamped the display symbol on native values. The tooltip beside it had been doing the same via `S()` for far longer, so F120 did not introduce the mislabel; it did, however, describe a mechanism that was not running. Corrected on the F120 row.
+
+**How it was verified.** `tests/harness/f124-native-currency-surfaces.js` — **22/22**. Real `renderMRRChart`, `updateScenario`, `renderScenarioChart` from `index.html` and real `_applyConvertedChart`, `updateCharts`, `buildCashChart`, `_cashSeries` from `app-main.js`, run against a recording `Chart` and a stub DOM (the chart LIBRARY is stubbed; every money function is real source). Entity **TTD**, display **EUR**, so `'$'`, `'TT$'` and `'€'` are three different strings and no two failure modes can be confused (Rule 4).
+
+**Failure paths EXECUTED (Rule 14), three of them:**
+- pre-fix `index.html` sources rebuilt and run → scenario cards and axis both render `'$'` on a TTD entity;
+- the `window.charts` guard restored → the overlay silently leaves both charts native: `overview [1000,2000]`, `cash [600,−1000]` — the shipped behaviour, demonstrated;
+- the converted path asserted with a **loss** in it → `cash [300,−500]`, so a clamped copy of the bars' `safe()` would have shown `[300,0]` and been caught.
+
+**⚠️ Limit.** Symbols are asserted as strings; no pixels are rendered. The **visual** confirmation is outstanding.
+
+**Course of action for the rest of the class — NOT fixed here, each with a number:** **F125** (`window.charts` and its five dead consumers), **F126** (MRR and Scenario are still not FX-*converted*, only honestly labelled), **F127** (`_mrrChartData` has no writer), **F129** (the remaining hardcoded-`'$'` business-money surfaces).
+
+---
+
+**Original finding (for the record):**
+
 **Status:** OPEN, confirmed by reading. All three **pre-date** F120 and none is caused by it.
 
 F120 fixed the two dashboard chart axes. The enumeration that produced it (see the correction on F120 — the original grep undercounted by half) turned up three further surfaces where the currency **label** and the currency the **value is actually in** can disagree. They are grouped because they share one root: **F34 Path B converted five surfaces and stopped** — KPI tiles, overview chart, expense breakdown, transactions list, investments. Anything else that renders business money was never enumerated.
@@ -848,6 +932,206 @@ F120 fixed the two dashboard chart axes. The enumeration that produced it (see t
 
 **Course of action.** Owner-gated, post-launch, one surface per commit: (a) convert the cash-chart series or blank it; (b) route MRR/ARR through the live symbol lookup, cards and axis in one change; (c) delete the local `S` at `index.html:6280` so the panel uses the global one, then the axis follows for free. Do **not** batch them — they are three different surfaces with three different data provenances, and (c) is entangled with F44.
 **Done when:** every client surface rendering business money either shows a figure in `activeCurrency` labelled with `activeCurrency`'s symbol, or shows `—` — and no surface carries its own private `'$'`.
+
+---
+
+### F125 🟠 HIGH — `window.charts` is unreachable, so every consumer of it is dead code — the FX chart overlay has NEVER run — **NEW (2026-08-03, PROVEN BY EXECUTION), PARTIAL**
+**Status:** 🟠 **PARTIAL.** The one instance that blocked F124 is fixed (`bb50d2f`); the other **five** are open and need an owner decision, not a copy of the same edit.
+
+**The mechanism.** `app-main.js:1598` declares `let charts = {};`. A top-level `let` in a **classic script** creates a binding in the script's declarative environment record — it does **not** become a property of the global object. `window.charts` is therefore `undefined` forever, and a repo-wide grep confirms nothing else ever assigns it.
+
+**Proven by execution, in jsdom, not by citing the specification:**
+```
+after a classic script declaring  let charts = {} :
+  typeof window.charts  = undefined
+  typeof window.alsoVar = object   (var, for contrast)
+```
+
+**Every `window.charts` consumer, enumerated (Rule 13) — 7 sites, 2 files:**
+
+| # | Site | What it was supposed to do | State |
+|---|---|---|---|
+| 1 | `app-main.js` `_applyConvertedChart` — overview | F34 Path B surface 1: paint the SERVER-converted monthly buckets | ✅ fixed `bb50d2f` (reads the script-scoped `charts`) |
+| 2 | `app-main.js` `_applyConvertedChart` — cash | F124's converted cash series | ✅ fixed `bb50d2f` |
+| 3 | `app-main.js:4971-4973` | destroy orphaned Chart instances, then reset the registry | **OPEN** — the whole `if(window.charts){…}` block is unreachable, including its `window.charts={}` |
+| 4 | `finflow-api-wiring-dashboard.js:91,98,101` | update the overview chart from the wiring's monthly arrays | **OPEN** |
+| 5 | `finflow-api-wiring-dashboard.js:394` | build the chart if it is missing | **OPEN** — reads `!window.charts?.overview`, always true, so it calls `buildCharts()` **every time** |
+| 6 | `finflow-api-wiring-dashboard.js:465` | same guard, second site | **OPEN** |
+| 7 | `finflow-api-wiring-dashboard.js:467-472` | write `revByMonth`/`expByMonth` into the overview datasets | **OPEN** |
+
+**The consequence that matters.** **F34 Path B surface 1 has never rendered.** The audit has carried it as complete since `063c98c`/`5639f06` — the F33/F34 reconciliation row in this file lists "chart (`app-main.js:4434`)" among the four verified client surfaces. It was verified by reading. Under a display currency the overview chart has always shown NATIVE figures, while its tooltip (`S()`) and, since F120, its axis both stamped the display symbol on them.
+
+**Why the rest is NOT fixed by the same one-line edit.** The obvious "root fix" — add `window.charts = charts;` beside the declaration — would wake all five remaining sites **at once**, and site 7 writes the *same two datasets* that `_applyConvertedChart` writes. That is a second writer of one figure appearing without anyone choosing it: failure mode 2, arriving as a side effect of a one-line tidy-up. It needs the owner to decide which writer owns the overview chart, and it needs the wiring paths executed before they go live — none of them has ever run.
+
+**Class beyond this variable (Rule 13).** The real class is *"a top-level `let`/`const` in `app-main.js` that other files reach for via `window.`"*. `charts` is the instance that was caught. The same shape is already documented working correctly elsewhere — `finflow-api-wiring-dashboard.js` deliberately uses bare `currentPeriod`/`currentMonthIdx` with `typeof` guards *because* `window.*` would be `undefined` for them (recorded on **F61**) — which shows the trap was known for two variables and never swept for the rest. A full sweep of `let`/`const` top-level declarations in `app-main.js` against `window.<name>` reads in the wiring files is the enumeration this finding needs and does not yet have.
+**Course of action:** (1) owner decides the overview chart's single writer; (2) sweep the `let`/`const`-vs-`window.` class properly; (3) then wake or delete sites 3-7, each executed, not pattern-mirrored (Rule 14 — none of these paths has ever run, so "it looks equivalent" is worth nothing here).
+**Done when:** no code reads `window.<name>` for a binding that `app-main.js` declares with `let`/`const`, and every chart dataset has exactly one writer.
+
+---
+
+### F126 🟡 MEDIUM — MRR/ARR and the Scenario planner are never FX-converted at all — **NEW (2026-08-03, found while fixing F124), OPEN**
+**Status:** OPEN. **F124 made these surfaces HONEST, not converted** — do not read that tick as coverage.
+
+Both render business money that no code converts:
+- **MRR / ARR** — `loadMRRData` (`index.html`) sums `GET /api/recurring-invoices` with no `?display=` param and no rate applied.
+- **Scenario planner** — projects from `window.BASE`, set by `finflow-api-wiring-medium.js:996` from native invoice/expense rows (and on a superseded basis besides — **F44**).
+
+Since F124 they carry the **entity's** symbol, so nothing is mislabelled. But a user who sets a display currency sees the dashboard in EUR and these two pages in TT$, with no explanation on screen. That is honest and confusing, which is better than dishonest and tidy — and it is not finished.
+
+**What finishing requires** (and why it was not done inside a labelling commit): a converted source. Either `?display=` support on `/api/recurring-invoices` plus a converted `BASE`, or — better, and consistent with where F34 Path B already went — server-computed figures for both surfaces so the client never holds a rate. Client-side conversion is explicitly the wrong answer: the F59 landmine note records that `S()` has never converted and must not start, because the server already returns converted figures and a working client `fxConvert` would double-convert everything on the dashboard.
+**Course of action:** owner-gated, post-launch, one surface per commit. Until then, consider a visible "shown in <CCY>" note on both pages so the mixed-currency screen explains itself.
+**Done when:** with a display currency armed, MRR/ARR and the Scenario planner show converted figures under the display symbol — or say plainly why they do not.
+
+---
+
+### F127 🟡 MEDIUM — `window._mrrChartData` has no writer anywhere: the MRR chart is a permanent flat zero line — **NEW (2026-08-03, found while fixing F124), OPEN**
+**Status:** OPEN, confirmed by grep and by reading.
+
+`renderMRRChart` (`index.html`) does:
+```js
+const data = window._mrrChartData || new Array(12).fill(0);
+```
+```
+$ grep -rn "_mrrChartData" public/ --include=*.js --include=*.html | grep -v finflow-bundle.js
+public/index.html:  const data=window._mrrChartData||new Array(12).fill(0);
+```
+**One hit. The reader. There is no writer in the repository.** So the fallback is not a fallback — it is the only path, and the MRR chart has always drawn a flat line at zero beneath MRR/ARR cards showing real figures.
+
+**Class:** the same shape as **F65** (controls that report work they did not do) — a surface presenting as live with nothing behind it — and it belongs with the **B10** honesty pass. It is a *chart* rather than a button, which is why F65's enumeration missed it: that sweep walked controls, not renderers.
+**Course of action:** either populate `_mrrChartData` from the recurring-invoice history (12 monthly MRR points — the data exists), or remove the chart until it can be. Do not leave a zero line on a money page. If it is populated, F126 applies to it as well.
+**Done when:** the MRR chart plots real monthly MRR, or it is not on the page.
+
+---
+
+### F128 🟠 **PARTIAL** (`83e92de`, 2026-08-03) — the WRONG FIGURE is fixed; the shadowing is not — `generateReport`'s live copy used the PRE-F32 paid-only basis, and the app-main report bodies remain dead code
+**Status:** 🟠 **PARTIAL**, per the tick-off corollary — the reachable money defect is fixed and probe-verified; the dead-code half is untouched and needs an owner decision. Found by running the Rule 1 check before editing — the check that would also have prevented the F123 mis-rating in this same file.
+
+> ### ⚠️ THE FIRST CUT OF THIS FIX WAS HALF THE CLASS. Recorded because it is Rule 13, again.
+>
+> The modal was fixed and the row was written as though the finding were closed. **`window.renderReports` (`finflow-api-wiring-extra.js:256`) carried the identical defect** — `invoices.filter(status === 'paid')` for revenue and `Σ expenses` for opex, feeding the three metric cards on the Reports PAGE. Fixing only the modal would have left the page contradicting the modal launched from it, and both contradicting the dashboard: three numbers, one screen away from each other.
+>
+> **Rule 1 mattered here in the opposite direction to F123.** `renderReports` is one of the five **WRAPPER** overrides, not a replacement — it calls `_origRenderReports()` first (painting the static report lists) and *then* overwrites the metric cards. So the wiring copy owns the values; app-main's own paid-only recompute feeds only the `onclick` arguments that the replacement `generateReport` ignores. Patching app-main would have rendered nothing.
+>
+> Both surfaces are fixed in this commit, and the probe asserts **page card == modal card** so they cannot drift apart again.
+
+**What changed (the money half — BOTH surfaces).** Neither `window.generateReport` (the modal) nor `window.renderReports` (the page) computes money any more. Both source:
+
+| Figure | Now | Was |
+|---|---|---|
+| Revenue | `window.computeRevenue(period)` | `invoices.filter(status === 'paid')` — pre-F32 |
+| Expenses | `window.computeExpenseBreakdown(period).total` | `Σ expenses` — no bills, no payroll, no contras |
+| Net profit | `revenue − COGS − expenses` | `revenue − expenses` — COGS omitted |
+| Outstanding | unchanged — `_arOutstanding` (F56) | already canonical |
+| Category rows | `breakdown.byCategory` (period-scoped) | its own all-time recompute |
+
+**Delegation, deliberately, not better arithmetic (Rule 2).** This figure already had four implementations — `computeBooks`, `/api/reports`, the client pair, and this one. Writing a fifth *correct* one just relocates the next divergence. `computeRevenue` / `computeExpenseBreakdown` are the canonical CLIENT pair the dashboard KPIs read, they carry every leg including the F58 contras, and step 4 gates them against `VERIFICATION.md` across four timezones. Sourcing from them makes Reports agree with the dashboard **by construction** (Rule 6) — a future basis change lands on both at once, which is the entire point.
+
+**COGS was the last gap, and it was caught by measurement, not review.** With revenue and opex delegated, the probe still read net **−300** where every other surface says **−1,700** — exactly the 1,400 of FY COGS. `updateDashboard` composes `revenue − COGS − opex` (`app-main.js:2167`, mirrored at `:4502`/`:4539`); the report now does the same via the period-scoped `window._cogsTotal` (F25).
+
+**Period — decided and STATED.** The report follows the app's active period selector, like every other money surface, and the modal now labels it ("issued, this fiscal year"). It was silently all-time; changing that without saying so on screen would move a number the user had no way to explain. `currentPeriod` is a top-level `let`, so it lives in the shared global *lexical* scope and is read bare with a `typeof` guard — not via `window` (F125).
+
+**Two honesty fixes in the same render.** The Expenses card says "incl. bills & payroll"; the category table is headed "recorded expenses only", because `byCategory` covers manual expense rows and therefore does **not** sum to the Expenses total above it. Money figures use `_fmtMoneyNative` — they come out of the engines unconverted (F124's rule), and the shared `money()` helper would have stamped `activeCurrency` on them.
+
+**A stale caption is its own defect.** The page's revenue card read *"Paid revenue this period"* — wrong on both counts once the figure is accrual **and** period-scoped. It now reads "Revenue issued, this fiscal year", and the probe asserts the old wording is gone rather than merely that the number changed.
+
+**How it was verified.** `tests/harness/f128-reports-canonical-source.js` — **24/24**. Runs the REAL `generateReport` **and** the REAL `renderReports` bodies from the wiring source against the REAL engines from `app-main.js`, seeded from `seedData.js`, asserting against `expected.js` (Rule 6 — the hand-supplied oracle, not the other engine). Includes `page card == modal card`, so the two surfaces are pinned to each other as well as to the oracle.
+
+**Rule 4 — this seed discriminates hard:**
+```
+canonical revenue 8800   ·  PAID-ONLY would give 1000
+canonical opex    9100   ·  EXPENSES-ONLY would give 1600
+canonical net    -1700   ·  omitting COGS gives -300
+```
+**Failure paths EXECUTED, both surfaces:** each pre-fix body was rebuilt and run. Modal → revenue **1,000**, expenses **1,600**. Page → revenue **1,000**, profit **−600** (against the canonical **−1,700**). Every figure moved.
+
+> **The probe's own first cut had TWO defects, recorded because they are instructive.** (1) It read `p.bill_ref`, a field that does not exist, so the B2 payment became an unlinked orphan and FY opex read **9,600** against 9,100 — precisely the self-inflicted double-count `VERIFICATION.md`'s seed-fidelity warning describes, reproduced inside a test. (2) Its HTML parser stripped non-digits from the whole regex match rather than the capture group, so `font-size:16px` leaked in and every figure came back as **−16**. Both were caught because the numbers were wrong in a way the oracle noticed; a probe asserting something looser would have gone green on both.
+
+**STILL OPEN — the shadowing half, which is why this row is PARTIAL.** `app-main.js:5559`'s `generateReport` remains dead code, and with it three genuinely-written report bodies: the **P&L**, the **Balance Sheet** (whose "Cash & Equivalents" line is F123's `cash: null` contract, still unrendered), and the **Cash Flow Statement** (already wired to the canonical shared `window._cashMonthly` cache — the best of the three). The live copy still ignores the report name and renders one generic card set for every report. Reviving them is an owner decision, not a side effect of a basis fix, and it must not be done by editing the shadowed copy (F75).
+**Done when:** the Reports page renders per-report bodies from the canonical figures, no `generateReport` copy is shadowed, and F123's "Not tracked" is what the Balance Sheet body shows.
+
+---
+
+**Original finding (for the record):**
+
+**Status:** OPEN. Found by running the Rule 1 check before editing — the check that would also have prevented the F123 mis-rating in this same file.
+
+**Rule 1, executed:** `app-main.js:5559` declares `generateReport`; `finflow-api-wiring-extra.js:488` assigns `window.generateReport = async function (name)` with **no `_orig` reference** — a replacement, in bundle source **#7**, which loads after `app-main.js`. Loading them in index.html's order and calling the global:
+```
+after app-main.js  : APP-MAIN COPY
+after the bundle   : WIRING COPY
+```
+
+**What is dead.** `app-main.js`'s entire report renderer — the **P&L** body, the **Balance Sheet** body (the *"Cash & Equivalents"* line that F123 was briefly mis-rated on), and the **Cash Flow Statement** body, which is the one wired to the F57/D3 shared `window._cashMonthly` cache. None of it executes. The two `onclick="generateReport(…)"` call sites resolve through the global object, so the wiring copy always wins.
+
+**What runs instead, and why that is the actual defect.** The live copy **ignores the report name entirely** — every report renders the same generic card set — and it computes revenue as:
+```js
+const paid    = invoices.filter(i => i.status?.toLowerCase() === 'paid');
+const revenue = paid.reduce((s, i) => s + (i.amount || 0), 0);
+```
+**Paid-only.** That is the pre-**F32** basis, superseded on 18 July by ACCRUAL, ISSUE-BASED recognition (Rule 11) across `computeBooks`, `computeRevenue`, `/api/reports`, `/books`, the monthly buckets and the accountant portal. It is the same survival F76 records for `GET /api/tax-filing` — and unlike that endpoint, **this one is reachable**: the Reports page's "Generate ↗" button. Expenses are all-time and unwindowed; only Outstanding was ever brought up to date (`_arOutstanding`, F56).
+
+So a user opening any report gets a revenue figure that disagrees with the dashboard, and three genuinely-written statements they can never see.
+
+**Severity HIGH** on the reachable wrong figure, not on the dead code. The dead code is what makes it expensive to fix correctly.
+
+**Class (Rule 13).** Two classes intersect here and both are already named: **F75** (fixes applied to shadowed copies — 28 shadowed functions, 23 replacements; `generateReport` should be checked against that inventory, and if it is absent the inventory is incomplete) and the **pre-F32 basis survival** class with F76. Neither list currently contains this function.
+**Course of action:** owner-gated. Either revive the app-main bodies onto the runtime path (they are the better implementation — real per-report bodies, and the Cash Flow one already reads the canonical shared cache) and delete the wiring replacement, or fix the wiring copy's basis and accept one generic report. **Do not edit the app-main copy while it is shadowed** — that is the F75 trap, and F123 came within one edit of it. Whichever way it goes, F123's `cash: null` / `cashTracked: false` contract is what the Balance Sheet body must render as *"Not tracked"*.
+**Done when:** the Reports page renders per-report bodies from the canonical accrual figures, no `generateReport` copy is shadowed, and its revenue equals `/api/reports` revenue for the same period.
+
+---
+
+### F130 ✅ **FIXED** (`bb50d2f`, 2026-08-03) — was 🟠 HIGH · **LAUNCH BLOCKER B12** — An expired trial rendered as a BROKEN APP: every read 402s, the client discarded the code, and the only trial UI vanishes on expiry
+**Status:** ✅ FIXED and probe-verified, including the discrimination cases. Owner **visual** check outstanding. The read-only-vs-hard-lock product decision is **separate and still open** — see the bottom of this row.
+
+**What was wrong — three things lining up.**
+
+1. **The server blocks everything.** `checkPlan` (`server.js:392-406`) 402s every `/api` request with `{error, code:'TRIAL_EXPIRED'}`. Auth routes are exempt (`server.js:643`), so the user **logs in successfully** and the app **boots successfully** — and then every single data read fails.
+2. **The client threw the reason away.** `api()` (`public/finflow-api.js`) did `throw new Error(data.error || res.status)`. Status gone, `code` gone. A caller cannot branch on information the thrower discarded, so a 402 TRIAL_EXPIRED was indistinguishable from any other failure and fell into the F67/F96 error path — **"Unable to load"** cards, plus `sb-brand-name` reading "Unable to load" in the sidebar.
+3. **The one piece of trial UI bails at exactly the wrong moment.** The countdown banner returns early on `if(daysLeft<=0||daysLeft>30)return;` (`index.html`) — it disappears the instant the trial ends.
+
+**Net effect: a customer whose trial expired saw a broken product, with nothing on screen saying why and no way to pay.** That is the worst possible moment to look like a bug, and it is a **launch blocker** on commercial grounds rather than accounting ones — every trial user reaches this state by definition.
+
+**What changed.**
+- **`finflow-api.js`** — the thrown Error carries `status` and `code`. The message is unchanged, so no existing caller that reads `err.message` behaves differently.
+- **`app-main.js`** — new `_ffShowTrialExpired(message)`: ONE blocking, full-screen, **idempotent** gate with an Upgrade CTA routing through the existing `showPage('pricing')` (hard `href` fallback if the SPA router is not up — the whole point is that this fires when things are degraded). Placed in `app-main.js` because it loads synchronously *before* index.html's inline scripts and before the deferred bundle, so every caller can reach it whenever the 402 lands.
+- **`app-main.js` `_pick`** — recognises 402 + `TRIAL_EXPIRED`, raises the gate, and the `loadEntityData` catch **short-circuits before `_dashSetState('error')`**. Checked before the fatal/non-fatal split: a 402 on `customers` is the same account-wide event as a 402 on `invoices`.
+- **`index.html` `_loadEntitiesFromDBImpl`** — the FIRST fetch on a cold boot, so this is where the experience is decided. Raises the gate and returns **`true`**, so the boot memo latches (F97) instead of re-fetching a guaranteed 402 on every trigger.
+
+**How it was verified.** `tests/harness/f130-trial-expired-paywall.js` — **21/21**, executing all three real code paths against the verbatim 402 body `checkPlan` sends.
+
+**Rule 4 — the discriminator is the CODE, not the status.** A fix keyed on "any 402" or "any failure" would pass the happy case and be wrong, so the probe asserts the negatives too: a **402 without `TRIAL_EXPIRED`** (e.g. the PL#3 `ENTITY_LIMIT` 402) does **not** gate and still throws with its own code; a **500** does not gate (F67 owns it); a **401** does not gate and still returns empty (the auth gate owns it). Idempotency is asserted by firing the gate five times — `loadEntityData` runs five loaders in one `Promise.all`, so without the guard a boot would stack five overlays.
+
+**⚠️ Limits.** The overlay is asserted structurally — the DOM is a stub and no browser renders it, so its **appearance is a visual check** and is outstanding. The CTA is asserted to route to `showPage('pricing')`, not that the pricing page then sells anything.
+
+> ### ⬜ SEPARATE AND STILL OPEN — hard-lock vs READ-ONLY. Flagged, deliberately NOT built.
+>
+> This fix makes the *failure* honest. It does **not** settle what an expired trial should DO. The two options are materially different products:
+> - **Hard lock (current behaviour, now explained).** Simple, and it is what the server already enforces.
+> - **Read-only** — books visible, writes blocked. Friendlier, and what most accounting products do: locking someone out of their own financial records to sell them a plan is a poor trade, and an accountant mid-close would be stuck.
+>
+> Read-only is a **server** change (`checkPlan` would allow GETs and 402 only mutations), not a client one, so it is not a variation on this commit. Owner decision.
+
+**Numbering note.** Drafted in conversation as "F125" before that number was taken by the `window.charts` finding. It is **F130**; F125 is unrelated.
+**Done when:** an expired-trial user sees one clear upgrade state on any page load, never "Unable to load" — and the hard-lock/read-only question has an owner ruling.
+
+---
+
+### F129 🟢 LOW — Residual hardcoded-`'$'` business-money surfaces — the rest of F124's class — **NEW (2026-08-03), OPEN**
+**Status:** OPEN, enumerated. Logged so F124's tick is not mistaken for closing the class.
+
+F124 fixed the three chart surfaces it was scoped to. The full grep for hardcoded-`'$'` money renders across the client returns these **business-money** instances still open:
+
+| Site | Surface | Note |
+|---|---|---|
+| `app-main.js:1069-1070` | manual-journal Dr/Cr totals | entity money |
+| `app-main.js:2854`, `:3719` | payroll net-pay previews | entity money |
+| `index.html:4228` | budget actual / target rows | entity money; see also **F45** (actuals are lifetime, not periodic) |
+| `app-main.js:~5481` | the Reports body `fmt` helper | **inside the dead block — F128.** Fix it when that code is revived, not before |
+
+**Deliberately EXCLUDED, with reasons** (so a future pass does not re-flag them): `app-main.js:4168` `S2` and `index.html:6699,6726-6730` are **personal / investment** surfaces, USD-priced by design and governed by `persCurrency`; `index.html:5807-5808` are **plan prices**, genuinely USD; `app-main.js:2654` is explicitly labelled `USD/mo`.
+
+**Rated LOW** because each is a single figure on a secondary surface and none feeds a headline total — but the count is the point: F120's enumeration said two sites, F124's said three surfaces, and the real class is larger than both. The fix is mechanical now that `_fmtMoneyNative` exists.
+**Done when:** no client surface rendering ENTITY money carries a literal `'$'`, and the excluded set above is the only `'$'` left.
 
 ---
 

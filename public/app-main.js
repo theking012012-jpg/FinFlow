@@ -5256,33 +5256,14 @@ window.toggleGroup = function(name) {
 // ════════════════════════════════════════════
 const itemsData=[];
 let itemsFilter='all';
-function renderItems(filter=itemsFilter){
-  itemsFilter=filter;
-  const list=document.getElementById('items-list');if(!list)return;
-  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
-  set('items-total',itemsData.length);
-  set('items-active',itemsData.filter(i=>i.status==='Active').length);
-  set('items-lowstock',itemsData.filter(i=>i.status==='Low Stock').length);
-  const filtered=itemsData.filter(i=>filter==='all'||i.type.toLowerCase()===filter);
-  if(!filtered.length){list.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">No items yet. Click + New item to add your products and services.</div>';return;}
-  list.innerHTML=filtered.map((i,idx)=>`
-    <div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px">
-      <span style="font-weight:500">${esc(i.name)}<br><span style="font-size:11px;color:var(--t3)">${esc(i.sku)}</span></span>
-      <span><span class="badge ${i.type==='Service'?'b-blue':'b-purple'}">${esc(i.type)}</span></span>
-      <span style="font-family:var(--font-mono)">$${esc(i.price)}<span style="font-size:10px;color:var(--t3)">/${esc(i.unit)}</span></span>
-      <span style="color:var(--t2)">${i.stock!==null?esc(i.stock)+' units':'—'}</span>
-      <span><span class="badge ${i.status==='Active'?'b-green':i.status==='Low Stock'?'b-amber':'b-red'}">${esc(i.status)}</span></span>
-      <div class="table-actions"><button class="btn btn-ghost btn-sm" data-item-name="${esc(i.name)}" onclick="notify('Edit item: '+this.dataset.itemName)">Edit</button></div>
-    </div>`).join('');
-}
-function filterItems(f){itemsFilter=f;renderItems(f);}
-function filterItemsBySearch(v){
-  const list=document.getElementById('items-list');if(!list)return;
-  const q=v.toLowerCase();
-  const filtered=itemsData.filter(i=>i.name.toLowerCase().includes(q)||i.sku.toLowerCase().includes(q));
-  list.innerHTML=filtered.map(i=>`<div class="table-row" style="grid-template-columns:1fr 80px 80px 70px 80px 60px"><span style="font-weight:500">${esc(i.name)}</span><span><span class="badge ${i.type==='Service'?'b-blue':'b-purple'}">${esc(i.type)}</span></span><span style="font-family:var(--font-mono)">$${esc(i.price)}</span><span>${i.stock!==null?esc(i.stock):'—'}</span><span><span class="badge ${i.status==='Active'?'b-green':'b-amber'}">${esc(i.status)}</span></span><div class="table-actions"><button class="btn btn-ghost btn-sm">Edit</button></div></div>`).join('');
-}
-function openNewItemModal(){notify('New Item modal — add your products & services');}
+// Honesty pass (F51/F65): the app-main renderItems / filterItems /
+// filterItemsBySearch / openNewItemModal are DEAD — each is overridden at runtime by
+// finflow-api-wiring-medium.js (window.renderItems, .filterItems,
+// .filterItemsBySearch, .openNewItemModal), which loads after app-main.js in the
+// bundle and provides real, DB-backed controls (openEditItemModal → PUT /api/items).
+// The dead copies here toasted fake success ("Edit item: NAME", "New Item modal —
+// add your products & services") and never rendered. Deleted so they cannot be
+// re-exposed. Runtime winner is unchanged (Rule 1 confirmed).
 
 // ════════════════════════════════════════════
 // BANKING PAGE
@@ -6126,7 +6107,10 @@ function refreshEditorPreview(id){
 
 window.saveTemplateSettings = function(id){
   refreshEditorPreview(id);
-  notify('Template saved ✦');
+  // Honesty pass (F51/F65): template settings are held in memory for the session
+  // only (setTemplateSetting has no DB/localStorage backing), so they are lost on
+  // refresh. Don't claim a persistent "saved".
+  notify('Preview updated — saving templates is coming soon');
 };
 
 window.openEmailTemplateEditor = function(name){
@@ -6157,8 +6141,8 @@ Thank you for your business,
         </div>
         <div style="font-size:11px;color:var(--t3)">Available variables: {{client_name}} {{invoice_number}} {{amount}} {{due_date}} {{portal_link}} {{business_name}}</div>
         <div style="display:flex;gap:8px">
-          <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="document.getElementById('email-tmpl-editor').remove();notify('Email template saved ✦')">Save template</button>
-          <button class="btn btn-ghost" onclick="notify('Test email sent to your address ✦')">Send test</button>
+          <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="document.getElementById('email-tmpl-editor').remove();notify('Editable email templates are coming soon')">Save template</button>
+          <button class="btn btn-ghost" onclick="notify('Test-email sending is coming soon')">Send test</button>
         </div>
       </div>
     </div>`;
@@ -6576,7 +6560,7 @@ if(connectionsItem){
   const advisorItem = document.createElement('div');
   advisorItem.className = 'nav-item';
   advisorItem.setAttribute('onclick', "showPage('advisors',this)");
-  advisorItem.innerHTML = `<svg class="nav-icon" viewBox="0 0 16 16"><circle cx="6" cy="4.5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/><circle cx="12" cy="8" r="2"/><path d="M9.5 14c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5"/><path d="M14 6l1.5 1.5L18 5" style="display:none"/><polyline points="14,5 15,6 17,4"/></svg>Find Advisor<span class="badge b-green" style="margin-left:auto;font-size:9px">NEW</span>`;
+  advisorItem.innerHTML = `<svg class="nav-icon" viewBox="0 0 16 16"><circle cx="6" cy="4.5" r="2.5"/><path d="M1 13c0-2.76 2.24-5 5-5"/><circle cx="12" cy="8" r="2"/><path d="M9.5 14c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5"/><path d="M14 6l1.5 1.5L18 5" style="display:none"/><polyline points="14,5 15,6 17,4"/></svg>Find Advisor`;
   connectionsItem.parentNode.insertBefore(advisorItem, connectionsItem.nextSibling);
 }
 
@@ -6586,39 +6570,14 @@ advisorPage.id = 'page-advisors';
 advisorPage.innerHTML = '<div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem"><div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#128101;</div><div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Advisor Network &#8212; Coming Soon</div><div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Connect with certified FinFlow accountants and financial advisors who can review your books, file taxes, and help you scale.</div><span class="badge b-amber" style="font-size:11px;padding:4px 12px">In development</span></div>';
 document.querySelector('.content')?.appendChild(advisorPage);
 
-const ADVISORS = [];
-
-window.renderAdvisors = function(){
-  const q = (document.getElementById('adv-search')?.value||'').toLowerCase();
-  const spec = document.getElementById('adv-filter-specialty')?.value||'';
-  const reg = document.getElementById('adv-filter-region')?.value||'';
-  const filtered = ADVISORS.filter(a=>{
-    const matchQ = !q || (a.name+a.firm+a.location).toLowerCase().includes(q);
-    const matchS = !spec || a.specialty===spec;
-    const matchR = !reg || a.region===reg;
-    return matchQ && matchS && matchR;
-  });
-  const list = document.getElementById('adv-list');
-  if(!list)return;
-  list.innerHTML = filtered.map(a=>`
-    <div class="advisor-card" onclick="notify('Connecting you with ${esc(a.name||'')}…')">
-      <div class="adv-avatar ${a.avClass}">${a.avatar}</div>
-      <div style="flex:1;min-width:0">
-        <div class="adv-name">${esc(a.name||'')} ${a.verified?'<span style="color:var(--acc);font-size:11px">✦ Certified</span>':''}</div>
-        <div class="adv-firm">${esc(a.firm||'')} · ${esc(a.location||'')}</div>
-        <div style="font-size:11px;color:var(--t3);margin-top:3px">${a.clients} client businesses</div>
-        <div class="adv-tags">${a.tags.map(t=>`<span class="adv-tag">${esc(t||'')}</span>`).join('')}</div>
-      </div>
-      <div style="text-align:right;flex-shrink:0">
-        <div class="adv-stars">${'★'.repeat(a.rating)}${'☆'.repeat(5-a.rating)}</div>
-        <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="event.stopPropagation();notify('Message sent to ${esc(a.name||'')}')">Contact</button>
-      </div>
-    </div>`).join('');
-  if(!filtered.length) list.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--t3)">No advisors match your search</div>';
-};
-
-window.openAdvisorCertModal = function(){ document.getElementById('adv-cert-modal').classList.remove('hidden'); };
-window.submitAdvisorApp = function(){ closeModal('adv-cert-modal'); notify("Application submitted — we'll review within 2 business days ✦"); };
+// Honesty pass (F51/F65): the advisor directory was dead — ADVISORS is empty and
+// the "Find Advisor" nav redirects to the real Find Accountant directory
+// (index.html marketplace block), so renderAdvisors rendered into a non-existent
+// #adv-list and bailed, and openAdvisorCertModal / submitAdvisorApp had no caller
+// anywhere. Their fake toasts ("Connecting you with…", "Message sent to…",
+// "Application submitted — we'll review within 2 business days ✦") are removed so
+// they cannot be re-exposed. The "Advisor Network — Coming Soon" page is left as an
+// honest placeholder (it is never reached at runtime due to the redirect).
 
 
 // ── 3. TAX FILING PAGE ───────────────────────────────────────────────────
@@ -6627,7 +6586,7 @@ if(reportsItem){
   const taxNavItem = document.createElement('div');
   taxNavItem.className = 'nav-item';
   taxNavItem.setAttribute('onclick', "showPage('tax-filing',this)");
-  taxNavItem.innerHTML = `<svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><path d="M5 4V2"/><path d="M11 4V2"/><line x1="2" y1="6" x2="14" y2="6"/><line x1="5" y1="9" x2="11" y2="9"/><polyline points="9,12 10.5,13.5 13,11"/></svg>Tax Filing<span class="badge b-green" style="margin-left:auto;font-size:9px">NEW</span>`;
+  taxNavItem.innerHTML = `<svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><path d="M5 4V2"/><path d="M11 4V2"/><line x1="2" y1="6" x2="14" y2="6"/><line x1="5" y1="9" x2="11" y2="9"/><polyline points="9,12 10.5,13.5 13,11"/></svg>Tax Filing`;
   reportsItem.parentNode.insertBefore(taxNavItem, reportsItem);
 }
 
@@ -6647,24 +6606,12 @@ document.querySelector('.content')?.appendChild(taxPage);
 
 
 // ── 4. INTEGRATION MARKETPLACE UPGRADE ──────────────────────────────────
-const connPage = document.getElementById('page-connections');
-if(connPage){
-  const mpBanner = document.createElement('div');
-  mpBanner.innerHTML = `
-    <div style="background:linear-gradient(135deg,var(--acc-bg),rgba(30,24,8,.3));border:1px solid var(--acc2);border-radius:var(--radius-lg);padding:1rem 1.25rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <div>
-        <div style="font-size:13.5px;font-weight:600;color:var(--acc-light);font-family:var(--font-display);letter-spacing:.03em">FinFlow Integration Marketplace</div>
-        <div style="font-size:12px;color:var(--t2);margin-top:3px">750+ apps &amp; services · Browse, connect, and automate your entire stack</div>
-      </div>
-      <div style="display:flex;gap:8px;flex-shrink:0">
-        <button class="btn btn-ghost btn-sm" onclick="notify('Opening full marketplace…')">Browse all 750+ ↗</button>
-        <button class="btn btn-primary btn-sm" onclick="notify('Build your own integration via the FinFlow API')">Build an app +</button>
-      </div>
-    </div>`;
-  const hubTop = connPage.querySelector('.conn-hub-topbar');
-  if(hubTop) hubTop.parentNode.insertBefore(mpBanner, hubTop.nextSibling);
-
-}
+// Honesty pass (F51/F65): removed the "FinFlow Integration Marketplace" banner.
+// Its "750+ apps & services · Browse, connect, and automate your entire stack"
+// copy and its "Browse all 750+ ↗" / "Build an app +" buttons all fired fake
+// toasts ("Opening full marketplace…") for capabilities that do not exist — no
+// integration in the catalogue actually connects (see connToggle). Banner deleted
+// outright; the browse-only catalogue below stays.
 
 // ── 5. PATCH showPage for new pages ─────────────────────────────────────
 const _origShowPage = window.showPage;
@@ -6672,7 +6619,8 @@ window.showPage = function(id, el){
   _origShowPage(id, el);
   const extra = {'advisors':'Advisor Network','tax-filing':'Tax Filing'};
   if(extra[id]) document.getElementById('pageTitle').textContent = extra[id];
-  if(id==='advisors') requestAnimationFrame(renderAdvisors);
+  // Advisor render hook removed with the dead advisor directory (honesty pass); the
+  // 'advisors' nav redirects to Find Accountant (index.html marketplace block).
   // PL#11: tax-filing is a static "Coming Soon" placeholder — no render hook (calcAndRenderTax removed).
 };
 

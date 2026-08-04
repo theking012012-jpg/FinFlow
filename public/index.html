@@ -1929,7 +1929,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="card" style="margin-bottom:0">
             <div class="card-header">
               <div><h2 class="card-title">Asset allocation</h2><div class="card-sub">By market value</div></div>
-              <button class="btn btn-ghost btn-sm" onclick="notify('Rebalance plan generated ✦')">Rebalance ↗</button>
+              <button class="btn btn-ghost btn-sm" onclick="notify('Rebalancing suggestions are coming soon')">Rebalance ↗</button>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
               <div class="bar-row"><span class="bar-label">Equities</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--acc)"></div></div><span class="bar-val">$0</span></div>
@@ -2462,13 +2462,11 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           window.connToggle=function(idx){
             var item=INTEGRATIONS[idx];
             if(!item)return;
-            var name=item.name;
-            connStates[name]=!connStates[name];
-            if(!connStates[name])delete connStates[name];
-            saveStates(connStates);
-            render();
-            buildPills();
-            if(typeof notify==='function')notify(connStates[name]?name+' connected':name+' disconnected');
+            // Honesty pass (F51/F65): the integration catalogue is browse-only —
+            // toggles were never wired to /api/connections and saveStates() is a
+            // no-op, so a "connected" state was faked and lost on refresh. Do not
+            // record or claim a connection that did not happen.
+            if(typeof notify==='function')notify(item.name+' integration is coming soon');
           };
 
           window.connFilterAll=function(){
@@ -2746,7 +2744,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <span style="font-size:36px;font-weight:300;font-family:var(--font-display);font-style:italic;color:var(--t1)">Custom</span>
             </div>
             <div style="font-size:11.5px;color:var(--t3);margin-bottom:1.25rem">Volume pricing available</div>
-            <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px;border-color:var(--purple);color:var(--purple)" onclick="notify('Opening enterprise enquiry form… ✦')">Contact sales</button>
+            <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px;border-color:var(--purple);color:var(--purple)" onclick="window.location.href='mailto:support@finflow.app?subject=Enterprise%20enquiry'">Contact sales</button>
             <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">Everything in Business, plus</div>
             <div id="ent-features"></div>
           </div>
@@ -6568,44 +6566,12 @@ window.runAutocatAI = async function(){
 // ══════════════════════════════════════════════════════════════════
 // CLIENT PORTAL
 // ══════════════════════════════════════════════════════════════════
-const PORTALS = []; // populated from DB
-
-function renderPortal(){
-  const list = document.getElementById('portal-list');
-  if(!list) return;
-  list.innerHTML = PORTALS.map(p=>`
-    <div class="portal-card">
-      <div style="width:36px;height:36px;border-radius:8px;background:var(--bg3);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--acc);flex-shrink:0">${p.client.slice(0,2).toUpperCase()}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:500;color:var(--t1);margin-bottom:2px">${p.client}</div>
-        <div style="font-size:11px;color:var(--t3)">Outstanding: <span style="color:${p.outstanding==='$0'?'var(--green)':'var(--amber)'}">${p.outstanding}</span> · Paid YTD: <span style="color:var(--t1)">${p.paidYTD}</span></div>
-        <div style="font-size:10.5px;color:var(--t3);margin-top:2px">Last viewed: ${p.lastViewed}</div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex-shrink:0">
-        <span class="portal-link-pill" style="width:auto;max-width:180px">portal.finflow.io/client/${p.slug}</span>
-        <div style="display:flex;gap:5px">
-          <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="copyPortalLink('${p.slug}')">Copy link</button>
-          <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="notify('Email sent to ${p.client} ✦')">Send email</button>
-        </div>
-      </div>
-    </div>`).join('');
-}
-
-window.copyPortalLink = function(slug){
-  const url = 'https://portal.finflow.io/client/'+slug;
-  navigator.clipboard?.writeText(url).catch(()=>{});
-  notify('Portal link copied to clipboard ✦');
-};
-window.createPortal = function(){
-  // TODO: Replace with modal text input — prompt() removed per audit Finding 34
-  if(!confirm('Create a new client portal? You can rename it from the portal list.')) return;
-  const clientName = 'New Client ' + (PORTALS.length + 1);
-  if(!clientName||!clientName.trim()) return;
-  const slug = clientName.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')+'-'+Math.random().toString(36).slice(2,6);
-  PORTALS.push({client:clientName.trim(),slug,outstanding:'$0',paidYTD:'$0',lastViewed:'Never',active:true});
-  renderPortal();
-  notify('Portal created for '+clientName.trim()+' ✦');
-};
+// Honesty pass (F51/F65): the interactive Client Portal (PORTALS list,
+// renderPortal, createPortal, copyPortalLink) was dead — the Client Portal page
+// is a "Coming Soon" placeholder with no #portal-list element, so renderPortal
+// bailed and createPortal had no caller. Its "Email sent ✦" / "Portal created ✦"
+// toasts and the fabricated portal.finflow.io links are removed so they cannot be
+// re-exposed. The page keeps its honest "Coming Soon" card.
 
 // ══════════════════════════════════════════════════════════════════
 // PATCH showPage FOR NEW PAGES
@@ -6617,7 +6583,6 @@ window.showPage = function(id, el){
   if(names[id]) document.getElementById('pageTitle').textContent = names[id];
   if(id==='scenario'){ requestAnimationFrame(()=>{ if(typeof window._syncScenarioBase==='function')window._syncScenarioBase(); updateScenario(); renderScenarioChart(BASE.rev||0,BASE.exp||0); }); }
   if(id==='autocat')  requestAnimationFrame(renderAutocat);
-  if(id==='portal')   requestAnimationFrame(renderPortal);
   if(id==='notifications') toggleNotifPanel();
 };
 

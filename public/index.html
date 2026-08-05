@@ -7156,6 +7156,13 @@ document.addEventListener('click', e=>{
         </select>
       </div>
     </div>
+    <!-- F84: optional bill link. Selecting a bill makes this payment a SETTLEMENT (Dr AP / Cr Cash)
+         — savePaymentMade sends bill_id, the server excludes it from expense (no double-count) and
+         reduces AP. Blank = a direct disbursement with no bill on file. Populated by
+         openMakePaymentModal from the open bills; partial amounts are allowed. -->
+    <div class="field-wrap"><label class="field-label" for="pm-bill">Apply to bill (optional)</label>
+      <select class="finput" id="pm-bill" onchange="onPmBillChange()"><option value="">— none (direct expense) —</option></select>
+    </div>
     <div class="field-wrap"><label class="field-label" for="pm-notes">Notes</label><input class="finput" id="pm-notes" placeholder="Optional notes"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-payment-made')">Cancel</button>

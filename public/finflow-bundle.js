@@ -3172,26 +3172,11 @@ function openEditPaymentMadeModal(id){
   openModal('modal-payment-made');
 }
 
-async function savePaymentMade(){
-  const id = document.getElementById('pm-id').value;
-  const existing = id ? _paymentsMade.find(p=>p.id===+id) : null;
-  const payload = {
-    vendor: document.getElementById('pm-vendor').value.trim(),
-    amount: parseFloat(document.getElementById('pm-amount').value)||0,
-    date:   document.getElementById('pm-date').value,
-    method: document.getElementById('pm-method').value,
-    notes:  document.getElementById('pm-notes').value.trim(),
-    ref:    existing ? existing.ref : nextNum('PM', _paymentsMade, 'ref'),
-  };
-  if(!payload.vendor){ alert('Vendor is required'); return; }
-  try{
-    if(id){ await apiFetch('/api/payments-made/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
-    else   { await apiFetch('/api/payments-made',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
-    closeModal('modal-payment-made');
-    renderPaymentsMade();
-    window.finflow?.refresh(['expenses','dashboard','money-out','budget','reports']);
-  } catch(e){ alert('Save failed: '+e.message); }
-}
+// F84 / Failure #1 (F75): the `savePaymentMade` that once lived here was a DEAD SHADOW. The bundle
+// loads this file (finflow-bundle.js:3175) BEFORE finflow-api-wiring-pages.js's
+// `window.savePaymentMade = …` (:4178), which overwrote this global — so this copy never ran, and it
+// omitted `bill_id` (the F84 double-count). It is deleted so only the one pages.js runtime winner
+// remains. Do not reintroduce a savePaymentMade here.
 
 async function deletePaymentMade(id){
   if(!confirm('Delete this payment?')) return;
@@ -4172,7 +4157,35 @@ function clearAIChat(){
       ['pm-vendor','pm-amount','pm-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const d = document.getElementById('pm-date'); if (d) d.value = todayStr();
       const m = document.getElementById('pm-method'); if (m) m.value = 'Bank Transfer';
+      // F84: populate the (optional) bill selector from OPEN bills. Picking a bill links the payment
+      // to it, so the server counts it as a SETTLEMENT (Dr AP / Cr Cash) — excluded from expense, no
+      // double-count — and drops AP. Blank = a direct disbursement with no bill. Partial amounts are
+      // allowed (server recalcBillStatus handles part-payment → status 'partial').
+      const sel = document.getElementById('pm-bill');
+      if (sel) {
+        const open = (_billsData || []).filter(b => (b.status || '').toLowerCase() !== 'paid'
+          && ((parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)) > 0);
+        sel.innerHTML = '<option value="">— none (direct expense) —</option>'
+          + open.map(b => {
+              const out = Math.round((((parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0))) * 100) / 100;
+              return `<option value="${b.id}">${esc(b.vendor || 'Bill')} · ${esc(b.num || ('#' + b.id))} · ${S(out)} due</option>`;
+            }).join('');
+        sel.value = '';
+      }
       openModal('modal-payment-made');
+    };
+
+    // F84: when a bill is chosen, prefill the vendor and default the amount to the bill's outstanding
+    // balance — both still editable, so a partial payment is simply a smaller amount. Selecting the
+    // blank "none" option changes nothing the user typed.
+    window.onPmBillChange = function () {
+      const sel = document.getElementById('pm-bill');
+      if (!sel || !sel.value) return;
+      const b = (_billsData || []).find(r => String(r.id) === String(sel.value));
+      if (!b) return;
+      const out = Math.round((((parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0))) * 100) / 100;
+      const v = document.getElementById('pm-vendor'); if (v) v.value = b.vendor || '';
+      const a = document.getElementById('pm-amount'); if (a) a.value = String(out);
     };
 
     window.savePaymentMade = async function () {
@@ -4184,8 +4197,14 @@ function clearAIChat(){
       const method = document.getElementById('pm-method')?.value || 'Bank Transfer';
       const notes  = document.getElementById('pm-notes')?.value?.trim() || '';
       const ref    = 'PM-' + uid4();
+      // F84: a selected bill links this payment — the server treats it as a settlement (Dr AP / Cr
+      // Cash), excludes it from expense (the sole double-count guard, server.js:4378) and reduces AP.
+      // Empty ⇒ omit bill_id ⇒ a direct disbursement that stays an expense (unchanged behaviour).
+      const _billSel = document.getElementById('pm-bill')?.value;
+      const body = { vendor, ref, amount, date, method, notes };
+      if (_billSel) body.bill_id = Number(_billSel);
       try {
-        const saved = await api('POST', '/api/payments-made', { vendor, ref, amount, date, method, notes });
+        const saved = await api('POST', '/api/payments-made', body);
         _paymentsMadeData.unshift(saved.row || saved);
         window.paymentsMade = _paymentsMadeData;
         closeModal('modal-payment-made');

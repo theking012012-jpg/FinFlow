@@ -319,26 +319,11 @@ function openEditPaymentMadeModal(id){
   openModal('modal-payment-made');
 }
 
-async function savePaymentMade(){
-  const id = document.getElementById('pm-id').value;
-  const existing = id ? _paymentsMade.find(p=>p.id===+id) : null;
-  const payload = {
-    vendor: document.getElementById('pm-vendor').value.trim(),
-    amount: parseFloat(document.getElementById('pm-amount').value)||0,
-    date:   document.getElementById('pm-date').value,
-    method: document.getElementById('pm-method').value,
-    notes:  document.getElementById('pm-notes').value.trim(),
-    ref:    existing ? existing.ref : nextNum('PM', _paymentsMade, 'ref'),
-  };
-  if(!payload.vendor){ alert('Vendor is required'); return; }
-  try{
-    if(id){ await apiFetch('/api/payments-made/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
-    else   { await apiFetch('/api/payments-made',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
-    closeModal('modal-payment-made');
-    renderPaymentsMade();
-    window.finflow?.refresh(['expenses','dashboard','money-out','budget','reports']);
-  } catch(e){ alert('Save failed: '+e.message); }
-}
+// F84 / Failure #1 (F75): the `savePaymentMade` that once lived here was a DEAD SHADOW. The bundle
+// loads this file (finflow-bundle.js:3175) BEFORE finflow-api-wiring-pages.js's
+// `window.savePaymentMade = …` (:4178), which overwrote this global — so this copy never ran, and it
+// omitted `bill_id` (the F84 double-count). It is deleted so only the one pages.js runtime winner
+// remains. Do not reintroduce a savePaymentMade here.
 
 async function deletePaymentMade(id){
   if(!confirm('Delete this payment?')) return;

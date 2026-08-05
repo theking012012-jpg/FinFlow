@@ -2605,12 +2605,12 @@ const paymentsMadeTotal = sumFX(paymentsMade.filter(p =>
 
 | # | Path | Sends `bill_id`? | Result |
 |---|---|---|---|
-| 1 | `markBillPaid()` — Bills page "Pay" button (`finflow-api-wiring-pages.js:709`) | ✅ yes | correct — settlement, excluded from expense |
-| 2 | `savePaymentMade()` — Payments Made "Make Payment" (`finflow-api-wiring-pages.js:796`) | ❌ **no** | counted as a fresh expense |
-| 3 | `savePaymentMade()` — older copy (`finflow-api-wiring-final5.js:322`) | ❌ **no** | shadowed; see below |
-| 4 | `PUT /api/payments-made/:id` (`server.js:2319`) | only if supplied | can relink, but nothing surfaces the need |
+| 1 | `markBillPaid()` — Bills page "Pay" button (`finflow-api-wiring-pages.js:723`) | ✅ yes | correct — settlement, excluded from expense |
+| 2 | `savePaymentMade()` — Payments Made "Make Payment" (`finflow-api-wiring-pages.js:818`) | ❌ **no** | counted as a fresh expense |
+| 3 | `savePaymentMade()` — older copy (`finflow-api-wiring-final5.js:322`) | ❌ **no** | dead shadow; see below |
+| 4 | `PUT /api/payments-made/:id` (`server.js:2430`) | only if supplied | can relink, but no UI caller exists (`pm-id` latent; the winner always POSTs) |
 
-Path 3 is dead code: the bundle loads `final5.js` at line 2832 and `pages.js` at 3339, and `pages.js:786` does `window.savePaymentMade = …`, so the **pages.js copy wins at runtime** (Rule 1 applied — both were checked rather than assumed). It makes no difference to the outcome: neither copy sends `bill_id`.
+Path 3 is dead code (re-verified 2026-08-05). It is a **bare `async function savePaymentMade(){` declaration** at `final5.js:322` — NOT a `window.savePaymentMade =` assignment, which is why a grep for `window.savePaymentMade` / `bill_id` misses it (the Rule 5 text-proximity trap; an earlier session wrongly reported this copy as removed). In the regenerated bundle the final5 declaration sits at `finflow-bundle.js:3175` and the `pages.js` assignment `window.savePaymentMade = async function` at `4178`; 4178 > 3175, so the **pages.js copy overwrites the global and wins at runtime** (`onclick="savePaymentMade()"` resolves to `window.savePaymentMade`). It makes no difference to the double-count either way — neither copy sends `bill_id`. **The F84 fix (this cycle) deletes this dead shadow (`final5.js:322-341`) so only the one `pages.js` winner remains (Failure #1 / F75 hygiene).**
 
 **The modal has no bill field.** `#modal-payment-made` contains exactly `pm-vendor`, `pm-amount`, `pm-date`, `pm-method`, `pm-notes` — no bill selector, no invoice-style picker. And the Bills page offers exactly one payment action:
 ```html

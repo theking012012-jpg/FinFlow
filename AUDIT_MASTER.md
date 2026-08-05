@@ -1097,6 +1097,22 @@ So a user opening any report gets a revenue figure that disagrees with the dashb
 
 ---
 
+### F134 🟠 HIGH — Fresh login/register 401s every `/api` read until a manual refresh — the session is set but never `save()`d before responding, so the async Postgres store isn't durable when the client's immediate authenticated GETs arrive — **NEW (2026-08-04), OPEN · owner-reproduced**
+**Status:** OPEN, verified — owner reproduced (fresh login → blank / $0 dashboard, every `/api` read 401s; a manual refresh fixes it) and confirmed from source below.
+
+**Mechanism (confirmed from source + express-session internals).**
+- All three session-establishing routes set `req.session.userId` (+ role/email) then respond with **no `req.session.save()`**: register (`server.js:500` → `res.status(201).json` at 506), login (`server.js:525` → `res.json` at 533), team-accept (`server.js:2797` → `res.json` at 2800). `grep 'req.session.save'` over server.js → **zero hits**.
+- The store is `connect-pg-simple` (`server.js:281`; `resave:false`, `saveUninitialized:false`) — session persistence is an **async Postgres INSERT**.
+- express-session saves on `res.end`, but flushes the response BODY *before* that save completes. Its `res.end` override calls `req.session.save(…)` then `return writetop()` (`node_modules/express-session/index.js:349-358`); `writetop()` writes the headers + JSON body synchronously (`index.js:285-304`) while the `store.set` INSERT is still in flight, and the real `_end` runs only later in the save callback. With a Content-Length response the client's `fetch` resolves once the body bytes arrive (at `writetop`) — **before the session row is committed.**
+- The client fires ~20 authenticated GETs the instant login resolves: `bootFinFlowAPI()` + `await loadEntitiesFromDB(true)` + `loadBankingFromDB()` (`app-main.js:696-700`). These reach the server before the INSERT commits → `store.get` finds no row → `requireAuth` sees `!req.session.userId` (`server.js:387`) → **401** → blank dashboard. A refresh works because the row has since committed. (`checkPlan` reads `req.session.userId` too, `server.js:394`, so it fails the same way.)
+
+**Class (Rule 13).** Every route that establishes a session shares the race. Enumerated by `grep 'req.session.userId ='`: **register (500), login (525), team-accept (2797)** — three write sites, all responding without a save (2739 is a read, not a write). The fix must cover all three or the same defect survives on register and invite-accept.
+
+**Course of action (proposed — HOLD for approval; NOT built).** Wrap the session write in an awaited save before every session-establishing response: `await new Promise((resolve, reject) => req.session.save(e => e ? reject(e) : resolve()));` immediately before the `res.json` / `res.status().json` on all three routes, so the row is durable before the response is sent. Verify by execution (Rule 14): POST `/api/auth/login` then immediately GET a protected route on the same session → **200 not 401**, and the session row exists in the store right after the login response resolves — with the race made DETERMINISTIC (a controlled `store.set` delay) so the test genuinely FAILS on the current code before it passes on the fix.
+**Done when:** immediately after a login/register/accept response resolves, the session row is committed and an authenticated GET on that session returns 200 — proven by an executed test that fails on the pre-fix code.
+
+---
+
 ### F133 🟡 MEDIUM — Invoices set to status "paid" never get `amount_paid`, so they badge "paid" but count $0 in Collected and full in Outstanding — regression from F56 — **NEW (2026-08-04), OPEN · owner-reproduced**
 **Status:** OPEN, verified — owner reproduced from production: ids **10/11/12/13** have `status='paid'`, `amount_paid=NULL` → shown "paid" yet excluded from Collected and counted in Outstanding; id **7** (sean, paid via Record Payment) correctly has `amount_paid=1000`. The split is exactly between paid-on-create/edit (no `amount_paid`) and paid-via-Record-Payment (has it).
 

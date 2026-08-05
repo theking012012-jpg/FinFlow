@@ -1121,14 +1121,24 @@ So a user opening any report gets a revenue figure that disagrees with the dashb
 
 ---
 
-### F133 🟡 MEDIUM — Invoices set to status "paid" never get `amount_paid`, so they badge "paid" but count $0 in Collected and full in Outstanding — regression from F56 — **NEW (2026-08-04), OPEN · owner-reproduced**
-**Status:** OPEN, verified — owner reproduced from production: ids **10/11/12/13** have `status='paid'`, `amount_paid=NULL` → shown "paid" yet excluded from Collected and counted in Outstanding; id **7** (sean, paid via Record Payment) correctly has `amount_paid=1000`. The split is exactly between paid-on-create/edit (no `amount_paid`) and paid-via-Record-Payment (has it).
+### F133 ✅ **FIXED** (2026-08-04, executed both ways) — was 🟡 MEDIUM — Invoices set to status "paid" never get `amount_paid`, so they badge "paid" but count $0 in Collected and full in Outstanding — regression from F56
+
+> ### ✅ FIXED (2026-08-04) — create + guarded edit now set `amount_paid` from status.
+> **What changed.** `POST /api/invoices` (`server.js`): `amount_paid = (status==='paid') ? amount : 0` on insert. `PUT /api/invoices`: on a status flip to 'paid', set `amount_paid = amount` **only when the invoice has no `invoice_payments`** (guarded, so a real partial-payment record owned by `recalcInvoiceStatus` is never clobbered). Matches the F56 boot-backfill + `recalcInvoiceStatus` semantics (paid ⇒ amount_paid = amount).
+>
+> **The PUT edit path is API-only.** There is no client caller for `PUT /api/invoices` (grep: the only client invoice mutation is `DELETE /api/invoices/${id}`; Record Payment replaced the edit pencil, F113-115). The UI-reachable defect is the CREATE path (the invoice modal's "Paid" option); the PUT is closed as the same code class.
+>
+> **How it was verified (Rule 14 — fail-then-pass, EXECUTED).** `tests/harness/verify-f133-paid-on-create.js`: real scratch Postgres + real server, seeded AFTER boot via the real `POST /api/invoices` (so the F56 boot-backfill, which ran at initDB over an empty table, can't mask the create-path bug), no reboot. Seed: INV-A {1300, paid}, INV-B {500, pending}, INV-C {1000, pending} + a $400 payment via the real `POST /api/invoice-payments`. CURRENT code → INV-A.amount_paid absent, **Collected 400, Outstanding 2400** (3 failed). FIXED code → INV-A.amount_paid 1300, **Collected 1700, Outstanding 1100** (8 passed). Discriminators are Collected and INV-A.amount_paid; reconciliation (Billed = Collected + Outstanding = 2800) holds BOTH ways and is NOT a discriminator (Rule 4). Owner independently re-ran → ALL GREEN.
+>
+> **Existing rows / AP mirror.** The F56 boot-backfill (`database.js:113-116`) heals existing paid-on-create INVOICES on the next deploy, so no separate invoice backfill is needed (owner's account is test data). The symmetric AP gap on BILLS — where no boot-backfill exists — is logged separately as **F135**.
+
+**Status (original finding, now FIXED — see the block above):** verified — owner reproduced from production: ids **10/11/12/13** have `status='paid'`, `amount_paid=NULL` → shown "paid" yet excluded from Collected and counted in Outstanding; id **7** (sean, paid via Record Payment) correctly has `amount_paid=1000`. The split is exactly between paid-on-create/edit (no `amount_paid`) and paid-via-Record-Payment (has it).
 
 **Mechanism.** `POST`/`PUT /api/invoices` set `status` but never `amount_paid` (`server.js:~950`). The row's Record Payment control is gated on `status !== 'paid'` (`app-main.js:2360`), so an invoice marked paid on create has **no UI path to ever set `amount_paid`** — the trap is airtight. Meanwhile Collected = `Σ amount_paid` and Outstanding = `Σ max(0, amount − amount_paid)` (`postgres.js:286-287`, F56). A `paid`/`NULL` row therefore contributes **0 to Collected and its full face to Outstanding** while badging "paid".
 
 **Regression from F56.** Pre-F56 these figures were a **status-based** paid/unpaid split, so a `'paid'` row counted as collected. F56 switched them to **`amount_paid`** to fix partial-payment reconciliation — correct for that — but never updated the create/edit path, so marking "Paid" silently stopped counting. This is the F56 class: a money figure moved to a new source on one path but not its siblings.
 
-**Course of action (decision needed — do NOT build in this logging commit).** Likely on create/edit: if `status='paid'`, set `amount_paid = amount` (and define what a partial-on-create means); the existing stuck rows (10/11/12/13) are an owner-gated **backfill** (Rule 8, separate commit). Class check (Rule 13): the **edit** path, the **partial** status, and **bills/AP (Payments Made)** symmetry — the same paid-without-amount trap may exist on the payables side.
+**Course of action (IMPLEMENTED 2026-08-04 — see the ✅ FIXED block above).** Likely on create/edit: if `status='paid'`, set `amount_paid = amount` (and define what a partial-on-create means); the existing stuck rows (10/11/12/13) are an owner-gated **backfill** (Rule 8, separate commit). Class check (Rule 13): the **edit** path, the **partial** status, and **bills/AP (Payments Made)** symmetry — the same paid-without-amount trap may exist on the payables side.
 **Done when:** no invoice can badge "paid" while contributing `$0` to Collected.
 
 ---

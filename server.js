@@ -963,9 +963,17 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   // TOCTOU race and the slow (>5s) re-click the old window missed (Rule 9). Two genuinely separate
   // invoices carry DIFFERENT tokens → both succeed. INERT until the index exists (no index ⇒ no
   // 23505 ⇒ prior behaviour); a null token is excluded by the partial index → behaviour unchanged.
+  // F133: a bare status='paid' on create must set amount_paid = amount, else the invoice badges
+  // "paid" yet counts $0 in Collected and full in Outstanding (Collected=Σamount_paid,
+  // Outstanding=Σmax(0,amount−amount_paid), F56). Record Payment is gated on status!=='paid'
+  // (app-main.js:2360), so there is otherwise NO path to ever set it. Matches the boot-backfill
+  // (database.js) + recalcInvoiceStatus semantics (paid ⇒ amount_paid = amount). A new invoice has
+  // no payments, so this is unambiguous; the payment path (recalcInvoiceStatus) still owns it after.
+  const _amt = parseFloat(amount) || 0;
+  const _amountPaid = String(status).toLowerCase() === 'paid' ? _amt : 0;
   let row;
   try {
-    ({ row } = await db.insert('invoices', { user_id: req.session.userId, entity_id: eid, client: client.trim().slice(0,200), amount: parseFloat(amount)||0, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null, idempotency_key: idem }));
+    ({ row } = await db.insert('invoices', { user_id: req.session.userId, entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(
@@ -991,6 +999,20 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   if (status != null) patch.status = status.toLowerCase();
   if (notes != null) patch.notes = notes;
   if (issue_date != null) patch.issue_date = issue_date;   // F36: editable business issue date
+  // F133 (guarded edit path): a bare status flip to 'paid' must set amount_paid = amount — BUT only
+  // when the invoice has NO invoice_payments, so a real partial-payment record (owned by
+  // recalcInvoiceStatus) is never clobbered. Effective amount = the patched amount if it is being
+  // changed in the same PUT, else the existing row amount. (This PUT has no client caller today, but
+  // the code gap is the same F133 class, so it is closed here.)
+  if (patch.status === 'paid') {
+    const { rows: _ipc } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2`,
+      [row.id, req.session.userId]
+    );
+    if (_ipc[0].n === 0) {
+      patch.amount_paid = (patch.amount != null ? patch.amount : (parseFloat(row.amount) || 0));
+    }
+  }
   await db.updateById('invoices', row.id, patch);
   const { rows: [_iur] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [row.id]);
   const updated = _iur ? rowToObj(_iur) : {};

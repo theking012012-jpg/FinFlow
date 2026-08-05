@@ -1097,8 +1097,16 @@ So a user opening any report gets a revenue figure that disagrees with the dashb
 
 ---
 
-### F134 🟠 HIGH — Fresh login/register 401s every `/api` read until a manual refresh — the session is set but never `save()`d before responding, so the async Postgres store isn't durable when the client's immediate authenticated GETs arrive — **NEW (2026-08-04), OPEN · owner-reproduced**
-**Status:** OPEN, verified — owner reproduced (fresh login → blank / $0 dashboard, every `/api` read 401s; a manual refresh fixes it) and confirmed from source below.
+### F134 ✅ **FIXED** (2026-08-04; login + register executed both ways, team-accept verified-by-reading) — was 🟠 HIGH — Fresh login/register 401s every `/api` read until a manual refresh — the session is set but never `save()`d before responding, so the async Postgres store isn't durable when the client's immediate authenticated GETs arrive
+
+> ### ✅ FIXED (2026-08-04) — `saveSession(req)` awaited before every session-establishing response.
+> **What changed.** One shared helper `saveSession(req) = new Promise((res, rej) => req.session.save(e => e ? rej(e) : res()))` (`server.js:395`), awaited immediately before the response on all three write sites: register (`server.js:513`), login (`server.js:541`), team-accept (`server.js:2809`). The session row is now committed before the response is sent, so the client's immediate authenticated GETs can never precede it. Rule 9: single shared mechanism, so a new auth route cannot silently reintroduce the race.
+>
+> **How it was verified (Rule 14 — fail-then-pass, EXECUTED for login + register).** `tests/harness/verify-f134-session-save.js`: real scratch Postgres + real server, every session-table INSERT (`store.set`) delayed 400 ms so the async-durability window is deterministic. It uses a HEADER-EARLY client — resolves on `await fetch()` headers, reads the Set-Cookie, fires the authed GET WITHOUT draining the response body — because a body-awaiting client blocks until `res.end` (which express-session calls only after the implicit save) and would go GREEN on the bug (that dead end was hit and diagnosed first, not assumed). CURRENT code: login + register → session row ABSENT at header time, immediate GET → **401** (4 failed). FIXED code: row present at header time, GET → **200** (6 passed).
+>
+> **⚠️ Team-accept is verified by READING, not execution — do not cite it as executed.** The executed test drives **login and register** (2 of the 3 sites). `POST /api/team/accept` (`server.js:2809`) carries the identical `await saveSession(req)` line before its response but is not exercised by the harness (its full invite/accept flow is heavy to seed); it is covered by the shared mechanism and confirmed by reading the diff.
+
+**Status (original finding, now FIXED — see the block above):** verified — owner reproduced (fresh login → blank / $0 dashboard, every `/api` read 401s; a manual refresh fixes it) and confirmed from source below.
 
 **Mechanism (confirmed from source + express-session internals).**
 - All three session-establishing routes set `req.session.userId` (+ role/email) then respond with **no `req.session.save()`**: register (`server.js:500` → `res.status(201).json` at 506), login (`server.js:525` → `res.json` at 533), team-accept (`server.js:2797` → `res.json` at 2800). `grep 'req.session.save'` over server.js → **zero hits**.
@@ -1108,7 +1116,7 @@ So a user opening any report gets a revenue figure that disagrees with the dashb
 
 **Class (Rule 13).** Every route that establishes a session shares the race. Enumerated by `grep 'req.session.userId ='`: **register (500), login (525), team-accept (2797)** — three write sites, all responding without a save (2739 is a read, not a write). The fix must cover all three or the same defect survives on register and invite-accept.
 
-**Course of action (proposed — HOLD for approval; NOT built).** Wrap the session write in an awaited save before every session-establishing response: `await new Promise((resolve, reject) => req.session.save(e => e ? reject(e) : resolve()));` immediately before the `res.json` / `res.status().json` on all three routes, so the row is durable before the response is sent. Verify by execution (Rule 14): POST `/api/auth/login` then immediately GET a protected route on the same session → **200 not 401**, and the session row exists in the store right after the login response resolves — with the race made DETERMINISTIC (a controlled `store.set` delay) so the test genuinely FAILS on the current code before it passes on the fix.
+**Course of action (proposed — now IMPLEMENTED, see the ✅ FIXED block above).** Wrap the session write in an awaited save before every session-establishing response: `await new Promise((resolve, reject) => req.session.save(e => e ? reject(e) : resolve()));` immediately before the `res.json` / `res.status().json` on all three routes, so the row is durable before the response is sent. Verify by execution (Rule 14): POST `/api/auth/login` then immediately GET a protected route on the same session → **200 not 401**, and the session row exists in the store right after the login response resolves — with the race made DETERMINISTIC (a controlled `store.set` delay) so the test genuinely FAILS on the current code before it passes on the fix.
 **Done when:** immediately after a login/register/accept response resolves, the session row is committed and an authenticated GET on that session returns 200 — proven by an executed test that fails on the pre-fix code.
 
 ---

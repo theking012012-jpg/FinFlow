@@ -388,6 +388,16 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// F134: session persistence is async (connect-pg-simple -> Postgres INSERT), and express-session
+// flushes the response headers+body (its res.end override's writetop) BEFORE that INSERT commits.
+// A route that sets req.session.userId and responds WITHOUT awaiting the save lets the client's
+// immediate authenticated GETs arrive before the session row is durable -> requireAuth 401s until a
+// refresh. Every session-establishing route awaits this before responding so the row is committed
+// first. Single shared mechanism (Rule 9) so a new auth route cannot silently reintroduce the race.
+function saveSession(req) {
+  return new Promise((resolve, reject) => req.session.save(err => (err ? reject(err) : resolve())));
+}
+
 // Checks trial expiry — attaches req.userPlan for downstream use
 async function checkPlan(req, res, next) {
   try {
@@ -503,6 +513,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const { rows: [_ru] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [userId]);
     const user = _ru ? rowToObj(_ru) : null;
     console.log('[Register] New user created, id:', userId);
+    await saveSession(req);   // F134: durable session row before the response (else immediate GETs 401)
     res.status(201).json({ user: safeUser(user) });
   } catch (err) {
     console.error('[Register] Unexpected error:', err);
@@ -530,6 +541,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       `UPDATE users SET data = data || jsonb_build_object('last_login', $1::text) WHERE id = $2`,
       [new Date().toISOString(), user.id]
     );
+    await saveSession(req);   // F134: durable session row before the response (else immediate GETs 401)
     res.json({ user: safeUser(user) });
   } catch (err) {
     console.error('[Login] Unexpected error:', err);
@@ -2797,6 +2809,7 @@ app.post('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
     req.session.userId    = memberUserId;
     req.session.userRole  = 'owner';   // own-identity session role; account role comes from resolver
     req.session.userEmail = inv.email;
+    await saveSession(req);   // F134: durable session row before the response (else immediate GETs 401)
     return res.json({ ok: true, role: inv.role });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch (_) {}

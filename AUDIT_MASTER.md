@@ -2643,6 +2643,25 @@ Path 3 is dead code (re-verified 2026-08-05). It is a **bare `async function sav
 
 ---
 
+### F136 🟡 MEDIUM — `final5.js` carries a whole DEAD-SHADOW Payments-Made subsystem (Failure #1 trap) — **NEW (2026-08-05, read-only verified)**
+**Status:** OPEN. Surfaced while fixing F84 (which deleted the `savePaymentMade` shadow in this same block). Zero runtime effect today — logged because a future fix applied to the wrong copy is exactly the F75 trap that shipped two clean-diff no-op "fixes" before.
+
+`finflow-api-wiring-final5.js` defines a full Payments-Made UI subsystem as **bare `function` declarations**, every one of which is overwritten at runtime by a `window.NAME =` winner in `finflow-api-wiring-pages.js` (which the bundle loads AFTER final5 — same mechanism as the deleted F84 `savePaymentMade` shadow):
+
+| final5.js (dead) | pages.js runtime winner |
+|---|---|
+| `loadPaymentsMade` (`:275`) | `loadPaymentsMade` (`pages.js:774`) |
+| `renderPaymentsMade` (`:280`) | `window.renderPaymentsMade` (`pages.js:786`) |
+| `openMakePaymentModal` (`:299`) | `window.openMakePaymentModal` (`pages.js:811`) |
+| `deletePaymentMade` (`:328`) | `window.deletePaymentMade` (`pages.js:874`) |
+
+`openEditPaymentMadeModal` (`final5.js:310`) has **no runtime winner and no live caller**: its only invocation is the "Edit" button rendered by final5's `renderPaymentsMade` (`:292`) — which is itself the dead shadow (the live pages.js `renderPaymentsMade` renders only a delete `✕`, no Edit button). So the entire payments-made **edit affordance is dead code**, which is why the F84 enumeration's path 4 (`PUT /api/payments-made/:id`, `server.js:2430`) has a working server route but no reachable UI caller.
+
+**Course of action (docs-first, then a separate cleanup commit):** delete the dead Payments-Made block from `final5.js` — `loadPaymentsMade`, `renderPaymentsMade`, `openMakePaymentModal`, `openEditPaymentMadeModal`, `deletePaymentMade` — leaving only the pages.js winners, exactly as the F84 `savePaymentMade` shadow was removed. Confirm each has a pages.js winner (or, for `openEditPaymentMadeModal`, that it is genuinely uncalled) BEFORE deleting, and regenerate the bundle. Separate from any money change (Rule: one fix per commit) — this is structural hygiene with no figure impact. If a payments-made **edit** path is wanted later, it is a deliberate feature built on the pages.js winner + the existing `PUT` route, not a revival of the shadow.
+**Done when:** `final5.js` contains no Payments-Made subsystem functions, the bundle regenerates in sync, and the live Payments-Made page (render/add/delete) is unchanged.
+
+---
+
 ### F85 🟠 HIGH — Payroll runs are recognised on `run_date` (creation time), not the period they are FOR — **NEW (2026-07-23, read-only verified)**
 **Status:** OPEN. Found while auditing `NOW()` usage for the harness.
 

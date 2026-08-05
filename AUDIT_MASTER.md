@@ -1097,6 +1097,20 @@ So a user opening any report gets a revenue figure that disagrees with the dashb
 
 ---
 
+### F135 🟡 MEDIUM — Bills created (or edited) with status "paid" never get `amount_paid`, so a paid-on-create bill overstates AP payable — symmetric AP mirror of F133 — **NEW (2026-08-04), OPEN**
+**Status:** OPEN, confirmed from source alongside F133 (not yet fixed — its own commit + oracle).
+
+**Mechanism.** `POST /api/bills` (`server.js:2107`) and `PUT /api/bills` (`server.js:2119`) set `status` but never `amount_paid`. The bill modal offers a **"Paid"** option (`index.html:6964`), so a bill marked paid on create carries `amount_paid` absent/0. AP payable = `Σ max(0, amount − amount_paid)` over `RECOGNIZED_BILL` (which includes `'paid'`, `server.js:3842`) — so a paid-on-create bill counts its **full face as payable** while badging "paid", the exact mirror of F133 on the payables side.
+
+**Partially mitigated, not closed.** The intended "Pay" path — Bills page → `markBillPaid` → `POST /api/payments-made` (bill_id set) → `recalcBillStatus` (`server.js:3819`) — DOES set `amount_paid`. Only the **bare create/edit as "Paid"** (no linked payment) is the gap; the create form makes it reachable. (Whether a bill EDIT modal can also flip status to 'paid' is unconfirmed — to check in the F135 investigation.)
+
+**No boot-backfill safety net (unlike F133).** The F56 backfill (`database.js:113-116`) is **invoices-only**, so paid-on-create bills do **not** self-heal on deploy — any existing stuck bills would need an owner-gated backfill (Rule 8, separate).
+
+**Course of action (own commit, own oracle — do NOT fold into F133).** Mirror the F133 fix: on create/edit, `status='paid'` → `amount_paid = amount`, guarded on the edit path by "no linked `payments_made`". Oracle: seed a bill created `status:'paid'` via the real `POST /api/bills` → assert AP payable excludes it, not full face; a normally-paid bill (via `markBillPaid`) stays correct; fail-then-pass against real scratch Postgres.
+**Done when:** no bill can badge "paid" while contributing its full face to AP payable, proven by an executed test that fails on the pre-fix code.
+
+---
+
 ### F134 ✅ **FIXED** (2026-08-04; login + register executed both ways, team-accept verified-by-reading) — was 🟠 HIGH — Fresh login/register 401s every `/api` read until a manual refresh — the session is set but never `save()`d before responding, so the async Postgres store isn't durable when the client's immediate authenticated GETs arrive
 
 > ### ✅ FIXED (2026-08-04) — `saveSession(req)` awaited before every session-establishing response.

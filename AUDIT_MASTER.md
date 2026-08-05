@@ -1097,6 +1097,32 @@ So a user opening any report gets a revenue figure that disagrees with the dashb
 
 ---
 
+### F133 🟡 MEDIUM — Invoices set to status "paid" never get `amount_paid`, so they badge "paid" but count $0 in Collected and full in Outstanding — regression from F56 — **NEW (2026-08-04), OPEN · owner-reproduced**
+**Status:** OPEN, verified — owner reproduced from production: ids **10/11/12/13** have `status='paid'`, `amount_paid=NULL` → shown "paid" yet excluded from Collected and counted in Outstanding; id **7** (sean, paid via Record Payment) correctly has `amount_paid=1000`. The split is exactly between paid-on-create/edit (no `amount_paid`) and paid-via-Record-Payment (has it).
+
+**Mechanism.** `POST`/`PUT /api/invoices` set `status` but never `amount_paid` (`server.js:~950`). The row's Record Payment control is gated on `status !== 'paid'` (`app-main.js:2360`), so an invoice marked paid on create has **no UI path to ever set `amount_paid`** — the trap is airtight. Meanwhile Collected = `Σ amount_paid` and Outstanding = `Σ max(0, amount − amount_paid)` (`postgres.js:286-287`, F56). A `paid`/`NULL` row therefore contributes **0 to Collected and its full face to Outstanding** while badging "paid".
+
+**Regression from F56.** Pre-F56 these figures were a **status-based** paid/unpaid split, so a `'paid'` row counted as collected. F56 switched them to **`amount_paid`** to fix partial-payment reconciliation — correct for that — but never updated the create/edit path, so marking "Paid" silently stopped counting. This is the F56 class: a money figure moved to a new source on one path but not its siblings.
+
+**Course of action (decision needed — do NOT build in this logging commit).** Likely on create/edit: if `status='paid'`, set `amount_paid = amount` (and define what a partial-on-create means); the existing stuck rows (10/11/12/13) are an owner-gated **backfill** (Rule 8, separate commit). Class check (Rule 13): the **edit** path, the **partial** status, and **bills/AP (Payments Made)** symmetry — the same paid-without-amount trap may exist on the payables side.
+**Done when:** no invoice can badge "paid" while contributing `$0` to Collected.
+
+---
+
+### F132 🟠 HIGH — Expired-trial paywall is ESCAPABLE → the F130 "broken $0 app" returns on navigation — **NEW (2026-08-04), OPEN · LAUNCH BLOCKER · owner-reproduced in production**
+**Status:** OPEN, verified — owner reproduced the full escape (paywall → Upgrade → in-app pricing → click any nav tab → $0 dashboard) and confirmed the mechanism from source. This re-opens the exact F130 "broken $0 app" state through a different door: **F130 fixed the paywall APPEARING; this is the paywall being ESCAPABLE.**
+
+**Mechanism.** `_ffShowTrialExpired` (`app-main.js:4699`) paints the full-screen gate whenever any `/api` read returns `402 TRIAL_EXPIRED`; the in-memory data arrays stay `[]`. The Upgrade handler (`app-main.js:4725-4728`) runs `g.remove(); window._ffTrialExpiredActive = false; showPage('pricing')` — it removes the gate and clears the active flag, landing on the pricing page, which makes **no `/api` reads**, so nothing re-locks. Subsequent `showPage` navigation re-renders from the empty cached arrays **without re-fetching**, so no fresh `402` fires and the paywall never re-asserts → the `$0` broken-app state returns. Enforcement is global — `checkPlan` is on all `/api` including GET (`server.js:641-648`) — so the gate is correct on read; the hole is that escaping it triggers no further read.
+
+**No real upgrade path.** "Upgrade" points at the **internal** pricing page (whose CTAs say "Start free trial"), not a Stripe checkout — so even a user who wants to pay cannot, and the escape is the only thing the button actually accomplishes.
+
+**Secondary (sub-item).** `currentUserPlan` defaults to `'pro'` (`app-main.js:626`), so the plan badge reads "Pro" for a trial/expired account until `/auth/me` overwrites it — a cosmetic mislabel on the same surface, logged here so it is not lost.
+
+**Open decision (deferred — do NOT build): F130 hard-lock vs read-only vs grace period.** The fix shape depends on this ruling; it is the same open product decision F130 flagged.
+**Done when:** an expired-trial user can never reach a rendered data surface that is neither fully gated nor explicitly read-only, and Upgrade reaches a working checkout.
+
+---
+
 ### F131 🟡 MEDIUM — The 5s `findRecentDuplicate` pre-check is TOKEN-BLIND: on a token-bucket route it collapses two legitimately different-token records into one (dropped record / missing money) — **NEW (2026-08-04); invoices instance FIXED & executed in commit A; class OPEN**
 **Status:** invoices instance FIXED and executed both ways (commit A, 2026-08-04). The class across the other token-bucket routes is OPEN and **frozen** for the C1 rollout — Rule 13: fix the in-scope instance, document the class; do not grow scope mid-round.
 
@@ -1117,6 +1143,8 @@ So a user opening any report gets a revenue figure that disagrees with the dashb
 
 ### F130 ✅ **FIXED** (`bb50d2f`, 2026-08-03) — was 🟠 HIGH · **LAUNCH BLOCKER B12** — An expired trial rendered as a BROKEN APP: every read 402s, the client discarded the code, and the only trial UI vanishes on expiry
 **Status:** ✅ FIXED and probe-verified, including the discrimination cases. Owner **visual** check outstanding. The read-only-vs-hard-lock product decision is **separate and still open** — see the bottom of this row.
+
+> **↔ F132 (2026-08-04) — this fix is escapable.** F130 fixed the paywall APPEARING; **F132** is the paywall being ESCAPABLE — Upgrade removes the gate and lands on a page that never re-reads, so this exact `$0` broken-app state returns on navigation. Still a launch blocker until F132 closes.
 
 **What was wrong — three things lining up.**
 

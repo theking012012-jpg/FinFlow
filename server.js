@@ -2135,7 +2135,13 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   if (_dup) return res.json(_dup);
   // F36/F38: issue_date is the business issue date the (Step 4) expense-accrual leg keys on;
   // stored only when supplied, legacy rows fall back to created_at at recognition time.
-  const { row } = await db.insert('bills', { user_id: req.session.userId, entity_id: entity?.id, vendor, num, amount: Number(amount), due_date, status, notes, issue_date: issue_date || null });
+  // F135: a bare status='paid' on create must set amount_paid = amount, else the bill badges "paid"
+  // yet counts at FULL FACE in AP (AP = Σ max(0, amount − amount_paid), server.js:3589) — the AP mirror
+  // of F133. A fresh bill has no linked payment, so this is unambiguous; recalcBillStatus (Step 3)
+  // owns amount_paid once a real payments_made row exists. There is NO bills boot-backfill to heal it.
+  const _amt = Number(amount);
+  const _amountPaid = String(status).toLowerCase() === 'paid' ? _amt : 0;
+  const { row } = await db.insert('bills', { user_id: req.session.userId, entity_id: entity?.id, vendor, num, amount: _amt, due_date, status, notes, issue_date: issue_date || null, amount_paid: _amountPaid });
   res.json(row);
 }));
 app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
@@ -2153,6 +2159,22 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   if (b.status     != null) patch.status     = b.status;
   if (b.notes      != null) patch.notes      = b.notes;
   if (b.issue_date != null) patch.issue_date = b.issue_date;   // F36/F38: editable issue date
+  // F135 (guarded edit path, AP mirror of F133's invoice PUT): a bare status flip to 'paid' must set
+  // amount_paid = amount — BUT only when the bill has NO linked payments_made, so a real (partial)
+  // payment owned by recalcBillStatus is never clobbered. `payments_made.bill_id` is the bills analog
+  // of `invoice_payments` (same key recalcBillStatus sums, server.js:3849). Effective amount = the
+  // patched amount if it is being changed in this PUT, else the existing row amount. This also makes
+  // markBillPaid's benign else-branch PUT {status:'paid'} (already fully covered by payments) a no-op
+  // on amount_paid, since that bill DOES have linked payments.
+  if (patch.status != null && String(patch.status).toLowerCase() === 'paid') {
+    const { rows: _pmc } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2`,
+      [scopeId(req), String(Number(req.params.id))]
+    );
+    if (_pmc[0].n === 0) {
+      patch.amount_paid = (patch.amount != null ? patch.amount : (parseFloat(row.amount) || 0));
+    }
+  }
   await db.updateById('bills', Number(req.params.id), patch);
   res.json({ ok: true });
 }));

@@ -897,31 +897,81 @@
       // estimatedTax = taxable × 25%; quarterly = /4). The 25% is a FLAT PLACEHOLDER (server.js:3720),
       // surfaced as an explicit "rough estimate, not tax advice" banner — never authoritative. ──────
       if (name === 'Income Tax Estimate') {
+        // Multi-line estimate WORKSHEET (F137-k). Each line is a % of taxable income, a % of revenue,
+        // or a fixed amount, summed. Cross-border obligations (foreign tax credits, worldwide income,
+        // capital gains not tracked here) are entered as fixed lines. NOT a tax engine — a worksheet.
         const [t, st] = await Promise.all([
           api('GET', '/api/tax-filing').catch(() => ({})),
           api('GET', '/api/settings').catch(() => ({})),
         ]);
-        const revenue = parseFloat((t || {}).revenue) || 0, deductible = parseFloat((t || {}).deductible) || 0;
-        const taxable = parseFloat((t || {}).taxableIncome) || 0;
-        const saved = (st && st.tax_rate != null && st.tax_rate !== '') ? parseFloat(st.tax_rate) : 25;
-        const rate = Math.max(0, Math.min(100, isFinite(saved) ? saved : 25));
-        window._itTaxable = taxable;   // read by onIncomeTaxRateChange to recompute live
-        const est = Math.round(taxable * rate / 100), q = Math.round(est / 4);
-        _rptBody(
-          `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:9px 11px;margin-bottom:12px;font-size:11px;color:var(--t2)">Your income-tax rate below is used here AND in your accountant's Tax Summary. Rough estimate — <strong>not tax advice</strong>.</div>`
-          + `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:10px 12px;margin-bottom:12px"><label for="it-rate" style="font-size:12px;color:var(--t2);font-weight:600">Income-tax rate</label><span style="display:flex;align-items:center;gap:4px"><input id="it-rate" type="number" min="0" max="100" step="0.5" value="${rate}" oninput="onIncomeTaxRateChange()" style="width:74px;text-align:right;font-family:var(--font-mono);background:var(--bg,#0f0d0a);border:1px solid var(--bd,#2b2620);color:var(--t1);border-radius:6px;padding:5px 7px"><span style="color:var(--t2)">%</span></span></div>`
-          + tiles([
-            tile('Estimated Annual Tax', `<span id="it-est">${m(est)}</span>`, 'taxable × your rate', 'var(--red)'),
-            tile('Per Quarter', `<span id="it-quarter">${m(q)}</span>`, 'set aside each Q', 'var(--red)'),
-            tile('Taxable Income', m(taxable), 'revenue − deductibles'),
-            tile('Your Rate', `<span id="it-effrate">${rate}%</span>`, 'editable above'),
-          ])
-          + hdr('How it is estimated')
-          + row('Revenue', m(revenue), { color: 'var(--green)' })
-          + row('Less: deductible expenses', '− ' + m(deductible), { color: 'var(--red)' })
-          + row('Taxable income', m(taxable), { bold: true })
-          + `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)"><span style="color:var(--t2)">Estimated tax (× <span id="it-ratepct">${rate}</span>%)</span><span style="font-family:var(--font-mono);color:var(--red)" id="it-est2">${m(est)}</span></div>`
-          + row('Quarterly payment (÷ 4)', `<span id="it-quarter2">${m(q)}</span>`, { bold: true, color: 'var(--red)' }));
+        window._taxTaxable = parseFloat((t || {}).taxableIncome) || 0;
+        window._taxRevenue = parseFloat((t || {}).revenue) || 0;
+        let saved = Array.isArray(st && st.tax_lines) ? st.tax_lines : null;
+        if (!saved || !saved.length) {
+          const legacy = (st && st.tax_rate != null && st.tax_rate !== '') ? parseFloat(st.tax_rate) : 25;
+          saved = [{ label: 'Income tax', type: 'taxable', value: isFinite(legacy) ? legacy : 25, note: '' }];
+        }
+        window._taxLines = saved.map(l => ({
+          label: String((l && l.label) || ''),
+          type: ['taxable', 'revenue', 'fixed'].includes(l && l.type) ? l.type : 'taxable',
+          value: parseFloat(l && l.value) || 0,
+          note: String((l && l.note) || ''),
+        }));
+
+        const lineAmt = l => { const v = parseFloat(l.value) || 0; return l.type === 'revenue' ? (window._taxRevenue || 0) * v / 100 : l.type === 'fixed' ? v : (window._taxTaxable || 0) * v / 100; };
+        const r2 = n => Math.round(n * 100) / 100;
+        const totalTax = () => r2(window._taxLines.reduce((s, l) => s + lineAmt(l), 0));
+        const persistTax = () => {
+          const total = totalTax(), tx = window._taxTaxable || 0;
+          const eff = tx > 0 ? r2(total / tx * 100) : 0;   // derived effective rate → accountant portal
+          clearTimeout(window._taxSave);
+          window._taxSave = setTimeout(() => { try { api('PUT', '/api/settings', { tax_lines: window._taxLines, tax_rate: eff }); } catch (_) { /* ignore */ } }, 500);
+        };
+        window._readTaxInputs = () => window._taxLines.forEach((l, i) => {
+          const g = id => document.getElementById(id + i);
+          if (g('tl-label-')) l.label = g('tl-label-').value;
+          if (g('tl-val-')) l.value = parseFloat(g('tl-val-').value) || 0;
+          if (g('tl-type-')) l.type = g('tl-type-').value;
+          if (g('tl-note-')) l.note = g('tl-note-').value;
+        });
+        window.onTaxEdit = () => {
+          window._readTaxInputs();
+          window._taxLines.forEach((l, i) => { const a = document.getElementById('tl-amt-' + i); if (a) a.textContent = m(r2(lineAmt(l))); });
+          const total = totalTax(), q = Math.round(total / 4);
+          ['tl-total', 'tl-total2'].forEach(id => { const x = document.getElementById(id); if (x) x.textContent = m(total); });
+          ['tl-quarter', 'tl-fq'].forEach(id => { const x = document.getElementById(id); if (x) x.textContent = m(q); });
+          persistTax();
+        };
+        window.addTaxLine = () => { window._readTaxInputs(); window._taxLines.push({ label: '', type: 'taxable', value: 0, note: '' }); window._renderTaxWorksheet(); persistTax(); };
+        window.removeTaxLine = (i) => { window._readTaxInputs(); window._taxLines.splice(i, 1); if (!window._taxLines.length) window._taxLines.push({ label: 'Income tax', type: 'taxable', value: 0, note: '' }); window._renderTaxWorksheet(); persistTax(); };
+        window._renderTaxWorksheet = () => {
+          const opt = (v, lbl, cur) => `<option value="${v}"${cur === v ? ' selected' : ''}>${lbl}</option>`;
+          const lineRows = window._taxLines.map((l, i) => `<div style="padding:8px 0;border-bottom:1px solid var(--bd)">
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+              <input id="tl-label-${i}" value="${e(l.label)}" oninput="onTaxEdit()" placeholder="Tax name" style="flex:1;min-width:0;background:var(--bg,#0f0d0a);border:1px solid var(--bd,#2b2620);color:var(--t1);border-radius:6px;padding:5px 7px;font-size:12px">
+              <input id="tl-val-${i}" type="number" step="0.1" min="0" value="${l.value}" oninput="onTaxEdit()" style="width:62px;text-align:right;font-family:var(--font-mono);background:var(--bg,#0f0d0a);border:1px solid var(--bd,#2b2620);color:var(--t1);border-radius:6px;padding:5px 6px;font-size:12px">
+              <select id="tl-type-${i}" onchange="onTaxEdit()" style="background:var(--bg,#0f0d0a);border:1px solid var(--bd,#2b2620);color:var(--t1);border-radius:6px;padding:5px 4px;font-size:11px">${opt('taxable', '% taxable', l.type)}${opt('revenue', '% revenue', l.type)}${opt('fixed', 'fixed $', l.type)}</select>
+              <button onclick="removeTaxLine(${i})" title="Remove" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 3px">✕</button>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+              <input id="tl-note-${i}" value="${e(l.note)}" oninput="onTaxEdit()" placeholder="note (optional)" style="flex:1;min-width:0;background:none;border:none;color:var(--t3);font-size:11px;padding:0">
+              <span style="font-family:var(--font-mono);color:var(--red);font-size:12px">= <span id="tl-amt-${i}">${m(r2(lineAmt(l)))}</span></span>
+            </div></div>`).join('');
+          const total = totalTax(), q = Math.round(total / 4);
+          _rptBody(
+            `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:9px 11px;margin-bottom:12px;font-size:11px;color:var(--t2)">Add a line per tax you owe — each a % of taxable income, % of revenue, or a fixed amount. <strong>Rough estimate — not tax advice.</strong> Cross-border obligations (foreign tax credits, worldwide income, capital gains) aren't computed here — enter them as fixed amounts and consult a professional. Your lines also feed your accountant's Tax Summary.</div>`
+            + tiles([
+              tile('Estimated Tax', `<span id="tl-total">${m(total)}</span>`, 'sum of all lines', 'var(--red)'),
+              tile('Per Quarter', `<span id="tl-quarter">${m(q)}</span>`, 'set aside each Q', 'var(--red)'),
+              tile('Taxable Income', m(window._taxTaxable || 0), 'revenue − deductibles'),
+              tile('Revenue', m(window._taxRevenue || 0), 'gross income'),
+            ])
+            + hdr('Tax lines')
+            + lineRows
+            + `<button onclick="addTaxLine()" style="margin-top:8px;background:none;border:1px dashed var(--acc,#c8a44a);color:var(--acc,#c8a44a);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;width:100%">+ Add tax line</button>`
+            + `<div style="margin-top:12px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Total Estimated Tax <span style="color:var(--t3);font-size:11px;font-weight:500">(<span id="tl-fq">${m(q)}</span>/quarter)</span></span><span style="font-family:var(--font-mono);color:var(--red)" id="tl-total2">${m(total)}</span></div>`);
+        };
+        window._renderTaxWorksheet();
         return;
       }
 
@@ -1062,21 +1112,6 @@
     }
   };
 
-  // F137-k: live handler for the Income Tax Estimate editable rate. Recomputes the estimate from the
-  // taxable income (window._itTaxable) × the entered rate, updates the on-screen figures, and persists
-  // the rate to /api/settings (debounced) so it survives reloads AND flows to the accountant portal.
-  window.onIncomeTaxRateChange = function () {
-    const el = document.getElementById('it-rate'); if (!el) return;
-    let r = parseFloat(el.value); if (!isFinite(r)) r = 0; r = Math.max(0, Math.min(100, r));
-    const taxable = parseFloat(window._itTaxable) || 0;
-    const est = Math.round(taxable * r / 100), q = Math.round(est / 4);
-    const fmtN = (typeof window._fmtMoneyNative === 'function') ? window._fmtMoneyNative : (n => '$' + (parseFloat(n) || 0).toFixed(2));
-    const set = (id, v) => { const x = document.getElementById(id); if (x) x.textContent = v; };
-    set('it-est', fmtN(est)); set('it-est2', fmtN(est)); set('it-quarter', fmtN(q)); set('it-quarter2', fmtN(q));
-    set('it-effrate', r + '%'); set('it-ratepct', String(r));
-    clearTimeout(window._itSave);
-    window._itSave = setTimeout(() => { try { api('PUT', '/api/settings', { tax_rate: r }); } catch (_) { /* ignore */ } }, 500);
-  };
 
   // ══════════════════════════════════════════════════════
   // 9. BUDGET TARGETS — handled by finflow-api-wiring-medium.js

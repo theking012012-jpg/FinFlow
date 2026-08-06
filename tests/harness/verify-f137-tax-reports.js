@@ -66,31 +66,37 @@ process.on('uncaughtException', (e) => {
     A('Deductible: total === Σ deductible expenses (canonical)', td.flat.includes('TotalDeductible' + flat(fmt(srvDed))), `want TotalDeductible${flat(fmt(srvDed))} (ded=${srvDed})`);
     A('Deductible: no escaped-HTML leak', !/<span/i.test(td.raw));
 
-    // F137-k Income Tax Estimate
+    // F137-k Income Tax Estimate — multi-line worksheet
+    const taxable = Number(tf.taxableIncome) || 0;
     const it = await bodyOf('Income Tax Estimate');
-    A('Income Tax: own content + "not tax advice" disclaimer', /not tax advice/i.test(it.raw) && /Estimated Annual Tax/i.test(it.raw));
+    const tget = id => window.document.getElementById(id);
+    A('Income Tax: worksheet content (Tax lines + Estimated Tax + not-tax-advice + Add line)',
+      /Tax lines/i.test(it.raw) && /Estimated Tax/i.test(it.raw) && /not tax advice/i.test(it.raw) && /Add tax line/i.test(it.raw));
     A('Income Tax: NOT generic', !/incl\.\s*bills/i.test(it.raw));
-    A('Income Tax: Taxable income === /api/tax-filing taxableIncome', it.flat.includes('Taxableincome' + flat(fmt(Number(tf.taxableIncome) || 0))), `want Taxableincome${flat(fmt(Number(tf.taxableIncome) || 0))}`);
-    // Editable persistent rate (replaces the hardcoded 25%).
-    const itRate = window.document.getElementById('it-rate');
-    A('Income Tax: editable rate input present, defaults to 25%', !!itRate && String(itRate.value) === '25', `value=${itRate && itRate.value}`);
-    if (itRate) {
-      const taxable = Number(tf.taxableIncome) || 0;
-      itRate.value = '40';
-      if (typeof window.onIncomeTaxRateChange === 'function') window.onIncomeTaxRateChange();
-      await settle(3, 50);
-      const estEl = window.document.getElementById('it-est');
-      const wantEst = fmt(Math.round(taxable * 40 / 100));
-      A('Income Tax: editing the rate recomputes the estimate (taxable × new rate)',
-        !!estEl && flat(estEl.textContent) === flat(wantEst), `est=${estEl && estEl.textContent} want=${wantEst}`);
-      await settle(8, 100); // past the 500ms debounce
-      const puts = (wireLog || []).filter(w => w.method === 'PUT' && w.path === '/api/settings' && /tax_rate/.test(w.body || ''));
-      A('Income Tax: the new rate persists via PUT /api/settings {tax_rate} (also feeds the accountant portal)',
-        puts.length >= 1 && /"tax_rate":\s*40/.test(puts[puts.length - 1].body || ''), `puts=${puts.length}`);
-      const after = (await http.get('/api/settings')).json || {};
-      A('Income Tax: tax_rate saved server-side (settings allowlist accepts it — accountant portal reads settings.tax_rate)',
-        Number(after.tax_rate) === 40, `server tax_rate=${JSON.stringify(after.tax_rate)}`);
-    }
+    A('Income Tax: no escaped-HTML leak', !/<span|<input|<select/i.test(it.raw));
+    A('Income Tax: default income line computes taxable × 25%',
+      !!tget('tl-total') && flat(tget('tl-total').textContent) === flat(fmt(Math.round(taxable * 25 / 100 * 100) / 100)), `total=${tget('tl-total') && tget('tl-total').textContent}`);
+    // Edit line 0 → 30%, add a fixed capital-gains line $500, assert the total reconciles.
+    const setv = (id, v) => { const x = tget(id); if (x) x.value = v; };
+    setv('tl-val-0', '30'); window.onTaxEdit(); await settle(2, 50);
+    window.addTaxLine(); await settle(2, 50);
+    setv('tl-label-1', 'Capital gains'); setv('tl-type-1', 'fixed'); setv('tl-val-1', '500'); window.onTaxEdit(); await settle(2, 50);
+    const expTotal = Math.round((taxable * 30 / 100 + 500) * 100) / 100;
+    A('Income Tax: multi-line total reconciles (30% of taxable + $500 fixed)',
+      !!tget('tl-total') && flat(tget('tl-total').textContent) === flat(fmt(expTotal)), `total=${tget('tl-total') && tget('tl-total').textContent} want=${fmt(expTotal)}`);
+    A('Income Tax: no leak after add-line re-render', !/<span|<input|<select/i.test((tget('rpt-body') || {}).textContent || ''));
+    await settle(8, 100); // past the 500ms debounce
+    const puts = (wireLog || []).filter(w => w.method === 'PUT' && w.path === '/api/settings' && /tax_lines/.test(w.body || ''));
+    A('Income Tax: worksheet persists via PUT /api/settings {tax_lines}', puts.length >= 1, `puts=${puts.length}`);
+    const after = (await http.get('/api/settings')).json || {};
+    A('Income Tax: tax_lines saved server-side (SOURCE OF TRUTH: 2 lines incl. fixed $500); derived tax_rate finite',
+      Array.isArray(after.tax_lines) && after.tax_lines.length === 2 && after.tax_lines.some(l => l.type === 'fixed' && Number(l.value) === 500) && Number.isFinite(Number(after.tax_rate)),
+      `tax_lines=${JSON.stringify(after.tax_lines)} rate=${after.tax_rate}`);
+    // Derived rate is exact for %-of-taxable lines when taxable>0; with a fixed line or taxable=0 it
+    // cannot be represented as one rate (the accountant-portal coupling limitation — see ledger).
+    A('Income Tax: derived tax_rate reproduces the total when taxable>0 (else 0, honest)',
+      taxable > 0 ? Math.abs(Number(after.tax_rate) / 100 * taxable - expTotal) < 1 : Number(after.tax_rate) === 0,
+      `rate=${after.tax_rate} taxable=${taxable} expTotal=${expTotal}`);
 
     // F137-l VAT Return
     const vt = await bodyOf('VAT Return');

@@ -1610,6 +1610,15 @@ app.put('/api/settings', requireAuth, requirePerm('settings:manage'), wrap(async
   // accountant portal Tax Summary (accountant-routes.js reads settings.data.tax_rate) share one rate.
   // Clamped 0–100. Replaces the hardcoded 25% guess with the owner's own number.
   if (b.tax_rate       != null) patch.tax_rate        = Math.max(0, Math.min(100, parseFloat(b.tax_rate) || 0));
+  // F137-k: the Income Tax Estimate worksheet — a list of estimate lines {label,type,value,note}
+  // (type: % of taxable income / % of revenue / fixed amount). Sanitized + capped. `tax_rate` above
+  // is still written as the DERIVED effective rate so the accountant portal (rate-based) stays correct.
+  if (Array.isArray(b.tax_lines)) patch.tax_lines = b.tax_lines.slice(0, 20).map(l => ({
+    label: String((l && l.label) || '').slice(0, 60),
+    type: ['taxable', 'revenue', 'fixed'].includes(l && l.type) ? l.type : 'taxable',
+    value: Math.max(0, Math.min(1e12, parseFloat(l && l.value) || 0)),
+    note: String((l && l.note) || '').slice(0, 120),
+  }));
   if (b.fiscal_year    != null) patch.fiscal_year     = String(b.fiscal_year).slice(0,20);
   if (b.num_employees  != null) patch.num_employees   = b.num_employees;
   if (b.onboarding_done!= null) patch.onboarding_done = b.onboarding_done ? 1 : 0;

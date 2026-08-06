@@ -80,6 +80,15 @@ process.on('uncaughtException', (e) => {
     A('Balance Sheet: label reads "Cash & Equivalents" (single-encoded)', /Cash & Equivalents/.test(b.raw), `raw=${b.raw.slice(0, 60)}`);
     A('Balance Sheet: no literal "&amp;" in the rendered text', !/&amp;/.test(b.raw), `raw=${b.raw.slice(0, 60)}`);
 
+    // ── Print stylesheet (structural — on-paper appearance is owner-confirmed; jsdom can't render @media print) ──
+    const pcss = window.document.getElementById('rpt-print-css');
+    const pt = pcss ? (pcss.textContent || '') : '';
+    A('print: @media print stylesheet injected', !!pcss && /@media\s+print/.test(pt), 'no #rpt-print-css');
+    A('print: re-themes report to a light palette (redefines --bg2/--t1 on the modal)',
+      /#report-gen-modal \.modal\{[^}]*--bg2:/.test(pt) && /--t1:/.test(pt), 'no light-palette var override');
+    A('print: hides the rest of the app so only the report prints',
+      /body > \*:not\(#report-gen-modal\)\{[^}]*display:\s*none/.test(pt), 'no hide-others rule');
+
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed\n`);
   } catch (e) {
     console.error('\n  FATAL:', e && e.stack ? e.stack : String(e));

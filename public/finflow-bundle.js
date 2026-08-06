@@ -4981,6 +4981,25 @@ function clearAIChat(){
       </div>`;
       document.body.appendChild(modal);
     }
+    // F137 print-optimization: the "Print" button calls window.print(), which otherwise prints the
+    // whole dark app. This @media-print sheet (injected once) hides everything except the report and
+    // REDEFINES the theme CSS variables to a light palette scoped to the modal — because the report is
+    // built from var(--...)-driven inline styles, flipping the vars re-themes every element (tiles,
+    // bars, text) to dark-on-white for paper without touching the on-screen (dark) rendering.
+    // NOTE: on-paper appearance is owner-confirmed via print preview — jsdom cannot render @media print.
+    if (!document.getElementById('rpt-print-css')) {
+      const _pcss = document.createElement('style');
+      _pcss.id = 'rpt-print-css';
+      _pcss.textContent = '@media print {'
+        + ' body > *:not(#report-gen-modal){display:none !important;}'
+        + ' #report-gen-modal{position:static !important;background:#fff !important;}'
+        + ' #report-gen-modal .modal{--bg2:#f4f1ea;--bd:#d9d2c4;--t1:#1a1712;--t2:#3a352c;--t3:#6a6255;--green:#1f7a44;--red:#a23b2e;--acc:#9a7d2e;background:#fff !important;color:#111 !important;max-width:none !important;max-height:none !important;box-shadow:none !important;border:none !important;}'
+        + ' #report-gen-modal #rpt-body{overflow:visible !important;max-height:none !important;}'
+        + ' #report-gen-modal .modal-footer, #report-gen-modal .modal-close{display:none !important;}'
+        + ' @page{margin:14mm;}'
+        + '}';
+      document.head.appendChild(_pcss);
+    }
     document.getElementById('rpt-title').textContent = name;
     document.getElementById('rpt-sub').textContent = 'Generated ' + new Date().toLocaleDateString();
     document.getElementById('rpt-body').innerHTML = '<div style="color:var(--t3)">Loading data…</div>';

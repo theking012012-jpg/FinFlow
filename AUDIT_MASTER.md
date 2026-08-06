@@ -1112,7 +1112,11 @@ A richer `generateReport` at `app-main.js:5619` HAS proper branches — Profit &
 **Done when:** each report renders its own content (a Balance Sheet shows assets/liabilities/equity incl. AP; a Cash Flow shows inflow/outflow; etc.), proven per report; and the dead app-main copy is removed once nothing needs it.
 
 **Sub-fixes:**
-- **F137-a (Balance Sheet)** — IN PROGRESS this cycle: `name==='Balance Sheet'` branch delegating to `/api/reports/balance-sheet`, rendering Assets / AR / Accounts Payable / Equity (honoring F123 `cashTracked`). Also restores the visible AP surface for F135.
+- **F137-a (Balance Sheet)** — ✅ SHIPPED (`9cd92b3`): `name==='Balance Sheet'` branch delegating to `/api/reports/balance-sheet`, rendering Assets / AR / Accounts Payable / Equity (honoring F123 `cashTracked`). Restores the visible AP surface for F135. jsdom fail-then-pass (6/6).
+- **F137-b (Cash Flow Statement)** — built this cycle: monthly inflow/outflow/net from the shared `_cashMonthly` cache (`/api/reports/cash-flow`), same array the dashboard cash card reads (F57/D3). Pure delegation.
+- **F137-c (Accounts Receivable)** — built this cycle: outstanding-by-customer breakdown; total is canonical `_arOutstanding` (F56); rows use the identical per-invoice rule and reconcile to the total.
+- **F137-d (Accounts Payable)** — built this cycle: outstanding-by-vendor breakdown; total is canonical `/api/reports/balance-sheet` `accountsPayable` (F135); rows use the identical server AP rule and reconcile to the total.
+- Still generic (need content/endpoints built): Sales by Customer, Payroll Summary, VAT Return, Income Tax Estimate, 1099/W-2 Summary, Tax-Deductible Expenses. Delete the dead `app-main.js:5619` copy once all are migrated.
 
 ---
 

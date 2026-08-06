@@ -542,6 +542,15 @@
     modal.classList.remove('hidden');
 
     try {
+      // ── F137 (per-report renderers). Shared cell helpers. `m` is the app's native money formatter,
+      // so these reports read money exactly as every other surface does (F124). ─────────────────────
+      const m = n => (typeof window._fmtMoneyNative === 'function')
+        ? window._fmtMoneyNative(n)
+        : (typeof S === 'function' ? S(n) : '$' + (parseFloat(n) || 0).toFixed(2));
+      const hdr = l => `<div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;padding:8px 0 4px">${l}</div>`;
+      const row = (label, val, opts = {}) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)${opts.bold ? ';font-weight:600' : ''}"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono)${opts.color ? `;color:${opts.color}` : ''}">${val}</span></div>`;
+      const _rptBody = html => { document.getElementById('rpt-body').innerHTML = html; };
+
       // ── F137-a: the Balance Sheet report must render an ACTUAL balance sheet (assets /
       // liabilities / equity), NOT the generic P&L overview below. app-main.js:5647 had this but is
       // dead-shadowed by this winner. Delegates to the canonical /api/reports/balance-sheet (AR via
@@ -550,13 +559,8 @@
       // is labelled as excluding it. Returns before the generic render so the P&L cards do not also show.
       if (name === 'Balance Sheet') {
         const bs = await api('POST', '/api/reports/balance-sheet', {});
-        const m = n => (typeof window._fmtMoneyNative === 'function')
-          ? window._fmtMoneyNative(n)
-          : (typeof S === 'function' ? S(n) : '$' + (parseFloat(n) || 0).toFixed(2));
-        const hdr = l => `<div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;padding:8px 0 4px">${l}</div>`;
-        const row = (label, val, opts = {}) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)${opts.bold ? ';font-weight:600' : ''}"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono)${opts.color ? `;color:${opts.color}` : ''}">${val}</span></div>`;
         const cashCell = bs.cashTracked === false ? '<span style="color:var(--t3)">Not tracked</span>' : m(bs.cash);
-        document.getElementById('rpt-body').innerHTML =
+        _rptBody(
           hdr('Assets')
           + row('Cash &amp; Equivalents', cashCell)
           + row('Accounts Receivable', m(bs.accountsReceivable), { color: 'var(--green)' })
@@ -564,7 +568,77 @@
           + hdr('Liabilities')
           + row('Accounts Payable', m(bs.accountsPayable), { color: 'var(--red)' })
           + row('Total Liabilities', m(bs.totalLiabilities), { color: 'var(--red)', bold: true })
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="font-family:var(--font-mono);color:${(bs.equity || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${m(bs.equity)}</span></div>`;
+          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="font-family:var(--font-mono);color:${(bs.equity || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${m(bs.equity)}</span></div>`);
+        return;
+      }
+
+      // ── F137-b: Cash Flow Statement — monthly inflow/outflow/net from the SHARED cash cache
+      // (_cashMonthly, POST /api/reports/cash-flow), the same array the dashboard cash card reads,
+      // so the two cannot drift (F57/D3). Pure delegation — no recompute. ──────────────────────────
+      if (name === 'Cash Flow Statement') {
+        if (typeof window._loadCashMonthly === 'function') await window._loadCashMonthly();
+        const rows = window._cashMonthly || [];
+        const net = rows.reduce((s, r) => s + ((parseFloat(r.inflow) || 0) - (parseFloat(r.outflow) || 0)), 0);
+        const detail = rows.map(r => {
+          const rn = (parseFloat(r.inflow) || 0) - (parseFloat(r.outflow) || 0);
+          return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)"><span style="color:var(--t2)">${e(r.month || '')}</span><span style="color:var(--t3);font-family:var(--font-mono);font-size:11px">${m(r.inflow)} in / ${m(r.outflow)} out</span><span style="font-family:var(--font-mono);color:${rn >= 0 ? 'var(--green)' : 'var(--red)'}">${m(rn)}</span></div>`;
+        }).join('');
+        _rptBody(
+          hdr('Monthly Cash Flow')
+          + (detail || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No cash movement recorded.</div>')
+          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Net Cash Flow</span><span style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`);
+        return;
+      }
+
+      // ── F137-c: Accounts Receivable — outstanding customer balances. The TOTAL is the canonical
+      // _arOutstanding (F56, the same figure the dashboard/balance-sheet use). The per-customer rows
+      // are a breakdown using the IDENTICAL per-invoice rule (RECOGNIZED, not future-dated,
+      // Σ max(0, amount − amount_paid)), so Σ rows == total by construction (asserted in the harness),
+      // not a second implementation of the total. ─────────────────────────────────────────────────
+      if (name === 'Accounts Receivable') {
+        const invs = (await api('GET', '/api/invoices')) || [];
+        const ar = (typeof window._arOutstanding === 'function') ? window._arOutstanding(invs) : { total: 0 };
+        const REC = ['pending', 'overdue', 'partial', 'paid'];
+        const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : null;
+        const byCust = {};
+        invs.forEach(i => {
+          const st = (i.status || '').toLowerCase(); if (!REC.includes(st)) return;
+          const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(i.issue_date || i.created_at || i.date) : null;
+          if (today != null && (dy == null || dy > today)) return;
+          const due = Math.max(0, (parseFloat(i.amount) || 0) - (parseFloat(i.amount_paid) || 0));
+          if (due <= 0) return;
+          const cst = i.client || '—'; byCust[cst] = (byCust[cst] || 0) + due;
+        });
+        const rows = Object.entries(byCust).sort((a, b) => b[1] - a[1]).map(([c, amt]) => row(c, m(amt))).join('');
+        _rptBody(
+          hdr('Outstanding by customer')
+          + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding receivables.</div>')
+          + row('Total Receivable', m(ar.total), { bold: true, color: 'var(--green)' }));
+        return;
+      }
+
+      // ── F137-d: Accounts Payable — outstanding vendor balances. The TOTAL is the canonical
+      // /api/reports/balance-sheet accountsPayable (Σ max(0, amount − amount_paid), F135). Per-vendor
+      // rows use the IDENTICAL server AP rule (RECOGNIZED_BILL, not future-dated), so Σ rows == total. ─
+      if (name === 'Accounts Payable') {
+        const bs = await api('POST', '/api/reports/balance-sheet', {});
+        const bills = (await api('GET', '/api/bills')) || [];
+        const REC = ['unpaid', 'due_soon', 'overdue', 'partial', 'paid'];
+        const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : null;
+        const byVendor = {};
+        bills.forEach(b => {
+          const st = (b.status || '').toLowerCase(); if (!REC.includes(st)) return;
+          const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date) : null;
+          if (today != null && (dy == null || dy > today)) return;
+          const due = Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0));
+          if (due <= 0) return;
+          const v = b.vendor || '—'; byVendor[v] = (byVendor[v] || 0) + due;
+        });
+        const rows = Object.entries(byVendor).sort((a, b) => b[1] - a[1]).map(([v, amt]) => row(v, m(amt))).join('');
+        _rptBody(
+          hdr('Outstanding by vendor')
+          + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding payables.</div>')
+          + row('Total Payable', m(bs.accountsPayable), { bold: true, color: 'var(--red)' }));
         return;
       }
       // ── F128: DELEGATE to the canonical client engines. Do NOT recompute. ────────────────────

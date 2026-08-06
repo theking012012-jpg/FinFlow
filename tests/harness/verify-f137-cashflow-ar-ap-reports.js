@@ -71,8 +71,8 @@ process.on('uncaughtException', (e) => {
     // ── F137-b Cash Flow ──
     const cfb = await bodyFlat('Cash Flow Statement');
     console.log(`  [Cash Flow] ${cfb.raw.replace(/\s+/g, ' ').trim().slice(0, 140)}`);
-    A('Cash Flow: shows "Monthly Cash Flow" + "Net Cash Flow" (own content)',
-      /Monthly Cash Flow/i.test(cfb.raw) && /Net Cash Flow/i.test(cfb.raw), cfb.raw.slice(0, 120));
+    A('Cash Flow: shows monthly cash detail + "Net Cash Flow" (own content)',
+      /Net Cash Flow/i.test(cfb.raw) && /(Monthly detail|Cash in vs out)/i.test(cfb.raw), cfb.raw.slice(0, 120));
     A('Cash Flow: NOT the generic P&L modal ("incl. bills" absent)', !/incl\.\s*bills/i.test(cfb.raw));
     A('Cash Flow: Net === Σ(inflow − outflow) from /api/reports/cash-flow',
       cfb.flat.includes('NetCashFlow' + flatten(fmt(srvNet))), `want NetCashFlow${flatten(fmt(srvNet))}`);

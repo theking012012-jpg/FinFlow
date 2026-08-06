@@ -4995,6 +4995,35 @@ function clearAIChat(){
       const hdr = l => `<div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;padding:8px 0 4px">${l}</div>`;
       const row = (label, val, opts = {}) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)${opts.bold ? ';font-weight:600' : ''}"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono)${opts.color ? `;color:${opts.color}` : ''}">${val}</span></div>`;
       const _rptBody = html => { document.getElementById('rpt-body').innerHTML = html; };
+      // ── F137 rich shared helpers (used across the report renderers). ────────────────────────────
+      const _gold = 'var(--acc, #c8a44a)';
+      const tile = (label, val, sub, cls) => `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:9px 10px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)">${e(label)}</div><div style="font-size:17px;font-weight:600;margin-top:4px;color:${cls || 'var(--t1)'};font-family:var(--font-mono)">${val}</div>${sub ? `<div style="font-size:10px;color:var(--t3);margin-top:2px">${e(sub)}</div>` : ''}</div>`;
+      const tiles = arr => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">${arr.join('')}</div>`;
+      const pillHtml = t => `<span style="font-size:10px;font-weight:600;color:${_gold};background:rgba(200,164,74,.14);border-radius:5px;padding:2px 7px;margin-left:6px">${e(t)}</span>`;
+      // A share-bar row: label + amount + a proportional bar (share of `denom`).
+      const shareRow = (label, amt, denom, color) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono);color:${color || 'var(--t1)'}">${m(amt)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${_gold};opacity:.75;width:${denom > 0 ? Math.max(2, Math.round(Math.abs(amt) / denom * 100)) : 0}%"></i></div></div>`;
+      // Paired-series monthly SVG bar chart (rows: [{label, a, b}]). Inline SVG → prints cleanly.
+      const barChart = (cap, series, aLabel, bLabel) => {
+        const rws = series.slice(-6);
+        if (!rws.length) return '';
+        const maxV = Math.max(1, ...rws.map(r => Math.max(Math.abs(r.a || 0), Math.abs(r.b || 0))));
+        const CW = 440, CH = 108, base = CH - 4, gw = CW / rws.length, bw = Math.min(15, gw / 3.2);
+        let bars = '';
+        rws.forEach((r, i) => {
+          const cx = i * gw + gw / 2;
+          const ah = Math.round((Math.abs(r.a || 0) / maxV) * (base - 6));
+          const bh = Math.round((Math.abs(r.b || 0) / maxV) * (base - 6));
+          bars += `<rect x="${(cx - bw - 1).toFixed(1)}" y="${base - ah}" width="${bw.toFixed(1)}" height="${ah}" rx="1" fill="${_gold}"/>`;
+          bars += `<rect x="${(cx + 1).toFixed(1)}" y="${base - bh}" width="${bw.toFixed(1)}" height="${bh}" rx="1" fill="var(--t3)"/>`;
+        });
+        const xl = rws.map(r => `<span style="flex:1;text-align:center">${e(r.label || '')}</span>`).join('');
+        return `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:11px 12px;margin-bottom:14px">
+          <div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px">${e(cap)}</div>
+          <svg viewBox="0 0 ${CW} ${CH}" style="width:100%;height:104px;display:block" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="${base}" x2="${CW}" y2="${base}" stroke="var(--bd,#2b2620)"/>${bars}</svg>
+          <div style="display:flex;font-size:9px;color:var(--t3);margin-top:3px">${xl}</div>
+          <div style="font-size:10px;color:var(--t3);text-align:right;margin-top:6px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${_gold};margin:0 4px 0 8px;vertical-align:middle"></span>${e(aLabel)}<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--t3);margin:0 4px 0 10px;vertical-align:middle"></span>${e(bLabel)}</div>
+        </div>`;
+      };
 
       // ── F137-a: the Balance Sheet report must render an ACTUAL balance sheet (assets /
       // liabilities / equity), NOT the generic P&L overview below. app-main.js:5647 had this but is
@@ -5005,15 +5034,26 @@ function clearAIChat(){
       if (name === 'Balance Sheet') {
         const bs = await api('POST', '/api/reports/balance-sheet', {});
         const cashCell = bs.cashTracked === false ? '<span style="color:var(--t3)">Not tracked</span>' : m(bs.cash);
+        const ta = parseFloat(bs.totalAssets) || 0, tl = parseFloat(bs.totalLiabilities) || 0, eq = parseFloat(bs.equity) || 0;
+        const denomBS = Math.max(1, ta, tl);
         _rptBody(
-          hdr('Assets')
+          tiles([
+            tile('Total Assets', m(ta), 'excl. untracked cash', 'var(--green)'),
+            tile('Total Liabilities', m(tl), 'accounts payable', 'var(--red)'),
+            tile('Equity', m(eq), 'assets − liabilities', eq >= 0 ? 'var(--green)' : 'var(--red)'),
+            tile('Receivable', m(bs.accountsReceivable), 'outstanding AR'),
+          ])
+          + hdr('Assets vs Liabilities')
+          + shareRow('Assets', ta, denomBS, 'var(--green)')
+          + shareRow('Liabilities', tl, denomBS, 'var(--red)')
+          + hdr('Assets')
           + row('Cash & Equivalents', cashCell)
           + row('Accounts Receivable', m(bs.accountsReceivable), { color: 'var(--green)' })
-          + row('Total Assets (excl. untracked cash)', m(bs.totalAssets), { bold: true })
+          + row('Total Assets (excl. untracked cash)', m(ta), { bold: true })
           + hdr('Liabilities')
           + row('Accounts Payable', m(bs.accountsPayable), { color: 'var(--red)' })
-          + row('Total Liabilities', m(bs.totalLiabilities), { color: 'var(--red)', bold: true })
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="font-family:var(--font-mono);color:${(bs.equity || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${m(bs.equity)}</span></div>`);
+          + row('Total Liabilities', m(tl), { color: 'var(--red)', bold: true })
+          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="font-family:var(--font-mono);color:${eq >= 0 ? 'var(--green)' : 'var(--red)'}">${m(eq)}</span></div>`);
         return;
       }
 
@@ -5023,13 +5063,22 @@ function clearAIChat(){
       if (name === 'Cash Flow Statement') {
         if (typeof window._loadCashMonthly === 'function') await window._loadCashMonthly();
         const rows = window._cashMonthly || [];
-        const net = rows.reduce((s, r) => s + ((parseFloat(r.inflow) || 0) - (parseFloat(r.outflow) || 0)), 0);
+        const tin = rows.reduce((s, r) => s + (parseFloat(r.inflow) || 0), 0);
+        const tout = rows.reduce((s, r) => s + (parseFloat(r.outflow) || 0), 0);
+        const net = tin - tout;
         const detail = rows.map(r => {
           const rn = (parseFloat(r.inflow) || 0) - (parseFloat(r.outflow) || 0);
           return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)"><span style="color:var(--t2)">${e(r.month || '')}</span><span style="color:var(--t3);font-family:var(--font-mono);font-size:11px">${m(r.inflow)} in / ${m(r.outflow)} out</span><span style="font-family:var(--font-mono);color:${rn >= 0 ? 'var(--green)' : 'var(--red)'}">${m(rn)}</span></div>`;
         }).join('');
         _rptBody(
-          hdr('Monthly Cash Flow')
+          tiles([
+            tile('Net Cash Flow', m(net), 'inflow − outflow', net >= 0 ? 'var(--green)' : 'var(--red)'),
+            tile('Total Inflow', m(tin), 'received', 'var(--green)'),
+            tile('Total Outflow', m(tout), 'paid out', 'var(--red)'),
+            tile('Active Months', String(rows.length), 'with cash activity'),
+          ])
+          + barChart('Cash in vs out — monthly', rows.map(r => ({ label: r.month, a: parseFloat(r.inflow) || 0, b: parseFloat(r.outflow) || 0 })), 'Inflow', 'Outflow')
+          + hdr('Monthly detail')
           + (detail || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No cash movement recorded.</div>')
           + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Net Cash Flow</span><span style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`);
         return;
@@ -5054,9 +5103,14 @@ function clearAIChat(){
           if (due <= 0) return;
           const cst = i.client || '—'; byCust[cst] = (byCust[cst] || 0) + due;
         });
-        const rows = Object.entries(byCust).sort((a, b) => b[1] - a[1]).map(([c, amt]) => row(c, m(amt))).join('');
+        const entries = Object.entries(byCust).sort((a, b) => b[1] - a[1]);
+        const rows = entries.map(([c, amt]) => shareRow(c, amt, ar.total || 1, 'var(--red)')).join('');
         _rptBody(
-          hdr('Outstanding by customer')
+          tiles([
+            tile('Total Receivable', m(ar.total), (ar.count || 0) + ' open', 'var(--green)'),
+            tile('Overdue', m(ar.overdueTotal || 0), (ar.overdueCount || 0) + ' invoices', (ar.overdueTotal || 0) > 0 ? 'var(--red)' : 'var(--t2)'),
+          ])
+          + hdr('Outstanding by customer')
           + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding receivables.</div>')
           + row('Total Receivable', m(ar.total), { bold: true, color: 'var(--green)' }));
         return;
@@ -5079,11 +5133,17 @@ function clearAIChat(){
           if (due <= 0) return;
           const v = b.vendor || '—'; byVendor[v] = (byVendor[v] || 0) + due;
         });
-        const rows = Object.entries(byVendor).sort((a, b) => b[1] - a[1]).map(([v, amt]) => row(v, m(amt))).join('');
+        const apTotal = parseFloat(bs.accountsPayable) || 0;
+        const entries = Object.entries(byVendor).sort((a, b) => b[1] - a[1]);
+        const rows = entries.map(([v, amt]) => shareRow(v, amt, apTotal || 1, 'var(--red)')).join('');
         _rptBody(
-          hdr('Outstanding by vendor')
+          tiles([
+            tile('Total Payable', m(apTotal), entries.length + ' vendor' + (entries.length === 1 ? '' : 's'), 'var(--red)'),
+            tile('Largest', entries.length ? m(entries[0][1]) : m(0), entries.length ? String(entries[0][0]) : '—'),
+          ])
+          + hdr('Outstanding by vendor')
           + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding payables.</div>')
-          + row('Total Payable', m(bs.accountsPayable), { bold: true, color: 'var(--red)' }));
+          + row('Total Payable', m(apTotal), { bold: true, color: 'var(--red)' }));
         return;
       }
 
@@ -5107,11 +5167,17 @@ function clearAIChat(){
           const c = i.client || '—'; byCust[c] = (byCust[c] || 0) + amt; invoiced += amt;
         });
         const total = (typeof window.computeRevenue === 'function') ? window.computeRevenue(period) : invoiced;
-        const custRows = Object.entries(byCust).sort((a, b) => b[1] - a[1]).map(([c, amt]) => row(c, m(amt), { color: 'var(--green)' })).join('');
+        const entries = Object.entries(byCust).sort((a, b) => b[1] - a[1]);
+        const denomS = Math.max(1, total, invoiced);
+        const custRows = entries.map(([c, amt]) => shareRow(c, amt, denomS, 'var(--green)')).join('');
         const remainder = Math.round((total - invoiced) * 100) / 100;
         const remRow = Math.abs(remainder) >= 0.01 ? row('Cash sales / credits (unattributed)', m(remainder), { color: 'var(--t2)' }) : '';
         _rptBody(
-          hdr('Revenue by customer — ' + (PERIOD_LABEL[period] || period))
+          tiles([
+            tile('Total Revenue', m(total), PERIOD_LABEL[period] || period, 'var(--green)'),
+            tile('Top Customer', entries.length ? m(entries[0][1]) : m(0), entries.length ? String(entries[0][0]) : '—'),
+          ])
+          + hdr('Revenue by customer — ' + (PERIOD_LABEL[period] || period))
           + (custRows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No invoiced revenue in this period.</div>')
           + remRow
           + row('Total Revenue', m(total), { bold: true, color: 'var(--green)' }));
@@ -5125,16 +5191,23 @@ function clearAIChat(){
       if (name === 'Payroll Summary') {
         const runs = (await api('GET', '/api/payroll-runs')) || [];
         const lineGross = l => (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0);
-        let tGross = 0, tNet = 0;
-        const runRows = runs.map(r => {
+        const runData = runs.map(r => {
           const lines = Array.isArray(r.lines) ? r.lines.filter(Boolean) : [];
-          const g = lines.reduce((s, l) => s + lineGross(l), 0);
-          const n = lines.reduce((s, l) => s + (parseFloat(l.net_pay) || 0), 0);
-          tGross += g; tNet += n;
-          return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)"><span style="color:var(--t2)">${e(r.period || '')} <span style="color:var(--t3);font-size:11px">${e((r.status || '').toLowerCase())}</span></span><span style="color:var(--t3);font-family:var(--font-mono);font-size:11px">gross ${m(g)}</span><span style="font-family:var(--font-mono)">${m(n)}</span></div>`;
-        }).join('');
+          return { period: r.period || '', status: (r.status || '').toLowerCase(),
+            g: lines.reduce((s, l) => s + lineGross(l), 0), n: lines.reduce((s, l) => s + (parseFloat(l.net_pay) || 0), 0) };
+        });
+        const tGross = runData.reduce((s, x) => s + x.g, 0);
+        const tNet = runData.reduce((s, x) => s + x.n, 0);
+        const gDen = Math.max(1, ...runData.map(x => x.g));
+        const runRows = runData.map(x => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(x.period)} <span style="color:var(--t3);font-size:11px">${e(x.status)}</span></span><span style="font-family:var(--font-mono)">net ${m(x.n)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(x.g / gDen * 100))}%"></i></div><div style="font-size:10px;color:var(--t3);margin-top:2px">gross ${m(x.g)}</div></div>`).join('');
         _rptBody(
-          hdr('Payroll runs (gross = Σ line items, basis C)')
+          tiles([
+            tile('Total Gross', m(tGross), 'Σ line items (basis C)', 'var(--red)'),
+            tile('Total Net', m(tNet), 'take-home', 'var(--green)'),
+            tile('Runs', String(runData.length), 'payroll runs'),
+            tile('Deductions', m(Math.round((tGross - tNet) * 100) / 100), 'gross − net'),
+          ])
+          + hdr('Payroll runs (gross = Σ line items, basis C)')
           + (runRows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs yet.</div>')
           + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Gross / Net</span><span style="font-family:var(--font-mono)">${m(tGross)} / ${m(tNet)}</span></div>`);
         return;

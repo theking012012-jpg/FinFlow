@@ -562,7 +562,7 @@
         const cashCell = bs.cashTracked === false ? '<span style="color:var(--t3)">Not tracked</span>' : m(bs.cash);
         _rptBody(
           hdr('Assets')
-          + row('Cash &amp; Equivalents', cashCell)
+          + row('Cash & Equivalents', cashCell)
           + row('Accounts Receivable', m(bs.accountsReceivable), { color: 'var(--green)' })
           + row('Total Assets (excl. untracked cash)', m(bs.totalAssets), { bold: true })
           + hdr('Liabilities')
@@ -692,6 +692,80 @@
           hdr('Payroll runs (gross = Σ line items, basis C)')
           + (runRows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs yet.</div>')
           + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Gross / Net</span><span style="font-family:var(--font-mono)">${m(tGross)} / ${m(tNet)}</span></div>`);
+        return;
+      }
+
+      // ── F137-g: Profit & Loss Statement — a RICH statement: hero KPI tiles, a monthly
+      // revenue-vs-expenses chart (inline SVG — prints/exports cleanly, unlike a canvas), then the
+      // full statement with per-category expense share-bars and margin pills. Delegates to
+      // /api/reports/profit-loss (canonical computeBooks totals + dated monthly rows) for the figures
+      // and window.computeExpenseBreakdown for the manual-category split; every category + Payroll +
+      // a "Bills & other" remainder reconcile to the canonical Total Operating Expenses. ────────────
+      if (name === 'Profit & Loss Statement') {
+        const d = await api('POST', '/api/reports/profit-loss', {});
+        const prows = Array.isArray(d.rows) ? d.rows : [];
+        const rev = parseFloat(d.totalRevenue) || 0, cogs = parseFloat(d.cogs) || 0, gp = parseFloat(d.grossProfit) || 0;
+        const pay = parseFloat(d.payroll) || 0, exp = parseFloat(d.totalExpenses) || 0, net = parseFloat(d.netProfit) || 0;
+        const period = (typeof currentPeriod !== 'undefined' && currentPeriod) ? currentPeriod : 'year';
+        const pct = (n, dd) => dd > 0 ? (Math.round((n / dd) * 1000) / 10) + '%' : '—';
+        const gold = 'var(--acc, #c8a44a)';
+
+        // Hero KPI tiles.
+        const tile = (label, val, sub, cls) => `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:9px 10px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)">${e(label)}</div><div style="font-size:17px;font-weight:600;margin-top:4px;color:${cls || 'var(--t1)'};font-family:var(--font-mono)">${val}</div><div style="font-size:10px;color:var(--t3);margin-top:2px">${e(sub)}</div></div>`;
+        const kpis = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+          ${tile('Revenue', m(rev), 'issued', 'var(--green)')}
+          ${tile('Gross Profit', m(gp), pct(gp, rev) + ' margin')}
+          ${tile('Net Profit', m(net), pct(net, rev) + ' net margin', net >= 0 ? 'var(--green)' : 'var(--red)')}
+          ${tile('Expenses', m(exp), 'incl. payroll + COGS', 'var(--red)')}
+        </div>`;
+
+        // Monthly revenue-vs-expenses chart (last 6 months of dated rows).
+        const rws = prows.slice(-6);
+        let chart = '';
+        if (rws.length) {
+          const maxV = Math.max(1, ...rws.map(r => Math.max(parseFloat(r.revenue) || 0, parseFloat(r.expenses) || 0)));
+          const CW = 440, CH = 108, base = CH - 4, groupW = CW / rws.length, bw = Math.min(15, groupW / 3.2);
+          let bars = '';
+          rws.forEach((r, i) => {
+            const cx = i * groupW + groupW / 2;
+            const rh = Math.round(((parseFloat(r.revenue) || 0) / maxV) * (base - 6));
+            const eh = Math.round(((parseFloat(r.expenses) || 0) / maxV) * (base - 6));
+            bars += `<rect x="${(cx - bw - 1).toFixed(1)}" y="${base - rh}" width="${bw.toFixed(1)}" height="${rh}" rx="1" fill="${gold}"/>`;
+            bars += `<rect x="${(cx + 1).toFixed(1)}" y="${base - eh}" width="${bw.toFixed(1)}" height="${eh}" rx="1" fill="var(--t3)"/>`;
+          });
+          const xl = rws.map(r => `<span style="flex:1;text-align:center">${e(r.month || '')}</span>`).join('');
+          chart = `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:11px 12px;margin-bottom:14px">
+            <div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px">Revenue vs Expenses — monthly</div>
+            <svg viewBox="0 0 ${CW} ${CH}" style="width:100%;height:104px;display:block" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="${base}" x2="${CW}" y2="${base}" stroke="var(--bd,#2b2620)"/>${bars}</svg>
+            <div style="display:flex;font-size:9px;color:var(--t3);margin-top:3px">${xl}</div>
+            <div style="font-size:10px;color:var(--t3);text-align:right;margin-top:6px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${gold};margin:0 4px 0 8px;vertical-align:middle"></span>Revenue<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--t3);margin:0 4px 0 10px;vertical-align:middle"></span>Expenses</div>
+          </div>`;
+        }
+
+        // Operating-expense category share-bars: manual categories + Payroll + a reconciling
+        // "Bills & other" remainder, so Σ == the canonical Total Operating Expenses (exp).
+        const bd = (typeof window.computeExpenseBreakdown === 'function') ? window.computeExpenseBreakdown(period) : { total: 0, byCategory: {} };
+        const manualTotal = parseFloat(bd.total) || 0;
+        const billsOther = Math.round((exp - pay - manualTotal) * 100) / 100;
+        const catList = Object.entries(bd.byCategory || {}).map(([c, a]) => [c, parseFloat(a) || 0]);
+        catList.push(['Payroll', pay]);
+        if (Math.abs(billsOther) >= 0.01) catList.push(['Bills & other', billsOther]);
+        catList.sort((a, b) => b[1] - a[1]);
+        const catBar = ([label, amt]) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono);color:var(--red)">${m(amt)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${gold};opacity:.75;width:${exp > 0 ? Math.max(2, Math.round((amt / exp) * 100)) : 0}%"></i></div></div>`;
+        const pill = t => `<span style="font-size:10px;font-weight:600;color:${gold};background:rgba(200,164,74,.14);border-radius:5px;padding:2px 7px;margin-left:6px">${e(t)}</span>`;
+
+        _rptBody(
+          kpis
+          + chart
+          + hdr('Revenue')
+          + row('Total Revenue', m(rev), { bold: true, color: 'var(--green)' })
+          + hdr('Cost of Sales')
+          + row('Cost of Goods Sold (FIFO)', '− ' + m(cogs), { color: 'var(--red)' })
+          + `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd);font-weight:600"><span>Gross Profit ${pill(pct(gp, rev) + ' margin')}</span><span style="font-family:var(--font-mono)">${m(gp)}</span></div>`
+          + hdr('Operating Expenses')
+          + catList.map(catBar).join('')
+          + row('Total Operating Expenses', m(exp), { bold: true, color: 'var(--red)' })
+          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Net Profit ${pill(pct(net, rev) + ' net margin')}</span><span style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`);
         return;
       }
       // ── F128: DELEGATE to the canonical client engines. Do NOT recompute. ────────────────────

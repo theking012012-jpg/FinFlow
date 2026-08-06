@@ -570,7 +570,7 @@
       const m = n => (typeof window._fmtMoneyNative === 'function')
         ? window._fmtMoneyNative(n)
         : (typeof S === 'function' ? S(n) : '$' + (parseFloat(n) || 0).toFixed(2));
-      const hdr = l => `<div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;padding:8px 0 4px">${l}</div>`;
+      const hdr = l => `<div style="font-size:11px;color:var(--acc, #c8a44a);font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:9px 0 4px;border-bottom:1px solid var(--acc-bg, rgba(200,164,74,.18));margin-bottom:2px">${l}</div>`;
       const row = (label, val, opts = {}) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)${opts.bold ? ';font-weight:600' : ''}"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono)${opts.color ? `;color:${opts.color}` : ''}">${val}</span></div>`;
       const _rptBody = html => { document.getElementById('rpt-body').innerHTML = html; };
       // ── F137 rich shared helpers (used across the report renderers). ────────────────────────────

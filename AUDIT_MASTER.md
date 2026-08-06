@@ -1097,6 +1097,25 @@ So a user opening any report gets a revenue figure that disagrees with the dashb
 
 ---
 
+### F137 🟠 HIGH — 11 of 12 reports render the SAME generic P&L overview regardless of type; the real per-report renderer (incl. the only Balance-Sheet/AP surface) is dead-shadowed — **NEW (2026-08-05, read-only verified)**
+**Status:** OPEN. Found while hunting for a UI surface to confirm F135's Accounts Payable — there isn't one, and this is why.
+
+**Root.** Every report "Generate" button calls one function, `window.generateReport(name)` (`finflow-api-wiring-extra.js:515`), the runtime winner. It uses `name` ONLY for the modal title (`:539`); the body always computes the same four figures (Revenue / Expenses / Net Profit / Outstanding) + a recorded-expense breakdown and renders one modal. There is NO per-report branching in it. So "Balance Sheet", "Cash Flow", "Accounts Payable", "VAT Return", etc. all render the identical P&L overview under a different heading.
+
+A richer `generateReport` at `app-main.js:5619` HAS proper branches — Profit & Loss, a real Balance Sheet (Assets / AR / **Accounts Payable** / Equity via `/api/reports/balance-sheet`), and Cash Flow — but it is DEAD CODE, shadowed by the extra.js winner (bundle loads extra.js after app-main; `onclick="generateReport(...)"` → `window.generateReport` → extra.js copy). Failure #1 / F75: the good renderer produces nothing.
+
+**The figures are canonical, the labels are wrong.** F128 rewired the winner to delegate to `computeRevenue`/`computeExpenseBreakdown`, so the numbers agree with the dashboard by construction. This is a PRESENTATION/labeling defect, not a miscalculation — but a "Balance Sheet" that shows a P&L, and four Tax reports that show no tax content, is a launch-quality and trust problem. It is also why F135's AP fix has no visible readout.
+
+**Audit (all 12).** Correct + correctly labeled: Profit & Loss (1). Partially relevant: Expense Report (shows the category breakdown). Mislabeled duplicates of the P&L overview (10): Balance Sheet, Cash Flow Statement, Accounts Receivable, Accounts Payable, Sales by Customer, Payroll Summary, VAT Return, Income Tax Estimate, 1099/W-2 Summary, Tax-Deductible Expenses.
+
+**Course of action (one report per commit; each its own oracle where it shows money).** Add per-`name` branches to the winner delegating to canonical sources. Buildable now (server endpoints exist): Balance Sheet + AR + AP (`/api/reports/balance-sheet`), Cash Flow (`/api/reports/cash-flow`). Need content/endpoints built: Sales by Customer, Payroll Summary, and the four Tax reports. Once all reports are migrated onto the winner, delete the dead `app-main.js:5619` copy wholesale (Failure #1 hygiene) — kept for now as reference for the Cash Flow branch.
+**Done when:** each report renders its own content (a Balance Sheet shows assets/liabilities/equity incl. AP; a Cash Flow shows inflow/outflow; etc.), proven per report; and the dead app-main copy is removed once nothing needs it.
+
+**Sub-fixes:**
+- **F137-a (Balance Sheet)** — IN PROGRESS this cycle: `name==='Balance Sheet'` branch delegating to `/api/reports/balance-sheet`, rendering Assets / AR / Accounts Payable / Equity (honoring F123 `cashTracked`). Also restores the visible AP surface for F135.
+
+---
+
 ### F135 ✅ **FIXED (2026-08-05; create + edit executed fail-then-pass on real scratch Postgres)** — was 🟡 MEDIUM — Bills created (or edited) with status "paid" never got `amount_paid`, so a paid-on-create bill overstated AP payable — symmetric AP mirror of F133
 **Status:** ✅ **FIXED (code path)** — `server.js` POST and PUT `/api/bills` now set `amount_paid = amount` when `status='paid'` (PUT guarded on "no linked `payments_made`"). Verified by `tests/harness/verify-f135-paid-on-create-bill.js`: pre-fix AP=3100 with P/E `amount_paid` absent (**FAIL**), post-fix AP=1100 with P.amount_paid 1300, E.amount_paid 700, partial (L) intact, control (U) unchanged (**ALL GREEN, 10 passed**); F84 oracle re-run green (no regression). The confirmed edit-path answer to the old open sub-question: **yes**, PUT `/api/bills` could flip to 'paid' without `amount_paid` — closed here. Existing rows: see the backfill note below.
 

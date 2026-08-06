@@ -4983,6 +4983,31 @@ function clearAIChat(){
     modal.classList.remove('hidden');
 
     try {
+      // ── F137-a: the Balance Sheet report must render an ACTUAL balance sheet (assets /
+      // liabilities / equity), NOT the generic P&L overview below. app-main.js:5647 had this but is
+      // dead-shadowed by this winner. Delegates to the canonical /api/reports/balance-sheet (AR via
+      // computeBooks; AP = Σ max(0, amount − amount_paid), which F135 made correct), and honors F123:
+      // cash is NOT tracked, so it is shown as "Not tracked", never a fabricated $0, and Total Assets
+      // is labelled as excluding it. Returns before the generic render so the P&L cards do not also show.
+      if (name === 'Balance Sheet') {
+        const bs = await api('POST', '/api/reports/balance-sheet', {});
+        const m = n => (typeof window._fmtMoneyNative === 'function')
+          ? window._fmtMoneyNative(n)
+          : (typeof S === 'function' ? S(n) : '$' + (parseFloat(n) || 0).toFixed(2));
+        const hdr = l => `<div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;padding:8px 0 4px">${l}</div>`;
+        const row = (label, val, opts = {}) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)${opts.bold ? ';font-weight:600' : ''}"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono)${opts.color ? `;color:${opts.color}` : ''}">${val}</span></div>`;
+        const cashCell = bs.cashTracked === false ? '<span style="color:var(--t3)">Not tracked</span>' : m(bs.cash);
+        document.getElementById('rpt-body').innerHTML =
+          hdr('Assets')
+          + row('Cash &amp; Equivalents', cashCell)
+          + row('Accounts Receivable', m(bs.accountsReceivable), { color: 'var(--green)' })
+          + row('Total Assets (excl. untracked cash)', m(bs.totalAssets), { bold: true })
+          + hdr('Liabilities')
+          + row('Accounts Payable', m(bs.accountsPayable), { color: 'var(--red)' })
+          + row('Total Liabilities', m(bs.totalLiabilities), { color: 'var(--red)', bold: true })
+          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="font-family:var(--font-mono);color:${(bs.equity || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${m(bs.equity)}</span></div>`;
+        return;
+      }
       // ── F128: DELEGATE to the canonical client engines. Do NOT recompute. ────────────────────
       //
       // What was here: `invoices.filter(i => i.status === 'paid')` summed at full amount, plus

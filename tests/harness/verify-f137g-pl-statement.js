@@ -56,6 +56,24 @@ process.on('uncaughtException', (e) => {
     A('P&L: renders an inline SVG bar chart (print-safe visual)', /<svg/i.test(p.html) && /<rect/i.test(p.html), 'no <svg>/<rect> in report body');
     A('P&L: Total Operating Expenses === canonical totalExpenses (category bars reconcile)',
       p.flat.includes('TotalOperatingExpenses' + flatten(fmt(srvExp))), `want TotalOperatingExpenses${flatten(fmt(srvExp))} (exp=${srvExp})`);
+    // The parts (manual categories + Payroll + "Bills & other" remainder) must SUM to the total —
+    // the -$7.0K "Bills & other" bug was Σ(parts) ≠ total. Remainder = exp − payroll − Σ(manual cats).
+    const bdc = (typeof window.computeExpenseBreakdown === 'function') ? window.computeExpenseBreakdown('year') : { byCategory: {} };
+    const manualSum = Object.values(bdc.byCategory || {}).reduce((s, a) => s + (parseFloat(a) || 0), 0);
+    const srvPay = Number(pl.json?.payroll) || 0;
+    const expectRem = Math.round((srvExp - srvPay - manualSum) * 100) / 100;
+    A('P&L: "Bills & other" remainder reconciles to exp − payroll − Σ(manual categories)',
+      Math.abs(expectRem) < 0.01 || p.flat.includes('Bills&other' + flatten(fmt(expectRem))),
+      `expected Bills&other ${flatten(fmt(expectRem))} (exp=${srvExp} payroll=${srvPay} manual=${manualSum})`);
+    A('P&L: no negative amount among the Operating Expenses category bars',
+      (() => { const s = p.raw.indexOf('Operating Expenses'); const en = p.raw.indexOf('Total Operating Expenses'); const seg = (s >= 0 && en > s) ? p.raw.slice(s, en) : ''; return !/[-−]\s*\$/.test(seg); })(),
+      'a category bar shows a negative amount (parts do not reconcile)');
+
+    // ── Report modal is scrollable so tall reports don't clip (structural — jsdom can't render layout) ──
+    const shell = window.document.querySelector('#report-gen-modal .modal');
+    const rb = window.document.getElementById('rpt-body');
+    A('Report modal shell is height-capped (max-height set) [structural]', !!shell && /vh|px/.test(shell.style.maxHeight || ''), `maxHeight=${shell && shell.style.maxHeight}`);
+    A('Report body scrolls (overflow-y:auto) so tall reports do not clip [structural]', !!rb && (rb.style.overflowY === 'auto'), `overflowY=${rb && rb.style.overflowY}`);
 
     // ── Balance Sheet &amp; fix ──
     const b = await bodyOf('Balance Sheet');

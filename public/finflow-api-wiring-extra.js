@@ -518,8 +518,12 @@
       modal = document.createElement('div');
       modal.id = 'report-gen-modal';
       modal.className = 'modal-overlay hidden';
-      modal.innerHTML = `<div class="modal" style="max-width:480px">
-        <div class="modal-header">
+      // F137-g: the rich reports are taller than the viewport, so the shell is a flex column capped at
+      // 88vh with a SCROLLING body — otherwise the modal overflows and clips the top KPIs / bottom Net
+      // Profit (as it did on first ship). Header + footer stay pinned; #rpt-body scrolls (min-height:0
+      // lets the flex child actually shrink and scroll).
+      modal.innerHTML = `<div class="modal" style="max-width:480px;max-height:88vh;display:flex;flex-direction:column">
+        <div class="modal-header" style="flex:0 0 auto">
           <div>
             <div class="modal-title" id="rpt-title"></div>
             <div class="modal-sub" id="rpt-sub"></div>
@@ -528,8 +532,8 @@
             <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
           </button>
         </div>
-        <div id="rpt-body" style="margin-top:12px;font-size:13px;color:var(--t2)">Loading…</div>
-        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+        <div id="rpt-body" style="margin-top:12px;font-size:13px;color:var(--t2);overflow-y:auto;flex:1 1 auto;min-height:0">Loading…</div>
+        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px;flex:0 0 auto">
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('report-gen-modal').classList.add('hidden')">Close</button>
           <button class="btn btn-primary btn-sm" onclick="window.print()">Print ↗</button>
         </div>
@@ -744,10 +748,13 @@
 
         // Operating-expense category share-bars: manual categories + Payroll + a reconciling
         // "Bills & other" remainder, so Σ == the canonical Total Operating Expenses (exp).
-        const bd = (typeof window.computeExpenseBreakdown === 'function') ? window.computeExpenseBreakdown(period) : { total: 0, byCategory: {} };
-        const manualTotal = parseFloat(bd.total) || 0;
-        const billsOther = Math.round((exp - pay - manualTotal) * 100) / 100;
+        // byCategory is MANUAL expense rows only; bd.total is the FULL opex (bills + payments +
+        // payroll too), so the remainder must be exp − payroll − Σ(manual categories), NOT
+        // exp − payroll − bd.total (which double-subtracts and drove a bogus negative "Bills & other").
+        const bd = (typeof window.computeExpenseBreakdown === 'function') ? window.computeExpenseBreakdown(period) : { byCategory: {} };
         const catList = Object.entries(bd.byCategory || {}).map(([c, a]) => [c, parseFloat(a) || 0]);
+        const manualCatsSum = catList.reduce((s, kv) => s + kv[1], 0);
+        const billsOther = Math.round((exp - pay - manualCatsSum) * 100) / 100;
         catList.push(['Payroll', pay]);
         if (Math.abs(billsOther) >= 0.01) catList.push(['Bills & other', billsOther]);
         catList.sort((a, b) => b[1] - a[1]);

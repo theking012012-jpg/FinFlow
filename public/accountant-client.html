@@ -1155,19 +1155,30 @@ function renderTax(invoices, expenses) {
   const totalDed = dedFull+dedHalf;
   const taxable = Math.max(0, revenue-totalDed);
   const rate = parseFloat(_data?.taxRate)||0;
-  const liability = rate ? taxable*(rate/100) : 0;
-  set('tax-liability', rate ? fmt(liability) : 'Rate not set');
+  // F137-k/F138: prefer the client's Income Tax worksheet lines (accurate for fixed/revenue lines);
+  // fall back to the single derived rate for older clients that never set lines.
+  const escH = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const taxLines = Array.isArray(_data?.taxLines) ? _data.taxLines : [];
+  const lineAmt = l => { const v = parseFloat(l.value)||0; return l.type==='revenue' ? revenue*v/100 : l.type==='fixed' ? v : taxable*v/100; };
+  const hasLines = taxLines.length > 0;
+  const liability = hasLines ? taxLines.reduce((s,l)=>s+lineAmt(l),0) : (rate ? taxable*(rate/100) : 0);
+  const hasEstimate = hasLines || rate > 0;
+  set('tax-liability', hasEstimate ? fmt(liability) : 'Not set up');
   set('tax-deductible', fmt(totalDed));
   set('tax-taxable', fmt(taxable));
   const warnBanner = document.getElementById('tax-rate-warning');
-  if (warnBanner) warnBanner.style.display = rate ? 'none' : 'flex';
+  if (warnBanner) warnBanner.style.display = hasEstimate ? 'none' : 'flex';
+  const linesHtml = hasLines
+    ? taxLines.map(l=>{ const suffix = l.type==='fixed' ? ' (fixed)' : l.type==='revenue' ? ` (${parseFloat(l.value)||0}% of revenue)` : ` (${parseFloat(l.value)||0}% of taxable)`; return `<div class="pl-row"><span class="pl-label">${escH(l.label||'Tax')}${suffix}</span><span style="color:var(--red);font-weight:500">${fmt(lineAmt(l))}</span></div>`; }).join('')
+        + `<div class="pl-row" style="font-weight:600"><span class="pl-label">Total estimated tax</span><span style="color:var(--red)">${fmt(liability)}</span></div>`
+    : (rate ? `<div class="pl-row"><span class="pl-label">Tax rate (${rate}%)</span><span style="color:var(--red);font-weight:500">${fmt(liability)}</span></div>` : '<div style="font-size:11px;color:var(--text3);padding:8px 0">Client has not set up tax lines in their settings.</div>');
   document.getElementById('tax-breakdown').innerHTML = `
     <div class="card-hdr"><div class="card-title">Tax Calculation Breakdown</div></div>
     <div class="pl-row"><span class="pl-label">Gross Revenue</span><span>${fmt(revenue)}</span></div>
     <div class="pl-row"><span class="pl-label">Fully deductible expenses</span><span style="color:var(--green)">− ${fmt(dedFull)}</span></div>
     <div class="pl-row"><span class="pl-label">50% deductible expenses</span><span style="color:var(--green)">− ${fmt(dedHalf)}</span></div>
     <div class="pl-row"><span class="pl-label">Taxable Income</span><span style="color:var(--amber);font-weight:500">${fmt(taxable)}</span></div>
-    ${rate ? `<div class="pl-row"><span class="pl-label">Tax rate (${rate}%)</span><span style="color:var(--red);font-weight:500">${fmt(liability)}</span></div>` : '<div style="font-size:11px;color:var(--text3);padding:8px 0">Client has not set a tax rate in their settings.</div>'}`;
+    ${linesHtml}`;
 }
 
 // ── NOTES ──────────────────────────────────────────────────────────────────

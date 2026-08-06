@@ -545,6 +545,10 @@ If you cannot find a field, use null. Be concise.`;
     ]);
 
     const taxRate = parseFloat(settings.rows[0]?.data?.tax_rate || 0);
+    // F137-k/F138: the client's Income Tax worksheet lines {label,type,value,note}. When present the
+    // portal sums these directly (accurate for fixed/revenue lines); taxRate stays as the derived
+    // fallback for older clients that never set lines.
+    const taxLines = Array.isArray(settings.rows[0]?.data?.tax_lines) ? settings.rows[0].data.tax_lines : [];
 
     // Optional entity scope (?entity_id=) + period (?period=month|quarter|year; 'all'→year).
     // Default: all entities, year. Both mirror the client dashboard so totals reconcile at
@@ -571,6 +575,7 @@ If you cannot find a field, use null. Be concise.`;
     return res.json({
       accessLevel: access.rows[0].access_level,
       taxRate,
+      taxLines,
       entityId, // echoes the scope applied (null = all entities)
       period,   // echoes the period applied (month|quarter|year)
       summary: {

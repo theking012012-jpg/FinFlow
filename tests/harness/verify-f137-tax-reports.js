@@ -41,7 +41,7 @@ process.on('uncaughtException', (e) => {
         await c.query(`INSERT INTO payroll_run_lines (run_id, payroll_id, employee_name, gross, bonus, overtime, deductions, net_pay) VALUES ($1,$2,$3,$4,0,0,'[]'::jsonb,$5)`, [run, 2, 'Bob B', 1000, 800]);
       },
     });
-    const { window, http, settle } = boot;
+    const { window, http, settle, wireLog } = boot;
     for (let i = 0; i < 250 && typeof window.generateReport !== 'function'; i++) await new Promise(r => setTimeout(r, 100));
     await settle(12, 100);
     A('runtime winner present: window.generateReport', typeof window.generateReport === 'function');
@@ -71,6 +71,26 @@ process.on('uncaughtException', (e) => {
     A('Income Tax: own content + "not tax advice" disclaimer', /not tax advice/i.test(it.raw) && /Estimated Annual Tax/i.test(it.raw));
     A('Income Tax: NOT generic', !/incl\.\s*bills/i.test(it.raw));
     A('Income Tax: Taxable income === /api/tax-filing taxableIncome', it.flat.includes('Taxableincome' + flat(fmt(Number(tf.taxableIncome) || 0))), `want Taxableincome${flat(fmt(Number(tf.taxableIncome) || 0))}`);
+    // Editable persistent rate (replaces the hardcoded 25%).
+    const itRate = window.document.getElementById('it-rate');
+    A('Income Tax: editable rate input present, defaults to 25%', !!itRate && String(itRate.value) === '25', `value=${itRate && itRate.value}`);
+    if (itRate) {
+      const taxable = Number(tf.taxableIncome) || 0;
+      itRate.value = '40';
+      if (typeof window.onIncomeTaxRateChange === 'function') window.onIncomeTaxRateChange();
+      await settle(3, 50);
+      const estEl = window.document.getElementById('it-est');
+      const wantEst = fmt(Math.round(taxable * 40 / 100));
+      A('Income Tax: editing the rate recomputes the estimate (taxable × new rate)',
+        !!estEl && flat(estEl.textContent) === flat(wantEst), `est=${estEl && estEl.textContent} want=${wantEst}`);
+      await settle(8, 100); // past the 500ms debounce
+      const puts = (wireLog || []).filter(w => w.method === 'PUT' && w.path === '/api/settings' && /tax_rate/.test(w.body || ''));
+      A('Income Tax: the new rate persists via PUT /api/settings {tax_rate} (also feeds the accountant portal)',
+        puts.length >= 1 && /"tax_rate":\s*40/.test(puts[puts.length - 1].body || ''), `puts=${puts.length}`);
+      const after = (await http.get('/api/settings')).json || {};
+      A('Income Tax: tax_rate saved server-side (settings allowlist accepts it — accountant portal reads settings.tax_rate)',
+        Number(after.tax_rate) === 40, `server tax_rate=${JSON.stringify(after.tax_rate)}`);
+    }
 
     // F137-l VAT Return
     const vt = await bodyOf('VAT Return');

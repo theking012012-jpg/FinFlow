@@ -897,23 +897,31 @@
       // estimatedTax = taxable × 25%; quarterly = /4). The 25% is a FLAT PLACEHOLDER (server.js:3720),
       // surfaced as an explicit "rough estimate, not tax advice" banner — never authoritative. ──────
       if (name === 'Income Tax Estimate') {
-        const t = (await api('GET', '/api/tax-filing')) || {};
-        const revenue = parseFloat(t.revenue) || 0, deductible = parseFloat(t.deductible) || 0;
-        const taxable = parseFloat(t.taxableIncome) || 0, est = parseFloat(t.estimatedTax) || 0, q = parseFloat(t.quarterly) || 0;
+        const [t, st] = await Promise.all([
+          api('GET', '/api/tax-filing').catch(() => ({})),
+          api('GET', '/api/settings').catch(() => ({})),
+        ]);
+        const revenue = parseFloat((t || {}).revenue) || 0, deductible = parseFloat((t || {}).deductible) || 0;
+        const taxable = parseFloat((t || {}).taxableIncome) || 0;
+        const saved = (st && st.tax_rate != null && st.tax_rate !== '') ? parseFloat(st.tax_rate) : 25;
+        const rate = Math.max(0, Math.min(100, isFinite(saved) ? saved : 25));
+        window._itTaxable = taxable;   // read by onIncomeTaxRateChange to recompute live
+        const est = Math.round(taxable * rate / 100), q = Math.round(est / 4);
         _rptBody(
-          `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:9px 11px;margin-bottom:12px;font-size:11px;color:var(--t2)">⚠ Rough estimate at a flat 25% — <strong>not tax advice</strong>. Actual tax depends on your income, entity type and jurisdiction.</div>`
+          `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:9px 11px;margin-bottom:12px;font-size:11px;color:var(--t2)">Your income-tax rate below is used here AND in your accountant's Tax Summary. Rough estimate — <strong>not tax advice</strong>.</div>`
+          + `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:10px 12px;margin-bottom:12px"><label for="it-rate" style="font-size:12px;color:var(--t2);font-weight:600">Income-tax rate</label><span style="display:flex;align-items:center;gap:4px"><input id="it-rate" type="number" min="0" max="100" step="0.5" value="${rate}" oninput="onIncomeTaxRateChange()" style="width:74px;text-align:right;font-family:var(--font-mono);background:var(--bg,#0f0d0a);border:1px solid var(--bd,#2b2620);color:var(--t1);border-radius:6px;padding:5px 7px"><span style="color:var(--t2)">%</span></span></div>`
           + tiles([
-            tile('Estimated Annual Tax', m(est), '≈ 25% of taxable', 'var(--red)'),
-            tile('Per Quarter', m(q), 'set aside each Q', 'var(--red)'),
+            tile('Estimated Annual Tax', `<span id="it-est">${m(est)}</span>`, 'taxable × your rate', 'var(--red)'),
+            tile('Per Quarter', `<span id="it-quarter">${m(q)}</span>`, 'set aside each Q', 'var(--red)'),
             tile('Taxable Income', m(taxable), 'revenue − deductibles'),
-            tile('Effective Rate', '25%', 'flat placeholder'),
+            tile('Your Rate', `<span id="it-effrate">${rate}%</span>`, 'editable above'),
           ])
           + hdr('How it is estimated')
           + row('Revenue', m(revenue), { color: 'var(--green)' })
           + row('Less: deductible expenses', '− ' + m(deductible), { color: 'var(--red)' })
           + row('Taxable income', m(taxable), { bold: true })
-          + row('Estimated tax (× 25%)', m(est), { color: 'var(--red)' })
-          + row('Quarterly payment (÷ 4)', m(q), { bold: true, color: 'var(--red)' }));
+          + `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)"><span style="color:var(--t2)">Estimated tax (× <span id="it-ratepct">${rate}</span>%)</span><span style="font-family:var(--font-mono);color:var(--red)" id="it-est2">${m(est)}</span></div>`
+          + row('Quarterly payment (÷ 4)', `<span id="it-quarter2">${m(q)}</span>`, { bold: true, color: 'var(--red)' }));
         return;
       }
 
@@ -1052,6 +1060,22 @@
     } catch (err) {
       document.getElementById('rpt-body').textContent = 'Could not load data: ' + err.message;
     }
+  };
+
+  // F137-k: live handler for the Income Tax Estimate editable rate. Recomputes the estimate from the
+  // taxable income (window._itTaxable) × the entered rate, updates the on-screen figures, and persists
+  // the rate to /api/settings (debounced) so it survives reloads AND flows to the accountant portal.
+  window.onIncomeTaxRateChange = function () {
+    const el = document.getElementById('it-rate'); if (!el) return;
+    let r = parseFloat(el.value); if (!isFinite(r)) r = 0; r = Math.max(0, Math.min(100, r));
+    const taxable = parseFloat(window._itTaxable) || 0;
+    const est = Math.round(taxable * r / 100), q = Math.round(est / 4);
+    const fmtN = (typeof window._fmtMoneyNative === 'function') ? window._fmtMoneyNative : (n => '$' + (parseFloat(n) || 0).toFixed(2));
+    const set = (id, v) => { const x = document.getElementById(id); if (x) x.textContent = v; };
+    set('it-est', fmtN(est)); set('it-est2', fmtN(est)); set('it-quarter', fmtN(q)); set('it-quarter2', fmtN(q));
+    set('it-effrate', r + '%'); set('it-ratepct', String(r));
+    clearTimeout(window._itSave);
+    window._itSave = setTimeout(() => { try { api('PUT', '/api/settings', { tax_rate: r }); } catch (_) { /* ignore */ } }, 500);
   };
 
   // ══════════════════════════════════════════════════════

@@ -1606,6 +1606,10 @@ app.put('/api/settings', requireAuth, requirePerm('settings:manage'), wrap(async
   if (b.phone          != null) patch.phone           = String(b.phone).slice(0,50);
   if (b.website        != null) patch.website         = String(b.website).slice(0,200);
   if (b.tax_id         != null) patch.tax_id          = String(b.tax_id).slice(0,50);
+  // F137-k: user-set income-tax rate (%). Persisted here so the Income Tax Estimate report AND the
+  // accountant portal Tax Summary (accountant-routes.js reads settings.data.tax_rate) share one rate.
+  // Clamped 0–100. Replaces the hardcoded 25% guess with the owner's own number.
+  if (b.tax_rate       != null) patch.tax_rate        = Math.max(0, Math.min(100, parseFloat(b.tax_rate) || 0));
   if (b.fiscal_year    != null) patch.fiscal_year     = String(b.fiscal_year).slice(0,20);
   if (b.num_employees  != null) patch.num_employees   = b.num_employees;
   if (b.onboarding_done!= null) patch.onboarding_done = b.onboarding_done ? 1 : 0;

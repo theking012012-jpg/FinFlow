@@ -641,6 +641,59 @@
           + row('Total Payable', m(bs.accountsPayable), { bold: true, color: 'var(--red)' }));
         return;
       }
+
+      // ── F137-e: Sales by Customer — recognized revenue grouped by client, over the active period.
+      // Per-customer rows mirror computeRevenue's INVOICE leg EXACTLY (same _realInvoices, same
+      // _periodWindow, same RECOGNIZED allowlist, issue-date basis — F32), so their sum equals the
+      // invoice portion of the canonical computeRevenue by construction. The TOTAL is computeRevenue
+      // itself; any gap (cash receipts +, credit notes −, neither customer-attributed) is shown as one
+      // explicit "unattributed" row so Σ(rows) == Total, not a second revenue implementation. ────────
+      if (name === 'Sales by Customer') {
+        const period = (typeof currentPeriod !== 'undefined' && currentPeriod) ? currentPeriod : 'year';
+        const PERIOD_LABEL = { month: 'this month', quarter: 'this quarter', year: 'this fiscal year' };
+        const w = (typeof window._periodWindow === 'function') ? window._periodWindow(period) : null;
+        const REC = ['pending', 'overdue', 'partial', 'paid'];
+        const byCust = {};
+        let invoiced = 0;
+        (window._realInvoices || []).forEach(i => {
+          if (!REC.includes((i.status || '').toLowerCase())) return;
+          if (w && !w.inWin(i.issue_date || i.created_at || i.date)) return;
+          const amt = parseFloat(i.amount) || 0;
+          const c = i.client || '—'; byCust[c] = (byCust[c] || 0) + amt; invoiced += amt;
+        });
+        const total = (typeof window.computeRevenue === 'function') ? window.computeRevenue(period) : invoiced;
+        const custRows = Object.entries(byCust).sort((a, b) => b[1] - a[1]).map(([c, amt]) => row(c, m(amt), { color: 'var(--green)' })).join('');
+        const remainder = Math.round((total - invoiced) * 100) / 100;
+        const remRow = Math.abs(remainder) >= 0.01 ? row('Cash sales / credits (unattributed)', m(remainder), { color: 'var(--t2)' }) : '';
+        _rptBody(
+          hdr('Revenue by customer — ' + (PERIOD_LABEL[period] || period))
+          + (custRows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No invoiced revenue in this period.</div>')
+          + remRow
+          + row('Total Revenue', m(total), { bold: true, color: 'var(--green)' }));
+        return;
+      }
+
+      // ── F137-f: Payroll Summary — one row per payroll run (period · status · gross · net). Gross is
+      // Σ of the run's LINE items (gross+bonus+overtime), the SINGLE SOURCE OF TRUTH per basis C /
+      // Rule 12 — NOT the stored total_gross header (which can diverge; that divergence is F-space, not
+      // reconciled silently here). Net is Σ line net_pay. ────────────────────────────────────────────
+      if (name === 'Payroll Summary') {
+        const runs = (await api('GET', '/api/payroll-runs')) || [];
+        const lineGross = l => (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0);
+        let tGross = 0, tNet = 0;
+        const runRows = runs.map(r => {
+          const lines = Array.isArray(r.lines) ? r.lines.filter(Boolean) : [];
+          const g = lines.reduce((s, l) => s + lineGross(l), 0);
+          const n = lines.reduce((s, l) => s + (parseFloat(l.net_pay) || 0), 0);
+          tGross += g; tNet += n;
+          return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)"><span style="color:var(--t2)">${e(r.period || '')} <span style="color:var(--t3);font-size:11px">${e((r.status || '').toLowerCase())}</span></span><span style="color:var(--t3);font-family:var(--font-mono);font-size:11px">gross ${m(g)}</span><span style="font-family:var(--font-mono)">${m(n)}</span></div>`;
+        }).join('');
+        _rptBody(
+          hdr('Payroll runs (gross = Σ line items, basis C)')
+          + (runRows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs yet.</div>')
+          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Gross / Net</span><span style="font-family:var(--font-mono)">${m(tGross)} / ${m(tNet)}</span></div>`);
+        return;
+      }
       // ── F128: DELEGATE to the canonical client engines. Do NOT recompute. ────────────────────
       //
       // What was here: `invoices.filter(i => i.status === 'paid')` summed at full amount, plus

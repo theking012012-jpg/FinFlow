@@ -1116,7 +1116,9 @@ A richer `generateReport` at `app-main.js:5619` HAS proper branches — Profit &
 - **F137-b (Cash Flow Statement)** — built this cycle: monthly inflow/outflow/net from the shared `_cashMonthly` cache (`/api/reports/cash-flow`), same array the dashboard cash card reads (F57/D3). Pure delegation.
 - **F137-c (Accounts Receivable)** — built this cycle: outstanding-by-customer breakdown; total is canonical `_arOutstanding` (F56); rows use the identical per-invoice rule and reconcile to the total.
 - **F137-d (Accounts Payable)** — built this cycle: outstanding-by-vendor breakdown; total is canonical `/api/reports/balance-sheet` `accountsPayable` (F135); rows use the identical server AP rule and reconcile to the total.
-- Still generic (need content/endpoints built): Sales by Customer, Payroll Summary, VAT Return, Income Tax Estimate, 1099/W-2 Summary, Tax-Deductible Expenses. Delete the dead `app-main.js:5619` copy once all are migrated.
+- **F137-e (Sales by Customer)** — built this cycle: recognized revenue grouped by client over the active period; per-customer rows mirror `computeRevenue`'s invoice leg (`_realInvoices` + `_periodWindow` + F32 allowlist), total is canonical `computeRevenue`, with an explicit "unattributed" row (cash receipts / credit notes) so Σ rows == total.
+- **F137-f (Payroll Summary)** — built this cycle: one row per payroll run (period · status · gross · net); gross = Σ line items (basis C / Rule 12, NOT the `total_gross` header), net = Σ line `net_pay`.
+- Still generic (the four **Tax reports** — need tax basis + endpoints scoped with the owner): VAT Return, Income Tax Estimate, 1099/W-2 Summary, Tax-Deductible Expenses. Delete the dead `app-main.js:5619` copy once all are migrated.
 
 ---
 

@@ -116,6 +116,27 @@ async function initDB() {
          AND COALESCE((data->>'amount_paid')::numeric, 0) < (data->>'amount')::numeric
     `);
 
+    // F135 — the symmetric AP backfill for BILLS. F135 fixed the create/edit path going forward
+    // (server.js POST/PUT /api/bills: status='paid' ⇒ amount_paid = amount); this heals the EXISTING
+    // rows that were marked 'paid' with amount_paid NULL/0, which the AP leg counts at FULL FACE
+    // (AP = Σ max(0, amount − amount_paid), server.js:3589) — so a paid bill still shows as owed.
+    // Unlike invoices there was NO bills backfill before, so these rows never self-healed. Owner-gated
+    // (separate commit, explicit approval). SAME shape as the invoices backfill above: bills is a
+    // generic JSONB table (amount/amount_paid/status in `data`), so this is a NULL-safe jsonb_set,
+    // guarded on jsonb_typeof(data->'amount')='number'. It ONLY touches 'paid' bills whose amount_paid
+    // is below amount — a genuinely part-paid bill is status 'partial' (recalcBillStatus), so it is NOT
+    // matched and its amount_paid is preserved. Idempotent: the WHERE clause makes a re-run a no-op.
+    // Read-only pre-check the owner can run first: SELECT id, data->>'vendor', data->>'amount',
+    //   data->>'amount_paid' FROM bills WHERE lower(data->>'status')='paid'
+    //   AND COALESCE((data->>'amount_paid')::numeric,0) < (data->>'amount')::numeric;
+    await client.query(`
+      UPDATE bills
+         SET data = jsonb_set(data, '{amount_paid}', data->'amount')
+       WHERE lower(data->>'status') = 'paid'
+         AND jsonb_typeof(data->'amount') = 'number'
+         AND COALESCE((data->>'amount_paid')::numeric, 0) < (data->>'amount')::numeric
+    `);
+
     // F117 / C1 — durable idempotency backstop for POST /api/invoices. invoices is a generic
     // JSONB table with NO natural key (two identical $2000 invoices are legitimate re-invoicing),
     // so the enforcing key is a per-submit-intent IDEMPOTENCY TOKEN the client mints once and

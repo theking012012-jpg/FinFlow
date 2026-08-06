@@ -5308,6 +5308,95 @@ function clearAIChat(){
           + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Net Profit ${pill(pct(net, rev) + ' net margin')}</span><span style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`);
         return;
       }
+
+      // ── F137-j: Tax-Deductible Expenses — deductible business costs grouped by category. Real
+      // data: expenses carry a `deductible` flag (server.js:1036); same basis as /api/tax-filing.
+      // Σ(category rows) == Total Deductible by construction. ──────────────────────────────────────
+      if (name === 'Tax-Deductible Expenses') {
+        const exps = (await api('GET', '/api/expenses')) || [];
+        const isDed = x => { const d = x.deductible; return d === true || /^(yes|true|1|y)$/i.test(String(d || '')); };
+        const byCat = {}; let ded = 0, nonDed = 0, dedCount = 0;
+        exps.forEach(x => {
+          const amt = parseFloat(x.amount) || 0;
+          if (isDed(x)) { const c = x.category || 'Other'; byCat[c] = (byCat[c] || 0) + amt; ded += amt; dedCount++; }
+          else nonDed += amt;
+        });
+        const entries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+        const rows = entries.map(([c, a]) => shareRow(c, a, ded || 1, 'var(--green)')).join('');
+        _rptBody(
+          tiles([
+            tile('Total Deductible', m(ded), dedCount + ' expense' + (dedCount === 1 ? '' : 's'), 'var(--green)'),
+            tile('Not Deductible', m(nonDed), 'excluded from tax', 'var(--t2)'),
+          ])
+          + hdr('Deductible by category')
+          + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No deductible expenses recorded.</div>')
+          + row('Total Deductible', m(ded), { bold: true, color: 'var(--green)' }));
+        return;
+      }
+
+      // ── F137-k: Income Tax Estimate — consumes /api/tax-filing (taxable = revenue − deductibles;
+      // estimatedTax = taxable × 25%; quarterly = /4). The 25% is a FLAT PLACEHOLDER (server.js:3720),
+      // surfaced as an explicit "rough estimate, not tax advice" banner — never authoritative. ──────
+      if (name === 'Income Tax Estimate') {
+        const t = (await api('GET', '/api/tax-filing')) || {};
+        const revenue = parseFloat(t.revenue) || 0, deductible = parseFloat(t.deductible) || 0;
+        const taxable = parseFloat(t.taxableIncome) || 0, est = parseFloat(t.estimatedTax) || 0, q = parseFloat(t.quarterly) || 0;
+        _rptBody(
+          `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:9px 11px;margin-bottom:12px;font-size:11px;color:var(--t2)">⚠ Rough estimate at a flat 25% — <strong>not tax advice</strong>. Actual tax depends on your income, entity type and jurisdiction.</div>`
+          + tiles([
+            tile('Estimated Annual Tax', m(est), '≈ 25% of taxable', 'var(--red)'),
+            tile('Per Quarter', m(q), 'set aside each Q', 'var(--red)'),
+            tile('Taxable Income', m(taxable), 'revenue − deductibles'),
+            tile('Effective Rate', '25%', 'flat placeholder'),
+          ])
+          + hdr('How it is estimated')
+          + row('Revenue', m(revenue), { color: 'var(--green)' })
+          + row('Less: deductible expenses', '− ' + m(deductible), { color: 'var(--red)' })
+          + row('Taxable income', m(taxable), { bold: true })
+          + row('Estimated tax (× 25%)', m(est), { color: 'var(--red)' })
+          + row('Quarterly payment (÷ 4)', m(q), { bold: true, color: 'var(--red)' }));
+        return;
+      }
+
+      // ── F137-l: VAT Return — FinFlow tracks NO VAT/GST (server.js:4009/4142). Honest "not tracked"
+      // state (F123 class), never a fabricated return. ────────────────────────────────────────────
+      if (name === 'VAT Return') {
+        _rptBody(
+          `<div style="text-align:center;padding:28px 16px;color:var(--t2)">
+            <div style="font-size:30px;margin-bottom:10px">🧾</div>
+            <div style="font-size:15px;font-weight:600;color:var(--t1);margin-bottom:6px">VAT / GST is not tracked</div>
+            <div style="font-size:12px;color:var(--t3);line-height:1.5;max-width:340px;margin:0 auto">FinFlow doesn’t record VAT or sales tax on invoices or bills, so a VAT return can’t be produced from your data. If you’re VAT/GST-registered and need this, VAT tracking can be added as a feature.</div>
+          </div>`);
+        return;
+      }
+
+      // ── F137-m: 1099 / W-2 Summary — per-employee wages from real payroll runs (W-2-style; gross =
+      // Σ line items, basis C). Contractor/1099 payments are NOT tracked, stated plainly. ───────────
+      if (name === '1099 / W-2 Summary') {
+        const runs = (await api('GET', '/api/payroll-runs')) || [];
+        const lg = l => (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0);
+        const byEmp = {}; let tG = 0, tN = 0;
+        runs.forEach(r => (Array.isArray(r.lines) ? r.lines : []).filter(Boolean).forEach(l => {
+          const nm = l.employee_name || '—'; const g = lg(l), n = parseFloat(l.net_pay) || 0;
+          if (!byEmp[nm]) byEmp[nm] = { g: 0, n: 0 };
+          byEmp[nm].g += g; byEmp[nm].n += n; tG += g; tN += n;
+        }));
+        const emps = Object.entries(byEmp).sort((a, b) => b[1].g - a[1].g);
+        const gDen = Math.max(1, ...emps.map(([, v]) => v.g));
+        const rows = emps.map(([nm, v]) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(nm)}</span><span style="font-family:var(--font-mono)">gross ${m(v.g)} · net ${m(v.n)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(v.g / gDen * 100))}%"></i></div></div>`).join('');
+        _rptBody(
+          tiles([
+            tile('Employees', String(emps.length), 'on payroll (W-2)'),
+            tile('Total Wages', m(tG), 'gross, Σ line items', 'var(--red)'),
+            tile('Total Withheld', m(Math.round((tG - tN) * 100) / 100), 'deductions'),
+            tile('Total Net', m(tN), 'take-home', 'var(--green)'),
+          ])
+          + `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:8px 11px;margin-bottom:10px;font-size:11px;color:var(--t2)">Employee (W-2) wages from payroll runs. <strong>Contractor / 1099 payments are not separately tracked</strong> in FinFlow.</div>`
+          + hdr('Employee wages (W-2)')
+          + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No payroll runs recorded.</div>')
+          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Total Wages / Net</span><span style="font-family:var(--font-mono)">${m(tG)} / ${m(tN)}</span></div>`);
+        return;
+      }
       // ── F128: DELEGATE to the canonical client engines. Do NOT recompute. ────────────────────
       //
       // What was here: `invoices.filter(i => i.status === 'paid')` summed at full amount, plus

@@ -3653,10 +3653,14 @@ function clearAIChat(){
       ['pr-customer','pr-invoice-ref','pr-amount','pr-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const d = document.getElementById('pr-date'); if (d) d.value = todayStr();
       const m = document.getElementById('pr-method'); if (m) m.value = 'Bank Transfer';
+      window._prIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new receipt never reuses the last token
       openModal('modal-payment-received');
     };
 
     window.savePaymentReceived = async function () {
+      // C1 Wave 1: in-flight re-entry lock — a double-click cannot fire a 2nd receipt POST. UX layer
+      // only; the durable guarantee is the DB idempotency index (idx_payments_received_idem_key).
+      if (window._savingPaymentReceived) return;
       const customer = document.getElementById('pr-customer')?.value?.trim();
       const amount   = parseFloat(document.getElementById('pr-amount')?.value);
       if (!customer) { notify('Customer name required', true); return; }
@@ -3665,6 +3669,15 @@ function clearAIChat(){
       const date        = document.getElementById('pr-date')?.value   || todayStr();
       const method      = document.getElementById('pr-method')?.value || 'Bank Transfer';
       const notes       = document.getElementById('pr-notes')?.value?.trim() || '';
+      // One idempotency token per submit-intent: minted lazily, reused on retry of THIS modal, reset
+      // on modal open and on success below. Double-submit reuses it (→ DB dedupes); a genuine new
+      // receipt from a reopened modal gets a fresh token and is allowed.
+      window._prIdemKey = window._prIdemKey || (window.crypto?.randomUUID
+        ? window.crypto.randomUUID()
+        : 'pr-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+      window._savingPaymentReceived = true;
+      const _prSaveBtn = document.querySelector('#modal-payment-received .ff-save-btn');
+      if (_prSaveBtn) _prSaveBtn.disabled = true;
       try {
         // F95 step 2: the optimistic `_paymentsRecvData.unshift(saved Store-A row)` that used to
         // sit here is REMOVED — _paymentsRecvData is Store-B-shaped now (invoice_id/payment_date,
@@ -3673,12 +3686,19 @@ function clearAIChat(){
         // where the payment is written (still POST /api/payments-received, still Store A, still
         // step 3's job) — it only removes a now-incorrect render side effect of THIS step's change.
         closeModal('modal-payment-received');
-        await api('POST', '/api/payments-received', { customer, invoice_ref, amount, date, method, notes });
+        await api('POST', '/api/payments-received', { customer, invoice_ref, amount, date, method, notes, idempotency_key: window._prIdemKey });
+        window._prIdemKey = null;   // success → the next receipt mints a fresh token
         notify(`Payment from ${esc(customer)} recorded ✦`);
         loadPaymentsReceived().catch(()=>{});
         window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
-      } catch (e) { notify('Could not save — ' + e.message, true); }
+      } catch (e) {
+        // Keep _prIdemKey so a manual retry of this SAME submit is idempotent (same token → 23505 → original row).
+        notify('Could not save — ' + e.message, true);
+      } finally {
+        window._savingPaymentReceived = false;
+        if (_prSaveBtn) _prSaveBtn.disabled = false;
+      }
     };
 
     // F95 step 2: no longer called from the row template (the delete "✕" column was removed —

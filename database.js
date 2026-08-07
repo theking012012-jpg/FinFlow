@@ -191,6 +191,16 @@ async function initDB() {
         WHERE data->>'idempotency_key' IS NOT NULL
     `);
 
+    // C1 Wave 1 — payments_received idempotency backstop (AR mirror of payments_made). A duplicated
+    // receipt overstates collections / understates AR, so it is high-value. Two legitimate receipts
+    // from the same customer for the same amount are allowed, so the key is the per-submit TOKEN,
+    // not UNIQUE(customer, amount). Partial on non-NULL keys → token-less/legacy rows unchanged.
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_received_idem_key
+        ON payments_received (user_id, (data->>'idempotency_key'))
+        WHERE data->>'idempotency_key' IS NOT NULL
+    `);
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)

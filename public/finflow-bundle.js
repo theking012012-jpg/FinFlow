@@ -3996,7 +3996,9 @@ function clearAIChat(){
       if (!_vendorsFetched) { loadVendors(); return; }
       renderVendorRows(_vendorsData);
       // KPI cards: count · total payables (unpaid bills) · overdue · paid (payments-made)
-      const _vPayables = _billsData.filter(b => b.status?.toLowerCase() !== 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+      // F72: payables = Σ max(0, amount − amount_paid), NOT full face over unpaid — a partially-paid
+      // bill owes only its remaining balance (mirrors the server AP leg, server.js:3779-3790).
+      const _vPayables = _billsData.filter(b => b.status?.toLowerCase() !== 'paid').reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
       const _vPaid = _paymentsMadeData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       setKpiCards('page-vendors', [_vendorsData.length, S(_vPayables), null, S(_vPaid)]);
       window._refreshDashboardUI?.();

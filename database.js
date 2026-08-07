@@ -228,6 +228,16 @@ async function initDB() {
         WHERE data->>'idempotency_key' IS NOT NULL
     `);
 
+    // C1 Wave 1 — journals idempotency backstop (manual journal entries). A duplicated JE double-
+    // posts to the ledger. Two identical balanced entries can be legitimate, so the token is the
+    // key (single-row insert; the debit/credit lines are stored as JSON on the row). Partial on
+    // non-NULL keys → token-less/legacy rows unchanged.
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_journals_idem_key
+        ON journals (user_id, (data->>'idempotency_key'))
+        WHERE data->>'idempotency_key' IS NOT NULL
+    `);
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)

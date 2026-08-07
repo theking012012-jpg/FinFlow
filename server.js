@@ -1747,14 +1747,33 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   if (Math.abs(totalDebit - totalCredit) > 0.01) return res.status(400).json({ error: 'Journal does not balance — debits must equal credits.' });
   if (await isLocked(req.session.userId, date)) return res.status(403).json({ error: 'Period is locked.' });
   const num = 'JE-' + String(Date.now()).slice(-4);
-  const _dup = await findRecentDuplicate('journals', req.session.userId, req.entityId || null, { textMatch: { description: description.trim().slice(0,500) }, numMatch: { debit: totalDebit } });
-  if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('journals', {
-    user_id: req.session.userId, entity_id: req.entityId || null,
-    date: date || new Date().toISOString().slice(0,10),
-    description: description.trim().slice(0,500), ref: num,
-    debit: totalDebit, credit: totalCredit, lines: JSON.stringify(lines), status,
-  });
+  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
+  // the partial unique index (idx_journals_idem_key) is the sole arbiter, so two legitimately
+  // different-token entries with the same description+debit within 5s are not collapsed (F131).
+  if (!idem) {
+    const _dup = await findRecentDuplicate('journals', req.session.userId, req.entityId || null, { textMatch: { description: description.trim().slice(0,500) }, numMatch: { debit: totalDebit } });
+    if (_dup) return res.status(200).json(_dup);
+  }
+  // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover
+  // the ORIGINAL row and return 200 (never a 500, never a double-posted ledger entry). Inert until
+  // idx_journals_idem_key exists.
+  let row;
+  try {
+    ({ row } = await db.insert('journals', {
+      user_id: req.session.userId, entity_id: req.entityId || null,
+      date: date || new Date().toISOString().slice(0,10),
+      description: description.trim().slice(0,500), ref: num,
+      debit: totalDebit, credit: totalCredit, lines: JSON.stringify(lines), status,
+      idempotency_key: idem,
+    }));
+  } catch (e) {
+    if (e.code === '23505' && idem) {
+      const { rows } = await pool.query(`SELECT * FROM journals WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
+    }
+    throw e;
+  }
   logAudit(req, 'CREATE', 'journals', row.id, null, row);
   res.status(201).json(row);
 }));

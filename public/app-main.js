@@ -1049,6 +1049,7 @@ function openJournalEntryModal(){
   document.getElementById('je-date').value = todayLocal();
   document.getElementById('je-notes').value = '';
   updateJETotals();
+  window._jeIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new journal entry never reuses the last token
   document.getElementById('journal-entry-modal').classList.remove('hidden');
 }
 

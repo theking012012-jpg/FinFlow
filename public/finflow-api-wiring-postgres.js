@@ -46,6 +46,9 @@
 
   // ── 2. Wire saveJournalEntry → POST /api/journals ─────────────────
   window.saveJournalEntry = async function (status) {
+    // C1 Wave 1: in-flight re-entry lock — a double-click on Draft/Post cannot fire a 2nd POST. UX
+    // layer only; the durable guarantee is the DB idempotency index (idx_journals_idem_key).
+    if (window._savingJournal) return;
     const rawLines = (window._jeLines || []).filter(
       l => l.code && (l.dr > 0 || l.cr > 0)
     );
@@ -68,14 +71,29 @@
       credit: l.cr    || 0,
     }));
 
+    // One idempotency token per submit-intent: minted lazily, reused on retry of THIS modal, reset
+    // on modal open (openJournalEntryModal) and on success below. A double-click (same status)
+    // reuses it (→ DB dedupes); a Draft then a later Post are separate intents — the modal closes
+    // and resets the token between them, so each posts once.
+    window._jeIdemKey = window._jeIdemKey || (window.crypto?.randomUUID
+      ? window.crypto.randomUUID()
+      : 'je-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+    window._savingJournal = true;
+    const _jeBtns = document.querySelectorAll('#journal-entry-modal [onclick*="saveJournalEntry"]');
+    _jeBtns.forEach(b => { b.disabled = true; });
     try {
-      await api('POST', '/api/journals', { date, description, lines: apiLines, status });
+      await api('POST', '/api/journals', { date, description, lines: apiLines, status, idempotency_key: window._jeIdemKey });
+      window._jeIdemKey = null;   // success → the next entry mints a fresh token
       if (typeof window.renderJournals === 'function') window.renderJournals();
       if (typeof window.renderCOA      === 'function') window.renderCOA();
       if (typeof window.closeModal     === 'function') window.closeModal('journal-entry-modal');
       tip('Journal entry ' + status.toLowerCase());
     } catch (e) {
+      // Keep _jeIdemKey so a manual retry of this SAME submit is idempotent (same token → 23505 → original row).
       tip('Could not save journal entry — ' + e.message, true);
+    } finally {
+      window._savingJournal = false;
+      _jeBtns.forEach(b => { b.disabled = false; });
     }
   };
 

@@ -238,6 +238,15 @@ async function initDB() {
         WHERE data->>'idempotency_key' IS NOT NULL
     `);
 
+    // C1 Wave 1b — chart_of_accounts idempotency backstop (token, boot-safe). JSONB table, so the
+    // token lives in data->>'idempotency_key' like the 9 Wave-1 routes. NOT a natural key on `code`
+    // (that business-uniqueness is deferred post-launch, out-of-band — never in initDB).
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_chart_of_accounts_idem_key
+        ON chart_of_accounts (user_id, (data->>'idempotency_key'))
+        WHERE data->>'idempotency_key' IS NOT NULL
+    `);
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)

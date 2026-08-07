@@ -5496,23 +5496,32 @@ function openNewAccountModal(){
   document.getElementById('coa-cat').value='Assets';
   document.getElementById('coa-nature').value='Debit';
   document.getElementById('coa-balance').value='0';
+  window._coaIdemKey=null;   // C1 Wave 1b: fresh submit-intent → a genuine new account never reuses the last token
   m.classList.remove('hidden');
 }
 async function saveNewAccount(){
+  if(window._savingAccount) return;   // C1 Wave 1b: in-flight re-entry lock
   const code=document.getElementById('coa-code').value.trim();
   const name=document.getElementById('coa-name').value.trim();
   const category=document.getElementById('coa-cat').value;
   const nature=document.getElementById('coa-nature').value;
   const balance=parseFloat(document.getElementById('coa-balance').value)||0;
   if(!code||!name){notify('Code and name are required',true);return;}
+  // One idempotency token per submit-intent (reused on retry, reset on modal-open + success).
+  window._coaIdemKey=window._coaIdemKey||(window.crypto?.randomUUID?window.crypto.randomUUID():'coa-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+  window._savingAccount=true;
+  const _coaBtn=document.querySelector('#coa-new-modal .btn-primary');
+  if(_coaBtn)_coaBtn.disabled=true;
   try{
-    const r=await fetch('/api/chart-of-accounts',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,name,category,nature,balance})});
+    const r=await fetch('/api/chart-of-accounts',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,name,category,nature,balance,idempotency_key:window._coaIdemKey})});
     if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||'API error');}
+    window._coaIdemKey=null;   // success → next account mints a fresh token
     document.getElementById('coa-new-modal').classList.add('hidden');
     notify('Account added ✦');
     window.finflow?.refresh(['journal','dashboard','reports','chart-of-accounts']);
     if(typeof renderCOA==='function')renderCOA();
-  }catch(e){notify('Could not add account — '+e.message,true);}
+  }catch(e){notify('Could not add account — '+e.message,true);}   // keep _coaIdemKey for idempotent retry
+  finally{window._savingAccount=false;if(_coaBtn)_coaBtn.disabled=false;}
 }
 
 // ════════════════════════════════════════════

@@ -1804,13 +1804,29 @@ app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
   if (!code || !name || !category) return res.status(400).json({ error: 'code, name and category required.' });
   const validCats = ['Assets','Liabilities','Equity','Revenue','Expenses'];
   if (!validCats.includes(category)) return res.status(400).json({ error: 'Invalid category.' });
-  const _dup = await findRecentDuplicate('chart_of_accounts', req.session.userId, req.entityId || null, { textMatch: { code: code.trim().slice(0,20) } });
-  if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('chart_of_accounts', {
-    user_id: req.session.userId, entity_id: req.entityId || null,
-    code: code.trim().slice(0,20), name: name.trim().slice(0,200),
-    category, nature, balance: parseFloat(balance) || 0,
-  });
+  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  // C1 Wave 1b: token-blind pre-check runs ONLY for token-less callers; with a token the partial
+  // unique index (idx_chart_of_accounts_idem_key) is the sole arbiter. Entity-consistent pre-check
+  // (req.entityId matches the insert). NOT the natural `code` key — deferred, out-of-band.
+  if (!idem) {
+    const _dup = await findRecentDuplicate('chart_of_accounts', req.session.userId, req.entityId || null, { textMatch: { code: code.trim().slice(0,20) } });
+    if (_dup) return res.status(200).json(_dup);
+  }
+  let row;
+  try {
+    ({ row } = await db.insert('chart_of_accounts', {
+      user_id: req.session.userId, entity_id: req.entityId || null,
+      code: code.trim().slice(0,20), name: name.trim().slice(0,200),
+      category, nature, balance: parseFloat(balance) || 0,
+      idempotency_key: idem,
+    }));
+  } catch (e) {
+    if (e.code === '23505' && idem) {
+      const { rows } = await pool.query(`SELECT * FROM chart_of_accounts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
+    }
+    throw e;
+  }
   res.status(201).json(row);
 }));
 app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {

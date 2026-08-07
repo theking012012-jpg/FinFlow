@@ -170,6 +170,16 @@ async function initDB() {
         WHERE data->>'idempotency_key' IS NOT NULL
     `);
 
+    // C1 Wave 1 — bills idempotency backstop (same shape as invoices/expenses). Two identical
+    // "Acme $500" bills are legitimate, so the key is the per-submit idempotency TOKEN, not
+    // UNIQUE(vendor, amount). Partial on non-NULL keys → token-less/legacy rows excluded, behaviour
+    // unchanged until a token is sent. Independent of F135 amount_paid-on-paid (that is unaffected).
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_bills_idem_key
+        ON bills (user_id, (data->>'idempotency_key'))
+        WHERE data->>'idempotency_key' IS NOT NULL
+    `);
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)

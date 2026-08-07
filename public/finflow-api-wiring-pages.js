@@ -666,6 +666,7 @@
       const rc = document.getElementById('bill-recurring'); if (rc) rc.checked = false;
       const ro = document.getElementById('bill-recurring-opts'); if (ro) ro.style.display = 'none';
       const bf = document.getElementById('bill-freq'); if (bf) bf.value = 'Monthly';
+      window._billIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new bill never reuses the last token
       openModal('bill-modal');
     };
 
@@ -680,6 +681,9 @@
     }
 
     window.saveBill = async function () {
+      // C1 Wave 1: in-flight re-entry lock — a double-click cannot fire a 2nd POST. UX layer only;
+      // the durable guarantee is the DB idempotency index (idx_bills_idem_key).
+      if (window._savingBill) return;
       const vendor = document.getElementById('bill-vendor')?.value?.trim();
       const amount = parseFloat(document.getElementById('bill-amount')?.value);
       if (!vendor) { notify('Vendor name required', true); return; }
@@ -691,9 +695,18 @@
       const recurring = !!document.getElementById('bill-recurring')?.checked;
       const frequency = document.getElementById('bill-freq')?.value || 'Monthly';
       const endDate   = document.getElementById('bill-end-date')?.value || null;
+      // One idempotency token per submit-intent: minted lazily, reused on retry of THIS modal, reset
+      // on modal open (openNewBillModal) and on success below. Double-submit reuses it (→ DB dedupes);
+      // a genuine new bill from a reopened modal gets a fresh token and is allowed.
+      window._billIdemKey = window._billIdemKey || (window.crypto?.randomUUID
+        ? window.crypto.randomUUID()
+        : 'bill-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+      window._savingBill = true;
+      const _billSaveBtn = document.querySelector('#bill-modal .ff-save-btn');
+      if (_billSaveBtn) _billSaveBtn.disabled = true;
       try {
         const _eidBNew = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
-        const saved = await api('POST', '/api/bills', { vendor, amount, due_date, issue_date, status, notes, entity_id: _eidBNew });
+        const saved = await api('POST', '/api/bills', { vendor, amount, due_date, issue_date, status, notes, entity_id: _eidBNew, idempotency_key: window._billIdemKey });
         _billsData.unshift(saved.row || saved);
         window.bills = _billsData;
         // Recurring: this bill IS the current occurrence; also create a recurring
@@ -711,13 +724,20 @@
             if (typeof loadRecurringBills === 'function') loadRecurringBills().catch(()=>{});
           } catch (re) { notify('Bill saved, but recurring setup failed — ' + re.message, true); }
         }
+        window._billIdemKey = null;   // success → the next bill mints a fresh token
         closeModal('bill-modal');
         renderBills();
         notify(recurring ? `Recurring bill for ${esc(vendor)} set up ✦` : `Bill from ${esc(vendor)} saved ✦`);
         loadBills().catch(()=>{});
         window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
-      } catch (e) { notify('Could not save — ' + e.message, true); }
+      } catch (e) {
+        // Keep _billIdemKey so a manual retry of this SAME submit is idempotent (same token → 23505 → original row).
+        notify('Could not save — ' + e.message, true);
+      } finally {
+        window._savingBill = false;
+        if (_billSaveBtn) _billSaveBtn.disabled = false;
+      }
     };
 
     window.markBillPaid = async function (id) {

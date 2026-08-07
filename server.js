@@ -2163,8 +2163,14 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
   const entity = await activeEntity(req.session.userId);
   const num = 'BILL-' + String(Date.now()).slice(-4);
-  const _dup = await findRecentDuplicate('bills', req.session.userId, entity?.id || null, { textMatch: { vendor: String(vendor) }, numMatch: { amount: Number(amount) } });
-  if (_dup) return res.json(_dup);
+  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  // C1 Wave 1: the token-blind 5s findRecentDuplicate pre-check runs ONLY for token-less callers;
+  // when a token IS present the partial unique index (idx_bills_idem_key) is the sole arbiter, so
+  // two legitimately different-token bills for the same vendor+amount within 5s are not collapsed.
+  if (!idem) {
+    const _dup = await findRecentDuplicate('bills', req.session.userId, entity?.id || null, { textMatch: { vendor: String(vendor) }, numMatch: { amount: Number(amount) } });
+    if (_dup) return res.json(_dup);
+  }
   // F36/F38: issue_date is the business issue date the (Step 4) expense-accrual leg keys on;
   // stored only when supplied, legacy rows fall back to created_at at recognition time.
   // F135: a bare status='paid' on create must set amount_paid = amount, else the bill badges "paid"
@@ -2173,7 +2179,19 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   // owns amount_paid once a real payments_made row exists. There is NO bills boot-backfill to heal it.
   const _amt = Number(amount);
   const _amountPaid = String(status).toLowerCase() === 'paid' ? _amt : 0;
-  const { row } = await db.insert('bills', { user_id: req.session.userId, entity_id: entity?.id, vendor, num, amount: _amt, due_date, status, notes, issue_date: issue_date || null, amount_paid: _amountPaid });
+  // C1 Wave 1 durable backstop (mirrors invoices/expenses): a same-token double-submit → the 2nd
+  // INSERT throws 23505 → recover the ORIGINAL row and return 200 (never a 500, never a duplicate).
+  // Inert until idx_bills_idem_key exists. F135 amount_paid-on-paid above is unchanged.
+  let row;
+  try {
+    ({ row } = await db.insert('bills', { user_id: req.session.userId, entity_id: entity?.id, vendor, num, amount: _amt, due_date, status, notes, issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
+  } catch (e) {
+    if (e.code === '23505' && idem) {
+      const { rows } = await pool.query(`SELECT * FROM bills WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
+    }
+    throw e;
+  }
   res.json(row);
 }));
 app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {

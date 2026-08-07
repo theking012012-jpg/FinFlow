@@ -5616,62 +5616,11 @@ async function renderReports(){
     </div>`).join('');
 }
 
-async function generateReport(name,revenue,expenses,profit){
-  const fmt=n=>'$'+(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-  const overlay=document.createElement('div');
-  overlay.className='modal-overlay';
-  overlay.style.zIndex='1100';
-  overlay.innerHTML=`<div class="modal" style="max-width:560px">
-    <div class="modal-header"><div><div class="modal-title">${esc(name)}</div><div class="modal-sub">Generated ${new Date().toLocaleDateString()}</div></div>
-    <button class="modal-close" onclick="this.closest('.modal-overlay').remove()"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
-    <div id="_rpt-body"><div style="padding:2rem;text-align:center;color:var(--t3);font-size:13px">Loading…</div></div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Close</button><button class="btn btn-primary" onclick="notify('Export as PDF coming soon ✦')">Export PDF</button></div>
-  </div>`;
-  document.body.appendChild(overlay);
-  const body=overlay.querySelector('#_rpt-body');
-  const rowStyle='display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)';
-  const hdr=label=>`<div style="font-size:11px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;padding:8px 0 4px">${label}</div>`;
-  try{
-    if(name==='Profit & Loss Statement'){
-      const d=await fetch('/api/reports/profit-loss',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());
-      // Monthly rows show dated cash activity; totals are canonical (computeBooks) — they add
-      // FIFO COGS and payroll accrual (a monthly rate) that aren't in the dated monthly detail.
-      body.innerHTML=`${hdr('Revenue')}${(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${esc(r.month||'')}</span><span style="color:var(--green);font-family:var(--font-mono)">${fmt(r.revenue)}</span></div>`).join('')}
-        <div style="${rowStyle};font-weight:600"><span>Total Revenue</span><span style="color:var(--green);font-family:var(--font-mono)">${fmt(d.totalRevenue)}</span></div>
-        <div style="${rowStyle}"><span style="color:var(--t2)">Cost of Goods Sold (FIFO)</span><span style="color:var(--red);font-family:var(--font-mono)">− ${fmt(d.cogs)}</span></div>
-        <div style="${rowStyle};font-weight:600"><span>Gross Profit</span><span style="font-family:var(--font-mono)">${fmt(d.grossProfit)}</span></div>
-        ${hdr('Operating Expenses')}${(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${esc(r.month||'')}</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(r.expenses)}</span></div>`).join('')}
-        <div style="${rowStyle}"><span style="color:var(--t2)">Payroll (accrued)</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(d.payroll)}</span></div>
-        <div style="${rowStyle};font-weight:600"><span>Total Operating Expenses</span><span style="color:var(--red);font-family:var(--font-mono)">${fmt(d.totalExpenses)}</span></div>
-        <div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Net Profit</span><span style="color:${(d.netProfit||0)>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt(d.netProfit)}</span></div>`;
-    } else if(name==='Balance Sheet'){
-      const d=await fetch('/api/reports/balance-sheet',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());
-      body.innerHTML=`${hdr('Assets')}
-        <div style="${rowStyle}"><span style="color:var(--t2)">Cash & Equivalents</span><span style="font-family:var(--font-mono);color:var(--green)">${fmt(d.cash)}</span></div>
-        <div style="${rowStyle}"><span style="color:var(--t2)">Accounts Receivable</span><span style="font-family:var(--font-mono);color:var(--green)">${fmt(d.accountsReceivable)}</span></div>
-        <div style="${rowStyle};font-weight:600"><span>Total Assets</span><span style="font-family:var(--font-mono);color:var(--green)">${fmt(d.totalAssets)}</span></div>
-        ${hdr('Liabilities')}
-        <div style="${rowStyle}"><span style="color:var(--t2)">Accounts Payable</span><span style="font-family:var(--font-mono);color:var(--red)">${fmt(d.accountsPayable)}</span></div>
-        <div style="${rowStyle};font-weight:600"><span>Total Liabilities</span><span style="font-family:var(--font-mono);color:var(--red)">${fmt(d.totalLiabilities)}</span></div>
-        <div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="color:${(d.equity||0)>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt(d.equity)}</span></div>`;
-    } else if(name==='Cash Flow Statement'){
-      // F57/D3: refresh the SHARED boot cache and render from it, so this report and the
-      // dashboard cash card are reading one array — they cannot drift into two numbers.
-      await _loadCashMonthly();
-      const _cfRows = window._cashMonthly || [];
-      const d = { rows: _cfRows,
-        totalInflow:  _cfRows.reduce((s,r)=>s+(parseFloat(r.inflow)||0),0),
-        totalOutflow: _cfRows.reduce((s,r)=>s+(parseFloat(r.outflow)||0),0) };
-      const rows=(d.rows||[]).map(r=>`<div style="${rowStyle}"><span style="color:var(--t2)">${esc(r.month||'')}</span><span style="color:var(--t2);font-family:var(--font-mono)">${fmt(r.inflow)} in / ${fmt(r.outflow)} out</span><span style="font-family:var(--font-mono);color:${r.net>=0?'var(--green)':'var(--red)'}">${fmt(r.net)}</span></div>`).join('');
-      body.innerHTML=`${hdr('Monthly Cash Flow')}${rows||'<div style="padding:8px 0;color:var(--t3);font-size:12px">No data yet</div>'}
-        <div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:13px;font-weight:600"><span>Net Cash Flow</span><span style="color:${((d.totalInflow||0)-(d.totalOutflow||0))>=0?'var(--green)':'var(--red)'};font-family:var(--font-mono)">${fmt((d.totalInflow||0)-(d.totalOutflow||0))}</span></div>`;
-    } else {
-      body.innerHTML=`<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:13px">${esc(name)} report is not yet available.</div>`;
-    }
-  }catch(err){
-    body.innerHTML=`<div style="padding:1.5rem;text-align:center;color:var(--red);font-size:13px">Error loading report: ${esc(err.message||'unknown error')}</div>`;
-  }
-}
+// F137 / Failure #1 (F75): the `generateReport` that lived here was a DEAD SHADOW. It handled only
+// P&L / Balance Sheet / Cash Flow and "not yet available" for the rest, and was overwritten at runtime
+// by `window.generateReport` in finflow-api-wiring-extra.js (the bundle loads AFTER app-main.js), so
+// this copy never ran. Now that the winner renders all 12 reports (F137-a…m, rich + print), this dead
+// copy is deleted so only the one runtime winner remains. Do not reintroduce a generateReport here.
 
 // ════════════════════════════════════════════
 // DOCUMENTS PAGE

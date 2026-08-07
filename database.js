@@ -180,6 +180,17 @@ async function initDB() {
         WHERE data->>'idempotency_key' IS NOT NULL
     `);
 
+    // C1 Wave 1 — payments_made idempotency backstop (same shape). A duplicated payment is a real
+    // AP double-spend, so this is high-value. Two legitimate payments to the same vendor for the
+    // same amount are allowed (paying two bills), so the key is the per-submit TOKEN, not
+    // UNIQUE(vendor, amount). The bill_id link / recalcBillStatus path is unaffected: on 23505 the
+    // 2nd insert never lands, so the bill is recalculated once by the first request only.
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_made_idem_key
+        ON payments_made (user_id, (data->>'idempotency_key'))
+        WHERE data->>'idempotency_key' IS NOT NULL
+    `);
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)

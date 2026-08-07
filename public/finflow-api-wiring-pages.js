@@ -847,6 +847,7 @@
             }).join('');
         sel.value = '';
       }
+      window._pmIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new payment never reuses the last token
       openModal('modal-payment-made');
     };
 
@@ -864,6 +865,9 @@
     };
 
     window.savePaymentMade = async function () {
+      // C1 Wave 1: in-flight re-entry lock — a double-click cannot fire a 2nd payment POST. UX layer
+      // only; the durable guarantee is the DB idempotency index (idx_payments_made_idem_key).
+      if (window._savingPaymentMade) return;
       const vendor = document.getElementById('pm-vendor')?.value?.trim();
       const amount = parseFloat(document.getElementById('pm-amount')?.value);
       if (!vendor) { notify('Vendor name required', true); return; }
@@ -876,19 +880,35 @@
       // Cash), excludes it from expense (the sole double-count guard, server.js:4378) and reduces AP.
       // Empty ⇒ omit bill_id ⇒ a direct disbursement that stays an expense (unchanged behaviour).
       const _billSel = document.getElementById('pm-bill')?.value;
-      const body = { vendor, ref, amount, date, method, notes };
+      // One idempotency token per submit-intent: minted lazily, reused on retry of THIS modal, reset
+      // on modal open (openMakePaymentModal) and on success below. Double-submit reuses it (→ DB
+      // dedupes); a genuine new payment from a reopened modal gets a fresh token and is allowed.
+      window._pmIdemKey = window._pmIdemKey || (window.crypto?.randomUUID
+        ? window.crypto.randomUUID()
+        : 'pm-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+      const body = { vendor, ref, amount, date, method, notes, idempotency_key: window._pmIdemKey };
       if (_billSel) body.bill_id = Number(_billSel);
+      window._savingPaymentMade = true;
+      const _pmSaveBtn = document.querySelector('#modal-payment-made .ff-save-btn');
+      if (_pmSaveBtn) _pmSaveBtn.disabled = true;
       try {
         const saved = await api('POST', '/api/payments-made', body);
         _paymentsMadeData.unshift(saved.row || saved);
         window.paymentsMade = _paymentsMadeData;
+        window._pmIdemKey = null;   // success → the next payment mints a fresh token
         closeModal('modal-payment-made');
         renderPaymentsMade();
         notify(`Payment to ${esc(vendor)} recorded ✦`);
         loadPaymentsMade().catch(()=>{});
         window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
-      } catch (e) { notify('Could not save — ' + e.message, true); }
+      } catch (e) {
+        // Keep _pmIdemKey so a manual retry of this SAME submit is idempotent (same token → 23505 → original row).
+        notify('Could not save — ' + e.message, true);
+      } finally {
+        window._savingPaymentMade = false;
+        if (_pmSaveBtn) _pmSaveBtn.disabled = false;
+      }
     };
 
     window.deletePaymentMade = async function (id) {

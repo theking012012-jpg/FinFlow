@@ -2480,22 +2480,41 @@ app.get('/api/payments-made', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, date, method, notes, ref, bill_id } = req.body || {};
-  const _dup = await findRecentDuplicate('payments_made', req.session.userId, req.entityId || null, { textMatch: { vendor: (vendor || '').trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
-  if (_dup) return res.json(_dup);
+  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
+  // the partial unique index (idx_payments_made_idem_key) is the sole arbiter, so two legitimately
+  // different-token payments to the same vendor+amount within 5s are not collapsed (F131 class).
+  if (!idem) {
+    const _dup = await findRecentDuplicate('payments_made', req.session.userId, req.entityId || null, { textMatch: { vendor: (vendor || '').trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    if (_dup) return res.json(_dup);
+  }
   // F38 Step 3: bill_id links this payment to a bill (nullable). A LINKED payment settles AP
   // (Step 4 excludes it from expense); an UNLINKED (bill_id null) payment stays a direct expense.
   const _billId = (bill_id != null && bill_id !== '') ? Number(bill_id) : null;
-  const { row } = await db.insert('payments_made', {
-    user_id: req.session.userId,
-    entity_id: req.entityId || null,
-    vendor: (vendor || '').trim().slice(0, 200),
-    amount: parseFloat(amount) || 0,
-    date: date || new Date().toISOString().slice(0, 10),
-    method: (method || '').slice(0, 50),
-    notes: (notes || '').slice(0, 500),
-    ref: (ref || '').slice(0, 100),
-    bill_id: _billId,
-  });
+  // C1 Wave 1 durable backstop (mirrors invoices/expenses/bills): a same-token double-submit → the
+  // 2nd INSERT throws 23505 → recover the ORIGINAL row and return 200. On that path the 2nd payment
+  // never lands, so recalcBillStatus below runs only for a genuine first insert — no double-recalc.
+  let row;
+  try {
+    ({ row } = await db.insert('payments_made', {
+      user_id: req.session.userId,
+      entity_id: req.entityId || null,
+      vendor: (vendor || '').trim().slice(0, 200),
+      amount: parseFloat(amount) || 0,
+      date: date || new Date().toISOString().slice(0, 10),
+      method: (method || '').slice(0, 50),
+      notes: (notes || '').slice(0, 500),
+      ref: (ref || '').slice(0, 100),
+      bill_id: _billId,
+      idempotency_key: idem,
+    }));
+  } catch (e) {
+    if (e.code === '23505' && idem) {
+      const { rows } = await pool.query(`SELECT * FROM payments_made WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
+    }
+    throw e;
+  }
   if (_billId != null) await recalcBillStatus(pool, _billId, req.session.userId);
   res.json(row);
 }));

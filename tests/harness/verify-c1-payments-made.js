@@ -1,0 +1,172 @@
+'use strict';
+/**
+ * verify-c1-payments-made.js — PROVE (Rule 14) that the partial UNIQUE index on the payments_made
+ * idempotency token + the 23505 handler make POST /api/payments-made safe against the concurrent /
+ * slow double-submit the 5s findRecentDuplicate pre-check cannot stop (C1 class, Wave 1).
+ *
+ * payments_made is a generic JSONB table; two identical payments to the same vendor for the same
+ * amount are legitimate (paying two invoices), so the key is a per-submit idempotency TOKEN, not
+ * UNIQUE(vendor, amount). A duplicated payment is a real double-spend in AP, so this is high-value.
+ * The bill_id link + recalcBillStatus path is unaffected: on 23505 the 2nd insert never lands, so
+ * the bill is recalculated once by the first request only.
+ *
+ *   node -r ./tests/harness/clock.js tests/harness/verify-c1-payments-made.js
+ *   NO_INDEX=1 node -r ./tests/harness/clock.js tests/harness/verify-c1-payments-made.js   (CONTROL)
+ *
+ *   A. SAME token, CONCURRENT (TOCTOU race)          fixed → 1 row   buggy → 2 rows
+ *   B. SAME token, SLOW >5s re-click (Rule 9 hole)   fixed → 1 row   buggy → 2 rows
+ *   C. SAME token, two RAW inserts (deterministic)   index → 23505/1 no index → 2 rows
+ *   D. DIFFERENT tokens, same vendor+amount, >5s     both  → 2 rows  (two real payments preserved)
+ *   E. NO token (legacy/API), two POSTs >5s apart    both  → 2 rows  (partial index ignores null)
+ */
+
+const bcrypt = require('bcryptjs');
+const { startScratchPostgres } = require('./pgScratch.js');
+const { bootServer } = require('./boot.js');
+const { HarnessHttp } = require('./httpClient.js');
+
+const LOGIN = { email: 'pm-c1@finflow.test', password: 'harness-password-not-a-secret' };
+const WITH_INDEX = !process.env.NO_INDEX;
+
+(async () => {
+  let scratch, server, pass = 0, fail = 0;
+  const A = (name, ok, detail) => {
+    if (ok) { pass++; console.log(`  PASS  ${name}`); }
+    else { fail++; console.log(`  FAIL  ${name}${detail ? '\n          ' + detail : ''}`); }
+  };
+
+  try {
+    scratch = await startScratchPostgres({ keep: false });
+    const c = scratch.client;
+
+    const pmCount = async (uid, vendor) =>
+      Number((await c.query(
+        `SELECT COUNT(*) n FROM payments_made WHERE user_id=$1 AND data->>'vendor'=$2`, [uid, vendor]
+      )).rows[0].n);
+    const ageOut = (uid, vendor) =>
+      c.query(`UPDATE payments_made SET created_at = NOW() - INTERVAL '30 seconds' WHERE user_id=$1 AND data->>'vendor'=$2`,
+        [uid, vendor]);
+
+    server = await bootServer(scratch.url);      // runs initDB → creates idx_payments_made_idem_key
+    console.log(`\n  MODE: ${WITH_INDEX ? 'WITH INDEX (the fix)' : 'NO INDEX (Rule-14 CONTROL — proves the JS guard alone is insufficient)'}\n`);
+    if (!WITH_INDEX) {
+      const d = await c.query(`DROP INDEX IF EXISTS idx_payments_made_idem_key`);
+      console.log(`  (control) dropped idx_payments_made_idem_key — command tag: ${d.command || 'DROP'}\n`);
+    } else {
+      const ix = await c.query(`SELECT indexdef FROM pg_indexes WHERE indexname='idx_payments_made_idem_key'`);
+      A('migration present: idx_payments_made_idem_key exists (partial, on data->>idempotency_key)',
+        ix.rows.length === 1 && /idempotency_key/.test(ix.rows[0].indexdef),
+        `rows=${ix.rows.length} def=${ix.rows[0]?.indexdef}`);
+    }
+
+    const uid = (await c.query(
+      `INSERT INTO users (user_id, entity_id, data, created_at, updated_at)
+       VALUES (NULL, NULL, $1, NOW(), NOW()) RETURNING id`,
+      [{ email: LOGIN.email, name: 'PM C1 Owner', plan: 'trial', role: 'owner',
+         password: bcrypt.hashSync(LOGIN.password, 10) }]
+    )).rows[0].id;
+    const eid = (await c.query(
+      `INSERT INTO entities (user_id, entity_id, data, created_at, updated_at)
+       VALUES ($1, NULL, $2, NOW(), NOW()) RETURNING id`,
+      [uid, { name: 'PM C1 Co', currency: 'USD', is_active: 1 }]
+    )).rows[0].id;
+
+    const http = new HarnessHttp(server.baseUrl);
+    const login = await http.post('/api/auth/login', LOGIN);
+    A('login 200', login.status === 200, `status ${login.status}: ${login.text?.slice(0, 200)}`);
+    const post = (body) => http.post('/api/payments-made', body);
+
+    // ── A. concurrent identical-token submits (the TOCTOU race) ──
+    const vA = 'race-A', keyA = 'tok-A';
+    const [r1, r2] = await Promise.all([
+      post({ vendor: vA, amount: 2000, idempotency_key: keyA }),
+      post({ vendor: vA, amount: 2000, idempotency_key: keyA }),
+    ]);
+    const nA = await pmCount(uid, vA);
+    if (WITH_INDEX) {
+      A('A. concurrent same-token: exactly ONE payment row', nA === 1, `rows=${nA}  statuses ${r1.status}/${r2.status}`);
+      A('A. concurrent same-token: both responses 2xx (no 500)',
+        [r1.status, r2.status].every(s => s >= 200 && s < 300),
+        `statuses ${r1.status}/${r2.status}  bodies ${r1.text?.slice(0,120)} | ${r2.text?.slice(0,120)}`);
+      A('A. concurrent same-token: both responses carry the SAME id (idempotent return)',
+        r1.json?.id != null && r1.json.id === r2.json?.id, `ids ${r1.json?.id} / ${r2.json?.id}`);
+    } else {
+      console.log(`  INFO  A. (no index) concurrent endpoint race produced ${nA} row(s) — non-deterministic on localhost`);
+    }
+
+    // ── B. slow (>5s) sequential same-token re-click ──
+    const vB = 'slow-B', keyB = 'tok-B';
+    const b1 = await post({ vendor: vB, amount: 1500, idempotency_key: keyB });
+    await ageOut(uid, vB);
+    const b2 = await post({ vendor: vB, amount: 1500, idempotency_key: keyB });
+    const nB = await pmCount(uid, vB);
+    if (WITH_INDEX) {
+      A('B. slow >5s same-token re-click: exactly ONE row (index caught what the 5s window missed)',
+        nB === 1, `rows=${nB}  b1=${b1.status} b2=${b2.status}`);
+      A('B. slow >5s same-token re-click: 2nd response 200 with the SAME id (idempotent recover)',
+        b2.status === 200 && b2.json?.id === b1.json?.id, `b2 status ${b2.status}  ids ${b1.json?.id}/${b2.json?.id}`);
+    } else {
+      A('B. CONTROL (no index): slow >5s same-token re-click → TWO rows — the exact Rule 9 defect, nothing stops it',
+        nB === 2, `rows=${nB}  (with the index this is 1)`);
+    }
+
+    // ── C. deterministic raw-insert control ──
+    const rawData = { vendor: 'raw-C', amount: 100, idempotency_key: 'tok-RAW' };
+    const insRaw = () => c.query(`INSERT INTO payments_made (user_id, entity_id, data) VALUES ($1,$2,$3)`, [uid, eid, rawData]);
+    await insRaw();
+    let rawRejected = false;
+    try { await insRaw(); } catch (e) { rawRejected = (e.code === '23505'); }
+    const nRaw = await pmCount(uid, 'raw-C');
+    if (WITH_INDEX) {
+      A('C. DB backstop: 2nd raw same-token insert rejected 23505 → ONE row', rawRejected && nRaw === 1, `rejected=${rawRejected} rows=${nRaw}`);
+    } else {
+      A('C. CONTROL (no index): 2nd raw same-token insert ACCEPTED → TWO rows (nothing stops a duplicate)', !rawRejected && nRaw === 2, `rejected=${rawRejected} rows=${nRaw}`);
+    }
+
+    // ── D. different tokens, same vendor+amount, spaced >5s → TWO rows (two real payments preserved) ──
+    const vD = 'legit-D';
+    const d1 = await post({ vendor: vD, amount: 3000, idempotency_key: 'tok-D1' });
+    await ageOut(uid, vD);
+    const d2 = await post({ vendor: vD, amount: 3000, idempotency_key: 'tok-D2' });
+    const nD = await pmCount(uid, vD);
+    A('D. different tokens, same vendor+amount: TWO rows (two legitimate payments preserved — token, not UNIQUE(vendor,amount))',
+      nD === 2, `rows=${nD}  d1=${d1.status} d2=${d2.status} ids ${d1.json?.id}/${d2.json?.id}`);
+
+    // ── D2. different tokens, same vendor+amount, <5s apart → TWO rows ──
+    const vD2 = 'legit-D2';
+    const d2a = await post({ vendor: vD2, amount: 3000, idempotency_key: 'tok-D2a' });
+    const d2b = await post({ vendor: vD2, amount: 3000, idempotency_key: 'tok-D2b' });
+    const nD2 = await pmCount(uid, vD2);
+    A('D2. different tokens, same vendor+amount, <5s apart: TWO rows (token-aware bypass; token-blind pre-check would collapse them — F131)',
+      nD2 === 2, `rows=${nD2}  d2a=${d2a.status} d2b=${d2b.status} ids ${d2a.json?.id}/${d2b.json?.id}`);
+
+    // ── E. no token (legacy/API), two POSTs spaced >5s apart → TWO rows ──
+    const vE = 'nokey-E';
+    const e1 = await post({ vendor: vE, amount: 700 });
+    await ageOut(uid, vE);
+    const e2 = await post({ vendor: vE, amount: 700 });
+    const nE = await pmCount(uid, vE);
+    A('E. no-token legacy POST (x2, >5s apart): TWO rows — 5s window expired; partial index ignores null keys → legacy behaviour unchanged',
+      nE === 2, `rows=${nE}  e1=${e1.status} e2=${e2.status}`);
+
+    // ── E2. no token, same vendor+amount, <5s apart → ONE row ──
+    const vE2 = 'nokey-E2';
+    const e2a = await post({ vendor: vE2, amount: 700 });
+    const e2b = await post({ vendor: vE2, amount: 700 });
+    const nE2 = await pmCount(uid, vE2);
+    A('E2. no-token, same vendor+amount, <5s apart: ONE row (pre-check still active for token-less requests — bypass is conditional)',
+      nE2 === 1, `rows=${nE2}  e2a=${e2a.status} e2b=${e2b.status}`);
+
+    console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (mode: ${WITH_INDEX ? 'WITH INDEX' : 'NO INDEX control'})\n`);
+  } catch (e) {
+    console.error('\n  FATAL:', e && e.stack ? e.stack : String(e));
+    if (e && e.code) console.error('  code:', e.code);
+    if (e instanceof AggregateError && e.errors) console.error('  aggregate:', e.errors.map(x => x.message).join(' | '));
+    console.error('');
+    fail++;
+  } finally {
+    try { if (server) await server.close(); } catch { /* ignore */ }
+    try { if (scratch) await scratch.stop(); } catch { /* ignore */ }
+  }
+  process.exitCode = fail === 0 ? 0 : 1;
+})();

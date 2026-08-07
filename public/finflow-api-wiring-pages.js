@@ -174,10 +174,14 @@
       ['receipt-customer','receipt-amount','receipt-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const d = document.getElementById('receipt-date'); if (d) d.value = todayStr();
       const m = document.getElementById('receipt-method'); if (m) m.value = 'Card';
+      window._srIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new receipt never reuses the last token
       openModal('modal-receipt');
     };
 
     window.saveReceipt = async function () {
+      // C1 Wave 1: in-flight re-entry lock — a double-click cannot fire a 2nd POST. UX layer only;
+      // the durable guarantee is the DB idempotency index (idx_sales_receipts_idem_key).
+      if (window._savingReceipt) return;
       const customer = document.getElementById('receipt-customer')?.value?.trim();
       const amount   = parseFloat(document.getElementById('receipt-amount')?.value);
       if (!customer) { notify('Customer name required', true); return; }
@@ -186,17 +190,33 @@
       const method = document.getElementById('receipt-method')?.value || 'Card';
       const notes  = document.getElementById('receipt-notes')?.value?.trim() || '';
       const num    = 'SR-' + uid4();
+      // One idempotency token per submit-intent: minted lazily, reused on retry of THIS modal, reset
+      // on modal open and on success below. Double-submit reuses it (→ DB dedupes); a genuine new
+      // receipt from a reopened modal gets a fresh token and is allowed.
+      window._srIdemKey = window._srIdemKey || (window.crypto?.randomUUID
+        ? window.crypto.randomUUID()
+        : 'sr-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+      window._savingReceipt = true;
+      const _srSaveBtn = document.querySelector('#modal-receipt .ff-save-btn');
+      if (_srSaveBtn) _srSaveBtn.disabled = true;
       try {
-        const saved = await api('POST', '/api/sales-receipts', { customer, num, amount, date, method, notes });
+        const saved = await api('POST', '/api/sales-receipts', { customer, num, amount, date, method, notes, idempotency_key: window._srIdemKey });
         _receiptsData.unshift(saved.row || saved);
         window.receipts = _receiptsData;
+        window._srIdemKey = null;   // success → the next receipt mints a fresh token
         closeModal('modal-receipt');
         renderReceipts();
         notify(`Receipt for ${esc(customer)} saved ✦`);
         loadReceipts().catch(()=>{});
         window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
-      } catch (e) { notify('Could not save — ' + e.message, true); }
+      } catch (e) {
+        // Keep _srIdemKey so a manual retry of this SAME submit is idempotent (same token → 23505 → original row).
+        notify('Could not save — ' + e.message, true);
+      } finally {
+        window._savingReceipt = false;
+        if (_srSaveBtn) _srSaveBtn.disabled = false;
+      }
     };
 
     window.deleteReceipt = async function (id) {

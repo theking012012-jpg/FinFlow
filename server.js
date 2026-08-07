@@ -2360,17 +2360,35 @@ app.get('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
 app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   const { customer, num, amount, date, method = 'Card' } = req.body || {};
   if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
-  const _dup = await findRecentDuplicate('sales_receipts', req.session.userId, null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
-  if (_dup) return res.json(_dup);
-  const { row } = await db.insert('sales_receipts', {
-    user_id: req.session.userId,
-    entity_id: req.entityId || null,
-    customer: String(customer).trim().slice(0, 200),
-    num: String(num || 'SR-' + String(Date.now()).slice(-4)).slice(0, 30),
-    amount: parseFloat(amount) || 0,
-    date: date || new Date().toISOString().slice(0, 10),
-    method: String(method).slice(0, 50),
-  });
+  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  if (!idem) {
+    // C1 Wave 1 (entity-scope alignment, same class as payments_received): the pre-check previously
+    // hardcoded entityId=null while the INSERT stores entity_id = req.entityId, so with an active
+    // entity the 5s dedupe never matched. Scoped to req.entityId||null to match the insert.
+    const _dup = await findRecentDuplicate('sales_receipts', req.session.userId, req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    if (_dup) return res.json(_dup);
+  }
+  // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover
+  // the ORIGINAL row and return 200. Inert until idx_sales_receipts_idem_key exists.
+  let row;
+  try {
+    ({ row } = await db.insert('sales_receipts', {
+      user_id: req.session.userId,
+      entity_id: req.entityId || null,
+      customer: String(customer).trim().slice(0, 200),
+      num: String(num || 'SR-' + String(Date.now()).slice(-4)).slice(0, 30),
+      amount: parseFloat(amount) || 0,
+      date: date || new Date().toISOString().slice(0, 10),
+      method: String(method).slice(0, 50),
+      idempotency_key: idem,
+    }));
+  } catch (e) {
+    if (e.code === '23505' && idem) {
+      const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
+    }
+    throw e;
+  }
   res.json(row);
 }));
 app.put('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {

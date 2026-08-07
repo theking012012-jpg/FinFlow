@@ -218,6 +218,16 @@ async function initDB() {
         WHERE data->>'idempotency_key' IS NOT NULL
     `);
 
+    // C1 Wave 1 — sales_receipts idempotency backstop (same shape). A duplicated receipt overstates
+    // cash sales. Two legitimate receipts to the same customer for the same amount are allowed, so
+    // the token is the key. (sales_receipts stores entity_id; its token-less pre-check scope is
+    // fixed in the server handler alongside — same class as payments_received.)
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_receipts_idem_key
+        ON sales_receipts (user_id, (data->>'idempotency_key'))
+        WHERE data->>'idempotency_key' IS NOT NULL
+    `);
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)

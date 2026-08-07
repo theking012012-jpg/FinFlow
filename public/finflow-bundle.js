@@ -3855,10 +3855,14 @@ function clearAIChat(){
       ['cn-customer','cn-amount','cn-reason'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const d = document.getElementById('cn-date'); if (d) d.value = todayStr();
       const s = document.getElementById('cn-status'); if (s) s.value = 'Open';
+      window._cnIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new credit note never reuses the last token
       openModal('modal-credit-note');
     };
 
     window.saveCreditNote = async function () {
+      // C1 Wave 1: in-flight re-entry lock — a double-click cannot fire a 2nd POST. UX layer only;
+      // the durable guarantee is the DB idempotency index (idx_credit_notes_idem_key).
+      if (window._savingCreditNote) return;
       const customer = document.getElementById('cn-customer')?.value?.trim();
       const amount   = parseFloat(document.getElementById('cn-amount')?.value);
       if (!customer) { notify('Customer name required', true); return; }
@@ -3867,17 +3871,33 @@ function clearAIChat(){
       const status = document.getElementById('cn-status')?.value          || 'Open';
       const reason = document.getElementById('cn-reason')?.value?.trim()  || '';
       const num    = 'CN-' + uid4();
+      // One idempotency token per submit-intent: minted lazily, reused on retry of THIS modal, reset
+      // on modal open and on success below. Double-submit reuses it (→ DB dedupes); a genuine new
+      // credit note from a reopened modal gets a fresh token and is allowed.
+      window._cnIdemKey = window._cnIdemKey || (window.crypto?.randomUUID
+        ? window.crypto.randomUUID()
+        : 'cn-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+      window._savingCreditNote = true;
+      const _cnSaveBtn = document.querySelector('#modal-credit-note .ff-save-btn');
+      if (_cnSaveBtn) _cnSaveBtn.disabled = true;
       try {
-        const saved = await api('POST', '/api/credit-notes', { customer, num, amount, date, status, reason });
+        const saved = await api('POST', '/api/credit-notes', { customer, num, amount, date, status, reason, idempotency_key: window._cnIdemKey });
         _creditNotesData.unshift(saved.row || saved);
         window.creditNotes = _creditNotesData;
+        window._cnIdemKey = null;   // success → the next credit note mints a fresh token
         closeModal('modal-credit-note');
         renderCreditNotes();
         notify(`Credit note for ${esc(customer)} saved ✦`);
         loadCreditNotes().catch(()=>{});
         window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
-      } catch (e) { notify('Could not save — ' + e.message, true); }
+      } catch (e) {
+        // Keep _cnIdemKey so a manual retry of this SAME submit is idempotent (same token → 23505 → original row).
+        notify('Could not save — ' + e.message, true);
+      } finally {
+        window._savingCreditNote = false;
+        if (_cnSaveBtn) _cnSaveBtn.disabled = false;
+      }
     };
 
     window.deleteCreditNote = async function (id) {

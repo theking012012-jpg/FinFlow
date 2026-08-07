@@ -201,6 +201,15 @@ async function initDB() {
         WHERE data->>'idempotency_key' IS NOT NULL
     `);
 
+    // C1 Wave 1 — credit_notes idempotency backstop (same shape). A duplicated credit note
+    // overstates contra-revenue once F58 applies them, so it is money-bearing. credit_notes is
+    // user-scoped (no entity_id stored), so the token is the key; partial on non-NULL keys.
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_notes_idem_key
+        ON credit_notes (user_id, (data->>'idempotency_key'))
+        WHERE data->>'idempotency_key' IS NOT NULL
+    `);
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)

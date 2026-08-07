@@ -4216,8 +4216,14 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(as
   // B8/C1: dedupe guard (TYPED table). A double-click ran payroll twice for the same period —
   // duplicate run + duplicate payroll_run_lines, doubling recorded gross/net. Keyed on `period`,
   // which is the run's identity: two runs for the same period seconds apart is always a mis-click.
-  const _prDup = await findRecentDuplicateTyped('payroll_runs', uid, eid, { period: String(period) });
-  if (_prDup) return res.status(201).json(_prDup);
+  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  // C1 Wave 1b: the token-blind period pre-check runs ONLY for token-less callers; with a token the
+  // partial unique index (idx_payroll_runs_idem_key) is the sole arbiter. (Where the prod-only
+  // natural-key period index exists, it also still catches a same-period dup — belt-and-suspenders.)
+  if (!idem) {
+    const _prDup = await findRecentDuplicateTyped('payroll_runs', uid, eid, { period: String(period) });
+    if (_prDup) return res.status(201).json(_prDup);
+  }
 
   // Net is pure arithmetic on the deduction rows the user defined on each record.
   // No tax calculation — percent rows apply to the period gross (gross+bonus+overtime).
@@ -4247,17 +4253,19 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(as
   let run;
   try {
     const { rows } = await pool.query(
-      `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net, notes)
-       VALUES ($1,$2,$3,NOW(),$4,$5,$6,$7,$8) RETURNING *`,
-      [uid, eid, period, 'draft', totalGross, totalDeductions, totalNet, notes]
+      `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net, notes, idempotency_key)
+       VALUES ($1,$2,$3,NOW(),$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [uid, eid, period, 'draft', totalGross, totalDeductions, totalNet, notes, idem]
     );
     run = rows[0];
   } catch (e) {
     if (e.code === '23505') {
-      const { rows } = await pool.query(
-        `SELECT * FROM payroll_runs WHERE user_id=$1 AND entity_id IS NOT DISTINCT FROM $2 AND period=$3 ORDER BY id ASC LIMIT 1`,
-        [uid, eid, period]
-      );
+      // Recover the ORIGINAL run: by token when the token index caught the dup, else by natural key
+      // (user_id, entity_id, period) for the prod-only period index. Return it + its lines, 200 —
+      // never a 500, never orphan lines against a run that was not created.
+      const { rows } = idem
+        ? await pool.query(`SELECT * FROM payroll_runs WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [uid, idem])
+        : await pool.query(`SELECT * FROM payroll_runs WHERE user_id=$1 AND entity_id IS NOT DISTINCT FROM $2 AND period=$3 ORDER BY id ASC LIMIT 1`, [uid, eid, period]);
       if (rows[0]) {
         const { rows: existingLines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id=$1`, [rows[0].id]);
         return res.status(200).json({ ...rows[0], lines: existingLines });

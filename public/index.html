@@ -4733,6 +4733,7 @@ function openRunPayrollModal(){
 let _payrollSubmitToken=null;
 function _mintToken(){ try{ return crypto.randomUUID(); }catch(_){ return 'k_'+Date.now()+'_'+Math.random().toString(36).slice(2); } }
 async function submitPayrollRun(){
+  if(window._savingPayrollRun) return;             // C1: in-flight re-entry lock — a double-click can't fire a 2nd run
   const period=document.getElementById('prm-period')?.value?.trim();
   const runDate=document.getElementById('prm-date')?.value;
   const notes=document.getElementById('prm-notes')?.value||'';
@@ -4751,6 +4752,9 @@ async function submitPayrollRun(){
   // Mint at intent; reuse the same token if this intent is retried before it resolves.
   if(!_payrollSubmitToken) _payrollSubmitToken=_mintToken();
   const idempotency_key=_payrollSubmitToken;
+  window._savingPayrollRun=true;
+  const _prBtn=document.querySelector('#run-payroll-modal .btn-primary');
+  if(_prBtn) _prBtn.disabled=true;
   try{
     const res=await fetch('/api/payroll-runs',{
       method:'POST',credentials:'include',
@@ -4763,7 +4767,8 @@ async function submitPayrollRun(){
     closeModal('run-payroll-modal');
     notify('✓ Payroll run created — '+data.run?.period);
     loadPayrollRuns();
-  }catch(e){ _payrollSubmitToken=null; notify('Could not create payroll run',true);}
+  }catch(e){ notify('Could not create payroll run',true); }   // keep _payrollSubmitToken for an idempotent retry (same token → 23505 → original)
+  finally{ window._savingPayrollRun=false; if(_prBtn) _prBtn.disabled=false; }
 }
 
 async function approvePayrollRun(id){

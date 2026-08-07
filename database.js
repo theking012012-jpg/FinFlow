@@ -514,6 +514,20 @@ async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_payroll_runs_user ON payroll_runs(user_id)`);
 
+    // C1 Wave 1b — payroll_runs idempotency backstop (TOKEN, boot-safe). Unlike the 9 JSONB routes,
+    // payroll_runs is a TYPED table (no `data` column), so the token needs a REAL column. Adding a
+    // nullable column is instant (no table rewrite) and the partial unique index covers zero existing
+    // rows (all NULL) at creation → instant, no boot-brick risk. This is the portable in-initDB
+    // guarantee for ALL environments; the prod-only natural-key `idx_payroll_runs_uniq` (one-shot,
+    // 2026-07-25, NOT in initDB) coexists and is the deferred post-launch item. Do NOT add the
+    // natural-key `period` index here (owner ruling 2026-08-07 — boot-safety over max correctness).
+    await client.query(`ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_payroll_runs_idem_key
+        ON payroll_runs (user_id, idempotency_key)
+        WHERE idempotency_key IS NOT NULL
+    `);
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS payroll_run_lines (
         id              SERIAL PRIMARY KEY,

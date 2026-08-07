@@ -265,6 +265,29 @@ A class is only a class if it has a full instance list. Each has one.
 >
 > **Numbering note:** the owner referenced this as "F107", but **F107 is already the cross-account visibility defect** (2026-07-24, uncommitted). To avoid the F104-class collision, this design is recorded here under **C1** — its true home. If a standalone number is wanted, the next free is **F108** (not F107).
 
+> **✅ UPDATE 2026-08-07 — TOKEN INFRA BUILT + 8 WAVE-2 TOKEN ROUTES SHIPPED (each verified fail-then-pass on real scratch Postgres; pushed to origin `c4cae5e`…`d5cd654`).**
+>
+> The state-3/4 prerequisite ("build token infra") is **DONE**. Pattern per route — boot-safe and uniform with the invoice pilot (F117), **NOT a natural key**:
+> - **DB:** partial UNIQUE index `idx_<table>_idem_key ON <table>(user_id, (data->>'idempotency_key')) WHERE data->>'idempotency_key' IS NOT NULL`, added in `initDB`. Partial on non-null → legacy/token-less rows excluded → builds cleanly, **no boot-brick risk** (the whole reason a token index can live in `initDB` where a natural key cannot).
+> - **Server:** the 5s `findRecentDuplicate` pre-check runs ONLY for token-less callers (`if (!idem)`); with a token the index is the sole arbiter (closes **F131** token-blindness). INSERT carries `idempotency_key`; on `23505 && idem` recover the ORIGINAL row by token → 200.
+> - **Client:** save handler mints one token per submit-intent (reused on retry, reset on modal-open + on success) + an in-flight `_saving…` lock.
+>
+> **Routes shipped** (invoices was already done in F117 commit A): **expenses, bills, payments_made, payments_received, credit_notes, vendor_credits, sales_receipts, journals** — 8 routes. Each proven by its own `tests/harness/verify-c1-<route>.js`: **Rule-14 CONTROL (index dropped) reproduces the duplicate (slow >5s re-click and raw dup → 2 rows); WITH INDEX → exactly 1 row, 23505→200 same id; different-token → 2 rows (re-invoicing/re-billing preserved); token-less legacy unchanged.** 12/12 each WITH INDEX, 7/7 each CONTROL; whole set re-run green together.
+>
+> **Also fixed (same class, execution-verified via each harness's E2 case):** the token-less pre-check on **payments_received** and **sales_receipts** hardcoded `entityId=null` while their INSERT stores `req.entityId`, so with an active entity the 5s dedupe **never matched** (token-less rapid dup → 2 rows). Scoped to `req.entityId||null` to match the insert. `credit_notes`/`vendor_credits` are user-scoped (no entity_id) → their null pre-check was already consistent.
+>
+> **Client double-click lock — UNEXECUTED:** written by mirroring the shipped invoice pattern; passes syntax + bundle, but no browser/jsdom test drives the button. The DB unique index is the *executed* guarantee; the client lock is belt-only (Rule 9: not the sole mechanism, and here not the tested one).
+>
+> **Still open (Wave 1b, token approach per owner ruling 2026-08-07):** `payroll_runs` (token — priority, see the portability-gap update below), `chart_of_accounts`, `team_members`; confirm `invoice_payments` / `inventory_movements`. Natural-key business-uniqueness (`code`/`email`/`period`) **DEFERRED post-launch, out-of-band, never in `initDB`**.
+
+> **⚠️ UPDATE 2026-08-07 — payroll_runs durable guarantee is PROD-ONLY / NON-PORTABLE (correction to any flat "it's inert" reading).**
+>
+> **Verified by execution** (booted `initDB` on a fresh scratch DB, queried `pg_indexes`): `payroll_runs` has only `idx_payroll_runs_user` + `idx_payroll_runs_user_entity` (both **non-unique**) + the PK. There is **no `UNIQUE(user_id, COALESCE(entity_id,0), period)` in `initDB`**. That index exists only via the 2026-07-25 one-shot (`scripts/migrations/2026-07-25-payroll-runs-uniq.sql`), applied by hand to production and deliberately kept out of `initDB` (a failed unique build inside the transactional `initDB` would rollback and brick boot — the same risk that just gated Wave 1b to tokens).
+>
+> **Consequence — not "unprotected", but non-portable.** Current production *is* protected, per the applied one-shot (index "confirmed via `pg_indexes`" per the 07-25 row — **NOT independently re-verified this session; no prod DB access**). But the guarantee is absent from **every fresh DB** — local dev, the scratch harness, and any future prod rebuild/restore — where the handler's `23505` recovery is dead code and payroll double-submit falls back to the 5s window (Rule 9 hole). A duplicate run doubles gross/net → high value.
+>
+> **Fix (owner ruling 2026-08-07, Step 4):** give `payroll_runs` the same boot-safe **token** index in `initDB` (`idx_payroll_runs_idem_key`, partial on non-null token) + token read/store + `23505` recovery + client token/lock, so the guarantee is uniform across ALL environments. The natural-key `period` index stays prod-only/out-of-band and is the deferred post-launch item (Step 6). The token and the natural-key index coexist without conflict.
+
 > **⚠️ TWO CORRECTIONS to this row's original list — recorded because both would have produced a fix that looked right and did nothing.**
 >
 > **1. The tables split two ways, and the existing matcher only works on one.** `findRecentDuplicate` compares `data->>'field'`, so on a **typed** table it compares against NULL and **can never match**. `invoice_payments`, `payroll_runs`, `inventory_movements`, `fx_transactions` are typed. Adding the JSONB matcher to them — the obvious reading of the original row — would have been a **silent no-op** that passed review. New sibling `findRecentDuplicateTyped` (`server.js:778`) matches real columns.

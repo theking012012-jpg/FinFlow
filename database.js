@@ -577,6 +577,17 @@ async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_inv_movements_user ON inventory_movements(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_inv_movements_inv  ON inventory_movements(inventory_id, moved_at)`);
+    // C1 Wave 1b — inventory_movements idempotency backstop (TOKEN, boot-safe). Typed table. HIGHEST-
+    // consequence duplicate: a double-clicked 'sale' books units out twice and (because COGS is
+    // recomputed from the rows) permanently corrupts FIFO COGS + gross profit. calculateFIFOCOGS is
+    // read-only, so the token 23505 preventing the duplicate ROW is the whole fix; the recovery
+    // returns before the units-decrement too. Nullable add + partial index over all-NULL rows = instant.
+    await client.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_movements_idem_key
+        ON inventory_movements (user_id, idempotency_key)
+        WHERE idempotency_key IS NOT NULL
+    `);
 
     // ── FEATURE 5: FX GAIN/LOSS TRACKING ────────────────────────────────────────
     await client.query(`

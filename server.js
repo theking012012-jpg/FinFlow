@@ -4854,24 +4854,42 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
   // highest-consequence duplicate in the app: a double-clicked 'sale' movement books the units out
   // twice AND consumes FIFO layers twice, permanently corrupting COGS and therefore gross profit.
   // Guarded BEFORE calculateFIFOCOGS so a duplicate never touches the FIFO ledger at all.
-  const _imDup = await findRecentDuplicateTyped('inventory_movements', req.session.userId, req.entityId || null,
-    { inventory_id: parseInt(inventory_id), type, quantity: qty }, 5, 'moved_at');
-  // Return the ORIGINAL row in the SAME shape as the success path ({...movement, cogs}) so a
-  // deduped re-submit is indistinguishable to the client. cogs is null: the duplicate consumed
-  // no FIFO layers, and re-reporting the original's COGS would double-count it in any caller
-  // that sums the field.
-  if (_imDup) return res.status(201).json({ ..._imDup, cogs: null });
+  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  // C1 Wave 1b: token-blind pre-check runs ONLY for token-less callers; with a token the partial
+  // unique index (idx_inventory_movements_idem_key) is the sole arbiter. calculateFIFOCOGS below is
+  // READ-ONLY (COGS is recomputed from the rows), and a duplicate token 23505s at the INSERT and
+  // returns before the units-decrement, so the FIFO ledger is never double-consumed.
+  if (!idem) {
+    const _imDup = await findRecentDuplicateTyped('inventory_movements', req.session.userId, req.entityId || null,
+      { inventory_id: parseInt(inventory_id), type, quantity: qty }, 5, 'moved_at');
+    // Return the ORIGINAL row in the SAME shape as the success path ({...movement, cogs}) so a
+    // deduped re-submit is indistinguishable to the client. cogs null: the duplicate consumed no
+    // FIFO layers, and re-reporting the original's COGS would double-count it in a summing caller.
+    if (_imDup) return res.status(201).json({ ..._imDup, cogs: null });
+  }
   let cogs = null;
   if (type === 'sale') {
     cogs = await calculateFIFOCOGS(pool, parseInt(inventory_id), qty);
   }
 
-  const { rows: [movement] } = await pool.query(
-    `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [req.session.userId, req.entityId || null, parseInt(inventory_id), type, qty,
-     parseFloat(unit_cost) || 0, reference || null, notes || null]
-  );
+  let movement;
+  try {
+    ({ rows: [movement] } = await pool.query(
+      `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [req.session.userId, req.entityId || null, parseInt(inventory_id), type, qty,
+       parseFloat(unit_cost) || 0, reference || null, notes || null, idem]
+    ));
+  } catch (e) {
+    if (e.code === '23505' && idem) {
+      // Duplicate submit lost the race at the DB → the movement already landed and the units were
+      // already decremented on the first insert. Return the ORIGINAL in the success shape, cogs null
+      // (it consumed no NEW FIFO layers) — never re-book units, never re-consume FIFO, never 500.
+      const { rows: ex } = await pool.query(`SELECT * FROM inventory_movements WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      if (ex[0]) return res.status(200).json({ ...ex[0], cogs: null });
+    }
+    throw e;
+  }
 
   const newUnits = type === 'purchase' ? item.units + qty : Math.max(0, item.units - qty);
   const newMax = item.max_units || 200;

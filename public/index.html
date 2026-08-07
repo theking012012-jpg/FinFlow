@@ -4804,6 +4804,7 @@ function openStockInModal(idx){
   const idxEl=document.getElementById('si-item-idx');
   if(idxEl)idxEl.value=idx;
   ['si-qty','si-cost','si-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  window._stockInIdemKey=null;   // C1 Wave 1b: fresh submit-intent → never reuses the last token
   openModal('stock-in-modal');
 }
 function openStockOutModal(idx){
@@ -4816,6 +4817,7 @@ function openStockOutModal(idx){
   ['so-qty','so-ref'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const prev=document.getElementById('so-cogs-preview');
   if(prev)prev.style.display='none';
+  window._stockOutIdemKey=null;   // C1 Wave 1b: fresh submit-intent → never reuses the last token
   openModal('stock-out-modal');
 }
 async function submitStockIn(){
@@ -4828,14 +4830,20 @@ async function submitStockIn(){
   if(!cost||cost<0){notify('Enter a valid unit cost',true);return;}
   const item=(inventory||[])[idx];
   if(!item){notify('Item not found',true);return;}
+  if(window._savingStockIn) return;   // C1 Wave 1b: in-flight re-entry lock
+  if(!window._stockInIdemKey) window._stockInIdemKey=(window.crypto?.randomUUID?window.crypto.randomUUID():'sin-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+  window._savingStockIn=true;
+  const _siBtn=document.querySelector('#stock-in-modal .btn-primary');
+  if(_siBtn)_siBtn.disabled=true;
   try{
     const res=await fetch('/api/inventory-movements',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item.dbId||idx,type:'purchase',quantity:qty,unit_cost:cost,notes}),
+      body:JSON.stringify({inventory_id:item.dbId||idx,type:'purchase',quantity:qty,unit_cost:cost,notes,idempotency_key:window._stockInIdemKey}),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
+    window._stockInIdemKey=null;   // success → next movement mints a fresh token
     item.units=(item.units||0)+qty;
     item.cost=cost;
     item.low=item.units<(item.max||0)*.1;
@@ -4843,7 +4851,8 @@ async function submitStockIn(){
     notify(`✓ +${qty} units at ${S(cost)} each`);
     if(typeof renderInventory==='function')renderInventory();
     loadCOGS();
-  }catch(e){notify('Could not record stock in',true);}
+  }catch(e){notify('Could not record stock in',true);}   // keep _stockInIdemKey for idempotent retry
+  finally{window._savingStockIn=false;if(_siBtn)_siBtn.disabled=false;}
 }
 async function submitStockOut(){
   const idx=parseInt(document.getElementById('so-item-idx')?.value);
@@ -4854,6 +4863,11 @@ async function submitStockOut(){
   const item=(inventory||[])[idx];
   if(!item){notify('Item not found',true);return;}
   if(qty>item.units){notify('Quantity exceeds stock on hand',true);return;}
+  if(window._savingStockOut) return;   // C1 Wave 1b: in-flight re-entry lock — a double-clicked sale can't double-consume FIFO
+  if(!window._stockOutIdemKey) window._stockOutIdemKey=(window.crypto?.randomUUID?window.crypto.randomUUID():'sout-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+  window._savingStockOut=true;
+  const _soBtn=document.querySelector('#stock-out-modal .btn-primary');
+  if(_soBtn)_soBtn.disabled=true;
   try{
     const cogsRes=await fetch('/api/cogs/calculate',{
       method:'POST',credentials:'include',
@@ -4870,10 +4884,11 @@ async function submitStockOut(){
     const res=await fetch('/api/inventory-movements',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item.dbId||idx,type:'sale',quantity:qty,unit_cost:cogs/qty,reference:ref}),
+      body:JSON.stringify({inventory_id:item.dbId||idx,type:'sale',quantity:qty,unit_cost:cogs/qty,reference:ref,idempotency_key:window._stockOutIdemKey}),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
+    window._stockOutIdemKey=null;   // success → next movement mints a fresh token
     item.units=Math.max(0,(item.units||0)-qty);
     item.cogs=(parseFloat(item.cogs)||0)+cogs;
     item.low=item.units<(item.max||0)*.1;
@@ -4881,7 +4896,8 @@ async function submitStockOut(){
     notify(`✓ -${qty} units · COGS ${S(cogs)}`);
     if(typeof renderInventory==='function')renderInventory();
     loadCOGS();
-  }catch(e){notify('Could not record stock out',true);}
+  }catch(e){notify('Could not record stock out',true);}   // keep _stockOutIdemKey for idempotent retry
+  finally{window._savingStockOut=false;if(_soBtn)_soBtn.disabled=false;}
 }
 async function loadCOGS(){
   try{

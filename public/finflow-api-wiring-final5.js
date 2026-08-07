@@ -369,6 +369,7 @@ function openNewVendorCreditModal(){
   _sv('vc-date', new Date().toISOString().slice(0,10));
   _sv('vc-status','Open');
   _sv('vc-reason','');
+  window._vcIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new vendor credit never reuses the last token
   openModal('modal-vendor-credit');
 }
 
@@ -385,6 +386,9 @@ function openEditVendorCreditModal(id){
 }
 
 async function saveVendorCredit(){
+  // C1 Wave 1: in-flight re-entry lock — a double-click cannot fire a 2nd POST. UX layer only;
+  // the durable guarantee is the DB idempotency index (idx_vendor_credits_idem_key).
+  if (window._savingVendorCredit) return;
   const id = document.getElementById('vc-id').value;
   const existing = id ? _vendorCredits.find(c=>c.id===+id) : null;
   const payload = {
@@ -396,13 +400,30 @@ async function saveVendorCredit(){
     num:     existing ? existing.num : nextNum('VC', _vendorCredits),
   };
   if(!payload.vendor){ alert('Vendor is required'); return; }
+  window._savingVendorCredit = true;
+  const _vcSaveBtn = document.querySelector('#modal-vendor-credit .ff-save-btn');
+  if (_vcSaveBtn) _vcSaveBtn.disabled = true;
   try{
     if(id){ await apiFetch('/api/vendor-credits/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
-    else   { await apiFetch('/api/vendor-credits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }
+    else   {
+      // Per-submit idempotency token on CREATE only (edit is a PUT, no dedupe needed). Minted lazily,
+      // reset on modal open + on success below; a double-submit reuses it (→ DB dedupes via 23505).
+      window._vcIdemKey = window._vcIdemKey || (window.crypto?.randomUUID
+        ? window.crypto.randomUUID()
+        : 'vc-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+      await apiFetch('/api/vendor-credits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ ...payload, idempotency_key: window._vcIdemKey })});
+      window._vcIdemKey = null;   // success → the next vendor credit mints a fresh token
+    }
     closeModal('modal-vendor-credit');
     renderVendorCredits();
     window.finflow?.refresh(['expenses','dashboard','money-out','budget','reports']);
-  } catch(e){ alert('Save failed: '+e.message); }
+  } catch(e){
+    // Keep _vcIdemKey so a manual retry of this SAME submit is idempotent (same token → 23505 → original row).
+    alert('Save failed: '+e.message);
+  } finally {
+    window._savingVendorCredit = false;
+    if (_vcSaveBtn) _vcSaveBtn.disabled = false;
+  }
 }
 
 async function deleteVendorCredit(id){

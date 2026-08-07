@@ -2605,17 +2605,35 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   const { vendor, num, amount, date, status = 'Open', reason = '' } = req.body || {};
   if (!vendor || amount == null) return res.status(400).json({ error: 'vendor and amount required.' });
   const validStatuses = ['Open', 'Applied', 'Void'];
-  const _dup = await findRecentDuplicate('vendor_credits', req.session.userId, null, { textMatch: { vendor: String(vendor).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
-  if (_dup) return res.json(_dup);
-  const { row } = await db.insert('vendor_credits', {
-    user_id: req.session.userId,
-    vendor: String(vendor).trim().slice(0, 200),
-    num: String(num || 'VC-' + String(Date.now()).slice(-4)).slice(0, 30),
-    amount: parseFloat(amount) || 0,
-    date: date || new Date().toISOString().slice(0, 10),
-    status: validStatuses.includes(status) ? status : 'Open',
-    reason: String(reason).slice(0, 300),
-  });
+  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
+  // the partial unique index (idx_vendor_credits_idem_key) is the sole arbiter. User-scoped table
+  // (no entity_id) → the existing null entityId matches the insert — no scope gap.
+  if (!idem) {
+    const _dup = await findRecentDuplicate('vendor_credits', req.session.userId, null, { textMatch: { vendor: String(vendor).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    if (_dup) return res.json(_dup);
+  }
+  // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover
+  // the ORIGINAL row and return 200. Inert until idx_vendor_credits_idem_key exists.
+  let row;
+  try {
+    ({ row } = await db.insert('vendor_credits', {
+      user_id: req.session.userId,
+      vendor: String(vendor).trim().slice(0, 200),
+      num: String(num || 'VC-' + String(Date.now()).slice(-4)).slice(0, 30),
+      amount: parseFloat(amount) || 0,
+      date: date || new Date().toISOString().slice(0, 10),
+      status: validStatuses.includes(status) ? status : 'Open',
+      reason: String(reason).slice(0, 300),
+      idempotency_key: idem,
+    }));
+  } catch (e) {
+    if (e.code === '23505' && idem) {
+      const { rows } = await pool.query(`SELECT * FROM vendor_credits WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
+    }
+    throw e;
+  }
   res.json(row);
 }));
 app.put('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {

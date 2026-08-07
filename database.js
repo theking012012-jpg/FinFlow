@@ -210,6 +210,14 @@ async function initDB() {
         WHERE data->>'idempotency_key' IS NOT NULL
     `);
 
+    // C1 Wave 1 — vendor_credits idempotency backstop (AP contra mirror of credit_notes). Also
+    // user-scoped (no entity_id), so the token is the key; partial on non-NULL keys.
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_credits_idem_key
+        ON vendor_credits (user_id, (data->>'idempotency_key'))
+        WHERE data->>'idempotency_key' IS NOT NULL
+    `);
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)

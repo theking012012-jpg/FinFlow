@@ -4491,6 +4491,7 @@ let _rpRemaining=0;
 function openRecordPaymentModal(inv){
   if(!inv) return;
   _rpInvoiceId = inv._dbId ?? inv.id ?? null;
+  window._ipIdemKey=null;   // C1 Wave 1b: fresh submit-intent → a payment for a newly-opened invoice never reuses the last token
   const total = parseFloat(inv.amount) || 0;
   const paid  = parseFloat(inv.amount_paid) || 0;
   _rpRemaining = Math.round((total - paid) * 100) / 100;
@@ -4534,6 +4535,7 @@ function _rpCheckOverpay(){
   if(saveBtn) saveBtn.disabled = over || !window._serverToday;
 }
 async function recordPayment(){
+  if(window._savingPayment) return;   // C1 Wave 1b: in-flight re-entry lock — a double-click can't book a 2nd payment
   const invoiceId=document.getElementById('rp-invoice-id')?.value;
   const amount=parseFloat(document.getElementById('rp-amount')?.value||0);
   const date=document.getElementById('rp-date')?.value;
@@ -4544,14 +4546,19 @@ async function recordPayment(){
   if(!amount||amount<=0){notify('Enter a valid amount',true);return;}
   if(!window._serverToday||!date){notify("Still loading today's date — try again in a moment",true);return;}
   if(amount > _rpRemaining + 0.005){notify('Amount exceeds the remaining balance',true);return;}
+  if(!window._ipIdemKey) window._ipIdemKey=(window.crypto?.randomUUID?window.crypto.randomUUID():'ip-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+  window._savingPayment=true;
+  const _rpBtn=document.querySelector('#record-payment-modal .btn-primary');
+  if(_rpBtn)_rpBtn.disabled=true;
   try{
     const res=await fetch('/api/invoice-payments',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({invoice_id:invoiceId,amount,payment_date:date,method,reference,notes}),
+      body:JSON.stringify({invoice_id:invoiceId,amount,payment_date:date,method,reference,notes,idempotency_key:window._ipIdemKey}),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
+    window._ipIdemKey=null;   // success → next payment mints a fresh token
     closeModal('record-payment-modal');
     notify('✓ Payment recorded');
     // F113/F114: the established live-refresh triple (finflow-api-wiring-pages.js's own save
@@ -4563,7 +4570,8 @@ async function recordPayment(){
     if(typeof window.refreshFinancials==='function') await window.refreshFinancials('invoices');
     window._loadPaymentsRecvFromDB?.();
     window._refreshDashboardUI?.();
-  }catch(e){notify('Could not record payment',true);}
+  }catch(e){notify('Could not record payment',true);}   // keep _ipIdemKey for an idempotent retry (same token → 23505 → original)
+  finally{window._savingPayment=false;if(_rpBtn)_rpBtn.disabled=false;}
 }
 
 // ── FEATURE 2b: BANK RECONCILIATION ──────────────────────────────────────────

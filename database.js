@@ -500,6 +500,16 @@ async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_inv_payments_user ON invoice_payments(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_inv_payments_inv  ON invoice_payments(invoice_id)`);
+    // C1 Wave 1b — invoice_payments idempotency backstop (TOKEN, boot-safe). Typed table (like
+    // payroll_runs), so the token is a REAL column. Money-critical: two rapid PARTIAL payments both
+    // fit under the overpayment check and both booked, silently settling an invoice twice. Nullable
+    // column add is instant; partial index over all-NULL existing rows is instant → no boot-brick.
+    await client.query(`ALTER TABLE invoice_payments ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_invoice_payments_idem_key
+        ON invoice_payments (user_id, idempotency_key)
+        WHERE idempotency_key IS NOT NULL
+    `);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS bank_reconciliation (

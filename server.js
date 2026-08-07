@@ -4109,15 +4109,32 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   // would push past the balance — two rapid PARTIAL payments both fit inside it and both booked,
   // silently settling the invoice twice. Guard on invoice+amount+date.
   const _pDate = payment_date || new Date().toISOString().slice(0, 10);
-  const _ipDup = await findRecentDuplicateTyped('invoice_payments', req.session.userId, req.entityId || null,
-    { invoice_id: parseInt(invoice_id), amount: amt, payment_date: _pDate });
-  if (_ipDup) return res.status(201).json(_ipDup);
-  const { rows } = await pool.query(
-    `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [req.session.userId, req.entityId || null, parseInt(invoice_id), amt,
-     payment_date || new Date().toISOString().slice(0, 10), method || 'Bank Transfer', reference || null, notes || null]
-  );
+  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  // C1 Wave 1b: token-blind pre-check runs ONLY for token-less callers; with a token the partial
+  // unique index (idx_invoice_payments_idem_key) is the sole arbiter (closes the concurrent /
+  // slow-resubmit race the 5s window and the overpayment check both miss for partial payments).
+  if (!idem) {
+    const _ipDup = await findRecentDuplicateTyped('invoice_payments', req.session.userId, req.entityId || null,
+      { invoice_id: parseInt(invoice_id), amount: amt, payment_date: _pDate });
+    if (_ipDup) return res.status(201).json(_ipDup);
+  }
+  let rows;
+  try {
+    ({ rows } = await pool.query(
+      `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [req.session.userId, req.entityId || null, parseInt(invoice_id), amt,
+       payment_date || new Date().toISOString().slice(0, 10), method || 'Bank Transfer', reference || null, notes || null, idem]
+    ));
+  } catch (e) {
+    if (e.code === '23505' && idem) {
+      // Duplicate submit lost the race at the DB → the payment already landed (and already recalc'd
+      // the invoice on the first insert). Return the ORIGINAL row, 200 — never re-book, never 500.
+      const { rows: ex } = await pool.query(`SELECT * FROM invoice_payments WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      if (ex[0]) return res.status(200).json(ex[0]);
+    }
+    throw e;
+  }
   await recalcInvoiceStatus(pool, parseInt(invoice_id), req.session.userId);
   await auditLog(pool, { userId: req.session.userId, entityId: req.entityId, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE', req });
   res.status(201).json(rows[0]);

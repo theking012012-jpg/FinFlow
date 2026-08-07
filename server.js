@@ -3864,23 +3864,25 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   });
 }));
 
-// GET /api/tax-filing — quarterly tax estimates from paid invoices and
-// deductible expenses. Uses a flat 25% combined federal+self-employment
-// estimate as a starting point; users override on the frontend.
+// GET /api/tax-filing — fiscal-year income-tax estimate. Revenue is ISSUE-BASED ACCRUAL and the
+// deductible is the single-source computeBooks leg — the SAME figures the dashboard, /api/reports,
+// /books and the accountant portal read, so the client Income-Tax worksheet can never diverge from
+// those surfaces again (F139). Uses a flat 25% combined federal+self-employment estimate as a
+// starting point; the worksheet overrides it per tax line on the frontend.
 app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
   try {
     const uid = req.session.userId;
     const eid = req.entityId || null;
-    const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
-    const invoices = (await db.allByUser('invoices', uid, matchEnt)) || [];
-    const expenses = (await db.allByUser('expenses', uid, matchEnt)) || [];
-
-    const revenue = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const deductible = expenses.reduce((s, e) => {
-      const ded = e.deductible;
-      const factor = ded === 'yes' || ded === '100' ? 1 : ded === 'half' || ded === '50' ? 0.5 : 0;
-      return s + ((parseFloat(e.amount) || 0) * factor);
-    }, 0);
+    // F139 — SINGLE SOURCE. Was: paid-only (CASH) revenue + all-time Σ deductible — a basis AND a
+    // window no other surface used (F76), so the worksheet reported a taxable no other page agreed
+    // with. Now revenue + deductible both come from computeBooks over the FISCAL-YEAR window. fyStart
+    // (0-11) arrives from the client's fiscal-year setting via ?fyStart=, exactly as /api/reports;
+    // absent/invalid → January (0), matching the client default.
+    const _fy = parseInt(req.query.fyStart, 10);
+    const fyStartIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
+    const books = await computeBooks(uid, eid, 'year', null, fyStartIdx);
+    const revenue = books.revenue;
+    const deductible = books.tax.deductible;
     const taxableIncome = Math.max(0, revenue - deductible);
     const estimatedTax = Math.round(taxableIncome * 0.25);
     const quarterly = Math.round(estimatedTax / 4);
@@ -4547,6 +4549,24 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // ── OpEx (mirrors frontend computeExpenseBreakdown / E1) — uses the SAME inPeriod as revenue ──
   const _expDate = e => e.expense_date || e.date || e.created_at;
   const expensesTotal     = sumFX(expenses.filter(e => inPeriod(_expDate(e))), e => e.amount, _expDate, 'expenses');
+  // ── F139 — DEDUCTIBLE (income-tax worksheet leg) ─────────────────────────────────────────────
+  // The SINGLE source both the client Income-Tax worksheet (GET /api/tax-filing) and the accountant
+  // Tax Summary read for tax-deductible expense, so the two can never diverge again on the deduction
+  // rule or the period window (Rule 2). SAME period filter (inPeriod) and entity scope (ent) as
+  // expensesTotal above — a reweighting of the very rows the expense leg recognises, never a
+  // different set. Factor map is the expense `deductible` vocabulary: 'yes'/'100' → 100%,
+  // 'half'/'50' → 50%, everything else (incl. 'no'/absent) → 0. NATIVE ONLY: no caller passes a
+  // display currency to the tax path (both use entity-native), so this leg is not FX-converted here
+  // — a labelled limitation, not a silent currency mix. If a display-currency tax view is ever
+  // added, this converts per-row at _expDate like expensesTotal.
+  const _dedFactor = e => {
+    const d = String(e.deductible == null ? '' : e.deductible).toLowerCase();
+    return (d === 'yes' || d === '100') ? 1 : (d === 'half' || d === '50') ? 0.5 : 0;
+  };
+  const _dedRows = expenses.filter(e => inPeriod(_expDate(e)));
+  const deductibleFull = r2(sum(_dedRows, e => _dedFactor(e) === 1   ? num(e.amount)       : 0));
+  const deductibleHalf = r2(sum(_dedRows, e => _dedFactor(e) === 0.5 ? num(e.amount) * 0.5 : 0));
+  const deductible     = r2(deductibleFull + deductibleHalf);
   // F38 Step 4 — EXPENSE-side accrual, the mirror of the F32 revenue accrual. An ISSUED bill is
   // an expense when ISSUED (Dr Expense / Cr AP), at FULL amount, keyed on its issue_date
   // (created_at fallback — the same time-boxed transition as the invoice issueDate above).
@@ -4755,6 +4775,9 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   return {
     revenue, cogs, grossProfit, opex, netProfit, outstanding, period, monthly, expenseBreakdown, transactions,
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
+    // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the
+    // client worksheet (GET /api/tax-filing) and the accountant Tax Summary so taxable reconciles.
+    tax: { deductible, deductibleFull, deductibleHalf },
     parts: {
       issuedInvoices: r2(issuedInvoices), salesReceipts: r2(salesReceipts),
       expenses: r2(expensesTotal), issuedBills: r2(issuedBillsTotal), paymentsMade: r2(paymentsMadeTotal), payroll: payrollTotal,

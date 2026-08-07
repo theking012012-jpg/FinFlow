@@ -5482,8 +5482,12 @@ function clearAIChat(){
         // Multi-line estimate WORKSHEET (F137-k). Each line is a % of taxable income, a % of revenue,
         // or a fixed amount, summed. Cross-border obligations (foreign tax credits, worldwide income,
         // capital gains not tracked here) are entered as fixed lines. NOT a tax engine — a worksheet.
+        // F139: send the client's fiscal-year start so /api/tax-filing windows revenue + deductible
+        // over the SAME fiscal year as the dashboard/reports (computeBooks 'year'). _fyContext() is
+        // the shared client resolver (app-main.js); absent → January (0), the server default.
+        const _fyi = window._fyContext ? window._fyContext().fyStartIdx : 0;
         const [t, st] = await Promise.all([
-          api('GET', '/api/tax-filing').catch(() => ({})),
+          api('GET', '/api/tax-filing?fyStart=' + _fyi).catch(() => ({})),
           api('GET', '/api/settings').catch(() => ({})),
         ]);
         window._taxTaxable = parseFloat((t || {}).taxableIncome) || 0;

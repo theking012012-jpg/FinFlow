@@ -558,10 +558,12 @@ If you cannot find a field, use null. Be concise.`;
     const period = ['month', 'quarter', 'year'].includes(req.query.period) ? req.query.period : 'year';
     const entMatch = eid => eid == null || eid === entityId || entityId == null;
 
-    // Canonical, entity-scoped books (F9) — the SAME computeBooks the client dashboard uses,
-    // so the accountant's totals reconcile. Revenue = paid invoices + sales receipts +
-    // payments received (fixes the old "count UNPAID invoices as income" bug); OpEx includes
-    // payments made + payroll accrual; NetProfit subtracts FIFO COGS.
+    // Canonical, entity-scoped books (F9) — the SAME computeBooks the client dashboard uses, so the
+    // accountant's totals reconcile. Revenue is ISSUE-BASED ACCRUAL (F32): every issued invoice
+    // (pending/overdue/partial/paid) recognised at full amount on its issue date, plus cash sales
+    // receipts, less credit notes — NOT paid-only, and payments_received is no longer a revenue leg.
+    // OpEx = expenses + issued bills + orphan payments made + payroll (basis C); NetProfit subtracts
+    // FIFO COGS. Deductible (F139) rides along in books.tax for the Tax Summary, from this same call.
     const books = await computeBooks(userId, entityId, period);
     // Per-entity canonical summaries (same period) so the portal's entity tabs reconcile.
     const summariesByEntity = {};
@@ -586,7 +588,13 @@ If you cannot find a field, use null. Be concise.`;
         opex:          books.opex.toFixed(2),
         netProfit:     books.netProfit.toFixed(2),
         outstanding:   books.outstanding.toFixed(2),
-        totalIncome:   books.revenue.toFixed(2),  // legacy alias → now paid-only canonical revenue
+        // F139 — tax-deductible expense for the Tax Summary, from the SAME computeBooks call as
+        // revenue above, so the accountant's taxable (revenue − deductible) reconciles with the
+        // client's own Income-Tax worksheet BY CONSTRUCTION, not by two agreeing re-implementations.
+        deductible:     books.tax.deductible.toFixed(2),
+        deductibleFull: books.tax.deductibleFull.toFixed(2),
+        deductibleHalf: books.tax.deductibleHalf.toFixed(2),
+        totalIncome:   books.revenue.toFixed(2),  // legacy alias → canonical accrual (issue-based) revenue
         totalExpenses: books.opex.toFixed(2),      // legacy alias → now canonical OpEx
         parts:         books.parts,
       },

@@ -1097,6 +1097,40 @@ So a user opening any report gets a revenue figure that disagrees with the dashb
 
 ---
 
+### F139 ✅ FIX HELD (2026-08-06; executed fail-then-pass on real scratch Postgres — awaiting owner approval to commit) — was 🟡 MEDIUM — the client Income-Tax worksheet and the accountant Tax Summary computed tax on DIFFERENT revenue AND deduction legs, so they disagreed on the same books
+**Status:** Fixed in the working tree, HELD for approval. Resolves **F76 defect #2** (paid-only revenue on `GET /api/tax-filing`).
+
+**Root (multi-writer — CLAUDE.md failure mode 2 / Rule 2).** The taxable figure had two independent implementations that disagreed on three axes:
+- **Revenue basis** — client `/api/tax-filing` used paid-only (CASH: `invoices.filter(i=>i.status==='paid')`), the pre-F32 basis; the accountant used `computeBooks.revenue` (issue-based ACCRUAL).
+- **Deduction factor map** — client counted `{yes,100}→1, {half,50}→0.5`; the accountant (`accountant-client.html renderTax`) counted only `{yes}→1, {half}→0.5`, silently DROPPING the `'100'` and `'50'` variants.
+- **Deduction period** — client summed ALL-TIME expenses; the accountant used a client-side `getFiltered` window that differs from `computeBooks`'s fiscal-year window.
+
+**Fix (single source; owner ruling = accrual).** `computeBooks` now computes the tax-deductible leg once — `tax:{deductible,deductibleFull,deductibleHalf}`, period+entity-scoped by the same `inPeriod` every P&L leg uses. `/api/tax-filing` reads `books.revenue` + `books.tax.deductible` over the fiscal-year window (`?fyStart=`, mirroring `/api/reports`); the accountant `/books` route returns the same `books.tax.*` in its summary; the accountant `renderTax` reads `_data.summary.*` instead of recomputing. The client worksheet sends its fiscal-year start via `window._fyContext()`. Stale "paid-only / payments received" comment in `accountant-routes.js` corrected.
+
+**Evidence — `tests/harness/verify-f139-tax-consistency.js`** (real scratch Postgres, real endpoints + shipped `renderTax`). Seed: issued-unpaid $10,000 + paid $4,000; deductibles yes $1000 / 100 $500 / half $800 / 50 $200 / no $9999. Owner oracle (hand-computed, independent): revenue 14000, deductible 2000, taxable **12000**.
+- **Pre-fix (fix stashed): 5 FAILED, exit 1** — client taxable 2000 (cash revenue 4000); accountant taxable 12600 (missed 100/50 → deductible 1400); the two surfaces and the owner value all differ.
+- **Post-fix: 12/12 GREEN, exit 0** — `client taxableIncome === accountant renderTax taxable === 12000`.
+
+**Files:** `server.js` (computeBooks deductible leg + `/api/tax-filing`), `accountant-routes.js` (summary + comment), `public/accountant-client.html` (renderTax), `public/finflow-api-wiring-extra.js` (worksheet fyStart) + regenerated `public/finflow-bundle.js`.
+
+**Class check (Rule 13).** The tax path had 2 writers; both now read the ONE `computeBooks` leg. Remaining fiscal-year-start divergence logged as **F140**.
+
+---
+
+### F140 🟡 MEDIUM — the accountant `/books` route windows `'year'` at JANUARY regardless of the client's fiscal-year start, so its figures diverge from the client's own dashboard for non-January fiscal years — **NEW (2026-08-06, found while unifying the tax basis in F139)**
+**Status:** OPEN, read-only verified.
+
+**Root.** `accountant-routes.js` calls `computeBooks(userId, entityId, period)` with **no** `fyStartIdx` argument, so it defaults to 0 (January). The client dashboard / reports / tax worksheet all pass the user's real fiscal-year start (`window._fyContext().fyStartIdx`, sent as `?fyStart=`). For any client whose fiscal year does not start in January, the accountant's `'year'` window `[Jan 1, next Jan 1)` differs from the client's `[fyStart, fyStart+12)`.
+
+**Class (Rule 13).** NOT tax-specific: it shifts EVERY `'year'` P&L leg the accountant shows — revenue, OpEx, COGS, net profit, and the new F139 deductible — for a non-January client. Same family as the F87 "per-user setting applied to per-entity books", except here the client's fiscal-year start simply isn't PLUMBED to the accountant at all (it is a client-only `#s-fy` value with no server store the accountant can read).
+
+**Why F139 does not fix it.** F139 makes client-worksheet ↔ accountant agree BY CONSTRUCTION *when both use the same fyStart* (its oracle seeds a January FY, so both are 0). It deliberately does not touch fyStart plumbing — that is this separate finding.
+
+**Course of action (owner-gated).** Persist the client's fiscal-year start server-side (e.g. `fiscal_year_start` on user settings) and have the accountant route read it, so all its `'year'` figures window on the client's real fiscal year.
+**Done when:** the accountant `/books` `'year'` revenue equals the client dashboard `'year'` revenue for a client with a non-January fiscal year, on real seeded data spanning the fiscal-year boundary.
+
+---
+
 ### F137 🟠 HIGH — 11 of 12 reports render the SAME generic P&L overview regardless of type; the real per-report renderer (incl. the only Balance-Sheet/AP surface) is dead-shadowed — **NEW (2026-08-05, read-only verified)**
 **Status:** OPEN. Found while hunting for a UI surface to confirm F135's Accounts Payable — there isn't one, and this is why.
 
@@ -1708,8 +1742,8 @@ So switching currency from Settings or the mobile drawer set `_displayCurrency`,
 
 ---
 
-### F76 🟡 MEDIUM — `GET /api/tax-filing` is stale on three counts — **NEW (2026-07-23, read-only verified)**
-**Status:** OPEN, verified by code read. **Not currently user-facing** (see urgency note) — that lowers urgency, it does **not** make it correct.
+### F76 🟡 MEDIUM — `GET /api/tax-filing` is stale on three counts — **NEW (2026-07-23, read-only verified) → defect #2 FIXED by F139 (2026-08-06, held)**
+**Status:** Defect #2 (paid-only revenue) **RESOLVED by F139** — the endpoint now reads `computeBooks.revenue` (accrual) + `books.tax.deductible`, executed fail-then-pass on real scratch Postgres. Defect #1 (flat 25% is now overridden by the F137-k owner-supplied tax-line worksheet; the endpoint still returns `rate:0.25` only as a starting default) and defect #3 (no `ytdPaid` — correctly "Not tracked", A7.23) are unchanged. Endpoint is now consumed by the F137-k worksheet, so it is user-facing.
 
 Three defects in one endpoint (`server.js:3464-3492`), reported together because they share a cause: the endpoint predates both the F32 recognition decision and **D1**, and was never revisited.
 

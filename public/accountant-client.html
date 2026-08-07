@@ -1147,12 +1147,17 @@ function renderJournals() {
 
 // ── TAX ────────────────────────────────────────────────────────────────────
 function renderTax(invoices, expenses) {
-  // Revenue from the canonical summary (entity + period scoped); deductibles from the
-  // period-filtered expense rows.
-  const revenue = parseFloat((_data.summary||{}).revenue)||0;
-  const dedFull = expenses.filter(e=>e.deductible==='yes').reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
-  const dedHalf = expenses.filter(e=>e.deductible==='half').reduce((s,e)=>s+(parseFloat(e.amount)||0)*0.5,0);
-  const totalDed = dedFull+dedHalf;
+  // F139 — revenue AND deductible both come from the canonical summary (computeBooks, entity +
+  // fiscal-year scoped), the SAME source the client's own Income-Tax worksheet reads, so accountant
+  // and client agree on taxable BY CONSTRUCTION. The deductible was recomputed HERE from client-side
+  // getFiltered() rows with a narrower factor map ('yes'/'half' only — missing '100'/'50') and no
+  // fiscal-year window ('year' returned ALL records), three ways to diverge from the client; that is
+  // gone. `expenses` is no longer read for tax figures.
+  const _s = _data.summary || {};
+  const revenue  = parseFloat(_s.revenue)  || 0;
+  const dedFull  = parseFloat(_s.deductibleFull) || 0;
+  const dedHalf  = parseFloat(_s.deductibleHalf) || 0;
+  const totalDed = parseFloat(_s.deductible) || 0;
   const taxable = Math.max(0, revenue-totalDed);
   const rate = parseFloat(_data?.taxRate)||0;
   // F137-k/F138: prefer the client's Income Tax worksheet lines (accurate for fixed/revenue lines);

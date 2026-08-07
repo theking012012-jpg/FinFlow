@@ -1277,7 +1277,8 @@ _Original finding (for the record):_
 ---
 
 ### F131 🟡 MEDIUM — The 5s `findRecentDuplicate` pre-check is TOKEN-BLIND: on a token-bucket route it collapses two legitimately different-token records into one (dropped record / missing money) — **NEW (2026-08-04); invoices instance FIXED & executed in commit A; class OPEN**
-**Status:** invoices instance FIXED and executed both ways (commit A, 2026-08-04). The class across the other token-bucket routes is OPEN and **frozen** for the C1 rollout — Rule 13: fix the in-scope instance, document the class; do not grow scope mid-round.
+**Status:** ✅ **CLASS CLOSED — 2026-08-07 (status corrected).** The token-aware bypass (`if (!idem)` — run the 5s pre-check only for token-less callers, else the partial unique index is the sole arbiter) shipped on EVERY C1 token route this session (expenses, bills, payments_made/received, credit/vendor notes, sales_receipts, journals, payroll_runs, chart_of_accounts, invoice_payments, inventory_movements — plus the original invoices). Each route's `verify-c1-<route>.js` executes case D2 (different tokens, same business fields, <5s apart → BOTH land), the exact F131 defect, and passes. So the token-blind collapse can no longer drop a legitimate record on any token route.
+**Was (stale):** invoices instance FIXED and executed both ways (commit A, 2026-08-04). The class across the other token-bucket routes is OPEN and **frozen** for the C1 rollout — Rule 13: fix the in-scope instance, document the class; do not grow scope mid-round.
 
 **Mechanism.** Every C1 create route runs a fast pre-check — `findRecentDuplicate(table, user, entity, {business fields}, 5s)` — BEFORE the insert, matching on business columns (invoices: `client`+`amount`, server.js:790). The durable idempotency key a token-bucket route adopts is a DIFFERENT dimension: a per-submit-intent token. So the pre-check is **blind to the token**. Two POSTs with the SAME client+amount but DIFFERENT tokens within 5 s — genuine re-invoicing, or any legitimate same-value record — both match the pre-check → the second is returned as a "duplicate" and its row is **DROPPED**. On invoices that is missing revenue; on any money-row route it is a silently absent transaction.
 
@@ -1604,7 +1605,8 @@ The `/api/holdings` case is the sharpest: `server.js:1336-1340` catches, logs, a
 ---
 
 ### F64 🟠 HIGH — Money is abbreviated everywhere, including itemized rows; "Show cents" is dead — **NEW**
-**Status:** OPEN, verified. *Pre-existing behaviour, not an F53 regression* — `patchSFormatter` abbreviated before `96ef6c3` too (verified against `96ef6c3^`). F53 unified the thresholds; it did not change where abbreviation applies.
+**Status:** ✅ **FIXED — verified by code-read 2026-08-07 (status corrected; the row below was stale).** `patchSFormatter` now sets `window.S = _fmtMoneyExact` (app-main.js:614) — full `toLocaleString` with cents — so itemized rows show the exact amount; the abbreviated formatter is split out as `_fmtMoneyAbbr` (app-main.js:564) for the KPI-card/chart-tick sites only; `_fmtMoneyExact` reads `#s-cents` live (comment at app-main.js:1261), so "Show cents" is wired. Matches the row's own "Course of action" 1–4. *Not independently re-executed — code-read only; a client render assertion would fully close it.*
+**Was (stale):** OPEN, verified. *Pre-existing behaviour, not an F53 regression* — `patchSFormatter` abbreviated before `96ef6c3` too (verified against `96ef6c3^`). F53 unified the thresholds; it did not change where abbreviation applies.
 
 **What's wrong.** `patchSFormatter` (`app-main.js:567`) replaces `window.S` at init (`app-main.js:1217`) with `_fmtMoney`, which abbreviates **every** value ≥ $1,000 to one decimal and rounds everything below $1,000 to whole dollars (`app-main.js:553-558`). `S()` is the app's universal money renderer — it is used for KPI cards *and* for every table row:
 
@@ -1627,7 +1629,8 @@ Do **not** try to make one formatter serve both — that is what produced the dr
 ---
 
 ### F65 🟡 MEDIUM — 8 controls report a completed action with no backend — **NEW** (honesty)
-**Status:** OPEN, verified. Ships as part of the **B10** honesty pass.
+**Status:** ✅ **FIXED — verified by code-read 2026-08-07 (status corrected; the row below was stale).** Every listed fake-success control is now removed or made honest: the advisor toasts + `submitAdvisorApp` + the "750+ apps & services" banner + Browse-all/Build-an-app are deleted (app-main.js now carries removal comments at ~6540/6574); the Rebalance button toasts an honest "Rebalancing suggestions are coming soon" (index.html:1932); "Contact sales" is a real `mailto:` (index.html:2747). No remaining click reports success for work that did not happen. *Not independently re-executed — code-read only.*
+**Was (stale):** OPEN, verified. Ships as part of the **B10** honesty pass.
 
 | Control | Site | Claims |
 |---|---|---|
@@ -2893,7 +2896,8 @@ This is the accrual question, not a rounding one: under decisions 1 and 2 an exp
 ---
 
 ### F51 🟡 MEDIUM — Placeholder surfaces presented as live features (blocker **B10**)
-**Verified live-confirmed placeholders:**
+**Status:** 🟢 **MOSTLY FIXED — verified by code-read 2026-08-07 (status corrected).** Find-Advisor now redirects to the real accountant directory and its fake advisor/application code is deleted (app-main.js ~6527/6538); the Connections `loadStates(){return{}}` / `saveStates(){}` empty stubs are gone from the real index.html (only orphaned OneDrive `.fuse_hidden*` copies still contain them — delete those junk files); `GET /api/tax-filing`'s flat-25% bullet is superseded by **F139** (now reads `computeBooks` + the F137-k worksheet). **Remaining slivers to confirm/close:** the `NEW` badge on the Find-Advisor nav item (if still present), Banking's static "Bank Sync — Coming Soon" card, and Templates (empty, no persistence). None is a fake-success control anymore — the honest "Coming Soon" cards are acceptable. *Code-read only.*
+**Verified live-confirmed placeholders (original, pre-fix):**
 | Surface | Evidence |
 |---|---|
 | **Banking** | static "Bank Sync — Coming Soon" card, `index.html:1987` |

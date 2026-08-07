@@ -2475,6 +2475,7 @@ function openExpenseModal(){
   const _sv=(id,v)=>{const el=document.getElementById(id); if(el) el.value=v;};
   _sv('bexp-desc','');
   _sv('bexp-amount','');
+  window._expIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new expense never reuses the last token
   openModal('expense-modal');
 }
 function saveExpense(){

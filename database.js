@@ -159,6 +159,17 @@ async function initDB() {
         WHERE data->>'idempotency_key' IS NOT NULL
     `);
 
+    // C1 Wave 1 — expenses idempotency backstop (same shape as invoices above). expenses is a
+    // generic JSONB table with NO natural key (two identical "Fuel $50" expenses are legitimate),
+    // so the enforcing key is the per-submit idempotency TOKEN, not UNIQUE(description, amount).
+    // Partial on non-NULL keys: legacy/token-less rows are excluded, so the index builds cleanly
+    // and behaviour is unchanged until a token is sent. Inside initDB → no new import side effect.
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_idem_key
+        ON expenses (user_id, (data->>'idempotency_key'))
+        WHERE data->>'idempotency_key' IS NOT NULL
+    `);
+
     // ── PERSONAL FINANCE: ASSETS/LIABILITIES + SNAPSHOTS ────────────────────────
     // Generic JSONB shape (user_id + entity_id + data) so the db.* helpers work,
     // but WITH cascade FKs to users/entities (created above by the generic loop)

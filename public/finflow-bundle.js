@@ -709,6 +709,9 @@
 
     // Patch saveExpense
     window.saveExpense = async function () {
+      // C1 Wave 1: in-flight re-entry lock — a double-click / impatient re-click cannot fire a 2nd
+      // POST. UX layer only; the durable guarantee is the DB idempotency index (idx_expenses_idem_key).
+      if (window._savingExpense) return;
       const desc = (typeof sanitizeText === 'function')
         ? sanitizeText(document.getElementById('bexp-desc')?.value, 300)
         : document.getElementById('bexp-desc')?.value?.trim();
@@ -722,6 +725,17 @@
       const cat = document.getElementById('bexp-cat')?.value  || 'Other';
       const ded = document.getElementById('bexp-ded')?.value  || 'no';
 
+      // One idempotency token per submit-intent: minted lazily now, reused on any retry of THIS
+      // modal, reset to null on modal open (openExpenseModal) and on success below. A double-submit
+      // of the same intent reuses it (→ DB dedupes); a genuine new expense from a reopened modal
+      // gets a fresh token and is allowed.
+      window._expIdemKey = window._expIdemKey || (window.crypto?.randomUUID
+        ? window.crypto.randomUUID()
+        : 'exp-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+
+      window._savingExpense = true;
+      const _expSaveBtn = document.querySelector('#expense-modal .btn-primary');
+      if (_expSaveBtn) _expSaveBtn.disabled = true;
       try {
         const _activeEnt2 = (window.ENTITIES || []).find(e => e.active);
         const _entityId2 = _activeEnt2?._dbId || null;
@@ -733,6 +747,7 @@
           deductible:  ded,
           expense_date: new Date().toISOString().slice(0, 10),
           entity_id: _entityId2,
+          idempotency_key: window._expIdemKey,   // C1 Wave 1 — the token idx_expenses_idem_key enforces
         });
 
         if (!window.bizExpenses) window.bizExpenses = [];
@@ -745,6 +760,7 @@
           date:   'Today',
         });
 
+        window._expIdemKey = null;   // success → the next expense mints a fresh token
         closeModal('expense-modal');
         if (typeof renderExpenses === 'function') renderExpenses();
         notify('Expense logged ✦');
@@ -752,7 +768,11 @@
         window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) {
+        // Keep _expIdemKey so a manual retry of this SAME submit is idempotent (same token → 23505 → original row).
         notify('Could not log expense — ' + e.message, true);
+      } finally {
+        window._savingExpense = false;
+        if (_expSaveBtn) _expSaveBtn.disabled = false;
       }
     };
 

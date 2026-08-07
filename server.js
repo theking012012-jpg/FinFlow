@@ -1038,10 +1038,29 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   const eid = entity_id || req.entityId || null;
   const edate = expense_date || new Date().toISOString().slice(0,10);
   if (await isLocked(req.session.userId, edate)) return res.status(403).json({ error: 'Period is locked.' });
-  // Layer 3: dedupe near-simultaneous duplicate creates (user_id + entity_id + description + amount).
-  const _dup = await findRecentDuplicate('expenses', req.session.userId, eid, { textMatch: { description: description.trim().slice(0,300) }, numMatch: { amount: parseFloat(amount)||0 } });
-  if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('expenses', { user_id: req.session.userId, entity_id: eid, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: edate });
+  const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
+  // C1 Wave 1: the token-blind 5s findRecentDuplicate pre-check runs ONLY for token-less callers
+  // (old clients / API). When a token IS present, the partial unique index (idx_expenses_idem_key)
+  // is the sole arbiter, so two legitimately different-token expenses with the same description+
+  // amount within 5s are not wrongly collapsed (F131 class). Token-less path unchanged.
+  if (!idem) {
+    const _dup = await findRecentDuplicate('expenses', req.session.userId, eid, { textMatch: { description: description.trim().slice(0,300) }, numMatch: { amount: parseFloat(amount)||0 } });
+    if (_dup) return res.status(200).json(_dup);
+  }
+  // Durable backstop (mirrors POST /api/invoices): a double-submit carries the SAME token → the 2nd
+  // INSERT throws 23505 → recover the ORIGINAL row and return 200 idempotently (never a 500, never a
+  // duplicate). Closes the concurrent-POST TOCTOU race and the slow >5s re-click the 5s window
+  // misses (Rule 9). Inert until idx_expenses_idem_key exists (no index ⇒ no 23505 ⇒ prior behaviour).
+  let row;
+  try {
+    ({ row } = await db.insert('expenses', { user_id: req.session.userId, entity_id: eid, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: edate, idempotency_key: idem }));
+  } catch (e) {
+    if (e.code === '23505' && idem) {
+      const { rows } = await pool.query(`SELECT * FROM expenses WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
+    }
+    throw e;
+  }
   logAudit(req, 'CREATE', 'expenses', row.id, null, row);
   res.status(201).json(row);
 }));

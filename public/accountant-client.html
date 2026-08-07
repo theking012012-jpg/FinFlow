@@ -1311,10 +1311,14 @@ function exportCSV() {
   expenses.forEach(e => lines.push([q(e.description||''), q(e.category||''), q(parseFloat(e.amount)||0), q(e.expense_date||''), q(e.deductible||'')].join(',')));
   lines.push('');
   lines.push('PAYROLL');
-  lines.push([q('Name'), q('Role'), q('Gross'), q('Tax Rate'), q('Net Pay')].join(','));
+  // F8 follow-up: `tax_rate` was deleted; net = gross − Σ(deductions) (percent → gross×value/100,
+  // fixed → value), matching renderPayroll's dedTotal. The old CSV read the dead tax_rate → 0% and
+  // net == gross. Export the real Deductions + Net instead.
+  lines.push([q('Name'), q('Role'), q('Gross'), q('Deductions'), q('Net Pay')].join(','));
   (_data.allPayroll || []).forEach(p => {
-    const g = parseFloat(p.gross) || 0, r = parseFloat(p.tax_rate) || 0;
-    lines.push([q((p.fname||'')+' '+(p.lname||'')), q(p.role||''), q(g), q(r+'%'), q(Math.round(g*(1-r/100)))].join(','));
+    const g = parseFloat(p.gross) || 0;
+    const ded = Math.round((Array.isArray(p.deductions) ? p.deductions : []).reduce((s, d) => { const v = parseFloat(d.value) || 0; return s + (d.type === 'percent' ? g * v / 100 : v); }, 0) * 100) / 100;
+    lines.push([q((p.fname||'')+' '+(p.lname||'')), q(p.role||''), q(g), q(ded), q(Math.round((g - ded) * 100) / 100)].join(','));
   });
   lines.push('');
   const rev = invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);

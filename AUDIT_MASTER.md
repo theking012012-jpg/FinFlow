@@ -1730,8 +1730,9 @@ So switching currency from Settings or the mobile drawer set `_displayCurrency`,
 
 ---
 
-### F73 🟢 LOW — Client payroll leg reads a LIMIT-50 endpoint; >50 lifetime runs undercounts until the server figure lands — **NEW (found while implementing basis C)**
-**Status:** OPEN, verified. Do **not** fix in isolation — belongs with the client-recompute rework (same class as **F7**, **F56**).
+### F73 ✅ FIXED (2026-08-07; executed) — was 🟢 LOW — Client payroll leg read a LIMIT-50 endpoint; >50 lifetime runs undercounted
+**Status:** ✅ **FIXED.** Removed `LIMIT 50` from `GET /api/payroll-runs` (server.js:4249), so `window.payrollRuns` is complete — closing both the client payroll-total undercount AND keeping the F33-C overview-chart payroll buckets accurate past 50 runs. payroll_runs is inherently small (one row per pay period), so an uncapped list is safe. Verified `tests/harness/verify-f73-payroll-runs-uncapped.js`: seed 60 runs → endpoint returns 60 (pre-fix 50).
+**Was (stale):** OPEN — the client leg read `window.payrollRuns` from a `LIMIT 50` endpoint, so >50 lifetime runs undercounted payroll on first paint until `/api/reports` overwrote the cards.
 
 **What's wrong.** Under basis C (`532390b`… see the payroll commit), the payroll expense leg = Σ `payroll_run_lines` whose parent `run_date` ∈ period, on **both** engines. The **server** leg (`computeBooks`) issues a **direct, unlimited** JOIN, so `/api/reports` / `/books` are authoritative and correct at any run count. The **client** leg reads `window.payrollRuns`, populated from `GET /api/payroll-runs` — which is capped: `... ORDER BY pr.created_at DESC LIMIT 50` (`server.js:3778`). So a user with **>50 lifetime payroll runs** gets a client dashboard that **undercounts** payroll (misses the oldest runs) until the async `/api/reports` fetch overwrites the cards with the server's figure.
 

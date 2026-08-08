@@ -4246,7 +4246,11 @@ app.get('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
      FROM payroll_runs pr
      LEFT JOIN payroll_run_lines prl ON prl.run_id = pr.id
      WHERE pr.user_id = $1 AND (pr.entity_id IS NULL OR ($2::int IS NOT NULL AND pr.entity_id = $2))
-     GROUP BY pr.id ORDER BY pr.created_at DESC LIMIT 50`,
+     GROUP BY pr.id ORDER BY pr.created_at DESC`,
+    // F73: LIMIT 50 REMOVED — window.payrollRuns feeds the client payroll total AND the F33-C
+    // overview-chart payroll buckets, both of which must be COMPLETE. Capping at 50 undercounted
+    // payroll for any account with >50 lifetime runs until the server /api/reports figure landed.
+    // payroll_runs is inherently small (one row per pay period), so an uncapped list is safe.
     [scopeId(req), req.entityId || null]
   );
   res.json(rows);

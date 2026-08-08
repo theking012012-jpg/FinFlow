@@ -2864,10 +2864,27 @@ This is the accrual question, not a rounding one: under decisions 1 and 2 an exp
 
 ---
 
-### F26 🟡 MEDIUM — `sales_receipts` / `payments_received` entity scoping
-**Status:** PARTIAL, unchanged. Inserts carry `entity_id` since sweep `e1319ef`, but **`computeBooks` still reads receipts user-scoped, not entity-scoped** (`server.js:3919`: `db.allByUser('sales_receipts', userId)` with no `ent` filter, comment `// user-scoped (no entity_id) — F26`). For a multi-entity user every entity's P&L includes **every** entity's cash sales.
-**Course of action:** (1) backfill legacy rows' `entity_id`; (2) then change `3919` to pass `ent` and drop `2131`/`2170`'s `null` entity in `findRecentDuplicate`. Order matters — scoping before backfill would hide existing rows.
-**Done when:** with two entities each holding a receipt, each entity's revenue includes only its own.
+### F26 ✅ FIXED (2026-08-07; executed, fail-then-pass) — `sales_receipts` entity scoping
+**Status:** ✅ **FIXED.** `sales_receipts` was the lone table read user-scoped in all three money surfaces while every sibling (invoices, expenses, payments_made, bills, credit_notes, vendor_credits) used the entity predicate — so a multi-entity owner's every entity P&L counted every entity's cash sales. Scoped all four sites to the **null-inclusive** predicate the neighbours already use:
+- computeBooks (server.js:4496) — `ent`
+- `POST /api/reports/profit-loss` (3680) and `POST /api/reports/cash-flow` (3842) — `matchEnt`
+- `GET /api/sales-receipts` list (2425) — matching `/api/invoices`/`/api/expenses`/`/api/bills`
+
+**The ledger's data-order concern is dissolved, not deferred.** It assumed STRICT scoping (`entity_id === eid`), which would hide legacy NULL-entity rows. The predicate every sibling uses is null-inclusive (`entityId == null || r.entity_id == null || r.entity_id === entityId`), so legacy NULL receipts stay visible to every entity exactly as before — only *other* entities' tagged rows are excluded. **No backfill is required for the leak fix.** A backfill (assigning legacy NULL receipts to one entity so they stop appearing in all) remains an OPTIONAL, owner-gated cleanup (Rule 8) — logged as **F26-b** below, not built.
+
+**Verified** `tests/harness/verify-f26-receipt-entity-scoping.js` (real Postgres, real endpoints): two entities (R1=100→E1, R2=200→E2) + legacy NULL R0=50. Post-fix E1 revenue=150, E2 revenue=250, E1 list=[50,100], legacy visible to both — 7/7. **Fail-then-pass control** vs `HEAD:server.js`: the 3 leak assertions FAIL (both entities 350) while legacy-visibility passes on both builds → discriminates (Rules 4+14). Done-when met.
+**payments_received note:** the finding's original `payments_received` leg is moot — F32 removed it as a revenue leg and F86 found it empty in prod; it feeds no money surface, so there is nothing to scope there.
+**Was (stale):** PARTIAL — line refs 3919/2131/2170 pre-move; "backfill first or rows hide" applied only to strict scoping.
+
+---
+
+### F26-b 🟢 LOW — legacy NULL-entity `sales_receipts` appear in every entity (optional cleanup) — **NEW (2026-08-07), OPEN, owner-gated (Rule 8)**
+Post-F26 the leak of *tagged* cross-entity receipts is closed, but a legacy receipt with `entity_id IS NULL` (created before sweep `e1319ef`) still shows in **every** entity's books via the null-inclusive predicate — the same treatment null-entity invoices/expenses already get. Fully correcting it means assigning each legacy NULL receipt to the entity it belongs to, a historical data change that needs an owner decision on assignment. **Do not build without approval.** Read-only instrument for the owner to size it: `SELECT COUNT(*) FROM sales_receipts WHERE entity_id IS NULL;` (and same for `payments_received`, `payments_made`). If the count is 0 in prod, F26-b is a no-op and can be closed.
+
+---
+
+### F142 🟢 LOW — `GET /api/payments-made` list not entity-scoped — **NEW (2026-08-07), OPEN**
+Found while enumerating F26's class. `GET /api/payments-made` (server.js:2602) reads `db.allByUser('payments_made', userId)` with no entity predicate, while `/api/invoices`, `/api/expenses`, `/api/bills`, and now `/api/sales-receipts` all scope their lists. Display-only — the payments_made **money** reads (profit-loss 3676, cash-flow 3838, computeBooks 4491) are already entity-scoped, so no figure is wrong; only the payments-made *page* shows other entities' rows for a multi-entity user. Fix: add the same null-inclusive predicate the sibling lists use. Not folded into F26 (different table).
 
 ---
 

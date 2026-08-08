@@ -2419,7 +2419,10 @@ app.delete('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => 
 
 // ── SALES RECEIPTS ────────────────────────────────────────────────────────────
 app.get('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('sales_receipts', req.session.userId));
+  // F26: entity-scope the list like /api/invoices, /api/expenses, /api/bills already do
+  // (null-inclusive, so legacy null-entity rows still show). Was user-scoped, so a multi-entity
+  // owner saw every entity's receipts on each entity's page.
+  res.json(await db.allByUser('sales_receipts', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   const { customer, num, amount, date, method = 'Card' } = req.body || {};
@@ -3674,7 +3677,7 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
     db.allByUser('invoices', uid, matchEnt),
     db.allByUser('expenses', uid, matchEnt),
     db.allByUser('payments_made', uid, matchEnt),
-    db.allByUser('sales_receipts', uid),      // user-level (no entity_id) — F26
+    db.allByUser('sales_receipts', uid, matchEnt),  // F26: entity-scoped (null-inclusive) like every sibling leg — was user-level, leaking other entities' cash sales into this entity's figures
     db.allByUser('bills', uid, matchEnt),     // F38 Step 4: issued bills = accrued expense
     // payments_received dropped: it settles AR, it is not revenue (F32).
     db.allByUser('credit_notes', uid, matchEnt),    // F58: revenue contra
@@ -3836,7 +3839,7 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
     pool.query(`SELECT * FROM invoice_payments WHERE user_id = $1`, [uid]),
     db.allByUser('expenses', uid, matchEnt),
     db.allByUser('payments_made', uid, matchEnt),
-    db.allByUser('sales_receipts', uid),      // user-level (no entity_id) — F26
+    db.allByUser('sales_receipts', uid, matchEnt),  // F26: entity-scoped (null-inclusive) like every sibling leg — was user-level, leaking other entities' cash sales into this entity's figures
     pool.query(
       `SELECT pr.id AS run_id, pr.run_date, pr.entity_id,
               COALESCE(SUM(COALESCE(prl.gross,0) + COALESCE(prl.bonus,0) + COALESCE(prl.overtime,0)), 0) AS run_total
@@ -4195,6 +4198,67 @@ app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) =>
   res.status(201).json(rows[0]);
 }));
 
+// F101: BATCH match — collapse a whole reconciliation session (100–300 pairs) into ONE request
+// instead of one POST per pair. This is why the F99 write cap can be revisited downward: a
+// legitimate reconciliation is no longer indistinguishable, by request count, from a runaway loop.
+// Atomic (all-or-nothing in one transaction). Idempotent by natural key — a banking_id or
+// invoice_payment_id ALREADY reconciled (or repeated within the batch) is SKIPPED, so a
+// double-submit or retry cannot create duplicate links. The single /match endpoint above is kept
+// for backward compatibility.
+app.post('/api/bank-reconciliation/match-batch', requireAuth, wrap(async (req, res) => {
+  const raw = Array.isArray(req.body && req.body.matches) ? req.body.matches : null;
+  if (!raw || raw.length === 0) return res.status(400).json({ error: 'matches[] required' });
+  if (raw.length > 500) return res.status(400).json({ error: 'too many matches in one batch (max 500)' });
+  const pairs = [];
+  for (const m of raw) {
+    const b = parseInt(m && m.banking_id, 10);
+    const p = parseInt(m && m.invoice_payment_id, 10);
+    if (!Number.isInteger(b) || b <= 0 || !Number.isInteger(p) || p <= 0) {
+      return res.status(400).json({ error: 'each match needs a positive integer banking_id and invoice_payment_id' });
+    }
+    pairs.push({ banking_id: b, invoice_payment_id: p });
+  }
+  const uid = req.session.userId;
+  const eid = req.entityId || null;
+  const sid = scopeId(req);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // ownership: every banking_id must be the user's personal_transactions row; every
+    // invoice_payment_id the user's invoice_payments row. Two set queries, not 2N.
+    const bankIds = [...new Set(pairs.map(p => p.banking_id))];
+    const payIds  = [...new Set(pairs.map(p => p.invoice_payment_id))];
+    const okBank = new Set((await client.query('SELECT id FROM personal_transactions WHERE user_id=$1 AND id = ANY($2::int[])', [sid, bankIds])).rows.map(r => r.id));
+    const okPay  = new Set((await client.query('SELECT id FROM invoice_payments WHERE user_id=$1 AND id = ANY($2::int[])', [sid, payIds])).rows.map(r => r.id));
+    const notFound = pairs.filter(p => !okBank.has(p.banking_id) || !okPay.has(p.invoice_payment_id));
+    if (notFound.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Some ids not found or not owned', notFound }); }
+    // idempotent skip: drop any pair whose bank tx or payment is already reconciled, and de-dupe
+    // within the batch (same bank tx or payment appearing twice).
+    const already = await client.query('SELECT banking_id, invoice_payment_id FROM bank_reconciliation WHERE user_id=$1', [sid]);
+    const usedBank = new Set(already.rows.map(r => r.banking_id));
+    const usedPay  = new Set(already.rows.map(r => r.invoice_payment_id));
+    const seenBank = new Set(), seenPay = new Set();
+    const toInsert = [], skipped = [];
+    for (const p of pairs) {
+      if (usedBank.has(p.banking_id) || usedPay.has(p.invoice_payment_id) || seenBank.has(p.banking_id) || seenPay.has(p.invoice_payment_id)) { skipped.push(p); continue; }
+      seenBank.add(p.banking_id); seenPay.add(p.invoice_payment_id); toInsert.push(p);
+    }
+    let rows = [];
+    if (toInsert.length) {
+      const vals = [], params = [];
+      toInsert.forEach((p, i) => { const o = i * 4; vals.push(`($${o+1},$${o+2},$${o+3},$${o+4})`); params.push(uid, eid, p.banking_id, p.invoice_payment_id); });
+      rows = (await client.query(`INSERT INTO bank_reconciliation (user_id, entity_id, banking_id, invoice_payment_id) VALUES ${vals.join(',')} RETURNING *`, params)).rows;
+    }
+    await client.query('COMMIT');
+    res.status(201).json({ matched: rows.length, skipped: skipped.length, rows });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    throw e;
+  } finally {
+    client.release();
+  }
+}));
+
 app.delete('/api/bank-reconciliation/:id', requireAuth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `DELETE FROM bank_reconciliation WHERE id=$1 AND user_id=$2 RETURNING *`,
@@ -4490,7 +4554,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     db.allByUser('expenses', userId, ent),
     db.allByUser('payments_made', userId, ent),
     db.allByUser('payroll', userId, ent),
-    db.allByUser('sales_receipts', userId),      // user-scoped (no entity_id) — F26
+    db.allByUser('sales_receipts', userId, ent),      // F26: entity-scoped (null-inclusive `ent`), matching every other leg above — was user-scoped, so a multi-entity owner's every entity P&L counted every entity's cash sales
     db.allByUser('bills', userId, ent),          // F38 Step 4: issued bills = accrued expense
     // payments_received is NO LONGER a revenue leg (F32): it settles AR, it is not revenue.
     // F58: credit notes / vendor credits are P&L CONTRA legs — see the revenue and opex legs.

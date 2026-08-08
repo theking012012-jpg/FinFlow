@@ -179,7 +179,12 @@ async function lookupMembership(body, membershipNumber) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient, computeBooks) {
+module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit) {
+  // F90 Phase B: recordAudit is the single audited write path (threaded from server.js). Accountant
+  // actions on a client's books log with actor_type='accountant' + actor_id=accountantId (derived
+  // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
+  // changed. A no-op fallback keeps the module loadable if ever called without it.
+  const _audit = typeof recordAudit === 'function' ? recordAudit : async () => {};
 
   // ── 1. REGISTER AS ACCOUNTANT ─────────────────────────────────────────────
   app.post('/api/accountants/register', authLimiter, wrap(async (req, res) => {
@@ -639,6 +644,7 @@ If you cannot find a field, use null. Be concise.`;
       lines: JSON.stringify(lines || []),
       posted_by: `accountant:${req.session.accountantId}`,
     });
+    await _audit(pool, { userId: parseInt(userId), table: 'journals', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B (accountant on client books)
     res.status(201).json(row);
   }));
 
@@ -662,6 +668,7 @@ If you cannot find a field, use null. Be concise.`;
     } else {
       await db.insert('lock_settings', { user_id: parseInt(userId), period, locked: locked ? 1 : 0, locked_by: `accountant:${req.session.accountantId}` });
     }
+    await _audit(pool, { userId: parseInt(userId), table: 'lock_settings', recordId: _lsAcc ? _lsAcc.id : null, action: locked ? 'LOCK' : 'UNLOCK', field: 'period', newValue: period, req });  // F90 Phase B (accountant)
     res.json({ ok: true });
   }));
 
@@ -792,6 +799,7 @@ If you cannot find a field, use null. Be concise.`;
         VALUES ($1, $2, 'referral', 1000, 'Referral commission — month 1', date_trunc('month', NOW()))
       `, [accountant_id, userId]);
 
+      await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_ACTIVATE', field: 'status', newValue: 'active', req });  // F90 Phase B (accountant)
       return res.json({ success: true });
     } finally {
       client.release();
@@ -806,6 +814,7 @@ If you cannot find a field, use null. Be concise.`;
       `UPDATE accountant_clients SET status = 'rejected' WHERE user_id = $1 AND accountant_id = $2`,
       [userId, req.session.accountantId]
     );
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_REJECT', field: 'status', newValue: 'rejected', req });  // F90 Phase B (accountant)
     return res.json({ success: true });
   }));
 
@@ -964,6 +973,7 @@ If you cannot find a field, use null. Be concise.`;
       WHERE user_id = $1 AND status = 'active' AND accountant_id = $2
     `, [userId, req.session.accountantId]);
 
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_SUSPEND', field: 'status', newValue: 'suspended', req });  // F90 Phase B (accountant)
     return res.json({ success: true, message: 'Client commission suspended. No further payouts until client reactivates.' });
   }));
 
@@ -984,6 +994,7 @@ If you cannot find a field, use null. Be concise.`;
         AND accountant_id = $2
     `, [userId, req.session.accountantId]);
 
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_REACTIVATE', field: 'status', newValue: 'active', req });  // F90 Phase B (accountant)
     return res.json({ success: true });
   }));
 

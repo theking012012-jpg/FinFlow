@@ -1860,8 +1860,8 @@ None of the three is visible in source. All three would have been caught by a se
 
 ---
 
-### F78 🔴 CRITICAL — `require('./server.js')` fires DDL **and a data-modifying UPDATE** at import time, against whatever `DATABASE_URL` is set — **NEW (2026-07-23, read-only verified while building the harness)**
-**Status:** OPEN. Not a harness problem — a property of the shipped server that any tool, test or script inherits.
+### F78 ✅ FIXED (structural; status corrected 2026-08-07) — was 🔴 CRITICAL — `require('./server.js')` fired DDL + a data-modifying UPDATE at import time
+**Status:** ✅ **FIXED.** `initDB()` (DDL across ~40 tables + the invoices `amount_paid` backfill) is now **inside** the `if (require.main === module)` guard (server.js:5439-5441, comment tagged `F78:`), so importing `server.js` — as any harness/tool/script does — no longer runs DDL or the backfill against `DATABASE_URL`. The finding below describes the pre-fix layout (`initDB()` at module scope, only `app.listen` guarded); that has been corrected. **Verification is STRUCTURAL** (the boot sequence, incl. `initDB()`, sits within the `require.main === module` block — no value can express "DDL did not run on import"); an execution check would require a scratch DB and asserting no tables were created on a bare `require`.
 
 Importing the server is not inert. `server.js:11` requires `./database`, and `server.js:4750` calls `initDB()` **at module scope, unawaited**:
 ```

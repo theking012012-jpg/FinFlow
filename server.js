@@ -2270,6 +2270,7 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
+  await recordAudit(pool, { userId: req.session.userId, entityId: entity?.id || null, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
@@ -2470,6 +2471,7 @@ app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
+  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
@@ -2532,6 +2534,7 @@ app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
+  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'payments_received', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
@@ -2591,6 +2594,7 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
+  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'credit_notes', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
@@ -2656,6 +2660,7 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
     throw e;
   }
   if (_billId != null) await recalcBillStatus(pool, _billId, req.session.userId);
+  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'payments_made', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
@@ -2733,6 +2738,7 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
+  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'vendor_credits', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
@@ -4450,6 +4456,7 @@ app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write
     [parseInt(req.params.id), scopeId(req)]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
+  await recordAudit(pool, { userId: req.session.userId, entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'APPROVE', field: 'status', newValue: 'approved', req });  // F90 Phase B: payroll recognised at approve
   res.json(rows[0]);
 }));
 
@@ -4459,6 +4466,7 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
     [parseInt(req.params.id), scopeId(req)]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
+  await recordAudit(pool, { userId: req.session.userId, entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'MARK_PAID', field: 'status', newValue: 'paid', req });  // F90 Phase B: cash-out event
   res.json(rows[0]);
 }));
 

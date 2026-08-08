@@ -2075,7 +2075,9 @@ Moving Q3's later months into the past would require a different pinned clock, w
 - **SNAPSHOTS** — new `old_data`/`new_data` JSONB columns hold record-level before/after, alongside the field-level `field_name`/`old_value`/`new_value`.
 Verified `tests/harness/verify-f90-audit-foundation.js` (10/10): append-only enforced, invoice CREATE lands in `audit_trail` (not `audit_log`) attributed `user` with a `new_data` snapshot, recalc attributed `system`. Regression: F92/F106/C1 green (the helper refactor is transparent).
 
-**Phase B (coverage sweep — remaining):** instrument the money/business-record mutations that are still unlogged — `bills`, `payments_made`/`payments_received`, `credit_notes`/`vendor_credits`, `customers`, `vendors`, `inventory`/`inventory_movements`, `sales_receipts`, `chart_of_accounts`, `entities`, payroll approve/mark-paid — plus the **30 accountant-routes handlers** (currently 0), each routed through `recordAudit`. Pure UI/settings toggles are deliberately out of scope. One table-family per commit, each verified.
+**Phase B — coverage sweep (in progress).**
+- **Batch 1 DONE (executed 9/9)** — the MONEY-MOVEMENT mutations now route through `recordAudit`: `bills`, `payments_received`, `payments_made`, `credit_notes`, `vendor_credits`, `sales_receipts` CREATE, plus payroll `APPROVE` and `MARK_PAID` (status = recognition/cash events). Verified `tests/harness/verify-f90-phaseB-coverage.js` (all eight land in `audit_trail`); C1 regression on every touched money route green (no behaviour change).
+- **Remaining:** UPDATE/DELETE on those money tables (record the old→new snapshot); the business-record tables (`customers`, `vendors`, `inventory`/`inventory_movements`, `chart_of_accounts`, `entities`) CRUD; and the **30 accountant-routes handlers** (still 0), each through `recordAudit` with `actor_type='accountant'`. Pure UI/settings toggles are deliberately out of scope. One table-family per commit, each verified.
 **Was (stale):** 🟡 PARTIAL — two parallel tables, ~15 of ~163 routes, accountant-routes at 0, no immutability, no attribution.
 
 **Original enumeration (historical) —** TWO mechanisms existed:

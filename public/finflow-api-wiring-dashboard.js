@@ -97,27 +97,15 @@
     return { months: months.map(m => m.label), revByMonth, expByMonth };
   }
 
-  // ── Update Chart.js overview chart with real data ─────────────────
-  function updateOverviewChart(revArr, expArr, labels) {
-    if (typeof Chart === 'undefined' || !window.charts) return;
-
-    // Update MONTHS and REV/EXP globals so period switching still works
-    if (typeof window.MONTHS !== 'undefined') window.MONTHS.splice(0, 12, ...labels);
-    if (typeof window.REV !== 'undefined') window.REV.splice(0, 12, ...revArr);
-    if (typeof window.EXP !== 'undefined') window.EXP.splice(0, 12, ...expArr);
-
-    let chart = window.charts.overview;
-    if (!chart) {
-      if (typeof buildCharts === 'function') buildCharts();
-      chart = window.charts?.overview;
-      if (!chart) return;
-    }
-    const safeData = arr => arr.map(v => Math.max(0, v || 0));
-    chart.data.labels = labels;
-    chart.data.datasets[0].data = safeData(revArr);
-    chart.data.datasets[1].data = safeData(expArr);
-    chart.update('none');
-  }
+  // ── F125 (dead-code removal, 2026-08-07): `updateOverviewChart` DELETED. It returned immediately on
+  // `!window.charts`, and `window.charts` is ONLY ever assigned inside `if(window.charts){…}`
+  // (app-main.js:5094) — a self-referential guard that can never fire — so `window.charts` is
+  // `undefined` forever and this function's window.REV/EXP splice AND its chart write NEVER RAN. The
+  // overview chart is owned by app-main: `buildCharts` seeds it from the script-scoped REV/EXP and
+  // `_applyConvertedChart` overlays the server-converted series. Removing this eliminates the dead
+  // "second writer" of the same datasets (F75 / failure-mode-2). UNEXECUTED: charts don't render in
+  // jsdom (no layout → buildCharts early-returns), so this is a STATIC-dead removal — owner to
+  // confirm the overview chart still renders on deploy. ────────────────────────────────────────────
 
   // (calcMTD removed — F87-class dead code: current-month MTD via local getMonth/getFullYear,
   // zero call sites repo-wide. Deleted rather than fixed since nothing invoked it.)
@@ -376,9 +364,8 @@
       try { const _c = await apiGetStatus('/api/cogs' + eq); window._cogsTotal = parseFloat(_c && _c.totalCOGS) || 0; }
       catch (e) { window._cogsTotal = window._cogsTotal || 0; }
 
-      // Build monthly chart data
-      const { months, revByMonth, expByMonth } = buildMonthlyArrays(window._realInvoices, window._realExpenses);
-      updateOverviewChart(revByMonth, expByMonth, months);
+      // F125: the overview chart is owned by app-main (buildCharts + _applyConvertedChart); the dead
+      // updateOverviewChart writer was removed, so its monthly-array feed here is gone too.
 
       // Update KPIs (default to year view)
       updateKPIs(window._realInvoices, window._realExpenses, 'year');
@@ -473,15 +460,11 @@
       });
     }
 
-    if (!window.charts?.overview && typeof buildCharts === 'function') buildCharts();
-    updateOverviewChart(revByMonth, expByMonth, months);
-    if (window.charts?.overview) {
-      const _safe = arr => arr.map(v => Math.max(0, v || 0));
-      window.charts.overview.data.labels = months;
-      window.charts.overview.data.datasets[0].data = _safe(revByMonth);
-      window.charts.overview.data.datasets[1].data = _safe(expByMonth);
-      window.charts.overview.update();
-    }
+    if (!window.charts?.overview && typeof buildCharts === 'function') buildCharts();   // LIVE: builds the app-main-owned chart
+    // F125: dead second-writer removed — the updateOverviewChart no-op call and the
+    // `if (window.charts?.overview){…}` block below it never ran (window.charts is undefined forever),
+    // so they wrote nothing. buildCharts() above still (re)builds/refreshes the overview chart.
+    // UNEXECUTED (charts don't render in jsdom) — owner to confirm the chart on deploy.
     updateKPIs(invs, exps, period);
     // (Removed the payroll patch that re-wrote d-exp/d-profit here — those cards are owned
     // solely by app-main updateDashboard, the canonical Revenue − COGS − OpEx writer.

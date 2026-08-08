@@ -2829,8 +2829,9 @@ This is the accrual question, not a rounding one: under decisions 1 and 2 an exp
 
 ---
 
-### F33-C 🟡 MEDIUM — Overview chart's expense series excludes payroll and COGS
-**Status:** OPEN (split out of F33, whose core is fixed). Now *deliberate* and documented (`server.js:4152`, `finflow-api-wiring-dashboard.js:46`) but still unlabelled on screen: the chart's "Expenses" line and the "Expenses" KPI directly above it are different quantities. Root of the originally-observed "$1,000 chart vs $8,000 KPI" discrepancy.
+### F33-C ✅ FIXED (2026-08-07; server reconciliation executed) — was 🟡 MEDIUM — Overview chart's expense series excluded payroll (and COGS)
+**Status:** ✅ **FIXED.** PAYROLL is now bucketed into the monthly expense series on BOTH engines — server `/api/reports/profit-loss` (server.js, after the vendor-credit leg) and client `buildMonthlyArrays` (`finflow-api-wiring-dashboard.js`) — using the EXACT `computeBooks`/`computeExpenseBreakdown` recognition: approved/paid runs, `Σ lines(gross+bonus+overtime)`, dated on `run_date`. So `Σ monthly-expenses == Expenses KPI (opex)`. **COGS is deliberately NOT bucketed** — it is grossProfit, a separate figure, not part of the opex "Expenses" KPI; adding it would break the match. Verified `tests/harness/verify-f33c-payroll-buckets.js`: seed 100 expense + 500 approved payroll (+ 999 draft excluded) → Σ P&L expenses = 600, payroll landing in the run_date month (June). Client mirrors the server + the canonical client KPI leg line-for-line.
+**Was (stale):** OPEN — chart's "Expenses" line and the "Expenses" KPI were different quantities (payroll excluded). Root of the "$1,000 chart vs $8,000 KPI" discrepancy.
 **Course of action:** either add payroll and COGS to the monthly buckets on **both** sides (`server.js:4147-4151` and `finflow-api-wiring-dashboard.js:64-105`), or relabel the series "Direct expenses" with a tooltip note. Adding them is the more honest option and makes `Σ(buckets) == KPI` at every period, which is also the cleanest verification.
 **Done when:** `Σ expByMonth` over the period window equals the Expenses KPI exactly.
 

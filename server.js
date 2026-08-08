@@ -3717,6 +3717,20 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
     .forEach(c => bump(c.date || c.created_at, 'revenue', -(parseFloat(c.amount) || 0)));
   vendorCredits.filter(v => _REC_CREDIT.has((v.status || '').toLowerCase()))
     .forEach(v => bump(v.date || v.created_at, 'expenses', -(parseFloat(v.amount) || 0)));
+  // F33-C: bucket PAYROLL into its run month so Σ monthly expenses reconciles with the Expenses KPI
+  // (computeBooks.opex, which includes payroll). EXACT mirror of the computeBooks payroll leg:
+  // payroll_run_lines gross+bonus+overtime, runs IN ('approved','paid'), dated on run_date. COGS is
+  // deliberately NOT bucketed here — it is grossProfit, not part of the opex "Expenses" figure.
+  try {
+    const { rows: _prl } = await pool.query(
+      `SELECT prl.gross, prl.bonus, prl.overtime, pr.run_date, pr.status
+         FROM payroll_run_lines prl JOIN payroll_runs pr ON pr.id = prl.run_id
+        WHERE pr.user_id = $1 AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)`,
+      [uid, eid]
+    );
+    _prl.filter(l => ['approved', 'paid'].includes(String(l.status || '').toLowerCase()))
+        .forEach(l => bump(l.run_date, 'expenses', (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0)));
+  } catch (_) { /* payroll optional — leave buckets unchanged on error */ }
   // Sort by YYYY-MM key ('Unknown' sorts last); format the label at render (F15).
   const rows = Object.keys(monthMap).sort().map(k => ({
     month: labelOf(k), key: k, revenue: monthMap[k].revenue, expenses: monthMap[k].expenses,

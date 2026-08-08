@@ -3713,7 +3713,11 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       }
       fxRealised = Math.round(fxRealised * 100) / 100;
       fxUnrealised = Math.round(fxUnrealised * 100) / 100;
-    } catch (_) {}
+    } catch (e) {
+      // C6: never swallow silently — a failed FX computation must not read as "no FX gain/loss".
+      // Graceful fallback (0) is preserved, but the failure is now visible (Rule 7).
+      console.error('[fx] gain/loss computation failed — FX totals shown as 0:', e && e.message);
+    }
 
     res.json({
       revenue, outstanding, overdue,

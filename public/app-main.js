@@ -6396,7 +6396,7 @@ setTimeout(function(){
   function _hdrain() {
     if (_hi >= _fns.length) return;
     var fn = _fns[_hi++];
-    try { if(typeof fn==='function') fn(); } catch(e){}
+    try { if(typeof fn==='function') fn(); } catch(e){ console.error('[boot] a deferred render hook threw (skipped, boot continues):', e && e.message); }  // C6: surface the failure, don't hide it
     (window.requestIdleCallback || function(cb){ setTimeout(cb,0); })(function(){ _hdrain(); });
   }
   _hdrain();

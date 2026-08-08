@@ -2824,8 +2824,9 @@ This is the accrual question, not a rounding one: under decisions 1 and 2 an exp
 
 ---
 
-### F69 🟢 LOW — Income-sources percentages mix bases — **NEW**
-`_topClients` is built from **paid-only** invoices (`app-main.js:1451-1457`) but the bar percentages divide by `d.rev`, which is **accrual** (`app-main.js:2047`). On an account with unpaid invoices the bars sum to well under 100% with no explanation. Fold into the F57 rewire: build `_topClients` from the same recognized-invoice set `computeRevenue` uses.
+### F69 ✅ FIXED (2026-08-07) — was 🟢 LOW — Income-sources percentages mix bases
+**Status:** ✅ **FIXED.** `_topClients` (app-main.js:1554) now recognizes per-client revenue on the accrual allowlist `['pending','overdue','partial','paid']` — verified identical to the server `_REC` (server.js:3703), server `RECOGNIZED` (:4566), and client `computeRevenue` (app-main.js:1920) — instead of paid-only. So the bars share the same accrual denominator (`computeRevenue`) and sum sensibly. Single builder, no shadow. Display-basis alignment, verified structurally (allowlist == canonical everywhere).
+**Was (stale):** `_topClients` built from paid-only invoices while the bar %s divide by accrual revenue → bars summed well under 100% on any account with unpaid invoices.
 
 ---
 

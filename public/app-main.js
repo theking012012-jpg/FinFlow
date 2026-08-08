@@ -1549,9 +1549,13 @@ async function loadEntityData(idx){
     // VERIFICATION.md's sequencing, which A6's client cross-engine probe will then guard automatically.
     if(typeof loadPayrollRuns==='function') loadPayrollRuns();
 
-    // Build _topClients from real paid invoices grouped by client name
+    // Build _topClients on the SAME accrual basis computeRevenue uses (F69). Was paid-only, but the
+    // income-source bar %s divide by ACCRUAL revenue, so paid-only made the bars sum to well under
+    // 100% on any account with unpaid invoices. Recognized allowlist (issue-based, excludes draft):
+    // pending/overdue/partial/paid — identical to the server _REC set and computeRevenue.
     const _clientTotals = {};
-    invoices.filter(i=>i.status?.toLowerCase()==='paid').forEach(i=>{
+    const _REC_INV = ['pending','overdue','partial','paid'];
+    invoices.filter(i=>_REC_INV.includes((i.status||'').toLowerCase())).forEach(i=>{
       const c = i.client||'Other';
       _clientTotals[c] = (_clientTotals[c]||0) + (parseFloat(i.amount)||0);
     });

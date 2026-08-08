@@ -1170,8 +1170,8 @@ So a user opening any report gets a revenue figure that disagrees with the dashb
 
 ---
 
-### F137 🟠 HIGH — 11 of 12 reports render the SAME generic P&L overview regardless of type; the real per-report renderer (incl. the only Balance-Sheet/AP surface) is dead-shadowed — **NEW (2026-08-05, read-only verified)**
-**Status:** OPEN. Found while hunting for a UI surface to confirm F135's Accounts Payable — there isn't one, and this is why.
+### F137 ✅ FIXED (report renderers; 2026-08-05→08, executed) — was 🟠 HIGH — 11 of 12 reports rendered the same generic P&L overview; real per-report renderer was dead-shadowed
+**Status:** ✅ **FIXED (functionally, verified) — status corrected 2026-08-07.** All sub-fixes F137-a…-g shipped: per-`name` branches on the winning `generateReport` deliver a real Balance Sheet (Assets/AR/**AP**/Equity), Cash Flow, Accounts Receivable, Accounts Payable, Sales by Customer, Payroll Summary, the four Tax reports, and a rich P&L template — figures all canonical. Verified against current HEAD by five harnesses (`verify-f137-balance-sheet-report` 6/6, `verify-f137-cashflow-ar-ap-reports` 12/12, `verify-f137-sales-payroll-reports` 9/9, `verify-f137-tax-reports` 20/20, `verify-f137g-pl-statement` 17/17 — 64 assertions, all green). **Remaining tail (hygiene, not a defect):** delete the dead `app-main.js:5619` `generateReport` copy once nothing references it (Failure #1 cleanup). The header previously read OPEN while the work was shipped — stale.
 
 **Root.** Every report "Generate" button calls one function, `window.generateReport(name)` (`finflow-api-wiring-extra.js:515`), the runtime winner. It uses `name` ONLY for the modal title (`:539`); the body always computes the same four figures (Revenue / Expenses / Net Profit / Outstanding) + a recorded-expense breakdown and renders one modal. There is NO per-report branching in it. So "Balance Sheet", "Cash Flow", "Accounts Payable", "VAT Return", etc. all render the identical P&L overview under a different heading.
 
@@ -1263,8 +1263,9 @@ _Original finding (for the record):_
 
 ---
 
-### F132 🟠 HIGH — Expired-trial paywall is ESCAPABLE → the F130 "broken $0 app" returns on navigation — **NEW (2026-08-04), OPEN · LAUNCH BLOCKER · owner-reproduced in production**
-**Status:** OPEN, verified — owner reproduced the full escape (paywall → Upgrade → in-app pricing → click any nav tab → $0 dashboard) and confirmed the mechanism from source. This re-opens the exact F130 "broken $0 app" state through a different door: **F130 fixed the paywall APPEARING; this is the paywall being ESCAPABLE.**
+### F132 🟢 read-only paywall FIXED (2026-08-07, executed); Stripe-checkout half OPEN — was 🟠 HIGH LAUNCH BLOCKER — Expired-trial paywall was ESCAPABLE
+**Status:** ✅ **Read-only enforcement FIXED & verified; ⏳ real checkout still OPEN (owner Stripe keys).** Owner ruled (2026-08-07): read-only past expiry. The escapable-gate hole is closed — an expired-trial user lands in an explicit read-only state, not the `$0` broken app. Verified against current HEAD: `verify-f132-readonly` (server 5/5) + `verify-f132-readonly-client` (jsdom 7/7), both green. **Genuinely remaining:** wire "Upgrade" to a real Stripe checkout (needs owner Stripe keys/webhooks) — until then Upgrade has no working payment path. The header previously read OPEN while the read-only half was shipped — stale.
+**Was (stale):** OPEN — owner reproduced the full escape (paywall → Upgrade → in-app pricing → click any nav tab → $0 dashboard). F130 fixed the paywall APPEARING; this was the paywall being ESCAPABLE.
 
 **Mechanism.** `_ffShowTrialExpired` (`app-main.js:4699`) paints the full-screen gate whenever any `/api` read returns `402 TRIAL_EXPIRED`; the in-memory data arrays stay `[]`. The Upgrade handler (`app-main.js:4725-4728`) runs `g.remove(); window._ffTrialExpiredActive = false; showPage('pricing')` — it removes the gate and clears the active flag, landing on the pricing page, which makes **no `/api` reads**, so nothing re-locks. Subsequent `showPage` navigation re-renders from the empty cached arrays **without re-fetching**, so no fresh `402` fires and the paywall never re-asserts → the `$0` broken-app state returns. Enforcement is global — `checkPlan` is on all `/api` including GET (`server.js:641-648`) — so the gate is correct on read; the hole is that escaping it triggers no further read.
 
@@ -1912,8 +1913,8 @@ One CHECK, on `accountant_reviews.rating`. Specifically:
 
 ---
 
-### F80 🟠 HIGH — Payroll leg has **no status filter**; `draft` runs are recognised as expense — on **BOTH** engines — **NEW (2026-07-23, read-only) → EXECUTED + FIX HELD (2026-07-24)**
-**Status:** FIX HELD (diff ready, awaiting owner approval) — **both legs, mirrored; verified by execution.** Lands together with **F102** as one change (see the UPDATE below). Contradicts `VERIFICATION.md` decision 2 and `CLAUDE.md` Rule 12.
+### F80 ✅ FIXED (executed; status corrected 2026-08-07) — was 🟠 HIGH — Payroll leg had no status filter; `draft` runs recognised as expense on BOTH engines
+**Status:** ✅ **FIXED & verified.** Both engines now gate payroll recognition on `IN ('approved','paid')` (server `computeBooks` `PAYROLL_RECOGNIZED`; client `computeExpenseBreakdown` `PAYROLL_RECOGNIZED`, app-main.js) — a `draft` run contributes 0. Execution-verified against current HEAD: `verify-f33c-payroll-buckets` asserts a draft run of 999 is EXCLUDED from the total (3/3 green), and the F85 harnesses further exercise the approved/paid filter. Aligns with `VERIFICATION.md` decision 2 and `CLAUDE.md` Rule 12. Header previously read FIX HELD — stale.
 
 > **UPDATE 2026-07-24 — client mirror located, defect executed, fix held (mirrored).**
 > - **The client half (the "enumerate before fixing" this row asked for).** `computeExpenseBreakdown` recomputes the same leg at **`app-main.js:1699-1707`** and had the identical gap — no `status` predicate. So the defect spanned BOTH engines, not just the server. Fixing the server alone would have left the dashboard/Expenses/AI/health surfaces still counting draft (the F7/F56 regrowth pattern). Both are fixed as one mirrored change: server predicate `status IN ('approved','paid')` (added `pr.status` to the `computeBooks` query, `server.js:4179`), client allowlist `['approved','paid']` (`app-main.js:1706-1711`). Both keep the `paid`-included form, per the ⚠️ implementation trap.

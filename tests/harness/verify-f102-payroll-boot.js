@@ -75,7 +75,7 @@ const EXPECTED = require('./expected.js');
          FROM payroll_run_lines prl JOIN payroll_runs pr ON pr.id = prl.run_id
         WHERE pr.run_date >= $1::date AND pr.run_date < $2::date
         GROUP BY pr.status ORDER BY pr.status`,
-      [win.start.toISOString().slice(0, 10), win.end.toISOString().slice(0, 10)]
+      [win.start, win.end]   // F87: _periodWindow start/end are already 'YYYY-MM-DD' strings (not Dates)
     )).rows;
     const sumAll = byStatus.reduce((s, r) => s + Number(r.total), 0);                                        // incl draft
     const draftSum = byStatus.filter(r => r.status === 'draft').reduce((s, r) => s + Number(r.total), 0);      // draft only

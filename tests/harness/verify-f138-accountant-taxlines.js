@@ -36,10 +36,13 @@ const { JSDOM } = require('jsdom');
     const fmt = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     // Build the real function with document/set/fmt/_data injected as scope.
     const make = (_data) => new Function('document', 'set', 'fmt', '_data', fnSrc + '\n; return renderTax;')(document, set, fmt, _data);
-    const expenses = [{ deductible: 'yes', amount: 2000 }]; // dedFull 2000 → taxable 10000 − 2000 = 8000
+    // F139: renderTax sources revenue AND deductible from _data.summary (the single computeBooks leg)
+    // — `expenses` is NO LONGER read for tax figures. So taxable comes from summary.deductible:
+    // revenue 10000 − deductible 2000 = taxable 8000. (The `expenses` arg is passed but ignored.)
+    const expenses = [];
 
     // ── Case A: worksheet lines summed ──
-    make({ summary: { revenue: '10000' }, taxRate: 12, taxLines: [
+    make({ summary: { revenue: '10000', deductible: 2000 }, taxRate: 12, taxLines: [
       { label: 'Income tax', type: 'taxable', value: 30 },
       { label: 'Capital gains', type: 'fixed', value: 500 },
       { label: 'Business levy', type: 'revenue', value: 1 },
@@ -50,7 +53,7 @@ const { JSDOM } = require('jsdom');
     A('breakdown lists each line + a total', /Capital gains \(fixed\)/.test(bdA) && /Business levy \(1% of revenue\)/.test(bdA) && /Total estimated tax/.test(bdA), bdA.slice(0, 220));
 
     // ── Case B: no lines → fall back to single rate ──
-    make({ summary: { revenue: '10000' }, taxRate: 20, taxLines: [] })([], expenses);
+    make({ summary: { revenue: '10000', deductible: 2000 }, taxRate: 20, taxLines: [] })([], expenses);
     A('fallback: no lines, rate 20% → 8000 × 20% = 1600', num(document.getElementById('tax-liability').textContent) === 1600, `liability=${document.getElementById('tax-liability').textContent}`);
     A('fallback breakdown shows the single rate row', /Tax rate \(20%\)/.test(document.getElementById('tax-breakdown').innerHTML));
 

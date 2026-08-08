@@ -413,8 +413,8 @@ Client-displayed figure **==** server figure, six figures × three periods.
 | A7.7 | COGS page | period COGS | 200 (Jun) | |
 | A7.8 | COGS page | no-period call | 1,650 all-time | |
 | A7.9–11 | Cash Flow | cash in — Jun/Jul/FY | 500 / 0 / 1,500 | PASS (seed 3c322e0f) |
-| A7.12–14 | Cash Flow | cash out — Jun/Jul/FY | 750 / 1,850 / 3,200 | PASS (2026-08-02 · seed 3c322e0f · **first-ever run**, F122) |
-| A7.15–17 | Cash Flow | net — Jun/Jul/FY | −250 / −1,850 / −1,700 | PASS (2026-08-02 · seed 3c322e0f · **first-ever run**, F122) |
+| A7.12–14 | Cash Flow | cash out — Jun/Jul/FY | 750 / 1,850 / 3,200 | PASS (seed 3c322e0f · **first-ever run**, F122) |
+| A7.15–17 | Cash Flow | net — Jun/Jul/FY | −250 / −1,850 / −1,700 | PASS (seed 3c322e0f · **first-ever run**, F122) |
 | A7.18 | Cash Flow | FY cash out != FY opex | 3,200 != 8,200 | |
 | A7.19 | Banking | in/out/net for **selected period** (no MTD card) | ⬜ **RE-SCOPED — see below. The old "matches A7.9–17" expectation is RETIRED, not failed.** | N/A pending a Banking-page spec |
 | A7.20 | Bills / AP | outstanding | 1,100 | |

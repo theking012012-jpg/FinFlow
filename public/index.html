@@ -4576,6 +4576,10 @@ async function recordPayment(){
 
 // ── FEATURE 2b: BANK RECONCILIATION ──────────────────────────────────────────
 let _brecBankSelected=null;
+// F101: staged (unsaved) matches held client-side. Each pairing queues here instead of firing its
+// own POST; "Save matches" commits the whole set in ONE batch request (/match-batch).
+let _brecPending=[];
+let _brecSaving=false;
 async function loadBankRec(){
   try{
     const res=await fetch('/api/bank-reconciliation',{credentials:'include'});
@@ -4587,9 +4591,16 @@ async function loadBankRec(){
     const upEl=document.getElementById('brec-unmatched-pay');
     const mcEl=document.getElementById('brec-matched-count');
 
-    const unbank=data.unmatched_bank||[];
-    const unpay=data.unmatched_payments||[];
+    let unbank=data.unmatched_bank||[];
+    let unpay=data.unmatched_payments||[];
     const matched=data.matched||[];
+
+    // F101: hide staged bank tx + payments from the "unmatched" columns so the same row can't be
+    // staged twice; they render in the pending block below until Save commits them.
+    const _stagedBank=new Set(_brecPending.map(m=>m.banking_id));
+    const _stagedPay =new Set(_brecPending.map(m=>m.invoice_payment_id));
+    unbank=unbank.filter(b=>!_stagedBank.has(b.id));
+    unpay =unpay.filter(p=>!_stagedPay.has(p.id));
 
     if(ubEl)ubEl.textContent=unbank.length;
     if(upEl)upEl.textContent=unpay.length;
@@ -4615,13 +4626,24 @@ async function loadBankRec(){
         :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All payments matched</div>';
     }
     if(matchedList){
-      matchedList.innerHTML=matched.length?matched.map(m=>`
+      // F101: pending (unsaved) block first, with the single Save button that commits ALL staged
+      // pairs in one batch POST; then the persisted matches from the server.
+      const pendingHtml=_brecPending.length?`
+        <div style="padding:8px;margin-bottom:8px;border:1px dashed var(--acc);border-radius:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <strong style="font-size:12px">${_brecPending.length} pending (unsaved)</strong>
+            <button class="btn btn-primary btn-sm" style="font-size:11px" onclick="saveBankRecMatches()">Save ${_brecPending.length} match${_brecPending.length===1?'':'es'}</button>
+          </div>
+          ${_brecPending.map((m,i)=>`<div class="tx-row"><div><div class="tx-name">Bank ID ${m.banking_id} ↔ Payment ID ${m.invoice_payment_id}</div><div class="tx-cat">pending — unsaved</div></div><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="unstageBankRec(${i})">Remove</button></div>`).join('')}
+        </div>`:'';
+      const savedHtml=matched.length?matched.map(m=>`
         <div class="tx-row">
           <div><div class="tx-name">Bank ID ${m.banking_id} ↔ Payment ID ${m.invoice_payment_id}</div>
           <div class="tx-cat">${esc(m.status||'matched')} · ${new Date(m.matched_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div></div>
           <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="unmatchBankRec(${m.id})">Unmatch</button>
         </div>`).join('')
-        :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No matched pairs yet — select a bank transaction then a payment to match.</div>';
+        :(_brecPending.length?'':'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No matched pairs yet — select a bank transaction then a payment to match.</div>');
+      matchedList.innerHTML=pendingHtml+savedHtml;
     }
   }catch(e){if(typeof notify==='function')notify('Could not load bank reconciliation');}
 }
@@ -4631,20 +4653,35 @@ function selectBankTx(id,el){
   if(el)el.style.borderLeftColor='var(--acc)';
   if(typeof notify==='function')notify('Bank transaction selected — now click a payment to match');
 }
-async function matchBankRec(bankingId,paymentId){
+// F101: pairing no longer fires a POST — it STAGES the pair. All staged pairs commit in one batch
+// request via saveBankRecMatches(). Same two-click interaction (select bank tx, click payment).
+function matchBankRec(bankingId,paymentId){
   if(!bankingId){notify('Select a bank transaction first',true);return;}
+  if(_brecPending.some(m=>m.banking_id===bankingId||m.invoice_payment_id===paymentId)){notify('Already staged',true);return;}
+  _brecPending.push({banking_id:bankingId,invoice_payment_id:paymentId});
+  _brecBankSelected=null;
+  notify('✓ Staged ('+_brecPending.length+' pending) — click "Save matches" to commit');
+  loadBankRec();
+}
+function unstageBankRec(i){ if(i>=0&&i<_brecPending.length){_brecPending.splice(i,1); loadBankRec();} }
+async function saveBankRecMatches(){
+  if(_brecSaving)return;                                   // in-flight lock — one batch at a time
+  if(!_brecPending.length){notify('Nothing to save',true);return;}
+  _brecSaving=true;
   try{
-    const res=await fetch('/api/bank-reconciliation/match',{
+    const res=await fetch('/api/bank-reconciliation/match-batch',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({banking_id:bankingId,invoice_payment_id:paymentId}),
+      body:JSON.stringify({matches:_brecPending.map(m=>({banking_id:m.banking_id,invoice_payment_id:m.invoice_payment_id}))}),
     });
     const data=await res.json();
-    if(data.error){notify('⚠ '+data.error,true);return;}
-    _brecBankSelected=null;
-    notify('✓ Matched');
+    if(data.error){notify('⚠ '+data.error,true);return;}   // keep pending so the user can retry
+    const n=data.matched||0, sk=data.skipped||0;
+    _brecPending=[];
+    notify('✓ Saved '+n+' match'+(n===1?'':'es')+(sk?(' ('+sk+' already matched, skipped)'):''));
     loadBankRec();
-  }catch(e){notify('Could not match',true);}
+  }catch(e){notify('Could not save matches',true);}
+  finally{_brecSaving=false;}
 }
 async function unmatchBankRec(recId){
   try{

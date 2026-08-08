@@ -2529,13 +2529,17 @@ Rule-14 controls (each fix removed in turn, EXECUTED): with boot-load off → d-
 
 ---
 
-### F101 🟡 MEDIUM — Bank reconciliation matches one POST per item, with no batch endpoint — forces a high write cap — **NEW (2026-07-23, found while sizing the F99 write cap)**
-**Status:** OPEN. Not fixed here; it is *why* the F99 write cap must be 300 rather than tighter.
+### F101 ✅ FIXED (2026-08-07; executed both halves; owner chose Stage+Save) — Bank reconciliation batch endpoint
+**Status:** ✅ **FIXED.** A full reconciliation now costs ONE write request regardless of item count.
 
-`POST /api/bank-reconciliation/match` (`server.js:3754`) accepts a single `{ banking_id, invoice_payment_id }`. Reconciling a busy month is therefore 100–300 separate POSTs, one per click. This is the reason the write limiter cannot be tightened to a value that would otherwise be ample for mutation-abuse protection: a legitimate reconciliation session is indistinguishable, by request count, from a runaway loop.
+**Server** — added `POST /api/bank-reconciliation/match-batch` (server.js:4208): accepts `{ matches: [{banking_id, invoice_payment_id}, …] }` (≤500), validates ownership of every id in two set queries (not 2N), inserts all in one atomic transaction, and is **idempotent by natural key** — a banking_id or invoice_payment_id already reconciled (or repeated within the batch) is SKIPPED, so a double-submit or retry cannot create duplicate links. Returns `{ matched, skipped, rows }`. The single `/match` endpoint is kept for backward compatibility.
 
-A **batch match endpoint** (`POST …/match` accepting an array of pairs, one transaction) would collapse a whole reconciliation into a handful of requests, let the write cap drop back toward human-action cadence, and remove the burst entirely. It is a small, self-contained server+client change — but it is a **feature change, not the immediate unblock**, so it is logged for the step-4 pass, not done now.
-**Done when:** a full reconciliation costs a bounded, small number of requests regardless of item count, and the write cap can be revisited downward.
+**Client** (index.html — the runtime winner; bank-rec code lives only here, not in the bundle, no dead-shadow) — `matchBankRec()` now STAGES each pairing into `_brecPending` instead of POSTing; staged bank tx + payments are hidden from the unmatched columns; a "Save N matches" button fires ONE `/match-batch` POST via `saveBankRecMatches()` (in-flight lock). Same two-click interaction; only the persistence timing changed (owner decision 2026-08-07: Stage+Save over auto-suggest, to avoid auto-linking money records). Trade-off: unsaved pairings are lost on reload — surfaced by the "N pending (unsaved)" indicator.
+
+**Verified**: `tests/harness/verify-f101-batch-match.js` (server, 8/8) — 3 pairs matched in one request, re-submit skips all 3 (no duplicates), foreign banking_id → 404 with atomic rollback, malformed → 400, single endpoint intact. `tests/harness/verify-f101-client-batch.js` (jsdom, 5/5) — staging 3 pairs fires ZERO write POSTs (pre-fix: 3), Save fires EXACTLY ONE POST to `/match-batch` carrying all 3. Done-when met.
+
+**Follow-up (not done here):** the F99 write cap (300/min) can now be revisited downward toward human-action cadence, since a reconciliation is no longer a 300-POST burst. Left as a separate decision — logged, not changed in this commit.
+**Was:** OPEN — single `/match` only, 100–300 POSTs per reconciliation, forcing the high write cap.
 
 ---
 

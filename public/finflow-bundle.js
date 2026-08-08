@@ -515,6 +515,10 @@
             _dbId:  r.id,
             client: r.client,
             amount: r.amount,
+            amount_paid: r.amount_paid,   // F119: THE dropping mapper — this is the winning boot loader
+                                          // for window.userInvoices; without amount_paid a partially-paid
+                                          // invoice showed its FULL amount as "remaining" in Record Payment,
+                                          // defeating the overpay guard (under-warn) and 400ing on settle.
             due:    r.due_date
                       ? new Date(r.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                       : 'TBD',
@@ -591,6 +595,9 @@
           _dbId:    saved.id,
           client,
           amount:   amountRaw,
+          amount_paid: 0,   // F119: a freshly-created invoice has nothing paid; carry the field so
+                            // EVERY object in userInvoices has amount_paid (partials always arrive via
+                            // a loader that carries the real value → Record Payment can't over-collect)
           due:      dueStr,
           due_date: due || null,
           status,

@@ -865,21 +865,21 @@ async function findRecentDuplicateTyped(table, userId, entityId, cols = {}, wind
 }
 
 // ── AUDIT LOG HELPER ──────────────────────────────────────────────────────────
+// F90: unified onto the single audited write path. Previously wrote whole-record snapshots to a
+// SEPARATE `audit_log` JSONB table (the two-trails coherence problem); now routes to recordAudit →
+// audit_trail (one append-only, attributed trail). Signature unchanged so all 12 call sites keep
+// working; oldData/newData land in the record-snapshot columns.
 async function logAudit(req, action, tableName, recordId, oldData, newData) {
-  try {
-    await db.insert('audit_log', {
-      user_id:    req.session.userId,
-      entity_id:  req.entityId || null,
-      action,
-      table_name: tableName,
-      record_id:  recordId || null,
-      old_data:   oldData ? JSON.stringify(oldData) : null,
-      new_data:   newData ? JSON.stringify(newData) : null,
-      ip:         req.ip || null,
-    });
-  } catch (e) {
-    console.error('[Audit] log failed:', e.message);
-  }
+  return recordAudit(pool, {
+    userId:   req?.session?.userId || null,
+    entityId: req?.entityId || null,
+    table:    tableName,
+    recordId: recordId || null,
+    action,
+    oldData:  oldData || null,
+    newData:  newData || null,
+    req,
+  });
 }
 
 // ── LOCK HELPER ───────────────────────────────────────────────────────────────
@@ -4005,15 +4005,31 @@ app.post('/api/connections', requireAuth, requirePerm('bank:manage'), wrap(async
 // ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 1 — FIELD-LEVEL AUDIT TRAIL
 // ════════════════════════════════════════════════════════════════════════════════
-async function auditLog(pool, { userId, entityId, table, recordId, action, field, oldValue, newValue, req }) {
+// F90 — THE SINGLE AUDITED WRITE PATH. Every audit call routes through recordAudit: it ATTRIBUTES the
+// actor (an accountant acting on a client's books is recorded as the accountant, not the client),
+// stores either a field-level change (field/old/new) or a full record snapshot (old_data/new_data),
+// and writes ONLY to `audit_trail` — which is APPEND-ONLY, enforced by a DB trigger (database.js), so
+// no route or bug can alter/erase a recorded change. `auditLog()` and `logAudit()` are thin
+// back-compat wrappers so existing call sites did not have to change while the two old tables merged
+// into one trail. A req-less caller (e.g. the F92 side-effect recalcs) is attributed to 'system'.
+async function recordAudit(pool, { userId = null, entityId = null, table, recordId = null, action, field = null, oldValue = null, newValue = null, oldData = null, newData = null, req = null }) {
   try {
+    let actorType = 'system', actorId = userId;
+    if (req && req.session && req.session.accountantId) { actorType = 'accountant'; actorId = req.session.accountantId; }
+    else if (req && req.session && req.session.userId)  { actorType = 'user';       actorId = req.session.userId; }
     await pool.query(
-      `INSERT INTO audit_trail (user_id,entity_id,table_name,record_id,action,field_name,old_value,new_value,ip_address)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [userId, entityId, table, recordId, action, field || null, oldValue?.toString() || null, newValue?.toString() || null, req?.ip || null]
+      `INSERT INTO audit_trail (user_id, entity_id, table_name, record_id, action, field_name, old_value, new_value, old_data, new_data, actor_type, actor_id, ip_address)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [userId, entityId, table, recordId, action, field,
+       oldValue == null ? null : String(oldValue), newValue == null ? null : String(newValue),
+       oldData ? JSON.stringify(oldData) : null, newData ? JSON.stringify(newData) : null,
+       actorType, actorId, req?.ip || null]
     );
-  } catch (e) { console.error('auditLog error:', e.message); }
+  } catch (e) { console.error('[audit] recordAudit failed:', e.message); }
 }
+
+// Back-compat wrapper (field-level shape). All existing auditLog(...) call sites keep working.
+async function auditLog(pool, opts) { return recordAudit(pool, opts); }
 
 app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
   const { table, action } = req.query;
@@ -4051,7 +4067,15 @@ async function recalcInvoiceStatus(pool, invoiceId, userId) {
   if (paid >= total) status = 'paid';
   else if (paid > 0) status = 'partial';
   else status = (invRow.status === 'partial' || invRow.status === 'paid') ? 'pending' : invRow.status;
+  const _oldStatus = invRow.status, _oldPaid = parseFloat(invRow.amount_paid) || 0;
   await db.updateById('invoices', invoiceId, { status, amount_paid: paid });
+  // F92: recalcInvoiceStatus is a SIDE-EFFECT money writer — it changes invoices.status/amount_paid
+  // (both load-bearing: status drives revenue recognition, amount_paid drives AR) as a consequence of
+  // a payment action on a DIFFERENT record, so a route-based audit never sees it. Log the movement
+  // (only when it actually changed) so the trail records what moved AR, not just the triggering payment.
+  if (String(_oldStatus) !== String(status) || Math.abs(_oldPaid - paid) > 0.005) {
+    try { await auditLog(pool, { userId, entityId: invRow.entity_id || null, table: 'invoices', recordId: invoiceId, action: 'RECALC', field: 'status/amount_paid', oldValue: `${_oldStatus} / ${_oldPaid}`, newValue: `${status} / ${paid}` }); } catch (_) {}
+  }
 }
 
 // F38 Step 3 — the payables mirror of recalcInvoiceStatus. Sums the payments_made LINKED to a
@@ -4079,7 +4103,14 @@ async function recalcBillStatus(pool, billId, userId) {
   if (paid >= total) status = 'paid';
   else if (paid > 0) status = 'partial';
   else status = (billRow.status === 'partial' || billRow.status === 'paid') ? 'unpaid' : billRow.status;
+  const _oldStatus = billRow.status, _oldPaid = parseFloat(billRow.amount_paid) || 0;
   await db.updateById('bills', billId, { status, amount_paid: paid });
+  // F92: recalcBillStatus is the payables-side SIDE-EFFECT money writer (bills.status drives expense
+  // recognition, amount_paid drives AP), triggered by a payments-made action on a different record —
+  // invisible to route-based audit. Log the movement when it changed.
+  if (String(_oldStatus) !== String(status) || Math.abs(_oldPaid - paid) > 0.005) {
+    try { await auditLog(pool, { userId, entityId: billRow.entity_id || null, table: 'bills', recordId: billId, action: 'RECALC', field: 'status/amount_paid', oldValue: `${_oldStatus} / ${_oldPaid}`, newValue: `${status} / ${paid}` }); } catch (_) {}
+  }
 }
 
 // F38: recognized bill statuses — the payables analog of the invoice RECOGNIZED set. An 'unpaid'

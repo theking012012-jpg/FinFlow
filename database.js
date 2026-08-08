@@ -488,6 +488,23 @@ async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_audit_trail_user ON audit_trail(user_id, changed_at DESC)`);
+    // F90 — accounting-grade audit trail: ATTRIBUTION + record snapshots, and DB-level IMMUTABILITY.
+    // Boot-safe (Rule 7): ADD COLUMN IF NOT EXISTS is idempotent over legacy rows; the trigger is
+    // dropped-and-recreated each boot. No data is read or modified.
+    await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS actor_type TEXT DEFAULT 'user'`);  // user | accountant | system
+    await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS actor_id   INTEGER`);              // acting principal (userId or accountantId)
+    await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS old_data   JSONB`);                // record-level before snapshot
+    await client.query(`ALTER TABLE audit_trail ADD COLUMN IF NOT EXISTS new_data   JSONB`);                // record-level after snapshot
+    // APPEND-ONLY: an accounting audit trail must be immutable. Block UPDATE/DELETE at the DATABASE so
+    // no route, bug, or actor (not even a compromised app) can alter or erase a recorded change —
+    // only INSERT is ever permitted.
+    await client.query(`
+      CREATE OR REPLACE FUNCTION audit_trail_immutable() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'audit_trail is append-only: % is not permitted', TG_OP; END;
+      $$ LANGUAGE plpgsql`);
+    await client.query(`DROP TRIGGER IF EXISTS audit_trail_no_mutate ON audit_trail`);
+    await client.query(`CREATE TRIGGER audit_trail_no_mutate BEFORE UPDATE OR DELETE ON audit_trail
+      FOR EACH ROW EXECUTE FUNCTION audit_trail_immutable()`);
 
     // ── FEATURE 2: PARTIAL PAYMENTS + BANK RECONCILIATION ───────────────────────
     await client.query(`

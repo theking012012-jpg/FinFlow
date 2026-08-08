@@ -1997,8 +1997,14 @@ So the moment D2 is implemented, a post-dated invoice drops out of every total *
 
 ---
 
-### F92 🟠 HIGH — Money-bearing fields are mutated as SIDE EFFECTS of other routes, not by routes of their own — **NEW (2026-07-23, the class behind F90's silent-recalc note)**
-**Status:** OPEN. This is the CLASS; F90 recorded two instances of it. Logged separately per Rule 13 — a finding that names one surface when the defect spans several is a sighting.
+### F92 🟠 HIGH — Money-bearing fields mutated as SIDE EFFECTS of other routes — **NEW (2026-07-23); enumeration complete + known members AUDITED 2026-08-07; structural elimination remains (= F90)**
+**Status:** 🟠 **PARTIAL — enumeration complete, the two side-effect money writers are now AUDITED; the structural fix (single audited write path) remains open as F90.**
+
+**Enumeration (step 1, complete).** Inverting the axis to write-sites (per the finding's own method): the money-field side-effect writers are exactly **two** — `recalcInvoiceStatus` (writes `invoices.status`/`amount_paid`, triggered by POST/DELETE `/api/invoice-payments`) and `recalcBillStatus` (writes `bills.status`/`amount_paid`, triggered by POST/PUT/DELETE `/api/payments-made`). Everything else that writes a money field does so from the route that owns that table (payroll approve/mark-paid/void, sales-receipt PUT, the invoice/bill/expense CRUD) — direct, not side-effect. The `initDB` backfill member is now gated behind `require.main` (F78 fixed), so it no longer fires on import.
+
+**Fix applied (step 3, for the known members): both recalc writers now audit-log.** They capture old `status`/`amount_paid`, write, and — only when the value actually moved — emit an `auditLog(... action 'RECALC', field 'status/amount_paid', old→new)` on the affected invoice/bill. So the AR/AP movement is now on the audit trail, not just the payment that triggered it. Verified `tests/harness/verify-f92-recalc-audit.js` (real endpoints): record a 400 invoice payment → invoice goes partial/400 AND a RECALC audit row appears; record a 200 bill payment → RECALC row appears. **Fail-then-pass** vs `HEAD:server.js`: pre-fix the recalc happens but NO audit row exists (4 assertions fail); post-fix 8/8.
+
+**Still open (the real structural fix = F90):** routing EVERY money mutation (direct + side-effect) through one shared logged write path, so "which writers are side effects" stops being a question. Per the finding's warning, this row is NOT marked closed on the enumeration alone — the two known members are logged; the invariant that no code can write a money field except through the audited path is F90's job.
 
 **The shape:** a function writes a money-bearing field on a record the caller did not name, triggered by an action on a *different* record. It has no route, no request, and no obvious owner. Consequences compound:
 
@@ -2061,8 +2067,18 @@ Moving Q3's later months into the past would require a different pinned clock, w
 
 ---
 
-### F90 🟡 MEDIUM (re-rated from 🔴 CRITICAL 2026-08-07) — Audit trail is PARTIAL, not absent — **NEW (2026-07-23) · status corrected 2026-08-07**
-**Status:** 🟡 **PARTIAL — corrected 2026-08-07. The "empty by construction" premise below examined only `audit_trail` and MISSED a second audit table.** TWO mechanisms exist:
+### F90 🟡 MEDIUM — Audit trail — **FOUNDATION rebuilt to accounting standard 2026-08-07 (Phase A, executed); coverage sweep = Phase B**
+**Status:** 🟢 **Phase A DONE (executed 10/10) — the trail is now accounting-grade; Phase B (coverage) in progress.** Owner ruled 2026-08-07: "the one that's perfect for an accounting app, up to standard." Built:
+- **IMMUTABLE / append-only** — a DB trigger (`audit_trail_no_mutate`, database.js) RAISES on any `UPDATE`/`DELETE` of `audit_trail`, so no route, bug, or actor can alter or erase a recorded change. Only `INSERT` is permitted (proven: UPDATE/DELETE both throw).
+- **ONE TRAIL** — the two parallel tables are unified: `logAudit()` (was writing whole-record snapshots to the separate `audit_log` JSONB table) and `auditLog()` are now thin wrappers over a single `recordAudit()` that writes only to `audit_trail`. `audit_log` receives nothing new. All 19 existing call sites unchanged.
+- **ATTRIBUTED** — new `actor_type` (`user`/`accountant`/`system`) + `actor_id`: a user's route write is `user`; a req-less side-effect (the F92 recalcs) is `system`; an accountant acting on a client's books will be `accountant` (once Phase B instruments accountant-routes).
+- **SNAPSHOTS** — new `old_data`/`new_data` JSONB columns hold record-level before/after, alongside the field-level `field_name`/`old_value`/`new_value`.
+Verified `tests/harness/verify-f90-audit-foundation.js` (10/10): append-only enforced, invoice CREATE lands in `audit_trail` (not `audit_log`) attributed `user` with a `new_data` snapshot, recalc attributed `system`. Regression: F92/F106/C1 green (the helper refactor is transparent).
+
+**Phase B (coverage sweep — remaining):** instrument the money/business-record mutations that are still unlogged — `bills`, `payments_made`/`payments_received`, `credit_notes`/`vendor_credits`, `customers`, `vendors`, `inventory`/`inventory_movements`, `sales_receipts`, `chart_of_accounts`, `entities`, payroll approve/mark-paid — plus the **30 accountant-routes handlers** (currently 0), each routed through `recordAudit`. Pure UI/settings toggles are deliberately out of scope. One table-family per commit, each verified.
+**Was (stale):** 🟡 PARTIAL — two parallel tables, ~15 of ~163 routes, accountant-routes at 0, no immutability, no attribution.
+
+**Original enumeration (historical) —** TWO mechanisms existed:
 - **`audit_log`** (JSONB, `logAudit()` at server.js:854) — written on **9 sites with real CRUD**: CREATE/UPDATE/DELETE on `invoices` + `expenses`, CREATE `journals`, UPDATE `settings`, UPLOAD `documents`.
 - **`audit_trail`** (typed, `auditLog()` at server.js:3989) — written on **3 CREATE sites**: `invoice_payments`, `payroll_runs`, `invoices`.
 

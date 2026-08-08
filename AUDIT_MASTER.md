@@ -1783,7 +1783,7 @@ So switching currency from Settings or the mobile drawer set `_displayCurrency`,
 
 ---
 
-### F76 🟡 MEDIUM — `GET /api/tax-filing` is stale on three counts — **NEW (2026-07-23, read-only verified) → defect #2 FIXED by F139 (2026-08-06, held)**
+### F76 🟡 MEDIUM — `GET /api/tax-filing` is stale on three counts — **NEW (2026-07-23, read-only verified) → defect #2 FIXED & SHIPPED by F139 (commit `bc8cd70`, pushed 2026-08-07); defects #1 & #3 remain, minor/labelled**
 **Status:** Defect #2 (paid-only revenue) **RESOLVED by F139** — the endpoint now reads `computeBooks.revenue` (accrual) + `books.tax.deductible`, executed fail-then-pass on real scratch Postgres. Defect #1 (flat 25% is now overridden by the F137-k owner-supplied tax-line worksheet; the endpoint still returns `rate:0.25` only as a starting default) and defect #3 (no `ytdPaid` — correctly "Not tracked", A7.23) are unchanged. Endpoint is now consumed by the F137-k worksheet, so it is user-facing.
 
 Three defects in one endpoint (`server.js:3464-3492`), reported together because they share a cause: the endpoint predates both the F32 recognition decision and **D1**, and was never revisited.
@@ -2052,8 +2052,13 @@ Moving Q3's later months into the past would require a different pinned clock, w
 
 ---
 
-### F90 🔴 CRITICAL — There is NO audit trail. The table exists and is empty by construction — **NEW (2026-07-23, read-only verified, two-axis enumeration)**
-**Status:** OPEN. **PRE-LAUNCH.** Scoped, not fixed.
+### F90 🟡 MEDIUM (re-rated from 🔴 CRITICAL 2026-08-07) — Audit trail is PARTIAL, not absent — **NEW (2026-07-23) · status corrected 2026-08-07**
+**Status:** 🟡 **PARTIAL — corrected 2026-08-07. The "empty by construction" premise below examined only `audit_trail` and MISSED a second audit table.** TWO mechanisms exist:
+- **`audit_log`** (JSONB, `logAudit()` at server.js:854) — written on **9 sites with real CRUD**: CREATE/UPDATE/DELETE on `invoices` + `expenses`, CREATE `journals`, UPDATE `settings`, UPLOAD `documents`.
+- **`audit_trail`** (typed, `auditLog()` at server.js:3989) — written on **3 CREATE sites**: `invoice_payments`, `payroll_runs`, `invoices`.
+
+So "there is NO audit trail" is **false** — a partial one exists (verified by code-read 2026-08-07). **Still materially incomplete:** combined ~**15 of ~163** mutating routes (~9%); **`accountant-routes.js` has 0 logging** (30 mutating handlers); most money tables (`bills`, `payments_made`/`received`, `credit_notes`/`vendor_credits`, `customers`, `vendors`, `inventory`, `sales_receipts`…) are unlogged in either table; and maintaining TWO parallel audit tables is itself a coherence problem to resolve. **PRE-LAUNCH owner decision:** complete coverage (one trail, all mutations) before launch, or accept partial for v1?
+**Was (stale):** 🔴 CRITICAL "There is NO audit trail. The table exists and is empty by construction." Status: OPEN, scoped, not fixed. *(Enumeration missed `audit_log` — it counted only `auditLog()`→`audit_trail`.)*
 
 #### Premise confirmed before scoping (2.1)
 

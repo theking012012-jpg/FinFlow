@@ -2786,8 +2786,16 @@ Path 3 is dead code (re-verified 2026-08-05). It is a **bare `async function sav
 
 ---
 
-### F85 🟠 HIGH — Payroll runs are recognised on `run_date` (creation time), not the period they are FOR — **NEW (2026-07-23, read-only verified)**
-**Status:** OPEN. Found while auditing `NOW()` usage for the harness.
+### F85 ✅ FIXED (2026-08-07; executed both halves; owner chose `period`/accrual) — Payroll now recognised on the period it is FOR, not run_date
+**Status:** ✅ **FIXED.** Owner ruled 2026-08-07: recognise payroll on the `period` the run covers (accrual), consistent with issued-invoice revenue (F32) and issued-bill expense (F38) — the rest of the P&L. All four accrual legs now file each run at the first of its `period` month (`'YYYY-MM' → 'YYYY-MM-01'`), a tz-free calendar date that also removes the Rule 10 UTC month-boundary misfile. **No backfill** — `period` is stored on every run (required at POST); run_date becomes audit metadata. The cash-flow leg keeps run_date as its own cash-basis F122 paid-date approximation, deliberately unchanged here.
+- computeBooks `_payDate` (server.js) — the money engine; used for both period placement and the FX rate date.
+- `POST /api/reports/profit-loss` monthly bump (server.js).
+- client `computeExpenseBreakdown` KPI (app-main.js — confirmed runtime winner, no wiring override).
+- client overview chart `buildMonthlyArrays` (finflow-api-wiring-dashboard.js).
+
+**Verified**: `tests/harness/verify-f85-payroll-period-basis.js` (server 4/4) + **fail-then-pass control** vs `HEAD:server.js` (June/July REVERSED pre-fix — June 0 / July 5000); `tests/harness/verify-f85-client-period-basis.js` (jsdom 3/3 — client June 5000 / July 0); F33-C re-run still 3/3 (no regression). A run FOR June created on 2 July now lands in JUNE on every surface.
+
+**Original finding (historical) —** OPEN. Found while auditing `NOW()` usage for the harness.
 
 `POST /api/payroll-runs` takes a client-supplied `period` (e.g. `"2026-06"`) which is the run's **identity** — the dedupe guard keys on it (`server.js:3801`). But the row's date is stamped by the database:
 ```sql

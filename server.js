@@ -3707,19 +3707,20 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
     .forEach(c => bump(c.date || c.created_at, 'revenue', -(parseFloat(c.amount) || 0)));
   vendorCredits.filter(v => _REC_CREDIT.has((v.status || '').toLowerCase()))
     .forEach(v => bump(v.date || v.created_at, 'expenses', -(parseFloat(v.amount) || 0)));
-  // F33-C: bucket PAYROLL into its run month so Σ monthly expenses reconciles with the Expenses KPI
+  // F33-C: bucket PAYROLL into its month so Σ monthly expenses reconciles with the Expenses KPI
   // (computeBooks.opex, which includes payroll). EXACT mirror of the computeBooks payroll leg:
-  // payroll_run_lines gross+bonus+overtime, runs IN ('approved','paid'), dated on run_date. COGS is
-  // deliberately NOT bucketed here — it is grossProfit, not part of the opex "Expenses" figure.
+  // payroll_run_lines gross+bonus+overtime, runs IN ('approved','paid'). F85 (2026-08-07, accrual):
+  // dated on the run's `period` (the month it is FOR), not run_date — matching computeBooks so the
+  // chart and the KPI agree. COGS is deliberately NOT bucketed here — it is grossProfit, not opex.
   try {
     const { rows: _prl } = await pool.query(
-      `SELECT prl.gross, prl.bonus, prl.overtime, pr.run_date, pr.status
+      `SELECT prl.gross, prl.bonus, prl.overtime, pr.run_date, pr.period, pr.status
          FROM payroll_run_lines prl JOIN payroll_runs pr ON pr.id = prl.run_id
         WHERE pr.user_id = $1 AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)`,
       [uid, eid]
     );
     _prl.filter(l => ['approved', 'paid'].includes(String(l.status || '').toLowerCase()))
-        .forEach(l => bump(l.run_date, 'expenses', (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0)));
+        .forEach(l => bump((l.period ? String(l.period).slice(0, 7) + '-01' : l.run_date), 'expenses', (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0)));
   } catch (_) { /* payroll optional — leave buckets unchanged on error */ }
   // Sort by YYYY-MM key ('Unknown' sorts last); format the label at render (F15).
   const rows = Object.keys(monthMap).sort().map(k => ({
@@ -4710,12 +4711,13 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   //   3. CASH/ACCRUAL MISMATCH against the F32 revenue basis.
   // The roster is now a TEMPLATE for creating a run. NO total reads from it.
   //
-  // Each line is dated by its parent run's run_date, so it converts through sumFX at that date
-  // like every other leg — and needs no effective-dating, because a run line is already dated.
+  // F85 (owner decision 2026-08-07, ACCRUAL): each line is recognised in the PERIOD THE RUN IS FOR,
+  // not run_date (the moment the button was pressed). This keeps payroll on the same accrual basis
+  // as issued invoices (F32) and issued bills (F38) — the whole rest of the P&L.
   let runLines = [];
   try {
     const { rows } = await pool.query(
-      `SELECT prl.gross, prl.bonus, prl.overtime, pr.run_date, pr.status, pr.entity_id, pr.id AS run_id
+      `SELECT prl.gross, prl.bonus, prl.overtime, pr.run_date, pr.period, pr.status, pr.entity_id, pr.id AS run_id
          FROM payroll_run_lines prl
          JOIN payroll_runs pr ON pr.id = prl.run_id
         WHERE pr.user_id = $1
@@ -4724,7 +4726,12 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     );
     runLines = rows;
   } catch (_) { runLines = []; }
-  const _runDate = l => l.run_date;
+  // F85: accounting date = first of the run's `period` month ('YYYY-MM' → 'YYYY-MM-01'). A tz-free
+  // calendar date, so it also removes the Rule 10 UTC month-boundary misfile. Used for BOTH period
+  // placement (inPeriod) and the sumFX rate date — a June expense converts at June's rate, the
+  // correct accrual treatment. run_date is now audit metadata; the fallback to it is defensive
+  // (period is required at POST, so a run without one should not exist).
+  const _payDate = l => (l && l.period ? String(l.period).slice(0, 7) + '-01' : (l && l.run_date));
   // F80 / VERIFICATION.md decision 2: recognise the payroll expense at `approved`; `draft` contributes
   // 0; `paid` adds nothing further (already recognised at approved). MUST be IN ('approved','paid'),
   // NOT ='approved' — a paid run was approved first, so approved-only would DROP the expense on
@@ -4733,9 +4740,9 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // below still counts every run.
   const PAYROLL_RECOGNIZED = new Set(['approved', 'paid']);
   const payrollTotal = r2(sumFX(
-    runLines.filter(l => inPeriod(_runDate(l)) && PAYROLL_RECOGNIZED.has(String(l.status || '').toLowerCase())),
+    runLines.filter(l => inPeriod(_payDate(l)) && PAYROLL_RECOGNIZED.has(String(l.status || '').toLowerCase())),
     l => num(l.gross) + num(l.bonus) + num(l.overtime),
-    _runDate, 'payroll'
+    _payDate, 'payroll'
   ));
   // Roster headcount cost — reported for the Payroll page's "create a run from your roster"
   // template and its empty state. INFORMATIONAL ONLY: it is deliberately NOT part of opex.

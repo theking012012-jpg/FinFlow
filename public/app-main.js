@@ -1774,7 +1774,10 @@ function computeExpenseBreakdown(period, monthIdx){
   const PAYROLL_RECOGNIZED = ['approved','paid'];
   let payroll = 0, payrollRunCount = 0;
   runs.forEach(r=>{
-    if(!inPeriod(r.run_date)) return;
+    // F85 (2026-08-07, accrual): recognise the run in the PERIOD IT IS FOR — first of the run's
+    // `period` month ('YYYY-MM' → 'YYYY-MM-01'), a tz-free calendar date — not run_date (creation
+    // time). Mirrors the server computeBooks _payDate so client and server agree. run_date is metadata.
+    if(!inPeriod(r.period ? String(r.period).slice(0,7)+'-01' : r.run_date)) return;
     payrollRunCount++;
     if(!PAYROLL_RECOGNIZED.includes(String(r.status||'').toLowerCase())) return;   // draft ⇒ 0
     (r.lines||[]).forEach(l=>{

@@ -84,11 +84,12 @@
     (window.vendorCredits || []).forEach(v => { if (!_RECCREDIT.includes((v.status || '').toLowerCase())) return; const idx = _idxOf(v.date || v.created_at); if (idx >= 0) expByMonth[idx] -= parseFloat(v.amount) || 0; });
     // F33-C: bucket PAYROLL into its run month so the overview chart's expense line reconciles with
     // the Expenses KPI (computeExpenseBreakdown opex, which includes payroll). EXACT mirror of that
-    // recognition + the server P&L bump: approved/paid runs, Σ lines(gross+bonus+overtime), by
-    // run_date. COGS is deliberately excluded — it is grossProfit, not part of the opex figure.
+    // recognition + the server P&L bump: approved/paid runs, Σ lines(gross+bonus+overtime). F85
+    // (2026-08-07, accrual): dated on the run's `period` (the month it is FOR), not run_date —
+    // matching the server so chart and KPI agree. COGS is excluded — grossProfit, not opex.
     (window.payrollRuns || []).forEach(r => {
       if (!['approved', 'paid'].includes(String(r.status || '').toLowerCase())) return;
-      const idx = _idxOf(r.run_date);
+      const idx = _idxOf(r.period ? String(r.period).slice(0, 7) + '-01' : r.run_date);
       if (idx < 0) return;
       (r.lines || []).forEach(l => { expByMonth[idx] += (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0); });
     });

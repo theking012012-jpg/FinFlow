@@ -1652,13 +1652,18 @@ Honest by comparison: "Export as PDF coming soon ✦" (`app-main.js:5116`) — t
 
 ---
 
-### F66 🟢 LOW — `PUT /api/customers/:id` and `POST /api/vendors` write unvalidated strings to JSONB — **NEW**
-**Status:** OPEN, verified. Part of class **C5**.
+### F66 ✅ FIXED (2026-08-07; executed, fail-then-pass) — was 🟢 LOW — `PUT /api/customers/:id` and `POST /api/vendors` wrote unvalidated strings to JSONB
+**Status:** ✅ **FIXED** (the customer/vendor slice of class **C5**; the broader C5 sweep of other unvalidated JSONB writers stays open as its own item).
 
-`PUT /api/customers/:id` (`server.js:954`) copies `['fname','lname','company','industry','email','phone','status','notes']` straight from the body — no trim, no length cap, no type check — so an object, array or 500 KB string lands in JSONB. Its sibling `POST` does cap. `POST /api/vendors` (`server.js:1941`) inserts `name`, `contact`, `category` raw, while its own `PUT` (`1953`) caps all three. Blast radius is bounded by `express.json({limit:'500kb'})`, so this is durability/consistency, not a DoS.
+The two broken routes now mirror the caps their capping siblings already applied:
+- `PUT /api/customers/:id` (server.js:1104) — the copy loop `patch[f] = b[f]` wrote all 8 fields RAW; replaced with per-field `String(...).slice(cap)` matching the sibling `POST`, patching only present fields (partial-update preserved).
+- `POST /api/vendors` (server.js:2160) — `name/contact/category` inserted raw; now `String(...).slice(cap)` matching its own `PUT`.
+- `POST /api/customers` (server.js:1097) — capped already, but never format-checked email; added the same conditional email regex as `PUT`, so the two customer routes are no longer a validation mirror of each other (Rule 2). Empty/absent email stays allowed; a malformed or non-string email → 400.
 
-**Course of action:** mirror the caps the sibling routes already use; add `String(...)` coercion; run the email regex on `email`.
-**Done when:** `PUT /api/customers/:id {email:{"a":1}}` → 400, and a 400 KB `notes` is rejected or truncated at 500.
+Email regex reused from the three existing sites: `/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/`. Blast radius was already bounded by `express.json({limit:'500kb'})`, so this was durability/consistency, not DoS.
+
+**Verified** `tests/harness/verify-f66-customer-vendor-validation.js` (real Postgres, real endpoints): 12/12 green post-fix; **fail-then-pass control** against `HEAD:server.js` (pre-F66) → the 7 bug-targeting assertions FAIL (object email 200, raw object stored, 400KB stored whole, malformed email 200) while both valid-path controls PASS on both builds — so the test discriminates (Rules 4 + 14). Done-when met: `PUT /api/customers/:id {email:{"a":1}}` → 400; 400KB `notes` truncated to 500.
+**Was (stale):** OPEN — line refs 954/1941/1953 were pre-move; the split (which routes cap, which don't) was correct.
 
 ---
 

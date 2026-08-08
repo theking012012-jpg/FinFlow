@@ -1096,9 +1096,14 @@ app.get('/api/customers', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
-  const _dup = await findRecentDuplicate('customers', req.session.userId, b.entity_id||null, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: (b.email||'').slice(0,200) } });
+  // F66: validate email format when one is supplied (empty/absent stays allowed, preserving the
+  // lenient no-email customer). Kept symmetric with PUT so neither route is a validation mirror of
+  // the other (Rule 2). Coerce first so a non-string body (object/array) fails the regex → 400.
+  const _cem = String(b.email == null ? '' : b.email).slice(0,200);
+  if (_cem && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(_cem)) return res.status(400).json({ error: 'Invalid email address.' });
+  const _dup = await findRecentDuplicate('customers', req.session.userId, b.entity_id||null, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('customers', { user_id: req.session.userId, entity_id: b.entity_id||null, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: (b.email||'').slice(0,200), phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
+  const { row } = await db.insert('customers', { user_id: req.session.userId, entity_id: b.entity_id||null, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
   res.status(201).json(row);
 }));
 app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
@@ -1106,8 +1111,23 @@ app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
   const b = req.body || {};
-  ['fname','lname','company','industry','email','phone','status','notes'].forEach(f => { if (b[f] != null) patch[f] = b[f]; });
-  if (b.revenue != null) patch.revenue = parseFloat(b.revenue);
+  // F66: the previous copy loop `patch[f] = b[f]` wrote every field RAW — an object, array or
+  // 500KB string landed straight in JSONB, while the sibling POST already capped all of them.
+  // Mirror those caps: coerce to String and bound length, patching only fields that are present
+  // so partial-update semantics are preserved.
+  if (b.fname    != null) patch.fname    = String(b.fname).trim().slice(0, 100);
+  if (b.lname    != null) patch.lname    = String(b.lname).trim().slice(0, 100);
+  if (b.company  != null) patch.company  = String(b.company).trim().slice(0, 200);
+  if (b.industry != null) patch.industry = String(b.industry).slice(0, 100);
+  if (b.phone    != null) patch.phone    = String(b.phone).slice(0, 30);
+  if (b.status   != null) patch.status   = String(b.status).slice(0, 50);
+  if (b.notes    != null) patch.notes    = String(b.notes).slice(0, 500);
+  if (b.email    != null) {
+    const _em = String(b.email).slice(0, 200);
+    if (_em && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(_em)) return res.status(400).json({ error: 'Invalid email address.' });
+    patch.email = _em;
+  }
+  if (b.revenue != null) patch.revenue = parseFloat(b.revenue) || 0;
   await db.updateById('customers', row.id, patch);
   const { rows: [_cur] } = await pool.query(`SELECT * FROM customers WHERE id = $1 LIMIT 1`, [row.id]);
   res.json(_cur ? rowToObj(_cur) : {});
@@ -2158,12 +2178,21 @@ app.get('/api/vendors', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('vendors', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.name.localeCompare(b.name)));
 }));
 app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
-  const { name, contact, category, owing = 0, ytd_paid = 0, status = 'active' } = req.body;
-  if (!name) return res.status(400).json({ error: 'name required' });
+  const b = req.body || {};
+  if (!b.name) return res.status(400).json({ error: 'name required' });
+  // F66: insert wrote name/contact/category RAW while the sibling PUT already capped all three.
+  // Mirror those caps — coerce to String and bound length so an object/array/oversized value
+  // cannot enter JSONB. name is required; contact/category default to ''. owing/ytd_paid numeric.
+  const name     = String(b.name).trim().slice(0, 200);
+  const contact  = String(b.contact  || '').trim().slice(0, 200);
+  const category = String(b.category || '').slice(0, 100);
+  const status   = String(b.status   || 'active').slice(0, 50);
+  const owing    = parseFloat(b.owing)    || 0;
+  const ytd_paid = parseFloat(b.ytd_paid) || 0;
   const entity = await activeEntity(req.session.userId);
-  const _dup = await findRecentDuplicate('vendors', req.session.userId, entity?.id || null, { textMatch: { name: String(name) } });
+  const _dup = await findRecentDuplicate('vendors', req.session.userId, entity?.id || null, { textMatch: { name } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('vendors', { user_id: req.session.userId, entity_id: entity?.id, name, contact, category, owing: Number(owing), ytd_paid: Number(ytd_paid), status });
+  const { row } = await db.insert('vendors', { user_id: req.session.userId, entity_id: entity?.id, name, contact, category, owing, ytd_paid, status });
   res.json(row);
 }));
 app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {

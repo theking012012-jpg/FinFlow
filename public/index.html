@@ -4272,6 +4272,32 @@ async function loadMRRData(){
       'arr-val': window._fmtMoneyNative(arr),
     };
     Object.entries(els).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.textContent=val; });
+    // F127: build a REAL trailing-12-month MRR series so the chart is not a permanent flat zero line
+    // (window._mrrChartData previously had NO writer anywhere). Each currently-active recurring invoice
+    // contributes its monthly value from its start month (created_at) forward — the ramp of the active
+    // book. Churned subs aren't retained server-side, so this is honestly "MRR of currently-active
+    // subscriptions over time" (the last point equals the MRR card), not a fabricated trend.
+    const _monthlyVal = r => { const a=parseFloat(r.amount)||0; const f=String(r.frequency||'').toLowerCase();
+      return f==='quarterly' ? a/3 : f==='annually' ? a/12 : a; };
+    const _active = rows.filter(r=>r.status==='active');
+    const _now = new Date();
+    const _series=[], _mlabels=[];
+    for(let i=11;i>=0;i--){
+      const mStart = new Date(_now.getFullYear(), _now.getMonth()-i, 1);
+      const mEnd   = new Date(_now.getFullYear(), _now.getMonth()-i+1, 1);
+      const total = _active.reduce((s,r)=>{
+        const started = r.created_at ? new Date(r.created_at) : mStart;   // no start ⇒ treat as always-on
+        if(started >= mEnd) return s;                                     // not started yet in this month
+        const ended = r.end_date ? new Date(r.end_date) : null;
+        if(ended && ended < mStart) return s;                             // ended before this month
+        return s + _monthlyVal(r);
+      },0);
+      _series.push(Math.round(total*100)/100);
+      _mlabels.push(mStart.toLocaleDateString('en-US',{month:'short'}));
+    }
+    window._mrrChartData = _series;
+    window._mrrChartLabels = _mlabels;
+    if(typeof renderMRRChart==='function') renderMRRChart();
   } catch(e){
     // F96 class — NETWORK-failure path (fetch rejected). Same visibility as the !res.ok branch:
     // a dropped connection must not read as "no subscriptions" ($0).
@@ -4287,7 +4313,9 @@ function renderMRRChart(){
   const existing=Chart.getChart(canvas);
   if(existing){existing.destroy();}
   if(mrrChartInst){mrrChartInst.destroy();mrrChartInst=null;}
-  const labels=['May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr'];
+  // F127: labels track the real trailing-12-month window loadMRRData built (fallback to a static
+  // sequence only before the data writer has run). The chart no longer draws a permanent flat zero.
+  const labels=window._mrrChartLabels||['May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr'];
   const data=window._mrrChartData||new Array(12).fill(0);
   mrrChartInst=new Chart(canvas,{
     type:'line',

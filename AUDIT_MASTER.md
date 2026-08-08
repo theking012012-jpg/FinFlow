@@ -1040,8 +1040,8 @@ Since F124 they carry the **entity's** symbol, so nothing is mislabelled. But a 
 
 ---
 
-### F127 🟡 MEDIUM — `window._mrrChartData` has no writer anywhere: the MRR chart is a permanent flat zero line — **NEW (2026-08-03, found while fixing F124), OPEN**
-**Status:** OPEN, confirmed by grep and by reading.
+### F127 ✅ FIXED (2026-08-07; executed in jsdom) — `window._mrrChartData` now has a writer; the MRR chart draws a real trend
+**Status:** ✅ **FIXED.** `loadMRRData` (index.html) now builds a REAL trailing-12-month MRR series and writes `window._mrrChartData` (+ matching `_mrrChartLabels`), then re-renders — previously nothing wrote it, so `renderMRRChart` drew a permanent flat zero line under real MRR/ARR cards. Each currently-active recurring invoice contributes its monthly value (monthly / quarterly÷3 / annually÷12) from its start month (`created_at`) forward, so the series is the ramp of the active book and its last point equals the current MRR card. Honest limitation: churned subs aren't retained server-side, so it is "MRR of currently-active subscriptions over time," not full history — real, not fabricated. Verified `tests/harness/verify-f127-mrr-chart.js` (jsdom 7/7): two active subs (100/mo from Feb, 300/mo from Jun) → series `[0,0,0,0,0,0,100,100,100,100,400,400]`, first point 0, last 400, monotonic; pre-fix it was all zeros.
 
 `renderMRRChart` (`index.html`) does:
 ```js

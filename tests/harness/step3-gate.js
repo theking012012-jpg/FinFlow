@@ -384,10 +384,14 @@ async function main() {
       revenue: 'A5.1–3', cogs: 'A5.4–6', grossProfit: 'A5.7–9',
       opex: 'A5.10–12', netProfit: 'A5.13–15', outstanding: 'A5.16–18',
     };
-    // Every written cell carries the run date AND the seed fingerprint. A result measured
-    // against a superseded seed is worse than an empty cell — it looks authoritative. The
-    // fingerprint lets verification-sync flag it the moment the seed or expectations change.
-    const stamp = new clock.RealDate().toISOString().slice(0, 10);
+    // F112 (owner decision 2026-08-07): each written cell carries ONLY the seed fingerprint,
+    // no run date. The fingerprint identifies the exact dataset a result was measured against
+    // (verification-sync flags it stale the moment the seed or expectations change); git blame
+    // records WHEN each cell was last written. The wall-clock date added nothing the fingerprint
+    // and git did not already carry, and it CHURNED — a gate run on a new calendar day rewrote
+    // every cell's date even when the figure was byte-identical, forcing a decision on whether to
+    // commit a pure date bump. Dropping it makes a re-run on an unchanged seed produce identical
+    // cells, so VERIFICATION.md only moves when a figure or the seed actually moves.
     const fp = EXPECTED.seedFingerprint();
     const fmtN = (v) => (typeof v === 'number' ? v.toLocaleString('en-US') : String(v));
     const toWrite = {};
@@ -397,8 +401,8 @@ async function main() {
       const want = ['jun', 'jul', 'fy'].map((k) => EXPECT[k][field]);
       const ok = got.every((v, i) => typeof v === 'number' && Math.abs(v - want[i]) < 0.005);
       toWrite[rowId] = ok
-        ? `PASS (${stamp} · seed ${fp})`
-        : `**FAIL** — actual ${got.map(fmtN).join(' / ')} (${stamp} · seed ${fp})`;
+        ? `PASS (seed ${fp})`
+        : `**FAIL** — actual ${got.map(fmtN).join(' / ')} (seed ${fp})`;
     }
     const written = writeResults(toWrite);
     console.log(`  ${written.length} Result cell(s) updated: ${written.join(', ') || '(none matched)'}`);

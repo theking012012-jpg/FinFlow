@@ -534,8 +534,9 @@ The same local-`getMonth` period-membership bug (F87 / Rule 10) on **non-recogni
 
 ---
 
-### F112 🟢 LOW — VERIFICATION.md stamp date churns daily — **NEW (2026-07-31), OPEN**
-Independent of **H6**. H6 stopped the seed **fingerprint** moving on EOL flips; the stamp **DATE** still moves every calendar day the gate runs, so VERIFICATION.md shows modified after any gate run on a new day and someone must decide each time whether to commit a date bump. Observed 2026-07-31 (`07-30 → 07-31`). **Not a defect** — the date records when the figure was last verified. Open question whether the stamp needs a date at all, given the seed fingerprint already identifies *what* was verified. Owner's call; no fix built.
+### F112 ✅ FIXED (2026-08-07; executed; owner decision "drop the date") — was 🟢 LOW — VERIFICATION.md stamp date churned daily
+**Status:** ✅ **FIXED.** Owner ruled 2026-08-07: drop the date from the Result-cell stamp. `step3-gate.js:390` was stamping the real wall-clock date into every measured cell (`PASS (2026-08-04 · seed 3c322e0f)`); the cell now carries only the seed fingerprint (`PASS (seed 3c322e0f)`). The fingerprint already identifies *what dataset* a result was measured against (verification-sync flags it stale the moment the seed changes) and git blame records *when* each cell was last written — the wall-clock date added nothing those two didn't, and it churned: a gate run on a new calendar day rewrote every cell's date even when the figure was byte-identical. The 7 existing date-bearing cells in VERIFICATION.md were normalized to `(seed …)`. Verified `tests/harness/verify-f112-stamp-churnfree.js`: FIX writes byte-identical across two calendar days; CONTROL (old date template) differs across the two days (proves the date was the churn and the test discriminates); repo doc carries zero date stamps.
+**Was (stale):** OPEN — H6 stopped the seed fingerprint moving on EOL flips; the stamp DATE still moved every calendar day the gate ran, forcing a decide-each-time on whether to commit a pure date bump. Observed 2026-07-31 (`07-30 → 07-31`). "Not a defect"; owner's call, no fix built.
 
 ---
 

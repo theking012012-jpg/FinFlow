@@ -4417,6 +4417,40 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
   res.json(rows[0]);
 }));
 
+// F106 (owner decision 2026-08-07, HYBRID): remove a payroll run.
+//   - VOID (this route) — for an approved/paid run that HAS been recognised: status='voided'. The
+//     row STAYS visible and dated in Run History but drops out of the books (voided ∉ the
+//     {approved,paid} recognition set — no other change needed anywhere), so a figure that was on
+//     the books is never silently erased (F87/F94). Audit-logged. Idempotent on already-voided.
+//   - DELETE (below) — for a DRAFT run only, which was never recognised.
+app.put('/api/payroll-runs/:id/void', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { rows: [run] } = await pool.query(`SELECT * FROM payroll_runs WHERE id=$1 AND user_id=$2`, [id, scopeId(req)]);
+  if (!run) return res.status(404).json({ error: 'Not found.' });
+  const st = String(run.status || '').toLowerCase();
+  if (st === 'voided') return res.json(run);                                   // idempotent
+  if (st === 'draft') return res.status(409).json({ error: 'A draft run is deleted, not voided. Use DELETE /api/payroll-runs/:id.' });
+  const { rows } = await pool.query(
+    `UPDATE payroll_runs SET status='voided' WHERE id=$1 AND user_id=$2 RETURNING *`, [id, scopeId(req)]);
+  await auditLog(pool, { userId: req.session.userId, entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'VOID', req });
+  res.json(rows[0]);
+}));
+
+// F106 (HYBRID): hard-DELETE a run — permitted ONLY for a `draft`, which was never recognised, so
+// removing it restates nothing. An approved/paid run must be VOIDED (never deleted). Lines first (FK).
+app.delete('/api/payroll-runs/:id', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { rows: [run] } = await pool.query(`SELECT * FROM payroll_runs WHERE id=$1 AND user_id=$2`, [id, scopeId(req)]);
+  if (!run) return res.status(404).json({ error: 'Not found.' });
+  if (String(run.status || '').toLowerCase() !== 'draft') {
+    return res.status(409).json({ error: 'Only a draft run can be deleted. Approved or paid runs must be voided (PUT /api/payroll-runs/:id/void).' });
+  }
+  await pool.query(`DELETE FROM payroll_run_lines WHERE run_id=$1`, [id]);
+  await pool.query(`DELETE FROM payroll_runs WHERE id=$1 AND user_id=$2`, [id, scopeId(req)]);
+  await auditLog(pool, { userId: req.session.userId, entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'DELETE', req });
+  res.json({ ok: true, deleted: id });
+}));
+
 // (Removed: GET /api/payroll/preview + the multi-jurisdiction tax engine — FinFlow
 // no longer calculates tax. Net is derived from user-defined deduction rows only.)
 

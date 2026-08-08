@@ -2419,8 +2419,12 @@ The remediation half of **F107**, logged separately because it is a feature, not
 
 ---
 
-### F106 🟡 MEDIUM — No way to delete or VOID a payroll run — once created, a run is permanent from the UI — **NEW (2026-07-24, owner-reported, verified against main)**
-**Status:** OPEN — design question for the owner. **No code; do not build the fix.** This is the flip side of **C1** (duplicate-submit): the app can CREATE a duplicate run and offers no way to UNDO one.
+### F106 ✅ FIXED (2026-08-07; executed both halves; owner chose HYBRID) — Remove a payroll run: delete draft, void approved/paid
+**Status:** ✅ **FIXED.** Owner ruled 2026-08-07 (Hybrid): a `draft` run (never recognised) is hard-DELETED; an `approved`/`paid` run is VOIDED (`status='voided'`), which auto-drops it from recognition (`voided` ∉ the {approved,paid} set — no other change needed) while the row stays visible and dated in Run History, so no closed period is silently restated (F87/F94). Both paths audit-logged (F90).
+- Server: `PUT /api/payroll-runs/:id/void` (approved/paid → voided; 409 on draft; idempotent on already-voided) and `DELETE /api/payroll-runs/:id` (draft only → deletes lines then run; 409 on non-draft). Both `auditLog(... action VOID|DELETE)`.
+- Client (index.html — runtime winner, no wiring override): Run History shows Delete for a draft, Void for approved/paid, neither for a voided run (terminal); `voided` badge added; `deletePayrollRun`/`voidPayrollRun` handlers (confirm-gated) call the endpoints then `loadPayrollRuns()` (which refreshes the KPI/chart).
+**Verified**: `tests/harness/verify-f106-void-delete.js` (server 12/12) — void an approved run drops P&L payroll 5000→0 while the row survives and is VOID-audit-logged; delete a draft removes row+lines and is DELETE-audit-logged; delete-non-draft → 409; void-draft → 409. `tests/harness/verify-f106-client-controls.js` (jsdom 5/5) — correct control per status, Void fires one PUT to /void.
+**Original finding (historical) —** OPEN, design question. The flip side of **C1** (duplicate-submit — creation half; the create route is now C1 token-guarded). No delete/void existed; a bad run needed direct DB access.
 
 **Verified facts (main):**
 - **No `DELETE /api/payroll-runs/:id` route.** The payroll-run routes are only `GET /api/payroll-runs`, `POST`, `GET /:id`, `PUT /:id/approve`, `PUT /:id/mark-paid` (`server.js:3808-3887`). No delete, no void.

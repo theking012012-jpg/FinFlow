@@ -4729,7 +4729,7 @@ async function loadPayrollRuns(){
   if(!el)return;
   try{
     if(!rows.length){el.innerHTML='<div style="padding:1rem;color:var(--t3);text-align:center;font-size:12px">No payroll runs yet.</div>';return;}
-    const statusBadge={draft:'b-amber',approved:'b-blue',paid:'b-green'};
+    const statusBadge={draft:'b-amber',approved:'b-blue',paid:'b-green',voided:'b-red'};
     el.innerHTML=rows.map(r=>`
       <div class="tx-row" style="align-items:flex-start">
         <div style="flex:1">
@@ -4740,6 +4740,8 @@ async function loadPayrollRuns(){
           <span class="badge ${statusBadge[r.status]||'b-amber'}" style="font-size:9px">${esc(r.status)}</span>
           ${r.status==='draft'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="approvePayrollRun(${r.id})">Approve</button>`:''}
           ${r.status==='approved'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="markPayrollPaid(${r.id})">Mark Paid</button>`:''}
+          ${r.status==='draft'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px;color:var(--red)" onclick="deletePayrollRun(${r.id})">Delete</button>`:''}
+          ${(r.status==='approved'||r.status==='paid')?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px;color:var(--red)" onclick="voidPayrollRun(${r.id})">Void</button>`:''}
         </div>
       </div>`).join('');
   }catch(e){el.innerHTML='<div style="color:var(--red);padding:1rem;font-size:12px">Could not load payroll runs</div>';}
@@ -4829,6 +4831,29 @@ async function markPayrollPaid(id){
     notify('✓ Payroll marked paid');
     loadPayrollRuns();
   }catch(e){notify('Could not update',true);}
+}
+// F106 (HYBRID): a DRAFT run is deleted outright (never recognised); an approved/paid run is VOIDED
+// (stays in history marked Voided, drops from the books). loadPayrollRuns() re-stashes
+// window.payrollRuns and triggers the financial refresh, so the KPI/chart update immediately.
+async function deletePayrollRun(id){
+  if(!confirm('Delete this draft payroll run? This cannot be undone.'))return;
+  try{
+    const res=await fetch('/api/payroll-runs/'+id,{method:'DELETE',credentials:'include'});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok){notify('⚠ '+(d.error||'Could not delete'),true);return;}
+    notify('✓ Draft run deleted');
+    loadPayrollRuns();
+  }catch(e){notify('Could not delete run',true);}
+}
+async function voidPayrollRun(id){
+  if(!confirm('Void this payroll run? It stays in history marked Voided and stops counting in your books.'))return;
+  try{
+    const res=await fetch('/api/payroll-runs/'+id+'/void',{method:'PUT',credentials:'include'});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok){notify('⚠ '+(d.error||'Could not void'),true);return;}
+    notify('✓ Run voided');
+    loadPayrollRuns();
+  }catch(e){notify('Could not void run',true);}
 }
 
 // ── FEATURE 4: INVENTORY COGS ─────────────────────────────────────────────────

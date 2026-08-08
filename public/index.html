@@ -4317,12 +4317,19 @@ window.addEventListener('ff:authed',function(){
   if(!u||!u.trial_ends||(u.plan!=='trial'&&u.plan!=='free'))return;
   var trialEnd=new Date(u.trial_ends);
   var daysLeft=Math.ceil((trialEnd-Date.now())/86400000);
-  if(daysLeft<=0||daysLeft>30)return;
+  if(daysLeft>30)return;                                   // plenty of trial left → no banner
+  // F132: when the trial has ENDED (daysLeft<=0) the app is READ-ONLY, not locked — show a
+  // PERSISTENT banner (was: `daysLeft<=0` bailed, so the only trial UI vanished exactly when it
+  // mattered). Reads still work (server checkPlan), so the user sees their books; this tells them
+  // why saving is blocked and how to fix it.
+  var expired=daysLeft<=0;
   var banner=document.createElement('div');
   banner.id='trial-banner';
-  banner.style.cssText='background:var(--acc);color:#000;text-align:center;font-size:12px;font-weight:600;padding:5px;cursor:pointer;';
-  banner.innerHTML='&#9889; '+daysLeft+' day'+(daysLeft===1?'':'s')+' left on your free trial — <u>Upgrade now</u>';
-  banner.onclick=function(){if(typeof showPage==='function')showPage('pricing',null);};
+  banner.style.cssText='background:'+(expired?'var(--red,#c0392b)':'var(--acc)')+';color:'+(expired?'#fff':'#000')+';text-align:center;font-size:12px;font-weight:600;padding:6px;cursor:pointer;';
+  banner.innerHTML=expired
+    ? '&#9889; Your free trial has ended — you can still view your books, but changes are locked. <u>Upgrade to make changes</u>'
+    : '&#9889; '+daysLeft+' day'+(daysLeft===1?'':'s')+' left on your free trial — <u>Upgrade now</u>';
+  banner.onclick=function(){ if(typeof window.startUpgrade==='function') window.startUpgrade(); else if(typeof showPage==='function') showPage('pricing',null); };
   var main=document.querySelector('.main');
   if(main)main.prepend(banner);
 },{once:true});

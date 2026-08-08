@@ -623,7 +623,7 @@ const ROLES = {
                nav:['dashboard','banking','invoices','expenses','bills','customers','vendors','payroll']},
 };
 let currentRole = 'owner';
-let currentUserPlan = 'pro';
+let currentUserPlan = 'trial';   // F132: honest default (was 'pro' — showed "Pro" for trial/expired users until /auth/me landed); set from data.user.plan on auth
 // PL#3: client-side entity cap — MUST mirror the server ENTITY_LIMITS (server.js POST /api/entities).
 // The server is the real enforcer (returns 402); this just shows the upgrade modal instead of a
 // failed create. business now caps at 5 (was silently unbounded on the client).
@@ -4723,20 +4723,43 @@ function _ffShowTrialExpired(message){
    + '<div id="ff-trial-gate-title" style="font-size:19px;font-weight:600;color:var(--t1,#f2e8d5);margin-bottom:8px">'
    + 'Your free trial has ended</div>'
    + '<div style="font-size:13px;color:var(--t2,#9e8e73);line-height:1.55;margin-bottom:20px">' + safe
-   + '<br><br>Your data is safe and untouched. Upgrade to pick up exactly where you left off.</div>'
+   + '<br><br>You can still <strong>view</strong> your books — making changes needs an upgrade. Your data is safe.</div>'
    + '<button id="ff-trial-upgrade" class="btn btn-primary" style="width:100%;padding:11px;font-size:14px;font-weight:600">'
-   + 'Upgrade &#8599;</button>'
+   + 'Upgrade to make changes &#8599;</button>'
+   + '<button id="ff-trial-dismiss" class="btn btn-ghost" style="width:100%;padding:9px;font-size:13px;margin-top:8px">Keep viewing (read-only)</button>'
    + '<div style="margin-top:14px;font-size:11px;color:var(--t3,#6b5c42)">'
    + 'Questions? <a href="mailto:support@finflow.app" style="color:var(--acc,#c9a84c)">support@finflow.app</a></div>'
    + '</div>';
   document.body.appendChild(g);
+  // F132: DISMISSABLE now. Reads work post-expiry, so dismissing lands on the user's real (read-only)
+  // books — never the old escapable $0 "broken app". Only a WRITE (402 TRIAL_EXPIRED) opens this.
+  const _close = function(){ g.remove(); window._ffTrialExpiredActive = false; };
   const btn = document.getElementById('ff-trial-upgrade');
   if(btn) btn.onclick = function(){
-    if(typeof showPage === 'function'){ g.remove(); window._ffTrialExpiredActive=false; showPage('pricing', null); }
-    else { window.location.href = '/app#pricing'; }
+    if(typeof window.startUpgrade === 'function') window.startUpgrade();
+    else if(typeof showPage === 'function'){ _close(); showPage('pricing', null); }
+    else window.location.href = '/app#pricing';
   };
+  const dz = document.getElementById('ff-trial-dismiss');
+  if(dz) dz.onclick = _close;
+  g.addEventListener('click', function(e){ if(e.target === g) _close(); });   // backdrop dismiss
 }
 window._ffShowTrialExpired = _ffShowTrialExpired;
+
+// F132: start a REAL Stripe checkout (POST /api/stripe/checkout → session URL). Graceful fallback
+// when billing isn't configured yet (Stripe key unset → 400 'Stripe not configured.'), so the button
+// is never a broken click. /stripe/ is open in checkPlan, so an EXPIRED trial can still reach it.
+window.startUpgrade = async function(){
+  try{
+    const res = await fetch('/api/stripe/checkout', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ plan:'business' }) });
+    const data = await res.json().catch(function(){ return {}; });
+    if(res.ok && data && data.url){ window.location.href = data.url; return; }
+    const msg = (data && data.error === 'Stripe not configured.')
+      ? 'Upgrades are opening soon — email support@finflow.app to upgrade now.'
+      : ((data && data.error) || 'Could not start checkout — email support@finflow.app.');
+    if(typeof notify === 'function') notify(msg, true);
+  }catch(e){ if(typeof notify === 'function') notify('Could not start checkout — email support@finflow.app.', true); }
+};
 
 // F34 Step 2: the display currency the dashboard renders business figures in. null ⇒ native (the
 // active entity's own currency) ⇒ no ?display= param ⇒ server returns native (identity, Step 1).

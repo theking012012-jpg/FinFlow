@@ -398,6 +398,10 @@ function saveSession(req) {
   return new Promise((resolve, reject) => req.session.save(err => (err ? reject(err) : resolve())));
 }
 
+// F132: read-POSTs that stay allowed in READ-ONLY mode — they compute + return, they do NOT mutate
+// the user's data (report generation + the COGS calculator). Paths are relative to the /api mount.
+const _READONLY_POST_OK = p => p.startsWith('/reports/') || p === '/cogs/calculate';
+
 // Checks trial expiry — attaches req.userPlan for downstream use
 async function checkPlan(req, res, next) {
   try {
@@ -407,11 +411,21 @@ async function checkPlan(req, res, next) {
     const plan = u.plan || 'trial';
     const trialEnds = u.trial_ends ? new Date(u.trial_ends) : null;
 
+    // F132 (owner decision 2026-08-07): READ-ONLY past expiry, NOT a total lockout. An expired trial
+    // keeps READ access to its own books — reads (GET/HEAD/OPTIONS + report/compute POSTs) pass, so
+    // the app renders real data instead of the old escapable $0 "broken app". Only genuine MUTATIONS
+    // (create/edit/delete) 402 TRIAL_EXPIRED, which the client turns into an upgrade prompt. Locking
+    // someone out of viewing their own financial data to sell them a plan is a poor trade.
     if (plan === 'trial' && trialEnds && trialEnds < new Date()) {
-      return res.status(402).json({
-        error: 'Your free trial has ended. Please upgrade to continue.',
-        code: 'TRIAL_EXPIRED',
-      });
+      const m = req.method;
+      const isRead = m === 'GET' || m === 'HEAD' || m === 'OPTIONS' || (m === 'POST' && _READONLY_POST_OK(req.path));
+      if (!isRead) {
+        return res.status(402).json({
+          error: 'Your free trial has ended. Upgrade to make changes.',
+          code: 'TRIAL_EXPIRED',
+        });
+      }
+      req.trialExpired = true;   // F132: downstream/read handlers may surface a read-only hint
     }
     req.userPlan = plan;
     next();

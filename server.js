@@ -3561,48 +3561,6 @@ app.post('/api/permissions', requireAuth, requirePerm('permissions:manage'), wra
 // pages so each one has a single round-trip instead of refetching invoices
 // and expenses individually and re-summing on the client.
 
-// GET /api/cashflow — { in, out, net, monthly: [{month, in, out, net}, ...] }
-app.get('/api/cashflow', requireAuth, wrap(async (req, res) => {
-  try {
-    const uid = req.session.userId;
-    const eid = req.entityId || null;
-    const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
-    const invoices = (await db.allByUser('invoices', uid, matchEnt)) || [];
-    const expenses = (await db.allByUser('expenses', uid, matchEnt)) || [];
-
-    const inflow  = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const outflow = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-
-    // Build last-12-month rolling buckets (oldest first). F87: keyed by ABSOLUTE-MONTH string
-    // arithmetic off the server's UTC "today" — no local-midnight Date, so the bucket a row files
-    // into never depends on the viewer's timezone. The row match below stays a string slice.
-    const _cfToday = FinFlowDates.resolvedToday(new Date());
-    const _cfAbsNow = parseInt(_cfToday.slice(0, 4), 10) * 12 + (parseInt(_cfToday.slice(5, 7), 10) - 1);
-    const _CF_MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const monthly = [];
-    for (let i = 11; i >= 0; i--) {
-      const _abs = _cfAbsNow - i;
-      const key = Math.floor(_abs / 12) + '-' + String((_abs % 12) + 1).padStart(2, '0'); // YYYY-MM
-      const label = _CF_MO[_abs % 12];
-      const mIn = invoices
-        .filter(x => x.status === 'paid' && (x.due_date || '').slice(0, 7) === key)
-        .reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
-      const mOut = expenses
-        .filter(x => (x.expense_date || '').slice(0, 7) === key)
-        .reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
-      monthly.push({ month: label, in: mIn, out: mOut, net: mIn - mOut });
-    }
-
-    res.json({ in: inflow, out: outflow, net: inflow - outflow, monthly });
-  } catch (e) {
-    // F31: a thrown query error must NOT be disguised as a legitimate $0 cash flow.
-    // A real business with no transactions returns real zeros from the try above;
-    // only a genuine failure reaches here — surface it instead of fabricating money.
-    console.error('[GET /api/cashflow]', e.message);
-    res.status(500).json({ error: 'Could not load cash flow. Please try again.' });
-  }
-}));
-
 // GET /api/reports — summary stats (revenue, expenses, profit, counts).
 app.get('/api/reports', requireAuth, wrap(async (req, res) => {
   try {

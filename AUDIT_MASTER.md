@@ -2891,9 +2891,9 @@ This is the accrual question, not a rounding one: under decisions 1 and 2 an exp
 
 ---
 
-### F40 🟢 LOW — `/api/cashflow` dates paid inflow on `due_date`
-`server.js:3175` buckets a paid invoice by `(due_date||'').slice(0,7)` — the month it was **due**, not the month cash arrived. The route is **orphan dead code** (no fetch caller anywhere outside the audit docs), so it is currently harmless.
-**Course of action:** delete the route, or repoint it at `invoice_payments.payment_date` before anything starts calling it. Do not leave it dead-but-wrong.
+### F40 ✅ FIXED (2026-08-07; executed) — `GET /api/cashflow` dead-but-wrong route DELETED
+**Status:** ✅ **FIXED by deletion.** The orphan `GET /api/cashflow` route (server.js:3564-3604) bucketed a paid invoice by `(due_date||'').slice(0,7)` — the month it was **due**, not when cash arrived — at full paid amount, ignoring partials and `invoice_payments` entirely: exactly the wrong pattern F95 excised from the live cash-basis route. Confirmed orphan (Rule 13, both directions): only reference outside audit docs is the route definition itself; the client cash-flow view (`renderCashflow → updateCashflow`, app-main.js) computes from local period data, never fetches the endpoint (corroborated by PRE_LAUNCH_FIX_PLAN.md:169). Deleting removes the mirror rather than maintaining a second, divergent cash-flow implementation (Rule 2); repointing it would have kept that duplicate alive. Verified `tests/harness/verify-f40-cashflow-route-gone.js`: `GET /api/cashflow` → 404, canonical `POST /api/reports/cash-flow` still 200.
+**Was (stale):** OPEN — line ref 3175 was pre-move; the route lived at 3564. Orphan-dead-code assessment was correct.
 
 ---
 
@@ -2909,8 +2909,9 @@ This is the accrual question, not a rounding one: under decisions 1 and 2 an exp
 
 ---
 
-### F47 🟢 LOW — Cash-flow route dates a paid invoice by `created_at`
-`server.js:3313` keys paid-invoice inflow on `created_at || due_date || date`, so the same invoice is now dated three different ways across the app (`issue_date` for accrual, `due_date` in `/api/cashflow`, `created_at` here). Correct in isolation — `/api/reports/cash-flow` is the cash-basis statement — but it will be re-flagged forever unless documented. Fold into the F32-residual rework: cash basis should key on the **payment** date, not any invoice date.
+### F47 ✅ FIXED (2026-08-07; superseded by F95/F122, confirmed by reading) — Cash-flow route now keys inflow on the payment date
+**Status:** ✅ **FIXED.** The concern — cash basis must key on the **payment** date, not any invoice date — is satisfied. The live `POST /api/reports/cash-flow` was rewritten under **F95**: inflow is now `invoice_payments.payment_date` (+ `sales_receipts.date`), and the old "paid invoice, full amount, at invoice date" leg (the `created_at||due_date||date` keying this row flagged) was **removed**, not stacked. Evidence (server.js:3900): `invoicePayments.forEach(p => add(p.payment_date, 'inflow', p.amount))`. The old line 3313 no longer exists. Remaining dating caveat is the PAID-payroll cash-**out** leg keyed on `run_date` (a labelled F122/F85 approximation, separate finding — not F47's invoice-inflow concern). Confirmed by reading, not execution; the F95 rewrite carried its own harness.
+**Was (stale):** OPEN — described server.js:3313 keying `created_at||due_date||date`; that code was superseded by the F95 payment-date rewrite.
 
 ---
 

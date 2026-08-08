@@ -714,6 +714,33 @@ async function initDB() {
       END $fk$;
     `);
 
+    // ── F79: STATUS VALUE-DOMAIN CONSTRAINTS (money tables) ──────────────────────
+    // The DB-level backstop to the app-layer validation in server.js. Case-insensitive (lower())
+    // so mixed-case legacy values like credit_notes 'Open' pass; NULL/absent status is allowed.
+    // Added NOT VALID (Rule 7/8): enforces every new INSERT/UPDATE, but does NOT scan existing rows
+    // at ADD time — so no legacy row can ever brick boot, and no historical data is rejected or
+    // migrated. Idempotent by constraint-name check (added once; a zero-op thereafter), matching the
+    // FK block above. payroll_runs.status is a real column; the rest live in JSONB data->>'status'.
+    await client.query(`
+      DO $stat$
+      DECLARE rec record;
+      BEGIN
+        FOR rec IN
+          SELECT * FROM (VALUES
+            ('payroll_runs','chk_payroll_runs_status','status IS NULL OR lower(status) IN (''draft'',''approved'',''paid'',''voided'')'),
+            ('invoices','chk_invoices_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''pending'',''overdue'',''partial'',''paid'',''draft'')'),
+            ('bills','chk_bills_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''unpaid'',''due_soon'',''overdue'',''partial'',''paid'')'),
+            ('credit_notes','chk_credit_notes_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''open'',''applied'',''void'')'),
+            ('vendor_credits','chk_vendor_credits_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''open'',''applied'',''void'')')
+          ) AS v(tbl, cname, expr)
+        LOOP
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = rec.cname) THEN
+            EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s) NOT VALID', rec.tbl, rec.cname, rec.expr);
+          END IF;
+        END LOOP;
+      END $stat$;
+    `);
+
     await client.query('COMMIT');
     console.log('[DB] PostgreSQL schema ready');
   } catch (err) {

@@ -952,9 +952,16 @@ app.post('/api/entities/:id/activate', requireAuth, requirePerm('entities:manage
 app.get('/api/invoices', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('invoices', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
+// F79: status value-domains — app-layer validation (the DB CHECK constraints in database.js are the
+// backstop). Case-insensitive; an unknown status is rejected 400, never silently stored. credit_notes
+// / vendor_credits already validate via their own validStatuses; payroll_runs status is code-set only.
+const INVOICE_STATUSES = new Set(['pending', 'overdue', 'partial', 'paid', 'draft']);
+const BILL_STATUSES    = new Set(['unpaid', 'due_soon', 'overdue', 'partial', 'paid']);
+const _badStatus = (set, v) => v != null && !set.has(String(v).toLowerCase());
 app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, due_date, status = 'pending', notes = '', entity_id, issue_date } = req.body || {};
   if (!client || amount == null) return res.status(400).json({ error: 'client and amount required.' });
+  if (_badStatus(INVOICE_STATUSES, status)) return res.status(400).json({ error: 'Invalid invoice status.' });
   const eid = entity_id || req.entityId || null;
   if (await isLocked(req.session.userId, due_date)) return res.status(403).json({ error: 'Period is locked.' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
@@ -1014,7 +1021,7 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   if (client != null) patch.client = client;
   if (amount != null) patch.amount = parseFloat(amount);
   if (due_date != null) patch.due_date = due_date;
-  if (status != null) patch.status = status.toLowerCase();
+  if (status != null) { if (_badStatus(INVOICE_STATUSES, status)) return res.status(400).json({ error: 'Invalid invoice status.' }); patch.status = String(status).toLowerCase(); }
   if (notes != null) patch.notes = notes;
   if (issue_date != null) patch.issue_date = issue_date;   // F36: editable business issue date
   // F133 (guarded edit path): a bare status flip to 'paid' must set amount_paid = amount — BUT only
@@ -2264,6 +2271,7 @@ app.get('/api/bills', requireAuth, wrap(async (req, res) => {
 app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, due_date, status = 'unpaid', notes = '', issue_date } = req.body;
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
+  if (_badStatus(BILL_STATUSES, status)) return res.status(400).json({ error: 'Invalid bill status.' });
   const entity = await activeEntity(req.session.userId);
   const num = 'BILL-' + String(Date.now()).slice(-4);
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
@@ -2310,7 +2318,7 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   if (b.vendor     != null) patch.vendor     = b.vendor;
   if (b.amount     != null) patch.amount     = Number(b.amount);
   if (b.due_date   != null) patch.due_date   = b.due_date;
-  if (b.status     != null) patch.status     = b.status;
+  if (b.status     != null) { if (_badStatus(BILL_STATUSES, b.status)) return res.status(400).json({ error: 'Invalid bill status.' }); patch.status = b.status; }
   if (b.notes      != null) patch.notes      = b.notes;
   if (b.issue_date != null) patch.issue_date = b.issue_date;   // F36/F38: editable issue date
   // F135 (guarded edit path, AP mirror of F133's invoice PUT): a bare status flip to 'paid' must set

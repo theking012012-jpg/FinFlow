@@ -87,17 +87,18 @@ async function main() {
     check("harness REJECTS payroll_runs status 'final' (the F77 value)", rejected, true);
     if (rejected) console.log(`          → ${msg}`);
 
-    // The counterpart, and the reason the gate above has to exist at all: prove by EXECUTION
-    // that real Postgres accepts the same value without complaint. F77 assumed the opposite —
-    // that a real INSERT would have been the thing to reject it. This row is valid in every
-    // way the database can check, and carries a status the product does not have.
-    await c.query(
-      `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross)
-       VALUES ($1, NULL, 'f79-proof', DATE '2026-06-01', 'final', 0)`, [userId]);
-    const { rows: [bad] } = await c.query(
-      `SELECT status FROM payroll_runs WHERE period = 'f79-proof' LIMIT 1`);
-    check("real Postgres ACCEPTS status 'final' — no CHECK exists (F79, proven by execution)",
-      bad && bad.status, 'final');
+    // The counterpart (F79 FIXED): real Postgres now REJECTS the same value at the DATABASE, via the
+    // chk_payroll_runs_status CHECK constraint (database.js). The impossible F77 status can no longer
+    // be stored even by a raw INSERT that bypasses the app. (Was, pre-fix: "Postgres ACCEPTS 'final'"
+    // — the very hole this gate documented as open; closing F79 flips this assertion.)
+    let dbRejected = false, dbCode = '';
+    try {
+      await c.query(
+        `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross)
+         VALUES ($1, NULL, 'f79-proof', DATE '2026-06-01', 'final', 0)`, [userId]);
+    } catch (e) { dbRejected = true; dbCode = e.code; }
+    check("real Postgres REJECTS status 'final' — chk_payroll_runs_status CHECK exists (F79 FIXED, proven by execution)",
+      dbRejected && dbCode === '23514', true);
     await c.query(`DELETE FROM payroll_runs WHERE period = 'f79-proof'`);
 
     for (const [kind, badValue] of [['invoice', 'final'], ['bill', 'pending'], ['payroll_run', 'submitted']]) {

@@ -1758,7 +1758,8 @@ function computeExpenseBreakdown(period, monthIdx){
   const pmade = (window.paymentsMade || []).filter(p=>p.bill_id==null && inPeriod(p.date||p.created_at));
   const paymentsMade = pmade.reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
   // ── PAYROLL — BASIS C: payroll runs are the SINGLE SOURCE OF TRUTH ───────────────────────
-  // Mirrors the server (computeBooks): Σ run LINES whose parent run_date falls in the window.
+  // Mirrors the server (computeBooks): Σ run LINES recognised in the PERIOD the run is FOR (F85,
+  // first-of-period-month), not run_date (creation time).
   // A payroll run is the event that creates the expense, exactly as an issued invoice creates
   // revenue (F32). Replaces `monthlyPayroll × elapsedMonths` — today's ROSTER × time — which had
   // no effective dating (hiring someone today changed last January), double-counted against any

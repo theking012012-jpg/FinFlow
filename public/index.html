@@ -4819,7 +4819,7 @@ async function submitPayrollRun(){
     if(data.error){notify('⚠ '+data.error,true);return;}
     _payrollSubmitToken=null;                      // intent resolved — next run mints fresh
     closeModal('run-payroll-modal');
-    notify('✓ Payroll run created — '+data.run?.period);
+    notify('✓ Payroll run created — '+(data.period||data.run?.period||''));
     loadPayrollRuns();
   }catch(e){ notify('Could not create payroll run',true); }   // keep _payrollSubmitToken for an idempotent retry (same token → 23505 → original)
   finally{ window._savingPayrollRun=false; if(_prBtn) _prBtn.disabled=false; }

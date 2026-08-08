@@ -914,6 +914,7 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
     return res.status(402).json({ error: 'Entity limit reached for your plan.' });
   }
   const { row } = await db.insert('entities', { user_id: req.session.userId, name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0 });
+  await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
@@ -922,11 +923,14 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
   const { name, currency, color } = req.body || {};
   await db.updateById('entities', row.id, { ...(name && {name}), ...(currency && {currency}), ...(color && {color}) });
   const { rows: [_er] } = await pool.query(`SELECT * FROM entities WHERE id = $1 LIMIT 1`, [row.id]);
+  await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'UPDATE', oldData: row, newData: _er ? rowToObj(_er) : null, req });  // F90 Phase B
   res.json(_er ? rowToObj(_er) : {});
 }));
 app.delete('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
-  if (!(await ownedBy('entities', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  const _eold = await ownedBy('entities', req.params.id, req.session.userId);
+  if (!_eold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('entities', parseInt(req.params.id));
+  await recordAudit(pool, { userId: req.session.userId, entityId: parseInt(req.params.id), table: 'entities', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _eold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 app.post('/api/entities/:id/activate', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
@@ -1118,6 +1122,7 @@ app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('customers', req.session.userId, b.entity_id||null, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('customers', { user_id: req.session.userId, entity_id: b.entity_id||null, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
+  await recordAudit(pool, { userId: req.session.userId, entityId: b.entity_id||null, table: 'customers', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
@@ -1144,11 +1149,14 @@ app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
   if (b.revenue != null) patch.revenue = parseFloat(b.revenue) || 0;
   await db.updateById('customers', row.id, patch);
   const { rows: [_cur] } = await pool.query(`SELECT * FROM customers WHERE id = $1 LIMIT 1`, [row.id]);
+  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'customers', recordId: row.id, action: 'UPDATE', oldData: row, newData: _cur ? rowToObj(_cur) : null, req });  // F90 Phase B
   res.json(_cur ? rowToObj(_cur) : {});
 }));
 app.delete('/api/customers/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('customers', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  const _old = await ownedBy('customers', req.params.id, req.session.userId);
+  if (!_old) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('customers', parseInt(req.params.id));
+  await recordAudit(pool, { userId: req.session.userId, entityId: _old.entity_id || null, table: 'customers', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _old, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -1163,6 +1171,7 @@ app.post('/api/inventory', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('inventory', req.session.userId, b.entity_id||null, { textMatch: { name: (b.name||'').trim().slice(0,200) }, numMatch: { cost: parseFloat(b.cost)||0 } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('inventory', { user_id: req.session.userId, entity_id: b.entity_id||null, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: u, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: u < mx * 0.1 ? 1 : 0 });
+  await recordAudit(pool, { userId: req.session.userId, entityId: b.entity_id||null, table: 'inventory', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
@@ -1176,6 +1185,7 @@ app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
   if (b.cost != null) patch.cost = parseFloat(b.cost);
   await db.updateById('inventory', row.id, patch);
   const { rows: [_inur] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
+  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'inventory', recordId: row.id, action: 'UPDATE', oldData: row, newData: _inur ? rowToObj(_inur) : null, req });  // F90 Phase B
   res.json(_inur ? rowToObj(_inur) : {});
 }));
 app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
@@ -1201,8 +1211,10 @@ app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
   res.json(_rstk ? rowToObj(_rstk) : {});
 }));
 app.delete('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('inventory', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  const _iold = await ownedBy('inventory', req.params.id, req.session.userId);
+  if (!_iold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('inventory', parseInt(req.params.id));
+  await recordAudit(pool, { userId: req.session.userId, entityId: _iold.entity_id || null, table: 'inventory', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _iold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -1227,6 +1239,7 @@ app.post('/api/items', requireAuth, wrap(async (req, res) => {
     sku:       (b.sku   || '').slice(0, 50),
     cost:      b.cost   != null ? parseFloat(b.cost) || 0 : null,
   });
+  await recordAudit(pool, { userId: req.session.userId, entityId: b.entity_id || null, table: 'items', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/items/:id', requireAuth, wrap(async (req, res) => {
@@ -1244,11 +1257,14 @@ app.put('/api/items/:id', requireAuth, wrap(async (req, res) => {
   if (b.cost   != null) patch.cost   = parseFloat(b.cost) || 0;
   await db.updateById('items', row.id, patch);
   const { rows: [_itmr] } = await pool.query(`SELECT * FROM items WHERE id = $1 LIMIT 1`, [row.id]);
+  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'items', recordId: row.id, action: 'UPDATE', oldData: row, newData: _itmr ? rowToObj(_itmr) : null, req });  // F90 Phase B
   res.json(_itmr ? rowToObj(_itmr) : {});
 }));
 app.delete('/api/items/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('items', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  const _itold = await ownedBy('items', req.params.id, req.session.userId);
+  if (!_itold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('items', parseInt(req.params.id));
+  await recordAudit(pool, { userId: req.session.userId, entityId: _itold.entity_id || null, table: 'items', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _itold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -1861,6 +1877,7 @@ app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
+  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'chart_of_accounts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
@@ -1874,11 +1891,14 @@ app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
   if (b.nature   != null) patch.nature   = b.nature;
   await db.updateById('chart_of_accounts', row.id, patch);
   const { rows: [_coar] } = await pool.query(`SELECT * FROM chart_of_accounts WHERE id = $1 LIMIT 1`, [row.id]);
+  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'chart_of_accounts', recordId: row.id, action: 'UPDATE', oldData: row, newData: _coar ? rowToObj(_coar) : null, req });  // F90 Phase B
   res.json(_coar ? rowToObj(_coar) : {});
 }));
 app.delete('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('chart_of_accounts', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  const _coold = await ownedBy('chart_of_accounts', req.params.id, req.session.userId);
+  if (!_coold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('chart_of_accounts', parseInt(req.params.id));
+  await recordAudit(pool, { userId: req.session.userId, entityId: _coold.entity_id || null, table: 'chart_of_accounts', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _coold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2207,6 +2227,7 @@ app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('vendors', req.session.userId, entity?.id || null, { textMatch: { name } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('vendors', { user_id: req.session.userId, entity_id: entity?.id, name, contact, category, owing, ytd_paid, status });
+  await recordAudit(pool, { userId: req.session.userId, entityId: entity?.id || null, table: 'vendors', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
@@ -2225,10 +2246,13 @@ app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
   if (b.ytd_paid != null) patch.ytd_paid = parseFloat(b.ytd_paid) || 0;
   if (b.status   != null) patch.status   = String(b.status).slice(0, 50);
   await db.updateById('vendors', Number(req.params.id), patch);
+  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 app.delete('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
+  const { rows: [_vold] } = await pool.query('SELECT * FROM vendors WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM vendors WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  if (_vold) await recordAudit(pool, { userId: req.session.userId, entityId: _vold.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2308,7 +2332,9 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
+  const { rows: [_bold] } = await pool.query('SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  if (_bold) await recordAudit(pool, { userId: req.session.userId, entityId: _bold.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_bold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2489,7 +2515,9 @@ app.put('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
+  const { rows: [_srold] } = await pool.query('SELECT * FROM sales_receipts WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM sales_receipts WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  if (_srold) await recordAudit(pool, { userId: req.session.userId, entityId: _srold.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_srold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2553,7 +2581,9 @@ app.put('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
+  const { rows: [_prold] } = await pool.query('SELECT * FROM payments_received WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM payments_received WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  if (_prold) await recordAudit(pool, { userId: req.session.userId, entityId: _prold.entity_id || null, table: 'payments_received', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_prold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2614,7 +2644,9 @@ app.put('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
+  const { rows: [_cnold] } = await pool.query('SELECT * FROM credit_notes WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM credit_notes WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  if (_cnold) await recordAudit(pool, { userId: req.session.userId, entityId: _cnold.entity_id || null, table: 'credit_notes', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_cnold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2692,6 +2724,7 @@ app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
   const _billId = _pmrow && _pmrow.data && _pmrow.data.bill_id != null ? Number(_pmrow.data.bill_id) : null;
   await pool.query('DELETE FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   if (_billId != null) await recalcBillStatus(pool, _billId, req.session.userId);
+  if (_pmrow) await recordAudit(pool, { userId: req.session.userId, entityId: _pmrow.entity_id || null, table: 'payments_made', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_pmrow), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2758,7 +2791,9 @@ app.put('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
+  const { rows: [_vcold] } = await pool.query('SELECT * FROM vendor_credits WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM vendor_credits WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  if (_vcold) await recordAudit(pool, { userId: req.session.userId, entityId: _vcold.entity_id || null, table: 'vendor_credits', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vcold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 

@@ -557,6 +557,12 @@ If you cannot find a field, use null. Be concise.`;
     const entityId = entParam != null && /^[1-9][0-9]*$/.test(String(entParam)) ? parseInt(entParam) : null;
     const period = ['month', 'quarter', 'year'].includes(req.query.period) ? req.query.period : 'year';
     const entMatch = eid => eid == null || eid === entityId || entityId == null;
+    // F140: window computeBooks on the CLIENT's fiscal-year start, not the January default. The
+    // client dashboard/reports pass ?fyStart=<0-11>; the accountant portal must use the SAME start —
+    // the client's `fiscal_year` setting (a month name in users.data) — or a non-January fiscal year
+    // makes the 'year' window diverge from the client's own dashboard. Default January when unset.
+    const _FY_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const fyStartIdx = Math.max(0, _FY_MONTHS.indexOf(String(settings.rows[0]?.data?.fiscal_year || 'January')));
 
     // Canonical, entity-scoped books (F9) — the SAME computeBooks the client dashboard uses, so the
     // accountant's totals reconcile. Revenue is ISSUE-BASED ACCRUAL (F32): every issued invoice
@@ -564,10 +570,10 @@ If you cannot find a field, use null. Be concise.`;
     // receipts, less credit notes — NOT paid-only, and payments_received is no longer a revenue leg.
     // OpEx = expenses + issued bills + orphan payments made + payroll (basis C); NetProfit subtracts
     // FIFO COGS. Deductible (F139) rides along in books.tax for the Tax Summary, from this same call.
-    const books = await computeBooks(userId, entityId, period);
+    const books = await computeBooks(userId, entityId, period, null, fyStartIdx);
     // Per-entity canonical summaries (same period) so the portal's entity tabs reconcile.
     const summariesByEntity = {};
-    for (const er of entities.rows) summariesByEntity[er.id] = await computeBooks(userId, er.id, period);
+    for (const er of entities.rows) summariesByEntity[er.id] = await computeBooks(userId, er.id, period, null, fyStartIdx);
 
     // Accounts payable (unpaid bills), entity-scoped to match the selected view.
     const unpaidBills = bills.rows

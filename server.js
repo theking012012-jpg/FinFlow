@@ -1837,6 +1837,7 @@ app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
   if (b.date        != null) patch.date        = b.date;
   await db.updateById('journals', row.id, patch);
   const { rows: [_jr] } = await pool.query(`SELECT * FROM journals WHERE id = $1 LIMIT 1`, [row.id]);
+  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'journals', recordId: row.id, action: 'UPDATE', oldData: row, newData: _jr ? rowToObj(_jr) : { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
   res.json(_jr ? rowToObj(_jr) : {});
 }));
 app.delete('/api/journals/:id', requireAuth, wrap(async (req, res) => {
@@ -2329,6 +2330,7 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
     }
   }
   await db.updateById('bills', Number(req.params.id), patch);
+  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
   res.json({ ok: true });
 }));
 app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
@@ -2508,10 +2510,12 @@ app.put('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
   if (b.date     != null) patch.date     = b.date;
   if (b.method   != null) patch.method   = String(b.method).slice(0, 50);
   if (b.num      != null) patch.num      = String(b.num).slice(0, 30);
+  const { rows: [_srold] } = await pool.query(`SELECT * FROM sales_receipts WHERE id = $1 AND user_id = $2 LIMIT 1`, [Number(req.params.id), scopeId(req)]);
   await pool.query(
     `UPDATE sales_receipts SET data = data || $1::jsonb, updated_at = NOW() WHERE id = $2 AND user_id = $3`,
     [JSON.stringify(Object.fromEntries(Object.entries(patch).filter(([,v]) => v !== undefined))), Number(req.params.id), scopeId(req)]
   );
+  if (_srold) { const _o = rowToObj(_srold); await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
   res.json({ ok: true });
 }));
 app.delete('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
@@ -2574,10 +2578,14 @@ app.put('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
   if (b.date         != null) patch.date         = b.date;
   if (b.method       != null) patch.method       = String(b.method).slice(0, 50);
   const { rows: [_prchk] } = await pool.query(
-    `SELECT id FROM payments_received WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    `SELECT * FROM payments_received WHERE id = $1 AND user_id = $2 LIMIT 1`,
     [Number(req.params.id), scopeId(req)]
   );
-  if (_prchk) await db.updateById('payments_received', _prchk.id, patch);
+  if (_prchk) {
+    await db.updateById('payments_received', _prchk.id, patch);
+    const _o = rowToObj(_prchk);
+    await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'payments_received', recordId: _prchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
+  }
   res.json({ ok: true });
 }));
 app.delete('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
@@ -2637,10 +2645,14 @@ app.put('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
   if (b.status   != null) patch.status   = validStatuses.includes(b.status) ? b.status : 'Open';
   if (b.reason   != null) patch.reason   = String(b.reason).slice(0, 300);
   const { rows: [_cnchk] } = await pool.query(
-    `SELECT id FROM credit_notes WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    `SELECT * FROM credit_notes WHERE id = $1 AND user_id = $2 LIMIT 1`,
     [Number(req.params.id), scopeId(req)]
   );
-  if (_cnchk) await db.updateById('credit_notes', _cnchk.id, patch);
+  if (_cnchk) {
+    await db.updateById('credit_notes', _cnchk.id, patch);
+    const _o = rowToObj(_cnchk);
+    await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'credit_notes', recordId: _cnchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
+  }
   res.json({ ok: true });
 }));
 app.delete('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
@@ -2716,6 +2728,7 @@ app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
   // F38 Step 3: recalc every bill this payment touched — the old link and the new one (deduped),
   // so amount/link changes redraw AP on both the previous and current bill.
   for (const b of new Set([_oldBillId, _newBillId])) { if (b != null) await recalcBillStatus(pool, b, req.session.userId); }
+  { const _o = rowToObj(_pmchk); await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'payments_made', recordId: _pmchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
   res.json({ ok: true });
 }));
 app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
@@ -2784,10 +2797,14 @@ app.put('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
   if (b.status  != null) patch.status  = validStatuses.includes(b.status) ? b.status : 'Open';
   if (b.reason  != null) patch.reason  = String(b.reason).slice(0, 300);
   const { rows: [_vcchk] } = await pool.query(
-    `SELECT id FROM vendor_credits WHERE id = $1 AND user_id = $2 LIMIT 1`,
+    `SELECT * FROM vendor_credits WHERE id = $1 AND user_id = $2 LIMIT 1`,
     [Number(req.params.id), scopeId(req)]
   );
-  if (_vcchk) await db.updateById('vendor_credits', _vcchk.id, patch);
+  if (_vcchk) {
+    await db.updateById('vendor_credits', _vcchk.id, patch);
+    const _o = rowToObj(_vcchk);
+    await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'vendor_credits', recordId: _vcchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
+  }
   res.json({ ok: true });
 }));
 app.delete('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {

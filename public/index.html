@@ -4871,7 +4871,7 @@ async function markPayrollPaid(id){
 // (stays in history marked Voided, drops from the books). loadPayrollRuns() re-stashes
 // window.payrollRuns and triggers the financial refresh, so the KPI/chart update immediately.
 async function deletePayrollRun(id){
-  if(!confirm('Delete this draft payroll run? This cannot be undone.'))return;
+  if(!(await window._confirmModal('Delete this draft payroll run? This cannot be undone.', {danger:true})))return;
   try{
     const res=await fetch('/api/payroll-runs/'+id,{method:'DELETE',credentials:'include'});
     const d=await res.json().catch(()=>({}));
@@ -4881,7 +4881,7 @@ async function deletePayrollRun(id){
   }catch(e){notify('Could not delete run',true);}
 }
 async function voidPayrollRun(id){
-  if(!confirm('Void this payroll run? It stays in history marked Voided and stops counting in your books.'))return;
+  if(!(await window._confirmModal('Void this payroll run? It stays in history marked Voided and stops counting in your books.', {danger:true})))return;
   try{
     const res=await fetch('/api/payroll-runs/'+id+'/void',{method:'PUT',credentials:'include'});
     const d=await res.json().catch(()=>({}));
@@ -5130,7 +5130,7 @@ async function addFXRate(btn){
 }
 
 // In-app confirm modal (styled like the app; no native "railway.app says" dialog). Returns a
-// Promise<boolean>. Reusable — other native confirm() sites can migrate to it later.
+// Promise<boolean>. Reusable — other native (await window._confirmModal(, {danger:true})) sites can migrate to it later.
 window._confirmModal=function(message, opts){
   opts=opts||{};
   return new Promise(function(resolve){
@@ -6583,7 +6583,7 @@ async function renderAutocat(){
   }
 }
 window.deleteAutocatRule=async function(id){
-  if(!confirm('Delete this rule?'))return;
+  if(!(await window._confirmModal('Delete this rule?', {danger:true})))return;
   const res=await fetch('/api/autocat-rules/'+id,{method:'DELETE',credentials:'include'});
   if(res.ok){ renderAutocat(); window.finflow?.refresh(['banking','dashboard']); }else notify('Delete failed');
 };
@@ -7679,7 +7679,7 @@ window.sendMsgToAccountant = async function() {
     if (input) input.value = '';
     await window.loadAccountantMessages();
   } catch(e) {
-    alert('Failed to send: ' + e.message);
+    if(typeof notify==='function') notify('Failed to send: ' + e.message, true); else alert('Failed to send: ' + e.message);
   } finally {
     if (btn) btn.disabled = false;
     if (input) input.focus();
@@ -7725,8 +7725,8 @@ window.updateAccPermission = function(type, val) {
   if(typeof notify==='function') notify(`${type === 'view' ? 'View' : 'Filing'} access ${val ? 'granted' : 'revoked'}`);
 }
 
-window.revokeAccountant = function() {
-  if (!confirm('Are you sure you want to revoke this accountant\'s access?')) return;
+window.revokeAccountant = async function() {
+  if (!(await window._confirmModal('Are you sure you want to revoke this accountant\'s access?', {danger:true}))) return;
   linkedAccountant = null;
   const content = document.getElementById('my-acc-content');
   const access = document.getElementById('my-acc-access');
@@ -7740,9 +7740,9 @@ window.revokeAccountant = function() {
 }
 
 // ── 5b. REPORT ACCOUNTANT ────────────────────────────────────────────────────
-window.reportAccountant = function(accountantId, name) {
+window.reportAccountant = async function(accountantId, name) {
   // TODO: Replace with modal textarea — prompt() removed per audit Finding 34
-  if (!confirm(`Report this accountant to FinFlow? Our team will review within 24 hours.`)) return;
+  if (!(await window._confirmModal(`Report this accountant to FinFlow? Our team will review within 24 hours.`, {danger:true}))) return;
   const reason = 'Reported by client — details to be collected via support contact';
   fetch('/api/accountants/report', {
     method: 'POST', credentials: 'include',
@@ -7756,10 +7756,10 @@ window.reportAccountant = function(accountantId, name) {
 };
 
 // ── 5c. LEAVE REVIEW (shown in My Accountant page after payment) ─────────────
-window.leaveReview = function(accountantId) {
+window.leaveReview = async function(accountantId) {
   if (!accountantId) { if(typeof notify==='function') notify('No accountant linked'); return; }
   // TODO: Replace with star-rating modal — prompt() removed per audit Finding 34
-  if (!confirm('Leave a 5-star review for your accountant?')) return;
+  if (!(await window._confirmModal('Leave a 5-star review for your accountant?', {danger:true}))) return;
   const r = 5; // TODO: collect star rating from modal UI
   const comment = ''; // TODO: collect from modal textarea
   fetch('/api/accountants/review', {

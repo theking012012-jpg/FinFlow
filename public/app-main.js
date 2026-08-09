@@ -2930,7 +2930,7 @@ window.saveEditEmployee = async function(){
     if(typeof renderPayroll==='function') renderPayroll();
     notify('Employee updated ✦');
   }catch(e){
-    alert('Failed to save: '+e.message);
+    notify('Failed to save: '+e.message, true);  // C2: native alert → toast
   }finally{
     btn.disabled=false; btn.textContent='Save changes';
   }
@@ -2944,7 +2944,7 @@ window.deleteEmployee = async function(id){
   const emp = (window.payrollEmployees||[]).find(e=>(e._dbId||e.id)===id);
   if(!emp) return;
   const nm = ((emp.fname||'')+' '+(emp.lname||'')).trim() || 'this employee';
-  if(!confirm(`Delete ${nm} from payroll? This cannot be undone.`)) return;
+  if(!(await window._confirmModal(`Delete ${nm} from payroll? This cannot be undone.`, {danger:true}))) return;
   try{
     const res = await fetch('/api/payroll/'+id,{method:'DELETE',credentials:'include'});
     if(!res.ok) throw new Error((await res.text())||('HTTP '+res.status));
@@ -3319,7 +3319,7 @@ async function saveGoal(){
 }
 async function deletePersGoal(dbId){
   if(dbId==null) return;
-  if(!confirm('Delete this goal?')) return;
+  if(!(await window._confirmModal('Delete this goal?', {danger:true}))) return;
   try{
     const res=await fetch('/api/goals/'+dbId,{method:'DELETE',credentials:'include'});
     if(!res.ok) throw new Error('Failed');
@@ -4092,7 +4092,7 @@ window.saveAccount=async function(){
   }catch(e){ notify('Could not save — '+(e.message||'error'),true); }
 };
 window.deletePersAccount=async function(id){
-  if(!confirm('Delete this account?')) return;
+  if(!(await window._confirmModal('Delete this account?', {danger:true}))) return;
   try{
     const r=await fetch('/api/personal-accounts/'+id,{method:'DELETE',credentials:'include'});
     if(!r.ok) throw new Error('Failed');
@@ -4668,10 +4668,10 @@ function saveCustomer(){
   else{data.id=nextCustId++;customers.push(data);notify('Customer added');}
   closeModal('customer-modal');renderCustomers(document.getElementById('cust-search').value);
 }
-function deleteCustomer(){
+async function deleteCustomer(){
   const id=Number(document.getElementById('cust-edit-id').value);
   if(!id)return;
-  if(!confirm('Delete this customer? This cannot be undone.'))return;
+  if(!(await window._confirmModal('Delete this customer? This cannot be undone.', {danger:true})))return;
   customers=customers.filter(c=>c.id!==id);
   closeModal('customer-modal');renderCustomers();notify('Customer deleted');
 }
@@ -5696,7 +5696,7 @@ async function renderDocuments(){
 function filterDocs(f){docsFilter=f;renderDocuments();}
 async function downloadDoc(id){window.open('/api/documents/'+id+'/download','_blank');}
 async function deleteDoc(id){
-  if(!confirm('Delete this document?'))return;
+  if(!(await window._confirmModal('Delete this document?', {danger:true})))return;
   const res=await fetch('/api/documents/'+id,{method:'DELETE',credentials:'include'});
   if(res.ok){ renderDocuments(); window.finflow?.refresh(['documents','dashboard']); }else notify('Delete failed');
 }

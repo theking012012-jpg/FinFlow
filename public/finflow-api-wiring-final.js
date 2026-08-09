@@ -255,7 +255,7 @@
 
     // deleteHolding — resolves the row's portfolio (personal or business) and repaints that one.
     window.deleteHolding = async function (id) {
-      if (!confirm('Remove this holding? This cannot be undone.')) return;
+      if (!(await window._confirmModal('Remove this holding? This cannot be undone.', {danger:true}))) return;
       let h = (window.holdings || window.portfolioHoldings || []).find(x => x.id === id);
       let scope = 'personal';
       if (!h) { h = (window.bizHoldings || []).find(x => x.id === id); if (h) scope = 'business'; }

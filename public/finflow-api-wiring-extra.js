@@ -214,7 +214,7 @@
   };
 
   window.deleteTimesheetEntry = async function (id) {
-    if (!confirm('Delete this time entry?')) return;
+    if (!(await window._confirmModal('Delete this time entry?', {danger:true}))) return;
     try {
       await api('DELETE', `/api/timesheet/${id}`);
       _tsData = _tsData.filter(t => t.id !== id);
@@ -492,7 +492,7 @@
   };
 
   window.deleteProject = async function (id) {
-    if (!confirm('Delete this project?')) return;
+    if (!(await window._confirmModal('Delete this project?', {danger:true}))) return;
     try {
       await api('DELETE', `/api/projects/${id}`);
       _projects = _projects.filter(p => p.id !== id);

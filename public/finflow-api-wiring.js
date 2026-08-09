@@ -264,7 +264,7 @@
     window.deleteCustomer = async function () {
       const id = Number(document.getElementById('cust-edit-id')?.value);
       if (!id) return;
-      if (!confirm('Delete this customer? This cannot be undone.')) return;
+      if (!(await window._confirmModal('Delete this customer? This cannot be undone.', {danger:true}))) return;
 
       const cust = (window.customers || []).find(c => c.id === id);
       const dbId = cust?._dbId || id;

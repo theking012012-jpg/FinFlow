@@ -185,7 +185,7 @@
     window.deleteInvoice = async function (idx) {
       const inv = window.userInvoices[idx];
       if (!inv) return;
-      if (!confirm(`Delete invoice for ${inv.client}? This cannot be undone.`)) return;
+      if (!(await window._confirmModal(`Delete invoice for ${inv.client}? This cannot be undone.`, {danger:true}))) return;
       try {
         if (inv._dbId) await api('DELETE', `/api/invoices/${inv._dbId}`);
         window.userInvoices.splice(idx, 1);
@@ -338,7 +338,7 @@
     window.deleteExpense = async function (idx) {
       const exp = window.bizExpenses[idx];
       if (!exp) return;
-      if (!confirm(`Delete expense "${exp.desc}"? This cannot be undone.`)) return;
+      if (!(await window._confirmModal(`Delete expense "${exp.desc}"? This cannot be undone.`, {danger:true}))) return;
       try {
         if (exp._dbId) await api('DELETE', `/api/expenses/${exp._dbId}`);
         window.bizExpenses.splice(idx, 1);
@@ -525,7 +525,7 @@
     window.deleteInventoryItem = async function (idx) {
       const item = window.inventory[idx];
       if (!item) return;
-      if (!confirm(`Delete "${item.name}" from inventory? This cannot be undone.`)) return;
+      if (!(await window._confirmModal(`Delete "${item.name}" from inventory? This cannot be undone.`, {danger:true}))) return;
       try {
         if (item._dbId) await api('DELETE', `/api/inventory/${item._dbId}`);
         window.inventory.splice(idx, 1);
@@ -1018,7 +1018,7 @@
     window.deleteItem = async function (dbId) {
       const item = (window.itemsData || []).find(i => i._dbId === dbId);
       if (!item) return;
-      if (!confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
+      if (!(await window._confirmModal(`Delete "${item.name}"? This cannot be undone.`, {danger:true}))) return;
       try {
         await api('DELETE', `/api/items/${dbId}`);
         window.itemsData = (window.itemsData || []).filter(i => i._dbId !== dbId);

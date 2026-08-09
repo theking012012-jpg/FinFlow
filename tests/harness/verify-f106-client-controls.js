@@ -53,6 +53,7 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
 
     // Clicking Void fires exactly one PUT to /void (confirm auto-accepted).
     window.confirm = () => true;
+    window._confirmModal = () => Promise.resolve(true);   // C2: void/delete now use the in-app modal
     writes.length = 0;
     await window.voidPayrollRun(2); await settle(2, 60);
     A('voidPayrollRun(2) → exactly one PUT to /api/payroll-runs/2/void', writes.length === 1 && /\/api\/payroll-runs\/2\/void$/.test(writes[0]), `writes=${JSON.stringify(writes)}`);

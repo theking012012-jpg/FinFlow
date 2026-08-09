@@ -119,7 +119,7 @@
 
     window.deleteQuote = async function (id) {
       const q = _quotesData.find(r => r.id === id);
-      if (!q || !confirm(`Delete quote for ${q.client}? This cannot be undone.`)) return;
+      if (!q || !(await window._confirmModal(`Delete quote for ${q.client}? This cannot be undone.`, {danger:true}))) return;
       try {
         await api('DELETE', `/api/quotes/${id}`);
         _quotesData = _quotesData.filter(r => r.id !== id);
@@ -220,7 +220,7 @@
     };
 
     window.deleteReceipt = async function (id) {
-      if (!confirm('Delete this receipt? This cannot be undone.')) return;
+      if (!(await window._confirmModal('Delete this receipt? This cannot be undone.', {danger:true}))) return;
       try {
         await api('DELETE', `/api/sales-receipts/${id}`);
         _receiptsData = _receiptsData.filter(r => r.id !== id);
@@ -363,7 +363,7 @@
     // pending the step-3 write-path decision — not deleted, so re-wiring it later is a one-line
     // change, not a rewrite.
     window.deletePaymentReceived = async function (id) {
-      if (!confirm('Delete this payment record? This cannot be undone.')) return;
+      if (!(await window._confirmModal('Delete this payment record? This cannot be undone.', {danger:true}))) return;
       try {
         await api('DELETE', `/api/payments-received/${id}`);
         _paymentsRecvData = _paymentsRecvData.filter(r => r.id !== id);
@@ -454,7 +454,7 @@
     };
 
     window.deleteRecurringInvoice = async function (id) {
-      if (!confirm('Delete this recurring profile? This cannot be undone.')) return;
+      if (!(await window._confirmModal('Delete this recurring profile? This cannot be undone.', {danger:true}))) return;
       try {
         await api('DELETE', `/api/recurring-invoices/${id}`);
         _recurringInvData = _recurringInvData.filter(r => r.id !== id);
@@ -556,7 +556,7 @@
     };
 
     window.deleteCreditNote = async function (id) {
-      if (!confirm('Delete this credit note? This cannot be undone.')) return;
+      if (!(await window._confirmModal('Delete this credit note? This cannot be undone.', {danger:true}))) return;
       try {
         await api('DELETE', `/api/credit-notes/${id}`);
         _creditNotesData = _creditNotesData.filter(r => r.id !== id);
@@ -654,7 +654,7 @@
 
     window.deleteVendor = async function (id) {
       const v = _vendorsData.find(r => r.id === id);
-      if (!v || !confirm(`Delete vendor ${v.name}? This cannot be undone.`)) return;
+      if (!v || !(await window._confirmModal(`Delete vendor ${v.name}? This cannot be undone.`, {danger:true}))) return;
       try {
         await api('DELETE', `/api/vendors/${id}`);
         _vendorsData = _vendorsData.filter(r => r.id !== id);
@@ -837,7 +837,7 @@
     };
 
     window.deleteBill = async function (id) {
-      if (!confirm('Delete this bill? This cannot be undone.')) return;
+      if (!(await window._confirmModal('Delete this bill? This cannot be undone.', {danger:true}))) return;
       try {
         await api('DELETE', `/api/bills/${id}`);
         _billsData = _billsData.filter(r => r.id !== id);
@@ -974,7 +974,7 @@
     };
 
     window.deletePaymentMade = async function (id) {
-      if (!confirm('Delete this payment record? This cannot be undone.')) return;
+      if (!(await window._confirmModal('Delete this payment record? This cannot be undone.', {danger:true}))) return;
       try {
         await api('DELETE', `/api/payments-made/${id}`);
         _paymentsMadeData = _paymentsMadeData.filter(r => r.id !== id);
@@ -1067,7 +1067,7 @@
     };
 
     window.deleteRecurringBill = async function (id) {
-      if (!confirm('Delete this recurring profile? This cannot be undone.')) return;
+      if (!(await window._confirmModal('Delete this recurring profile? This cannot be undone.', {danger:true}))) return;
       try {
         await api('DELETE', `/api/recurring-bills/${id}`);
         _recurringBillsData = _recurringBillsData.filter(r => r.id !== id);
@@ -1149,7 +1149,7 @@
     };
 
     window.deleteVendorCredit = async function (id) {
-      if (!confirm('Delete this vendor credit? This cannot be undone.')) return;
+      if (!(await window._confirmModal('Delete this vendor credit? This cannot be undone.', {danger:true}))) return;
       try {
         await api('DELETE', `/api/vendor-credits/${id}`);
         _vendorCreditsData = _vendorCreditsData.filter(r => r.id !== id);

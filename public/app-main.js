@@ -687,6 +687,7 @@ async function doLogin(){
     const res = await fetch('/api/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:pw})});
     const data = await res.json();
     if(!res.ok){ if(errEl) errEl.textContent=data.error||'Sign-in failed.'; return; }
+    if(data.today) window._serverToday = data.today; // F116: prime server-truth date on fresh login (mirrors auth/me path)
     const r = 'owner';
     currentRole = r;
     sessionStorage.setItem('ff_role', r);

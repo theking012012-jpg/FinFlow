@@ -556,7 +556,12 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       [new Date().toISOString(), user.id]
     );
     await saveSession(req);   // F134: durable session row before the response (else immediate GETs 401)
-    res.json({ user: safeUser(user) });
+    // F116: prime the client's server-truth "today" on the FRESH-LOGIN path too, exactly as
+    // GET /api/auth/me does on session-restore. Without it, window._serverToday is unset right
+    // after a new login and the Record Payment modal sits in its blocked "loading…" date state
+    // until a navigation/reload hits the auth/me path. Same source (server resolvedToday), so no
+    // new tz basis is introduced.
+    res.json({ user: safeUser(user), today: FinFlowDates.resolvedToday(new Date()) });
   } catch (err) {
     console.error('[Login] Unexpected error:', err);
     res.status(500).json({ error: 'Login failed. Please try again.' });
@@ -2691,7 +2696,11 @@ app.delete('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
 
 // ── PAYMENTS MADE ─────────────────────────────────────────────────────────────
 app.get('/api/payments-made', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('payments_made', req.session.userId));
+  // F142: entity-scope the list like /api/invoices, /api/expenses, /api/bills, /api/sales-receipts
+  // already do (null-inclusive, so legacy null-entity rows still show). Was user-scoped only, so a
+  // multi-entity owner saw every entity's payments-made rows on each entity's page. Display-only —
+  // the payments_made money reads (P&L, cash-flow, computeBooks) were already entity-scoped.
+  res.json(await db.allByUser('payments_made', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, date, method, notes, ref, bill_id } = req.body || {};

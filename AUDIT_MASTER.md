@@ -2934,6 +2934,14 @@ Instance of the **F75** class (fixes/features stranded on shadowed dead function
 
 ---
 
+### F144 ✅ FIXED (2026-08-09; executed) — was 🟡 MEDIUM — `final5.js` was a graveyard of dead-shadow money subsystems (Failure #1 class; sibling of F136/F143)
+**Status:** ✅ **FIXED.** After F136 (Payments-Made) and F143 (delete-fn copies), a live-function introspection enumeration showed `final5.js` still carried **four more** dead-shadow subsystems — every `render*`/`openNew*Modal`/`save*` overridden by a `window.NAME=` winner in `pages.js` (loaded later in the bundle): **Sales Receipts, Payments Received, Credit Notes, Vendor Credits**. All deleted (~24 functions + 4 `_*` state vars), leaving only the genuinely-live content: shared helpers (`apiFetch`/`fmtMoney`/`fmtDate`/`nextNum`/`_sv`/`_st`) and the AI chat section (`renderAIPage`/`sendAIMessage`/`clearAIChat`/`escHTML`). final5.js: ~450 → 146 lines.
+
+**Verified SAFE-first, per subsystem:** each had its 3 pages.js winners; each money `window.X` var — `receipts`→revenue (app-main:1952/dashboard:72), `creditNotes` (app-main:1965), `vendorCredits` (app-main:1797), `paymentsReceived` — is **boot-loaded by pages.js's own loader** (top-level `loadX()` inside the pages.js IIFE). The committed final5 only called `loadX()` inside its dead `render*` functions (page-nav), so it was NEVER the boot populator — deleting it changes nothing. Every `openEdit*Modal` had no pages.js winner and no live caller (only the dead final5 render's Edit button; the live pages.js renders have no Edit affordance). **Executed after removal:** bundle in sync; `verify-f144-receipts` 8/8 + `verify-f144-remaining` 14/14 (winners survive, all 4 money vars populated by pages.js, edit affordances gone, AI section live, no SyntaxError); step4-client 5/5 (all money figures incl. credit-note/vendor-credit contras unchanged). A key catch: the money-var checks first failed on a too-short jsdom settle, which forced *proving* pages.js is the boot-loader rather than assuming the money was intact.
+**Follow-up (optional):** `fmtMoney`/`fmtDate`/`nextNum` may now be orphaned (they served the deleted tables) — harmless dead helpers, a future tidy.
+
+---
+
 ### F30 🟢 LOW — Permissions matrix is display-only
 **Status:** OPEN, honestly labelled. `/api/permissions` persists per-account edits to `user_settings` (`server.js:3138`) but enforcement uses the fixed code matrix in `rbac.js`. The grid is relabelled read-only "role defaults" (`index.html:1511`), so it is not a lie — but the route still accepts and stores writes nothing reads.
 **Course of action:** post-launch — either enforce the stored matrix in `requirePerm`, or delete `POST /api/permissions` so nothing pretends to save.

@@ -2923,6 +2923,13 @@ Found while enumerating F26's class. `GET /api/payments-made` (server.js:2602) r
 
 ---
 
+### F143 🟢 LOW — Dead (shadowed) delete-function copies retain native `confirm()` after the C2 migration — **NEW (2026-08-09), OPEN**
+Instance of the **F75** class (fixes/features stranded on shadowed dead functions). During C2 (native `confirm()`/`alert()` → in-app `_confirmModal`/`notify`, committed `1e154e8`), runtime introspection (`tests/harness/c2-runtime-dialog-scan.js` — boots the SPA and reads each LIVE `window.*` function body) confirmed **0 native dialogs at runtime**: every user-reachable confirm/alert is now the in-app modal/toast. But **10 native `confirm()` calls remain in dead copies that never execute** — `finflow-api-wiring-final5.js` (`deleteReceipt`/`deletePaymentReceived`/`deleteCreditNote`/`deletePaymentMade`/`deleteVendorCredit`, 5) and `finflow-api-wiring-stubs.js` (`deleteQuote`/`deleteVendor`/`deleteBill`/`deleteRecurringBill`/`deleteRecurringInvoice`, 5). All are overridden at runtime by `finflow-api-wiring-pages.js` (later in bundle load order), whose copies WERE migrated to `_confirmModal`. They were **deliberately not edited** — editing a shadowed copy is the Rule 1 trap (a clean diff that never runs; it cost a full detour this session before the introspection scan caught it).
+**Course of action:** DELETE the dead shadowed copies entirely — the F125 / `91db2d7` pattern ("remove the second writer, not patch it"), which also erases the residual native confirms as a side effect. This is dead-code *removal*, its own commit, not part of the confirm migration.
+**Done when:** the final5.js/stubs.js dead delete copies are removed; `bundle:check` green; and `c2-runtime-dialog-scan` + `verify-f106-client-controls` stay green (proving the winning pages.js copies still serve every delete with 0 native dialogs and zero runtime behaviour change).
+
+---
+
 ### F30 🟢 LOW — Permissions matrix is display-only
 **Status:** OPEN, honestly labelled. `/api/permissions` persists per-account edits to `user_settings` (`server.js:3138`) but enforcement uses the fixed code matrix in `rbac.js`. The grid is relabelled read-only "role defaults" (`index.html:1511`), so it is not a lie — but the route still accepts and stores writes nothing reads.
 **Course of action:** post-launch — either enforce the stored matrix in `requirePerm`, or delete `POST /api/permissions` so nothing pretends to save.

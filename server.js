@@ -901,6 +901,7 @@ app.get('/api/entities', requireAuth, wrap(async (req, res) => {
 app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const { name, currency = 'USD', color = '#c9a84c' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Name is required.' });
+  if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + name).
   const _dup = await findRecentDuplicate('entities', req.session.userId, null, { textMatch: { name: name.trim().slice(0,100) } });
   if (_dup) return res.status(200).json(_dup);
@@ -921,6 +922,7 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
   const row = await ownedBy('entities', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const { name, currency, color } = req.body || {};
+  if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
   await db.updateById('entities', row.id, { ...(name && {name}), ...(currency && {currency}), ...(color && {color}) });
   const { rows: [_er] } = await pool.query(`SELECT * FROM entities WHERE id = $1 LIMIT 1`, [row.id]);
   await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'UPDATE', oldData: row, newData: _er ? rowToObj(_er) : null, req });  // F90 Phase B
@@ -958,6 +960,19 @@ app.get('/api/invoices', requireAuth, wrap(async (req, res) => {
 const INVOICE_STATUSES = new Set(['pending', 'overdue', 'partial', 'paid', 'draft']);
 const BILL_STATUSES    = new Set(['unpaid', 'due_soon', 'overdue', 'partial', 'paid']);
 const _badStatus = (set, v) => v != null && !set.has(String(v).toLowerCase());
+
+// C5: currency + ticker input validation. An invalid currency code silently breaks every downstream
+// FX lookup; a junk ticker corrupts a holding. CURRENCY_CODES is the runtime's own ISO 4217 table
+// (Intl) — authoritative and a superset of the UI's currency dropdown, so no legitimate currency is
+// rejected; the fallback covers the UI's 22 codes if Intl lacks the API. _badCurrency is strict
+// (canonical uppercase, as the dropdown submits); the fx-rate/fx-transaction routes, which accept
+// lowercase and uppercase it themselves, pass their value through String(v).toUpperCase() at the guard.
+const CURRENCY_CODES = (() => {
+  try { return new Set(Intl.supportedValuesOf('currency')); }
+  catch { return new Set(['USD','EUR','GBP','JPY','CAD','AUD','CHF','CNY','INR','TTD','NGN','ZAR','BRL','MXN','SGD','HKD','NZD','SEK','NOK','DKK','AED','SAR']); }
+})();
+const _badCurrency = v => v != null && v !== '' && !CURRENCY_CODES.has(String(v));
+const TICKER_RE = /^[A-Z0-9.\-]{1,20}$/;
 app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, due_date, status = 'pending', notes = '', entity_id, issue_date } = req.body || {};
   if (!client || amount == null) return res.status(400).json({ error: 'client and amount required.' });
@@ -1347,6 +1362,7 @@ app.get('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
 app.post('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
   const { description, category = 'Other', amount, tx_type = 'expense', tx_date, recurring_profile_id = null, currency = 'USD' } = req.body || {};
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
+  if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
   const _dup = await findRecentDuplicate('personal_transactions', req.session.userId, null, { textMatch: { description: description.trim().slice(0,300) }, numMatch: { amount: parseFloat(amount)||0 } });
   if (_dup) return res.status(200).json(_dup);
   // recurring_profile_id links this occurrence to the recurring profile it came
@@ -1365,7 +1381,7 @@ app.put('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => 
   if (b.amount != null)      patch.amount      = parseFloat(b.amount) || 0;
   if (b.tx_type != null)     patch.tx_type     = b.tx_type;
   if (b.tx_date != null)     patch.tx_date     = b.tx_date;
-  if (b.currency != null)    patch.currency    = String(b.currency);
+  if (b.currency != null)  { if (_badCurrency(b.currency)) return res.status(400).json({ error: 'Invalid currency code.' }); patch.currency = String(b.currency); }
   // Allow (re)linking or clearing the recurring profile on edit — null unlinks.
   if (b.recurring_profile_id !== undefined) patch.recurring_profile_id = b.recurring_profile_id != null ? Number(b.recurring_profile_id) : null;
   await db.updateById('personal_transactions', row.id, patch);
@@ -1576,6 +1592,7 @@ app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
 app.post('/api/holdings', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.ticker || b.shares == null) return res.status(400).json({ error: 'ticker and shares required.' });
+  if (!TICKER_RE.test(String(b.ticker).trim().toUpperCase().slice(0, 20))) return res.status(400).json({ error: 'Invalid ticker.' });
   // Row scope: personal → entity_id NULL (forced, even when a business entity is active in
   // session — otherwise a personal add would silently inherit it); business → the active entity
   // (rejected if none is active); legacy (no scope) → prior behavior.
@@ -1593,7 +1610,8 @@ app.put('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
   const b = req.body || {};
-  ['ticker','name','asset_type','color'].forEach(f => { if (b[f] != null) patch[f] = b[f]; });
+  ['name','asset_type','color'].forEach(f => { if (b[f] != null) patch[f] = b[f]; });
+  if (b.ticker != null) { const _tk = String(b.ticker).trim().toUpperCase().slice(0, 20); if (!TICKER_RE.test(_tk)) return res.status(400).json({ error: 'Invalid ticker.' }); patch.ticker = _tk; }
   ['shares','cost_per','price','dividend'].forEach(f => { if (b[f] != null) patch[f] = parseFloat(b[f]); });
   await db.updateById('holdings', row.id, patch);
   const { rows: [_hldr] } = await pool.query(`SELECT * FROM holdings WHERE id = $1 LIMIT 1`, [row.id]);
@@ -2403,6 +2421,7 @@ app.get('/api/recurring-personal-transactions', requireAuth, wrap(async (req, re
 app.post('/api/recurring-personal-transactions', requireAuth, wrap(async (req, res) => {
   const { description, category = 'Other', amount, tx_type = 'expense', frequency = 'Monthly', next_run, status = 'active', end_date = null, currency = 'USD' } = req.body || {};
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
+  if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
   const _dup = await findRecentDuplicate('recurring_personal_transactions', req.session.userId, null, { textMatch: { description: String(description).trim().slice(0,300), frequency: String(frequency) }, numMatch: { amount: parseFloat(amount)||0 } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('recurring_personal_transactions', { user_id: req.session.userId, description: String(description).trim().slice(0, 300), category, amount: parseFloat(amount)||0, tx_type, frequency, next_run, status, end_date: end_date || null, currency: String(currency || 'USD') });
@@ -2424,7 +2443,7 @@ app.put('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req
   if (frequency != null) patch.frequency = frequency;
   if (status != null) patch.status = status;
   if (end_date !== undefined) patch.end_date = end_date || null;
-  if (currency != null) patch.currency = String(currency);
+  if (currency != null) { if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' }); patch.currency = String(currency); }
   await db.updateById('recurring_personal_transactions', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
@@ -5287,6 +5306,7 @@ app.get('/api/fx-rates', requireAuth, wrap(async (req, res) => {
 app.post('/api/fx-rates', requireAuth, wrap(async (req, res) => {
   const { from_currency, to_currency, rate, rate_date } = req.body || {};
   if (!from_currency || !to_currency || !rate) return res.status(400).json({ error: 'from_currency, to_currency, rate required' });
+  if (!CURRENCY_CODES.has(String(from_currency).toUpperCase()) || !CURRENCY_CODES.has(String(to_currency).toUpperCase())) return res.status(400).json({ error: 'Invalid currency code.' });
   const _from = from_currency.toUpperCase(), _to = to_currency.toUpperCase();
   const _rate = parseFloat(rate), _date = rate_date || new Date().toISOString().slice(0, 10);
   // Recent-duplicate guard (mirrors findRecentDuplicate's 5s spirit, on fx_rates' TYPED columns —
@@ -5337,6 +5357,7 @@ app.post('/api/fx-transactions', requireAuth, wrap(async (req, res) => {
   if (!foreign_currency || !foreign_amount || !rate_at_transaction) {
     return res.status(400).json({ error: 'foreign_currency, foreign_amount, rate_at_transaction required' });
   }
+  if (!CURRENCY_CODES.has(String(foreign_currency).toUpperCase())) return res.status(400).json({ error: 'Invalid currency code.' });
   const fAmt = parseFloat(foreign_amount);
   const rate = parseFloat(rate_at_transaction);
   const baseAmount = Math.round(fAmt * rate * 100) / 100;

@@ -2994,6 +2994,21 @@ After final5.js was cleared (F136/F144), `stubs.js` is the other shadow graveyar
 
 ---
 
+### F147 🟡 MEDIUM — session-restore never applied the user's plan → business users re-gated at the trial cap on reload — **FIXED (2026-08-09), EXECUTED**
+**Found by the owner** while upgrading to business to test dual entities: after the upgrade the app still showed the "Multiple Entities requires the Business plan" modal. Root cause: `currentUserPlan` (app-main.js) defaults to `'trial'` and was set from `data.user.plan` ONLY in the fresh-login and register handlers. The **session-restore path** (`finflow-api-wiring-final.js`, `GET /api/auth/me`, runs on every page load with an existing session) set `_serverToday` but **never set `currentUserPlan` or `CURRENT_USER`** — and can't reach the app-main `let` directly. So any page RELOAD left the client at the trial cap (entity limit 1) regardless of the real plan; the server (which reads the DB plan) would have allowed the create, but the client modal blocked it first. Exact mirror of F116 (session-restore vs fresh-login parity).
+**Fix (Rule 13 — single mechanism):** added `window._applySessionUser(user)` in app-main.js (sets plan + `CURRENT_USER` + sidebar label); routed all three auth paths (login, register, session-restore) through it. Verified by execution (`verify-f147-plan-on-restore.js`, 5/5): seed a business user, boot through the restore path, `CURRENT_USER.plan==='business'` and the label reads "Business plan"; the setter re-applies a different plan too (proving single-source).
+**Data note:** the pooler DB shows the owner's account (`theking012012@gmail.com`, id 1) already at `plan:'business'`; the bug was purely the client not reflecting it on reload. Workaround pre-deploy: an explicit Logout + form Sign-in (the fresh-login path already set the plan).
+
+---
+
+### F146 🟡 MEDIUM — cross-entity LIST leak on 5 endpoints (the F142 class, fully enumerated) — **FIXED (2026-08-09), EXECUTED**
+**Found by an automated dual-entity leakage sweep** (`verify-entity-leakage-sweep.js`) built to answer the owner's "test dual entities for data leakage". F142 fixed `payments-made` but was one instance; enumerating every entity_id-bearing list surface (Rule 13) and EXECUTING against two seeded entities found **5 more lists returning the other entity's rows**: `items` (/api/items), `quotes` (/api/quotes), `recurring_bills` (/api/recurring-bills), `recurring_invoices` (/api/recurring-invoices), `payments_received` (/api/payments-received). 13 sibling surfaces were already correctly scoped.
+**Severity: display-only.** Each of the 5 tables is read ONLY at its list endpoint — none feed computeBooks/reports/cash-flow/P&L (checked), so no money figure was wrong; a multi-entity owner merely saw other entities' rows in these lists.
+**Fix:** the same null-inclusive predicate the scoped siblings use, on all 5 endpoints. Verified by execution: the sweep now reports **18/18 scoped, 0 leaks** (was 5 leaks). The sweep is retained as a standing regression guard for the whole class.
+**Out of scope (logged, not fixed here):** `credit_notes` stores NO `entity_id` at all (user-level) — a different shape; if credit notes are ever meant to be per-entity, that is a schema change + backfill (Rule 8), not a predicate. Flagged for a separate decision.
+
+---
+
 ### F30 🟢 LOW — Permissions matrix is display-only
 **Status:** OPEN, honestly labelled. `/api/permissions` persists per-account edits to `user_settings` (`server.js:3138`) but enforcement uses the fixed code matrix in `rbac.js`. The grid is relabelled read-only "role defaults" (`index.html:1511`), so it is not a lie — but the route still accepts and stores writes nothing reads.
 **Course of action:** post-launch — either enforce the stored matrix in `requirePerm`, or delete `POST /api/permissions` so nothing pretends to save.

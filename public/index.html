@@ -4223,7 +4223,7 @@ function renderBudget(){
         <div class="budget-actual" style="width:${pct}%;background:${over?'var(--red)':r.color}"></div>
         <div class="budget-marker" style="left:100%"></div>
       </div>
-      <span class="budget-vals" style="font-family:var(--font-mono);font-size:11px">${window._fmtMoney(r.actual,'$')} / ${window._fmtMoney(r.budget,'$')}</span>
+      <span class="budget-vals" style="font-family:var(--font-mono);font-size:11px">${window._fmtMoney(r.actual,window._nativeSymbol())} / ${window._fmtMoney(r.budget,window._nativeSymbol())}</span>
       <span class="budget-variance" style="color:${varColor}">${varStr}</span>
     </div>`;
   }).join('');

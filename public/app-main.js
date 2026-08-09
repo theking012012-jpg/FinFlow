@@ -1089,8 +1089,8 @@ function updateJETotals(){
   const lines = window._jeLines;
   const totalDr = lines.reduce((s,l)=>s+(l.dr||0),0);
   const totalCr = lines.reduce((s,l)=>s+(l.cr||0),0);
-  document.getElementById('je-total-dr').textContent = '$'+totalDr.toLocaleString(undefined,{minimumFractionDigits:2});
-  document.getElementById('je-total-cr').textContent = '$'+totalCr.toLocaleString(undefined,{minimumFractionDigits:2});
+  document.getElementById('je-total-dr').textContent = _nativeSymbol()+totalDr.toLocaleString(undefined,{minimumFractionDigits:2});  // F129: entity symbol, not literal $
+  document.getElementById('je-total-cr').textContent = _nativeSymbol()+totalCr.toLocaleString(undefined,{minimumFractionDigits:2});  // F129
   const balanced = Math.abs(totalDr - totalCr) < 0.01 && totalDr > 0;
   const balEl = document.getElementById('je-balanced');
   balEl.textContent = balanced ? '✓ Balanced' : 'Not balanced';
@@ -1217,8 +1217,8 @@ async function renderJournalsLive(){
         <span style="color:var(--t3)">${esc(j.date||'')}</span>
         <span style="font-weight:500">${esc(j.notes||j.description||'')}</span>
         <span style="color:var(--t3)">${esc(j.ref||'')}</span>
-        <span style="font-family:var(--font-mono);color:var(--red)">$${(j.debit||0).toLocaleString()}</span>
-        <span style="font-family:var(--font-mono);color:var(--green)">$${(j.credit||0).toLocaleString()}</span>
+        <span style="font-family:var(--font-mono);color:var(--red)">${_nativeSymbol()}${(j.debit||0).toLocaleString()}</span>
+        <span style="font-family:var(--font-mono);color:var(--green)">${_nativeSymbol()}${(j.credit||0).toLocaleString()}</span>
         <span><span class="badge ${(j.status||'Draft')==='Posted'?'b-green':'b-amber'}">${esc(j.status||'Draft')}</span></span>
       </div>`).join('');
   }catch(e){
@@ -1227,8 +1227,8 @@ async function renderJournalsLive(){
       <div class="table-row" style="grid-template-columns:90px 1fr 80px 80px 80px 70px">
         <span style="color:var(--t3)">${esc(j.date||'')}</span><span style="font-weight:500">${esc(j.notes||'')}</span>
         <span style="color:var(--t3)">${esc(j.ref||'')}</span>
-        <span style="font-family:var(--font-mono);color:var(--red)">$${(j.debit||0).toLocaleString()}</span>
-        <span style="font-family:var(--font-mono);color:var(--green)">$${(j.credit||0).toLocaleString()}</span>
+        <span style="font-family:var(--font-mono);color:var(--red)">${_nativeSymbol()}${(j.debit||0).toLocaleString()}</span>
+        <span style="font-family:var(--font-mono);color:var(--green)">${_nativeSymbol()}${(j.credit||0).toLocaleString()}</span>
         <span><span class="badge ${j.status==='Posted'?'b-green':'b-amber'}">${j.status}</span></span>
       </div>`).join('');
   }
@@ -2905,7 +2905,7 @@ window.closeEditEmployee = function(){
 window.previewEditEmpNet = function(){
   const gross = parseFloat(document.getElementById('edit-emp-gross')?.value)||0;
   const el = document.getElementById('edit-emp-net-preview');
-  if(el) el.textContent = gross>0 ? '$'+netFromDeductions(gross, readDedRows('edit-emp-deductions-rows')).toLocaleString() : '—';
+  if(el) el.textContent = gross>0 ? _nativeSymbol()+netFromDeductions(gross, readDedRows('edit-emp-deductions-rows')).toLocaleString() : '—';  // F129
 };
 
 window.saveEditEmployee = async function(){
@@ -3770,7 +3770,7 @@ function previewEmpNet(){
   const gross=parseFloat(document.getElementById('emp-gross')?.value)||0;
   const net=netFromDeductions(gross, readDedRows('emp-deductions-rows'));
   const el=document.getElementById('emp-net-preview');
-  if(el) el.textContent=gross>0?'$'+net.toLocaleString():'—';
+  if(el) el.textContent=gross>0?_nativeSymbol()+net.toLocaleString():'—';  // F129
 }
 
 async function saveNewEmployee(){
@@ -5455,8 +5455,8 @@ function renderJournals(){
       <span style="color:var(--t3)">${esc(j.date||'')}</span>
       <span style="font-weight:500">${esc(j.notes||'')}</span>
       <span style="color:var(--t3)">${esc(j.ref||'')}</span>
-      <span style="font-family:var(--font-mono);color:var(--red)">$${(j.debit||0).toLocaleString()}</span>
-      <span style="font-family:var(--font-mono);color:var(--green)">$${(j.credit||0).toLocaleString()}</span>
+      <span style="font-family:var(--font-mono);color:var(--red)">${_nativeSymbol()}${(j.debit||0).toLocaleString()}</span>
+      <span style="font-family:var(--font-mono);color:var(--green)">${_nativeSymbol()}${(j.credit||0).toLocaleString()}</span>
       <span><span class="badge ${j.status==='Posted'?'b-green':'b-amber'}">${j.status}</span></span>
     </div>`).join('');
 }

@@ -37,6 +37,33 @@ Working rules for changing this codebase live in [`CLAUDE.md`](CLAUDE.md) — th
 
 ---
 
+## ✅ 2026-08-09 RECONCILIATION — verified-fixed rows (authoritative; supersedes stale headers below)
+
+A finding-by-finding reconciliation on 2026-08-09 found many row headers/bodies below are **badly stale** —
+HIGH/CRITICAL findings that shipped and were verified but were never ticked. **For the findings listed here,
+THIS block is authoritative: treat them as ✅ FIXED regardless of any "OPEN" wording in their individual row.**
+Each was confirmed by a green execution harness on real Postgres, or by direct code read (ref given).
+
+**Verified FIXED (execution / code):**
+- **CRITICAL boot & rate-limiter class:** F95 (cash-flow reads genuine cash — server.js:3915), F96/F97/F98
+  (boot error-states + retry; no silent-empty dashboard — `_dashSetState('error')` + connection notices),
+  F99/F100/F103 (limiter split read=600 / write=300 + `keyGenerator` + no shared `'unknown'` bucket — server.js:305–353).
+- **CRITICAL money:** F84 (bill double-count via Payments-Made — `verify-f84-*` 6/6 + 6/6).
+- **Timezone viewer-dependence:** F87 / F88 / F89 (client figures identical across LA/Port-of-Spain/Kolkata/London — `step4-client-gate` 5/5).
+- **Shipped & execution-verified this session (commits b25f661 → 80e156b):** F90-residual (money-UPDATE audit),
+  F79 (two-layer status enforcement), C6 (silent-catch surfacing), C5 (currency/ticker validation), C2 (native
+  dialogs → in-app modal/toast), F143 / F136 / F144 (final5.js dead-shadow removal).
+- **Harness-green (deep-dive sweep 2026-08-08 — 53/53 verify-*.js + step1–4 gates):** F26, F33-C, F40, F66, F72,
+  F73, F85, F90, F101, F102, F106, F112, F117, F119, F125, F127, F132–F135, F137–F140, C1 (16 routes).
+
+**Still genuinely OPEN (small, no money bugs / no launch blockers):** F94 (scheduled UI — design call), F126 (MRR
+FX — by-design), F129 + F64 (display polish), F54/F107/F108/F111 (team/multi-tenant — deferred), F92 (PARTIAL —
+side-effects audited, structural elimination remains), F75 (dead-shadow class — shrinking), F77/F110 (test-debt),
+F109 (close-position feature — owner-gated), F19 (verified DB TLS — deferred), and LOW misc
+(F30/F52/F63/F68/F81/F83/F116/F142/F26-b/F105).
+
+---
+
 ## ⚙️ LOAD-BEARING INFRASTRUCTURE CONFIG — do not "clean up"
 
 Configuration whose current value is deliberate and whose removal would break something with no obvious cause. Recorded because none of this is reconstructable from memory, and the failure would surface months later at deploy time, not at edit time.
@@ -1336,8 +1363,8 @@ _Original finding (for the record):_
 
 ---
 
-### F129 🟢 LOW — Residual hardcoded-`'$'` business-money surfaces — the rest of F124's class — **NEW (2026-08-03), OPEN**
-**Status:** OPEN, enumerated. Logged so F124's tick is not mistaken for closing the class.
+### F129 ✅ FIXED (2026-08-09; executed) — was 🟢 LOW — Residual hardcoded-`'$'` business-money surfaces (rest of F124's class)
+**Status:** ✅ **FIXED.** The entity-money surfaces now render `_nativeSymbol()`/`_fmtMoney(…, _nativeSymbol())` instead of a literal `'$'`, format preserved: manual-journal Dr/Cr totals (`updateJETotals`), the live journal list rows (`renderJournalsLive` = `window.renderJournals`, both debit+credit ×2), payroll net previews (`previewEditEmpNet`, `previewEmpNet`), and budget actual/target (index.html). Each confirmed a RUNTIME WINNER before editing (Rule 1 — `renderJournals`/`S` false-matched `===` in grep; verified the real definitions). The Reports `fmt` helper is left (inside the F128 dead block, per plan); the personal/investment/plan-price USD surfaces remain excluded by design. Executed: `verify-f129` 4/4 (live `renderJournals`/`previewEditEmpNet` bodies carry `_nativeSymbol`, no hardcoded `$` remains), step4-client 5/5 (money values unchanged — symbol-only swap).
 
 F124 fixed the three chart surfaces it was scoped to. The full grep for hardcoded-`'$'` money renders across the client returns these **business-money** instances still open:
 
@@ -1608,7 +1635,7 @@ The `/api/holdings` case is the sharpest: `server.js:1336-1340` catches, logs, a
 ---
 
 ### F64 🟠 HIGH — Money is abbreviated everywhere, including itemized rows; "Show cents" is dead — **NEW**
-**Status:** ✅ **FIXED — verified by code-read 2026-08-07 (status corrected; the row below was stale).** `patchSFormatter` now sets `window.S = _fmtMoneyExact` (app-main.js:614) — full `toLocaleString` with cents — so itemized rows show the exact amount; the abbreviated formatter is split out as `_fmtMoneyAbbr` (app-main.js:564) for the KPI-card/chart-tick sites only; `_fmtMoneyExact` reads `#s-cents` live (comment at app-main.js:1261), so "Show cents" is wired. Matches the row's own "Course of action" 1–4. *Not independently re-executed — code-read only; a client render assertion would fully close it.*
+**Status:** ✅ **FIXED — verified by code-read 2026-08-07 (status corrected; the row below was stale).** `patchSFormatter` now sets `window.S = _fmtMoneyExact` (app-main.js:614) — full `toLocaleString` with cents — so itemized rows show the exact amount; the abbreviated formatter is split out as `_fmtMoneyAbbr` (app-main.js:564) for the KPI-card/chart-tick sites only; `_fmtMoneyExact` reads `#s-cents` live (comment at app-main.js:1261), so "Show cents" is wired. Matches the row's own "Course of action" 1–4. **Now EXECUTED (2026-08-09):** `verify-f64-showcents` 6/6 — `window.S(1234.56)` → `1,234.56` with cents ON, `1,235` with cents OFF, never abbreviated, and the toggle visibly changes output. Rule-1 confirmed: `window.S` (app-main exact) is the runtime winner — the medium.js `window.S ===` hits are `===` comparisons / delegating local helpers, not overrides. Caveat closed.
 **Was (stale):** OPEN, verified. *Pre-existing behaviour, not an F53 regression* — `patchSFormatter` abbreviated before `96ef6c3` too (verified against `96ef6c3^`). F53 unified the thresholds; it did not change where abbreviation applies.
 
 **What's wrong.** `patchSFormatter` (`app-main.js:567`) replaces `window.S` at init (`app-main.js:1217`) with `_fmtMoney`, which abbreviates **every** value ≥ $1,000 to one decimal and rounds everything below $1,000 to whole dollars (`app-main.js:553-558`). `S()` is the app's universal money renderer — it is used for KPI cards *and* for every table row:

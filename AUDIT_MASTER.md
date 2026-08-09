@@ -2790,8 +2790,10 @@ Path 3 is dead code (re-verified 2026-08-05). It is a **bare `async function sav
 
 ---
 
-### F136 🟡 MEDIUM — `final5.js` carries a whole DEAD-SHADOW Payments-Made subsystem (Failure #1 trap) — **NEW (2026-08-05, read-only verified)**
-**Status:** OPEN. Surfaced while fixing F84 (which deleted the `savePaymentMade` shadow in this same block). Zero runtime effect today — logged because a future fix applied to the wrong copy is exactly the F75 trap that shipped two clean-diff no-op "fixes" before.
+### F136 ✅ FIXED (2026-08-09; executed) — was 🟡 MEDIUM — `final5.js` carried a whole DEAD-SHADOW Payments-Made subsystem (Failure #1 trap)
+**Status:** ✅ **FIXED.** The dead Payments-Made block was deleted from `final5.js` (`loadPaymentsMade`/`renderPaymentsMade`/`openMakePaymentModal`/`openEditPaymentMadeModal` + the `_paymentsMade` var; `deletePaymentMade` already went with F143) — the F84/F125 "remove the second writer" pattern. Verified SAFE-first: the first three have pages.js runtime winners; `openEditPaymentMadeModal` has no winner and its only reference was the Edit button inside final5's own dead `renderPaymentsMade` (the live pages.js render has no Edit); `window.loadPaymentsMade` is unreferenced (pages.js uses an internal loader exposed as `window._loadPaymentsMadeFromDB`), and `window.paymentsMade` (which feeds the dashboard money at app-main.js:1758 / dashboard.js:78) is set by pages.js (:861/:959) independently. Executed after removal: bundle `-2KB` in sync, `verify-f136-paymentsmade` 8/8 (winners survive, `window.paymentsMade` still an array, edit affordance gone, no syntax error), f84 6/6+6/6, step4-client 5/5 (money figures unchanged). Original OPEN description below.
+
+**Original status —** OPEN. Surfaced while fixing F84 (which deleted the `savePaymentMade` shadow in this same block). Zero runtime effect today — logged because a future fix applied to the wrong copy is exactly the F75 trap that shipped two clean-diff no-op "fixes" before.
 
 `finflow-api-wiring-final5.js` defines a full Payments-Made UI subsystem as **bare `function` declarations**, every one of which is overwritten at runtime by a `window.NAME =` winner in `finflow-api-wiring-pages.js` (which the bundle loads AFTER final5 — same mechanism as the deleted F84 `savePaymentMade` shadow):
 

@@ -248,59 +248,6 @@ async function saveCreditNote(){
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
-
-/* ══════════════════════════════════════════════════════════════════
-   PAYMENTS MADE
-══════════════════════════════════════════════════════════════════ */
-let _paymentsMade = [];
-
-async function loadPaymentsMade(){
-  try{ _paymentsMade = await apiFetch('/api/payments-made') || []; } catch(e){ _paymentsMade=[]; }
-  window.paymentsMade = _paymentsMade;
-}
-
-function renderPaymentsMade(){
-  loadPaymentsMade().then(()=>{
-    const l = document.getElementById('payments-made-list'); if(!l) return;
-    if(!_paymentsMade.length){ l.innerHTML='<div style="padding:20px;text-align:center;color:var(--t3)">No payments recorded yet. Click + Make Payment to add one.</div>'; return; }
-    l.innerHTML = _paymentsMade.map(p=>`
-      <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 80px">
-        <span style="font-weight:500">${p.vendor||''}</span>
-        <span style="color:var(--t3)">${p.ref||''}</span>
-        <span style="font-family:var(--font-mono);color:var(--red)">${fmtMoney(p.amount)}</span>
-        <span style="color:var(--t2)">${fmtDate(p.date)||p.date||''}</span>
-        <span><span class="badge b-blue">${p.method||''}</span></span>
-        <span style="display:flex;gap:4px">
-          <button class="btn btn-ghost btn-sm" onclick="openEditPaymentMadeModal(${p.id})">Edit</button>
-          <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deletePaymentMade(${p.id})">Del</button>
-        </span>
-      </div>`).join('');
-  });
-}
-
-function openMakePaymentModal(){
-  _st('pm-modal-title','Make Payment');
-  _sv('pm-id','');
-  _sv('pm-vendor','');
-  _sv('pm-amount','');
-  _sv('pm-date', new Date().toISOString().slice(0,10));
-  _sv('pm-method','Bank Transfer');
-  _sv('pm-notes','');
-  openModal('modal-payment-made');
-}
-
-function openEditPaymentMadeModal(id){
-  const p = _paymentsMade.find(x=>x.id===id); if(!p) return;
-  _st('pm-modal-title','Edit Payment');
-  _sv('pm-id',id);
-  _sv('pm-vendor',p.vendor||'');
-  _sv('pm-amount',p.amount||'');
-  _sv('pm-date',(p.date||'').slice(0,10)||new Date().toISOString().slice(0,10));
-  _sv('pm-method',p.method||'Bank Transfer');
-  _sv('pm-notes',p.notes||'');
-  openModal('modal-payment-made');
-}
-
 // F84 / Failure #1 (F75): the `savePaymentMade` that once lived here was a DEAD SHADOW. The bundle
 // loads this file (finflow-bundle.js:3175) BEFORE finflow-api-wiring-pages.js's
 // `window.savePaymentMade = …` (:4178), which overwrote this global — so this copy never ran, and it

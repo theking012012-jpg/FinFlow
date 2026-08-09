@@ -5564,8 +5564,8 @@ if (require.main === module) {
   initDB().then(() => {
     app.listen(PORT, () => {
       warnIfUnset(); // F29 — loud one-time warning if APP_URL is unset
-      console.log(`\n  ✦ FinFlow backend running → http://localhost:${PORT}`);
-      console.log(`  ✦ Point Lighthouse at:    http://localhost:${PORT}\n`);
+      console.log(`  ✦ FinFlow backend running → http://localhost:${PORT}`);
+      console.log(`  ✦ Point Lighthouse at:    http://localhost:${PORT}`);
     });
     // Run scheduler on boot, then every hour
     runRecurringScheduler();

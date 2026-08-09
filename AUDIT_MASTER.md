@@ -2969,6 +2969,25 @@ Instance of the **F75** class (fixes/features stranded on shadowed dead function
 
 ---
 
+### F145 🟡 MEDIUM — `finflow-api-wiring-stubs.js` is a second dead-shadow file (F75 class; sibling of F136/F143/F144) — **FIXED (2026-08-09), EXECUTED**
+**Status:** FIXED — stubs.js retired to a documented empty IIFE (668→~35 lines); bundle regenerated & `bundle:check` OK. Verified by EXECUTION against the rebuilt bundle, not reasoning:
+- **Runtime introspection** (`f145-introspect.js`, real SPA boot): every one of stubs' bindings resolves to **pages.js** — 16 dead-shadow, 0 stubs-wins; the 6 "ABSENT" are the dead-uncalled `edit*` openers (zero live callers, pre-confirmed) — so no runtime behaviour changed.
+- **Money gate** (`step4-client-gate.js`): 18/18 VERIFICATION figures match across LA/Port-of-Spain/Kolkata/London, viewer-independent — removing stubs blanked no AP/dashboard figure (Rule 6, against owner-supplied expected values).
+- **Live-path proof** (`f145-render-smoke.js`): `renderVendors`/`renderBills`/`renderQuotes` still produce DOM rows via pages.js copies — 9/9 green (Rule 14).
+- `showPage` was NOT deleted as a special-cased risk — it was simply part of the retired file and its runtime winner (pages/extra/postgres) is unaffected; introspection confirms it still resolves.
+
+Corroborated statically by the devs' own markers in pages.js:1163-1164 ("overrides stubs.js — pages.js wins") on the entity-switch reload hooks `window._load{Vendors,Bills,Quotes,RecurringBills,RecurringInv}FromDB`.
+**Original finding (read-only):**
+
+After final5.js was cleared (F136/F144), `stubs.js` is the other shadow graveyard. Live-function analysis found **13 functions shadowed by REAL `window.X = function` winners in pages.js** (strict-regex confirmed, not `===` false-matches): `openNewQuoteModal`/`saveQuote`, `filterVendorsBySearch`/`openNewVendorModal`/`saveVendor`, `markBillPaid`/`openNewBillModal`/`saveBill`, `openNewRecurringBillModal`/`saveRecurringBill`, `openNewRecurringModal`/`saveRecurringInvoice`, and `showPage` (also overridden in extra.js + postgres.js). Plus **5 `edit*` openers** (`editQuote`/`editVendor`/`editBill`/`editRecurringBill`/`editRecurringInvoice`) with **zero external callers** — dead-uncalled, referenced only by stubs' own dead renders (the F144 `openEdit*` pattern).
+
+**Money-safety confirmed:** every `window.X` the stubs load/render functions set — `quotes`, `vendors`, `bills`, `recurringBills`, `recurringInvoices` — is independently set by pages.js (2 assignments each), so removing stubs' copies cannot blank an AP/dashboard figure (the F144 `window.paymentsMade`/`window.receipts` check, applied to all 5).
+
+**Course of action:** a focused pass (like F144) — delete the dead quote/vendor/bill/recurring subsystems + the 5 `edit*` + stubs' dead `showPage`, keeping only any genuinely-live helper; regenerate the bundle; verify with an introspection scan (winners intact), the bills/vendors/quotes flows, and step4-client (money unchanged). `showPage` (179 refs) gets its own careful winner-confirmation first.
+**Done when:** stubs.js contains no dead-shadow subsystem, bundle in sync, and every affected page (quotes/vendors/bills/recurring, plus navigation) works unchanged with money figures green.
+
+---
+
 ### F30 🟢 LOW — Permissions matrix is display-only
 **Status:** OPEN, honestly labelled. `/api/permissions` persists per-account edits to `user_settings` (`server.js:3138`) but enforcement uses the fixed code matrix in `rbac.js`. The grid is relabelled read-only "role defaults" (`index.html:1511`), so it is not a lie — but the route still accepts and stores writes nothing reads.
 **Course of action:** post-launch — either enforce the stored matrix in `requirePerm`, or delete `POST /api/permissions` so nothing pretends to save.

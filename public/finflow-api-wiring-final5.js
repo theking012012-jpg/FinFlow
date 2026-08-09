@@ -95,12 +95,6 @@ async function saveReceipt(){
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
-async function deleteReceipt(id){
-  if(!confirm('Delete this receipt?')) return;
-  await apiFetch('/api/sales-receipts/'+id,{method:'DELETE'});
-  renderReceipts();
-  window.finflow?.refresh(['invoices','dashboard','money-in','reports']);
-}
 
 /* ══════════════════════════════════════════════════════════════════
    PAYMENTS RECEIVED
@@ -180,12 +174,6 @@ async function savePaymentReceived(){
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
-async function deletePaymentReceived(id){
-  if(!confirm('Delete this payment?')) return;
-  await apiFetch('/api/payments-received/'+id,{method:'DELETE'});
-  renderPaymentsReceived();
-  window.finflow?.refresh(['invoices','dashboard','money-in','reports']);
-}
 
 /* ══════════════════════════════════════════════════════════════════
    CREDIT NOTES
@@ -260,12 +248,6 @@ async function saveCreditNote(){
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
-async function deleteCreditNote(id){
-  if(!confirm('Delete this credit note?')) return;
-  await apiFetch('/api/credit-notes/'+id,{method:'DELETE'});
-  renderCreditNotes();
-  window.finflow?.refresh(['invoices','dashboard','money-in','reports']);
-}
 
 /* ══════════════════════════════════════════════════════════════════
    PAYMENTS MADE
@@ -325,12 +307,6 @@ function openEditPaymentMadeModal(id){
 // omitted `bill_id` (the F84 double-count). It is deleted so only the one pages.js runtime winner
 // remains. Do not reintroduce a savePaymentMade here.
 
-async function deletePaymentMade(id){
-  if(!confirm('Delete this payment?')) return;
-  await apiFetch('/api/payments-made/'+id,{method:'DELETE'});
-  renderPaymentsMade();
-  window.finflow?.refresh(['expenses','dashboard','money-out','budget','reports']);
-}
 
 /* ══════════════════════════════════════════════════════════════════
    VENDOR CREDITS
@@ -426,12 +402,6 @@ async function saveVendorCredit(){
   }
 }
 
-async function deleteVendorCredit(id){
-  if(!confirm('Delete this vendor credit?')) return;
-  await apiFetch('/api/vendor-credits/'+id,{method:'DELETE'});
-  renderVendorCredits();
-  window.finflow?.refresh(['expenses','dashboard','money-out','budget','reports']);
-}
 
 /* ══════════════════════════════════════════════════════════════════
    AI CHAT

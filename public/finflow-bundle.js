@@ -2337,16 +2337,6 @@
     } catch (e) { showNotify('Could not save quote — ' + e.message, true); }
   };
 
-  window.deleteQuote = async function (id) {
-    if (!confirm('Delete this quote?')) return;
-    try {
-      await api('DELETE', `/api/quotes/${id}`);
-      _quotes = _quotes.filter(x => x.id !== id);
-      renderQuotesList(); updateQuoteMetrics();
-      showNotify('Quote deleted');
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
-    } catch (e) { showNotify('Could not delete — ' + e.message, true); }
-  };
 
   // ─────────────────────────────────────────────────────────────────
   // ══ VENDORS ══
@@ -2465,16 +2455,6 @@
     } catch (e) { showNotify('Could not save vendor — ' + e.message, true); }
   };
 
-  window.deleteVendor = async function (id) {
-    if (!confirm('Remove this vendor?')) return;
-    try {
-      await api('DELETE', `/api/vendors/${id}`);
-      _vendors = _vendors.filter(x => x.id !== id);
-      renderVendorsList(); updateVendorMetrics();
-      showNotify('Vendor removed');
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
-    } catch (e) { showNotify('Could not delete — ' + e.message, true); }
-  };
 
   // ─────────────────────────────────────────────────────────────────
   // ══ BILLS ══
@@ -2606,16 +2586,6 @@
     } catch (e) { showNotify('Could not save bill — ' + e.message, true); }
   };
 
-  window.deleteBill = async function (id) {
-    if (!confirm('Delete this bill?')) return;
-    try {
-      await api('DELETE', `/api/bills/${id}`);
-      _bills = _bills.filter(x => x.id !== id);
-      renderBillsList(); updateBillMetrics();
-      showNotify('Bill deleted');
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
-    } catch (e) { showNotify('Could not delete — ' + e.message, true); }
-  };
 
   // ─────────────────────────────────────────────────────────────────
   // ══ RECURRING BILLS ══
@@ -2719,16 +2689,6 @@
     } catch (e) { showNotify('Could not save — ' + e.message, true); }
   };
 
-  window.deleteRecurringBill = async function (id) {
-    if (!confirm('Remove this recurring bill profile?')) return;
-    try {
-      await api('DELETE', `/api/recurring-bills/${id}`);
-      _recurringBills = _recurringBills.filter(x => x.id !== id);
-      renderRecurringBillsList(); updateRecurringBillMetrics();
-      showNotify('Profile removed');
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
-    } catch (e) { showNotify('Could not delete — ' + e.message, true); }
-  };
 
   // ─────────────────────────────────────────────────────────────────
   // ══ RECURRING INVOICES ══
@@ -2825,16 +2785,6 @@
     } catch (e) { showNotify('Could not save — ' + e.message, true); }
   };
 
-  window.deleteRecurringInvoice = async function (id) {
-    if (!confirm('Remove this recurring invoice profile?')) return;
-    try {
-      await api('DELETE', `/api/recurring-invoices/${id}`);
-      _recurringInvoices = _recurringInvoices.filter(x => x.id !== id);
-      renderRecurringInvoicesList();
-      showNotify('Profile removed');
-      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('invoices');
-    } catch (e) { showNotify('Could not delete — ' + e.message, true); }
-  };
 
   // ─────────────────────────────────────────────────────────────────
   // ══ BOOT: load all data when a page is shown ══
@@ -2975,12 +2925,6 @@ async function saveReceipt(){
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
-async function deleteReceipt(id){
-  if(!confirm('Delete this receipt?')) return;
-  await apiFetch('/api/sales-receipts/'+id,{method:'DELETE'});
-  renderReceipts();
-  window.finflow?.refresh(['invoices','dashboard','money-in','reports']);
-}
 
 /* ══════════════════════════════════════════════════════════════════
    PAYMENTS RECEIVED
@@ -3060,12 +3004,6 @@ async function savePaymentReceived(){
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
-async function deletePaymentReceived(id){
-  if(!confirm('Delete this payment?')) return;
-  await apiFetch('/api/payments-received/'+id,{method:'DELETE'});
-  renderPaymentsReceived();
-  window.finflow?.refresh(['invoices','dashboard','money-in','reports']);
-}
 
 /* ══════════════════════════════════════════════════════════════════
    CREDIT NOTES
@@ -3140,12 +3078,6 @@ async function saveCreditNote(){
   } catch(e){ alert('Save failed: '+e.message); }
 }
 
-async function deleteCreditNote(id){
-  if(!confirm('Delete this credit note?')) return;
-  await apiFetch('/api/credit-notes/'+id,{method:'DELETE'});
-  renderCreditNotes();
-  window.finflow?.refresh(['invoices','dashboard','money-in','reports']);
-}
 
 /* ══════════════════════════════════════════════════════════════════
    PAYMENTS MADE
@@ -3205,12 +3137,6 @@ function openEditPaymentMadeModal(id){
 // omitted `bill_id` (the F84 double-count). It is deleted so only the one pages.js runtime winner
 // remains. Do not reintroduce a savePaymentMade here.
 
-async function deletePaymentMade(id){
-  if(!confirm('Delete this payment?')) return;
-  await apiFetch('/api/payments-made/'+id,{method:'DELETE'});
-  renderPaymentsMade();
-  window.finflow?.refresh(['expenses','dashboard','money-out','budget','reports']);
-}
 
 /* ══════════════════════════════════════════════════════════════════
    VENDOR CREDITS
@@ -3306,12 +3232,6 @@ async function saveVendorCredit(){
   }
 }
 
-async function deleteVendorCredit(id){
-  if(!confirm('Delete this vendor credit?')) return;
-  await apiFetch('/api/vendor-credits/'+id,{method:'DELETE'});
-  renderVendorCredits();
-  window.finflow?.refresh(['expenses','dashboard','money-out','budget','reports']);
-}
 
 /* ══════════════════════════════════════════════════════════════════
    AI CHAT

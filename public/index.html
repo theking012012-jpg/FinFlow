@@ -7801,8 +7801,17 @@ window.addEventListener('ff:authed', function(){ loadDirectory(); }, {once:true}
 
 })();
 }); // end load listener
+</script>
 
-
+<!-- F68: register the app-shell service worker (offline/boot-race resilience; /api is never
+     cached — see public/sw.js). Registration is best-effort and never blocks the app. -->
+<script>
+(function(){
+  if (!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function(){ /* non-fatal */ });
+  });
+})();
 </script>
 
 </body>

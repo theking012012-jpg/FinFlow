@@ -5192,20 +5192,29 @@ function clearAIChat(){
       updateTransactions(window._realInvoices, window._realExpenses);
       updateInvoiceStats(window._realInvoices);
 
-      // Patch updateDashboard so period switching uses real data
-      const _origUpdateDashboard = window.updateDashboard;
-      window.updateDashboard = function (d) {
-        // Call original first for any non-overridden elements
-        if (typeof _origUpdateDashboard === 'function') {
-          try { _origUpdateDashboard(d); } catch (e) { /* ignore */ }
-        }
-        // Overwrite with real data
-        const period = window.currentPeriod || 'year';
-        updateKPIs(window._realInvoices, window._realExpenses, period);
-        updateExpenseBars(window._realExpenses);
-        updateTransactions(window._realInvoices, window._realExpenses);
-        updateInvoiceStats(window._realInvoices);
-      };
+      // Patch updateDashboard so period switching uses real data.
+      // F63: guard against re-wrapping. bootDashboardWiring runs on EVERY entity load
+      // (loadEntityData → _bootDashboardWiring), so without this guard each switch added another
+      // wrapper layer and one updateDashboard() re-ran the four renderers once per past switch —
+      // unbounded DOM churn for the session. The wrapper reads the always-current window._real*
+      // globals, so wrapping exactly once is correct; the body still sees fresh data every call.
+      if (!window.updateDashboard || !window.updateDashboard._ffDashWrapped) {
+        const _origUpdateDashboard = window.updateDashboard;
+        const _wrapped = function (d) {
+          // Call original first for any non-overridden elements
+          if (typeof _origUpdateDashboard === 'function') {
+            try { _origUpdateDashboard(d); } catch (e) { /* ignore */ }
+          }
+          // Overwrite with real data
+          const period = window.currentPeriod || 'year';
+          updateKPIs(window._realInvoices, window._realExpenses, period);
+          updateExpenseBars(window._realExpenses);
+          updateTransactions(window._realInvoices, window._realExpenses);
+          updateInvoiceStats(window._realInvoices);
+        };
+        _wrapped._ffDashWrapped = true;
+        window.updateDashboard = _wrapped;
+      }
 
       // Force a full UI refresh so KPIs + chart render with real data on page load
       if (!window.charts?.overview && typeof buildCharts === 'function') buildCharts();

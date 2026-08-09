@@ -1247,7 +1247,9 @@ app.delete('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
 
 // ── ITEMS (product & service catalog) ────────────────────────────────────────
 app.get('/api/items', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('items', req.session.userId, null, (a, b) => a.id - b.id));
+  // F146: entity-scope the list (null-inclusive) like invoices/expenses/bills/sales-receipts. Stores
+  // entity_id but was user-scoped only, so a multi-entity owner saw every entity's items. Display-only.
+  res.json(await db.allByUser('items', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => a.id - b.id));
 }));
 app.post('/api/items', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -2204,7 +2206,8 @@ app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => 
 
 // ── QUOTES ────────────────────────────────────────────────────────────────────
 app.get('/api/quotes', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('quotes', req.session.userId, null, (a,b) => b.id - a.id));
+  // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
+  res.json(await db.allByUser('quotes', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   const { client, amount, expiry_date, status = 'pending', notes = '' } = req.body;
@@ -2374,7 +2377,8 @@ app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
 // ── RECURRING BILLS ───────────────────────────────────────────────────────────
 app.get('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   try {
-    res.json(await db.allByUser('recurring_bills', req.session.userId));
+    // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
+    res.json(await db.allByUser('recurring_bills', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
   } catch (e) {
     // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/recurring-bills] failed for user', req.session.userId, ':', e.code, e.message);
@@ -2459,7 +2463,8 @@ app.delete('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (
 
 // ── RECURRING INVOICES ────────────────────────────────────────────────────────
 app.get('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('recurring_invoices', req.session.userId));
+  // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
+  res.json(await db.allByUser('recurring_invoices', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
 }));
 app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
@@ -2559,7 +2564,9 @@ app.delete('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
 
 // ── PAYMENTS RECEIVED ─────────────────────────────────────────────────────────
 app.get('/api/payments-received', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('payments_received', req.session.userId));
+  // F146: entity-scope (null-inclusive) like sibling payments_made (F142). Stores entity_id but was
+  // user-scoped only. Display-only — the payments_received money reads were already entity-scoped.
+  res.json(await db.allByUser('payments_received', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
   const { customer, invoice_ref, amount, date, method = 'Bank Transfer' } = req.body || {};

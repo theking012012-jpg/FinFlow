@@ -632,6 +632,20 @@ const ROLES = {
 };
 let currentRole = 'owner';
 let currentUserPlan = 'trial';   // F132: honest default (was 'pro' — showed "Pro" for trial/expired users until /auth/me landed); set from data.user.plan on auth
+// F147: the ONE place every auth path applies the authenticated user to client state (plan +
+// CURRENT_USER + the sidebar plan label). Fresh login and register set the plan inline; the
+// session-restore path (finflow-api-wiring-final.js, GET /api/auth/me) previously set NEITHER, so
+// after any page RELOAD a business user silently reverted to the trial cap (entity limit 1) and hit
+// the "Multiple Entities requires the Business plan" modal despite being on business. Routing all
+// three paths through this setter is the single-mechanism fix (Rule 13) — same class as F116.
+window._applySessionUser = function (user) {
+  window.CURRENT_USER = user || {};
+  if (user && user.plan) {
+    currentUserPlan = user.plan;
+    const planEl = document.getElementById('sb-user-plan');
+    if (planEl) planEl.textContent = user.plan.charAt(0).toUpperCase() + user.plan.slice(1) + ' plan';
+  }
+};
 // PL#3: client-side entity cap — MUST mirror the server ENTITY_LIMITS (server.js POST /api/entities).
 // The server is the real enforcer (returns 402); this just shows the upgrade modal instead of a
 // failed create. business now caps at 5 (was silently unbounded on the client).
@@ -696,11 +710,7 @@ async function doLogin(){
     window.CURRENT_USER = data.user || {};
     _setUserDisplay(data.user);
     injectRoleBadge(r);
-    if(data.user?.plan){
-      currentUserPlan = data.user.plan;
-      const planEl = document.getElementById('sb-user-plan');
-      if(planEl) planEl.textContent = data.user.plan.charAt(0).toUpperCase()+data.user.plan.slice(1)+' plan';
-    }
+    window._applySessionUser(data.user); // F147: shared setter (plan + CURRENT_USER + label)
     notify('Welcome back' + (data.user?.name ? ', '+data.user.name : '') + ' ✴');
     window._ffAuthed = true;
     window.dispatchEvent(new Event('ff:authed'));
@@ -747,11 +757,7 @@ async function doRegister(){
     window.CURRENT_USER = data.user || {};
     _setUserDisplay(data.user);
     injectRoleBadge(r);
-    if(data.user?.plan){
-      currentUserPlan = data.user.plan;
-      const planEl = document.getElementById('sb-user-plan');
-      if(planEl) planEl.textContent = data.user.plan.charAt(0).toUpperCase()+data.user.plan.slice(1)+' plan';
-    }
+    window._applySessionUser(data.user); // F147: shared setter (plan + CURRENT_USER + label)
     notify('Account created ✴ Welcome to FinFlow!');
     window._ffAuthed = true;
     window.dispatchEvent(new Event('ff:authed'));

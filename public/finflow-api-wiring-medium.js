@@ -214,7 +214,7 @@
           <span>${esc(inv.client)}</span>
           <span style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
           <span style="color:${esc(inv.color)}">${esc(inv.due)}</span>
-          <span><span class="badge ${badgeCls[inv.status] || 'b-amber'}">${esc(inv.status)}</span></span>
+          <span>${window._isScheduled(inv.issue_date||inv.created_at||inv.date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${badgeCls[inv.status] || 'b-amber'}">${esc(inv.status)}</span></span>
           <span class="table-actions">
             ${inv.status?.toLowerCase() === 'overdue'
               ? `<button class="btn btn-ghost btn-sm inv-remind-btn"

@@ -604,6 +604,14 @@ function _fmtMoneyNative(n){ return _fmtMoney(n, _nativeSymbol()); }
 window._nativeSymbol   = _nativeSymbol;     // for sites that render exact, not abbreviated
 window._fmtMoneyNative = _fmtMoneyNative;
 
+// F94: a future-dated document is SCHEDULED — excluded from every figure by D2, and badged in its
+// list so it isn't mistaken for lost data. Tz-free calendar compare (Rule 10), on the SAME date the
+// D2 recognition leg excludes on (issue_date, with created_at/date fallbacks).
+window._isScheduled = function(dateStr){
+  try { const y = window.FinFlowDates._toYmd(dateStr); return y != null && y > window.FinFlowDates.resolvedToday(new Date()); }
+  catch(_){ return false; }
+};
+
 // ════════════════════════════════════════════
 // PATCH S() to apply FX conversion
 // (runs after original S() is defined at bottom of script)

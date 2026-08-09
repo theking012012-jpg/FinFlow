@@ -2010,8 +2010,8 @@ It becomes **wrong** the moment the harness is used as a regression gate — in 
 
 ---
 
-### F94 🟠 HIGH — No SCHEDULED state: implementing D2 would make future-dated documents vanish — **NEW (2026-07-23, prerequisite for D2)**
-**Status:** OPEN. A direct consequence of decision **D2**, logged separately because it is a UI gap, not the recognition rule itself (Rule 13 — the rule and its surface are different work).
+### F94 ✅ FIXED (2026-08-09; executed; owner chose derived badge + invoices/bills scope) — was 🟠 HIGH — No SCHEDULED state: future-dated documents were invisible
+**Status:** ✅ **FIXED.** D2 recognition was already live (future-dated invoices/bills contribute 0 — `ymd > _today` guards). The missing UI is now a **derived "Scheduled" badge** (no schema/status-vocab change, so the F79 CHECK constraints are untouched; auto-transitions when the date arrives): `window._isScheduled(dateStr)` (app-main.js) does a tz-free calendar compare (Rule 10) on the SAME recognition date the D2 leg excludes on (`issue_date` → `created_at`/`date` fallbacks), and the runtime-winning list renderers badge future-dated rows — `renderInvoices` (medium.js, the winner over app-main) and `renderBills` (pages.js). Owner chose derived-badge + invoices/bills scope. Executed: `verify-f94-scheduled` 7/7 (future→badge, past→none, today-boundary→none, exactly one badge on the future row), step4-client 5/5 (figures unchanged — display-only), bundle in sync. Closes the "my invoice disappeared" risk D2 would otherwise create.
 
 D2 says a future-dated document contributes 0 until its date arrives. But the app offers **no way to see a document that exists-but-is-not-yet-recognised**:
 - future dates are accepted with no bound (D2 consequence a — no server validation, zero client `max=`);

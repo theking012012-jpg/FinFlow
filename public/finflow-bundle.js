@@ -663,7 +663,7 @@
           <span>${esc(inv.client)}</span>
           <span style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
           <span style="color:${esc(inv.color)}">${esc(inv.due)}</span>
-          <span><span class="badge ${badgeCls[inv.status] || 'b-amber'}">${esc(inv.status)}</span></span>
+          <span>${window._isScheduled(inv.issue_date||inv.created_at||inv.date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${badgeCls[inv.status] || 'b-amber'}">${esc(inv.status)}</span></span>
           <span class="table-actions">
             ${inv.status?.toLowerCase() === 'overdue'
               ? `<button class="btn btn-ghost btn-sm inv-remind-btn"
@@ -3675,7 +3675,7 @@ function clearAIChat(){
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(b.amount)}</span>
             <span style="color:${b.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc(b.due_date || '—')}</span>
-            <span><span class="badge ${cls[b.status?.toLowerCase()] || 'b-amber'}">${esc(b.status)}</span></span>
+            <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${cls[b.status?.toLowerCase()] || 'b-amber'}">${esc(b.status)}</span></span>
             <div style="display:flex;gap:4px">
               ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
               <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>

@@ -606,8 +606,9 @@ This built `payment_date` from the **browser's local** `getFullYear()`/`getMonth
 
 ---
 
-### F116 🟢 LOW — `window._serverToday` is primed only on the session-restore path, not on a fresh login — **NEW (2026-07-31, source-verified), OPEN**
-**Status:** OPEN. Confirmed by source inspection.
+### F116 🟢 LOW — `window._serverToday` is primed only on the session-restore path, not on a fresh login — **FIXED (2026-08-09), EXECUTED**
+**Status:** FIXED. `POST /api/auth/login` now returns `today: FinFlowDates.resolvedToday(new Date())` (server.js:557), the same source `GET /api/auth/me` uses; `doLogin()` primes `window._serverToday` from it (app-main.js:689). Fresh login no longer leaves the Record Payment date in its blocked "loading…" state. Verified by execution (`verify-f142-f116.js`): the login response carries a valid `YYYY-MM-DD` `today`. Same server basis as the restore path — no new timezone dependency (Rule 10).
+**Original finding:**
 
 `window._serverToday` is set only inside `finflow-api-wiring-final.js`'s `GET /api/auth/me` handler, which runs on the **session-restore** boot path (an existing session found on page load). A **fresh** login goes through a different path — `POST /api/auth/login` (`app-main.js:640`) — which never calls `GET /api/auth/me` at all. So immediately after a brand-new login, `window._serverToday` is unset, and the Record Payment modal shows its blocked "loading…" date state (disabled field, disabled Save) until any navigation or page reload triggers the session-restore path and primes it.
 
@@ -1624,8 +1625,9 @@ The `/api/holdings` case is the sharpest: `server.js:1336-1340` catches, logs, a
 
 ---
 
-### F63 🟡 MEDIUM — `bootDashboardWiring` re-wraps `window.updateDashboard` on every call — **NEW**
-**Status:** OPEN, verified.
+### F63 🟡 MEDIUM — `bootDashboardWiring` re-wraps `window.updateDashboard` on every call — **FIXED (2026-08-09), EXECUTED**
+**Status:** FIXED. Guarded the wrap with `window.updateDashboard._ffDashWrapped` so it installs exactly once (dashboard.js:376). The wrapper reads the always-current `window._real*` globals, so wrapping once keeps every call fresh while ending the per-entity-switch stacking. Verified by execution (`verify-f63-dash-wrap.js`, 5/5): `updateDashboard` identity is UNCHANGED after repeated `_bootDashboardWiring()` calls (pre-fix each call installed a new wrapper). Bundle regenerated & in sync.
+**Original finding:**
 
 `bootDashboardWiring` (`finflow-api-wiring-dashboard.js:355`) does `const _origUpdateDashboard = window.updateDashboard; window.updateDashboard = function(d){ _orig(d); updateKPIs(...); updateExpenseBars(...); updateTransactions(...); updateInvoiceStats(...); }` with **no idempotency guard**. `loadEntityData` calls it on every entity load (`app-main.js:1453`). Each entity switch therefore adds a wrapper layer: after N switches, one `updateDashboard()` runs the four renderers **N times**, each re-parsing and re-writing the same DOM. Grows without bound for the session.
 
@@ -1716,7 +1718,9 @@ Email regex reused from the three existing sites: `/^[^\s@]+@[^\s@]+\.[^\s@]{2,}
 
 ---
 
-### F68 🟢 LOW — Installed PWA has no service worker — **NEW**
+### F68 🟢 LOW — Installed PWA has no service worker — **FIXED (2026-08-09), structural**
+**Status:** FIXED. Added `public/sw.js` + registration (index.html) + a `purpose:"maskable"` icon entry (manifest.json). **Deliberately conservative caching for an accounting app:** `/api/*` and all non-GET → NETWORK-ONLY (never cached — no path to a stale money figure); HTML navigations + `app-main.js`/`finflow-bundle.js` → NETWORK-FIRST, cache only as offline fallback (always-fresh code when online, so the SW can never pin an old money-computing build, while a flaky/offline cold-launch still paints the shell — the F50 boot-race window closed structurally); icons/manifest → cache-first. `SW_VERSION` bump drops all prior caches. Verified structurally (SW parses via `node --check`; manifest valid with 1 maskable icon; registration present) — a SW cannot execute in the harness, so this is labelled structural, not executed. NOTE: the maskable entry reuses `favicon-512.png`; a purpose-built maskable asset with safe-zone padding would avoid Android edge-crop (follow-up polish, not blocking).
+**Original finding:**
 `public/manifest.json` declares `display:standalone` and `start_url:/app`, but there is **no service worker anywhere** (grep: no `serviceWorker`, no `sw.js`, no registration). Every PWA cold-launch is a full network load of `app-main.js` + a 304 KB deferred bundle — which is precisely the window F50's boot race lived in. Icons also declare `purpose:"any"` only, so Android renders an unmasked icon.
 **Course of action:** post-launch — a minimal cache-first SW for the app shell (`/app`, `/app-main.js`, `/finflow-bundle.js`, icons), network-first for `/api`. Add a `purpose:"maskable"` icon entry.
 **Done when:** a second PWA launch paints the shell from cache and the F50 race window closes structurally rather than by re-fire.
@@ -2947,7 +2951,9 @@ Post-F26 the leak of *tagged* cross-entity receipts is closed, but a legacy rece
 
 ---
 
-### F142 🟢 LOW — `GET /api/payments-made` list not entity-scoped — **NEW (2026-08-07), OPEN**
+### F142 🟢 LOW — `GET /api/payments-made` list not entity-scoped — **FIXED (2026-08-09), EXECUTED**
+**Status:** FIXED. Applied the same null-inclusive entity predicate the sibling lists use (server.js:2698). Verified by execution (`verify-f142-f116.js`, Rule 4 discriminating seed E1=100/E2=200/legacy=50): E1 list = [50,100], E2 list = [50,200] (pre-fix both = [50,100,200]); the legacy NULL-entity row stays visible to both. No money figure affected (the payments_made money reads were already entity-scoped).
+**Original finding:**
 Found while enumerating F26's class. `GET /api/payments-made` (server.js:2602) reads `db.allByUser('payments_made', userId)` with no entity predicate, while `/api/invoices`, `/api/expenses`, `/api/bills`, and now `/api/sales-receipts` all scope their lists. Display-only — the payments_made **money** reads (profit-loss 3676, cash-flow 3838, computeBooks 4491) are already entity-scoped, so no figure is wrong; only the payments-made *page* shows other entities' rows for a multi-entity user. Fix: add the same null-inclusive predicate the sibling lists use. Not folded into F26 (different table).
 
 ---

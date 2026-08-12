@@ -1196,10 +1196,11 @@ app.post('/api/inventory', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   const u = Math.max(0, parseInt(b.qty || b.units)||0);
   const mx = parseInt(b.max_units)||200;
-  const _dup = await findRecentDuplicate('inventory', req.session.userId, b.entity_id||null, { textMatch: { name: (b.name||'').trim().slice(0,200) }, numMatch: { cost: parseFloat(b.cost)||0 } });
+  const _invEnt = b.entity_id || req.entityId || null;  // F150-class: was body-only → NULL rows leaked into every entity
+  const _dup = await findRecentDuplicate('inventory', req.session.userId, _invEnt, { textMatch: { name: (b.name||'').trim().slice(0,200) }, numMatch: { cost: parseFloat(b.cost)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('inventory', { user_id: req.session.userId, entity_id: b.entity_id||null, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: u, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: u < mx * 0.1 ? 1 : 0 });
-  await recordAudit(pool, { userId: req.session.userId, entityId: b.entity_id||null, table: 'inventory', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  const { row } = await db.insert('inventory', { user_id: req.session.userId, entity_id: _invEnt, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: u, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: u < mx * 0.1 ? 1 : 0 });
+  await recordAudit(pool, { userId: req.session.userId, entityId: _invEnt, table: 'inventory', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
@@ -2224,9 +2225,9 @@ app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req.session.userId);
   const num = 'QT-' + String(Date.now()).slice(-4);
-  const _dup = await findRecentDuplicate('quotes', req.session.userId, entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(amount) } });
+  const _dup = await findRecentDuplicate('quotes', req.session.userId, req.entityId || entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('quotes', { user_id: req.session.userId, entity_id: entity?.id, client, num, amount: Number(amount), expiry_date, status, notes });
+  const { row } = await db.insert('quotes', { user_id: req.session.userId, entity_id: req.entityId || entity?.id || null, client, num, amount: Number(amount), expiry_date, status, notes });  // F150-class: request-scoped entity, not is_active
   res.json(row);
 }));
 app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
@@ -2268,10 +2269,11 @@ app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const owing    = parseFloat(b.owing)    || 0;
   const ytd_paid = parseFloat(b.ytd_paid) || 0;
   const entity = await activeEntity(req.session.userId);
-  const _dup = await findRecentDuplicate('vendors', req.session.userId, entity?.id || null, { textMatch: { name } });
+  const _venEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
+  const _dup = await findRecentDuplicate('vendors', req.session.userId, _venEnt, { textMatch: { name } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('vendors', { user_id: req.session.userId, entity_id: entity?.id, name, contact, category, owing, ytd_paid, status });
-  await recordAudit(pool, { userId: req.session.userId, entityId: entity?.id || null, table: 'vendors', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  const { row } = await db.insert('vendors', { user_id: req.session.userId, entity_id: _venEnt, name, contact, category, owing, ytd_paid, status });
+  await recordAudit(pool, { userId: req.session.userId, entityId: _venEnt, table: 'vendors', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
@@ -2309,13 +2311,14 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
   if (_badStatus(BILL_STATUSES, status)) return res.status(400).json({ error: 'Invalid bill status.' });
   const entity = await activeEntity(req.session.userId);
+  const _billEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
   const num = 'BILL-' + String(Date.now()).slice(-4);
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: the token-blind 5s findRecentDuplicate pre-check runs ONLY for token-less callers;
   // when a token IS present the partial unique index (idx_bills_idem_key) is the sole arbiter, so
   // two legitimately different-token bills for the same vendor+amount within 5s are not collapsed.
   if (!idem) {
-    const _dup = await findRecentDuplicate('bills', req.session.userId, entity?.id || null, { textMatch: { vendor: String(vendor) }, numMatch: { amount: Number(amount) } });
+    const _dup = await findRecentDuplicate('bills', req.session.userId, _billEnt, { textMatch: { vendor: String(vendor) }, numMatch: { amount: Number(amount) } });
     if (_dup) return res.json(_dup);
   }
   // F36/F38: issue_date is the business issue date the (Step 4) expense-accrual leg keys on;
@@ -2331,7 +2334,7 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   // Inert until idx_bills_idem_key exists. F135 amount_paid-on-paid above is unchanged.
   let row;
   try {
-    ({ row } = await db.insert('bills', { user_id: req.session.userId, entity_id: entity?.id, vendor, num, amount: _amt, due_date, status, notes, issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
+    ({ row } = await db.insert('bills', { user_id: req.session.userId, entity_id: _billEnt, vendor, num, amount: _amt, due_date, status, notes, issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(`SELECT * FROM bills WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
@@ -2339,7 +2342,7 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: entity?.id || null, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: req.session.userId, entityId: _billEnt, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
@@ -2399,9 +2402,9 @@ app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
   const entity = await activeEntity(req.session.userId);
-  const _dup = await findRecentDuplicate('recurring_bills', req.session.userId, entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
+  const _dup = await findRecentDuplicate('recurring_bills', req.session.userId, req.entityId || entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('recurring_bills', { user_id: req.session.userId, entity_id: entity?.id, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });
+  const { row } = await db.insert('recurring_bills', { user_id: req.session.userId, entity_id: req.entityId || entity?.id || null, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
   res.json(row);
 }));
 app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
@@ -2480,9 +2483,9 @@ app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req.session.userId);
-  const _dup = await findRecentDuplicate('recurring_invoices', req.session.userId, entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
+  const _dup = await findRecentDuplicate('recurring_invoices', req.session.userId, req.entityId || entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('recurring_invoices', { user_id: req.session.userId, entity_id: entity?.id, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });
+  const { row } = await db.insert('recurring_invoices', { user_id: req.session.userId, entity_id: req.entityId || entity?.id || null, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
   res.json(row);
 }));
 app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {

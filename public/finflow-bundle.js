@@ -277,6 +277,10 @@
           notif_pay,
           name,
           business_name,
+          // F149-b: this is the deliberate "rename the business I'm viewing" action, so it opts in
+          // to the server's entity rename (server.js ~1733). No other /api/settings caller sends this,
+          // so a settings write can never rename an entity by accident (that was F149).
+          rename_active_entity: true,
           industry,
           address,
           email,

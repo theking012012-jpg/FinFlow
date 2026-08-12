@@ -1730,8 +1730,13 @@ app.put('/api/settings', requireAuth, requirePerm('settings:manage'), wrap(async
   if (_usRow) await db.updateById('user_settings', _usRow.id, patch);
   else await db.insert('user_settings', { user_id: uid2, ...patch });
   if (b.name) await db.updateById('users', uid2, { name: b.name.trim().slice(0,100) });
-  if (b.business_name) {
-    // Also update the active entity name if user is updating business name
+  // F149-b (class-kill): renaming an ENTITY from a /api/settings write is now OPT-IN. Previously
+  // ANY PUT with business_name renamed activeEntity() — so the create flow (which sent business_name
+  // while the PREVIOUS entity was still active) renamed the user's existing business (F149). The
+  // deliberate "rename this business" action is the Settings page (saveSettings), which now sends
+  // rename_active_entity:true; nothing else does. business_name is still persisted as the account
+  // profile string above either way — only the entity mutation is gated.
+  if (b.business_name && b.rename_active_entity === true) {
     const ent = await activeEntity(uid2);
     if (ent) await db.updateById('entities', ent.id, { name: b.business_name.slice(0,100) });
   }
@@ -2636,7 +2641,8 @@ app.delete('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
 
 // ── CREDIT NOTES ──────────────────────────────────────────────────────────────
 app.get('/api/credit-notes', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('credit_notes', req.session.userId));
+  // F148: entity-scope (null-inclusive) now that credit notes carry entity_id.
+  res.json(await db.allByUser('credit_notes', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   const { customer, num, amount, date, status = 'Open', reason = '' } = req.body || {};
@@ -2656,6 +2662,10 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   try {
     ({ row } = await db.insert('credit_notes', {
       user_id: req.session.userId,
+      entity_id: req.entityId || null,   // F148: was omitted, so every credit note was created
+      // account-wide (null entity). computeBooks' null-inclusive matchEnt (server.js:3802) then
+      // subtracted it from EVERY entity's revenue — a fresh entity showed NEGATIVE revenue. Store
+      // it like invoices/bills/sales_receipts so a credit note only contra's its own entity's P&L.
       customer: String(customer).trim().slice(0, 200),
       num: String(num || 'CN-' + String(Date.now()).slice(-4)).slice(0, 30),
       amount: parseFloat(amount) || 0,
@@ -2787,7 +2797,8 @@ app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
 // ── VENDOR CREDITS ────────────────────────────────────────────────────────────
 app.get('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   try {
-    res.json(await db.allByUser('vendor_credits', req.session.userId));
+    // F148: entity-scope (null-inclusive) now that vendor credits carry entity_id.
+    res.json(await db.allByUser('vendor_credits', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
   } catch (e) {
     // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/vendor-credits] failed for user', req.session.userId, ':', e.code, e.message);
@@ -2812,6 +2823,8 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   try {
     ({ row } = await db.insert('vendor_credits', {
       user_id: req.session.userId,
+      entity_id: req.entityId || null,   // F148: mirror of credit_notes — was omitted, so every
+      // vendor credit reduced EVERY entity's opex (F58 contra). Store it so it scopes to its entity.
       vendor: String(vendor).trim().slice(0, 200),
       num: String(num || 'VC-' + String(Date.now()).slice(-4)).slice(0, 30),
       amount: parseFloat(amount) || 0,

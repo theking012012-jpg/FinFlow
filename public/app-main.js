@@ -500,16 +500,24 @@ async function submitCreateBusiness(){
   try {
     const res=await fetch('/api/entities',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name,currency,color,tag,sort_order:typeof ENTITIES!=='undefined'?ENTITIES.length:0})});
     if(!res.ok) throw new Error((await res.json()).error);
-    const profile={
-      business_name: name,
-      industry,
-      currency,
-      tax_id:        (document.getElementById('nb-tax-id')||{}).value||'',
-      fiscal_year:   (document.getElementById('nb-fiscal')||{}).value||'January',
-      address:       (document.getElementById('nb-address')||{}).value||'',
-      website:       (document.getElementById('nb-website')||{}).value||'',
-    };
+    // F149: ONLY the first business seeds account-level settings. A 2nd+ business is fully
+    // defined by its own entity row (POST /api/entities above carries name+currency+color+tag),
+    // so an additional create must NOT write /api/settings at all. Why this matters: the settings
+    // handler renames the CURRENTLY-ACTIVE entity from business_name (server.js ~1733). On a 2nd
+    // business the active entity is the PREVIOUS one — so creating "B" renamed the user's existing
+    // business "A" in the DB. The shared profile fields (tax_id/address/fiscal_year/industry/
+    // currency) are account-wide too and a subsidiary must not clobber them. Per-entity business
+    // profiles (own tax_id/address, and moving rename off the settings side-effect) = F149-b.
     if(isFirst){
+      const profile={
+        business_name: name,
+        industry,
+        currency,
+        tax_id:        (document.getElementById('nb-tax-id')||{}).value||'',
+        fiscal_year:   (document.getElementById('nb-fiscal')||{}).value||'January',
+        address:       (document.getElementById('nb-address')||{}).value||'',
+        website:       (document.getElementById('nb-website')||{}).value||'',
+      };
       const _un=(document.getElementById('nb-user-name')||{}).value.trim();
       const _ue=(document.getElementById('nb-email')||{}).value.trim();
       const _up=(document.getElementById('nb-phone')||{}).value.trim();
@@ -518,8 +526,8 @@ async function submitCreateBusiness(){
       if(_un) profile.name  = _un;
       if(_ue) profile.email = _ue;
       if(_up) profile.phone = _up;
+      await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(profile)});
     }
-    await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(profile)});
     if(typeof loadEntitiesFromDB==='function') await loadEntitiesFromDB(true); // F50 Step 2: force — a new entity must bypass the boot memo
     notify('Business "'+esc(name)+'" created ✦');
     showPage('dashboard', null);

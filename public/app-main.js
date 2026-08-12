@@ -1620,7 +1620,20 @@ window.loadEntityData = loadEntityData; // expose for medium.js payroll reload h
 window._hideBootSplash = function(){
   var s=document.getElementById('ff-splash'); if(!s||s._ffHidden) return; s._ffHidden=true;
   if(window._bootSplashTimer){ clearTimeout(window._bootSplashTimer); window._bootSplashTimer=null; }
+  if(window._bootSplashSafety){ clearTimeout(window._bootSplashSafety); window._bootSplashSafety=null; }
   s.style.opacity='0'; setTimeout(function(){ s.style.display='none'; }, 400);
+};
+// F151 — RE-SHOW the splash for an entity SWITCH. Switching changes the currency/brand immediately
+// while the previous entity's numbers are still in memory, so an intermediate render pairs the old
+// entity's figures with the new currency (e.g. Saige's 206K shown in Acme/TTD) before the new data
+// loads. Covering the switch with the same splash (lifted on network-idle once the new entity's data
+// settles) removes that flash. Carries its own safety cap so a switch can never leave it stuck.
+window._showBootSplash = function(){
+  var s=document.getElementById('ff-splash'); if(!s) return;
+  if(window._bootSplashTimer){ clearTimeout(window._bootSplashTimer); window._bootSplashTimer=null; }
+  s._ffHidden=false; s.style.display='flex'; void s.offsetWidth; s.style.opacity='1';
+  if(window._bootSplashSafety) clearTimeout(window._bootSplashSafety);
+  window._bootSplashSafety = setTimeout(function(){ if(window._hideBootSplash) window._hideBootSplash(); }, 8000);
 };
 // F151 — DEBOUNCED lift (the fix for the "blinks"). The boot fires SEVERAL dashboard renders as its
 // data loads resolve, and one intermediate render can pair the wrong entity's numbers with the active

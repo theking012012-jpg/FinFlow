@@ -5705,6 +5705,9 @@ window.switchEntity=async function(idx){
   ENTITIES.forEach((e,i)=>e.active=i===idx);
   const e=ENTITIES[idx];
   if(!e) return;
+  // F151: cover the switch with the splash so the intermediate "old numbers in new currency" render
+  // (e.g. Saige's 206K shown in Acme/TTD) is never seen; lifted on network-idle once new data settles.
+  if(window._showBootSplash) window._showBootSplash();
 
   // Update sidebar brand immediately
   const nameEl=document.getElementById('sb-brand-name');
@@ -5728,6 +5731,20 @@ window.switchEntity=async function(idx){
 
   // Load real data for this entity
   await loadEntityData(idx);
+
+  // F151/entity-isolation: loadEntityData reloads invoices/expenses/customers/inventory/payroll for the
+  // new entity, but NOT the other money collections. Their loaders ran once at boot for the PREVIOUS
+  // entity and are never re-run on a switch, so window.creditNotes / vendorCredits / bills / receipts /
+  // payments keep the OLD entity's rows — which the dashboard compute then applies to the NEW entity
+  // (e.g. Saige's credit notes dragging empty Acme to −$1.2K). Reload them now (the session is already
+  // the new entity, via the activate above) and recompute once. The network-idle splash covers this.
+  await Promise.all([
+    window._loadCreditNotesFromDB,  window._loadVendorCreditsFromDB,
+    window._loadBillsFromDB,        window._loadReceiptsFromDB,
+    window._loadPaymentsMadeFromDB, window._loadPaymentsRecvFromDB,
+    window._loadVendorsFromDB,
+  ].map(fn => { try { return typeof fn === 'function' ? Promise.resolve(fn()).catch(()=>{}) : null; } catch(e){ return null; } }));
+  if(typeof updateDashboard === 'function'){ try { updateDashboard(); } catch(e){} }
 
   notify('Switched to '+e.name+' ✦');
 };

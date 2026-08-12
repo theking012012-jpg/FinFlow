@@ -3203,9 +3203,24 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 
 <!-- ══ ADD ENTITY MODAL ══ -->
 
+<!-- ══ BOOT SPLASH (F151) — visible by default; held until auth is confirmed AND the active
+     entity's data has loaded, then faded out to reveal the fully-populated dashboard. This is
+     what removes the login-screen FLASH on refresh and the $0-cards / empty-chart partial render:
+     nothing half-loaded is ever shown. A safety timeout (app-main.js) guarantees it can never
+     get stuck. Login screen below now defaults to display:none — shown only on a real 401. ══ -->
+<style>@keyframes ffSplashSpin{to{transform:rotate(360deg)}}</style>
+<div id="ff-splash" style="position:fixed;inset:0;background:var(--bg0);z-index:9600;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1.15rem;transition:opacity .35s ease">
+  <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 24px var(--acc-glow)">
+    <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="#0e0b08" stroke-width="1.8" stroke-linecap="round"><polyline points="1,11 5,6 8,9 11,4 15,7"/><line x1="1" y1="14" x2="15" y2="14"/></svg>
+  </div>
+  <div style="font-family:var(--font-display);font-size:22px;color:var(--acc-light);font-style:italic;letter-spacing:.04em">FinFlow</div>
+  <div style="width:24px;height:24px;border:3px solid var(--bg2);border-top-color:var(--acc);border-radius:50%;animation:ffSplashSpin .7s linear infinite"></div>
+  <div style="font-size:10.5px;color:var(--t2);letter-spacing:.09em;text-transform:uppercase">Loading your workspace…</div>
+</div>
+
 <!-- ══ LOGIN SCREEN ══ -->
 <style>.pw-eye{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;background:none;border:none;cursor:pointer;color:var(--t3);transition:color .13s}.pw-eye:hover{color:var(--acc)}.pw-eye svg{width:17px;height:17px}</style>
-<div id="login-screen" style="position:fixed;inset:0;background:var(--bg0);z-index:9000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1.5rem">
+<div id="login-screen" style="position:fixed;inset:0;background:var(--bg0);z-index:9000;display:none;align-items:center;justify-content:center;flex-direction:column;gap:1.5rem">
   <div style="text-align:center;margin-bottom:.5rem">
     <div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:inline-flex;align-items:center;justify-content:center;box-shadow:0 4px 24px var(--acc-glow);margin-bottom:1rem">
       <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="#0e0b08" stroke-width="1.8" stroke-linecap="round"><polyline points="1,11 5,6 8,9 11,4 15,7"/><line x1="1" y1="14" x2="15" y2="14"/></svg>
@@ -5417,6 +5432,7 @@ async function _loadEntitiesFromDBImpl(){
       // Highlight the + Add business button
       const addBizBtn = document.querySelector('#biz-menu button');
       if(addBizBtn){ addBizBtn.classList.remove('btn-ghost'); addBizBtn.classList.add('btn-primary'); }
+      if(typeof window._hideBootSplash==='function') window._hideBootSplash();  // F151: empty account is a COMPLETE load → reveal
       return true;   // F97: a genuinely-empty account (0 entities) is a COMPLETE load — latch it
     }
 

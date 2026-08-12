@@ -1605,9 +1605,27 @@ async function loadEntityData(idx){
     MONTH_FULL=computeMonthFull();
     MONTHS=MONTH_FULL.map(function(m){return m.split(' ')[0];});
     _loadEntityDataRunning=false;
+    // F151: the active entity's data is now loaded + the dashboard rendered → reveal it (removes the
+    // $0-cards / empty-chart partial render the user would otherwise watch populate).
+    if(typeof window._hideBootSplash==='function') window._hideBootSplash();
   }
 }
 window.loadEntityData = loadEntityData; // expose for medium.js payroll reload hook
+
+// F151 — BOOT SPLASH CONTROL. The splash (#ff-splash) is visible by default and covers the whole
+// boot so nothing half-loaded (login flash, $0 cards, empty chart) is ever shown. It is hidden ONCE
+// (idempotent) at the first data-ready moment: loadEntityData's finally (active entity loaded), the
+// genuinely-empty-account path, or the auth-401 path (via _showLoginScreen). A hard safety timeout
+// guarantees it can NEVER get stuck — a stuck splash would be a dead app.
+window._hideBootSplash = function(){
+  var s=document.getElementById('ff-splash'); if(!s||s._ffHidden) return; s._ffHidden=true;
+  s.style.opacity='0'; setTimeout(function(){ s.style.display='none'; }, 400);
+};
+window._showLoginScreen = function(){
+  if(typeof window._hideBootSplash==='function') window._hideBootSplash();
+  var l=document.getElementById('login-screen'); if(l) l.style.display='flex';
+};
+setTimeout(function(){ try{ window._hideBootSplash && window._hideBootSplash(); }catch(e){} }, 10000);
 
 const INVOICES_BASE = []; // populated from DB via loadEntityData
 

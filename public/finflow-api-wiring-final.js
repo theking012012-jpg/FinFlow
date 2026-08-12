@@ -72,7 +72,13 @@
         }, 0);
       }
     } catch (e) {
-      // 401 = not logged in, show login screen as normal
+      // 401 = not logged in → F151: the login screen now defaults to display:none (so it can't FLASH
+      // during this /auth/me round-trip), so we must explicitly reveal it here and drop the splash.
+      if (typeof window._showLoginScreen === 'function') { window._showLoginScreen(); }
+      else {
+        var _l = document.getElementById('login-screen'); if (_l) _l.style.display = 'flex';
+        var _s = document.getElementById('ff-splash');     if (_s) _s.style.display = 'none';
+      }
     }
 
     // ── API Logout ─────────────────────────────────────────────────

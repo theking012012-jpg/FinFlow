@@ -1605,9 +1605,9 @@ async function loadEntityData(idx){
     MONTH_FULL=computeMonthFull();
     MONTHS=MONTH_FULL.map(function(m){return m.split(' ')[0];});
     _loadEntityDataRunning=false;
-    // F151: the active entity's data is now loaded + the dashboard rendered → reveal it (removes the
-    // $0-cards / empty-chart partial render the user would otherwise watch populate).
-    if(typeof window._hideBootSplash==='function') window._hideBootSplash();
+    // F151: active entity's data loaded → SCHEDULE the reveal (debounced). updateDashboard reschedules
+    // it on every subsequent render, so the splash lifts only once the numbers stop changing.
+    if(typeof window._bootSplashSettle==='function') window._bootSplashSettle();
   }
 }
 window.loadEntityData = loadEntityData; // expose for medium.js payroll reload hook
@@ -1619,13 +1619,46 @@ window.loadEntityData = loadEntityData; // expose for medium.js payroll reload h
 // guarantees it can NEVER get stuck — a stuck splash would be a dead app.
 window._hideBootSplash = function(){
   var s=document.getElementById('ff-splash'); if(!s||s._ffHidden) return; s._ffHidden=true;
+  if(window._bootSplashTimer){ clearTimeout(window._bootSplashTimer); window._bootSplashTimer=null; }
   s.style.opacity='0'; setTimeout(function(){ s.style.display='none'; }, 400);
+};
+// F151 — DEBOUNCED lift (the fix for the "blinks"). The boot fires SEVERAL dashboard renders as its
+// data loads resolve, and one intermediate render can pair the wrong entity's numbers with the active
+// currency (e.g. Saige's figures shown in TTD). Lifting after the FIRST load exposes the rest. Instead,
+// every dashboard render (updateDashboard — the canonical writer of d-rev/d-exp/d-profit) reschedules
+// the lift, so the splash stays up until the numbers STOP changing, then reveals the single final
+// dashboard. The hard safety cap below still guarantees it can never stick.
+window._bootSplashSettle = function(){
+  var s=document.getElementById('ff-splash'); if(!s||s._ffHidden) return;   // already lifted — no-op post-boot
+  if(window._bootSplashTimer) clearTimeout(window._bootSplashTimer);
+  window._bootSplashTimer = setTimeout(function(){ if(window._hideBootSplash) window._hideBootSplash(); }, 750);
 };
 window._showLoginScreen = function(){
   if(typeof window._hideBootSplash==='function') window._hideBootSplash();
   var l=document.getElementById('login-screen'); if(l) l.style.display='flex';
 };
-setTimeout(function(){ try{ window._hideBootSplash && window._hideBootSplash(); }catch(e){} }, 10000);
+setTimeout(function(){ try{ window._hideBootSplash && window._hideBootSplash(); }catch(e){} }, 10000);  // hard safety: never stuck
+
+// F151 — NETWORK-IDLE splash gate. A fixed timer can lift the splash between two boot loads that are
+// spaced further apart than the timer (the "blink leaks after the splash" symptom). Instead, count
+// in-flight fetches WHILE the splash is up and reschedule the debounced lift every time one settles —
+// so the splash lifts only once the network goes quiet (all boot data loaded) and the numbers stop
+// moving. Once the splash is gone this wrapper is a pure passthrough, so there is ZERO effect on any
+// post-boot request. The 10s hard cap above still guarantees it can never stick.
+(function(){
+  var origFetch = window.fetch;
+  if(!origFetch || origFetch._ffSplashWrapped) return;
+  var wrapped = function(){
+    var s = document.getElementById('ff-splash');
+    if(!s || s._ffHidden) return origFetch.apply(this, arguments);   // splash already lifted → plain passthrough
+    var settle = function(){ if(window._bootSplashSettle) window._bootSplashSettle(); };
+    var p;
+    try { p = origFetch.apply(this, arguments); } catch(e){ settle(); throw e; }
+    return Promise.resolve(p).then(function(r){ settle(); return r; }, function(e){ settle(); throw e; });
+  };
+  wrapped._ffSplashWrapped = true;
+  window.fetch = wrapped;
+})();
 
 const INVOICES_BASE = []; // populated from DB via loadEntityData
 
@@ -2211,6 +2244,9 @@ else _ffSyncPeriodLabels();
 // DASHBOARD
 // ════════════════════════════════════════════
 function updateDashboard(d=getPeriodData()){
+  // F151: every dashboard paint reschedules the boot-splash lift (no-op once the splash is gone), so
+  // the splash covers ALL the boot "blinks" and lifts only after the numbers settle.
+  if(typeof window._bootSplashSettle==='function') window._bootSplashSettle();
   // F98: a failed entities load latches window._dashLoadError. SAME SHAPE as the _fxPending guard
   // a few lines down (comment "Honest-empty over confidently-wrong") — a second boolean flag on
   // the paint, not a new mechanism. updateDashboard is the canonical writer of d-rev/d-exp/d-profit

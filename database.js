@@ -741,6 +741,40 @@ async function initDB() {
       END $stat$;
     `);
 
+    // F150-class — ENTITY ISOLATION INVARIANT. entity_id must be NOT NULL on business tables so a
+    // business row can NEVER be stored account-wide (NULL); the null-inclusive read filter would
+    // otherwise surface a NULL row under EVERY entity — the cross-entity leak. Added NOT VALID
+    // (Rule 7/8): enforces every NEW insert/update, but does NOT scan or migrate existing rows at ADD
+    // time, so no legacy NULL can brick boot and no historical data is touched — legacy NULLs are
+    // cleared by the SEPARATE, owner-gated backfill, never automatically here. Personal / user-level
+    // tables (holdings, personal_transactions, personal_accounts, goals, projects, timesheet,
+    // documents, templates, user_settings, snapshots, budget_targets) are intentionally EXCLUDED —
+    // NULL entity_id is legitimate there. Guarded on column existence so a missing table/column is a
+    // zero-op, and idempotent by constraint-name check.
+    await client.query(`
+      DO $ent$
+      DECLARE rec RECORD;
+      BEGIN
+        FOR rec IN
+          SELECT unnest(ARRAY[
+            'invoices','expenses','customers','inventory','items','quotes','vendors','bills',
+            'recurring_bills','recurring_invoices','sales_receipts','payments_received',
+            'payments_made','credit_notes','vendor_credits','journals','chart_of_accounts'
+          ]) AS tbl
+        LOOP
+          IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = rec.tbl AND column_name = 'entity_id'
+             )
+             AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_'||rec.tbl||'_entity_nn')
+          THEN
+            EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (entity_id IS NOT NULL) NOT VALID',
+                           rec.tbl, 'chk_'||rec.tbl||'_entity_nn');
+          END IF;
+        END LOOP;
+      END $ent$;
+    `);
+
     await client.query('COMMIT');
     console.log('[DB] PostgreSQL schema ready');
   } catch (err) {

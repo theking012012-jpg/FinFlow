@@ -5178,6 +5178,7 @@ function clearAIChat(){
   // ── Main boot: load data and wire everything ─────────────────────
   async function bootDashboardWiring() {
     _dashSetState('loading');
+    var _bdwSeq = window._entitySwitchSeq || 0;   // F151 stale-response guard: token captured at start
     try {
       // Get active entity_id to filter correctly
       const activeEntity = (window.ENTITIES || []).find(e => e.active);
@@ -5188,6 +5189,10 @@ function clearAIChat(){
         apiGetStatus('/api/expenses' + eq),
       ]);
 
+      // F151 stale-response guard: if a switch happened while these fetches were in flight, a newer
+      // load owns the dashboard — discard this stale result instead of clobbering _realInvoices (the
+      // tab-refocus bug where a backgrounded Saige fetch resolved late and painted Saige under Acme).
+      if ((window._entitySwitchSeq || 0) !== _bdwSeq) return;
       // Store globally so period switching can re-use
       window._realInvoices = invoices || [];
       window._realExpenses = expenses || [];

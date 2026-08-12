@@ -1374,6 +1374,7 @@ let _loadEntityDataRunning = false;
 async function loadEntityData(idx){
   if (_loadEntityDataRunning) { console.warn('[Entity] loadEntityData already running, skipping'); return; }
   _loadEntityDataRunning = true;
+  var _leSeq = window._entitySwitchSeq || 0;   // F151 stale-response guard: captured at load start, re-checked before the data is applied
   activeEntityIdx = idx;
   // F50 Step 1 (flash fix): do NOT zero REV/EXP/PROFIT here. The old entry-zeroing opened a $0
   // window — any render firing between here and the refill (line ~1406) painted all-zero KPIs, and
@@ -1526,6 +1527,10 @@ async function loadEntityData(idx){
       try { syncAllPayrollsToPersonal(); } catch(e) { console.warn('[loadEntityData] syncAllPayrollsToPersonal failed:', e.message); }
     }
 
+    // F151 stale-response guard: if the user switched entities while this load was in flight, a NEWER
+    // load owns the dashboard now — discard this one so the previous entity's data can't clobber it
+    // (the tab-refocus "Saige under Acme" bug).
+    if ((window._entitySwitchSeq || 0) !== _leSeq) return;
     // Store globally for dashboard wiring — MUST update before calling updateDashboard
     window._realInvoices = invoices || [];
     window._realExpenses = expenses || [];

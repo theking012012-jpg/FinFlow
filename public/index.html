@@ -5705,6 +5705,10 @@ window.switchEntity=async function(idx){
   ENTITIES.forEach((e,i)=>e.active=i===idx);
   const e=ENTITIES[idx];
   if(!e) return;
+  // F151 stale-response guard: bump the switch generation so any data load still in flight for the
+  // PREVIOUS entity is discarded when it resolves (the tab-refocus bug: a backgrounded Saige fetch
+  // completing late and clobbering Acme's dashboard with Saige's numbers).
+  window._entitySwitchSeq = (window._entitySwitchSeq || 0) + 1;
   // F151: cover the switch with the splash so the intermediate "old numbers in new currency" render
   // (e.g. Saige's 206K shown in Acme/TTD) is never seen; lifted on network-idle once new data settles.
   if(window._showBootSplash) window._showBootSplash();

@@ -54,6 +54,7 @@ const num = (s) => { const m = String(s == null ? '' : s).replace(/[^0-9.\-]/g, 
 
     await p; await settle(40, 60);
 
+    A('switch bumped the stale-response generation token', (window._entitySwitchSeq || 0) > 0, `seq=${window._entitySwitchSeq}`);
     A('after switch settles: splash hidden again', splash && splash._ffHidden === true, `hidden=${splash&&splash._ffHidden}`);
     const revAfter = num((doc.getElementById('d-rev') || {}).textContent);
     A('dashboard now shows E2 (empty → 0), not E1 stale numbers', revAfter === 0, `#d-rev after="${(doc.getElementById('d-rev')||{}).textContent}"`);

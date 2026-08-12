@@ -1146,10 +1146,11 @@ app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   // the other (Rule 2). Coerce first so a non-string body (object/array) fails the regex → 400.
   const _cem = String(b.email == null ? '' : b.email).slice(0,200);
   if (_cem && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(_cem)) return res.status(400).json({ error: 'Invalid email address.' });
-  const _dup = await findRecentDuplicate('customers', req.session.userId, b.entity_id||null, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem } });
+  const _custEnt = b.entity_id||req.entityId||null;  // F150: fall back to active entity (was body-only → NULL rows leaked into every entity)
+  const _dup = await findRecentDuplicate('customers', req.session.userId, _custEnt, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('customers', { user_id: req.session.userId, entity_id: b.entity_id||null, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
-  await recordAudit(pool, { userId: req.session.userId, entityId: b.entity_id||null, table: 'customers', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  const { row } = await db.insert('customers', { user_id: req.session.userId, entity_id: _custEnt, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
+  await recordAudit(pool, { userId: req.session.userId, entityId: _custEnt, table: 'customers', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
@@ -1254,11 +1255,15 @@ app.get('/api/items', requireAuth, wrap(async (req, res) => {
 app.post('/api/items', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.name) return res.status(400).json({ error: 'name required.' });
-  const _dup = await findRecentDuplicate('items', req.session.userId, b.entity_id||null, { textMatch: { name: b.name.trim().slice(0,200) }, numMatch: { price: parseFloat(b.price)||0 } });
+  // F150: fall back to the active entity (req.entityId) like every other business insert. This
+  // handler previously stamped only b.entity_id, so a create without an explicit body entity_id
+  // was born entity_id=NULL and — via the null-inclusive read filter — leaked into EVERY entity.
+  const _itemEnt = b.entity_id || req.entityId || null;
+  const _dup = await findRecentDuplicate('items', req.session.userId, _itemEnt, { textMatch: { name: b.name.trim().slice(0,200) }, numMatch: { price: parseFloat(b.price)||0 } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('items', {
     user_id:   req.session.userId,
-    entity_id: b.entity_id || null,
+    entity_id: _itemEnt,
     name:      b.name.trim().slice(0, 200),
     type:      b.type   || 'Product',
     price:     parseFloat(b.price) || 0,
@@ -1268,7 +1273,7 @@ app.post('/api/items', requireAuth, wrap(async (req, res) => {
     sku:       (b.sku   || '').slice(0, 50),
     cost:      b.cost   != null ? parseFloat(b.cost) || 0 : null,
   });
-  await recordAudit(pool, { userId: req.session.userId, entityId: b.entity_id || null, table: 'items', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: req.session.userId, entityId: _itemEnt, table: 'items', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/items/:id', requireAuth, wrap(async (req, res) => {

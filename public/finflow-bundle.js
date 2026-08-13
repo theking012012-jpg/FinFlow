@@ -756,7 +756,7 @@
           category:    cat,
           amount:      amountRaw,
           deductible:  ded,
-          expense_date: new Date().toISOString().slice(0, 10),
+          expense_date: (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10)),  // C3/F37: local date, not UTC
           entity_id: _entityId2,
           idempotency_key: window._expIdemKey,   // C1 Wave 1 — the token idx_expenses_idem_key enforces
         });
@@ -1957,7 +1957,7 @@
       const category    = document.getElementById('exp-category')?.value;
       const amount      = parseFloat(document.getElementById('exp-amount')?.value) || 0;
       const deductible  = document.getElementById('exp-deductible')?.value || 'no';
-      const expense_date = document.getElementById('exp-date')?.value || new Date().toISOString().slice(0, 10);
+      const expense_date = document.getElementById('exp-date')?.value || (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10));  // C3/F37: local date, not UTC
 
       if (!description || !amount) { notify('Description and amount required.', true); return; }
 
@@ -2384,7 +2384,7 @@ function clearAIChat(){
     return res.json();
   }
 
-  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const todayStr = () => (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10));  // C3/F37: local date, not UTC
   const uid4 = () => String(Date.now()).slice(-4);
 
   // ── KPI card helpers ──────────────────────────────────────────────
@@ -3589,7 +3589,7 @@ function clearAIChat(){
   }
   function money(n) { return typeof S === 'function' ? S(n) : '$' + (parseFloat(n) || 0).toFixed(2); }
   function tip(msg, isErr) { if (typeof notify === 'function') notify(msg, isErr); else console.warn(msg); }
-  const today = () => new Date().toISOString().slice(0, 10);
+  const today = () => (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10));  // C3/F37: local date, not UTC
 
   // ══════════════════════════════════════════════════════
   // 1. INVOICE VIEW MODAL
@@ -5421,7 +5421,7 @@ function clearAIChat(){
       tip('Debits must equal credits to post', true); return;
     }
 
-    const date        = document.getElementById('je-date')?.value || new Date().toISOString().slice(0, 10);
+    const date        = document.getElementById('je-date')?.value || (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10));  // C3/F37: local date, not UTC
     const description = document.getElementById('je-notes')?.value?.trim() || 'Manual journal entry';
 
     // Map frontend dr/cr fields → API debit/credit field names

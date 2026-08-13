@@ -120,7 +120,7 @@
       const category    = document.getElementById('exp-category')?.value;
       const amount      = parseFloat(document.getElementById('exp-amount')?.value) || 0;
       const deductible  = document.getElementById('exp-deductible')?.value || 'no';
-      const expense_date = document.getElementById('exp-date')?.value || new Date().toISOString().slice(0, 10);
+      const expense_date = document.getElementById('exp-date')?.value || (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10));  // C3/F37: local date, not UTC
 
       if (!description || !amount) { notify('Description and amount required.', true); return; }
 

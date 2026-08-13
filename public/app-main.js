@@ -19,6 +19,11 @@ function toLocalYMD(d){
   return `${y}-${m}-${day}`;
 }
 function todayLocal(){ return toLocalYMD(new Date()); }
+// C3/F37: expose the LOCAL-date helpers so every client file uses the viewer's local calendar date
+// for record-date defaults, never `new Date().toISOString().slice(0,10)` (which is the UTC date and,
+// at a negative UTC offset after ~20:00 local, stamps a record into TOMORROW → wrong month/period).
+window.todayLocal = todayLocal;
+window.toLocalYMD = toLocalYMD;
 
 // ════════════════════════════════════════════
 // MULTI-CURRENCY ENGINE

@@ -1215,7 +1215,7 @@ function toggleJournalForm() {
   f.classList.toggle('open');
   if (f.classList.contains('open')) {
     const d = document.getElementById('jnl-date');
-    if (!d.value) d.value = new Date().toISOString().slice(0,10);
+    if (!d.value) { var _n = new Date(); d.value = _n.getFullYear() + '-' + String(_n.getMonth()+1).padStart(2,'0') + '-' + String(_n.getDate()).padStart(2,'0'); }  // C3/F37: local date, not UTC (standalone page, no window.todayLocal)
     showSection('journals', null);
   }
 }

@@ -4808,7 +4808,7 @@ function openRunPayrollModal(){
   const period=document.getElementById('prm-period');
   if(period){const d=new Date();period.value=d.toLocaleString('en-US',{month:'long',year:'numeric'});}
   const runDate=document.getElementById('prm-date');
-  if(runDate)runDate.value=new Date().toISOString().slice(0,10);
+  if(runDate)runDate.value=(window.todayLocal?window.todayLocal():new Date().toISOString().slice(0,10));  // C3/F37: local date, not UTC
   const notesEl=document.getElementById('prm-notes');
   if(notesEl)notesEl.value='';
   const preview=document.getElementById('prm-preview');

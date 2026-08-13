@@ -16,7 +16,7 @@
     return res.json();
   }
 
-  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const todayStr = () => (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10));  // C3/F37: local date, not UTC
   const uid4 = () => String(Date.now()).slice(-4);
 
   // ── KPI card helpers ──────────────────────────────────────────────

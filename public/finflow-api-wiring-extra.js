@@ -23,7 +23,7 @@
   }
   function money(n) { return typeof S === 'function' ? S(n) : '$' + (parseFloat(n) || 0).toFixed(2); }
   function tip(msg, isErr) { if (typeof notify === 'function') notify(msg, isErr); else console.warn(msg); }
-  const today = () => new Date().toISOString().slice(0, 10);
+  const today = () => (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10));  // C3/F37: local date, not UTC
 
   // ══════════════════════════════════════════════════════
   // 1. INVOICE VIEW MODAL

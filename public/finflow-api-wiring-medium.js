@@ -303,7 +303,7 @@
           category:    cat,
           amount:      amountRaw,
           deductible:  ded,
-          expense_date: new Date().toISOString().slice(0, 10),
+          expense_date: (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10)),  // C3/F37: local date, not UTC
           entity_id: _entityId2,
           idempotency_key: window._expIdemKey,   // C1 Wave 1 — the token idx_expenses_idem_key enforces
         });

@@ -60,7 +60,7 @@
       tip('Debits must equal credits to post', true); return;
     }
 
-    const date        = document.getElementById('je-date')?.value || new Date().toISOString().slice(0, 10);
+    const date        = document.getElementById('je-date')?.value || (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10));  // C3/F37: local date, not UTC
     const description = document.getElementById('je-notes')?.value?.trim() || 'Manual journal entry';
 
     // Map frontend dr/cr fields → API debit/credit field names

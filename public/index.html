@@ -3726,20 +3726,27 @@ window.addEventListener('resize',function(){if(window.innerWidth>768)closeSideba
   'use strict';
   // Force a fresh, COMPLETE reload of the active entity + dashboard. Gated on auth (never fires on
   // the login screen) and debounced so a burst of focus/visibility events triggers at most one load.
-  var _last = 0;
+  var _last = 0, _hiddenAt = 0;
   function _refresh(reason){
     if(!window._ffAuthed) return;
     var now = Date.now();
-    if(now - _last < 2500) return;                     // debounce
+    if(now - _last < 2500) return;                     // debounce the visibility+focus double-fire
+    // F151: only resume-refresh after a MEANINGFUL time in the background. A quick tab-switch (the
+    // common case) must NOT force a full reload — loadEntitiesFromDB(true) re-fetches invoices/etc and
+    // triggers several dashboard re-renders, so the CORRECT data visibly "blinked" on every tab return.
+    // A genuine long resume (installed-PWA wake, or >60s backgrounded) still refreshes so stale data
+    // can't linger. _hiddenAt=0 means the tab was never actually hidden → nothing to resume, skip.
+    if(!_hiddenAt || (now - _hiddenAt) < 60000) return;
     _last = now;
     if(typeof window.loadEntitiesFromDB === 'function'){
       try{ window.loadEntitiesFromDB(true); }catch(e){}  // force: bypass the boot memo → real reload
     }
   }
 
-  // 1. Resume-from-background — the natural PWA "refresh". visibilitychange fires when the app is
-  //    foregrounded; focus covers desktop tab/window return.
+  // 1. Resume-from-background. visibilitychange records when we go to the background; on return, the
+  //    refresh is gated on how long we were away (see _refresh) so a quick tab-switch never reloads.
   document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'hidden'){ _hiddenAt = Date.now(); return; }
     if(document.visibilityState === 'visible') _refresh('visible');
   });
   window.addEventListener('focus', function(){ _refresh('focus'); });

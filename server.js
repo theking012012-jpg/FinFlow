@@ -4368,6 +4368,15 @@ app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) =>
   const bankRow = await pool.query('SELECT id FROM personal_transactions WHERE id=$1 AND user_id=$2', [banking_id, scopeId(req)]);
   const payRow = await pool.query('SELECT id FROM invoice_payments WHERE id=$1 AND user_id=$2', [invoice_payment_id, scopeId(req)]);
   if (!bankRow.rows[0] || !payRow.rows[0]) return res.status(404).json({ error: 'Not found.' });
+  // C1/F117: idempotent by natural key — mirror /match-batch. A bank tx or payment ALREADY
+  // reconciled (a double-submit or retry) returns the existing link instead of inserting a
+  // duplicate. bank_reconciliation has no unique constraint, so this SELECT-before-INSERT is the
+  // guard (no migration; matches the batch endpoint's skip semantics).
+  const _dupMatch = await pool.query(
+    `SELECT * FROM bank_reconciliation WHERE user_id=$1 AND (banking_id=$2 OR invoice_payment_id=$3) ORDER BY id DESC LIMIT 1`,
+    [req.session.userId, parseInt(banking_id), parseInt(invoice_payment_id)]
+  );
+  if (_dupMatch.rows[0]) return res.status(200).json(_dupMatch.rows[0]);
   const { rows } = await pool.query(
     `INSERT INTO bank_reconciliation (user_id, entity_id, banking_id, invoice_payment_id)
      VALUES ($1,$2,$3,$4) RETURNING *`,

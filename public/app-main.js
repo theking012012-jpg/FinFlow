@@ -4410,24 +4410,11 @@ function renderInvestments(){
   updateInvAI(totalValue,totalGain,gainPct,totalDiv);
   updateNetWorthPanel(totalValue);
 
-  // Performance card — populate from real portfolio gain (no hardcoded benchmarks).
-  // S&P 500 / 60/40 stay as dashes unless a benchmark API is wired in.
-  const _perfPort = document.getElementById('biz-perf-port');
-  const _perfSum  = document.getElementById('biz-perf-summary');
-  if (_perfPort) {
-    if (holdings.length === 0) {
-      _perfPort.textContent = '—';
-      _perfPort.style.color = 'var(--t3)';
-      if (_perfSum) _perfSum.textContent = 'No holdings yet — add positions to see performance.';
-    } else {
-      const pct = parseFloat(gainPct) || 0;
-      const pos = pct >= 0;
-      _perfPort.textContent = (pos ? '+' : '') + pct.toFixed(1) + '%';
-      _perfPort.style.color = pos ? 'var(--green)' : 'var(--red)';
-      _perfPort.style.fontWeight = '600';
-      if (_perfSum) _perfSum.textContent = 'Unrealised ' + (pos ? 'gain' : 'loss') + ': ' + (pos ? '+' : '') + S2(totalGain) + ' on ' + S2(totalCost) + ' cost basis.';
-    }
-  }
+  // F155: the business Performance box (#biz-perf-port / #biz-perf-summary) lives on
+  // page-biz-investments and is now owned by renderBizInvestments (business data). This PERSONAL
+  // render used to write it from the personal `holdings` array — a cross-wire that displayed the
+  // personal cost basis on the business page, identical across every entity and matching none.
+  // Removed so the personal render only touches personal-page elements.
 }
 
 // Personal spend-by-category donut (real transaction category totals).

@@ -6869,6 +6869,12 @@ document.addEventListener('click', e=>{
       list.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--t3)">No holdings yet — click + Add holding to get started</div>';
       ['biz-inv-total','biz-inv-gain','biz-inv-daychg'].forEach(id => bizEl(id,'$0'));
       bizEl('biz-inv-income','$0/yr');
+      // F155: this render OWNS the business Performance box. It used to be written only by the
+      // PERSONAL renderInvestments (app-main.js) from personal holdings — a cross-wire that showed
+      // the personal cost basis on the business page, identical across every entity.
+      { const pp=document.getElementById('biz-perf-port'); const ps=document.getElementById('biz-perf-summary');
+        if(pp){ pp.textContent='—'; pp.style.color='var(--t3)'; }
+        if(ps) ps.textContent='No holdings yet — add positions to see performance.'; }
       return;
     }
     const palette=['#c9a84c','#5aaa9e','#9e8fbf','#7db87d','#d4964a','#c46a5a','#5a4e3a'];
@@ -6915,6 +6921,10 @@ document.addEventListener('click', e=>{
     bizChg('biz-inv-total-chg', (gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% all time', gainPos?'up':'dn');
     bizChg('biz-inv-gain-chg',  (gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% return',   gainPos?'up':'dn');
     if(haveDay) bizChg('biz-inv-daychg-chg', (totalDayChg>=0?'▲ ':'▼ ')+Math.abs(dayPct)+'% today', totalDayChg>=0?'up':'dn');
+    // F155: business Performance box from BUSINESS data (was cross-wired to personal renderInvestments).
+    { const pp=document.getElementById('biz-perf-port'); const ps=document.getElementById('biz-perf-summary');
+      if(pp){ pp.textContent=(gainPos?'+':'')+Math.abs(parseFloat(gainPct))+'%'; pp.style.color=gainPos?'var(--green)':'var(--red)'; pp.style.fontWeight='600'; }
+      if(ps) ps.textContent='Unrealised '+(gainPos?'gain':'loss')+': '+(gainPos?'+':'')+S2b(totalGain)+' on '+S2b(totalCost)+' cost basis.'; }
   }
 
   // Apply live quotes into window.bizHoldings, then repaint.

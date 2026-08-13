@@ -1362,6 +1362,16 @@ let activeEntityIdx = 0;
 let REV    = new Array(12).fill(0);
 let EXP    = new Array(12).fill(0);
 let PROFIT = new Array(12).fill(0);
+// F153: the single in-app writer for the monthly chart arrays REV[]/EXP[]/PROFIT[]. Exposed as a
+// window setter so the wiring path (_refreshDashboardUI, which holds the real data via
+// window._realInvoices) can fill them WITHOUT reaching the `let` bindings cross-file (the F125 rule).
+// buildCharts reads REV/EXP; before this, _refreshDashboardUI built the monthly arrays then dropped
+// them, so the overview chart drew zeros even though the KPIs had real data.
+window._setMonthlyArrays = function(revArr, expArr){
+  if(!Array.isArray(revArr) || !Array.isArray(expArr)) return;
+  REV.splice(0,12,...revArr); EXP.splice(0,12,...expArr);
+  for(let i=0;i<12;i++) PROFIT[i] = (REV[i]||0) - (EXP[i]||0);
+};
 const EXP_SAL  = new Array(12).fill(0);
 const EXP_RENT = new Array(12).fill(0);
 const EXP_SW   = new Array(12).fill(0);
@@ -1548,10 +1558,7 @@ async function loadEntityData(idx){
     // once it does. Payroll is NOT in EXP[] — computeExpenseBreakdown adds it once (canonical).
     if(typeof window._buildMonthlyArrays==='function'){
       const _mb=window._buildMonthlyArrays(invoices, expenses);
-      if(_mb && _mb.revByMonth){
-        REV.splice(0,12,..._mb.revByMonth); EXP.splice(0,12,..._mb.expByMonth);
-        for(let i=0;i<12;i++) PROFIT[i] = REV[i]-EXP[i];
-      }
+      if(_mb && _mb.revByMonth){ window._setMonthlyArrays(_mb.revByMonth, _mb.expByMonth); }   // F153: route through the single writer
     }
 
     const _safeRender = (fn) => { try { if(typeof fn==='function') fn(); } catch(e) { console.warn('render error:', e.message); } };

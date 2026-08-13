@@ -440,6 +440,7 @@
     if (!invs || !exps) return;
     const period = window.currentPeriod || 'year';
     const { months, revByMonth, expByMonth } = buildMonthlyArrays(invs, exps);
+    if (typeof window._setMonthlyArrays === 'function') window._setMonthlyArrays(revByMonth, expByMonth);   // F153: fill the global REV[]/EXP[] the overview chart reads — this path holds the real data (app-main's early fill at :1552 ran before data arrived, leaving zeros)
 
     // Populate EXP_SAL/RENT/SW/MKT per-month so getPeriodData() has real values.
     // F60: these MUST be indexed on the FISCAL year, exactly like buildMonthlyArrays above and

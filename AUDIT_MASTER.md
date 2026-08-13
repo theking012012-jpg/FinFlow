@@ -1089,6 +1089,19 @@ after a classic script declaring  let charts = {} :
 
 ---
 
+### F152 ✅ **FIXED** (`7b30f38`, 2026-08-13) — was 🟠 HIGH — dashboard overview + cash charts never rendered — `buildCharts()` called before the lazy Chart.js load — **F125's deferred render risk, materialized on live deploy**
+**Status:** ✅ FIXED (code); render UNEXECUTED (jsdom can't paint charts — owner visual check on deploy).
+
+**Symptom (owner console, 2026-08-13):** two `Chart.js not loaded — charts skipped` warnings at `app-main.js:5190`; no chart rendered.
+
+**Root cause.** Chart.js loads lazily via `loadChartJS(cb)` (`index.html:3572`) which injects the cdnjs `chart.umd.js` and runs `cb` on `onload`. Every caller wraps `buildCharts` in it — EXCEPT the wiring live-data path, which called `buildCharts()` **raw** at `finflow-api-wiring-dashboard.js:406` and `:477`. On boot those fire during entity data-load, before the CDN script has loaded, so `buildCharts` hits its own `typeof Chart==='undefined'` guard (`app-main.js:5190`) and returns. Two raw calls = the two warnings. No `Chart.js failed to load` error → the CDN was fine; the calls were simply too early. This is exactly the render F125 shipped **UNEXECUTED** ("owner to confirm the chart on deploy") — the risk landed.
+
+**Fix.** Both sites now `if (typeof loadChartJS === 'function') loadChartJS(buildCharts); else buildCharts();`. `loadChartJS` is idempotent (immediate if `Chart` defined, queue if mid-load, else load — `index.html:3573-3576`), and the `typeof` guard falls back to the raw call if `loadChartJS` is somehow absent → **no regression path**. `buildCharts` self-destroys prior instances first, so a double-fire (406 then 477) is a safe rebuild.
+
+**Verified:** `node --check`; idempotency + no-regression fallback by code read. **UNEXECUTED:** the actual paint (jsdom limitation, same as F125) — owner confirms on deploy after a hard refresh.
+
+---
+
 ### F126 🟡 MEDIUM — MRR/ARR and the Scenario planner are never FX-converted at all — **NEW (2026-08-03, found while fixing F124), OPEN**
 **Status:** OPEN. **F124 made these surfaces HONEST, not converted** — do not read that tick as coverage.
 

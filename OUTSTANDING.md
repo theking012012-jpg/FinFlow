@@ -2,14 +2,14 @@
 
 Last updated: 2026-08-13. Mirror of the Progress task list. **No open money bugs, no launch blockers** per the 2026-08-09 reconciliation in `AUDIT_MASTER.md`. Full detail for each item lives in `AUDIT_MASTER.md` under its finding number.
 
-**Just shipped this session (done):** C3 client record-date fix (local dates, execution-verified), F152 (charts now run — `loadChartJS` wrap), F153 (charts now show data — single-writer `_setMonthlyArrays`). All committed + pushed (`0363e5f`).
+**Just shipped this session (done):** C3 client record-date fix (local dates, execution-verified), F152 (charts now run — `loadChartJS` wrap), F153 (charts now show data — single-writer `_setMonthlyArrays`). All committed + pushed (`0363e5f`). F151f (quick tab-switch no longer force-reloads → no data blink) committed + pushed (`4e6de6b`).
 
 ---
 
 ## Priority order
 
 ### 1. Ready to ship — one approval away
-- [ ] **F139 — commit verified tax-worksheet fix.** Client Income-Tax worksheet vs accountant Tax Summary computed tax on different revenue+deduction legs. Fix written + executed fail-then-pass on real scratch Postgres; HELD awaiting owner approval to commit. Highest leverage.
+- [x] **F139 — tax-worksheet single-source. ALREADY DONE (committed `bc8cd70`).** Client Income-Tax worksheet and accountant Tax Summary now read one `computeBooks` deductible leg. Re-verified GREEN on real scratch Postgres 2026-08-13: client taxable === accountant taxable === 12000, deductible 2000 includes the 100/50 variants, client revenue is accrual 14000 (not cash 4000). The prior "HELD awaiting commit" note was stale. **Harness caveat:** `verify-f139-tax-consistency.js` had to be updated to run — its seed inserted `entity_id=NULL`, which the F150 constraint (`chk_*_entity_nn`, added afterward) now rejects (code 23514); the seed now creates one active entity and stamps it. That harness-seed fix is the only F139 item left, and it's test-debt, not a money fix.
 
 ### 2. Root architecture
 - [ ] **F88 / C3-server — entity-timezone recognition (+F85 carry-period).** Roots the C3 server half. Genuine timestamps (run_date=NOW()) and any server date default must resolve against the ENTITY timezone, not UTC/created_at; better, events carry their intended period explicitly (F85). Do NOT add a created_at fallback to receipts — breaks the F34 recognition==filter invariant (Rule 6). Client C3 half already shipped+verified.
@@ -36,6 +36,10 @@ Last updated: 2026-08-13. Mirror of the Progress task list. **No open money bugs
 - [ ] **F54 / F107 / F108** (team/multi-tenant), **F92** (structural dead-shadow elimination), **F19** (DB TLS, verified, deferred), **F109** (close-position feature, owner-gated), **F83** (harness exits 0 even on failure — CI hazard).
 
 ---
+
+## Working-tree hygiene (2026-08-13)
+- ⚠ **Stale `public/finflow-bundle.js` on disk.** OneDrive reverted the working-tree bundle to an OLDER copy — it is MISSING the C3/F37, F152, and F153 changes that ARE correct in the committed HEAD bundle. Git shows it as modified. Do NOT commit it. Restore with `git checkout -- public/finflow-bundle.js` (or regenerate via `node bundle.js`). Committed HEAD and production (Railway deploys from git) are unaffected.
+- `tests/harness/clock.js` and `tests/harness/seedData.js` show as modified but are byte-identical to HEAD (line-ending/mtime noise) — safe to `git checkout` / ignore.
 
 ## Standing constraints (from CLAUDE.md — read it fully first)
 - Owner runs ALL git commits/pushes in PowerShell; assistant cannot commit (OneDrive `.git/index.lock`).

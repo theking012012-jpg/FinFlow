@@ -73,17 +73,26 @@ async function insertJson(c, table, userId, entityId, ymd, data) {
          password: bcrypt.hashSync(CLIENT.password, 10) }]
     )).rows[0].id;
 
+    // F150: business rows now require a non-null entity_id (chk_*_entity_nn added after this
+    // harness was written). Create one active entity and stamp every invoice/expense to it; the
+    // cash/accrual + deductible discriminating logic is unchanged — only storage now carries an entity.
+    const eid = (await c.query(
+      `INSERT INTO entities (user_id, entity_id, data, created_at, updated_at)
+       VALUES ($1, NULL, $2, NOW(), NOW()) RETURNING id`,
+      [userId, { name: "F139 Co", currency: "USD", is_active: 1, sort_order: 0 }]
+    )).rows[0].id;
+
     // Invoices — entity_id NULL (single business, no entity). issue_date inside FY2026, ≤ today (07-25).
-    await insertJson(c, 'invoices', userId, null, '2026-07-03', {
+    await insertJson(c, 'invoices', userId, eid, '2026-07-03', {
       client: 'Acme', amount: 10000, amount_paid: 0, status: 'pending',
       issue_date: '2026-07-03', due_date: '2026-07-03', num: 'INV-U' });
-    await insertJson(c, 'invoices', userId, null, '2026-07-04', {
+    await insertJson(c, 'invoices', userId, eid, '2026-07-04', {
       client: 'Beta', amount: 4000, amount_paid: 4000, status: 'paid',
       issue_date: '2026-07-04', due_date: '2026-07-04', num: 'INV-P' });
 
     // Expenses — one of every deductible variant, incl. the '100'/'50' the accountant missed.
     const exp = (ymd, amount, deductible, desc) =>
-      insertJson(c, 'expenses', userId, null, ymd, { description: desc, category: 'Ops', amount, deductible, expense_date: ymd });
+      insertJson(c, 'expenses', userId, eid, ymd, { description: desc, category: 'Ops', amount, deductible, expense_date: ymd });
     await exp('2026-07-05', 1000, 'yes', 'Full A');
     await exp('2026-07-06', 500, '100', 'Full B (100 variant)');
     await exp('2026-07-07', 800, 'half', 'Half C');

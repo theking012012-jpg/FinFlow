@@ -403,7 +403,9 @@
       }
 
       // Force a full UI refresh so KPIs + chart render with real data on page load
-      if (!window.charts?.overview && typeof buildCharts === 'function') buildCharts();
+      // F152: route through loadChartJS so Chart.js (lazy CDN load) is present BEFORE buildCharts
+      // runs — calling it raw here fired before the library loaded → "Chart.js not loaded — charts skipped".
+      if (!window.charts?.overview && typeof buildCharts === 'function') { if (typeof loadChartJS === 'function') loadChartJS(buildCharts); else buildCharts(); }
       if (typeof window._refreshDashboardUI === 'function') window._refreshDashboardUI();
 
       // Canonical writer owns d-rev/d-exp/d-profit — call it LAST at boot so those cards show
@@ -474,7 +476,7 @@
       });
     }
 
-    if (!window.charts?.overview && typeof buildCharts === 'function') buildCharts();   // LIVE: builds the app-main-owned chart
+    if (!window.charts?.overview && typeof buildCharts === 'function') { if (typeof loadChartJS === 'function') loadChartJS(buildCharts); else buildCharts(); }   // LIVE: builds the app-main-owned chart — F152: via loadChartJS so Chart.js is present first
     // F125: dead second-writer removed — the updateOverviewChart no-op call and the
     // `if (window.charts?.overview){…}` block below it never ran (window.charts is undefined forever),
     // so they wrote nothing. buildCharts() above still (re)builds/refreshes the overview chart.

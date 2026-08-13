@@ -408,7 +408,9 @@ Blocking browser dialogs. Not wrong, but they break the visual language, cannot 
 
 ---
 
-### C3 — Timezone: UTC record dates — 35 defect sites 🔴 F37 REOPENED
+### C3 — Timezone: UTC record dates 🟡 PARTIAL — client record-date half done+verified (see UPDATE 2026-08-13 below); server + recurrence residual
+> ⚠️ The site catalog in this block is **STALE** (pre-F149/150/151). Trust the **UPDATE 2026-08-13** section at the end of this block for the current enumeration, not the line numbers here.
+
 `new Date().toISOString().slice(0,10)` yields the **UTC** calendar date. This account runs at a negative UTC offset (verified during the F37 work: `todayLocal()` returned 07-19 while UTC read 07-20). Any record created after ~20:00 local is stamped **tomorrow** — which moves it into the wrong month at a month boundary and therefore into the wrong P&L period.
 
 **Server — 15 sites** (record-date defaults):
@@ -424,6 +426,31 @@ Blocking browser dialogs. Not wrong, but they break the visual language, cannot 
 
 **Course of action:** client — export the existing `todayLocal()` (`app-main.js:21`) onto `window` and replace all 20. Server — the server **cannot** know the user's local date; it must **stop defaulting dates at all** and either require the client to send one or store `NULL` (this is already the deliberate pattern for `issue_date`, `server.js:859-862`). Do **not** substitute a server-side timezone guess.
 **Done when:** a record created at 21:00 local on the last day of a month appears in that month on the dashboard, the Expenses page and `/api/reports`.
+
+---
+
+**UPDATE 2026-08-13 — client record-date half DONE + EXECUTION-VERIFIED; server half REVERTED as a finding; catalog above is STALE (pre-F149/150/151, do not trust its line numbers).**
+
+Re-enumerated against current code (Rule 5 — the site catalog above predates three arcs and its line numbers drifted). Canonical grep `toISOString().slice(0,10)` now returns **12 client sites** (not 20) and **18 server sites**.
+
+**CLIENT — record-date defaults CONVERTED (7 sites) + `window` export.** Every client default that stamps a *transaction's accounting date* now uses the viewer's LOCAL date via `window.todayLocal()` (guarded fallback), or self-contained local getters on the standalone accountant page:
+- `app-main.js:25-26` — exports `window.todayLocal` / `window.toLocalYMD` (the enabler)
+- `finflow-api-wiring-extra.js:26`, `finflow-api-wiring-pages.js:19`, `finflow-api-wiring-medium.js:306`, `finflow-api-wiring-final.js:123`, `finflow-api-wiring-postgres.js:63` — guarded `window.todayLocal ? … : <old UTC>`
+- `index.html:4811` (run-date), `accountant-client.html:1218` (self-contained local getters — standalone page, no `window.todayLocal`)
+
+**VERIFIED BY EXECUTION** (real function body from `app-main.js:14-20`, not a paraphrase; Rule 4 discriminating + Rule 10 sign-boundary control):
+- Bug instant `2026-06-01T01:30:00Z` = `2026-05-31 21:30` in New York (UTC-4). Old UTC form → `2026-06-01` (files into JUNE, wrong). New local form → `2026-05-31` (files into MAY, correct). **Discriminates: true.**
+- London (UTC+1) positive-offset control: both forms → `2026-06-01`, no movement — the documented F87/Rule-10 asymmetry (west of UTC is wrong, east is not) confirmed by execution.
+
+**CLIENT — 5 bare `toISOString` sites left, classified as NOT the record-date class:**
+- `app-main.js:3632`, `finflow-api-wiring-pages.js:742` — next-recurrence-date *formatters* (advance a derived schedule date by a period; recurrence-interval family the catalog already rules "leave alone").
+- `finflow-api-wiring-medium.js:740` (`today`) + `:745` (`nextRun`) — recurring-profile *scheduler* (month-boundary materialization). Real but distinct sub-class → **logged as C3-recur residual**, not a record-date default.
+- `index.html:5135` — FX-rate *as-of* default (catalog already rules FX-as-of "leave UTC").
+- (`app-main.js:23` is this rule's own comment text, not a site.)
+
+**SERVER — 0 sites converted. REVERTED to original UTC, deliberately, as a finding.** A blind `date || null` swap is UNSAFE: the money-recognition legs do NOT all fall back to `created_at`. Confirmed at `server.js:3841` — `receipts.forEach(r => bump(r.date, 'revenue', r.amount))` has **no `|| r.created_at`**, unlike invoices (3840), expenses (3842), bills (3845), paymentsMade (3848), creditNotes (3853), vendorCredits (3855). So a `sales_receipts` row stored with `date=null` would drop out of monthly revenue — a regression. The server half needs a **per-table recognition audit** (and a fallback added to 3841) BEFORE any server site can store NULL. Until then all 18 server sites stay UTC. **This UTC fallback is dead for browser traffic anyway** — the client now always sends a local date; the server default only fires for date-less API callers. → **C3-server residual, blocked on the 3841 recognition-gap fix.**
+
+**Net:** record-date class fixed + verified on the client (the surface a human actually uses); recurrence-scheduler, FX-as-of, and the whole server sweep remain as scoped residuals. Row stays **PARTIAL** — not "✅ FIXED" (the F37 lesson).
 
 ---
 

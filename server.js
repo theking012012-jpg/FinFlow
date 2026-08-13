@@ -2664,10 +2664,13 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   const validStatuses = ['Open', 'Applied', 'Void'];
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
-  // the partial unique index (idx_credit_notes_idem_key) is the sole arbiter. credit_notes is
-  // user-scoped (no entity_id), so the existing null entityId matches the insert — no scope gap.
+  // the partial unique index (idx_credit_notes_idem_key) is the sole arbiter.
+  // C1 (F148 alignment, same class as sales_receipts/payments_received): since F148 the INSERT stores
+  // entity_id = req.entityId||null, so a pre-check hardcoded to null never matched the inserted row
+  // under an active entity → a token-less <5s double-submit created a DUPLICATE credit note
+  // (double-contra of that entity's revenue). Scope the pre-check to req.entityId||null to match the insert.
   if (!idem) {
-    const _dup = await findRecentDuplicate('credit_notes', req.session.userId, null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('credit_notes', req.session.userId, req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.json(_dup);
   }
   // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover
@@ -2825,10 +2828,12 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   const validStatuses = ['Open', 'Applied', 'Void'];
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
-  // the partial unique index (idx_vendor_credits_idem_key) is the sole arbiter. User-scoped table
-  // (no entity_id) → the existing null entityId matches the insert — no scope gap.
+  // the partial unique index (idx_vendor_credits_idem_key) is the sole arbiter.
+  // C1 (F148 alignment, same class as credit_notes/sales_receipts): since F148 the INSERT stores
+  // entity_id = req.entityId||null, so a pre-check hardcoded to null never matched under an active
+  // entity → a token-less <5s double-submit created a DUPLICATE vendor credit. Scope to req.entityId||null.
   if (!idem) {
-    const _dup = await findRecentDuplicate('vendor_credits', req.session.userId, null, { textMatch: { vendor: String(vendor).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('vendor_credits', req.session.userId, req.entityId || null, { textMatch: { vendor: String(vendor).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.json(_dup);
   }
   // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover

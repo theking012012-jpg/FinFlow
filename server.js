@@ -732,7 +732,13 @@ app.use('/api', async (req, res, next) => {
       }
     }
     req.entityId = entityIdInt;
-    req.session.entityId = entityIdInt;
+    // F151 ROOT FIX: do NOT persist a per-request ?entity_id into the session. The consolidated
+    // dashboard fetches /api/reports?entity_id=<EVERY entity> in a loop; persisting here let the
+    // last one (e.g. entity 1 / Saige) hijack the session, so a later session-based read
+    // (medium.js's fallback /api/invoices with no entity_id, which fires when the active entity is
+    // empty) returned the WRONG entity's data — the tab-refocus "Saige under Acme" bug. ?entity_id
+    // now scopes THIS request only; the session's active entity is owned solely by the explicit
+    // switch (/api/entities/:id/activate) and the first-load fallback below.
     return next();
   }
   if (req.session.entityId) {

@@ -1513,10 +1513,17 @@
         : (window.userInvoices || []);
       if (!_invSrc.length && !window._entRevFetching) {
         window._entRevFetching = true;
-        fetch('/api/invoices', { credentials: 'same-origin' })
+        // F151: scope this fallback to the ACTIVE entity explicitly (never the session, which the
+        // consolidated loop below can transiently move), and guard the write against a switch landing
+        // mid-fetch — otherwise an empty active entity fetched the wrong entity's invoices.
+        var _aEnt = (window.ENTITIES || []).find(e => e && e.active);
+        var _aeq = _aEnt && _aEnt._dbId ? '?entity_id=' + _aEnt._dbId : '';
+        var _rSeq = window._entitySwitchSeq || 0;
+        fetch('/api/invoices' + _aeq, { credentials: 'same-origin' })
           .then(r => r.ok ? r.json() : [])
           .then(rows => {
             window._entRevFetching = false;
+            if ((window._entitySwitchSeq || 0) !== _rSeq) return;   // stale — a switch happened, discard
             if (rows && rows.length) { window._realInvoices = rows; if (typeof window.renderEntities === 'function') window.renderEntities(); }
           })
           .catch(() => { window._entRevFetching = false; });

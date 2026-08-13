@@ -237,6 +237,7 @@ F25, F30, F32 (residual `/api/cashflow` reconciliation + Store A row), F33-C, F3
 A class is only a class if it has a full instance list. Each has one.
 
 ### C1 — Duplicate-submit — 🟠 **PARTIAL** — durable DB-level fix DONE for `payroll_runs` (pilot); interim heuristic still backs the other money routes; ~29-route rollout + client token OPEN
+> **UPDATE 2026-08-13 — client half ✅ CLOSED; money-route audit complete.** All 63 POST routes swept: money paths covered (idempotency_key / heuristic + 13 client re-entry locks); shared `withSubmitGuard` shipped + FX handlers guarded (`26c395e`); one real server gap fixed — legacy `/bank-reconciliation/match` made idempotent (`d2fe703`). Remaining token rollout is **non-money routes only** (stripe-webhook, team-accept [gated], ai-cache, accountant-messages, connections). Full detail + harness evidence in the "Client half — CLOSED" block below.
 
 > **STATUS — four states (2026-07-25). PARTIAL per the tick-off corollary: a fix covering part of a class says PARTIAL and lists what's left. C1 stays the single home for the double-submit class — no new F-number.**
 >
@@ -350,7 +351,23 @@ A class is only a class if it has a full instance list. Each has one.
 **Verified:** 34/34 — every call site checked column-by-column against the parsed schema; reverse check confirms no JSONB matcher points at a typed table; generated SQL asserted for scoping, window, contiguous parameter numbering, and null-handling that does not shift parameter indices.
 **Still to confirm live (owner):** double-click *Record Payment* with a partial amount → one payment row, not two. Double-click a sale movement → COGS unchanged by the second click.
 
+**Client half — ✅ CLOSED (2026-08-13).** The original note ("88 POST sites, **9** guarded, post-launch") is **superseded** — it predated the "C1 Wave 1b" rollout. Re-verified this session by reading current source:
+
+- **13 money-mutating handlers already carry an in-flight re-entry lock** (`if (window._savingXxx) return;` — the exact guard `withSubmitGuard` provides), plus button-disable + `finally` re-enable, and most also send a server `idempotency_key`: record-payment, payroll-run, stock-in, stock-out (`index.html`); invoice, expense (`wiring-medium`); sales-receipt, payment-received, credit-note, bill, payment-made (`wiring-pages`); journal-entry (`wiring-postgres`); chart-of-accounts (`app-main`). Grep evidence: `if (window._saving…) return` × 13.
+- **Shared `withSubmitGuard(btn, fn, opts)` helper added** (`app-main.js`, after `todayLocal`) — refuses re-entry while in-flight, ALWAYS re-enables the button in `finally` (even on throw), restores the label, returns fn's value. Adopted in the **only two money-adjacent handlers that lacked a real lock**: `addFXRate`, `addFXTransaction` (`index.html`). Commit **`26c395e`**.
+- **Evidence:** `tests/harness/verify-f117-client-submit-guard.js` — 13 unit checks on the real extracted helper + a double-fire integration against real Postgres (`/api/fx-rates`): guarded → **1** request reaches the server (2nd click blocked), unguarded → **2** (server 5s-dedup keeps the row at 1 either way, which is why the client guard is measured on requests, not rows). **18/18 green; fail-then-pass proven.** Deliberately did **not** convert the 13 already-locked handlers — a no-op rename on working money code near launch is risk without benefit (Rule 9 churn).
+
+**Server audit (2026-08-13) — all 63 POST routes swept.** Money routes are covered (idempotency_key on the F117 / C1 Wave-1/2 set; `findRecentDuplicate` / 5s on inventory, payroll, holdings, recurring, FX). A keyword scan flagged 4 candidate gaps; **reading them (Rule 5) cleared 3 as false positives** — `/bank-reconciliation/match-batch` skips already-reconciled pairs by natural key, `/inventory/:id/restock` has the `last_restock_*` 5s marker, `/fx-transactions/:id/settle` is a naturally-idempotent UPDATE (recomputes the same realised G/L). **One real gap, fixed:**
+
+- **`POST /api/bank-reconciliation/match`** — the single, legacy endpoint (**no client caller**; the UI uses `/match-batch`). It INSERTed a `bank_reconciliation` link with no guard, and the table has no UNIQUE constraint, so a direct retry/API double-fire made duplicate links. Fixed with a natural-key SELECT-before-INSERT mirroring `/match-batch` (a `banking_id` or `invoice_payment_id` already reconciled → return existing, 200) — server-only, no migration. Commit **`d2fe703`**. Evidence: `tests/harness/verify-f117-bankrec-match-idempotent.js` — double-POST → **1 link, same id both times (5/5 green); unfixed → 2 links.**
+
+**Remaining — non-money, create no financial duplicate (low priority, not launch-blocking):** `POST /api/stripe/webhook` (platform_fees — should key off the Stripe event id), `POST /api/team/accept` (users insert — team invites gated pre-launch, F54), `POST /api/ai` (ai_cache), `POST /api/accountant-messages`, `POST /api/connections` (audit_trail). None can duplicate a money figure.
+
+<details><summary>Original note (superseded 2026-08-13)</summary>
+
 **Still OPEN — the client half.** 88 POST call sites in the main app, **9** with a disable-on-submit guard (`index.html:4836`, `4897`, `6331`, `7348`; `app-main.js:494`, `638`, `677`, `725`, `2635`). Server dedupe is now the backstop for money, so this is post-launch: add one `withSubmitGuard(btn, fn)` helper rather than 88 hand-edits.
+
+</details>
 
 <details><summary>Original C1 row</summary>
 

@@ -19,6 +19,35 @@ function toLocalYMD(d){
   return `${y}-${m}-${day}`;
 }
 function todayLocal(){ return toLocalYMD(new Date()); }
+
+// ── withSubmitGuard — the single shared double-submit guard (Rule 9) ───────────────────
+// Wrap any mutating submit handler so a double/triple-click cannot fire it twice. While fn is in
+// flight the button is disabled (optionally relabelled); a second call for the SAME button is
+// refused and returns undefined; and the button is ALWAYS restored in a finally — including when fn
+// throws, the failure mode ad-hoc per-button guards keep leaking (a button left stuck disabled on
+// error). Idempotency at the write (server unique key) is the durable layer; this is the client
+// layer that stops the second request from ever being sent. Returns fn's resolved value.
+async function withSubmitGuard(btn, fn, opts){
+  opts = opts || {};
+  if (btn) {
+    if (btn.dataset.ffSubmitting === '1') return undefined;   // already in flight → refuse re-entry
+    btn.dataset.ffSubmitting = '1';
+    btn.dataset.ffPrevHtml = btn.innerHTML;
+    btn.disabled = true;
+    if (opts.label != null) btn.textContent = opts.label;
+  }
+  try {
+    return await fn();
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      if (opts.label != null && btn.dataset.ffPrevHtml != null) btn.innerHTML = btn.dataset.ffPrevHtml;
+      delete btn.dataset.ffPrevHtml;
+      btn.dataset.ffSubmitting = '';
+    }
+  }
+}
+window.withSubmitGuard = withSubmitGuard;
 // C3/F37: expose the LOCAL-date helpers so every client file uses the viewer's local calendar date
 // for record-date defaults, never `new Date().toISOString().slice(0,10)` (which is the UTC date and,
 // at a negative UTC offset after ~20:00 local, stamps a record into TOMORROW → wrong month/period).

@@ -5135,20 +5135,22 @@ async function addFXRate(btn){
   const date=document.getElementById('fxr-date')?.value||new Date().toISOString().slice(0,10);
   if(!from||!to){notify('Enter both currencies',true);return;}
   if(!rate||rate<=0){notify('Enter a valid rate',true);return;}
-  if(btn) btn.disabled=true;   // disable-on-submit — blocks the double/triple-click that created dupes
-  try{
-    const res=await fetch('/api/fx-rates',{
-      method:'POST',credentials:'include',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({from_currency:from,to_currency:to,rate,rate_date:date}),
-    });
-    const data=await res.json();
-    if(data.error){notify('⚠ '+data.error,true);return;}
-    closeModal('fx-rate-modal');
-    notify('✓ FX rate saved');
-    loadFXData();
-  }catch(e){notify('Could not save rate',true);}
-  finally{ if(btn) btn.disabled=false; }
+  // C1/F117 client layer: route through the shared double-submit guard (disable + re-entry block +
+  // guaranteed re-enable in finally). Validation stays ABOVE the guard so bad input never locks btn.
+  return withSubmitGuard(btn, async () => {
+    try{
+      const res=await fetch('/api/fx-rates',{
+        method:'POST',credentials:'include',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({from_currency:from,to_currency:to,rate,rate_date:date}),
+      });
+      const data=await res.json();
+      if(data.error){notify('⚠ '+data.error,true);return;}
+      closeModal('fx-rate-modal');
+      notify('✓ FX rate saved');
+      loadFXData();
+    }catch(e){notify('Could not save rate',true);}
+  });
 }
 
 // In-app confirm modal (styled like the app; no native "railway.app says" dialog). Returns a
@@ -5196,20 +5198,21 @@ async function addFXTransaction(btn){
   if(!currency){notify('Enter foreign currency',true);return;}
   if(!amount||amount<=0){notify('Enter a valid amount',true);return;}
   if(!rate||rate<=0){notify('Enter a valid rate',true);return;}
-  if(btn) btn.disabled=true;   // disable-on-submit — blocks the double/triple-click that created dupes
-  try{
-    const res=await fetch('/api/fx-transactions',{
-      method:'POST',credentials:'include',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({foreign_currency:currency,foreign_amount:amount,base_currency:base,rate_at_transaction:rate,reference_type:refType,reference_id:refId}),
-    });
-    const data=await res.json();
-    if(data.error){notify('⚠ '+data.error,true);return;}
-    closeModal('fx-tx-modal');
-    notify('✓ FX transaction saved');
-    loadFXData();
-  }catch(e){notify('Could not save transaction',true);}
-  finally{ if(btn) btn.disabled=false; }
+  // C1/F117 client layer: route through the shared double-submit guard (see withSubmitGuard).
+  return withSubmitGuard(btn, async () => {
+    try{
+      const res=await fetch('/api/fx-transactions',{
+        method:'POST',credentials:'include',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({foreign_currency:currency,foreign_amount:amount,base_currency:base,rate_at_transaction:rate,reference_type:refType,reference_id:refId}),
+      });
+      const data=await res.json();
+      if(data.error){notify('⚠ '+data.error,true);return;}
+      closeModal('fx-tx-modal');
+      notify('✓ FX transaction saved');
+      loadFXData();
+    }catch(e){notify('Could not save transaction',true);}
+  });
 }
 
 // PL#6: settlement rate is collected via #fx-settle-modal (prompt() was removed per audit).

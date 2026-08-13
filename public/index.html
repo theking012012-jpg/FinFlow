@@ -6930,9 +6930,14 @@ document.addEventListener('click', e=>{
   }
 
   // Load entity-scoped business holdings from the DB (scope=business → active entity).
-  async function loadBizHoldingsFromDB(){
+  async function loadBizHoldingsFromDB(entityId){
     try{
-      const res = await fetch('/api/holdings?scope=business', { credentials:'include' });
+      // F154: accept an explicit entity_id so an entity SWITCH reloads the RIGHT portfolio without
+      // depending on session timing. The server resolves a no-entity_id ?scope=business against the
+      // ACTIVE entity (server.js:744) — which, mid-switch, is the entity we just left, i.e. the leak.
+      // No arg → active entity (unchanged for boot / page-nav / post-mutation refresh paths).
+      const _u = '/api/holdings?scope=business' + (entityId != null ? '&entity_id=' + encodeURIComponent(entityId) : '');
+      const res = await fetch(_u, { credentials:'include' });
       if(!res.ok) throw new Error('HTTP '+res.status);
       const rows = await res.json();
       window.bizHoldings = (rows||[]).map(r => ({

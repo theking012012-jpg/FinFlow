@@ -1605,6 +1605,14 @@ async function loadEntityData(idx){
       .map(([label,total])=>({label,total}));
 
     console.log('[Entity] Loaded real data — invoices:'+invoices.length+' expenses:'+expenses.length+' top clients:'+_topClients.length);
+
+    // F154 (F150/F151 entity-isolation class — Rule 13): business investment positions are entity-
+    // scoped and MUST reload on every switch. loadEntityData reloads invoices/expenses/customers/
+    // inventory/payroll above, but window.bizHoldings was never enumerated — so the dashboard
+    // Investments card and renderBizInvestments (both read window.bizHoldings) kept the PREVIOUS
+    // entity's portfolio, leaking one entity's holdings onto another (e.g. Saige's under empty Acme).
+    // Pass the explicit switched entity id (_eid) so the reload never depends on session timing.
+    if(typeof window._loadBizHoldingsFromDB === 'function'){ try{ await window._loadBizHoldingsFromDB(_eid); }catch(_){} }
   } catch(e){
     // F67: an authenticated load failure must be VISIBLE. Previously this warned to console and
     // left whatever was on screen — which, on a cold boot, was a full set of $0 cards the user

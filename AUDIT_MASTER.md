@@ -1102,6 +1102,21 @@ after a classic script declaring  let charts = {} :
 
 ---
 
+### F153 ✅ **FIXED** (`8b5cfd5`, 2026-08-13; render OWNER-VERIFIED on deploy) — was 🟠 HIGH — overview + cash charts rendered EMPTY (zero bars, ~$1 axis) despite real KPIs — the real-data path built the monthly arrays then never wrote the globals the chart reads
+**Status:** ✅ FIXED — owner confirmed bars render with data on deploy (the render half F152 left UNEXECUTED is now visually confirmed).
+
+**Uncovered by F152.** Once `buildCharts` actually ran (F152), it drew from `REV[]`/`EXP[]` (`app-main.js:1362-1364`) which were still `[0…0]`.
+
+**Root cause.** Two paths, one writer. `REV`/`EXP` were written ONLY at `app-main.js:1552`, on the early entity-load render path that runs BEFORE the real rows land (console: the fill/`buildCharts` at 1564 fire before `[Entity] Loaded real data` at 1600). The path that DOES hold the real data — `window._refreshDashboardUI` (`finflow-api-wiring-dashboard.js:437`) — computed the correct `revByMonth`/`expByMonth` at `:442` and filled the per-category `EXP_SAL…` arrays, but **never wrote `REV`/`EXP`** before calling `buildCharts` (`:479`). The `app-main.js:1547` comment ("_refreshDashboardUI fills REV[] once it does") was **stale/false** — it did not.
+
+**Fix.** Added `window._setMonthlyArrays(revArr, expArr)` in app-main (`~1365`) as the **single in-app writer** of `REV`/`EXP`/`PROFIT` — app-main owns the `let` bindings; the wiring drives the fill through the setter rather than reaching the binding cross-file (**F125 rule**). Routed app-main's own early fill (`:1552`) through the same setter, and made `_refreshDashboardUI` call it right after `:442` with the arrays it already builds. Same canonical builder both sides (`buildMonthlyArrays === window._buildMonthlyArrays`, `dashboard.js:46-47`) → not a divergent writer. `_refreshDashboardUI` returns early at `:440` when real data is absent, so it never zeroes `REV`.
+
+**Verified:** owner `node --check` clean pre-commit (sandbox shell was wedged that turn); **render owner-confirmed on deploy** (bars fill, axis scales to real revenue). Cash chart shares the now-filled `PROFIT[]`.
+
+**Enumeration note (Rule 13, self-correction).** My first caller sweep for F152 missed `app-main.js:1564 _safeRender(buildCharts)` because the grep keyed on `buildCharts\(` and there `buildCharts` is passed as a REFERENCE. Recorded so the next sweep greps references too, not just direct calls.
+
+---
+
 ### F126 🟡 MEDIUM — MRR/ARR and the Scenario planner are never FX-converted at all — **NEW (2026-08-03, found while fixing F124), OPEN**
 **Status:** OPEN. **F124 made these surfaces HONEST, not converted** — do not read that tick as coverage.
 

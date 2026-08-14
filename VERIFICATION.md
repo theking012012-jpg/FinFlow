@@ -585,8 +585,8 @@ a 5-second window — a slow double-submit defeats it; `CLAUDE.md` Rule 9).
 |---|---|---|---|
 | B1.1 | Create invoice | exactly one | PASS (2026-08-04, commits A+B) — server DB idempotency index on a per-intent token + client in-flight lock. Same-intent double-submit (concurrent or slow >5s) → exactly one; reopened modal = new token → new invoice (correct). Executed: verify-c1-invoice-pilot.js 12/12 (+7/7 no-index control), verify-c1-invoice-client.js 8/8. |
 | B1.2 | Record payment | exactly one | |
-| B1.3 | Run Payroll | exactly one run | |
-| B1.4 | Approve payroll run | expense counted once | |
+| B1.3 | Run Payroll | exactly one run | PASS (2026-08-13) — concurrent/slow (>5s) double-submit of POST /api/payroll-runs creates exactly one run (idempotency index + 23505 recovery). Executed: verify-c1-payroll-runs.js (+NO_INDEX control). Delta probe, drift-immune (F110). |
+| B1.4 | Approve payroll run | expense counted once | PASS (2026-08-13) — 2nd approve moves opex by 0 (recognised once). Executed: b4-2-3-payroll-pl-transition.js §4, delta on GET /api/reports.expenses. Drift-immune (F110). |
 | B1.5 | Log expense | exactly one row | |
 | B1.6 | Record sale movement | COGS moves once | |
 | B1.7 | Restock item | stock moves once | |
@@ -614,9 +614,9 @@ visited, so the Expenses KPI depended on where you clicked first.
 ## B4 · Status lifecycle — 4
 | # | Check | Expected | Result |
 |---|---|---|---|
-| B4.1 | Draft run present | contributes 0 | |
-| B4.2 | Approve it | contributes exactly Σ lines, once | |
-| B4.3 | **Mark it Paid** | **expense UNCHANGED — must not disappear** (the decision-2 trap) | |
+| B4.1 | Draft run present | contributes 0 | PASS (2026-08-13) — draft moves opex by 0. Executed: b4-2-3-payroll-pl-transition.js §2. Drift-immune delta (F110). |
+| B4.2 | Approve it | contributes exactly Σ lines, once | PASS (2026-08-13) — approve moves opex by exactly Σ lines (5,888). Executed: b4-2-3-payroll-pl-transition.js §3. Drift-immune delta (F110). |
+| B4.3 | **Mark it Paid** | **expense UNCHANGED — must not disappear** (the decision-2 trap) | PASS (2026-08-13) — mark-paid moves opex by 0. **Control-verified (Rule 14):** forcing the leg to `status='approved'` turns this red at −Σ lines. Executed: b4-2-3-payroll-pl-transition.js §5. Drift-immune delta (F110). |
 | B4.4 | Mark Paid | Cash Flow **out** increases by Σ lines | PASS (2026-08-03 · **first-ever run** — `tests/harness/b4-4-payroll-cash-transition.js`, 19/19) |
 
 > **B4.4 — how it is asserted, and why it is not in `step3-gate.js`.** A run created through the real

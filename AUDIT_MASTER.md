@@ -626,7 +626,14 @@ The node clock pin (`clock.js` `PINNED_ISO`) and `seedData.TODAY_LOCAL` must mov
 
 **Guard LANDED (this commit).** A pin↔seed consistency assertion in `clock.js` section 2b compares the pinned instant's **UTC** date (`_utcYmd(PINNED_MS)`) against `seedData.TODAY_LOCAL` and throws at `-r` preload naming both values + the fix. UTC not local: `resolvedToday` keys on `_utcYmd`, and tz-matrix spawns four zones via `-r clock.js`, so a local compare would false-fail eastern viewers — **verified passing under Kolkata (+5:30) and London (+1)**. `seedData.js` is pure data (no requires, no module-scope `new Date()`), so requiring it from clock.js is side-effect-free; neither file is loaded by the app, so the guard cannot fire outside the harness. **Proven:** the pin moved alone to `2026-06-25` throws once, before step3 runs, rather than surfacing as 17/17.
 
-**STILL OPEN:** the four re-pin strategy options (advance the pin+seed in lockstep · make the seed relative to the pin · freeze the DB clock · fail the drift check loudly) remain an owner decision; the guard presupposes none of them.
+**STILL OPEN (re-pin proper):** the four re-pin strategy options (advance the pin+seed in lockstep · make the seed relative to the pin · freeze the DB clock · fail the drift check loudly) remain an owner decision; the guard presupposes none of them.
+
+**UPDATE 2026-08-13 — 4 of the 7 BLOCKED Part-B checks UNBLOCKED without re-pinning (FIX HELD, executed).** Re-framed: re-pinning the NODE clock cannot fix these — they are blocked by `payroll_runs.run_date = NOW()` (Postgres clock), and freezing the DB clock is explicitly rejected (it would freeze the 5-second dedup window, making B1.1-B1.8 pass trivially — drift.js header). The blessed path is the **B4.4 delta-probe precedent**: assert `after − before` in one process, immune to which month the row lands in. Under that lens:
+- **B1.4, B4.2, B4.3** → NEW probe `tests/harness/b4-2-3-payroll-pl-transition.js` (16/0): P&L opex deltas across draft→approved→paid on GET /api/reports.expenses. B4.2 approve +Σ lines (5,888); B1.4 2nd approve +0; B4.3 mark-paid +0. **Rule 14 control EXECUTED:** forcing computeBooks' leg (server.js:4968) to `status='approved'` turns B4.3 red at −5,888 (the decision-2 trap), restored green. Σ lines built from probe-supplied inputs (Rule 6).
+- **B1.3** → already covered by `verify-c1-payroll-runs.js` (concurrent/slow double-submit → exactly one run; NO_INDEX control). Was drift-listed only for lack of a cited probe.
+- Removed all four from `drift.js` DRIFT_SENSITIVE_CHECKS (mirroring the B4.4 removal). VERIFICATION.md B1.3/B1.4/B4.1/B4.2/B4.3 rows now carry PASS + probe refs. Gate BLOCKED list shrinks **7 → 3**; step2 63/0, step3 56/0 unchanged.
+
+**STILL BLOCKED (3):** B3.1/B3.2/B3.3 (nav-order independence of the client Expenses figure). B3.1 (boot → dashboard-first) is guarded by `verify-f102-payroll-boot.js`; **B3.2/B3.3** (visit Payroll → return → unchanged; Payroll-first) need a jsdom nav-order probe — not yet built, the remaining F110 work.
 
 ---
 

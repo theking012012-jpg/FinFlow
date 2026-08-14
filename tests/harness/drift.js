@@ -22,21 +22,27 @@ const clock = require('./clock.js');
 // Part B checks whose result depends on a row the APP created being placed in the period the
 // pinned clock expects. Everything else in Part B is a delta assertion and is drift-immune.
 const DRIFT_SENSITIVE_CHECKS = [
-  'B1.3', // Run Payroll — exactly one run (run_date = NOW(), server.js:3822)
-  'B1.4', // Approve payroll run — expense counted once
   'B3.1', // Fresh reload → dashboard first → Expenses reads the Jun figure
   'B3.2', // Visit Payroll → return → unchanged
   'B3.3', // Payroll first → dashboard → same figure via both routes
-  'B4.2', // Approve → contributes exactly Σ lines
-  'B4.3', // Mark Paid → expense UNCHANGED
-  // B4.4 (Mark Paid → Cash Flow out increases by Σ lines) was here and is DELIBERATELY GONE.
-  // It now has its own probe — tests/harness/b4-4-payroll-cash-transition.js (6ebc85a) — which
-  // asserts the DELTA in POST /api/reports/cash-flow across draft→approved→paid in one process,
-  // never an absolute period figure. That is the drift-immune shape this list's own header
-  // describes, so B4.4 no longer belongs in it: printing "BLOCKED" beside a check that carries a
-  // PASS in VERIFICATION.md is the harness contradicting the document.
-  // B4.2/B4.3 STAY — they assert the P&L expense figure, still have no probe, and are genuinely
-  // drift-sensitive. Removing B4.4 is not a precedent for removing them.
+  // ── DELIBERATELY REMOVED — each now has a drift-immune DELTA probe (the B4.4 precedent) ──
+  // A check belongs here ONLY if it asserts an ABSOLUTE period figure that a NOW()-stamped,
+  // app-created row would move. The moment a check is re-expressed as `after − before` in one
+  // process, it stops being drift-sensitive and printing "BLOCKED" beside it would make the
+  // harness contradict the PASS it carries in VERIFICATION.md.
+  //
+  //   B4.4  → b4-4-payroll-cash-transition.js (6ebc85a) — cash-out delta across draft→approved→paid.
+  //   B4.2  ┐
+  //   B4.3  ┤ → b4-2-3-payroll-pl-transition.js — P&L opex delta across the same lifecycle. B4.2 =
+  //   B1.4  ┘   approve +Σ lines; B4.3 = mark-paid +0 (the decision-2 trap, control-verified: forcing
+  //             the leg to status='approved' turns B4.3 red at −Σ lines); B1.4 = 2nd approve +0.
+  //   B1.3  → verify-c1-payroll-runs.js — concurrent/slow double-submit of POST /api/payroll-runs
+  //           creates exactly one run (idempotency index + 23505 recovery; NO_INDEX control).
+  //
+  // B3.1-3 STAY: they assert nav-order independence of the CLIENT Expenses figure. B3.1 (boot →
+  // dashboard-first, no Payroll visit) is guarded by f102-payroll-boot.js; B3.2/B3.3 (visit Payroll,
+  // return, and Payroll-first) have no probe yet and remain genuinely drift-sensitive. Removing the
+  // four above is not a precedent for removing these — build the jsdom nav-order probe first.
 ];
 
 function localYmd(d) {

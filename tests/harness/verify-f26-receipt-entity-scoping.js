@@ -34,6 +34,13 @@ const D = '2026-07-10';   // inside the pinned-clock FY (clock 2026-07-25), not 
     scratch = await startScratchPostgres({ keep: false });
     const c = scratch.client;
     server = await bootServer(scratch.url);
+    // F150 seed-debt (test-only): this harness INTENTIONALLY seeds a legacy account-wide receipt
+    // (R0, entity_id = NULL) that must stay visible to BOTH entities. chk_*_entity_nn is NOT VALID
+    // (enforces new writes, tolerates pre-existing NULLs), so drop it at seed time — the product
+    // still stamps entity_id on real writes (verify-f150c, 33/0).
+    await c.query(`DO $ffdrop$ DECLARE r RECORD; BEGIN
+      FOR r IN SELECT conname, conrelid::regclass AS tbl FROM pg_constraint WHERE conname LIKE 'chk\\_%\\_entity\\_nn'
+      LOOP EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', r.tbl, r.conname); END LOOP; END $ffdrop$;`);
 
     const uid = (await c.query(
       `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,

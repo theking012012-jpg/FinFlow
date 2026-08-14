@@ -29,10 +29,15 @@ const LOGIN = { email: 'f92@finflow.test', password: 'harness-password-not-a-sec
       `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
       [{ email: LOGIN.email, name: 'F92', plan: 'trial', role: 'owner', password: bcrypt.hashSync(LOGIN.password, 10) }]
     )).rows[0].id;
-    const invId = (await c.query(`INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
-      [uid, { client: 'C', amount: 1000, status: 'pending', issue_date: '2026-06-10' }])).rows[0].id;
-    const billId = (await c.query(`INSERT INTO bills (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
-      [uid, { vendor: 'V', amount: 500, status: 'unpaid', issue_date: '2026-06-10' }])).rows[0].id;
+    // F150 seed-debt fix: create an active entity and stamp the seeds, mirroring production. This
+    // harness records payments through the real routes (payments_made is entity-constrained), so it
+    // needs a resolvable req.entityId — not a legacy-NULL setup.
+    const eid = (await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
+      [uid, { name: 'F92 Co', currency: 'USD', is_active: 1 }])).rows[0].id;
+    const invId = (await c.query(`INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$3,$2,NOW(),NOW()) RETURNING id`,
+      [uid, { client: 'C', amount: 1000, status: 'pending', issue_date: '2026-06-10' }, eid])).rows[0].id;
+    const billId = (await c.query(`INSERT INTO bills (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$3,$2,NOW(),NOW()) RETURNING id`,
+      [uid, { vendor: 'V', amount: 500, status: 'unpaid', issue_date: '2026-06-10' }, eid])).rows[0].id;
 
     const http = new HarnessHttp(server.baseUrl);
     A('login 200', (await http.post('/api/auth/login', LOGIN)).status === 200);

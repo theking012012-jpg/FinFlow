@@ -65,11 +65,11 @@ const body = (description, amt, key) => {
       [{ email: LOGIN.email, name: 'JE C1 Owner', plan: 'trial', role: 'owner',
          password: bcrypt.hashSync(LOGIN.password, 10) }]
     )).rows[0].id;
-    await c.query(
+    const eid = (await c.query(
       `INSERT INTO entities (user_id, entity_id, data, created_at, updated_at)
-       VALUES ($1, NULL, $2, NOW(), NOW())`,
+       VALUES ($1, NULL, $2, NOW(), NOW()) RETURNING id`,
       [uid, { name: 'JE C1 Co', currency: 'USD', is_active: 1 }]
-    );
+    )).rows[0].id;
 
     const http = new HarnessHttp(server.baseUrl);
     const login = await http.post('/api/auth/login', LOGIN);
@@ -109,7 +109,7 @@ const body = (description, amt, key) => {
 
     // ── C. deterministic raw-insert control ──
     const rawData = { description: 'raw-C', debit: 100, credit: 100, idempotency_key: 'tok-RAW' };
-    const insRaw = () => c.query(`INSERT INTO journals (user_id, entity_id, data) VALUES ($1,$2,$3)`, [uid, null, rawData]);
+    const insRaw = () => c.query(`INSERT INTO journals (user_id, entity_id, data) VALUES ($1,$2,$3)`, [uid, eid, rawData]);
     await insRaw();
     let rawRejected = false;
     try { await insRaw(); } catch (e) { rawRejected = (e.code === '23505'); }

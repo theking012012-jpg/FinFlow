@@ -52,10 +52,10 @@ const WITH_INDEX = !process.env.NO_INDEX;
       [{ email: LOGIN.email, name: 'COA C1 Owner', plan: 'trial', role: 'owner',
          password: bcrypt.hashSync(LOGIN.password, 10) }]
     )).rows[0].id;
-    await c.query(
-      `INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1, NULL, $2, NOW(), NOW())`,
+    const eid = (await c.query(
+      `INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1, NULL, $2, NOW(), NOW()) RETURNING id`,
       [uid, { name: 'COA C1 Co', currency: 'USD', is_active: 1 }]
-    );
+    )).rows[0].id;
 
     const http = new HarnessHttp(server.baseUrl);
     const login = await http.post('/api/auth/login', LOGIN);
@@ -96,7 +96,7 @@ const WITH_INDEX = !process.env.NO_INDEX;
 
     // ── C. deterministic raw-insert control ──
     const rawData = { code: '3000', name: 'Raw', category: 'Assets', idempotency_key: 'tok-RAW' };
-    const insRaw = () => c.query(`INSERT INTO chart_of_accounts (user_id, entity_id, data) VALUES ($1,NULL,$2)`, [uid, rawData]);
+    const insRaw = () => c.query(`INSERT INTO chart_of_accounts (user_id, entity_id, data) VALUES ($1,$3,$2)`, [uid, rawData, eid]);
     await insRaw();
     let rawRejected = false;
     try { await insRaw(); } catch (e) { rawRejected = (e.code === '23505'); }

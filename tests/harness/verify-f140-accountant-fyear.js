@@ -37,10 +37,14 @@ const ACC = { email: 'f140-acc@finflow.test', password: 'harness-password-not-a-
       `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
       [{ email: CLIENT.email, name: 'C', plan: 'trial', role: 'owner', fiscal_year: 'April', password: bcrypt.hashSync(CLIENT.password, 10) }]
     )).rows[0].id;
-    await c.query(`INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW())`,
-      [uid, { client: 'X', amount: 1000, status: 'pending', issue_date: '2026-02-15' }]);
-    await c.query(`INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW())`,
-      [uid, { client: 'Y', amount: 500, status: 'pending', issue_date: '2026-05-15' }]);
+    // F150 seed-debt fix: invoices require a non-NULL entity_id (chk_invoices_entity_nn). Create an
+    // active entity and stamp it, mirroring production onboarding (which POSTs /api/entities).
+    const eid = (await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
+      [uid, { name: 'F140 Co', currency: 'USD', is_active: 1 }])).rows[0].id;
+    await c.query(`INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$3,$2,NOW(),NOW())`,
+      [uid, { client: 'X', amount: 1000, status: 'pending', issue_date: '2026-02-15' }, eid]);
+    await c.query(`INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$3,$2,NOW(),NOW())`,
+      [uid, { client: 'Y', amount: 500, status: 'pending', issue_date: '2026-05-15' }, eid]);
 
     // verified accountant with an ACTIVE relationship to the client
     const accId = (await c.query(

@@ -39,6 +39,13 @@ const { initSchema } = require('./boot.js');
     // initDB #1 — build the schema; the backfill runs over an EMPTY bills table (heals nothing).
     const { database } = await initSchema(scratch.url);
     appPool = database.pool;
+    // F150 seed-debt (test-only): this harness INTENTIONALLY seeds legacy account-wide bills
+    // (entity_id = NULL) to prove the F135 backfill heals them. chk_bills_entity_nn is NOT VALID
+    // (enforces new writes, tolerates pre-existing NULLs), so drop it at seed time; later initDB
+    // re-adds it NOT VALID over the now-legacy rows without scanning them.
+    await c.query(`DO $ffdrop$ DECLARE r RECORD; BEGIN
+      FOR r IN SELECT conname, conrelid::regclass AS tbl FROM pg_constraint WHERE conname LIKE 'chk\\_%\\_entity\\_nn'
+      LOOP EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', r.tbl, r.conname); END LOOP; END $ffdrop$;`);
 
     // A real owner row (bills.user_id has an FK to users). The backfill itself is user-agnostic.
     const uid = (await c.query(

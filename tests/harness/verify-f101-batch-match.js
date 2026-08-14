@@ -31,9 +31,15 @@ const LOGIN = { email: 'f101@finflow.test', password: 'harness-password-not-a-se
       `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
       [{ email: LOGIN.email, name: 'F101', plan: 'trial', role: 'owner', password: bcrypt.hashSync(LOGIN.password, 10) }]
     )).rows[0].id;
+    // F150 seed-debt fix: invoices require a non-NULL entity_id (chk_invoices_entity_nn). Create an
+    // active entity and stamp it, mirroring production onboarding (which POSTs /api/entities).
+    const eid = (await c.query(
+      `INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
+      [uid, { name: 'F101 Co', currency: 'USD', is_active: 1 }]
+    )).rows[0].id;
     const invId = (await c.query(
-      `INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
-      [uid, { client: 'C', amount: 300, status: 'paid', issue_date: '2026-07-01' }]
+      `INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$3,$2,NOW(),NOW()) RETURNING id`,
+      [uid, { client: 'C', amount: 300, status: 'paid', issue_date: '2026-07-01' }, eid]
     )).rows[0].id;
 
     const bankIds = [], payIds = [];

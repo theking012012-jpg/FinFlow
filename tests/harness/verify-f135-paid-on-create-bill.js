@@ -48,6 +48,10 @@ const LOGIN = { email: 'f135@finflow.test', password: 'harness-password-not-a-se
       `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
       [{ email: LOGIN.email, name: 'F135', plan: 'pro', role: 'owner', password: bcrypt.hashSync(LOGIN.password, 10) }]
     )).rows[0].id;
+    // F150 seed-debt fix: create an active entity so req.entityId resolves (production onboarding
+    // POSTs /api/entities); without it, business-route writes stamp entity_id NULL → chk_*_entity_nn.
+    await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1, NULL, $2, NOW(), NOW())`,
+      [uid, { name: 'F135 Co', currency: 'USD', is_active: 1 }]);
 
     const http = new HarnessHttp(server.baseUrl);
     const login = await http.post('/api/auth/login', LOGIN);

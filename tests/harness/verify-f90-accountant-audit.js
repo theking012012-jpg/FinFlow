@@ -28,6 +28,10 @@ const ACC = { email: 'f90acc@finflow.test', password: 'harness-password-not-a-se
       `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
       [{ email: 'f90client@finflow.test', name: 'Client', plan: 'trial', role: 'owner' }]
     )).rows[0].id;
+    // F150 seed-debt fix: create an active entity so req.entityId resolves (production onboarding
+    // POSTs /api/entities); without it, business-route writes stamp entity_id NULL → chk_*_entity_nn.
+    await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1, NULL, $2, NOW(), NOW())`,
+      [uid, { name: 'F90 Client Co', currency: 'USD', is_active: 1 }]);
     const accId = (await c.query(
       `INSERT INTO accountants (email, password_hash, first_name, last_name, referral_code, status)
        VALUES ($1,$2,'A','B','F90ACCREF','verified') RETURNING id`, [ACC.email, bcrypt.hashSync(ACC.password, 10)]

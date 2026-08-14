@@ -29,11 +29,11 @@ const LOGIN = { email: 'f33c@finflow.test', password: 'harness-password-not-a-se
       `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
       [{ email: LOGIN.email, name: 'F33C', plan: 'trial', role: 'owner', password: bcrypt.hashSync(LOGIN.password, 10) }]
     )).rows[0].id;
-    await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW())`,
-      [uid, { name: 'F33C Co', currency: 'USD', is_active: 1 }]);
+    const eid = (await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
+      [uid, { name: 'F33C Co', currency: 'USD', is_active: 1 }])).rows[0].id;
     // one expense: 100, June
-    await c.query(`INSERT INTO expenses (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW())`,
-      [uid, { description: 'Rent', category: 'Other', amount: 100, deductible: 'no', expense_date: '2026-06-10' }]);
+    await c.query(`INSERT INTO expenses (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$3,$2,NOW(),NOW())`,
+      [uid, { description: 'Rent', category: 'Other', amount: 100, deductible: 'no', expense_date: '2026-06-10' }, eid]);
     // APPROVED payroll run, June, lines total 500 (300 + 200 gross)
     const runId = (await c.query(
       `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net)

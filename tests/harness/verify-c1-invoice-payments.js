@@ -57,10 +57,16 @@ const DATE = '2026-07-20';
       [{ email: LOGIN.email, name: 'IP C1 Owner', plan: 'trial', role: 'owner',
          password: bcrypt.hashSync(LOGIN.password, 10) }]
     )).rows[0].id;
+    // F150 seed-debt fix: business rows require a non-NULL entity_id (chk_*_entity_nn). Create an
+    // active entity and stamp it, mirroring production onboarding (which POSTs /api/entities).
+    const eid = (await c.query(
+      `INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1, NULL, $2, NOW(), NOW()) RETURNING id`,
+      [uid, { name: 'IP C1 Co', currency: 'USD', is_active: 1 }]
+    )).rows[0].id;
     // One big invoice with plenty of headroom so every test payment fits under the overpayment check.
     const invId = (await c.query(
-      `INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at) VALUES ($1, NULL, $2, NOW(), NOW()) RETURNING id`,
-      [uid, { client: 'Big Co', amount: 1000000, status: 'pending', amount_paid: 0 }]
+      `INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at) VALUES ($1, $3, $2, NOW(), NOW()) RETURNING id`,
+      [uid, { client: 'Big Co', amount: 1000000, status: 'pending', amount_paid: 0 }, eid]
     )).rows[0].id;
 
     const http = new HarnessHttp(server.baseUrl);

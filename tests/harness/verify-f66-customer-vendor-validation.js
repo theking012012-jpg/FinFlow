@@ -31,9 +31,13 @@ const LOGIN = { email: 'f66@finflow.test', password: 'harness-password-not-a-sec
     scratch = await startScratchPostgres({ keep: false });
     const c = scratch.client;
     server = await bootServer(scratch.url);
-    await c.query(
-      `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW())`,
-      [{ email: LOGIN.email, name: 'F66', plan: 'trial', role: 'owner', password: bcrypt.hashSync(LOGIN.password, 10) }]);
+    const uid = (await c.query(
+      `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
+      [{ email: LOGIN.email, name: 'F66', plan: 'trial', role: 'owner', password: bcrypt.hashSync(LOGIN.password, 10) }])).rows[0].id;
+    // F150 seed-debt fix: create an active entity so req.entityId resolves (production onboarding
+    // POSTs /api/entities); without it, business-route writes stamp entity_id NULL → chk_*_entity_nn.
+    await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1, NULL, $2, NOW(), NOW())`,
+      [uid, { name: 'F66 Co', currency: 'USD', is_active: 1 }]);
 
     const http = new HarnessHttp(server.baseUrl);
     A('login 200', (await http.post('/api/auth/login', LOGIN)).status === 200);

@@ -34,6 +34,10 @@ const LOGIN = { email: 'f79@finflow.test', password: 'harness-password-not-a-sec
       `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
       [{ email: LOGIN.email, name: 'F79', plan: 'business', role: 'owner', password: bcrypt.hashSync(LOGIN.password, 10) }]
     )).rows[0].id;
+    // F150 seed-debt fix: create an active entity so req.entityId resolves (production onboarding
+    // POSTs /api/entities); without it, business-route writes stamp entity_id NULL → chk_*_entity_nn.
+    const eid = (await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1, NULL, $2, NOW(), NOW()) RETURNING id`,
+      [uid, { name: 'F79 Co', currency: 'USD', is_active: 1 }])).rows[0].id;
     const http = new HarnessHttp(server.baseUrl);
     A('login 200', (await http.post('/api/auth/login', LOGIN)).status === 200);
 
@@ -60,18 +64,18 @@ const LOGIN = { email: 'f79@finflow.test', password: 'harness-password-not-a-sec
       '23514' === await tryInsert(c, `INSERT INTO payroll_runs (user_id, status, period, run_date, total_gross, total_deductions, total_net) VALUES ($1,'final','2026-06','2026-06-15',0,0,0)`, [uid]));
     // invoices (JSONB): valid ok, invalid rejected
     A('DB REJECTS invoices data.status=final (23514)',
-      '23514' === await tryInsert(c, `INSERT INTO invoices (user_id, data) VALUES ($1, '{"status":"final","amount":100}'::jsonb)`, [uid]));
+      '23514' === await tryInsert(c, `INSERT INTO invoices (user_id, entity_id, data) VALUES ($1, $2, '{"status":"final","amount":100}'::jsonb)`, [uid, eid]));
     // case-insensitive: mixed-case 'Open' must PASS on credit_notes
     A('DB accepts credit_notes data.status=Open (case-insensitive lower())',
-      null === await tryInsert(c, `INSERT INTO credit_notes (user_id, data) VALUES ($1, '{"status":"Open"}'::jsonb)`, [uid]));
+      null === await tryInsert(c, `INSERT INTO credit_notes (user_id, entity_id, data) VALUES ($1, $2, '{"status":"Open"}'::jsonb)`, [uid, eid]));
     // NULL/absent status must PASS
     A('DB accepts invoices with NO status key (NULL allowed)',
-      null === await tryInsert(c, `INSERT INTO invoices (user_id, data) VALUES ($1, '{"amount":50}'::jsonb)`, [uid]));
+      null === await tryInsert(c, `INSERT INTO invoices (user_id, entity_id, data) VALUES ($1, $2, '{"amount":50}'::jsonb)`, [uid, eid]));
 
     // ── EXECUTED FAILURE PATH (Rule 14): drop the constraint, show the bad INSERT then succeeds ──
     await c.query(`ALTER TABLE invoices DROP CONSTRAINT chk_invoices_status`);
     A('control: WITHOUT the constraint, invoices status=final is ACCEPTED (proves the constraint rejects it)',
-      null === await tryInsert(c, `INSERT INTO invoices (user_id, data) VALUES ($1, '{"status":"final","amount":100}'::jsonb)`, [uid]));
+      null === await tryInsert(c, `INSERT INTO invoices (user_id, entity_id, data) VALUES ($1, $2, '{"status":"final","amount":100}'::jsonb)`, [uid, eid]));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed\n`);
   } catch (e) {

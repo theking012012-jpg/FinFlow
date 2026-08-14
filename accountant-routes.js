@@ -1327,6 +1327,31 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     return res.json(result.rows[0]);
   }));
 
+  // ── CLIENT: CHOOSE THEIR ACCOUNTANT'S ACCESS LEVEL — review (view) vs run the books (filing) ──
+  // The OWNER (client session) decides what their linked accountant may do: 'view' = read-only
+  // review; 'filing' = may post adjusting journal entries + lock periods. This is the real grant
+  // behind the "run the books" choice — previously the client toggle only showed a notification and
+  // persisted nothing (fake-success), and no server route set access_level, so 'filing' was
+  // ungrantable. Owner-scoped: updates only THIS user's own active accountant link.
+  app.put('/api/accountants/my-accountant/access', wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const { access_level } = req.body || {};
+    if (access_level !== 'view' && access_level !== 'filing') {
+      return res.status(400).json({ error: "access_level must be 'view' or 'filing'." });
+    }
+    const { rows: [row] } = await pool.query(
+      `UPDATE accountant_clients SET access_level = $1
+        WHERE user_id = $2 AND status = 'active'
+        RETURNING accountant_id, access_level`,
+      [access_level, req.session.userId]
+    );
+    if (!row) return res.status(404).json({ error: 'No active accountant to update.' });
+    // F90: audit the owner-initiated access change on their own account.
+    await _audit(pool, { userId: req.session.userId, table: 'accountant_clients', recordId: null,
+      action: access_level === 'filing' ? 'GRANT_FILING' : 'SET_VIEW', field: 'access_level', newValue: access_level, req });
+    res.json({ access_level: row.access_level });
+  }));
+
   // ── CLIENT: REQUEST ACCESS FROM AN ACCOUNTANT ─────────────────────────────
   app.post('/api/accountants/request-access', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });

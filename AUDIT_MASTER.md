@@ -550,6 +550,21 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F158 🟠 HIGH — the accountant "view vs filing" access grant was a FAKE-SUCCESS control; `filing` was ungrantable — **NEW (2026-08-14) → ✅ BUILT + VERIFIED (server), UI wired (inspection); FIX HELD**
+**Status:** ✅ **BUILT (FIX HELD).** Owner feature request: let the client choose whether a hired accountant can just *review* the books (`view`) or *run* them (`filing` — post adjusting journal entries + lock periods).
+
+**What was wrong (verified).** The owner's "Access permissions" panel (`index.html:7494`) had a "File tax returns on my behalf" toggle, but `updateAccPermission` (`index.html:7786`) **only showed a notification and persisted nothing** — a fake-success control (the class this codebase's audits repeatedly flag). And **no server route ever set `access_level`**: `request-access`/`approve-request` create/activate the link on the schema default `'view'`, and nothing writes `'filing'`. So every hired accountant was permanently `view`, and the toggle lied. (The two client-book mutations — POST journal, POST lock — already gate on `view` correctly, verified by `verify-accountant-portal-access.js`; they were simply unreachable because `filing` could never be granted.)
+
+**What changed (mechanism).**
+- **Server:** new `PUT /api/accountants/my-accountant/access` (`accountant-routes.js`) — owner-scoped, validates `access_level ∈ {view, filing}`, updates the caller's own active link, audit-logged (F90 `GRANT_FILING`/`SET_VIEW`), 404 if no active accountant.
+- **Owner UI (`index.html`):** `updateAccPermission` now calls that endpoint (filing checkbox = the "run the books" upgrade; view is the read-only base, un-check routed to "Revoke access"), and `renderLinkedAccountant` reflects the real granted level on load. `updateAccPermission` is **not shadowed** (Rule 1 — sole definition, runtime winner).
+- **Accountant UI (`accountant-client.html`):** the "New Entry" and "Lock Period" affordances are hidden unless the level is `filing` (server still 403s regardless — this just stops showing a button that would fail).
+
+**Verified.** `tests/harness/verify-accountant-access-grant.js` (9/0) — end-to-end: default `view` → accountant POST journal 403; owner PUT `{filing}` → 201; owner PUT `{view}` → 403 again (revocable, next request); bogus → 400; no-accountant → 404. `verify-accountant-portal-access.js` still 11/0; no regression (step2 63/0, entity-leakage 18/0, f90-accountant-audit 11/0). The two client HTML edits are **inspection-verified** (no jsdom render harness exists for `index.html`/`accountant-client.html`). `index.html`/`accountant-client.html` are NOT bundle sources (bundle = the 10 wiring `.js` only), so they ship directly.
+**Done when:** committed.
+
+---
+
 ### F156 🟠 HIGH — accountant "add journal on behalf of client" never stamped `entity_id` — the one F150-class insert missed — **NEW (2026-08-13, execution-verified fail-then-pass) → ✅ FIX HELD (awaiting owner approval to commit)**
 **Status:** ✅ **FIX HELD** — root fix staged in the working tree, executed fail-then-pass on real scratch Postgres; **not committed** (HOLD). **Severity: HIGH** — a wrong ledger on every one of the client's entities, plus a hard 500 that breaks the feature live.
 
@@ -1503,7 +1518,11 @@ F124 fixed the three chart surfaces it was scoped to. The full grep for hardcode
 ---
 
 ### F54 🟠 HIGH — Team-member data scope is incoherent (reads actor-scoped, writes account-scoped) — **NEW**
-**Status:** OPEN, verified in code. Reachable — the invite/accept flow is live and writes `member_user_id` (`server.js:2637-2642`).
+**Status:** OPEN, verified in code. **Mitigated for launch:** BOTH member-creating routes are gated off — `POST /api/team` and `POST /api/team/invite` return `403 "Team invites are coming soon."` (F54's 30-minute alternative was taken), so no new membership can be created through the API today. Reversible by removing those two guards.
+
+> **RBAC enforcement EXECUTION-VERIFIED (2026-08-13), separate from the F54 scope question.** The role→capability matrix (`rbac.js` + the coarse method gate, `server.js:767`) genuinely blocks — proven by `tests/harness/verify-rbac-enforcement.js` (30/0): role resolves from the active membership (`server.js:707`, re-resolved each request), viewer is read-only, accountant is books-only (no payroll/audit/bank/entities/delete), admin is barred from bank/entities (owner-only), owner is unrestricted, and a **revoked** membership loses access on the next request (no session cache). Rule-14 control: neutering both gates flips exactly the 13 deny assertions. NB the "inert spine until Step 4" comment at `server.js:693` is **stale** — line 707 sets the real membership role and both gates consume it. This verifies the *enforcement*; it does not resolve the F54 read/write **scope** incoherence (the 34 `req.session.userId` read sites), which stays open and is why invites remain disabled.
+>
+> **MARKETPLACE PORTAL is a SEPARATE access system — also EXECUTION-VERIFIED (2026-08-13).** Hired accountants do NOT use `rbac.js` at all; they authenticate via `requireAccountant` and their power over a client is a per-link `access_level` (`view`|`filing`) on `accountant_clients`, hand-checked per route. `tests/harness/verify-accountant-portal-access.js` (11/0): a **view** accountant reads the books (payroll redacted) but is blocked from the only two client-book mutations (POST journal → 403, POST lock → 403); **filing** may post a journal (201) and lock a period (200); a **no-link** accountant gets 403 on everything. Rule-14 control: removing the two `view` gates flips exactly those two blocks. Owner decision (2026-08-13): keep the two systems separate; hired accountants are view-first. (Notes/flags/messages are the accountant's own annotations, deliberately not view-gated.)
 
 **What's wrong.** The account resolver works: an active membership sets `req.accountId` to the owner's id (`server.js:611-645`), and `scopeId(req)` returns it (`711`). But only **86** call sites use `scopeId(req)`; **34 data routes read `req.session.userId` directly**, and every create writes `user_id: req.session.userId`. The split is by table, not by verb:
 

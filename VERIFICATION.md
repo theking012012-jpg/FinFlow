@@ -655,8 +655,21 @@ visited, so the Expenses KPI depended on where you clicked first.
 State these as unverified rather than assuming them:
 
 - Authentication, sessions, password reset
-- Team scoping and permissions (B9-F54)
-- Accountant portal access control
+- ~~Team scoping and permissions (B9-F54)~~ — **RBAC enforcement now VERIFIED (2026-08-13)**:
+  `verify-rbac-enforcement.js` (30/0) executes the role→capability matrix through the real server —
+  viewer read-only, accountant books-only (no payroll/audit/bank/entities/delete), admin (no
+  bank/entities), owner all; a revoked membership loses access on the next request. Rule-14 control:
+  neutering both gates flips exactly the 13 deny assertions. *(Note: the invite/add-member routes
+  themselves stay disabled for launch — F54; this verifies the enforcement that runs once a member
+  exists.)*
+- ~~Accountant portal access control~~ — **portal view/filing enforcement now VERIFIED (2026-08-13)**:
+  `verify-accountant-portal-access.js` (11/0) — the marketplace is a SEPARATE system from team RBAC
+  (its own `requireAccountant` auth + per-link `access_level` on `accountant_clients`, `view`|`filing`,
+  hand-checked per route). A **view** accountant reads the books (payroll detail redacted) but is
+  blocked from the only two client-book mutations — POST journal → 403, POST lock → 403; **filing**
+  may post a journal (201) and lock a period (200); a **no-link** accountant gets 403 on everything.
+  Rule-14 control: removing the two `view` gates flips exactly those two blocks. (Notes/flags/messages
+  are the accountant's own annotations, deliberately not view-gated — out of scope.)
 - PDF / CSV exports and emailed documents
 - Stripe billing (currently disabled — key not set)
 - Recurring invoice and bill scheduling

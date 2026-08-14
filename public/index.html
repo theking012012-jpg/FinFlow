@@ -7690,6 +7690,12 @@ function renderLinkedAccountant() {
     </div>`;
 
   if (access) access.style.display = 'block';
+  // Reflect the access level the owner has actually granted: filing = "run the books"
+  // (post entries + lock periods), otherwise view = review-only. Read access is the base.
+  const _fCb = document.getElementById('acc-perm-filing');
+  if (_fCb) _fCb.checked = (a.access_level === 'filing');
+  const _vCb = document.getElementById('acc-perm-view');
+  if (_vCb) _vCb.checked = true;
   if (typeof window.loadAccountantMessages === 'function') window.loadAccountantMessages();
 }
 
@@ -7783,8 +7789,45 @@ window.requestAccountant = async function(accountantId, name) {
   }
 }
 
-window.updateAccPermission = function(type, val) {
-  if(typeof notify==='function') notify(`${type === 'view' ? 'View' : 'Filing'} access ${val ? 'granted' : 'revoked'}`);
+window.updateAccPermission = async function(type, val) {
+  // The owner chooses their accountant's level: view = review the books (read-only),
+  // filing = run the books (post adjusting entries + lock periods). "File tax returns on my
+  // behalf" is the filing upgrade; "View my books" is the read-only base. Persists via the real
+  // endpoint (was previously a notification only — a fake-success control).
+  const viewCb = document.getElementById('acc-perm-view');
+  const filingCb = document.getElementById('acc-perm-filing');
+  let level;
+  if (type === 'filing') {
+    level = val ? 'filing' : 'view';
+  } else { // 'view' toggled — read is the base while an accountant is linked
+    if (!val) {
+      if (viewCb) viewCb.checked = true; // can't drop below read without removing the accountant
+      if (typeof notify === 'function') notify('To remove all access, use "Revoke access".');
+      return;
+    }
+    level = (filingCb && filingCb.checked) ? 'filing' : 'view';
+  }
+  try {
+    const res = await fetch('/api/accountants/my-accountant/access', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ access_level: level }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      if (filingCb) filingCb.checked = (data.access_level === 'filing');
+      if (viewCb) viewCb.checked = true;
+      if (typeof notify === 'function') {
+        notify(data.access_level === 'filing'
+          ? '✓ Your accountant can now run your books — post entries & lock periods'
+          : '✓ Your accountant is set to review-only');
+      }
+    } else {
+      if (filingCb) filingCb.checked = !!(linkedAccountant && linkedAccountant.access_level === 'filing');
+      if (typeof notify === 'function') notify('⚠ ' + (data.error || 'Could not update access'));
+    }
+  } catch (e) {
+    if (typeof notify === 'function') notify('Could not update access — are you logged in?');
+  }
 }
 
 window.revokeAccountant = async function() {

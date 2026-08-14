@@ -788,6 +788,11 @@ async function loadData() {
     if (_data.accessLevel) {
       document.getElementById('sb-access-badge').innerHTML = `<i class="ti ti-shield-check" style="font-size:11px"></i> ${esc(_data.accessLevel)} access`;
     }
+    // 'filing' = run the books (post journals + lock periods); 'view' = review only. The server
+    // enforces this with a 403 either way; hiding the edit affordances just avoids showing a button
+    // that would fail. Default to view (most restrictive) if the level is missing.
+    window._acctCanEdit = (_data.accessLevel === 'filing');
+    document.querySelectorAll('[onclick="toggleJournalForm()"]').forEach(b => { b.style.display = window._acctCanEdit ? '' : 'none'; });
     buildEntityTabs();
     renderAll();
     loadNotes();
@@ -1141,7 +1146,7 @@ function renderJournals() {
   document.getElementById('periods-list').innerHTML = periods.map(p=>`
     <div class="period-row">
       <span style="color:var(--text2)">${p}</span>
-      <button class="lock-btn" onclick="lockPeriod('${p}',this)">🔓 Lock Period</button>
+      ${window._acctCanEdit ? `<button class="lock-btn" onclick="lockPeriod('${p}',this)">🔓 Lock Period</button>` : `<span style="font-size:11px;color:var(--text3)">View-only</span>`}
     </div>`).join('');
 }
 

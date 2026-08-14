@@ -516,7 +516,14 @@ rates move.
 
 | # | Figure | Expected | Result |
 |---|---|---|---|
-| A8c.1–6 | revenue / cogs / grossProfit / opex / netProfit / outstanding | reconciles exactly | |
+| A8c.1–6 | revenue / cogs / grossProfit / opex / netProfit / outstanding | reconciles exactly | PASS (2026-08-13) — `verify-a8c-fx-reconcile.js` (13/0). USD-native books + one flat USD→EUR rate (0.90): every leg converts to native × 0.90 exactly, the ratio is identical across all six (consistent), coverage complete. Blocked rate (GBP, none seeded) → `fxCoverage.complete=false` and rows excluded — the "—" path, never a native figure relabelled. |
+
+> ✅ **A8c PASSES (2026-08-13).** Display currency is a viewer's LENS over the viewer-independent
+> **native** books (the accountant marketplace reads native on both sides — F88 2b). `computeBooks`
+> converts each leg at its own recognition-date rate (`server.js:4812`, `sumFX`); a flat rate makes
+> the reconciliation exact, so `verify-a8c-fx-reconcile.js` asserts EUR == native × 0.90 on all six
+> legs and that a missing rate flags incomplete coverage rather than silently relabelling. Symbol-
+> matches-value is covered separately by `f124-native-currency-surfaces.js`.
 
 ---
 
@@ -665,6 +672,19 @@ Re-run Part A with one EUR invoice and one EUR expense added, and a non-USD disp
 selected. Kept separate so the base paper arithmetic stays hand-computable. Checks: figures
 convert, symbols match the figures, and a blocked FX rate yields "—" rather than a native
 number presented as converted.
+
+> ✅ **Largely COVERED (2026-08-13).** The three checks are now executed:
+> - **figures convert + reconcile** — `verify-a8c-fx-reconcile.js` (13/0): native USD × a flat
+>   USD→EUR rate reconciles exactly on all six A8c legs, with an executed blocked-rate control (A8c).
+> - **a blocked FX rate yields "—"** — same probe: an unseeded currency (GBP) flags
+>   `fxCoverage.complete=false` and excludes the rows, never relabelling native.
+> - **symbols match the figures** — `f124-native-currency-surfaces.js`: entity=TTD, display=EUR, and
+>   '$' / 'TT$' / '€' are asserted to be three distinct strings so no figure is mis-symbolled.
+>
+> **Residual (optional):** the literal "one EUR *invoice* and one EUR *expense*" — i.e. a
+> foreign-**denominated** transaction (`fx_transactions`, realised/unrealised gain-loss) rather than a
+> display-time conversion of native rows — is not yet probed. The display-currency reconciliation and
+> the "—" guard, which were the correctness questions, are closed.
 
 # Appendix C — Answered / still open
 

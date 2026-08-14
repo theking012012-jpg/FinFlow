@@ -1084,6 +1084,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 </div>
 
 <div class="app" id="app">
+  <!-- F111: app-wide banner when this session is scoped into an account the user does not own -->
+  <div id="scoped-banner" style="display:none;background:var(--amber-bg,#2a2109);color:var(--amber,#c9a84c);border-bottom:1px solid rgba(196,138,42,.3);padding:8px 16px;font-size:12.5px;text-align:center">
+    You're viewing <b id="scoped-banner-name"></b>'s account — your access here is <span id="scoped-banner-role" style="text-transform:capitalize"></span>.
+  </div>
   <div class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation">
     <div class="brand" style="position:relative;cursor:pointer;user-select:none" onclick="toggleBizMenu(event)" id="biz-switcher">
       <div class="brand-logo" id="biz-logo"><svg viewBox="0 0 16 16"><polyline points="1,11 5,6 8,9 11,4 15,7"/><line x1="1" y1="14" x2="15" y2="14"/></svg></div>
@@ -1496,6 +1500,12 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Team members</div><div class="mc-val" id="team-count">0</div><div class="mc-change neutral">Active users</div></div>
           <div class="mc"><div class="mc-label">Roles</div><div class="mc-val">4</div><div class="mc-change neutral">Owner · Admin · Accountant · Viewer</div></div>
           <div class="mc"><div class="mc-label">Pending invites</div><div class="mc-val" id="team-pending">0</div><div class="mc-change neutral">Awaiting acceptance</div></div>
+        </div>
+        <!-- F111: the member axis — accounts THIS login can access (mirror of the owner-axis roster above) -->
+        <div class="card" id="my-access-card" style="margin:0 0 1rem">
+          <div class="card-header"><h2 class="card-title">Accounts you can access</h2></div>
+          <div style="font-size:10.5px;color:var(--t3);padding:2px 0 8px">Every account your login can open — your own, plus any you've been invited into.</div>
+          <div id="my-access-list" style="font-size:13px;color:var(--t2)">Loading…</div>
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
@@ -7788,6 +7798,34 @@ window.requestAccountant = async function(accountantId, name) {
     if(typeof notify==='function') notify('Could not send request — are you logged in?');
   }
 }
+
+// F111: render the member axis — which accounts this login can access — and the scoped-session
+// banner. Reads GET /api/my-access (the resolver's member axis, which nothing displayed before).
+window.loadMyAccess = async function() {
+  try {
+    const res = await fetch('/api/my-access', { credentials: 'include' });
+    if (!res.ok) return;
+    const d = await res.json();
+    const E = (s) => (window.esc ? window.esc(String(s == null ? '' : s)) : String(s == null ? '' : s));
+    const banner = document.getElementById('scoped-banner');
+    if (d.scopedIntoOther) {
+      const other = (d.accounts || []).find(a => a.accountOwnerId === d.currentAccountId) || {};
+      const nEl = document.getElementById('scoped-banner-name'); if (nEl) nEl.textContent = other.ownerName || other.ownerEmail || 'another account';
+      const rEl = document.getElementById('scoped-banner-role'); if (rEl) rEl.textContent = other.role || 'member';
+      if (banner) banner.style.display = 'block';
+    } else if (banner) { banner.style.display = 'none'; }
+    const list = document.getElementById('my-access-list');
+    if (list) {
+      const rows = (d.accounts || []).map(a => {
+        const label = a.isOwn ? 'Your own account' : (a.ownerName || a.ownerEmail || ('Account #' + a.accountOwnerId));
+        const cur = (a.accountOwnerId === d.currentAccountId) ? ' <span style="color:var(--acc,#c9a84c)">· currently viewing</span>' : '';
+        return `<div style="padding:8px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span>${E(label)}${cur}</span><span style="color:var(--t3);font-size:11px;text-transform:capitalize">${E(a.role)}</span></div>`;
+      });
+      list.innerHTML = rows.join('') || '<div style="color:var(--t3)">Just your own account.</div>';
+    }
+  } catch (e) { /* not logged in / no access — leave defaults */ }
+};
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.loadMyAccess()); else window.loadMyAccess();
 
 window.updateAccPermission = async function(type, val) {
   // The owner chooses their accountant's level: view = review the books (read-only),

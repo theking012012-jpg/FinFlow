@@ -129,6 +129,9 @@ if (process.env.S4_CHILD) {
 }
 
 // ── PARENT ──
+// F83: this gate already exits non-zero on a check FAIL (H2). --strict additionally makes the
+// "a viewer produced no fingerprint" harness-error path non-zero instead of silently exit-0.
+const STRICT = process.argv.includes('--strict') || process.env.STRICT === '1';
 let pass = 0, fail = 0;
 const A = (name, ok, detail) => { if (ok) { pass++; console.log('  PASS  ' + name); } else { fail++; console.log('  FAIL  ' + name + (detail ? '\n          ' + detail : '')); } };
 const flat = (obj, pre, out) => { out = out || {}; pre = pre || ''; for (const k of Object.keys(obj)) { const v = obj[k]; const key = pre ? pre + '.' + k : k; if (v && typeof v === 'object') flat(v, key, out); else out[key] = v; } return out; };
@@ -149,7 +152,7 @@ if (runs.some((x) => !x.fp)) {
   console.log('\n  A viewer produced no fingerprint (harness/extraction error) — raw tail:');
   for (const x of runs) if (!x.fp) console.log('    [' + x.z.tz + '] ' + x.raw.trim().slice(0, 600));
   console.log('\n  ' + fail + ' FAILED — cannot proceed without all four viewers.\n');
-  process.exit(0);
+  process.exit(STRICT ? 1 : 0);   // F83: a missing-fingerprint harness error is non-zero under --strict
 }
 
 // ── 1 · VIEWER INDEPENDENCE (the F87 detector) — every figure identical across viewers ──

@@ -2114,8 +2114,9 @@ The risk was a **false failure**: any surface that bounds its window at the curr
 
 ---
 
-### F83 🟢 LOW — Harness exits 0 even when checks fail — **deliberate for now, tracked commitment** (2026-07-23)
-**Status:** OPEN by design. Recorded so it is a decision with an expiry, not an oversight that calcifies.
+### F83 🟢 LOW — Harness exits 0 even when checks fail — **✅ FIXED (2026-08-13; --strict added, executed fail-then-pass; FIX HELD pending commit)**
+**Status:** ✅ **FIXED.** `--strict` (or `STRICT=1`) added to all four step-gates: bare invocation still exits 0 (interactive sweeps stay readable), `--strict` exits non-zero on any FAIL or thrown error. **Executed (the "Done when"):** step2 GREEN exits 0 in both modes; with a deliberately broken seed (INV-1 amount_paid 1000→999, 2 checks fail) `--strict` exits **1** and bare invocation exits **0**; all four gates GREEN under `--strict` exit 0 (step1 26/0, step2 63/0, step3 56/0, step4 5/0). **Root subtlety (Rule 14):** setting `process.exitCode` does NOT survive — embedded-postgres pulls in `async-exit-hook`, which resets the code on natural exit (traced: `beforeExit` code=1 → `exit` code=0). The gates now call `process.exit(code)` explicitly, the same way every `verify-*`/`b4-*` probe already does; cleanup runs in `main()`'s `finally` before the exit, so nothing is orphaned. step4's viewer-error path (`process.exit(0)`) now honours `--strict` too.
+**Was — Status:** OPEN by design. Recorded so it is a decision with an expiry, not an oversight that calcifies.
 
 The harness sets `process.exitCode = 0` unconditionally. That is correct **while it is an instrument**: during a sweep the artefact is the *report* — actual vs expected for every check — and a non-zero exit that truncated output or tripped a wrapper would cost more than it gained. `VERIFICATION.md` rule 1 (run every check before fixing anything) depends on a full run always completing and always being readable.
 

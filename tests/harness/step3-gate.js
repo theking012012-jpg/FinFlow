@@ -33,6 +33,9 @@ const EXPECTED = require('./expected.js');
 const { writeResults } = require('./verification-sync.js');
 
 const KEEP = process.argv.includes('--keep');
+// F83: exit-0 by default keeps an interactive sweep readable; --strict (or STRICT=1) makes the gate a
+// real regression signal for automated callers — non-zero on any FAIL or a thrown error.
+const STRICT = process.argv.includes('--strict') || process.env.STRICT === '1';
 const LOGIN = { email: 'seed@finflow.test', password: 'harness-password-not-a-secret' };
 
 let pass = 0, fail = 0;
@@ -437,6 +440,9 @@ async function main() {
   }
   console.log('\n  Scope: /api/reports only. /books not yet gated. Client surfaces not yet read.');
   console.log('═'.repeat(78) + '\n');
+  // F83: process.exit(code), NOT process.exitCode — embedded-postgres' async-exit-hook resets
+  // exitCode on natural exit; every probe exits this way. Cleanup already ran in main's finally.
+  process.exit(STRICT && fail > 0 ? 1 : 0);
 }
 
 main().catch((err) => {
@@ -448,5 +454,5 @@ main().catch((err) => {
     for (const e of err.errors) console.error('  · ' + (e && e.message ? e.message : e));
   }
   if (err && err.stack) console.error('\n--- stack ---\n' + err.stack);
-  process.exitCode = 0;   // exits 0 by design — see F83
+  process.exit(STRICT ? 1 : 0);   // F83: a thrown error is a failure under --strict
 });

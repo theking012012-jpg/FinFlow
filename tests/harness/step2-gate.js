@@ -30,6 +30,10 @@ const { printSubstrateHeader } = require('./substrate.js');
 const D = require('./seedData.js');
 
 const KEEP = process.argv.includes('--keep');
+// F83: exit-0 by default keeps an interactive sweep readable (a non-zero could truncate output or
+// trip a wrapper mid-report). --strict (or STRICT=1) makes the gate a real regression signal for any
+// automated caller — CI, a pre-commit hook — by exiting non-zero on any FAIL or on a thrown error.
+const STRICT = process.argv.includes('--strict') || process.env.STRICT === '1';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -297,6 +301,10 @@ async function main() {
   if (fail) { console.log(''); for (const f of failures) console.log(`   FAIL  ${f.name}`); }
   console.log('  Scope: the SEED matches VERIFICATION.md. No app figure is asserted here.');
   console.log('═'.repeat(78) + '\n');
+  // F83: use process.exit(code), NOT process.exitCode — embedded-postgres' async-exit-hook resets
+  // exitCode on natural exit (verified: beforeExit=1 → exit=0), which is why every probe exits this
+  // way. Cleanup already ran in main's finally, so an explicit exit here is safe.
+  process.exit(STRICT && fail > 0 ? 1 : 0);
 }
 
 main().catch((err) => {
@@ -309,5 +317,5 @@ main().catch((err) => {
     for (const e of err.errors) console.error('  · ' + (e && e.message ? e.message : e));
   }
   if (err && err.stack) console.error('\n--- stack ---\n' + err.stack);
-  process.exitCode = 0;   // exits 0 by design — see F83
+  process.exit(STRICT ? 1 : 0);   // F83: a thrown error is a failure under --strict
 });

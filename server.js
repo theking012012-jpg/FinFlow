@@ -907,30 +907,30 @@ async function isLocked(userId, date) {
 
 // ── ENTITIES ──────────────────────────────────────────────────────────────────
 app.get('/api/entities', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('entities', req.session.userId, null, (a, b) => a.sort_order - b.sort_order));
+  res.json(await db.allByUser('entities', scopeId(req), null, (a, b) => a.sort_order - b.sort_order));
 }));
 app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const { name, currency = 'USD', color = '#c9a84c' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Name is required.' });
   if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + name).
-  const _dup = await findRecentDuplicate('entities', req.session.userId, null, { textMatch: { name: name.trim().slice(0,100) } });
+  const _dup = await findRecentDuplicate('entities', scopeId(req), null, { textMatch: { name: name.trim().slice(0,100) } });
   if (_dup) return res.status(200).json(_dup);
   // PL#3: enforce the plan's entity cap SERVER-SIDE — RBAC (entities:manage) governs WHO may manage
   // entities, not HOW MANY. Without this a direct API call bypasses the UI gate and creates unlimited
   // entities past the plan. req.userPlan is attached by the trial-expiry middleware. Dedupe runs
   // first so a retried duplicate is never counted against the cap. (Dedupe short-circuits above.)
   const ENTITY_LIMITS = { trial: 1, pro: 1, business: 5 };
-  const _entCount = (await db.allByUser('entities', req.session.userId)).length;
+  const _entCount = (await db.allByUser('entities', scopeId(req))).length;
   if (_entCount >= (ENTITY_LIMITS[req.userPlan] ?? 1)) {
     return res.status(402).json({ error: 'Entity limit reached for your plan.' });
   }
-  const { row } = await db.insert('entities', { user_id: req.session.userId, name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0 });
+  const { row } = await db.insert('entities', { user_id: scopeId(req), name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0 });
   await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
-  const row = await ownedBy('entities', req.params.id, req.session.userId);
+  const row = await ownedBy('entities', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const { name, currency, color } = req.body || {};
   if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
@@ -940,14 +940,14 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
   res.json(_er ? rowToObj(_er) : {});
 }));
 app.delete('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
-  const _eold = await ownedBy('entities', req.params.id, req.session.userId);
+  const _eold = await ownedBy('entities', req.params.id, scopeId(req));
   if (!_eold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('entities', parseInt(req.params.id));
   await recordAudit(pool, { userId: req.session.userId, entityId: parseInt(req.params.id), table: 'entities', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _eold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 app.post('/api/entities/:id/activate', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
-  const uid = req.session.userId;
+  const uid = scopeId(req);
   const eid = parseInt(req.params.id);
   await pool.query(
     `UPDATE entities SET data = data || '{"is_active":0}'::jsonb, updated_at = NOW() WHERE user_id = $1`,
@@ -963,7 +963,7 @@ app.post('/api/entities/:id/activate', requireAuth, requirePerm('entities:manage
 
 // ── INVOICES ──────────────────────────────────────────────────────────────────
 app.get('/api/invoices', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('invoices', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('invoices', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 // F79: status value-domains — app-layer validation (the DB CHECK constraints in database.js are the
 // backstop). Case-insensitive; an unknown status is rejected 400, never silently stored. credit_notes
@@ -999,7 +999,7 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   // collapsed into one (a dropped invoice / missing revenue). This token-blindness is a CLASS
   // across all 31 findRecentDuplicate routes (F131); each adopts this bypass as it gains a token.
   if (!idem) {
-    const _dup = await findRecentDuplicate('invoices', req.session.userId, eid, { textMatch: { client: client.trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('invoices', scopeId(req), eid, { textMatch: { client: client.trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.status(200).json(_dup);
   }
   // F36: issue_date is the user-editable business issue date recognition keys on (Step 2).
@@ -1024,12 +1024,12 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   const _amountPaid = String(status).toLowerCase() === 'paid' ? _amt : 0;
   let row;
   try {
-    ({ row } = await db.insert('invoices', { user_id: req.session.userId, entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
+    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(
         `SELECT * FROM invoices WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`,
-        [req.session.userId, idem]
+        [scopeId(req), idem]
       );
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
@@ -1039,7 +1039,7 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('invoices', req.params.id, req.session.userId);
+  const row = await ownedBy('invoices', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
@@ -1071,7 +1071,7 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   res.json(updated);
 }));
 app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('invoices', req.params.id, req.session.userId);
+  const row = await ownedBy('invoices', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.deleteById('invoices', parseInt(req.params.id));
@@ -1081,7 +1081,7 @@ app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
 
 // ── EXPENSES ──────────────────────────────────────────────────────────────────
 app.get('/api/expenses', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('expenses', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('expenses', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   const { description, category = 'Other', amount, deductible = 'no', expense_date, entity_id } = req.body || {};
@@ -1095,7 +1095,7 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   // is the sole arbiter, so two legitimately different-token expenses with the same description+
   // amount within 5s are not wrongly collapsed (F131 class). Token-less path unchanged.
   if (!idem) {
-    const _dup = await findRecentDuplicate('expenses', req.session.userId, eid, { textMatch: { description: description.trim().slice(0,300) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('expenses', scopeId(req), eid, { textMatch: { description: description.trim().slice(0,300) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.status(200).json(_dup);
   }
   // Durable backstop (mirrors POST /api/invoices): a double-submit carries the SAME token → the 2nd
@@ -1104,10 +1104,10 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   // misses (Rule 9). Inert until idx_expenses_idem_key exists (no index ⇒ no 23505 ⇒ prior behaviour).
   let row;
   try {
-    ({ row } = await db.insert('expenses', { user_id: req.session.userId, entity_id: eid, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: edate, idempotency_key: idem }));
+    ({ row } = await db.insert('expenses', { user_id: scopeId(req), entity_id: eid, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: edate, idempotency_key: idem }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM expenses WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      const { rows } = await pool.query(`SELECT * FROM expenses WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -1116,7 +1116,7 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('expenses', req.params.id, req.session.userId);
+  const row = await ownedBy('expenses', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
@@ -1133,7 +1133,7 @@ app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   res.json(updated);
 }));
 app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('expenses', req.params.id, req.session.userId);
+  const row = await ownedBy('expenses', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.deleteById('expenses', parseInt(req.params.id));
@@ -1143,7 +1143,7 @@ app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
 
 // ── CUSTOMERS ─────────────────────────────────────────────────────────────────
 app.get('/api/customers', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('customers', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.revenue - a.revenue));
+  res.json(await db.allByUser('customers', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.revenue - a.revenue));
 }));
 app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -1153,14 +1153,14 @@ app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const _cem = String(b.email == null ? '' : b.email).slice(0,200);
   if (_cem && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(_cem)) return res.status(400).json({ error: 'Invalid email address.' });
   const _custEnt = b.entity_id||req.entityId||null;  // F150: fall back to active entity (was body-only → NULL rows leaked into every entity)
-  const _dup = await findRecentDuplicate('customers', req.session.userId, _custEnt, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem } });
+  const _dup = await findRecentDuplicate('customers', scopeId(req), _custEnt, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('customers', { user_id: req.session.userId, entity_id: _custEnt, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
+  const { row } = await db.insert('customers', { user_id: scopeId(req), entity_id: _custEnt, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
   await recordAudit(pool, { userId: req.session.userId, entityId: _custEnt, table: 'customers', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('customers', req.params.id, req.session.userId);
+  const row = await ownedBy('customers', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
   const b = req.body || {};
@@ -1187,7 +1187,7 @@ app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
   res.json(_cur ? rowToObj(_cur) : {});
 }));
 app.delete('/api/customers/:id', requireAuth, wrap(async (req, res) => {
-  const _old = await ownedBy('customers', req.params.id, req.session.userId);
+  const _old = await ownedBy('customers', req.params.id, scopeId(req));
   if (!_old) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('customers', parseInt(req.params.id));
   await recordAudit(pool, { userId: req.session.userId, entityId: _old.entity_id || null, table: 'customers', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _old, req });  // F90 Phase B
@@ -1196,21 +1196,21 @@ app.delete('/api/customers/:id', requireAuth, wrap(async (req, res) => {
 
 // ── INVENTORY ─────────────────────────────────────────────────────────────────
 app.get('/api/inventory', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('inventory', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.id - b.id));
+  res.json(await db.allByUser('inventory', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.id - b.id));
 }));
 app.post('/api/inventory', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   const u = Math.max(0, parseInt(b.qty || b.units)||0);
   const mx = parseInt(b.max_units)||200;
   const _invEnt = b.entity_id || req.entityId || null;  // F150-class: was body-only → NULL rows leaked into every entity
-  const _dup = await findRecentDuplicate('inventory', req.session.userId, _invEnt, { textMatch: { name: (b.name||'').trim().slice(0,200) }, numMatch: { cost: parseFloat(b.cost)||0 } });
+  const _dup = await findRecentDuplicate('inventory', scopeId(req), _invEnt, { textMatch: { name: (b.name||'').trim().slice(0,200) }, numMatch: { cost: parseFloat(b.cost)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('inventory', { user_id: req.session.userId, entity_id: _invEnt, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: u, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: u < mx * 0.1 ? 1 : 0 });
+  const { row } = await db.insert('inventory', { user_id: scopeId(req), entity_id: _invEnt, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: u, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: u < mx * 0.1 ? 1 : 0 });
   await recordAudit(pool, { userId: req.session.userId, entityId: _invEnt, table: 'inventory', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('inventory', req.params.id, req.session.userId);
+  const row = await ownedBy('inventory', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const newUnits = b.units != null ? Math.max(0, parseInt(b.units)||0) : row.units;
@@ -1224,7 +1224,7 @@ app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
   res.json(_inur ? rowToObj(_inur) : {});
 }));
 app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('inventory', req.params.id, req.session.userId);
+  const row = await ownedBy('inventory', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const qty = Math.max(1, Math.min(parseInt(req.body.qty)||0, 100000));
   // B8/C1: restock is an UPDATE (units += qty), not an INSERT, so there is no row for either
@@ -1246,7 +1246,7 @@ app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
   res.json(_rstk ? rowToObj(_rstk) : {});
 }));
 app.delete('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
-  const _iold = await ownedBy('inventory', req.params.id, req.session.userId);
+  const _iold = await ownedBy('inventory', req.params.id, scopeId(req));
   if (!_iold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('inventory', parseInt(req.params.id));
   await recordAudit(pool, { userId: req.session.userId, entityId: _iold.entity_id || null, table: 'inventory', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _iold, req });  // F90 Phase B
@@ -1257,7 +1257,7 @@ app.delete('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
 app.get('/api/items', requireAuth, wrap(async (req, res) => {
   // F146: entity-scope the list (null-inclusive) like invoices/expenses/bills/sales-receipts. Stores
   // entity_id but was user-scoped only, so a multi-entity owner saw every entity's items. Display-only.
-  res.json(await db.allByUser('items', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => a.id - b.id));
+  res.json(await db.allByUser('items', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => a.id - b.id));
 }));
 app.post('/api/items', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -1266,10 +1266,10 @@ app.post('/api/items', requireAuth, wrap(async (req, res) => {
   // handler previously stamped only b.entity_id, so a create without an explicit body entity_id
   // was born entity_id=NULL and — via the null-inclusive read filter — leaked into EVERY entity.
   const _itemEnt = b.entity_id || req.entityId || null;
-  const _dup = await findRecentDuplicate('items', req.session.userId, _itemEnt, { textMatch: { name: b.name.trim().slice(0,200) }, numMatch: { price: parseFloat(b.price)||0 } });
+  const _dup = await findRecentDuplicate('items', scopeId(req), _itemEnt, { textMatch: { name: b.name.trim().slice(0,200) }, numMatch: { price: parseFloat(b.price)||0 } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('items', {
-    user_id:   req.session.userId,
+    user_id:   scopeId(req),
     entity_id: _itemEnt,
     name:      b.name.trim().slice(0, 200),
     type:      b.type   || 'Product',
@@ -1284,7 +1284,7 @@ app.post('/api/items', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/items/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('items', req.params.id, req.session.userId);
+  const row = await ownedBy('items', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
@@ -1302,7 +1302,7 @@ app.put('/api/items/:id', requireAuth, wrap(async (req, res) => {
   res.json(_itmr ? rowToObj(_itmr) : {});
 }));
 app.delete('/api/items/:id', requireAuth, wrap(async (req, res) => {
-  const _itold = await ownedBy('items', req.params.id, req.session.userId);
+  const _itold = await ownedBy('items', req.params.id, scopeId(req));
   if (!_itold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('items', parseInt(req.params.id));
   await recordAudit(pool, { userId: req.session.userId, entityId: _itold.entity_id || null, table: 'items', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _itold, req });  // F90 Phase B
@@ -1822,7 +1822,7 @@ app.get('/api/lock-settings', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/lock-settings', requireAuth, requirePerm('settings:manage'), wrap(async (req, res) => {
   const { enabled, lock_date, password } = req.body || {};
-  const uid = req.session.userId;
+  const uid = scopeId(req);
   const patch = { enabled: enabled ? 1 : 0, lock_date: lock_date || null };
   if (password) patch.password_hash = bcrypt.hashSync(password, 10);
   const { rows: [_lsUp] } = await pool.query(
@@ -1836,7 +1836,7 @@ app.post('/api/lock-settings', requireAuth, requirePerm('settings:manage'), wrap
 
 // ── MANUAL JOURNALS ───────────────────────────────────────────────────────────
 app.get('/api/journals', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('journals', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('journals', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   const { date, description, lines = [], status = 'Draft' } = req.body || {};
@@ -1851,7 +1851,7 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   // the partial unique index (idx_journals_idem_key) is the sole arbiter, so two legitimately
   // different-token entries with the same description+debit within 5s are not collapsed (F131).
   if (!idem) {
-    const _dup = await findRecentDuplicate('journals', req.session.userId, req.entityId || null, { textMatch: { description: description.trim().slice(0,500) }, numMatch: { debit: totalDebit } });
+    const _dup = await findRecentDuplicate('journals', scopeId(req), req.entityId || null, { textMatch: { description: description.trim().slice(0,500) }, numMatch: { debit: totalDebit } });
     if (_dup) return res.status(200).json(_dup);
   }
   // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover
@@ -1860,7 +1860,7 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('journals', {
-      user_id: req.session.userId, entity_id: req.entityId || null,
+      user_id: scopeId(req), entity_id: req.entityId || null,
       date: date || new Date().toISOString().slice(0,10),
       description: description.trim().slice(0,500), ref: num,
       debit: totalDebit, credit: totalCredit, lines: JSON.stringify(lines), status,
@@ -1868,7 +1868,7 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM journals WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      const { rows } = await pool.query(`SELECT * FROM journals WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -1877,7 +1877,7 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('journals', req.params.id, req.session.userId);
+  const row = await ownedBy('journals', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
@@ -1890,14 +1890,14 @@ app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
   res.json(_jr ? rowToObj(_jr) : {});
 }));
 app.delete('/api/journals/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('journals', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('journals', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('journals', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
 // ── CHART OF ACCOUNTS ─────────────────────────────────────────────────────────
 app.get('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('chart_of_accounts', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.code.localeCompare(b.code)));
+  res.json(await db.allByUser('chart_of_accounts', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.code.localeCompare(b.code)));
 }));
 app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
   const { code, name, category, nature = 'Debit', balance = 0 } = req.body || {};
@@ -1909,20 +1909,20 @@ app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
   // unique index (idx_chart_of_accounts_idem_key) is the sole arbiter. Entity-consistent pre-check
   // (req.entityId matches the insert). NOT the natural `code` key — deferred, out-of-band.
   if (!idem) {
-    const _dup = await findRecentDuplicate('chart_of_accounts', req.session.userId, req.entityId || null, { textMatch: { code: code.trim().slice(0,20) } });
+    const _dup = await findRecentDuplicate('chart_of_accounts', scopeId(req), req.entityId || null, { textMatch: { code: code.trim().slice(0,20) } });
     if (_dup) return res.status(200).json(_dup);
   }
   let row;
   try {
     ({ row } = await db.insert('chart_of_accounts', {
-      user_id: req.session.userId, entity_id: req.entityId || null,
+      user_id: scopeId(req), entity_id: req.entityId || null,
       code: code.trim().slice(0,20), name: name.trim().slice(0,200),
       category, nature, balance: parseFloat(balance) || 0,
       idempotency_key: idem,
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM chart_of_accounts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      const { rows } = await pool.query(`SELECT * FROM chart_of_accounts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -1931,7 +1931,7 @@ app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('chart_of_accounts', req.params.id, req.session.userId);
+  const row = await ownedBy('chart_of_accounts', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
@@ -1945,7 +1945,7 @@ app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
   res.json(_coar ? rowToObj(_coar) : {});
 }));
 app.delete('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
-  const _coold = await ownedBy('chart_of_accounts', req.params.id, req.session.userId);
+  const _coold = await ownedBy('chart_of_accounts', req.params.id, scopeId(req));
   if (!_coold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('chart_of_accounts', parseInt(req.params.id));
   await recordAudit(pool, { userId: req.session.userId, entityId: _coold.entity_id || null, table: 'chart_of_accounts', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _coold, req });  // F90 Phase B
@@ -2224,16 +2224,16 @@ app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => 
 // ── QUOTES ────────────────────────────────────────────────────────────────────
 app.get('/api/quotes', requireAuth, wrap(async (req, res) => {
   // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
-  res.json(await db.allByUser('quotes', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('quotes', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   const { client, amount, expiry_date, status = 'pending', notes = '' } = req.body;
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req.session.userId);
   const num = 'QT-' + String(Date.now()).slice(-4);
-  const _dup = await findRecentDuplicate('quotes', req.session.userId, req.entityId || entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(amount) } });
+  const _dup = await findRecentDuplicate('quotes', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('quotes', { user_id: req.session.userId, entity_id: req.entityId || entity?.id || null, client, num, amount: Number(amount), expiry_date, status, notes });  // F150-class: request-scoped entity, not is_active
+  const { row } = await db.insert('quotes', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client, num, amount: Number(amount), expiry_date, status, notes });  // F150-class: request-scoped entity, not is_active
   res.json(row);
 }));
 app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
@@ -2260,7 +2260,7 @@ app.delete('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
 
 // ── VENDORS ───────────────────────────────────────────────────────────────────
 app.get('/api/vendors', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('vendors', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.name.localeCompare(b.name)));
+  res.json(await db.allByUser('vendors', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.name.localeCompare(b.name)));
 }));
 app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -2276,9 +2276,9 @@ app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const ytd_paid = parseFloat(b.ytd_paid) || 0;
   const entity = await activeEntity(req.session.userId);
   const _venEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
-  const _dup = await findRecentDuplicate('vendors', req.session.userId, _venEnt, { textMatch: { name } });
+  const _dup = await findRecentDuplicate('vendors', scopeId(req), _venEnt, { textMatch: { name } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('vendors', { user_id: req.session.userId, entity_id: _venEnt, name, contact, category, owing, ytd_paid, status });
+  const { row } = await db.insert('vendors', { user_id: scopeId(req), entity_id: _venEnt, name, contact, category, owing, ytd_paid, status });
   await recordAudit(pool, { userId: req.session.userId, entityId: _venEnt, table: 'vendors', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
@@ -2310,7 +2310,7 @@ app.delete('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
 
 // ── BILLS ─────────────────────────────────────────────────────────────────────
 app.get('/api/bills', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('bills', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('bills', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, due_date, status = 'unpaid', notes = '', issue_date } = req.body;
@@ -2324,7 +2324,7 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   // when a token IS present the partial unique index (idx_bills_idem_key) is the sole arbiter, so
   // two legitimately different-token bills for the same vendor+amount within 5s are not collapsed.
   if (!idem) {
-    const _dup = await findRecentDuplicate('bills', req.session.userId, _billEnt, { textMatch: { vendor: String(vendor) }, numMatch: { amount: Number(amount) } });
+    const _dup = await findRecentDuplicate('bills', scopeId(req), _billEnt, { textMatch: { vendor: String(vendor) }, numMatch: { amount: Number(amount) } });
     if (_dup) return res.json(_dup);
   }
   // F36/F38: issue_date is the business issue date the (Step 4) expense-accrual leg keys on;
@@ -2340,10 +2340,10 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   // Inert until idx_bills_idem_key exists. F135 amount_paid-on-paid above is unchanged.
   let row;
   try {
-    ({ row } = await db.insert('bills', { user_id: req.session.userId, entity_id: _billEnt, vendor, num, amount: _amt, due_date, status, notes, issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
+    ({ row } = await db.insert('bills', { user_id: scopeId(req), entity_id: _billEnt, vendor, num, amount: _amt, due_date, status, notes, issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM bills WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      const { rows } = await pool.query(`SELECT * FROM bills WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -2397,7 +2397,7 @@ app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
 app.get('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   try {
     // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
-    res.json(await db.allByUser('recurring_bills', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
+    res.json(await db.allByUser('recurring_bills', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
   } catch (e) {
     // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/recurring-bills] failed for user', req.session.userId, ':', e.code, e.message);
@@ -2408,9 +2408,9 @@ app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
   const entity = await activeEntity(req.session.userId);
-  const _dup = await findRecentDuplicate('recurring_bills', req.session.userId, req.entityId || entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
+  const _dup = await findRecentDuplicate('recurring_bills', scopeId(req), req.entityId || entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('recurring_bills', { user_id: req.session.userId, entity_id: req.entityId || entity?.id || null, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
+  const { row } = await db.insert('recurring_bills', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
   res.json(row);
 }));
 app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
@@ -2483,15 +2483,15 @@ app.delete('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (
 // ── RECURRING INVOICES ────────────────────────────────────────────────────────
 app.get('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
-  res.json(await db.allByUser('recurring_invoices', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
+  res.json(await db.allByUser('recurring_invoices', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
 }));
 app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req.session.userId);
-  const _dup = await findRecentDuplicate('recurring_invoices', req.session.userId, req.entityId || entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
+  const _dup = await findRecentDuplicate('recurring_invoices', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('recurring_invoices', { user_id: req.session.userId, entity_id: req.entityId || entity?.id || null, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
+  const { row } = await db.insert('recurring_invoices', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
   res.json(row);
 }));
 app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
@@ -2521,7 +2521,7 @@ app.get('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   // F26: entity-scope the list like /api/invoices, /api/expenses, /api/bills already do
   // (null-inclusive, so legacy null-entity rows still show). Was user-scoped, so a multi-entity
   // owner saw every entity's receipts on each entity's page.
-  res.json(await db.allByUser('sales_receipts', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
+  res.json(await db.allByUser('sales_receipts', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   const { customer, num, amount, date, method = 'Card' } = req.body || {};
@@ -2531,7 +2531,7 @@ app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
     // C1 Wave 1 (entity-scope alignment, same class as payments_received): the pre-check previously
     // hardcoded entityId=null while the INSERT stores entity_id = req.entityId, so with an active
     // entity the 5s dedupe never matched. Scoped to req.entityId||null to match the insert.
-    const _dup = await findRecentDuplicate('sales_receipts', req.session.userId, req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('sales_receipts', scopeId(req), req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.json(_dup);
   }
   // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover
@@ -2539,7 +2539,7 @@ app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('sales_receipts', {
-      user_id: req.session.userId,
+      user_id: scopeId(req),
       entity_id: req.entityId || null,
       customer: String(customer).trim().slice(0, 200),
       num: String(num || 'SR-' + String(Date.now()).slice(-4)).slice(0, 30),
@@ -2550,7 +2550,7 @@ app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -2585,7 +2585,7 @@ app.delete('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
 app.get('/api/payments-received', requireAuth, wrap(async (req, res) => {
   // F146: entity-scope (null-inclusive) like sibling payments_made (F142). Stores entity_id but was
   // user-scoped only. Display-only — the payments_received money reads were already entity-scoped.
-  res.json(await db.allByUser('payments_received', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
+  res.json(await db.allByUser('payments_received', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
   const { customer, invoice_ref, amount, date, method = 'Bank Transfer' } = req.body || {};
@@ -2599,7 +2599,7 @@ app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
     // INSERT below stores entity_id = req.entityId, so with an active entity the 5s dedupe NEVER
     // matched and token-less rapid duplicate receipts both landed (proven by verify-c1-payments-
     // received E2). Scoped to req.entityId||null to match the insert, like the sibling money routes.
-    const _dup = await findRecentDuplicate('payments_received', req.session.userId, req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('payments_received', scopeId(req), req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.json(_dup);
   }
   // C1 Wave 1 durable backstop (mirrors invoices/expenses/bills/payments_made): a same-token
@@ -2608,7 +2608,7 @@ app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('payments_received', {
-      user_id: req.session.userId,
+      user_id: scopeId(req),
       entity_id: req.entityId || null,
       customer: String(customer).trim().slice(0, 200),
       invoice_ref: String(invoice_ref || '').slice(0, 50),
@@ -2619,7 +2619,7 @@ app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM payments_received WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      const { rows } = await pool.query(`SELECT * FROM payments_received WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -2656,7 +2656,7 @@ app.delete('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
 // ── CREDIT NOTES ──────────────────────────────────────────────────────────────
 app.get('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   // F148: entity-scope (null-inclusive) now that credit notes carry entity_id.
-  res.json(await db.allByUser('credit_notes', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
+  res.json(await db.allByUser('credit_notes', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   const { customer, num, amount, date, status = 'Open', reason = '' } = req.body || {};
@@ -2670,7 +2670,7 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   // under an active entity → a token-less <5s double-submit created a DUPLICATE credit note
   // (double-contra of that entity's revenue). Scope the pre-check to req.entityId||null to match the insert.
   if (!idem) {
-    const _dup = await findRecentDuplicate('credit_notes', req.session.userId, req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('credit_notes', scopeId(req), req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.json(_dup);
   }
   // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover
@@ -2678,7 +2678,7 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('credit_notes', {
-      user_id: req.session.userId,
+      user_id: scopeId(req),
       entity_id: req.entityId || null,   // F148: was omitted, so every credit note was created
       // account-wide (null entity). computeBooks' null-inclusive matchEnt (server.js:3802) then
       // subtracted it from EVERY entity's revenue — a fresh entity showed NEGATIVE revenue. Store
@@ -2693,7 +2693,7 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM credit_notes WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      const { rows } = await pool.query(`SELECT * FROM credit_notes WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -2734,7 +2734,7 @@ app.get('/api/payments-made', requireAuth, wrap(async (req, res) => {
   // already do (null-inclusive, so legacy null-entity rows still show). Was user-scoped only, so a
   // multi-entity owner saw every entity's payments-made rows on each entity's page. Display-only —
   // the payments_made money reads (P&L, cash-flow, computeBooks) were already entity-scoped.
-  res.json(await db.allByUser('payments_made', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
+  res.json(await db.allByUser('payments_made', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, date, method, notes, ref, bill_id } = req.body || {};
@@ -2743,7 +2743,7 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   // the partial unique index (idx_payments_made_idem_key) is the sole arbiter, so two legitimately
   // different-token payments to the same vendor+amount within 5s are not collapsed (F131 class).
   if (!idem) {
-    const _dup = await findRecentDuplicate('payments_made', req.session.userId, req.entityId || null, { textMatch: { vendor: (vendor || '').trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('payments_made', scopeId(req), req.entityId || null, { textMatch: { vendor: (vendor || '').trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.json(_dup);
   }
   // F38 Step 3: bill_id links this payment to a bill (nullable). A LINKED payment settles AP
@@ -2755,7 +2755,7 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('payments_made', {
-      user_id: req.session.userId,
+      user_id: scopeId(req),
       entity_id: req.entityId || null,
       vendor: (vendor || '').trim().slice(0, 200),
       amount: parseFloat(amount) || 0,
@@ -2768,7 +2768,7 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM payments_made WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      const { rows } = await pool.query(`SELECT * FROM payments_made WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -2815,7 +2815,7 @@ app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
 app.get('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   try {
     // F148: entity-scope (null-inclusive) now that vendor credits carry entity_id.
-    res.json(await db.allByUser('vendor_credits', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
+    res.json(await db.allByUser('vendor_credits', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
   } catch (e) {
     // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/vendor-credits] failed for user', req.session.userId, ':', e.code, e.message);
@@ -2833,7 +2833,7 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   // entity_id = req.entityId||null, so a pre-check hardcoded to null never matched under an active
   // entity → a token-less <5s double-submit created a DUPLICATE vendor credit. Scope to req.entityId||null.
   if (!idem) {
-    const _dup = await findRecentDuplicate('vendor_credits', req.session.userId, req.entityId || null, { textMatch: { vendor: String(vendor).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('vendor_credits', scopeId(req), req.entityId || null, { textMatch: { vendor: String(vendor).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.json(_dup);
   }
   // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover
@@ -2841,7 +2841,7 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('vendor_credits', {
-      user_id: req.session.userId,
+      user_id: scopeId(req),
       entity_id: req.entityId || null,   // F148: mirror of credit_notes — was omitted, so every
       // vendor credit reduced EVERY entity's opex (F58 contra). Store it so it scopes to its entity.
       vendor: String(vendor).trim().slice(0, 200),
@@ -2854,7 +2854,7 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM vendor_credits WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      const { rows } = await pool.query(`SELECT * FROM vendor_credits WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -3751,7 +3751,7 @@ app.post('/api/permissions', requireAuth, requirePerm('permissions:manage'), wra
 // GET /api/reports — summary stats (revenue, expenses, profit, counts).
 app.get('/api/reports', requireAuth, wrap(async (req, res) => {
   try {
-    const uid = req.session.userId;
+    const uid = scopeId(req);
     const eid = req.entityId || null;
     const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
     // F33/F25: optional explicit window (?start=YYYY-MM-DD&end=YYYY-MM-DD&elapsedMonths=N),
@@ -3858,7 +3858,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
 // canonical — it additionally includes payroll accrual (a monthly rate, surfaced as its own
 // line) and FIFO COGS (an aggregate). Sorted by YYYY-MM key, labelled at render (F15).
 app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
-  const uid = req.session.userId;
+  const uid = scopeId(req);
   const eid = req.entityId || null;
   const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
   const [invoices, expenses, paymentsMade, receipts, bills, creditNotes, vendorCredits] = await Promise.all([
@@ -3938,7 +3938,7 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
 // AP = unpaid bills (entity-scoped). No real cash-account model, so cash is a retained-
 // earnings proxy (max(0, netProfit)) — noted, not a tracked balance.
 app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
-  const uid = req.session.userId;
+  const uid = scopeId(req);
   const eid = req.entityId || null;
   const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
   const [books, bills] = await Promise.all([
@@ -4010,7 +4010,7 @@ app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
 // account payroll is typically the largest outflow, making the reported net structurally
 // optimistic). Paid-only, deliberately NOT the P&L's approved-or-paid filter — see below.
 app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
-  const uid = req.session.userId;
+  const uid = scopeId(req);
   const eid = req.entityId || null;
   const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
   // invoice_payments is a TYPED table (no `data` JSONB column) — db.allByUser()/rowToObj() would
@@ -4080,7 +4080,7 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
 // starting point; the worksheet overrides it per tax line on the frontend.
 app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
   try {
-    const uid = req.session.userId;
+    const uid = scopeId(req);
     const eid = req.entityId || null;
     // F139 — SINGLE SOURCE. Was: paid-only (CASH) revenue + all-time Σ deductible — a basis AND a
     // window no other surface used (F76), so the worksheet reported a taxable no other page agreed
@@ -4354,7 +4354,7 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
     if (e.code === '23505' && idem) {
       // Duplicate submit lost the race at the DB → the payment already landed (and already recalc'd
       // the invoice on the first insert). Return the ORIGINAL row, 200 — never re-book, never 500.
-      const { rows: ex } = await pool.query(`SELECT * FROM invoice_payments WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      const { rows: ex } = await pool.query(`SELECT * FROM invoice_payments WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (ex[0]) return res.status(200).json(ex[0]);
     }
     throw e;
@@ -5225,7 +5225,7 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
       // Duplicate submit lost the race at the DB → the movement already landed and the units were
       // already decremented on the first insert. Return the ORIGINAL in the success shape, cogs null
       // (it consumed no NEW FIFO layers) — never re-book units, never re-consume FIFO, never 500.
-      const { rows: ex } = await pool.query(`SELECT * FROM inventory_movements WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
+      const { rows: ex } = await pool.query(`SELECT * FROM inventory_movements WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (ex[0]) return res.status(200).json({ ...ex[0], cogs: null });
     }
     throw e;

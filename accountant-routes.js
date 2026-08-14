@@ -637,8 +637,21 @@ If you cannot find a field, use null. Be concise.`;
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
     if (access.rows[0].access_level === 'view') return res.status(403).json({ error: 'View-only access.' });
+    // F150-class: a journal created on the client's behalf MUST carry the client's entity_id.
+    // Omitting it stored the row account-wide (entity_id NULL) — the null-inclusive read filter
+    // would surface it under EVERY one of the client's entities (the cross-entity leak F150 fixed
+    // on the main app's inserts), and post-F150 chk_journals_entity_nn rejects it outright (500).
+    // Resolve the client's active entity exactly as the main app's entity-scope middleware does
+    // (server.js:751): active first, then lowest id.
+    const _entRow = await pool.query(
+      `SELECT id FROM entities WHERE user_id = $1 ORDER BY (CASE WHEN (data->>'is_active')::int = 1 THEN 0 ELSE 1 END), id ASC LIMIT 1`,
+      [parseInt(userId)]
+    );
+    const _clientEntityId = _entRow.rows[0]?.id ?? null;
+    if (_clientEntityId == null) return res.status(400).json({ error: 'Client has no entity to post against.' });
     const { row } = await db.insert('journals', {
       user_id: parseInt(userId),
+      entity_id: _clientEntityId,
       description: (description || '').slice(0, 500),
       date: date || new Date().toISOString().slice(0, 10),
       lines: JSON.stringify(lines || []),

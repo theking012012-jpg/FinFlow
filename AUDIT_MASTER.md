@@ -2586,8 +2586,10 @@ An entity today has a display name but **no structured jurisdiction**. Consequen
 
 ---
 
-### F111 🟡 MEDIUM — no member-axis visibility for team memberships (the remediation half of F107) — **NEW (2026-07-30), OPEN**
+### F111 🟡 MEDIUM — no member-axis visibility for team memberships (the remediation half of F107) — **NEW (2026-07-30) → 🟢 SERVER HALF BUILT + VERIFIED (2026-08-13; FIX HELD, UI remains)**
 The remediation half of **F107**, logged separately because it is a feature, not a patch: (a) an endpoint and UI listing the accounts a login can access, reading the member axis the resolver already queries (`data->>'member_user_id' = uid`); (b) an indicator on any session scoped into an account the user does not own (`req.accountId !== req.session.userId`). F107 records the defect; F111 is the work.
+
+**Status (2026-08-13):** ✅ **SERVER HALF DONE (FIX HELD).** New read-only endpoint `GET /api/my-access` (server.js, after `/api/team`) reads the **member axis** and returns `{ ownAccountId, currentAccountId, scopedIntoOther, accounts[] }` — every account this login can reach (own + each active membership, with the account owner's name/email + role), and whether the current request is scoped into an account the user does not own (`req.accountId` from the resolver). No writes, no new permissions — purely the missing view. **Verified:** `tests/harness/verify-f111-access-visibility.js` (11/0) — B, an active member of A, sees BOTH accounts with `scopedIntoOther=true` / `currentAccountId=A`, while `GET /api/team` (owner axis) does NOT list A (the exact invisibility F107 names); C (no membership) sees only its own account, `scopedIntoOther=false`. No regression: step2 63/0, entity-leakage-sweep 18/0. **Remaining (owner-gated UI):** an "Accounts you can access" view + an active-session banner that consumes this endpoint; F107's incident-data question (does a live cross-account row exist, and its provenance) stays owner-run. Membership creation/flip audit-logging is F90.
 
 ---
 

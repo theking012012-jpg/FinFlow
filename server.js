@@ -2956,6 +2956,43 @@ app.get('/api/team', requireAuth, wrap(async (req, res) => {
   ];
   res.json(members);
 }));
+
+// ── F111 — MEMBER-AXIS VISIBILITY (the remediation half of F107) ───────────────
+// GET /api/team reads the OWNER axis (people you invited). The account resolver reads the MEMBER
+// axis (`data->>'member_user_id' = you`) to scope your session INTO another account — and nothing
+// displays that axis, so a membership that relocates your session is invisible to you. This
+// read-only endpoint fills the gap: it lists every account THIS login can access, and reports
+// whether the current request is scoped into an account you do not own (req.accountId, set by the
+// resolver that ran before this route). No writes, no new permissions — purely the missing view.
+app.get('/api/my-access', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const { rows: memberships } = await pool.query(
+    `SELECT tm.user_id AS account_owner_id, tm.data->>'role' AS role,
+            u.data->>'name' AS owner_name, lower(u.data->>'email') AS owner_email
+       FROM team_members tm JOIN users u ON u.id = tm.user_id
+      WHERE tm.data->>'member_user_id' = $1::text AND tm.data->>'status' = 'active'
+      ORDER BY tm.id ASC`,
+    [String(uid)]
+  );
+  const { rows: [own] } = await pool.query(
+    `SELECT data->>'name' AS name, lower(data->>'email') AS email FROM users WHERE id = $1`, [uid]
+  );
+  const accounts = [
+    { accountOwnerId: uid, ownerName: own?.name || null, ownerEmail: own?.email || null, role: 'owner', isOwn: true },
+    ...memberships.map(m => ({
+      accountOwnerId: m.account_owner_id, ownerName: m.owner_name, ownerEmail: m.owner_email,
+      role: m.role || 'member', isOwn: false,
+    })),
+  ];
+  const currentAccountId = req.accountId != null ? req.accountId : uid;
+  res.json({
+    ownAccountId: uid,
+    currentAccountId,
+    scopedIntoOther: currentAccountId !== uid,   // true ⇒ this session is operating in another account's books
+    accounts,
+  });
+}));
+
 app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
   // F54: no invite/token/email handshake — a bare team_members insert. No caller (client,
   // server-to-server, or test harness — checked) uses this route; the real invite path is

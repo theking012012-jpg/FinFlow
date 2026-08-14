@@ -607,9 +607,9 @@ visited, so the Expenses KPI depended on where you clicked first.
 
 | # | Check | Expected | Result |
 |---|---|---|---|
-| B3.1 | Fresh reload → dashboard first → read Expenses | 5,750 (Jun) | |
-| B3.2 | Then visit Payroll → return to dashboard | **unchanged** | |
-| B3.3 | Reload → Payroll first → dashboard | **same figure via both routes** | |
+| B3.1 | Fresh reload → dashboard first → read Expenses | correct at boot (no Payroll visit) | PASS (2026-08-13) — d-exp at boot == _fmtMoney(expected.js FY opex); NOT the payroll-missing (F102) nor draft-counted (F80) value. Executed: b3-payroll-nav-order.js (jsdom); also f102-payroll-boot.js. |
+| B3.2 | Then visit Payroll → return to dashboard | **unchanged** | PASS (2026-08-13) — d-exp identical after showPage('payroll')→showPage('dashboard'), still the oracle value. Executed: b3-payroll-nav-order.js. |
+| B3.3 | Reload → Payroll first → dashboard | **same figure via both routes** | PASS (2026-08-13) — d-exp identical across a second Payroll→dashboard route (nav-order independent). Executed: b3-payroll-nav-order.js. |
 
 ## B4 · Status lifecycle — 4
 | # | Check | Expected | Result |

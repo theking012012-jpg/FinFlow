@@ -633,7 +633,9 @@ The node clock pin (`clock.js` `PINNED_ISO`) and `seedData.TODAY_LOCAL` must mov
 - **B1.3** → already covered by `verify-c1-payroll-runs.js` (concurrent/slow double-submit → exactly one run; NO_INDEX control). Was drift-listed only for lack of a cited probe.
 - Removed all four from `drift.js` DRIFT_SENSITIVE_CHECKS (mirroring the B4.4 removal). VERIFICATION.md B1.3/B1.4/B4.1/B4.2/B4.3 rows now carry PASS + probe refs. Gate BLOCKED list shrinks **7 → 3**; step2 63/0, step3 56/0 unchanged.
 
-**STILL BLOCKED (3):** B3.1/B3.2/B3.3 (nav-order independence of the client Expenses figure). B3.1 (boot → dashboard-first) is guarded by `verify-f102-payroll-boot.js`; **B3.2/B3.3** (visit Payroll → return → unchanged; Payroll-first) need a jsdom nav-order probe — not yet built, the remaining F110 work.
+**UPDATE 2026-08-13 (cont.) — ALL 7 BLOCKED checks now UNBLOCKED; the drift-sensitive list is EMPTY.** Added `tests/harness/b3-payroll-nav-order.js` (7/0, jsdom) for **B3.1/B3.2/B3.3**: the dashboard Expenses KPI is correct at boot (dashboard-first, f102 oracle — NOT the payroll-missing or draft-counted value) AND identical across `showPage('payroll')→showPage('dashboard')` round-trips (nav-order independent). B3 reads SEEDED runs (explicit run_dates), never a NOW()-stamped row, so it was never truly drift-sensitive — only unprobed. `drift.js` DRIFT_SENSITIVE_CHECKS is now **empty**; the month-straddle warning is downgraded to informational and blocks nothing. Gate BLOCKED list **7 → 0**; step2 63/0, step3 56/0. VERIFICATION.md B3.1-3 rows → PASS.
+
+**NET F110 STATUS:** the *re-pin proper* remains an OPEN owner decision (above), but its practical consequence — 7 Part-B checks the sweep could not evaluate — is **fully resolved** via drift-immune probes, the sanctioned B4.4 path. No node re-pin or DB-clock freeze was needed or done.
 
 ---
 

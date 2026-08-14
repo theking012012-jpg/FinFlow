@@ -22,27 +22,27 @@ const clock = require('./clock.js');
 // Part B checks whose result depends on a row the APP created being placed in the period the
 // pinned clock expects. Everything else in Part B is a delta assertion and is drift-immune.
 const DRIFT_SENSITIVE_CHECKS = [
-  'B3.1', // Fresh reload → dashboard first → Expenses reads the Jun figure
-  'B3.2', // Visit Payroll → return → unchanged
-  'B3.3', // Payroll first → dashboard → same figure via both routes
-  // ── DELIBERATELY REMOVED — each now has a drift-immune DELTA probe (the B4.4 precedent) ──
-  // A check belongs here ONLY if it asserts an ABSOLUTE period figure that a NOW()-stamped,
-  // app-created row would move. The moment a check is re-expressed as `after − before` in one
-  // process, it stops being drift-sensitive and printing "BLOCKED" beside it would make the
+  // EMPTY — every check that once lived here now has a drift-immune probe (the B4.4 precedent):
+  // a check belongs here ONLY if it asserts an ABSOLUTE period figure that a NOW()-stamped,
+  // app-created row would move. Re-expressed as `after − before` (or a client equality) in one
+  // process, a check stops being drift-sensitive; printing "BLOCKED" beside it would make the
   // harness contradict the PASS it carries in VERIFICATION.md.
   //
-  //   B4.4  → b4-4-payroll-cash-transition.js (6ebc85a) — cash-out delta across draft→approved→paid.
-  //   B4.2  ┐
-  //   B4.3  ┤ → b4-2-3-payroll-pl-transition.js — P&L opex delta across the same lifecycle. B4.2 =
-  //   B1.4  ┘   approve +Σ lines; B4.3 = mark-paid +0 (the decision-2 trap, control-verified: forcing
-  //             the leg to status='approved' turns B4.3 red at −Σ lines); B1.4 = 2nd approve +0.
-  //   B1.3  → verify-c1-payroll-runs.js — concurrent/slow double-submit of POST /api/payroll-runs
-  //           creates exactly one run (idempotency index + 23505 recovery; NO_INDEX control).
+  //   B4.4        → b4-4-payroll-cash-transition.js — cash-out delta across draft→approved→paid.
+  //   B4.2 / B4.3 → b4-2-3-payroll-pl-transition.js — P&L opex delta across the same lifecycle.
+  //     B4.2 = approve +Σ lines; B4.3 = mark-paid +0 (the decision-2 trap, control-verified: forcing
+  //     the leg to status='approved' turns B4.3 red at −Σ lines).
+  //   B1.4        → b4-2-3-payroll-pl-transition.js §4 — 2nd approve moves opex by 0 (counted once).
+  //   B1.3        → verify-c1-payroll-runs.js — concurrent/slow double-submit → exactly one run
+  //                 (idempotency index + 23505 recovery; NO_INDEX control).
+  //   B3.1/2/3    → b3-payroll-nav-order.js — the dashboard Expenses KPI is CORRECT at boot
+  //                 (dashboard-first, f102 oracle: 9,x00, not 3,200 / 12,700) and IDENTICAL across
+  //                 Payroll→dashboard round-trips (nav-order independent). These read seeded runs
+  //                 (explicit run_dates), never a NOW()-stamped row, so they were never truly
+  //                 drift-sensitive — only unprobed.
   //
-  // B3.1-3 STAY: they assert nav-order independence of the CLIENT Expenses figure. B3.1 (boot →
-  // dashboard-first, no Payroll visit) is guarded by f102-payroll-boot.js; B3.2/B3.3 (visit Payroll,
-  // return, and Payroll-first) have no probe yet and remain genuinely drift-sensitive. Removing the
-  // four above is not a precedent for removing these — build the jsdom nav-order probe first.
+  // Keep this array empty unless a NEW check genuinely asserts an absolute figure over an
+  // app-created, NOW()-stamped row AND has no delta/equality probe. Prefer writing the probe.
 ];
 
 function localYmd(d) {
@@ -81,19 +81,24 @@ function reportDrift(drift) {
   }
 
   console.log('');
-  console.log('  ⚠️  ══════════════════════════════════════════════════════════════════════');
-  console.log('  ⚠️   MONTH-BOUNDARY DRIFT — some Part B checks cannot be evaluated.');
-  console.log('  ⚠️  ══════════════════════════════════════════════════════════════════════');
+  console.log('  ── ══════════════════════════════════════════════════════════════════════');
+  console.log('     MONTH-BOUNDARY DRIFT — informational (F110).');
+  console.log('  ── ══════════════════════════════════════════════════════════════════════');
   console.log('');
   console.log(`     Postgres NOW() (${drift.pgLocal}) and the pinned clock (${drift.pinnedLocal}) are in`);
   console.log('     DIFFERENT MONTHS. Rows the app creates are stamped by the database clock');
-  console.log('     (payroll_runs.run_date = NOW(), server.js:3822 — see F85), so they land in a');
+  console.log('     (payroll_runs.run_date = NOW(), server.js — see F85), so they land in a');
   console.log('     different period than the pinned clock expects.');
   console.log('');
   console.log('     Part A is UNAFFECTED — it seeds explicit dates and never reads NOW().');
-  console.log('     These Part B checks are marked BLOCKED, not failed:');
-  console.log(`       ${DRIFT_SENSITIVE_CHECKS.join(', ')}`);
-  console.log('     Every other check still runs.');
+  if (DRIFT_SENSITIVE_CHECKS.length === 0) {
+    console.log('     NO checks are blocked — every once-drift-sensitive Part B check now has a');
+    console.log('     drift-immune delta/equality probe (F110): B1.3, B1.4, B3.1-3, B4.2-4.');
+  } else {
+    console.log('     These Part B checks are marked BLOCKED, not failed:');
+    console.log(`       ${DRIFT_SENSITIVE_CHECKS.join(', ')}`);
+    console.log('     Every other check still runs.');
+  }
   console.log('');
   console.log('     ── MAINTENANCE: RE-PINNING THE CLOCK ────────────────────────────────');
   console.log('     This goes live soon by construction. Real time passes the pinned clock on');

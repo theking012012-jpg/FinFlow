@@ -548,6 +548,34 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F156 🟠 HIGH — accountant "add journal on behalf of client" never stamped `entity_id` — the one F150-class insert missed — **NEW (2026-08-13, execution-verified fail-then-pass) → ✅ FIX HELD (awaiting owner approval to commit)**
+**Status:** ✅ **FIX HELD** — root fix staged in the working tree, executed fail-then-pass on real scratch Postgres; **not committed** (HOLD). **Severity: HIGH** — a wrong ledger on every one of the client's entities, plus a hard 500 that breaks the feature live.
+
+`POST /api/accountants/clients/:userId/journal` (`accountant-routes.js:640`) inserted into `journals` **without an `entity_id`**. This is the single constrained-table insert F150 missed when it stamped `entity_id` across the main app's business routes (server.js — all 17 constrained tables verified stamped; `accountant-routes.js` `lock_settings` is not constrained, so `journals` was the only gap).
+
+Two consequences: **(a) latent cross-entity leak** — the journal was stored account-wide (`entity_id = NULL`), and the null-inclusive read filter surfaces it under EVERY one of that client's entities, identical in shape to the leak F150 fixed everywhere else; **(b) live hard break** — since `chk_journals_entity_nn` landed (2026-08-12) the NULL insert is rejected, so the route returns **HTTP 500** and the accountant journal feature is broken for every client.
+
+**What changed (mechanism).** Resolve the client's active entity exactly as the main app's entity-scope middleware does (`server.js:751` — active first, then lowest id), stamp it on the insert, and return a clean **400** if the client has no entity (instead of a 500). One file, `accountant-routes.js`.
+
+**How verified.** `verify-f90-accountant-audit.js` executed fail-then-pass on real scratch Postgres: HEAD reproduces `POST …/journal` → **500** (`chk_journals_entity_nn`, failing row `(1, 1, null, …)`), audit row absent, **2 failed / 9 passed**; with the fix → **201**, `journals/CREATE` audited to the accountant, **11 / 0**. No regression: F150 family still green (`verify-f150-entity-stamp-no-leak` 9/0, `verify-f150c-write-side-isolation` 33/0, `verify-f150d-entity-constraint` 19/0, `verify-entity-leakage-sweep` "ALL SCOPED" 18/0, `verify-f148` 5/0); accountant consumers `verify-f138-accountant-taxlines` 6/0, `verify-f140-accountant-fyear` 5/0; step-gates 150/0.
+
+**Class (Rule 13).** Enumerated every `db.insert` into a constrained table across `server.js` and `accountant-routes.js`; this was the **only** remaining unstamped instance. See `AUDIT_2026-08-13_pass2.md` §3.
+**Done when:** committed. (Fix held pending approval.)
+
+---
+
+### F157 🟢 LOW — a business write by a user with no active entity returns a generic 500, not a clean 400 — **NEW (2026-08-13) → ✅ FIX HELD (awaiting owner approval to commit)**
+**Status:** ✅ **FIX HELD** — shared guard staged in the working tree, executed; **not committed** (HOLD). **Severity: LOW** — normal use never reaches it (onboarding always creates an entity first), so this is robustness/observability, not a money defect.
+
+`POST /api/auth/register` creates **no default entity** (the register route inserts only a `users` row). Business routes stamp `entity_id = req.entityId`; with no entity that is `NULL`, and `chk_*_entity_nn` then makes the insert throw a generic **500**. The SPA never hits this because onboarding POSTs `/api/entities` before any create surface (`finflow-api-wiring-postgres.js:115`, `app-main.js:535`) — which is exactly why the route-driven regression harnesses that omitted entity setup were test-debt, not product defects. But a direct-API caller, or a race reaching a create before onboarding, gets an opaque 500 rather than a clean 400. The holdings route already guards this (`server.js:1620`, "No active business entity."); the other business routes did not.
+
+**What changed (mechanism).** Guarded at the **single shared write path** rather than per-route (Rule 9 — a new create route routing through `db.insert` cannot bypass it). `db.insert` (`database.js`) now knows the 17 entity-required tables (`ENTITY_REQUIRED_TABLES`, kept in sync with the `chk_*_entity_nn` list in `initDB`); when a create targets one of them with a null `entity_id` it throws a typed, client-safe error (`status:400, expose:true, code:'NO_ACTIVE_ENTITY'`). The global error handler (`server.js:5609`) honours `err.expose === true && Number.isInteger(err.status)` — exposing that one message — and leaves every other error a generic 500. The 17 create routes all use `wrap()` and their idempotency catches re-throw non-`23505`, so the typed error reaches the handler.
+
+**How verified.** New regression harness `verify-f157-no-entity-400.js` — a user with no entity POSTs each constrained surface (invoices, expenses, bills, customers, vendors, journals, chart-of-accounts); each returns **400** naming the entity, never a 500: **15/0**. Fail side documented: pre-fix the same requests returned 500 (`verify-f79`/`verify-f133` reproduced it). No happy-path regression (entity present): step-gates **150/0**, and the constrained-route C1 dedup family (invoices, bills, expenses, sales-receipts, credit-notes, payments-made/received, invoice-payments) all green.
+**Done when:** committed. (Fix held pending approval.)
+
+---
+
 ### H1 🟠 HIGH — pre-commit bundle guard built from the working tree, not the index — could ship unreviewed code — **NEW (2026-07-30, found during F87-batch review)**
 **Status:** ✅ **FIXED (this commit)** — proven by execution. **Severity: HIGH.** Live on `main` from the hook's introduction until this commit. **Exposure:** any commit with a dirty or partially-staged wiring source.
 

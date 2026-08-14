@@ -1311,7 +1311,7 @@ app.delete('/api/items/:id', requireAuth, wrap(async (req, res) => {
 
 // ── PAYROLL ───────────────────────────────────────────────────────────────────
 app.get('/api/payroll', requireAuth, wrap(async (req, res) => {
-  const userId = req.session.userId;
+  const userId = scopeId(req);
   const entityId = req.entityId || null;
   // Fail safe: when no entity resolves, return only legacy unassigned rows — never all entities.
   const rows = await db.allByUser('payroll', userId, r => r.entity_id == null || (entityId != null && r.entity_id === entityId));
@@ -1327,13 +1327,13 @@ app.post('/api/payroll', requireAuth, requirePerm('payroll:write'), wrap(async (
   if (!b.fname) return res.status(400).json({ error: 'fname required.' });
   const _peid = b.entity_id || null;
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + entity_id + fname + lname + gross).
-  const _dup = await findRecentDuplicate('payroll', req.session.userId, _peid, { textMatch: { fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100) }, numMatch: { gross: parseFloat(b.gross)||0 } });
+  const _dup = await findRecentDuplicate('payroll', scopeId(req), _peid, { textMatch: { fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100) }, numMatch: { gross: parseFloat(b.gross)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('payroll', { user_id: req.session.userId, entity_id: _peid, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, deductions: Array.isArray(b.deductions) ? computeDeductions(parseFloat(b.gross)||0, b.deductions).rows.map(({label,value,type})=>({label,value,type})) : [], av_class: b.av_class||'av-blue', is_owner: b.is_owner ? true : false, salary_profile_id: b.salary_profile_id != null ? Number(b.salary_profile_id) : null });
+  const { row } = await db.insert('payroll', { user_id: scopeId(req), entity_id: _peid, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, deductions: Array.isArray(b.deductions) ? computeDeductions(parseFloat(b.gross)||0, b.deductions).rows.map(({label,value,type})=>({label,value,type})) : [], av_class: b.av_class||'av-blue', is_owner: b.is_owner ? true : false, salary_profile_id: b.salary_profile_id != null ? Number(b.salary_profile_id) : null });
   res.status(201).json(row);
 }));
 app.put('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
-  const row = await ownedBy('payroll', req.params.id, req.session.userId);
+  const row = await ownedBy('payroll', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
   const b = req.body || {};
@@ -1349,7 +1349,7 @@ app.put('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(asyn
   res.json(_payr ? rowToObj(_payr) : {});
 }));
 app.delete('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
-  if (!(await ownedBy('payroll', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('payroll', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('payroll', parseInt(req.params.id));
   res.json({ ok: true });
 }));
@@ -2999,7 +2999,7 @@ app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, 
   // POST /api/team/invite, already gated for launch below. Same "coming soon" gate, same
   // reason: this route is the second door into team_members and must close with the first.
   // Reversible: remove this block to re-enable alongside /api/team/invite.
-  return res.status(403).json({ error: 'Team invites are coming soon. This feature is not yet available.' });
+  // F54: invites ENABLED (2026-08-14) — data scope fixed + invite/accept verified. (was: 403 'coming soon')
   const { name, email, role = 'viewer' } = req.body || {};
   if (!name || !email) return res.status(400).json({ error: 'name and email required.' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email.' });
@@ -3049,7 +3049,7 @@ app.post('/api/team/invite', inviteLimiter, requireAuth, requirePerm('team:manag
   // flow, see /api/accountants/request-access — is untouched). Reversible: remove this
   // block to re-enable. Existing pending/active team_members rows and the accept flow
   // (/api/team/accept) are left alone on purpose — this only blocks CREATING new invites.
-  return res.status(403).json({ error: 'Team invites are coming soon. This feature is not yet available.' });
+  // F54: invites ENABLED (2026-08-14) — data scope fixed + invite/accept verified. (was: 403 'coming soon')
   // Only an owner/admin OF THIS ACCOUNT may invite. accountRole is set per-request
   // by the account resolver; a viewer/accountant member cannot invite.
   if (!['owner', 'admin'].includes(req.accountRole)) {
@@ -4539,7 +4539,7 @@ app.get('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
 app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   const { period, bonus_overrides = {}, overtime_overrides = {}, notes = '' } = req.body || {};
   if (!period) return res.status(400).json({ error: 'period required' });
-  const uid = req.session.userId;
+  const uid = scopeId(req);
   const eid = req.entityId || null;
 
   const employees = await db.allByUser('payroll', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
@@ -4614,7 +4614,7 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(as
   }
 
   const { rows: fullLines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id = $1`, [run.id]);
-  await auditLog(pool, { userId: uid, entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', req });
+  await auditLog(pool, { userId: req.session.userId, entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', req });
   res.status(201).json({ ...run, lines: fullLines });
 }));
 
@@ -5241,7 +5241,7 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
 }));
 
 app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
-  const uid = req.session.userId;
+  const uid = scopeId(req);
   const eid = req.entityId || null;
   // F25: optional period window (?start=&end=&elapsedMonths=), validated identically to
   // /api/reports so the dashboard gets a PERIOD-SCOPED COGS that reconciles with computeBooks.

@@ -100,6 +100,17 @@ async function main() {
       mPers.some(t => t.description === 'MEMBER-PERSONAL') && !mPers.some(t => t.description === 'OWNER-PERSONAL'),
       `member personal: ${JSON.stringify(mPers.map(t => t.description))}`);
 
+    // ── 6 · payroll is account-coherent too (roster + runs residual fix) ──
+    console.log('\n-- 6 - payroll: owner adds an employee, member runs payroll, owner sees the run --');
+    const emp = await owner.post('/api/payroll', { fname: 'Emp', lname: 'One', gross: 3000 });
+    A('owner POST payroll employee → 2xx', emp.status >= 200 && emp.status < 300, `status ${emp.status}: ${emp.text.slice(0,120)}`);
+    const mRun = await member.post('/api/payroll-runs', { period: '2026-07' });
+    A('member (admin) POST payroll-run → 201 (reads the ACCOUNT roster, not an empty one)', mRun.status === 201, `status ${mRun.status}: ${mRun.text.slice(0,160)}`);
+    A('the run has at least one line (account roster was pulled)', Array.isArray(mRun.json && mRun.json.lines) && mRun.json.lines.length > 0, `lines ${JSON.stringify(mRun.json && mRun.json.lines && mRun.json.lines.length)}`);
+    const oRuns = (await owner.get('/api/payroll-runs')).json || [];
+    A('owner GET payroll-runs includes the member-created run', oRuns.some(r => r.id === (mRun.json && mRun.json.id)),
+      `owner run ids: ${JSON.stringify(oRuns.map(r => r.id))}`);
+
     console.log('\n' + '-'.repeat(78));
     console.log(fail === 0 ? '  ALL GREEN - ' + pass + ' passed, 0 failed  (F54 team-member data scope)'
                            : '  ' + fail + ' FAILED, ' + pass + ' passed');

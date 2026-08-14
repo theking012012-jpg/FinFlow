@@ -557,18 +557,20 @@ A9 assertions come with the client probe.
 
 | # | Check | Expected | Result |
 |---|---|---|---|
-| A9.1 | Future invoice contributes 0 to **FY** revenue | FY revenue unchanged (10,000, not 15,000) | ⬜ not yet automated |
-| A9.2 | Contributes 0 to its **quarter** (Q3, Jul–Sep) | Q3 revenue unchanged (4,000, not 9,000) | ⬜ not yet automated |
-| A9.3 | Contributes 0 to **AR outstanding** | 8,500, not 13,500 | ⬜ not yet automated |
-| A9.4 | Appears in a visible **scheduled** state — excluded from totals but NOT invisible | labelled, not vanished (**F94**) | ⬜ not yet automated |
+| A9.1 | Future invoice contributes 0 to **FY** revenue | FY revenue 8,800, not 13,800 | PASS (2026-08-13) — `verify-a9-future-dated.js`; INV-6 excluded, and a fresh future invoice moves FY revenue by 0. |
+| A9.2 | Contributes 0 to its **quarter** (Q3, Jul–Sep) | Q3 revenue 4,000, not 9,000 | PASS (2026-08-13) — `verify-a9-future-dated.js` (`?period=quarter&monthIdx=6`). |
+| A9.3 | Contributes 0 to **AR outstanding** | 8,500, not 13,500 | PASS (2026-08-13) — `verify-a9-future-dated.js`; AR leg carries the D2 bound (server.js:5037). |
+| A9.4 | Appears in a visible **scheduled** state — excluded from totals but NOT invisible | labelled, not vanished (**F94**) | PASS (2026-08-13) — `verify-a9-future-dated.js` (present + future-dated) and `verify-f94-scheduled.js`. |
 
-> ⚠️ **A9 currently FAILS by design.** The app has no upper date bound and no scheduled state
-> (D2 consequences a and F94), and the recognition legs have no "not after today" filter — so the
-> present code *recognises* INV-6 and A9.1–3 fail. A9.4 fails because no scheduled state exists.
-> These failures are the **discriminator**: they go on the sweep's failure list and are cleared
-> only when D2 is implemented. **D2 itself is blocked on server-side period resolution** (F88/2i,
-> F89) — "future relative to whose clock?" is undefined while the boundary is the viewer's
-> browser clock (F87).
+> ✅ **A9 PASSES — D2 is implemented (updated 2026-08-13).** The recognition legs carry a D2 upper
+> bound: `inPeriod` excludes any row dated after today, applied to **every** period incl. Year
+> (`server.js:4776`), and the AR leg has the same bound (`server.js:5037`). `_today` is the **server**
+> clock as a UTC calendar **string**, so the cutoff is viewer-independent (F87/F89 landed). The client
+> mirrors it (`app-main.js` computeRevenue/AR + the F94 `isScheduled` badge). Verified by
+> `verify-a9-future-dated.js` (8/0) — oracle baseline **and** a seed-independent delta — with the
+> Rule-14 control executed: deleting the `> _today` clause turns A9.1 → 13,800, A9.2 → 9,000,
+> A9.1Δ → +7,777. Cash-flow applies no per-row D2 (documented known limitation; the seed has no
+> future cash event).
 
 ---
 

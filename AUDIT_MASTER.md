@@ -126,6 +126,8 @@ The intended shape:
 
 **(c) A Part A check is required and the seed needs a future-dated row.** The current seed has no future-dated document, so this decision is **untested**. Added as check **A9** in `VERIFICATION.md`; the seed row (a future-dated invoice after the pinned clock but inside FY2026) is folded into the held seed revision and re-derived there. Expected: it contributes **0** to Month, Quarter **and** Year, and to AR — so a green A9 requires the correct behaviour, and the current code (which recognises it) will **FAIL** A9 until D2 is built.
 
+> ✅ **All three consequences RESOLVED (2026-08-13).** (a) future dates are allowed but shown in a **scheduled** state (F94, owner chose the derived badge), not silently recognised; (b) the recognition cutoff is now the **server** clock via server-resolved windows (F89) with string-compare dates (F87), so it is viewer-independent — not the browser clock; (c) **A9 is automated and green** — `verify-a9-future-dated.js` (8/0), Rule-14 control executed. INV-6 (2026-09-01, 5,000) contributes 0 to FY, Q3 and AR. See F93 above for the evidence.
+
 ---
 
 ## ⬜ OPEN DECISIONS — awaiting an owner ruling
@@ -2127,8 +2129,10 @@ It becomes **wrong** the moment the harness is used as a regression gate — in 
 
 ---
 
-### F93 ✅ DECIDED (2026-07-23) → moved to STANDING DECISION **D2**
-**Status:** DECIDED. Future-dated documents are **not** recognised until their date arrives — see **D2** at the top of this file for the ruling, rationale, and the three consequences (a/b/c). Implementation is owner-gated and depends on the F87/F88/F89 structural batch (D2 consequence b). The seed row and Part A check **A9** are tracked under D2(c); the missing scheduled-state UI is **F94**.
+### F93 ✅ DECIDED (2026-07-23) → STANDING DECISION **D2** → ✅ **IMPLEMENTED + VERIFIED (2026-08-13)**
+**Status:** ✅ **IMPLEMENTED.** D2 is live on both sides and A9 now passes. The dependency batch landed: server-side period resolution (client sends intent, server resolves the window from the server clock — F89), string-compare calendar dates (F87), and the scheduled-state UI (F94). The D2 upper bound lives in `computeBooks.inPeriod` — `ymd > _today → excluded`, applied to **every** period incl. Year (`server.js:4776`) — and in the AR leg (`server.js:5037`); `_today` is the server clock as a UTC string, so the cutoff is viewer-independent. The client mirrors it (`app-main.js` computeRevenue/AR + `isScheduled` badge). **Verified:** `tests/harness/verify-a9-future-dated.js` (8/0) — oracle baseline (INV-6 excluded: FY 8,800, Q3 4,000, AR 8,500) **and** a seed-independent delta (a fresh future invoice moves nothing), with the Rule-14 control executed (drop `> _today` → FY 13,800, Q3 9,000, Δ +7,777). `VERIFICATION.md` A9.1–A9.4 → PASS.
+**Known limitation (logged, not a defect):** the cash-flow engine applies no per-row D2 (`app-main.js:2018-2023`); the seed has no future cash event, so it is untested there.
+**Was:** DECIDED, implementation owner-gated and blocked on the F87/F88/F89 batch. The seed row + A9 + F94 tracked the closure; all now done.
 
 ---
 

@@ -681,10 +681,17 @@ number presented as converted.
 > - **symbols match the figures** — `f124-native-currency-surfaces.js`: entity=TTD, display=EUR, and
 >   '$' / 'TT$' / '€' are asserted to be three distinct strings so no figure is mis-symbolled.
 >
-> **Residual (optional):** the literal "one EUR *invoice* and one EUR *expense*" — i.e. a
-> foreign-**denominated** transaction (`fx_transactions`, realised/unrealised gain-loss) rather than a
-> display-time conversion of native rows — is not yet probed. The display-currency reconciliation and
-> the "—" guard, which were the correctness questions, are closed.
+> **Foreign-denominated positions — now COVERED (2026-08-13).** `verify-fx-gainloss.js` (12/0) drives
+> the real `POST /api/fx-transactions` + `…/settle` routes and asserts the gain-loss math:
+> `base_amount = foreign × rate_at_transaction` (11,000); **realised** = (settle − txn) × foreign =
+> **−250** (a settled loss); **unrealised** = (current − txn) × foreign = **+500** (an open gain);
+> and the **F3** property — an open position with no current rate reports unrealised **null**, never a
+> fabricated 0, and is excluded from the total. Signed, distinct numbers (Rule 4) catch any
+> sign/formula slip. `GET /api/reports` surfaces `fx_realised`/`fx_unrealised` correctly.
+>
+> **Residual (optional, feature-level):** wiring an fx_transaction to an actual foreign-denominated
+> invoice/bill (the `reference_id`/`reference_type` link) and settlement-timing edge cases are not
+> exercised; the gain-loss engine itself is verified.
 
 # Appendix C — Answered / still open
 

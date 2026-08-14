@@ -5607,6 +5607,11 @@ app.get('*', (req, res) => {
 // fall through to Express's default handler and return HTML/stack instead of JSON.)
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
+  // F157: honour a typed, client-safe status set upstream (e.g. db.insert's NO_ACTIVE_ENTITY 400).
+  // Only errors explicitly marked `expose` leak their message; everything else stays a generic 500.
+  if (err && err.expose === true && Number.isInteger(err.status)) {
+    return res.status(err.status).json({ error: err.message });
+  }
   console.error('[Unhandled Error]', err);
   res.status(500).json({ error: 'An unexpected error occurred. Please try again.' });
 });

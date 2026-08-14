@@ -880,10 +880,26 @@ function objToData(obj) {
 //   pool.query("SELECT * FROM users WHERE data->>'email' = $1 LIMIT 1", [email])
 // and hot-path db.update()/db.delete() with direct parameterized WHERE queries.
 // Acceptable at small scale; revisit before high row counts. See idx_users_email index.
+// F150/F157: business tables carry the entity-isolation invariant (chk_<table>_entity_nn,
+// CHECK (entity_id IS NOT NULL)). Kept in sync with the constraint list in initDB(). A create with
+// no resolvable entity would otherwise hit the DB constraint and surface as an opaque 500; instead
+// db.insert throws a typed, client-safe 400 that the global error handler exposes. This is the single
+// shared mechanism (Rule 9) — a new create route routing through db.insert cannot ship without it.
+const ENTITY_REQUIRED_TABLES = new Set([
+  'invoices', 'expenses', 'customers', 'inventory', 'items', 'quotes', 'vendors', 'bills',
+  'recurring_bills', 'recurring_invoices', 'sales_receipts', 'payments_received',
+  'payments_made', 'credit_notes', 'vendor_credits', 'journals', 'chart_of_accounts',
+]);
+
 const db = {
 
   async insert(table, row) {
     const { user_id = null, entity_id = null, ...rest } = row;
+    if (entity_id == null && ENTITY_REQUIRED_TABLES.has(table)) {
+      const e = new Error('No active business entity. Create or select a business entity first.');
+      e.status = 400; e.expose = true; e.code = 'NO_ACTIVE_ENTITY';
+      throw e;
+    }
     const data = objToData(rest);
     const doInsert = () => pool.query(
       `INSERT INTO ${table} (user_id, entity_id, data)

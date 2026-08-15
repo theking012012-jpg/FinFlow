@@ -2816,7 +2816,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><h2 class="card-title">Bank Accounts</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="openReconcileModal()">⇌ Reconcile</button><button class="btn btn-primary btn-sm" onclick="openAddAccountModal()">+ Add Account</button></div></div>
+            <div class="card-header"><h2 class="card-title">Bank Accounts</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="ffBankLinkFromPage()">🔗 Link bank</button><button class="btn btn-ghost btn-sm" onclick="openReconcileModal()">⇌ Reconcile</button><button class="btn btn-primary btn-sm" onclick="openAddAccountModal()">+ Add Account</button></div></div>
+            <!-- Real Plaid-linked banks (populated from /api/plaid/items; empty until a bank is linked). -->
+            <div id="plaid-linked-strip"></div>
             <div id="bank-accounts-list"></div>
           </div>
           <div class="card" style="margin-bottom:0">
@@ -3811,6 +3813,95 @@ window.addEventListener('resize',function(){if(window.innerWidth>768)closeSideba
 })();
 </script>
 
+<!-- ── PLAID BANK LINKING (real, owner-only; server env-gated) ──────────────
+     One shared helper used by both onboarding Step 3 and the Connections page. It performs a
+     genuine Plaid Link handshake and NEVER shows a "linked" state unless the exchange succeeded.
+     If the server is not configured (no PLAID keys) it reports that honestly via onError. -->
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script>
+window.ffLinkBank = async function(onLinked, onError){
+  const fail = (m) => { if(typeof notify==='function') notify(m, true); if(typeof onError==='function') onError(m); };
+  let tok;
+  try{
+    const r = await fetch('/api/plaid/link-token', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:'{}'});
+    tok = await r.json().catch(()=>({}));
+    if(!r.ok){
+      if(r.status===401) return fail('Please finish creating your account first, then link your bank.');
+      return fail(tok.error || 'Bank linking is unavailable right now.');
+    }
+  }catch(e){ return fail('Network error starting bank link.'); }
+  if(!(window.Plaid && window.Plaid.create)) return fail('Bank-linking library did not load. Check your connection and try again.');
+  window.Plaid.create({
+    token: tok.link_token,
+    onSuccess: async (public_token) => {
+      try{
+        const ex = await fetch('/api/plaid/exchange', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({public_token})});
+        const j = await ex.json().catch(()=>({}));
+        if(!ex.ok) return fail(j.error || 'Could not finish linking your bank.');
+        if(typeof notify==='function') notify('Bank linked: ' + (j.institution_name || 'your bank') + ' ✓');
+        if(typeof onLinked==='function') onLinked(j);
+      }catch(e){ fail('Network error finishing bank link.'); }
+    },
+    onExit: (err) => { if(err && typeof notify==='function') notify('Bank link cancelled.'); }
+  }).open();
+};
+
+// ── Banking-page Plaid controls: real linked state + link/sync/unlink ──
+window.renderPlaidLinked = async function(){
+  const strip = document.getElementById('plaid-linked-strip');
+  if(!strip) return;
+  let d = {};
+  try{
+    const r = await fetch('/api/plaid/items', {credentials:'include'});
+    if(r.status===401 || r.status===403){ strip.innerHTML=''; return; }
+    d = await r.json().catch(()=>({}));
+  }catch(e){ strip.innerHTML=''; return; }
+  const items = (d && d.items) || [];
+  if(!d.configured && !items.length){
+    strip.innerHTML = '<div style="font-size:11.5px;color:var(--t3);padding:6px 0 10px">Bank linking isn\'t set up yet. Add your Plaid keys (PLAID_CLIENT_ID, PLAID_SECRET) to enable one-click bank linking.</div>';
+    return;
+  }
+  if(!items.length){ strip.innerHTML=''; return; }
+  strip.innerHTML = items.map(it => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);margin-bottom:6px">
+      <span class="badge b-green" style="font-size:10px">Linked ✓</span>
+      <div style="flex:1;font-size:12.5px;color:var(--t1)">${(it.institution_name||'Bank').replace(/[<>&]/g,'')}</div>
+      <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="ffBankSync()">↻ Sync</button>
+      <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--red)" onclick="ffBankUnlink('${it.item_id}')">Unlink</button>
+    </div>`).join('') + `<div style="font-size:11px;color:var(--t3);margin:2px 0 10px">Linked via Plaid (${(d.env||'sandbox')}). Sync pulls new transactions into your books.</div>`;
+};
+window.ffBankLinkFromPage = function(){
+  window.ffLinkBank(()=>{ renderPlaidLinked(); if(typeof loadBankingFromDB==='function') loadBankingFromDB(); });
+};
+window.ffBankSync = async function(){
+  if(typeof notify==='function') notify('Syncing bank transactions…');
+  try{
+    const r = await fetch('/api/plaid/sync', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:'{}'});
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok){ if(typeof notify==='function') notify(j.error||'Sync failed.', true); return; }
+    if(typeof notify==='function') notify('Synced — '+(j.added||0)+' new transaction'+((j.added===1)?'':'s')+'.');
+    if(typeof loadBankingFromDB==='function') loadBankingFromDB();
+  }catch(e){ if(typeof notify==='function') notify('Network error during sync.', true); }
+};
+window.ffBankUnlink = async function(itemId){
+  try{
+    const r = await fetch('/api/plaid/unlink', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({item_id:itemId})});
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok){ if(typeof notify==='function') notify(j.error||'Could not unlink.', true); return; }
+    if(typeof notify==='function') notify('Bank unlinked.');
+    renderPlaidLinked();
+  }catch(e){ if(typeof notify==='function') notify('Network error.', true); }
+};
+// Rule 1-safe: wrap the FINAL showPage (after all wiring overrides) once the DOM is ready, saving
+// and calling the prior winner, then refresh the linked-bank strip when the banking page opens.
+document.addEventListener('DOMContentLoaded', function(){
+  if(typeof window.showPage === 'function'){
+    const _origSP = window.showPage;
+    window.showPage = function(id){ const out = _origSP.apply(this, arguments); if(id==='banking'){ try{ renderPlaidLinked(); }catch(e){} } return out; };
+  }
+});
+</script>
+
 <!-- ── ONBOARDING FLOW ─────────────────────────────────────────────────── -->
 <style>
 .ob-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:2000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);animation:obFadeIn .25s ease}
@@ -3854,8 +3945,14 @@ select.ob-input{cursor:pointer}
 
 <script>
 (function(){
-// Only show onboarding once (use sessionStorage so it shows on first load)
-if(sessionStorage.getItem('ff_onboarded')) return;
+// Show onboarding only once PER USER, not once per session. localStorage persists across
+// sessions/tabs (sessionStorage did not — the wizard reappeared on every new session). We also
+// honour the server-side flag: after login, settings.onboarding_done sets this key (see the
+// settings load handler), so a returning user is never re-onboarded, even on a fresh device.
+try{ if(localStorage.getItem('ff_onboarded')) return; }catch(e){}
+// Legacy: respect an existing sessionStorage flag from a prior version so mid-session users
+// aren't re-shown after this update.
+try{ if(sessionStorage.getItem('ff_onboarded')) return; }catch(e){}
 
 const STEPS = 4;
 let currentStep = 1;
@@ -3997,21 +4094,29 @@ window.selectBizType = function(el, type){
   el.classList.add('selected');
 };
 
-window.obConnectBank = function(el){
+// Honest Step 3: these integrations are set up AFTER onboarding on the Connections page —
+// nothing connects here. Clicking only flags the item as "set up later" (toggleable); it must
+// never claim "Connected", which would be a fake-success control (the class F158 flagged).
+function obMarkLater(badgeId){
+  const badge = document.getElementById(badgeId);
+  if(!badge) return;
+  const on = badge.dataset.later === '1';
+  if(on){ badge.dataset.later=''; badge.className='badge b-amber'; badge.textContent='Connect'; }
+  else  { badge.dataset.later='1'; badge.className='badge'; badge.textContent='Set up later'; }
+}
+// Bank is a REAL Plaid link now. On success show the true linked state; if linking isn't
+// available (no keys / cancelled), fall back to the honest "set up later" chip — never a fake ✓.
+window.obConnectBank = function(){
   const badge = document.getElementById('ob-bank-badge');
-  const icon = document.getElementById('ob-ck-bank');
-  badge.className='badge b-green'; badge.textContent='Connected ✓'; icon.textContent='✓';
+  if(badge){ badge.className='badge'; badge.textContent='Linking…'; }
+  window.ffLinkBank(
+    (res)=>{ const b=document.getElementById('ob-bank-badge'); if(b){ b.className='badge b-green'; b.textContent='Linked: '+((res&&res.institution_name)||'Bank')+' ✓'; b.dataset.later=''; } },
+    ()=>{ const b=document.getElementById('ob-bank-badge'); if(b){ b.className='badge'; b.dataset.later=''; } obMarkLater('ob-bank-badge'); }
+  );
 };
-window.obConnectStripe = function(el){
-  const badge = document.getElementById('ob-stripe-badge');
-  const icon = document.getElementById('ob-ck-stripe');
-  badge.className='badge b-green'; badge.textContent='Connected ✓'; icon.textContent='✓';
-};
-window.obConnectPayroll = function(el){
-  const badge = document.getElementById('ob-payroll-badge');
-  const icon = document.getElementById('ob-ck-payroll');
-  badge.className='badge b-green'; badge.textContent='Connected ✓'; icon.textContent='✓';
-};
+// Stripe & payroll have no real integration yet — keep them honestly "set up later" (F51/F65).
+window.obConnectStripe  = function(){ obMarkLater('ob-stripe-badge'); };
+window.obConnectPayroll = function(){ obMarkLater('ob-payroll-badge'); };
 
 function updateDots(step){
   for(let i=1;i<=STEPS;i++){
@@ -4069,7 +4174,8 @@ async function finishOnboarding(){
         })});
     }catch(e){}
   }
-  sessionStorage.setItem('ff_onboarded','1');
+  try{ localStorage.setItem('ff_onboarded','1'); }catch(e){}
+  try{ sessionStorage.setItem('ff_onboarded','1'); }catch(e){}
   const o=document.getElementById('ob-overlay');
   o.style.opacity='0';o.style.transition='opacity .25s ease';
   setTimeout(()=>o.remove(),260);

@@ -952,9 +952,9 @@
           const opt = (v, lbl, cur) => `<option value="${v}"${cur === v ? ' selected' : ''}>${lbl}</option>`;
           const lineRows = window._taxLines.map((l, i) => `<div style="padding:8px 0;border-bottom:1px solid var(--bd)">
             <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
-              <input id="tl-label-${i}" value="${e(l.label)}" oninput="onTaxEdit()" placeholder="Tax name" style="flex:1;min-width:0;background:var(--bg,#0f0d0a);border:1px solid var(--bd,#2b2620);color:var(--t1);border-radius:6px;padding:5px 7px;font-size:12px">
-              <input id="tl-val-${i}" type="number" step="0.1" min="0" value="${l.value}" oninput="onTaxEdit()" style="width:62px;text-align:right;font-family:var(--font-mono);background:var(--bg,#0f0d0a);border:1px solid var(--bd,#2b2620);color:var(--t1);border-radius:6px;padding:5px 6px;font-size:12px">
-              <select id="tl-type-${i}" onchange="onTaxEdit()" style="background:var(--bg,#0f0d0a);border:1px solid var(--bd,#2b2620);color:var(--t1);border-radius:6px;padding:5px 4px;font-size:11px">${opt('taxable', '% taxable', l.type)}${opt('revenue', '% revenue', l.type)}${opt('fixed', 'fixed $', l.type)}</select>
+              <input id="tl-label-${i}" value="${e(l.label)}" oninput="onTaxEdit()" placeholder="Tax name" style="flex:1;min-width:0;background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 7px;font-size:12px">
+              <input id="tl-val-${i}" type="number" step="0.1" min="0" value="${l.value}" oninput="onTaxEdit()" style="width:62px;text-align:right;font-family:var(--font-mono);background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 6px;font-size:12px">
+              <select id="tl-type-${i}" onchange="onTaxEdit()" style="background:var(--bg2,#1c1712);border:1px solid var(--bd,#2e2619);color:var(--t1);border-radius:6px;padding:5px 4px;font-size:11px">${opt('taxable', '% taxable', l.type)}${opt('revenue', '% revenue', l.type)}${opt('fixed', 'fixed $', l.type)}</select>
               <button onclick="removeTaxLine(${i})" title="Remove" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0 3px">✕</button>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">

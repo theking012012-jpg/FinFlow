@@ -35,9 +35,13 @@ function installEnv(scratchUrl) {
   // Keep every outbound integration unconfigured. The network guard in clock.js blocks these
   // anyway; unsetting them means the app takes its own "not configured" branch instead of
   // attempting a call and catching the block, so the run report stays clean and truthful.
+  // Opt-in escape hatch: a harness that must exercise a signed-webhook path (verify-webhook-
+  // reconcile) sets HARNESS_KEEP_STRIPE=1 so the Stripe keys survive — the network guard still
+  // blocks any real outbound Stripe call, so only the offline crypto (constructEvent) runs.
+  const keepStripe = process.env.HARNESS_KEEP_STRIPE === '1';
   for (const k of [
     'ANTHROPIC_API_KEY', 'FINNHUB_API_KEY', 'COINGECKO_API_KEY',
-    'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'RESEND_API_KEY',
+    ...(keepStripe ? [] : ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']), 'RESEND_API_KEY',
     'ALLOWED_ORIGIN', 'APP_URL', 'DATABASE_CA_CERT',
   ]) delete process.env[k];
 

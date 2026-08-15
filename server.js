@@ -173,6 +173,21 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       await setSubscriptionStatus(upgradeUserId, 'active');
       await reactivateClientForUser(upgradeUserId);
     }
+
+    // ── Invoice "Pay now" reconciliation (Stripe Connect payment links) ──
+    // A mode=payment session carrying our invoice reference means a customer actually paid an
+    // invoice. Record it through the SINGLE invoice_payments writer (idempotent on the session id),
+    // NOT here inline — so there is one source of truth for amount_paid (Rules 2/6/9). Creating a
+    // link never reaches this; only a signature-verified 'paid' event does.
+    if (session.mode === 'payment' && (session.client_reference_id || session.metadata?.kind === 'invoice_payment')) {
+      const invId = parseInt(session.client_reference_id || session.metadata?.invoice_id, 10);
+      if (invId) {
+        const rec = await recordExternalInvoicePayment({
+          invoiceId: invId, amountMinor: session.amount_total, method: 'Card (Stripe)', idemKey: 'stripe:' + session.id,
+        }).catch(err => { console.error('[Stripe] invoice reconcile failed:', err.message); return { recorded: false, reason: 'error' }; });
+        console.log('[Stripe] invoice ' + invId + ' payment → ' + JSON.stringify(rec));
+      }
+    }
   }
 
   // F11: subscription lifecycle — the authoritative source for subscriptionStatus.
@@ -4741,6 +4756,107 @@ for (const [ckey, cfg] of Object.entries(CRED_CONNECTORS)) {
   }));
 }
 
+// ── INTEGRATION REQUESTS — the catalogue's ~750 unbuilt logos register real demand instead of a
+//    dead toast. Deduped per account (one row per account per integration); owners/admins see the
+//    aggregate so the roadmap is demand-driven. Stored as user_settings rows (no schema change). ──
+app.post('/api/integration-requests', requireAuth, wrap(async (req, res) => {
+  const name = String((req.body && req.body.name) || '').trim().slice(0, 80);
+  if (!name) return res.status(400).json({ error: 'name is required.' });
+  const uid = scopeId(req);
+  const { rows: [existing] } = await pool.query(
+    `SELECT id FROM user_settings WHERE user_id=$1 AND data->>'key'='integration_request' AND data->>'value'=$2 LIMIT 1`, [uid, name]);
+  if (existing) return res.json({ ok: true, requested: false, note: 'Already recorded.' });
+  await db.insert('user_settings', { user_id: uid, key: 'integration_request', value: name, requested_at: new Date().toISOString() });
+  res.status(201).json({ ok: true, requested: true });
+}));
+app.get('/api/integration-requests', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
+  // Aggregate across ALL accounts — this is founder-facing demand, not one account's wishlist.
+  const { rows } = await pool.query(
+    `SELECT data->>'value' AS name, COUNT(*)::int AS requests
+       FROM user_settings WHERE data->>'key'='integration_request'
+       GROUP BY 1 ORDER BY requests DESC, name ASC`);
+  res.json({ requests: rows });
+}));
+
+// ── INVOICE PAYMENT LINKS — turn a connected processor into a "Pay now" link on an invoice.
+//    Uses the first connected processor (or ?provider), reads the encrypted key server-side (never
+//    exposed), stores the hosted URL on the invoice. This does NOT record a payment — reconciling
+//    the paid amount stays the existing invoice_payments path (Rules 2 & 12). ──
+async function createPaymentLink(provider, conn, o) {
+  if (provider === 'paystack') {
+    const r = await fetch('https://api.paystack.co/transaction/initialize', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.secret_key), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: o.email || 'customer@example.com', amount: Math.round(o.amount * 100), currency: o.currency, reference: o.reference }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.status) throw new Error(j.message || ('Paystack HTTP ' + r.status));
+    return j.data.authorization_url;
+  }
+  if (provider === 'flutterwave') {
+    const r = await fetch('https://api.flutterwave.com/v3/payments', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.secret_key), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tx_ref: o.reference, amount: o.amount, currency: o.currency, redirect_url: appUrl() + '/', customer: { email: o.email || 'customer@example.com', name: o.client || 'Customer' } }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.status !== 'success') throw new Error(j.message || ('Flutterwave HTTP ' + r.status));
+    return j.data.link;
+  }
+  if (provider === 'stripe') {
+    if (!process.env.STRIPE_SECRET_KEY) throw new Error('Stripe platform key not set.');
+    const body = new URLSearchParams();
+    body.set('mode', 'payment'); body.set('success_url', appUrl() + '/'); body.set('cancel_url', appUrl() + '/');
+    body.set('line_items[0][price_data][currency]', String(o.currency).toLowerCase());
+    body.set('line_items[0][price_data][product_data][name]', 'Invoice ' + o.reference);
+    body.set('line_items[0][price_data][unit_amount]', String(Math.round(o.amount * 100)));
+    body.set('line_items[0][quantity]', '1');
+    // Carry the invoice reference so the webhook can reconcile the payment (F171).
+    if (o.invoiceId != null) { body.set('client_reference_id', String(o.invoiceId)); body.set('metadata[invoice_id]', String(o.invoiceId)); body.set('metadata[kind]', 'invoice_payment'); }
+    const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Account': conn.stripe_user_id },
+      body: body.toString(),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((j.error && j.error.message) || ('Stripe HTTP ' + r.status));
+    return j.url;
+  }
+  if (provider === 'wipay') {
+    const host = { TT: 'tt', JM: 'jm', BB: 'bb', GY: 'gy', LC: 'lc' }[conn.country] || 'tt';
+    const body = new URLSearchParams({ account_number: conn.account_number, api_key: decTok(conn.api_key), currency: o.currency, country_code: conn.country || 'TT', total: String(o.amount), order_id: o.reference, origin: 'FinFlow', response_url: appUrl() + '/' });
+    const r = await fetch('https://' + host + '.wipayfinancial.com/plugins/payments/request', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: body.toString(),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error('WiPay HTTP ' + r.status);
+    return j.url || (Array.isArray(j) && j[0] && j[0].url);
+  }
+  throw new Error('Payment links are not supported for ' + provider + ' yet.');
+}
+
+app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  const inv = await ownedBy('invoices', req.params.id, scopeId(req));
+  if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
+  const amount = parseFloat(inv.amount) || 0;
+  if (amount <= 0) return res.status(400).json({ error: 'Invoice amount must be greater than zero.' });
+  const uid = scopeId(req);
+  const requested = req.body && req.body.provider;
+  const PAY = ['stripe', 'paystack', 'flutterwave', 'wipay'];
+  const order = requested ? [String(requested)] : PAY;
+  let provider = null, conn = null;
+  for (const p of order) {
+    const { value } = await _providerBlob(uid, (p === 'stripe' ? 'stripe' : p) + '_conn');
+    const isConn = p === 'stripe' ? !!(value && value.stripe_user_id) : p === 'wipay' ? !!(value && value.account_number) : !!(value && value.connected);
+    if (isConn) { provider = p; conn = value; break; }
+  }
+  if (!provider) return res.status(400).json({ error: 'No payment processor connected. Connect Stripe, Paystack, Flutterwave, or WiPay first.', code: 'NO_PAYMENT_PROVIDER' });
+  const currency = String(inv.currency || (req.body && req.body.currency) || 'USD').toUpperCase();
+  try {
+    const url = await createPaymentLink(provider, conn, { amount, currency, email: (req.body && req.body.email) || null, reference: 'INV-' + inv.id + '-' + Date.now(), client: inv.client, invoiceId: inv.id });
+    if (!url) throw new Error('Provider returned no URL.');
+    await db.updateById('invoices', inv.id, { payment_link: url, payment_provider: provider });
+    res.status(201).json({ ok: true, provider, payment_link: url });
+  } catch (e) { console.error('[payment-link]', provider, e.message); res.status(502).json({ error: 'Could not create a payment link: ' + e.message, provider }); }
+}));
+
 // ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 1 — FIELD-LEVEL AUDIT TRAIL
 // ════════════════════════════════════════════════════════════════════════════════
@@ -4784,6 +4900,37 @@ app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (
 // ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 2 — PARTIAL PAYMENTS + BANK RECONCILIATION
 // ════════════════════════════════════════════════════════════════════════════════
+// Webhook-driven invoice payment writer. Routes through the SAME invoice_payments table +
+// recalcInvoiceStatus as the manual path (Rule 2/6: one writer of amount_paid), idempotent on the
+// processor's event/session id via the idempotency_key unique index (Rule 9: dedupe at the write,
+// so a retried/duplicate webhook can't double-book). Never overbooks past the remaining balance
+// (no refund/credit model). Amount is in MINOR units (cents) as processors send it.
+async function recordExternalInvoicePayment({ invoiceId, amountMinor, method, idemKey }) {
+  const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
+  if (!ir) return { recorded: false, reason: 'invoice_not_found' };
+  const inv = rowToObj(ir);
+  const uid = ir.user_id;                                   // the invoice's account = the money scope
+  const amt = Math.round(Number(amountMinor) || 0) / 100;   // minor units → major
+  if (!(amt > 0)) return { recorded: false, reason: 'bad_amount' };
+  const remaining = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
+  const bookAmt = Math.min(amt, Math.max(remaining, 0));    // cap to balance — never negative AR
+  if (!(bookAmt > 0)) return { recorded: false, reason: 'already_paid' };
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [uid, ir.entity_id || null, invoiceId, bookAmt, new Date().toISOString().slice(0, 10),
+       method || 'Card', idemKey, 'Auto-recorded from ' + (method || 'processor') + ' payment', idemKey]
+    );
+    await recalcInvoiceStatus(pool, invoiceId, uid);
+    try { await auditLog(pool, { userId: uid, entityId: ir.entity_id, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE' }); } catch (_) {}
+    return { recorded: true, id: rows[0].id, amount: bookAmt };
+  } catch (e) {
+    if (e.code === '23505') return { recorded: false, reason: 'duplicate' };   // idempotent: already recorded
+    throw e;
+  }
+}
+
 async function recalcInvoiceStatus(pool, invoiceId, userId) {
   const { rows: [_invR] } = await pool.query(
     `SELECT * FROM invoices WHERE id = $1 AND user_id = $2 LIMIT 1`, [invoiceId, userId]

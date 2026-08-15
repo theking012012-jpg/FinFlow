@@ -550,6 +550,34 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F171 🟠 HIGH — webhook payment reconciliation: a real Stripe payment auto-records through the single invoice-payment writer — **NEW (2026-08-14, execution-verified) → ✅ BUILT + verified (held)**
+**Status:** ✅ **BUILT (FIX HELD).** Completes the payment-link loop (F170): when a customer actually pays a Stripe "Pay now" link, the payment now auto-reconciles onto the invoice — the honest end-state agreed with the owner (a link whose payment never reconciles forces error-prone manual double-entry). Built with the three guardrails so it *satisfies* the money rules rather than breaking them:
+
+- **Signature-verified (never trust an unauthenticated 'paid').** Handled in the existing `/api/stripe/webhook` via `stripe.webhooks.constructEvent` — a forged/altered body is rejected 400 with no write.
+- **Single writer (Rule 2/6).** New `recordExternalInvoicePayment()` routes through the SAME `invoice_payments` INSERT + `recalcInvoiceStatus()` as the manual path — one source of truth for `amount_paid`. It does NOT mark the invoice paid inline.
+- **Idempotent (Rule 9).** `idempotency_key = 'stripe:' + session.id` rides the existing `idx_invoice_payments_idem_key` unique index, so a retried/duplicated webhook (Stripe retries) can't double-book. Overpayment is capped to the remaining balance (no negative AR / no refund model). Creating a link never reaches this — only a mode=`payment` session carrying our `client_reference_id`/metadata does.
+
+The Stripe Checkout Session (F170 `createPaymentLink`) now carries `client_reference_id` + `metadata.invoice_id` so the webhook can map payment→invoice.
+
+**Verified (execution — the money path, not just reasoning).** `tests/harness/verify-webhook-reconcile.js` (12/0) signs synthetic `checkout.session.completed` events with the real Stripe SDK (`generateTestHeaderString`) and posts the raw body, so the server's real `constructEvent` + write run: valid event → invoice `amount_paid=500`/`status=paid` with exactly one `invoice_payments` row keyed `stripe:cs_test_1`; **duplicate event → still one payment** (idempotent); **forged signature → 400, nothing written**; overpayment on a $100 invoice → booked only $100; unknown invoice → 200, ignored. Regression (money): `verify-c1-invoice-payments` 12/0, `verify-c1-invoice-client` 8/0 — the canonical path is undisturbed. Harness plumbing: `boot.js` gained an opt-in `HARNESS_KEEP_STRIPE=1` (Stripe keys survive the scrub for signed-webhook tests; the network guard still blocks real outbound calls).
+**UNEXECUTED (Rule 14):** a real Stripe charge — needs a live account. The signed-event → write path IS executed. Same webhook pattern extends to Paystack/Flutterwave/WiPay next.
+**Files:** `server.js`, `tests/harness/boot.js`. **Done when:** committed; live charge verified once a Stripe account is connected.
+
+---
+
+### F170 🟠 HIGH — catalogue "Request" captures real demand + invoice "Pay now" payment links — **NEW (2026-08-14) → ✅ BUILT + verified (held)**
+**Status:** ✅ **BUILT (FIX HELD).** Two features.
+
+**(1) Integration requests (fully verified).** The ~750 unbuilt catalogue logos now RECORD demand instead of a dead toast. `POST /api/integration-requests {name}` — deduped per account (one row per account per integration, stored as `user_settings` rows, no schema change). `GET /api/integration-requests` — owner/admin only (`audit:read`) — returns the **cross-account** aggregate `[{name, requests}]` sorted by demand, so the roadmap is demand-driven. Client: the catalogue "Request" button now POSTs and reports recorded/already-requested.
+
+**(2) Invoice payment links.** `POST /api/invoices/:id/payment-link` turns a connected processor into a hosted "Pay now" link: it picks the first connected processor (or `?provider`), reads the **encrypted key server-side (never exposed)**, calls the provider's create-link API, and stores the URL on the invoice. Builders for **Stripe** (Checkout Session on the connected account), **Paystack** (`transaction/initialize`), **Flutterwave** (`/v3/payments`), **WiPay** (plugin request). `books:write` (owner/admin/accountant). Deliberately does NOT record a payment — reconciliation stays the `invoice_payments` path (Rules 2 & 12). Client helper `ffInvoicePaymentLink(id)` (creates link, copies, opens).
+
+**Verified (execution).** `tests/harness/verify-requests-paylinks.js` (13/0): requests — unauth 401, no-name 400, first request 201, **dedupe** (re-request 200 requested:false), **cross-account aggregate** (QuickBooks requested by 2 accounts → count 2, sorted first), viewer GET 403. Payment links — unknown invoice 404, **no-processor 400 `NO_PAYMENT_PROVIDER`**, viewer 403, and with Paystack connected the endpoint **selects the provider and reaches dispatch** (502 with `provider:'paystack'` — the fake key/blocked host fails the call, proving everything up to the live HTTP). Regression: RBAC 30/0, finch+codat 82/0, Plaid 21/0, F111 UI 6/0.
+**UNEXECUTED (Rule 14):** a SUCCESSFUL provider payment-link response — needs real merchant keys.
+**Files:** `server.js`, `public/index.html`. **Done when:** committed.
+
+---
+
 ### F169 🟠 HIGH — more regional payment rails: dLocal, Mercado Pago (LatAm), Flutterwave, Paystack (Africa), Wise (global) — **NEW (2026-08-14) → ✅ BUILT + verified (held)**
 **Status:** ✅ **BUILT (FIX HELD).** Five more processors, all authenticated by a merchant API key (not OAuth), so they share ONE generic credential-connector registrar (`CRED_CONNECTORS` in `server.js`) — adding a region's rail later is a one-line map entry. dLocal + Mercado Pago = LatAm; Flutterwave + Paystack = Africa; Wise = global multi-currency. dLocal + Mercado Pago were also added as catalogue logos (they weren't in the 755 before).
 

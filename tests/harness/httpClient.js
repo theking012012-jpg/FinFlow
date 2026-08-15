@@ -12,9 +12,14 @@
  */
 
 class HarnessHttp {
-  constructor(baseUrl) {
+  constructor(baseUrl, opts = {}) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.cookies = new Map();
+    // Optional X-Forwarded-For. `app.set('trust proxy', 1)` means req.ip derives from it, so a
+    // distinct xff gives a client its OWN rate-limit bucket — needed for tests that exercise a
+    // rate-limited surface (e.g. authLimiter, max:10) many times under the pinned clock (whose
+    // window never advances). Omitted ⇒ no header ⇒ identical to the original behaviour.
+    this.xff = opts.xff || null;
   }
 
   _cookieHeader() {
@@ -39,6 +44,7 @@ class HarnessHttp {
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const cookie = this._cookieHeader();
     if (cookie) headers.Cookie = cookie;
+    if (this.xff) headers['X-Forwarded-For'] = this.xff;
 
     const res = await fetch(this.baseUrl + urlPath, {
       method,

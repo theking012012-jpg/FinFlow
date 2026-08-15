@@ -550,6 +550,91 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F165 🟠 HIGH — onboarding: fake "Connected ✓" buttons + wizard re-shown every session — **NEW (2026-08-14) → ✅ FIXED (held)**
+**Status:** ✅ **FIXED (held).** Two defects in the first-run wizard (`index.html`):
+
+1. **Fake-success connect buttons.** Step 3's `obConnectBank/Stripe/Payroll` flipped the badge to "Connected ✓" while doing nothing — the same fake-success control F51/F65/F158 removed elsewhere. **Fixed:** the **bank** button now performs a REAL Plaid link (F164) and shows the true institution on success, or an honest fallback if linking isn't available; **Stripe/payroll** (no real integration yet) now honestly read "Set up later" instead of faking a connection.
+2. **Shown every session.** The guard used `sessionStorage` (cleared when the tab/session closes), so a returning user who finished onboarding saw the whole wizard again — despite the "show once" comment and a server `onboarding_done` flag the client never read. **Fixed:** guard + finish now persist via `localStorage` (true once-per-device), keep honoring the legacy `sessionStorage` flag, and the server flag path is documented for cross-device suppression.
+
+**Verified.** SPA boots clean in jsdom after the changes (`verify-f111-ui-render` 6/0 — the new inline scripts + the DOMContentLoaded `showPage` wrapper parse and run without error). `index.html` ships directly (not a bundle source). Behavioural UX (clicking through the wizard) is inspection-verified — no automated wizard-flow harness exists.
+**Files:** `public/index.html`.
+**Done when:** committed.
+
+---
+
+### F164 🟠 HIGH — real Plaid bank-linking (env-gated) — replaces the "coming soon" placeholder for banks — **NEW (2026-08-14) → ✅ BUILT (held); live handshake UNEXECUTED pending keys**
+**Status:** ✅ **BUILT (FIX HELD).** Owner request: make the connect buttons actually link, not fake it. Banks now have a genuine Plaid Link flow; Stripe-Connect and payroll remain honest placeholders (their own future builds).
+
+**Mechanism.**
+- **Server (`server.js`, 5 owner-only routes, `bank:manage` = owner-only in the RBAC matrix):** `GET /api/plaid/items` (real linked state; `configured` flag), `POST /api/plaid/link-token`, `POST /api/plaid/exchange`, `POST /api/plaid/unlink`, `POST /api/plaid/sync` (pulls transactions into `personal_transactions` as `source:'banking'`, idempotent on Plaid's stable `transaction_id` — NOT the weak 5-second window, Rule 9; cursor-based). Uses Plaid's REST API over Node 22 global `fetch` — **no new npm dependency**.
+- **Env-gated exactly like AI/Stripe:** with no `PLAID_CLIENT_ID`/`PLAID_SECRET` the write routes return a clean **502 `PLAID_NOT_CONFIGURED`** and the UI shows an honest "not set up" message — it **never** claims a connection that didn't happen (F51/F65).
+- **Tokens encrypted at rest (AES-256-GCM, key derived from `SESSION_SECRET`)** — deliberately does NOT repeat the F160 plaintext-secret class. Access tokens never leave the server.
+- **Storage:** linked items in `user_settings` under `key='plaid_items'` (JSON, scoped by `scopeId`) — no schema migration.
+- **Client (`index.html`):** shared `window.ffLinkBank` (loads Plaid Link, link-token → exchange, shows real result); wired into onboarding Step 3 (bank) and a new "🔗 Link bank" + linked-state strip (Sync/Unlink) on the Banking page. `showPage` is wrapped Rule-1-safely (save-and-call the final winner in a `DOMContentLoaded` handler) to refresh the strip on page open. CSP extended for `cdn.plaid.com` (script) + `*.plaid.com` (connect/frame).
+
+**Verified (execution).** `tests/harness/verify-plaid-linking.js` (21/0) with NO keys: env gate returns 502 (never a fake link); `bank:manage` is owner-only (viewer 403 on every write, owner passes the gate then hits the 502 wall — proving RBAC not the gate); `items` shape + unauth 401; unlink validation (400/404); and AES-256-GCM token-at-rest round-trips, ciphertext ≠ plaintext, and a **tampered ciphertext fails the GCM auth tag**. Regression: `verify-rbac-enforcement` 30/0, `verify-auth-flow` 24/0, `verify-recurring-scheduler` 29/0, `verify-f111-ui-render` 6/0.
+**UNEXECUTED (Rule 14):** the LIVE handshake (link-token→exchange→sync against Plaid with real keys) — needs a Plaid account. To finish: add `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=sandbox` (free) to the env, run a sandbox link, and confirm `/api/plaid/items` shows the institution and `/api/plaid/sync` imports transactions. Ships labelled until then.
+**Files:** `server.js`, `public/index.html`. **Own commit recommended** (a new feature).
+**Done when:** committed; live path verified once keys are added.
+
+---
+
+### F163 🟢 LOW (cosmetic) — color-scheme consistency: one real theme bug fixed; residual dead-fallback mismatches catalogued — **NEW (2026-08-14) → ✅ real bug FIXED (held); rest catalogued for owner**
+**Status:** ✅ **one fix HELD**, remainder is a catalogue. The app has a proper two-theme token system (dark `:root` + light `[data-theme]`, `index.html:129-155`). A sweep of hardcoded hex in the client files (excluding the generated bundle) found three categories:
+
+1. **REAL BUG (fixed).** The tax-line editor inputs (`finflow-api-wiring-extra.js:955-957`) set `background:var(--bg, #0f0d0a)` — but **`--bg` is not a token** (the palette defines `--bg0..--bg4`), so the fallback `#0f0d0a` (near-black) *always* rendered. Harmless in dark theme (≈`--bg0`), but a **black input on the light-theme page**. Fixed to `var(--bg2, #1c1712)` (the canonical `.finput` background, `index.html:545`), so the fields now theme-adapt. Verified: 0 `var(--bg…)` non-existent-token references remain in any client file (Rule 13 — whole class closed); files still parse.
+2. **DEAD fallback mismatches (catalogued, not changed).** ~35 `var(--token, #fallback)` sites where the fallback literal ≠ the canonical token value (e.g. `var(--acc,#c8a44a)` vs `--acc #c9a84c`; `var(--red,#e05454)` vs `--red #c46a5a`; `var(--bd,#2b2620)`/`#221e18` vs `--bd #2e2619`; `var(--green,#4a9c6d)` vs `--green #7db87d`). These **never render** because every referenced token is defined in `:root` — the fallback is dead code. Cosmetic hygiene only; normalising them touches many Rule-1-sensitive `app-main.js` sites for zero pixel change, so left for the owner to sweep deliberately if desired.
+3. **Invoice/document TEMPLATE palette (by design, not a bug).** The printable invoice templates carry their own accent (default `#c8a44a`) and muted greys (`#888`) independent of the app theme, because they render as standalone documents (often on white). The default template gold `#c8a44a` differs slightly from the brand `--acc #c9a84c` — a brand-consistency *choice* for the owner, not a defect.
+
+**Chart/canvas colors** are correctly hardcoded (Chart.js/SVG cannot consume `var()`); not flagged.
+**Files:** `public/finflow-api-wiring-extra.js` (the one fix — a bundle source; the F13 hook regenerates `finflow-bundle.js` from it).
+**Done when:** committed.
+
+---
+
+### F162 🟢 LOW (test-infra) — `boot-failures-gate.js` cannot complete in one CI slice — **NEW (2026-08-14)**
+**Status:** OPEN (test-infra, not a product defect). The gate boots a full jsdom SPA per failure scenario (`bootSpaInJsdom({ failMap })` inside the scenario loop, `tests/harness/boot-failures-gate.js:54,155`), so a full run exceeds the 120s tool cap and cannot finish in one slice. Every individual scenario passes when run alone. **Fix:** shard the scenario list (run N at a time) or raise the per-slice budget. Does not affect any product behaviour or any money figure.
+
+---
+
+### F161 🟢 LOW (test-infra) — `f123-balance-sheet-cash.js` structural count drifted (expects 1, is 0) — **NEW (2026-08-14)**
+**Status:** OPEN (test-infra, not a product defect). Step 4 is an explicitly-**structural** assertion (`f123-balance-sheet-cash.js:129`) expecting exactly **1** client fetch of `/api/reports/balance-sheet` in `app-main.js`; the real count is now **0** — the only fetch sat in shadowed/removed code (F128). The *value* checks (steps 1-3: the balance sheet reports cash as NOT TRACKED, never a fabricated number) still pass. Only the stale structural expectation needs refreshing to 0 with a note that the route is client-unreached. No money figure affected.
+
+---
+
+### F160 🟡 MEDIUM (security) — password-reset tokens stored in PLAINTEXT at rest, while invite tokens are hashed — **NEW (2026-08-14) → FIX HELD (candidate for its own security commit)**
+**Status:** OPEN — inconsistent handling of the same class of secret. `POST /api/auth/forgot-password` generates `crypto.randomBytes(32)` and stores the **raw** token in `password_resets.data.token` (`server.js:589,593`); `reset-password` looks it up by the raw value (`server.js:635`). By contrast, team invites store **only the sha256 hash** (`hashInviteToken`, `server.js:3045,3080`) and look up by hash (`server.js:3141`). So anyone with read access to the DB (or a leaked backup) holds **live, usable reset tokens** — a full account-takeover primitive until each expires — whereas the equivalent invite secret is not recoverable from the row. **Recommended fix:** store `sha256(token)` in `password_resets` and look up by hash, mirroring the invite path; the emailed link keeps the raw token (as invites do). Low blast-radius change, but a security change ⇒ **its own commit**. Not yet built — logged for owner decision.
+
+---
+
+### F159 🟠 HIGH — recurring scheduler advanced `next_run` with timezone-dependent instant math (Rule 10); a 1st-of-month template misfired the date — **NEW (2026-08-14, execution-verified fail-then-pass) → ✅ FIX HELD (awaiting owner approval to commit)**
+**Status:** ✅ **ROOT-FIXED (FIX HELD).** Found while building `verify-recurring-scheduler.js` (task: verify recurring invoice/bill scheduling — previously UNVERIFIED, Appendix A).
+
+**What was wrong (verified by execution).** `nextRunDate(currentDate, frequency)` (`server.js:3579`) did `new Date('YYYY-MM-DD')` — which parses a **date-only string to UTC midnight** — then advanced it with **local-time** `setMonth`/`setDate`/`setFullYear`. On any server whose timezone is west of UTC, UTC midnight is the *previous evening* locally, so the day rolls back across a month boundary. This is the exact Rule 10 antipattern (a calendar date routed through instant math becomes timezone-dependent). Confirmed under the pinned harness TZ (America/Port_of_Spain, UTC-4):
+
+```
+nextRunDate('2026-07-01','monthly') → 2026-07-31   (want 2026-08-01)   ❌
+nextRunDate('2026-12-01','monthly') → 2026-12-31   (want 2027-01-01)   ❌  (also lost the year)
+nextRunDate('2026-02-01','monthly') → 2026-03-04   (want 2026-03-01)   ❌
+nextRunDate('2026-03-31','monthly') → 2026-05-01   (want 2026-04-30)   ❌  (month-overflow spill)
+nextRunDate('2026-07-10','monthly') → 2026-08-10   (correct — mid-month dates survived, which hid it)
+```
+
+**The class (Rule 13 — enumerated both directions).** The helper has **three copies** (Rule 2 multi-writer): the server (`nextRunDate`) plus two client mirrors that pre-compute the *initial* `next_run` in the **viewer's** browser — `public/app-main.js:_txNextRun` (recurring personal transactions) and `public/finflow-api-wiring-pages.js:_billNextRun` (recurring bills). Both carried the identical bug; because they run client-side the initial `next_run` was **viewer-timezone-dependent** (two users creating the same recurring bill from different zones could store different next dates). Both client copies are plain locals, called only within their own file — **not shadowed** (Rule 1: they are the runtime winners). All three fixed.
+
+**What changed (mechanism).** Rewrote all three copies to compute with **integer Y/M/D arithmetic + UTC-only day math** (`Date.UTC` / `getUTCDate`), which no timezone can shift. Bonus correctness: month-overflow is now clamped (`2026-01-31 +1mo → 2026-02-28`, not a March spill) instead of the old JS `setMonth` roll-forward. Frequency parsing kept case-insensitive with the `Annually`/`Annual → yearly` alias.
+
+**Verified (execution, fail-then-pass).**
+- `tests/harness/verify-recurring-scheduler.js` (29/0) — drives the real exported `runRecurringScheduler()` against real Postgres under the pinned clock: a DUE template materialises exactly one invoice/bill and advances `next_run` to the correct date; NOT-due templates are untouched; `end_date` completes after firing once; re-running is idempotent (no duplicate). Includes a 10-case direct assertion of the whole `nextRunDate` class (this is the check that went red pre-fix on `2026-07-01 → 2026-07-31`).
+- `tests/harness/verify-recurring-nextrun-tz.js` (3 zones, 0 fail) — EXECUTES the actual shipped source of all three copies under **UTC-4, UTC+9, and UTC** (spans the sign boundary, Rule 10 corollary) and asserts server == `_txNextRun` == `_billNextRun` == the hand-derived calendar answer for all 9 cases.
+- Two new server test hooks: `module.exports.runRecurringScheduler`, `module.exports.nextRunDate` (no prod behaviour change).
+
+**Note on production exposure.** Whether the *server* copy misfired in production depends on the Railway process TZ (UTC ⇒ monthly was fine there; any non-UTC ⇒ wrong). The *client* copies misfired for any non-UTC viewer regardless. Either way the fix is mandated by Rule 10 — the computation must not depend on a timezone at all.
+**Files:** `server.js` (`nextRunDate` + 2 exports), `public/app-main.js` (`_txNextRun`), `public/finflow-api-wiring-pages.js` (`_billNextRun` — bundle regenerates from this wiring source via the F13 hook).
+**Done when:** committed. Candidate for its own commit (one fix per change).
+
+---
+
 ### F158 🟠 HIGH — the accountant "view vs filing" access grant was a FAKE-SUCCESS control; `filing` was ungrantable — **NEW (2026-08-14) → ✅ BUILT + VERIFIED (server), UI wired (inspection); FIX HELD**
 **Status:** ✅ **BUILT (FIX HELD).** Owner feature request: let the client choose whether a hired accountant can just *review* the books (`view`) or *run* them (`filing` — post adjusting journal entries + lock periods).
 

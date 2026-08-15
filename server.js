@@ -4704,6 +4704,43 @@ app.post('/api/wipay/disconnect', requireAuth, requirePerm('bank:manage'), wrap(
   res.json({ ok: true });
 }));
 
+// ── GENERIC CREDENTIAL CONNECTORS — payment processors that authenticate with a merchant API key
+//    (not OAuth). One registrar covers all of them: owner-only (bank:manage), EVERY credential
+//    field encrypted at rest, secrets never returned in a response. Adding a region's rail later is
+//    one line in this map. (dLocal/Mercado Pago = LatAm, Flutterwave/Paystack = Africa, Wise = global.)
+const CRED_CONNECTORS = {
+  dlocal:      { label: 'dLocal',       fields: ['x_login', 'x_trans_key', 'secret_key'] },
+  mercadopago: { label: 'Mercado Pago', fields: ['access_token'] },
+  flutterwave: { label: 'Flutterwave',  fields: ['secret_key'] },
+  paystack:    { label: 'Paystack',     fields: ['secret_key'] },
+  wise:        { label: 'Wise',         fields: ['api_token'] },
+};
+for (const [ckey, cfg] of Object.entries(CRED_CONNECTORS)) {
+  const blobKey = ckey + '_conn';
+  app.get(`/api/${ckey}/status`, requireAuth, wrap(async (req, res) => {
+    const { value } = await _providerBlob(scopeId(req), blobKey);
+    res.json({ connected: !!(value && value.connected), provider: cfg.label });
+  }));
+  app.post(`/api/${ckey}/connect`, requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+    const body = req.body || {};
+    const missing = cfg.fields.filter(f => !String(body[f] || '').trim());
+    if (missing.length) return res.status(400).json({ error: `${cfg.label} requires: ${cfg.fields.join(', ')}.`, missing });
+    const stored = { connected: true, provider: cfg.label, linked_at: new Date().toISOString() };
+    for (const f of cfg.fields) stored[f] = encTok(String(body[f]).trim());  // every credential encrypted at rest
+    const uid = scopeId(req);
+    const { id } = await _providerBlob(uid, blobKey);
+    await _saveProviderBlob(uid, id, blobKey, stored);
+    res.status(201).json({ ok: true, provider: cfg.label });
+  }));
+  app.post(`/api/${ckey}/disconnect`, requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+    const uid = scopeId(req);
+    const { id, value } = await _providerBlob(uid, blobKey);
+    if (!value || !value.connected) return res.status(404).json({ error: `No ${cfg.label} account connected.` });
+    if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+    res.json({ ok: true });
+  }));
+}
+
 // ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 1 — FIELD-LEVEL AUDIT TRAIL
 // ════════════════════════════════════════════════════════════════════════════════

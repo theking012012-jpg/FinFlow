@@ -135,6 +135,30 @@ async function main() {
     A('owner wipay/disconnect → 200', (await owner.post('/api/wipay/disconnect', {})).status === 200);
     A('owner wipay/status after disconnect → not connected', (await owner.get('/api/wipay/status')).json.connected === false);
 
+    // ── Generic credential connectors: dLocal / Mercado Pago / Flutterwave / Paystack / Wise ──
+    console.log('\n-- generic credential connectors (LatAm + Africa + Wise) --');
+    const CRED = {
+      dlocal:      { fields: ['x_login', 'x_trans_key', 'secret_key'], secret: 'dlocal-secret-xyz' },
+      mercadopago: { fields: ['access_token'], secret: 'mp-access-token-xyz' },
+      flutterwave: { fields: ['secret_key'], secret: 'flw-secret-xyz' },
+      paystack:    { fields: ['secret_key'], secret: 'ps-secret-xyz' },
+      wise:        { fields: ['api_token'], secret: 'wise-token-xyz' },
+    };
+    for (const [k, spec] of Object.entries(CRED)) {
+      A(`${k}: unauth status → 401`, (await anon.get(`/api/${k}/status`)).status === 401);
+      A(`${k}: owner status not connected`, (await owner.get(`/api/${k}/status`)).json.connected === false);
+      A(`${k}: connect missing fields → 400`, (await owner.post(`/api/${k}/connect`, {})).status === 400);
+      const body = {}; spec.fields.forEach((f, i) => { body[f] = (i === spec.fields.length - 1) ? spec.secret : (f + '-val'); });
+      const con = await owner.post(`/api/${k}/connect`, body);
+      A(`${k}: owner connect (valid) → 201`, con.status === 201, `status ${con.status}: ${con.text.slice(0,80)}`);
+      const st = await owner.get(`/api/${k}/status`);
+      A(`${k}: status connected, no secret leaked in response`, st.json.connected === true && !JSON.stringify(st.json).includes(spec.secret), JSON.stringify(st.json));
+      const dbrow = (await c.query(`SELECT data->>'value' AS value FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 LIMIT 1`, [ownerId, k + '_conn'])).rows[0];
+      A(`${k}: credential encrypted at rest (not plaintext in DB)`, dbrow && !String(dbrow.value).includes(spec.secret), `stored=${dbrow ? String(dbrow.value).slice(0,70) : 'none'}`);
+      A(`${k}: viewer connect → 403 (bank:manage owner-only)`, (await viewer.post(`/api/${k}/connect`, body)).status === 403);
+      A(`${k}: owner disconnect → 200`, (await owner.post(`/api/${k}/disconnect`, {})).status === 200);
+    }
+
     console.log('\n' + '-'.repeat(78));
     console.log(fail === 0 ? '  ALL GREEN - ' + pass + ' passed, 0 failed  (finch + codat — env-gated paths)'
                            : '  ' + fail + ' FAILED, ' + pass + ' passed');

@@ -550,6 +550,19 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F169 🟠 HIGH — more regional payment rails: dLocal, Mercado Pago (LatAm), Flutterwave, Paystack (Africa), Wise (global) — **NEW (2026-08-14) → ✅ BUILT + verified (held)**
+**Status:** ✅ **BUILT (FIX HELD).** Five more processors, all authenticated by a merchant API key (not OAuth), so they share ONE generic credential-connector registrar (`CRED_CONNECTORS` in `server.js`) — adding a region's rail later is a one-line map entry. dLocal + Mercado Pago = LatAm; Flutterwave + Paystack = Africa; Wise = global multi-currency. dLocal + Mercado Pago were also added as catalogue logos (they weren't in the 755 before).
+
+**Mechanism.** For each provider: `GET /api/<k>/status`, `POST /api/<k>/connect`, `POST /api/<k>/disconnect` — owner-only (`bank:manage`); EVERY credential field encrypted at rest (AES-256-GCM); secrets never returned in any response. No env gate (the merchant's own key IS the connection), which means the whole cycle is execution-verifiable. Client: one generic credentials modal (`ffConnectCreds` + `FF_CRED` field map); catalogue rows + built-set + live-count updated.
+
+**Verified (execution — full cycle, not just env gate).** `tests/harness/verify-finch-codat-linking.js` now **82/0**. For each of the five: unauth status 401, connect-missing-fields 400, valid connect 201, status reflects connected with **no secret in the response**, the credential **encrypted in the DB** (asserted against the raw `user_settings` row), viewer 403 (owner-only), disconnect 200. Regression: RBAC 30/0, Plaid 21/0, F111 UI 6/0.
+**UNEXECUTED (Rule 14):** live charges/reads against each provider (need real merchant accounts) — connect/store/RBAC/encryption are all executed; making an actual payment is not.
+**Files:** `server.js`, `public/index.html`. **Done when:** committed.
+
+Built-aggregator count is now **11**: Plaid, Belvo, Finch, Codat, Stripe, WiPay, dLocal, Mercado Pago, Flutterwave, Paystack, Wise — covering North America, LatAm, the Caribbean, Africa, and global.
+
+---
+
 ### F168 🟠 HIGH — regional aggregators: Belvo (LatAm banking) + WiPay (Caribbean payments) — **NEW (2026-08-14) → ✅ BUILT (held); live handshakes UNEXECUTED pending keys**
 **Status:** ✅ **BUILT (FIX HELD).** Worldwide-app gap: Plaid/Stripe/Finch/Codat are US/UK/EU-centric and do NOT cover the owner's own region. Coverage confirmed by research — Plaid: US/CA/UK/EU only (no LatAm/Caribbean); **Belvo**: ~90% of accounts in Mexico/Brazil/Colombia; **WiPay**: Caribbean card processor (TT/JM/BB/GY/LC). Both were catalogue logos with no backing; now real.
 

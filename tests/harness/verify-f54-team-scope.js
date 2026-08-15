@@ -111,6 +111,18 @@ async function main() {
     A('owner GET payroll-runs includes the member-created run', oRuns.some(r => r.id === (mRun.json && mRun.json.id)),
       `owner run ids: ${JSON.stringify(oRuns.map(r => r.id))}`);
 
+    // ── 7 · banking feed is account-shared (bank-reconciliation residual fixed) ──
+    console.log('\n-- 7 - banking: owner adds a bank line, member sees the account feed --');
+    const bk = await owner.post('/api/banking', { desc: 'BANK-LINE-ACCT', amount: 500, date: '2026-07-11' });
+    A('owner POST banking → 2xx', bk.status >= 200 && bk.status < 300, `status ${bk.status}: ${bk.text.slice(0,120)}`);
+    const mBank = (await member.get('/api/banking')).json || [];
+    A('member GET banking SEES the owner\'s bank line (account feed shared, not member-empty)',
+      mBank.some(t => t.description === 'BANK-LINE-ACCT'), `member banking: ${JSON.stringify(mBank.map(t => t.description))}`);
+    // …and the general personal-transactions ledger stays private (banking row is account-owned, not the member's personal)
+    const mPers2 = (await member.get('/api/personal-transactions')).json || [];
+    A('member personal-transactions does NOT include the account bank line (personal stays separate)',
+      !mPers2.some(t => t.description === 'BANK-LINE-ACCT'), `member personal: ${JSON.stringify(mPers2.map(t => t.description))}`);
+
     console.log('\n' + '-'.repeat(78));
     console.log(fail === 0 ? '  ALL GREEN - ' + pass + ' passed, 0 failed  (F54 team-member data scope)'
                            : '  ' + fail + ' FAILED, ' + pass + ' passed');

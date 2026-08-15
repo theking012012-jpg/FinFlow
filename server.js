@@ -3675,7 +3675,7 @@ async function runRecurringScheduler() {
 
 // ── BANKING TRANSACTIONS ──────────────────────────────────────────────────────
 app.get('/api/banking', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('personal_transactions', req.session.userId, r => r.source === 'banking' && (!req.entityId || r.entity_id === req.entityId || r.entity_id == null), (a, b) => new Date(b.tx_date || b.date) - new Date(a.tx_date || a.date)));
+  res.json(await db.allByUser('personal_transactions', scopeId(req), r => r.source === 'banking' && (!req.entityId || r.entity_id === req.entityId || r.entity_id == null), (a, b) => new Date(b.tx_date || b.date) - new Date(a.tx_date || a.date)));
 }));
 app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   const { desc, amount, type, date, cat } = req.body || {};
@@ -3686,11 +3686,11 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   const TX_TYPES = ['credit', 'debit'];
   if (type != null && !TX_TYPES.includes(type)) return res.status(400).json({ error: "tx_type must be 'credit' or 'debit'." });
   // B8/C1: dedupe guard — personal_transactions is a JSONB table, so the JSONB matcher applies.
-  const _bDup = await findRecentDuplicate('personal_transactions', req.session.userId, req.entityId || null,
+  const _bDup = await findRecentDuplicate('personal_transactions', scopeId(req), req.entityId || null,
     { textMatch: { description: String(desc) }, numMatch: { amount: parseFloat(amount) || 0 } });
   if (_bDup) return res.status(201).json(_bDup);
   const { row } = await db.insert('personal_transactions', {
-    user_id: req.session.userId,
+    user_id: scopeId(req),
     entity_id: req.entityId || null,
     description: desc, amount: parseFloat(amount) || 0,
     // F23: standardize on tx_type/tx_date to match the rest of personal_transactions
@@ -3701,7 +3701,7 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('personal_transactions', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('personal_transactions', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('personal_transactions', parseInt(req.params.id));
   res.json({ ok: true });
 }));
@@ -4375,7 +4375,7 @@ app.delete('/api/invoice-payments/:id', requireAuth, wrap(async (req, res) => {
 }));
 
 app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
-  const uid = req.session.userId;
+  const uid = scopeId(req);
   const matchedBankIds = await pool.query(`SELECT banking_id FROM bank_reconciliation WHERE user_id=$1`, [scopeId(req)]);
   const matchedPayIds  = await pool.query(`SELECT invoice_payment_id FROM bank_reconciliation WHERE user_id=$1`, [scopeId(req)]);
   const matchedBankSet = new Set(matchedBankIds.rows.map(r => r.banking_id));
@@ -4416,13 +4416,13 @@ app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) =>
   // guard (no migration; matches the batch endpoint's skip semantics).
   const _dupMatch = await pool.query(
     `SELECT * FROM bank_reconciliation WHERE user_id=$1 AND (banking_id=$2 OR invoice_payment_id=$3) ORDER BY id DESC LIMIT 1`,
-    [req.session.userId, parseInt(banking_id), parseInt(invoice_payment_id)]
+    [scopeId(req), parseInt(banking_id), parseInt(invoice_payment_id)]
   );
   if (_dupMatch.rows[0]) return res.status(200).json(_dupMatch.rows[0]);
   const { rows } = await pool.query(
     `INSERT INTO bank_reconciliation (user_id, entity_id, banking_id, invoice_payment_id)
      VALUES ($1,$2,$3,$4) RETURNING *`,
-    [req.session.userId, req.entityId || null, parseInt(banking_id), parseInt(invoice_payment_id)]
+    [scopeId(req), req.entityId || null, parseInt(banking_id), parseInt(invoice_payment_id)]
   );
   res.status(201).json(rows[0]);
 }));
@@ -4475,7 +4475,7 @@ app.post('/api/bank-reconciliation/match-batch', requireAuth, wrap(async (req, r
     let rows = [];
     if (toInsert.length) {
       const vals = [], params = [];
-      toInsert.forEach((p, i) => { const o = i * 4; vals.push(`($${o+1},$${o+2},$${o+3},$${o+4})`); params.push(uid, eid, p.banking_id, p.invoice_payment_id); });
+      toInsert.forEach((p, i) => { const o = i * 4; vals.push(`($${o+1},$${o+2},$${o+3},$${o+4})`); params.push(sid, eid, p.banking_id, p.invoice_payment_id); });
       rows = (await client.query(`INSERT INTO bank_reconciliation (user_id, entity_id, banking_id, invoice_payment_id) VALUES ${vals.join(',')} RETURNING *`, params)).rows;
     }
     await client.query('COMMIT');

@@ -253,6 +253,69 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   res.json({ received: true });
 });
 
+// ── PAYSTACK WEBHOOK ──────────────────────────────────────────────────────────
+// Raw body, before express.json (needs the exact bytes for the HMAC). Paystack signs each event
+// with HMAC-SHA512(rawBody, <merchant secret_key>). Multi-tenant: each account has its own key, so
+// we resolve WHICH account from the invoice reference we set on the payment link (INV-<id>-<ts>),
+// fetch that account's stored key, and verify with it. The money write happens ONLY after the
+// signature verifies, through the SAME single writer + idempotency as Stripe (F171).
+app.post('/api/paystack/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['x-paystack-signature'];
+  if (!sig) return res.status(400).json({ error: 'Missing signature.' });
+  let evt;
+  try { evt = JSON.parse(req.body.toString('utf8')); } catch (_) { return res.status(400).json({ error: 'Bad body.' }); }
+  const reference = (evt && evt.data && evt.data.reference) || '';
+  const m = /^INV-(\d+)-/.exec(reference);
+  if (!m) return res.status(200).json({ received: true, ignored: 'no invoice reference' });
+  const invoiceId = parseInt(m[1], 10);
+  const { rows: [ir] } = await pool.query(`SELECT user_id FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
+  if (!ir) return res.status(200).json({ received: true, ignored: 'unknown invoice' });
+  const { value: conn } = await _providerBlob(ir.user_id, 'paystack_conn');
+  if (!conn || !conn.secret_key) return res.status(400).json({ error: 'Paystack not connected for this account.' });
+  let secret; try { secret = decTok(conn.secret_key); } catch (_) { return res.status(400).json({ error: 'Stored key unreadable.' }); }
+  const expected = crypto.createHmac('sha512', secret).update(req.body).digest('hex');
+  const ok = Buffer.byteLength(sig) === Buffer.byteLength(expected) &&
+    crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+  if (!ok) { console.error('[Paystack] signature mismatch for invoice ' + invoiceId); return res.status(401).json({ error: 'Invalid signature.' }); }
+  if (evt.event === 'charge.success' && evt.data && evt.data.status === 'success') {
+    const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: evt.data.amount, method: 'Card (Paystack)', idemKey: 'paystack:' + reference })
+      .catch(e => { console.error('[Paystack] reconcile failed:', e.message); return { recorded: false, reason: 'error' }; });
+    console.log('[Paystack] invoice ' + invoiceId + ' payment → ' + JSON.stringify(rec));
+  }
+  res.json({ received: true });
+});
+
+// ── FLUTTERWAVE WEBHOOK ───────────────────────────────────────────────────────
+// Raw body, before express.json. Flutterwave auth is a static header: it sends the merchant's
+// configured "secret hash" in `verif-hash`. Multi-tenant: resolve the account from the tx_ref
+// (INV-<id>-<ts>) we set on the payment link, compare against THAT account's stored secret_hash
+// (timing-safe), then record through the SAME single/idempotent writer. Flutterwave amounts are in
+// MAJOR units, so ×100 to minor for the shared writer.
+app.post('/api/flutterwave/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['verif-hash'];
+  if (!sig) return res.status(400).json({ error: 'Missing verif-hash.' });
+  let evt;
+  try { evt = JSON.parse(req.body.toString('utf8')); } catch (_) { return res.status(400).json({ error: 'Bad body.' }); }
+  const ref = (evt && evt.data && (evt.data.tx_ref || evt.data.txref)) || '';
+  const m = /^INV-(\d+)-/.exec(ref);
+  if (!m) return res.status(200).json({ received: true, ignored: 'no invoice reference' });
+  const invoiceId = parseInt(m[1], 10);
+  const { rows: [ir] } = await pool.query(`SELECT user_id FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
+  if (!ir) return res.status(200).json({ received: true, ignored: 'unknown invoice' });
+  const { value: conn } = await _providerBlob(ir.user_id, 'flutterwave_conn');
+  if (!conn || !conn.secret_hash) return res.status(400).json({ error: 'Flutterwave not connected (or no secret hash) for this account.' });
+  let hash; try { hash = decTok(conn.secret_hash); } catch (_) { return res.status(400).json({ error: 'Stored hash unreadable.' }); }
+  const ok = Buffer.byteLength(sig) === Buffer.byteLength(hash) &&
+    crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(hash));
+  if (!ok) { console.error('[Flutterwave] verif-hash mismatch for invoice ' + invoiceId); return res.status(401).json({ error: 'Invalid verif-hash.' }); }
+  if ((evt.event === 'charge.completed' || evt['event.type'] === 'CARD_TRANSACTION') && evt.data && String(evt.data.status).toLowerCase() === 'successful') {
+    const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: Math.round((Number(evt.data.amount) || 0) * 100), method: 'Card (Flutterwave)', idemKey: 'flutterwave:' + ref })
+      .catch(e => { console.error('[Flutterwave] reconcile failed:', e.message); return { recorded: false, reason: 'error' }; });
+    console.log('[Flutterwave] invoice ' + invoiceId + ' payment → ' + JSON.stringify(rec));
+  }
+  res.json({ received: true });
+});
+
 // NOTE: Stripe checkout route is registered later (after session + express.json +
 // requireAuth are active) so req.session and req.body are populated. See below.
 
@@ -4540,6 +4603,38 @@ app.post('/api/codat/disconnect', requireAuth, requirePerm('books:write'), wrap(
   res.json({ ok: true });
 }));
 
+// Parity with the other data aggregators: read a display-only summary (chart-of-accounts count)
+// from the connected platform. Does NOT write to the books (Rules 2 & 12).
+app.post('/api/codat/sync', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
+  const uid = scopeId(req);
+  const { value } = await _providerBlob(uid, 'codat_conn');
+  if (!value || !value.company_id) return res.status(400).json({ error: 'No linked accounting platform. Connect one first.' });
+  try {
+    const data = await codatCall(`/companies/${value.company_id}/data/accounts?pageSize=100`);
+    const accounts = Array.isArray(data.results) ? data.results.length : (data.totalResults || 0);
+    res.json({ ok: true, accounts, note: 'Chart of accounts read for display. Importing into the books is a separate, owner-approved step (Rule 2/12).' });
+  } catch (e) { console.error('[codat sync]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not sync accounting data: ' + e.message }); }
+}));
+
+// Wise (global multi-currency): parity sync — read account balances for DISPLAY only. Owner-only
+// (bank:manage, matching the generic connector). Never writes to the books.
+app.post('/api/wise/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  const uid = scopeId(req);
+  const { value } = await _providerBlob(uid, 'wise_conn');
+  if (!value || !value.connected || !value.api_token) return res.status(400).json({ error: 'No Wise account connected. Connect one first.' });
+  try {
+    const token = decTok(value.api_token);
+    const auth = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+    const profiles = await (await fetch('https://api.wise.com/v2/profiles', { headers: auth })).json();
+    const profileId = Array.isArray(profiles) && profiles[0] && (profiles[0].id || profiles[0].profileId);
+    if (!profileId) throw new Error('No Wise profile found.');
+    const balances = await (await fetch(`https://api.wise.com/v4/profiles/${profileId}/balances?types=STANDARD`, { headers: auth })).json();
+    const list = (Array.isArray(balances) ? balances : []).map(b => ({ currency: b.currency, amount: b.amount && b.amount.value }));
+    res.json({ ok: true, balances: list, note: 'Balances shown for display. Importing into the books is a separate, owner-approved step.' });
+  } catch (e) { console.error('[wise sync]', e.message); res.status(502).json({ error: 'Could not read Wise balances: ' + e.message }); }
+}));
+
 // ── STRIPE CONNECT (Payments) — link the user's OWN Stripe account (read-only) via OAuth. ──
 // Distinct from the platform billing Stripe (STRIPE_SECRET_KEY / /api/stripe/checkout|webhook):
 // this pulls the user's revenue for display. Env-gated on STRIPE_SECRET_KEY (the platform secret,
@@ -4726,7 +4821,7 @@ app.post('/api/wipay/disconnect', requireAuth, requirePerm('bank:manage'), wrap(
 const CRED_CONNECTORS = {
   dlocal:      { label: 'dLocal',       fields: ['x_login', 'x_trans_key', 'secret_key'] },
   mercadopago: { label: 'Mercado Pago', fields: ['access_token'] },
-  flutterwave: { label: 'Flutterwave',  fields: ['secret_key'] },
+  flutterwave: { label: 'Flutterwave',  fields: ['secret_key', 'secret_hash'] },   // secret_hash = webhook verif-hash
   paystack:    { label: 'Paystack',     fields: ['secret_key'] },
   wise:        { label: 'Wise',         fields: ['api_token'] },
 };
@@ -4829,6 +4924,29 @@ async function createPaymentLink(provider, conn, o) {
     if (!r.ok) throw new Error('WiPay HTTP ' + r.status);
     return j.url || (Array.isArray(j) && j[0] && j[0].url);
   }
+  if (provider === 'mercadopago') {
+    const r = await fetch('https://api.mercadopago.com/checkout/preferences', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.access_token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: [{ title: 'Invoice ' + o.reference, quantity: 1, unit_price: o.amount, currency_id: o.currency }], external_reference: o.reference }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.init_point) throw new Error(j.message || ('Mercado Pago HTTP ' + r.status));
+    return j.init_point;
+  }
+  if (provider === 'dlocal') {
+    const xLogin = decTok(conn.x_login), xTransKey = decTok(conn.x_trans_key), secret = decTok(conn.secret_key);
+    const payload = JSON.stringify({ amount: o.amount, currency: o.currency, country: o.country || 'BR', payment_method_flow: 'REDIRECT',
+      payer: { name: o.client || 'Customer', email: o.email || 'customer@example.com' }, order_id: o.reference, success_url: appUrl() + '/', notification_url: appUrl() + '/' });
+    const xDate = new Date().toISOString();
+    const signature = crypto.createHmac('sha256', secret).update(xLogin + xDate + payload).digest('hex');
+    const r = await fetch('https://api.dlocal.com/payments', {
+      method: 'POST', headers: { 'X-Date': xDate, 'X-Login': xLogin, 'X-Trans-Key': xTransKey, 'Content-Type': 'application/json', 'Authorization': 'V2-HMAC-SHA256, Signature: ' + signature },
+      body: payload,
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.message || ('dLocal HTTP ' + r.status));
+    return j.redirect_url;
+  }
   throw new Error('Payment links are not supported for ' + provider + ' yet.');
 }
 
@@ -4839,7 +4957,7 @@ app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write
   if (amount <= 0) return res.status(400).json({ error: 'Invoice amount must be greater than zero.' });
   const uid = scopeId(req);
   const requested = req.body && req.body.provider;
-  const PAY = ['stripe', 'paystack', 'flutterwave', 'wipay'];
+  const PAY = ['stripe', 'paystack', 'flutterwave', 'wipay', 'mercadopago', 'dlocal'];
   const order = requested ? [String(requested)] : PAY;
   let provider = null, conn = null;
   for (const p of order) {
@@ -4850,7 +4968,7 @@ app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write
   if (!provider) return res.status(400).json({ error: 'No payment processor connected. Connect Stripe, Paystack, Flutterwave, or WiPay first.', code: 'NO_PAYMENT_PROVIDER' });
   const currency = String(inv.currency || (req.body && req.body.currency) || 'USD').toUpperCase();
   try {
-    const url = await createPaymentLink(provider, conn, { amount, currency, email: (req.body && req.body.email) || null, reference: 'INV-' + inv.id + '-' + Date.now(), client: inv.client, invoiceId: inv.id });
+    const url = await createPaymentLink(provider, conn, { amount, currency, email: (req.body && req.body.email) || null, reference: 'INV-' + inv.id + '-' + Date.now(), client: inv.client, invoiceId: inv.id, country: (req.body && req.body.country) || conn.country || null });
     if (!url) throw new Error('Provider returned no URL.');
     await db.updateById('invoices', inv.id, { payment_link: url, payment_provider: provider });
     res.status(201).json({ ok: true, provider, payment_link: url });

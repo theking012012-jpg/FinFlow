@@ -84,6 +84,13 @@ async function main() {
     await A_.post('/api/paystack/connect', { secret_key: 'sk_test_fake' });
     const withProv = await A_.post('/api/invoices/' + invId + '/payment-link', { provider: 'paystack' });
     A('with Paystack connected → provider SELECTED (not 400); live call unexecuted → 502', withProv.status === 502 && withProv.json.provider === 'paystack', `status ${withProv.status}: ${withProv.text.slice(0,90)}`);
+    // Mercado Pago + dLocal builders exist now (parity): provider selected → dispatch reached (502, live blocked).
+    await A_.post('/api/mercadopago/connect', { access_token: 'mp-token' });
+    const mp = await A_.post('/api/invoices/' + invId + '/payment-link', { provider: 'mercadopago' });
+    A('Mercado Pago builder reached (502, live blocked — not "unsupported")', mp.status === 502 && mp.json.provider === 'mercadopago' && !/not supported/i.test(mp.text), `status ${mp.status}: ${mp.text.slice(0,90)}`);
+    await A_.post('/api/dlocal/connect', { x_login: 'l', x_trans_key: 't', secret_key: 's' });
+    const dl = await A_.post('/api/invoices/' + invId + '/payment-link', { provider: 'dlocal', country: 'BR' });
+    A('dLocal builder reached (502, live blocked — not "unsupported")', dl.status === 502 && dl.json.provider === 'dlocal' && !/not supported/i.test(dl.text), `status ${dl.status}: ${dl.text.slice(0,90)}`);
 
     console.log('\n' + '-'.repeat(78));
     console.log(fail === 0 ? '  ALL GREEN - ' + pass + ' passed, 0 failed  (requests + payment links)'

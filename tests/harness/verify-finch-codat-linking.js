@@ -93,6 +93,9 @@ async function main() {
     A('accountant finch/connect-url → 403 (payroll:write excludes accountant)', (await acct.post('/api/finch/connect-url', {})).status === 403);
     const acl = await acct.post('/api/codat/link-url', {});
     A('accountant codat/link-url → 502, NOT 403 (books:write includes accountant)', acl.status === 502, `status ${acl.status}`);
+    A('owner codat/sync → 502 CODAT_NOT_CONFIGURED (parity sync exists)', (await owner.post('/api/codat/sync', {})).status === 502);
+    A('accountant codat/sync → 502 not 403 (books:write)', (await acct.post('/api/codat/sync', {})).status === 502);
+    A('viewer codat/sync → 403', (await viewer.post('/api/codat/sync', {})).status === 403);
 
     // ── Stripe Connect (bank:manage = owner-only, like Plaid) ──
     console.log('\n-- Stripe Connect (owner-only) --');
@@ -140,7 +143,7 @@ async function main() {
     const CRED = {
       dlocal:      { fields: ['x_login', 'x_trans_key', 'secret_key'], secret: 'dlocal-secret-xyz' },
       mercadopago: { fields: ['access_token'], secret: 'mp-access-token-xyz' },
-      flutterwave: { fields: ['secret_key'], secret: 'flw-secret-xyz' },
+      flutterwave: { fields: ['secret_key', 'secret_hash'], secret: 'flw-secret-xyz' },
       paystack:    { fields: ['secret_key'], secret: 'ps-secret-xyz' },
       wise:        { fields: ['api_token'], secret: 'wise-token-xyz' },
     };
@@ -158,6 +161,15 @@ async function main() {
       A(`${k}: viewer connect → 403 (bank:manage owner-only)`, (await viewer.post(`/api/${k}/connect`, body)).status === 403);
       A(`${k}: owner disconnect → 200`, (await owner.post(`/api/${k}/disconnect`, {})).status === 200);
     }
+
+    // ── Wise parity sync (display-only balances; owner-only) ──
+    console.log('\n-- Wise balance sync (parity) --');
+    await owner.post('/api/wise/connect', { api_token: 'wise-token-xyz' });
+    const ws = await owner.post('/api/wise/sync', {});
+    A('owner wise/sync (connected; live Wise call blocked) → 502', ws.status === 502, `status ${ws.status}`);
+    A('viewer wise/sync → 403 (bank:manage owner-only)', (await viewer.post('/api/wise/sync', {})).status === 403);
+    await owner.post('/api/wise/disconnect', {});
+    A('owner wise/sync after disconnect → 400 (not connected)', (await owner.post('/api/wise/sync', {})).status === 400);
 
     console.log('\n' + '-'.repeat(78));
     console.log(fail === 0 ? '  ALL GREEN - ' + pass + ' passed, 0 failed  (finch + codat — env-gated paths)'

@@ -550,6 +550,50 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F174 🟠 HIGH — connector PARITY audit: close the half-built gaps across all 11 connectors — **NEW (2026-08-14, execution-verified) → ✅ FIXED + verified (held)**
+**Status:** ✅ **FIXED (FIX HELD).** A parity audit (Rule 13 — should have run before extending) across every connector found four capability gaps where a provider could be connected but did nothing useful:
+1. **Codat** had no sync — connected but pulled no data. Added `POST /api/codat/sync` (chart-of-accounts count, display-only, `books:write`), matching Plaid/Belvo/Finch.
+2. **Mercado Pago** + **dLocal** were connectable but had NO pay-link builder (hollow "Connect"). Added both to `createPaymentLink` (Mercado Pago `checkout/preferences` → `init_point`; dLocal signed `V2-HMAC-SHA256` payments → `redirect_url`) and to the payment-link provider order.
+3. **Wise** connected but had no capability. Added `POST /api/wise/sync` (multi-currency balances, display-only, `bank:manage`).
+
+All syncs are display-only (Rules 2 & 12 — no auto-write to the books).
+
+**Verified (execution).** `verify-finch-codat-linking.js` now **88/0** (Codat sync: 502 env-gate, accountant 502 not 403, viewer 403; Wise sync: connected→502 live-blocked, viewer 403, disconnected→400). `verify-requests-paylinks.js` **15/0** (Mercado Pago + dLocal builders REACHED — network-blocked 502 with the right `provider`, not "unsupported"). Full connection-layer certification sweep ALL GREEN: connectors 88/0, Plaid 21/0, paylinks 15/0, Stripe/Paystack/Flutterwave webhooks 12/10/8, pay-link button 6/0, invoice-payments 12/0, RBAC 30/0, F111 UI 6/0. Client parity confirmed: built-set, connToggle, and live-count all cover the full 11.
+
+**Connector matrix (all verified except live HTTP, which is UNEXECUTED / reached-only):** Plaid·Belvo·Finch·Codat (data: status/connect/sync/disconnect) · Stripe·Paystack·Flutterwave (payments: +webhook +pay-link) · Mercado Pago·dLocal (payments: +pay-link) · Wise (multi-currency: +balance sync) · WiPay (payments: pay-link; reconciliation deferred — redirect model).
+**Files:** `server.js`. **Done when:** committed. **Next (owner-directed):** WiPay reconciliation, then a full-suite regression sweep.
+
+---
+
+### F173 🟠 HIGH — Flutterwave webhook reconciliation (completes the 3-processor payment layer) — **NEW (2026-08-14, execution-verified) → ✅ BUILT + verified (held)**
+**Status:** ✅ **BUILT (FIX HELD).** Third processor, same single-writer/idempotent pattern. Flutterwave auth is a static `verif-hash` header (the merchant's "secret hash"), so the Flutterwave connector gained a second field `secret_hash` (client field map + generic connector; encrypted at rest). `POST /api/flutterwave/webhook` (raw body): resolves the account from the invoice `tx_ref`, timing-safe compares against that account's stored `secret_hash`, and on `charge.completed`/`successful` records via `recordExternalInvoicePayment` (idempotent on `flutterwave:<tx_ref>`). Flutterwave amounts are MAJOR units → ×100 to minor for the shared writer.
+
+**Verified (execution).** `tests/harness/verify-flutterwave-webhook.js` (8/0): valid hash → paid via single writer, one payment keyed `flutterwave:INV-…`; duplicate → no double-book; **wrong verif-hash → 401, nothing written**; overpayment capped; non-invoice ref ignored. `verify-finch-codat-linking` still 82/0 (Flutterwave now connects with both fields).
+
+**Consolidated payment-layer sweep — ALL GREEN:** Stripe webhook 12/0, Paystack webhook 10/0, Flutterwave webhook 8/0, requests+paylinks 13/0, invoice Pay-link button 6/0, invoice-payments 12/0, Plaid 21/0, RBAC 30/0, F111 UI 6/0.
+**UNEXECUTED (Rule 14):** a real Flutterwave charge — needs a live account. WiPay reconciliation is deferred: WiPay uses a redirect/callback model (not a signed webhook), so it needs its own verification design.
+**Files:** `server.js`, `public/index.html`. **Done when:** committed.
+
+Payment reconciliation now covers **Stripe, Paystack, and Flutterwave** — all signed/verified, idempotent, single-writer, balance-capped.
+
+---
+
+### F172 🟠 HIGH — Paystack webhook reconciliation + invoice "Pay link" button — **NEW (2026-08-14, execution-verified) → ✅ BUILT + verified (held)**
+**Status:** ✅ **BUILT (FIX HELD).** Extends F171 to a second processor and makes the loop clickable.
+
+**Paystack reconciliation (multi-tenant HMAC).** `POST /api/paystack/webhook` (raw body, before `express.json`). Paystack signs each event with HMAC-SHA512(rawBody, <merchant secret_key>) — and each account has its own key, so the handler resolves WHICH account from the invoice reference (`INV-<id>-<ts>` set on the payment link), fetches that account's stored key, and `timingSafeEqual`-compares. The money write happens ONLY after the signature verifies, through the SAME `recordExternalInvoicePayment` (single writer, idempotent on `paystack:<reference>`, balance-capped) as Stripe.
+
+**Invoice "Pay link ↗" button.** Added to the unpaid-invoice rows (pending/partial) in the runtime-winner `window.renderInvoices` (`finflow-api-wiring-medium.js` — Rule 1: this is the copy that wins; app-main's `function renderInvoices` is shadowed and was NOT touched). Calls `window.ffInvoicePaymentLink(invoice.id)` (F170). Paid invoices don't show it.
+
+**Verified (execution).**
+- `tests/harness/verify-paystack-webhook.js` (10/0): valid HMAC event → paid via single writer, one payment keyed `paystack:INV-…`; duplicate → no double-book; **forged signature → 401, nothing written**; **wrong-merchant-secret → 401** (proves per-tenant verification); overpayment capped; non-invoice reference ignored.
+- `tests/harness/verify-invoice-paylink-button.js` (6/0): executes the shipped `renderInvoices` source — "Pay link" present + wired to `ffInvoicePaymentLink(window.userInvoices[i].id)` for unpaid, absent for paid, Record Payment preserved.
+- Regression: Stripe webhook 12/0, invoice-payments 12/0, requests+paylinks 13/0, RBAC 30/0.
+**UNEXECUTED (Rule 14):** a real Paystack charge — needs a live account. The signed-event → write path IS executed.
+**Files:** `server.js`, `public/finflow-api-wiring-medium.js`. **Done when:** committed (the F13 hook regenerates the bundle from the wiring source).
+
+---
+
 ### F171 🟠 HIGH — webhook payment reconciliation: a real Stripe payment auto-records through the single invoice-payment writer — **NEW (2026-08-14, execution-verified) → ✅ BUILT + verified (held)**
 **Status:** ✅ **BUILT (FIX HELD).** Completes the payment-link loop (F170): when a customer actually pays a Stripe "Pay now" link, the payment now auto-reconciles onto the invoice — the honest end-state agreed with the owner (a link whose payment never reconciles forces error-prone manual double-entry). Built with the three guardrails so it *satisfies* the money rules rather than breaking them:
 

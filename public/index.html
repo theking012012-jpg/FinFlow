@@ -2495,10 +2495,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             if(n==='WiPay'){ if(window.ffConnectWiPay) window.ffConnectWiPay(function(){ if(typeof updateStats==='function') updateStats(); }); return; }
             var CRED_MAP={'dLocal':'dlocal','Mercado Pago':'mercadopago','Flutterwave':'flutterwave','Paystack':'paystack','Wise':'wise'};
             if(CRED_MAP[n]){ if(window.ffConnectCreds) window.ffConnectCreds(CRED_MAP[n], function(){ if(typeof updateStats==='function') updateStats(); }); return; }
-            // Everything else is NOT a live integration (F51/F65 honesty): register a request,
-            // never fake a connection. Many providers are reachable via the aggregators above
-            // (banks→Plaid, payroll→Finch, accounting→Codat).
-            if(typeof notify==='function')notify('Thanks — noted your interest in '+n+'. It isn\'t a live integration yet.');
+            // Everything else is NOT a live integration (F51/F65 honesty): RECORD the request
+            // (demand-driven roadmap), never fake a connection. Many providers are reachable via the
+            // aggregators above (banks→Plaid/Belvo, payroll→Finch, accounting→Codat, payments→Stripe…).
+            fetch('/api/integration-requests',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name:n})})
+              .then(function(r){return r.json().catch(function(){return {};});})
+              .then(function(j){ if(typeof notify==='function') notify(j.requested===false ? ('You\'ve already requested '+n+'.') : ('Request recorded for '+n+' — we prioritise by demand.')); })
+              .catch(function(){ if(typeof notify==='function') notify('Couldn\'t record the request. Try again.', true); });
           };
 
           window.connFilterAll=function(){
@@ -3996,6 +3999,19 @@ window.ffConnectProvider = async function(cfg){
     }catch(e){}
     if(tries > 150 || (popup && popup.closed && tries > 2)){ clearInterval(poll); }
   }, 2000);
+};
+
+// ── Invoice "Pay now" link: generate a hosted payment link via a connected processor. ──
+window.ffInvoicePaymentLink = async function(invoiceId, provider){
+  try{
+    var r=await fetch('/api/invoices/'+invoiceId+'/payment-link',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(provider?{provider:provider}:{})});
+    var j=await r.json().catch(function(){return {};});
+    if(!r.ok){ if(typeof notify==='function') notify(j.error||'Could not create a payment link.', true); return null; }
+    if(typeof notify==='function') notify('Payment link created ('+j.provider+').');
+    try{ await navigator.clipboard.writeText(j.payment_link); if(typeof notify==='function') notify('Link copied to clipboard.'); }catch(e){}
+    try{ window.open(j.payment_link,'_blank'); }catch(e){}
+    return j.payment_link;
+  }catch(e){ if(typeof notify==='function') notify('Network error creating payment link.', true); return null; }
 };
 
 // ── Banking-page Plaid controls: real linked state + link/sync/unlink ──

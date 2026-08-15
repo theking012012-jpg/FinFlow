@@ -4366,6 +4366,240 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════
+// FINCH (Payroll/HR aggregator) + CODAT (Accounting aggregator) — REAL, owner-only, env-gated.
+// ════════════════════════════════════════════════════════════════════════════════
+// Same shape as Plaid: one integration each covers a whole category (Finch ~250 payroll/HRIS
+// providers; Codat ~30 accounting platforms). Env-gated (clean 502 until keys), access tokens
+// encrypted at rest (reuse encTok/decTok), connection blob in user_settings (no migration).
+//
+// DELIBERATE SCOPE LIMIT (Rules 2 & 12): these establish the connection and pull data for DISPLAY
+// only. They do NOT auto-write payroll_runs / journals / invoices — letting an external source
+// silently author a money figure is the multi-writer defect this codebase exists to prevent.
+// Materialising external payroll/accounting data into the books is a separate, owner-gated import.
+const _providerBlob = async (uid, key) => {
+  const { rows: [r] } = await pool.query(`SELECT * FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 LIMIT 1`, [uid, key]);
+  const row = r ? rowToObj(r) : null;
+  let value = null; try { value = row && row.value ? JSON.parse(row.value) : null; } catch (_) {}
+  return { id: r ? r.id : null, value };
+};
+const _saveProviderBlob = async (uid, id, key, value) => {
+  const data = JSON.stringify(value);
+  if (id) await db.updateById('user_settings', id, { value: data });
+  else await db.insert('user_settings', { user_id: uid, key, value: data });
+};
+
+// ── FINCH ──
+const finchConfigured = () => !!(process.env.FINCH_CLIENT_ID && process.env.FINCH_CLIENT_SECRET);
+const FINCH_API = 'https://api.tryfinch.com';
+async function finchCall(pathname, accessToken, opts = {}) {
+  const resp = await fetch(FINCH_API + pathname, {
+    method: opts.method || 'GET',
+    headers: Object.assign({ 'Authorization': 'Bearer ' + accessToken, 'Finch-API-Version': '2020-09-17', 'Content-Type': 'application/json' }, opts.headers || {}),
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  let json = {}; try { json = await resp.json(); } catch (_) {}
+  if (!resp.ok) { const e = new Error(json.message || json.error || ('Finch HTTP ' + resp.status)); e.provider = json; throw e; }
+  return json;
+}
+
+app.get('/api/finch/status', requireAuth, wrap(async (req, res) => {
+  const { value } = await _providerBlob(scopeId(req), 'finch_conn');
+  res.json({ configured: finchConfigured(), connected: !!(value && value.access_token), provider: value ? value.provider_name || null : null, employees: value ? (value.employee_count ?? null) : null });
+}));
+
+// NOTE: the callback MUST live under /api so the account resolver runs (it's app.use('/api', …)),
+// which sets req.accountId/req.accountRole — without them requirePerm fails closed and scopeId is
+// undefined. So the redirect URI points at /api/finch/callback.
+const _finchRedirectUri = () => process.env.FINCH_REDIRECT_URI || (appUrl() + '/api/finch/callback');
+// Build the Finch Connect authorize URL the browser opens (popup); Finch redirects back to
+// /finch/callback with a `code`. products default to read-only company/directory/payroll scopes.
+app.post('/api/finch/connect-url', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+  if (!finchConfigured()) return res.status(502).json({ error: 'Payroll linking is not set up yet. Add FINCH_CLIENT_ID and FINCH_CLIENT_SECRET to enable it.', code: 'FINCH_NOT_CONFIGURED' });
+  const products = (process.env.FINCH_PRODUCTS || 'company directory payroll');
+  const params = new URLSearchParams({
+    client_id: process.env.FINCH_CLIENT_ID, products,
+    redirect_uri: _finchRedirectUri(), state: String(scopeId(req)),
+  });
+  if ((process.env.FINCH_ENV || 'sandbox').toLowerCase() !== 'production') params.set('sandbox', 'true');
+  res.json({ connect_url: 'https://connect.tryfinch.com/authorize?' + params.toString() });
+}));
+
+// Finch redirects the popup here with ?code=…; exchange it server-side, store (encrypted), close.
+app.get('/api/finch/callback', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+  const done = (msg) => res.set('Content-Type', 'text/html').send(`<!doctype html><meta charset=utf-8><body style="font-family:system-ui;background:#16120d;color:#f2e8d5;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><p>${msg}</p><script>try{window.opener&&window.opener.postMessage({finch:'done'},'*')}catch(e){};setTimeout(()=>window.close(),1200)</script></div>`);
+  if (!finchConfigured()) return done('Payroll linking is not set up.');
+  const code = req.query.code || '';
+  if (!code) return done('No authorization code returned.');
+  try {
+    const resp = await fetch(FINCH_API + '/auth/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: process.env.FINCH_CLIENT_ID, client_secret: process.env.FINCH_CLIENT_SECRET, code, redirect_uri: _finchRedirectUri() }),
+    });
+    let j = {}; try { j = await resp.json(); } catch (_) {}
+    if (!resp.ok || !j.access_token) throw new Error(j.message || ('Finch token HTTP ' + resp.status));
+    let providerName = null;
+    try { const intro = await finchCall('/introspect', j.access_token); providerName = (intro && (intro.payroll_provider_id || intro.provider_id)) || null; } catch (_) {}
+    const uid = scopeId(req);
+    const { id } = await _providerBlob(uid, 'finch_conn');
+    await _saveProviderBlob(uid, id, 'finch_conn', { access_token: encTok(j.access_token), provider_name: providerName, linked_at: new Date().toISOString(), employee_count: null });
+    return done('Payroll connected ✓ You can close this window.');
+  } catch (e) { console.error('[finch callback]', e.message, e.provider || ''); return done('Could not link payroll: ' + e.message); }
+}));
+
+// Pull the employee directory for DISPLAY (count only) — does NOT write payroll_runs (Rule 12).
+app.post('/api/finch/sync', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+  if (!finchConfigured()) return res.status(502).json({ error: 'Payroll linking is not set up yet. Add FINCH keys to enable it.', code: 'FINCH_NOT_CONFIGURED' });
+  const uid = scopeId(req);
+  const { id, value } = await _providerBlob(uid, 'finch_conn');
+  if (!value || !value.access_token) return res.status(400).json({ error: 'No linked payroll. Connect a provider first.' });
+  try {
+    const dir = await finchCall('/employer/directory', decTok(value.access_token));
+    const count = Array.isArray(dir.individuals) ? dir.individuals.length : (dir.paging && dir.paging.count) || 0;
+    await _saveProviderBlob(uid, id, 'finch_conn', Object.assign({}, value, { employee_count: count, last_synced: new Date().toISOString() }));
+    res.json({ ok: true, employees: count, note: 'Directory pulled for display. Importing payroll into the books is a separate, owner-approved step (Rule 12).' });
+  } catch (e) { console.error('[finch sync]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not sync payroll: ' + e.message }); }
+}));
+
+app.post('/api/finch/disconnect', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+  const uid = scopeId(req);
+  const { id, value } = await _providerBlob(uid, 'finch_conn');
+  if (!value) return res.status(404).json({ error: 'No linked payroll.' });
+  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+  res.json({ ok: true });
+}));
+
+// ── CODAT ──
+const codatConfigured = () => !!process.env.CODAT_API_KEY;
+const CODAT_API = 'https://api.codat.io';
+const _codatAuth = () => 'Basic ' + Buffer.from(String(process.env.CODAT_API_KEY || '') + ':').toString('base64');
+async function codatCall(pathname, opts = {}) {
+  const resp = await fetch(CODAT_API + pathname, {
+    method: opts.method || 'GET',
+    headers: Object.assign({ 'Authorization': _codatAuth(), 'Content-Type': 'application/json', 'Accept': 'application/json' }, opts.headers || {}),
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  let json = {}; try { json = await resp.json(); } catch (_) {}
+  if (!resp.ok) { const e = new Error(json.error || json.message || ('Codat HTTP ' + resp.status)); e.provider = json; throw e; }
+  return json;
+}
+
+app.get('/api/codat/status', requireAuth, wrap(async (req, res) => {
+  const { value } = await _providerBlob(scopeId(req), 'codat_conn');
+  let platform = value ? value.platform || null : null, connected = false;
+  if (codatConfigured() && value && value.company_id) {
+    try {
+      const conns = await codatCall(`/companies/${value.company_id}/connections`);
+      const linked = (conns.results || []).find(c => c.status === 'Linked');
+      if (linked) { connected = true; platform = linked.platformName || platform; }
+    } catch (_) {}
+  }
+  res.json({ configured: codatConfigured(), connected, platform, company_id: value ? value.company_id || null : null });
+}));
+
+// Create a Codat company + return the hosted Link URL the user completes to connect their platform.
+app.post('/api/codat/link-url', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
+  try {
+    const uid = scopeId(req);
+    const { id, value } = await _providerBlob(uid, 'codat_conn');
+    let companyId = value && value.company_id;
+    let company;
+    if (!companyId) {
+      company = await codatCall('/companies', { method: 'POST', body: { name: 'FinFlow user ' + uid } });
+      companyId = company.id;
+    } else {
+      company = await codatCall(`/companies/${companyId}`);
+    }
+    const linkUrl = (company.redirect) || (company.links && company.links.self) || null;
+    await _saveProviderBlob(uid, id, 'codat_conn', Object.assign({}, value || {}, { company_id: companyId, linked_at: new Date().toISOString() }));
+    if (!linkUrl) return res.status(502).json({ error: 'Codat did not return a link URL.' });
+    res.json({ link_url: linkUrl, company_id: companyId });
+  } catch (e) { console.error('[codat link-url]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not start accounting linking: ' + e.message }); }
+}));
+
+app.post('/api/codat/disconnect', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  const uid = scopeId(req);
+  const { id, value } = await _providerBlob(uid, 'codat_conn');
+  if (!value) return res.status(404).json({ error: 'No linked accounting platform.' });
+  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+  res.json({ ok: true });
+}));
+
+// ── STRIPE CONNECT (Payments) — link the user's OWN Stripe account (read-only) via OAuth. ──
+// Distinct from the platform billing Stripe (STRIPE_SECRET_KEY / /api/stripe/checkout|webhook):
+// this pulls the user's revenue for display. Env-gated on STRIPE_SECRET_KEY (the platform secret,
+// used as client_secret in the token exchange) + STRIPE_CONNECT_CLIENT_ID (the Connect app id).
+// Owner-only (bank:manage). Access token encrypted at rest. Callback under /api (resolver scope).
+const stripeConnectConfigured = () => !!(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_CONNECT_CLIENT_ID);
+const _stripeRedirectUri = () => process.env.STRIPE_CONNECT_REDIRECT_URI || (appUrl() + '/api/stripe/callback');
+
+app.get('/api/stripe/status', requireAuth, wrap(async (req, res) => {
+  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
+  res.json({ configured: stripeConnectConfigured(), connected: !!(value && value.stripe_user_id), account: value ? value.stripe_user_id || null : null });
+}));
+
+app.post('/api/stripe/connect-url', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe payments linking is not set up yet. Add STRIPE_SECRET_KEY and STRIPE_CONNECT_CLIENT_ID to enable it.', code: 'STRIPE_NOT_CONFIGURED' });
+  const params = new URLSearchParams({
+    response_type: 'code', client_id: process.env.STRIPE_CONNECT_CLIENT_ID, scope: 'read_only',
+    redirect_uri: _stripeRedirectUri(), state: String(scopeId(req)),
+  });
+  res.json({ connect_url: 'https://connect.stripe.com/oauth/authorize?' + params.toString() });
+}));
+
+app.get('/api/stripe/callback', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  const done = (msg) => res.set('Content-Type', 'text/html').send(`<!doctype html><meta charset=utf-8><body style="font-family:system-ui;background:#16120d;color:#f2e8d5;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><p>${msg}</p><script>try{window.opener&&window.opener.postMessage({stripe:'done'},'*')}catch(e){};setTimeout(()=>window.close(),1200)</script></div>`);
+  if (!stripeConnectConfigured()) return done('Stripe payments linking is not set up.');
+  const code = req.query.code || '';
+  if (!code) return done('No authorization code returned.');
+  try {
+    const resp = await fetch('https://connect.stripe.com/oauth/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_secret: process.env.STRIPE_SECRET_KEY, code, grant_type: 'authorization_code' }).toString(),
+    });
+    let j = {}; try { j = await resp.json(); } catch (_) {}
+    if (!resp.ok || !j.stripe_user_id) throw new Error(j.error_description || j.error || ('Stripe OAuth HTTP ' + resp.status));
+    const uid = scopeId(req);
+    const { id } = await _providerBlob(uid, 'stripe_conn');
+    await _saveProviderBlob(uid, id, 'stripe_conn', { stripe_user_id: j.stripe_user_id, access_token: j.access_token ? encTok(j.access_token) : null, linked_at: new Date().toISOString() });
+    return done('Stripe connected ✓ You can close this window.');
+  } catch (e) { console.error('[stripe connect callback]', e.message); return done('Could not link Stripe: ' + e.message); }
+}));
+
+app.post('/api/stripe/disconnect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  const uid = scopeId(req);
+  const { id, value } = await _providerBlob(uid, 'stripe_conn');
+  if (!value || !value.stripe_user_id) return res.status(404).json({ error: 'No linked Stripe account.' });
+  if (stripeConnectConfigured()) {
+    try {
+      await fetch('https://connect.stripe.com/oauth/deauthorize', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY },
+        body: new URLSearchParams({ client_id: process.env.STRIPE_CONNECT_CLIENT_ID, stripe_user_id: value.stripe_user_id }).toString(),
+      });
+    } catch (_) {}
+  }
+  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+  res.json({ ok: true });
+}));
+
+// Pull the connected account's balance for DISPLAY only (does NOT write revenue into the books).
+app.post('/api/stripe/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe payments linking is not set up yet. Add STRIPE keys to enable it.', code: 'STRIPE_NOT_CONFIGURED' });
+  const uid = scopeId(req);
+  const { value } = await _providerBlob(uid, 'stripe_conn');
+  if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account. Connect one first.' });
+  try {
+    const resp = await fetch('https://api.stripe.com/v1/balance', {
+      headers: { 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY, 'Stripe-Account': value.stripe_user_id },
+    });
+    let j = {}; try { j = await resp.json(); } catch (_) {}
+    if (!resp.ok) throw new Error((j.error && j.error.message) || ('Stripe HTTP ' + resp.status));
+    const available = (j.available || []).map(b => ({ amount: b.amount, currency: b.currency }));
+    res.json({ ok: true, available, note: 'Balance shown for display. Importing revenue into the books is a separate, owner-approved step.' });
+  } catch (e) { console.error('[stripe sync]', e.message); res.status(502).json({ error: 'Could not read Stripe balance: ' + e.message }); }
+}));
+
+// ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 1 — FIELD-LEVEL AUDIT TRAIL
 // ════════════════════════════════════════════════════════════════════════════════
 // F90 — THE SINGLE AUDITED WRITE PATH. Every audit call routes through recordAudit: it ATTRIBUTES the
@@ -5878,3 +6112,6 @@ module.exports.nextRunDate = nextRunDate;
 module.exports._encTok = encTok;
 module.exports._decTok = decTok;
 module.exports.plaidConfigured = plaidConfigured;
+module.exports.finchConfigured = finchConfigured;
+module.exports.codatConfigured = codatConfigured;
+module.exports.stripeConnectConfigured = stripeConnectConfigured;

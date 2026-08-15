@@ -2303,8 +2303,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
 
         <div class="conn-stats-row">
-          <div class="conn-stat"><div class="conn-stat-label">Total integrations</div><div class="conn-stat-val" id="cs-total">755</div><div class="conn-stat-sub">across 27 categories</div></div>
-          <div class="conn-stat"><div class="conn-stat-label">Connected</div><div class="conn-stat-val" id="cs-connected" style="color:var(--green)">0</div><div class="conn-stat-sub">active right now</div></div>
+          <div class="conn-stat"><div class="conn-stat-label">In directory</div><div class="conn-stat-val" id="cs-total">755</div><div class="conn-stat-sub">available to request</div></div>
+          <div class="conn-stat"><div class="conn-stat-label">Live connections</div><div class="conn-stat-val" id="cs-connected" style="color:var(--green)">0</div><div class="conn-stat-sub">connected right now</div></div>
           <div class="conn-stat"><div class="conn-stat-label">Categories</div><div class="conn-stat-val" id="cs-cats">27</div><div class="conn-stat-sub">from payments to IoT</div></div>
           <div class="conn-stat"><div class="conn-stat-label">Regions covered</div><div class="conn-stat-val">6+</div><div class="conn-stat-sub">global coverage</div></div>
         </div>
@@ -2442,6 +2442,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
                 var on=!!connStates[item.name];
                 var col2=CAT_COLOR[item.cat]||'#888';
                 var idx=INTEGRATIONS.indexOf(item);
+                // Honest labelling: only the built aggregators actually connect; everything else
+                // is a request, not a live integration (never imply a connection that can't happen).
+                var built=(item.name==='Plaid'||item.name==='Finch'||item.name==='Codat'||item.name==='Stripe');
                 var card=document.createElement('div');
                 card.className='conn-card'+(on?' is-connected':'');
                 card.innerHTML=(on?'<div class="conn-dot"></div>':'')
@@ -2452,8 +2455,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
                   +'</div></div>'
                   +'<div class="conn-card-desc">'+item.desc+'</div>'
                   +'<div class="conn-card-footer">'
-                  +(on?'<span class="conn-connected-badge">&#10003; Connected</span>':'<span></span>')
-                  +'<button class="conn-toggle-btn '+(on?'conn':'disconn')+'" onclick="connToggle('+idx+')">'+(on?'Disconnect':'Connect')+'</button>'
+                  +(on?'<span class="conn-connected-badge">&#10003; Connected</span>':(built?'<span style="font-size:10px;color:var(--green)">Available</span>':'<span></span>'))
+                  +'<button class="conn-toggle-btn '+(on?'conn':'disconn')+'" onclick="connToggle('+idx+')">'+(on?'Disconnect':(built?'Connect':'Request'))+'</button>'
                   +'</div>';
                 grid.appendChild(card);
               });
@@ -2462,21 +2465,32 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           }
 
           function updateStats(){
-            var cnt=Object.keys(connStates).filter(function(k){return connStates[k];}).length;
-            var el=document.getElementById('cs-connected');
-            if(el)el.textContent=cnt;
             var el2=document.getElementById('cs-total');
-            if(el2)el2.textContent=INTEGRATIONS.length;
+            if(el2)el2.textContent=INTEGRATIONS.length;   // directory size (honest: not "connected")
+            // Live count = REAL connected aggregators (Plaid/Finch/Codat/Stripe), not browse toggles.
+            var el=document.getElementById('cs-connected');
+            if(!el)return;
+            Promise.all([
+              fetch('/api/plaid/items',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return (d.items&&d.items.length)?1:0}).catch(function(){return 0}),
+              fetch('/api/finch/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0}),
+              fetch('/api/codat/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0}),
+              fetch('/api/stripe/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0})
+            ]).then(function(a){ el.textContent = a.reduce(function(s,n){return s+n;},0); });
           }
 
           window.connToggle=function(idx){
             var item=INTEGRATIONS[idx];
             if(!item)return;
-            // Honesty pass (F51/F65): the integration catalogue is browse-only —
-            // toggles were never wired to /api/connections and saveStates() is a
-            // no-op, so a "connected" state was faked and lost on refresh. Do not
-            // record or claim a connection that did not happen.
-            if(typeof notify==='function')notify(item.name+' integration is coming soon');
+            var n=item.name;
+            // Built aggregators run the REAL connect flow (each covers a whole category).
+            if(n==='Plaid'){ if(window.ffLinkBank) window.ffLinkBank(function(){ if(typeof notify==='function') notify('Bank linked ✓'); }); return; }
+            if(n==='Finch'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/finch/connect-url',urlKey:'connect_url',statusEndpoint:'/api/finch/status'}); return; }
+            if(n==='Codat'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/codat/link-url',urlKey:'link_url',statusEndpoint:'/api/codat/status'}); return; }
+            if(n==='Stripe'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/stripe/connect-url',urlKey:'connect_url',statusEndpoint:'/api/stripe/status'}); return; }
+            // Everything else is NOT a live integration (F51/F65 honesty): register a request,
+            // never fake a connection. Many providers are reachable via the aggregators above
+            // (banks→Plaid, payroll→Finch, accounting→Codat).
+            if(typeof notify==='function')notify('Thanks — noted your interest in '+n+'. It isn\'t a live integration yet.');
           };
 
           window.connFilterAll=function(){
@@ -3846,6 +3860,38 @@ window.ffLinkBank = async function(onLinked, onError){
   }).open();
 };
 
+// ── Shared connect flow for redirect/hosted-URL providers (Finch payroll, Codat accounting).
+//    Asks the server for a connect URL (502 → honest message), opens it in a popup, then polls
+//    the provider's status endpoint until it reports connected. Never fakes a connected state. ──
+window.ffConnectProvider = async function(cfg){
+  // cfg: { urlEndpoint, urlKey, statusEndpoint, onConnected }
+  const fail = (m) => { if(typeof notify==='function') notify(m, true); };
+  let d;
+  try{
+    const r = await fetch(cfg.urlEndpoint, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:'{}'});
+    d = await r.json().catch(()=>({}));
+    if(!r.ok){
+      if(r.status===401) return fail('Please finish creating your account first.');
+      if(r.status===403) return fail('Only the account owner can connect this.');
+      return fail(d.error || 'This connection isn\'t set up yet.');
+    }
+  }catch(e){ return fail('Network error starting the connection.'); }
+  const url = d[cfg.urlKey];
+  if(!url) return fail('No connect URL returned.');
+  const popup = window.open(url, 'ff-connect', 'width=600,height=760');
+  if(typeof notify==='function') notify('Complete the connection in the popup window…');
+  // Poll status until connected (or the popup closes / we time out).
+  let tries = 0;
+  const poll = setInterval(async ()=>{
+    tries++;
+    try{
+      const s = await (await fetch(cfg.statusEndpoint, {credentials:'include'})).json();
+      if(s && s.connected){ clearInterval(poll); if(typeof notify==='function') notify('Connected ✓'); if(cfg.onConnected) cfg.onConnected(s); return; }
+    }catch(e){}
+    if(tries > 150 || (popup && popup.closed && tries > 2)){ clearInterval(poll); }
+  }, 2000);
+};
+
 // ── Banking-page Plaid controls: real linked state + link/sync/unlink ──
 window.renderPlaidLinked = async function(){
   const strip = document.getElementById('plaid-linked-strip');
@@ -4114,9 +4160,27 @@ window.obConnectBank = function(){
     ()=>{ const b=document.getElementById('ob-bank-badge'); if(b){ b.className='badge'; b.dataset.later=''; } obMarkLater('ob-bank-badge'); }
   );
 };
-// Stripe & payroll have no real integration yet — keep them honestly "set up later" (F51/F65).
-window.obConnectStripe  = function(){ obMarkLater('ob-stripe-badge'); };
-window.obConnectPayroll = function(){ obMarkLater('ob-payroll-badge'); };
+// Payroll is a REAL Finch connection now (covers Gusto/ADP/Rippling/Paychex/… via one link).
+window.obConnectPayroll = function(){
+  const badge = document.getElementById('ob-payroll-badge');
+  if(badge){ badge.className='badge'; badge.textContent='Connecting…'; }
+  window.ffConnectProvider({
+    urlEndpoint:'/api/finch/connect-url', urlKey:'connect_url', statusEndpoint:'/api/finch/status',
+    onConnected:(s)=>{ const b=document.getElementById('ob-payroll-badge'); if(b){ b.className='badge b-green'; b.textContent='Connected ✓'; b.dataset.later=''; } }
+  });
+  // If linking isn't available (no keys), ffConnectProvider notifies; leave an honest chip.
+  setTimeout(()=>{ const b=document.getElementById('ob-payroll-badge'); if(b && b.textContent==='Connecting…'){ b.className='badge'; obMarkLater('ob-payroll-badge'); } }, 1500);
+};
+// Stripe payments is a REAL Stripe Connect (read-only) link now.
+window.obConnectStripe = function(){
+  const badge = document.getElementById('ob-stripe-badge');
+  if(badge){ badge.className='badge'; badge.textContent='Connecting…'; }
+  window.ffConnectProvider({
+    urlEndpoint:'/api/stripe/connect-url', urlKey:'connect_url', statusEndpoint:'/api/stripe/status',
+    onConnected:(s)=>{ const b=document.getElementById('ob-stripe-badge'); if(b){ b.className='badge b-green'; b.textContent='Connected ✓'; b.dataset.later=''; } }
+  });
+  setTimeout(()=>{ const b=document.getElementById('ob-stripe-badge'); if(b && b.textContent==='Connecting…'){ b.className='badge'; obMarkLater('ob-stripe-badge'); } }, 1500);
+};
 
 function updateDots(step){
   for(let i=1;i<=STEPS;i++){

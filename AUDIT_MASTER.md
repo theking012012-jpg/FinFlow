@@ -550,6 +550,38 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F167 🟠 HIGH — Stripe Connect (payments) linking + honest "755" stat card — **NEW (2026-08-14) → ✅ BUILT (held); live handshake UNEXECUTED pending keys**
+**Status:** ✅ **BUILT (FIX HELD).** Fourth aggregator + a truthfulness fix on the catalogue's headline number.
+
+**Stripe Connect (owner-only, `bank:manage`).** Links the user's OWN Stripe account read-only via OAuth — distinct from the platform billing Stripe (`/api/stripe/checkout`, `/api/stripe/webhook`). Routes: `GET /api/stripe/status`, `POST /api/stripe/connect-url` (OAuth authorize URL), `GET /api/stripe/callback` (**under `/api`** — same resolver-scope lesson as F166; exchanges the code form-encoded, stores the connected `stripe_user_id` + encrypted token), `POST /api/stripe/disconnect` (best-effort `/oauth/deauthorize`), `POST /api/stripe/sync` (reads account balance for DISPLAY only — does NOT write revenue into the books, Rules 2 & 12). Env-gated on `STRIPE_SECRET_KEY` + `STRIPE_CONNECT_CLIENT_ID` → clean 502 `STRIPE_NOT_CONFIGURED`. Client: onboarding Stripe button + catalogue "Stripe" row now run the real flow; Stripe added to the built-aggregator set.
+
+**Honest "755" stat card.** The catalogue header showed **"Total integrations: 755"** / **"Connected: 0"**, where 755 = the length of the browse array (logos, not working integrations) and the count came from the dead browse-toggle state. Relabelled to **"In directory: 755 (available to request)"** and **"Live connections: N (connected right now)"**, where N is now computed from the REAL status endpoints (Plaid items + Finch/Codat/Stripe `connected`), not the toggle map. So the number a viewer sees reflects actual connections, and 755 is honestly framed as a directory, not 755 live integrations.
+
+**Verified (execution).** `tests/harness/verify-finch-codat-linking.js` (25/0 — now also covers Stripe): env gate (502 `STRIPE_NOT_CONFIGURED`), `bank:manage` owner-only (viewer AND accountant 403; owner passes to 502), status shape, callback 200, disconnect 404. Regression: RBAC 30/0, Plaid 21/0, auth 24/0, F111 UI 6/0.
+**UNEXECUTED (Rule 14):** live Stripe OAuth handshake — needs `STRIPE_CONNECT_CLIENT_ID` + a Stripe Connect app.
+**Files:** `server.js`, `public/index.html`. **Done when:** committed; live path verified once keys are added.
+
+---
+
+### F166 🟠 HIGH — real Finch (payroll) + Codat (accounting) linking + honest catalogue relabel — **NEW (2026-08-14) → ✅ BUILT (held); live handshakes UNEXECUTED pending keys**
+**Status:** ✅ **BUILT (FIX HELD).** Extends the F164 pattern to two more aggregators so the catalogue stops being all-placeholder. Each is one integration covering a whole category: **Finch** ≈ 220–265 payroll/HRIS providers (Gusto, ADP, Rippling, Paychex, UKG, Workday…); **Codat** ≈ 30+ accounting platforms (QuickBooks Online/Desktop, Xero, Sage, NetSuite, FreshBooks…).
+
+**Mechanism (same shape as Plaid — env-gated, tokens encrypted at rest, `user_settings` blob, no migration).**
+- **Finch (`payroll:write` = owner/admin):** `GET /api/finch/status`, `POST /api/finch/connect-url` (builds the Finch Connect authorize URL), `GET /api/finch/callback` (exchanges the `code`, stores encrypted, closes the popup), `POST /api/finch/sync` (pulls the employee **directory count for DISPLAY only**), `POST /api/finch/disconnect`.
+- **Codat (`books:write` = owner/admin/accountant):** `GET /api/codat/status` (queries Codat for a `Linked` connection), `POST /api/codat/link-url` (creates a Codat company + returns the hosted Link URL), `POST /api/codat/disconnect`.
+- **Client (`index.html`):** shared `window.ffConnectProvider` (open connect URL in a popup, poll the status endpoint until connected — never fakes state); onboarding **payroll** button now runs the real Finch flow; the 755-item catalogue is **relabelled honestly** — the three built aggregators (Plaid/Finch/Codat) show a working **"Connect"** (+ "Available"), every other logo shows **"Request"** and registers interest instead of implying a live integration (extends the F51/F65 honesty pass).
+
+**DELIBERATE SCOPE LIMIT (Rules 2 & 12):** sync pulls data for **display only**; it does NOT auto-write `payroll_runs` / journals / invoices. Letting an external source silently author a money figure is the multi-writer defect this codebase exists to prevent — materialising external data into the books is a separate, owner-gated import.
+
+**Bug caught + fixed during the build:** `GET /finch/callback` was first placed **outside `/api`**, so the account resolver (`app.use('/api', …)`) never ran — `req.accountRole`/`req.accountId` were unset, `requirePerm` failed **closed** and 403'd even the owner, and `scopeId` would have been undefined. Moved to `/api/finch/callback` (execution-confirmed: owner 403 → 200 after the move).
+
+**Verified (execution).** `tests/harness/verify-finch-codat-linking.js` (17/0): env gate (502 `*_NOT_CONFIGURED`, never a fake link); RBAC **discriminates by capability** — accountant can Codat (502, passes `books:write`) but not Finch (403, `payroll:write` excludes accountant); viewer 403 on both; unauth 401; disconnect 404 when nothing linked; the moved callback returns 200 HTML. Regression: RBAC 30/0, Plaid 21/0, auth 24/0, F111 UI 6/0.
+**UNEXECUTED (Rule 14):** live Finch Connect / Codat Link handshakes — need provider accounts. To finish: set `FINCH_CLIENT_ID`/`FINCH_CLIENT_SECRET` (+`FINCH_ENV=sandbox`) and `CODAT_API_KEY`, run a sandbox connect, confirm `status` flips to connected.
+**Files:** `server.js`, `public/index.html`. **Own commit recommended** (new feature).
+**Done when:** committed; live paths verified once keys are added.
+
+---
+
 ### F165 🟠 HIGH — onboarding: fake "Connected ✓" buttons + wizard re-shown every session — **NEW (2026-08-14) → ✅ FIXED (held)**
 **Status:** ✅ **FIXED (held).** Two defects in the first-run wizard (`index.html`):
 

@@ -69,11 +69,12 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com; " +   // cdn.plaid.com: Plaid Link SDK
     "style-src 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src https://fonts.gstatic.com; " +
     "img-src 'self' data: blob:; " +
-    "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com; " +   // F49: dropped dead ws:/wss: — FinFlow opens no socket, so a stray socket now hits a documented CSP block
+    "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com https://*.plaid.com; " +   // F49: dropped dead ws:/wss: — FinFlow opens no socket, so a stray socket now hits a documented CSP block. *.plaid.com: Plaid Link
+    "frame-src https://cdn.plaid.com https://*.plaid.com; " +   // Plaid Link renders its flow in an iframe
     "frame-ancestors 'none'; " +
     "object-src 'none'; " +
     "base-uri 'self';"
@@ -3577,17 +3578,33 @@ app.get('/favicon.ico', (req, res) => {
 
 // ── RECURRING SCHEDULER ───────────────────────────────────────────────────────
 function nextRunDate(currentDate, frequency) {
-  const d = new Date(currentDate);
-  if (isNaN(d.getTime())) return null;
-  // Normalize so every entry point agrees: case-insensitive, and treat
-  // 'Annually'/'Annual' as yearly (the Recurring Bills/Invoices modals send
-  // 'Annually', which previously fell through to the monthly default).
+  // A next_run is an accounting/calendar date, not an instant (Rule 10). The previous
+  // implementation did `new Date('YYYY-MM-DD')` (parses to UTC midnight) then advanced with
+  // LOCAL-time setMonth/setDate — so on any server whose timezone is west of UTC, UTC midnight
+  // is the prior evening locally and a 1st-of-month date rolled BACK a day (2026-07-01 → 07-31,
+  // 2026-12-01 → 12-31 instead of next year). Confirmed by execution (verify-recurring-scheduler).
+  // Fix: pure integer Y/M/D arithmetic with UTC-only day math, which no timezone can shift.
+  const s = String(currentDate || '').slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  let y = +m[1], mo = +m[2], d = +m[3];  // mo is 1-based
+  // Normalize frequency: case-insensitive, and treat 'Annually'/'Annual' as yearly (the Recurring
+  // Bills/Invoices modals send 'Annually', which previously fell through to the monthly default).
   const f = String(frequency || '').trim().toLowerCase();
-  if (f === 'weekly')                                    d.setDate(d.getDate() + 7);
-  else if (f === 'quarterly')                            d.setMonth(d.getMonth() + 3);
-  else if (f === 'yearly' || f === 'annually' || f === 'annual') d.setFullYear(d.getFullYear() + 1);
-  else                                                   d.setMonth(d.getMonth() + 1); // monthly / default
-  return d.toISOString().slice(0, 10);
+  if (f === 'weekly') {
+    const t = Date.UTC(y, mo - 1, d) + 7 * 86400000;  // day arithmetic in UTC is timezone-free
+    return new Date(t).toISOString().slice(0, 10);
+  }
+  if (f === 'quarterly')                                         mo += 3;
+  else if (f === 'yearly' || f === 'annually' || f === 'annual') y += 1;
+  else                                                          mo += 1; // monthly / default
+  // Carry month overflow into years (e.g. month 13 → next January).
+  y += Math.floor((mo - 1) / 12);
+  mo = ((mo - 1) % 12) + 1;
+  // Clamp the day to the target month's length so Jan 31 + 1mo → Feb 28/29 (not a March spill).
+  const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();  // day 0 of next month
+  if (d > daysInMonth) d = daysInMonth;
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
 async function runRecurringScheduler() {
@@ -4174,6 +4191,178 @@ app.post('/api/connections', requireAuth, requirePerm('bank:manage'), wrap(async
     console.error('[POST /api/connections]', e.message);
     res.status(500).json({ error: 'Could not save connection settings.' });
   }
+}));
+
+// ════════════════════════════════════════════════════════════════════════════════
+// PLAID BANK LINKING — a REAL, owner-only link flow (env-gated, never a fake state).
+// ════════════════════════════════════════════════════════════════════════════════
+// This deliberately replaces the "coming soon" placeholder for banks: a genuine Plaid Link
+// handshake (link-token → public-token exchange → persisted item). Env-gated exactly like the
+// AI (ANTHROPIC_API_KEY→502) and Stripe (STRIPE_SECRET_KEY→null) surfaces: with no keys it
+// returns a clean, actionable 502 and NEVER claims a connection that did not happen (F51/F65
+// honesty rule). Access tokens are encrypted at rest (AES-256-GCM) so this does not repeat the
+// F160 plaintext-secret class. Uses Plaid's REST API over global fetch — no new npm dependency.
+const PLAID_ENV_NAME = (process.env.PLAID_ENV || 'sandbox').toLowerCase();
+const PLAID_BASE = PLAID_ENV_NAME === 'production' ? 'https://production.plaid.com'
+                 : PLAID_ENV_NAME === 'development' ? 'https://development.plaid.com'
+                 : 'https://sandbox.plaid.com';
+const PLAID_COUNTRIES = (process.env.PLAID_COUNTRY_CODES || 'US').split(',').map(s => s.trim()).filter(Boolean);
+const plaidConfigured = () => !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
+
+async function plaidCall(pathname, body) {
+  const resp = await fetch(PLAID_BASE + pathname, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ client_id: process.env.PLAID_CLIENT_ID, secret: process.env.PLAID_SECRET }, body)),
+  });
+  let json = {};
+  try { json = await resp.json(); } catch (_) {}
+  if (!resp.ok) {
+    const err = new Error(json.error_message || json.error_code || ('Plaid HTTP ' + resp.status));
+    err.plaid = json; err.httpStatus = resp.status;
+    throw err;
+  }
+  return json;
+}
+
+// AES-256-GCM at rest, key derived from SESSION_SECRET (already a required env var).
+function _plaidKey() { return crypto.createHash('sha256').update('plaid-token:' + (process.env.SESSION_SECRET || '')).digest(); }
+function encTok(plain) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', _plaidKey(), iv);
+  const enc = Buffer.concat([c.update(String(plain), 'utf8'), c.final()]);
+  return iv.toString('hex') + ':' + c.getAuthTag().toString('hex') + ':' + enc.toString('hex');
+}
+function decTok(stored) {
+  const [ivh, tagh, dh] = String(stored).split(':');
+  const d = crypto.createDecipheriv('aes-256-gcm', _plaidKey(), Buffer.from(ivh, 'hex'));
+  d.setAuthTag(Buffer.from(tagh, 'hex'));
+  return Buffer.concat([d.update(Buffer.from(dh, 'hex')), d.final()]).toString('utf8');
+}
+
+// Linked items live in user_settings under key='plaid_items' as a JSON array (mirrors the
+// connections blob) — no schema migration, and scoped by scopeId like every other read.
+async function _getPlaidItems(uid) {
+  const { rows: [r] } = await pool.query(
+    `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' = 'plaid_items' LIMIT 1`, [uid]);
+  const row = r ? rowToObj(r) : null;
+  let items = [];
+  try { items = row && row.value ? JSON.parse(row.value) : []; } catch (_) { items = []; }
+  return { id: r ? r.id : null, items: Array.isArray(items) ? items : [] };
+}
+async function _savePlaidItems(uid, existingId, items) {
+  const data = JSON.stringify(items);
+  if (existingId) await db.updateById('user_settings', existingId, { value: data });
+  else await db.insert('user_settings', { user_id: uid, key: 'plaid_items', value: data });
+}
+const _publicItem = i => ({ item_id: i.item_id, institution_name: i.institution_name, linked_at: i.linked_at });
+
+// GET the real linked-bank state (tokens NEVER leave the server). `configured` lets the UI show
+// an honest "needs setup" state instead of a Link button that would 502.
+app.get('/api/plaid/items', requireAuth, wrap(async (req, res) => {
+  const { items } = await _getPlaidItems(scopeId(req));
+  res.json({ configured: plaidConfigured(), env: PLAID_ENV_NAME, items: items.map(_publicItem) });
+}));
+
+// Step 1 of Link: create a link_token the browser hands to Plaid Link.
+app.post('/api/plaid/link-token', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
+  try {
+    const j = await plaidCall('/link/token/create', {
+      user: { client_user_id: String(scopeId(req)) },
+      client_name: 'FinFlow',
+      products: ['transactions'],
+      country_codes: PLAID_COUNTRIES,
+      language: 'en',
+    });
+    res.json({ link_token: j.link_token, expiration: j.expiration });
+  } catch (e) {
+    console.error('[plaid link-token]', e.message, e.plaid || '');
+    res.status(502).json({ error: 'Could not start bank linking: ' + e.message });
+  }
+}));
+
+// Step 2 of Link: exchange the public_token for a long-lived access_token; persist (encrypted)
+// with the institution name so the UI can show a REAL linked state.
+app.post('/api/plaid/exchange', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
+  const publicToken = (req.body && req.body.public_token) || '';
+  if (!publicToken) return res.status(400).json({ error: 'public_token is required.' });
+  try {
+    const ex = await plaidCall('/item/public_token/exchange', { public_token: publicToken });
+    let institution = 'Bank';
+    try {
+      const acc = await plaidCall('/accounts/get', { access_token: ex.access_token });
+      const instId = acc.item && acc.item.institution_id;
+      if (instId) {
+        const inst = await plaidCall('/institutions/get_by_id', { institution_id: instId, country_codes: PLAID_COUNTRIES });
+        institution = (inst.institution && inst.institution.name) || institution;
+      }
+    } catch (_) { /* institution name is best-effort; the link still succeeds */ }
+    const uid = scopeId(req);
+    const { id, items } = await _getPlaidItems(uid);
+    const next = items.filter(it => it.item_id !== ex.item_id); // idempotent re-link
+    next.push({ item_id: ex.item_id, access_token: encTok(ex.access_token), institution_name: institution, linked_at: new Date().toISOString(), cursor: null });
+    await _savePlaidItems(uid, id, next);
+    res.status(201).json({ ok: true, institution_name: institution, item_id: ex.item_id, items: next.map(_publicItem) });
+  } catch (e) {
+    console.error('[plaid exchange]', e.message, e.plaid || '');
+    res.status(502).json({ error: 'Could not link your bank: ' + e.message });
+  }
+}));
+
+// Unlink (owner-only). Removes the stored item locally and best-effort tells Plaid to invalidate it.
+app.post('/api/plaid/unlink', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  const uid = scopeId(req);
+  const itemId = (req.body && req.body.item_id) || '';
+  if (!itemId) return res.status(400).json({ error: 'item_id is required.' });
+  const { id, items } = await _getPlaidItems(uid);
+  const target = items.find(it => it.item_id === itemId);
+  if (!target) return res.status(404).json({ error: 'No such linked bank.' });
+  if (plaidConfigured()) { try { await plaidCall('/item/remove', { access_token: decTok(target.access_token) }); } catch (_) {} }
+  await _savePlaidItems(uid, id, items.filter(it => it.item_id !== itemId));
+  res.json({ ok: true, items: items.filter(it => it.item_id !== itemId).map(_publicItem) });
+}));
+
+// Pull transactions from every linked item into personal_transactions (source:'banking'), so the
+// linked bank actually FEEDS the books. Idempotent on Plaid's stable transaction_id (NOT the weak
+// 5-second dedupe window — Rule 9) and cursor-based so re-runs only fetch new activity.
+app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
+  const uid = scopeId(req);
+  const { id, items } = await _getPlaidItems(uid);
+  if (!items.length) return res.status(400).json({ error: 'No linked bank. Link a bank first.' });
+  let added = 0;
+  for (const it of items) {
+    try {
+      const token = decTok(it.access_token);
+      let cursor = it.cursor || null, hasMore = true;
+      while (hasMore) {
+        const sync = await plaidCall('/transactions/sync', cursor ? { access_token: token, cursor } : { access_token: token });
+        for (const t of (sync.added || [])) {
+          // Idempotency on Plaid's transaction_id (stable), not a time window.
+          const { rows: [dup] } = await pool.query(
+            `SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'plaid_txn_id'=$2 LIMIT 1`, [uid, t.transaction_id]);
+          if (dup) continue;
+          await db.insert('personal_transactions', {
+            user_id: uid, entity_id: req.entityId || null,
+            description: t.name || t.merchant_name || 'Bank transaction',
+            amount: Math.abs(Number(t.amount) || 0),
+            // Plaid: positive amount = money OUT of the account (debit); negative = money IN (credit).
+            tx_type: (Number(t.amount) >= 0 ? 'debit' : 'credit'),
+            tx_date: t.date || new Date().toISOString().slice(0, 10),
+            category: (t.personal_finance_category && t.personal_finance_category.primary) || 'Other',
+            source: 'banking', plaid_txn_id: t.transaction_id,
+          });
+          added++;
+        }
+        cursor = sync.next_cursor; hasMore = !!sync.has_more;
+      }
+      it.cursor = cursor;
+    } catch (e) { console.error('[plaid sync]', e.message, e.plaid || ''); }
+  }
+  await _savePlaidItems(uid, id, items);
+  res.json({ ok: true, added });
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -5679,3 +5868,13 @@ module.exports = app;
 // Test hook: expose the canonical books calculator for harness verification (no behavior
 // change in prod — the app is still the default export).
 module.exports.computeBooks = computeBooks;
+// Test hook: expose the recurring scheduler for harness verification (no behavior change in
+// prod — it still runs on boot + on its interval; this only makes it drivable under test).
+module.exports.runRecurringScheduler = runRecurringScheduler;
+// Test hook: expose the pure recurrence-date helper so the Rule 10 timezone-free math can be
+// asserted directly (no behavior change in prod).
+module.exports.nextRunDate = nextRunDate;
+// Test hooks: Plaid access-token encryption at rest (assert round-trip + tamper detection).
+module.exports._encTok = encTok;
+module.exports._decTok = decTok;
+module.exports.plaidConfigured = plaidConfigured;

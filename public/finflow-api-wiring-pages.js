@@ -733,13 +733,21 @@
     };
 
     // Next occurrence date for a recurring bill (mirrors server nextRunDate).
+    // F159/Rule 10: a next_run is a calendar date. The old `new Date(dateStr)` + local setMonth
+    // made the result depend on the VIEWER's timezone (a 1st-of-month date rolled back a day west
+    // of UTC). Compute with integer Y/M/D + UTC-only day math so no timezone can shift it.
     function _billNextRun(dateStr, freq) {
-      const d = new Date(dateStr || todayStr());
-      if (freq === 'Weekly')         d.setDate(d.getDate() + 7);
-      else if (freq === 'Quarterly') d.setMonth(d.getMonth() + 3);
-      else if (freq === 'Yearly')    d.setFullYear(d.getFullYear() + 1);
-      else                           d.setMonth(d.getMonth() + 1); // Monthly
-      return d.toISOString().slice(0, 10);
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || todayStr()).slice(0, 10));
+      if (!m) return null;
+      let y = +m[1], mo = +m[2], d = +m[3];
+      const f = String(freq || '').trim().toLowerCase();
+      if (f === 'weekly') return new Date(Date.UTC(y, mo - 1, d) + 7 * 86400000).toISOString().slice(0, 10);
+      if (f === 'quarterly')                                   mo += 3;
+      else if (f === 'yearly' || f === 'annually' || f === 'annual') y += 1;
+      else                                                    mo += 1; // Monthly / default
+      y += Math.floor((mo - 1) / 12); mo = ((mo - 1) % 12) + 1;
+      const dim = new Date(Date.UTC(y, mo, 0)).getUTCDate(); if (d > dim) d = dim;
+      return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     }
 
     window.saveBill = async function () {

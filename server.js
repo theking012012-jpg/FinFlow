@@ -69,12 +69,12 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com; " +   // cdn.plaid.com: Plaid Link SDK
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com https://cdn.belvo.io; " +   // Plaid Link + Belvo widget SDKs
     "style-src 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src https://fonts.gstatic.com; " +
     "img-src 'self' data: blob:; " +
-    "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com https://*.plaid.com; " +   // F49: dropped dead ws:/wss: — FinFlow opens no socket, so a stray socket now hits a documented CSP block. *.plaid.com: Plaid Link
-    "frame-src https://cdn.plaid.com https://*.plaid.com; " +   // Plaid Link renders its flow in an iframe
+    "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com https://*.plaid.com https://*.belvo.io https://*.belvo.com; " +   // F49: dropped dead ws:/wss:. *.plaid.com/*.belvo.*: bank-link widgets
+    "frame-src https://cdn.plaid.com https://*.plaid.com https://*.belvo.io; " +   // Plaid + Belvo render their flows in an iframe
     "frame-ancestors 'none'; " +
     "object-src 'none'; " +
     "base-uri 'self';"
@@ -4600,6 +4600,111 @@ app.post('/api/stripe/sync', requireAuth, requirePerm('bank:manage'), wrap(async
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════
+// REGIONAL AGGREGATORS — BELVO (Latin America bank data) + WIPAY (Caribbean payments).
+// ════════════════════════════════════════════════════════════════════════════════
+// Worldwide app: Plaid does NOT cover LatAm/Caribbean. Belvo aggregates ~90% of accounts in
+// Mexico/Brazil/Colombia; WiPay is the Caribbean card processor (TT/JM/BB/GY/LC). Same rules:
+// owner-only (bank:manage), tokens/keys encrypted at rest, display-only sync (Rules 2 & 12).
+
+// ── BELVO (LatAm open banking; env-gated, Plaid-style widget) ──
+const belvoConfigured = () => !!(process.env.BELVO_SECRET_ID && process.env.BELVO_SECRET_PASSWORD);
+const BELVO_ENV_NAME = (process.env.BELVO_ENV || 'sandbox').toLowerCase();
+const BELVO_BASE = BELVO_ENV_NAME === 'production' ? 'https://api.belvo.com'
+                 : BELVO_ENV_NAME === 'development' ? 'https://development.belvo.com'
+                 : 'https://sandbox.belvo.com';
+const _belvoAuth = () => 'Basic ' + Buffer.from(String(process.env.BELVO_SECRET_ID || '') + ':' + String(process.env.BELVO_SECRET_PASSWORD || '')).toString('base64');
+async function belvoCall(pathname, opts = {}) {
+  const resp = await fetch(BELVO_BASE + pathname, {
+    method: opts.method || 'GET',
+    headers: Object.assign({ 'Authorization': _belvoAuth(), 'Content-Type': 'application/json' }, opts.headers || {}),
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  let json = {}; try { json = await resp.json(); } catch (_) {}
+  if (!resp.ok) { const e = new Error((json.detail) || (Array.isArray(json) && json[0] && json[0].message) || ('Belvo HTTP ' + resp.status)); e.provider = json; throw e; }
+  return json;
+}
+
+app.get('/api/belvo/status', requireAuth, wrap(async (req, res) => {
+  const { value } = await _providerBlob(scopeId(req), 'belvo_conn');
+  const links = (value && value.links) || [];
+  res.json({ configured: belvoConfigured(), connected: links.length > 0, institutions: links.map(l => l.institution).filter(Boolean) });
+}));
+
+app.post('/api/belvo/widget-token', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO_SECRET_ID and BELVO_SECRET_PASSWORD to enable it.', code: 'BELVO_NOT_CONFIGURED' });
+  try {
+    const j = await belvoCall('/api/token/', { method: 'POST', body: { id: process.env.BELVO_SECRET_ID, password: process.env.BELVO_SECRET_PASSWORD, scopes: 'read_institutions,write_links' } });
+    res.json({ access: j.access });
+  } catch (e) { console.error('[belvo token]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not start LatAm bank linking: ' + e.message }); }
+}));
+
+app.post('/api/belvo/exchange', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
+  const link = (req.body && req.body.link) || '';
+  if (!link) return res.status(400).json({ error: 'link is required.' });
+  try {
+    let institution = null;
+    try { const d = await belvoCall('/api/links/' + encodeURIComponent(link) + '/'); institution = d.institution || null; } catch (_) {}
+    const uid = scopeId(req);
+    const { id, value } = await _providerBlob(uid, 'belvo_conn');
+    const links = (value && value.links) || [];
+    const next = links.filter(l => l.link !== link);
+    next.push({ link, institution, linked_at: new Date().toISOString() });
+    await _saveProviderBlob(uid, id, 'belvo_conn', { links: next });
+    res.status(201).json({ ok: true, institution, institutions: next.map(l => l.institution).filter(Boolean) });
+  } catch (e) { console.error('[belvo exchange]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not link bank: ' + e.message }); }
+}));
+
+app.post('/api/belvo/disconnect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  const uid = scopeId(req);
+  const { id, value } = await _providerBlob(uid, 'belvo_conn');
+  if (!value || !((value.links || []).length)) return res.status(404).json({ error: 'No linked LatAm bank.' });
+  if (belvoConfigured()) { for (const l of value.links) { try { await belvoCall('/api/links/' + encodeURIComponent(l.link) + '/', { method: 'DELETE' }); } catch (_) {} } }
+  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({ links: [] }) });
+  res.json({ ok: true });
+}));
+
+app.post('/api/belvo/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
+  const uid = scopeId(req);
+  const { value } = await _providerBlob(uid, 'belvo_conn');
+  const links = (value && value.links) || [];
+  if (!links.length) return res.status(400).json({ error: 'No linked LatAm bank. Link one first.' });
+  let accounts = 0;
+  for (const l of links) { try { const a = await belvoCall('/api/accounts/', { method: 'POST', body: { link: l.link } }); accounts += Array.isArray(a) ? a.length : (a.count || 0); } catch (_) {} }
+  res.json({ ok: true, accounts, note: 'Accounts read for display. Importing into the books is a separate, owner-approved step (Rule 2/12).' });
+}));
+
+// ── WIPAY (Caribbean card payments) — merchant-credentials model (no platform OAuth). The owner
+//    enters their OWN WiPay account number + API key (encrypted); used to generate hosted payment
+//    links on invoices. The credentials ARE the connection, so there is no env gate. ──
+app.get('/api/wipay/status', requireAuth, wrap(async (req, res) => {
+  const { value } = await _providerBlob(scopeId(req), 'wipay_conn');
+  res.json({ connected: !!(value && value.account_number), account: value ? value.account_number || null : null, country: value ? value.country || null : null });
+}));
+
+app.post('/api/wipay/connect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  const account = String((req.body && req.body.account_number) || '').trim();
+  const apiKey = String((req.body && req.body.api_key) || '').trim();
+  const country = String((req.body && req.body.country) || 'TT').trim().toUpperCase();
+  const ALLOWED = ['TT', 'JM', 'BB', 'GY', 'LC'];  // WiPay's live markets
+  if (!account || !apiKey) return res.status(400).json({ error: 'WiPay account number and API key are required.' });
+  if (!ALLOWED.includes(country)) return res.status(400).json({ error: 'country must be one of ' + ALLOWED.join(', ') + '.' });
+  const uid = scopeId(req);
+  const { id } = await _providerBlob(uid, 'wipay_conn');
+  await _saveProviderBlob(uid, id, 'wipay_conn', { account_number: account, api_key: encTok(apiKey), country, linked_at: new Date().toISOString() });
+  res.status(201).json({ ok: true, account, country });
+}));
+
+app.post('/api/wipay/disconnect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  const uid = scopeId(req);
+  const { id, value } = await _providerBlob(uid, 'wipay_conn');
+  if (!value || !value.account_number) return res.status(404).json({ error: 'No WiPay account connected.' });
+  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+  res.json({ ok: true });
+}));
+
+// ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 1 — FIELD-LEVEL AUDIT TRAIL
 // ════════════════════════════════════════════════════════════════════════════════
 // F90 — THE SINGLE AUDITED WRITE PATH. Every audit call routes through recordAudit: it ATTRIBUTES the
@@ -6115,3 +6220,4 @@ module.exports.plaidConfigured = plaidConfigured;
 module.exports.finchConfigured = finchConfigured;
 module.exports.codatConfigured = codatConfigured;
 module.exports.stripeConnectConfigured = stripeConnectConfigured;
+module.exports.belvoConfigured = belvoConfigured;

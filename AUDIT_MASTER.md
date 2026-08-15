@@ -550,6 +550,21 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F168 🟠 HIGH — regional aggregators: Belvo (LatAm banking) + WiPay (Caribbean payments) — **NEW (2026-08-14) → ✅ BUILT (held); live handshakes UNEXECUTED pending keys**
+**Status:** ✅ **BUILT (FIX HELD).** Worldwide-app gap: Plaid/Stripe/Finch/Codat are US/UK/EU-centric and do NOT cover the owner's own region. Coverage confirmed by research — Plaid: US/CA/UK/EU only (no LatAm/Caribbean); **Belvo**: ~90% of accounts in Mexico/Brazil/Colombia; **WiPay**: Caribbean card processor (TT/JM/BB/GY/LC). Both were catalogue logos with no backing; now real.
+
+**Belvo (LatAm open banking; env-gated, Plaid-style widget, owner-only `bank:manage`).** `GET /api/belvo/status`, `POST /api/belvo/widget-token` (creates the widget access token), `POST /api/belvo/exchange` (stores the returned `link` id + institution), `POST /api/belvo/sync` (reads account count for DISPLAY only), `POST /api/belvo/disconnect` (best-effort `DELETE` at Belvo). Basic-auth to `sandbox|development|production` host by `BELVO_ENV`; 502 `BELVO_NOT_CONFIGURED` until `BELVO_SECRET_ID`/`BELVO_SECRET_PASSWORD` set. Client: Belvo widget SDK + `ffLinkBelvo`; CSP extended for `cdn.belvo.io` / `*.belvo.io` / `*.belvo.com`.
+
+**WiPay (Caribbean payments; merchant-credentials model, owner-only).** WiPay isn't OAuth — the owner enters their OWN `account_number` + `api_key` (+ country ∈ TT/JM/BB/GY/LC), stored with the **key encrypted at rest** (AES-256-GCM). No env gate — the credentials ARE the connection. `GET /api/wipay/status`, `POST /api/wipay/connect`, `POST /api/wipay/disconnect`. Client: a small credentials modal (`ffConnectWiPay`). Because there's no external dependency, the FULL connect→status→disconnect cycle is execution-verified (not just the env gate).
+
+Both added to the built-aggregator set (real "Connect", not "Request") and the "Live connections" count. Sync stays display-only (Rules 2 & 12).
+
+**Verified (execution).** `tests/harness/verify-finch-codat-linking.js` (42/0 — now covers all six aggregators): Belvo env gate (502) + `bank:manage` owner-only (viewer & accountant 403); WiPay full cycle — missing fields 400, bad country 400, valid connect 201, status reflects connected with the **api_key never returned in the response AND encrypted in the DB** (asserted against the raw row), viewer 403, disconnect 200. Regression: RBAC 30/0, Plaid 21/0, auth 24/0, F111 UI 6/0.
+**UNEXECUTED (Rule 14):** live Belvo widget handshake (needs Belvo keys) and a live WiPay transaction (needs a real merchant account).
+**Files:** `server.js`, `public/index.html`. **Done when:** committed; live paths verified once keys/creds are added.
+
+---
+
 ### F167 🟠 HIGH — Stripe Connect (payments) linking + honest "755" stat card — **NEW (2026-08-14) → ✅ BUILT (held); live handshake UNEXECUTED pending keys**
 **Status:** ✅ **BUILT (FIX HELD).** Fourth aggregator + a truthfulness fix on the catalogue's headline number.
 

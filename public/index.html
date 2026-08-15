@@ -2444,7 +2444,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
                 var idx=INTEGRATIONS.indexOf(item);
                 // Honest labelling: only the built aggregators actually connect; everything else
                 // is a request, not a live integration (never imply a connection that can't happen).
-                var built=(item.name==='Plaid'||item.name==='Finch'||item.name==='Codat'||item.name==='Stripe');
+                var built=(item.name==='Plaid'||item.name==='Finch'||item.name==='Codat'||item.name==='Stripe'||item.name==='Belvo'||item.name==='WiPay');
                 var card=document.createElement('div');
                 card.className='conn-card'+(on?' is-connected':'');
                 card.innerHTML=(on?'<div class="conn-dot"></div>':'')
@@ -2474,7 +2474,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               fetch('/api/plaid/items',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return (d.items&&d.items.length)?1:0}).catch(function(){return 0}),
               fetch('/api/finch/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0}),
               fetch('/api/codat/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0}),
-              fetch('/api/stripe/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0})
+              fetch('/api/stripe/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0}),
+              fetch('/api/belvo/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0}),
+              fetch('/api/wipay/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0})
             ]).then(function(a){ el.textContent = a.reduce(function(s,n){return s+n;},0); });
           }
 
@@ -2487,6 +2489,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             if(n==='Finch'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/finch/connect-url',urlKey:'connect_url',statusEndpoint:'/api/finch/status'}); return; }
             if(n==='Codat'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/codat/link-url',urlKey:'link_url',statusEndpoint:'/api/codat/status'}); return; }
             if(n==='Stripe'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/stripe/connect-url',urlKey:'connect_url',statusEndpoint:'/api/stripe/status'}); return; }
+            if(n==='Belvo'){ if(window.ffLinkBelvo) window.ffLinkBelvo(function(){ if(typeof updateStats==='function') updateStats(); }); return; }
+            if(n==='WiPay'){ if(window.ffConnectWiPay) window.ffConnectWiPay(function(){ if(typeof updateStats==='function') updateStats(); }); return; }
             // Everything else is NOT a live integration (F51/F65 honesty): register a request,
             // never fake a connection. Many providers are reachable via the aggregators above
             // (banks→Plaid, payroll→Finch, accounting→Codat).
@@ -3832,7 +3836,69 @@ window.addEventListener('resize',function(){if(window.innerWidth>768)closeSideba
      genuine Plaid Link handshake and NEVER shows a "linked" state unless the exchange succeeded.
      If the server is not configured (no PLAID keys) it reports that honestly via onError. -->
 <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script src="https://cdn.belvo.io/belvo-widget-1-stable.js"></script>
 <script>
+// ── Belvo (Latin America bank data) — Plaid-style widget: token → widget → link → exchange. ──
+window.ffLinkBelvo = async function(onLinked, onError){
+  const fail = (m) => { if(typeof notify==='function') notify(m, true); if(typeof onError==='function') onError(m); };
+  let d;
+  try{
+    const r = await fetch('/api/belvo/widget-token', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:'{}'});
+    d = await r.json().catch(()=>({}));
+    if(!r.ok){
+      if(r.status===401) return fail('Please finish creating your account first.');
+      if(r.status===403) return fail('Only the account owner can connect this.');
+      return fail(d.error || 'Latin America bank linking isn\'t set up yet.');
+    }
+  }catch(e){ return fail('Network error starting the connection.'); }
+  if(!(window.belvoSDK && window.belvoSDK.createWidget)) return fail('Belvo widget did not load. Check your connection and try again.');
+  window.belvoSDK.createWidget(d.access, {
+    callback: async (link) => {
+      try{
+        const ex = await fetch('/api/belvo/exchange', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({link})});
+        const j = await ex.json().catch(()=>({}));
+        if(!ex.ok) return fail(j.error || 'Could not finish linking your bank.');
+        if(typeof notify==='function') notify('Bank linked: ' + (j.institution || 'your bank') + ' ✓');
+        if(typeof onLinked==='function') onLinked(j);
+      }catch(e){ fail('Network error finishing bank link.'); }
+    },
+    onExit: () => {}
+  }).build();
+};
+
+// ── WiPay (Caribbean payments) — merchant-credentials modal (account number + API key). ──
+window.ffConnectWiPay = function(onConnected){
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;display:flex;align-items:center;justify-content:center';
+  ov.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:12px;width:100%;max-width:400px;padding:20px">'
+    +'<div style="font-family:var(--font-display);font-style:italic;font-size:18px;color:var(--acc-light);margin-bottom:4px">Connect WiPay</div>'
+    +'<div style="font-size:12px;color:var(--t2);margin-bottom:14px">Enter your WiPay merchant credentials to accept Caribbean card payments.</div>'
+    +'<label style="font-size:11px;color:var(--t2)">Account number</label>'
+    +'<input id="wp-acct" class="finput" style="margin:4px 0 10px" placeholder="1234567890">'
+    +'<label style="font-size:11px;color:var(--t2)">API key</label>'
+    +'<input id="wp-key" class="finput" type="password" style="margin:4px 0 10px" placeholder="Your WiPay API key">'
+    +'<label style="font-size:11px;color:var(--t2)">Country</label>'
+    +'<select id="wp-country" class="finput" style="margin:4px 0 14px"><option value="TT">Trinidad & Tobago</option><option value="JM">Jamaica</option><option value="BB">Barbados</option><option value="GY">Guyana</option><option value="LC">St. Lucia</option></select>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end"><button id="wp-cancel" class="btn btn-ghost btn-sm">Cancel</button><button id="wp-save" class="btn btn-primary btn-sm">Connect</button></div></div>';
+  document.body.appendChild(ov);
+  var close=function(){ try{ov.remove();}catch(e){} };
+  ov.querySelector('#wp-cancel').onclick=close;
+  ov.onclick=function(e){ if(e.target===ov) close(); };
+  ov.querySelector('#wp-save').onclick=async function(){
+    var account=ov.querySelector('#wp-acct').value.trim();
+    var key=ov.querySelector('#wp-key').value.trim();
+    var country=ov.querySelector('#wp-country').value;
+    if(!account||!key){ if(typeof notify==='function') notify('Account number and API key are required.', true); return; }
+    try{
+      var r=await fetch('/api/wipay/connect',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({account_number:account,api_key:key,country:country})});
+      var j=await r.json().catch(()=>({}));
+      if(!r.ok){ if(typeof notify==='function') notify(j.error||'Could not connect WiPay.', true); return; }
+      if(typeof notify==='function') notify('WiPay connected ✓ ('+country+')');
+      close(); if(typeof onConnected==='function') onConnected(j);
+    }catch(e){ if(typeof notify==='function') notify('Network error connecting WiPay.', true); }
+  };
+};
+
 window.ffLinkBank = async function(onLinked, onError){
   const fail = (m) => { if(typeof notify==='function') notify(m, true); if(typeof onError==='function') onError(m); };
   let tok;

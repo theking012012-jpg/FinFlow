@@ -30,7 +30,7 @@ let pass = 0, fail = 0;
 const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fail++, console.log('  FAIL  ' + name + (d ? '\n          ' + d : ''))); };
 
 async function main() {
-  for (const k of ['FINCH_CLIENT_ID', 'FINCH_CLIENT_SECRET', 'CODAT_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_CONNECT_CLIENT_ID']) delete process.env[k];
+  for (const k of ['FINCH_CLIENT_ID', 'FINCH_CLIENT_SECRET', 'CODAT_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_CONNECT_CLIENT_ID', 'BELVO_SECRET_ID', 'BELVO_SECRET_PASSWORD']) delete process.env[k];
   const scratch = await startScratchPostgres({ keep: false });
   const c = scratch.client;
   let server = null;
@@ -105,6 +105,35 @@ async function main() {
     A('owner stripe/disconnect (nothing linked) → 404', (await owner.post('/api/stripe/disconnect', {})).status === 404);
     A('viewer stripe/connect-url → 403 (bank:manage owner-only)', (await viewer.post('/api/stripe/connect-url', {})).status === 403);
     A('accountant stripe/connect-url → 403 (bank:manage owner-only)', (await acct.post('/api/stripe/connect-url', {})).status === 403);
+
+    // ── Belvo (LatAm banking, env-gated, owner-only bank:manage) ──
+    console.log('\n-- Belvo (LatAm banking, owner-only) --');
+    A('belvoConfigured() false', app.belvoConfigured() === false);
+    const bs = await owner.get('/api/belvo/status');
+    A('owner belvo/status 200 {configured:false,connected:false}', bs.status === 200 && bs.json.configured === false && bs.json.connected === false, JSON.stringify(bs.json));
+    const bwt = await owner.post('/api/belvo/widget-token', {});
+    A('owner belvo/widget-token → 502 BELVO_NOT_CONFIGURED (passed RBAC)', bwt.status === 502 && bwt.json.code === 'BELVO_NOT_CONFIGURED', `status ${bwt.status}`);
+    A('owner belvo/sync → 502', (await owner.post('/api/belvo/sync', {})).status === 502);
+    A('owner belvo/disconnect (nothing linked) → 404', (await owner.post('/api/belvo/disconnect', {})).status === 404);
+    A('viewer belvo/widget-token → 403', (await viewer.post('/api/belvo/widget-token', {})).status === 403);
+    A('accountant belvo/widget-token → 403 (bank:manage owner-only)', (await acct.post('/api/belvo/widget-token', {})).status === 403);
+
+    // ── WiPay (Caribbean payments) — credentials model, NO env gate: full connect cycle verifiable ──
+    console.log('\n-- WiPay (Caribbean payments, owner-only, credentials) --');
+    A('unauth wipay/status → 401', (await anon.get('/api/wipay/status')).status === 401);
+    A('owner wipay/status → 200 not connected', (await owner.get('/api/wipay/status')).json.connected === false);
+    A('owner wipay/connect (missing fields) → 400', (await owner.post('/api/wipay/connect', { account_number: '123' })).status === 400);
+    A('owner wipay/connect (bad country) → 400', (await owner.post('/api/wipay/connect', { account_number: '123', api_key: 'k', country: 'US' })).status === 400);
+    const wc = await owner.post('/api/wipay/connect', { account_number: '1002345', api_key: 'secret-wipay-key', country: 'TT' });
+    A('owner wipay/connect (valid) → 201', wc.status === 201 && wc.json.account === '1002345' && wc.json.country === 'TT', `status ${wc.status}: ${wc.text.slice(0,80)}`);
+    const wst = await owner.get('/api/wipay/status');
+    A('owner wipay/status now connected (account echoed, KEY NOT returned)', wst.json.connected === true && wst.json.account === '1002345' && !JSON.stringify(wst.json).includes('secret-wipay-key'), JSON.stringify(wst.json));
+    // the api_key must be stored ENCRYPTED, never as plaintext
+    const raw = (await c.query(`SELECT data->>'value' AS value FROM user_settings WHERE user_id=$1 AND data->>'key'='wipay_conn' LIMIT 1`, [ownerId])).rows[0];
+    A('WiPay api_key is encrypted at rest (not plaintext in DB)', raw && !String(raw.value).includes('secret-wipay-key'), `stored=${raw ? String(raw.value).slice(0,90) : 'none'}`);
+    A('viewer wipay/connect → 403 (bank:manage owner-only)', (await viewer.post('/api/wipay/connect', { account_number: '1', api_key: 'k', country: 'TT' })).status === 403);
+    A('owner wipay/disconnect → 200', (await owner.post('/api/wipay/disconnect', {})).status === 200);
+    A('owner wipay/status after disconnect → not connected', (await owner.get('/api/wipay/status')).json.connected === false);
 
     console.log('\n' + '-'.repeat(78));
     console.log(fail === 0 ? '  ALL GREEN - ' + pass + ' passed, 0 failed  (finch + codat — env-gated paths)'

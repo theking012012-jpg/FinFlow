@@ -37,7 +37,7 @@ verification exist, only the provider's own network response is unrun).
 | **Belvo** (LatAm banking) | ✅ | ✅ | ✅ | — | — | 🔶 needs `BELVO_SECRET_ID/PASSWORD` |
 | **Finch** (payroll) | ✅ | ✅ | ✅ | — | — | 🔶 needs `FINCH_CLIENT_ID/SECRET` |
 | **Codat** (accounting) | ✅ | ✅ | ✅ | — | — | 🔶 needs `CODAT_API_KEY` |
-| **Stripe** (payments) | ✅ | ✅ | ✅ | ✅ | ✅ signed webhook 12/0 | 🔶 needs `STRIPE_CONNECT_CLIENT_ID` |
+| **Stripe** (payments) | ✅ | ✅ | ✅ | ✅ | ✅ signed webhook 12/0 | ✅ **LIVE 2026-08-16** |
 | **Paystack** (payments) | ✅ | ✅ | — | ✅ | ✅ HMAC webhook 10/0 | 🔶 needs a Paystack key |
 | **Flutterwave** (payments) | ✅ | ✅ | — | ✅ | ✅ verif-hash webhook 8/0 | 🔶 needs FLW key + secret hash |
 | **WiPay** (Caribbean) | ✅ | ✅ | — | ✅ | ✅ md5 callback 9/0 | 🔶 sandbox key is `123` |
@@ -58,6 +58,26 @@ connectors + syncs), `verify-requests-paylinks` (15/0), `verify-webhook-reconcil
 **Signature formulas are doc-confirmed, not guessed:** Stripe (SDK `constructEvent`), Paystack
 (HMAC-SHA512), Flutterwave (static `verif-hash`), WiPay (`md5(txn+total+key)` — reverse-engineered
 and confirmed against WiPay's own worked example in their API PDF).
+
+---
+
+## ✅ LIVE-VERIFIED — Stripe payments (2026-08-16)
+
+The Stripe live handshake is **no longer pending** — it was executed end to end against the deployed app
+(`finflow-production-dab2`) and a real Stripe test sandbox:
+
+1. Owner set `STRIPE_SECRET_KEY` / `STRIPE_CONNECT_CLIENT_ID` / `STRIPE_WEBHOOK_SECRET` (+ `APP_URL`) in Railway.
+2. **Connect** OAuth completed and linked an account.
+3. **Pay-link** generated a real Checkout Session for INV-16 ($2,000).
+4. Paid with test card `4242` → **signed `checkout.session.completed`** delivered (confirmed on Stripe's side)
+   → `recordExternalInvoicePayment`.
+5. **Canonical books moved:** Outstanding **$4,000 → $2,000**, invoice **pending → paid** — matching the
+   owner-predicted value (Rule 6).
+
+Two real defects the stub tests could not catch were found and fixed live: **F180** (OAuth `read_only` →
+`read_write`) and **F181** (pay-link button passed an undefined invoice id). Two follow-ups logged: **F182**
+(stale `app-url.js` fallback, mitigated via `APP_URL`) and **F183** (pay-link `success_url` → marketing page).
+The other 10 connectors below remain 🔶 LIVE-PENDING until their keys are added.
 
 ---
 

@@ -2482,6 +2482,25 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             }))).then(function(a){ el.textContent = a.reduce(function(s,n){return s+n;},0); });
           }
 
+          // F184: hydrate per-card connected state from the REAL status endpoints (loadStates()
+          // was stubbed to {} in the zero-localStorage refactor, so cards never showed Connected).
+          function hydrateStates(){
+            var probes=[
+              ['Plaid', fetch('/api/plaid/items',{credentials:'include'}).then(function(r){return r.ok?r.json():{};}).then(function(d){return (d.items&&d.items.length)?1:0;}).catch(function(){return 0;})],
+              ['Finch','finch'],['Codat','codat'],['Stripe','stripe'],['Belvo','belvo'],
+              ['WiPay','wipay'],['dLocal','dlocal'],['Mercado Pago','mercadopago'],
+              ['Flutterwave','flutterwave'],['Paystack','paystack'],['Wise','wise']
+            ];
+            var proms=probes.map(function(pr){
+              if(typeof pr[1]!=='string') return pr[1];
+              return fetch('/api/'+pr[1]+'/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{};}).then(function(d){return d.connected?1:0;}).catch(function(){return 0;});
+            });
+            Promise.all(proms).then(function(res){
+              probes.forEach(function(pr,i){ connStates[pr[0]] = res[i]?1:0; });
+              render();
+            });
+          }
+
           window.connToggle=function(idx){
             var item=INTEGRATIONS[idx];
             if(!item)return;
@@ -2490,7 +2509,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             if(n==='Plaid'){ if(window.ffLinkBank) window.ffLinkBank(function(){ if(typeof notify==='function') notify('Bank linked ✓'); }); return; }
             if(n==='Finch'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/finch/connect-url',urlKey:'connect_url',statusEndpoint:'/api/finch/status'}); return; }
             if(n==='Codat'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/codat/link-url',urlKey:'link_url',statusEndpoint:'/api/codat/status'}); return; }
-            if(n==='Stripe'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/stripe/connect-url',urlKey:'connect_url',statusEndpoint:'/api/stripe/status'}); return; }
+            if(n==='Stripe'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/stripe/connect-url',urlKey:'connect_url',statusEndpoint:'/api/stripe/status',onConnected:function(){hydrateStates();}}); return; }
             if(n==='Belvo'){ if(window.ffLinkBelvo) window.ffLinkBelvo(function(){ if(typeof updateStats==='function') updateStats(); }); return; }
             if(n==='WiPay'){ if(window.ffConnectWiPay) window.ffConnectWiPay(function(){ if(typeof updateStats==='function') updateStats(); }); return; }
             var CRED_MAP={'dLocal':'dlocal','Mercado Pago':'mercadopago','Flutterwave':'flutterwave','Paystack':'paystack','Wise':'wise'};
@@ -2514,6 +2533,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 
           buildPills();
           render();
+          hydrateStates();
         })();
         </script>
       </div>

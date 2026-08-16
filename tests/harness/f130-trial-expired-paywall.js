@@ -76,6 +76,7 @@ function makeDom() {
       appendChild(c) { appended.push(c); if (c.id) byId[c.id] = c; },
       remove() { const i = appended.indexOf(this); if (i >= 0) appended.splice(i, 1); if (this.id) delete byId[this.id]; },
       onclick: null, classList: { add() {}, remove() {} },
+      addEventListener() {}, removeEventListener() {},   // real _ffShowTrialExpired attaches listeners
     };
     return el;
   };
@@ -83,8 +84,8 @@ function makeDom() {
     createElement: mk,
     getElementById: (id) => byId[id] || null,
     body: { appendChild(c) { appended.push(c); if (c.id) byId[c.id] = c;
-                             // the gate's innerHTML carries the button; register it so the CTA is reachable
-                             if (c.id === 'ff-trial-gate') byId['ff-trial-upgrade'] = mk('button'); } },
+                             // the gate's innerHTML carries the buttons; register them so the CTAs are reachable
+                             if (c.id === 'ff-trial-gate') { byId['ff-trial-upgrade'] = mk('button'); byId['ff-trial-dismiss'] = mk('button'); } } },
     querySelector: () => null,
     addEventListener() {},
   };
@@ -219,9 +220,15 @@ console.log('='.repeat(78));
   }
 
   // ── 6 · STRUCTURAL (Rule 5, labelled) — the countdown banner cannot cover this ──
-  console.log('\n-- 6 - STRUCTURAL: the trial banner bails exactly when the trial expires --');
-  A('STRUCTURAL: the banner returns on daysLeft <= 0', /if\(daysLeft<=0\|\|daysLeft>30\)return;/.test(IDX), true,
-    'so it is not, and cannot be, the expired-trial UI — hence this gate');
+  // F132 UPDATE: the banner now bails ONLY on daysLeft>30 (plenty of trial left) and, when the trial
+  // has ENDED (daysLeft<=0), shows a PERSISTENT read-only banner instead of vanishing. So the gate
+  // (_ffShowTrialExpired) is what covers the expired state, and the banner explicitly does NOT return
+  // on daysLeft<=0. Assert the current (post-F132) source, not the old vanish-on-expiry behaviour.
+  console.log('\n-- 6 - STRUCTURAL: the trial banner does NOT own the expired state (F132) --');
+  A('STRUCTURAL: banner bails only on daysLeft>30 (not on <=0)', /if\(daysLeft>30\)return;/.test(IDX), true,
+    'F132: it no longer vanishes at expiry');
+  A('STRUCTURAL: expiry is flagged persistently (var expired=daysLeft<=0)', /var expired=daysLeft<=0/.test(IDX), true,
+    'so the gate — not the banner — is the expired-trial UI');
 
   console.log('\n' + '-'.repeat(78));
   console.log(fail === 0 ? '  ALL GREEN - ' + pass + ' passed, 0 failed'

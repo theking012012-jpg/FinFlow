@@ -550,6 +550,11 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F179 ✅ HOUSEKEEPING — `.gitattributes` (kill CRLF churn) + refresh the 3 stale test probes — **2026-08-14**
+Two hygiene items so the repo + sweep read cleanly. (1) **`.gitattributes`** (`* text=auto eol=lf` + binary rules): OneDrive on Windows kept flipping LF↔CRLF, producing whole-file "churn" diffs that twice masked — and once discarded — a real one-line change (the F173 flutterwave field). Git now stores/checks out LF, so `git diff` shows only real changes. (2) **Refreshed f123/f128/f130** (the fragile source-extraction probes flagged in F161/F176): f123 count → 0 (client-unreached route); f130 → post-F132 persistent-banner assertions (also made its DOM stubs faithful with `addEventListener`); f128 **rewritten** from execute-and-scrape (obsolete since F137-g moved reports to server-sourced figures) to a structural invariant (reports source `/api/reports/*`, don't client-recompute money) — numeric verification stays in `verify-f137*`. All three green (13/0, 7/0, 22/0). No product code touched.
+
+---
+
 ### F178 🟠 HIGH — bank statement import (OFX/QFX + CSV): integrate ANY bank, incl. local/Caribbean — **NEW (2026-08-14, execution-verified) → ✅ BUILT + verified (held)**
 **Status:** ✅ **BUILT (FIX HELD).** The realistic answer to "integrate local banks": the Caribbean has no open banking / aggregator coverage, and direct bank APIs need per-bank partnerships. Statement import works for **every bank on earth with zero bank cooperation** (the file the user downloads from their portal) — the same approach QuickBooks/Xero use for unsupported banks.
 
@@ -574,8 +579,7 @@ Ran the whole harness suite (~141 files) after all the integration/payment work,
 - **Integration/payment layer (this session):** Plaid 21, connectors 88, Stripe/Paystack/Flutterwave/WiPay reconciliation 12/10/8/9, paylinks 15, pay-link button 6, auth 24, team 14, accountant ×3, recurring ×2+TZ, a9/a8c/fx — all green.
 
 **Non-green items — all accounted for, NONE a product/money regression:**
-- **f128, f130** — fragile source-extraction/stub probes (Rule 5 class: `new Function`/text-slice + hand DOM stubs). They fail on STUB fidelity ("parsed 0 card figures"; a stub element lacking `addEventListener`), NOT on a wrong figure. The functions they extract (`generateReport`, `_ffShowTrialExpired`) were untouched this session, and the report figures f128 guards are **independently green** via the five `f137*` harnesses. → test-infra, same class as **F161**; probes need refreshing.
-- **f123** — known structural-count nit (**F161**).
+- **f123, f128, f130** — were fragile source-extraction/stub probes (Rule 5 class). **NOW FIXED (F179):** f123's structural count refreshed to reflect the client-unreached balance-sheet route; f130 updated to assert the post-F132 persistent-banner behaviour (it was testing removed vanish-on-expiry code); f128 **rewritten** — the P&L modal was moved to server-sourced figures (F137-g, single source of truth), so the old execute-and-scrape was retired in favour of a structural invariant that the reports source `/api/reports/*` and don't recompute money client-side (the numeric verification lives in the `verify-f137*` suite). All three now GREEN (13/0, 7/0, 22/0).
 - **c2-runtime-dialog-scan, boot-failures-gate** — exceed the sandbox's ~180s per-call cap (**F162** class); pass when sharded.
 - **tz-matrix, vocabulary** — slow *diagnostic* scanners (emit an analysis report, not a pass/fail gate); tz-matrix confirmed progressing across all viewer zones.
 

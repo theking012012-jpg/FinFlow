@@ -1,0 +1,15 @@
+# Normalize line endings. OneDrive on Windows keeps flipping LF↔CRLF in the working tree, which
+# produced whole-file "churn" diffs that twice masked (and once discarded) real one-line changes.
+# With this, Git stores LF in the repo and checks out LF, so `git diff` shows only real changes.
+* text=auto eol=lf
+
+# Binary/rendered assets Git must never try to normalize.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.zip binary

@@ -126,7 +126,10 @@ async function main() {
     const appMain = fs.readFileSync(path.join(ROOT, 'public/app-main.js'), 'utf8');
     const extra   = fs.readFileSync(path.join(ROOT, 'public/finflow-api-wiring-extra.js'), 'utf8');
     const fetches = (appMain.match(/\/api\/reports\/balance-sheet/g) || []).length;
-    A('STRUCTURAL: app-main is the only client file fetching the route', fetches, 1);
+    // F161: the route is now client-UNREACHED — 0 fetches in app-main (the old fetch was in the
+    // shadowed/removed generateReport copy). The figure is asserted live by verify-f137*; this step
+    // records that no client surface reaches the balance-sheet route.
+    A('STRUCTURAL: balance-sheet route is client-unreached (0 app-main fetches; F128/F161)', fetches, 0);
     A('STRUCTURAL: a wiring file overrides generateReport (replacement, no _orig)',
       /window\.generateReport\s*=\s*async function/.test(extra) && !/_origGenerateReport/.test(extra), true);
 

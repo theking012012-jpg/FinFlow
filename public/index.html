@@ -2505,6 +2505,23 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             var item=INTEGRATIONS[idx];
             if(!item)return;
             var n=item.name;
+            // F185/F186: if already connected, the card action is DISCONNECT (previously it re-ran the
+            // connect flow, so "Disconnect" never disconnected). Plaid is per-bank on the Banking page.
+            if(connStates[item.name]){
+              if(n==='Plaid'){ if(typeof notify==='function') notify('Manage linked banks on the Banking page.'); return; }
+              var DKEY={'Finch':'finch','Codat':'codat','Stripe':'stripe','Belvo':'belvo','WiPay':'wipay','dLocal':'dlocal','Mercado Pago':'mercadopago','Flutterwave':'flutterwave','Paystack':'paystack','Wise':'wise'}[n];
+              if(DKEY){
+                (async function(){
+                  if(window._confirmModal && !(await window._confirmModal('Disconnect '+n+'?'))) return;
+                  try{
+                    var r=await fetch('/api/'+DKEY+'/disconnect',{method:'POST',credentials:'include'});
+                    if(r.ok){ if(typeof notify==='function') notify(n+' disconnected'); hydrateStates(); }
+                    else { var j=await r.json().catch(function(){return {};}); if(typeof notify==='function') notify((j&&j.error)||('Could not disconnect '+n), true); }
+                  }catch(e){ if(typeof notify==='function') notify('Network error disconnecting '+n, true); }
+                })();
+                return;
+              }
+            }
             // Built aggregators run the REAL connect flow (each covers a whole category).
             if(n==='Plaid'){ if(window.ffLinkBank) window.ffLinkBank(function(){ if(typeof notify==='function') notify('Bank linked ✓'); hydrateStates(); }); return; }
             if(n==='Finch'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/finch/connect-url',urlKey:'connect_url',statusEndpoint:'/api/finch/status',onConnected:function(){hydrateStates();}}); return; }
@@ -4055,6 +4072,35 @@ window.ffInvoicePaymentLink = async function(invoiceId, provider){
     try{ window.open(j.payment_link,'_blank'); }catch(e){}
     return j.payment_link;
   }catch(e){ if(typeof notify==='function') notify('Network error creating payment link.', true); return null; }
+};
+
+// F185: when >1 payment processor is connected, let the user CHOOSE which generates the link
+// (the button used to silently default to the first-connected = Stripe). 0 connected → honest prompt;
+// exactly 1 → use it directly; >1 → small picker, then ffInvoicePaymentLink(id, chosen).
+window.ffInvoicePayLinkChoose = async function(invoiceId){
+  var PROVS=[['stripe','Stripe'],['paystack','Paystack'],['flutterwave','Flutterwave'],['wipay','WiPay'],['mercadopago','Mercado Pago'],['dlocal','dLocal']];
+  var connected=[];
+  await Promise.all(PROVS.map(function(pr){
+    return fetch('/api/'+pr[0]+'/status',{credentials:'include'})
+      .then(function(r){return r.ok?r.json():{};})
+      .then(function(d){ if(d&&d.connected) connected.push(pr); })
+      .catch(function(){});
+  }));
+  if(connected.length===0){ if(typeof notify==='function') notify('Connect a payment processor first (API connections).', true); return; }
+  if(connected.length===1){ return window.ffInvoicePaymentLink(invoiceId, connected[0][0]); }
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3200;display:flex;align-items:center;justify-content:center';
+  var rows=connected.map(function(pr){ return '<button data-p="'+pr[0]+'" class="btn btn-ghost btn-sm" style="width:100%;justify-content:flex-start;margin:4px 0">'+pr[1]+' &#8599;</button>'; }).join('');
+  ov.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:12px;width:100%;max-width:320px;padding:20px">'
+    +'<div style="font-family:var(--font-display);font-style:italic;font-size:17px;color:var(--acc-light);margin-bottom:4px">Choose a processor</div>'
+    +'<div style="font-size:12px;color:var(--t2);margin-bottom:12px">You have more than one connected. Which should generate this payment link?</div>'
+    +rows
+    +'<div style="display:flex;justify-content:flex-end;margin-top:10px"><button id="pc-cancel" class="btn btn-ghost btn-sm">Cancel</button></div></div>';
+  document.body.appendChild(ov);
+  var close=function(){ try{ov.remove();}catch(e){} };
+  ov.querySelector('#pc-cancel').onclick=close;
+  ov.onclick=function(e){ if(e.target===ov) close(); };
+  ov.querySelectorAll('button[data-p]').forEach(function(b){ b.onclick=function(){ var p=b.getAttribute('data-p'); close(); window.ffInvoicePaymentLink(invoiceId, p); }; });
 };
 
 // ── Banking-page Plaid controls: real linked state + link/sync/unlink ──

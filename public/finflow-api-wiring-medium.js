@@ -227,7 +227,7 @@
               : ''}
             ${(inv.status?.toLowerCase() === 'pending' || inv.status?.toLowerCase() === 'partial')
               ? `<button class="btn btn-ghost btn-sm" onclick="openRecordPaymentModal(window.userInvoices[${idx}])">Record Payment</button>`
-                + `<button class="btn btn-ghost btn-sm" title="Generate a hosted payment link via a connected processor" onclick="ffInvoicePaymentLink(window.userInvoices[${idx}]._dbId)">Pay link ↗</button>`
+                + `<button class="btn btn-ghost btn-sm" title="Generate a hosted payment link via a connected processor" onclick="ffInvoicePayLinkChoose(window.userInvoices[${idx}]._dbId)">Pay link ↗</button>`
               : ''}
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7"
               onclick="deleteInvoice(${idx})">✕</button>

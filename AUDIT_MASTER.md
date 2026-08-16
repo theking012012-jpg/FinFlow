@@ -550,6 +550,11 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F185 🟢 LOW — Pay-link has no processor chooser; silently uses the first connected (Stripe-priority) — **NEW (2026-08-16)**
+`POST /api/invoices/:id/payment-link` selects the first connected processor from a fixed order `['stripe','paystack','flutterwave','wipay','mercadopago','dlocal']` (server.js:5096-5104) unless `req.body.provider` is passed; the Pay-link button (finflow-api-wiring-medium.js:230) passes none. So a merchant with **more than one** processor connected (here: Stripe **and** WiPay) cannot choose which generates the link — it always uses Stripe. Surfaced while closing the WiPay live leg: WiPay had to be forced with `ffInvoicePaymentLink(id,'wipay')` via console to test it at all. **Proposed (HELD, own commit):** a per-invoice processor picker (or a default-processor setting). **Related — verify + log separately:** the catalogue card's "Disconnect" label calls `connToggle` → the *connect* flow, so it may not actually disconnect.
+
+---
+
 ### F180 ✅ HIGH — Stripe Connect OAuth requested `read_only`; Stripe rejects it AND pay-links need write — **NEW (2026-08-16, LIVE execution-verified) → ✅ FIXED `52107d0`**
 Surfaced by the first real Stripe handshake (closing the 🔶 LIVE-PENDING gap in `VERIFICATION_INTEGRATIONS.md`). `/api/stripe/connect-url` built the OAuth URL with `scope: 'read_only'` (server.js:4784). Two failures, both executed live: (1) Stripe now rejects read-only connections (`Please use the read_write scope…`); (2) the pay-link creates a Checkout Session **on the connected account** (`Stripe-Account` header, server.js:5040) — a write that read-only could never authorize. **Fix:** `read_only` → `read_write` (single occurrence — whole class). **Verified:** after deploy the OAuth handshake completed and an account linked (previously impossible). Server-only; wiring untouched.
 
@@ -560,8 +565,8 @@ Runtime-winner `window.renderInvoices` (finflow-api-wiring-medium.js:230) called
 
 ---
 
-### F182 🟢 LOW (code — HELD) — `app-url.js` `LIVE_FALLBACK` points at dead `dab1` origin; live app is `dab2` — **NEW (2026-08-16)**
-`LIVE_FALLBACK = https://finflow-production-dab1.up.railway.app` (app-url.js:11) returns **404**; the live app is `finflow-production-dab2…` (verified: dab2 serves the app, dab1 404s). When `APP_URL` is unset, `appUrl()` falls back to the dead origin, so every server-built outbound link (Stripe OAuth `redirect_uri`, pay-link success/cancel, F29 password-reset + invite emails) points nowhere. **Mitigated:** `APP_URL=https://finflow-production-dab2.up.railway.app` set in Railway (also corrected a scheme-less value that broke the Stripe redirect match). **Code fix HELD (own commit):** update `LIVE_FALLBACK` to the live origin / real canonical domain.
+### F182 ✅ LOW — `app-url.js` `LIVE_FALLBACK` pointed at dead `dab1`; live app is `dab2` — **2026-08-16 → ✅ FIXED `b176497`**
+`LIVE_FALLBACK = https://finflow-production-dab1.up.railway.app` (app-url.js:11) returns **404**; the live app is `finflow-production-dab2…` (verified: dab2 serves the app, dab1 404s). When `APP_URL` is unset, `appUrl()` falls back to the dead origin, so every server-built outbound link (Stripe OAuth `redirect_uri`, pay-link success/cancel, F29 password-reset + invite emails) points nowhere. **Mitigated:** `APP_URL=https://finflow-production-dab2.up.railway.app` set in Railway (also corrected a scheme-less value that broke the Stripe redirect match). **Fixed `b176497`:** `LIVE_FALLBACK` → `dab2` (the live origin), so an unset `APP_URL` can no longer produce dead outbound links.
 
 ---
 
@@ -570,8 +575,8 @@ All pay-links set `success_url`/`cancel_url` to `appUrl() + '/'` (server.js:5032
 
 ---
 
-### F184 🟢 LOW (needs read-only diagnosis) — API-connections Stripe card stays "Available/Connect" after a successful link — **NEW (2026-08-16, owner-observed)**
-After OAuth completed (callback `Stripe connected ✓`; backend held `stripe_user_id`, proven by a working pay-link), the API-connections catalogue card still read "Available/Connect" after a refresh. **Not yet root-caused — do not assume cosmetic.** Investigate read-only: does the card read `/api/stripe/status`, and what does it return for this account (vs a separate "live connections" indicator, or a scopeId read mismatch)?
+### F184 ✅ LOW — connector catalogue cards never showed "Connected" (per-card state stubbed to `{}`) — **2026-08-16 → ✅ FIXED `5241510`, live-verified**
+**Root cause:** `loadStates()` (index.html:2376) was stubbed to `return {}` during the zero-localStorage refactor and never rewired, so `connStates` was permanently empty and every card's connected flag (`!!connStates[name]`, :2442) was always false — **no card could ever show Connected, for any provider.** The aggregate "Live connections" stat *did* query `/api/*/status`, hence the mismatch (counter 1, cards all "Connect") the owner saw. **Fix `5241510`:** added `hydrateStates()` — fetches the 11 built providers' real status endpoints, sets `connStates`, re-renders; called on page load + wired into the Stripe connect `onConnected`. **Live-verified:** the Stripe card now reads "Connected" after linking. (index.html ships directly — not a bundle source.)
 
 ---
 

@@ -40,7 +40,7 @@ verification exist, only the provider's own network response is unrun).
 | **Stripe** (payments) | ✅ | ✅ | ✅ | ✅ | ✅ signed webhook 12/0 | ✅ **LIVE 2026-08-16** |
 | **Paystack** (payments) | ✅ | ✅ | — | ✅ | ✅ HMAC webhook 10/0 | 🔶 needs a Paystack key |
 | **Flutterwave** (payments) | ✅ | ✅ | — | ✅ | ✅ verif-hash webhook 8/0 | 🔶 needs FLW key + secret hash |
-| **WiPay** (Caribbean) | ✅ | ✅ | — | ✅ | ✅ md5 callback 9/0 | 🔶 sandbox key is `123` |
+| **WiPay** (Caribbean) | ✅ | ✅ | — | ✅ | ✅ md5 callback 9/0 | ✅ **LIVE 2026-08-16** |
 | **Mercado Pago** (LatAm) | ✅ | ✅ | — | ✅ | — | 🔶 needs an access token |
 | **dLocal** (LatAm) | ✅ | ✅ | — | ✅ | — | 🔶 needs dLocal keys |
 | **Wise** (global) | ✅ | ✅ | ✅ | — | — | 🔶 needs a Wise API token |
@@ -77,7 +77,9 @@ The Stripe live handshake is **no longer pending** — it was executed end to en
 Two real defects the stub tests could not catch were found and fixed live: **F180** (OAuth `read_only` →
 `read_write`) and **F181** (pay-link button passed an undefined invoice id). Two follow-ups logged: **F182**
 (stale `app-url.js` fallback, mitigated via `APP_URL`) and **F183** (pay-link `success_url` → marketing page).
-The other 10 connectors below remain 🔶 LIVE-PENDING until their keys are added.
+**WiPay (2026-08-16)** — also live-verified end to end: connected in-app (acct `1234567890` / key `123` / TT, `WIPAY_ENV=sandbox`), forced a WiPay pay-link on INV-17 ($150), paid on WiPay's sandbox, and the **md5 callback verified its hash on the ORIGINAL $150 total** (not the $5.50-fee-inclusive $155.50) → reconciled: Outstanding $2,150 → $2,000, invoice paid. Confirms the reverse-engineered WiPay hash formula against a real transaction, and that the customer-paid fee stays out of the books. Surfaced **F185** (no processor chooser — the Pay-link button defaults to Stripe when multiple processors are connected; WiPay had to be forced via the provider arg).
+
+The other **9** connectors below remain 🔶 LIVE-PENDING until their keys are added.
 
 ---
 

@@ -316,6 +316,45 @@ app.post('/api/flutterwave/webhook', express.raw({ type: 'application/json' }), 
   res.json({ received: true });
 });
 
+// ── WIPAY CALLBACK ────────────────────────────────────────────────────────────
+// WiPay is NOT a signed webhook — it web-redirects the payor's browser (GET) to response_url with
+// the result in the query string, including `hash` = md5(transaction_id + ORIGINAL total + API key)
+// (per WiPay docs; verified against their worked example). The hash IS the authentication — only
+// WiPay, holding the merchant's key, can produce it. Public endpoint (the payor isn't logged in):
+// resolve the account from order_id (INV-<id>), recompute the hash with THAT account's stored key,
+// and on a verified `success` record via the SAME single/idempotent writer. Always redirects the
+// browser back to the app; only a hash match writes anything.
+app.get('/api/wipay/callback', async (req, res) => {
+  const back = appUrl() + '/app';
+  try {
+    const q = req.query || {};
+    const m = /^INV-(\d+)-/.exec(String(q.order_id || ''));
+    if (!m) return res.redirect(back);
+    const invoiceId = parseInt(m[1], 10);
+    const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
+    if (!ir) return res.redirect(back);
+    const inv = rowToObj(ir);
+    const { value: conn } = await _providerBlob(ir.user_id, 'wipay_conn');
+    if (!conn || !conn.account_number) return res.redirect(back);
+    if (String(q.status) === 'success' && q.hash && q.transaction_id) {
+      let key; try { key = decTok(conn.api_key); } catch (_) { return res.redirect(back); }
+      const original = (parseFloat(inv.amount) || 0).toFixed(2);   // the total WiPay hashed (2dp)
+      const expected = crypto.createHash('md5').update(String(q.transaction_id) + original + key).digest('hex');
+      const given = String(q.hash);
+      const ok = Buffer.byteLength(given) === Buffer.byteLength(expected) &&
+        crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+      if (ok) {
+        const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: Math.round((parseFloat(inv.amount) || 0) * 100), method: 'Card (WiPay)', idemKey: 'wipay:' + q.transaction_id })
+          .catch(e => { console.error('[WiPay] reconcile failed:', e.message); return { recorded: false, reason: 'error' }; });
+        console.log('[WiPay] invoice ' + invoiceId + ' payment → ' + JSON.stringify(rec));
+      } else {
+        console.error('[WiPay] hash mismatch for invoice ' + invoiceId);
+      }
+    }
+  } catch (e) { console.error('[WiPay callback]', e.message); }
+  res.redirect(back);
+});
+
 // NOTE: Stripe checkout route is registered later (after session + express.json +
 // requireAuth are active) so req.session and req.body are populated. See below.
 
@@ -4915,8 +4954,14 @@ async function createPaymentLink(provider, conn, o) {
     return j.url;
   }
   if (provider === 'wipay') {
-    const host = { TT: 'tt', JM: 'jm', BB: 'bb', GY: 'gy', LC: 'lc' }[conn.country] || 'tt';
-    const body = new URLSearchParams({ account_number: conn.account_number, api_key: decTok(conn.api_key), currency: o.currency, country_code: conn.country || 'TT', total: String(o.amount), order_id: o.reference, origin: 'FinFlow', response_url: appUrl() + '/' });
+    const cc = ['TT', 'JM', 'BB', 'GY'].includes(conn.country) ? conn.country : 'TT';   // WiPay's live hosts
+    const host = { TT: 'tt', JM: 'jm', BB: 'bb', GY: 'gy' }[cc];
+    const body = new URLSearchParams({
+      account_number: conn.account_number, api_key: decTok(conn.api_key),
+      environment: (process.env.WIPAY_ENV || 'live'), method: 'credit_card', fee_structure: 'customer_pay',
+      currency: o.currency, country_code: cc, total: (Number(o.amount) || 0).toFixed(2),   // 2dp — matches the hash
+      order_id: o.reference, origin: 'FinFlow', response_url: appUrl() + '/api/wipay/callback',
+    });
     const r = await fetch('https://' + host + '.wipayfinancial.com/plugins/payments/request', {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: body.toString(),
     });

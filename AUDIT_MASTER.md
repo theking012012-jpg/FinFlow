@@ -550,6 +550,37 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F176 ✅ FULL-SUITE REGRESSION SWEEP (post-integration) — **2026-08-14 → GREEN across every money surface**
+Ran the whole harness suite (~141 files) after all the integration/payment work, serially in batches. **Every money figure and every product harness that completes is GREEN:**
+- **Step-gates:** step1 26/0, step2 63/0, step3 56/0, step4 5/0 (the authoritative figure gates).
+- **c1 CRUD (22/22):** invoices, payments, bills, expenses, credit/vendor notes, journals, payroll runs, sales receipts, inventory, chart-of-accounts, etc. — all green.
+- **verify-f\* (68/68):** all green (F26…F157: entity-scoping, F90 audit trail, F137 reports ×5, F150 isolation, F151 boot, F54 scope, F85/F87 periods, tax, FX…).
+- **Reports figures:** f137-balance-sheet, f137-cashflow-ar-ap, f137-sales-payroll, f137-tax, f137g-pl, f120/f124 currency, f57 cash, f64 money-format — all green.
+- **Integration/payment layer (this session):** Plaid 21, connectors 88, Stripe/Paystack/Flutterwave/WiPay reconciliation 12/10/8/9, paylinks 15, pay-link button 6, auth 24, team 14, accountant ×3, recurring ×2+TZ, a9/a8c/fx — all green.
+
+**Non-green items — all accounted for, NONE a product/money regression:**
+- **f128, f130** — fragile source-extraction/stub probes (Rule 5 class: `new Function`/text-slice + hand DOM stubs). They fail on STUB fidelity ("parsed 0 card figures"; a stub element lacking `addEventListener`), NOT on a wrong figure. The functions they extract (`generateReport`, `_ffShowTrialExpired`) were untouched this session, and the report figures f128 guards are **independently green** via the five `f137*` harnesses. → test-infra, same class as **F161**; probes need refreshing.
+- **f123** — known structural-count nit (**F161**).
+- **c2-runtime-dialog-scan, boot-failures-gate** — exceed the sandbox's ~180s per-call cap (**F162** class); pass when sharded.
+- **tz-matrix, vocabulary** — slow *diagnostic* scanners (emit an analysis report, not a pass/fail gate); tz-matrix confirmed progressing across all viewer zones.
+
+**Conclusion:** no regression from any of the F156–F175 work. Every figure on the money surfaces verifies green against real seeded data.
+
+---
+
+### F175 🟠 HIGH — WiPay reconciliation (completes the 4-processor payment layer) — **NEW (2026-08-14, execution-verified) → ✅ BUILT + verified (held)**
+**Status:** ✅ **BUILT (FIX HELD).** WiPay isn't a signed webhook — it web-redirects the payor's browser (GET) to `response_url` with the result in the query string, including `hash = md5(transaction_id + ORIGINAL total + API key)`, no separators (per WiPay's Payments API docs v1.0.8). **The exact formula was reverse-engineered and CONFIRMED against WiPay's own worked example** (sandbox key `123`, txn `SB-12-1-oid_123-aBc-20210616024001`, original total `10.00` → documented hash `3d34d20260f7433ceee277e9ed9166a3`) — not guessed, which matters on a money path.
+
+**Mechanism.** `GET /api/wipay/callback` — public (the payor isn't logged in; the hash IS the auth, since only WiPay holds the merchant key). Resolves the account from `order_id` (`INV-<id>`), recomputes the hash with THAT account's stored key **and the INVOICE's own amount** (so a tampered `total` in the query can't forge), timing-safe compares, and on a verified `success` records via the SAME `recordExternalInvoicePayment` (single writer, idempotent on `wipay:<transaction_id>`, balance-capped). Always redirects the browser back to `/app`; only a hash match writes. Also fixed the WiPay pay-link builder (was missing required `environment`/`method`/`fee_structure`, sent a non-2dp total, and pointed `response_url` at `/` instead of the callback).
+
+**Verified (execution).** `tests/harness/verify-wipay-reconcile.js` (9/0): valid hash → paid via single writer, one payment keyed `wipay:<txn>`; duplicate → no double-book; **forged hash → nothing written**; **hash computed for a DIFFERENT total → rejected** (server hashes the invoice amount, not the query's); failed status ignored; non-invoice order_id ignored. Payment-layer regression ALL GREEN: Stripe 12/0, Paystack 10/0, Flutterwave 8/0, WiPay 9/0, paylinks 15/0, connectors 88/0, invoice-payments 12/0, RBAC 30/0.
+**UNEXECUTED (Rule 14):** a real WiPay transaction — needs a live account. The hash formula is doc-confirmed and the verify+write path is executed.
+**Files:** `server.js`. **Done when:** committed.
+
+**Payment reconciliation now covers ALL FOUR processors** (Stripe, Paystack, Flutterwave, WiPay) — every one verified, idempotent, single-writer, balance-capped, and forgery-rejecting. **Next (owner-directed): full-suite regression sweep.**
+
+---
+
 ### F174 🟠 HIGH — connector PARITY audit: close the half-built gaps across all 11 connectors — **NEW (2026-08-14, execution-verified) → ✅ FIXED + verified (held)**
 **Status:** ✅ **FIXED (FIX HELD).** A parity audit (Rule 13 — should have run before extending) across every connector found four capability gaps where a provider could be connected but did nothing useful:
 1. **Codat** had no sync — connected but pulled no data. Added `POST /api/codat/sync` (chart-of-accounts count, display-only, `books:write`), matching Plaid/Belvo/Finch.

@@ -774,7 +774,7 @@ Both added to the built-aggregator set (real "Connect", not "Request") and the "
 
 ---
 
-### F164 🟠 HIGH — real Plaid bank-linking (env-gated) — replaces the "coming soon" placeholder for banks — **NEW (2026-08-14) → ✅ BUILT (held); live handshake UNEXECUTED pending keys**
+### F164 🟠 HIGH — real Plaid bank-linking (env-gated) — replaces the "coming soon" placeholder for banks — **NEW (2026-08-14) → ✅ BUILT + LIVE-VERIFIED 2026-08-16**
 **Status:** ✅ **BUILT (FIX HELD).** Owner request: make the connect buttons actually link, not fake it. Banks now have a genuine Plaid Link flow; Stripe-Connect and payroll remain honest placeholders (their own future builds).
 
 **Mechanism.**
@@ -785,9 +785,9 @@ Both added to the built-aggregator set (real "Connect", not "Request") and the "
 - **Client (`index.html`):** shared `window.ffLinkBank` (loads Plaid Link, link-token → exchange, shows real result); wired into onboarding Step 3 (bank) and a new "🔗 Link bank" + linked-state strip (Sync/Unlink) on the Banking page. `showPage` is wrapped Rule-1-safely (save-and-call the final winner in a `DOMContentLoaded` handler) to refresh the strip on page open. CSP extended for `cdn.plaid.com` (script) + `*.plaid.com` (connect/frame).
 
 **Verified (execution).** `tests/harness/verify-plaid-linking.js` (21/0) with NO keys: env gate returns 502 (never a fake link); `bank:manage` is owner-only (viewer 403 on every write, owner passes the gate then hits the 502 wall — proving RBAC not the gate); `items` shape + unauth 401; unlink validation (400/404); and AES-256-GCM token-at-rest round-trips, ciphertext ≠ plaintext, and a **tampered ciphertext fails the GCM auth tag**. Regression: `verify-rbac-enforcement` 30/0, `verify-auth-flow` 24/0, `verify-recurring-scheduler` 29/0, `verify-f111-ui-render` 6/0.
-**UNEXECUTED (Rule 14):** the LIVE handshake (link-token→exchange→sync against Plaid with real keys) — needs a Plaid account. To finish: add `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=sandbox` (free) to the env, run a sandbox link, and confirm `/api/plaid/items` shows the institution and `/api/plaid/sync` imports transactions. Ships labelled until then.
+**✅ LIVE-VERIFIED (2026-08-16) — Rule 14 discharged.** Executed end to end on the deployed `dab2` app against Plaid's live **sandbox** (owner set `PLAID_CLIENT_ID`/`PLAID_SECRET`/`PLAID_ENV=sandbox` in Railway): `GET /api/plaid/items` → `configured:true, env:sandbox`; Plaid Link (non-OAuth **First Platypus Bank**, `user_good`/`pass_good`) → `POST /api/plaid/exchange` **201**, item persisted with a real `item_id` + `institution_name:"First Platypus Bank"`; `POST /api/plaid/sync` → `added:48`; `GET /api/banking` → **48** rows, all `source:'banking'` (real Plaid merchants) — landed in the canonical `personal_transactions` store. **Idempotency proven live:** immediate re-sync → `added:0`, banking still **48** (dedupe on Plaid's stable `transaction_id`, Rule 9 — not a time window). No code defects surfaced (worked first try). Full evidence in `VERIFICATION_INTEGRATIONS.md`.
 **Files:** `server.js`, `public/index.html`. **Own commit recommended** (a new feature).
-**Done when:** committed; live path verified once keys are added.
+**Done when:** ✅ committed; live path verified 2026-08-16 (sandbox).
 
 ---
 

@@ -33,7 +33,7 @@ verification exist, only the provider's own network response is unrun).
 
 | Connector | connect | status | sync | pay-link | webhook/reconcile | live handshake |
 |---|---|---|---|---|---|---|
-| **Plaid** (banking) | ✅ | ✅ | ✅ | — | — | 🔶 needs `PLAID_CLIENT_ID/SECRET` |
+| **Plaid** (banking) | ✅ | ✅ | ✅ | — | — | ✅ **LIVE 2026-08-16** |
 | **Belvo** (LatAm banking) | ✅ | ✅ | ✅ | — | — | 🔶 needs `BELVO_SECRET_ID/PASSWORD` |
 | **Finch** (payroll) | ✅ | ✅ | ✅ | — | — | 🔶 needs `FINCH_CLIENT_ID/SECRET` |
 | **Codat** (accounting) | ✅ | ✅ | ✅ | — | — | 🔶 needs `CODAT_API_KEY` |
@@ -79,7 +79,32 @@ Two real defects the stub tests could not catch were found and fixed live: **F18
 (stale `app-url.js` fallback, mitigated via `APP_URL`) and **F183** (pay-link `success_url` → marketing page).
 **WiPay (2026-08-16)** — also live-verified end to end: connected in-app (acct `1234567890` / key `123` / TT, `WIPAY_ENV=sandbox`), forced a WiPay pay-link on INV-17 ($150), paid on WiPay's sandbox, and the **md5 callback verified its hash on the ORIGINAL $150 total** (not the $5.50-fee-inclusive $155.50) → reconciled: Outstanding $2,150 → $2,000, invoice paid. Confirms the reverse-engineered WiPay hash formula against a real transaction, and that the customer-paid fee stays out of the books. Surfaced **F185** (no processor chooser — the Pay-link button defaults to Stripe when multiple processors are connected; WiPay had to be forced via the provider arg).
 
-The other **9** connectors below remain 🔶 LIVE-PENDING until their keys are added.
+## ✅ LIVE-VERIFIED — Plaid banking (2026-08-16)
+
+The Plaid live handshake is **no longer pending** — it was executed end to end against the deployed app
+(`finflow-production-dab2`) and Plaid's live **sandbox** (`PLAID_ENV=sandbox`):
+
+1. Owner set `PLAID_CLIENT_ID` / `PLAID_SECRET` / `PLAID_ENV=sandbox` in Railway. `GET /api/plaid/items`
+   returned `{configured:true, env:"sandbox", items:[]}` — the server sees the keys; honest empty state.
+2. **Link** completed via Plaid Link (non-OAuth sandbox institution **First Platypus Bank**, login
+   `user_good`/`pass_good`) → `POST /api/plaid/exchange` **201** → item persisted with a real `item_id`
+   and resolved `institution_name:"First Platypus Bank"` (access token **encrypted at rest**, AES-256-GCM).
+3. **Sync** (`POST /api/plaid/sync`) returned `{ok:true, added:48}` — 48 real sandbox transactions pulled
+   over the live network.
+4. **Into the canonical books:** `GET /api/banking` returned **48** rows, all `source:"banking"` (Uber,
+   GUSTO PAY, CD DEPOSIT, United Airlines, …) — the feed lands in `personal_transactions`, the same store
+   the reconciliation UI and reports read. Count matches the sync exactly (48 = 48).
+5. **Idempotency (Rule 9) proven live:** an immediate re-sync returned `added:0` and `/api/banking` still
+   **48** — dedupe keys on Plaid's stable `transaction_id`, not a time window; no double-book.
+
+**No code defects surfaced** — the flow worked first try (unlike Stripe's F180/F181). `tx_type` is derived
+purely from Plaid's amount sign (`>=0` → debit/out, `<0` → credit/in; server.js:4559-4560), i.e. Plaid's
+documented convention — the sandbox's deliberately sign-noisy merchant names look backwards but the mapping
+is faithful. See **F164** in `AUDIT_MASTER.md` (built, now live-verified).
+
+---
+
+The other **8** connectors below remain 🔶 LIVE-PENDING until their keys are added.
 
 ---
 

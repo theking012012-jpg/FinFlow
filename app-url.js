@@ -8,7 +8,7 @@
 //                   the live Railway origin when unset (never a dead domain).
 //   warnIfUnset() → loud, one-time boot warning if APP_URL isn't set (call at startup).
 
-const LIVE_FALLBACK = 'https://finflow-production-dab1.up.railway.app';
+const LIVE_FALLBACK = 'https://finflow-production-dab2.up.railway.app';
 
 function appUrl() {
   const raw = process.env.APP_URL;

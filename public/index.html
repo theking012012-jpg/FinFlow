@@ -2506,14 +2506,14 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             if(!item)return;
             var n=item.name;
             // Built aggregators run the REAL connect flow (each covers a whole category).
-            if(n==='Plaid'){ if(window.ffLinkBank) window.ffLinkBank(function(){ if(typeof notify==='function') notify('Bank linked ✓'); }); return; }
-            if(n==='Finch'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/finch/connect-url',urlKey:'connect_url',statusEndpoint:'/api/finch/status'}); return; }
-            if(n==='Codat'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/codat/link-url',urlKey:'link_url',statusEndpoint:'/api/codat/status'}); return; }
+            if(n==='Plaid'){ if(window.ffLinkBank) window.ffLinkBank(function(){ if(typeof notify==='function') notify('Bank linked ✓'); hydrateStates(); }); return; }
+            if(n==='Finch'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/finch/connect-url',urlKey:'connect_url',statusEndpoint:'/api/finch/status',onConnected:function(){hydrateStates();}}); return; }
+            if(n==='Codat'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/codat/link-url',urlKey:'link_url',statusEndpoint:'/api/codat/status',onConnected:function(){hydrateStates();}}); return; }
             if(n==='Stripe'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/stripe/connect-url',urlKey:'connect_url',statusEndpoint:'/api/stripe/status',onConnected:function(){hydrateStates();}}); return; }
-            if(n==='Belvo'){ if(window.ffLinkBelvo) window.ffLinkBelvo(function(){ if(typeof updateStats==='function') updateStats(); }); return; }
-            if(n==='WiPay'){ if(window.ffConnectWiPay) window.ffConnectWiPay(function(){ if(typeof updateStats==='function') updateStats(); }); return; }
+            if(n==='Belvo'){ if(window.ffLinkBelvo) window.ffLinkBelvo(function(){ hydrateStates(); }); return; }
+            if(n==='WiPay'){ if(window.ffConnectWiPay) window.ffConnectWiPay(function(){ hydrateStates(); }); return; }
             var CRED_MAP={'dLocal':'dlocal','Mercado Pago':'mercadopago','Flutterwave':'flutterwave','Paystack':'paystack','Wise':'wise'};
-            if(CRED_MAP[n]){ if(window.ffConnectCreds) window.ffConnectCreds(CRED_MAP[n], function(){ if(typeof updateStats==='function') updateStats(); }); return; }
+            if(CRED_MAP[n]){ if(window.ffConnectCreds) window.ffConnectCreds(CRED_MAP[n], function(){ hydrateStates(); }); return; }
             // Everything else is NOT a live integration (F51/F65 honesty): RECORD the request
             // (demand-driven roadmap), never fake a connection. Many providers are reachable via the
             // aggregators above (banks→Plaid/Belvo, payroll→Finch, accounting→Codat, payments→Stripe…).

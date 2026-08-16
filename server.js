@@ -325,7 +325,7 @@ app.post('/api/flutterwave/webhook', express.raw({ type: 'application/json' }), 
 // and on a verified `success` record via the SAME single/idempotent writer. Always redirects the
 // browser back to the app; only a hash match writes anything.
 app.get('/api/wipay/callback', async (req, res) => {
-  const back = appUrl() + '/app';
+  const back = appUrl() + '/pay-received.html' + (String((req.query && req.query.status) || '') === 'success' ? '' : '?status=cancelled');
   try {
     const q = req.query || {};
     const m = /^INV-(\d+)-/.exec(String(q.order_id || ''));
@@ -5011,7 +5011,7 @@ async function createPaymentLink(provider, conn, o) {
   if (provider === 'paystack') {
     const r = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.secret_key), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: o.email || 'customer@example.com', amount: Math.round(o.amount * 100), currency: o.currency, reference: o.reference }),
+      body: JSON.stringify({ email: o.email || 'customer@example.com', amount: Math.round(o.amount * 100), currency: o.currency, reference: o.reference, callback_url: appUrl() + '/pay-received.html' }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.status) throw new Error(j.message || ('Paystack HTTP ' + r.status));
@@ -5020,7 +5020,7 @@ async function createPaymentLink(provider, conn, o) {
   if (provider === 'flutterwave') {
     const r = await fetch('https://api.flutterwave.com/v3/payments', {
       method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.secret_key), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tx_ref: o.reference, amount: o.amount, currency: o.currency, redirect_url: appUrl() + '/', customer: { email: o.email || 'customer@example.com', name: o.client || 'Customer' } }),
+      body: JSON.stringify({ tx_ref: o.reference, amount: o.amount, currency: o.currency, redirect_url: appUrl() + '/pay-received.html', customer: { email: o.email || 'customer@example.com', name: o.client || 'Customer' } }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.status !== 'success') throw new Error(j.message || ('Flutterwave HTTP ' + r.status));
@@ -5029,7 +5029,7 @@ async function createPaymentLink(provider, conn, o) {
   if (provider === 'stripe') {
     if (!process.env.STRIPE_SECRET_KEY) throw new Error('Stripe platform key not set.');
     const body = new URLSearchParams();
-    body.set('mode', 'payment'); body.set('success_url', appUrl() + '/'); body.set('cancel_url', appUrl() + '/');
+    body.set('mode', 'payment'); body.set('success_url', appUrl() + '/pay-received.html'); body.set('cancel_url', appUrl() + '/pay-received.html?status=cancelled');
     body.set('line_items[0][price_data][currency]', String(o.currency).toLowerCase());
     body.set('line_items[0][price_data][product_data][name]', 'Invoice ' + o.reference);
     body.set('line_items[0][price_data][unit_amount]', String(Math.round(o.amount * 100)));
@@ -5063,7 +5063,7 @@ async function createPaymentLink(provider, conn, o) {
   if (provider === 'mercadopago') {
     const r = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.access_token), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: [{ title: 'Invoice ' + o.reference, quantity: 1, unit_price: o.amount, currency_id: o.currency }], external_reference: o.reference }),
+      body: JSON.stringify({ items: [{ title: 'Invoice ' + o.reference, quantity: 1, unit_price: o.amount, currency_id: o.currency }], external_reference: o.reference, back_urls: { success: appUrl() + '/pay-received.html', pending: appUrl() + '/pay-received.html', failure: appUrl() + '/pay-received.html?status=cancelled' }, auto_return: 'approved' }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.init_point) throw new Error(j.message || ('Mercado Pago HTTP ' + r.status));
@@ -5072,7 +5072,7 @@ async function createPaymentLink(provider, conn, o) {
   if (provider === 'dlocal') {
     const xLogin = decTok(conn.x_login), xTransKey = decTok(conn.x_trans_key), secret = decTok(conn.secret_key);
     const payload = JSON.stringify({ amount: o.amount, currency: o.currency, country: o.country || 'BR', payment_method_flow: 'REDIRECT',
-      payer: { name: o.client || 'Customer', email: o.email || 'customer@example.com' }, order_id: o.reference, success_url: appUrl() + '/', notification_url: appUrl() + '/' });
+      payer: { name: o.client || 'Customer', email: o.email || 'customer@example.com' }, order_id: o.reference, success_url: appUrl() + '/pay-received.html', notification_url: appUrl() + '/' });
     const xDate = new Date().toISOString();
     const signature = crypto.createHmac('sha256', secret).update(xLogin + xDate + payload).digest('hex');
     const r = await fetch('https://api.dlocal.com/payments', {

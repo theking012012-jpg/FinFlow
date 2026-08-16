@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Payment received — FinFlow</title>
+<style>
+  :root{--bg:#16120d;--card:#1e1913;--bd:#3a2f22;--txt:#f2e8d5;--sub:#b8a888;--gold:#d4a94a;--green:#6cc07a;--red:#d98a6a}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;padding:24px}
+  .card{max-width:420px;width:100%;background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:36px 32px;text-align:center}
+  .badge{width:64px;height:64px;border-radius:50%;margin:0 auto 20px;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:700}
+  .ok{background:rgba(108,192,122,.15);color:var(--green);border:1px solid rgba(108,192,122,.4)}
+  .no{background:rgba(217,138,106,.15);color:var(--red);border:1px solid rgba(217,138,106,.4)}
+  h1{font-size:22px;margin:0 0 10px}
+  p{color:var(--sub);font-size:14px;line-height:1.55;margin:0 0 6px}
+  .ref{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--sub);margin-top:16px;word-break:break-all}
+  .brand{margin-top:28px;font-size:12px;color:var(--sub);letter-spacing:.04em}
+  .brand b{color:var(--gold);font-weight:600}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge ok" id="badge">&#10003;</div>
+    <h1 id="title">Payment received</h1>
+    <p id="msg">Thank you &mdash; your payment was completed successfully. A receipt will follow from the business you paid.</p>
+    <div class="ref" id="ref"></div>
+    <p style="margin-top:18px">You can safely close this window.</p>
+    <div class="brand">Secured by <b>FinFlow</b></div>
+  </div>
+  <script>
+    (function(){
+      var q=new URLSearchParams(location.search);
+      var status=(q.get('status')||'success').toLowerCase();
+      var ref=q.get('ref')||q.get('order_id')||q.get('reference')||'';
+      if(status==='cancelled'||status==='cancel'||status==='failed'){
+        var b=document.getElementById('badge'); b.className='badge no'; b.textContent='!';
+        document.getElementById('title').textContent='Payment not completed';
+        document.getElementById('msg').textContent='Your payment was cancelled or did not go through, and no charge was made. You can close this window and try again from your invoice.';
+      }
+      if(ref){ document.getElementById('ref').textContent='Reference: '+ref; }
+    })();
+  </script>
+</body>
+</html>

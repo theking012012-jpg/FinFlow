@@ -550,6 +550,11 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F177 ✅ END-TO-END payment chain + integration verification ledger — **2026-08-14, execution-verified**
+`tests/harness/verify-e2e-payment-flow.js` (**11/0**) chains the whole flow through real Postgres + the canonical books: invoice issued → `/api/reports/balance-sheet` shows **AR=500** → generate a Stripe pay-link (dispatch reached) → SIGNED Stripe webhook → single-writer reconcile → **AR=0 in the same report**; then a second invoice settles via a SIGNED Paystack webhook into the SAME canonical AR; integrity: one payment per invoice, keyed by processor event id, no double-book. Proves the integration layer and the money engine connect — not just that each unit works. The only unrun step is the live provider HTTP (blocked in-sandbox; needs keys). Full per-connector status + the exact steps to close each live gap are in **`VERIFICATION_INTEGRATIONS.md`**.
+
+---
+
 ### F176 ✅ FULL-SUITE REGRESSION SWEEP (post-integration) — **2026-08-14 → GREEN across every money surface**
 Ran the whole harness suite (~141 files) after all the integration/payment work, serially in batches. **Every money figure and every product harness that completes is GREEN:**
 - **Step-gates:** step1 26/0, step2 63/0, step3 56/0, step4 5/0 (the authoritative figure gates).

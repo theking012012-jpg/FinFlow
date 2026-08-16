@@ -550,6 +550,16 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F178 🟠 HIGH — bank statement import (OFX/QFX + CSV): integrate ANY bank, incl. local/Caribbean — **NEW (2026-08-14, execution-verified) → ✅ BUILT + verified (held)**
+**Status:** ✅ **BUILT (FIX HELD).** The realistic answer to "integrate local banks": the Caribbean has no open banking / aggregator coverage, and direct bank APIs need per-bank partnerships. Statement import works for **every bank on earth with zero bank cooperation** (the file the user downloads from their portal) — the same approach QuickBooks/Xero use for unsupported banks.
+
+**Mechanism.** `POST /api/banking/import {format, content, mapping?}` — parses **OFX/QFX** (`STMTTRN` blocks; handles SGML w/o close tags; sign→`tx_type`, `DTPOSTED`→date, NAME/MEMO→description) and **CSV** (header auto-detect for date/description/amount, or separate debit/credit columns, or explicit `mapping`; RFC-ish quoted-field splitter). Lands rows in `personal_transactions` as `source:'banking'` — the SAME store the Plaid feed uses, so imports flow into the existing reconciliation UI. **Idempotent:** dedupe on OFX `FITID` (exact) or a `sha1(date|amount|desc)` content hash for CSV, keyed as `import_key` — re-uploading the same statement imports 0. Size-capped (~5MB), validates format, and the coarse read-only gate blocks viewers. Client: "⬆ Import" button on the Banking page (`ffImportStatement` — file picker → read as text → POST → reload).
+
+**Verified (execution).** `tests/harness/verify-bank-import.js` (16/0) with real OFX + CSV fixtures: OFX 3 txns parsed (debit −45→debit/45, credit 1200, date `20260710`→`2026-07-10`); **re-import → 0 imported / 3 skipped** (FITID dedupe); CSV 3 txns incl. a quoted `"WICKED, GOOD ROTI"` comma field kept intact and `2026/07/20`→`2026-07-20` date normalization; CSV re-import → 0 (content-hash dedupe); empty/no-txn/unknown-column → 400; **viewer → 403**. **Client chain EXECUTED** — `tests/harness/verify-bank-import-client.js` (8/0) runs the shipped `ffImportStatement` through a simulated upload (fake input + stubbed FileReader + captured fetch): detects `ofx`/`csv` from the extension and POSTs the file text to `/api/banking/import`. SPA still boots clean (`verify-f111-ui-render` 6/0).
+**Files:** `server.js`, `public/index.html`. **Done when:** committed. Covers local Caribbean banks (Republic, First Citizens, Scotiabank TT…) via their OFX/CSV exports — no API partnership needed.
+
+---
+
 ### F177 ✅ END-TO-END payment chain + integration verification ledger — **2026-08-14, execution-verified**
 `tests/harness/verify-e2e-payment-flow.js` (**11/0**) chains the whole flow through real Postgres + the canonical books: invoice issued → `/api/reports/balance-sheet` shows **AR=500** → generate a Stripe pay-link (dispatch reached) → SIGNED Stripe webhook → single-writer reconcile → **AR=0 in the same report**; then a second invoice settles via a SIGNED Paystack webhook into the SAME canonical AR; integrity: one payment per invoice, keyed by processor event id, no double-book. Proves the integration layer and the money engine connect — not just that each unit works. The only unrun step is the live provider HTTP (blocked in-sandbox; needs keys). Full per-connector status + the exact steps to close each live gap are in **`VERIFICATION_INTEGRATIONS.md`**.
 

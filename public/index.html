@@ -2841,7 +2841,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><h2 class="card-title">Bank Accounts</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="ffBankLinkFromPage()">🔗 Link bank</button><button class="btn btn-ghost btn-sm" onclick="openReconcileModal()">⇌ Reconcile</button><button class="btn btn-primary btn-sm" onclick="openAddAccountModal()">+ Add Account</button></div></div>
+            <div class="card-header"><h2 class="card-title">Bank Accounts</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="ffBankLinkFromPage()">🔗 Link bank</button><button class="btn btn-ghost btn-sm" onclick="ffImportStatement()" title="Import an OFX/QFX/CSV statement from any bank">⬆ Import</button><button class="btn btn-ghost btn-sm" onclick="openReconcileModal()">⇌ Reconcile</button><button class="btn btn-primary btn-sm" onclick="openAddAccountModal()">+ Add Account</button></div></div>
             <!-- Real Plaid-linked banks (populated from /api/plaid/items; empty until a bank is linked). -->
             <div id="plaid-linked-strip"></div>
             <div id="bank-accounts-list"></div>
@@ -3999,6 +3999,29 @@ window.ffConnectProvider = async function(cfg){
     }catch(e){}
     if(tries > 150 || (popup && popup.closed && tries > 2)){ clearInterval(poll); }
   }, 2000);
+};
+
+// ── Bank statement import: upload an OFX/QFX/CSV file from any bank (incl. local banks). ──
+window.ffImportStatement = function(){
+  var inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.ofx,.qfx,.csv,.txt';
+  inp.onchange = function(){
+    var file = inp.files && inp.files[0]; if(!file) return;
+    var ext = (file.name.split('.').pop() || '').toLowerCase();
+    var format = (ext === 'ofx' || ext === 'qfx') ? 'ofx' : (ext === 'csv' ? 'csv' : 'ofx');
+    var reader = new FileReader();
+    reader.onload = async function(){
+      try{
+        var r = await fetch('/api/banking/import', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ format: format, content: String(reader.result || '') })});
+        var j = await r.json().catch(function(){return {};});
+        if(!r.ok){ if(typeof notify==='function') notify(j.error || 'Could not import the statement.', true); return; }
+        if(typeof notify==='function') notify('Imported ' + j.imported + ' transaction' + (j.imported===1?'':'s') + (j.skipped ? ' (' + j.skipped + ' already there)' : '') + '.');
+        if(typeof loadBankingFromDB==='function') loadBankingFromDB();
+      }catch(e){ if(typeof notify==='function') notify('Network error importing the statement.', true); }
+    };
+    reader.readAsText(file);
+  };
+  inp.click();
 };
 
 // ── Invoice "Pay now" link: generate a hosted payment link via a connected processor. ──

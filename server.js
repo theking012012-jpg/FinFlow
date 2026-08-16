@@ -3840,6 +3840,97 @@ app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── BANK STATEMENT IMPORT ─────────────────────────────────────────────────────
+// Works for ANY bank (incl. local/Caribbean banks with no API) via the file the user downloads
+// from their bank: OFX/QFX (standard, exact per-transaction dedupe on FITID) or CSV (header
+// auto-detect / explicit mapping, dedupe on a content hash). Lands in personal_transactions as
+// source:'banking' — the SAME store the Plaid feed uses — so imported rows flow into the existing
+// reconciliation UI. Idempotent: re-uploading the same statement cannot double-count.
+function _ofxTag(block, name) { const m = new RegExp('<' + name + '>([^<\\r\\n]*)', 'i').exec(block); return m ? m[1].trim() : ''; }
+function _ofxDate(s) { const m = /^(\d{4})(\d{2})(\d{2})/.exec(String(s || '')); return m ? `${m[1]}-${m[2]}-${m[3]}` : new Date().toISOString().slice(0, 10); }
+function parseOFX(text) {
+  const out = [];
+  let blocks = text.match(/<STMTTRN>[\s\S]*?<\/STMTTRN>/gi);
+  if (!blocks) blocks = text.split(/<STMTTRN>/i).slice(1).map(b => '<STMTTRN>' + b);   // SGML w/o close tags
+  for (const b of (blocks || [])) {
+    const amt = parseFloat(_ofxTag(b, 'TRNAMT'));
+    if (!Number.isFinite(amt)) continue;
+    out.push({
+      tx_date: _ofxDate(_ofxTag(b, 'DTPOSTED')),
+      amount: Math.abs(amt),
+      tx_type: amt < 0 ? 'debit' : 'credit',                     // OFX: negative = money out
+      description: (_ofxTag(b, 'NAME') || _ofxTag(b, 'MEMO') || 'Bank transaction').slice(0, 200),
+      fitid: _ofxTag(b, 'FITID') || null,
+    });
+  }
+  return out;
+}
+function _csvSplit(line) {                                        // minimal RFC-ish CSV row splitter
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) { if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
+    else if (ch === '"') q = true; else if (ch === ',') { out.push(cur); cur = ''; } else cur += ch;
+  }
+  out.push(cur); return out.map(s => s.trim());
+}
+function parseCSV(text, mapping) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length);
+  if (!lines.length) return [];
+  const header = _csvSplit(lines[0]).map(h => h.toLowerCase());
+  const find = (cands) => { for (const c of cands) { const i = header.indexOf(c); if (i >= 0) return i; } return -1; };
+  const di = mapping && mapping.date != null ? +mapping.date : find(['date', 'transaction date', 'posted', 'posting date']);
+  const ci = mapping && mapping.description != null ? +mapping.description : find(['description', 'details', 'narrative', 'memo', 'payee', 'name']);
+  const ai = mapping && mapping.amount != null ? +mapping.amount : find(['amount', 'value']);
+  const debiti = find(['debit', 'withdrawal', 'money out']); const crediti = find(['credit', 'deposit', 'money in']);
+  if (di < 0 || ci < 0 || (ai < 0 && debiti < 0 && crediti < 0)) throw new Error('Could not detect date/description/amount columns. Provide a mapping.');
+  const out = [];
+  for (let r = 1; r < lines.length; r++) {
+    const f = _csvSplit(lines[r]); if (!f.length || f.every(x => !x)) continue;
+    let amt, type;
+    if (ai >= 0) { amt = parseFloat(String(f[ai]).replace(/[^0-9.\-]/g, '')); type = amt < 0 ? 'debit' : 'credit'; amt = Math.abs(amt); }
+    else { const d = parseFloat(String(f[debiti] || '').replace(/[^0-9.\-]/g, '')) || 0; const cr = parseFloat(String(f[crediti] || '').replace(/[^0-9.\-]/g, '')) || 0; if (d) { amt = Math.abs(d); type = 'debit'; } else { amt = Math.abs(cr); type = 'credit'; } }
+    if (!Number.isFinite(amt) || amt === 0) continue;
+    const dateRaw = String(f[di] || '').trim();
+    const iso = /^\d{4}-\d{2}-\d{2}/.test(dateRaw) ? dateRaw.slice(0, 10)
+      : (() => { const d = new Date(dateRaw); return isNaN(d) ? new Date().toISOString().slice(0, 10) : d.toISOString().slice(0, 10); })();
+    out.push({ tx_date: iso, amount: amt, tx_type: type, description: String(f[ci] || 'Bank transaction').slice(0, 200), fitid: null });
+  }
+  return out;
+}
+
+app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
+  const { format, content, mapping } = req.body || {};
+  if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content (the statement file text) is required.' });
+  if (content.length > 5_000_000) return res.status(400).json({ error: 'Statement too large (max ~5MB).' });
+  const fmt = String(format || '').toLowerCase();
+  let txns;
+  try {
+    if (fmt === 'ofx' || fmt === 'qfx' || /<STMTTRN>/i.test(content)) txns = parseOFX(content);
+    else if (fmt === 'csv') txns = parseCSV(content, mapping);
+    else return res.status(400).json({ error: "format must be 'ofx', 'qfx', or 'csv'." });
+  } catch (e) { return res.status(400).json({ error: e.message }); }
+  if (!txns.length) return res.status(400).json({ error: 'No transactions found in the statement.' });
+
+  const uid = scopeId(req);
+  let imported = 0, skipped = 0;
+  for (const t of txns) {
+    // Idempotent dedupe: OFX → FITID (exact); CSV → content hash of date+amount+desc.
+    const key = t.fitid ? 'ofx:' + t.fitid
+      : 'csv:' + crypto.createHash('sha1').update(t.tx_date + '|' + t.amount + '|' + t.description).digest('hex');
+    const { rows: [dup] } = await pool.query(
+      `SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, key]);
+    if (dup) { skipped++; continue; }
+    await db.insert('personal_transactions', {
+      user_id: uid, entity_id: req.entityId || null,
+      description: t.description, amount: t.amount, tx_type: t.tx_type, tx_date: t.tx_date,
+      category: 'Uncategorized', source: 'banking', import_key: key,
+    });
+    imported++;
+  }
+  res.status(201).json({ ok: true, imported, skipped, total: txns.length });
+}));
+
 // ── MRR / SAAS ────────────────────────────────────────────────────────────────
 app.get('/api/mrr', requireAuth, wrap(async (req, res) => {
   const rows = await db.allByUser('user_settings', req.session.userId, r => r.key === 'mrr_data');

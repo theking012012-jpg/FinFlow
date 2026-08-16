@@ -4781,7 +4781,7 @@ app.get('/api/stripe/status', requireAuth, wrap(async (req, res) => {
 app.post('/api/stripe/connect-url', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe payments linking is not set up yet. Add STRIPE_SECRET_KEY and STRIPE_CONNECT_CLIENT_ID to enable it.', code: 'STRIPE_NOT_CONFIGURED' });
   const params = new URLSearchParams({
-    response_type: 'code', client_id: process.env.STRIPE_CONNECT_CLIENT_ID, scope: 'read_only',
+    response_type: 'code', client_id: process.env.STRIPE_CONNECT_CLIENT_ID, scope: 'read_write',
     redirect_uri: _stripeRedirectUri(), state: String(scopeId(req)),
   });
   res.json({ connect_url: 'https://connect.stripe.com/oauth/authorize?' + params.toString() });

@@ -2456,6 +2456,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
                   +'<div class="conn-card-desc">'+item.desc+'</div>'
                   +'<div class="conn-card-footer">'
                   +(on?'<span class="conn-connected-badge">&#10003; Connected</span>':(built?'<span style="font-size:10px;color:var(--green)">Available</span>':'<span></span>'))
+                  +((on&&item.name==='Codat')?'<button class="conn-toggle-btn conn" style="margin-right:6px" title="Import your existing accounting data into FinFlow" onclick="event.stopPropagation();ffCodatMigrate()">&#8681; Import books</button>':'')
                   +'<button class="conn-toggle-btn '+(on?'conn':'disconn')+'" onclick="connToggle('+idx+')">'+(on?'Disconnect':(built?'Connect':'Request'))+'</button>'
                   +'</div>';
                 grid.appendChild(card);
@@ -4036,6 +4037,71 @@ window.ffConnectProvider = async function(cfg){
     }catch(e){}
     if(tries > 150 || (popup && popup.closed && tries > 2)){ clearInterval(poll); }
   }, 2000);
+};
+
+// ── Codat migration: preview an existing accounting book (QuickBooks/Xero/Sage/…) and import
+//    it into FinFlow. Owner-confirmed — shows a dry-run PREVIEW first and writes only on confirm.
+//    Re-running is safe (server dedupes on Codat's stable ids). ──
+window.ffCodatMigrate = async function(){
+  const note = (m,e)=>{ if(typeof notify==='function') notify(m, !!e); };
+  let st; try{ st = await (await fetch('/api/codat/status',{credentials:'include'})).json(); }
+  catch(e){ return note('Network error reaching Codat.', true); }
+  if(!st || !st.configured){ return note('Accounting import isn\'t set up yet (needs CODAT_API_KEY).', true); }
+  if(!st.connected){ return note('Connect your accounting platform first: API connections → Codat → Connect.', true); }
+  note('Reading your accounting data…');
+  let pv;
+  try{
+    const r = await fetch('/api/codat/import-preview',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:'{}'});
+    pv = await r.json().catch(()=>({}));
+    if(!r.ok){ return note(pv.error||'Could not read your accounting data.', true); }
+  }catch(e){ return note('Network error building the import preview.', true); }
+  const LABEL={accounts:'Chart of accounts',customers:'Customers',suppliers:'Suppliers',invoices:'Invoices',bills:'Bills',payments:'Payments received',billPayments:'Payments made',journalEntries:'Journal entries'};
+  const ds = pv.datasets||{}; let totalNew=0; const curSet={};
+  const rows = Object.keys(LABEL).map(function(k){
+    const t=ds[k]||{}; totalNew += (t.added||0);
+    Object.keys(t.currencies||{}).forEach(function(c){ curSet[c]=1; });
+    const bits=[];
+    if(t.duplicate) bits.push(t.duplicate+' already imported');
+    if(t.locked) bits.push(t.locked+' in a locked period');
+    if(t.skipped) bits.push(t.skipped+' skipped');
+    if(t.error) bits.push('⚠ '+t.error);
+    return '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd)">'
+      +'<span style="font-size:12.5px;color:var(--t1)">'+LABEL[k]+'</span>'
+      +'<span style="font-size:12px;color:var(--t2);text-align:right"><b style="color:var(--acc-light)">'+(t.added||0)+'</b> to import'
+      +(bits.length?('<div style="font-size:10.5px;color:var(--t3)">'+bits.join(' · ')+'</div>'):'')+'</span></div>';
+  }).join('');
+  const curs=Object.keys(curSet);
+  const warn = curs.length>1
+    ? '<div style="font-size:11px;color:var(--amber,#e0a500);margin-top:8px">⚠ Mixed currencies in source ('+curs.join(', ')+'). Amounts import as-is — confirm they match this entity\'s currency.</div>'
+    : (curs.length===1 ? '<div style="font-size:11px;color:var(--t3);margin-top:8px">Source currency: '+curs[0]+'. Amounts import as-is.</div>' : '');
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:3300;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML='<div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:14px;width:100%;max-width:440px;max-height:88vh;overflow:auto;padding:22px">'
+    +'<div style="font-family:var(--font-display);font-style:italic;font-size:19px;color:var(--acc-light);margin-bottom:2px">Import your books'+(pv.platform?(' — '+String(pv.platform).replace(/[<>&]/g,'')):'')+'</div>'
+    +'<div style="font-size:12px;color:var(--t2);margin-bottom:14px">Review what will be imported. Nothing is written until you confirm. Re-running is safe — already-imported records are skipped.</div>'
+    +rows+warn
+    +'<div style="font-size:12.5px;color:var(--t1);margin:14px 0 4px"><b style="color:var(--acc-light)">'+totalNew+'</b> new record'+(totalNew===1?'':'s')+' will be imported.</div>'
+    +'<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">'
+    +'<button id="cm-cancel" class="btn btn-ghost btn-sm">Cancel</button>'
+    +'<button id="cm-go" class="btn btn-primary btn-sm"'+(totalNew?'':' disabled')+'>Import '+totalNew+' record'+(totalNew===1?'':'s')+'</button>'
+    +'</div></div>';
+  document.body.appendChild(ov);
+  const close=function(){ try{ ov.remove(); }catch(e){} };
+  ov.querySelector('#cm-cancel').onclick=close;
+  ov.onclick=function(e){ if(e.target===ov) close(); };
+  const go=ov.querySelector('#cm-go');
+  if(go) go.onclick=async function(){
+    go.disabled=true; go.textContent='Importing…';
+    try{
+      const r=await fetch('/api/codat/import',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:'{}'});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok){ go.disabled=false; go.textContent='Retry import'; return note(j.error||'Import failed.', true); }
+      close();
+      note('Imported '+(j.total_added||0)+' record'+((j.total_added===1)?'':'s')+' from '+(j.platform||'your accounting platform')+' ✓');
+      try{ if(window.loadEntitiesFromDB) window.loadEntitiesFromDB(true); }catch(e){}
+      try{ if(window.finflow&&window.finflow.refresh) window.finflow.refresh(['dashboard','reports','invoices','bills','customers','vendors']); }catch(e){}
+    }catch(e){ go.disabled=false; go.textContent='Retry import'; note('Network error during import.', true); }
+  };
 };
 
 // ── Bank statement import: upload an OFX/QFX/CSV file from any bank (incl. local banks). ──

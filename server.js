@@ -4747,6 +4747,187 @@ app.post('/api/codat/sync', requireAuth, requirePerm('books:write'), wrap(async 
   } catch (e) { console.error('[codat sync]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not sync accounting data: ' + e.message }); }
 }));
 
+
+// ════════════════════════════════════════════════════════════════════════════════
+// CODAT MIGRATION — one-time, owner-initiated IMPORT of an existing accounting book
+// (QuickBooks / Xero / Sage / … via Codat) INTO the FinFlow ledger. This is the
+// "separate, owner-approved step" the display-only /codat/sync note refers to. It is
+// NOT a silent external writer (Rules 2 & 12): nothing is written until the owner has
+// reviewed a PREVIEW and explicitly POSTs /import. Every row goes through the SAME
+// db.insert the manual routes use (single-writer), is scoped to the owner + active
+// entity, and is IDEMPOTENT on a deterministic Codat-derived key (`import_key`, mirrored
+// into the existing partial-unique `idempotency_key` index) so a re-run imports 0 and
+// never double-books. Amounts are already major-unit in Codat — no minor-unit conversion.
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Codat paginates 1-based; pull every page of a data type into one array.
+async function codatFetchAll(companyId, dataType) {
+  const out = [];
+  for (let page = 1; page <= 500; page++) {
+    const j = await codatCall(`/companies/${companyId}/data/${dataType}?page=${page}&pageSize=100`);
+    const results = Array.isArray(j.results) ? j.results : [];
+    out.push(...results);
+    const total = Number(j.totalResults || 0);
+    if (!results.length) break;
+    if (total && out.length >= total) break;
+    if (!(j._links && j._links.next) && !total) break;
+  }
+  return out;
+}
+
+const _cdClip = (s, n) => String(s == null ? '' : s).slice(0, n);
+const _cdNum  = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+const _cdDate = (d) => { const s = String(d == null ? '' : d); return s ? s.slice(0, 10) : null; };
+const _cdSplitName = (full) => {
+  const p = _cdClip(full, 200).trim().split(/\s+/).filter(Boolean);
+  if (!p.length) return { fname: '', lname: '' };
+  if (p.length === 1) return { fname: p[0], lname: '' };
+  return { fname: p.slice(0, -1).join(' '), lname: p[p.length - 1] };
+};
+// Codat account type → FinFlow chart-of-accounts category + normal-balance nature.
+const _CD_ACCT_CAT = { Asset: 'Assets', Liability: 'Liabilities', Equity: 'Equity', Income: 'Revenue', Expense: 'Expenses' };
+// Codat invoice/bill status → FinFlow status enum. (amount_paid is derived from amountDue below,
+// NOT from the label, so AR/AP ties out regardless of how a status maps.)
+const _CD_INV_STATUS  = { Paid: 'paid', PartiallyPaid: 'partial', Submitted: 'pending', Draft: 'draft', Void: 'draft' };
+const _CD_BILL_STATUS = { Paid: 'paid', PartiallyPaid: 'partial', Open: 'unpaid', Draft: 'unpaid', Void: 'unpaid' };
+
+// Pure mappers: one Codat record → { table, key, date, data } where `data` holds the exact FinFlow
+// field keys the manual routes write. Return null to SKIP (e.g. an unbalanced journal FinFlow rejects).
+function _codatMappers(companyId, platform) {
+  const ck  = (type, id) => `codat:${companyId}:${type}:${id}`;
+  const tag = platform ? ('Imported from ' + platform) : 'Imported (Codat)';
+  return {
+    accounts: (a) => ({ table: 'chart_of_accounts', key: ck('account', a.id), date: null, data: {
+      code: _cdClip(a.nominalCode || '', 20),
+      name: _cdClip(a.name || a.fullyQualifiedName || 'Account', 200),
+      category: _CD_ACCT_CAT[a.type] || 'Assets',
+      nature: (_CD_ACCT_CAT[a.type] === 'Assets' || _CD_ACCT_CAT[a.type] === 'Expenses') ? 'Debit' : 'Credit',
+      balance: _cdNum(a.currentBalance) } }),
+    customers: (c) => { const n = _cdSplitName(c.contactName); return { table: 'customers', key: ck('customer', c.id), date: null, data: {
+      fname: n.fname, lname: n.lname, company: _cdClip(c.customerName || '', 200), industry: '',
+      email: _cdClip(c.emailAddress || '', 200), phone: _cdClip(c.phone || '', 30),
+      revenue: 0, status: (c.status === 'Archived') ? 'inactive' : 'active', notes: tag } }; },
+    suppliers: (s) => ({ table: 'vendors', key: ck('supplier', s.id), date: null, data: {
+      name: _cdClip(s.supplierName || 'Supplier', 200), contact: _cdClip(s.contactName || '', 200),
+      category: '', owing: 0, ytd_paid: 0, status: (s.status === 'Archived') ? 'inactive' : 'active' } }),
+    invoices: (i) => { const total = _cdNum(i.totalAmount), due = _cdNum(i.amountDue);
+      return { table: 'invoices', key: ck('invoice', i.id), date: _cdDate(i.issueDate) || _cdDate(i.dueDate), data: {
+        client: _cdClip((i.customerRef && (i.customerRef.companyName || i.customerRef.id)) || 'Unknown', 200),
+        amount: total, amount_paid: Math.max(0, +(total - due).toFixed(2)),
+        due_date: _cdDate(i.dueDate), issue_date: _cdDate(i.issueDate),
+        status: _CD_INV_STATUS[i.status] || 'pending',
+        notes: _cdClip(tag + (i.invoiceNumber ? (' · ' + i.invoiceNumber) : ''), 500) } }; },
+    bills: (b) => { const total = _cdNum(b.totalAmount), due = _cdNum(b.amountDue);
+      return { table: 'bills', key: ck('bill', b.id), date: _cdDate(b.issueDate) || _cdDate(b.dueDate), data: {
+        vendor: _cdClip((b.supplierRef && (b.supplierRef.supplierName || b.supplierRef.id)) || 'Unknown', 200),
+        num: _cdClip(b.reference || ('BILL-' + String(b.id).slice(-4)), 60),
+        amount: total, amount_paid: Math.max(0, +(total - due).toFixed(2)),
+        due_date: _cdDate(b.dueDate), issue_date: _cdDate(b.issueDate),
+        status: _CD_BILL_STATUS[b.status] || 'unpaid', notes: _cdClip(tag, 500) } }; },
+    payments: (p) => ({ table: 'payments_received', key: ck('payment', p.id), date: null, data: {
+      customer: _cdClip((p.customerRef && (p.customerRef.companyName || p.customerRef.id)) || '', 200),
+      invoice_ref: _cdClip((p.lines && p.lines[0] && p.lines[0].links && p.lines[0].links[0] && p.lines[0].links[0].id) || '', 60),
+      amount: _cdNum(p.totalAmount), date: _cdDate(p.date), method: 'Imported' } }),
+    // billPayments → payments_made WITHOUT a bill_id, so recalcBillStatus is NOT re-triggered
+    // (the bill already carries its amount_paid from amountDue) — this is what prevents double-counting.
+    billPayments: (bp) => ({ table: 'payments_made', key: ck('billpayment', bp.id), date: null, data: {
+      vendor: _cdClip((bp.supplierRef && (bp.supplierRef.supplierName || bp.supplierRef.id)) || '', 200),
+      amount: _cdNum(bp.totalAmount), date: _cdDate(bp.date), method: 'Imported',
+      notes: 'Imported (Codat)', ref: _cdClip(bp.id, 60) } }),
+    journalEntries: (j) => {
+      const lines = Array.isArray(j.journalLines) ? j.journalLines : [];
+      let debit = 0, credit = 0; const norm = [];
+      for (const l of lines) { const amt = _cdNum(l.netAmount); if (amt >= 0) debit += amt; else credit += -amt;
+        norm.push({ account: _cdClip((l.accountRef && l.accountRef.id) || '', 60), description: _cdClip(l.description || '', 200), amount: amt }); }
+      debit = +debit.toFixed(2); credit = +credit.toFixed(2);
+      if (Math.abs(debit - credit) > 0.01) return null; // FinFlow rejects unbalanced journals — skip, don't force
+      return { table: 'journals', key: ck('journal', j.id), date: _cdDate(j.postedOn || j.createdOn), data: {
+        date: _cdDate(j.postedOn || j.createdOn), description: _cdClip(j.description || j.journalRef || 'Journal', 300),
+        ref: _cdClip(j.journalRef || ('JE-' + String(j.id).slice(-4)), 60),
+        debit, credit, lines: JSON.stringify(norm), status: 'Posted' } };
+    },
+  };
+}
+
+// The eight Codat data types we migrate, in dependency order (masters before transactions).
+const CODAT_IMPORT_TYPES = ['accounts', 'customers', 'suppliers', 'invoices', 'bills', 'payments', 'billPayments', 'journalEntries'];
+
+// Resolve the connected company id + platform name (for labels/preview).
+async function _codatCompany(uid) {
+  const { value } = await _providerBlob(uid, 'codat_conn');
+  if (!value || !value.company_id) { const e = new Error('No linked accounting platform. Connect one first.'); e.status = 400; throw e; }
+  let platform = value.platform || null;
+  try {
+    const conns = await codatCall(`/companies/${value.company_id}/connections`);
+    const linked = (conns.results || []).find(c => c.status === 'Linked');
+    if (linked) platform = linked.platformName || platform;
+  } catch (_) {}
+  return { companyId: value.company_id, platform };
+}
+
+// Core loop, shared by preview (dryRun) and import. Fetch → map → dedupe on the deterministic key →
+// (import) db.insert through the canonical single-writer, or (dryRun) just count. Locked-period rows
+// are skipped (never silently written into a closed period). Returns a per-type tally.
+async function _codatImportType(uid, entityId, sessionUserId, companyId, platform, type, opts) {
+  const dryRun = !!(opts && opts.dryRun);
+  const map = _codatMappers(companyId, platform)[type];
+  const tally = { total: 0, added: 0, duplicate: 0, locked: 0, skipped: 0, failed: 0, currencies: {}, sample: [] };
+  let records;
+  try { records = await codatFetchAll(companyId, type); }
+  catch (e) { tally.error = e.message; return tally; }
+  tally.total = records.length;
+  for (const rec of records) {
+    if (rec && rec.currency) tally.currencies[rec.currency] = (tally.currencies[rec.currency] || 0) + 1;
+    let m;
+    try { m = map(rec); } catch (e) { tally.failed++; continue; }
+    if (!m) { tally.skipped++; continue; }
+    const dup = await pool.query(`SELECT 1 FROM ${m.table} WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, m.key]);
+    if (dup.rows.length) { tally.duplicate++; continue; }
+    if (m.date && await isLocked(sessionUserId, m.date)) { tally.locked++; continue; }
+    if (tally.sample.length < 3) tally.sample.push(m.data);
+    if (dryRun) { tally.added++; continue; }
+    try {
+      await db.insert(m.table, Object.assign({ user_id: uid, entity_id: entityId,
+        import_key: m.key, idempotency_key: m.key, source: 'codat', codat_id: rec.id }, m.data));
+      tally.added++;
+    } catch (e) {
+      if (e.code === '23505') { tally.duplicate++; }
+      else { tally.failed++; console.error(`[codat import ${type}]`, e.message); }
+    }
+  }
+  return tally;
+}
+
+// PREVIEW (dry-run): read every data type and report what WOULD import — counts, brand-new vs already,
+// a small sample, and the currency mix — so the owner confirms before ANYTHING is written. No writes.
+app.post('/api/codat/import-preview', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
+  const uid = scopeId(req);
+  if (!req.entityId) return res.status(400).json({ error: 'Select a business entity to import into first.', code: 'NO_ACTIVE_ENTITY' });
+  let company; try { company = await _codatCompany(uid); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
+  const datasets = {};
+  for (const type of CODAT_IMPORT_TYPES) {
+    datasets[type] = await _codatImportType(uid, req.entityId, req.session.userId, company.companyId, company.platform, type, { dryRun: true });
+  }
+  res.json({ ok: true, company_id: company.companyId, platform: company.platform, entity_id: req.entityId, datasets });
+}));
+
+// IMPORT (the write): owner-confirmed. Writes every data type through the canonical db.insert,
+// idempotently. Safe to re-run — already-imported records are skipped, never duplicated.
+app.post('/api/codat/import', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
+  const uid = scopeId(req);
+  if (!req.entityId) return res.status(400).json({ error: 'Select a business entity to import into first.', code: 'NO_ACTIVE_ENTITY' });
+  let company; try { company = await _codatCompany(uid); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
+  const results = {}; let totalAdded = 0;
+  for (const type of CODAT_IMPORT_TYPES) {
+    const t = await _codatImportType(uid, req.entityId, req.session.userId, company.companyId, company.platform, type, { dryRun: false });
+    results[type] = t; totalAdded += t.added;
+  }
+  try { logAudit(req, 'CREATE', 'codat_import', null, null, { entity_id: req.entityId, platform: company.platform, total_added: totalAdded }); } catch (_) {}
+  res.json({ ok: true, platform: company.platform, entity_id: req.entityId, total_added: totalAdded, results });
+}));
+
 // Wise (global multi-currency): parity sync — read account balances for DISPLAY only. Owner-only
 // (bank:manage, matching the generic connector). Never writes to the books.
 app.post('/api/wise/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {

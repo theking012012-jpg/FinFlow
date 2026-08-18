@@ -4679,7 +4679,14 @@ app.post('/api/finch/disconnect', requireAuth, requirePerm('payroll:write'), wra
 // ── CODAT ──
 const codatConfigured = () => !!process.env.CODAT_API_KEY;
 const CODAT_API = 'https://api.codat.io';
-const _codatAuth = () => 'Basic ' + Buffer.from(String(process.env.CODAT_API_KEY || '') + ':').toString('base64');
+const _codatAuth = () => {
+  const k = String(process.env.CODAT_API_KEY || '').trim();
+  // Codat's Portal (Developers -> API keys) exposes a ready-made "Authorization header" value
+  // (`Basic ...`). Accept it verbatim so we never double-encode; fall back to key-as-username
+  // Basic auth when only the raw API key was supplied.
+  if (/^Basic\s+/i.test(k)) return k;
+  return 'Basic ' + Buffer.from(k + ':').toString('base64');
+};
 async function codatCall(pathname, opts = {}) {
   const resp = await fetch(CODAT_API + pathname, {
     method: opts.method || 'GET',

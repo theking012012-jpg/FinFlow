@@ -4624,20 +4624,21 @@ const _finchRedirectUri = () => process.env.FINCH_REDIRECT_URI || (appUrl() + '/
 app.post('/api/finch/connect-url', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   if (!finchConfigured()) return res.status(502).json({ error: 'Payroll linking is not set up yet. Add FINCH_CLIENT_ID and FINCH_CLIENT_SECRET to enable it.', code: 'FINCH_NOT_CONFIGURED' });
   // Finch RETIRED the direct connect.tryfinch.com/authorize URL (now "legacy-flows"); the current flow is a
-  // server-side Connect Session (POST /connect/sessions, Basic client_id:client_secret) that mints a fresh
-  // single-use connect_url. Still a redirect flow: the user completes it and Finch redirects to redirect_uri
-  // with ?code, which /api/finch/callback exchanges (unchanged). products default 'company directory' — NOT
-  // 'payroll' (not a valid Finch product; the old default 400'd "payroll is an invalid product").
+  // server-side Connect Session (POST /connect/sessions) that mints a fresh single-use connect_url. This is
+  // an APP-CREDENTIAL endpoint: client_id + client_secret go in the BODY (same as /auth/token in the callback
+  // below) — NOT a Basic auth header (that returns "Invalid client: Unable to validate credentials"). Still a
+  // redirect flow: the user completes it and Finch redirects to redirect_uri with ?code, which
+  // /api/finch/callback exchanges (unchanged). products default 'company directory' — NOT 'payroll' (not a
+  // valid Finch product; the old default 400'd "payroll is an invalid product").
   const products = (process.env.FINCH_PRODUCTS || 'company directory').split(/\s+/).filter(Boolean);
   const sandbox = (process.env.FINCH_ENV || 'sandbox').toLowerCase() !== 'production';
   try {
     const resp = await fetch(FINCH_API + '/connect/sessions', {
       method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + Buffer.from(process.env.FINCH_CLIENT_ID + ':' + process.env.FINCH_CLIENT_SECRET).toString('base64'),
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(Object.assign({
+        client_id: process.env.FINCH_CLIENT_ID,
+        client_secret: process.env.FINCH_CLIENT_SECRET,
         products,
         customer_id: String(scopeId(req)),
         customer_name: 'FinFlow',

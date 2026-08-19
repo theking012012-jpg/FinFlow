@@ -550,6 +550,18 @@ Severity: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low
 
 ---
 
+### F188 🟠 HIGH — Finch payroll connector: LIVE handshake fixed (retired flow + invalid product + wrong cred location) + missing catalogue card added — **NEW (2026-08-18, LIVE execution-verified) → ✅ FIXED**
+**Status:** ✅ **FIXED (live-verified on dab2 against Finch Sandbox).** The Finch connector was built entirely against Finch's OLD API and never live-tested; the first real handshake surfaced a chain of defects (same value as the Stripe F180 live pass). Fixed in order as each surfaced:
+1. **Dead connect flow.** `/api/finch/connect-url` hand-built `connect.tryfinch.com/authorize?...`. Finch RETIRED that URL (now "legacy-flows") → every link returned **"Link Inactive."** Fix: create a server-side **Connect Session** (`POST /connect/sessions`) and return its freshly-minted `connect_url`. (`f8df120`)
+2. **Invalid product.** Default `products` was `'company directory payroll'` — Finch 400'd **"payroll is an invalid product"** (there is no bare `payroll` scope). Fix: default `'company directory'` (all our sync needs). (`f8df120`)
+3. **Wrong credential location.** `/connect/sessions` was sent Basic `client_id:client_secret` → **401 "Invalid client: Unable to validate credentials."** It's an app-credential endpoint like `/auth/token` — creds go in the **BODY**, not a Basic header. Fix: `client_id`/`client_secret` in the JSON body (mirrors the callback's token exchange). (body-creds commit)
+4. **Unreachable from the UI.** Finch was the ONLY one of the 11 built connectors absent from the `INTEGRATIONS` catalogue array (search "Finch" → 0 results) — connectable only by calling `ffConnectProvider` from the console. The `built`-set + `connToggle` already handled Finch; only the card was missing. Fix: added the Finch card (Payroll category, first entry). (this commit)
+
+**Live-verified (2026-08-18):** after the fixes + a corrected `FINCH_CLIENT_ID`/`FINCH_CLIENT_SECRET` (initial value was wrong — an env-entry mistake, not a code fault; isolated with a direct `POST /connect/sessions` curl), the Connect Session minted a live URL, the Finch Sandbox popup completed, and `GET /api/finch/status` → **`{configured:true, connected:true, provider:"ecca"}`** (real access token, encrypted at rest). `POST /api/finch/sync` → **`{ok:true, employees:0}`** — the live `/employer/directory` call SUCCEEDED; the 0 count is because **ECCA is an *assisted* sandbox provider Finch does not seed with a directory** (a Finch sandbox data artifact, not a FinFlow issue). Confirmed live: Connect-Session flow, token exchange + AES-GCM encryption at rest, live directory sync, RBAC (`payroll:write` = owner/admin only, accountant/viewer denied), and the honest "not written to the books" scope (Rule 12). For a non-zero directory, connect an automated sandbox provider (assisted providers stay pending).
+**Files:** `server.js`, `public/index.html`. **Own commit recommended.** **Done when:** committed; live path verified 2026-08-18 (sandbox).
+
+---
+
 ### F187 🟠 HIGH — Codat → FinFlow MIGRATION importer (owner-initiated bulk import of an existing accounting book) — **NEW (2026-08-16) → ✅ BUILT (FIX HELD); harness 28/0 GREEN (owner-run 2026-08-16), live Codat handshake UNEXECUTED pending key**
 **Status:** ✅ **BUILT (FIX HELD).** Owner request: let a business switching off QuickBooks/Xero/Sage/etc. migrate its existing books INTO FinFlow via Codat (one integration → ~30 accounting platforms). This is the "separate, owner-approved step" the display-only `/api/codat/sync` note always pointed at. **Scope (owner ruling 2026-08-16): full ledger, full history** — chart of accounts, customers, suppliers, invoices, bills, payments-received, payments-made, journal entries.
 

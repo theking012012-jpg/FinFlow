@@ -2421,47 +2421,62 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               updateStats();
               return;
             }
-            var grouped={};
-            CATS.forEach(function(cat){
-              var items=filtered.filter(function(i){return i.cat===cat;});
-              if(items.length)grouped[cat]=items;
-            });
-            Object.keys(grouped).forEach(function(cat){
-              var items=grouped[cat];
-              var col=CAT_COLOR[cat]||'#888';
+            var BUILT=['Plaid','Finch','Codat','Stripe','Belvo','WiPay','dLocal','Mercado Pago','Wise'];
+            function _isBuilt(n){return BUILT.indexOf(n)>=0;}
+            function _connCard(item){
+              var on=!!connStates[item.name];
+              var col2=CAT_COLOR[item.cat]||'#888';
+              var idx=INTEGRATIONS.indexOf(item);
+              var built=_isBuilt(item.name);
+              var card=document.createElement('div');
+              card.className='conn-card'+(on?' is-connected':'');
+              card.innerHTML=(on?'<div class="conn-dot"></div>':'')
+                +'<div class="conn-card-top">'
+                +'<div class="conn-card-logo" style="background:'+col2+'22;color:'+col2+';border-color:'+col2+'33">'+item.name.charAt(0)+'</div>'
+                +'<div><div class="conn-card-name">'+item.name+'</div>'
+                +'<span class="conn-cat-badge" style="background:'+col2+'22;color:'+col2+'">'+item.cat+'</span>'
+                +'</div></div>'
+                +'<div class="conn-card-desc">'+item.desc+'</div>'
+                +'<div class="conn-card-footer">'
+                +(on?'<span class="conn-connected-badge">&#10003; Connected</span>':(built?'<span style="font-size:10px;color:var(--green)">Available</span>':'<span></span>'))
+                +((on&&item.name==='Codat')?'<button class="conn-toggle-btn conn" style="margin-right:6px" title="Import your existing accounting data into FinFlow" onclick="event.stopPropagation();ffCodatMigrate()">&#8681; Import books</button>':'')
+                +'<button class="conn-toggle-btn '+(on?'conn':'disconn')+'" onclick="connToggle('+idx+')">'+(on?'Disconnect':(built?'Connect':'Request'))+'</button>'
+                +'</div>';
+              return card;
+            }
+            function _connSection(title, sub, items, col){
               var sec=document.createElement('div');
               sec.className='conn-section';
               sec.innerHTML='<div class="conn-section-hdr">'
-                +'<div class="conn-section-icon" style="background:'+col+'22;color:'+col+'">'+cat.charAt(0)+'</div>'
-                +'<span class="conn-section-title">'+cat+'</span>'
-                +'<span class="conn-section-ct">'+items.length+' integration'+(items.length!==1?'s':'')+'</span>'
+                +'<div class="conn-section-icon" style="background:'+col+'22;color:'+col+'">'+title.charAt(0)+'</div>'
+                +'<span class="conn-section-title">'+title+'</span>'
+                +'<span class="conn-section-ct">'+items.length+' '+sub+'</span>'
                 +'</div><div class="conn-grid"></div>';
               catalog.appendChild(sec);
               var grid=sec.querySelector('.conn-grid');
-              items.forEach(function(item){
-                var on=!!connStates[item.name];
-                var col2=CAT_COLOR[item.cat]||'#888';
-                var idx=INTEGRATIONS.indexOf(item);
-                // Honest labelling: only the built aggregators actually connect; everything else
-                // is a request, not a live integration (never imply a connection that can't happen).
-                var built=(item.name==='Plaid'||item.name==='Finch'||item.name==='Codat'||item.name==='Stripe'||item.name==='Belvo'||item.name==='WiPay'||item.name==='dLocal'||item.name==='Mercado Pago'||item.name==='Wise');
-                var card=document.createElement('div');
-                card.className='conn-card'+(on?' is-connected':'');
-                card.innerHTML=(on?'<div class="conn-dot"></div>':'')
-                  +'<div class="conn-card-top">'
-                  +'<div class="conn-card-logo" style="background:'+col2+'22;color:'+col2+';border-color:'+col2+'33">'+item.name.charAt(0)+'</div>'
-                  +'<div><div class="conn-card-name">'+item.name+'</div>'
-                  +'<span class="conn-cat-badge" style="background:'+col2+'22;color:'+col2+'">'+item.cat+'</span>'
-                  +'</div></div>'
-                  +'<div class="conn-card-desc">'+item.desc+'</div>'
-                  +'<div class="conn-card-footer">'
-                  +(on?'<span class="conn-connected-badge">&#10003; Connected</span>':(built?'<span style="font-size:10px;color:var(--green)">Available</span>':'<span></span>'))
-                  +((on&&item.name==='Codat')?'<button class="conn-toggle-btn conn" style="margin-right:6px" title="Import your existing accounting data into FinFlow" onclick="event.stopPropagation();ffCodatMigrate()">&#8681; Import books</button>':'')
-                  +'<button class="conn-toggle-btn '+(on?'conn':'disconn')+'" onclick="connToggle('+idx+')">'+(on?'Disconnect':(built?'Connect':'Request'))+'</button>'
-                  +'</div>';
-                grid.appendChild(card);
+              items.forEach(function(item){ grid.appendChild(_connCard(item)); });
+            }
+            // SECTION 1 — Available now (real, connectable integrations)
+            var builtItems=filtered.filter(function(i){return _isBuilt(i.name);});
+            if(builtItems.length){
+              _connSection('Available now','live integration'+(builtItems.length!==1?'s':''),builtItems,'#3aa76d');
+            }
+            // SECTION 2 — Coming soon (browse & request; not yet live)
+            var soonItems=filtered.filter(function(i){return !_isBuilt(i.name);});
+            if(soonItems.length){
+              var banner=document.createElement('div');
+              banner.style.cssText='margin:20px 2px 6px;padding:9px 12px;border-top:1px solid var(--bd);color:var(--t3);font-size:12px;letter-spacing:.02em';
+              banner.textContent='Coming soon — browse '+soonItems.length+' more and request the ones you need';
+              catalog.appendChild(banner);
+              var grouped={};
+              CATS.forEach(function(cat){
+                var items=soonItems.filter(function(i){return i.cat===cat;});
+                if(items.length)grouped[cat]=items;
               });
-            });
+              Object.keys(grouped).forEach(function(cat){
+                _connSection(cat,'integration'+(grouped[cat].length!==1?'s':''),grouped[cat],CAT_COLOR[cat]||'#888');
+              });
+            }
             updateStats();
           }
 

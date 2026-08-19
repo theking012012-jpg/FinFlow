@@ -5164,8 +5164,6 @@ app.post('/api/wipay/disconnect', requireAuth, requirePerm('bank:manage'), wrap(
 const CRED_CONNECTORS = {
   dlocal:      { label: 'dLocal',       fields: ['x_login', 'x_trans_key', 'secret_key'] },
   mercadopago: { label: 'Mercado Pago', fields: ['access_token'] },
-  flutterwave: { label: 'Flutterwave',  fields: ['secret_key', 'secret_hash'] },   // secret_hash = webhook verif-hash
-  paystack:    { label: 'Paystack',     fields: ['secret_key'] },
   wise:        { label: 'Wise',         fields: ['api_token'] },
 };
 for (const [ckey, cfg] of Object.entries(CRED_CONNECTORS)) {
@@ -5306,7 +5304,7 @@ app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write
   if (amount <= 0) return res.status(400).json({ error: 'Invoice amount must be greater than zero.' });
   const uid = scopeId(req);
   const requested = req.body && req.body.provider;
-  const PAY = ['stripe', 'paystack', 'flutterwave', 'wipay', 'mercadopago', 'dlocal'];
+  const PAY = ['stripe', 'wipay', 'mercadopago', 'dlocal'];
   const order = requested ? [String(requested)] : PAY;
   let provider = null, conn = null;
   for (const p of order) {
@@ -5314,7 +5312,7 @@ app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write
     const isConn = p === 'stripe' ? !!(value && value.stripe_user_id) : p === 'wipay' ? !!(value && value.account_number) : !!(value && value.connected);
     if (isConn) { provider = p; conn = value; break; }
   }
-  if (!provider) return res.status(400).json({ error: 'No payment processor connected. Connect Stripe, Paystack, Flutterwave, or WiPay first.', code: 'NO_PAYMENT_PROVIDER' });
+  if (!provider) return res.status(400).json({ error: 'No payment processor connected. Connect Stripe or WiPay first.', code: 'NO_PAYMENT_PROVIDER' });
   const currency = String(inv.currency || (req.body && req.body.currency) || 'USD').toUpperCase();
   try {
     const url = await createPaymentLink(provider, conn, { amount, currency, email: (req.body && req.body.email) || null, reference: 'INV-' + inv.id + '-' + Date.now(), client: inv.client, invoiceId: inv.id, country: (req.body && req.body.country) || conn.country || null });

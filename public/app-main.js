@@ -5226,7 +5226,7 @@ function toggleTheme(){
 function chartDefaults(){return{tc:darkMode?'#9e8e73':'#6b5c42',gc:darkMode?'rgba(201,168,76,0.06)':'rgba(0,0,0,0.05)'}}
 
 function buildCharts(){
-  if(typeof Chart==='undefined'){console.warn('Chart.js not loaded — charts skipped');return;}
+  if(typeof Chart==='undefined'){if(typeof loadChartJS==='function')loadChartJS(buildCharts);else console.warn('Chart.js not loaded — charts skipped');return;}
   // Destroy ALL orphaned Chart instances (prevents "instance 0" ghost conflict on re-render)
   Object.keys(Chart.instances).forEach(key=>{try{Chart.instances[key].destroy();}catch(e){}});
   // Destroy existing charts to prevent canvas reuse error
@@ -5300,7 +5300,7 @@ function _cashSeries(profit){
 }
 
 function buildCashChart(){
-  if(typeof Chart==='undefined'){console.warn('Chart.js not loaded — cash chart skipped');return;}
+  if(typeof Chart==='undefined'){if(typeof loadChartJS==='function')loadChartJS(buildCashChart);else console.warn('Chart.js not loaded — cash chart skipped');return;}
   const{tc,gc}=chartDefaults();
   const _cc=document.getElementById('cashChart');
   if(!_cc||_cc.offsetWidth===0||_cc.offsetParent===null)return;

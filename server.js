@@ -4623,13 +4623,37 @@ const _finchRedirectUri = () => process.env.FINCH_REDIRECT_URI || (appUrl() + '/
 // /finch/callback with a `code`. products default to read-only company/directory/payroll scopes.
 app.post('/api/finch/connect-url', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   if (!finchConfigured()) return res.status(502).json({ error: 'Payroll linking is not set up yet. Add FINCH_CLIENT_ID and FINCH_CLIENT_SECRET to enable it.', code: 'FINCH_NOT_CONFIGURED' });
-  const products = (process.env.FINCH_PRODUCTS || 'company directory payroll');
-  const params = new URLSearchParams({
-    client_id: process.env.FINCH_CLIENT_ID, products,
-    redirect_uri: _finchRedirectUri(), state: String(scopeId(req)),
-  });
-  if ((process.env.FINCH_ENV || 'sandbox').toLowerCase() !== 'production') params.set('sandbox', 'true');
-  res.json({ connect_url: 'https://connect.tryfinch.com/authorize?' + params.toString() });
+  // Finch RETIRED the direct connect.tryfinch.com/authorize URL (now "legacy-flows"); the current flow is a
+  // server-side Connect Session (POST /connect/sessions, Basic client_id:client_secret) that mints a fresh
+  // single-use connect_url. Still a redirect flow: the user completes it and Finch redirects to redirect_uri
+  // with ?code, which /api/finch/callback exchanges (unchanged). products default 'company directory' — NOT
+  // 'payroll' (not a valid Finch product; the old default 400'd "payroll is an invalid product").
+  const products = (process.env.FINCH_PRODUCTS || 'company directory').split(/\s+/).filter(Boolean);
+  const sandbox = (process.env.FINCH_ENV || 'sandbox').toLowerCase() !== 'production';
+  try {
+    const resp = await fetch(FINCH_API + '/connect/sessions', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from(process.env.FINCH_CLIENT_ID + ':' + process.env.FINCH_CLIENT_SECRET).toString('base64'),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(Object.assign({
+        products,
+        customer_id: String(scopeId(req)),
+        customer_name: 'FinFlow',
+        redirect_uri: _finchRedirectUri(),
+      }, sandbox ? { sandbox: 'finch' } : {})),
+    });
+    let j = {}; try { j = await resp.json(); } catch (_) {}
+    if (!resp.ok || !j.connect_url) {
+      console.error('[finch connect-url]', resp.status, JSON.stringify(j).slice(0, 300));
+      return res.status(502).json({ error: 'Could not start payroll connection: ' + (j.message || j.error || ('Finch HTTP ' + resp.status)), code: 'FINCH_SESSION_FAILED' });
+    }
+    res.json({ connect_url: j.connect_url });
+  } catch (e) {
+    console.error('[finch connect-url]', e.message);
+    res.status(502).json({ error: 'Could not start payroll connection: ' + e.message });
+  }
 }));
 
 // Finch redirects the popup here with ?code=…; exchange it server-side, store (encrypted), close.

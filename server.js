@@ -404,13 +404,30 @@ async function _recordPageView(v) {
     [v.vkey, v.ip, geo && geo.country, geo && geo.region, geo && geo.city, v.pth, v.ref || null, v.ua || null, v.uid]
   );
 }
+// Real visitor IP behind Railway's proxy. `trust proxy:1` (set below) resolves req.ip to
+// only ONE hop in, which on Railway is an intermediate edge address (e.g. it geolocated a
+// Brazilian POP, not the visitor). Prefer the address the edge itself vouches for:
+//   1) x-envoy-external-address — Railway/Envoy sets this to the trusted external client;
+//   2) the LEFTMOST x-forwarded-for entry — the origin client the chain started from;
+//   3) req.ip as a last resort.
+// Strip an IPv4-mapped IPv6 prefix so geo + dedupe see a clean dotted-quad.
+function _clientIp(req) {
+  const envoy = req.headers['x-envoy-external-address'];
+  if (envoy && String(envoy).trim()) return String(envoy).trim().replace(/^::ffff:/i, '');
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) {
+    const first = String(xff).split(',')[0].trim();
+    if (first) return first.replace(/^::ffff:/i, '');
+  }
+  return (req.ip || (req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/i, '') || null;
+}
 const _TRACK_SKIP_RE = /^\/(api|favicon|robots|sitemap|health|tier-config)/i;
 app.use((req, res, next) => {
   if (req.method === 'GET' && !_TRACK_SKIP_RE.test(req.path) && !/\.[a-z0-9]{1,8}$/i.test(req.path)) {
     res.on('finish', () => {
       try {
         if (res.statusCode >= 400) return;
-        const ip  = req.ip || null;
+        const ip  = _clientIp(req);
         const ua  = (req.get('user-agent') || '').slice(0, 400);
         const ref = (req.get('referer') || req.get('referrer') || '').slice(0, 400);
         const pth = String(req.path || '/').slice(0, 300);

@@ -696,6 +696,7 @@ let _logData = [];
 let _securityData = [];
 let _overviewChart = null;
 let _trafficChart = null;
+let _trafficTimer = null;
 let _currentLogTab = 'admin';
 let _currentUserId = null;
 let _currentAccId = null;
@@ -770,6 +771,15 @@ function showPage(name) {
 
 // ── TRAFFIC / VISITOR ANALYTICS ─────────────────────────────────────────────
 async function loadTraffic() {
+  // Live refresh: while the Traffic page is open, re-pull every 15s so new visitors
+  // appear without a manual reload. Self-clears when the user navigates away.
+  if (!_trafficTimer) {
+    _trafficTimer = setInterval(() => {
+      const p = document.getElementById('page-traffic');
+      if (p && p.classList.contains('active')) loadTraffic();
+      else { clearInterval(_trafficTimer); _trafficTimer = null; }
+    }, 15000);
+  }
   try {
     const res = await fetch('/api/admin/traffic', { credentials: 'include' });
     const d = await res.json();

@@ -8,12 +8,23 @@
 (function () {
   'use strict';
 
+  // Coalesce concurrent identical GETs. On a cold boot each list loader is fired from the
+  // module init AND again from the render pass before the first fetch resolves; sharing the
+  // in-flight promise collapses those duplicates into ONE request. GET-only (never mutations),
+  // and the entry clears as soon as it settles, so a later reload still fetches fresh data.
+  const _inflightGets = new Map();
   async function api(method, path, body) {
     const opts = { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } };
     if (body !== undefined) opts.body = JSON.stringify(body);
-    const res = await fetch(path, opts);
-    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `API error ${res.status}`); }
-    return res.json();
+    const isGet = String(method).toUpperCase() === 'GET';
+    if (isGet && _inflightGets.has(path)) return _inflightGets.get(path);
+    const p = (async () => {
+      const res = await fetch(path, opts);
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `API error ${res.status}`); }
+      return res.json();
+    })();
+    if (isGet) { _inflightGets.set(path, p); const done = () => { if (_inflightGets.get(path) === p) _inflightGets.delete(path); }; p.then(done, done); }
+    return p;
   }
 
   function e(s) {

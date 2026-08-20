@@ -117,6 +117,25 @@ async function main() {
     const pg = (d.pages || []).find(p => p.path === '/');
     A('top pages: "/" has 3 views across 2 visitors', pg && Number(pg.views) === 3 && Number(pg.visitors) === 2, JSON.stringify(d.pages));
 
+    console.log('\n-- real client IP behind a proxy chain (Railway) --');
+    // Leftmost X-Forwarded-For entry is the ORIGIN client; the rightmost is the edge hop that
+    // trust-proxy:1's req.ip wrongly reported (152.233.47.66 → Brazil). raw fetch: HarnessHttp only
+    // sets a single xff value, so craft the multi-hop header directly.
+    await fetch(server.baseUrl + '/', { headers: { 'x-forwarded-for': '77.88.8.8, 10.0.0.1, 152.233.47.66' } });
+    let iprows = await waitFor(c, r => r.some(x => x.ip_address === '77.88.8.8'));
+    A('client IP = leftmost XFF entry (the visitor)', iprows.some(x => x.ip_address === '77.88.8.8'),
+      JSON.stringify(iprows.map(r => r.ip_address)));
+    A('did NOT record the edge-hop IP (152.233.47.66)', !iprows.some(x => x.ip_address === '152.233.47.66'));
+    A('geo from the real client IP (77.88.8.8 → RU), not the BR hop',
+      (iprows.find(x => x.ip_address === '77.88.8.8') || {}).country === 'RU',
+      String((iprows.find(x => x.ip_address === '77.88.8.8') || {}).country));
+
+    // Railway/Envoy sets x-envoy-external-address to the trusted external client — prefer it.
+    await fetch(server.baseUrl + '/', { headers: { 'x-forwarded-for': '77.88.8.8', 'x-envoy-external-address': '8.8.4.4' } });
+    iprows = await waitFor(c, r => r.some(x => x.ip_address === '8.8.4.4'));
+    A('x-envoy-external-address preferred over XFF', iprows.some(x => x.ip_address === '8.8.4.4'),
+      JSON.stringify(iprows.map(r => r.ip_address)));
+
     console.log('\n-- graceful boot: no unhandled rejections from tracking --');
     A('no boot rejections', (server.bootRejections || []).length === 0, JSON.stringify(server.bootRejections));
 

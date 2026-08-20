@@ -6714,29 +6714,19 @@ document.querySelector('.content')?.appendChild(advisorPage);
 // honest placeholder (it is never reached at runtime due to the redirect).
 
 
-// ── 3. TAX FILING PAGE ───────────────────────────────────────────────────
-const reportsItem = document.querySelector('.nav-item[onclick*="reports"]');
-if(reportsItem){
-  const taxNavItem = document.createElement('div');
-  taxNavItem.className = 'nav-item';
-  taxNavItem.setAttribute('onclick', "showPage('tax-filing',this)");
-  taxNavItem.innerHTML = `<svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="1" width="12" height="14" rx="1.2"/><path d="M5 4V2"/><path d="M11 4V2"/><line x1="2" y1="6" x2="14" y2="6"/><line x1="5" y1="9" x2="11" y2="9"/><polyline points="9,12 10.5,13.5 13,11"/></svg>Tax Filing`;
-  reportsItem.parentNode.insertBefore(taxNavItem, reportsItem);
-}
-
-const taxPage = document.createElement('div');
-taxPage.className = 'page';
-taxPage.id = 'page-tax-filing';
-taxPage.innerHTML = '<div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem"><div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">&#127963;</div><div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Tax Filing &#8212; Coming Soon</div><div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Direct e-file to IRS, HMRC, and other tax authorities. Auto-calculate quarterly estimates, generate W-2s and 1099s, and file in minutes.</div><span class="badge b-amber" style="font-size:11px;padding:4px 12px">Requires tax API integration</span></div>';
-document.querySelector('.content')?.appendChild(taxPage);
-
-// PL#11 (Path A): the interactive tax page these three functions drove was replaced by the
-// "Coming Soon" placeholder above, so their target elements (tax-liability/tax-paid-ytd/tax-due/
-// tax-val-*/tax-bar-*/#tax-steps-list) no longer exist anywhere in the main app — every write was a
-// silent no-op. calcAndRenderTax also FABRICATED figures (ytdPaid = liability × 0.75, with no
-// tax-payment ledger backing it) off the stale pre-F32 category arrays. Removed at the source so the
-// fabrication can never resurrect. A real canonical tax estimator (issue-based net × rate, ytdPaid
-// "Not tracked") is logged as a separate future feature in the F51 placeholder-honesty track.
+// ── 3. TAX FILING — REMOVED (D1 + honesty pass) ──────────────────────────
+// The "Tax Filing" nav item + "Coming Soon" page promised direct e-file to IRS/HMRC,
+// W-2/1099 generation and auto-calculated estimates — none of which FinFlow does or (per
+// D1) intends to: FinFlow holds no tax knowledge and filing is explicitly out of scope. The
+// card advertised capabilities the app lacks (and named the wrong tax authorities for its
+// Americas/Caribbean/Europe scope), so it is removed rather than shipped as a false promise.
+// What FinFlow legitimately offers stays under Reports: the owner-driven Income Tax Estimate
+// worksheet and the W-2/1099 SUMMARY report. Real filing, if ever pursued, is a post-launch
+// third-party integration — logged, not stubbed.
+//
+// (An earlier interactive tax page here was already deleted for FABRICATING a "tax paid YTD"
+// figure — ytdPaid = liability × 0.75 with no payment ledger. Do NOT reintroduce a tax-filing
+// page without a real filing backend.)
 
 
 // ── 4. INTEGRATION MARKETPLACE UPGRADE ──────────────────────────────────
@@ -6751,11 +6741,11 @@ document.querySelector('.content')?.appendChild(taxPage);
 const _origShowPage = window.showPage;
 window.showPage = function(id, el){
   _origShowPage(id, el);
-  const extra = {'advisors':'Advisor Network','tax-filing':'Tax Filing'};
+  const extra = {'advisors':'Advisor Network'};
   if(extra[id]) document.getElementById('pageTitle').textContent = extra[id];
   // Advisor render hook removed with the dead advisor directory (honesty pass); the
   // 'advisors' nav redirects to Find Accountant (index.html marketplace block).
-  // PL#11: tax-filing is a static "Coming Soon" placeholder — no render hook (calcAndRenderTax removed).
+  // 'tax-filing' nav + page removed (honesty pass / D1) — see section 3 above.
 };
 
 // ── 6. PATCH showPage to close sidebar on mobile ──────────────────────────

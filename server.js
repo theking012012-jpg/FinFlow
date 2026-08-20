@@ -4383,8 +4383,8 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
 // GET /api/tax-filing — fiscal-year income-tax estimate. Revenue is ISSUE-BASED ACCRUAL and the
 // deductible is the single-source computeBooks leg — the SAME figures the dashboard, /api/reports,
 // /books and the accountant portal read, so the client Income-Tax worksheet can never diverge from
-// those surfaces again (F139). Uses a flat 25% combined federal+self-employment estimate as a
-// starting point; the worksheet overrides it per tax line on the frontend.
+// those surfaces again (F139). The rate is the OWNER's saved tax_rate (Settings), defaulting to 25%
+// only until they set it; the multi-line worksheet on the frontend refines it per tax line.
 app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
   try {
     const uid = scopeId(req);
@@ -4400,13 +4400,24 @@ app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
     const revenue = books.revenue;
     const deductible = books.tax.deductible;
     const taxableIncome = Math.max(0, revenue - deductible);
-    const estimatedTax = Math.round(taxableIncome * 0.25);
+    // F76 defect #1 / D1 — use the OWNER'S saved rate (Settings → tax_rate, a 0–100 %), never a
+    // hardcoded guess. FinFlow holds no tax knowledge (D1); the rate is the user's own number. The
+    // richer Income Tax Estimate worksheet already computes client-side from the user's tax lines —
+    // reading the setting here keeps this raw endpoint consistent with that for any consumer, and
+    // defaults to 25% ONLY until the owner sets their own rate.
+    const { rows: [_trs] } = await pool.query(
+      `SELECT data->>'tax_rate' AS tax_rate FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`,
+      [uid]
+    );
+    const _rp = _trs && _trs.tax_rate != null && _trs.tax_rate !== '' ? parseFloat(_trs.tax_rate) : NaN;
+    const rate = Number.isFinite(_rp) && _rp >= 0 && _rp <= 100 ? _rp / 100 : 0.25;
+    const estimatedTax = Math.round(taxableIncome * rate);
     const quarterly = Math.round(estimatedTax / 4);
 
     res.json({
       revenue, deductible, taxableIncome,
       estimatedTax, quarterly,
-      rate: 0.25,
+      rate,
     });
   } catch (e) {
     // F31: don't disguise a query failure as a $0 tax estimate. Real empty period

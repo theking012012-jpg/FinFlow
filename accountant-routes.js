@@ -711,6 +711,7 @@ If you cannot find a field, use null. Be concise.`;
       `UPDATE accountant_clients SET notes = $1 WHERE accountant_id = $2 AND user_id = $3`,
       [(note || '').slice(0, 2000), req.session.accountantId, userId]
     );
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'NOTE_UPDATE', field: 'notes', newValue: (note || '').slice(0, 200), req });  // F90 residual: accountant workflow audit
     res.json({ ok: true });
   }));
 
@@ -728,6 +729,7 @@ If you cannot find a field, use null. Be concise.`;
       INSERT INTO accountant_reports (accountant_id, reporter_id, reason, created_at)
       VALUES ($1, $2, $3, NOW())
     `, [req.session.accountantId, parseInt(userId), JSON.stringify({ type, ref, message })]);
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_reports', action: 'FLAG', newData: { type, ref, message }, req });  // F90 residual: accountant workflow audit
     res.json({ ok: true });
   }));
 
@@ -890,6 +892,8 @@ If you cannot find a field, use null. Be concise.`;
     `, [accountantId, userId || null, split.accountantNetCents, split.billedCents,
         split.commissionCents, split.stripeFeeCents, description || 'Service commission']);
 
+    await _audit(pool, { userId: userId ? parseInt(userId) : null, table: 'accountant_earnings', action: 'COMMISSION_RECORD', newData: { type: 'service_commission', billed_cents: split.billedCents, commission_cents: split.commissionCents, net_cents: split.accountantNetCents, description: description || 'Service commission' }, req });  // F90 residual: accountant workflow audit
+
     return res.json({ success: true, commissionRate: rate, ...split,
       commissionFormatted: '$' + (split.commissionCents / 100).toFixed(2) });
   }));
@@ -1044,6 +1048,7 @@ If you cannot find a field, use null. Be concise.`;
       `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ($1,'user',$2,$3,NOW())`,
       ['accountant_notification', userId, (message || '').slice(0, 500)]
     ).catch(() => {});
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'NOTIFY_CLIENT', newValue: (message || '').slice(0, 200), req });  // F90 residual: accountant workflow audit
     return res.json({ ok: true });
   }));
 
@@ -1139,6 +1144,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       `UPDATE accountant_clients SET checklist = $1 WHERE accountant_id = $2 AND user_id = $3`,
       [checklist, req.session.accountantId, userId]
     );
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CHECKLIST_UPDATE', newData: checklist, req });  // F90 residual: accountant workflow audit
     return res.json({ ok: true });
   }));
 
@@ -1182,6 +1188,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
        VALUES ($1, $2, $3, 'accountant') RETURNING id, message, sender, created_at`,
       [req.session.accountantId, userId, message.trim().slice(0, 2000)]
     );
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_messages', recordId: row.rows[0]?.id || null, action: 'MESSAGE', req });  // F90 residual: accountant workflow audit
     return res.json(row.rows[0]);
   }));
 
@@ -1217,6 +1224,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
        VALUES ($1, $2, $3, 'accountant', NOW()) RETURNING id, message AS content, sender, created_at`,
       [req.session.accountantId, userId, content]
     );
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_messages', recordId: row.rows[0]?.id || null, action: 'MESSAGE', req });  // F90 residual: accountant workflow audit
     res.json(row.rows[0]);
   }));
 
@@ -1457,6 +1465,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
         VALUES ($1, $2, 'referral', 1000, 'Referral commission — month 1', date_trunc('month', NOW()))
       `, [req.session.accountantId, userId]);
 
+      await _audit(conn, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_ACTIVATE', field: 'status', newValue: 'active', req });  // F90 residual: accountant workflow audit (approve access request)
+
       // Email the client
       const [uRes, aRes] = await Promise.all([
         conn.query(`SELECT data->>'email' AS email, data->>'name' AS name FROM users WHERE id = $1`, [userId]),
@@ -1492,6 +1502,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       `DELETE FROM accountant_clients WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending'`,
       [userId, req.session.accountantId]
     );
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_DECLINE', field: 'status', newValue: 'declined', req });  // F90 residual: accountant workflow audit (decline access request)
     return res.json({ success: true });
   }));
 
@@ -1609,6 +1620,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
         [req.session.accountantId, clientId, split.accountantNetCents, split.billedCents,
          split.commissionCents, split.stripeFeeCents, paymentIntent.id, description || 'Accounting services']
       );
+
+      await _audit(pool, { userId: parseInt(clientId), table: 'accountant_earnings', action: 'BILL_CLIENT', newData: { billed_cents: split.billedCents, commission_cents: split.commissionCents, net_cents: split.accountantNetCents, payment_intent_id: paymentIntent.id, description: description || 'Accounting services' }, req });  // F90 residual: accountant workflow audit
 
       res.json({
         clientSecret: paymentIntent.client_secret,

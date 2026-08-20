@@ -434,38 +434,6 @@ async function initDB() {
       )
     `);
 
-    // ── VISITOR ANALYTICS (page-view tracking) ──────────────────────────────
-    // One row per unique visitor (ip+user-agent hash) per UTC day. `views` counts
-    // repeat loads that day; last_seen carries the most recent hit's time. Country/
-    // region/city are resolved from the IP at capture time (fast-geoip, offline).
-    // Surfaced only in the admin Traffic panel. RLS enabled to stay consistent with
-    // the platform lockdown (the app connects as a superuser and bypasses it).
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS page_views (
-        id          SERIAL PRIMARY KEY,
-        visitor_key TEXT NOT NULL,
-        view_day    DATE NOT NULL,
-        ip_address  TEXT,
-        country     TEXT,
-        region      TEXT,
-        city        TEXT,
-        path        TEXT,
-        referrer    TEXT,
-        user_agent  TEXT,
-        user_id     INTEGER,
-        views       INTEGER NOT NULL DEFAULT 1,
-        first_seen  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        last_seen   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE(visitor_key, view_day)
-      )
-    `);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_page_views_day ON page_views(view_day DESC)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_page_views_last_seen ON page_views(last_seen DESC)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_page_views_country ON page_views(country)`);
-    // Boot-safe: enabling RLS is idempotent; superuser/table-owner connections bypass it,
-    // so the app is unaffected while any future Data-API exposure stays denied by default.
-    await client.query(`ALTER TABLE page_views ENABLE ROW LEVEL SECURITY`).catch(() => {});
-
     // AI response cache
     await client.query(`
       CREATE TABLE IF NOT EXISTS ai_cache (
@@ -746,67 +714,6 @@ async function initDB() {
       END $fk$;
     `);
 
-    // ── F79: STATUS VALUE-DOMAIN CONSTRAINTS (money tables) ──────────────────────
-    // The DB-level backstop to the app-layer validation in server.js. Case-insensitive (lower())
-    // so mixed-case legacy values like credit_notes 'Open' pass; NULL/absent status is allowed.
-    // Added NOT VALID (Rule 7/8): enforces every new INSERT/UPDATE, but does NOT scan existing rows
-    // at ADD time — so no legacy row can ever brick boot, and no historical data is rejected or
-    // migrated. Idempotent by constraint-name check (added once; a zero-op thereafter), matching the
-    // FK block above. payroll_runs.status is a real column; the rest live in JSONB data->>'status'.
-    await client.query(`
-      DO $stat$
-      DECLARE rec record;
-      BEGIN
-        FOR rec IN
-          SELECT * FROM (VALUES
-            ('payroll_runs','chk_payroll_runs_status','status IS NULL OR lower(status) IN (''draft'',''approved'',''paid'',''voided'')'),
-            ('invoices','chk_invoices_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''pending'',''overdue'',''partial'',''paid'',''draft'')'),
-            ('bills','chk_bills_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''unpaid'',''due_soon'',''overdue'',''partial'',''paid'')'),
-            ('credit_notes','chk_credit_notes_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''open'',''applied'',''void'')'),
-            ('vendor_credits','chk_vendor_credits_status','data->>''status'' IS NULL OR lower(data->>''status'') IN (''open'',''applied'',''void'')')
-          ) AS v(tbl, cname, expr)
-        LOOP
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = rec.cname) THEN
-            EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s) NOT VALID', rec.tbl, rec.cname, rec.expr);
-          END IF;
-        END LOOP;
-      END $stat$;
-    `);
-
-    // F150-class — ENTITY ISOLATION INVARIANT. entity_id must be NOT NULL on business tables so a
-    // business row can NEVER be stored account-wide (NULL); the null-inclusive read filter would
-    // otherwise surface a NULL row under EVERY entity — the cross-entity leak. Added NOT VALID
-    // (Rule 7/8): enforces every NEW insert/update, but does NOT scan or migrate existing rows at ADD
-    // time, so no legacy NULL can brick boot and no historical data is touched — legacy NULLs are
-    // cleared by the SEPARATE, owner-gated backfill, never automatically here. Personal / user-level
-    // tables (holdings, personal_transactions, personal_accounts, goals, projects, timesheet,
-    // documents, templates, user_settings, snapshots, budget_targets) are intentionally EXCLUDED —
-    // NULL entity_id is legitimate there. Guarded on column existence so a missing table/column is a
-    // zero-op, and idempotent by constraint-name check.
-    await client.query(`
-      DO $ent$
-      DECLARE rec RECORD;
-      BEGIN
-        FOR rec IN
-          SELECT unnest(ARRAY[
-            'invoices','expenses','customers','inventory','items','quotes','vendors','bills',
-            'recurring_bills','recurring_invoices','sales_receipts','payments_received',
-            'payments_made','credit_notes','vendor_credits','journals','chart_of_accounts'
-          ]) AS tbl
-        LOOP
-          IF EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name = rec.tbl AND column_name = 'entity_id'
-             )
-             AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_'||rec.tbl||'_entity_nn')
-          THEN
-            EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (entity_id IS NOT NULL) NOT VALID',
-                           rec.tbl, 'chk_'||rec.tbl||'_entity_nn');
-          END IF;
-        END LOOP;
-      END $ent$;
-    `);
-
     await client.query('COMMIT');
     console.log('[DB] PostgreSQL schema ready');
   } catch (err) {
@@ -912,26 +819,10 @@ function objToData(obj) {
 //   pool.query("SELECT * FROM users WHERE data->>'email' = $1 LIMIT 1", [email])
 // and hot-path db.update()/db.delete() with direct parameterized WHERE queries.
 // Acceptable at small scale; revisit before high row counts. See idx_users_email index.
-// F150/F157: business tables carry the entity-isolation invariant (chk_<table>_entity_nn,
-// CHECK (entity_id IS NOT NULL)). Kept in sync with the constraint list in initDB(). A create with
-// no resolvable entity would otherwise hit the DB constraint and surface as an opaque 500; instead
-// db.insert throws a typed, client-safe 400 that the global error handler exposes. This is the single
-// shared mechanism (Rule 9) — a new create route routing through db.insert cannot ship without it.
-const ENTITY_REQUIRED_TABLES = new Set([
-  'invoices', 'expenses', 'customers', 'inventory', 'items', 'quotes', 'vendors', 'bills',
-  'recurring_bills', 'recurring_invoices', 'sales_receipts', 'payments_received',
-  'payments_made', 'credit_notes', 'vendor_credits', 'journals', 'chart_of_accounts',
-]);
-
 const db = {
 
   async insert(table, row) {
     const { user_id = null, entity_id = null, ...rest } = row;
-    if (entity_id == null && ENTITY_REQUIRED_TABLES.has(table)) {
-      const e = new Error('No active business entity. Create or select a business entity first.');
-      e.status = 400; e.expose = true; e.code = 'NO_ACTIVE_ENTITY';
-      throw e;
-    }
     const data = objToData(rest);
     const doInsert = () => pool.query(
       `INSERT INTO ${table} (user_id, entity_id, data)

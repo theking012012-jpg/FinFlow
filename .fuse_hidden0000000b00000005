@@ -69,12 +69,11 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com https://cdn.belvo.io; " +   // Plaid Link + Belvo widget SDKs
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
     "style-src 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src https://fonts.gstatic.com; " +
     "img-src 'self' data: blob:; " +
-    "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com https://*.plaid.com https://*.belvo.io https://*.belvo.com; " +   // F49: dropped dead ws:/wss:. *.plaid.com/*.belvo.*: bank-link widgets
-    "frame-src https://cdn.plaid.com https://*.plaid.com https://*.belvo.io; " +   // Plaid + Belvo render their flows in an iframe
+    "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com; " +   // F49: dropped dead ws:/wss: — FinFlow opens no socket, so a stray socket now hits a documented CSP block
     "frame-ancestors 'none'; " +
     "object-src 'none'; " +
     "base-uri 'self';"
@@ -173,21 +172,6 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       await setSubscriptionStatus(upgradeUserId, 'active');
       await reactivateClientForUser(upgradeUserId);
     }
-
-    // ── Invoice "Pay now" reconciliation (Stripe Connect payment links) ──
-    // A mode=payment session carrying our invoice reference means a customer actually paid an
-    // invoice. Record it through the SINGLE invoice_payments writer (idempotent on the session id),
-    // NOT here inline — so there is one source of truth for amount_paid (Rules 2/6/9). Creating a
-    // link never reaches this; only a signature-verified 'paid' event does.
-    if (session.mode === 'payment' && (session.client_reference_id || session.metadata?.kind === 'invoice_payment')) {
-      const invId = parseInt(session.client_reference_id || session.metadata?.invoice_id, 10);
-      if (invId) {
-        const rec = await recordExternalInvoicePayment({
-          invoiceId: invId, amountMinor: session.amount_total, method: 'Card (Stripe)', idemKey: 'stripe:' + session.id,
-        }).catch(err => { console.error('[Stripe] invoice reconcile failed:', err.message); return { recorded: false, reason: 'error' }; });
-        console.log('[Stripe] invoice ' + invId + ' payment → ' + JSON.stringify(rec));
-      }
-    }
   }
 
   // F11: subscription lifecycle — the authoritative source for subscriptionStatus.
@@ -253,175 +237,8 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   res.json({ received: true });
 });
 
-// ── PAYSTACK WEBHOOK ──────────────────────────────────────────────────────────
-// Raw body, before express.json (needs the exact bytes for the HMAC). Paystack signs each event
-// with HMAC-SHA512(rawBody, <merchant secret_key>). Multi-tenant: each account has its own key, so
-// we resolve WHICH account from the invoice reference we set on the payment link (INV-<id>-<ts>),
-// fetch that account's stored key, and verify with it. The money write happens ONLY after the
-// signature verifies, through the SAME single writer + idempotency as Stripe (F171).
-app.post('/api/paystack/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig = req.headers['x-paystack-signature'];
-  if (!sig) return res.status(400).json({ error: 'Missing signature.' });
-  let evt;
-  try { evt = JSON.parse(req.body.toString('utf8')); } catch (_) { return res.status(400).json({ error: 'Bad body.' }); }
-  const reference = (evt && evt.data && evt.data.reference) || '';
-  const m = /^INV-(\d+)-/.exec(reference);
-  if (!m) return res.status(200).json({ received: true, ignored: 'no invoice reference' });
-  const invoiceId = parseInt(m[1], 10);
-  const { rows: [ir] } = await pool.query(`SELECT user_id FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
-  if (!ir) return res.status(200).json({ received: true, ignored: 'unknown invoice' });
-  const { value: conn } = await _providerBlob(ir.user_id, 'paystack_conn');
-  if (!conn || !conn.secret_key) return res.status(400).json({ error: 'Paystack not connected for this account.' });
-  let secret; try { secret = decTok(conn.secret_key); } catch (_) { return res.status(400).json({ error: 'Stored key unreadable.' }); }
-  const expected = crypto.createHmac('sha512', secret).update(req.body).digest('hex');
-  const ok = Buffer.byteLength(sig) === Buffer.byteLength(expected) &&
-    crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
-  if (!ok) { console.error('[Paystack] signature mismatch for invoice ' + invoiceId); return res.status(401).json({ error: 'Invalid signature.' }); }
-  if (evt.event === 'charge.success' && evt.data && evt.data.status === 'success') {
-    const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: evt.data.amount, method: 'Card (Paystack)', idemKey: 'paystack:' + reference })
-      .catch(e => { console.error('[Paystack] reconcile failed:', e.message); return { recorded: false, reason: 'error' }; });
-    console.log('[Paystack] invoice ' + invoiceId + ' payment → ' + JSON.stringify(rec));
-  }
-  res.json({ received: true });
-});
-
-// ── FLUTTERWAVE WEBHOOK ───────────────────────────────────────────────────────
-// Raw body, before express.json. Flutterwave auth is a static header: it sends the merchant's
-// configured "secret hash" in `verif-hash`. Multi-tenant: resolve the account from the tx_ref
-// (INV-<id>-<ts>) we set on the payment link, compare against THAT account's stored secret_hash
-// (timing-safe), then record through the SAME single/idempotent writer. Flutterwave amounts are in
-// MAJOR units, so ×100 to minor for the shared writer.
-app.post('/api/flutterwave/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig = req.headers['verif-hash'];
-  if (!sig) return res.status(400).json({ error: 'Missing verif-hash.' });
-  let evt;
-  try { evt = JSON.parse(req.body.toString('utf8')); } catch (_) { return res.status(400).json({ error: 'Bad body.' }); }
-  const ref = (evt && evt.data && (evt.data.tx_ref || evt.data.txref)) || '';
-  const m = /^INV-(\d+)-/.exec(ref);
-  if (!m) return res.status(200).json({ received: true, ignored: 'no invoice reference' });
-  const invoiceId = parseInt(m[1], 10);
-  const { rows: [ir] } = await pool.query(`SELECT user_id FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
-  if (!ir) return res.status(200).json({ received: true, ignored: 'unknown invoice' });
-  const { value: conn } = await _providerBlob(ir.user_id, 'flutterwave_conn');
-  if (!conn || !conn.secret_hash) return res.status(400).json({ error: 'Flutterwave not connected (or no secret hash) for this account.' });
-  let hash; try { hash = decTok(conn.secret_hash); } catch (_) { return res.status(400).json({ error: 'Stored hash unreadable.' }); }
-  const ok = Buffer.byteLength(sig) === Buffer.byteLength(hash) &&
-    crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(hash));
-  if (!ok) { console.error('[Flutterwave] verif-hash mismatch for invoice ' + invoiceId); return res.status(401).json({ error: 'Invalid verif-hash.' }); }
-  if ((evt.event === 'charge.completed' || evt['event.type'] === 'CARD_TRANSACTION') && evt.data && String(evt.data.status).toLowerCase() === 'successful') {
-    const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: Math.round((Number(evt.data.amount) || 0) * 100), method: 'Card (Flutterwave)', idemKey: 'flutterwave:' + ref })
-      .catch(e => { console.error('[Flutterwave] reconcile failed:', e.message); return { recorded: false, reason: 'error' }; });
-    console.log('[Flutterwave] invoice ' + invoiceId + ' payment → ' + JSON.stringify(rec));
-  }
-  res.json({ received: true });
-});
-
-// ── WIPAY CALLBACK ────────────────────────────────────────────────────────────
-// WiPay is NOT a signed webhook — it web-redirects the payor's browser (GET) to response_url with
-// the result in the query string, including `hash` = md5(transaction_id + ORIGINAL total + API key)
-// (per WiPay docs; verified against their worked example). The hash IS the authentication — only
-// WiPay, holding the merchant's key, can produce it. Public endpoint (the payor isn't logged in):
-// resolve the account from order_id (INV-<id>), recompute the hash with THAT account's stored key,
-// and on a verified `success` record via the SAME single/idempotent writer. Always redirects the
-// browser back to the app; only a hash match writes anything.
-app.get('/api/wipay/callback', async (req, res) => {
-  const back = appUrl() + '/pay-received.html' + (String((req.query && req.query.status) || '') === 'success' ? '' : '?status=cancelled');
-  try {
-    const q = req.query || {};
-    const m = /^INV-(\d+)-/.exec(String(q.order_id || ''));
-    if (!m) return res.redirect(back);
-    const invoiceId = parseInt(m[1], 10);
-    const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
-    if (!ir) return res.redirect(back);
-    const inv = rowToObj(ir);
-    const { value: conn } = await _providerBlob(ir.user_id, 'wipay_conn');
-    if (!conn || !conn.account_number) return res.redirect(back);
-    if (String(q.status) === 'success' && q.hash && q.transaction_id) {
-      let key; try { key = decTok(conn.api_key); } catch (_) { return res.redirect(back); }
-      const original = (parseFloat(inv.amount) || 0).toFixed(2);   // the total WiPay hashed (2dp)
-      const expected = crypto.createHash('md5').update(String(q.transaction_id) + original + key).digest('hex');
-      const given = String(q.hash);
-      const ok = Buffer.byteLength(given) === Buffer.byteLength(expected) &&
-        crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected));
-      if (ok) {
-        const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: Math.round((parseFloat(inv.amount) || 0) * 100), method: 'Card (WiPay)', idemKey: 'wipay:' + q.transaction_id })
-          .catch(e => { console.error('[WiPay] reconcile failed:', e.message); return { recorded: false, reason: 'error' }; });
-        console.log('[WiPay] invoice ' + invoiceId + ' payment → ' + JSON.stringify(rec));
-      } else {
-        console.error('[WiPay] hash mismatch for invoice ' + invoiceId);
-      }
-    }
-  } catch (e) { console.error('[WiPay callback]', e.message); }
-  res.redirect(back);
-});
-
 // NOTE: Stripe checkout route is registered later (after session + express.json +
 // requireAuth are active) so req.session and req.body are populated. See below.
-
-// ── VISITOR ANALYTICS (page-view tracking) ───────────────────────────────────
-// Records a page view per unique visitor per UTC day for the admin Traffic panel,
-// with coarse IP-derived location and time. Registered HERE — before the "/" and
-// "/app" routes and before express.static — so it sees every real page navigation.
-//
-// Non-blocking by construction: the work is deferred to the response 'finish' event
-// and fired without await, and every geo/DB error is swallowed, so tracking can never
-// slow down or break a page load. Only genuine navigations are counted — GET only,
-// nothing under /api, nothing with a file extension (static assets), and only
-// successful (<400) responses.
-//
-// fast-geoip is an OFFLINE ip→location database (no external calls, ~1MB RAM). It is
-// lazy-required and wrapped: if it is ever missing the app still records views with a
-// null location instead of throwing.
-let _geoipMod = null, _geoipTried = false;
-function _getGeoip() {
-  if (!_geoipTried) { _geoipTried = true; try { _geoipMod = require('fast-geoip'); } catch (_) { _geoipMod = null; } }
-  return _geoipMod;
-}
-async function _lookupGeo(ip) {
-  try {
-    const g = _getGeoip();
-    if (!g || !ip) return null;
-    const clean = String(ip).replace(/^::ffff:/i, '');
-    // Skip loopback / private / link-local / ULA — no meaningful public location.
-    if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|::1$|fc|fd|fe80)/i.test(clean)) return null;
-    const r = await g.lookup(clean);
-    if (!r) return null;
-    return { country: r.country || null, region: r.region || null, city: r.city || null };
-  } catch (_) { return null; }
-}
-async function _recordPageView(v) {
-  const geo = await _lookupGeo(v.ip);
-  await pool.query(
-    `INSERT INTO page_views
-       (visitor_key, view_day, ip_address, country, region, city, path, referrer, user_agent, user_id, views, first_seen, last_seen)
-     VALUES ($1, (NOW() AT TIME ZONE 'UTC')::date, $2,$3,$4,$5,$6,$7,$8,$9, 1, NOW(), NOW())
-     ON CONFLICT (visitor_key, view_day) DO UPDATE SET
-       views     = page_views.views + 1,
-       last_seen = NOW(),
-       country   = COALESCE(page_views.country, EXCLUDED.country),
-       region    = COALESCE(page_views.region,  EXCLUDED.region),
-       city      = COALESCE(page_views.city,    EXCLUDED.city)`,
-    [v.vkey, v.ip, geo && geo.country, geo && geo.region, geo && geo.city, v.pth, v.ref || null, v.ua || null, v.uid]
-  );
-}
-const _TRACK_SKIP_RE = /^\/(api|favicon|robots|sitemap|health|tier-config)/i;
-app.use((req, res, next) => {
-  if (req.method === 'GET' && !_TRACK_SKIP_RE.test(req.path) && !/\.[a-z0-9]{1,8}$/i.test(req.path)) {
-    res.on('finish', () => {
-      try {
-        if (res.statusCode >= 400) return;
-        const ip  = req.ip || null;
-        const ua  = (req.get('user-agent') || '').slice(0, 400);
-        const ref = (req.get('referer') || req.get('referrer') || '').slice(0, 400);
-        const pth = String(req.path || '/').slice(0, 300);
-        const uid = (req.session && req.session.userId) ? req.session.userId : null;
-        const vkey = crypto.createHash('sha256').update((ip || '') + '|' + ua).digest('hex').slice(0, 40);
-        _recordPageView({ vkey, ip, ua, ref, pth, uid }).catch(() => {});
-      } catch (_) { /* tracking must never affect the response */ }
-    });
-  }
-  next();
-});
 
 // ── ROOT ROUTES — registered BEFORE express.static so the static handler
 // can't auto-serve public/index.html at "/". "/" = marketing landing page,
@@ -915,13 +732,7 @@ app.use('/api', async (req, res, next) => {
       }
     }
     req.entityId = entityIdInt;
-    // F151 ROOT FIX: do NOT persist a per-request ?entity_id into the session. The consolidated
-    // dashboard fetches /api/reports?entity_id=<EVERY entity> in a loop; persisting here let the
-    // last one (e.g. entity 1 / Saige) hijack the session, so a later session-based read
-    // (medium.js's fallback /api/invoices with no entity_id, which fires when the active entity is
-    // empty) returned the WRONG entity's data — the tab-refocus "Saige under Acme" bug. ?entity_id
-    // now scopes THIS request only; the session's active entity is owned solely by the explicit
-    // switch (/api/entities/:id/activate) and the first-load fallback below.
+    req.session.entityId = entityIdInt;
     return next();
   }
   if (req.session.entityId) {
@@ -1090,30 +901,30 @@ async function isLocked(userId, date) {
 
 // ── ENTITIES ──────────────────────────────────────────────────────────────────
 app.get('/api/entities', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('entities', scopeId(req), null, (a, b) => a.sort_order - b.sort_order));
+  res.json(await db.allByUser('entities', req.session.userId, null, (a, b) => a.sort_order - b.sort_order));
 }));
 app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const { name, currency = 'USD', color = '#c9a84c' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Name is required.' });
   if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + name).
-  const _dup = await findRecentDuplicate('entities', scopeId(req), null, { textMatch: { name: name.trim().slice(0,100) } });
+  const _dup = await findRecentDuplicate('entities', req.session.userId, null, { textMatch: { name: name.trim().slice(0,100) } });
   if (_dup) return res.status(200).json(_dup);
   // PL#3: enforce the plan's entity cap SERVER-SIDE — RBAC (entities:manage) governs WHO may manage
   // entities, not HOW MANY. Without this a direct API call bypasses the UI gate and creates unlimited
   // entities past the plan. req.userPlan is attached by the trial-expiry middleware. Dedupe runs
   // first so a retried duplicate is never counted against the cap. (Dedupe short-circuits above.)
   const ENTITY_LIMITS = { trial: 1, pro: 1, business: 5 };
-  const _entCount = (await db.allByUser('entities', scopeId(req))).length;
+  const _entCount = (await db.allByUser('entities', req.session.userId)).length;
   if (_entCount >= (ENTITY_LIMITS[req.userPlan] ?? 1)) {
     return res.status(402).json({ error: 'Entity limit reached for your plan.' });
   }
-  const { row } = await db.insert('entities', { user_id: scopeId(req), name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0 });
+  const { row } = await db.insert('entities', { user_id: req.session.userId, name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0 });
   await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
-  const row = await ownedBy('entities', req.params.id, scopeId(req));
+  const row = await ownedBy('entities', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const { name, currency, color } = req.body || {};
   if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
@@ -1123,14 +934,14 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
   res.json(_er ? rowToObj(_er) : {});
 }));
 app.delete('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
-  const _eold = await ownedBy('entities', req.params.id, scopeId(req));
+  const _eold = await ownedBy('entities', req.params.id, req.session.userId);
   if (!_eold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('entities', parseInt(req.params.id));
   await recordAudit(pool, { userId: req.session.userId, entityId: parseInt(req.params.id), table: 'entities', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _eold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 app.post('/api/entities/:id/activate', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
-  const uid = scopeId(req);
+  const uid = req.session.userId;
   const eid = parseInt(req.params.id);
   await pool.query(
     `UPDATE entities SET data = data || '{"is_active":0}'::jsonb, updated_at = NOW() WHERE user_id = $1`,
@@ -1146,7 +957,7 @@ app.post('/api/entities/:id/activate', requireAuth, requirePerm('entities:manage
 
 // ── INVOICES ──────────────────────────────────────────────────────────────────
 app.get('/api/invoices', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('invoices', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('invoices', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 // F79: status value-domains — app-layer validation (the DB CHECK constraints in database.js are the
 // backstop). Case-insensitive; an unknown status is rejected 400, never silently stored. credit_notes
@@ -1182,7 +993,7 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   // collapsed into one (a dropped invoice / missing revenue). This token-blindness is a CLASS
   // across all 31 findRecentDuplicate routes (F131); each adopts this bypass as it gains a token.
   if (!idem) {
-    const _dup = await findRecentDuplicate('invoices', scopeId(req), eid, { textMatch: { client: client.trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('invoices', req.session.userId, eid, { textMatch: { client: client.trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.status(200).json(_dup);
   }
   // F36: issue_date is the user-editable business issue date recognition keys on (Step 2).
@@ -1207,12 +1018,12 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   const _amountPaid = String(status).toLowerCase() === 'paid' ? _amt : 0;
   let row;
   try {
-    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
+    ({ row } = await db.insert('invoices', { user_id: req.session.userId, entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(
         `SELECT * FROM invoices WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`,
-        [scopeId(req), idem]
+        [req.session.userId, idem]
       );
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
@@ -1222,7 +1033,7 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('invoices', req.params.id, scopeId(req));
+  const row = await ownedBy('invoices', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
@@ -1254,7 +1065,7 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   res.json(updated);
 }));
 app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('invoices', req.params.id, scopeId(req));
+  const row = await ownedBy('invoices', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.deleteById('invoices', parseInt(req.params.id));
@@ -1264,7 +1075,7 @@ app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
 
 // ── EXPENSES ──────────────────────────────────────────────────────────────────
 app.get('/api/expenses', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('expenses', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('expenses', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   const { description, category = 'Other', amount, deductible = 'no', expense_date, entity_id } = req.body || {};
@@ -1278,7 +1089,7 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   // is the sole arbiter, so two legitimately different-token expenses with the same description+
   // amount within 5s are not wrongly collapsed (F131 class). Token-less path unchanged.
   if (!idem) {
-    const _dup = await findRecentDuplicate('expenses', scopeId(req), eid, { textMatch: { description: description.trim().slice(0,300) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('expenses', req.session.userId, eid, { textMatch: { description: description.trim().slice(0,300) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.status(200).json(_dup);
   }
   // Durable backstop (mirrors POST /api/invoices): a double-submit carries the SAME token → the 2nd
@@ -1287,10 +1098,10 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   // misses (Rule 9). Inert until idx_expenses_idem_key exists (no index ⇒ no 23505 ⇒ prior behaviour).
   let row;
   try {
-    ({ row } = await db.insert('expenses', { user_id: scopeId(req), entity_id: eid, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: edate, idempotency_key: idem }));
+    ({ row } = await db.insert('expenses', { user_id: req.session.userId, entity_id: eid, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: edate, idempotency_key: idem }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM expenses WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      const { rows } = await pool.query(`SELECT * FROM expenses WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -1299,7 +1110,7 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('expenses', req.params.id, scopeId(req));
+  const row = await ownedBy('expenses', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
@@ -1316,7 +1127,7 @@ app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   res.json(updated);
 }));
 app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('expenses', req.params.id, scopeId(req));
+  const row = await ownedBy('expenses', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.deleteById('expenses', parseInt(req.params.id));
@@ -1326,7 +1137,7 @@ app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
 
 // ── CUSTOMERS ─────────────────────────────────────────────────────────────────
 app.get('/api/customers', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('customers', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.revenue - a.revenue));
+  res.json(await db.allByUser('customers', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.revenue - a.revenue));
 }));
 app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -1335,15 +1146,14 @@ app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   // the other (Rule 2). Coerce first so a non-string body (object/array) fails the regex → 400.
   const _cem = String(b.email == null ? '' : b.email).slice(0,200);
   if (_cem && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(_cem)) return res.status(400).json({ error: 'Invalid email address.' });
-  const _custEnt = b.entity_id||req.entityId||null;  // F150: fall back to active entity (was body-only → NULL rows leaked into every entity)
-  const _dup = await findRecentDuplicate('customers', scopeId(req), _custEnt, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem } });
+  const _dup = await findRecentDuplicate('customers', req.session.userId, b.entity_id||null, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('customers', { user_id: scopeId(req), entity_id: _custEnt, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
-  await recordAudit(pool, { userId: req.session.userId, entityId: _custEnt, table: 'customers', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  const { row } = await db.insert('customers', { user_id: req.session.userId, entity_id: b.entity_id||null, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
+  await recordAudit(pool, { userId: req.session.userId, entityId: b.entity_id||null, table: 'customers', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('customers', req.params.id, scopeId(req));
+  const row = await ownedBy('customers', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
   const b = req.body || {};
@@ -1370,7 +1180,7 @@ app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
   res.json(_cur ? rowToObj(_cur) : {});
 }));
 app.delete('/api/customers/:id', requireAuth, wrap(async (req, res) => {
-  const _old = await ownedBy('customers', req.params.id, scopeId(req));
+  const _old = await ownedBy('customers', req.params.id, req.session.userId);
   if (!_old) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('customers', parseInt(req.params.id));
   await recordAudit(pool, { userId: req.session.userId, entityId: _old.entity_id || null, table: 'customers', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _old, req });  // F90 Phase B
@@ -1379,21 +1189,20 @@ app.delete('/api/customers/:id', requireAuth, wrap(async (req, res) => {
 
 // ── INVENTORY ─────────────────────────────────────────────────────────────────
 app.get('/api/inventory', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('inventory', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.id - b.id));
+  res.json(await db.allByUser('inventory', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.id - b.id));
 }));
 app.post('/api/inventory', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   const u = Math.max(0, parseInt(b.qty || b.units)||0);
   const mx = parseInt(b.max_units)||200;
-  const _invEnt = b.entity_id || req.entityId || null;  // F150-class: was body-only → NULL rows leaked into every entity
-  const _dup = await findRecentDuplicate('inventory', scopeId(req), _invEnt, { textMatch: { name: (b.name||'').trim().slice(0,200) }, numMatch: { cost: parseFloat(b.cost)||0 } });
+  const _dup = await findRecentDuplicate('inventory', req.session.userId, b.entity_id||null, { textMatch: { name: (b.name||'').trim().slice(0,200) }, numMatch: { cost: parseFloat(b.cost)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('inventory', { user_id: scopeId(req), entity_id: _invEnt, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: u, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: u < mx * 0.1 ? 1 : 0 });
-  await recordAudit(pool, { userId: req.session.userId, entityId: _invEnt, table: 'inventory', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  const { row } = await db.insert('inventory', { user_id: req.session.userId, entity_id: b.entity_id||null, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: u, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: u < mx * 0.1 ? 1 : 0 });
+  await recordAudit(pool, { userId: req.session.userId, entityId: b.entity_id||null, table: 'inventory', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('inventory', req.params.id, scopeId(req));
+  const row = await ownedBy('inventory', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const newUnits = b.units != null ? Math.max(0, parseInt(b.units)||0) : row.units;
@@ -1407,7 +1216,7 @@ app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
   res.json(_inur ? rowToObj(_inur) : {});
 }));
 app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('inventory', req.params.id, scopeId(req));
+  const row = await ownedBy('inventory', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const qty = Math.max(1, Math.min(parseInt(req.body.qty)||0, 100000));
   // B8/C1: restock is an UPDATE (units += qty), not an INSERT, so there is no row for either
@@ -1429,7 +1238,7 @@ app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
   res.json(_rstk ? rowToObj(_rstk) : {});
 }));
 app.delete('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
-  const _iold = await ownedBy('inventory', req.params.id, scopeId(req));
+  const _iold = await ownedBy('inventory', req.params.id, req.session.userId);
   if (!_iold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('inventory', parseInt(req.params.id));
   await recordAudit(pool, { userId: req.session.userId, entityId: _iold.entity_id || null, table: 'inventory', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _iold, req });  // F90 Phase B
@@ -1440,20 +1249,16 @@ app.delete('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
 app.get('/api/items', requireAuth, wrap(async (req, res) => {
   // F146: entity-scope the list (null-inclusive) like invoices/expenses/bills/sales-receipts. Stores
   // entity_id but was user-scoped only, so a multi-entity owner saw every entity's items. Display-only.
-  res.json(await db.allByUser('items', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => a.id - b.id));
+  res.json(await db.allByUser('items', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => a.id - b.id));
 }));
 app.post('/api/items', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.name) return res.status(400).json({ error: 'name required.' });
-  // F150: fall back to the active entity (req.entityId) like every other business insert. This
-  // handler previously stamped only b.entity_id, so a create without an explicit body entity_id
-  // was born entity_id=NULL and — via the null-inclusive read filter — leaked into EVERY entity.
-  const _itemEnt = b.entity_id || req.entityId || null;
-  const _dup = await findRecentDuplicate('items', scopeId(req), _itemEnt, { textMatch: { name: b.name.trim().slice(0,200) }, numMatch: { price: parseFloat(b.price)||0 } });
+  const _dup = await findRecentDuplicate('items', req.session.userId, b.entity_id||null, { textMatch: { name: b.name.trim().slice(0,200) }, numMatch: { price: parseFloat(b.price)||0 } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('items', {
-    user_id:   scopeId(req),
-    entity_id: _itemEnt,
+    user_id:   req.session.userId,
+    entity_id: b.entity_id || null,
     name:      b.name.trim().slice(0, 200),
     type:      b.type   || 'Product',
     price:     parseFloat(b.price) || 0,
@@ -1463,11 +1268,11 @@ app.post('/api/items', requireAuth, wrap(async (req, res) => {
     sku:       (b.sku   || '').slice(0, 50),
     cost:      b.cost   != null ? parseFloat(b.cost) || 0 : null,
   });
-  await recordAudit(pool, { userId: req.session.userId, entityId: _itemEnt, table: 'items', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: req.session.userId, entityId: b.entity_id || null, table: 'items', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/items/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('items', req.params.id, scopeId(req));
+  const row = await ownedBy('items', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
@@ -1485,7 +1290,7 @@ app.put('/api/items/:id', requireAuth, wrap(async (req, res) => {
   res.json(_itmr ? rowToObj(_itmr) : {});
 }));
 app.delete('/api/items/:id', requireAuth, wrap(async (req, res) => {
-  const _itold = await ownedBy('items', req.params.id, scopeId(req));
+  const _itold = await ownedBy('items', req.params.id, req.session.userId);
   if (!_itold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('items', parseInt(req.params.id));
   await recordAudit(pool, { userId: req.session.userId, entityId: _itold.entity_id || null, table: 'items', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _itold, req });  // F90 Phase B
@@ -1494,7 +1299,7 @@ app.delete('/api/items/:id', requireAuth, wrap(async (req, res) => {
 
 // ── PAYROLL ───────────────────────────────────────────────────────────────────
 app.get('/api/payroll', requireAuth, wrap(async (req, res) => {
-  const userId = scopeId(req);
+  const userId = req.session.userId;
   const entityId = req.entityId || null;
   // Fail safe: when no entity resolves, return only legacy unassigned rows — never all entities.
   const rows = await db.allByUser('payroll', userId, r => r.entity_id == null || (entityId != null && r.entity_id === entityId));
@@ -1510,13 +1315,13 @@ app.post('/api/payroll', requireAuth, requirePerm('payroll:write'), wrap(async (
   if (!b.fname) return res.status(400).json({ error: 'fname required.' });
   const _peid = b.entity_id || null;
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + entity_id + fname + lname + gross).
-  const _dup = await findRecentDuplicate('payroll', scopeId(req), _peid, { textMatch: { fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100) }, numMatch: { gross: parseFloat(b.gross)||0 } });
+  const _dup = await findRecentDuplicate('payroll', req.session.userId, _peid, { textMatch: { fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100) }, numMatch: { gross: parseFloat(b.gross)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('payroll', { user_id: scopeId(req), entity_id: _peid, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, deductions: Array.isArray(b.deductions) ? computeDeductions(parseFloat(b.gross)||0, b.deductions).rows.map(({label,value,type})=>({label,value,type})) : [], av_class: b.av_class||'av-blue', is_owner: b.is_owner ? true : false, salary_profile_id: b.salary_profile_id != null ? Number(b.salary_profile_id) : null });
+  const { row } = await db.insert('payroll', { user_id: req.session.userId, entity_id: _peid, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, deductions: Array.isArray(b.deductions) ? computeDeductions(parseFloat(b.gross)||0, b.deductions).rows.map(({label,value,type})=>({label,value,type})) : [], av_class: b.av_class||'av-blue', is_owner: b.is_owner ? true : false, salary_profile_id: b.salary_profile_id != null ? Number(b.salary_profile_id) : null });
   res.status(201).json(row);
 }));
 app.put('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
-  const row = await ownedBy('payroll', req.params.id, scopeId(req));
+  const row = await ownedBy('payroll', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
   const b = req.body || {};
@@ -1532,7 +1337,7 @@ app.put('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(asyn
   res.json(_payr ? rowToObj(_payr) : {});
 }));
 app.delete('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
-  if (!(await ownedBy('payroll', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('payroll', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('payroll', parseInt(req.params.id));
   res.json({ ok: true });
 }));
@@ -1925,13 +1730,8 @@ app.put('/api/settings', requireAuth, requirePerm('settings:manage'), wrap(async
   if (_usRow) await db.updateById('user_settings', _usRow.id, patch);
   else await db.insert('user_settings', { user_id: uid2, ...patch });
   if (b.name) await db.updateById('users', uid2, { name: b.name.trim().slice(0,100) });
-  // F149-b (class-kill): renaming an ENTITY from a /api/settings write is now OPT-IN. Previously
-  // ANY PUT with business_name renamed activeEntity() — so the create flow (which sent business_name
-  // while the PREVIOUS entity was still active) renamed the user's existing business (F149). The
-  // deliberate "rename this business" action is the Settings page (saveSettings), which now sends
-  // rename_active_entity:true; nothing else does. business_name is still persisted as the account
-  // profile string above either way — only the entity mutation is gated.
-  if (b.business_name && b.rename_active_entity === true) {
+  if (b.business_name) {
+    // Also update the active entity name if user is updating business name
     const ent = await activeEntity(uid2);
     if (ent) await db.updateById('entities', ent.id, { name: b.business_name.slice(0,100) });
   }
@@ -2005,7 +1805,7 @@ app.get('/api/lock-settings', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/lock-settings', requireAuth, requirePerm('settings:manage'), wrap(async (req, res) => {
   const { enabled, lock_date, password } = req.body || {};
-  const uid = scopeId(req);
+  const uid = req.session.userId;
   const patch = { enabled: enabled ? 1 : 0, lock_date: lock_date || null };
   if (password) patch.password_hash = bcrypt.hashSync(password, 10);
   const { rows: [_lsUp] } = await pool.query(
@@ -2019,7 +1819,7 @@ app.post('/api/lock-settings', requireAuth, requirePerm('settings:manage'), wrap
 
 // ── MANUAL JOURNALS ───────────────────────────────────────────────────────────
 app.get('/api/journals', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('journals', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('journals', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   const { date, description, lines = [], status = 'Draft' } = req.body || {};
@@ -2034,7 +1834,7 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   // the partial unique index (idx_journals_idem_key) is the sole arbiter, so two legitimately
   // different-token entries with the same description+debit within 5s are not collapsed (F131).
   if (!idem) {
-    const _dup = await findRecentDuplicate('journals', scopeId(req), req.entityId || null, { textMatch: { description: description.trim().slice(0,500) }, numMatch: { debit: totalDebit } });
+    const _dup = await findRecentDuplicate('journals', req.session.userId, req.entityId || null, { textMatch: { description: description.trim().slice(0,500) }, numMatch: { debit: totalDebit } });
     if (_dup) return res.status(200).json(_dup);
   }
   // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover
@@ -2043,7 +1843,7 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('journals', {
-      user_id: scopeId(req), entity_id: req.entityId || null,
+      user_id: req.session.userId, entity_id: req.entityId || null,
       date: date || new Date().toISOString().slice(0,10),
       description: description.trim().slice(0,500), ref: num,
       debit: totalDebit, credit: totalCredit, lines: JSON.stringify(lines), status,
@@ -2051,7 +1851,7 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM journals WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      const { rows } = await pool.query(`SELECT * FROM journals WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -2060,7 +1860,7 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('journals', req.params.id, scopeId(req));
+  const row = await ownedBy('journals', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
@@ -2073,14 +1873,14 @@ app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
   res.json(_jr ? rowToObj(_jr) : {});
 }));
 app.delete('/api/journals/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('journals', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('journals', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('journals', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
 // ── CHART OF ACCOUNTS ─────────────────────────────────────────────────────────
 app.get('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('chart_of_accounts', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.code.localeCompare(b.code)));
+  res.json(await db.allByUser('chart_of_accounts', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.code.localeCompare(b.code)));
 }));
 app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
   const { code, name, category, nature = 'Debit', balance = 0 } = req.body || {};
@@ -2092,20 +1892,20 @@ app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
   // unique index (idx_chart_of_accounts_idem_key) is the sole arbiter. Entity-consistent pre-check
   // (req.entityId matches the insert). NOT the natural `code` key — deferred, out-of-band.
   if (!idem) {
-    const _dup = await findRecentDuplicate('chart_of_accounts', scopeId(req), req.entityId || null, { textMatch: { code: code.trim().slice(0,20) } });
+    const _dup = await findRecentDuplicate('chart_of_accounts', req.session.userId, req.entityId || null, { textMatch: { code: code.trim().slice(0,20) } });
     if (_dup) return res.status(200).json(_dup);
   }
   let row;
   try {
     ({ row } = await db.insert('chart_of_accounts', {
-      user_id: scopeId(req), entity_id: req.entityId || null,
+      user_id: req.session.userId, entity_id: req.entityId || null,
       code: code.trim().slice(0,20), name: name.trim().slice(0,200),
       category, nature, balance: parseFloat(balance) || 0,
       idempotency_key: idem,
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM chart_of_accounts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      const { rows } = await pool.query(`SELECT * FROM chart_of_accounts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -2114,7 +1914,7 @@ app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('chart_of_accounts', req.params.id, scopeId(req));
+  const row = await ownedBy('chart_of_accounts', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
@@ -2128,7 +1928,7 @@ app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
   res.json(_coar ? rowToObj(_coar) : {});
 }));
 app.delete('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
-  const _coold = await ownedBy('chart_of_accounts', req.params.id, scopeId(req));
+  const _coold = await ownedBy('chart_of_accounts', req.params.id, req.session.userId);
   if (!_coold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('chart_of_accounts', parseInt(req.params.id));
   await recordAudit(pool, { userId: req.session.userId, entityId: _coold.entity_id || null, table: 'chart_of_accounts', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _coold, req });  // F90 Phase B
@@ -2407,16 +2207,16 @@ app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => 
 // ── QUOTES ────────────────────────────────────────────────────────────────────
 app.get('/api/quotes', requireAuth, wrap(async (req, res) => {
   // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
-  res.json(await db.allByUser('quotes', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('quotes', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   const { client, amount, expiry_date, status = 'pending', notes = '' } = req.body;
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req.session.userId);
   const num = 'QT-' + String(Date.now()).slice(-4);
-  const _dup = await findRecentDuplicate('quotes', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(amount) } });
+  const _dup = await findRecentDuplicate('quotes', req.session.userId, entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('quotes', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client, num, amount: Number(amount), expiry_date, status, notes });  // F150-class: request-scoped entity, not is_active
+  const { row } = await db.insert('quotes', { user_id: req.session.userId, entity_id: entity?.id, client, num, amount: Number(amount), expiry_date, status, notes });
   res.json(row);
 }));
 app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
@@ -2443,7 +2243,7 @@ app.delete('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
 
 // ── VENDORS ───────────────────────────────────────────────────────────────────
 app.get('/api/vendors', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('vendors', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.name.localeCompare(b.name)));
+  res.json(await db.allByUser('vendors', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.name.localeCompare(b.name)));
 }));
 app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -2458,11 +2258,10 @@ app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const owing    = parseFloat(b.owing)    || 0;
   const ytd_paid = parseFloat(b.ytd_paid) || 0;
   const entity = await activeEntity(req.session.userId);
-  const _venEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
-  const _dup = await findRecentDuplicate('vendors', scopeId(req), _venEnt, { textMatch: { name } });
+  const _dup = await findRecentDuplicate('vendors', req.session.userId, entity?.id || null, { textMatch: { name } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('vendors', { user_id: scopeId(req), entity_id: _venEnt, name, contact, category, owing, ytd_paid, status });
-  await recordAudit(pool, { userId: req.session.userId, entityId: _venEnt, table: 'vendors', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  const { row } = await db.insert('vendors', { user_id: req.session.userId, entity_id: entity?.id, name, contact, category, owing, ytd_paid, status });
+  await recordAudit(pool, { userId: req.session.userId, entityId: entity?.id || null, table: 'vendors', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
@@ -2493,21 +2292,20 @@ app.delete('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
 
 // ── BILLS ─────────────────────────────────────────────────────────────────────
 app.get('/api/bills', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('bills', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
+  res.json(await db.allByUser('bills', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
 app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, due_date, status = 'unpaid', notes = '', issue_date } = req.body;
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
   if (_badStatus(BILL_STATUSES, status)) return res.status(400).json({ error: 'Invalid bill status.' });
   const entity = await activeEntity(req.session.userId);
-  const _billEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
   const num = 'BILL-' + String(Date.now()).slice(-4);
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: the token-blind 5s findRecentDuplicate pre-check runs ONLY for token-less callers;
   // when a token IS present the partial unique index (idx_bills_idem_key) is the sole arbiter, so
   // two legitimately different-token bills for the same vendor+amount within 5s are not collapsed.
   if (!idem) {
-    const _dup = await findRecentDuplicate('bills', scopeId(req), _billEnt, { textMatch: { vendor: String(vendor) }, numMatch: { amount: Number(amount) } });
+    const _dup = await findRecentDuplicate('bills', req.session.userId, entity?.id || null, { textMatch: { vendor: String(vendor) }, numMatch: { amount: Number(amount) } });
     if (_dup) return res.json(_dup);
   }
   // F36/F38: issue_date is the business issue date the (Step 4) expense-accrual leg keys on;
@@ -2523,15 +2321,15 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   // Inert until idx_bills_idem_key exists. F135 amount_paid-on-paid above is unchanged.
   let row;
   try {
-    ({ row } = await db.insert('bills', { user_id: scopeId(req), entity_id: _billEnt, vendor, num, amount: _amt, due_date, status, notes, issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
+    ({ row } = await db.insert('bills', { user_id: req.session.userId, entity_id: entity?.id, vendor, num, amount: _amt, due_date, status, notes, issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM bills WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      const { rows } = await pool.query(`SELECT * FROM bills WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: _billEnt, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: req.session.userId, entityId: entity?.id || null, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
@@ -2580,7 +2378,7 @@ app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
 app.get('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   try {
     // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
-    res.json(await db.allByUser('recurring_bills', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
+    res.json(await db.allByUser('recurring_bills', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
   } catch (e) {
     // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/recurring-bills] failed for user', req.session.userId, ':', e.code, e.message);
@@ -2591,9 +2389,9 @@ app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
   const entity = await activeEntity(req.session.userId);
-  const _dup = await findRecentDuplicate('recurring_bills', scopeId(req), req.entityId || entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
+  const _dup = await findRecentDuplicate('recurring_bills', req.session.userId, entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('recurring_bills', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
+  const { row } = await db.insert('recurring_bills', { user_id: req.session.userId, entity_id: entity?.id, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });
   res.json(row);
 }));
 app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
@@ -2666,15 +2464,15 @@ app.delete('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (
 // ── RECURRING INVOICES ────────────────────────────────────────────────────────
 app.get('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
-  res.json(await db.allByUser('recurring_invoices', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
+  res.json(await db.allByUser('recurring_invoices', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
 }));
 app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req.session.userId);
-  const _dup = await findRecentDuplicate('recurring_invoices', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
+  const _dup = await findRecentDuplicate('recurring_invoices', req.session.userId, entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('recurring_invoices', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
+  const { row } = await db.insert('recurring_invoices', { user_id: req.session.userId, entity_id: entity?.id, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });
   res.json(row);
 }));
 app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
@@ -2704,7 +2502,7 @@ app.get('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   // F26: entity-scope the list like /api/invoices, /api/expenses, /api/bills already do
   // (null-inclusive, so legacy null-entity rows still show). Was user-scoped, so a multi-entity
   // owner saw every entity's receipts on each entity's page.
-  res.json(await db.allByUser('sales_receipts', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
+  res.json(await db.allByUser('sales_receipts', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   const { customer, num, amount, date, method = 'Card' } = req.body || {};
@@ -2714,7 +2512,7 @@ app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
     // C1 Wave 1 (entity-scope alignment, same class as payments_received): the pre-check previously
     // hardcoded entityId=null while the INSERT stores entity_id = req.entityId, so with an active
     // entity the 5s dedupe never matched. Scoped to req.entityId||null to match the insert.
-    const _dup = await findRecentDuplicate('sales_receipts', scopeId(req), req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('sales_receipts', req.session.userId, req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.json(_dup);
   }
   // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover
@@ -2722,7 +2520,7 @@ app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('sales_receipts', {
-      user_id: scopeId(req),
+      user_id: req.session.userId,
       entity_id: req.entityId || null,
       customer: String(customer).trim().slice(0, 200),
       num: String(num || 'SR-' + String(Date.now()).slice(-4)).slice(0, 30),
@@ -2733,7 +2531,7 @@ app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -2768,7 +2566,7 @@ app.delete('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
 app.get('/api/payments-received', requireAuth, wrap(async (req, res) => {
   // F146: entity-scope (null-inclusive) like sibling payments_made (F142). Stores entity_id but was
   // user-scoped only. Display-only — the payments_received money reads were already entity-scoped.
-  res.json(await db.allByUser('payments_received', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
+  res.json(await db.allByUser('payments_received', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
   const { customer, invoice_ref, amount, date, method = 'Bank Transfer' } = req.body || {};
@@ -2782,7 +2580,7 @@ app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
     // INSERT below stores entity_id = req.entityId, so with an active entity the 5s dedupe NEVER
     // matched and token-less rapid duplicate receipts both landed (proven by verify-c1-payments-
     // received E2). Scoped to req.entityId||null to match the insert, like the sibling money routes.
-    const _dup = await findRecentDuplicate('payments_received', scopeId(req), req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('payments_received', req.session.userId, req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.json(_dup);
   }
   // C1 Wave 1 durable backstop (mirrors invoices/expenses/bills/payments_made): a same-token
@@ -2791,7 +2589,7 @@ app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('payments_received', {
-      user_id: scopeId(req),
+      user_id: req.session.userId,
       entity_id: req.entityId || null,
       customer: String(customer).trim().slice(0, 200),
       invoice_ref: String(invoice_ref || '').slice(0, 50),
@@ -2802,7 +2600,7 @@ app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM payments_received WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      const { rows } = await pool.query(`SELECT * FROM payments_received WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -2838,8 +2636,7 @@ app.delete('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
 
 // ── CREDIT NOTES ──────────────────────────────────────────────────────────────
 app.get('/api/credit-notes', requireAuth, wrap(async (req, res) => {
-  // F148: entity-scope (null-inclusive) now that credit notes carry entity_id.
-  res.json(await db.allByUser('credit_notes', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
+  res.json(await db.allByUser('credit_notes', req.session.userId));
 }));
 app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   const { customer, num, amount, date, status = 'Open', reason = '' } = req.body || {};
@@ -2847,13 +2644,10 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   const validStatuses = ['Open', 'Applied', 'Void'];
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
-  // the partial unique index (idx_credit_notes_idem_key) is the sole arbiter.
-  // C1 (F148 alignment, same class as sales_receipts/payments_received): since F148 the INSERT stores
-  // entity_id = req.entityId||null, so a pre-check hardcoded to null never matched the inserted row
-  // under an active entity → a token-less <5s double-submit created a DUPLICATE credit note
-  // (double-contra of that entity's revenue). Scope the pre-check to req.entityId||null to match the insert.
+  // the partial unique index (idx_credit_notes_idem_key) is the sole arbiter. credit_notes is
+  // user-scoped (no entity_id), so the existing null entityId matches the insert — no scope gap.
   if (!idem) {
-    const _dup = await findRecentDuplicate('credit_notes', scopeId(req), req.entityId || null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('credit_notes', req.session.userId, null, { textMatch: { customer: String(customer).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.json(_dup);
   }
   // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover
@@ -2861,11 +2655,7 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('credit_notes', {
-      user_id: scopeId(req),
-      entity_id: req.entityId || null,   // F148: was omitted, so every credit note was created
-      // account-wide (null entity). computeBooks' null-inclusive matchEnt (server.js:3802) then
-      // subtracted it from EVERY entity's revenue — a fresh entity showed NEGATIVE revenue. Store
-      // it like invoices/bills/sales_receipts so a credit note only contra's its own entity's P&L.
+      user_id: req.session.userId,
       customer: String(customer).trim().slice(0, 200),
       num: String(num || 'CN-' + String(Date.now()).slice(-4)).slice(0, 30),
       amount: parseFloat(amount) || 0,
@@ -2876,7 +2666,7 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM credit_notes WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      const { rows } = await pool.query(`SELECT * FROM credit_notes WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -2917,7 +2707,7 @@ app.get('/api/payments-made', requireAuth, wrap(async (req, res) => {
   // already do (null-inclusive, so legacy null-entity rows still show). Was user-scoped only, so a
   // multi-entity owner saw every entity's payments-made rows on each entity's page. Display-only —
   // the payments_made money reads (P&L, cash-flow, computeBooks) were already entity-scoped.
-  res.json(await db.allByUser('payments_made', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
+  res.json(await db.allByUser('payments_made', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, date, method, notes, ref, bill_id } = req.body || {};
@@ -2926,7 +2716,7 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   // the partial unique index (idx_payments_made_idem_key) is the sole arbiter, so two legitimately
   // different-token payments to the same vendor+amount within 5s are not collapsed (F131 class).
   if (!idem) {
-    const _dup = await findRecentDuplicate('payments_made', scopeId(req), req.entityId || null, { textMatch: { vendor: (vendor || '').trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('payments_made', req.session.userId, req.entityId || null, { textMatch: { vendor: (vendor || '').trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.json(_dup);
   }
   // F38 Step 3: bill_id links this payment to a bill (nullable). A LINKED payment settles AP
@@ -2938,7 +2728,7 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('payments_made', {
-      user_id: scopeId(req),
+      user_id: req.session.userId,
       entity_id: req.entityId || null,
       vendor: (vendor || '').trim().slice(0, 200),
       amount: parseFloat(amount) || 0,
@@ -2951,7 +2741,7 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM payments_made WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      const { rows } = await pool.query(`SELECT * FROM payments_made WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -2997,8 +2787,7 @@ app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
 // ── VENDOR CREDITS ────────────────────────────────────────────────────────────
 app.get('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   try {
-    // F148: entity-scope (null-inclusive) now that vendor credits carry entity_id.
-    res.json(await db.allByUser('vendor_credits', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
+    res.json(await db.allByUser('vendor_credits', req.session.userId));
   } catch (e) {
     // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/vendor-credits] failed for user', req.session.userId, ':', e.code, e.message);
@@ -3011,12 +2800,10 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   const validStatuses = ['Open', 'Applied', 'Void'];
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
-  // the partial unique index (idx_vendor_credits_idem_key) is the sole arbiter.
-  // C1 (F148 alignment, same class as credit_notes/sales_receipts): since F148 the INSERT stores
-  // entity_id = req.entityId||null, so a pre-check hardcoded to null never matched under an active
-  // entity → a token-less <5s double-submit created a DUPLICATE vendor credit. Scope to req.entityId||null.
+  // the partial unique index (idx_vendor_credits_idem_key) is the sole arbiter. User-scoped table
+  // (no entity_id) → the existing null entityId matches the insert — no scope gap.
   if (!idem) {
-    const _dup = await findRecentDuplicate('vendor_credits', scopeId(req), req.entityId || null, { textMatch: { vendor: String(vendor).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('vendor_credits', req.session.userId, null, { textMatch: { vendor: String(vendor).trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
     if (_dup) return res.json(_dup);
   }
   // C1 Wave 1 durable backstop: a same-token double-submit → the 2nd INSERT throws 23505 → recover
@@ -3024,9 +2811,7 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('vendor_credits', {
-      user_id: scopeId(req),
-      entity_id: req.entityId || null,   // F148: mirror of credit_notes — was omitted, so every
-      // vendor credit reduced EVERY entity's opex (F58 contra). Store it so it scopes to its entity.
+      user_id: req.session.userId,
       vendor: String(vendor).trim().slice(0, 200),
       num: String(num || 'VC-' + String(Date.now()).slice(-4)).slice(0, 30),
       amount: parseFloat(amount) || 0,
@@ -3037,7 +2822,7 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
     }));
   } catch (e) {
     if (e.code === '23505' && idem) {
-      const { rows } = await pool.query(`SELECT * FROM vendor_credits WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      const { rows } = await pool.query(`SELECT * FROM vendor_credits WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
       if (rows[0]) return res.status(200).json(rowToObj(rows[0]));
     }
     throw e;
@@ -3139,50 +2924,13 @@ app.get('/api/team', requireAuth, wrap(async (req, res) => {
   ];
   res.json(members);
 }));
-
-// ── F111 — MEMBER-AXIS VISIBILITY (the remediation half of F107) ───────────────
-// GET /api/team reads the OWNER axis (people you invited). The account resolver reads the MEMBER
-// axis (`data->>'member_user_id' = you`) to scope your session INTO another account — and nothing
-// displays that axis, so a membership that relocates your session is invisible to you. This
-// read-only endpoint fills the gap: it lists every account THIS login can access, and reports
-// whether the current request is scoped into an account you do not own (req.accountId, set by the
-// resolver that ran before this route). No writes, no new permissions — purely the missing view.
-app.get('/api/my-access', requireAuth, wrap(async (req, res) => {
-  const uid = req.session.userId;
-  const { rows: memberships } = await pool.query(
-    `SELECT tm.user_id AS account_owner_id, tm.data->>'role' AS role,
-            u.data->>'name' AS owner_name, lower(u.data->>'email') AS owner_email
-       FROM team_members tm JOIN users u ON u.id = tm.user_id
-      WHERE tm.data->>'member_user_id' = $1::text AND tm.data->>'status' = 'active'
-      ORDER BY tm.id ASC`,
-    [String(uid)]
-  );
-  const { rows: [own] } = await pool.query(
-    `SELECT data->>'name' AS name, lower(data->>'email') AS email FROM users WHERE id = $1`, [uid]
-  );
-  const accounts = [
-    { accountOwnerId: uid, ownerName: own?.name || null, ownerEmail: own?.email || null, role: 'owner', isOwn: true },
-    ...memberships.map(m => ({
-      accountOwnerId: m.account_owner_id, ownerName: m.owner_name, ownerEmail: m.owner_email,
-      role: m.role || 'member', isOwn: false,
-    })),
-  ];
-  const currentAccountId = req.accountId != null ? req.accountId : uid;
-  res.json({
-    ownAccountId: uid,
-    currentAccountId,
-    scopedIntoOther: currentAccountId !== uid,   // true ⇒ this session is operating in another account's books
-    accounts,
-  });
-}));
-
 app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
   // F54: no invite/token/email handshake — a bare team_members insert. No caller (client,
   // server-to-server, or test harness — checked) uses this route; the real invite path is
   // POST /api/team/invite, already gated for launch below. Same "coming soon" gate, same
   // reason: this route is the second door into team_members and must close with the first.
   // Reversible: remove this block to re-enable alongside /api/team/invite.
-  // F54: invites ENABLED (2026-08-14) — data scope fixed + invite/accept verified. (was: 403 'coming soon')
+  return res.status(403).json({ error: 'Team invites are coming soon. This feature is not yet available.' });
   const { name, email, role = 'viewer' } = req.body || {};
   if (!name || !email) return res.status(400).json({ error: 'name and email required.' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email.' });
@@ -3232,7 +2980,7 @@ app.post('/api/team/invite', inviteLimiter, requireAuth, requirePerm('team:manag
   // flow, see /api/accountants/request-access — is untouched). Reversible: remove this
   // block to re-enable. Existing pending/active team_members rows and the accept flow
   // (/api/team/accept) are left alone on purpose — this only blocks CREATING new invites.
-  // F54: invites ENABLED (2026-08-14) — data scope fixed + invite/accept verified. (was: 403 'coming soon')
+  return res.status(403).json({ error: 'Team invites are coming soon. This feature is not yet available.' });
   // Only an owner/admin OF THIS ACCOUNT may invite. accountRole is set per-request
   // by the account resolver; a viewer/accountant member cannot invite.
   if (!['owner', 'admin'].includes(req.accountRole)) {
@@ -3760,33 +3508,17 @@ app.get('/favicon.ico', (req, res) => {
 
 // ── RECURRING SCHEDULER ───────────────────────────────────────────────────────
 function nextRunDate(currentDate, frequency) {
-  // A next_run is an accounting/calendar date, not an instant (Rule 10). The previous
-  // implementation did `new Date('YYYY-MM-DD')` (parses to UTC midnight) then advanced with
-  // LOCAL-time setMonth/setDate — so on any server whose timezone is west of UTC, UTC midnight
-  // is the prior evening locally and a 1st-of-month date rolled BACK a day (2026-07-01 → 07-31,
-  // 2026-12-01 → 12-31 instead of next year). Confirmed by execution (verify-recurring-scheduler).
-  // Fix: pure integer Y/M/D arithmetic with UTC-only day math, which no timezone can shift.
-  const s = String(currentDate || '').slice(0, 10);
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (!m) return null;
-  let y = +m[1], mo = +m[2], d = +m[3];  // mo is 1-based
-  // Normalize frequency: case-insensitive, and treat 'Annually'/'Annual' as yearly (the Recurring
-  // Bills/Invoices modals send 'Annually', which previously fell through to the monthly default).
+  const d = new Date(currentDate);
+  if (isNaN(d.getTime())) return null;
+  // Normalize so every entry point agrees: case-insensitive, and treat
+  // 'Annually'/'Annual' as yearly (the Recurring Bills/Invoices modals send
+  // 'Annually', which previously fell through to the monthly default).
   const f = String(frequency || '').trim().toLowerCase();
-  if (f === 'weekly') {
-    const t = Date.UTC(y, mo - 1, d) + 7 * 86400000;  // day arithmetic in UTC is timezone-free
-    return new Date(t).toISOString().slice(0, 10);
-  }
-  if (f === 'quarterly')                                         mo += 3;
-  else if (f === 'yearly' || f === 'annually' || f === 'annual') y += 1;
-  else                                                          mo += 1; // monthly / default
-  // Carry month overflow into years (e.g. month 13 → next January).
-  y += Math.floor((mo - 1) / 12);
-  mo = ((mo - 1) % 12) + 1;
-  // Clamp the day to the target month's length so Jan 31 + 1mo → Feb 28/29 (not a March spill).
-  const daysInMonth = new Date(Date.UTC(y, mo, 0)).getUTCDate();  // day 0 of next month
-  if (d > daysInMonth) d = daysInMonth;
-  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  if (f === 'weekly')                                    d.setDate(d.getDate() + 7);
+  else if (f === 'quarterly')                            d.setMonth(d.getMonth() + 3);
+  else if (f === 'yearly' || f === 'annually' || f === 'annual') d.setFullYear(d.getFullYear() + 1);
+  else                                                   d.setMonth(d.getMonth() + 1); // monthly / default
+  return d.toISOString().slice(0, 10);
 }
 
 async function runRecurringScheduler() {
@@ -3874,7 +3606,7 @@ async function runRecurringScheduler() {
 
 // ── BANKING TRANSACTIONS ──────────────────────────────────────────────────────
 app.get('/api/banking', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('personal_transactions', scopeId(req), r => r.source === 'banking' && (!req.entityId || r.entity_id === req.entityId || r.entity_id == null), (a, b) => new Date(b.tx_date || b.date) - new Date(a.tx_date || a.date)));
+  res.json(await db.allByUser('personal_transactions', req.session.userId, r => r.source === 'banking' && (!req.entityId || r.entity_id === req.entityId || r.entity_id == null), (a, b) => new Date(b.tx_date || b.date) - new Date(a.tx_date || a.date)));
 }));
 app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   const { desc, amount, type, date, cat } = req.body || {};
@@ -3885,11 +3617,11 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   const TX_TYPES = ['credit', 'debit'];
   if (type != null && !TX_TYPES.includes(type)) return res.status(400).json({ error: "tx_type must be 'credit' or 'debit'." });
   // B8/C1: dedupe guard — personal_transactions is a JSONB table, so the JSONB matcher applies.
-  const _bDup = await findRecentDuplicate('personal_transactions', scopeId(req), req.entityId || null,
+  const _bDup = await findRecentDuplicate('personal_transactions', req.session.userId, req.entityId || null,
     { textMatch: { description: String(desc) }, numMatch: { amount: parseFloat(amount) || 0 } });
   if (_bDup) return res.status(201).json(_bDup);
   const { row } = await db.insert('personal_transactions', {
-    user_id: scopeId(req),
+    user_id: req.session.userId,
     entity_id: req.entityId || null,
     description: desc, amount: parseFloat(amount) || 0,
     // F23: standardize on tx_type/tx_date to match the rest of personal_transactions
@@ -3900,100 +3632,9 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('personal_transactions', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('personal_transactions', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('personal_transactions', parseInt(req.params.id));
   res.json({ ok: true });
-}));
-
-// ── BANK STATEMENT IMPORT ─────────────────────────────────────────────────────
-// Works for ANY bank (incl. local/Caribbean banks with no API) via the file the user downloads
-// from their bank: OFX/QFX (standard, exact per-transaction dedupe on FITID) or CSV (header
-// auto-detect / explicit mapping, dedupe on a content hash). Lands in personal_transactions as
-// source:'banking' — the SAME store the Plaid feed uses — so imported rows flow into the existing
-// reconciliation UI. Idempotent: re-uploading the same statement cannot double-count.
-function _ofxTag(block, name) { const m = new RegExp('<' + name + '>([^<\\r\\n]*)', 'i').exec(block); return m ? m[1].trim() : ''; }
-function _ofxDate(s) { const m = /^(\d{4})(\d{2})(\d{2})/.exec(String(s || '')); return m ? `${m[1]}-${m[2]}-${m[3]}` : new Date().toISOString().slice(0, 10); }
-function parseOFX(text) {
-  const out = [];
-  let blocks = text.match(/<STMTTRN>[\s\S]*?<\/STMTTRN>/gi);
-  if (!blocks) blocks = text.split(/<STMTTRN>/i).slice(1).map(b => '<STMTTRN>' + b);   // SGML w/o close tags
-  for (const b of (blocks || [])) {
-    const amt = parseFloat(_ofxTag(b, 'TRNAMT'));
-    if (!Number.isFinite(amt)) continue;
-    out.push({
-      tx_date: _ofxDate(_ofxTag(b, 'DTPOSTED')),
-      amount: Math.abs(amt),
-      tx_type: amt < 0 ? 'debit' : 'credit',                     // OFX: negative = money out
-      description: (_ofxTag(b, 'NAME') || _ofxTag(b, 'MEMO') || 'Bank transaction').slice(0, 200),
-      fitid: _ofxTag(b, 'FITID') || null,
-    });
-  }
-  return out;
-}
-function _csvSplit(line) {                                        // minimal RFC-ish CSV row splitter
-  const out = []; let cur = '', q = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (q) { if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
-    else if (ch === '"') q = true; else if (ch === ',') { out.push(cur); cur = ''; } else cur += ch;
-  }
-  out.push(cur); return out.map(s => s.trim());
-}
-function parseCSV(text, mapping) {
-  const lines = text.split(/\r?\n/).filter(l => l.trim().length);
-  if (!lines.length) return [];
-  const header = _csvSplit(lines[0]).map(h => h.toLowerCase());
-  const find = (cands) => { for (const c of cands) { const i = header.indexOf(c); if (i >= 0) return i; } return -1; };
-  const di = mapping && mapping.date != null ? +mapping.date : find(['date', 'transaction date', 'posted', 'posting date']);
-  const ci = mapping && mapping.description != null ? +mapping.description : find(['description', 'details', 'narrative', 'memo', 'payee', 'name']);
-  const ai = mapping && mapping.amount != null ? +mapping.amount : find(['amount', 'value']);
-  const debiti = find(['debit', 'withdrawal', 'money out']); const crediti = find(['credit', 'deposit', 'money in']);
-  if (di < 0 || ci < 0 || (ai < 0 && debiti < 0 && crediti < 0)) throw new Error('Could not detect date/description/amount columns. Provide a mapping.');
-  const out = [];
-  for (let r = 1; r < lines.length; r++) {
-    const f = _csvSplit(lines[r]); if (!f.length || f.every(x => !x)) continue;
-    let amt, type;
-    if (ai >= 0) { amt = parseFloat(String(f[ai]).replace(/[^0-9.\-]/g, '')); type = amt < 0 ? 'debit' : 'credit'; amt = Math.abs(amt); }
-    else { const d = parseFloat(String(f[debiti] || '').replace(/[^0-9.\-]/g, '')) || 0; const cr = parseFloat(String(f[crediti] || '').replace(/[^0-9.\-]/g, '')) || 0; if (d) { amt = Math.abs(d); type = 'debit'; } else { amt = Math.abs(cr); type = 'credit'; } }
-    if (!Number.isFinite(amt) || amt === 0) continue;
-    const dateRaw = String(f[di] || '').trim();
-    const iso = /^\d{4}-\d{2}-\d{2}/.test(dateRaw) ? dateRaw.slice(0, 10)
-      : (() => { const d = new Date(dateRaw); return isNaN(d) ? new Date().toISOString().slice(0, 10) : d.toISOString().slice(0, 10); })();
-    out.push({ tx_date: iso, amount: amt, tx_type: type, description: String(f[ci] || 'Bank transaction').slice(0, 200), fitid: null });
-  }
-  return out;
-}
-
-app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
-  const { format, content, mapping } = req.body || {};
-  if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content (the statement file text) is required.' });
-  if (content.length > 5_000_000) return res.status(400).json({ error: 'Statement too large (max ~5MB).' });
-  const fmt = String(format || '').toLowerCase();
-  let txns;
-  try {
-    if (fmt === 'ofx' || fmt === 'qfx' || /<STMTTRN>/i.test(content)) txns = parseOFX(content);
-    else if (fmt === 'csv') txns = parseCSV(content, mapping);
-    else return res.status(400).json({ error: "format must be 'ofx', 'qfx', or 'csv'." });
-  } catch (e) { return res.status(400).json({ error: e.message }); }
-  if (!txns.length) return res.status(400).json({ error: 'No transactions found in the statement.' });
-
-  const uid = scopeId(req);
-  let imported = 0, skipped = 0;
-  for (const t of txns) {
-    // Idempotent dedupe: OFX → FITID (exact); CSV → content hash of date+amount+desc.
-    const key = t.fitid ? 'ofx:' + t.fitid
-      : 'csv:' + crypto.createHash('sha1').update(t.tx_date + '|' + t.amount + '|' + t.description).digest('hex');
-    const { rows: [dup] } = await pool.query(
-      `SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, key]);
-    if (dup) { skipped++; continue; }
-    await db.insert('personal_transactions', {
-      user_id: uid, entity_id: req.entityId || null,
-      description: t.description, amount: t.amount, tx_type: t.tx_type, tx_date: t.tx_date,
-      category: 'Uncategorized', source: 'banking', import_key: key,
-    });
-    imported++;
-  }
-  res.status(201).json({ ok: true, imported, skipped, total: txns.length });
 }));
 
 // ── MRR / SAAS ────────────────────────────────────────────────────────────────
@@ -4041,7 +3682,7 @@ app.post('/api/permissions', requireAuth, requirePerm('permissions:manage'), wra
 // GET /api/reports — summary stats (revenue, expenses, profit, counts).
 app.get('/api/reports', requireAuth, wrap(async (req, res) => {
   try {
-    const uid = scopeId(req);
+    const uid = req.session.userId;
     const eid = req.entityId || null;
     const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
     // F33/F25: optional explicit window (?start=YYYY-MM-DD&end=YYYY-MM-DD&elapsedMonths=N),
@@ -4148,7 +3789,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
 // canonical — it additionally includes payroll accrual (a monthly rate, surfaced as its own
 // line) and FIFO COGS (an aggregate). Sorted by YYYY-MM key, labelled at render (F15).
 app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
-  const uid = scopeId(req);
+  const uid = req.session.userId;
   const eid = req.entityId || null;
   const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
   const [invoices, expenses, paymentsMade, receipts, bills, creditNotes, vendorCredits] = await Promise.all([
@@ -4228,7 +3869,7 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
 // AP = unpaid bills (entity-scoped). No real cash-account model, so cash is a retained-
 // earnings proxy (max(0, netProfit)) — noted, not a tracked balance.
 app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
-  const uid = scopeId(req);
+  const uid = req.session.userId;
   const eid = req.entityId || null;
   const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
   const [books, bills] = await Promise.all([
@@ -4300,7 +3941,7 @@ app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
 // account payroll is typically the largest outflow, making the reported net structurally
 // optimistic). Paid-only, deliberately NOT the P&L's approved-or-paid filter — see below.
 app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
-  const uid = scopeId(req);
+  const uid = req.session.userId;
   const eid = req.entityId || null;
   const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
   // invoice_payments is a TYPED table (no `data` JSONB column) — db.allByUser()/rowToObj() would
@@ -4370,7 +4011,7 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
 // starting point; the worksheet overrides it per tax line on the frontend.
 app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
   try {
-    const uid = scopeId(req);
+    const uid = req.session.userId;
     const eid = req.entityId || null;
     // F139 — SINGLE SOURCE. Was: paid-only (CASH) revenue + all-time Σ deductible — a basis AND a
     // window no other surface used (F76), so the worksheet reported a taxable no other page agreed
@@ -4467,927 +4108,6 @@ app.post('/api/connections', requireAuth, requirePerm('bank:manage'), wrap(async
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════
-// PLAID BANK LINKING — a REAL, owner-only link flow (env-gated, never a fake state).
-// ════════════════════════════════════════════════════════════════════════════════
-// This deliberately replaces the "coming soon" placeholder for banks: a genuine Plaid Link
-// handshake (link-token → public-token exchange → persisted item). Env-gated exactly like the
-// AI (ANTHROPIC_API_KEY→502) and Stripe (STRIPE_SECRET_KEY→null) surfaces: with no keys it
-// returns a clean, actionable 502 and NEVER claims a connection that did not happen (F51/F65
-// honesty rule). Access tokens are encrypted at rest (AES-256-GCM) so this does not repeat the
-// F160 plaintext-secret class. Uses Plaid's REST API over global fetch — no new npm dependency.
-const PLAID_ENV_NAME = (process.env.PLAID_ENV || 'sandbox').toLowerCase();
-const PLAID_BASE = PLAID_ENV_NAME === 'production' ? 'https://production.plaid.com'
-                 : PLAID_ENV_NAME === 'development' ? 'https://development.plaid.com'
-                 : 'https://sandbox.plaid.com';
-const PLAID_COUNTRIES = (process.env.PLAID_COUNTRY_CODES || 'US').split(',').map(s => s.trim()).filter(Boolean);
-const plaidConfigured = () => !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
-
-async function plaidCall(pathname, body) {
-  const resp = await fetch(PLAID_BASE + pathname, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(Object.assign({ client_id: process.env.PLAID_CLIENT_ID, secret: process.env.PLAID_SECRET }, body)),
-  });
-  let json = {};
-  try { json = await resp.json(); } catch (_) {}
-  if (!resp.ok) {
-    const err = new Error(json.error_message || json.error_code || ('Plaid HTTP ' + resp.status));
-    err.plaid = json; err.httpStatus = resp.status;
-    throw err;
-  }
-  return json;
-}
-
-// AES-256-GCM at rest, key derived from SESSION_SECRET (already a required env var).
-function _plaidKey() { return crypto.createHash('sha256').update('plaid-token:' + (process.env.SESSION_SECRET || '')).digest(); }
-function encTok(plain) {
-  const iv = crypto.randomBytes(12);
-  const c = crypto.createCipheriv('aes-256-gcm', _plaidKey(), iv);
-  const enc = Buffer.concat([c.update(String(plain), 'utf8'), c.final()]);
-  return iv.toString('hex') + ':' + c.getAuthTag().toString('hex') + ':' + enc.toString('hex');
-}
-function decTok(stored) {
-  const [ivh, tagh, dh] = String(stored).split(':');
-  const d = crypto.createDecipheriv('aes-256-gcm', _plaidKey(), Buffer.from(ivh, 'hex'));
-  d.setAuthTag(Buffer.from(tagh, 'hex'));
-  return Buffer.concat([d.update(Buffer.from(dh, 'hex')), d.final()]).toString('utf8');
-}
-
-// Linked items live in user_settings under key='plaid_items' as a JSON array (mirrors the
-// connections blob) — no schema migration, and scoped by scopeId like every other read.
-async function _getPlaidItems(uid) {
-  const { rows: [r] } = await pool.query(
-    `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' = 'plaid_items' LIMIT 1`, [uid]);
-  const row = r ? rowToObj(r) : null;
-  let items = [];
-  try { items = row && row.value ? JSON.parse(row.value) : []; } catch (_) { items = []; }
-  return { id: r ? r.id : null, items: Array.isArray(items) ? items : [] };
-}
-async function _savePlaidItems(uid, existingId, items) {
-  const data = JSON.stringify(items);
-  if (existingId) await db.updateById('user_settings', existingId, { value: data });
-  else await db.insert('user_settings', { user_id: uid, key: 'plaid_items', value: data });
-}
-const _publicItem = i => ({ item_id: i.item_id, institution_name: i.institution_name, linked_at: i.linked_at });
-
-// GET the real linked-bank state (tokens NEVER leave the server). `configured` lets the UI show
-// an honest "needs setup" state instead of a Link button that would 502.
-app.get('/api/plaid/items', requireAuth, wrap(async (req, res) => {
-  const { items } = await _getPlaidItems(scopeId(req));
-  res.json({ configured: plaidConfigured(), env: PLAID_ENV_NAME, items: items.map(_publicItem) });
-}));
-
-// Step 1 of Link: create a link_token the browser hands to Plaid Link.
-app.post('/api/plaid/link-token', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
-  try {
-    const j = await plaidCall('/link/token/create', {
-      user: { client_user_id: String(scopeId(req)) },
-      client_name: 'FinFlow',
-      products: ['transactions'],
-      country_codes: PLAID_COUNTRIES,
-      language: 'en',
-    });
-    res.json({ link_token: j.link_token, expiration: j.expiration });
-  } catch (e) {
-    console.error('[plaid link-token]', e.message, e.plaid || '');
-    res.status(502).json({ error: 'Could not start bank linking: ' + e.message });
-  }
-}));
-
-// Step 2 of Link: exchange the public_token for a long-lived access_token; persist (encrypted)
-// with the institution name so the UI can show a REAL linked state.
-app.post('/api/plaid/exchange', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
-  const publicToken = (req.body && req.body.public_token) || '';
-  if (!publicToken) return res.status(400).json({ error: 'public_token is required.' });
-  try {
-    const ex = await plaidCall('/item/public_token/exchange', { public_token: publicToken });
-    let institution = 'Bank';
-    try {
-      const acc = await plaidCall('/accounts/get', { access_token: ex.access_token });
-      const instId = acc.item && acc.item.institution_id;
-      if (instId) {
-        const inst = await plaidCall('/institutions/get_by_id', { institution_id: instId, country_codes: PLAID_COUNTRIES });
-        institution = (inst.institution && inst.institution.name) || institution;
-      }
-    } catch (_) { /* institution name is best-effort; the link still succeeds */ }
-    const uid = scopeId(req);
-    const { id, items } = await _getPlaidItems(uid);
-    const next = items.filter(it => it.item_id !== ex.item_id); // idempotent re-link
-    next.push({ item_id: ex.item_id, access_token: encTok(ex.access_token), institution_name: institution, linked_at: new Date().toISOString(), cursor: null });
-    await _savePlaidItems(uid, id, next);
-    res.status(201).json({ ok: true, institution_name: institution, item_id: ex.item_id, items: next.map(_publicItem) });
-  } catch (e) {
-    console.error('[plaid exchange]', e.message, e.plaid || '');
-    res.status(502).json({ error: 'Could not link your bank: ' + e.message });
-  }
-}));
-
-// Unlink (owner-only). Removes the stored item locally and best-effort tells Plaid to invalidate it.
-app.post('/api/plaid/unlink', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  const uid = scopeId(req);
-  const itemId = (req.body && req.body.item_id) || '';
-  if (!itemId) return res.status(400).json({ error: 'item_id is required.' });
-  const { id, items } = await _getPlaidItems(uid);
-  const target = items.find(it => it.item_id === itemId);
-  if (!target) return res.status(404).json({ error: 'No such linked bank.' });
-  if (plaidConfigured()) { try { await plaidCall('/item/remove', { access_token: decTok(target.access_token) }); } catch (_) {} }
-  await _savePlaidItems(uid, id, items.filter(it => it.item_id !== itemId));
-  res.json({ ok: true, items: items.filter(it => it.item_id !== itemId).map(_publicItem) });
-}));
-
-// Pull transactions from every linked item into personal_transactions (source:'banking'), so the
-// linked bank actually FEEDS the books. Idempotent on Plaid's stable transaction_id (NOT the weak
-// 5-second dedupe window — Rule 9) and cursor-based so re-runs only fetch new activity.
-app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
-  const uid = scopeId(req);
-  const { id, items } = await _getPlaidItems(uid);
-  if (!items.length) return res.status(400).json({ error: 'No linked bank. Link a bank first.' });
-  let added = 0;
-  for (const it of items) {
-    try {
-      const token = decTok(it.access_token);
-      let cursor = it.cursor || null, hasMore = true;
-      while (hasMore) {
-        const sync = await plaidCall('/transactions/sync', cursor ? { access_token: token, cursor } : { access_token: token });
-        for (const t of (sync.added || [])) {
-          // Idempotency on Plaid's transaction_id (stable), not a time window.
-          const { rows: [dup] } = await pool.query(
-            `SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'plaid_txn_id'=$2 LIMIT 1`, [uid, t.transaction_id]);
-          if (dup) continue;
-          await db.insert('personal_transactions', {
-            user_id: uid, entity_id: req.entityId || null,
-            description: t.name || t.merchant_name || 'Bank transaction',
-            amount: Math.abs(Number(t.amount) || 0),
-            // Plaid: positive amount = money OUT of the account (debit); negative = money IN (credit).
-            tx_type: (Number(t.amount) >= 0 ? 'debit' : 'credit'),
-            tx_date: t.date || new Date().toISOString().slice(0, 10),
-            category: (t.personal_finance_category && t.personal_finance_category.primary) || 'Other',
-            source: 'banking', plaid_txn_id: t.transaction_id,
-          });
-          added++;
-        }
-        cursor = sync.next_cursor; hasMore = !!sync.has_more;
-      }
-      it.cursor = cursor;
-    } catch (e) { console.error('[plaid sync]', e.message, e.plaid || ''); }
-  }
-  await _savePlaidItems(uid, id, items);
-  res.json({ ok: true, added });
-}));
-
-// ════════════════════════════════════════════════════════════════════════════════
-// FINCH (Payroll/HR aggregator) + CODAT (Accounting aggregator) — REAL, owner-only, env-gated.
-// ════════════════════════════════════════════════════════════════════════════════
-// Same shape as Plaid: one integration each covers a whole category (Finch ~250 payroll/HRIS
-// providers; Codat ~30 accounting platforms). Env-gated (clean 502 until keys), access tokens
-// encrypted at rest (reuse encTok/decTok), connection blob in user_settings (no migration).
-//
-// DELIBERATE SCOPE LIMIT (Rules 2 & 12): these establish the connection and pull data for DISPLAY
-// only. They do NOT auto-write payroll_runs / journals / invoices — letting an external source
-// silently author a money figure is the multi-writer defect this codebase exists to prevent.
-// Materialising external payroll/accounting data into the books is a separate, owner-gated import.
-const _providerBlob = async (uid, key) => {
-  const { rows: [r] } = await pool.query(`SELECT * FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 LIMIT 1`, [uid, key]);
-  const row = r ? rowToObj(r) : null;
-  let value = null; try { value = row && row.value ? JSON.parse(row.value) : null; } catch (_) {}
-  return { id: r ? r.id : null, value };
-};
-const _saveProviderBlob = async (uid, id, key, value) => {
-  const data = JSON.stringify(value);
-  if (id) await db.updateById('user_settings', id, { value: data });
-  else await db.insert('user_settings', { user_id: uid, key, value: data });
-};
-
-// ── FINCH ──
-const finchConfigured = () => !!(process.env.FINCH_CLIENT_ID && process.env.FINCH_CLIENT_SECRET);
-const FINCH_API = 'https://api.tryfinch.com';
-async function finchCall(pathname, accessToken, opts = {}) {
-  const resp = await fetch(FINCH_API + pathname, {
-    method: opts.method || 'GET',
-    headers: Object.assign({ 'Authorization': 'Bearer ' + accessToken, 'Finch-API-Version': '2020-09-17', 'Content-Type': 'application/json' }, opts.headers || {}),
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  let json = {}; try { json = await resp.json(); } catch (_) {}
-  if (!resp.ok) { const e = new Error(json.message || json.error || ('Finch HTTP ' + resp.status)); e.provider = json; throw e; }
-  return json;
-}
-
-app.get('/api/finch/status', requireAuth, wrap(async (req, res) => {
-  const { value } = await _providerBlob(scopeId(req), 'finch_conn');
-  res.json({ configured: finchConfigured(), connected: !!(value && value.access_token), provider: value ? value.provider_name || null : null, employees: value ? (value.employee_count ?? null) : null });
-}));
-
-// NOTE: the callback MUST live under /api so the account resolver runs (it's app.use('/api', …)),
-// which sets req.accountId/req.accountRole — without them requirePerm fails closed and scopeId is
-// undefined. So the redirect URI points at /api/finch/callback.
-const _finchRedirectUri = () => process.env.FINCH_REDIRECT_URI || (appUrl() + '/api/finch/callback');
-// Build the Finch Connect authorize URL the browser opens (popup); Finch redirects back to
-// /finch/callback with a `code`. products default to read-only company/directory/payroll scopes.
-app.post('/api/finch/connect-url', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
-  if (!finchConfigured()) return res.status(502).json({ error: 'Payroll linking is not set up yet. Add FINCH_CLIENT_ID and FINCH_CLIENT_SECRET to enable it.', code: 'FINCH_NOT_CONFIGURED' });
-  // Finch RETIRED the direct connect.tryfinch.com/authorize URL (now "legacy-flows"); the current flow is a
-  // server-side Connect Session (POST /connect/sessions) that mints a fresh single-use connect_url. This is
-  // an APP-CREDENTIAL endpoint: client_id + client_secret go in the BODY (same as /auth/token in the callback
-  // below) — NOT a Basic auth header (that returns "Invalid client: Unable to validate credentials"). Still a
-  // redirect flow: the user completes it and Finch redirects to redirect_uri with ?code, which
-  // /api/finch/callback exchanges (unchanged). products default 'company directory' — NOT 'payroll' (not a
-  // valid Finch product; the old default 400'd "payroll is an invalid product").
-  const products = (process.env.FINCH_PRODUCTS || 'company directory').split(/\s+/).filter(Boolean);
-  const sandbox = (process.env.FINCH_ENV || 'sandbox').toLowerCase() !== 'production';
-  try {
-    const resp = await fetch(FINCH_API + '/connect/sessions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({
-        client_id: process.env.FINCH_CLIENT_ID,
-        client_secret: process.env.FINCH_CLIENT_SECRET,
-        products,
-        customer_id: String(scopeId(req)),
-        customer_name: 'FinFlow',
-        redirect_uri: _finchRedirectUri(),
-      }, sandbox ? { sandbox: 'finch' } : {})),
-    });
-    let j = {}; try { j = await resp.json(); } catch (_) {}
-    if (!resp.ok || !j.connect_url) {
-      console.error('[finch connect-url]', resp.status, JSON.stringify(j).slice(0, 300));
-      return res.status(502).json({ error: 'Could not start payroll connection: ' + (j.message || j.error || ('Finch HTTP ' + resp.status)), code: 'FINCH_SESSION_FAILED' });
-    }
-    res.json({ connect_url: j.connect_url });
-  } catch (e) {
-    console.error('[finch connect-url]', e.message);
-    res.status(502).json({ error: 'Could not start payroll connection: ' + e.message });
-  }
-}));
-
-// Finch redirects the popup here with ?code=…; exchange it server-side, store (encrypted), close.
-app.get('/api/finch/callback', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
-  const done = (msg) => res.set('Content-Type', 'text/html').send(`<!doctype html><meta charset=utf-8><body style="font-family:system-ui;background:#16120d;color:#f2e8d5;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><p>${msg}</p><script>try{window.opener&&window.opener.postMessage({finch:'done'},'*')}catch(e){};setTimeout(()=>window.close(),1200)</script></div>`);
-  if (!finchConfigured()) return done('Payroll linking is not set up.');
-  const code = req.query.code || '';
-  if (!code) return done('No authorization code returned.');
-  try {
-    const resp = await fetch(FINCH_API + '/auth/token', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: process.env.FINCH_CLIENT_ID, client_secret: process.env.FINCH_CLIENT_SECRET, code, redirect_uri: _finchRedirectUri() }),
-    });
-    let j = {}; try { j = await resp.json(); } catch (_) {}
-    if (!resp.ok || !j.access_token) throw new Error(j.message || ('Finch token HTTP ' + resp.status));
-    let providerName = null;
-    try { const intro = await finchCall('/introspect', j.access_token); providerName = (intro && (intro.payroll_provider_id || intro.provider_id)) || null; } catch (_) {}
-    const uid = scopeId(req);
-    const { id } = await _providerBlob(uid, 'finch_conn');
-    await _saveProviderBlob(uid, id, 'finch_conn', { access_token: encTok(j.access_token), provider_name: providerName, linked_at: new Date().toISOString(), employee_count: null });
-    return done('Payroll connected ✓ You can close this window.');
-  } catch (e) { console.error('[finch callback]', e.message, e.provider || ''); return done('Could not link payroll: ' + e.message); }
-}));
-
-// Pull the employee directory for DISPLAY (count only) — does NOT write payroll_runs (Rule 12).
-app.post('/api/finch/sync', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
-  if (!finchConfigured()) return res.status(502).json({ error: 'Payroll linking is not set up yet. Add FINCH keys to enable it.', code: 'FINCH_NOT_CONFIGURED' });
-  const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'finch_conn');
-  if (!value || !value.access_token) return res.status(400).json({ error: 'No linked payroll. Connect a provider first.' });
-  try {
-    const dir = await finchCall('/employer/directory', decTok(value.access_token));
-    const count = Array.isArray(dir.individuals) ? dir.individuals.length : (dir.paging && dir.paging.count) || 0;
-    await _saveProviderBlob(uid, id, 'finch_conn', Object.assign({}, value, { employee_count: count, last_synced: new Date().toISOString() }));
-    res.json({ ok: true, employees: count, note: 'Directory pulled for display. Importing payroll into the books is a separate, owner-approved step (Rule 12).' });
-  } catch (e) { console.error('[finch sync]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not sync payroll: ' + e.message }); }
-}));
-
-app.post('/api/finch/disconnect', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
-  const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'finch_conn');
-  if (!value) return res.status(404).json({ error: 'No linked payroll.' });
-  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
-  res.json({ ok: true });
-}));
-
-// ── CODAT ──
-const codatConfigured = () => !!process.env.CODAT_API_KEY;
-const CODAT_API = 'https://api.codat.io';
-const _codatAuth = () => {
-  const k = String(process.env.CODAT_API_KEY || '').trim();
-  // Codat's Portal (Developers -> API keys) exposes a ready-made "Authorization header" value
-  // (`Basic ...`). Accept it verbatim so we never double-encode; fall back to key-as-username
-  // Basic auth when only the raw API key was supplied.
-  if (/^Basic\s+/i.test(k)) return k;
-  return 'Basic ' + Buffer.from(k + ':').toString('base64');
-};
-async function codatCall(pathname, opts = {}) {
-  const resp = await fetch(CODAT_API + pathname, {
-    method: opts.method || 'GET',
-    headers: Object.assign({ 'Authorization': _codatAuth(), 'Content-Type': 'application/json', 'Accept': 'application/json' }, opts.headers || {}),
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  let json = {}; try { json = await resp.json(); } catch (_) {}
-  if (!resp.ok) { const e = new Error(json.error || json.message || ('Codat HTTP ' + resp.status)); e.provider = json; throw e; }
-  return json;
-}
-
-app.get('/api/codat/status', requireAuth, wrap(async (req, res) => {
-  const { value } = await _providerBlob(scopeId(req), 'codat_conn');
-  let platform = value ? value.platform || null : null, connected = false;
-  if (codatConfigured() && value && value.company_id) {
-    try {
-      const conns = await codatCall(`/companies/${value.company_id}/connections`);
-      const linked = (conns.results || []).find(c => c.status === 'Linked');
-      if (linked) { connected = true; platform = linked.platformName || platform; }
-    } catch (_) {}
-  }
-  res.json({ configured: codatConfigured(), connected, platform, company_id: value ? value.company_id || null : null });
-}));
-
-// Create a Codat company + return the hosted Link URL the user completes to connect their platform.
-app.post('/api/codat/link-url', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
-  if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
-  try {
-    const uid = scopeId(req);
-    const { id, value } = await _providerBlob(uid, 'codat_conn');
-    let companyId = value && value.company_id;
-    let company;
-    if (!companyId) {
-      company = await codatCall('/companies', { method: 'POST', body: { name: 'FinFlow user ' + uid } });
-      companyId = company.id;
-    } else {
-      company = await codatCall(`/companies/${companyId}`);
-    }
-    const linkUrl = (company.redirect) || (company.links && company.links.self) || null;
-    await _saveProviderBlob(uid, id, 'codat_conn', Object.assign({}, value || {}, { company_id: companyId, linked_at: new Date().toISOString() }));
-    if (!linkUrl) return res.status(502).json({ error: 'Codat did not return a link URL.' });
-    res.json({ link_url: linkUrl, company_id: companyId });
-  } catch (e) { console.error('[codat link-url]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not start accounting linking: ' + e.message }); }
-}));
-
-app.post('/api/codat/disconnect', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
-  const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'codat_conn');
-  if (!value) return res.status(404).json({ error: 'No linked accounting platform.' });
-  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
-  res.json({ ok: true });
-}));
-
-// Parity with the other data aggregators: read a display-only summary (chart-of-accounts count)
-// from the connected platform. Does NOT write to the books (Rules 2 & 12).
-app.post('/api/codat/sync', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
-  if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
-  const uid = scopeId(req);
-  const { value } = await _providerBlob(uid, 'codat_conn');
-  if (!value || !value.company_id) return res.status(400).json({ error: 'No linked accounting platform. Connect one first.' });
-  try {
-    const data = await codatCall(`/companies/${value.company_id}/data/accounts?pageSize=100`);
-    const accounts = Array.isArray(data.results) ? data.results.length : (data.totalResults || 0);
-    res.json({ ok: true, accounts, note: 'Chart of accounts read for display. Importing into the books is a separate, owner-approved step (Rule 2/12).' });
-  } catch (e) { console.error('[codat sync]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not sync accounting data: ' + e.message }); }
-}));
-
-
-// ════════════════════════════════════════════════════════════════════════════════
-// CODAT MIGRATION — one-time, owner-initiated IMPORT of an existing accounting book
-// (QuickBooks / Xero / Sage / … via Codat) INTO the FinFlow ledger. This is the
-// "separate, owner-approved step" the display-only /codat/sync note refers to. It is
-// NOT a silent external writer (Rules 2 & 12): nothing is written until the owner has
-// reviewed a PREVIEW and explicitly POSTs /import. Every row goes through the SAME
-// db.insert the manual routes use (single-writer), is scoped to the owner + active
-// entity, and is IDEMPOTENT on a deterministic Codat-derived key (`import_key`, mirrored
-// into the existing partial-unique `idempotency_key` index) so a re-run imports 0 and
-// never double-books. Amounts are already major-unit in Codat — no minor-unit conversion.
-// ════════════════════════════════════════════════════════════════════════════════
-
-// Codat paginates 1-based; pull every page of a data type into one array.
-async function codatFetchAll(companyId, dataType) {
-  const out = [];
-  for (let page = 1; page <= 500; page++) {
-    const j = await codatCall(`/companies/${companyId}/data/${dataType}?page=${page}&pageSize=100`);
-    const results = Array.isArray(j.results) ? j.results : [];
-    out.push(...results);
-    const total = Number(j.totalResults || 0);
-    if (!results.length) break;
-    if (total && out.length >= total) break;
-    if (!(j._links && j._links.next) && !total) break;
-  }
-  return out;
-}
-
-const _cdClip = (s, n) => String(s == null ? '' : s).slice(0, n);
-const _cdNum  = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
-const _cdDate = (d) => { const s = String(d == null ? '' : d); return s ? s.slice(0, 10) : null; };
-const _cdSplitName = (full) => {
-  const p = _cdClip(full, 200).trim().split(/\s+/).filter(Boolean);
-  if (!p.length) return { fname: '', lname: '' };
-  if (p.length === 1) return { fname: p[0], lname: '' };
-  return { fname: p.slice(0, -1).join(' '), lname: p[p.length - 1] };
-};
-// Codat account type → FinFlow chart-of-accounts category + normal-balance nature.
-const _CD_ACCT_CAT = { Asset: 'Assets', Liability: 'Liabilities', Equity: 'Equity', Income: 'Revenue', Expense: 'Expenses' };
-// Codat invoice/bill status → FinFlow status enum. (amount_paid is derived from amountDue below,
-// NOT from the label, so AR/AP ties out regardless of how a status maps.)
-const _CD_INV_STATUS  = { Paid: 'paid', PartiallyPaid: 'partial', Submitted: 'pending', Draft: 'draft', Void: 'draft' };
-const _CD_BILL_STATUS = { Paid: 'paid', PartiallyPaid: 'partial', Open: 'unpaid', Draft: 'unpaid', Void: 'unpaid' };
-
-// Pure mappers: one Codat record → { table, key, date, data } where `data` holds the exact FinFlow
-// field keys the manual routes write. Return null to SKIP (e.g. an unbalanced journal FinFlow rejects).
-function _codatMappers(companyId, platform) {
-  const ck  = (type, id) => `codat:${companyId}:${type}:${id}`;
-  const tag = platform ? ('Imported from ' + platform) : 'Imported (Codat)';
-  return {
-    accounts: (a) => ({ table: 'chart_of_accounts', key: ck('account', a.id), date: null, data: {
-      code: _cdClip(a.nominalCode || '', 20),
-      name: _cdClip(a.name || a.fullyQualifiedName || 'Account', 200),
-      category: _CD_ACCT_CAT[a.type] || 'Assets',
-      nature: (_CD_ACCT_CAT[a.type] === 'Assets' || _CD_ACCT_CAT[a.type] === 'Expenses') ? 'Debit' : 'Credit',
-      balance: _cdNum(a.currentBalance) } }),
-    customers: (c) => { const n = _cdSplitName(c.contactName); return { table: 'customers', key: ck('customer', c.id), date: null, data: {
-      fname: n.fname, lname: n.lname, company: _cdClip(c.customerName || '', 200), industry: '',
-      email: _cdClip(c.emailAddress || '', 200), phone: _cdClip(c.phone || '', 30),
-      revenue: 0, status: (c.status === 'Archived') ? 'inactive' : 'active', notes: tag } }; },
-    suppliers: (s) => ({ table: 'vendors', key: ck('supplier', s.id), date: null, data: {
-      name: _cdClip(s.supplierName || 'Supplier', 200), contact: _cdClip(s.contactName || '', 200),
-      category: '', owing: 0, ytd_paid: 0, status: (s.status === 'Archived') ? 'inactive' : 'active' } }),
-    invoices: (i) => { const total = _cdNum(i.totalAmount), due = _cdNum(i.amountDue);
-      return { table: 'invoices', key: ck('invoice', i.id), date: _cdDate(i.issueDate) || _cdDate(i.dueDate), data: {
-        client: _cdClip((i.customerRef && (i.customerRef.companyName || i.customerRef.id)) || 'Unknown', 200),
-        amount: total, amount_paid: Math.max(0, +(total - due).toFixed(2)),
-        due_date: _cdDate(i.dueDate), issue_date: _cdDate(i.issueDate),
-        status: _CD_INV_STATUS[i.status] || 'pending',
-        notes: _cdClip(tag + (i.invoiceNumber ? (' · ' + i.invoiceNumber) : ''), 500) } }; },
-    bills: (b) => { const total = _cdNum(b.totalAmount), due = _cdNum(b.amountDue);
-      return { table: 'bills', key: ck('bill', b.id), date: _cdDate(b.issueDate) || _cdDate(b.dueDate), data: {
-        vendor: _cdClip((b.supplierRef && (b.supplierRef.supplierName || b.supplierRef.id)) || 'Unknown', 200),
-        num: _cdClip(b.reference || ('BILL-' + String(b.id).slice(-4)), 60),
-        amount: total, amount_paid: Math.max(0, +(total - due).toFixed(2)),
-        due_date: _cdDate(b.dueDate), issue_date: _cdDate(b.issueDate),
-        status: _CD_BILL_STATUS[b.status] || 'unpaid', notes: _cdClip(tag, 500) } }; },
-    payments: (p) => ({ table: 'payments_received', key: ck('payment', p.id), date: null, data: {
-      customer: _cdClip((p.customerRef && (p.customerRef.companyName || p.customerRef.id)) || '', 200),
-      invoice_ref: _cdClip((p.lines && p.lines[0] && p.lines[0].links && p.lines[0].links[0] && p.lines[0].links[0].id) || '', 60),
-      amount: _cdNum(p.totalAmount), date: _cdDate(p.date), method: 'Imported' } }),
-    // billPayments → payments_made WITHOUT a bill_id, so recalcBillStatus is NOT re-triggered
-    // (the bill already carries its amount_paid from amountDue) — this is what prevents double-counting.
-    billPayments: (bp) => ({ table: 'payments_made', key: ck('billpayment', bp.id), date: null, data: {
-      vendor: _cdClip((bp.supplierRef && (bp.supplierRef.supplierName || bp.supplierRef.id)) || '', 200),
-      amount: _cdNum(bp.totalAmount), date: _cdDate(bp.date), method: 'Imported',
-      notes: 'Imported (Codat)', ref: _cdClip(bp.id, 60) } }),
-    journalEntries: (j) => {
-      const lines = Array.isArray(j.journalLines) ? j.journalLines : [];
-      let debit = 0, credit = 0; const norm = [];
-      for (const l of lines) { const amt = _cdNum(l.netAmount); if (amt >= 0) debit += amt; else credit += -amt;
-        norm.push({ account: _cdClip((l.accountRef && l.accountRef.id) || '', 60), description: _cdClip(l.description || '', 200), amount: amt }); }
-      debit = +debit.toFixed(2); credit = +credit.toFixed(2);
-      if (Math.abs(debit - credit) > 0.01) return null; // FinFlow rejects unbalanced journals — skip, don't force
-      return { table: 'journals', key: ck('journal', j.id), date: _cdDate(j.postedOn || j.createdOn), data: {
-        date: _cdDate(j.postedOn || j.createdOn), description: _cdClip(j.description || j.journalRef || 'Journal', 300),
-        ref: _cdClip(j.journalRef || ('JE-' + String(j.id).slice(-4)), 60),
-        debit, credit, lines: JSON.stringify(norm), status: 'Posted' } };
-    },
-  };
-}
-
-// The eight Codat data types we migrate, in dependency order (masters before transactions).
-const CODAT_IMPORT_TYPES = ['accounts', 'customers', 'suppliers', 'invoices', 'bills', 'payments', 'billPayments', 'journalEntries'];
-
-// Resolve the connected company id + platform name (for labels/preview).
-async function _codatCompany(uid) {
-  const { value } = await _providerBlob(uid, 'codat_conn');
-  if (!value || !value.company_id) { const e = new Error('No linked accounting platform. Connect one first.'); e.status = 400; throw e; }
-  let platform = value.platform || null;
-  try {
-    const conns = await codatCall(`/companies/${value.company_id}/connections`);
-    const linked = (conns.results || []).find(c => c.status === 'Linked');
-    if (linked) platform = linked.platformName || platform;
-  } catch (_) {}
-  return { companyId: value.company_id, platform };
-}
-
-// Core loop, shared by preview (dryRun) and import. Fetch → map → dedupe on the deterministic key →
-// (import) db.insert through the canonical single-writer, or (dryRun) just count. Locked-period rows
-// are skipped (never silently written into a closed period). Returns a per-type tally.
-async function _codatImportType(uid, entityId, sessionUserId, companyId, platform, type, opts) {
-  const dryRun = !!(opts && opts.dryRun);
-  const map = _codatMappers(companyId, platform)[type];
-  const tally = { total: 0, added: 0, duplicate: 0, locked: 0, skipped: 0, failed: 0, currencies: {}, sample: [] };
-  let records;
-  try { records = await codatFetchAll(companyId, type); }
-  catch (e) { tally.error = e.message; return tally; }
-  tally.total = records.length;
-  for (const rec of records) {
-    if (rec && rec.currency) tally.currencies[rec.currency] = (tally.currencies[rec.currency] || 0) + 1;
-    let m;
-    try { m = map(rec); } catch (e) { tally.failed++; continue; }
-    if (!m) { tally.skipped++; continue; }
-    const dup = await pool.query(`SELECT 1 FROM ${m.table} WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, m.key]);
-    if (dup.rows.length) { tally.duplicate++; continue; }
-    if (m.date && await isLocked(sessionUserId, m.date)) { tally.locked++; continue; }
-    if (tally.sample.length < 3) tally.sample.push(m.data);
-    if (dryRun) { tally.added++; continue; }
-    try {
-      await db.insert(m.table, Object.assign({ user_id: uid, entity_id: entityId,
-        import_key: m.key, idempotency_key: m.key, source: 'codat', codat_id: rec.id }, m.data));
-      tally.added++;
-    } catch (e) {
-      if (e.code === '23505') { tally.duplicate++; }
-      else { tally.failed++; console.error(`[codat import ${type}]`, e.message); }
-    }
-  }
-  return tally;
-}
-
-// PREVIEW (dry-run): read every data type and report what WOULD import — counts, brand-new vs already,
-// a small sample, and the currency mix — so the owner confirms before ANYTHING is written. No writes.
-app.post('/api/codat/import-preview', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
-  if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
-  const uid = scopeId(req);
-  if (!req.entityId) return res.status(400).json({ error: 'Select a business entity to import into first.', code: 'NO_ACTIVE_ENTITY' });
-  let company; try { company = await _codatCompany(uid); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
-  const datasets = {};
-  for (const type of CODAT_IMPORT_TYPES) {
-    datasets[type] = await _codatImportType(uid, req.entityId, req.session.userId, company.companyId, company.platform, type, { dryRun: true });
-  }
-  res.json({ ok: true, company_id: company.companyId, platform: company.platform, entity_id: req.entityId, datasets });
-}));
-
-// IMPORT (the write): owner-confirmed. Writes every data type through the canonical db.insert,
-// idempotently. Safe to re-run — already-imported records are skipped, never duplicated.
-app.post('/api/codat/import', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
-  if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
-  const uid = scopeId(req);
-  if (!req.entityId) return res.status(400).json({ error: 'Select a business entity to import into first.', code: 'NO_ACTIVE_ENTITY' });
-  let company; try { company = await _codatCompany(uid); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
-  const results = {}; let totalAdded = 0;
-  for (const type of CODAT_IMPORT_TYPES) {
-    const t = await _codatImportType(uid, req.entityId, req.session.userId, company.companyId, company.platform, type, { dryRun: false });
-    results[type] = t; totalAdded += t.added;
-  }
-  try { logAudit(req, 'CREATE', 'codat_import', null, null, { entity_id: req.entityId, platform: company.platform, total_added: totalAdded }); } catch (_) {}
-  res.json({ ok: true, platform: company.platform, entity_id: req.entityId, total_added: totalAdded, results });
-}));
-
-// Wise (global multi-currency): parity sync — read account balances for DISPLAY only. Owner-only
-// (bank:manage, matching the generic connector). Never writes to the books.
-app.post('/api/wise/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  const uid = scopeId(req);
-  const { value } = await _providerBlob(uid, 'wise_conn');
-  if (!value || !value.connected || !value.api_token) return res.status(400).json({ error: 'No Wise account connected. Connect one first.' });
-  try {
-    const token = decTok(value.api_token);
-    const auth = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
-    const profiles = await (await fetch('https://api.wise.com/v2/profiles', { headers: auth })).json();
-    const profileId = Array.isArray(profiles) && profiles[0] && (profiles[0].id || profiles[0].profileId);
-    if (!profileId) throw new Error('No Wise profile found.');
-    const balances = await (await fetch(`https://api.wise.com/v4/profiles/${profileId}/balances?types=STANDARD`, { headers: auth })).json();
-    const list = (Array.isArray(balances) ? balances : []).map(b => ({ currency: b.currency, amount: b.amount && b.amount.value }));
-    res.json({ ok: true, balances: list, note: 'Balances shown for display. Importing into the books is a separate, owner-approved step.' });
-  } catch (e) { console.error('[wise sync]', e.message); res.status(502).json({ error: 'Could not read Wise balances: ' + e.message }); }
-}));
-
-// ── STRIPE CONNECT (Payments) — link the user's OWN Stripe account (read-only) via OAuth. ──
-// Distinct from the platform billing Stripe (STRIPE_SECRET_KEY / /api/stripe/checkout|webhook):
-// this pulls the user's revenue for display. Env-gated on STRIPE_SECRET_KEY (the platform secret,
-// used as client_secret in the token exchange) + STRIPE_CONNECT_CLIENT_ID (the Connect app id).
-// Owner-only (bank:manage). Access token encrypted at rest. Callback under /api (resolver scope).
-const stripeConnectConfigured = () => !!(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_CONNECT_CLIENT_ID);
-const _stripeRedirectUri = () => process.env.STRIPE_CONNECT_REDIRECT_URI || (appUrl() + '/api/stripe/callback');
-
-app.get('/api/stripe/status', requireAuth, wrap(async (req, res) => {
-  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
-  res.json({ configured: stripeConnectConfigured(), connected: !!(value && value.stripe_user_id), account: value ? value.stripe_user_id || null : null });
-}));
-
-app.post('/api/stripe/connect-url', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe payments linking is not set up yet. Add STRIPE_SECRET_KEY and STRIPE_CONNECT_CLIENT_ID to enable it.', code: 'STRIPE_NOT_CONFIGURED' });
-  const params = new URLSearchParams({
-    response_type: 'code', client_id: process.env.STRIPE_CONNECT_CLIENT_ID, scope: 'read_write',
-    redirect_uri: _stripeRedirectUri(), state: String(scopeId(req)),
-  });
-  res.json({ connect_url: 'https://connect.stripe.com/oauth/authorize?' + params.toString() });
-}));
-
-app.get('/api/stripe/callback', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  const done = (msg) => res.set('Content-Type', 'text/html').send(`<!doctype html><meta charset=utf-8><body style="font-family:system-ui;background:#16120d;color:#f2e8d5;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><p>${msg}</p><script>try{window.opener&&window.opener.postMessage({stripe:'done'},'*')}catch(e){};setTimeout(()=>window.close(),1200)</script></div>`);
-  if (!stripeConnectConfigured()) return done('Stripe payments linking is not set up.');
-  const code = req.query.code || '';
-  if (!code) return done('No authorization code returned.');
-  try {
-    const resp = await fetch('https://connect.stripe.com/oauth/token', {
-      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ client_secret: process.env.STRIPE_SECRET_KEY, code, grant_type: 'authorization_code' }).toString(),
-    });
-    let j = {}; try { j = await resp.json(); } catch (_) {}
-    if (!resp.ok || !j.stripe_user_id) throw new Error(j.error_description || j.error || ('Stripe OAuth HTTP ' + resp.status));
-    const uid = scopeId(req);
-    const { id } = await _providerBlob(uid, 'stripe_conn');
-    await _saveProviderBlob(uid, id, 'stripe_conn', { stripe_user_id: j.stripe_user_id, access_token: j.access_token ? encTok(j.access_token) : null, linked_at: new Date().toISOString() });
-    return done('Stripe connected ✓ You can close this window.');
-  } catch (e) { console.error('[stripe connect callback]', e.message); return done('Could not link Stripe: ' + e.message); }
-}));
-
-app.post('/api/stripe/disconnect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'stripe_conn');
-  if (!value || !value.stripe_user_id) return res.status(404).json({ error: 'No linked Stripe account.' });
-  if (stripeConnectConfigured()) {
-    try {
-      await fetch('https://connect.stripe.com/oauth/deauthorize', {
-        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY },
-        body: new URLSearchParams({ client_id: process.env.STRIPE_CONNECT_CLIENT_ID, stripe_user_id: value.stripe_user_id }).toString(),
-      });
-    } catch (_) {}
-  }
-  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
-  res.json({ ok: true });
-}));
-
-// Pull the connected account's balance for DISPLAY only (does NOT write revenue into the books).
-app.post('/api/stripe/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe payments linking is not set up yet. Add STRIPE keys to enable it.', code: 'STRIPE_NOT_CONFIGURED' });
-  const uid = scopeId(req);
-  const { value } = await _providerBlob(uid, 'stripe_conn');
-  if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account. Connect one first.' });
-  try {
-    const resp = await fetch('https://api.stripe.com/v1/balance', {
-      headers: { 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY, 'Stripe-Account': value.stripe_user_id },
-    });
-    let j = {}; try { j = await resp.json(); } catch (_) {}
-    if (!resp.ok) throw new Error((j.error && j.error.message) || ('Stripe HTTP ' + resp.status));
-    const available = (j.available || []).map(b => ({ amount: b.amount, currency: b.currency }));
-    res.json({ ok: true, available, note: 'Balance shown for display. Importing revenue into the books is a separate, owner-approved step.' });
-  } catch (e) { console.error('[stripe sync]', e.message); res.status(502).json({ error: 'Could not read Stripe balance: ' + e.message }); }
-}));
-
-// ════════════════════════════════════════════════════════════════════════════════
-// REGIONAL AGGREGATORS — BELVO (Latin America bank data) + WIPAY (Caribbean payments).
-// ════════════════════════════════════════════════════════════════════════════════
-// Worldwide app: Plaid does NOT cover LatAm/Caribbean. Belvo aggregates ~90% of accounts in
-// Mexico/Brazil/Colombia; WiPay is the Caribbean card processor (TT/JM/BB/GY/LC). Same rules:
-// owner-only (bank:manage), tokens/keys encrypted at rest, display-only sync (Rules 2 & 12).
-
-// ── BELVO (LatAm open banking; env-gated, Plaid-style widget) ──
-const belvoConfigured = () => !!(process.env.BELVO_SECRET_ID && process.env.BELVO_SECRET_PASSWORD);
-const BELVO_ENV_NAME = (process.env.BELVO_ENV || 'sandbox').toLowerCase();
-const BELVO_BASE = BELVO_ENV_NAME === 'production' ? 'https://api.belvo.com'
-                 : BELVO_ENV_NAME === 'development' ? 'https://development.belvo.com'
-                 : 'https://sandbox.belvo.com';
-const _belvoAuth = () => 'Basic ' + Buffer.from(String(process.env.BELVO_SECRET_ID || '') + ':' + String(process.env.BELVO_SECRET_PASSWORD || '')).toString('base64');
-async function belvoCall(pathname, opts = {}) {
-  const resp = await fetch(BELVO_BASE + pathname, {
-    method: opts.method || 'GET',
-    headers: Object.assign({ 'Authorization': _belvoAuth(), 'Content-Type': 'application/json' }, opts.headers || {}),
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  let json = {}; try { json = await resp.json(); } catch (_) {}
-  if (!resp.ok) { const e = new Error((json.detail) || (Array.isArray(json) && json[0] && json[0].message) || ('Belvo HTTP ' + resp.status)); e.provider = json; throw e; }
-  return json;
-}
-
-app.get('/api/belvo/status', requireAuth, wrap(async (req, res) => {
-  const { value } = await _providerBlob(scopeId(req), 'belvo_conn');
-  const links = (value && value.links) || [];
-  res.json({ configured: belvoConfigured(), connected: links.length > 0, institutions: links.map(l => l.institution).filter(Boolean) });
-}));
-
-app.post('/api/belvo/widget-token', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO_SECRET_ID and BELVO_SECRET_PASSWORD to enable it.', code: 'BELVO_NOT_CONFIGURED' });
-  try {
-    const j = await belvoCall('/api/token/', { method: 'POST', body: { id: process.env.BELVO_SECRET_ID, password: process.env.BELVO_SECRET_PASSWORD, scopes: 'read_institutions,write_links' } });
-    res.json({ access: j.access });
-  } catch (e) { console.error('[belvo token]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not start LatAm bank linking: ' + e.message }); }
-}));
-
-app.post('/api/belvo/exchange', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
-  const link = (req.body && req.body.link) || '';
-  if (!link) return res.status(400).json({ error: 'link is required.' });
-  try {
-    let institution = null;
-    try { const d = await belvoCall('/api/links/' + encodeURIComponent(link) + '/'); institution = d.institution || null; } catch (_) {}
-    const uid = scopeId(req);
-    const { id, value } = await _providerBlob(uid, 'belvo_conn');
-    const links = (value && value.links) || [];
-    const next = links.filter(l => l.link !== link);
-    next.push({ link, institution, linked_at: new Date().toISOString() });
-    await _saveProviderBlob(uid, id, 'belvo_conn', { links: next });
-    res.status(201).json({ ok: true, institution, institutions: next.map(l => l.institution).filter(Boolean) });
-  } catch (e) { console.error('[belvo exchange]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not link bank: ' + e.message }); }
-}));
-
-app.post('/api/belvo/disconnect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'belvo_conn');
-  if (!value || !((value.links || []).length)) return res.status(404).json({ error: 'No linked LatAm bank.' });
-  if (belvoConfigured()) { for (const l of value.links) { try { await belvoCall('/api/links/' + encodeURIComponent(l.link) + '/', { method: 'DELETE' }); } catch (_) {} } }
-  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({ links: [] }) });
-  res.json({ ok: true });
-}));
-
-app.post('/api/belvo/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
-  const uid = scopeId(req);
-  const { value } = await _providerBlob(uid, 'belvo_conn');
-  const links = (value && value.links) || [];
-  if (!links.length) return res.status(400).json({ error: 'No linked LatAm bank. Link one first.' });
-  let accounts = 0;
-  for (const l of links) { try { const a = await belvoCall('/api/accounts/', { method: 'POST', body: { link: l.link } }); accounts += Array.isArray(a) ? a.length : (a.count || 0); } catch (_) {} }
-  res.json({ ok: true, accounts, note: 'Accounts read for display. Importing into the books is a separate, owner-approved step (Rule 2/12).' });
-}));
-
-// ── WIPAY (Caribbean card payments) — merchant-credentials model (no platform OAuth). The owner
-//    enters their OWN WiPay account number + API key (encrypted); used to generate hosted payment
-//    links on invoices. The credentials ARE the connection, so there is no env gate. ──
-app.get('/api/wipay/status', requireAuth, wrap(async (req, res) => {
-  const { value } = await _providerBlob(scopeId(req), 'wipay_conn');
-  res.json({ connected: !!(value && value.account_number), account: value ? value.account_number || null : null, country: value ? value.country || null : null });
-}));
-
-app.post('/api/wipay/connect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  const account = String((req.body && req.body.account_number) || '').trim();
-  const apiKey = String((req.body && req.body.api_key) || '').trim();
-  const country = String((req.body && req.body.country) || 'TT').trim().toUpperCase();
-  const ALLOWED = ['TT', 'JM', 'BB', 'GY', 'LC'];  // WiPay's live markets
-  if (!account || !apiKey) return res.status(400).json({ error: 'WiPay account number and API key are required.' });
-  if (!ALLOWED.includes(country)) return res.status(400).json({ error: 'country must be one of ' + ALLOWED.join(', ') + '.' });
-  const uid = scopeId(req);
-  const { id } = await _providerBlob(uid, 'wipay_conn');
-  await _saveProviderBlob(uid, id, 'wipay_conn', { account_number: account, api_key: encTok(apiKey), country, linked_at: new Date().toISOString() });
-  res.status(201).json({ ok: true, account, country });
-}));
-
-app.post('/api/wipay/disconnect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'wipay_conn');
-  if (!value || !value.account_number) return res.status(404).json({ error: 'No WiPay account connected.' });
-  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
-  res.json({ ok: true });
-}));
-
-// ── GENERIC CREDENTIAL CONNECTORS — payment processors that authenticate with a merchant API key
-//    (not OAuth). One registrar covers all of them: owner-only (bank:manage), EVERY credential
-//    field encrypted at rest, secrets never returned in a response. Adding a region's rail later is
-//    one line in this map. (dLocal/Mercado Pago = LatAm, Flutterwave/Paystack = Africa, Wise = global.)
-const CRED_CONNECTORS = {
-  dlocal:      { label: 'dLocal',       fields: ['x_login', 'x_trans_key', 'secret_key'] },
-  mercadopago: { label: 'Mercado Pago', fields: ['access_token'] },
-  wise:        { label: 'Wise',         fields: ['api_token'] },
-};
-for (const [ckey, cfg] of Object.entries(CRED_CONNECTORS)) {
-  const blobKey = ckey + '_conn';
-  app.get(`/api/${ckey}/status`, requireAuth, wrap(async (req, res) => {
-    const { value } = await _providerBlob(scopeId(req), blobKey);
-    res.json({ connected: !!(value && value.connected), provider: cfg.label });
-  }));
-  app.post(`/api/${ckey}/connect`, requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-    const body = req.body || {};
-    const missing = cfg.fields.filter(f => !String(body[f] || '').trim());
-    if (missing.length) return res.status(400).json({ error: `${cfg.label} requires: ${cfg.fields.join(', ')}.`, missing });
-    const stored = { connected: true, provider: cfg.label, linked_at: new Date().toISOString() };
-    for (const f of cfg.fields) stored[f] = encTok(String(body[f]).trim());  // every credential encrypted at rest
-    const uid = scopeId(req);
-    const { id } = await _providerBlob(uid, blobKey);
-    await _saveProviderBlob(uid, id, blobKey, stored);
-    res.status(201).json({ ok: true, provider: cfg.label });
-  }));
-  app.post(`/api/${ckey}/disconnect`, requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-    const uid = scopeId(req);
-    const { id, value } = await _providerBlob(uid, blobKey);
-    if (!value || !value.connected) return res.status(404).json({ error: `No ${cfg.label} account connected.` });
-    if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
-    res.json({ ok: true });
-  }));
-}
-
-// ── INTEGRATION REQUESTS — the catalogue's ~750 unbuilt logos register real demand instead of a
-//    dead toast. Deduped per account (one row per account per integration); owners/admins see the
-//    aggregate so the roadmap is demand-driven. Stored as user_settings rows (no schema change). ──
-app.post('/api/integration-requests', requireAuth, wrap(async (req, res) => {
-  const name = String((req.body && req.body.name) || '').trim().slice(0, 80);
-  if (!name) return res.status(400).json({ error: 'name is required.' });
-  const uid = scopeId(req);
-  const { rows: [existing] } = await pool.query(
-    `SELECT id FROM user_settings WHERE user_id=$1 AND data->>'key'='integration_request' AND data->>'value'=$2 LIMIT 1`, [uid, name]);
-  if (existing) return res.json({ ok: true, requested: false, note: 'Already recorded.' });
-  await db.insert('user_settings', { user_id: uid, key: 'integration_request', value: name, requested_at: new Date().toISOString() });
-  res.status(201).json({ ok: true, requested: true });
-}));
-app.get('/api/integration-requests', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
-  // Aggregate across ALL accounts — this is founder-facing demand, not one account's wishlist.
-  const { rows } = await pool.query(
-    `SELECT data->>'value' AS name, COUNT(*)::int AS requests
-       FROM user_settings WHERE data->>'key'='integration_request'
-       GROUP BY 1 ORDER BY requests DESC, name ASC`);
-  res.json({ requests: rows });
-}));
-
-// ── INVOICE PAYMENT LINKS — turn a connected processor into a "Pay now" link on an invoice.
-//    Uses the first connected processor (or ?provider), reads the encrypted key server-side (never
-//    exposed), stores the hosted URL on the invoice. This does NOT record a payment — reconciling
-//    the paid amount stays the existing invoice_payments path (Rules 2 & 12). ──
-async function createPaymentLink(provider, conn, o) {
-  if (provider === 'paystack') {
-    const r = await fetch('https://api.paystack.co/transaction/initialize', {
-      method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.secret_key), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: o.email || 'customer@example.com', amount: Math.round(o.amount * 100), currency: o.currency, reference: o.reference, callback_url: appUrl() + '/pay-received.html' }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.status) throw new Error(j.message || ('Paystack HTTP ' + r.status));
-    return j.data.authorization_url;
-  }
-  if (provider === 'flutterwave') {
-    const r = await fetch('https://api.flutterwave.com/v3/payments', {
-      method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.secret_key), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tx_ref: o.reference, amount: o.amount, currency: o.currency, redirect_url: appUrl() + '/pay-received.html', customer: { email: o.email || 'customer@example.com', name: o.client || 'Customer' } }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.status !== 'success') throw new Error(j.message || ('Flutterwave HTTP ' + r.status));
-    return j.data.link;
-  }
-  if (provider === 'stripe') {
-    if (!process.env.STRIPE_SECRET_KEY) throw new Error('Stripe platform key not set.');
-    const body = new URLSearchParams();
-    body.set('mode', 'payment'); body.set('success_url', appUrl() + '/pay-received.html'); body.set('cancel_url', appUrl() + '/pay-received.html?status=cancelled');
-    body.set('line_items[0][price_data][currency]', String(o.currency).toLowerCase());
-    body.set('line_items[0][price_data][product_data][name]', 'Invoice ' + o.reference);
-    body.set('line_items[0][price_data][unit_amount]', String(Math.round(o.amount * 100)));
-    body.set('line_items[0][quantity]', '1');
-    // Carry the invoice reference so the webhook can reconcile the payment (F171).
-    if (o.invoiceId != null) { body.set('client_reference_id', String(o.invoiceId)); body.set('metadata[invoice_id]', String(o.invoiceId)); body.set('metadata[kind]', 'invoice_payment'); }
-    const r = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-      method: 'POST', headers: { 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Account': conn.stripe_user_id },
-      body: body.toString(),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error((j.error && j.error.message) || ('Stripe HTTP ' + r.status));
-    return j.url;
-  }
-  if (provider === 'wipay') {
-    const cc = ['TT', 'JM', 'BB', 'GY'].includes(conn.country) ? conn.country : 'TT';   // WiPay's live hosts
-    const host = { TT: 'tt', JM: 'jm', BB: 'bb', GY: 'gy' }[cc];
-    const body = new URLSearchParams({
-      account_number: conn.account_number, api_key: decTok(conn.api_key),
-      environment: (process.env.WIPAY_ENV || 'live'), method: 'credit_card', fee_structure: 'customer_pay',
-      currency: o.currency, country_code: cc, total: (Number(o.amount) || 0).toFixed(2),   // 2dp — matches the hash
-      order_id: o.reference, origin: 'FinFlow', response_url: appUrl() + '/api/wipay/callback',
-    });
-    const r = await fetch('https://' + host + '.wipayfinancial.com/plugins/payments/request', {
-      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: body.toString(),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error('WiPay HTTP ' + r.status);
-    return j.url || (Array.isArray(j) && j[0] && j[0].url);
-  }
-  if (provider === 'mercadopago') {
-    const r = await fetch('https://api.mercadopago.com/checkout/preferences', {
-      method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.access_token), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: [{ title: 'Invoice ' + o.reference, quantity: 1, unit_price: o.amount, currency_id: o.currency }], external_reference: o.reference, back_urls: { success: appUrl() + '/pay-received.html', pending: appUrl() + '/pay-received.html', failure: appUrl() + '/pay-received.html?status=cancelled' }, auto_return: 'approved' }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.init_point) throw new Error(j.message || ('Mercado Pago HTTP ' + r.status));
-    return j.init_point;
-  }
-  if (provider === 'dlocal') {
-    const xLogin = decTok(conn.x_login), xTransKey = decTok(conn.x_trans_key), secret = decTok(conn.secret_key);
-    const payload = JSON.stringify({ amount: o.amount, currency: o.currency, country: o.country || 'BR', payment_method_flow: 'REDIRECT',
-      payer: { name: o.client || 'Customer', email: o.email || 'customer@example.com' }, order_id: o.reference, success_url: appUrl() + '/pay-received.html', notification_url: appUrl() + '/' });
-    const xDate = new Date().toISOString();
-    const signature = crypto.createHmac('sha256', secret).update(xLogin + xDate + payload).digest('hex');
-    const r = await fetch('https://api.dlocal.com/payments', {
-      method: 'POST', headers: { 'X-Date': xDate, 'X-Login': xLogin, 'X-Trans-Key': xTransKey, 'Content-Type': 'application/json', 'Authorization': 'V2-HMAC-SHA256, Signature: ' + signature },
-      body: payload,
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.message || ('dLocal HTTP ' + r.status));
-    return j.redirect_url;
-  }
-  throw new Error('Payment links are not supported for ' + provider + ' yet.');
-}
-
-app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
-  const inv = await ownedBy('invoices', req.params.id, scopeId(req));
-  if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
-  const amount = parseFloat(inv.amount) || 0;
-  if (amount <= 0) return res.status(400).json({ error: 'Invoice amount must be greater than zero.' });
-  const uid = scopeId(req);
-  const requested = req.body && req.body.provider;
-  const PAY = ['stripe', 'wipay', 'mercadopago', 'dlocal'];
-  const order = requested ? [String(requested)] : PAY;
-  let provider = null, conn = null;
-  for (const p of order) {
-    const { value } = await _providerBlob(uid, (p === 'stripe' ? 'stripe' : p) + '_conn');
-    const isConn = p === 'stripe' ? !!(value && value.stripe_user_id) : p === 'wipay' ? !!(value && value.account_number) : !!(value && value.connected);
-    if (isConn) { provider = p; conn = value; break; }
-  }
-  if (!provider) return res.status(400).json({ error: 'No payment processor connected. Connect Stripe or WiPay first.', code: 'NO_PAYMENT_PROVIDER' });
-  const currency = String(inv.currency || (req.body && req.body.currency) || 'USD').toUpperCase();
-  try {
-    const url = await createPaymentLink(provider, conn, { amount, currency, email: (req.body && req.body.email) || null, reference: 'INV-' + inv.id + '-' + Date.now(), client: inv.client, invoiceId: inv.id, country: (req.body && req.body.country) || conn.country || null });
-    if (!url) throw new Error('Provider returned no URL.');
-    await db.updateById('invoices', inv.id, { payment_link: url, payment_provider: provider });
-    res.status(201).json({ ok: true, provider, payment_link: url });
-  } catch (e) { console.error('[payment-link]', provider, e.message); res.status(502).json({ error: 'Could not create a payment link: ' + e.message, provider }); }
-}));
-
-// ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 1 — FIELD-LEVEL AUDIT TRAIL
 // ════════════════════════════════════════════════════════════════════════════════
 // F90 — THE SINGLE AUDITED WRITE PATH. Every audit call routes through recordAudit: it ATTRIBUTES the
@@ -5430,37 +4150,6 @@ app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (
 // ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 2 — PARTIAL PAYMENTS + BANK RECONCILIATION
 // ════════════════════════════════════════════════════════════════════════════════
-// Webhook-driven invoice payment writer. Routes through the SAME invoice_payments table +
-// recalcInvoiceStatus as the manual path (Rule 2/6: one writer of amount_paid), idempotent on the
-// processor's event/session id via the idempotency_key unique index (Rule 9: dedupe at the write,
-// so a retried/duplicate webhook can't double-book). Never overbooks past the remaining balance
-// (no refund/credit model). Amount is in MINOR units (cents) as processors send it.
-async function recordExternalInvoicePayment({ invoiceId, amountMinor, method, idemKey }) {
-  const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
-  if (!ir) return { recorded: false, reason: 'invoice_not_found' };
-  const inv = rowToObj(ir);
-  const uid = ir.user_id;                                   // the invoice's account = the money scope
-  const amt = Math.round(Number(amountMinor) || 0) / 100;   // minor units → major
-  if (!(amt > 0)) return { recorded: false, reason: 'bad_amount' };
-  const remaining = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
-  const bookAmt = Math.min(amt, Math.max(remaining, 0));    // cap to balance — never negative AR
-  if (!(bookAmt > 0)) return { recorded: false, reason: 'already_paid' };
-  try {
-    const { rows } = await pool.query(
-      `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [uid, ir.entity_id || null, invoiceId, bookAmt, new Date().toISOString().slice(0, 10),
-       method || 'Card', idemKey, 'Auto-recorded from ' + (method || 'processor') + ' payment', idemKey]
-    );
-    await recalcInvoiceStatus(pool, invoiceId, uid);
-    try { await auditLog(pool, { userId: uid, entityId: ir.entity_id, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE' }); } catch (_) {}
-    return { recorded: true, id: rows[0].id, amount: bookAmt };
-  } catch (e) {
-    if (e.code === '23505') return { recorded: false, reason: 'duplicate' };   // idempotent: already recorded
-    throw e;
-  }
-}
-
 async function recalcInvoiceStatus(pool, invoiceId, userId) {
   const { rows: [_invR] } = await pool.query(
     `SELECT * FROM invoices WHERE id = $1 AND user_id = $2 LIMIT 1`, [invoiceId, userId]
@@ -5596,7 +4285,7 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
     if (e.code === '23505' && idem) {
       // Duplicate submit lost the race at the DB → the payment already landed (and already recalc'd
       // the invoice on the first insert). Return the ORIGINAL row, 200 — never re-book, never 500.
-      const { rows: ex } = await pool.query(`SELECT * FROM invoice_payments WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      const { rows: ex } = await pool.query(`SELECT * FROM invoice_payments WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
       if (ex[0]) return res.status(200).json(ex[0]);
     }
     throw e;
@@ -5617,7 +4306,7 @@ app.delete('/api/invoice-payments/:id', requireAuth, wrap(async (req, res) => {
 }));
 
 app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
-  const uid = scopeId(req);
+  const uid = req.session.userId;
   const matchedBankIds = await pool.query(`SELECT banking_id FROM bank_reconciliation WHERE user_id=$1`, [scopeId(req)]);
   const matchedPayIds  = await pool.query(`SELECT invoice_payment_id FROM bank_reconciliation WHERE user_id=$1`, [scopeId(req)]);
   const matchedBankSet = new Set(matchedBankIds.rows.map(r => r.banking_id));
@@ -5652,19 +4341,10 @@ app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) =>
   const bankRow = await pool.query('SELECT id FROM personal_transactions WHERE id=$1 AND user_id=$2', [banking_id, scopeId(req)]);
   const payRow = await pool.query('SELECT id FROM invoice_payments WHERE id=$1 AND user_id=$2', [invoice_payment_id, scopeId(req)]);
   if (!bankRow.rows[0] || !payRow.rows[0]) return res.status(404).json({ error: 'Not found.' });
-  // C1/F117: idempotent by natural key — mirror /match-batch. A bank tx or payment ALREADY
-  // reconciled (a double-submit or retry) returns the existing link instead of inserting a
-  // duplicate. bank_reconciliation has no unique constraint, so this SELECT-before-INSERT is the
-  // guard (no migration; matches the batch endpoint's skip semantics).
-  const _dupMatch = await pool.query(
-    `SELECT * FROM bank_reconciliation WHERE user_id=$1 AND (banking_id=$2 OR invoice_payment_id=$3) ORDER BY id DESC LIMIT 1`,
-    [scopeId(req), parseInt(banking_id), parseInt(invoice_payment_id)]
-  );
-  if (_dupMatch.rows[0]) return res.status(200).json(_dupMatch.rows[0]);
   const { rows } = await pool.query(
     `INSERT INTO bank_reconciliation (user_id, entity_id, banking_id, invoice_payment_id)
      VALUES ($1,$2,$3,$4) RETURNING *`,
-    [scopeId(req), req.entityId || null, parseInt(banking_id), parseInt(invoice_payment_id)]
+    [req.session.userId, req.entityId || null, parseInt(banking_id), parseInt(invoice_payment_id)]
   );
   res.status(201).json(rows[0]);
 }));
@@ -5717,7 +4397,7 @@ app.post('/api/bank-reconciliation/match-batch', requireAuth, wrap(async (req, r
     let rows = [];
     if (toInsert.length) {
       const vals = [], params = [];
-      toInsert.forEach((p, i) => { const o = i * 4; vals.push(`($${o+1},$${o+2},$${o+3},$${o+4})`); params.push(sid, eid, p.banking_id, p.invoice_payment_id); });
+      toInsert.forEach((p, i) => { const o = i * 4; vals.push(`($${o+1},$${o+2},$${o+3},$${o+4})`); params.push(uid, eid, p.banking_id, p.invoice_payment_id); });
       rows = (await client.query(`INSERT INTO bank_reconciliation (user_id, entity_id, banking_id, invoice_payment_id) VALUES ${vals.join(',')} RETURNING *`, params)).rows;
     }
     await client.query('COMMIT');
@@ -5781,7 +4461,7 @@ app.get('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
 app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   const { period, bonus_overrides = {}, overtime_overrides = {}, notes = '' } = req.body || {};
   if (!period) return res.status(400).json({ error: 'period required' });
-  const uid = scopeId(req);
+  const uid = req.session.userId;
   const eid = req.entityId || null;
 
   const employees = await db.allByUser('payroll', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
@@ -5856,7 +4536,7 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(as
   }
 
   const { rows: fullLines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id = $1`, [run.id]);
-  await auditLog(pool, { userId: req.session.userId, entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', req });
+  await auditLog(pool, { userId: uid, entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', req });
   res.status(201).json({ ...run, lines: fullLines });
 }));
 
@@ -6467,7 +5147,7 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
       // Duplicate submit lost the race at the DB → the movement already landed and the units were
       // already decremented on the first insert. Return the ORIGINAL in the success shape, cogs null
       // (it consumed no NEW FIFO layers) — never re-book units, never re-consume FIFO, never 500.
-      const { rows: ex } = await pool.query(`SELECT * FROM inventory_movements WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      const { rows: ex } = await pool.query(`SELECT * FROM inventory_movements WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [req.session.userId, idem]);
       if (ex[0]) return res.status(200).json({ ...ex[0], cogs: null });
     }
     throw e;
@@ -6483,7 +5163,7 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
 }));
 
 app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
-  const uid = scopeId(req);
+  const uid = req.session.userId;
   const eid = req.entityId || null;
   // F25: optional period window (?start=&end=&elapsedMonths=), validated identically to
   // /api/reports so the dashboard gets a PERIOD-SCOPED COGS that reconciles with computeBooks.
@@ -6886,11 +5566,6 @@ app.get('*', (req, res) => {
 // fall through to Express's default handler and return HTML/stack instead of JSON.)
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
-  // F157: honour a typed, client-safe status set upstream (e.g. db.insert's NO_ACTIVE_ENTITY 400).
-  // Only errors explicitly marked `expose` leak their message; everything else stays a generic 500.
-  if (err && err.expose === true && Number.isInteger(err.status)) {
-    return res.status(err.status).json({ error: err.message });
-  }
   console.error('[Unhandled Error]', err);
   res.status(500).json({ error: 'An unexpected error occurred. Please try again.' });
 });
@@ -6921,17 +5596,3 @@ module.exports = app;
 // Test hook: expose the canonical books calculator for harness verification (no behavior
 // change in prod — the app is still the default export).
 module.exports.computeBooks = computeBooks;
-// Test hook: expose the recurring scheduler for harness verification (no behavior change in
-// prod — it still runs on boot + on its interval; this only makes it drivable under test).
-module.exports.runRecurringScheduler = runRecurringScheduler;
-// Test hook: expose the pure recurrence-date helper so the Rule 10 timezone-free math can be
-// asserted directly (no behavior change in prod).
-module.exports.nextRunDate = nextRunDate;
-// Test hooks: Plaid access-token encryption at rest (assert round-trip + tamper detection).
-module.exports._encTok = encTok;
-module.exports._decTok = decTok;
-module.exports.plaidConfigured = plaidConfigured;
-module.exports.finchConfigured = finchConfigured;
-module.exports.codatConfigured = codatConfigured;
-module.exports.stripeConnectConfigured = stripeConnectConfigured;
-module.exports.belvoConfigured = belvoConfigured;

@@ -621,4 +621,58 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     return res.json({ ok: true });
   }));
 
+  // ── TRAFFIC / VISITOR ANALYTICS ───────────────────────────────────────────
+  // Reads the page_views table (one row per unique visitor per UTC day, populated
+  // by the tracking middleware in server.js). Returns headline counts, a 30-day
+  // daily series for the chart, top countries + pages, and the most-recent visitors.
+  app.get('/api/admin/traffic', requireAdmin, wrap(async (req, res) => {
+    const TODAY = `(NOW() AT TIME ZONE 'UTC')::date`;
+    const [uniqToday, uniq7, uniq30, uniqAll, viewsToday, views7, views30] = await Promise.all([
+      pool.query(`SELECT COUNT(*) AS c FROM page_views WHERE view_day = ${TODAY}`),
+      pool.query(`SELECT COUNT(*) AS c FROM page_views WHERE view_day >= ${TODAY} - 6`),
+      pool.query(`SELECT COUNT(*) AS c FROM page_views WHERE view_day >= ${TODAY} - 29`),
+      pool.query(`SELECT COUNT(*) AS c FROM page_views`),
+      pool.query(`SELECT COALESCE(SUM(views),0) AS t FROM page_views WHERE view_day = ${TODAY}`),
+      pool.query(`SELECT COALESCE(SUM(views),0) AS t FROM page_views WHERE view_day >= ${TODAY} - 6`),
+      pool.query(`SELECT COALESCE(SUM(views),0) AS t FROM page_views WHERE view_day >= ${TODAY} - 29`),
+    ]);
+
+    const daily = await pool.query(`
+      SELECT view_day AS day, COUNT(*) AS visitors, COALESCE(SUM(views),0) AS views
+      FROM page_views WHERE view_day >= ${TODAY} - 29
+      GROUP BY view_day ORDER BY view_day ASC
+    `);
+    const countries = await pool.query(`
+      SELECT COALESCE(NULLIF(country,''),'—') AS country, COUNT(*) AS visitors, COALESCE(SUM(views),0) AS views
+      FROM page_views WHERE view_day >= ${TODAY} - 29
+      GROUP BY 1 ORDER BY visitors DESC, views DESC LIMIT 15
+    `);
+    const pages = await pool.query(`
+      SELECT COALESCE(NULLIF(path,''),'/') AS path, COALESCE(SUM(views),0) AS views, COUNT(*) AS visitors
+      FROM page_views WHERE view_day >= ${TODAY} - 29
+      GROUP BY 1 ORDER BY views DESC LIMIT 15
+    `);
+    const recent = await pool.query(`
+      SELECT ip_address, country, region, city, path, referrer, user_agent,
+             user_id, views, first_seen, last_seen
+      FROM page_views ORDER BY last_seen DESC LIMIT 200
+    `);
+
+    return res.json({
+      summary: {
+        uniqueToday: parseInt(uniqToday.rows[0].c, 10),
+        unique7:     parseInt(uniq7.rows[0].c, 10),
+        unique30:    parseInt(uniq30.rows[0].c, 10),
+        uniqueAll:   parseInt(uniqAll.rows[0].c, 10),
+        viewsToday:  parseInt(viewsToday.rows[0].t, 10),
+        views7:      parseInt(views7.rows[0].t, 10),
+        views30:     parseInt(views30.rows[0].t, 10),
+      },
+      daily: daily.rows,
+      countries: countries.rows,
+      pages: pages.rows,
+      recent: recent.rows,
+    });
+  }));
+
 }; // end registerAdminRoutes

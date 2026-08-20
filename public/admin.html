@@ -223,6 +223,11 @@ td.amber{color:var(--amber)}
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
         Dashboard
       </div>
+      <div class="nav-item" onclick="showPage('traffic')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 11l4-4 3 3 6-6"/><path d="M11 1h3v3"/></svg>
+        Traffic
+        <span class="nav-badge" id="traffic-count" style="display:none">0</span>
+      </div>
 
       <div class="sidebar-section-label">Accountants</div>
       <div class="nav-item" onclick="showPage('pending')">
@@ -558,6 +563,68 @@ td.amber{color:var(--amber)}
         </div>
       </div>
 
+      <!-- TRAFFIC / VISITOR ANALYTICS -->
+      <div class="page" id="page-traffic">
+        <div class="page-title">Traffic</div>
+        <div class="page-sub">Who's viewing the site — unique visitors per day, with location and time · <span id="traffic-updated">loading...</span></div>
+        <div class="stat-grid" style="grid-template-columns:repeat(4,1fr)">
+          <div class="stat-card gold">
+            <div class="stat-label">Visitors Today</div>
+            <div class="stat-val" id="tf-today">—</div>
+            <div class="stat-sub" id="tf-today-views">— page loads</div>
+          </div>
+          <div class="stat-card green">
+            <div class="stat-label">Visitors (7 days)</div>
+            <div class="stat-val" id="tf-7">—</div>
+            <div class="stat-sub" id="tf-7-views">— page loads</div>
+          </div>
+          <div class="stat-card purple">
+            <div class="stat-label">Visitors (30 days)</div>
+            <div class="stat-val" id="tf-30">—</div>
+            <div class="stat-sub" id="tf-30-views">— page loads</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Visitors (all time)</div>
+            <div class="stat-val" id="tf-all">—</div>
+            <div class="stat-sub">unique per day, since launch</div>
+          </div>
+        </div>
+
+        <div class="chart-wrap">
+          <div class="chart-title">Unique Visitors — last 30 days</div>
+          <canvas id="traffic-chart"></canvas>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Top Locations (30 days)</div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Country</th><th>Visitors</th><th>Views</th></tr></thead>
+                <tbody id="tf-countries-tbody"><tr><td colspan="3" class="empty">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Top Pages (30 days)</div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Page</th><th>Views</th><th>Visitors</th></tr></thead>
+                <tbody id="tf-pages-tbody"><tr><td colspan="3" class="empty">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 12px">Recent Visitors</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Last seen</th><th>Location</th><th>Page</th><th>Loads</th><th>IP address</th></tr></thead>
+            <tbody id="tf-recent-tbody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
     </main>
   </div>
 </div>
@@ -628,6 +695,7 @@ let _allAccountants = [];
 let _logData = [];
 let _securityData = [];
 let _overviewChart = null;
+let _trafficChart = null;
 let _currentLogTab = 'admin';
 let _currentUserId = null;
 let _currentAccId = null;
@@ -688,6 +756,7 @@ function showPage(name) {
   document.querySelector(`[onclick="showPage('${name}')"]`).classList.add('active');
 
   const loaders = {
+    traffic: loadTraffic,
     accountants: () => loadAccountants('', ''),
     reports: loadReports,
     users: () => loadUsers('', ''),
@@ -697,6 +766,74 @@ function showPage(name) {
     flags: loadFlags,
   };
   if (loaders[name]) loaders[name]();
+}
+
+// ── TRAFFIC / VISITOR ANALYTICS ─────────────────────────────────────────────
+async function loadTraffic() {
+  try {
+    const res = await fetch('/api/admin/traffic', { credentials: 'include' });
+    const d = await res.json();
+    const s = d.summary || {};
+
+    document.getElementById('traffic-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    document.getElementById('tf-today').textContent = (s.uniqueToday || 0).toLocaleString();
+    document.getElementById('tf-today-views').textContent = (s.viewsToday || 0).toLocaleString() + ' page loads';
+    document.getElementById('tf-7').textContent = (s.unique7 || 0).toLocaleString();
+    document.getElementById('tf-7-views').textContent = (s.views7 || 0).toLocaleString() + ' page loads';
+    document.getElementById('tf-30').textContent = (s.unique30 || 0).toLocaleString();
+    document.getElementById('tf-30-views').textContent = (s.views30 || 0).toLocaleString() + ' page loads';
+    document.getElementById('tf-all').textContent = (s.uniqueAll || 0).toLocaleString();
+
+    // Sidebar badge — today's visitors
+    const badge = document.getElementById('traffic-count');
+    if (badge) {
+      if (s.uniqueToday > 0) { badge.textContent = s.uniqueToday; badge.style.display = 'inline'; }
+      else { badge.style.display = 'none'; }
+    }
+
+    // Top countries
+    const countries = d.countries || [];
+    document.getElementById('tf-countries-tbody').innerHTML = countries.length
+      ? countries.map(c => `<tr><td class="primary">${esc(c.country)}</td><td>${parseInt(c.visitors).toLocaleString()}</td><td>${parseInt(c.views).toLocaleString()}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="empty">No visitors yet</td></tr>';
+
+    // Top pages
+    const pages = d.pages || [];
+    document.getElementById('tf-pages-tbody').innerHTML = pages.length
+      ? pages.map(p => `<tr><td class="primary">${esc(p.path)}</td><td>${parseInt(p.views).toLocaleString()}</td><td>${parseInt(p.visitors).toLocaleString()}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="empty">No page views yet</td></tr>';
+
+    // Recent visitors
+    const recent = d.recent || [];
+    document.getElementById('tf-recent-tbody').innerHTML = recent.length
+      ? recent.map(r => {
+          const loc = [r.city, r.region, r.country].filter(Boolean).join(', ') || '—';
+          const when = r.last_seen ? new Date(r.last_seen).toLocaleString() : '—';
+          return `<tr><td>${esc(when)}</td><td>${esc(loc)}</td><td class="primary">${esc(r.path || '/')}</td><td>${parseInt(r.views || 1).toLocaleString()}</td><td style="color:var(--t3);font-variant-numeric:tabular-nums">${esc(r.ip_address || '—')}</td></tr>`;
+        }).join('')
+      : '<tr><td colspan="5" class="empty">No visitors recorded yet</td></tr>';
+
+    // Daily chart
+    const daily = d.daily || [];
+    const labels = daily.map(x => new Date(x.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    const visitors = daily.map(x => parseInt(x.visitors));
+    if (typeof Chart !== 'undefined' && document.getElementById('traffic-chart')) {
+      const ctx = document.getElementById('traffic-chart').getContext('2d');
+      if (_trafficChart) _trafficChart.destroy();
+      _trafficChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets: [{ label: 'Unique Visitors', data: visitors, fill: true,
+          backgroundColor: 'rgba(200,164,74,0.12)', borderColor: 'rgba(200,164,74,0.9)',
+          borderWidth: 2, tension: 0.3, pointRadius: 2, pointBackgroundColor: 'rgba(200,164,74,1)' }] },
+        options: { responsive: true, maintainAspectRatio: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#9a8a6e', font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } },
+            y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#9a8a6e', font: { size: 10 }, precision: 0 }, beginAtZero: true }
+          } }
+      });
+    }
+  } catch (e) { console.error('Traffic error', e); }
 }
 
 // ── OVERVIEW ──────────────────────────────────────────────────────────────────

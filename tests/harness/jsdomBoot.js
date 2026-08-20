@@ -29,6 +29,18 @@ const { initSchema, bootServer } = require('./boot.js');
 const { seed } = require('./seed.js');
 const { HarnessHttp } = require('./httpClient.js');
 
+// jsdom teardown race (node ≥ 24): a requestAnimationFrame callback can fire AFTER the window is
+// closed, so `window._document` is null and jsdom throws `Cannot read properties of null (reading
+// '_location')` from a timer — an UNCAUGHT exception that poisons the process exit code even when
+// every assertion already printed ALL GREEN. It is post-test noise, never a real failure. Swallow
+// exactly this one signature (installed once, at module load, for every jsdom harness); anything
+// else still throws. jsdom 30 fixes most of it; this is the belt-and-suspenders for the residual.
+process.on('uncaughtException', (e) => {
+  const s = String((e && e.message) || e);
+  if (/reading '_location'|_document\)\._location/.test(s)) return;
+  throw e;
+});
+
 const LOGIN = { email: 'seed@finflow.test', password: 'harness-password-not-a-secret' };
 
 function pathOf(url) {

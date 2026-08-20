@@ -253,69 +253,6 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   res.json({ received: true });
 });
 
-// ── PAYSTACK WEBHOOK ──────────────────────────────────────────────────────────
-// Raw body, before express.json (needs the exact bytes for the HMAC). Paystack signs each event
-// with HMAC-SHA512(rawBody, <merchant secret_key>). Multi-tenant: each account has its own key, so
-// we resolve WHICH account from the invoice reference we set on the payment link (INV-<id>-<ts>),
-// fetch that account's stored key, and verify with it. The money write happens ONLY after the
-// signature verifies, through the SAME single writer + idempotency as Stripe (F171).
-app.post('/api/paystack/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig = req.headers['x-paystack-signature'];
-  if (!sig) return res.status(400).json({ error: 'Missing signature.' });
-  let evt;
-  try { evt = JSON.parse(req.body.toString('utf8')); } catch (_) { return res.status(400).json({ error: 'Bad body.' }); }
-  const reference = (evt && evt.data && evt.data.reference) || '';
-  const m = /^INV-(\d+)-/.exec(reference);
-  if (!m) return res.status(200).json({ received: true, ignored: 'no invoice reference' });
-  const invoiceId = parseInt(m[1], 10);
-  const { rows: [ir] } = await pool.query(`SELECT user_id FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
-  if (!ir) return res.status(200).json({ received: true, ignored: 'unknown invoice' });
-  const { value: conn } = await _providerBlob(ir.user_id, 'paystack_conn');
-  if (!conn || !conn.secret_key) return res.status(400).json({ error: 'Paystack not connected for this account.' });
-  let secret; try { secret = decTok(conn.secret_key); } catch (_) { return res.status(400).json({ error: 'Stored key unreadable.' }); }
-  const expected = crypto.createHmac('sha512', secret).update(req.body).digest('hex');
-  const ok = Buffer.byteLength(sig) === Buffer.byteLength(expected) &&
-    crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
-  if (!ok) { console.error('[Paystack] signature mismatch for invoice ' + invoiceId); return res.status(401).json({ error: 'Invalid signature.' }); }
-  if (evt.event === 'charge.success' && evt.data && evt.data.status === 'success') {
-    const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: evt.data.amount, method: 'Card (Paystack)', idemKey: 'paystack:' + reference })
-      .catch(e => { console.error('[Paystack] reconcile failed:', e.message); return { recorded: false, reason: 'error' }; });
-    console.log('[Paystack] invoice ' + invoiceId + ' payment → ' + JSON.stringify(rec));
-  }
-  res.json({ received: true });
-});
-
-// ── FLUTTERWAVE WEBHOOK ───────────────────────────────────────────────────────
-// Raw body, before express.json. Flutterwave auth is a static header: it sends the merchant's
-// configured "secret hash" in `verif-hash`. Multi-tenant: resolve the account from the tx_ref
-// (INV-<id>-<ts>) we set on the payment link, compare against THAT account's stored secret_hash
-// (timing-safe), then record through the SAME single/idempotent writer. Flutterwave amounts are in
-// MAJOR units, so ×100 to minor for the shared writer.
-app.post('/api/flutterwave/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig = req.headers['verif-hash'];
-  if (!sig) return res.status(400).json({ error: 'Missing verif-hash.' });
-  let evt;
-  try { evt = JSON.parse(req.body.toString('utf8')); } catch (_) { return res.status(400).json({ error: 'Bad body.' }); }
-  const ref = (evt && evt.data && (evt.data.tx_ref || evt.data.txref)) || '';
-  const m = /^INV-(\d+)-/.exec(ref);
-  if (!m) return res.status(200).json({ received: true, ignored: 'no invoice reference' });
-  const invoiceId = parseInt(m[1], 10);
-  const { rows: [ir] } = await pool.query(`SELECT user_id FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
-  if (!ir) return res.status(200).json({ received: true, ignored: 'unknown invoice' });
-  const { value: conn } = await _providerBlob(ir.user_id, 'flutterwave_conn');
-  if (!conn || !conn.secret_hash) return res.status(400).json({ error: 'Flutterwave not connected (or no secret hash) for this account.' });
-  let hash; try { hash = decTok(conn.secret_hash); } catch (_) { return res.status(400).json({ error: 'Stored hash unreadable.' }); }
-  const ok = Buffer.byteLength(sig) === Buffer.byteLength(hash) &&
-    crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(hash));
-  if (!ok) { console.error('[Flutterwave] verif-hash mismatch for invoice ' + invoiceId); return res.status(401).json({ error: 'Invalid verif-hash.' }); }
-  if ((evt.event === 'charge.completed' || evt['event.type'] === 'CARD_TRANSACTION') && evt.data && String(evt.data.status).toLowerCase() === 'successful') {
-    const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: Math.round((Number(evt.data.amount) || 0) * 100), method: 'Card (Flutterwave)', idemKey: 'flutterwave:' + ref })
-      .catch(e => { console.error('[Flutterwave] reconcile failed:', e.message); return { recorded: false, reason: 'error' }; });
-    console.log('[Flutterwave] invoice ' + invoiceId + ' payment → ' + JSON.stringify(rec));
-  }
-  res.json({ received: true });
-});
-
 // ── WIPAY CALLBACK ────────────────────────────────────────────────────────────
 // WiPay is NOT a signed webhook — it web-redirects the payor's browser (GET) to response_url with
 // the result in the query string, including `hash` = md5(transaction_id + ORIGINAL total + API key)
@@ -5253,7 +5190,7 @@ app.post('/api/wipay/disconnect', requireAuth, requirePerm('bank:manage'), wrap(
 // ── GENERIC CREDENTIAL CONNECTORS — payment processors that authenticate with a merchant API key
 //    (not OAuth). One registrar covers all of them: owner-only (bank:manage), EVERY credential
 //    field encrypted at rest, secrets never returned in a response. Adding a region's rail later is
-//    one line in this map. (dLocal/Mercado Pago = LatAm, Flutterwave/Paystack = Africa, Wise = global.)
+//    one line in this map. (dLocal/Mercado Pago = LatAm, Wise = global.)
 const CRED_CONNECTORS = {
   dlocal:      { label: 'dLocal',       fields: ['x_login', 'x_trans_key', 'secret_key'] },
   mercadopago: { label: 'Mercado Pago', fields: ['access_token'] },
@@ -5312,24 +5249,6 @@ app.get('/api/integration-requests', requireAuth, requirePerm('audit:read'), wra
 //    exposed), stores the hosted URL on the invoice. This does NOT record a payment — reconciling
 //    the paid amount stays the existing invoice_payments path (Rules 2 & 12). ──
 async function createPaymentLink(provider, conn, o) {
-  if (provider === 'paystack') {
-    const r = await fetch('https://api.paystack.co/transaction/initialize', {
-      method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.secret_key), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: o.email || 'customer@example.com', amount: Math.round(o.amount * 100), currency: o.currency, reference: o.reference, callback_url: appUrl() + '/pay-received.html' }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.status) throw new Error(j.message || ('Paystack HTTP ' + r.status));
-    return j.data.authorization_url;
-  }
-  if (provider === 'flutterwave') {
-    const r = await fetch('https://api.flutterwave.com/v3/payments', {
-      method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.secret_key), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tx_ref: o.reference, amount: o.amount, currency: o.currency, redirect_url: appUrl() + '/pay-received.html', customer: { email: o.email || 'customer@example.com', name: o.client || 'Customer' } }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.status !== 'success') throw new Error(j.message || ('Flutterwave HTTP ' + r.status));
-    return j.data.link;
-  }
   if (provider === 'stripe') {
     if (!process.env.STRIPE_SECRET_KEY) throw new Error('Stripe platform key not set.');
     const body = new URLSearchParams();

@@ -138,13 +138,12 @@ async function main() {
     A('owner wipay/disconnect → 200', (await owner.post('/api/wipay/disconnect', {})).status === 200);
     A('owner wipay/status after disconnect → not connected', (await owner.get('/api/wipay/status')).json.connected === false);
 
-    // ── Generic credential connectors: dLocal / Mercado Pago / Flutterwave / Paystack / Wise ──
-    console.log('\n-- generic credential connectors (LatAm + Africa + Wise) --');
+    // ── Generic credential connectors: dLocal / Mercado Pago / Wise. (Paystack + Flutterwave were
+    //    removed in the regional cleanup — Africa rails, out of the Americas/Caribbean/Europe scope.) ──
+    console.log('\n-- generic credential connectors (LatAm + Wise) --');
     const CRED = {
       dlocal:      { fields: ['x_login', 'x_trans_key', 'secret_key'], secret: 'dlocal-secret-xyz' },
       mercadopago: { fields: ['access_token'], secret: 'mp-access-token-xyz' },
-      flutterwave: { fields: ['secret_key', 'secret_hash'], secret: 'flw-secret-xyz' },
-      paystack:    { fields: ['secret_key'], secret: 'ps-secret-xyz' },
       wise:        { fields: ['api_token'], secret: 'wise-token-xyz' },
     };
     for (const [k, spec] of Object.entries(CRED)) {

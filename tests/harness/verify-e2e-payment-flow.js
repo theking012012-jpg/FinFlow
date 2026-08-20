@@ -9,7 +9,7 @@
  *   generate a Stripe "Pay link"  →  provider dispatch reached (integration wiring live)
  *   customer pays   →  a SIGNED Stripe webhook  →  recordExternalInvoicePayment (single writer)
  *   invoice goes paid  →  AR drops to 0 in the SAME canonical report
- *   a second invoice paid via a SIGNED Paystack webhook  →  AR drops again
+ *   a second invoice paid via a WiPay redirect callback  →  AR drops again (a DIFFERENT processor, same books)
  *
  * The only thing NOT executed is the live provider network call (blocked in-sandbox; needs keys) —
  * everything from our pay-link dispatch through the signed webhook to the reconciled figure IS run.
@@ -31,7 +31,7 @@ const { HarnessHttp } = require('./httpClient.js');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const PW = 'harness-password-not-a-secret';
-const PS_SECRET = 'sk_test_paystack_e2e';
+const WP_KEY = 'wipay-e2e-key';
 let pass = 0, fail = 0;
 const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fail++, console.log('  FAIL  ' + name + (d ? '\n          ' + d : ''))); };
 
@@ -64,7 +64,7 @@ async function main() {
     A('issued invoice → canonical report shows AR = 500', (await AR()) === 500, `AR=${await AR()}`);
 
     // connect Stripe + generate the pay-link → dispatch reached (integration wiring is live)
-    await http.post('/api/paystack/connect', { secret_key: PS_SECRET });  // (paystack for leg 2)
+    await http.post('/api/wipay/connect', { account_number: '1234567890', api_key: WP_KEY, country: 'TT' });  // (WiPay for leg 2)
     // Stripe "connected" via the OAuth store:
     await c.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW())`,
       [uid, { key: 'stripe_conn', value: JSON.stringify({ stripe_user_id: 'acct_e2e', linked_at: 'now' }) }]);
@@ -81,15 +81,19 @@ async function main() {
     A('invoice A reconciled → paid, amount_paid=500', sA.s === 'paid' && parseFloat(sA.p) === 500, JSON.stringify(sA));
     A('AR dropped to 0 in the canonical report (the payment flowed into the books)', (await AR()) === 0, `AR=${await AR()}`);
 
-    // ── invoice B: Paystack leg — a DIFFERENT processor lands in the SAME books path ──
-    console.log('\n-- leg 2: Paystack --');
+    // ── invoice B: WiPay leg — a DIFFERENT processor (Caribbean browser-redirect callback, not a
+    //    signed webhook) lands in the SAME single-writer books path ──
+    console.log('\n-- leg 2: WiPay --');
     const invB = await mkInvoice(300);
     A('second issued invoice → AR = 300', (await AR()) === 300, `AR=${await AR()}`);
     const ref = 'INV-' + invB + '-1';
-    const psEvt = JSON.stringify({ event: 'charge.success', data: { reference: ref, amount: 30000, status: 'success' } });
-    const psSig = crypto.createHmac('sha512', PS_SECRET).update(Buffer.from(psEvt, 'utf8')).digest('hex');
-    const psWh = await fetch(server.baseUrl + '/api/paystack/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-paystack-signature': psSig }, body: psEvt });
-    A('signed Paystack webhook → 200', psWh.status === 200);
+    const txn = 'WP-e2e-' + invB;
+    // WiPay authenticates its redirect with md5(transaction_id + ORIGINAL invoice total(2dp) + api_key).
+    const wpHash = crypto.createHash('md5').update(txn + (300).toFixed(2) + WP_KEY).digest('hex');
+    const wpCb = await fetch(server.baseUrl + '/api/wipay/callback?' + new URLSearchParams({
+      order_id: ref, transaction_id: txn, status: 'success', total: '307.50', currency: 'TTD', hash: wpHash,
+    }).toString(), { redirect: 'manual' });
+    A('WiPay callback (valid hash) → browser redirect (30x)', wpCb.status >= 300 && wpCb.status < 400, `status ${wpCb.status}`);
     A('invoice B reconciled → paid', (await c.query(`SELECT data->>'status' s FROM invoices WHERE id=$1`, [invB])).rows[0].s === 'paid');
     A('AR back to 0 (both processors settle into the same canonical AR)', (await AR()) === 0, `AR=${await AR()}`);
 
@@ -99,7 +103,7 @@ async function main() {
     const paysB = Number((await c.query(`SELECT COUNT(*) n FROM invoice_payments WHERE invoice_id=$1`, [invB])).rows[0].n);
     A('exactly one payment per invoice (single writer, no dupes)', paysA === 1 && paysB === 1, `A=${paysA} B=${paysB}`);
     A('payments keyed by processor event id (idempotent)',
-      Number((await c.query(`SELECT COUNT(*) n FROM invoice_payments WHERE idempotency_key IN ('stripe:cs_e2e_A', $1)`, ['paystack:' + ref])).rows[0].n) === 2);
+      Number((await c.query(`SELECT COUNT(*) n FROM invoice_payments WHERE idempotency_key IN ('stripe:cs_e2e_A', $1)`, ['wipay:' + txn])).rows[0].n) === 2);
 
     console.log('\n' + '-'.repeat(78));
     console.log(fail === 0 ? '  ALL GREEN - ' + pass + ' passed, 0 failed  (END-TO-END payment flow)'

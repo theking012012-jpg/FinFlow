@@ -79,12 +79,9 @@ async function main() {
     const noProv = await A_.post('/api/invoices/' + invId + '/payment-link', {});
     A('no processor connected → 400 NO_PAYMENT_PROVIDER', noProv.status === 400 && noProv.json.code === 'NO_PAYMENT_PROVIDER', `status ${noProv.status}: ${noProv.text.slice(0,90)}`);
     A('viewer payment-link → 403 (books:write excludes viewer)', (await V_.post('/api/invoices/' + invId + '/payment-link', {})).status === 403);
-    // connect a processor (fake key) → provider SELECTION is now reached; the live call fails
+    // connect a processor (fake key) → provider SELECTION is reached; the live call fails
     // (bad key / blocked host) so it returns 502 with the selected provider — proving dispatch.
-    await A_.post('/api/paystack/connect', { secret_key: 'sk_test_fake' });
-    const withProv = await A_.post('/api/invoices/' + invId + '/payment-link', { provider: 'paystack' });
-    A('with Paystack connected → provider SELECTED (not 400); live call unexecuted → 502', withProv.status === 502 && withProv.json.provider === 'paystack', `status ${withProv.status}: ${withProv.text.slice(0,90)}`);
-    // Mercado Pago + dLocal builders exist now (parity): provider selected → dispatch reached (502, live blocked).
+    // Mercado Pago + dLocal are the current builders (parity): provider selected → dispatch reached (502, live blocked).
     await A_.post('/api/mercadopago/connect', { access_token: 'mp-token' });
     const mp = await A_.post('/api/invoices/' + invId + '/payment-link', { provider: 'mercadopago' });
     A('Mercado Pago builder reached (502, live blocked — not "unsupported")', mp.status === 502 && mp.json.provider === 'mercadopago' && !/not supported/i.test(mp.text), `status ${mp.status}: ${mp.text.slice(0,90)}`);

@@ -658,6 +658,9 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       }).catch(e => console.error('[Referral] Link failed:', e.message));
     }
 
+    // (L1) Regenerate the session id at the privilege change so a pre-auth fixed cookie
+    // cannot be promoted to an authenticated session.
+    await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
     req.session.userId = userId;
     req.session.userRole = 'owner';
     req.session.userEmail = email.toLowerCase();
@@ -684,6 +687,8 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
     if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Invalid email or password.' });
+    // (L1) Regenerate the session id on login (session-fixation hardening).
+    await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
     req.session.userId = user.id;
     req.session.userRole = user.role || 'owner';
     req.session.userEmail = user.email;
@@ -726,8 +731,11 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
     const token   = crypto.randomBytes(32).toString('hex');
     const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
+    // (L2) Store only the SHA-256 of the token — never the raw value — so a DB read cannot
+    // hand out usable reset links. The raw token goes out in the email link only; lookup
+    // re-hashes the incoming token. Mirrors the invite-token flow (hashInviteToken).
     await pool.query(`DELETE FROM password_resets WHERE user_id = $1`, [user.id]);
-    await db.insert('password_resets', { user_id: user.id, token, expires });
+    await db.insert('password_resets', { user_id: user.id, token: hashInviteToken(token), expires });
 
     const resetUrl = `${appUrl()}/reset-password.html?token=${token}`;
 
@@ -752,7 +760,10 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
         console.error('[Resend] Failed to send reset email:', e.message);
       }
     } else {
-      console.log('[Password Reset] Reset requested for user ID:', user.id, '— configure RESEND_API_KEY to send email');
+      // (.env.example) No email provider configured → log the reset LINK so it can still be used
+      // in dev, exactly as documented ("reset links are logged to the server console instead").
+      // The token in the URL is the raw value; the DB stores only its SHA-256 (L2).
+      console.log('[Password Reset] Reset link (RESEND_API_KEY not set — logged instead of emailed):', resetUrl);
     }
 
     res.json({ ok: true });
@@ -768,19 +779,20 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
     if (!token || !password) return res.status(400).json({ error: 'Token and password required.' });
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
 
+    const tokenHash = hashInviteToken(token);   // (L2) tokens are stored hashed — match on the hash
     const { rows: [_pr] } = await pool.query(
-      `SELECT * FROM password_resets WHERE data->>'token' = $1 LIMIT 1`, [token]
+      `SELECT * FROM password_resets WHERE data->>'token' = $1 LIMIT 1`, [tokenHash]
     );
     const record = _pr ? rowToObj(_pr) : null;
     if (!record) return res.status(400).json({ error: 'Invalid or expired reset link.' });
     if (new Date(record.expires) < new Date()) {
-      await pool.query(`DELETE FROM password_resets WHERE data->>'token' = $1`, [token]);
+      await pool.query(`DELETE FROM password_resets WHERE data->>'token' = $1`, [tokenHash]);
       return res.status(400).json({ error: 'This reset link has expired. Please request a new one.' });
     }
 
     const hash = bcrypt.hashSync(password, 12);
     await db.updateById('users', record.user_id, { password: hash });
-    await pool.query(`DELETE FROM password_resets WHERE data->>'token' = $1`, [token]);
+    await pool.query(`DELETE FROM password_resets WHERE data->>'token' = $1`, [tokenHash]);
 
     res.json({ ok: true });
   } catch (err) {
@@ -3407,7 +3419,8 @@ app.post('/api/ai', requireAuth, async (req, res) => {
     const { message, history = [] } = req.body;
     if (!message) return res.status(400).json({ error: 'No message provided' });
 
-    const uid         = req.session.userId;
+    const uid         = scopeId(req);   // (L4) read the ACCOUNT's books, not the actor's own —
+                                        // consistent with the cache/cap/settings reads below.
     const questionKey = message.trim().toLowerCase();
 
     // Check cache first — identical question for same user within 24 h
@@ -4463,8 +4476,22 @@ async function plaidCall(pathname, body) {
   return json;
 }
 
-// AES-256-GCM at rest, key derived from SESSION_SECRET (already a required env var).
-function _plaidKey() { return crypto.createHash('sha256').update('plaid-token:' + (process.env.SESSION_SECRET || '')).digest(); }
+// AES-256-GCM at rest. (M1) Prefer a DEDICATED CONNECTOR_ENC_KEY so the credential key is
+// INDEPENDENT of SESSION_SECRET: rotating the session secret no longer bricks stored connector
+// tokens, and a single secret's compromise no longer yields both session forgery AND all
+// connector plaintext. Backward-compatible: decTok tries every configured key, so credentials
+// encrypted under the legacy SESSION_SECRET-derived key still open; encTok always writes with
+// the PRIMARY (first) key, so re-saving a connector transparently migrates it forward.
+function _connKeys() {
+  const keys = [];
+  if (process.env.CONNECTOR_ENC_KEY)
+    keys.push(crypto.createHash('sha256').update('connector-key:' + process.env.CONNECTOR_ENC_KEY).digest());
+  if (process.env.SESSION_SECRET)
+    keys.push(crypto.createHash('sha256').update('plaid-token:' + process.env.SESSION_SECRET).digest());
+  if (!keys.length) throw new Error('No connector encryption key configured (set CONNECTOR_ENC_KEY or SESSION_SECRET).');
+  return keys;
+}
+function _plaidKey() { return _connKeys()[0]; }   // primary = the key we ENCRYPT with
 function encTok(plain) {
   const iv = crypto.randomBytes(12);
   const c = crypto.createCipheriv('aes-256-gcm', _plaidKey(), iv);
@@ -4473,9 +4500,15 @@ function encTok(plain) {
 }
 function decTok(stored) {
   const [ivh, tagh, dh] = String(stored).split(':');
-  const d = crypto.createDecipheriv('aes-256-gcm', _plaidKey(), Buffer.from(ivh, 'hex'));
-  d.setAuthTag(Buffer.from(tagh, 'hex'));
-  return Buffer.concat([d.update(Buffer.from(dh, 'hex')), d.final()]).toString('utf8');
+  let lastErr;
+  for (const key of _connKeys()) {          // primary, then legacy — the GCM auth tag proves the right key
+    try {
+      const d = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivh, 'hex'));
+      d.setAuthTag(Buffer.from(tagh, 'hex'));
+      return Buffer.concat([d.update(Buffer.from(dh, 'hex')), d.final()]).toString('utf8');
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error('decTok: no configured key could decrypt this value.');
 }
 
 // Linked items live in user_settings under key='plaid_items' as a JSON array (mirrors the

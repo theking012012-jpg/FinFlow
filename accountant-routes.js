@@ -910,10 +910,13 @@ If you cannot find a field, use null. Be concise.`;
   app.post('/api/accountants/run-monthly-payouts', wrap(async (req, res) => {
     const secret = req.headers['x-cron-secret'];
     if (!process.env.CRON_SECRET) return res.status(503).json({ error: 'Cron not configured.' });
-    if (!process.env.CRON_SECRET || !crypto.timingSafeEqual(
-      Buffer.from(secret || '').slice(0, 64),
-      Buffer.from(process.env.CRON_SECRET).slice(0, 64)
-    )) {
+    // (L8) Fixed-length buffers so a wrong-length header can't throw a RangeError out of
+    // timingSafeEqual (which surfaced as a 500 instead of a clean 401). Mirrors admin-login.
+    try {
+      const a = Buffer.alloc(72); Buffer.from(String(secret || '')).copy(a);
+      const b = Buffer.alloc(72); Buffer.from(String(process.env.CRON_SECRET)).copy(b);
+      if (!crypto.timingSafeEqual(a, b)) return res.status(401).json({ error: 'Unauthorized' });
+    } catch (e) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 

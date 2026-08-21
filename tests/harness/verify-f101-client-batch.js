@@ -19,7 +19,11 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
   try {
     boot = await bootSpaInJsdom({});
     const { window, settle } = boot;
-    await settle(3, 100);
+    // (M2) The SPA bundle exposes these fns asynchronously; a fixed 300ms settle races the bundle
+    // under full-sweep load and flakes. Poll up to ~25s for the runtime winners, then settle for
+    // boot data before driving.
+    for (let i = 0; i < 250 && (typeof window.matchBankRec !== 'function' || typeof window.saveBankRecMatches !== 'function'); i++) await settle(1, 100);
+    await settle(10, 100);
 
     if (typeof window.matchBankRec !== 'function' || typeof window.saveBankRecMatches !== 'function') {
       A('client bank-rec staging fns present (matchBankRec, saveBankRecMatches)', false,

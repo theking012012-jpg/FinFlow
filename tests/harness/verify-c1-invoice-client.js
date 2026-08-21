@@ -39,6 +39,10 @@ process.on('uncaughtException', (e) => {
     // The SPA scripts (app-main.js, then the deferred bundle) load asynchronously in jsdom — wait
     // for the runtime winners to be defined before driving them (up to ~25s).
     for (let i = 0; i < 250 && typeof window.saveInvoice !== 'function'; i++) await new Promise(r => setTimeout(r, 100));
+    // (M2) saveInvoice being DEFINED is not the same as the SPA boot having loaded the active entity;
+    // firing the first save before it lands makes the F157 no-entity guard correctly no-op the POST.
+    // Settle for boot data before the first driven action.
+    await settle(25, 100);
     const postsSince = (from) => wireLog.slice(from).filter(w => w.method === 'POST' && w.path === '/api/invoices');
     const dbCount = async (cli) =>
       Number((await c.query(`SELECT COUNT(*) n FROM invoices WHERE user_id=$1 AND data->>'client'=$2`, [userId, cli])).rows[0].n);

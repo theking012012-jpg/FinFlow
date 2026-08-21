@@ -21,11 +21,17 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     boot = await bootSpaInJsdom({});
     const { window, settle, consoleErrors } = boot;
 
-    // Keep renderReports (a deferred hook, app-main.js:6391) throwing throughout the drain window,
-    // re-installing every 2ms so wiring's own assignment can't leave a non-throwing copy in place
-    // when _hdrain reaches it.
-    const iv = setInterval(() => { try { window.renderReports = function () { throw new Error('injected boot-hook failure'); }; } catch (_) {} }, 2);
-    await settle(120, 25);   // ~3s of drain time while we hold the throwing hook in place
+    // (M2) Install renderReports as a non-configurable GETTER that always returns a throwing hook
+    // and IGNORES wiring's own re-assignment. _hdrain reads `renderReports` (the global) when it
+    // reaches that deferred hook, so whenever the drain gets there it sees the throwing copy —
+    // deterministic regardless of sweep-load timing (the old re-install-every-2ms approach raced the
+    // drain and flaked). Belt-and-suspenders interval kept for engines that ignore the getter.
+    const throwing = function () { throw new Error('injected boot-hook failure'); };
+    try {
+      Object.defineProperty(window, 'renderReports', { configurable: true, get() { return throwing; }, set() {} });
+    } catch (_) {}
+    const iv = setInterval(() => { try { window.renderReports = throwing; } catch (_) {} }, 2);
+    await settle(160, 25);   // ~4s of drain time while we hold the throwing hook in place
     clearInterval(iv);
 
     const hit = consoleErrors.some(l => /deferred render hook threw/.test(l));

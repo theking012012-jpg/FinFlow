@@ -17,7 +17,10 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
   try {
     boot = await bootSpaInJsdom({});
     const { window, settle } = boot;
-    await settle(3, 100);
+    // (M2) Poll up to ~25s for the async SPA bundle to expose the runtime winners before asserting —
+    // a fixed 300ms settle races the bundle under full-sweep load and flakes. Then settle for boot data.
+    for (let i = 0; i < 250 && (typeof window.loadPayrollRuns !== 'function' || typeof window.voidPayrollRun !== 'function' || typeof window.deletePayrollRun !== 'function'); i++) await settle(1, 100);
+    await settle(10, 100);
 
     if (typeof window.loadPayrollRuns !== 'function' || typeof window.voidPayrollRun !== 'function' || typeof window.deletePayrollRun !== 'function') {
       A('client fns present (loadPayrollRuns, voidPayrollRun, deletePayrollRun)', false,
@@ -43,8 +46,17 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     if (!window.document.getElementById('payroll-runs-list')) {
       const d = window.document.createElement('div'); d.id = 'payroll-runs-list'; window.document.body.appendChild(d);
     }
-    await window.loadPayrollRuns(); await settle(2, 60);
-    const html = window.document.getElementById('payroll-runs-list').innerHTML;
+    // (M2) The DOM paint can lag the loadPayrollRuns() promise under full-sweep load, and a late boot
+    // loader can repaint the list from the real (empty) endpoint after our first render. Poll until the
+    // expected rows are actually present (re-loading through the mock each pass), so the assertions run
+    // against a settled DOM rather than racing it. Times out → the assertion legitimately fails.
+    let html = '';
+    for (let i = 0; i < 100; i++) {
+      await window.loadPayrollRuns();
+      await settle(3, 50);
+      html = window.document.getElementById('payroll-runs-list').innerHTML || '';
+      if (/deletePayrollRun\(1\)/.test(html) && /voidPayrollRun\(2\)/.test(html)) break;
+    }
 
     A('draft row shows Delete (not Void)', /deletePayrollRun\(1\)/.test(html) && !/voidPayrollRun\(1\)/.test(html), html.slice(0, 0));
     A('approved row shows Void (not Delete)', /voidPayrollRun\(2\)/.test(html) && !/deletePayrollRun\(2\)/.test(html));

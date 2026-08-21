@@ -5143,8 +5143,12 @@ function clearAIChat(){
     const el = document.getElementById('d-txns');
     if (!el) return;
 
+    // F187: the transactions feed must apply the same recognised-revenue allowlist as the KPI
+    // (Rule 11) — a `draft` invoice is NOT revenue and must not appear here as income. Without this
+    // filter the draft INV-4 ($9,999) rendered as "Revenue · draft +$9,999".
+    const _RECOGNISED_INV = ['pending', 'overdue', 'partial', 'paid'];
     const allTxns = [
-      ...invoices.slice(0, 5).map(i => ({
+      ...invoices.filter(i => _RECOGNISED_INV.includes(String(i.status || '').toLowerCase())).slice(0, 5).map(i => ({
         name: i.client || 'Invoice',
         cat: `Revenue · ${i.status}`,
         amt: parseFloat(i.amount) || 0,
@@ -5246,9 +5250,16 @@ function clearAIChat(){
       window._realInvoices = invoices || [];
       window._realExpenses = expenses || [];
 
-      // Stash the entity-scoped FIFO COGS total for the canonical Net (Revenue − COGS − OpEx)
+      // Stash the PERIOD-scoped FIFO COGS total for the canonical Net (Revenue − COGS − OpEx)
       // that app-main updateDashboard / AI / health score subtract. Non-inventory → 0.
-      try { const _c = await apiGetStatus('/api/cogs' + eq); window._cogsTotal = parseFloat(_c && _c.totalCOGS) || 0; }
+      // F186: was '/api/cogs'+eq (entity-only ⇒ ALL-TIME COGS), which is wrong for a fiscal year
+      // that excludes prior-year inventory (FY-2026 COGS 1,400 ≠ all-time 1,650) AND raced the
+      // period-scoped _loadPeriodCOGS writer, so Net painted with whichever landed last. Load the
+      // SAME period-scoped figure _loadPeriodCOGS uses, so there is one consistent value.
+      const _cogsUrl = (typeof window._cogsPeriodParams === 'function')
+        ? '/api/cogs?' + window._cogsPeriodParams().toString()
+        : '/api/cogs' + eq;
+      try { const _c = await apiGetStatus(_cogsUrl); window._cogsTotal = parseFloat(_c && _c.totalCOGS) || 0; }
       catch (e) { window._cogsTotal = window._cogsTotal || 0; }
 
       // F125: the overview chart is owned by app-main (buildCharts + _applyConvertedChart); the dead

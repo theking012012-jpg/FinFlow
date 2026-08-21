@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FinFlow — Accountant Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #0e0e0c;
@@ -34,7 +34,7 @@
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'Jost', sans-serif;
     font-weight: 300;
     min-height: 100vh;
     display: flex;
@@ -62,7 +62,7 @@
   .nav-right { display: flex; align-items: center; gap: 16px; }
   .nav-name { font-size: 13px; color: var(--text2); }
   .nav-badge { font-size: 11px; background: rgba(201,168,76,0.1); color: var(--gold); border: 1px solid var(--gold-dim); border-radius: 4px; padding: 3px 8px; }
-  .nav-logout { font-size: 12px; color: var(--text3); text-decoration: none; cursor: pointer; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; transition: all 0.2s; background: none; font-family: 'DM Sans', sans-serif; }
+  .nav-logout { font-size: 12px; color: var(--text3); text-decoration: none; cursor: pointer; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; transition: all 0.2s; background: none; font-family: 'Jost', sans-serif; }
   .nav-logout:hover { color: var(--red); border-color: var(--red); }
 
   /* LAYOUT */
@@ -205,7 +205,7 @@
   .invite-row input {
     flex: 1; background: var(--bg2); border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 14px;
-    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 300;
+    font-family: 'Jost', sans-serif; font-size: 13px; font-weight: 300;
     color: var(--text); outline: none; transition: border-color 0.2s;
   }
   .invite-row input:focus { border-color: var(--gold-dim); }
@@ -224,7 +224,7 @@
   .ref-url { font-size: 12px; color: var(--gold-dim); font-family: monospace; }
 
   /* BUTTONS */
-  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 400; cursor: pointer; transition: all 0.2s; border: none; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; border-radius: 8px; font-family: 'Jost', sans-serif; font-size: 13px; font-weight: 400; cursor: pointer; transition: all 0.2s; border: none; }
   .btn-gold { background: var(--gold); color: var(--bg); }
   .btn-gold:hover { background: var(--gold-light); }
   .btn-outline { background: transparent; border: 1px solid var(--border2); color: var(--text2); }
@@ -275,7 +275,7 @@
   .modal-form-group input, .modal-form-group select {
     width: 100%; background: var(--bg2); border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 14px;
-    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 300;
+    font-family: 'Jost', sans-serif; font-size: 13px; font-weight: 300;
     color: var(--text); outline: none; transition: border-color 0.2s; appearance: none;
   }
   .modal-form-group input:focus, .modal-form-group select:focus { border-color: var(--gold-dim); }
@@ -290,13 +290,13 @@
   .profile-field input, .profile-field textarea, .profile-field select {
     width: 100%; background: var(--bg2); border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 14px;
-    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 300;
+    font-family: 'Jost', sans-serif; font-size: 13px; font-weight: 300;
     color: var(--text); outline: none; transition: border-color 0.2s; appearance: none;
   }
   .profile-field input:focus, .profile-field textarea:focus { border-color: var(--gold-dim); }
   .profile-field textarea { resize: vertical; min-height: 80px; }
 
-  .finput{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg2);color:var(--text);font-family:'DM Sans',sans-serif;outline:none;appearance:none;}
+  .finput{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg2);color:var(--text);font-family:'Jost',sans-serif;outline:none;appearance:none;}
   .finput:focus{border-color:var(--gold-dim);}
 
   @media (max-width: 900px) {
@@ -689,7 +689,7 @@
     <p>FinFlow processes the payment and transfers 96% to your connected Stripe account. You set the rate.</p>
     <div class="modal-form-group">
       <label for="bill-client-select">Client</label>
-      <select id="bill-client-select" class="finput" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-family:'DM Sans',sans-serif;font-size:13px;color:var(--text);outline:none;appearance:none">
+      <select id="bill-client-select" class="finput" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-family:'Jost',sans-serif;font-size:13px;color:var(--text);outline:none;appearance:none">
         <option value="">Select client...</option>
       </select>
     </div>

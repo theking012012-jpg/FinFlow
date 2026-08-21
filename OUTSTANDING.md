@@ -8,27 +8,48 @@
 period-scoped), F187 (draft invoice showing in the tx feed → filtered), M1 (connector key decoupled from
 `SESSION_SECRET`), L1 (session regen), L2 (hashed reset tokens), L4 (`/api/ai` scope), L8 (cron compare),
 L6 (fonts→Jost), M2 (4 flaky client harnesses stabilised), M3 (`npm audit fix`), plus the VERIFICATION.md
-cell closure (A1–A6, B2, B5.1/B5.3). **Money engine 150/0 gates, full sweep ~138–140/140.**
+cell closure (A1–A6, B2, B5.1/B5.3). **Money engine 150/0 gates, full sweep 140/140 GREEN, 0 open money bugs.**
 
-**Still remaining:**
+> Nothing below is an open money bug or a core-product launch blocker.
 
-1. **L3 — CSP `script-src 'unsafe-inline'` removal.** NOT a batch edit. The app has **623 inline event
-   handlers** (466 in index.html); nonces don't cover inline handlers, and adding a nonce disables
-   `'unsafe-inline'`, which would freeze the app. Requires migrating all 623 handlers to `addEventListener`
-   — a scoped, page-by-page refactor project. Or accept `'unsafe-inline'` (rest of the CSP is already tight).
-   Evidence in `PARTB_L3_L5_2026-08-21.md`.
-2. **L5 / F92 — dead-code (shadowed app-main functions) removal.** A batch removal of the 15 confirmed
-   replacements was ATTEMPTED and REVERTED — it broke `c6-hdrain` + `f132-readonly` even after AST-precise
-   analysis (the functions have non-obvious boot-timing coupling). Must be done **one function at a time,
-   each re-verified against the full suite** — not a bulk pass. Zero functional benefit (runtime already
-   correct); pure maintainability. Evidence in `PARTB_L3_L5_2026-08-21.md`.
-3. **8 key-gated connectors** — Belvo, Finch, Codat, Paystack, Flutterwave, dLocal, Mercado Pago, Wise.
-   Code + verification exist to the network boundary; each needs live keys + one sandbox transaction.
-   (Plaid, Stripe, WiPay already live-verified.)
-4. **Standing test-infra:** occasional jsdom flake under max full-sweep load (`c6-hdrain`) — passes
-   standalone; F110/F111 clock re-pin; a couple of harnesses too slow for the sandbox cap. Not blockers.
+### A. Real work remaining — each its own scoped pass, NOT a batch edit
+1. **L3 — CSP `script-src 'unsafe-inline'` removal.** The app has **623 inline event handlers** (466 in
+   index.html); CSP nonces don't cover inline handlers, and adding a nonce disables `'unsafe-inline'`, which
+   would freeze the app. Requires migrating all 623 handlers to `addEventListener`, page by page. Or accept
+   `'unsafe-inline'` (rest of the CSP is already tight). Evidence: `PARTB_L3_L5_2026-08-21.md`.
+2. **L5 / F92 — dead shadowed app-main functions removal.** A batch removal of the 15 confirmed replacements
+   was ATTEMPTED and REVERTED — it broke `c6-hdrain` + `f132-readonly` even after AST-precise analysis (the
+   functions have non-obvious boot-timing coupling). Must be done **one function at a time, each re-verified
+   against the full suite**. Zero functional benefit (runtime already correct); pure maintainability.
 
-**Done this pass (was remaining):** the `CONNECTOR_ENC_KEY` Railway step (M1), Part B cells B5.1/B5.3.
+### B. Needs your keys (post-launch; code built + verified to the network boundary)
+3. **8 connectors** — Belvo, Finch, Codat, Paystack, Flutterwave, dLocal, Mercado Pago, Wise. Each needs
+   live keys + one sandbox transaction. (Plaid, Stripe, WiPay already live-verified.)
+
+### C. Needs an owner decision (code isn't blocked — the ruling is)
+4. **F128** — revive the 3 dead-shadowed report bodies (P&L / Balance Sheet / Cash Flow), or keep the
+   generic card set? Money figures already correct.
+5. **F94** — scheduled-document UI design.
+6. **D1** — which taxes a combined tax figure covers (corp tax / VAT / PAYE / NIS).
+7. **F86** — "Payments Received" source: `invoice_payments` (settlements) vs the `payments_received` table.
+
+### D. Verification gaps (low-risk; optional to close)
+8. **L4 (`/api/ai` scope) + L8 (cron compare)** — shipped and READ-verified, but not execution-verified (no
+   AI/cron harness exists). Two small probes would put them on the permanent list.
+
+### E. Never tested — NOT broken, just unverified (Appendix A)
+9. Mobile / responsive device testing · PDF / CSV exports · live AI (`ANTHROPIC_API_KEY`) · transactional
+   email (`RESEND_API_KEY`) · performance/scale (the payroll-runs `LIMIT 50` client cap).
+
+### F. Test-infra debt (harmless)
+10. Occasional `c6-hdrain` jsdom flake under max full-sweep load (passes standalone) · F110/F111 clock re-pin
+    (a few Part-B checks not fully automated) · a couple of harnesses too slow for the sandbox cap.
+
+### G. Post-launch batches (from WORK_PLAN.md)
+11. **F54** team/multi-tenant scoping · **C2 / C5 / C6** input-hygiene sweeps.
+
+**Done this pass (was remaining):** the `CONNECTOR_ENC_KEY` Railway step (M1) · Part B cells B5.1/B5.3 · the
+full VERIFICATION.md A1–A6 / B2 / B5 cell closure · F186 + F187 render bugs.
 
 ---
 

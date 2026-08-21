@@ -655,9 +655,9 @@ visited, so the Expenses KPI depended on where you clicked first.
 ## B5 · Cross-cutting — 3
 | # | Check | Expected | Result |
 |---|---|---|---|
-| B5.1 | Change currency in Settings (not the pill) | figures **and** symbol change together | |
+| B5.1 | Change currency in Settings (not the pill) | figures **and** symbol change together | PASS (2026-08-21) — `verify-b5-currency.js` (5/0): real `updateCurrency()` → EUR; FY revenue 8,800 → **€7,920** (×0.90), investments → €5,400, symbol flips to € together. Discriminating (relabel 8,800 / inversion 9,777 both fail). |
 | B5.2 | Switch Month → Quarter → Year | every figure moves consistently | PASS (2026-08-21) — `verify-dashboard-render.js`: Year→Month changes the KPI figures (verified via `setPeriod`). Quarter leg not separately asserted. |
-| B5.3 | Block `/api/reports` in DevTools | all cards show "—", never a stale or native number | ⬜ not automated — needs its OWN process (server.js has a module-global pool, so a 2nd in-process bootServer collides). Next round. |
+| B5.3 | Block `/api/reports` in DevTools | all cards show "—", never a stale or native number | PASS (2026-08-21) — `verify-b5-blocked-reports.js` (6/0): with `/api/reports` blocked, switching to EUR blanks all 5 cards to "—" (F59 honest-empty); base USD cards stay correct (dashboard computes locally). |
 
 ---
 

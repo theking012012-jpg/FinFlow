@@ -1,6 +1,38 @@
 # FinFlow — Outstanding Work (session handoff)
 
-Last updated: 2026-08-13. Mirror of the Progress task list. **No open money bugs, no launch blockers** per the 2026-08-09 reconciliation in `AUDIT_MASTER.md`. Full detail for each item lives in `AUDIT_MASTER.md` under its finding number.
+---
+
+## ⭐ CURRENT — remaining after the 2026-08-21 audit + fix sessions
+
+**Shipped & verified this pass (all committed/pushed):** F186 (dashboard Net used all-time COGS at boot →
+period-scoped), F187 (draft invoice showing in the tx feed → filtered), M1 (connector key decoupled from
+`SESSION_SECRET`), L1 (session regen), L2 (hashed reset tokens), L4 (`/api/ai` scope), L8 (cron compare),
+L6 (fonts→Jost), M2 (4 flaky client harnesses stabilised), M3 (`npm audit fix`), plus the VERIFICATION.md
+cell closure (A1–A6, B2, B5.1/B5.3). **Money engine 150/0 gates, full sweep ~138–140/140.**
+
+**Still remaining:**
+
+1. **L3 — CSP `script-src 'unsafe-inline'` removal.** NOT a batch edit. The app has **623 inline event
+   handlers** (466 in index.html); nonces don't cover inline handlers, and adding a nonce disables
+   `'unsafe-inline'`, which would freeze the app. Requires migrating all 623 handlers to `addEventListener`
+   — a scoped, page-by-page refactor project. Or accept `'unsafe-inline'` (rest of the CSP is already tight).
+   Evidence in `PARTB_L3_L5_2026-08-21.md`.
+2. **L5 / F92 — dead-code (shadowed app-main functions) removal.** A batch removal of the 15 confirmed
+   replacements was ATTEMPTED and REVERTED — it broke `c6-hdrain` + `f132-readonly` even after AST-precise
+   analysis (the functions have non-obvious boot-timing coupling). Must be done **one function at a time,
+   each re-verified against the full suite** — not a bulk pass. Zero functional benefit (runtime already
+   correct); pure maintainability. Evidence in `PARTB_L3_L5_2026-08-21.md`.
+3. **8 key-gated connectors** — Belvo, Finch, Codat, Paystack, Flutterwave, dLocal, Mercado Pago, Wise.
+   Code + verification exist to the network boundary; each needs live keys + one sandbox transaction.
+   (Plaid, Stripe, WiPay already live-verified.)
+4. **Standing test-infra:** occasional jsdom flake under max full-sweep load (`c6-hdrain`) — passes
+   standalone; F110/F111 clock re-pin; a couple of harnesses too slow for the sandbox cap. Not blockers.
+
+**Done this pass (was remaining):** the `CONNECTOR_ENC_KEY` Railway step (M1), Part B cells B5.1/B5.3.
+
+---
+
+Last updated: 2026-08-13 (below). Mirror of the Progress task list. **No open money bugs, no launch blockers** per the 2026-08-09 reconciliation in `AUDIT_MASTER.md`. Full detail for each item lives in `AUDIT_MASTER.md` under its finding number.
 
 **Just shipped this session (done):** C3 client record-date fix (local dates, execution-verified), F152 (charts now run — `loadChartJS` wrap), F153 (charts now show data — single-writer `_setMonthlyArrays`). All committed + pushed (`0363e5f`). F151f (quick tab-switch no longer force-reloads → no data blink) committed + pushed (`4e6de6b`).
 

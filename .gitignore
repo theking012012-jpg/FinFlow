@@ -16,6 +16,13 @@ _review_diff.txt
 _residual.txt
 commit-msg*.txt
 
+# FUSE mount artifacts — orphaned ".fuse_hidden*" inodes left by the OneDrive/FUSE
+# mount when an open file is deleted. OS garbage, never source. Matches at any depth.
+.fuse_hidden*
+# A stray mis-named file the mount produced once (prefix match, safe — no real file
+# in this repo starts with this string).
+ersthekiOneDriveDesktopfinflow-FINAL7*
+
 # Local-only audit docs — ignored by EXPLICIT NAME, never a pattern.
 # AUDIT_MASTER.md is tracked and MUST stay tracked, and AUDIT_MASTER_ARCHIVE_2026-07-22.md
 # is one path segment away from it — a glob like AUDIT_*.md would be a landmine.

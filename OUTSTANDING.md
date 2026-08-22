@@ -8,7 +8,15 @@
 period-scoped), F187 (draft invoice showing in the tx feed → filtered), M1 (connector key decoupled from
 `SESSION_SECRET`), L1 (session regen), L2 (hashed reset tokens), L4 (`/api/ai` scope), L8 (cron compare),
 L6 (fonts→Jost), M2 (4 flaky client harnesses stabilised), M3 (`npm audit fix`), plus the VERIFICATION.md
-cell closure (A1–A6, B2, B5.1/B5.3). **Money engine 150/0 gates, full sweep 140/140 GREEN, 0 open money bugs.**
+cell closure (A1–A6, B2, B5.1/B5.3). **Money engine 150/0 gates, full sweep 141/141 GREEN, 0 open money bugs.**
+
+**Shipped this session — F88 kickoff (commit `6b17db3`):** F88 **step 1** — entity `timezone` (IANA) +
+`country` (ISO-2) added to `POST/PUT /api/entities` with validation (`Intl`-based, no new dep); entities are
+JSONB so no migration. New harness `verify-entity-timezone.js` = **17/0**. Independently re-verified by
+Claude Code + the cloud container: gates **150/0**, full sweep **141/141 GREEN 0 RED**, diff confirmed
+**model-only** (`resolvedToday`/`_isScheduled`/`runRecurringScheduler`/`nextRunDate` untouched), and both
+client callers post no `country` key so no existing create-flow regression. Design mock for the page it
+unlocks (F94) lives as an Artifact; scope in `F88_SCOPE_2026-08-21.md`. See **§ A2**.
 
 > Nothing below is an open money bug or a core-product launch blocker.
 
@@ -26,12 +34,45 @@ cell closure (A1–A6, B2, B5.1/B5.3). **Money engine 150/0 gates, full sweep 14
 3. **8 connectors** — Belvo, Finch, Codat, Paystack, Flutterwave, dLocal, Mercado Pago, Wise. Each needs
    live keys + one sandbox transaction. (Plaid, Stripe, WiPay already live-verified.)
 
-### C. Needs an owner decision (code isn't blocked — the ruling is)
-4. **F128** — revive the 3 dead-shadowed report bodies (P&L / Balance Sheet / Cash Flow), or keep the
-   generic card set? Money figures already correct.
-5. **F94** — scheduled-document UI design.
-6. **D1** — which taxes a combined tax figure covers (corp tax / VAT / PAYE / NIS).
-7. **F86** — "Payments Received" source: `invoice_payments` (settlements) vs the `payments_received` table.
+### C. Owner decisions — RESOLVED 2026-08-21 (see AUDIT_MASTER / memory for rationale)
+4. **F128 — CLOSED.** Statements already render correctly via the live `generateReport` winner (P&L /
+   Balance Sheet / Cash Flow + AR/AP/Sales/Payroll/VAT/tax), execution-verified green. The 3 "dead
+   bodies" are the old app-main copies that never run — leave them; cleanup rides along with the F92 pass.
+5. **F94 — DESIGN DELIVERED.** Calendar-first Scheduled Documents prototype built (unified agenda of
+   recurring runs + future-dated one-offs; per-item Run-now/Skip/Pause/Cancel). Wiring depends on F88
+   (entity-tz day-edge boundary). Next: approve design → resolve F88 → build the real page w/ harness.
+6. **D1 — DECIDED: no blended tax figure.** Keep Income Tax Estimate + VAT Return as separate
+   owner-set lines; "tax paid" stays "Not tracked." A combined KPI would imply the calc F8/D1 refused.
+7. **F86 — DECIDED: keep `invoice_payments` as the source.** Store-A `payments_received` stays (it's
+   wired into computeBooks' table list, audit trail, idempotency index + 5 harnesses) — retire via the
+   gated deprecation below, NOT a pre-launch yank. → see A-new.
+
+### A-new. Pre-launch, not urgent (owner-requested 2026-08-21)
+0. **Store-A `payments_received` gated deprecation.** Retire the orphaned `POST/PUT/DELETE
+   /api/payments-received` routes (no client caller; UI reads `invoice_payments`). Do it gated +
+   dry-runnable (the planned F35/Stage-3 vehicle): confirm the prod table is empty, gate the writes
+   (410 / feature-flag), retire or repoint the 5 dependent harnesses (`verify-c1-payments-received`,
+   `verify-f90-update-audit`, `verify-f90-phaseB-coverage`, `verify-f144-remaining`,
+   `verify-entity-leakage-sweep`), keep the read + money-engine table entry until the harnesses are
+   migrated. Reversible, one commit, full sweep green before/after. **Do before launch, after current work.**
+
+### A2. F88 — entity-timezone & locale resolution (IN PROGRESS — roots F94 + all day-edge correctness)
+Full scope + build order in `F88_SCOPE_2026-08-21.md`. Problem: "today" and every auto-dated event resolve
+to **UTC**, but a set of books belongs to an **entity** in its own zone/country/currency — so a US company
+and a Canadian company both get judged by UTC (the multi-entity bug). The `resolvedToday(serverNow, tz)`
+**phase-2 hook already exists** in `finflow-dates.js` (currently voids the tz arg, returns UTC).
+
+- [x] **Step 1 — entity `timezone` + `country` (DONE, `6b17db3`, 17/0 + 150/0 + 141/141, re-verified by Code).**
+      Model + validation only; nothing resolves against the zone yet (correct — that's step 2).
+- [ ] **Step 2 — implement `resolvedToday` phase 2** (resolve the server instant into the entity's calendar
+      date) + a day-edge unit harness (e.g. 23:30 in `America/Port_of_Spain` is still "yesterday" in UTC).
+- [ ] **Step 3 — per-entity scheduler boundary.** `runRecurringScheduler` must stop using one global UTC
+      `today`; resolve each row's entity `today` and stamp `run_date` in the entity zone. Two-entity
+      different-zone boundary harness + reproducing negative control (Rule 14).
+- [ ] **Step 4 — pass entity tz into `_isScheduled`** so the "Scheduled" badge flips on the entity boundary.
+- [ ] **Step 5 — full sweep unchanged for any UTC-zone entity** (the byte-identical regression guard).
+- [ ] **Step 6 (additive) — holiday / business-day shift** driven by `entity.country`, locale-sourced.
+- [ ] **Then: build the real F94 Scheduled Documents page** on top (reads entity tz/currency/country at runtime).
 
 ### D. Verification gaps (low-risk; optional to close)
 8. **L4 (`/api/ai` scope) + L8 (cron compare)** — shipped and READ-verified, but not execution-verified (no

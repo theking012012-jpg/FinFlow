@@ -1059,9 +1059,11 @@ app.get('/api/entities', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('entities', scopeId(req), null, (a, b) => a.sort_order - b.sort_order));
 }));
 app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
-  const { name, currency = 'USD', color = '#c9a84c' } = req.body || {};
+  const { name, currency = 'USD', color = '#c9a84c', timezone, country } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Name is required.' });
   if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
+  if (_badTimezone(timezone)) return res.status(400).json({ error: 'Invalid timezone. Use an IANA zone such as America/Toronto.' });
+  if (_badCountry(country)) return res.status(400).json({ error: 'Invalid country code. Use a 2-letter ISO code such as CA.' });
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + name).
   const _dup = await findRecentDuplicate('entities', scopeId(req), null, { textMatch: { name: name.trim().slice(0,100) } });
   if (_dup) return res.status(200).json(_dup);
@@ -1074,16 +1076,25 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
   if (_entCount >= (ENTITY_LIMITS[req.userPlan] ?? 1)) {
     return res.status(402).json({ error: 'Entity limit reached for your plan.' });
   }
-  const { row } = await db.insert('entities', { user_id: scopeId(req), name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0 });
+  const _entExtra = {};
+  if (timezone) _entExtra.timezone = String(timezone);
+  if (country)  _entExtra.country  = String(country).toUpperCase();
+  const { row } = await db.insert('entities', { user_id: scopeId(req), name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0, ..._entExtra });
   await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const row = await ownedBy('entities', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  const { name, currency, color } = req.body || {};
+  const { name, currency, color, timezone, country } = req.body || {};
   if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
-  await db.updateById('entities', row.id, { ...(name && {name}), ...(currency && {currency}), ...(color && {color}) });
+  if (_badTimezone(timezone)) return res.status(400).json({ error: 'Invalid timezone. Use an IANA zone such as America/Toronto.' });
+  if (_badCountry(country)) return res.status(400).json({ error: 'Invalid country code. Use a 2-letter ISO code such as CA.' });
+  await db.updateById('entities', row.id, {
+    ...(name && {name}), ...(currency && {currency}), ...(color && {color}),
+    ...(timezone !== undefined && { timezone: timezone ? String(timezone) : null }),
+    ...(country !== undefined && { country: country ? String(country).toUpperCase() : null }),
+  });
   const { rows: [_er] } = await pool.query(`SELECT * FROM entities WHERE id = $1 LIMIT 1`, [row.id]);
   await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'UPDATE', oldData: row, newData: _er ? rowToObj(_er) : null, req });  // F90 Phase B
   res.json(_er ? rowToObj(_er) : {});
@@ -1133,6 +1144,19 @@ const CURRENCY_CODES = (() => {
 })();
 const _badCurrency = v => v != null && v !== '' && !CURRENCY_CODES.has(String(v));
 const TICKER_RE = /^[A-Z0-9.\-]{1,20}$/;
+
+// F88: entity timezone (IANA) + country (ISO-3166-1 alpha-2). These drive per-entity date resolution
+// (resolvedToday phase 2) and the holiday / business-day shift, so a junk zone must never be stored —
+// it would make a set of books resolve "today" against a non-existent calendar. Absent/empty is allowed
+// (reads fall back to UTC until set; no forced data migration), but a PRESENT value must validate.
+// Intl.DateTimeFormat throws RangeError on an unknown timeZone — the runtime's own IANA table, no dep.
+const _badTimezone = v => {
+  if (v == null || v === '') return false;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: String(v) }); return false; }
+  catch { return true; }
+};
+const _COUNTRY_RE = /^[A-Za-z]{2}$/;
+const _badCountry = v => v != null && v !== '' && !_COUNTRY_RE.test(String(v));
 app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, due_date, status = 'pending', notes = '', entity_id, issue_date } = req.body || {};
   if (!client || amount == null) return res.status(400).json({ error: 'client and amount required.' });

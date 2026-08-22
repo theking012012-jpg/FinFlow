@@ -40,6 +40,23 @@
     return d.getUTCFullYear() + '-' + _pad2(d.getUTCMonth() + 1) + '-' + _pad2(d.getUTCDate());
   };
 
+  // F88 PHASE 2: format a Date to its calendar date IN A GIVEN IANA ZONE. Intl.DateTimeFormat handles
+  // DST and offset for real; formatToParts with 2-digit month/day gives a zero-padded 'YYYY-MM-DD'.
+  // An unknown zone throws RangeError — resolvedToday catches it and falls back to UTC. Still a pure
+  // FORMAT of a genuine instant to a calendar date, never a Date-to-Date comparison (Rule 10).
+  var _ymdInZone = function (d, tz) {
+    var parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(d);
+    var y = '', m = '', day = '';
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].type === 'year') y = parts[i].value;
+      else if (parts[i].type === 'month') m = parts[i].value;
+      else if (parts[i].type === 'day') day = parts[i].value;
+    }
+    return y + '-' + m + '-' + day;
+  };
+
   var _MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
   // Month name / number → 0-11 index. Accepts 0-11, '0'..'11', or an English month name; default January.
   var _monthIndex = function (m) {
@@ -76,10 +93,18 @@
     var d = (serverNow instanceof Date) ? serverNow
           : (serverNow == null ? new Date() : new Date(serverNow));
     if (isNaN(d.getTime())) return null;
-    // PHASE 2 HOOK: resolve `d` against the entity timezone (tzOrOffset) — books have a zone,
-    // viewers don't. Until then, tzOrOffset is intentionally unused and today is the UTC date.
-    void tzOrOffset;
-    return _utcYmd(d);
+    // F88 PHASE 2: resolve `d` against the ENTITY timezone — books have a zone, viewers don't.
+    // Absent/empty ⇒ UTC, so every existing single-arg caller is byte-for-byte unchanged (the
+    // regression guard: a UTC-zone entity's "today" must not move).
+    if (tzOrOffset == null || tzOrOffset === '') return _utcYmd(d);
+    // A fixed offset in MINUTES east of UTC (e.g. -240 for UTC-4): shift the instant, read UTC parts.
+    if (typeof tzOrOffset === 'number' && isFinite(tzOrOffset)) {
+      return _utcYmd(new Date(d.getTime() + tzOrOffset * 60000));
+    }
+    // An IANA zone name (what entity.timezone stores). Invalid zone ⇒ safe UTC fallback — never throw,
+    // this sits on the dashboard hot path; writes are validated at /api/entities anyway.
+    try { return _ymdInZone(d, String(tzOrOffset)); }
+    catch (_) { return _utcYmd(d); }
   }
 
   // 2 ── resolvePeriod({ period, monthIdx, fyStartMonth, today }) → { start, end, elapsedMonths }

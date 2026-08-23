@@ -34,18 +34,25 @@ unlocks (F94) lives as an Artifact; scope in `F88_SCOPE_2026-08-21.md`. See **§
 3. **8 connectors** — Belvo, Finch, Codat, Paystack, Flutterwave, dLocal, Mercado Pago, Wise. Each needs
    live keys + one sandbox transaction. (Plaid, Stripe, WiPay already live-verified.)
 
-### C. Owner decisions — RESOLVED 2026-08-21 (see AUDIT_MASTER / memory for rationale)
-4. **F128 — CLOSED.** Statements already render correctly via the live `generateReport` winner (P&L /
-   Balance Sheet / Cash Flow + AR/AP/Sales/Payroll/VAT/tax), execution-verified green. The 3 "dead
-   bodies" are the old app-main copies that never run — leave them; cleanup rides along with the F92 pass.
+### C. Owner decisions — RESOLVED 2026-08-21; **F128 / D1 / F86 re-ruled + re-verified 2026-08-23** (see AUDIT_MASTER / VERIFICATION for evidence)
+4. **F128 — CLOSED (ratified 2026-08-23).** Statements render rich + canonical-sourced via the live
+   `generateReport` winner (P&L / Balance Sheet / Cash Flow + AR/AP/Sales/Payroll/VAT/tax/1099/deductible),
+   re-verified GREEN this session (P&L 17/0, BS 6/0, CF+AR+AP 12/0, Sales+Payroll 9/0, Tax 20/0, canonical-
+   source 7/0). **Correction to the prior note: there are no residual "3 dead bodies" — the app-main
+   `generateReport` shadow was DELETED during F137 (`app-main.js:5800-5804` tombstone).** The only app-main
+   report code left is the wrapped `renderReports` menu (inert paid-only args). No code needed.
 5. **F94 — DESIGN DELIVERED.** Calendar-first Scheduled Documents prototype built (unified agenda of
    recurring runs + future-dated one-offs; per-item Run-now/Skip/Pause/Cancel). Wiring depends on F88
    (entity-tz day-edge boundary). Next: approve design → resolve F88 → build the real page w/ harness.
-6. **D1 — DECIDED: no blended tax figure.** Keep Income Tax Estimate + VAT Return as separate
-   owner-set lines; "tax paid" stays "Not tracked." A combined KPI would imply the calc F8/D1 refused.
-7. **F86 — DECIDED: keep `invoice_payments` as the source.** Store-A `payments_received` stays (it's
-   wired into computeBooks' table list, audit trail, idempotency index + 5 harnesses) — retire via the
-   gated deprecation below, NOT a pre-launch yank. → see A-new.
+6. **D1 — RULED 2026-08-23: no blended tax figure, no schema change.** Keep the multi-line Income Tax
+   Estimate worksheet + VAT Return as separate owner-set lines; "tax paid" stays "Not tracked" (A7.23
+   guard stands — any computed tax-PAID number = FAIL). A combined KPI would imply the calc F8/D1 refused.
+   Verified: verify-tax-rate 14/0, verify-f139 12/0, verify-f137-tax-reports 20/0. VERIFICATION §C.3 ruled.
+7. **F86 — RULED 2026-08-23: `invoice_payments` is canonical; A7.4 STAMPED PASS (1,500).** Every live
+   surface already reads it (page via F95; cash-in + computeBooks dropped `payments_received`). Read-only
+   instrument `tests/harness/f86-payments-source-instrument.js` shows Store B $1,500 vs Store A $0. Store-A
+   `payments_received` stays (computeBooks table list, audit trail, idempotency index + 5 harnesses) —
+   retire via the gated deprecation below, NOT a pre-launch yank. → see A-new #0.
 
 ### A-new. Pre-launch, not urgent (owner-requested 2026-08-21)
 0. **Store-A `payments_received` gated deprecation.** Retire the orphaned `POST/PUT/DELETE
@@ -114,9 +121,11 @@ Last updated: 2026-08-13 (below). Mirror of the Progress task list. **No open mo
 - [ ] **C1/F117 — remaining server token rollout: NON-MONEY routes only.** 2026-08-13 audit of all 63 POST routes: every money route is covered (idempotency_key or heuristic + client lock); `/match-batch`, `/inventory/:id/restock`, `/fx-transactions/:id/settle` confirmed already idempotent (not gaps). Only non-money routes still lack a durable key — `stripe/webhook` (should key off Stripe event id), `team/accept` (gated, F54), `ai` (ai_cache), `accountant-messages`, `connections` (audit_trail). None create a financial duplicate. Low priority, post-launch. Detail in the C1 block of `AUDIT_MASTER.md`.
 
 ### 4. Owner decisions (nothing broken — current behaviour silently becomes the decision)
-- [ ] **F128 — revive dead-shadowed report bodies?** P&L / Balance Sheet (incl F123 cash line) / Cash Flow never render; live copy shows one generic card set. Must NOT edit the shadowed copy (F75/Rule 1). Money figure already correct.
+- [x] **F128 — RULED 2026-08-23: CLOSED as done.** (Superseded — this old "revive dead-shadowed bodies?"
+  framing is stale: the reports already render rich + canonical, and the app-main shadow was deleted. See §C.4.)
 - [ ] **F94 — scheduled-doc UI (design call).** Blocked on F88 (period resolution).
-- [ ] **F86 / D1 scope / F90.** F86: "Payments Received" = invoice_payments (settlements) or the payments_received table? (blocks A7.4 / cash-in). D1: which taxes a combined figure covers (corp tax, VAT, PAYE, NIS). F90: audit trail required before launch, as rated?
+- [x] **F86 / D1 scope — RULED 2026-08-23** (see §C.6 / §C.7). F86: invoice_payments canonical, A7.4 stamped.
+  D1: no combined figure, "tax paid" stays "Not tracked." **F90 still open**: audit trail before launch, as rated?
 - [ ] **F110/F111 — harness re-pin strategy.** 4 options (advance pin+seed in lockstep · seed relative to pin · freeze DB clock · fail drift loudly). Test-debt.
 
 ### 5. Display / FX polish (medium; only affects display currency ≠ entity currency)

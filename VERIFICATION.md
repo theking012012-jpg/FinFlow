@@ -418,7 +418,7 @@ Client-displayed figure **==** server figure, six figures × three periods.
 | A7.1 | Invoices | total outstanding | 8,500 | |
 | A7.2 | Invoices | count excludes draft | 4 of 5 | |
 | A7.3 | Invoices | subtitle wording | "1 overdue" (never "All invoices paid") | |
-| A7.4 | Payments Received | total received | 1,500 | |
+| A7.4 | Payments Received | total received | 1,500 | PASS (2026-08-23) — **F86 ruled: `invoice_payments` (Store B) is canonical Payments Received.** `step3-gate.js` A7.4 (via `GET /api/bank-reconciliation`.unmatchedPayments) **and** A7.4b (`GET /api/invoice-payments`, no-arg, exactly 2 rows resolving to INV-1/INV-2) both total **1,500**; full gate **56/0**. `payments_received` (Store A) is empty on the seed and orphaned in prod — see `f86-payments-source-instrument.js` (Store B $1,500 vs Store A $0 across DB **and** every live endpoint; a source swap would read $0 — Rule-4 discriminating). |
 | A7.5 | Customer detail | per-customer balance | **A = 1,500 · B = 7,000 · A+B = 8,500 (== AR)** | |
 | A7.6 | Expenses page | period total | 750 (Jun) | |
 | A7.7 | COGS page | period COGS | 200 (Jun) | |
@@ -476,6 +476,20 @@ Client-displayed figure **==** server figure, six figures × three periods.
 >
 > This check does **not** require the figure to be displayed. It is a guard against a number
 > reappearing without a source, not a request to build the surface.
+
+> ### ✅ Reports-page bodies (F128) — RESOLVED 2026-08-23
+>
+> The Reports page renders **rich, per-report, canonical-sourced** bodies via the one runtime winner
+> `window.generateReport` (`finflow-api-wiring-extra.js:526`, the F137-a…m series): P&L, Balance Sheet,
+> Cash Flow, AR, AP, Sales by Customer, Payroll Summary, Tax-Deductible Expenses, Income Tax Estimate
+> (editable worksheet), VAT Return (honest "not tracked"), 1099/W-2. Each sources the canonical server
+> engines (`/api/reports/*`, `computeBooks`) — no client recompute — and the old paid-only "one generic
+> card set" defect is gone. The dead app-main `generateReport` shadow was **deleted** during the F137
+> work (`app-main.js:5800-5804` records the removal); the only app-main report code left is the
+> `renderReports` menu (a legitimately-wrapped original whose paid-only figures feed only ignored
+> onclick args + wrapper-overwritten cards — inert). **Re-verified GREEN this session** (real jsdom +
+> server + Postgres): P&L 17/0, Balance Sheet 6/0, Cash Flow+AR+AP 12/0, Sales+Payroll 9/0,
+> Tax/VAT/1099 20/0, `f128-reports-canonical-source.js` 7/0. No code change needed; F128 CLOSED.
 
 ## A8 · VIEWER INDEPENDENCE — 18
 
@@ -754,8 +768,17 @@ Tax paid is not merely un-aggregated — it is **unrecordable**. This is why the
 **decision D1** in `AUDIT_MASTER.md`: no tax payment tracking exists, so the figure must read
 *"Not tracked"* and never a computed number. Endpoint staleness is tracked separately as **F76**.
 
-## ⬜ 3. STILL OPEN — owner decision
+## ✅ 3. RULED 2026-08-23 — no combined figure; keep "Not tracked" for paid tax
 
 Which taxes should a combined "tax" figure cover — corporation tax, VAT, PAYE and NIS are
-separate obligations on different periods. One combined figure may not be useful; splitting
-them is a feature, not a fix. Deferred alongside the D1 implementation, and carried on D1.
+separate obligations on different periods. **Owner ruling (D1): no blended/combined tax figure,
+and no schema change.** Reasons: (a) tax **paid** still has no source (§C.2 — no `tax_payments`
+table, not in the `TABLES` array, no expense category, no `ytdPaid` on `GET /api/tax-filing`), so
+a combined *paid* KPI would necessarily fabricate the number D1 forbids; (b) a combined *estimate*
+across obligations on different periods is not useful. The Income Tax Estimate stays a **multi-line
+worksheet** (the owner enters corp tax / VAT / PAYE / NIS as their own lines — a % of taxable, a %
+of revenue, or a fixed amount; `finflow-api-wiring-extra.js` F137-k), the VAT Return surface stays
+"not tracked", and the **A7.23 guard stands**: any computed/estimated/placeholder tax-PAID *number*
+is a FAIL. Verified this session: `verify-tax-rate.js` 14/0 (rate is owner-supplied), `verify-f139-
+tax-consistency.js` 12/0 (client worksheet taxable == accountant Tax Summary taxable), `verify-f137-
+tax-reports.js` 20/0 (VAT "not tracked", worksheet persists, no fabricated numbers). No code change.

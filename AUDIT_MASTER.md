@@ -107,6 +107,18 @@ The intended shape:
 
 **Scope note:** which taxes a combined estimate would even cover (corporation tax, VAT, PAYE, NIS — separate obligations on different periods) remains an **open owner question**, deferred with the implementation. One combined figure may not be useful; splitting is a feature, not a fix.
 
+> ### ✅ SCOPE RULED 2026-08-23 — no combined figure; keep "Not tracked" for paid tax; no schema change.
+> Owner ruling on the open scope question: **do not build a blended/combined "tax" figure, and add no
+> tax-payments schema.** Tax **paid** still has no source (§C.2 — no `tax_payments` table, not in the
+> `TABLES` array, no expense category, no `ytdPaid` on `GET /api/tax-filing`), so a combined *paid* KPI
+> would fabricate the number D1 forbids; a combined *estimate* over obligations on different periods is
+> not useful. The Income Tax Estimate stays a **multi-line worksheet** (owner enters corp tax / VAT /
+> PAYE / NIS as their own %-of-taxable, %-of-revenue, or fixed lines — F137-k), VAT Return stays "not
+> tracked", and the **A7.23 guard stands** (any computed tax-PAID *number* = FAIL). Rate is already
+> owner-supplied (`55f07d0`). Verified this session: `verify-tax-rate.js` 14/0, `verify-f139-tax-
+> consistency.js` 12/0, `verify-f137-tax-reports.js` 20/0. No code change. This closes the D1 scope
+> question; the broader D1 estimator target above is already implemented (owner rate + worksheet).
+
 > **Explicitly not recorded as history:** an earlier session was *believed* to have made this decision, but a search of `AUDIT_MASTER.md`, the archive, `PRE_LAUNCH_FIX_PLAN.md` and the full git log found **no record of it**. Rather than reconstruct an undocumented decision as though it had been minuted, it is recorded here as a decision **made on 2026-07-23**.
 
 ### D2 · Future-dated documents are NOT recognised until their date arrives (decided 2026-07-23)
@@ -144,8 +156,8 @@ the decision**, and nobody ever ruled on it.
 
 | # | Decision needed | Blocks | Default if unruled |
 |---|---|---|---|
-| **F86** | Does A7.4 "Payments Received" mean `invoice_payments` (settlements) or `payments_received` (the page's own table)? | A7.4, and possibly Cash Flow cash-in A7.9–11 | the seed's current choice, unexamined |
-| **D1 scope** | Which taxes a combined figure would cover (corporation tax, VAT, PAYE, NIS) | the D1 implementation | — |
+| ~~**F86**~~ | ✅ **RULED 2026-08-23** — `invoice_payments` (settlements) is canonical Payments Received; every live surface already reads it; A7.4 stamped PASS (1,500). `payments_received` orphan → gated deprecation (post-launch). | ~~A7.4 / cash-in~~ | — |
+| ~~**D1 scope**~~ | ✅ **RULED 2026-08-23** — no combined figure; keep "Not tracked" for paid tax; worksheet stays multi-line; no schema change. | — | — |
 | **F90 sequencing** | Audit trail before launch, as rated? | launch order | — |
 
 *(F93 — future-dated recognition — decided 2026-07-23, now **STANDING DECISION D2**. F91 seed revision — Apr rows + INV-6 — **approved and applied 2026-07-23**.)*
@@ -1549,6 +1561,33 @@ public/index.html:  const data=window._mrrChartData||new Array(12).fill(0);
 **Done when:** the MRR chart plots real monthly MRR, or it is not on the page.
 
 ---
+
+### F128 ✅ **RESOLVED** (owner-ruled 2026-08-23) — reports render rich + canonical-sourced; the dead shadow was deleted; nothing left to decide
+> ### ✅ CLOSED 2026-08-23 (owner ruling: "close as done"). Both halves are now done — this supersedes the 🟠 PARTIAL body below.
+>
+> **The reachable half (money/render) is fixed** and has been since the F137-a…m series: the one runtime
+> winner `window.generateReport` (`finflow-api-wiring-extra.js:526`) renders a rich, per-report body for
+> every report — P&L, Balance Sheet (F123 "cash Not tracked"), Cash Flow, AR, AP, Sales by Customer,
+> Payroll Summary, Tax-Deductible Expenses, Income Tax Estimate worksheet, VAT Return ("not tracked"),
+> 1099/W-2 — each **sourced from the canonical server engines** (`/api/reports/*`, `computeBooks`), no
+> client recompute. The pre-F32 "one generic card set / paid-only revenue" defect is gone.
+>
+> **The dead-shadow half is also done — the residue this row worried about no longer exists.** The
+> app-main `generateReport` shadow was **DELETED** during the F137 work; `app-main.js:5800-5804` is the
+> tombstone comment ("this dead copy is deleted so only the one runtime winner remains. Do not
+> reintroduce a generateReport here."). The only app-main report code left is `renderReports` (the menu),
+> a **legitimately-wrapped original** (`window.renderReports` in extra.js calls `_origRenderReports()`
+> then overwrites the metric cards) — its paid-only figures feed only ignored onclick args + cards the
+> wrapper immediately overwrites, so they are inert, not a live wrong figure. (Optional micro-hygiene, NOT
+> required: the inert paid-only calc at `app-main.js:5774` could be dropped; zero runtime effect.)
+>
+> **Re-verified GREEN this session** (real jsdom + server + embedded Postgres): P&L 17/0, Balance Sheet
+> 6/0, Cash Flow+AR+AP 12/0, Sales+Payroll 9/0, Tax/VAT/1099 20/0, `f128-reports-canonical-source.js`
+> 7/0. **No code change needed.** VERIFICATION.md carries the F128 note after A7.23.
+>
+> *(The 🟠 PARTIAL body below is retained for history — it was written 2026-08-03, before the F137 series
+> built the per-report bodies into the winner and deleted the app-main shadow. Its "STILL OPEN — the
+> shadowing half" paragraph is now STALE: that dead code is gone.)*
 
 ### F128 🟠 **PARTIAL** (`83e92de`, 2026-08-03) — the WRONG FIGURE is fixed; the shadowing is not — `generateReport`'s live copy used the PRE-F32 paid-only basis, and the app-main report bodies remain dead code
 **Status:** 🟠 **PARTIAL**, per the tick-off corollary — the reachable money defect is fixed and probe-verified; the dead-code half is untouched and needs an owner decision. Found by running the Rule 1 check before editing — the check that would also have prevented the F123 mis-rating in this same file.
@@ -3212,7 +3251,20 @@ The seed records money-in as `invoice_payments` (INV-1 1,000 on 05-15; INV-2 500
 
 ---
 
-### F86 ✅ RESOLVED — A7.4 "Payments Received" is ambiguous: two different tables could satisfy it — **NEW (2026-07-23, found by the step-3 probe) → RESOLVED (2026-07-31)**
+### F86 ✅ RESOLVED — A7.4 "Payments Received" is ambiguous: two different tables could satisfy it — **NEW (2026-07-23, found by the step-3 probe) → RESOLVED (2026-07-31) → RATIFIED + A7.4 STAMPED (2026-08-23)**
+> ### ✅ RATIFIED 2026-08-23 (owner ruling "ratify invoice_payments; stamp A7.4").
+> The 2026-07-31 decision was re-confirmed with fresh execution evidence and the VERIFICATION.md ledger
+> caught up. A read-only instrument (`tests/harness/f86-payments-source-instrument.js`, Rule 7 — SELECT +
+> report-reads only, no writes) shows on the seed: **`invoice_payments` (Store B) = 2 rows / $1,500** and
+> **`payments_received` (Store A) = 0 rows / $0**, at the DB **and** through every live endpoint (the
+> Payments-Received page `GET /api/invoice-payments`, the A7.4 read `GET /api/bank-reconciliation`, the
+> cash-in leg `POST /api/reports/cash-flow` `.totalInflow`) — all $1,500 from Store B. Rule-2 sweep:
+> every live surface already reads Store B (page via F95; dashboard/report cash-in + `computeBooks` no
+> longer read `payments_received` — `server.js:4151/4161/4287/4331/6070`); the accountant portal shows no
+> independent Payments-Received figure. **VERIFICATION.md A7.4 now stamped PASS (1,500)** with the
+> `step3-gate.js` evidence (56/0, incl. A7.4 + A7.4b). The orphaned Store-A `POST/PUT/DELETE
+> /api/payments-received` routes stay for the **gated deprecation** item (OUTSTANDING §A-new #0 —
+> post-launch, its own commit), NOT a pre-launch yank. No live-code change this pass.
 **Update 2026-07-23:** the live question underneath A7.4 is now answered — see **F95**. The two stores are disjoint and the cash-in leg reads only one. The A7.4 *seed* decision still needs an owner ruling (settlements vs the Payments Received page total), but it should be made **together with the F95 consolidation**, not before it — deciding what A7.4 asserts while the two stores don't reconcile would lock in a target against a broken model.
 
 **Update 2026-07-31 — owner ruling.** `payments_received` (Store A) confirmed **empty in production** — the single test row (customer "king", $1,000, no `invoice_ref`) was deleted, count = 0. Owner decision: `invoice_payments` (Store B) is **canonical** "Payments Received." Option 1 from the original decision list below.

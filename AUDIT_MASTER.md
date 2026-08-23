@@ -1578,8 +1578,10 @@ public/index.html:  const data=window._mrrChartData||new Array(12).fill(0);
 > reintroduce a generateReport here."). The only app-main report code left is `renderReports` (the menu),
 > a **legitimately-wrapped original** (`window.renderReports` in extra.js calls `_origRenderReports()`
 > then overwrites the metric cards) — its paid-only figures feed only ignored onclick args + cards the
-> wrapper immediately overwrites, so they are inert, not a live wrong figure. (Optional micro-hygiene, NOT
-> required: the inert paid-only calc at `app-main.js:5774` could be dropped; zero runtime effect.)
+> wrapper immediately overwrites, so they are inert, not a live wrong figure. **Micro-hygiene DONE
+> 2026-08-23:** that inert paid-only calc in `renderReports` was removed — the menu now passes only the
+> report NAME (`onclick="generateReport('${r.name}')"`), no fetch, no pre-F32 recompute; report harnesses
+> + both L5 canaries (c6-hdrain, f132-readonly) green.)
 >
 > **Re-verified GREEN this session** (real jsdom + server + embedded Postgres): P&L 17/0, Balance Sheet
 > 6/0, Cash Flow+AR+AP 12/0, Sales+Payroll 9/0, Tax/VAT/1099 20/0, `f128-reports-canonical-source.js`
@@ -3263,8 +3265,20 @@ The seed records money-in as `invoice_payments` (INV-1 1,000 on 05-15; INV-2 500
 > longer read `payments_received` — `server.js:4151/4161/4287/4331/6070`); the accountant portal shows no
 > independent Payments-Received figure. **VERIFICATION.md A7.4 now stamped PASS (1,500)** with the
 > `step3-gate.js` evidence (56/0, incl. A7.4 + A7.4b). The orphaned Store-A `POST/PUT/DELETE
-> /api/payments-received` routes stay for the **gated deprecation** item (OUTSTANDING §A-new #0 —
-> post-launch, its own commit), NOT a pre-launch yank. No live-code change this pass.
+> /api/payments-received` routes stay for the **gated deprecation** item (OUTSTANDING §A-new #0).
+>
+> ### ✅ GATED DEPRECATION SHIPPED 2026-08-23 (owner: "do both").
+> The manual write routes `POST/PUT/DELETE /api/payments-received` now return **410 Gone** behind a
+> reversible flag — `_prWritesRetired()` reads `FF_PR_WRITES` at request time; **rollback = set
+> `FF_PR_WRITES=1`**. LEFT LIVE: the GET read, the money-engine `TABLES` entry, the audit code, and the
+> Codat importer's own writes (`_codatMappers → db.insert`, not this route). Only **3** harnesses drive
+> the write routes (the "5" list was over-broad): `verify-c1-payments-received` asserts the 410 gate then
+> enables the flag to keep its reversible idempotency coverage (13/0 + 8/0 NO_INDEX control);
+> `verify-f90-update-audit` (15/0) + `verify-f90-phaseB-coverage` (9/0) enable the flag to keep their
+> route-audit coverage. `verify-f144-remaining` (client GET) + `verify-entity-leakage-sweep` (SQL-seed +
+> GET) never used the write route → unchanged. Codat 28/0, step3-gate 56/0 (A7.4 GET-based, unaffected).
+> **Full sweep 141/142** (the 1 red is the pre-existing `verify-c2-confirm-modal` load-flake, 10/0
+> standalone). Confirm-empty dry-run tool: `scripts/inventory-store-a.js`. Full store removal is a later step.
 **Update 2026-07-23:** the live question underneath A7.4 is now answered — see **F95**. The two stores are disjoint and the cash-in leg reads only one. The A7.4 *seed* decision still needs an owner ruling (settlements vs the Payments Received page total), but it should be made **together with the F95 consolidation**, not before it — deciding what A7.4 asserts while the two stores don't reconcile would lock in a target against a broken model.
 
 **Update 2026-07-31 — owner ruling.** `payments_received` (Store A) confirmed **empty in production** — the single test row (customer "king", $1,000, no `invoice_ref`) was deleted, count = 0. Owner decision: `invoice_payments` (Store B) is **canonical** "Payments Received." Option 1 from the original decision list below.

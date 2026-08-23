@@ -40,7 +40,9 @@ unlocks (F94) lives as an Artifact; scope in `F88_SCOPE_2026-08-21.md`. See **§
    re-verified GREEN this session (P&L 17/0, BS 6/0, CF+AR+AP 12/0, Sales+Payroll 9/0, Tax 20/0, canonical-
    source 7/0). **Correction to the prior note: there are no residual "3 dead bodies" — the app-main
    `generateReport` shadow was DELETED during F137 (`app-main.js:5800-5804` tombstone).** The only app-main
-   report code left is the wrapped `renderReports` menu (inert paid-only args). No code needed.
+   report code left is the wrapped `renderReports` menu. **Optional hygiene DONE 2026-08-23:** the inert
+   paid-only calc in `renderReports` was removed (the menu now passes only the report NAME; the winner
+   ignored the numeric args); report harnesses + both L5 canaries (c6-hdrain, f132-readonly) green.
 5. **F94 — DESIGN DELIVERED.** Calendar-first Scheduled Documents prototype built (unified agenda of
    recurring runs + future-dated one-offs; per-item Run-now/Skip/Pause/Cancel). Wiring depends on F88
    (entity-tz day-edge boundary). Next: approve design → resolve F88 → build the real page w/ harness.
@@ -55,13 +57,21 @@ unlocks (F94) lives as an Artifact; scope in `F88_SCOPE_2026-08-21.md`. See **§
    retire via the gated deprecation below, NOT a pre-launch yank. → see A-new #0.
 
 ### A-new. Pre-launch, not urgent (owner-requested 2026-08-21)
-0. **Store-A `payments_received` gated deprecation.** Retire the orphaned `POST/PUT/DELETE
-   /api/payments-received` routes (no client caller; UI reads `invoice_payments`). Do it gated +
-   dry-runnable (the planned F35/Stage-3 vehicle): confirm the prod table is empty, gate the writes
-   (410 / feature-flag), retire or repoint the 5 dependent harnesses (`verify-c1-payments-received`,
-   `verify-f90-update-audit`, `verify-f90-phaseB-coverage`, `verify-f144-remaining`,
-   `verify-entity-leakage-sweep`), keep the read + money-engine table entry until the harnesses are
-   migrated. Reversible, one commit, full sweep green before/after. **Do before launch, after current work.**
+0. ✅ **DONE 2026-08-23 — Store-A `payments_received` gated deprecation.** The manual write routes
+   (`POST/PUT/DELETE /api/payments-received`) now return **410 Gone** behind a reversible flag
+   (`server.js` — `_prWritesRetired()` reads `FF_PR_WRITES` at request time; **rollback = set
+   `FF_PR_WRITES=1`**). DELIBERATELY LEFT LIVE: the GET read, the money-engine `TABLES` entry, the
+   audit code, and the Codat importer's own writes (`_codatMappers → db.insert`, not this route).
+   Dependent-harness reality (the "5" list was over-broad): only **3** actually drive the write
+   routes and were handled — `verify-c1-payments-received` (asserts the 410 gate, then enables the
+   flag to keep the reversible idempotency coverage), `verify-f90-update-audit` + `verify-f90-phaseB-
+   coverage` (flag enabled to keep their route-audit coverage). `verify-f144-remaining` (client GET
+   global) and `verify-entity-leakage-sweep` (SQL-seed + GET) never touched the write route → no
+   change. Confirm-empty dry-run tool already present: `scripts/inventory-store-a.js` (read-only).
+   Verified: c1 13/0 (+8/0 NO_INDEX control), f90-update 15/0, f90-phaseB 9/0, entity-leakage 18/0,
+   codat-import 28/0, step3-gate 56/0; **full sweep 141/142** (the 1 red is the pre-existing
+   `verify-c2-confirm-modal` load-flake — 10/0 standalone, unrelated). Next step (later): full
+   removal of the store once history is migrated.
 
 ### A2. F88 — entity-timezone & locale resolution (IN PROGRESS — roots F94 + all day-edge correctness)
 Full scope + build order in `F88_SCOPE_2026-08-21.md`. Problem: "today" and every auto-dated event resolve

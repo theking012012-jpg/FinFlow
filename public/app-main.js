@@ -5764,17 +5764,11 @@ const taxReportsData=[
 ];
 async function renderReports(){
   const l=document.getElementById('reports-list');if(!l)return;
-  // Fetch real totals for report summary
-  let revenue=0,expenses=0,invoiceCount=0;
-  try {
-    const [invRes,expRes]=await Promise.all([
-      fetch('/api/invoices',{credentials:'include'}),
-      fetch('/api/expenses',{credentials:'include'}),
-    ]);
-    if(invRes.ok){const inv=await invRes.json();revenue=inv.filter(i=>i.status?.toLowerCase()==='paid').reduce((s,i)=>s+(i.amount||0),0);invoiceCount=inv.length;}
-    if(expRes.ok){const exp=await expRes.json();expenses=exp.reduce((s,e)=>s+(e.amount||0),0);}
-  } catch(e){}
-  const profit=revenue-expenses;
+  // F128 hygiene (2026-08-23): report bodies are rendered by the window.generateReport winner
+  // (finflow-api-wiring-extra.js), which sources canonical figures from the server and ignores any
+  // numeric args — so this menu passes only the report NAME. The prior paid-only revenue/expenses
+  // recompute here fed args the winner never read (inert, pre-F32 basis) and is removed. The
+  // window.renderReports wrapper overwrites the metric cards with canonical figures after this paints.
   // Update stat cards
   const mc1=document.querySelector('#page-reports .mc-val');
   if(mc1)mc1.textContent=(reportsData.length+taxReportsData.length);
@@ -5784,7 +5778,7 @@ async function renderReports(){
         <span style="font-size:18px">${r.icon}</span>
         <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${r.name}</div><div style="font-size:11px;color:var(--t3)">${r.desc}</div></div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="generateReport('${r.name}',${revenue},${expenses},${profit})">Generate ↗</button>
+      <button class="btn btn-ghost btn-sm" onclick="generateReport('${r.name}')">Generate ↗</button>
     </div>`).join('');
   const t=document.getElementById('tax-reports-list');if(!t)return;
   t.innerHTML=taxReportsData.map(r=>`
@@ -5793,7 +5787,7 @@ async function renderReports(){
         <span style="font-size:18px">${r.icon}</span>
         <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${r.name}</div><div style="font-size:11px;color:var(--t3)">${r.desc}</div></div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="generateReport('${r.name}',${revenue},${expenses},${profit})">Generate ↗</button>
+      <button class="btn btn-ghost btn-sm" onclick="generateReport('${r.name}')">Generate ↗</button>
     </div>`).join('');
 }
 

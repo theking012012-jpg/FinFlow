@@ -67,6 +67,14 @@ const WITH_INDEX = !process.env.NO_INDEX;
     A('login 200', login.status === 200, `status ${login.status}: ${login.text?.slice(0, 200)}`);
     const post = (body) => http.post('/api/payments-received', body);
 
+    // ── F86 gated deprecation: the manual write routes are RETIRED (410) by default. Prove the gate
+    //    first, THEN enable FF_PR_WRITES for the rest of this process — the idempotency index / 23505
+    //    behaviour below is the reversible-rollback coverage (it still matters if the route is restored). ──
+    const _gate = await post({ customer: 'gate-probe', amount: 1, idempotency_key: 'tok-gate' });
+    A('F86: POST /api/payments-received returns 410 when writes are retired (default, no FF_PR_WRITES)',
+      _gate.status === 410, `status ${_gate.status}: ${_gate.text?.slice(0, 140)}`);
+    process.env.FF_PR_WRITES = '1';   // enable the reversible write path for the coverage below (read at request time)
+
     // ── A. concurrent identical-token submits (the TOCTOU race) ──
     const cA = 'race-A', keyA = 'tok-A';
     const [r1, r2] = await Promise.all([

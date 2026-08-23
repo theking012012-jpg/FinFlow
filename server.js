@@ -2760,7 +2760,23 @@ app.get('/api/payments-received', requireAuth, wrap(async (req, res) => {
   // user-scoped only. Display-only — the payments_received money reads were already entity-scoped.
   res.json(await db.allByUser('payments_received', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
+// ── F86 gated deprecation (2026-08-23, owner-ruled) ─────────────────────────────────────────────
+// payments_received (Store A) is ORPHANED as a manual surface: the Payments Received page reads
+// invoice_payments (F95), the money engine dropped this table as a revenue/cash leg (F32/F95), and
+// the production table is empty (confirm with scripts/inventory-store-a.js — the dry-run). Its
+// STANDALONE write routes (POST/PUT/DELETE below) are RETIRED behind a reversible flag and return
+// 410 Gone by default. DELIBERATELY LEFT LIVE: the GET read, the money-engine TABLES entry, the
+// audit code, and the Codat importer's own writes (_codatMappers → db.insert, NOT this route) — so
+// nothing that still uses the store breaks. Re-enable is a one-line rollback: set FF_PR_WRITES=1.
+// Read at REQUEST time (not captured at module load) so a test can prove both the gate and the
+// reversible path in one process. Full removal of the store is a later, separate step.
+const _prWritesRetired = () => process.env.FF_PR_WRITES !== '1';
+const _prGone = (res) => res.status(410).json({
+  error: 'Recording a standalone "Payment Received" has been retired. Record the payment against its invoice instead — it settles the invoice and updates cash-in.',
+  code: 'PAYMENTS_RECEIVED_RETIRED', deprecated: true,
+});
 app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
+  if (_prWritesRetired()) return _prGone(res);   // F86 gated deprecation — writes retired (410); GET stays
   const { customer, invoice_ref, amount, date, method = 'Bank Transfer' } = req.body || {};
   if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
@@ -2801,6 +2817,7 @@ app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
   res.json(row);
 }));
 app.put('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
+  if (_prWritesRetired()) return _prGone(res);   // F86 gated deprecation — writes retired (410); GET stays
   const b = req.body || {};
   const patch = {};
   if (b.customer     != null) patch.customer     = String(b.customer).trim().slice(0, 200);
@@ -2820,6 +2837,7 @@ app.put('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 app.delete('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
+  if (_prWritesRetired()) return _prGone(res);   // F86 gated deprecation — writes retired (410); GET stays
   const { rows: [_prold] } = await pool.query('SELECT * FROM payments_received WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM payments_received WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   if (_prold) await recordAudit(pool, { userId: req.session.userId, entityId: _prold.entity_id || null, table: 'payments_received', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_prold), req });  // F90 Phase B

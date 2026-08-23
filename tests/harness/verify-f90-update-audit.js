@@ -21,6 +21,9 @@ const { bootServer } = require('./boot.js');
 const { HarnessHttp } = require('./httpClient.js');
 
 const LOGIN = { email: 'f90upd@finflow.test', password: 'harness-password-not-a-secret' };
+// F86: payments_received manual write routes are retired by default (410). This harness exercises the
+// route's UPDATE-audit path, which stays valid for the reversible rollback — enable it for this run.
+process.env.FF_PR_WRITES = '1';
 
 (async () => {
   let scratch, server, pass = 0, fail = 0;

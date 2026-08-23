@@ -23,8 +23,7 @@
 <meta name="description" content="FinFlow — all-in-one financial management for small business. Invoicing, expenses, payroll, investments and AI-powered insights in one place.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="preconnect" href="https://cdnjs.cloudflare.com">
-<link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
+<!-- Chart.js is self-hosted at /vendor/chart.umd.js (2026-08-23) — no cdnjs preconnect needed. -->
 <link rel="preload" href="/finflow-dates.js" as="script">
 <link rel="preload" href="/app-main.js" as="script">
 <link rel="preload" href="/finflow-bundle.js" as="script">
@@ -296,6 +295,45 @@ html{overflow-x:hidden;background:var(--bg0)}/* PWA: dark root so the notch/stat
   .swipe-hint{bottom:68px}
   /* bar-label narrower */
   .bar-label{width:85px;font-size:11px}
+}
+
+/* ══════════════════════════════════════════════
+   MOBILE (≤560px): stack money-list rows into cards
+   The invoice list (.inv-cols) and the inline-grid pages.js money lists (bills,
+   payments made/received, sales receipts, credit/vendor notes) pack 5–6 columns
+   incl. a multi-button action cell into a narrow row, so on a phone the action
+   buttons overflow their cell and overlap the Due Date column (clipping at the
+   right edge). Stacking each row into a card removes the overlap. flex + the two
+   !important lines beat the rows' INLINE grid-template-columns (higher specificity
+   than a class rule). The .cust-row / .inv-item-row / .inv-holding-row grids
+   already have their own column-hide rules above, so they are excluded.
+   ══════════════════════════════════════════════ */
+@media(max-width:560px){
+  [id$="-list"] > .table-row:not(.cust-row):not(.inv-item-row):not(.inv-holding-row){
+    display:flex !important;
+    grid-template-columns:none !important;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:4px 10px;
+    padding:11px 2px;
+  }
+  /* primary cell (client / vendor / description) → own line, emphasised */
+  [id$="-list"] > .table-row:not(.cust-row):not(.inv-item-row):not(.inv-holding-row) > :first-child{
+    flex:1 1 100%;
+    font-weight:600;
+    font-size:13px;
+  }
+  /* the actions cell → full width below, buttons wrap and right-align */
+  [id$="-list"] > .table-row > .table-actions{
+    flex:1 1 100%;
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    gap:6px;
+    margin-top:4px;
+  }
+  /* the desktop column-header row is meaningless once rows are stacked cards */
+  .table-header{display:none !important}
 }
 
 /* ══════════════════════════════════════════════
@@ -3665,8 +3703,9 @@ function loadChartJS(callback){
   window._chartJSLoading=true;
   window._chartJSQueue=[callback];
   const s=document.createElement('script');
-  s.src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js';
-  s.crossOrigin='anonymous';
+  // Self-hosted (2026-08-23): Chart.js 4.4.1 is vendored at /public/vendor/chart.umd.js and served
+  // same-origin, so charts render even when a CDN or a strict CSP blocks cdnjs. No crossOrigin needed.
+  s.src='/vendor/chart.umd.js';
   s.onload=function(){(window._chartJSQueue||[]).forEach(function(fn){try{fn();}catch(e){}});window._chartJSQueue=[];};
   s.onerror=function(){console.warn('Chart.js failed to load — charts will be skipped.');};
   document.head.appendChild(s);

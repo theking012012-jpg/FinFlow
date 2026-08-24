@@ -17,7 +17,7 @@
  */
 'use strict';
 
-const SW_VERSION = 'finflow-v1-2026-08-09';
+const SW_VERSION = 'finflow-v2-2026-08-24';
 const SHELL_CACHE = 'shell-' + SW_VERSION;
 
 // Precached on install so the very first offline launch has a shell to paint.

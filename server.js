@@ -397,10 +397,24 @@ app.get('/tier-config.js', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: false,
   setHeaders: (res, filePath) => {
+    // Vendored, version-pinned libraries (e.g. /vendor/chart.umd.js) are content-stable — long,
+    // immutable cache. If a vendor lib is ever upgraded, ship it under a new path/filename so cached
+    // clients aren't pinned to the old copy.
+    if (filePath.includes('/vendor/')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return;
+    }
+    // App code + HTML: NEVER cached at the HTTP layer — the service worker is the freshness layer
+    // (SW_VERSION busts it per deploy). A stale HTTP cache here would pin old money-computing code.
     if (filePath.endsWith('.js') || filePath.endsWith('.html')) {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
+      return;
+    }
+    // Static media / fonts / icons: stable assets, safe to cache for a month.
+    if (/\.(png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=2592000');
     }
   },
 }));

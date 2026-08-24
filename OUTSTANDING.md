@@ -55,8 +55,11 @@ unlocks (F94) lives as an Artifact; scope in `F88_SCOPE_2026-08-21.md`. See **§
     UNMINIFIED (`app-main.js` 414 KB + `finflow-bundle.js` 343 KB), ~9.5 s main-thread work, TBT 1,230 ms,
     plus "reduce unused JS" 469 KiB. This needs a **build/minify step** (the served files are currently the
     editable sources — no pipeline) and/or code-splitting. A real project, not a quick fix; scope separately
-    so the owner's PowerShell-commit workflow is accounted for. Caching is deliberately `no-store` for
-    `*.js`/`*.html` (SW is the freshness layer) — do NOT flip without content-hashed filenames.
+    so the owner's PowerShell-commit workflow is accounted for. App-code caching stays deliberately
+    `no-store` for `*.js`/`*.html` (SW is the freshness layer) — do NOT flip without content-hashed filenames.
+  - **Safe caching win shipped 2026-08-24:** `express.static` `setHeaders` now long-caches stable,
+    non-app-code assets — `/vendor/*` (Chart.js) → `max-age=31536000, immutable`; images/fonts/icons →
+    `max-age=2592000`. App code + HTML untouched (still `no-store`). Money baseline re-confirmed 150/0.
 - **Service worker bumped `v2`→`v5`** (`sw.js` `SW_VERSION`) so clients pull the new shell after deploy
   (v3 = forgot-password/email; v4 = first-login fix; v5 = Plaid/Belvo lazy-load).
 - **Mobile / responsive — smoke-tested + fixed.** Wide tables card-stack under `@media(max-width:560px)`;

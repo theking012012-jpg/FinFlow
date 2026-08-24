@@ -1402,7 +1402,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const accFirst    = accRes.rows[0]?.first_name || 'there';
     if (accEmail && resendClient) {
       resendClient.emails.send({
-        from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.io>',
+        from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
         to: accEmail,
         subject: `New client request — ${clientName}`,
         html: `<p>Hi ${accFirst},</p>
@@ -1480,7 +1480,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       const firm    = aRes.rows[0]?.firm || 'your accountant';
       if (clientEmail && resendClient) {
         resendClient.emails.send({
-          from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.io>',
+          from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
           to: clientEmail,
           subject: 'Your accountant request has been approved',
           html: `<p>Hi ${uRes.rows[0]?.name || 'there'},</p>

@@ -5,6 +5,28 @@
 
 ---
 
+## ⚡ UPDATE 2026-08-24 (read this before the 2026-08-14 body below)
+
+Things have moved since this handover was written — several "open gaps" are now closed:
+
+- **Live-verified since 08-14:** **Stripe**, **Plaid**, **WiPay** live handshakes done **2026-08-16**
+  (see `VERIFICATION_INTEGRATIONS.md`). Section 5 item 1 below is DONE.
+- **Transactional email (Resend) — WIRED + LIVE (2026-08-24).** `verify-email-resend.js` 10/0 + a real
+  reset email delivered from production. Section 5 item 3's email entry is DONE.
+- **Forgot-password on the live login** (`finflow-api.js` `showAuthGate` — the runtime winner; static login
+  is dead-shadowed): shipped, `verify-forgot-password-ui.js` 10/0. **SW bumped v2→v3.**
+- **Mobile card-stack** + **Chart.js self-hosted** (`public/vendor/chart.umd.js`, off cdnjs) shipped (`965171c`).
+- **F128/D1/F86** owner decisions ruled + re-verified 2026-08-23 (see `OUTSTANDING.md` §C).
+
+**The one remaining launch item for email:** Resend is on the **sandbox sender** (`onboarding@resend.dev`,
+delivers only to the owner's own inbox). Real users need a **verified domain** in Resend + `EMAIL_FROM=
+noreply@<domain>`. See `OUTSTANDING.md` § H. Everything else in the email path is done.
+
+Repo has advanced well past `62137cc` (many commits since). The current authoritative "what's left" list is
+**`OUTSTANDING.md`** (updated 2026-08-24), not this snapshot.
+
+---
+
 ## 0. READ THESE FIRST, IN ORDER
 1. **`CLAUDE.md`** — the project's 3 defining failures + 14 non-negotiable rules. It **OVERRIDES your defaults**. Every rule exists because breaking it caused a real production bug. Do not skim.
 2. **`AUDIT_MASTER.md`** — the findings ledger (F1…F179). Your work this session is F156–F179 near the top.

@@ -1,6 +1,6 @@
 # Integrations & payments — end-to-end verification ledger
 
-**Date:** 2026-08-14  ·  **Method:** every claim below is EXECUTED against a real embedded Postgres
+**Date:** 2026-08-14 (email section added 2026-08-24)  ·  **Method:** every claim below is EXECUTED against a real embedded Postgres
 (and, for UI, real jsdom), not reasoned. The one boundary I cannot cross from the build sandbox is
 the **live provider network call** — outbound HTTP to Plaid/Stripe/etc. is blocked here and needs
 your API keys. Where that's the case it's marked **LIVE-PENDING** with the exact steps to close it.
@@ -101,6 +101,28 @@ The Plaid live handshake is **no longer pending** — it was executed end to end
 purely from Plaid's amount sign (`>=0` → debit/out, `<0` → credit/in; server.js:4559-4560), i.e. Plaid's
 documented convention — the sandbox's deliberately sign-noisy merchant names look backwards but the mapping
 is faithful. See **F164** in `AUDIT_MASTER.md` (built, now live-verified).
+
+---
+
+## ✅ WIRED + LIVE — Transactional email (Resend) (2026-08-24)
+
+Email was the one integration left as "never tested" (Appendix A). Now wired end to end and live-confirmed:
+
+- **Code path:** `resendClient` inits on `RESEND_API_KEY` (`server.js`); `POST /api/auth/forgot-password`
+  and the reset route send via `resendClient.emails.send({from,to,subject,html})`, `from` = `EMAIL_FROM`.
+- **Boundary harness** `verify-email-resend.js` — **10/0**: mocks the `resend` module, drives the real
+  route, asserts correct `from`/`to`/`subject`, an `APP_URL`-built reset link, the **L2 hashed-token** store
+  (DB holds the SHA-256, not the raw link token), and a full **emailed-link → reset-password → login** round-trip.
+- **Live handshake DONE:** a real password-reset email was delivered from production
+  (`finflow-production-dab2`) to the owner's inbox, link and all. `EMAIL_FROM` + `RESEND_API_KEY` set in Railway.
+- **UI:** forgot-password affordance added to the live login (`finflow-api.js` `showAuthGate`, the runtime
+  winner — the static login is dead-shadowed, Rule 1); `verify-forgot-password-ui.js` **10/0**.
+
+🔶 **LIVE-PENDING for arbitrary recipients:** the sender is Resend's **sandbox** `onboarding@resend.dev`,
+which only delivers to the Resend account owner's own email (rejects all other recipients silently — the
+route swallows the send error for no-account-enumeration, so the app always shows "reset link is on its
+way"). To email ANY user, **verify a domain** in Resend and set `EMAIL_FROM=noreply@<yourdomain>`. Code
+unchanged; DNS only.
 
 ---
 

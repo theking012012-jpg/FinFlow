@@ -18,6 +18,35 @@ Claude Code + the cloud container: gates **150/0**, full sweep **141/141 GREEN 0
 client callers post no `country` key so no existing create-flow regression. Design mock for the page it
 unlocks (F94) lives as an Artifact; scope in `F88_SCOPE_2026-08-21.md`. See **§ A2**.
 
+## 🆕 Shipped 2026-08-24 — launch-readiness pass (login, email, mobile, exports)
+
+**All committed/pushed; production `finflow-production-dab2` live.**
+- **Transactional email (Resend) — WIRED + LIVE.** `resendClient` inits on `RESEND_API_KEY`; the
+  forgot-password + reset routes send via Resend. `verify-email-resend.js` **10/0** (mocks the network
+  boundary: correct `from`/`to`/`subject`, an `APP_URL`-built reset link, the L2 hashed-token store, and a
+  full emailed-link → reset → login round-trip). **Live-confirmed** — a real reset email was delivered to
+  the owner's inbox from production. `EMAIL_FROM` + `RESEND_API_KEY` set in Railway; sender is the Resend
+  sandbox `onboarding@resend.dev`. accountant-routes `.io`→`.app` link fallback fixed (`fedabab`).
+  - ⚠️ **REMAINING (email launch blocker for real users):** the sandbox sender only delivers to the Resend
+    account owner's own email. To send resets/receipts to ANY user you must **verify a domain in Resend**
+    and set `EMAIL_FROM=noreply@<yourdomain>` (~15 min of DNS). Until then real users get no reset email. → § H.
+- **Forgot-password on the LIVE login — SHIPPED.** The runtime-winner login is JS-rendered by
+  `finflow-api.js` `showAuthGate` (the static index.html login is dead-shadowed, Rule 1) and had no
+  forgot-password affordance. Added the "Forgot password?" link + reset panel + `ffForgot()` (POSTs
+  `/api/auth/forgot-password`); bundle regenerated. `verify-forgot-password-ui.js` **10/0** (jsdom).
+- **Service worker bumped `v2`→`v3`** (`sw.js` `SW_VERSION`) so clients pull the new shell after deploy.
+- **Mobile / responsive — smoke-tested + fixed.** Wide tables card-stack under `@media(max-width:560px)`;
+  Playwright mobile+desktop screenshots reviewed. (`965171c`)
+- **Chart.js self-hosted.** `public/vendor/chart.umd.js` (4.4.1 UMD); `loadChartJS` repointed off cdnjs;
+  cdnjs preconnect removed — no third-party CDN at runtime. (`965171c`)
+- **PDF / CSV exports — smoke-tested** (no regressions found).
+- **Deploy incident fixed:** a production 500 (`ERR_INVALID_CHAR` in `cors()`) was a trailing newline in the
+  `ALLOWED_ORIGIN` Railway var — retyped clean. Same env-hygiene class as the Resend key paste; watch for it.
+- **F128 optional hygiene** (`renderReports` inert paid-only calc removed) shipped (`43d715b`).
+
+**Money engine unaffected:** gate baseline re-confirmed **150/0** (26/63/56/5) after the login/bundle change;
+L5 canaries (`c6-hdrain`, `f132-readonly`) green standalone (f132's one sequential-load red is the known flake).
+
 > Nothing below is an open money bug or a core-product launch blocker.
 
 ### A. Real work remaining — each its own scoped pass, NOT a batch edit
@@ -96,8 +125,9 @@ and a Canadian company both get judged by UTC (the multi-entity bug). The `resol
    AI/cron harness exists). Two small probes would put them on the permanent list.
 
 ### E. Never tested — NOT broken, just unverified (Appendix A)
-9. Mobile / responsive device testing · PDF / CSV exports · live AI (`ANTHROPIC_API_KEY`) · transactional
-   email (`RESEND_API_KEY`) · performance/scale (the payroll-runs `LIMIT 50` client cap).
+9. live AI (`ANTHROPIC_API_KEY`) · performance/scale (the payroll-runs `LIMIT 50` client cap).
+   **Closed 2026-08-24:** mobile/responsive (card-stack), PDF/CSV exports, and transactional email (Resend,
+   live-confirmed) — all smoke/live-tested this session (see the 🆕 2026-08-24 block above).
 
 ### F. Test-infra debt (harmless)
 10. Occasional `c6-hdrain` jsdom flake under max full-sweep load (passes standalone) · F110/F111 clock re-pin
@@ -106,12 +136,21 @@ and a Canadian company both get judged by UTC (the multi-entity bug). The `resol
 ### G. Post-launch batches (from WORK_PLAN.md)
 11. **F54** team/multi-tenant scoping · **C2 / C5 / C6** input-hygiene sweeps.
 
+### H. Email — domain verification (launch blocker for real-user email; owner-run, ~15 min) — OPEN
+12. Resend is wired + live but on the **sandbox sender** (`onboarding@resend.dev`), which only delivers to
+    the Resend-account owner's own inbox. Real users get NO reset/receipt email until you **verify a domain
+    in Resend** (add the SPF/DKIM DNS records Resend generates) and set `EMAIL_FROM=noreply@<yourdomain>`.
+    Nothing in code changes — routes, templates, key and UI are all done + verified (§ 2026-08-24, § VERIFICATION_INTEGRATIONS).
+
 **Done this pass (was remaining):** the `CONNECTOR_ENC_KEY` Railway step (M1) · Part B cells B5.1/B5.3 · the
 full VERIFICATION.md A1–A6 / B2 / B5 cell closure · F186 + F187 render bugs.
 
 ---
 
-Last updated: 2026-08-13 (below). Mirror of the Progress task list. **No open money bugs, no launch blockers** per the 2026-08-09 reconciliation in `AUDIT_MASTER.md`. Full detail for each item lives in `AUDIT_MASTER.md` under its finding number.
+Last updated: **2026-08-24** (login/email/mobile/exports pass — see the 🆕 block at top). Earlier baseline
+below dated 2026-08-13. Mirror of the Progress task list. **No open money bugs.** The one remaining launch
+item for real-user email is Resend domain verification (§ H); Stripe + Plaid + WiPay are live-verified
+(§ VERIFICATION_INTEGRATIONS). Full detail for each item lives in `AUDIT_MASTER.md` under its finding number.
 
 **Just shipped this session (done):** C3 client record-date fix (local dates, execution-verified), F152 (charts now run — `loadChartJS` wrap), F153 (charts now show data — single-writer `_setMonthlyArrays`). All committed + pushed (`0363e5f`). F151f (quick tab-switch no longer force-reloads → no data blink) committed + pushed (`4e6de6b`).
 
@@ -152,7 +191,11 @@ Last updated: 2026-08-13 (below). Mirror of the Progress task list. **No open mo
 ---
 
 ## Working-tree hygiene (2026-08-13)
-- ⚠ **Stale `public/finflow-bundle.js` on disk.** OneDrive reverted the working-tree bundle to an OLDER copy — it is MISSING the C3/F37, F152, and F153 changes that ARE correct in the committed HEAD bundle. Git shows it as modified. Do NOT commit it. Restore with `git checkout -- public/finflow-bundle.js` (or regenerate via `node bundle.js`). Committed HEAD and production (Railway deploys from git) are unaffected.
+- ✅ **RESOLVED 2026-08-24.** The bundle was regenerated via `node bundle.js` and committed with the
+  forgot-password change; it now carries all wiring including the forgot-password/reset code. Sync was
+  confirmed byte-for-byte against the 9 other wiring sources before delivery. The earlier stale-bundle
+  warning below no longer applies.
+- ⚠ (historical, 2026-08-13) **Stale `public/finflow-bundle.js` on disk.** OneDrive reverted the working-tree bundle to an OLDER copy — it was MISSING the C3/F37, F152, and F153 changes. Restore with `git checkout -- public/finflow-bundle.js` (or regenerate via `node bundle.js`). Committed HEAD and production (Railway deploys from git) were unaffected.
 - `tests/harness/clock.js` and `tests/harness/seedData.js` show as modified but are byte-identical to HEAD (line-ending/mtime noise) — safe to `git checkout` / ignore.
 
 ## Standing constraints (from CLAUDE.md — read it fully first)

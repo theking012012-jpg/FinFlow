@@ -34,7 +34,17 @@ unlocks (F94) lives as an Artifact; scope in `F88_SCOPE_2026-08-21.md`. See **§
   `finflow-api.js` `showAuthGate` (the static index.html login is dead-shadowed, Rule 1) and had no
   forgot-password affordance. Added the "Forgot password?" link + reset panel + `ffForgot()` (POSTs
   `/api/auth/forgot-password`); bundle regenerated. `verify-forgot-password-ui.js` **10/0** (jsdom).
-- **Service worker bumped `v2`→`v3`** (`sw.js` `SW_VERSION`) so clients pull the new shell after deploy.
+- **First-login blank-screen — FIXED.** After sign-in the whole app showed empty (KPIs/chart/lists blank)
+  until a manual refresh; console showed a 401 flood on every data endpoint. Root cause: the dashboard +
+  money data are painted by the **wiring boot** (`finflow-api-wiring-final.js` `_run` → `_ffApiBootEasy/
+  Medium` → the entity path), which runs ONCE on page load and 401s while logged-out, and never re-runs
+  after the thin-shell's in-page `ffOnAuth` (its partial `ffLoadData` doesn't paint the dashboard by
+  design). Fix: `ffLogin`/`ffRegister` now `location.reload()` on success (the server already awaits
+  `saveSession` — F134 — so the session is durable), re-entering the wiring boot exactly like the refresh
+  that already worked. `verify-login-reload.js` **5/0** (reloads once on success, not on a failed login;
+  POSTs `/api/auth/login`). Canaries green (auth-flow 25/0, f132 7/0, c6-hdrain 2/0, dashboard-render 9/0).
+- **Service worker bumped `v2`→`v4`** (`sw.js` `SW_VERSION`) so clients pull the new shell after deploy
+  (v3 = forgot-password/email; v4 = first-login fix).
 - **Mobile / responsive — smoke-tested + fixed.** Wide tables card-stack under `@media(max-width:560px)`;
   Playwright mobile+desktop screenshots reviewed. (`965171c`)
 - **Chart.js self-hosted.** `public/vendor/chart.umd.js` (4.4.1 UMD); `loadChartJS` repointed off cdnjs;

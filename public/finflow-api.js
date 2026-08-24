@@ -67,7 +67,12 @@
     var e=document.getElementById('ff-le').value.trim(), p=document.getElementById('ff-lp').value;
     if(!e||!p){ffErr('Please fill in all fields.');return;}
     ffBusy('ff-lb',true);
-    try { var r=await FF_API.login(e,p); await ffOnAuth(r.user); }
+    // On success, RELOAD rather than an in-page transition. The dashboard + all money data are painted
+    // by the separate wiring boot (finflow-api-wiring-final.js `_run` → _ffApiBootEasy/Medium → the
+    // entity path), which runs ONCE on page load and 401s while logged-out; it does not re-run after an
+    // in-page login, so ffOnAuth's partial ffLoadData left the app blank until a manual refresh. A reload
+    // re-enters that wiring boot with the now-durable session — identical to the refresh that already works.
+    try { await FF_API.login(e,p); location.reload(); }
     catch(err) { ffErr(err.message||'Login failed.'); ffBusy('ff-lb',false); }
   };
 
@@ -75,7 +80,8 @@
     var n=document.getElementById('ff-rn').value.trim(), e=document.getElementById('ff-re2').value.trim(), p=document.getElementById('ff-rp').value;
     if(!e||!p){ffErr('Email and password required.');return;}
     ffBusy('ff-rb',true);
-    try { var r=await FF_API.register(e,p,n); await ffOnAuth(r.user); }
+    // Same reason as ffLogin: reload so the wiring boot paints the app with the fresh session.
+    try { await FF_API.register(e,p,n); location.reload(); }
     catch(err) { ffErr(err.message||'Registration failed.'); ffBusy('ff-rb',false); }
   };
 

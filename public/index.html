@@ -3934,8 +3934,23 @@ window.addEventListener('resize',function(){if(window.innerWidth>768)closeSideba
      One shared helper used by both onboarding Step 3 and the Connections page. It performs a
      genuine Plaid Link handshake and NEVER shows a "linked" state unless the exchange succeeded.
      If the server is not configured (no PLAID keys) it reports that honestly via onError. -->
-<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
-<script src="https://cdn.belvo.io/belvo-widget-1-stable.js"></script>
+<script>
+// Lazy-load the third-party bank widgets (Plaid, Belvo) ONLY when the user actually links a bank.
+// Loading them eagerly set 4 third-party cookies on EVERY page load (Lighthouse Best-Practices hit)
+// and put third-party JS on the mobile critical path. Same CDN hosts as before → CSP unchanged.
+window._loadScriptOnce = function(src){
+  window.__ldScripts = window.__ldScripts || {};
+  if (window.__ldScripts[src]) return window.__ldScripts[src];
+  window.__ldScripts[src] = new Promise(function(resolve, reject){
+    var s = document.createElement('script');
+    s.src = src; s.async = true;
+    s.onload = function(){ resolve(); };
+    s.onerror = function(){ window.__ldScripts[src] = null; reject(new Error('load failed: ' + src)); };
+    document.head.appendChild(s);
+  });
+  return window.__ldScripts[src];
+};
+</script>
 <script>
 // ── Belvo (Latin America bank data) — Plaid-style widget: token → widget → link → exchange. ──
 window.ffLinkBelvo = async function(onLinked, onError){
@@ -3950,6 +3965,7 @@ window.ffLinkBelvo = async function(onLinked, onError){
       return fail(d.error || 'Latin America bank linking isn\'t set up yet.');
     }
   }catch(e){ return fail('Network error starting the connection.'); }
+  try{ await window._loadScriptOnce('https://cdn.belvo.io/belvo-widget-1-stable.js'); }catch(e){}
   if(!(window.belvoSDK && window.belvoSDK.createWidget)) return fail('Belvo widget did not load. Check your connection and try again.');
   window.belvoSDK.createWidget(d.access, {
     callback: async (link) => {
@@ -4043,6 +4059,7 @@ window.ffLinkBank = async function(onLinked, onError){
       return fail(tok.error || 'Bank linking is unavailable right now.');
     }
   }catch(e){ return fail('Network error starting bank link.'); }
+  try{ await window._loadScriptOnce('https://cdn.plaid.com/link/v2/stable/link-initialize.js'); }catch(e){}
   if(!(window.Plaid && window.Plaid.create)) return fail('Bank-linking library did not load. Check your connection and try again.');
   window.Plaid.create({
     token: tok.link_token,

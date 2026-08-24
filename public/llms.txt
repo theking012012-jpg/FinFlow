@@ -1,0 +1,15 @@
+# FinFlow
+
+> FinFlow is a multi-entity accounting and financial-management web app for small businesses — invoices, expenses, payroll, banking, multi-currency, and financial reports across several business entities from one workspace.
+
+FinFlow is a private, login-gated single-page application. Most functionality lives behind authentication and is not publicly crawlable. The pages below are the public entry points.
+
+## Main
+
+- [Landing page](https://finflow-production-dab2.up.railway.app/): Product overview and sign-up.
+- [Application](https://finflow-production-dab2.up.railway.app/app): The FinFlow app (requires sign-in).
+
+## Notes
+
+- Financial data is per-user and per-entity, served only to authenticated sessions over the API.
+- FinFlow supports bank connectivity (Plaid, Belvo), payments (Stripe, WiPay, and others), and payroll (Finch) via owner-configured integrations.

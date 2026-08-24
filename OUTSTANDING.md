@@ -43,8 +43,22 @@ unlocks (F94) lives as an Artifact; scope in `F88_SCOPE_2026-08-21.md`. See **§
   `saveSession` — F134 — so the session is durable), re-entering the wiring boot exactly like the refresh
   that already worked. `verify-login-reload.js` **5/0** (reloads once on success, not on a failed login;
   POSTs `/api/auth/login`). Canaries green (auth-flow 25/0, f132 7/0, c6-hdrain 2/0, dashboard-render 9/0).
-- **Service worker bumped `v2`→`v4`** (`sw.js` `SW_VERSION`) so clients pull the new shell after deploy
-  (v3 = forgot-password/email; v4 = first-login fix).
+- **Lighthouse pass (2026-08-20 reports: mobile Perf 54 / desktop 80; Best-Practices 77; A11y 100; SEO 100).**
+  Fixes shipped 2026-08-24:
+  - **Best Practices — third-party cookies REMOVED.** `index.html` loaded the Plaid (`cdn.plaid.com`) AND
+    Belvo (`cdn.belvo.io`) bank widgets eagerly on EVERY page load → 4 third-party cookies + a DevTools
+    Issues entry, for users who never link a bank. Now lazy-loaded via `window._loadScriptOnce(src)` only
+    inside `ffLinkBank`/`ffLinkBelvo` (same CDN hosts → CSP unchanged, already in `script-src`). Also takes
+    third-party JS off the mobile critical path.
+  - **Agentic Browsing — added `public/llms.txt`** (the only failing audit in that category).
+  - ⏳ **STILL OPEN — mobile Performance (54).** The bulk is the app's OWN JavaScript: ~750 KiB shipped
+    UNMINIFIED (`app-main.js` 414 KB + `finflow-bundle.js` 343 KB), ~9.5 s main-thread work, TBT 1,230 ms,
+    plus "reduce unused JS" 469 KiB. This needs a **build/minify step** (the served files are currently the
+    editable sources — no pipeline) and/or code-splitting. A real project, not a quick fix; scope separately
+    so the owner's PowerShell-commit workflow is accounted for. Caching is deliberately `no-store` for
+    `*.js`/`*.html` (SW is the freshness layer) — do NOT flip without content-hashed filenames.
+- **Service worker bumped `v2`→`v5`** (`sw.js` `SW_VERSION`) so clients pull the new shell after deploy
+  (v3 = forgot-password/email; v4 = first-login fix; v5 = Plaid/Belvo lazy-load).
 - **Mobile / responsive — smoke-tested + fixed.** Wide tables card-stack under `@media(max-width:560px)`;
   Playwright mobile+desktop screenshots reviewed. (`965171c`)
 - **Chart.js self-hosted.** `public/vendor/chart.umd.js` (4.4.1 UMD); `loadChartJS` repointed off cdnjs;

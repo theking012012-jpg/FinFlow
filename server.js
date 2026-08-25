@@ -3814,14 +3814,27 @@ function nextRunDate(currentDate, frequency) {
 
 async function runRecurringScheduler() {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    // F88 step 3: a recurring row fires on ITS ENTITY's calendar day, not one global UTC day — a US book
+    // and a Trinidad book each get their own "today". resolvedToday(now, entityTz) does the resolution
+    // (phase 2); an entity with no timezone — and a personal row with no entity — falls back to UTC, so a
+    // UTC-zone book is byte-for-byte unchanged from the pre-F88 behaviour.
+    const _now = new Date();
+    // Candidate window: any entity's local today is at most UTC+1 day ahead (max IANA offset +14:00), so a
+    // row can be "today" for SOME entity only if next_run <= UTC-tomorrow. West-of-UTC entities are already
+    // covered (their today <= UTC today). This is a tight superset; the per-entity filter re-narrows it.
+    const _utcTomorrow = FinFlowDates.resolvedToday(new Date(_now.getTime() + 86400000));
+    const { rows: _entRows } = await pool.query(`SELECT id, data->>'timezone' AS tz FROM entities`);
+    const _entTz = new Map(_entRows.map(e => [e.id, e.tz || null]));
+    const _entityToday = (entity_id) => FinFlowDates.resolvedToday(_now, _entTz.get(entity_id) || null);
 
     // Recurring invoices
     const { rows: _recInvRows } = await pool.query(
       `SELECT * FROM recurring_invoices WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1`,
-      [today]
+      [_utcTomorrow]
     );
-    const recInvoices = _recInvRows.map(r => ({ id: r.id, user_id: r.user_id, entity_id: r.entity_id, ...r.data }));
+    const recInvoices = _recInvRows
+      .map(r => ({ id: r.id, user_id: r.user_id, entity_id: r.entity_id, ...r.data }))
+      .filter(r => r.next_run <= _entityToday(r.entity_id));   // F88: fire on the ENTITY's day, not UTC
     for (const r of recInvoices) {
       // Respect optional end_date: once the schedule has passed it, stop (mirrors recurring bills).
       if (r.end_date && r.next_run > r.end_date) {
@@ -3842,9 +3855,11 @@ async function runRecurringScheduler() {
     // Recurring bills
     const { rows: _recBillRows } = await pool.query(
       `SELECT * FROM recurring_bills WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1`,
-      [today]
+      [_utcTomorrow]
     );
-    const recBills = _recBillRows.map(r => ({ id: r.id, user_id: r.user_id, entity_id: r.entity_id, ...r.data }));
+    const recBills = _recBillRows
+      .map(r => ({ id: r.id, user_id: r.user_id, entity_id: r.entity_id, ...r.data }))
+      .filter(r => r.next_run <= _entityToday(r.entity_id));   // F88: fire on the ENTITY's day, not UTC
     for (const r of recBills) {
       // Respect optional end_date: once the schedule has passed it, stop.
       if (r.end_date && r.next_run > r.end_date) {
@@ -3866,9 +3881,11 @@ async function runRecurringScheduler() {
     // Recurring personal transactions (mirrors bills; materialises personal_transactions)
     const { rows: _recPtRows } = await pool.query(
       `SELECT * FROM recurring_personal_transactions WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1`,
-      [today]
+      [_utcTomorrow]
     );
-    const recPts = _recPtRows.map(r => ({ id: r.id, user_id: r.user_id, ...r.data }));
+    const recPts = _recPtRows
+      .map(r => ({ id: r.id, user_id: r.user_id, ...r.data }))
+      .filter(r => r.next_run <= _entityToday(r.entity_id));   // personal has no entity_id ⇒ UTC today (unchanged)
     for (const r of recPts) {
       if (r.end_date && r.next_run > r.end_date) {
         await db.updateById('recurring_personal_transactions', r.id, { status: 'completed' });

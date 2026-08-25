@@ -16,7 +16,9 @@ JSONB so no migration. New harness `verify-entity-timezone.js` = **17/0**. Indep
 Claude Code + the cloud container: gates **150/0**, full sweep **141/141 GREEN 0 RED**, diff confirmed
 **model-only** (`resolvedToday`/`_isScheduled`/`runRecurringScheduler`/`nextRunDate` untouched), and both
 client callers post no `country` key so no existing create-flow regression. Design mock for the page it
-unlocks (F94) lives as an Artifact; scope in `F88_SCOPE_2026-08-21.md`. See **§ A2**.
+unlocks (F94) is committed at `F94_SCHEDULED_DOCS_DESIGN.html` (repo root, open in a browser); scope in
+`F88_SCOPE_2026-08-21.md`. **F88 step 2 (`resolvedToday` phase-2 entity-tz resolution) also shipped this
+session — `cad82e3`, 14/0, gates 150/0, full sweep 142/142.** See **§ A2** for the step ledger.
 
 ## 🆕 Shipped 2026-08-24 — launch-readiness pass (login, email, mobile, exports)
 
@@ -137,15 +139,27 @@ and a Canadian company both get judged by UTC (the multi-entity bug). The `resol
 
 - [x] **Step 1 — entity `timezone` + `country` (DONE, `6b17db3`, 17/0 + 150/0 + 141/141, re-verified by Code).**
       Model + validation only; nothing resolves against the zone yet (correct — that's step 2).
-- [ ] **Step 2 — implement `resolvedToday` phase 2** (resolve the server instant into the entity's calendar
-      date) + a day-edge unit harness (e.g. 23:30 in `America/Port_of_Spain` is still "yesterday" in UTC).
+- [x] **Step 2 — `resolvedToday` phase 2 (DONE, `cad82e3`, 14/0 + 150/0 + 142/142).** A valid IANA tz (or
+      numeric offset-minutes) now resolves the server instant to the entity's calendar date via
+      `Intl.DateTimeFormat`; absent/empty/invalid ⇒ UTC (byte-identical to phase 1). `finflow-dates.js` is
+      NOT a bundle source (own `<script>` + server `require`), so one edit updates both engines, no bundle
+      regen. Harness `verify-resolvedtoday-tz.js` covers day-edge across PoS/NY/Toronto/Kolkata/Sydney, a DST
+      year-boundary, the offset branch, junk-zone→UTC, and a phase-1 parity block. Nothing moves yet — every
+      caller still passes a single arg (that's step 3).
 - [ ] **Step 3 — per-entity scheduler boundary.** `runRecurringScheduler` must stop using one global UTC
       `today`; resolve each row's entity `today` and stamp `run_date` in the entity zone. Two-entity
       different-zone boundary harness + reproducing negative control (Rule 14).
 - [ ] **Step 4 — pass entity tz into `_isScheduled`** so the "Scheduled" badge flips on the entity boundary.
 - [ ] **Step 5 — full sweep unchanged for any UTC-zone entity** (the byte-identical regression guard).
 - [ ] **Step 6 (additive) — holiday / business-day shift** driven by `entity.country`, locale-sourced.
-- [ ] **Then: build the real F94 Scheduled Documents page** on top (reads entity tz/currency/country at runtime).
+- [ ] **Then: build the real F94 Scheduled Documents page** on top (reads entity tz/currency/country at
+      runtime — NO hardcoded data). **It must ship as its OWN top-level sidebar tab** —
+      `showPage('scheduled-documents')` + a dedicated `nav-item` in `index.html`, NOT nested under Documents
+      and NOT inside Recurring Invoices/Bills. It unifies recurring runs + future-dated one-offs into one
+      destination. **Blueprint: `F94_SCHEDULED_DOCS_DESIGN.html`** (repo root — open in a browser; interactive:
+      per-entity switcher, cash-flow forecast, needs-attention lane, create/edit, lineage, end-of-schedule +
+      locale holidays). Sample companies/figures are PLACEHOLDER only; the real page loads the account's own
+      entities via `GET /api/entities`.
 
 ### D. Verification gaps (low-risk; optional to close)
 8. **L4 (`/api/ai` scope) + L8 (cron compare)** — shipped and READ-verified, but not execution-verified (no

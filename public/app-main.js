@@ -649,8 +649,16 @@ window._fmtMoneyNative = _fmtMoneyNative;
 // F94: a future-dated document is SCHEDULED — excluded from every figure by D2, and badged in its
 // list so it isn't mistaken for lost data. Tz-free calendar compare (Rule 10), on the SAME date the
 // D2 recognition leg excludes on (issue_date, with created_at/date fallbacks).
+// F88 step 4: the "today" boundary is the ACTIVE ENTITY's, not the server's UTC day. A US entity and a
+// Canadian one can disagree on whether a given date is still future — the badge must match the entity the
+// user is looking at, exactly as the server scheduler resolves per-entity (F88 step 3). No active entity,
+// or one with no timezone, ⇒ null ⇒ resolvedToday falls back to UTC — byte-identical to prior behavior.
+function _activeEntityTz(){
+  try { const a=(typeof ENTITIES!=='undefined'?ENTITIES:(window.ENTITIES||[])).find(e=>e.active); return (a&&a.timezone)||null; } catch(e){ return null; }
+}
+window._activeEntityTz = _activeEntityTz;
 window._isScheduled = function(dateStr){
-  try { const y = window.FinFlowDates._toYmd(dateStr); return y != null && y > window.FinFlowDates.resolvedToday(new Date()); }
+  try { const y = window.FinFlowDates._toYmd(dateStr); return y != null && y > window.FinFlowDates.resolvedToday(new Date(), _activeEntityTz()); }
   catch(_){ return false; }
 };
 

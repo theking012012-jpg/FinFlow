@@ -7,6 +7,12 @@
  * understates AR. Two legitimate receipts from the same customer for the same amount are allowed,
  * so the key is a per-submit idempotency TOKEN, not UNIQUE(customer, amount).
  *
+ * F86 REPOINT (2026-08-26): the standalone write routes are now RETIRED behind FF_PR_WRITES
+ * (server.js:2788, 410 Gone by default) per the owner-ruled gated deprecation. This harness first
+ * proves the default gate is closed (POST/PUT/DELETE → 410, GET read stays live, no row written),
+ * then flips FF_PR_WRITES=1 to exercise the REVERSIBLE write path and prove the C1 idempotency
+ * machinery still holds — the invariant that must survive as long as the rollback exists.
+ *
  *   node -r ./tests/harness/clock.js tests/harness/verify-c1-payments-received.js
  *   NO_INDEX=1 node -r ./tests/harness/clock.js tests/harness/verify-c1-payments-received.js   (CONTROL)
  */
@@ -67,13 +73,30 @@ const WITH_INDEX = !process.env.NO_INDEX;
     A('login 200', login.status === 200, `status ${login.status}: ${login.text?.slice(0, 200)}`);
     const post = (body) => http.post('/api/payments-received', body);
 
-    // ── F86 gated deprecation: the manual write routes are RETIRED (410) by default. Prove the gate
-    //    first, THEN enable FF_PR_WRITES for the rest of this process — the idempotency index / 23505
-    //    behaviour below is the reversible-rollback coverage (it still matters if the route is restored). ──
-    const _gate = await post({ customer: 'gate-probe', amount: 1, idempotency_key: 'tok-gate' });
-    A('F86: POST /api/payments-received returns 410 when writes are retired (default, no FF_PR_WRITES)',
-      _gate.status === 410, `status ${_gate.status}: ${_gate.text?.slice(0, 140)}`);
-    process.env.FF_PR_WRITES = '1';   // enable the reversible write path for the coverage below (read at request time)
+    // ── F86 gated deprecation (server.js:2778) — the standalone WRITE routes are RETIRED (410) BY
+    //    DEFAULT; the GET read stays live. The C1 idempotency battery below is the reversible path
+    //    (FF_PR_WRITES=1), so we first prove the default gate is closed — the standalone "Payment
+    //    Received" write the whole C1 machinery guards no longer exists for real users. The server
+    //    reads the flag at REQUEST time (server.js:2786-2787), so flipping process.env mid-run proves
+    //    the gate AND the reversible path in one process. ──
+    delete process.env.FF_PR_WRITES;            // force the DEFAULT (retired) regardless of ambient env
+    {
+      const gPost = await post({ customer: 'gate-G', amount: 999, idempotency_key: 'tok-GATE' });
+      A('F86 gate: POST /api/payments-received is retired 410 by default', gPost.status === 410, `status ${gPost.status} body ${gPost.text?.slice(0,120)}`);
+      A('F86 gate: 410 body carries code PAYMENTS_RECEIVED_RETIRED', gPost.json?.code === 'PAYMENTS_RECEIVED_RETIRED' && gPost.json?.deprecated === true, `body ${gPost.text?.slice(0,160)}`);
+      const gPut = await http.put('/api/payments-received/999999', { amount: 2 });
+      A('F86 gate: PUT is retired 410 by default (gate precedes row lookup)', gPut.status === 410, `status ${gPut.status}`);
+      const gDel = await http.del('/api/payments-received/999999');
+      A('F86 gate: DELETE is retired 410 by default', gDel.status === 410, `status ${gDel.status}`);
+      const gGet = await http.get('/api/payments-received');
+      A('F86 gate: GET read stays live (200) — only writes are retired', gGet.status === 200, `status ${gGet.status}`);
+      const nGate = await prCount(uid, 'gate-G');
+      A('F86 gate: the retired POST created NO row', nGate === 0, `rows=${nGate}`);
+    }
+
+    // ── Re-enable the REVERSIBLE write path and prove the C1 idempotency machinery still holds — the
+    //    invariant that must survive as long as the one-line rollback (FF_PR_WRITES=1) exists. ──
+    process.env.FF_PR_WRITES = '1';
 
     // ── A. concurrent identical-token submits (the TOCTOU race) ──
     const cA = 'race-A', keyA = 'tok-A';

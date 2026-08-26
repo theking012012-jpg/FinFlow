@@ -21,9 +21,6 @@ const { bootServer } = require('./boot.js');
 const { HarnessHttp } = require('./httpClient.js');
 
 const LOGIN = { email: 'f90upd@finflow.test', password: 'harness-password-not-a-secret' };
-// F86: payments_received manual write routes are retired by default (410). This harness exercises the
-// route's UPDATE-audit path, which stays valid for the reversible rollback — enable it for this run.
-process.env.FF_PR_WRITES = '1';
 
 (async () => {
   let scratch, server, pass = 0, fail = 0;
@@ -41,6 +38,13 @@ process.env.FF_PR_WRITES = '1';
     // POSTs /api/entities); without it, business-route writes stamp entity_id NULL → chk_*_entity_nn.
     await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1, NULL, $2, NOW(), NOW())`,
       [uid, { name: 'F90UPD Co', currency: 'USD', is_active: 1 }]);
+    // F86 (2026-08-26): payments_received standalone WRITES are retired 410-by-default behind
+    // FF_PR_WRITES (server.js:2788). This harness proves the UPDATE-audit machinery across all 7 money
+    // tables, and the audit code is DELIBERATELY LEFT LIVE for the reversible path (server.js:2783). We
+    // exercise that reversible path so payments_received keeps its audit coverage like the other six;
+    // the dedicated gate proof (default 410) lives in verify-c1-payments-received.js. The server reads
+    // the flag at request time, so setting it here is sufficient.
+    process.env.FF_PR_WRITES = '1';
     const http = new HarnessHttp(server.baseUrl);
     A('login 200', (await http.post('/api/auth/login', LOGIN)).status === 200);
 

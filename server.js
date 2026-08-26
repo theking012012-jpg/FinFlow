@@ -10,6 +10,7 @@ const path         = require('path');
 const crypto       = require('crypto');
 const { db, initDB, pool, rowToObj } = require('./database');
 const FinFlowDates = require('./public/finflow-dates.js'); // F87 — canonical calendar-date/period resolver (Rule 10)
+const Holidays     = require('date-holidays');            // F88 step 6 — per-country public-holiday calendar (offline, no network)
 const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
 const aiCap = require('./ai-cap');                        // F18 — central AI cost caps
 const { appUrl, warnIfUnset } = require('./app-url');     // F29 — single source of truth for app links
@@ -3782,6 +3783,70 @@ app.get('/favicon.ico', (req, res) => {
 // would miss the ~940 lines of routes below (they'd leak HTML/stack — F4).
 
 // ── RECURRING SCHEDULER ───────────────────────────────────────────────────────
+// F88 step 6 — MODIFIED FOLLOWING business-day shift, per the entity's country.
+// A recurring run's schedule anchor (`next_run`) is left UNADJUSTED so the monthly/quarterly/yearly
+// cadence never drifts; instead the DATE STAMPED on the generated document (invoice / bill due_date) is
+// shifted off weekends + that country's STATUTORY closures (public + bank holidays; owner-ruled — see
+// F190) to the nearest business day. Convention: move FORWARD to the next business day, but if that
+// crosses into a new calendar month, move BACKWARD instead — so a run always lands in the month it was
+// scheduled for (P&L / cash-flow / every period figure buckets by month).
+//
+// RULE 10 (F190 fix): a holiday is matched by CALENDAR STRING, never by a Date instant. The prior version
+// probed date-holidays with `isHoliday(new Date(Date.UTC(y,mo,d,12)))`, which (a) rolled to the wrong
+// LOCAL day for far-east zones — it missed 11 of 13 New Zealand public holidays (UTC+12/+13) — and (b)
+// accepted `observance`/`school` types (St Patrick's Day, Tax Day) as closures. Both are fixed by building
+// a per-country-per-year SET of 'YYYY-MM-DD' closure strings from getHolidays() and testing membership.
+// `new Date(Date.UTC(y,mo-1,d))` appears ONLY to read a UTC weekday (unambiguous for a calendar date),
+// never to compare. ADDITIVE: no country (personal rows, or an entity that never set one) ⇒ the date is
+// returned unchanged, byte-for-byte the pre-F88 behaviour (guarded by verify-f88-utc-parity).
+const _CLOSURE_TYPES = new Set(['public', 'bank']);   // owner ruling (F190): statutory closures only
+const _holCache = new Map();   // "COUNTRY:YEAR" → Set<'YYYY-MM-DD'> of closure dates (empty for unsupported)
+function _closureSet(country, year) {
+  const key = String(country || '').toUpperCase() + ':' + year;
+  if (!_holCache.has(key)) {
+    const set = new Set();
+    try {
+      const h = new Holidays(String(country).toUpperCase());
+      if (h && h.getRules && h.getRules().length) {
+        for (const ev of (h.getHolidays(year) || [])) {
+          // ev.date is a local string, sometimes with an offset suffix ("2026-02-02 00:00:00 -0600");
+          // the leading 10 chars ARE the country's calendar date — slice, never parse to an instant.
+          if (_CLOSURE_TYPES.has(ev.type)) set.add(String(ev.date).slice(0, 10));
+        }
+      }
+    } catch (_) { /* unsupported country ⇒ empty set ⇒ weekend-only (still correct for served markets) */ }
+    _holCache.set(key, set);
+  }
+  return _holCache.get(key);
+}
+function _isBusinessDay(ymd, country) {
+  const y = +ymd.slice(0, 4), mo = +ymd.slice(5, 7), d = +ymd.slice(8, 10);
+  const wd = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();   // 0 Sun … 6 Sat — weekday of a calendar date, tz-free
+  if (wd === 0 || wd === 6) return false;                    // weekend (Sat/Sun — the served markets' weekend)
+  return !_closureSet(country, y).has(ymd);                  // string membership — no instant (Rule 10)
+}
+function _stepToBusinessDay(ymd, step, country) {
+  // Walk `step` (±1) days at a time until a business day; capped so a pathological run can never loop forever.
+  let t = Date.UTC(+ymd.slice(0,4), +ymd.slice(5,7) - 1, +ymd.slice(8,10));
+  for (let i = 0; i < 14; i++) {
+    t += step * 86400000;
+    const nd = new Date(t);
+    const cand = nd.getUTCFullYear() + '-' + String(nd.getUTCMonth() + 1).padStart(2, '0') + '-' + String(nd.getUTCDate()).padStart(2, '0');
+    if (_isBusinessDay(cand, country)) return cand;
+  }
+  return null;   // unreachable in practice (14 consecutive non-business days cannot occur)
+}
+function businessDayShift(ymd, country) {
+  const s = String(ymd || '').slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m || !country) return m ? s : ymd;                     // no country / bad date ⇒ unchanged (additive)
+  if (_isBusinessDay(s, country)) return s;                   // already a business day
+  const fwd = _stepToBusinessDay(s, +1, country);            // Modified Following: forward first…
+  if (fwd && fwd.slice(0, 7) === s.slice(0, 7)) return fwd;   // …unless it leaves the month (Y+M)…
+  const back = _stepToBusinessDay(s, -1, country);           // …then fall back to the previous business day
+  return back || s;
+}
+
 function nextRunDate(currentDate, frequency) {
   // A next_run is an accounting/calendar date, not an instant (Rule 10). The previous
   // implementation did `new Date('YYYY-MM-DD')` (parses to UTC midnight) then advanced with
@@ -3823,8 +3888,9 @@ async function runRecurringScheduler() {
     // row can be "today" for SOME entity only if next_run <= UTC-tomorrow. West-of-UTC entities are already
     // covered (their today <= UTC today). This is a tight superset; the per-entity filter re-narrows it.
     const _utcTomorrow = FinFlowDates.resolvedToday(new Date(_now.getTime() + 86400000));
-    const { rows: _entRows } = await pool.query(`SELECT id, data->>'timezone' AS tz FROM entities`);
+    const { rows: _entRows } = await pool.query(`SELECT id, data->>'timezone' AS tz, data->>'country' AS country FROM entities`);
     const _entTz = new Map(_entRows.map(e => [e.id, e.tz || null]));
+    const _entCountry = new Map(_entRows.map(e => [e.id, e.country || null]));   // F88 step 6: per-entity business-day calendar
     const _entityToday = (entity_id) => FinFlowDates.resolvedToday(_now, _entTz.get(entity_id) || null);
 
     // Recurring invoices
@@ -3843,7 +3909,9 @@ async function runRecurringScheduler() {
       }
       await db.insert('invoices', {
         user_id: r.user_id, entity_id: r.entity_id || null,
-        client: r.client, amount: r.amount, due_date: r.next_run,
+        // F88 step 6: stamp the due date on a business day for the entity's country (Modified Following);
+        // next_run (the schedule anchor) stays unadjusted so the cadence never drifts.
+        client: r.client, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
         status: 'pending', notes: `Auto-generated from recurring schedule`,
       });
       const _nextRun = nextRunDate(r.next_run, r.frequency);
@@ -3869,7 +3937,8 @@ async function runRecurringScheduler() {
       const num = 'BILL-' + String(Date.now()).slice(-4);
       await db.insert('bills', {
         user_id: r.user_id, entity_id: r.entity_id || null,
-        vendor: r.vendor, num, amount: r.amount, due_date: r.next_run,
+        // F88 step 6: business-day-shifted due date (Modified Following, entity's country); anchor unadjusted.
+        vendor: r.vendor, num, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
         status: 'unpaid', notes: `Auto-generated from recurring schedule`,
       });
       const _nextRun = nextRunDate(r.next_run, r.frequency);
@@ -6980,6 +7049,7 @@ module.exports.runRecurringScheduler = runRecurringScheduler;
 // Test hook: expose the pure recurrence-date helper so the Rule 10 timezone-free math can be
 // asserted directly (no behavior change in prod).
 module.exports.nextRunDate = nextRunDate;
+module.exports.businessDayShift = businessDayShift;   // F88 step 6 — per-country business-day shift (test surface)
 // Test hooks: Plaid access-token encryption at rest (assert round-trip + tamper detection).
 module.exports._encTok = encTok;
 module.exports._decTok = decTok;

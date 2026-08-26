@@ -11,6 +11,7 @@
  *   node tests/harness/verify-login-reload.js
  */
 const fs = require('fs');
+const path = require('path');
 const { JSDOM, VirtualConsole } = require('jsdom');
 
 (async () => {
@@ -40,7 +41,7 @@ const { JSDOM, VirtualConsole } = require('jsdom');
   };
 
   try {
-    window.eval(fs.readFileSync('/srv/ffv/public/finflow-api.js', 'utf8'));
+    window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'finflow-api.js'), 'utf8'));
     await new Promise(r => setTimeout(r, 60)); // boot() → me() 401 → showAuthGate()
 
     A('unauthenticated boot shows the login gate', !!window.document.getElementById('ff-auth-gate'));

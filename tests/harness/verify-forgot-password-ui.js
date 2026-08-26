@@ -8,6 +8,7 @@
  *   node tests/harness/verify-forgot-password-ui.js
  */
 const fs = require('fs');
+const path = require('path');
 const { JSDOM } = require('jsdom');
 
 (async () => {
@@ -22,7 +23,7 @@ const { JSDOM } = require('jsdom');
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) });
   };
   try {
-    window.eval(fs.readFileSync('/srv/ffv/public/finflow-api.js', 'utf8'));
+    window.eval(fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'finflow-api.js'), 'utf8'));
     await new Promise(r => setTimeout(r, 60)); // let boot() → me() reject → showAuthGate()
 
     const gate = window.document.getElementById('ff-auth-gate');

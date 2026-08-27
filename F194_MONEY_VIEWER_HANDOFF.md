@@ -10,6 +10,31 @@ canonical amount.
 
 ---
 
+## ⏱️ CURRENT STATUS — 2026-08-27 (read this first)
+
+**LIVE (committed + pushed):** Phase 1 doc viewer `d92f990` · Phase 2a invoice line items `3066bc7` ·
+F195 date labels `a588852` · F196 Tier-1 letterhead name `9fe1240` · docs `ede70d9`.
+
+**VERIFIED + HELD (uncommitted on disk, owner approved the push):** **F196 Tier-2** — full per-entity
+Business Profile. Harness `verify-entity-profile.js` **20/20**, full sweep **155/155**, independently
+re-verified by the Cowork account. NO data-move (owner's profile was blank). Files to commit:
+`server.js`, `public/finflow-api-wiring.js`, `public/finflow-docview.js`, `public/index.html`,
+`tests/harness/verify-entity-profile.js`, `tools/f196-entity-profile-inventory.js` (SELECT-only).
+Commit message: `feat(entities): per-entity business profile → letterhead (F196 Tier-2)`.
+`git add` those paths (NOT the bundle — F13 hook regenerates it) and push.
+
+**OUTSTANDING (not started):** Phase 2b (bills/quotes line items) · Phase 3 (roll View across the other
+doc types) · Phase 4 (clickable Scheduled Documents calendar) · F196 logo-upload UI (entity `logo` field
+is validated + read but no UI writes it — dormant, F191-shaped) · F192 bank-linking regional decision.
+
+**PROCESS TRAP (documented by the code account):** the F13 hook regenerates the bundle into the git
+INDEX only, never the working tree — so `public/finflow-bundle.js` in your folder silently rots. jsdom
+harnesses boot the BUILT bundle, so **run `node bundle.js` before any local sweep** after editing a
+wiring source, or the sweep tests stale code. Also: never pipe the sweep through `| tail` — a pipeline
+returns tail's exit code and masks a RED run.
+
+---
+
 ## Rules that bind this work (do not regrow the codebase's defining defects)
 
 - **Rule 1 (runtime winner).** `saveInvoice` is a **wiring override** (`finflow-api-wiring-medium.js`, in
@@ -97,6 +122,20 @@ credit-notes, quotes, vendor-credits, payments-made**:
 - Wire these as ship-direct overrides (like docview) or in the relevant wiring source; confirm Rule 1.
 - Harness: one per doc type, or a combined `verify-docview-alltypes.js` asserting each kind renders real
   data + correct KIND title.
+
+**CROSS-CUTTING — the invoice fixes extend to EVERY tab through the shared viewer, not per-tab.**
+The rich document viewer is the single surface for all Money In/Out records, so wiring a tab through
+`ffOpenDocView(doc, kind)` makes it inherit, for free and with no re-fixing:
+- **F196 per-entity letterhead** — `letterhead()` lives in `finflow-docview.js`; every doc type it renders
+  already gets the active entity's name/address/email/tax-id with account fallback.
+- **F195 TZ-safe dates** — the viewer formats dates via `dlabel`→`_toYmd` (string slice, no shift). NOTE:
+  I verified the OTHER tabs' LIST rows carry no `new Date(dateOnly).toLocaleDateString()` bug (only
+  invoice-due + expense-date ever did, both fixed), so nothing extra to do there.
+- **Line items** — the viewer renders a `line_items` table whenever the `xToDoc` mapper passes one, so a
+  bill/quote that has line items (Phase 2b) shows them in its View with zero extra viewer work.
+The only genuinely per-tab work is Phase 3 (add the View + its `xToDoc` mapper) and Phase 2b (line-items
+on bills/quotes). Receipts / credit-notes / vendor-credits get the rich VIEW but are NOT scoped for line
+items — revisit with the owner if they want editable line items there too.
 
 ### Phase 4 — clickable Scheduled Documents calendar  ⬜ NOT STARTED
 `public/finflow-f94.js`, `renderCal` (~lines 289–292). Today only `.cell.has` cells (with `data-day`) are

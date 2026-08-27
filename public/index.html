@@ -3483,6 +3483,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               </div>
               <div class="field-wrap"><label class="field-label" for="s-address">Business address</label><textarea class="finput" id="s-address" style="min-height:60px" placeholder="Street, City, State, Country"></textarea></div>
               <div class="field-wrap"><label class="field-label" for="s-website">Website</label><input class="finput" id="s-website" placeholder="https://yourbusiness.com"></div>
+              <!-- F196 Tier 2: the BUSINESS contact that prints on documents. Distinct from the
+                   "Your profile" email/phone below, which are the USER's own — the letterhead used to
+                   read those, so a business document printed the user's personal contact details. -->
+              <div class="field-group">
+                <div class="field-wrap"><label class="field-label" for="s-biz-email">Business email</label><input class="finput" id="s-biz-email" placeholder="billing@yourbusiness.com" type="email"></div>
+                <div class="field-wrap"><label class="field-label" for="s-biz-phone">Business phone</label><input class="finput" id="s-biz-phone" placeholder="+1 (555) 000-0000" type="tel"></div>
+              </div>
             </div>
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="3"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/></svg>Your profile</div>
@@ -6181,6 +6188,19 @@ async function _loadEntitiesFromDBImpl(){
       currency: e.currency || 'USD',
       active:   e.is_active == 1 || e.is_active === true,
       data:     {rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0},
+      // F196 Tier 2: the entity's OWN letterhead profile. A document is issued BY this entity, so
+      // its business name/address/contact/tax-id must travel with it rather than being read from the
+      // account-wide settings blob (which is ONE row per account and mislabels every entity but one).
+      // Absent fields stay undefined so the letterhead falls back to the account blob (no migration).
+      profile: {
+        business_name: e.business_name || null,
+        address:       e.address       || null,
+        email:         e.email         || null,
+        phone:         e.phone         || null,
+        tax_id:        e.tax_id        || null,
+        website:       e.website       || null,
+        logo:          e.logo          || null,
+      },
     }));
 
     // If none active, activate first one
@@ -6202,6 +6222,14 @@ async function _loadEntitiesFromDBImpl(){
 
     renderEntities();
     if(typeof renderBusinessSwitcher === 'function') renderBusinessSwitcher();
+
+    // F196 Tier 2: paint the Business-profile panel from the ACTIVE ENTITY now that ENTITIES exists.
+    // loadSettingsFromDB (finflow-api-wiring.js) races this loader and can finish FIRST, and when it
+    // does there is no entity to read yet — so it fills the panel from the account-wide blob and the
+    // per-entity profile never lands. Both paths call the same repaint, so whichever finishes last
+    // produces the correct final state regardless of the order they resolve in.
+    try { if (typeof window._ffApplyEntityProfile === 'function') window._ffApplyEntityProfile(); }
+    catch(e5){ console.warn('[Entities] business-profile paint failed:', e5 && e5.message); }
 
     // Update sidebar brand
     const active = ENTITIES.find(e=>e.active);
@@ -6518,6 +6546,14 @@ window.switchEntity=async function(idx){
 
   // Refresh entity list UI
   renderEntities();
+
+  // F196 Tier 2: repaint the Business-profile panel for the NEW entity. /api/settings is ONE row per
+  // ACCOUNT and is loaded once at boot, so without this the panel (and any document rendered from it)
+  // keeps showing the PREVIOUS entity's business name/address/tax-id after a switch — the same
+  // per-user-setting-on-per-entity-output class as the letterhead bug itself. ENTITIES already carries
+  // each entity's profile from /api/entities, so this is a repaint, not a refetch.
+  try { if (typeof window._ffApplyEntityProfile === 'function') window._ffApplyEntityProfile(); }
+  catch(e4){ console.warn('[Entity] business-profile repaint failed:', e4 && e4.message); }
 
   // Keep the sidebar's PARALLEL `businesses` model in lockstep with ENTITIES. `businesses` is derived
   // from ENTITIES on every entity-load (copying active:e.active, index.html:~6182) and is what the

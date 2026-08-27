@@ -216,6 +216,58 @@
     // ════════════════════════════════════════════
     // 1. SETTINGS — load on boot + save
     // ════════════════════════════════════════════
+    // F196 Tier 2 — PER-ENTITY BUSINESS PROFILE.
+    // The letterhead on every document is issued BY an entity, but /api/settings is ONE row per
+    // ACCOUNT (server.js: `WHERE user_id=$1 AND data->>'key' IS NULL`), loaded once at boot and never
+    // reloaded on an entity switch. So a multi-entity account printed the same business name, address,
+    // tax-id and contact on every entity's documents. That is the Rule 10 "under investigation" class:
+    // a setting stored PER-USER applied to PER-ENTITY output.
+    //
+    // The Business-profile panel now edits the ACTIVE ENTITY's profile, with the account blob kept as
+    // the fallback for any field the entity has not set (so nothing changes for a single-entity account
+    // and no data migration is required — Rule 8).
+    //
+    // NOTE the deliberate split: `s-biz-email` / `s-biz-phone` are the BUSINESS contact that prints on
+    // documents; `s-email` / `s-phone` under "Your profile" remain the USER's own and are NOT touched
+    // here. The letterhead previously read the user's fields, so a business document printed the
+    // user's personal contact details.
+    var ENT_PROFILE_FIELDS = {
+      business_name: 's-biz-name',
+      address:       's-address',
+      email:         's-biz-email',
+      phone:         's-biz-phone',
+      tax_id:        's-tax-id',
+      website:       's-website',
+    };
+    var _accountProfile = {};   // the account-wide blob, cached at boot as the per-field FALLBACK
+
+    function _activeEntity() {
+      try { return (window.ENTITIES || []).find(function (e) { return e && e.active; }) || null; }
+      catch (_) { return null; }
+    }
+
+    // Paint the Business-profile inputs for whichever entity is active RIGHT NOW. Every field is
+    // recomputed from scratch (entity ?? account ?? '') rather than only overwritten when the entity
+    // has a value — otherwise a switch would leave the previous entity's values on screen for any
+    // field the new entity has not set.
+    function applyEntityProfileFields() {
+      var ent = _activeEntity();
+      var prof = (ent && ent.profile) || {};
+      Object.keys(ENT_PROFILE_FIELDS).forEach(function (f) {
+        var el = document.getElementById(ENT_PROFILE_FIELDS[f]);
+        if (!el) return;
+        var v = prof[f];
+        if (v == null || v === '') v = _accountProfile[f];
+        // business_name falls back to the entity's own switcher name before the account blob, so a
+        // brand-new entity shows its own name rather than another entity's business name.
+        if ((v == null || v === '') && f === 'business_name' && ent && ent.name) v = ent.name;
+        el.value = (v == null) ? '' : v;
+      });
+      if (typeof window.updateBrandName === 'function') { try { window.updateBrandName(); } catch (_) {} }
+    }
+    // Exposed so the entity switcher can repaint the panel without a page reload (index.html switchEntity).
+    window._ffApplyEntityProfile = applyEntityProfileFields;
+
     // Load settings from DB and apply them to the form fields
     async function loadSettingsFromDB() {
       try {
@@ -265,6 +317,17 @@
         setField('s-website',  s.website);
         setField('s-tax-id',   s.tax_id);
         setField('s-fy',       s.fiscal_year);
+        // F196 Tier 2: the account blob above is ONE row per account, so on a multi-entity account it
+        // labels every entity with the same business. Cache it as the FALLBACK, then overlay the
+        // ACTIVE entity's own profile on top. Cached (rather than re-fetched) so an entity switch can
+        // recompute every field deterministically: entity value ?? account value ?? '' — otherwise
+        // switching from an entity that HAS an address to one that does not would leave the previous
+        // entity's address on screen (the same stale-carry-over class as F151).
+        _accountProfile = {
+          business_name: s.business_name, address: s.address, email: s.email,
+          phone: s.phone, tax_id: s.tax_id, website: s.website,
+        };
+        applyEntityProfileFields();
       } catch (e) {
         // Not logged in yet or no settings saved — fine, use defaults
       }
@@ -313,6 +376,33 @@
           fiscal_year,
         });
         notify('Settings saved successfully ✦');
+        // F196 Tier 2: the Business profile belongs to the ACTIVE ENTITY — write it there too, so a
+        // multi-entity account gets per-entity letterheads instead of one account-wide business.
+        // The /api/settings write above is deliberately left intact: it keeps the account blob current
+        // as the FALLBACK for entities with no profile, and it is what a role holding `settings:manage`
+        // but NOT `entities:manage` is permitted to do. Both writers take the SAME input fields, so
+        // they cannot disagree (Rule 2) — the entity copy simply wins when present.
+        try {
+          const _ent = _activeEntity();
+          if (_ent && _ent._dbId) {
+            const _profile = {
+              business_name: document.getElementById('s-biz-name')?.value?.trim() || '',
+              address:       document.getElementById('s-address')?.value?.trim() || '',
+              email:         document.getElementById('s-biz-email')?.value?.trim() || '',
+              phone:         document.getElementById('s-biz-phone')?.value?.trim() || '',
+              tax_id:        document.getElementById('s-tax-id')?.value?.trim() || '',
+              website:       document.getElementById('s-website')?.value?.trim() || '',
+            };
+            await api('PUT', '/api/entities/' + _ent._dbId, _profile);
+            // Keep the in-memory entity in lockstep so the next document renders the new letterhead
+            // without a page reload (the letterhead reads ENTITIES[i].profile, not the DB).
+            _ent.profile = Object.assign({}, _ent.profile || {}, _profile);
+          }
+        } catch (e2) {
+          // Never silent: the account-level save succeeded but the per-entity letterhead did not, and
+          // the user must know which one they are looking at.
+          notify('Saved, but this entity\'s business profile did not update — ' + e2.message, true);
+        }
         // Refresh all financial displays so currency symbol + format changes apply immediately
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('all');
       } catch (e) {

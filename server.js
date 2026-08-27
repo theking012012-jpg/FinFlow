@@ -1094,6 +1094,10 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
   const _entExtra = {};
   if (timezone) _entExtra.timezone = String(timezone);
   if (country)  _entExtra.country  = String(country).toUpperCase();
+  // F196 Tier 2: optional per-entity letterhead profile at create time.
+  const _prof = normalizeEntityProfile(req.body || {});
+  if (_prof.error) return res.status(400).json({ error: _prof.error });
+  Object.assign(_entExtra, _prof.patch);
   const { row } = await db.insert('entities', { user_id: scopeId(req), name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0, ..._entExtra });
   await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
@@ -1105,10 +1109,15 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
   if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
   if (_badTimezone(timezone)) return res.status(400).json({ error: 'Invalid timezone. Use an IANA zone such as America/Toronto.' });
   if (_badCountry(country)) return res.status(400).json({ error: 'Invalid country code. Use a 2-letter ISO code such as CA.' });
+  // F196 Tier 2: per-entity letterhead profile. Only the keys actually sent are patched, so a
+  // profile save cannot blank name/currency/color and a rename cannot blank the profile.
+  const _prof = normalizeEntityProfile(req.body || {});
+  if (_prof.error) return res.status(400).json({ error: _prof.error });
   await db.updateById('entities', row.id, {
     ...(name && {name}), ...(currency && {currency}), ...(color && {color}),
     ...(timezone !== undefined && { timezone: timezone ? String(timezone) : null }),
     ...(country !== undefined && { country: country ? String(country).toUpperCase() : null }),
+    ..._prof.patch,
   });
   const { rows: [_er] } = await pool.query(`SELECT * FROM entities WHERE id = $1 LIMIT 1`, [row.id]);
   await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'UPDATE', oldData: row, newData: _er ? rowToObj(_er) : null, req });  // F90 Phase B
@@ -1172,6 +1181,43 @@ const _badTimezone = v => {
 };
 const _COUNTRY_RE = /^[A-Za-z]{2}$/;
 const _badCountry = v => v != null && v !== '' && !_COUNTRY_RE.test(String(v));
+
+// F196 Tier 2: PER-ENTITY BUSINESS PROFILE (letterhead). A document is issued BY an entity, but the
+// letterhead was read from the ACCOUNT-wide user_settings row (ONE per account, no entity scoping),
+// so every entity's documents printed the same business name / address / tax-id. That is the Rule 10
+// "UNDER INVESTIGATION" class: a setting stored PER-USER applied to PER-ENTITY output.
+// These fields live in the entity's own `data` JSONB — no schema change and no migration (Rule 8).
+// An entity with none set simply has none, and the client falls back to the account blob, so every
+// existing entity keeps rendering exactly what it renders today until someone sets a profile.
+// Caps mirror the /api/settings profile caps exactly, so the two stores cannot disagree on limits.
+const _ENT_PROFILE_MAX = { business_name: 200, address: 500, email: 254, phone: 50, website: 200, tax_id: 50 };
+// The logo is a data: URI stored inline on the row. Capped hard: JSONB imposes no size limit of its
+// own, so without this one PUT could grow an entity row to megabytes.
+const _ENT_LOGO_MAX = 256 * 1024;
+const _ENT_LOGO_RE = /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,/i;
+// Returns { error } on an invalid value — rejected 400, never silently dropped or truncated into the
+// row — else { patch } carrying ONLY the keys the caller actually sent. An ABSENT key is left alone,
+// so a PUT sending just { address } cannot blank the rest; an explicit '' or null IS a deliberate
+// clear and is stored as null (which is what makes the client fall back to the account blob).
+function normalizeEntityProfile(b) {
+  const patch = {};
+  for (const f of Object.keys(_ENT_PROFILE_MAX)) {
+    if (b[f] === undefined) continue;
+    if (b[f] === null || b[f] === '') { patch[f] = null; continue; }
+    if (typeof b[f] !== 'string' && typeof b[f] !== 'number') return { error: `Invalid ${f}: expected text.` };
+    let v = String(b[f]).trim();
+    if (v.length > _ENT_PROFILE_MAX[f]) return { error: `${f} is too long (max ${_ENT_PROFILE_MAX[f]} characters).` };
+    if (f === 'email') v = v.toLowerCase();
+    patch[f] = v === '' ? null : v;
+  }
+  if (b.logo !== undefined) {
+    if (b.logo === null || b.logo === '') patch.logo = null;
+    else if (typeof b.logo !== 'string' || !_ENT_LOGO_RE.test(b.logo)) return { error: 'Invalid logo: expected a base64 image data URI.' };
+    else if (b.logo.length > _ENT_LOGO_MAX) return { error: 'Logo is too large (max 256 KB).' };
+    else patch.logo = b.logo;
+  }
+  return { patch };
+}
 
 // F194: line-items. A document (invoice now; bills/quotes to follow, same helper) MAY carry a JSONB
 // `line_items` array [{desc, qty, rate}]. When present it is the SOURCE OF THE TOTAL: the server

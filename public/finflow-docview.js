@@ -27,16 +27,22 @@
   function letterhead(){
     var e = null;
     try { e = (window.ENTITIES || []).find(function(x){ return x.active; }) || (window.ENTITIES || [])[0] || null; } catch(_){}
+    // F196 Tier 2: a document is issued BY the active ENTITY, so the entity's OWN profile wins for
+    // EVERY letterhead field — not just the name (Tier 1). The account-wide settings inputs
+    // (`s-*`, ONE row per account) remain the FALLBACK, so an entity with no profile set renders
+    // exactly what it rendered before: no migration, no behaviour change for single-entity accounts.
+    var p = (e && e.profile) || {};
     return {
-      // F196: a document is issued BY the active ENTITY — its name wins over the account-wide settings
-      // business_name (`s-biz-name` is one per account, so it mislabels every entity but the first).
-      name:   (e && e.name) || val('s-biz-name') || 'Your Business',
-      address:val('s-address'),
-      email:  val('s-email'),
-      phone:  val('s-phone') || val('nb-phone'),
-      taxId:  val('s-tax-id') || val('nb-tax-id'),
-      website:val('s-website') || val('nb-website'),
-      logo:   window._invoiceLogoDataURL || window._companyLogo || null,
+      name:   p.business_name || (e && e.name) || val('s-biz-name') || 'Your Business',
+      address:p.address || val('s-address'),
+      email:  p.email   || val('s-biz-email') || val('s-email'),
+      phone:  p.phone   || val('s-biz-phone') || val('s-phone') || val('nb-phone'),
+      taxId:  p.tax_id  || val('s-tax-id') || val('nb-tax-id'),
+      website:p.website || val('s-website') || val('nb-website'),
+      // NOTE: no UI writes a logo yet (neither the entity profile nor _invoiceLogoDataURL /
+      // _companyLogo, which are read here but set nowhere). The entity field is accepted and
+      // validated server-side; wiring an upload is a separate piece of work — see AUDIT_MASTER F196.
+      logo:   p.logo || window._invoiceLogoDataURL || window._companyLogo || null,
       currency: (e && e.currency) || 'USD',
     };
   }

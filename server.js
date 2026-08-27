@@ -3913,6 +3913,7 @@ async function runRecurringScheduler() {
         // next_run (the schedule anchor) stays unadjusted so the cadence never drifts.
         client: r.client, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
         status: 'pending', notes: `Auto-generated from recurring schedule`,
+        recurring_invoice_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
       });
       const _nextRun = nextRunDate(r.next_run, r.frequency);
       const _patch = { next_run: _nextRun };
@@ -3940,6 +3941,7 @@ async function runRecurringScheduler() {
         // F88 step 6: business-day-shifted due date (Modified Following, entity's country); anchor unadjusted.
         vendor: r.vendor, num, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
         status: 'unpaid', notes: `Auto-generated from recurring schedule`,
+        recurring_bill_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
       });
       const _nextRun = nextRunDate(r.next_run, r.frequency);
       const _patch = { next_run: _nextRun };

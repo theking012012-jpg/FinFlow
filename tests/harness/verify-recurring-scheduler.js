@@ -110,6 +110,9 @@ async function main() {
     A('DUE invoice template materialised exactly one invoice', Number(g1.n) === 1, `count=${g1.n}`);
     A('  generated invoice carries the template due_date (2026-07-01)', g1.dd === '2026-07-01', `due=${g1.dd}`);
     A('  generated invoice status = pending', g1.st === 'pending', `status=${g1.st}`);
+    // F94: durable lineage link back to the recurring template (the F94 page reads this, never fuzzy-matches).
+    const invLink = (await c.query(`SELECT data->>'recurring_invoice_id' AS rid FROM invoices WHERE data->>'client'='Recur Client A' LIMIT 1`)).rows[0];
+    A('  generated invoice carries recurring_invoice_id = its template id (F94 lineage)', Number(invLink.rid) === Number(dueInvId), `recurring_invoice_id=${invLink.rid}, template=${dueInvId}`);
     A('  generated invoice is entity-scoped (not a personal/null-entity leak)',
       Number((await c.query(`SELECT COUNT(*) n FROM invoices WHERE data->>'client'='Recur Client A' AND entity_id=$1`, [eid])).rows[0].n) === 1);
     const a1 = await nrun('recurring_invoices', dueInvId);
@@ -119,6 +122,8 @@ async function main() {
     const b1 = await billFor('Recur Vendor');
     A('DUE bill template materialised exactly one bill', Number(b1.n) === 1, `count=${b1.n}`);
     A('  generated bill status = unpaid', b1.st === 'unpaid', `status=${b1.st}`);
+    const billLink = (await c.query(`SELECT data->>'recurring_bill_id' AS rid FROM bills WHERE data->>'vendor'='Recur Vendor' LIMIT 1`)).rows[0];
+    A('  generated bill carries recurring_bill_id = its template id (F94 lineage)', Number(billLink.rid) === Number(dueBillId), `recurring_bill_id=${billLink.rid}, template=${dueBillId}`);
     A('DUE bill template next_run advanced → 2026-08-10', (await nrun('recurring_bills', dueBillId)).n === '2026-08-10');
 
     const fut1 = await invFor('Future Client');

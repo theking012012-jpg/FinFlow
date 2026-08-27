@@ -146,20 +146,42 @@ and a Canadian company both get judged by UTC (the multi-entity bug). The `resol
       regen. Harness `verify-resolvedtoday-tz.js` covers day-edge across PoS/NY/Toronto/Kolkata/Sydney, a DST
       year-boundary, the offset branch, junk-zone→UTC, and a phase-1 parity block. Nothing moves yet — every
       caller still passes a single arg (that's step 3).
-- [ ] **Step 3 — per-entity scheduler boundary.** `runRecurringScheduler` must stop using one global UTC
-      `today`; resolve each row's entity `today` and stamp `run_date` in the entity zone. Two-entity
-      different-zone boundary harness + reproducing negative control (Rule 14).
-- [ ] **Step 4 — pass entity tz into `_isScheduled`** so the "Scheduled" badge flips on the entity boundary.
-- [ ] **Step 5 — full sweep unchanged for any UTC-zone entity** (the byte-identical regression guard).
-- [ ] **Step 6 (additive) — holiday / business-day shift** driven by `entity.country`, locale-sourced.
-- [ ] **Then: build the real F94 Scheduled Documents page** on top (reads entity tz/currency/country at
-      runtime — NO hardcoded data). **It must ship as its OWN top-level sidebar tab** —
-      `showPage('scheduled-documents')` + a dedicated `nav-item` in `index.html`, NOT nested under Documents
-      and NOT inside Recurring Invoices/Bills. It unifies recurring runs + future-dated one-offs into one
-      destination. **Blueprint: `F94_SCHEDULED_DOCS_DESIGN.html`** (repo root — open in a browser; interactive:
-      per-entity switcher, cash-flow forecast, needs-attention lane, create/edit, lineage, end-of-schedule +
-      locale holidays). Sample companies/figures are PLACEHOLDER only; the real page loads the account's own
-      entities via `GET /api/entities`.
+- [x] **Step 3 — per-entity scheduler boundary (DONE, `5c03e9b`, verify-scheduler-entity-tz 16/0).**
+      `runRecurringScheduler` resolves each row against its entity's `today` (widen query to UTC-tomorrow,
+      then JS-filter on `resolvedToday(now, entityTz)`); no-tz + personal ⇒ UTC (byte-identical).
+- [x] **Step 4 — entity tz into `_isScheduled` (DONE, verify-isscheduled-entity-tz 15/0).** `_activeEntityTz()`
+      passed into `resolvedToday`; the "Scheduled" badge flips on the entity's day, not UTC.
+- [x] **Step 5 — UTC-entity byte-identical guard (DONE, verify-f88-utc-parity 49/0).** Permanent tripwire over
+      an 8-instant matrix + every legacy call shape; goes red if step 6 ever leaks into the no-tz path.
+- [x] **Step 6 (additive) — holiday / business-day shift by `entity.country` (DONE + F190 fix, verify-scheduler-businessday-tz 36/0).**
+      Modified-Following shift off weekends + `{public, bank}` holidays via `date-holidays` (offline). F190:
+      matched by calendar string, no Date instant (fixed a UTC+12 under-shift + observance over-shift). Full
+      sweep 149/149. Coverage verified across Canada, N/C/S America, the Caribbean, Europe — zero gaps.
+- [ ] **Step 7 (POST-LAUNCH, optional) — sub-national (state / province) holidays.** Step 6 uses the entity
+      `country` (ISO-2) ⇒ **national** public holidays only. It does NOT do subdivisions (e.g. an Ontario-only
+      holiday vs all-Canada, or a US state holiday). `date-holidays` supports these via subdivision codes
+      (`CA-ON`, `US-NY`, …). To add: store the entity's subdivision and pass `"<country>-<SUB>"` into
+      `_closureSet` in `server.js`. National-by-country is the correct launch scope; this is a clean later add.
+- [x] **F94 Scheduled Documents page — INCREMENTS 1 & 2 COMPLETE (own top-level tab, `showPage('scheduled-documents')`
+      + nav-item; new `finflow-f94.js` loaded after the bundle so no bundle regen; verify-f94-scheduled-page 42/0;
+      verify-recurring-scheduler 31/0; dashboard boot 9/0).** Renders LIVE entities + recurring/one-off schedules
+      (NO hardcoded data), per-entity/multi-region, with calendar, KPIs, filters, and Pause/Resume/Skip/Cancel via
+      existing routes (no client "run now"). Built from `F94_SCHEDULED_DOCS_DESIGN.html`.
+      **Increment 2 DONE:** cash-flow forecast SVG (cumulative net impact, 60-day, starts at 0 — no fabricated
+      balance); create-schedule modal (invoice/bill/personal → POST the existing `/api/recurring-*` routes, entity
+      scoped server-side from the active session; client-side validation; harness opens+fills+saves each type);
+      **F191** — timezone + ISO-2 country captured on the Create-Business form AND editable per existing entity via
+      the in-tab region editor (PUT `/api/entities/:id`), so `entity.country` is set and step 6's holiday shift
+      engages in prod; and **per-row last-posted lineage** — the scheduler now stamps a durable link on every
+      materialised row (`recurring_invoice_id` on invoices, `recurring_bill_id` on bills — mirroring personal's
+      existing `recurring_profile_id`, server.js:~3914/3941), and the row shows "Last posted <date>" resolved
+      **link-exact only** (no fuzzy party/amount matching; unlinked historical rows show nothing). Scheduler-link
+      verified end-to-end against real Postgres (verify-recurring-scheduler +2 asserts).
+    - **Fixed in passing (F94-class, was latent in increment 1):** the one-off "Scheduled" path read
+      `window.userInvoices` (display-mapper drops `issue_date` + `entity_id`) and `window.userBills` (never
+      exists) — both were dead in prod. Now reads the RAW arrays the app loads (`window._realInvoices`,
+      `window.bills`, `window._allPersTxs`), and `reload()` refreshes them. Auto-generated rows (`recurring_*_id`
+      set) are excluded from the one-off list so they aren't double-shown alongside their template.
 
 ### D. Verification gaps (low-risk; optional to close)
 8. **L4 (`/api/ai` scope) + L8 (cron compare)** — shipped and READ-verified, but not execution-verified (no

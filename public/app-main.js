@@ -528,11 +528,15 @@ async function submitCreateBusiness(){
   if(_cbBtn){ _cbBtn.disabled=true; _cbBtn.innerHTML='Creating…'; }
   const currency=(document.getElementById('nb-currency')||{}).value||'USD';
   const industry=(document.getElementById('nb-industry')||{}).value||'Other';
+  // F191: capture entity timezone + country so F88 scheduling (day-edge + holiday shift) engages.
+  // Both optional; server validates (IANA / ISO-2) and allows blank. Selects populated by finflow-f94.js.
+  const timezone=(document.getElementById('nb-timezone')||{}).value||'';
+  const country=(document.getElementById('nb-country')||{}).value||'';
   const isFirst=typeof ENTITIES==='undefined'||ENTITIES.length===0;
   const color='#c9a84c';
   const tag=isFirst?'Parent':'Subsidiary';
   try {
-    const res=await fetch('/api/entities',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name,currency,color,tag,sort_order:typeof ENTITIES!=='undefined'?ENTITIES.length:0})});
+    const res=await fetch('/api/entities',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name,currency,color,tag,timezone,country,sort_order:typeof ENTITIES!=='undefined'?ENTITIES.length:0})});
     if(!res.ok) throw new Error((await res.json()).error);
     // F149: ONLY the first business seeds account-level settings. A 2nd+ business is fully
     // defined by its own entity row (POST /api/entities above carries name+currency+color+tag),
@@ -2153,7 +2157,7 @@ function showPage(id, el){
     'recurring-bills':'Recurring Bills','vendor-credits':'Vendor Credits',
     projects:'Projects',timesheet:'Timesheet','manual-journals':'Manual Journals',
     'chart-of-accounts':'Chart of Accounts','transaction-locking':'Transaction Locking',
-    reports:'Reports',documents:'Documents',templates:'Templates',
+    reports:'Reports',documents:'Documents',templates:'Templates','scheduled-documents':'Scheduled Documents',
     investments:'Investments',
     'create-business':'Create Business',
   };

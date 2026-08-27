@@ -6486,6 +6486,19 @@ window.switchEntity=async function(idx){
   if(nameEl) nameEl.textContent=e.name;
   if(badgeEl) badgeEl.textContent=e.currency+' · Pro';
 
+  // Reset the DISPLAY currency to the new entity's — exactly what boot does (app-main.js:1320-1323).
+  // The switch path relabelled the badge to e.currency but never reset activeCurrency, so S() (→
+  // _fmtMoneyExact, which reads CURRENCIES[activeCurrency] LIVE) kept stamping the PREVIOUS entity's
+  // symbol on the NEW entity's native figures — e.g. Saige/USD rendered as TT$207.7K until a refresh
+  // re-ran boot. This is app-wide (dashboard, invoices, reports, every S()-formatted surface), not
+  // dashboard-only. The F151 splash only hid the transient; the end-state symbol stayed wrong.
+  try {
+    activeCurrency = e.displayCurrency || e.currency;
+    currencySymbol = (CURRENCIES[activeCurrency] && CURRENCIES[activeCurrency].symbol) || '$';
+    var _cflag = document.getElementById('currency-flag'); if(_cflag) _cflag.textContent = (CURRENCIES[activeCurrency] && CURRENCIES[activeCurrency].flag) || '🇺🇸';
+    var _clabel = document.getElementById('currency-code-label'); if(_clabel) _clabel.textContent = activeCurrency;
+  } catch(e2){ console.warn('[Entity] currency reset failed:', e2 && e2.message); }
+
   // Refresh entity list UI
   renderEntities();
 
@@ -6516,6 +6529,15 @@ window.switchEntity=async function(idx){
     window._loadVendorsFromDB,
   ].map(fn => { try { return typeof fn === 'function' ? Promise.resolve(fn()).catch(()=>{}) : null; } catch(e){ return null; } }));
   if(typeof updateDashboard === 'function'){ try { updateDashboard(); } catch(e){} }
+
+  // F94: the Scheduled Documents tab is not wired into loadEntityData/updateDashboard, so a sidebar or
+  // entity-card switch re-scoped the session + reloaded data but left the tab rendering the PREVIOUS
+  // entity until a manual refresh. Re-render it when it's the visible page. (The in-page entity dropdown
+  // already re-renders through its own onchange handler; _f94Open is idempotent, so any overlap is safe.)
+  try {
+    var _sdPage = document.getElementById('page-scheduled-documents');
+    if(_sdPage && _sdPage.classList.contains('active') && typeof window._f94Open === 'function') window._f94Open();
+  } catch(e){}
 
   notify('Switched to '+e.name+' ✦');
 };

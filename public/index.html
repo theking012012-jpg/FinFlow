@@ -3795,6 +3795,23 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-client">Client name *</label><input class="finput" id="inv-client" placeholder="Client or company name"></div><div class="field-wrap"><label class="field-label" for="inv-amount">Amount ($) *</label><input class="finput" id="inv-amount" type="number" placeholder="0.00"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-issue">Issue date</label><input class="finput" id="inv-issue" type="date"></div><div class="field-wrap"><label class="field-label" for="inv-due">Due date</label><input class="finput" id="inv-due" type="date"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-status">Status</label><select class="finput" id="inv-status"><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></div></div>
+    <div class="field-wrap" id="inv-li-wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <label class="field-label" style="margin:0">Line items <span style="color:var(--t3,#7a6f57);font-weight:400">— optional; fills the amount above</span></label>
+        <button type="button" class="btn btn-ghost" id="inv-li-add" style="padding:4px 12px;font-size:12px">+ Add line</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="text-align:left;color:var(--t3,#7a6f57);font-size:11px;letter-spacing:.03em">
+          <th style="padding:2px 6px 6px 0;font-weight:600">Description</th>
+          <th style="padding:2px 6px 6px;font-weight:600;width:70px;text-align:center">Qty</th>
+          <th style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Rate</th>
+          <th style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Amount</th>
+          <th style="width:28px"></th>
+        </tr></thead>
+        <tbody id="inv-li-rows"></tbody>
+      </table>
+      <div id="inv-li-total" style="text-align:right;margin-top:8px;font-size:13px;font-weight:700;color:var(--t1,#e8dcc4);display:none">Subtotal: <span id="inv-li-total-val">$0.00</span></div>
+    </div>
     <div class="field-wrap"><label class="field-label" for="inv-desc">Description</label><textarea class="finput" id="inv-desc" placeholder="Services rendered…"></textarea></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('invoice-modal')">Cancel</button><button class="btn btn-primary" onclick="saveInvoice()">Create invoice</button></div>
   </div>
@@ -7832,6 +7849,8 @@ document.addEventListener('click', e=>{
 <!-- Rich document viewer for Money In / Money Out records. Loads AFTER the bundle so its
      window.viewInvoice override is the runtime winner (Rule 1). Ships direct — no bundle regen. -->
 <script src="/finflow-docview.js" defer></script>
+<!-- Line-items editor for the New Invoice modal. saveInvoice (bundle) reads window.ffInvLineItems. -->
+<script src="/finflow-lineitems.js" defer></script>
 
 <!-- ══ MODAL OPEN ALIASES — keep button onclicks resolvable regardless of naming convention ══ -->
 <script>

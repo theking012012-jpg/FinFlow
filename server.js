@@ -1172,9 +1172,44 @@ const _badTimezone = v => {
 };
 const _COUNTRY_RE = /^[A-Za-z]{2}$/;
 const _badCountry = v => v != null && v !== '' && !_COUNTRY_RE.test(String(v));
+
+// F194: line-items. A document (invoice now; bills/quotes to follow, same helper) MAY carry a JSONB
+// `line_items` array [{desc, qty, rate}]. When present it is the SOURCE OF THE TOTAL: the server
+// derives amount = round(Σ qty×rate, 2), and THAT derived amount is the single figure every
+// downstream surface reads (AR / arOutstanding, revenue recognition, dashboard, /api/reports) — so
+// line items and the recognized amount can never diverge (CLAUDE.md Rule 2, the multi-writer trap).
+// A record with NO line_items is unchanged: the caller's own `amount` is used exactly as before, so
+// every existing invoice and API caller keeps working (backward-compatible). Returns { error } on any
+// invalid shape (rejected 400, never silently stored), or { present, line_items, amount }.
+const _LI_MAX_ROWS = 200;
+function normalizeLineItems(raw) {
+  if (raw == null) return { present: false, line_items: null, amount: null };
+  if (!Array.isArray(raw)) return { error: 'line_items must be an array.' };
+  if (raw.length === 0)    return { error: 'line_items cannot be empty when provided.' };
+  if (raw.length > _LI_MAX_ROWS) return { error: `line_items cannot exceed ${_LI_MAX_ROWS} rows.` };
+  const items = [];
+  let sum = 0;
+  for (const it of raw) {
+    if (it == null || typeof it !== 'object' || Array.isArray(it)) return { error: 'each line item must be an object.' };
+    const qty  = Number(it.qty);
+    const rate = Number(it.rate);
+    if (!Number.isFinite(qty)  || qty  < 0) return { error: 'line item qty must be a number ≥ 0.' };
+    if (!Number.isFinite(rate) || rate < 0) return { error: 'line item rate must be a number ≥ 0.' };
+    items.push({ desc: String(it.desc == null ? '' : it.desc).slice(0, 200), qty, rate });
+    sum += qty * rate;
+  }
+  const amount = Math.round(sum * 100) / 100;
+  if (!(amount > 0)) return { error: 'line items must total more than 0.' };
+  return { present: true, line_items: items, amount };
+}
+
 app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, due_date, status = 'pending', notes = '', entity_id, issue_date } = req.body || {};
-  if (!client || amount == null) return res.status(400).json({ error: 'client and amount required.' });
+  // F194: when line_items are supplied, the DERIVED Σ qty×rate is the canonical amount (Rule 2).
+  const _li = normalizeLineItems(req.body?.line_items);
+  if (_li.error) return res.status(400).json({ error: _li.error });
+  const _effAmount = _li.present ? _li.amount : amount;
+  if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required.' });
   if (_badStatus(INVOICE_STATUSES, status)) return res.status(400).json({ error: 'Invalid invoice status.' });
   const eid = entity_id || req.entityId || null;
   if (await isLocked(req.session.userId, due_date)) return res.status(403).json({ error: 'Period is locked.' });
@@ -1187,7 +1222,7 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   // collapsed into one (a dropped invoice / missing revenue). This token-blindness is a CLASS
   // across all 31 findRecentDuplicate routes (F131); each adopts this bypass as it gains a token.
   if (!idem) {
-    const _dup = await findRecentDuplicate('invoices', scopeId(req), eid, { textMatch: { client: client.trim().slice(0,200) }, numMatch: { amount: parseFloat(amount)||0 } });
+    const _dup = await findRecentDuplicate('invoices', scopeId(req), eid, { textMatch: { client: client.trim().slice(0,200) }, numMatch: { amount: parseFloat(_effAmount)||0 } });
     if (_dup) return res.status(200).json(_dup);
   }
   // F36: issue_date is the user-editable business issue date recognition keys on (Step 2).
@@ -1208,11 +1243,11 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   // (app-main.js:2360), so there is otherwise NO path to ever set it. Matches the boot-backfill
   // (database.js) + recalcInvoiceStatus semantics (paid ⇒ amount_paid = amount). A new invoice has
   // no payments, so this is unambiguous; the payment path (recalcInvoiceStatus) still owns it after.
-  const _amt = parseFloat(amount) || 0;
+  const _amt = parseFloat(_effAmount) || 0;
   const _amountPaid = String(status).toLowerCase() === 'paid' ? _amt : 0;
   let row;
   try {
-    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
+    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(
@@ -1232,8 +1267,12 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   if (await isLocked(req.session.userId, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
   const { client, amount, due_date, status, notes, issue_date } = req.body || {};
+  // F194: same invariant on edit — line_items present ⇒ amount = derived Σ qty×rate (Rule 2).
+  const _li = normalizeLineItems(req.body?.line_items);
+  if (_li.error) return res.status(400).json({ error: _li.error });
   if (client != null) patch.client = client;
-  if (amount != null) patch.amount = parseFloat(amount);
+  if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
+  else if (amount != null) patch.amount = parseFloat(amount);
   if (due_date != null) patch.due_date = due_date;
   if (status != null) { if (_badStatus(INVOICE_STATUSES, status)) return res.status(400).json({ error: 'Invalid invoice status.' }); patch.status = String(status).toLowerCase(); }
   if (notes != null) patch.notes = notes;

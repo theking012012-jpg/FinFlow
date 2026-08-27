@@ -2562,6 +2562,7 @@ function openInvoiceModal(){
   _sv('inv-due','');
   _sv('inv-status','pending');
   _sv('inv-desc','');
+  try { if (window.ffInvLineItems) window.ffInvLineItems.reset(); } catch(_){}  // F194: clear line-items editor + unlock amount
   openModal('invoice-modal');
 }
 function saveInvoice(){

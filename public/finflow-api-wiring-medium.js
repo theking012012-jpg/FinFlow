@@ -141,6 +141,11 @@
         const _activeEnt = (window.ENTITIES || []).find(e => e.active);
         const _entityId = _activeEnt?._dbId || null;
 
+        // F194: optional line items. When present, the SERVER re-derives amount = Σ qty×rate and
+        // returns it — that server figure (saved.amount) is canonical, never amountRaw (Rule 2).
+        const _lineItems = (window.ffInvLineItems && typeof window.ffInvLineItems.get === 'function')
+          ? window.ffInvLineItems.get() : null;
+
         const saved = await api('POST', '/api/invoices', {
           client,
           amount:   amountRaw,
@@ -150,22 +155,30 @@
           notes,
           entity_id: _entityId,
           idempotency_key: window._invIdemKey,   // F117 commit B — the token commit A's index enforces
+          ...(_lineItems ? { line_items: _lineItems } : {}),
         });
+
+        // Trust the server's stored amount (derived from line_items when present); fall back to what
+        // the user typed only if the response omitted it.
+        const _savedAmount = (saved && saved.amount != null) ? parseFloat(saved.amount) : amountRaw;
 
         if (!window.userInvoices) window.userInvoices = [];
         window.userInvoices.unshift({
           _dbId:    saved.id,
           client,
-          amount:   amountRaw,
-          amount_paid: 0,   // F119: a freshly-created invoice has nothing paid; carry the field so
+          amount:   _savedAmount,
+          amount_paid: (saved && saved.amount_paid != null) ? parseFloat(saved.amount_paid) : 0,
+                            // F119: a freshly-created invoice has nothing paid; carry the field so
                             // EVERY object in userInvoices has amount_paid (partials always arrive via
                             // a loader that carries the real value → Record Payment can't over-collect)
           due:      dueStr,
           due_date: due || null,
           status,
           notes,
+          line_items: _lineItems || null,   // F194: so an immediate View renders the rows without a refetch
           color:    status === 'overdue' ? 'var(--red)' : 'var(--t2)',
         });
+        if (Array.isArray(window._realInvoices) && saved) window._realInvoices.unshift(saved);
 
         window._invIdemKey = null;   // success → the next invoice mints a fresh token
         closeModal('invoice-modal');

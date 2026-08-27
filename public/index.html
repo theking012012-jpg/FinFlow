@@ -476,7 +476,7 @@ body.sidebar-open .mob-bottom-nav,body.sidebar-open .mobile-fab{display:none!imp
 .mc:nth-child(3)::before{background:var(--purple)}
 .mc:nth-child(4)::before{background:var(--amber)}
 .mc-label{font-size:9.5px;color:var(--t2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.14em;font-weight:500}
-.mc-val{font-size:34px;font-weight:300;color:var(--t1);letter-spacing:-.01em;font-family:var(--font-display);line-height:1;font-style:italic;min-height:40px}
+.mc-val{font-size:34px;font-weight:300;color:var(--t1);letter-spacing:-.01em;font-family:var(--font-display);line-height:1;min-height:40px}
 .mc-change{font-size:11px;margin-top:5px;min-height:16px}
 #main-content{min-height:calc(100svh - 54px) !important;contain:layout style !important}
 #page-dashboard{min-height:400px}
@@ -761,8 +761,8 @@ textarea.finput{resize:vertical;min-height:72px;line-height:1.5}
 
 /* ── RIVER DIAGRAM ────────────────────────────── */
 #river-wrap svg{display:block;width:100%}
-.river-node-label{font-family:'Jost',sans-serif;font-size:11px;fill:var(--t2);letter-spacing:.04em}
-.river-node-value{font-family:'Cormorant Garamond',Georgia,serif;font-size:18px;fill:var(--t1);font-style:italic}
+.river-node-label{font-family:var(--font);font-size:11px;fill:var(--t2);letter-spacing:.04em}
+.river-node-value{font-family:var(--font-display);font-size:18px;fill:var(--t1);font-style:italic}
 .river-flow{transition:d .6s cubic-bezier(.25,.46,.45,.94),opacity .3s}
 @keyframes riverFlow{
   0%{stroke-dashoffset:1000}
@@ -918,7 +918,7 @@ textarea.finput{resize:vertical;min-height:72px;line-height:1.5}
 
 /* ── MRR DASHBOARD ────────────────────────────── */
 .mrr-metric{text-align:center;padding:.75rem;background:var(--bg2);border-radius:var(--radius);border:1px solid var(--bd)}
-.mrr-val{font-size:22px;font-weight:300;font-family:var(--font-display);font-style:italic;color:var(--t1)}
+.mrr-val{font-size:22px;font-weight:300;font-family:var(--font-display);color:var(--t1)}
 .mrr-label{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-top:3px}
 
 /* ── PLAID CONNECT ────────────────────────────── */
@@ -996,7 +996,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 .scenario-result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:1.25rem}
 .scenario-result-mc{background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);padding:.75rem;text-align:center}
 .scenario-result-label{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}
-.scenario-result-val{font-size:20px;font-weight:300;font-family:var(--font-display);font-style:italic;color:var(--t1)}
+.scenario-result-val{font-size:20px;font-weight:300;font-family:var(--font-display);color:var(--t1)}
 .scenario-result-delta{font-size:11px;margin-top:3px}
 .scenario-preset-btn{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border:1px solid var(--bd2);border-radius:10px;font-size:11.5px;color:var(--t2);cursor:pointer;background:var(--bg2);transition:all .13s;white-space:nowrap}
 .scenario-preset-btn:hover,.scenario-preset-btn.active-preset{border-color:var(--acc);color:var(--acc);background:var(--acc-bg)}
@@ -1149,7 +1149,6 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     <div class="nav-item" onclick="showPage('banking',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('banking',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M1 6l7-4 7 4"/><rect x="3" y="6" width="2.5" height="6"/><rect x="6.75" y="6" width="2.5" height="6"/><rect x="10.5" y="6" width="2.5" height="6"/><line x1="1" y1="12" x2="15" y2="12"/></svg>Banking</div>
     <div class="nav-item" onclick="showPage('bank-rec',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('bank-rec',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="10" rx="1"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="8" y1="5" x2="8" y2="11"/></svg>Bank Rec</div>
     <div class="nav-item" onclick="showPage('fx',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('fx',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><circle cx="5" cy="8" r="4"/><circle cx="11" cy="8" r="4"/><path d="M7 6l2 2-2 2"/></svg>FX / Currency</div>
-    <div class="nav-item" onclick="showPage('scheduled-documents',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('scheduled-documents',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11.5" rx="1.2"/><line x1="2" y1="5.5" x2="14" y2="5.5"/><line x1="5.5" y1="1" x2="5.5" y2="4"/><line x1="10.5" y1="1" x2="10.5" y2="4"/><circle cx="11.5" cy="10" r="2.2"/><path d="M11.5 8.8v1.2l.8.5"/></svg>Scheduled Documents</div>
 
     <!-- MONEY IN group -->
     <div class="nav-group-header" id="grp-sales" onclick="toggleGroup('sales')" role="button" aria-expanded="false" aria-controls="nav-group-sales" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleGroup('sales')}">
@@ -1509,8 +1508,6 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div class="field-group">
               <div class="field-wrap"><label class="field-label" for="nb-industry">Industry</label><select class="finput" id="nb-industry"><option>Technology</option><option>Retail</option><option>Finance</option><option>Healthcare</option><option>Consulting</option><option>Manufacturing</option><option>Other</option></select></div>
               <div class="field-wrap"><label class="field-label" for="nb-currency">Currency</label><select class="finput" id="nb-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="CAD">CAD (C$)</option><option value="AUD">AUD (A$)</option><option value="TTD">TTD (TT$)</option></select></div>
-              <div class="field-wrap"><label class="field-label" for="nb-timezone">Timezone <span style="color:var(--t3);font-weight:400">· for scheduling</span></label><select class="finput" id="nb-timezone"><option value="">— none (UTC) —</option></select></div>
-              <div class="field-wrap"><label class="field-label" for="nb-country">Country <span style="color:var(--t3);font-weight:400">· public holidays</span></label><select class="finput" id="nb-country"><option value="">— none —</option></select></div>
             </div>
             <div class="field-group">
               <div class="field-wrap"><label class="field-label" for="nb-tax-id">Tax ID / EIN</label><input class="finput" id="nb-tax-id" placeholder="XX-XXXXXXX"></div>
@@ -1744,7 +1741,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             </div>
             <div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;align-items:baseline">
               <span style="font-size:11.5px;color:var(--t2)">Total net worth</span>
-              <span style="font-size:17px;font-weight:300;font-family:var(--font-display);font-style:italic;color:var(--t1)" id="nw-total-display">—</span>
+              <span style="font-size:17px;font-weight:300;font-family:var(--font-display);color:var(--t1)" id="nw-total-display">—</span>
             </div>
             <div style="margin-top:6px;font-size:11px;color:var(--t3)">Portfolio contributes <span id="nw-port-pct" style="color:var(--green);font-weight:600">—%</span> of net worth</div>
           </div>
@@ -2301,7 +2298,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         .conn-stat::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--acc);opacity:.4}
         .conn-stat:nth-child(2)::before{background:var(--green)}
         .conn-stat-label{font-size:9.5px;color:var(--t2);text-transform:uppercase;letter-spacing:.12em;font-weight:500;margin-bottom:4px}
-        .conn-stat-val{font-size:22px;font-weight:300;color:var(--t1);font-family:var(--font-display);font-style:italic;line-height:1}
+        .conn-stat-val{font-size:22px;font-weight:300;color:var(--t1);font-family:var(--font-display);line-height:1}
         .conn-stat-sub{font-size:11px;color:var(--t3);margin-top:3px}
         .conn-cat-pills{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:1.1rem}
         .conn-cat-pill{padding:4px 10px;font-size:11px;border:1px solid var(--bd2);border-radius:20px;background:var(--bg2);color:var(--t2);cursor:pointer;white-space:nowrap;font-family:var(--font);transition:all .13s;line-height:1.4}
@@ -3204,234 +3201,6 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
       </div>
 
-      <!-- SCHEDULED DOCUMENTS (F94 — own top-level tab; renders from live entities via finflow-f94.js) -->
-      <div class="page" id="page-scheduled-documents">
-        <style>
-          #page-scheduled-documents .f94-entbar{display:flex;align-items:center;gap:12px;background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-lg,11px);padding:10px 14px;margin-bottom:16px;flex-wrap:wrap}
-          #page-scheduled-documents .f94-entbar .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--t3)}
-          #page-scheduled-documents #f94-entSel{font-family:var(--font-display);font-style:italic;font-size:18px;color:var(--t1);background:none;border:none;cursor:pointer;padding:2px 4px}
-          #page-scheduled-documents .chiplet{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--t2);background:var(--bg2);border:1px solid var(--bd);border-radius:20px;padding:4px 11px}
-          #page-scheduled-documents .chiplet code{font-family:var(--font-mono);font-size:10.5px;color:var(--acc)}
-          #page-scheduled-documents .chiplet .dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
-          #page-scheduled-documents #f94-entMeta{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
-          #page-scheduled-documents #f94-entNote{width:100%;font-size:11px;color:var(--t3);border-top:1px dashed var(--bd);padding-top:8px;margin-top:2px}
-          #page-scheduled-documents #f94-entNote b{color:var(--t2);font-weight:500}
-          #page-scheduled-documents .f94-head{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:12px}
-          #page-scheduled-documents .f94-sub{color:var(--t2);font-size:13px;max-width:60ch;margin:0}
-          #page-scheduled-documents .f94-newbtn{margin-left:auto;border:1px solid var(--acc2);background:linear-gradient(135deg,var(--acc),var(--acc2));color:#1a1305;border-radius:var(--radius,7px);padding:8px 15px;font-family:var(--font);font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
-          #page-scheduled-documents .f94-linkbtn{border:none;background:none;color:var(--acc);cursor:pointer;font-family:var(--font);font-size:11px;padding:0 2px;text-decoration:underline}
-          #page-scheduled-documents #f94-region .f94-newbtn{margin-left:0}
-          #page-scheduled-documents .attn{border:1px solid var(--red-bd);background:var(--red-bg);border-radius:var(--radius-lg,11px);padding:13px 15px;margin:0 0 16px}
-          #page-scheduled-documents .attn-head{display:flex;align-items:center;gap:9px;margin-bottom:9px}
-          #page-scheduled-documents .attn-head .ico{width:20px;height:20px;border-radius:50%;background:var(--red);color:var(--bg1);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
-          #page-scheduled-documents .attn-head .lbl{font-weight:500;color:var(--red);font-size:12.5px}
-          #page-scheduled-documents .attn-head .cnt{font-family:var(--font-mono);font-size:11px;color:var(--red);opacity:.8}
-          #page-scheduled-documents .attn-row{display:flex;align-items:center;gap:11px;padding:8px 0;border-top:1px solid var(--red-bd)}
-          #page-scheduled-documents .attn-row .who{font-weight:500;font-size:13px;color:var(--t1)}
-          #page-scheduled-documents .attn-row .why{font-size:11.5px;color:var(--red);margin-top:2px}
-          #page-scheduled-documents .attn-row .ref{font-family:var(--font-mono);font-size:10.5px;color:var(--t2);margin-left:auto}
-          #page-scheduled-documents .f94-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:0 0 16px}
-          #page-scheduled-documents .f94-kpis .mc{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-lg,11px);padding:14px 16px}
-          #page-scheduled-documents .f94-kpis .mc-label{font-size:9.5px;color:var(--t2);text-transform:uppercase;letter-spacing:.14em;font-weight:500;margin-bottom:8px}
-          #page-scheduled-documents .f94-kpis .mc-val{font-family:var(--font-display);font-style:italic;font-size:28px;line-height:1;color:var(--t1)}
-          #page-scheduled-documents .f94-kpis .mc-val.mono{font-family:var(--font-mono);font-style:normal;font-size:21px;font-variant-numeric:tabular-nums}
-          #page-scheduled-documents .f94-kpis .mc-val.red{color:var(--red)}
-          #page-scheduled-documents .f94-kpis .mc-sub{font-size:11px;color:var(--t3);margin-top:7px}
-          #page-scheduled-documents .fc{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-xl,16px);padding:18px 20px 14px;margin-bottom:18px}
-          #page-scheduled-documents .fc-top{display:flex;align-items:baseline;gap:12px;margin-bottom:6px;flex-wrap:wrap}
-          #page-scheduled-documents .fc-title{font-family:var(--font-display);font-style:italic;font-size:20px;color:var(--t1)}
-          #page-scheduled-documents .fc-sub{font-size:11.5px;color:var(--t3)}
-          #page-scheduled-documents .fc-flag{margin-left:auto;font-size:11px;border-radius:20px;padding:3px 11px;font-weight:500}
-          #page-scheduled-documents .fc-flag.bad{color:var(--red);background:var(--red-bg);border:1px solid var(--red-bd)}
-          #page-scheduled-documents .fc-flag.ok{color:var(--green);background:var(--green-bg);border:1px solid var(--green-bd)}
-          #page-scheduled-documents .fc-chart{width:100%;height:170px;display:block;overflow:visible}
-          #page-scheduled-documents .fc-x{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9.5px;color:var(--t3);margin-top:2px;padding:0 2px}
-          #page-scheduled-documents .fc-legend{display:flex;gap:16px;margin-top:8px;flex-wrap:wrap}
-          #page-scheduled-documents .fc-legend span{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--t2)}
-          #page-scheduled-documents .fc-legend i{width:14px;height:0;border-top-width:2px;border-top-style:solid;display:inline-block}
-          #page-scheduled-documents .calcard{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-xl,16px);padding:18px 20px 20px;margin-bottom:18px}
-          #page-scheduled-documents .cal-top{display:flex;align-items:center;gap:12px;margin-bottom:14px}
-          #page-scheduled-documents .cal-month{font-family:var(--font-display);font-style:italic;font-size:22px;color:var(--t1)}
-          #page-scheduled-documents .cal-nav{display:inline-flex;gap:4px}
-          #page-scheduled-documents .cal-nav button{width:28px;height:28px;border-radius:7px;border:1px solid var(--bd);background:var(--bg2);color:var(--t2);cursor:pointer;font-size:13px}
-          #page-scheduled-documents .cal-legend{margin-left:auto;display:flex;gap:13px;flex-wrap:wrap}
-          #page-scheduled-documents .cal-legend span{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--t2)}
-          #page-scheduled-documents .cal-legend .d,#page-scheduled-documents .cell .dots .d{width:7px;height:7px;border-radius:50%}
-          #page-scheduled-documents .d.inv,#page-scheduled-documents .chip.inv .cd,#page-scheduled-documents .ic.inv{color:var(--green)}
-          #page-scheduled-documents .d.bill,#page-scheduled-documents .chip.bill .cd,#page-scheduled-documents .ic.bill{color:var(--red)}
-          #page-scheduled-documents .d.pers,#page-scheduled-documents .chip.pers .cd,#page-scheduled-documents .ic.pers{color:var(--acc)}
-          #page-scheduled-documents .d.inv{background:var(--green)}#page-scheduled-documents .d.bill{background:var(--red)}#page-scheduled-documents .d.pers{background:var(--acc)}
-          #page-scheduled-documents .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
-          #page-scheduled-documents .cal .cdow{font-family:var(--font-mono);font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;padding:0 0 3px 3px}
-          #page-scheduled-documents .cell{min-height:72px;border:1px solid var(--bd);border-radius:9px;background:var(--bg2);padding:6px 7px;display:flex;flex-direction:column;gap:4px;position:relative}
-          #page-scheduled-documents .cell.pad{background:transparent;border:none}
-          #page-scheduled-documents .cell .num{font-family:var(--font-mono);font-size:11px;color:var(--t3)}
-          #page-scheduled-documents .cell.today{border-color:var(--acc2);background:var(--acc-bg)}
-          #page-scheduled-documents .cell.today .num{color:var(--acc-light);font-weight:600}
-          #page-scheduled-documents .cell.has{cursor:pointer}
-          #page-scheduled-documents .cell.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
-          #page-scheduled-documents .chip{font-size:9.5px;line-height:1.35;border-radius:4px;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px}
-          #page-scheduled-documents .chip .cd{width:5px;height:5px;border-radius:50%;flex-shrink:0;background:currentColor}
-          #page-scheduled-documents .chip.inv{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
-          #page-scheduled-documents .chip.bill{background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)}
-          #page-scheduled-documents .chip.pers{background:var(--acc-bg);color:var(--acc);border:1px solid var(--acc2)}
-          #page-scheduled-documents .chip.more{background:none;border:none;color:var(--t3);padding:0 4px}
-          #page-scheduled-documents .cell .dots{display:none;gap:3px}
-          @media (max-width:680px){#page-scheduled-documents .cell{min-height:50px}#page-scheduled-documents .chip{display:none}#page-scheduled-documents .cell .dots{display:flex}#page-scheduled-documents .f94-kpis{grid-template-columns:1fr 1fr}}
-          #page-scheduled-documents .f94-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px}
-          #page-scheduled-documents .f94-tabs{display:inline-flex;gap:2px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius,7px);padding:3px}
-          #page-scheduled-documents .f94-tabs .tab{border:none;background:none;font-family:var(--font);font-size:12px;color:var(--t2);padding:6px 13px;border-radius:5px;cursor:pointer;font-weight:500}
-          #page-scheduled-documents .f94-tabs .tab.active{background:var(--bg4);color:var(--acc-light)}
-          #page-scheduled-documents .f94-tabs .tab .cnt{font-family:var(--font-mono);font-size:10px;opacity:.7;margin-left:5px}
-          #page-scheduled-documents .dayfilter{display:none;align-items:center;gap:8px;font-size:12px;color:var(--acc);background:var(--acc-bg);border:1px solid var(--acc2);border-radius:20px;padding:4px 12px}
-          #page-scheduled-documents .dayfilter.on{display:inline-flex}
-          #page-scheduled-documents .dayfilter button{border:none;background:none;color:var(--acc);cursor:pointer;font-size:14px;line-height:1;padding:0}
-          #page-scheduled-documents .toggle{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--t2);cursor:pointer;user-select:none;margin-left:auto}
-          #page-scheduled-documents .toggle .switch{width:32px;height:18px;border-radius:20px;background:var(--bd2);position:relative;transition:background .15s}
-          #page-scheduled-documents .toggle .switch::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--bg1);transition:transform .15s}
-          #page-scheduled-documents .toggle.on .switch{background:var(--acc2)}
-          #page-scheduled-documents .toggle.on .switch::after{transform:translateX(14px)}
-          #page-scheduled-documents .agenda{display:flex;flex-direction:column;gap:6px}
-          #page-scheduled-documents .daygroup{margin-top:14px}#page-scheduled-documents .daygroup:first-child{margin-top:0}
-          #page-scheduled-documents .dayhead{display:flex;align-items:baseline;gap:10px;padding:0 2px 8px}
-          #page-scheduled-documents .dayhead .dow{font-family:var(--font-mono);font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em}
-          #page-scheduled-documents .dayhead .date{font-family:var(--font-display);font-style:italic;font-size:19px;color:var(--t1)}
-          #page-scheduled-documents .dayhead .rel{font-size:10.5px;color:var(--acc);background:var(--acc-bg);border:1px solid var(--acc2);border-radius:20px;padding:2px 9px}
-          #page-scheduled-documents .dayhead .daytot{margin-left:auto;font-family:var(--font-mono);font-size:11.5px;color:var(--t2);font-variant-numeric:tabular-nums}
-          #page-scheduled-documents .item{display:grid;grid-template-columns:34px 1fr auto;gap:12px;align-items:center;background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-lg,11px);padding:12px 14px;position:relative}
-          #page-scheduled-documents .item.paused{opacity:.5}
-          #page-scheduled-documents .ic{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center}
-          #page-scheduled-documents .ic svg{width:16px;height:16px}
-          #page-scheduled-documents .ic.inv{background:var(--green-bg);border:1px solid var(--green-bd)}
-          #page-scheduled-documents .ic.bill{background:var(--red-bg);border:1px solid var(--red-bd)}
-          #page-scheduled-documents .ic.pers{background:var(--acc-bg);border:1px solid var(--acc2)}
-          #page-scheduled-documents .item .who{font-weight:500;font-size:13.5px;color:var(--t1);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-          #page-scheduled-documents .item .meta{font-size:11px;color:var(--t3);margin-top:3px;display:flex;align-items:center;gap:8px}
-          #page-scheduled-documents .item .meta .sep{opacity:.5}
-          #page-scheduled-documents .item .meta .lineage{color:var(--acc-light);opacity:.9}
-          #page-scheduled-documents .freq{font-family:var(--font-mono);font-size:10px;letter-spacing:.04em}
-          #page-scheduled-documents .badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:500;line-height:1.5}
-          #page-scheduled-documents .b-green{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
-          #page-scheduled-documents .b-amber{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd)}
-          #page-scheduled-documents .b-blue{background:var(--acc-bg);color:var(--acc);border:1px solid var(--acc2)}
-          #page-scheduled-documents .right{display:flex;align-items:center;gap:12px}
-          #page-scheduled-documents .amt{font-family:var(--font-mono);font-size:14px;font-weight:500;color:var(--t1);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-          #page-scheduled-documents .amt .cur{font-size:10px;color:var(--t3);margin-right:3px}
-          #page-scheduled-documents .amt.out{color:var(--green)}#page-scheduled-documents .amt.owe{color:var(--red)}
-          #page-scheduled-documents .kebab{border:1px solid transparent;background:none;color:var(--t3);cursor:pointer;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center}
-          #page-scheduled-documents .kebab:hover{background:var(--bg3);color:var(--t1);border-color:var(--bd)}
-          #page-scheduled-documents .menu{position:absolute;top:46px;right:12px;z-index:20;min-width:180px;background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-lg,11px);padding:5px;display:none}
-          #page-scheduled-documents .menu.open{display:block}
-          #page-scheduled-documents .menu .mi{display:flex;width:100%;align-items:center;gap:9px;background:none;border:none;font-family:var(--font);font-size:12.5px;color:var(--t1);padding:8px 10px;border-radius:6px;cursor:pointer;text-align:left}
-          #page-scheduled-documents .menu .mi:hover{background:var(--bg3)}
-          #page-scheduled-documents .menu .mi.danger{color:var(--red)}
-          #page-scheduled-documents .menu .mi-ic{width:14px;text-align:center;opacity:.7;font-size:12px}
-          #page-scheduled-documents .menu hr{border:none;border-top:1px solid var(--bd);margin:4px 2px}
-          #page-scheduled-documents .empty{padding:34px;text-align:center;color:var(--t3);font-size:12.5px;background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-lg,11px)}
-          #page-scheduled-documents .how{background:var(--bg1);border:1px solid var(--bd);border-radius:var(--radius-lg,11px);padding:16px 18px;margin-top:22px}
-          #page-scheduled-documents .how .htitle{font-family:var(--font-display);font-style:italic;font-size:16px;color:var(--t1);margin:0 0 10px}
-          #page-scheduled-documents .how li{font-size:12px;color:var(--t2);margin-bottom:8px;line-height:1.45}
-          #page-scheduled-documents .how b{color:var(--t1);font-weight:500}
-          #page-scheduled-documents .f94-toasts{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;gap:8px;align-items:center}
-          #page-scheduled-documents .toast{background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-lg,11px);padding:10px 15px;font-size:12.5px;color:var(--t1);display:flex;align-items:center;gap:9px;max-width:90vw}
-          #page-scheduled-documents .toast .tk{width:7px;height:7px;border-radius:50%;background:var(--green)}
-          #page-scheduled-documents .toast.warn .tk{background:var(--amber)}
-          #page-scheduled-documents .f94-overlay{position:fixed;inset:0;background:rgba(10,8,5,.55);z-index:9500;display:none;align-items:center;justify-content:center;padding:20px}
-          #page-scheduled-documents .f94-overlay.open{display:flex}
-          #page-scheduled-documents .f94-modal{width:100%;max-width:440px;background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl,16px);padding:20px 22px;max-height:90vh;overflow-y:auto}
-          #page-scheduled-documents .f94-modal h3{font-family:var(--font-display);font-style:italic;font-size:22px;color:var(--t1);margin:0 0 3px}
-          #page-scheduled-documents .f94-msub{font-size:11.5px;color:var(--t3);margin:0 0 16px}
-          #page-scheduled-documents .f94-field{margin-bottom:13px}
-          #page-scheduled-documents .f94-field label{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--t2);margin-bottom:5px}
-          #page-scheduled-documents .f94-field input,#page-scheduled-documents .f94-field select{width:100%;font-family:var(--font);font-size:13px;color:var(--t1);background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius,7px);padding:8px 10px}
-          #page-scheduled-documents .f94-row2{display:grid;grid-template-columns:1fr 1fr;gap:11px}
-          #page-scheduled-documents .f94-seg{display:inline-flex;gap:2px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius,7px);padding:3px;width:100%}
-          #page-scheduled-documents .f94-seg button{flex:1;border:none;background:none;font-family:var(--font);font-size:12px;color:var(--t2);padding:7px;border-radius:5px;cursor:pointer}
-          #page-scheduled-documents .f94-seg button.on{background:var(--bg4);color:var(--acc-light)}
-          #page-scheduled-documents .f94-mfoot{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:8px}
-          #page-scheduled-documents .f94-mnote{font-size:10.5px;color:var(--t3);margin-top:10px;line-height:1.4}
-        </style>
-        <div class="f94-entbar">
-          <span class="lbl">Entity</span>
-          <select id="f94-entSel" aria-label="Active entity"></select>
-          <span id="f94-entMeta"></span>
-          <div id="f94-entNote"></div>
-        </div>
-        <div class="f94-head">
-          <p class="f94-sub">What’s set to post ahead for this entity — recurring runs and future-dated documents. Each entity schedules in its own timezone, currency &amp; holidays.</p>
-          <button class="f94-newbtn" id="f94-new">+ New recurring</button>
-        </div>
-        <div class="attn" id="f94-attn" style="display:none"></div>
-        <div class="f94-kpis" id="f94-kpis"></div>
-        <div class="fc">
-          <div class="fc-top">
-            <span class="fc-title">Projected cash position</span>
-            <span class="fc-sub" id="f94-fcSub"></span>
-            <span class="fc-flag" id="f94-fcFlag"></span>
-          </div>
-          <svg class="fc-chart" id="f94-fcChart" viewBox="0 0 720 170" preserveAspectRatio="none" aria-hidden="true"></svg>
-          <div class="fc-x" id="f94-fcX"></div>
-          <div class="fc-legend">
-            <span><i style="border-color:var(--acc)"></i> Cumulative net impact</span>
-            <span><i style="border-color:var(--red);border-top-style:dashed"></i> Zero (no net change)</span>
-          </div>
-        </div>
-        <div class="calcard">
-          <div class="cal-top">
-            <span class="cal-month" id="f94-calMonth"></span>
-            <span class="cal-nav"><button id="f94-calPrev" aria-label="Previous month">‹</button><button id="f94-calNext" aria-label="Next month">›</button></span>
-            <span class="cal-legend"><span><span class="d inv"></span> Invoice</span><span><span class="d bill"></span> Bill</span><span><span class="d pers"></span> Personal</span></span>
-          </div>
-          <div class="cal" id="f94-cal"></div>
-        </div>
-        <div class="f94-controls">
-          <div class="f94-tabs" id="f94-tabs">
-            <button class="tab active" data-f="all">All <span class="cnt"></span></button>
-            <button class="tab" data-f="invoice">Invoices <span class="cnt"></span></button>
-            <button class="tab" data-f="bill">Bills <span class="cnt"></span></button>
-            <button class="tab" data-f="personal">Personal <span class="cnt"></span></button>
-            <button class="tab" data-f="recurring">Recurring <span class="cnt"></span></button>
-            <button class="tab" data-f="oneoff">One-off <span class="cnt"></span></button>
-          </div>
-          <span class="dayfilter" id="f94-dayFilter"><span id="f94-dayFilterLabel"></span> <button id="f94-dayFilterClear" aria-label="Clear day filter">✕</button></span>
-          <div class="toggle on" id="f94-pausedToggle" role="switch" aria-checked="true" tabindex="0"><span class="switch"></span> Show paused</div>
-        </div>
-        <div class="agenda" id="f94-agenda"></div>
-        <div class="how">
-          <div class="htitle">How scheduling works</div>
-          <ul style="margin:0;padding:0;list-style:none">
-            <li>Every date resolves in <b>this entity’s own timezone</b>, totals in <b>its currency</b>, and shifts off weekends and <b>its country’s public holidays</b> (F88).</li>
-            <li>A scheduled document is <b>excluded from every figure</b> until its date arrives — the agenda is a look-ahead, not booked numbers.</li>
-            <li>Row actions call existing routes; a schedule posts on its date via the server, never on a click. A series nearing its end shows a <b>runs-left</b> warning.</li>
-          </ul>
-        </div>
-        <div class="f94-toasts" id="f94-toasts"></div>
-        <div class="f94-overlay" id="f94-overlay">
-          <div class="f94-modal" role="dialog" aria-modal="true" aria-labelledby="f94-modalTitle">
-            <h3 id="f94-modalTitle">New recurring schedule</h3>
-            <p class="f94-msub" id="f94-modalSub"></p>
-            <div class="f94-field"><label>Type</label>
-              <div class="f94-seg" id="f94-segType">
-                <button type="button" data-t="invoice" class="on">Invoice (in)</button>
-                <button type="button" data-t="bill">Bill (out)</button>
-                <button type="button" data-t="personal">Personal</button>
-              </div>
-            </div>
-            <div class="f94-field"><label id="f94-partyLabel">Customer</label><input id="f94-mWho" placeholder="e.g. Acme Corp"></div>
-            <div class="f94-row2">
-              <div class="f94-field"><label>Amount</label><input id="f94-mAmount" type="number" min="0" step="0.01" placeholder="0.00"></div>
-              <div class="f94-field"><label>Frequency</label><select id="f94-mFreq"><option>Monthly</option><option>Weekly</option></select></div>
-            </div>
-            <div class="f94-row2">
-              <div class="f94-field"><label>Next date</label><input id="f94-mDate" type="date"></div>
-              <div class="f94-field"><label>End date <span style="text-transform:none;letter-spacing:0;color:var(--t3)">· optional</span></label><input id="f94-mEnd" type="date"></div>
-            </div>
-            <div class="f94-mfoot"><button class="f94-linkbtn" id="f94-mCancel">Cancel</button><button class="f94-newbtn" style="margin:0" id="f94-mSave">Save schedule</button></div>
-            <div class="f94-mnote" id="f94-mNote"></div>
-          </div>
-        </div>
-      </div>
-
       <!-- DOCUMENTS -->
       <div class="page" id="page-documents">
         <div class="metrics-grid">
@@ -3483,13 +3252,6 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               </div>
               <div class="field-wrap"><label class="field-label" for="s-address">Business address</label><textarea class="finput" id="s-address" style="min-height:60px" placeholder="Street, City, State, Country"></textarea></div>
               <div class="field-wrap"><label class="field-label" for="s-website">Website</label><input class="finput" id="s-website" placeholder="https://yourbusiness.com"></div>
-              <!-- F196 Tier 2: the BUSINESS contact that prints on documents. Distinct from the
-                   "Your profile" email/phone below, which are the USER's own — the letterhead used to
-                   read those, so a business document printed the user's personal contact details. -->
-              <div class="field-group">
-                <div class="field-wrap"><label class="field-label" for="s-biz-email">Business email</label><input class="finput" id="s-biz-email" placeholder="billing@yourbusiness.com" type="email"></div>
-                <div class="field-wrap"><label class="field-label" for="s-biz-phone">Business phone</label><input class="finput" id="s-biz-phone" placeholder="+1 (555) 000-0000" type="tel"></div>
-              </div>
             </div>
             <div class="settings-section">
               <div class="settings-title"><svg viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="3"/><path d="M2 14c0-3.31 2.69-6 6-6s6 2.69 6 6"/></svg>Your profile</div>
@@ -3540,9 +3302,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <button class="btn" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)" onclick="openDeleteAccountModal()">Delete my account</button>
             </div>
             <div style="margin-top:2rem;padding-top:1.5rem;border-top:.5px solid var(--bd)">
-              <div class="section-label" style="margin-bottom:.75rem">Account</div>
-              <p style="font-size:13px;color:var(--t2);margin-bottom:1rem">Signed in as <span id="settings-user-email" style="color:var(--t1)"></span></p>
-              <button onclick="logoutUser()" style="background:transparent;border:1px solid #E24B4A;color:#E24B4A;padding:.5rem 1.25rem;border-radius:var(--radius-md);cursor:pointer;font-size:13px">Sign out</button>
+              <div class="settings-title" style="margin-bottom:.75rem">Account</div>
+              <p style="font-size:13px;color:var(--t2);margin-bottom:1rem;font-family:var(--font)">Signed in as <span id="settings-user-email" style="color:var(--t1)"></span></p>
+              <button onclick="logoutUser()" style="background:transparent;border:1px solid var(--red-bd);color:var(--red);padding:.5rem 1.25rem;border-radius:var(--radius);cursor:pointer;font-size:13px;font-family:var(--font)">Sign out</button>
             </div>
           </div>
         </div>
@@ -3802,23 +3564,6 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-client">Client name *</label><input class="finput" id="inv-client" placeholder="Client or company name"></div><div class="field-wrap"><label class="field-label" for="inv-amount">Amount ($) *</label><input class="finput" id="inv-amount" type="number" placeholder="0.00"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-issue">Issue date</label><input class="finput" id="inv-issue" type="date"></div><div class="field-wrap"><label class="field-label" for="inv-due">Due date</label><input class="finput" id="inv-due" type="date"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-status">Status</label><select class="finput" id="inv-status"><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></div></div>
-    <div class="field-wrap" id="inv-li-wrap">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <label class="field-label" style="margin:0">Line items <span style="color:var(--t3,#7a6f57);font-weight:400">— optional; fills the amount above</span></label>
-        <button type="button" class="btn btn-ghost" id="inv-li-add" style="padding:4px 12px;font-size:12px">+ Add line</button>
-      </div>
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr style="text-align:left;color:var(--t3,#7a6f57);font-size:11px;letter-spacing:.03em">
-          <th style="padding:2px 6px 6px 0;font-weight:600">Description</th>
-          <th style="padding:2px 6px 6px;font-weight:600;width:70px;text-align:center">Qty</th>
-          <th style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Rate</th>
-          <th style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Amount</th>
-          <th style="width:28px"></th>
-        </tr></thead>
-        <tbody id="inv-li-rows"></tbody>
-      </table>
-      <div id="inv-li-total" style="text-align:right;margin-top:8px;font-size:13px;font-weight:700;color:var(--t1,#e8dcc4);display:none">Subtotal: <span id="inv-li-total-val">$0.00</span></div>
-    </div>
     <div class="field-wrap"><label class="field-label" for="inv-desc">Description</label><textarea class="finput" id="inv-desc" placeholder="Services rendered…"></textarea></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('invoice-modal')">Cancel</button><button class="btn btn-primary" onclick="saveInvoice()">Create invoice</button></div>
   </div>
@@ -6188,19 +5933,6 @@ async function _loadEntitiesFromDBImpl(){
       currency: e.currency || 'USD',
       active:   e.is_active == 1 || e.is_active === true,
       data:     {rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0},
-      // F196 Tier 2: the entity's OWN letterhead profile. A document is issued BY this entity, so
-      // its business name/address/contact/tax-id must travel with it rather than being read from the
-      // account-wide settings blob (which is ONE row per account and mislabels every entity but one).
-      // Absent fields stay undefined so the letterhead falls back to the account blob (no migration).
-      profile: {
-        business_name: e.business_name || null,
-        address:       e.address       || null,
-        email:         e.email         || null,
-        phone:         e.phone         || null,
-        tax_id:        e.tax_id        || null,
-        website:       e.website       || null,
-        logo:          e.logo          || null,
-      },
     }));
 
     // If none active, activate first one
@@ -6222,14 +5954,6 @@ async function _loadEntitiesFromDBImpl(){
 
     renderEntities();
     if(typeof renderBusinessSwitcher === 'function') renderBusinessSwitcher();
-
-    // F196 Tier 2: paint the Business-profile panel from the ACTIVE ENTITY now that ENTITIES exists.
-    // loadSettingsFromDB (finflow-api-wiring.js) races this loader and can finish FIRST, and when it
-    // does there is no entity to read yet — so it fills the panel from the account-wide blob and the
-    // per-entity profile never lands. Both paths call the same repaint, so whichever finishes last
-    // produces the correct final state regardless of the order they resolve in.
-    try { if (typeof window._ffApplyEntityProfile === 'function') window._ffApplyEntityProfile(); }
-    catch(e5){ console.warn('[Entities] business-profile paint failed:', e5 && e5.message); }
 
     // Update sidebar brand
     const active = ENTITIES.find(e=>e.active);
@@ -6531,43 +6255,8 @@ window.switchEntity=async function(idx){
   if(nameEl) nameEl.textContent=e.name;
   if(badgeEl) badgeEl.textContent=e.currency+' · Pro';
 
-  // Reset the DISPLAY currency to the new entity's — exactly what boot does (app-main.js:1320-1323).
-  // The switch path relabelled the badge to e.currency but never reset activeCurrency, so S() (→
-  // _fmtMoneyExact, which reads CURRENCIES[activeCurrency] LIVE) kept stamping the PREVIOUS entity's
-  // symbol on the NEW entity's native figures — e.g. Saige/USD rendered as TT$207.7K until a refresh
-  // re-ran boot. This is app-wide (dashboard, invoices, reports, every S()-formatted surface), not
-  // dashboard-only. The F151 splash only hid the transient; the end-state symbol stayed wrong.
-  try {
-    activeCurrency = e.displayCurrency || e.currency;
-    currencySymbol = (CURRENCIES[activeCurrency] && CURRENCIES[activeCurrency].symbol) || '$';
-    var _cflag = document.getElementById('currency-flag'); if(_cflag) _cflag.textContent = (CURRENCIES[activeCurrency] && CURRENCIES[activeCurrency].flag) || '🇺🇸';
-    var _clabel = document.getElementById('currency-code-label'); if(_clabel) _clabel.textContent = activeCurrency;
-  } catch(e2){ console.warn('[Entity] currency reset failed:', e2 && e2.message); }
-
   // Refresh entity list UI
   renderEntities();
-
-  // F196 Tier 2: repaint the Business-profile panel for the NEW entity. /api/settings is ONE row per
-  // ACCOUNT and is loaded once at boot, so without this the panel (and any document rendered from it)
-  // keeps showing the PREVIOUS entity's business name/address/tax-id after a switch — the same
-  // per-user-setting-on-per-entity-output class as the letterhead bug itself. ENTITIES already carries
-  // each entity's profile from /api/entities, so this is a repaint, not a refetch.
-  try { if (typeof window._ffApplyEntityProfile === 'function') window._ffApplyEntityProfile(); }
-  catch(e4){ console.warn('[Entity] business-profile repaint failed:', e4 && e4.message); }
-
-  // Keep the sidebar's PARALLEL `businesses` model in lockstep with ENTITIES. `businesses` is derived
-  // from ENTITIES on every entity-load (copying active:e.active, index.html:~6182) and is what the
-  // sidebar switcher (renderBusinessSwitcher / buildBizMenu) reads — but a direct switchEntity (the
-  // Scheduled-Documents dropdown, the Entities page) never updated it, so the sidebar repainted the
-  // PREVIOUS business over the new one (Acme shown while Saige was the active entity). Mirror the active
-  // flag by _dbId and re-render the switcher so both indicators always move together.
-  try {
-    if (typeof businesses !== 'undefined' && Array.isArray(businesses)) {
-      businesses.forEach(function(b){ b.active = (b._dbId != null && b._dbId === e._dbId); });
-      if (e._dbId != null && typeof activeBizId !== 'undefined') activeBizId = 'biz-' + e._dbId;
-      if (typeof renderBusinessSwitcher === 'function') renderBusinessSwitcher();
-    }
-  } catch(e3){ console.warn('[Entity] business-switcher sync failed:', e3 && e3.message); }
 
   // MUST activate in session and wait for response before loading data
   if(e._dbId){
@@ -6596,15 +6285,6 @@ window.switchEntity=async function(idx){
     window._loadVendorsFromDB,
   ].map(fn => { try { return typeof fn === 'function' ? Promise.resolve(fn()).catch(()=>{}) : null; } catch(e){ return null; } }));
   if(typeof updateDashboard === 'function'){ try { updateDashboard(); } catch(e){} }
-
-  // F94: the Scheduled Documents tab is not wired into loadEntityData/updateDashboard, so a sidebar or
-  // entity-card switch re-scoped the session + reloaded data but left the tab rendering the PREVIOUS
-  // entity until a manual refresh. Re-render it when it's the visible page. (The in-page entity dropdown
-  // already re-renders through its own onchange handler; _f94Open is idempotent, so any overlap is safe.)
-  try {
-    var _sdPage = document.getElementById('page-scheduled-documents');
-    if(_sdPage && _sdPage.classList.contains('active') && typeof window._f94Open === 'function') window._f94Open();
-  } catch(e){}
 
   notify('Switched to '+e.name+' ✦');
 };
@@ -7881,12 +7561,6 @@ document.addEventListener('click', e=>{
      10 individual finflow-api*.js files. To regenerate after edits, run
      `node bundle.js` in the project root. -->
 <script src="/finflow-bundle.js" defer></script>
-<script src="/finflow-f94.js" defer></script>
-<!-- Rich document viewer for Money In / Money Out records. Loads AFTER the bundle so its
-     window.viewInvoice override is the runtime winner (Rule 1). Ships direct — no bundle regen. -->
-<script src="/finflow-docview.js" defer></script>
-<!-- Line-items editor for the New Invoice modal. saveInvoice (bundle) reads window.ffInvLineItems. -->
-<script src="/finflow-lineitems.js" defer></script>
 
 <!-- ══ MODAL OPEN ALIASES — keep button onclicks resolvable regardless of naming convention ══ -->
 <script>

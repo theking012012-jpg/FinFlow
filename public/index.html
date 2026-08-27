@@ -6502,6 +6502,20 @@ window.switchEntity=async function(idx){
   // Refresh entity list UI
   renderEntities();
 
+  // Keep the sidebar's PARALLEL `businesses` model in lockstep with ENTITIES. `businesses` is derived
+  // from ENTITIES on every entity-load (copying active:e.active, index.html:~6182) and is what the
+  // sidebar switcher (renderBusinessSwitcher / buildBizMenu) reads — but a direct switchEntity (the
+  // Scheduled-Documents dropdown, the Entities page) never updated it, so the sidebar repainted the
+  // PREVIOUS business over the new one (Acme shown while Saige was the active entity). Mirror the active
+  // flag by _dbId and re-render the switcher so both indicators always move together.
+  try {
+    if (typeof businesses !== 'undefined' && Array.isArray(businesses)) {
+      businesses.forEach(function(b){ b.active = (b._dbId != null && b._dbId === e._dbId); });
+      if (e._dbId != null && typeof activeBizId !== 'undefined') activeBizId = 'biz-' + e._dbId;
+      if (typeof renderBusinessSwitcher === 'function') renderBusinessSwitcher();
+    }
+  } catch(e3){ console.warn('[Entity] business-switcher sync failed:', e3 && e3.message); }
+
   // MUST activate in session and wait for response before loading data
   if(e._dbId){
     try {

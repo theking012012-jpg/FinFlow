@@ -41,15 +41,26 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     A('boot: two entities, one USD one TTD', usdIdx >= 0 && ttdIdx >= 0, `usdIdx=${usdIdx} ttdIdx=${ttdIdx}`);
     A('boot: display currency label = USD', label() === 'USD', `label="${label()}"`);
 
+    const usdName = window.ENTITIES[usdIdx].name, ttdName = window.ENTITIES[ttdIdx].name;
+    const brand = () => (doc.getElementById('sb-brand-name') || {}).textContent || '';
+    // Note: sb-brand-name is set from businesses.find(active).name by renderBusinessSwitcher (which
+    // switchEntity now calls AFTER mirroring the flag). If the businesses model were NOT kept in
+    // lockstep, that call would repaint the STALE business name — so a correct brand here IS the
+    // proof the parallel model moved. (`businesses` is a let, not on window, so it can't be read directly.)
+    A('boot: sidebar brand shows the active (USD) entity', brand() === usdName, `brand="${brand()}" want="${usdName}"`);
+
     // Switch to the TTD entity → the display currency must become TTD.
     await window.switchEntity(ttdIdx); await settle(40, 60);
     A('after switch to TTD entity: label = TTD', label() === 'TTD', `label="${label()}"`);
     A('after switch to TTD: revenue KPI carries the TT$ symbol', /TT\$/.test(rev()), `#d-rev="${rev()}"`);
+    // the sidebar switcher (parallel `businesses` model) must move with it — the reported desync
+    A('after switch to TTD: sidebar brand follows to the TTD entity', brand() === ttdName, `brand="${brand()}" want="${ttdName}"`);
 
     // Switch BACK to the USD entity → the display currency must return to USD (THE BUG: it stayed TTD).
     await window.switchEntity(usdIdx); await settle(40, 60);
     A('round-trip to USD entity: label back to USD (not stuck on TTD)', label() === 'USD', `label="${label()}"`);
     A('round-trip to USD: revenue KPI shows $, NOT TT$ (the reported symptom)', /\$/.test(rev()) && !/TT\$/.test(rev()), `#d-rev="${rev()}"`);
+    A('round-trip to USD: sidebar brand follows back to the USD entity', brand() === usdName, `brand="${brand()}" want="${usdName}"`);
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (display currency follows the active entity)\n`);
   } catch (e) { console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); fail++; }

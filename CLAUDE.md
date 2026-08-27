@@ -19,6 +19,23 @@ correctness** — see "What done means" at the bottom.
 
 ---
 
+## Product facts (context, not preference — state these right)
+
+These are factual, not stylistic. Getting one wrong wastes the owner's time correcting it.
+
+- **FinFlow is a multi-currency, multi-region product.** Currency, country and timezone are
+  **per-entity** — each entity books in its own currency, resolves dates in its own timezone,
+  and follows its own country's public holidays (F88 / F191). ~50 currencies, ~53 countries.
+- **`USD` is the code default/base** (seed + boot default). Default ≠ flagship, and ≠ a ceiling
+  on what is supported.
+- **There is NO single "flagship" currency or "home" market — and TTD is NOT it.** TTD is one
+  supported currency among many. Never describe TTD, or any one currency / country / region, as
+  the flagship, primary, home, or default market. When something is genuinely region-specific
+  (e.g. bank-linking coverage differs by country), name the specific region — never collapse the
+  whole product down to one.
+
+---
+
 ## THE THREE FAILURES THAT DEFINE THIS CODEBASE
 
 Everything else in this file follows from these. They have each happened more than once.

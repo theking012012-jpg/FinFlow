@@ -87,6 +87,17 @@ L5 canaries (`c6-hdrain`, `f132-readonly`) green standalone (f132's one sequenti
    was ATTEMPTED and REVERTED — it broke `c6-hdrain` + `f132-readonly` even after AST-precise analysis (the
    functions have non-obvious boot-timing coupling). Must be done **one function at a time, each re-verified
    against the full suite**. Zero functional benefit (runtime already correct); pure maintainability.
+- **F192 — bank-linking: region→provider routing + uncovered-region fallback. ⛔ BLOCKED on an owner decision.**
+  Two aggregators are built — Plaid (US/CA/UK/EU) + Belvo (LatAm) — but the UI leads with Plaid for everyone,
+  and **~30 of the ~53 supported countries** (the entire Caribbean incl. TT, Central America, much of South
+  America) have **no aggregator wired at all** (WiPay is Caribbean *payments*, not aggregation). The "Banking"
+  tab (`index.html:2048`) is a static "Coming Soon" card wired to none of the working backend; the real
+  linked-banks page (`page-banking-biz`, `index.html:2929`) is orphaned (no `showPage` reaches it). Scope, once
+  decided: route by the entity's `country` → Plaid / Belvo / **manual CSV-OFX import** (into the existing
+  `source:'banking'` store, `server.js:4023`); show the coming-soon card only when `!plaidConfigured && !belvoConfigured`;
+  wire the tab to `ffLinkBank` / `page-banking-biz`; fix the card copy (drop the false "15-min sync", stop naming
+  only Plaid). Full evidence: **AUDIT_MASTER F192**. **Owner decision that unblocks scope:** manual import as the
+  uncovered-region answer (all regions ship, method varies), or source a regional aggregator first (delays them)?
 
 ### B. Needs your keys (post-launch; code built + verified to the network boundary)
 3. **8 connectors** — Belvo, Finch, Codat, Paystack, Flutterwave, dLocal, Mercado Pago, Wise. Each needs

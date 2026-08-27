@@ -2,6 +2,36 @@
 
 ---
 
+## 🔴 IN FLIGHT — Money In/Out rich viewer + line items (F194) — 2026-08-27
+
+Full spec + handoff: **`F194_MONEY_VIEWER_HANDOFF.md`** (repo root). Cross-account handoff for the code
+account to finish without the Cowork session.
+- **Phase 1 (document viewer)** — ✅ committed `d92f990` (live). `finflow-docview.js` + index.html tag +
+  `verify-docview-invoice.js` 11/11.
+- **Phase 2a (invoice line items, server-derived amount)** — ✅ committed `3066bc7`.
+  `server.js normalizeLineItems` + POST/PUT, `finflow-lineitems.js` editor, index.html/app-main/wiring,
+  `verify-invoice-line-items.js` 21/21.
+- **Phase 2b** — ⬜ line items for BILLS + QUOTES (reuse `normalizeLineItems`; bills feed expense-recognition).
+- **Phase 3** — ⬜ roll the View across bills/receipts/payments/credit-notes/quotes/vendor-credits via
+  `ffOpenDocView(doc, kind)` (KIND map already complete).
+- **Phase 4** — ⬜ clickable Scheduled Documents calendar (finflow-f94.js `renderCal`): day-click filters
+  the agenda + "＋ New on this day". Owner chose **Both**.
+- **F195** — ✅ **committed `a588852`.** Calendar-date DISPLAY labels shifted a day west of UTC (Rule 10,
+  display side): invoice due showed "Aug 15" in the list but "16 Aug" in the doc view — the doc was
+  correct. Root fix: one shared `FinFlowDates.fmtLabel` (`_toYmd` string slice — no Date, no TZ) applied to
+  every date-only `toLocaleDateString` call site across the four mappers. Harness `verify-date-label-tz.js`
+  **12/12**, matrix spans the UTC SIGN boundary. Logged AUDIT_MASTER F195.
+- **F196** — 🟠 **Tier 1 committed `9fe1240`; Tier 2 OPEN.** Document letterhead showed the ACCOUNT
+  business ("Acme"), not the active ENTITY (Saige Holdings) — the Rule 10 per-user-setting-on-per-entity
+  class. **Tier 1 (shipped):** docview `letterhead()` + `buildInvoiceHTML` name follows the active entity;
+  `verify-docview-invoice.js` **11/11**, assertion now discriminating. **Tier 2 (open; owner decided FULL
+  per-entity Business Profile):** address/email/phone/tax-id/website/logo on every document are STILL the
+  account's until it ships, and its data-move step is owner-gated and its own commit (Rule 8).
+  Logged AUDIT_MASTER F196. Full spec in the handoff doc.
+- **F192** — ⬜ bank-linking regional coverage: owner decision (Tier A manual import vs Tier B aggregators).
+
+---
+
 ## ⭐ CURRENT — remaining after the 2026-08-21 audit + fix sessions
 
 **Shipped & verified this pass (all committed/pushed):** F186 (dashboard Net used all-time COGS at boot →
@@ -16,7 +46,9 @@ JSONB so no migration. New harness `verify-entity-timezone.js` = **17/0**. Indep
 Claude Code + the cloud container: gates **150/0**, full sweep **141/141 GREEN 0 RED**, diff confirmed
 **model-only** (`resolvedToday`/`_isScheduled`/`runRecurringScheduler`/`nextRunDate` untouched), and both
 client callers post no `country` key so no existing create-flow regression. Design mock for the page it
-unlocks (F94) lives as an Artifact; scope in `F88_SCOPE_2026-08-21.md`. See **§ A2**.
+unlocks (F94) is committed at `F94_SCHEDULED_DOCS_DESIGN.html` (repo root, open in a browser); scope in
+`F88_SCOPE_2026-08-21.md`. **F88 step 2 (`resolvedToday` phase-2 entity-tz resolution) also shipped this
+session — `cad82e3`, 14/0, gates 150/0, full sweep 142/142.** See **§ A2** for the step ledger.
 
 ## 🆕 Shipped 2026-08-24 — launch-readiness pass (login, email, mobile, exports)
 
@@ -60,26 +92,8 @@ unlocks (F94) lives as an Artifact; scope in `F88_SCOPE_2026-08-21.md`. See **§
   - **Safe caching win shipped 2026-08-24:** `express.static` `setHeaders` now long-caches stable,
     non-app-code assets — `/vendor/*` (Chart.js) → `max-age=31536000, immutable`; images/fonts/icons →
     `max-age=2592000`. App code + HTML untouched (still `no-store`). Money baseline re-confirmed 150/0.
-- **Design-consistency pass (2026-08-24, partial — app chrome).** Two reported strays fixed + the KPI
-  font decision applied:
-  - **Settings → Account block** used class `.section-label`, which is **undefined in index.html** (only
-    defined in accountants.html) → rendered as unstyled plain text (the "different font/black" look). Switched
-    to `.settings-title` (the canonical gold-uppercase settings header). Sign-out button `#E24B4A`→`var(--red)`,
-    undefined `var(--radius-md)`→`var(--radius)`.
-  - **KPI/stat numbers read badly in the italic display serif** ("0h" looked like "oh"). Applied option B:
-    dropped `font-style:italic` from the numeric STAT-VALUE classes only (`.mc-val`, `.mrr-val`,
-    `.scenario-result-val`, `.conn-stat-val`, `#nw-total-display`) — kept Cormorant, upright, so digits are
-    legible. Titles/brand text stay italic by design (words, not ambiguous).
-  - SVG "river" text `'Jost'`/`'Cormorant Garamond'` literals → `var(--font)`/`var(--font-display)`.
-  - ⏳ **NOT a stray, deliberately left:** invoice/receipt/export templates (`buildInvoiceHTML` etc.) use a
-    LIGHT print palette (`#fff`/`#333`/`#eee`) + `Georgia` (web-safe brand font for PDF/email export); charts,
-    category tags, avatars use an intentional multi-hue set. These must NOT be forced into the dark tokens.
-  - ⏳ **REMAINING:** a full app-chrome token normalization (literal hex that duplicates tokens → `var()`,
-    matters most for light-mode; a handful of off-palette chrome colors) across index.html/app-main/wiring —
-    bounded but many small edits, needs screen-by-screen BROWSER verification (bridge reconnected). Scope it
-    as a verified pass; do NOT blind-replace (would hit the export templates + data-viz palettes above).
-- **Service worker bumped `v2`→`v6`** (`sw.js` `SW_VERSION`) so clients pull the new shell after deploy
-  (v3 = forgot-password/email; v4 = first-login fix; v5 = Plaid/Belvo lazy-load; v6 = design-consistency pass).
+- **Service worker bumped `v2`→`v5`** (`sw.js` `SW_VERSION`) so clients pull the new shell after deploy
+  (v3 = forgot-password/email; v4 = first-login fix; v5 = Plaid/Belvo lazy-load).
 - **Mobile / responsive — smoke-tested + fixed.** Wide tables card-stack under `@media(max-width:560px)`;
   Playwright mobile+desktop screenshots reviewed. (`965171c`)
 - **Chart.js self-hosted.** `public/vendor/chart.umd.js` (4.4.1 UMD); `loadChartJS` repointed off cdnjs;
@@ -103,6 +117,17 @@ L5 canaries (`c6-hdrain`, `f132-readonly`) green standalone (f132's one sequenti
    was ATTEMPTED and REVERTED — it broke `c6-hdrain` + `f132-readonly` even after AST-precise analysis (the
    functions have non-obvious boot-timing coupling). Must be done **one function at a time, each re-verified
    against the full suite**. Zero functional benefit (runtime already correct); pure maintainability.
+- **F192 — bank-linking: region→provider routing + uncovered-region fallback. ⛔ BLOCKED on an owner decision.**
+  Two aggregators are built — Plaid (US/CA/UK/EU) + Belvo (LatAm) — but the UI leads with Plaid for everyone,
+  and **~30 of the ~53 supported countries** (the entire Caribbean incl. TT, Central America, much of South
+  America) have **no aggregator wired at all** (WiPay is Caribbean *payments*, not aggregation). The "Banking"
+  tab (`index.html:2048`) is a static "Coming Soon" card wired to none of the working backend; the real
+  linked-banks page (`page-banking-biz`, `index.html:2929`) is orphaned (no `showPage` reaches it). Scope, once
+  decided: route by the entity's `country` → Plaid / Belvo / **manual CSV-OFX import** (into the existing
+  `source:'banking'` store, `server.js:4023`); show the coming-soon card only when `!plaidConfigured && !belvoConfigured`;
+  wire the tab to `ffLinkBank` / `page-banking-biz`; fix the card copy (drop the false "15-min sync", stop naming
+  only Plaid). Full evidence: **AUDIT_MASTER F192**. **Owner decision that unblocks scope:** manual import as the
+  uncovered-region answer (all regions ship, method varies), or source a regional aggregator first (delays them)?
 
 ### B. Needs your keys (post-launch; code built + verified to the network boundary)
 3. **8 connectors** — Belvo, Finch, Codat, Paystack, Flutterwave, dLocal, Mercado Pago, Wise. Each needs
@@ -155,15 +180,49 @@ and a Canadian company both get judged by UTC (the multi-entity bug). The `resol
 
 - [x] **Step 1 — entity `timezone` + `country` (DONE, `6b17db3`, 17/0 + 150/0 + 141/141, re-verified by Code).**
       Model + validation only; nothing resolves against the zone yet (correct — that's step 2).
-- [ ] **Step 2 — implement `resolvedToday` phase 2** (resolve the server instant into the entity's calendar
-      date) + a day-edge unit harness (e.g. 23:30 in `America/Port_of_Spain` is still "yesterday" in UTC).
-- [ ] **Step 3 — per-entity scheduler boundary.** `runRecurringScheduler` must stop using one global UTC
-      `today`; resolve each row's entity `today` and stamp `run_date` in the entity zone. Two-entity
-      different-zone boundary harness + reproducing negative control (Rule 14).
-- [ ] **Step 4 — pass entity tz into `_isScheduled`** so the "Scheduled" badge flips on the entity boundary.
-- [ ] **Step 5 — full sweep unchanged for any UTC-zone entity** (the byte-identical regression guard).
-- [ ] **Step 6 (additive) — holiday / business-day shift** driven by `entity.country`, locale-sourced.
-- [ ] **Then: build the real F94 Scheduled Documents page** on top (reads entity tz/currency/country at runtime).
+- [x] **Step 2 — `resolvedToday` phase 2 (DONE, `cad82e3`, 14/0 + 150/0 + 142/142).** A valid IANA tz (or
+      numeric offset-minutes) now resolves the server instant to the entity's calendar date via
+      `Intl.DateTimeFormat`; absent/empty/invalid ⇒ UTC (byte-identical to phase 1). `finflow-dates.js` is
+      NOT a bundle source (own `<script>` + server `require`), so one edit updates both engines, no bundle
+      regen. Harness `verify-resolvedtoday-tz.js` covers day-edge across PoS/NY/Toronto/Kolkata/Sydney, a DST
+      year-boundary, the offset branch, junk-zone→UTC, and a phase-1 parity block. Nothing moves yet — every
+      caller still passes a single arg (that's step 3).
+- [x] **Step 3 — per-entity scheduler boundary (DONE, `5c03e9b`, verify-scheduler-entity-tz 16/0).**
+      `runRecurringScheduler` resolves each row against its entity's `today` (widen query to UTC-tomorrow,
+      then JS-filter on `resolvedToday(now, entityTz)`); no-tz + personal ⇒ UTC (byte-identical).
+- [x] **Step 4 — entity tz into `_isScheduled` (DONE, verify-isscheduled-entity-tz 15/0).** `_activeEntityTz()`
+      passed into `resolvedToday`; the "Scheduled" badge flips on the entity's day, not UTC.
+- [x] **Step 5 — UTC-entity byte-identical guard (DONE, verify-f88-utc-parity 49/0).** Permanent tripwire over
+      an 8-instant matrix + every legacy call shape; goes red if step 6 ever leaks into the no-tz path.
+- [x] **Step 6 (additive) — holiday / business-day shift by `entity.country` (DONE + F190 fix, verify-scheduler-businessday-tz 36/0).**
+      Modified-Following shift off weekends + `{public, bank}` holidays via `date-holidays` (offline). F190:
+      matched by calendar string, no Date instant (fixed a UTC+12 under-shift + observance over-shift). Full
+      sweep 149/149. Coverage verified across Canada, N/C/S America, the Caribbean, Europe — zero gaps.
+- [ ] **Step 7 (POST-LAUNCH, optional) — sub-national (state / province) holidays.** Step 6 uses the entity
+      `country` (ISO-2) ⇒ **national** public holidays only. It does NOT do subdivisions (e.g. an Ontario-only
+      holiday vs all-Canada, or a US state holiday). `date-holidays` supports these via subdivision codes
+      (`CA-ON`, `US-NY`, …). To add: store the entity's subdivision and pass `"<country>-<SUB>"` into
+      `_closureSet` in `server.js`. National-by-country is the correct launch scope; this is a clean later add.
+- [x] **F94 Scheduled Documents page — INCREMENTS 1 & 2 COMPLETE (own top-level tab, `showPage('scheduled-documents')`
+      + nav-item; new `finflow-f94.js` loaded after the bundle so no bundle regen; verify-f94-scheduled-page 42/0;
+      verify-recurring-scheduler 31/0; dashboard boot 9/0).** Renders LIVE entities + recurring/one-off schedules
+      (NO hardcoded data), per-entity/multi-region, with calendar, KPIs, filters, and Pause/Resume/Skip/Cancel via
+      existing routes (no client "run now"). Built from `F94_SCHEDULED_DOCS_DESIGN.html`.
+      **Increment 2 DONE:** cash-flow forecast SVG (cumulative net impact, 60-day, starts at 0 — no fabricated
+      balance); create-schedule modal (invoice/bill/personal → POST the existing `/api/recurring-*` routes, entity
+      scoped server-side from the active session; client-side validation; harness opens+fills+saves each type);
+      **F191** — timezone + ISO-2 country captured on the Create-Business form AND editable per existing entity via
+      the in-tab region editor (PUT `/api/entities/:id`), so `entity.country` is set and step 6's holiday shift
+      engages in prod; and **per-row last-posted lineage** — the scheduler now stamps a durable link on every
+      materialised row (`recurring_invoice_id` on invoices, `recurring_bill_id` on bills — mirroring personal's
+      existing `recurring_profile_id`, server.js:~3914/3941), and the row shows "Last posted <date>" resolved
+      **link-exact only** (no fuzzy party/amount matching; unlinked historical rows show nothing). Scheduler-link
+      verified end-to-end against real Postgres (verify-recurring-scheduler +2 asserts).
+    - **Fixed in passing (F94-class, was latent in increment 1):** the one-off "Scheduled" path read
+      `window.userInvoices` (display-mapper drops `issue_date` + `entity_id`) and `window.userBills` (never
+      exists) — both were dead in prod. Now reads the RAW arrays the app loads (`window._realInvoices`,
+      `window.bills`, `window._allPersTxs`), and `reload()` refreshes them. Auto-generated rows (`recurring_*_id`
+      set) are excluded from the one-off list so they aren't double-shown alongside their template.
 
 ### D. Verification gaps (low-risk; optional to close)
 8. **L4 (`/api/ai` scope) + L8 (cron compare)** — shipped and READ-verified, but not execution-verified (no

@@ -39,9 +39,9 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     const realClient = String(rec.client || '');
     const amtNum = (parseFloat(rec.amount) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-    // Letterhead sentinel: prove the doc reads the live settings input, not a hardcoded name.
+    // Letterhead: the settings business_name must be OVERRIDDEN by the active entity's name (F196).
     const setV = (id, v) => { const el = doc.getElementById(id); if (el) el.value = v; };
-    setV('s-biz-name', 'Sentinel Books Ltd');
+    setV('s-biz-name', 'Account Settings Biz Co');   // MUST NOT appear — the active entity name wins
     setV('s-email', 'hello@sentinelbooks.test');
 
     // ── open the document ──
@@ -56,8 +56,11 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     // (b) real data — the record's own client + amount, executed value not source text (Rule 5)
     A('document shows the invoice\'s REAL client (not a placeholder)', realClient.length > 0 && html.indexOf(realClient) !== -1, `client="${realClient}"`);
     A('document shows the invoice\'s REAL amount, formatted', html.indexOf(amtNum) !== -1, `amount="${amtNum}"`);
-    // letterhead read from the live settings input
-    A('document letterhead reads the live settings biz-name input', html.indexOf('Sentinel Books Ltd') !== -1, 'sentinel biz-name missing');
+    // [F196] letterhead shows the ISSUING ENTITY's name, NOT the account-wide settings business_name
+    const activeName = ((window.ENTITIES || []).find(e => e && e.active) || {}).name || '';
+    A('[F196] letterhead shows the active ENTITY name, not the account settings business_name',
+      activeName.length > 0 && html.indexOf(activeName) !== -1 && html.indexOf('Account Settings Biz Co') === -1,
+      `entity="${activeName}" settingsLeaked=${html.indexOf('Account Settings Biz Co') !== -1}`);
 
     // (c) NO buildInvoiceHTML sample-data leak
     const SAMPLES = ['Product design &amp; strategy', 'Product design & strategy', 'Frontend development', 'QA testing & delivery'];

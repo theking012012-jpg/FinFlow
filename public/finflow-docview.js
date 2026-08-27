@@ -28,7 +28,9 @@
     var e = null;
     try { e = (window.ENTITIES || []).find(function(x){ return x.active; }) || (window.ENTITIES || [])[0] || null; } catch(_){}
     return {
-      name:   val('s-biz-name') || (e && e.name) || 'Your Business',
+      // F196: a document is issued BY the active ENTITY — its name wins over the account-wide settings
+      // business_name (`s-biz-name` is one per account, so it mislabels every entity but the first).
+      name:   (e && e.name) || val('s-biz-name') || 'Your Business',
       address:val('s-address'),
       email:  val('s-email'),
       phone:  val('s-phone') || val('nb-phone'),

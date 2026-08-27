@@ -5955,7 +5955,9 @@ function renderTemplates(){
 function buildInvoiceHTML(templateId, logoDataURL, settings){
   const t = invTemplatesData.find(x=>x.id===templateId) || invTemplatesData[0];
   const acc = settings.accentColor || t.accentColor;
-  const bizName = document.getElementById('s-biz-name')?.value || 'FinFlow Inc.';
+  // F196: the issuing ENTITY's name wins over the account-wide settings business_name.
+  const _activeEnt = (window.ENTITIES || []).find(e => e && e.active);
+  const bizName = (_activeEnt && _activeEnt.name) || document.getElementById('s-biz-name')?.value || 'FinFlow Inc.';
   const bizEmail = document.getElementById('s-email')?.value || '';
   const poweredBy = settings.poweredBy !== false;
   const logoHTML = logoDataURL

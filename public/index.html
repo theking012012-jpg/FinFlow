@@ -7829,6 +7829,9 @@ document.addEventListener('click', e=>{
      `node bundle.js` in the project root. -->
 <script src="/finflow-bundle.js" defer></script>
 <script src="/finflow-f94.js" defer></script>
+<!-- Rich document viewer for Money In / Money Out records. Loads AFTER the bundle so its
+     window.viewInvoice override is the runtime winner (Rule 1). Ships direct — no bundle regen. -->
+<script src="/finflow-docview.js" defer></script>
 
 <!-- ══ MODAL OPEN ALIASES — keep button onclicks resolvable regardless of naming convention ══ -->
 <script>

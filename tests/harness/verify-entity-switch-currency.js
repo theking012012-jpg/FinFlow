@@ -62,6 +62,24 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     A('round-trip to USD: revenue KPI shows $, NOT TT$ (the reported symptom)', /\$/.test(rev()) && !/TT\$/.test(rev()), `#d-rev="${rev()}"`);
     A('round-trip to USD: sidebar brand follows back to the USD entity', brand() === usdName, `brand="${brand()}" want="${usdName}"`);
 
+    // ── the REAL prod desync root cause: an uncaught throw in updateCharts aborts the switch ──
+    // On the sidebar path (switchBusiness → setCurrency → refreshAllPeriodData → updateCharts →
+    // charts.*.update()), Chart.js throws inside update() when the dashboard canvas is detached (user on
+    // another tab). Unguarded, that threw SYNCHRONOUSLY and aborted switchBusiness BEFORE switchEntity ran,
+    // so the sidebar label changed (set first) but the entity/dropdown never did. The fix wraps the two
+    // update() calls (app-main.js:5382/5400). Test updateCharts DIRECTLY with a throwing chart — driving
+    // it through switchBusiness can't reproduce here because updateDashboard rebuilds window.charts to {}
+    // in jsdom (no real canvas) before updateCharts runs, wiping the mock; the direct call is what
+    // discriminates (red with the bug, green with the guard).
+    // `charts` is a lexical `let` (app-main.js:1774), NOT window.charts — inject the throwing mock via
+    // window.eval so it lands in the same scope updateCharts reads. update() throws exactly like Chart.js
+    // does on a detached canvas.
+    window.eval("charts.overview = { data:{labels:[],datasets:[{data:[]},{data:[]}]}, options:{scales:{x:{ticks:{},grid:{}},y:{ticks:{},grid:{}}},plugins:{tooltip:{callbacks:{}}}}, update:function(){ throw new Error(\"Cannot read properties of null (reading 'addEventListener')\"); } };"
+             + "charts.cash = { data:{datasets:[{data:[]},{data:[]}]}, options:{scales:{x:{ticks:{},grid:{}},y:{ticks:{},grid:{}}}}, update:function(){ throw new Error(\"boom\"); } };");
+    let updateChartsThrew = false;
+    try { window.updateCharts(); } catch (_) { updateChartsThrew = true; }
+    A('updateCharts swallows a throwing chart.update() (does not abort its caller — the switch)', updateChartsThrew === false, 'updateCharts propagated the throw — a sidebar switch would then abort before switchEntity runs');
+
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (display currency follows the active entity)\n`);
   } catch (e) { console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); fail++; }
   finally { try { if (boot) await boot.stop(); } catch {} }

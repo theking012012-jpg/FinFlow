@@ -5379,7 +5379,11 @@ function updateCharts(d=getPeriodData()){
   charts.overview.options.scales.x.ticks.color=tc;charts.overview.options.scales.y.ticks.color=tc;
   charts.overview.options.scales.x.grid.color=gc;charts.overview.options.scales.y.grid.color=gc;
   charts.overview.options.plugins.tooltip.callbacks.label=ctx=>S(ctx.raw);
-  charts.overview.update();
+  // Guard the update like _applyConvertedChart (:5082) does. Chart.js throws inside update() when the
+  // canvas is detached (dashboard page hidden while the user is on another tab), and updateCharts runs
+  // SYNCHRONOUSLY inside refreshAllPeriodData ← setCurrency ← switchBusiness — an uncaught throw here
+  // aborted the sidebar entity switch BEFORE it reached switchEntity, desyncing the two entity pickers.
+  try{ charts.overview.update(); }catch(_){ /* detached/hidden canvas — chart rebuilds when its page is shown */ }
   // Cash chart always shows full year + forecast
   if(charts.cash){
     // F124: repaint the NATIVE series here, exactly as the overview chart is repainted from
@@ -5397,7 +5401,7 @@ function updateCharts(d=getPeriodData()){
     }
     charts.cash.options.scales.x.ticks.color=tc;charts.cash.options.scales.y.ticks.color=tc;
     charts.cash.options.scales.x.grid.color=gc;charts.cash.options.scales.y.grid.color=gc;
-    charts.cash.update();
+    try{ charts.cash.update(); }catch(_){ /* detached/hidden canvas — chart rebuilds when its page is shown */ }
   }
 }
 

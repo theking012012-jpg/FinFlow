@@ -2,6 +2,36 @@
 
 ---
 
+## 🔴 IN FLIGHT — Money In/Out rich viewer + line items (F194) — 2026-08-27
+
+Full spec + handoff: **`F194_MONEY_VIEWER_HANDOFF.md`** (repo root). Cross-account handoff for the code
+account to finish without the Cowork session.
+- **Phase 1 (document viewer)** — ✅ committed `d92f990` (live). `finflow-docview.js` + index.html tag +
+  `verify-docview-invoice.js` 11/11.
+- **Phase 2a (invoice line items, server-derived amount)** — ✅ committed `3066bc7`.
+  `server.js normalizeLineItems` + POST/PUT, `finflow-lineitems.js` editor, index.html/app-main/wiring,
+  `verify-invoice-line-items.js` 21/21.
+- **Phase 2b** — ⬜ line items for BILLS + QUOTES (reuse `normalizeLineItems`; bills feed expense-recognition).
+- **Phase 3** — ⬜ roll the View across bills/receipts/payments/credit-notes/quotes/vendor-credits via
+  `ffOpenDocView(doc, kind)` (KIND map already complete).
+- **Phase 4** — ⬜ clickable Scheduled Documents calendar (finflow-f94.js `renderCal`): day-click filters
+  the agenda + "＋ New on this day". Owner chose **Both**.
+- **F195** — ✅ **committed `a588852`.** Calendar-date DISPLAY labels shifted a day west of UTC (Rule 10,
+  display side): invoice due showed "Aug 15" in the list but "16 Aug" in the doc view — the doc was
+  correct. Root fix: one shared `FinFlowDates.fmtLabel` (`_toYmd` string slice — no Date, no TZ) applied to
+  every date-only `toLocaleDateString` call site across the four mappers. Harness `verify-date-label-tz.js`
+  **12/12**, matrix spans the UTC SIGN boundary. Logged AUDIT_MASTER F195.
+- **F196** — 🟠 **Tier 1 committed `9fe1240`; Tier 2 OPEN.** Document letterhead showed the ACCOUNT
+  business ("Acme"), not the active ENTITY (Saige Holdings) — the Rule 10 per-user-setting-on-per-entity
+  class. **Tier 1 (shipped):** docview `letterhead()` + `buildInvoiceHTML` name follows the active entity;
+  `verify-docview-invoice.js` **11/11**, assertion now discriminating. **Tier 2 (open; owner decided FULL
+  per-entity Business Profile):** address/email/phone/tax-id/website/logo on every document are STILL the
+  account's until it ships, and its data-move step is owner-gated and its own commit (Rule 8).
+  Logged AUDIT_MASTER F196. Full spec in the handoff doc.
+- **F192** — ⬜ bank-linking regional coverage: owner decision (Tier A manual import vs Tier B aggregators).
+
+---
+
 ## ⭐ CURRENT — remaining after the 2026-08-21 audit + fix sessions
 
 **Shipped & verified this pass (all committed/pushed):** F186 (dashboard Net used all-time COGS at boot →

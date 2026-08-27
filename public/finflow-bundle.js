@@ -558,7 +558,7 @@
                                           // invoice showed its FULL amount as "remaining" in Record Payment,
                                           // defeating the overpay guard (under-warn) and 400ing on settle.
             due:    r.due_date
-                      ? new Date(r.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date)   // F195: TZ-safe calendar date
                       : 'TBD',
             due_date: r.due_date,
             status: r.status,
@@ -598,7 +598,7 @@
       const notes  = document.getElementById('inv-desc')?.value?.trim() || '';
       // F36: business issue date (default today, backdatable). Recognition keys on this.
       const issue_date = document.getElementById('inv-issue')?.value || (typeof todayLocal==='function'?todayLocal():null);
-      const dueStr = due ? new Date(due).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'TBD';
+      const dueStr = due ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(due) : due) : 'TBD';   // F195: TZ-safe calendar date
 
       // One idempotency token per submit-intent: minted lazily now, reused on any retry of THIS
       // modal, and reset to null on modal open (openInvoiceModal) and on success below. So a
@@ -753,7 +753,7 @@
             amount: r.amount,
             ded:    r.deductible,
             date:   r.expense_date
-                      ? new Date(r.expense_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.expense_date) : r.expense_date)   // F195: TZ-safe calendar date
                       : 'Today',
           }));
           if (!window.bizExpenses) window.bizExpenses = [];
@@ -2277,7 +2277,7 @@ async function apiFetch(path, opts={}){
 }
 
 function fmtMoney(n){ return '$' + Number(n||0).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0}); }
-function fmtDate(s){ if(!s)return ''; const d=new Date(s); return isNaN(d)?s:d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+function fmtDate(s){ if(!s)return ''; return window.FinFlowDates ? window.FinFlowDates.fmtLabel(s, { year: true }) : s; }   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
 function nextNum(prefix, list, field='num'){
   const nums = list.map(r=>(r[field]||'').replace(prefix+'-','0')).map(Number).filter(n=>!isNaN(n));
   const next = nums.length ? Math.max(...nums)+1 : 1;
@@ -5610,7 +5610,7 @@ function clearAIChat(){
           // rejected 400 by the server's overpayment guard. Also feeds the canonical AR figure.
           amount_paid: r.amount_paid,
           due:      r.due_date
-            ? new Date(r.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date)   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
             : 'TBD',
           due_date: r.due_date,
           status:   r.status,
@@ -5628,7 +5628,7 @@ function clearAIChat(){
           amount: r.amount,
           ded:    r.deductible,
           date:   r.expense_date
-            ? new Date(r.expense_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.expense_date) : r.expense_date)   // F195: TZ-safe calendar date
             : 'Today',
         }));
         window._realExpenses = expenses;

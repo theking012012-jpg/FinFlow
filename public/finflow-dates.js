@@ -151,10 +151,30 @@
     return d >= start && d < end;
   }
 
+  // F195: format a CALENDAR date for DISPLAY without ever constructing a Date from a date-only string.
+  // The bug this replaces: `new Date('2026-08-16').toLocaleDateString()` parses the date-only value as UTC
+  // midnight and renders it in the VIEWER's zone, so west of UTC it rolls back a day (Rule 10, display
+  // side). fmtLabel reduces via _toYmd (string slice — no Date, no TZ for a date-only or …Z value) and
+  // builds the label from the YMD parts. opts: { month:'short'|'long' (default short), year:bool (default
+  // false) }. "Aug 16" by default; "Aug 16 2026" with year; "August 16" with month:'long'.
+  var _LBL_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var _LBL_LONG  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var fmtLabel = function (v, opts) {
+    var ymd = _toYmd(v);
+    if (!ymd) return '';
+    opts = opts || {};
+    var p = ymd.split('-');
+    var mon = (opts.month === 'long' ? _LBL_LONG : _LBL_SHORT)[parseInt(p[1], 10) - 1] || '';
+    var s = mon + ' ' + parseInt(p[2], 10);
+    if (opts.year) s += ' ' + p[0];
+    return s;
+  };
+
   return {
     resolvedToday: resolvedToday,
     resolvePeriod: resolvePeriod,
     inWindow: inWindow,
     _toYmd: _toYmd,   // exposed for tests (calendar-date reducer)
+    fmtLabel: fmtLabel,   // F195: timezone-safe calendar-date display label
   };
 });

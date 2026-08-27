@@ -157,7 +157,7 @@
           // rejected 400 by the server's overpayment guard. Also feeds the canonical AR figure.
           amount_paid: r.amount_paid,
           due:      r.due_date
-            ? new Date(r.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date)   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
             : 'TBD',
           due_date: r.due_date,
           status:   r.status,
@@ -175,7 +175,7 @@
           amount: r.amount,
           ded:    r.deductible,
           date:   r.expense_date
-            ? new Date(r.expense_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.expense_date) : r.expense_date)   // F195: TZ-safe calendar date
             : 'Today',
         }));
         window._realExpenses = expenses;

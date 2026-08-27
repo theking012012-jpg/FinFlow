@@ -1512,7 +1512,7 @@ async function loadEntityData(idx){
     userInvoices = invoices.map(r=>({
       _dbId:r.id, client:r.client, amount:r.amount,
       amount_paid: r.amount_paid,   // F48 follow-up: carry so markInvoicePaid settles only the REMAINING balance (partials don't overpay→400)
-      due: r.due_date ? new Date(r.due_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'TBD',
+      due: r.due_date ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.due_date) : r.due_date) : 'TBD',   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
       due_date:r.due_date, status:r.status, notes:r.notes||'',
       color: r.status?.toLowerCase()==='overdue'?'var(--red)':'var(--t2)',
     }));
@@ -1521,7 +1521,7 @@ async function loadEntityData(idx){
     bizExpenses = expenses.map(r=>({
       _dbId:r.id, desc:r.description, cat:r.category,
       amount:r.amount, ded:r.deductible,
-      date: r.expense_date ? new Date(r.expense_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'Today',
+      date: r.expense_date ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.expense_date) : r.expense_date) : 'Today',   // F195: TZ-safe calendar date
     }));
 
     // Replace customers
@@ -5486,7 +5486,7 @@ async function loadBankingFromDB(){
         amount: Math.abs(r.amount),
         type: (r.tx_type || r.type)==='credit'?'credit':'debit',
         _iso,   // raw YYYY-MM-DD for month filtering (display `date` below is localized)
-        date: _iso ? new Date(_iso).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'Today',
+        date: _iso ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(_iso) : _iso) : 'Today',   // F195: TZ-safe calendar date
         cat: r.category||'Other',
       };
     });

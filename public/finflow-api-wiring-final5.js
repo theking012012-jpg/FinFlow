@@ -11,7 +11,7 @@ async function apiFetch(path, opts={}){
 }
 
 function fmtMoney(n){ return '$' + Number(n||0).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0}); }
-function fmtDate(s){ if(!s)return ''; const d=new Date(s); return isNaN(d)?s:d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+function fmtDate(s){ if(!s)return ''; return window.FinFlowDates ? window.FinFlowDates.fmtLabel(s, { year: true }) : s; }   // F195: TZ-safe calendar date (was new Date().toLocaleDateString → shifted west of UTC)
 function nextNum(prefix, list, field='num'){
   const nums = list.map(r=>(r[field]||'').replace(prefix+'-','0')).map(Number).filter(n=>!isNaN(n));
   const next = nums.length ? Math.max(...nums)+1 : 1;

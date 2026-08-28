@@ -82,13 +82,13 @@
       const cls = { pending: 'b-amber', accepted: 'b-green', declined: 'b-red' };
       el.innerHTML = _quotesData.length
         ? _quotesData.map(q => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 50px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
             <span style="font-weight:500">${esc(q.client)}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(q.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(q.amount)}</span>
             <span style="color:var(--t2)">${esc(q.expiry_date || '—')}</span>
             <span><span class="badge ${cls[q.status] || 'b-amber'}">${esc(q.status)}</span></span>
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteQuote(${q.id})">✕</button>
+            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewQuote(${q.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteQuote(${q.id})">✕</button></div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No quotes yet — click + New Quote to create one</div>';
       const accepted = _quotesData.filter(q => q.status?.toLowerCase() === 'accepted').length;
@@ -167,13 +167,13 @@
       if (!el) return;
       el.innerHTML = _receiptsData.length
         ? _receiptsData.map(r => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 50px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
             <span style="font-weight:500">${esc(r.customer || '')}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
             <span style="color:var(--t2)">${esc(r.date || '')}</span>
             <span style="color:var(--t2)">${esc(r.method || '')}</span>
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteReceipt(${r.id})">✕</button>
+            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewReceipt(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteReceipt(${r.id})">✕</button></div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No receipts yet</div>';
       // KPI cards: count · cash sales · card/stripe sales · refunds
@@ -282,12 +282,13 @@
         ? _paymentsRecvData.map(r => {
             const _prInv = _prInvById.get(r.invoice_id);
             return `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 70px 90px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
             <span style="font-weight:500">${esc(_prInv?.client || '—')}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.num || '—')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
             <span style="color:var(--t2)">${esc(r.payment_date || '')}</span>
             <span style="color:var(--t2)">${esc(r.method || '')}</span>
+            <button class="btn btn-ghost btn-sm" style="justify-self:end" onclick="viewPaymentReceived(${r.id})">View</button>
           </div>`;
           }).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No payments received yet</div>';
@@ -503,13 +504,13 @@
       const cls = { Open: 'b-amber', Applied: 'b-green', Void: 'b-red' };
       el.innerHTML = _creditNotesData.length
         ? _creditNotesData.map(r => `
-          <div class="table-row" style="grid-template-columns:1fr 90px 80px 80px 70px 50px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+          <div class="table-row" style="grid-template-columns:1fr 90px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
             <span style="font-weight:500">${esc(r.customer || '')}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
             <span style="color:var(--t2)">${esc(r.date || '')}</span>
             <span><span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status || 'Open')}</span></span>
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteCreditNote(${r.id})">✕</button>
+            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewCreditNote(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteCreditNote(${r.id})">✕</button></div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No credit notes yet</div>';
       // KPI cards: count · open/unapplied sum · applied sum · this-month sum
@@ -704,13 +705,14 @@
       const cls = { unpaid: 'b-amber', due_soon: 'b-amber', overdue: 'b-red', paid: 'b-green' };
       el.innerHTML = _billsData.length
         ? _billsData.map(b => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 90px 80px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+          <div class="table-row" style="grid-template-columns:1fr 100px 80px 90px 80px 160px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
             <span style="font-weight:500">${esc(b.vendor)}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(b.amount)}</span>
             <span style="color:${b.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc(b.due_date || '—')}</span>
             <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${cls[b.status?.toLowerCase()] || 'b-amber'}">${esc(b.status)}</span></span>
             <div style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="viewBill(${b.id})">View</button>
               ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
               <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>
             </div>
@@ -896,13 +898,13 @@
       if (!el) return;
       el.innerHTML = _paymentsMadeData.length
         ? _paymentsMadeData.map(r => `
-          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 90px 50px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+          <div class="table-row" style="grid-template-columns:1fr 100px 80px 80px 90px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
             <span style="font-weight:500">${esc(r.vendor || '')}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.ref || '')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
             <span style="color:var(--t2)">${esc(r.date || '')}</span>
             <span style="color:var(--t2)">${esc(r.method || '')}</span>
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deletePaymentMade(${r.id})">✕</button>
+            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewPaymentMade(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deletePaymentMade(${r.id})">✕</button></div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No payments made yet</div>';
       // KPI cards: total paid · unique vendor count · largest single · avg
@@ -1127,13 +1129,13 @@
       const cls = { Open: 'b-green', Applied: 'b-amber' };
       el.innerHTML = _vendorCreditsData.length
         ? _vendorCreditsData.map(r => `
-          <div class="table-row" style="grid-template-columns:1fr 90px 80px 80px 70px 50px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
+          <div class="table-row" style="grid-template-columns:1fr 90px 80px 80px 70px 110px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd)">
             <span style="font-weight:500">${esc(r.vendor || '')}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
             <span style="color:var(--t2)">${esc(r.date || '')}</span>
             <span><span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status || 'Open')}</span></span>
-            <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteVendorCredit(${r.id})">✕</button>
+            <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewVendorCredit(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteVendorCredit(${r.id})">✕</button></div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No vendor credits yet</div>';
       // KPI cards: count · open sum · applied sum · this-month sum
@@ -1213,6 +1215,69 @@
         if (id === 'recurring-bills')    loadRecurringBills();
       };
     }
+
+    // ── F194 Phase 3: rich document View for every Money In/Out list (reuses ffOpenDocView) ──
+    // Each viewX finds the record in its already-loaded array (closure-scoped here) and maps it to the
+    // shared doc shape. The viewer (finflow-docview.js) owns letterhead (F196), TZ-safe dates (F195)
+    // and the line-items table (Phase 2b) for free — nothing money-related is written, display only.
+    window.viewBill = function (id) {
+      const b = (_billsData || []).find(x => x.id === id); if (!b) return;
+      window.ffOpenDocView({
+        number: b.num, party: b.vendor, issue_date: b.issue_date || b.created_at || null,
+        due_date: b.due_date || null, status: b.status || '', notes: b.notes || '',
+        amount: b.amount, tax: b.tax || 0, line_items: b.line_items || null, currency: b.currency || null,
+      }, 'bill');
+    };
+    window.viewQuote = function (id) {
+      const q = (_quotesData || []).find(x => x.id === id); if (!q) return;
+      window.ffOpenDocView({
+        number: q.num, party: q.client, issue_date: q.issue_date || q.created_at || null,
+        due_date: q.expiry_date || null, status: q.status || '', notes: q.notes || '',
+        amount: q.amount, line_items: q.line_items || null, currency: q.currency || null,
+      }, 'quote');
+    };
+    window.viewReceipt = function (id) {
+      const r = (_receiptsData || []).find(x => x.id === id); if (!r) return;
+      window.ffOpenDocView({
+        number: r.num, party: r.customer, issue_date: r.date || null, status: r.status || 'paid',
+        notes: r.notes || (r.method ? 'Payment method: ' + r.method : ''),
+        amount: r.amount, line_items: r.line_items || null, currency: r.currency || null,
+      }, 'receipt');
+    };
+    window.viewPaymentReceived = function (id) {
+      const r = (_paymentsRecvData || []).find(x => x.id === id); if (!r) return;
+      // Store-B rows carry invoice_id, not a party name — resolve client + num from _realInvoices,
+      // exactly like renderPaymentsReceived does (same array, same tolerance for a missing invoice).
+      const inv = new Map((window._realInvoices || []).map(i => [i.id, i])).get(r.invoice_id) || null;
+      window.ffOpenDocView({
+        number: r.num || (inv && inv.num) || '', party: (inv && inv.client) || r.client || '—',
+        issue_date: r.payment_date || r.date || null, status: 'paid',
+        notes: r.method ? 'Payment method: ' + r.method : (inv ? 'Payment for ' + (inv.num || 'invoice') : ''),
+        amount: r.amount, currency: r.currency || null,
+      }, 'payment');
+    };
+    window.viewCreditNote = function (id) {
+      const r = (_creditNotesData || []).find(x => x.id === id); if (!r) return;
+      window.ffOpenDocView({
+        number: r.num, party: r.customer, issue_date: r.date || null, status: r.status || 'Open',
+        notes: r.notes || r.reason || '', amount: r.amount, line_items: r.line_items || null, currency: r.currency || null,
+      }, 'credit-note');
+    };
+    window.viewVendorCredit = function (id) {
+      const r = (_vendorCreditsData || []).find(x => x.id === id); if (!r) return;
+      window.ffOpenDocView({
+        number: r.num, party: r.vendor, issue_date: r.date || null, status: r.status || 'Open',
+        notes: r.notes || r.reason || '', amount: r.amount, line_items: r.line_items || null, currency: r.currency || null,
+      }, 'vendor-credit');
+    };
+    window.viewPaymentMade = function (id) {
+      const r = (_paymentsMadeData || []).find(x => x.id === id); if (!r) return;
+      window.ffOpenDocView({
+        number: r.num, party: r.vendor, issue_date: r.date || null, status: 'paid',
+        notes: r.method ? 'Payment method: ' + r.method : (r.bill_id ? 'Payment for bill' : ''),
+        amount: r.amount, currency: r.currency || null,
+      }, 'payment');
+    };
 
     console.log('[FinFlow API Wiring — Pages] ✅ Quotes, Receipts, Payments Received, Recurring Invoices, Credit Notes, Vendors, Bills, Payments Made, Recurring Bills, Vendor Credits wired');
   })()

@@ -1102,6 +1102,19 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
   await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
+// F94 B3 — validate the per-entity opening cash balance for the runway. PURE + additive:
+//   undefined  → { skip:true }  (field not sent → leave the stored value untouched)
+//   null / ''  → { value:null } (explicit clear — we never store a fabricated 0)
+//   a number ≥ 0 → { value:<rounded to cents> }
+//   anything else → { error } (rejected with a 400)
+function normalizeOpeningCash(v) {
+  if (v === undefined) return { skip: true };
+  if (v === null || v === '') return { value: null };
+  const n = Number(v);
+  if (!isFinite(n) || n < 0) return { error: 'Opening cash must be a number of 0 or more.' };
+  return { value: Math.round(n * 100) / 100 };
+}
+
 app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const row = await ownedBy('entities', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
@@ -1113,10 +1126,15 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
   // profile save cannot blank name/currency/color and a rename cannot blank the profile.
   const _prof = normalizeEntityProfile(req.body || {});
   if (_prof.error) return res.status(400).json({ error: _prof.error });
+  // F94 B3: per-entity opening cash for the Scheduled-Documents runway. Only patched when sent; never
+  // fabricated (F31/F55) — an empty value clears it. Validation lives in a pure exported helper.
+  const _oc = normalizeOpeningCash((req.body || {}).opening_cash);
+  if (_oc.error) return res.status(400).json({ error: _oc.error });
   await db.updateById('entities', row.id, {
     ...(name && {name}), ...(currency && {currency}), ...(color && {color}),
     ...(timezone !== undefined && { timezone: timezone ? String(timezone) : null }),
     ...(country !== undefined && { country: country ? String(country).toUpperCase() : null }),
+    ...(!_oc.skip && { opening_cash: _oc.value }),
     ..._prof.patch,
   });
   const { rows: [_er] } = await pool.query(`SELECT * FROM entities WHERE id = $1 LIMIT 1`, [row.id]);
@@ -7192,6 +7210,7 @@ module.exports.runRecurringScheduler = runRecurringScheduler;
 module.exports.nextRunDate = nextRunDate;
 module.exports.businessDayShift = businessDayShift;   // F88 step 6 — per-country business-day shift (test surface)
 module.exports.annotateResolvedPostDate = annotateResolvedPostDate;   // F94 B2 — resolved post-date annotator (test surface)
+module.exports.normalizeOpeningCash = normalizeOpeningCash;   // F94 B3 — opening-cash validator (test surface)
 // Test hooks: Plaid access-token encryption at rest (assert round-trip + tamper detection).
 module.exports._encTok = encTok;
 module.exports._decTok = decTok;

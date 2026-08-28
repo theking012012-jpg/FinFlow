@@ -194,11 +194,12 @@
         : 'No timezone/country set — dates resolve in UTC and the holiday shift is inactive.';
       // F191: inline region editor so an EXISTING entity can be localised (there is no other entity-edit UI).
       note.innerHTML = summary
-        + ' <button class="f94-linkbtn" data-f94act="region-toggle">'+(e.timezone||e.country?'Edit region':'Set timezone &amp; country')+'</button>'
+        + ' <button class="f94-linkbtn" data-f94act="region-toggle">'+(e.timezone||e.country||e.opening_cash!=null?'Edit entity settings':'Set region &amp; opening cash')+'</button>'
         + '<div id="f94-region" style="display:none;margin-top:9px;padding-top:9px;border-top:1px dashed var(--bd);display:none">'
         + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
         + '<label style="font-size:10.5px;color:var(--t2)">Timezone<br><select id="f94-tz" style="font-family:var(--font);font-size:12px;padding:5px 7px;background:var(--bg2);color:var(--t1);border:1px solid var(--bd);border-radius:6px;min-width:180px"></select></label>'
         + '<label style="font-size:10.5px;color:var(--t2)">Country (holidays)<br><select id="f94-country" style="font-family:var(--font);font-size:12px;padding:5px 7px;background:var(--bg2);color:var(--t1);border:1px solid var(--bd);border-radius:6px;min-width:180px"></select></label>'
+        + '<label style="font-size:10.5px;color:var(--t2)">Opening cash today ('+esc(e.currency||'USD')+')<br><input id="f94-openingcash" type="number" min="0" step="0.01" placeholder="e.g. 12000" value="'+(e.opening_cash!=null?esc(String(e.opening_cash)):'')+'" style="font-family:var(--font);font-size:12px;padding:5px 7px;background:var(--bg2);color:var(--t1);border:1px solid var(--bd);border-radius:6px;width:150px"></label>'
         + '<button class="f94-newbtn" style="margin:0" data-f94act="region-save">Save</button>'
         + '<button class="f94-linkbtn" data-f94act="region-cancel">Cancel</button>'
         + '</div></div>';
@@ -210,17 +211,28 @@
   // ── needs-attention (real signals only) ──
   function renderAttn(items){
     var host = $('f94-attn'); if (!host) return;
-    var e = activeEntity(), rows = [];
+    var e = activeEntity(), today = entityToday(), rows = [];
     items.forEach(function(it){
       if (it.src === 'recurring' && it.end) {
         var left = runsLeft(it);
         if (left != null && left <= 1) rows.push({ who: it.who, ref: (it.kind).toUpperCase()+' · '+it.date, why: 'Last scheduled run before its end date ('+it.end+') — the series stops after this.' });
       }
+      // F94 B4: MISSED / LATE POST — an ACTIVE recurring run whose post day (it.date, the F88-resolved
+      // day from B2) is already in the past means the server scheduler has NOT materialised it: a failed
+      // or delayed run. A successful run advances next_run to its next future occurrence, so a past
+      // next_run on an active row is the signal. entityToday() is the entity's own resolved 'today' (F88),
+      // the same clock the scheduler fires on. Paused rows are excluded (they legitimately don't post);
+      // one-offs are excluded (they are real documents, not scheduler-driven).
+      if (it.src === 'recurring' && it.status === 'active' && it.date && it.date < today) {
+        var lp = it.lastPosted ? ('last posted ' + dlabel(it.lastPosted.date)) : 'none on record';
+        rows.push({ missed: true, who: it.who, ref: 'MISSED · ' + it.kind.toUpperCase() + ' · due ' + dlabel(it.date),
+          why: 'Scheduled to post ' + dlabel(it.date) + ' but no document has been created — the run may have failed or be delayed (prior postings: ' + lp + ').' });
+      }
     });
     if (!rows.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
     host.style.display = '';
     host.innerHTML = '<div class="attn-head"><span class="ico">!</span><span class="lbl">Needs attention</span><span class="cnt">'+rows.length+'</span></div>'
-      + rows.map(function(r){ return '<div class="attn-row"><div><div class="who">'+esc(r.who)+'</div><div class="why">'+esc(r.why)+'</div></div><div class="ref">'+esc(r.ref)+'</div></div>'; }).join('');
+      + rows.map(function(r){ return '<div class="attn-row'+(r.missed?' missed':'')+'"><div><div class="who">'+esc(r.who)+'</div><div class="why">'+esc(r.why)+'</div></div><div class="ref">'+esc(r.ref)+'</div></div>'; }).join('');
   }
 
   // ── KPIs (30-day window, entity-native currency) ──
@@ -256,8 +268,19 @@
     var today = entityToday(), last = addDaysYmd(today, FC_HORIZON);
     var net = {};
     items.forEach(function(it){ if (it.status === 'paused') return; if (it.date >= today && it.date <= last) net[it.date] = (net[it.date] || 0) + signed(it); });
-    var pts = [{ x: today, y: 0 }], cum = 0;
-    for (var i = 1; i <= FC_HORIZON; i++){ var ds = addDaysYmd(today, i); cum += (net[ds] || 0); pts.push({ x: ds, y: cum }); }
+    // F94 B3 — RUNWAY. When the entity has a real opening cash balance (USER-provided; we never
+    // fabricate one — F31/F55 honesty), project the actual cash BALANCE forward and flag the first day
+    // it goes negative. Absent ⇒ the honest zero-based "net impact of what's scheduled" line (unchanged).
+    var ocRaw = e ? e.opening_cash : null;
+    var base = (ocRaw != null && ocRaw !== '' && isFinite(Number(ocRaw))) ? Number(ocRaw) : null;
+    var runway = base != null, start = runway ? base : 0;
+    var pts = [{ x: today, y: start }], bal = start, dipDate = null, minY = start, minDate = today;
+    for (var i = 1; i <= FC_HORIZON; i++){
+      var ds = addDaysYmd(today, i); bal += (net[ds] || 0); pts.push({ x: ds, y: bal });
+      if (runway && dipDate === null && bal < 0) dipDate = ds;
+      if (bal < minY){ minY = bal; minDate = ds; }
+    }
+    var cum = bal - start;   // net impact over the horizon (honest-mode flag parity)
     var W = 720, H = 170, padL = 8, padR = 8, padT = 14, padB = 16;
     var ys = pts.map(function(p){ return p.y; });
     var yMax = Math.max.apply(null, ys.concat([0])), yMin = Math.min.apply(null, ys.concat([0]));
@@ -266,14 +289,26 @@
     var Y = function(v){ return padT + (1-(v-yMin)/(yMax-yMin))*(H-padT-padB); };
     var line = pts.map(function(p,i){ return (i?'L':'M')+X(i).toFixed(1)+' '+Y(p.y).toFixed(1); }).join(' ');
     var zeroY = Y(0).toFixed(1);
+    var dipMark = '';
+    if (runway && dipDate){ var di = pts.findIndex(function(p){ return p.x === dipDate; }); if (di > 0) dipMark = '<circle cx="'+X(di).toFixed(1)+'" cy="'+Y(pts[di].y).toFixed(1)+'" r="3.5" fill="var(--red)"/>'; }
     svg.innerHTML =
         '<line x1="'+padL+'" y1="'+zeroY+'" x2="'+(W-padR)+'" y2="'+zeroY+'" stroke="var(--red)" stroke-width="1" stroke-dasharray="2 3" opacity=".55"/>'
-      + '<path d="'+line+'" fill="none" stroke="var(--acc)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+      + '<path d="'+line+'" fill="none" stroke="var(--acc)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
+      + dipMark;
     var xs = $('f94-fcX');
     if (xs) xs.innerHTML = '<span>'+dlabel(today)+'</span><span>'+dlabel(pts[Math.floor(pts.length/2)].x)+'</span><span>'+dlabel(last)+'</span>';
-    var sub = $('f94-fcSub'); if (sub) sub.textContent = 'Net cash impact of scheduled runs · next '+FC_HORIZON+' days';
+    var sub = $('f94-fcSub');
+    if (sub){
+      if (runway) sub.textContent = 'Projected cash balance · next '+FC_HORIZON+' days · from opening '+s+fmt(base);
+      else sub.innerHTML = 'Net cash impact of scheduled runs · next '+FC_HORIZON+' days · <button class="f94-linkbtn" data-f94act="region-toggle">set opening cash for a runway</button>';
+    }
     var flag = $('f94-fcFlag');
-    if (flag){ var neg = cum < 0; flag.className = 'fc-flag '+(neg?'bad':'ok'); flag.textContent = (neg?'Net −':'Net +')+s+fmt(Math.abs(cum)); }
+    if (flag){
+      if (runway){
+        if (dipDate){ flag.className = 'fc-flag bad'; flag.textContent = 'Cash dips below 0 on '+dlabel(dipDate); }
+        else { flag.className = 'fc-flag ok'; flag.textContent = 'Stays positive · low '+s+fmt(minY)+' on '+dlabel(minDate); }
+      } else { var neg = cum < 0; flag.className = 'fc-flag '+(neg?'bad':'ok'); flag.textContent = (neg?'Net −':'Net +')+s+fmt(Math.abs(cum)); }
+    }
   }
 
   // ── calendar ──
@@ -473,11 +508,14 @@
     if (_busy) return;
     var e = activeEntity(); if (!e || e._dbId == null) { toast('Select an entity first', true); return; }
     var tz = ($('f94-tz') || {}).value || '', country = ($('f94-country') || {}).value || '';
+    // F94 B3: opening cash for the runway. Empty ⇒ null (clears it — we never store a fabricated 0).
+    var ocv = ($('f94-openingcash') || {}).value; ocv = (ocv == null || String(ocv).trim() === '') ? null : Number(ocv);
+    if (ocv != null && (!isFinite(ocv) || ocv < 0)) { toast('Opening cash must be a number of 0 or more', true); return; }
     _busy = true;
     try {
-      await apiJSON('PUT', '/api/entities/' + e._dbId, { timezone: tz, country: country });
-      e.timezone = tz || null; e.country = country || null;   // reflect immediately
-      toast('Region saved — scheduling now localised');
+      await apiJSON('PUT', '/api/entities/' + e._dbId, { timezone: tz, country: country, opening_cash: ocv });
+      e.timezone = tz || null; e.country = country || null; e.opening_cash = ocv;   // reflect immediately
+      toast('Entity settings saved');
       await reload();
     } catch (err) { toast('Could not save region — ' + (err && err.message || 'error'), true); }
     finally { _busy = false; render(); }

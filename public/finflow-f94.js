@@ -286,10 +286,10 @@
       var chips = its.slice(0,3).map(function(it){ return '<span class="chip '+icClass[it.kind]+'"><span class="cd" style="background:currentColor"></span>'+esc(it.who)+'</span>'; }).join('');
       if (its.length>3) chips += '<span class="chip more">+'+(its.length-3)+'</span>';
       var dots = its.slice(0,4).map(function(it){ return '<span class="d '+icClass[it.kind]+'" style="background:currentColor"></span>'; }).join('');
-      html += '<div class="cell'+(its.length?' has':'')+(isToday?' today':'')+(sel?' sel':'')+'"'+(its.length?' data-day="'+ds+'"':'')+'><span class="num">'+d+'</span>'+chips+'<span class="dots">'+dots+'</span></div>';
+      html += '<div class="cell'+(its.length?' has':'')+(isToday?' today':'')+(sel?' sel':'')+'" data-day="'+ds+'"><span class="num">'+d+'</span>'+chips+'<span class="dots">'+dots+'</span></div>';
     }
     host.innerHTML = html;
-    host.querySelectorAll('.cell.has').forEach(function(c){ c.onclick = function(){ var ds = c.getAttribute('data-day'); dayFilter = (dayFilter===ds) ? null : ds; render(); }; });
+    host.querySelectorAll('.cell[data-day]').forEach(function(c){ c.onclick = function(){ var ds = c.getAttribute('data-day'); dayFilter = (dayFilter===ds) ? null : ds; render(); }; });  // F94 Phase 4: every day cell (not only days with items) toggles the day filter
   }
 
   // ── agenda ──
@@ -302,15 +302,20 @@
     // day filter chip
     var df = $('f94-dayFilter');
     if (df) { if (dayFilter) { df.classList.add('on'); $('f94-dayFilterLabel').textContent = 'Only '+dayFilter; } else df.classList.remove('on'); }
+    // F94 Phase 4: when a calendar day is selected, offer "+ New on this day" (opens the create
+    // modal pre-filled with that date). Shown in both the empty and populated agenda states.
+    var newDay = dayFilter ? '<button type="button" id="f94-newDayBtn" class="f94-newday" style="display:block;width:100%;margin:0 0 10px;padding:9px 12px;border:1px dashed var(--acc,#c9a84c);border-radius:8px;background:transparent;color:var(--acc,#c9a84c);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer">+ New on '+esc(dlabel(dayFilter))+'</button>' : '';
+    var _wireNewDay = function(){ var nd = $('f94-newDayBtn'); if (nd) nd.onclick = function(){ openModal(dayFilter); }; };
     if (!shown.length) {
-      host.innerHTML = '<div class="empty">'+(items.length ? 'Nothing matches this filter.' : 'No scheduled documents for this entity yet. Recurring invoices, bills and future-dated documents will appear here.')+'</div>';
+      host.innerHTML = newDay + '<div class="empty">'+(items.length ? 'Nothing matches this filter.' : 'No scheduled documents for this entity yet. Recurring invoices, bills and future-dated documents will appear here.')+'</div>';
+      _wireNewDay();
       return;
     }
     // group by date
     var groups = [], byDate = {};
     shown.forEach(function(it){ if (!byDate[it.date]) { byDate[it.date] = []; groups.push(it.date); } byDate[it.date].push(it); });
     var e = activeEntity(), s = sym(e ? e.currency : 'USD');
-    host.innerHTML = groups.map(function(date){
+    host.innerHTML = newDay + groups.map(function(date){
       var its = byDate[date], p = date.split('-'), dt = new Date(+p[0], +p[1]-1, +p[2]);
       var dow = ['SUN','MON','TUE','WED','THU','FRI','SAT'][dt.getDay()];
       var rel = relLabel(date), tot = its.reduce(function(a,it){ return a + signed(it); }, 0);
@@ -324,6 +329,7 @@
     host.querySelectorAll('[data-kebab]').forEach(function(btn){
       btn.onclick = function(ev){ ev.stopPropagation(); var m = btn.nextElementSibling; var open = m.classList.contains('open'); closeMenus(); if (!open) m.classList.add('open'); };
     });
+    _wireNewDay();
   }
 
   function itemRow(it){
@@ -486,13 +492,13 @@
     var ttl = $('f94-modalTitle'); if (ttl) ttl.textContent = m[2];
   }
   function _mnote(msg, isErr){ var n = $('f94-mNote'); if (!n) return; n.textContent = msg || ''; n.style.color = isErr ? 'var(--red)' : ''; }
-  function openModal(){
+  function openModal(prefillDate){
     var ov = $('f94-overlay'); if (!ov) return;
     var e = activeEntity();
     setModalType('invoice');
     var who = $('f94-mWho'), amt = $('f94-mAmount'), freq = $('f94-mFreq'), date = $('f94-mDate'), end = $('f94-mEnd');
     if (who) who.value = ''; if (amt) amt.value = ''; if (freq) freq.value = 'Monthly';
-    if (date) date.value = entityToday();   // calendar 'today' for the active entity (Rule 10 safe)
+    if (date) date.value = prefillDate || entityToday();   // F94 Phase 4: pre-fill from a clicked calendar day; else entity 'today' (Rule 10 safe)
     if (end) end.value = '';
     _mnote('', false);
     var sub = $('f94-modalSub');

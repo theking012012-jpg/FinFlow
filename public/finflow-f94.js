@@ -257,6 +257,16 @@
   // Calendar-safe day add (Rule 10): epoch-ms arithmetic on the UTC instant, read back as a UTC ymd.
   function addDaysYmd(ymd, n){ var p = String(ymd).split('-'); var d = new Date(Date.UTC(+p[0], +p[1]-1, +p[2]) + n*86400000); return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0'); }
   function dlabel(ymd){ var p = String(ymd).split('-'); return (+p[2])+' '+MONS[+p[1]-1]; }
+  // F94 B5: bucket a post date relative to the entity's 'today' for the agenda section headers, so a long
+  // list stays scannable. First-match order (Overdue → This week → This month → Later); groups arrive
+  // date-sorted, so the bucket only ever advances. "This month" = the rest of today's calendar month.
+  function _bucket(date, today){
+    if (date < today) return { k:0, label:'Overdue' };
+    if (date <= addDaysYmd(today, 6)) return { k:1, label:'This week' };
+    var p = today.split('-'), mEnd = p[0]+'-'+p[1]+'-'+String(new Date(Date.UTC(+p[0], +p[1], 0)).getUTCDate()).padStart(2,'0');
+    if (date <= mEnd) return { k:2, label:'This month' };
+    return { k:3, label:'Later' };
+  }
 
   // ── cash-flow forecast: cumulative NET impact of the scheduled runs over the horizon (entity-native
   //    currency). Starts at 0 (the impact of what's scheduled), not an absolute balance — we don't
@@ -346,7 +356,7 @@
     if (df) { if (dayFilter) { df.classList.add('on'); $('f94-dayFilterLabel').textContent = 'Only '+dayFilter; } else df.classList.remove('on'); }
     // F94 Phase 4: when a calendar day is selected, offer "+ New on this day" (opens the create
     // modal pre-filled with that date). Shown in both the empty and populated agenda states.
-    var newDay = dayFilter ? '<button type="button" id="f94-newDayBtn" class="f94-newday" style="display:block;width:100%;margin:0 0 10px;padding:9px 12px;border:1px dashed var(--acc,#c9a84c);border-radius:8px;background:transparent;color:var(--acc,#c9a84c);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer">+ New on '+esc(dlabel(dayFilter))+'</button>' : '';
+    var newDay = dayFilter ? '<button type="button" id="f94-newDayBtn" class="f94-newday" style="display:block;width:100%;margin:0 0 10px;padding:9px 12px;border:1px dashed var(--acc,#c9a84c);border-radius:8px;background:transparent;color:var(--acc,#c9a84c);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer">+ New on '+esc(dlabel(dayFilter))+' (recurring)</button>' : '';   // F94 B1: label the create affordance honestly — this page creates recurring schedules, not one-off documents
     var _wireNewDay = function(){ var nd = $('f94-newDayBtn'); if (nd) nd.onclick = function(){ openModal(dayFilter); }; };
     if (!shown.length) {
       host.innerHTML = newDay + '<div class="empty">'+(items.length ? 'Nothing matches this filter.' : 'No scheduled documents for this entity yet. Recurring invoices, bills and future-dated documents will appear here.')+'</div>';
@@ -357,7 +367,12 @@
     var groups = [], byDate = {};
     shown.forEach(function(it){ if (!byDate[it.date]) { byDate[it.date] = []; groups.push(it.date); } byDate[it.date].push(it); });
     var e = activeEntity(), s = sym(e ? e.currency : 'USD');
+    // F94 B5: section headers by time bucket so a long agenda stays scannable. Suppressed when the list is
+    // already narrowed to a single day (a day filter is active), where a bucket header would be redundant.
+    var today = entityToday(), showSections = !dayFilter, lastK = -1;
     host.innerHTML = newDay + groups.map(function(date){
+      var section = '';
+      if (showSections){ var b = _bucket(date, today); if (b.k !== lastK){ lastK = b.k; section = '<div class="f94-section" style="margin:14px 0 8px;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t2)">'+b.label+'</div>'; } }
       var its = byDate[date], p = date.split('-'), dt = new Date(+p[0], +p[1]-1, +p[2]);
       var dow = ['SUN','MON','TUE','WED','THU','FRI','SAT'][dt.getDay()];
       var rel = relLabel(date), tot = its.reduce(function(a,it){ return a + signed(it); }, 0);
@@ -365,7 +380,7 @@
         + (rel ? '<span class="rel">'+rel+'</span>' : '')
         + '<span class="daytot">'+(tot<0?'−':'+')+s+fmt(Math.abs(tot))+'</span></div>';
       var rows = its.map(itemRow).join('');
-      return '<div class="daygroup">'+head+rows+'</div>';
+      return section + '<div class="daygroup">'+head+rows+'</div>';
     }).join('');
     // wire kebabs
     host.querySelectorAll('[data-kebab]').forEach(function(btn){
@@ -548,7 +563,9 @@
     if (end) end.value = '';
     _mnote('', false);
     var sub = $('f94-modalSub');
-    if (sub) sub.textContent = e ? ('For ' + (e.name || 'this entity') + ' · posts in ' + (e.timezone || 'UTC') + ', totals in ' + (e.currency || 'USD') + '.') : '';
+    // F94 B1: state plainly that this creates a REPEATING schedule (not a one-off document) — to add a
+    // single future-dated invoice/bill, the user uses the Invoices/Bills pages that own those documents.
+    if (sub) sub.textContent = e ? ('Creates a repeating schedule for ' + (e.name || 'this entity') + ' · posts in ' + (e.timezone || 'UTC') + ', totals in ' + (e.currency || 'USD') + '.') : 'Creates a repeating schedule.';
     ov.classList.add('open');
     try { if (who) who.focus(); } catch(_){}
   }

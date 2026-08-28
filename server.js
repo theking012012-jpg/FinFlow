@@ -2501,12 +2501,18 @@ app.get('/api/quotes', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   const { client, amount, expiry_date, status = 'pending', notes = '' } = req.body;
-  if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
+  // F194 Phase 2b: when line_items are supplied, the DERIVED Σ qty×rate is the canonical amount
+  // (Rule 2, same as invoices). Quotes are document-only — NOT recognized revenue, so no money-path
+  // leg keys on this; the derived amount is purely the quote total.
+  const _li = normalizeLineItems(req.body?.line_items);
+  if (_li.error) return res.status(400).json({ error: _li.error });
+  const _effAmount = _li.present ? _li.amount : amount;
+  if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required' });
   const entity = await activeEntity(req.session.userId);
   const num = 'QT-' + String(Date.now()).slice(-4);
-  const _dup = await findRecentDuplicate('quotes', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(amount) } });
+  const _dup = await findRecentDuplicate('quotes', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(_effAmount) } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('quotes', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client, num, amount: Number(amount), expiry_date, status, notes });  // F150-class: request-scoped entity, not is_active
+  const { row } = await db.insert('quotes', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client, num, amount: Number(_effAmount), expiry_date, status, notes, ...(_li.present ? { line_items: _li.line_items } : {}) });  // F150-class: request-scoped entity, not is_active
   res.json(row);
 }));
 app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
@@ -2518,8 +2524,12 @@ app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
   const row = rowToObj(_qtr);
   const patch = {};
   const b = req.body || {};
+  // F194 Phase 2b: same invariant on edit — line_items present ⇒ amount = derived Σ qty×rate (Rule 2).
+  const _li = normalizeLineItems(b.line_items);
+  if (_li.error) return res.status(400).json({ error: _li.error });
   if (b.client      != null) patch.client      = b.client;
-  if (b.amount      != null) patch.amount      = Number(b.amount);
+  if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
+  else if (b.amount != null) patch.amount      = Number(b.amount);
   if (b.expiry_date != null) patch.expiry_date = b.expiry_date;
   if (b.status      != null) patch.status      = b.status;
   if (b.notes       != null) patch.notes       = b.notes;
@@ -2587,7 +2597,13 @@ app.get('/api/bills', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, due_date, status = 'unpaid', notes = '', issue_date } = req.body;
-  if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
+  // F194 Phase 2b: line_items present ⇒ the DERIVED Σ qty×rate is the canonical amount (Rule 2).
+  // The derived amount flows to expense recognition unchanged — an ISSUED bill (RECOGNIZED_BILL)
+  // is recognized at FULL amount by issue_date (server.js:~4373), so Σ reaches OpEx by exactly Σ.
+  const _li = normalizeLineItems(req.body?.line_items);
+  if (_li.error) return res.status(400).json({ error: _li.error });
+  const _effAmount = _li.present ? _li.amount : amount;
+  if (!vendor || _effAmount == null) return res.status(400).json({ error: 'vendor and amount required' });
   if (_badStatus(BILL_STATUSES, status)) return res.status(400).json({ error: 'Invalid bill status.' });
   const entity = await activeEntity(req.session.userId);
   const _billEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
@@ -2597,7 +2613,7 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   // when a token IS present the partial unique index (idx_bills_idem_key) is the sole arbiter, so
   // two legitimately different-token bills for the same vendor+amount within 5s are not collapsed.
   if (!idem) {
-    const _dup = await findRecentDuplicate('bills', scopeId(req), _billEnt, { textMatch: { vendor: String(vendor) }, numMatch: { amount: Number(amount) } });
+    const _dup = await findRecentDuplicate('bills', scopeId(req), _billEnt, { textMatch: { vendor: String(vendor) }, numMatch: { amount: Number(_effAmount) } });
     if (_dup) return res.json(_dup);
   }
   // F36/F38: issue_date is the business issue date the (Step 4) expense-accrual leg keys on;
@@ -2606,14 +2622,14 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   // yet counts at FULL FACE in AP (AP = Σ max(0, amount − amount_paid), server.js:3589) — the AP mirror
   // of F133. A fresh bill has no linked payment, so this is unambiguous; recalcBillStatus (Step 3)
   // owns amount_paid once a real payments_made row exists. There is NO bills boot-backfill to heal it.
-  const _amt = Number(amount);
+  const _amt = Number(_effAmount);
   const _amountPaid = String(status).toLowerCase() === 'paid' ? _amt : 0;
   // C1 Wave 1 durable backstop (mirrors invoices/expenses): a same-token double-submit → the 2nd
   // INSERT throws 23505 → recover the ORIGINAL row and return 200 (never a 500, never a duplicate).
   // Inert until idx_bills_idem_key exists. F135 amount_paid-on-paid above is unchanged.
   let row;
   try {
-    ({ row } = await db.insert('bills', { user_id: scopeId(req), entity_id: _billEnt, vendor, num, amount: _amt, due_date, status, notes, issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem }));
+    ({ row } = await db.insert('bills', { user_id: scopeId(req), entity_id: _billEnt, vendor, num, amount: _amt, due_date, status, notes, issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(`SELECT * FROM bills WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
@@ -2633,8 +2649,13 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   if (!row) return res.status(404).json({ error: 'not found' });
   const patch = {};
   const b = req.body || {};
+  // F194 Phase 2b: line_items present ⇒ amount = derived Σ qty×rate (Rule 2). The derived amount
+  // is what the F135 paid-flip block below reads (patch.amount), so that path is unaffected.
+  const _li = normalizeLineItems(b.line_items);
+  if (_li.error) return res.status(400).json({ error: _li.error });
   if (b.vendor     != null) patch.vendor     = b.vendor;
-  if (b.amount     != null) patch.amount     = Number(b.amount);
+  if (_li.present) { patch.line_items = _li.line_items; patch.amount = _li.amount; }
+  else if (b.amount != null) patch.amount    = Number(b.amount);
   if (b.due_date   != null) patch.due_date   = b.due_date;
   if (b.status     != null) { if (_badStatus(BILL_STATUSES, b.status)) return res.status(400).json({ error: 'Invalid bill status.' }); patch.status = b.status; }
   if (b.notes      != null) patch.notes      = b.notes;

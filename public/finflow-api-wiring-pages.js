@@ -115,8 +115,11 @@
       const expiry_date = document.getElementById('quote-expiry')?.value || null;
       const status = document.getElementById('quote-status')?.value || 'pending';
       const notes  = document.getElementById('quote-notes')?.value?.trim() || '';
+      // F194 Phase 2b: attach line_items when the user added any. The server re-derives the amount
+      // from them (Rule 2) — the `amount` here is only the locked on-screen mirror.
+      const _qli = (window.ffQuoteLineItems && window.ffQuoteLineItems.get && window.ffQuoteLineItems.get()) || null;
       try {
-        const saved = await api('POST', '/api/quotes', { client, amount, expiry_date, status, notes });
+        const saved = await api('POST', '/api/quotes', { client, amount, expiry_date, status, notes, ...(_qli ? { line_items: _qli } : {}) });
         _quotesData.unshift(saved.row || saved);
         window.quotes = _quotesData;
         closeModal('quote-modal');
@@ -787,7 +790,10 @@
       if (_billSaveBtn) _billSaveBtn.disabled = true;
       try {
         const _eidBNew = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
-        const saved = await api('POST', '/api/bills', { vendor, amount, due_date, issue_date, status, notes, entity_id: _eidBNew, idempotency_key: window._billIdemKey });
+        // F194 Phase 2b: attach line_items when present. The server re-derives amount = Σ qty×rate
+        // (Rule 2) and that derived amount flows to expense recognition; `amount` here is the mirror.
+        const _bli = (window.ffBillLineItems && window.ffBillLineItems.get && window.ffBillLineItems.get()) || null;
+        const saved = await api('POST', '/api/bills', { vendor, amount, due_date, issue_date, status, notes, entity_id: _eidBNew, idempotency_key: window._billIdemKey, ...(_bli ? { line_items: _bli } : {}) });
         _billsData.unshift(saved.row || saved);
         window.bills = _billsData;
         // Recurring: this bill IS the current occurrence; also create a recurring

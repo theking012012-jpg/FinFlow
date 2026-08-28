@@ -7945,6 +7945,23 @@ document.addEventListener('click', e=>{
         </select>
       </div>
     </div>
+    <div class="field-wrap" id="quote-li-wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <label class="field-label" style="margin:0">Line items <span style="color:var(--t3,#7a6f57);font-weight:400">— optional; fills the amount above</span></label>
+        <button type="button" class="btn btn-ghost" id="quote-li-add" style="padding:4px 12px;font-size:12px">+ Add line</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="text-align:left;color:var(--t3,#7a6f57);font-size:11px;letter-spacing:.03em">
+          <th style="padding:2px 6px 6px 0;font-weight:600">Description</th>
+          <th style="padding:2px 6px 6px;font-weight:600;width:70px;text-align:center">Qty</th>
+          <th style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Rate</th>
+          <th style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Amount</th>
+          <th style="width:28px"></th>
+        </tr></thead>
+        <tbody id="quote-li-rows"></tbody>
+      </table>
+      <div id="quote-li-total" style="text-align:right;margin-top:8px;font-size:13px;font-weight:700;color:var(--t1,#e8dcc4);display:none">Subtotal: <span id="quote-li-total-val">$0.00</span></div>
+    </div>
     <div class="field-wrap"><label class="field-label" for="quote-notes">Notes</label><input class="finput" id="quote-notes" placeholder="Optional notes"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="document.getElementById('quote-modal').classList.add('hidden')">Cancel</button>
@@ -8004,6 +8021,23 @@ document.addEventListener('click', e=>{
           <option value="paid">Paid</option>
         </select>
       </div>
+    </div>
+    <div class="field-wrap" id="bill-li-wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <label class="field-label" style="margin:0">Line items <span style="color:var(--t3,#7a6f57);font-weight:400">— optional; fills the amount above</span></label>
+        <button type="button" class="btn btn-ghost" id="bill-li-add" style="padding:4px 12px;font-size:12px">+ Add line</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="text-align:left;color:var(--t3,#7a6f57);font-size:11px;letter-spacing:.03em">
+          <th style="padding:2px 6px 6px 0;font-weight:600">Description</th>
+          <th style="padding:2px 6px 6px;font-weight:600;width:70px;text-align:center">Qty</th>
+          <th style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Rate</th>
+          <th style="padding:2px 6px 6px;font-weight:600;width:96px;text-align:right">Amount</th>
+          <th style="width:28px"></th>
+        </tr></thead>
+        <tbody id="bill-li-rows"></tbody>
+      </table>
+      <div id="bill-li-total" style="text-align:right;margin-top:8px;font-size:13px;font-weight:700;color:var(--t1,#e8dcc4);display:none">Subtotal: <span id="bill-li-total-val">$0.00</span></div>
     </div>
     <div class="field-wrap"><label class="field-label" for="bill-notes">Notes</label><input class="finput" id="bill-notes" placeholder="Optional notes"></div>
     <div class="field-wrap" style="margin-bottom:.5rem">

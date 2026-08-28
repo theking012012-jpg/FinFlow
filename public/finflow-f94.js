@@ -77,12 +77,19 @@
         // recurring rows carry entity_id + {client|vendor|description, amount, next_run, frequency, end_date, status, currency}
         if (kind !== 'personal' && eid != null && r.entity_id != null && r.entity_id !== eid) return; // per-entity scope
         if (!r.next_run) return;
+        // F94 B2: a recurring row POSTS on businessDayShift(next_run, entityCountry) — the F88 weekend/
+        // holiday shift, computed SERVER-side (needs date-holidays) and delivered as resolved_post_date.
+        // Place the item on that true post day; keep the nominal anchor for the "moved from" note. The
+        // browser never re-implements the shift (Rule 10). Absent field ⇒ falls back to next_run (unchanged).
+        var _nom = toYmd(r.next_run);
+        var _res = r.resolved_post_date ? toYmd(r.resolved_post_date) : _nom;
         out.push({
           id: r.id, kind: kind, src: 'recurring',
           who: r[who] || r.client || r.vendor || r.description || '—',
           amount: parseFloat(r.amount) || 0,
           cur: r.currency || e.currency || 'USD',
-          date: toYmd(r.next_run), freq: r.frequency || 'Monthly',
+          date: _res, nominalDate: _nom, shifted: (r.post_shifted === true) && !!_res && _res !== _nom,
+          freq: r.frequency || 'Monthly',
           end: r.end_date ? toYmd(r.end_date) : null,
           status: (r.status === 'paused') ? 'paused' : 'active'
         });
@@ -349,6 +356,7 @@
     return '<div class="item'+(it.status==='paused'?' paused':'')+'">'
       + '<div class="ic '+icClass[it.kind]+'">'+ICONS[it.kind]+'</div>'
       + '<div><div class="who">'+esc(it.who)+' '+badge+' '+leftTag+'</div><div class="meta">'+freq+'<span class="sep">·</span><span>'+(it.kind==='invoice'?'money in':it.kind==='bill'?'money out':'owner draw')+'</span>'
+      + (it.shifted ? '<span class="sep">·</span><span class="shifted" title="Scheduled for '+esc(dlabel(it.nominalDate))+' — a weekend or public holiday; posts the next business day (F88).">moved from '+esc(dlabel(it.nominalDate))+'</span>' : '')
       + (it.lastPosted ? '<span class="sep">·</span><span class="lineage" title="Most recent document this schedule has posted">Last posted '+esc(dlabel(it.lastPosted.date))+(it.lastPosted.count>1?' ('+it.lastPosted.count+' total)':'')+'</span>' : '')
       + '</div></div>'
       + '<div class="right"><div class="amt '+amtCls+'"><span class="cur">'+esc(it.cur)+'</span>'+fmt(it.amount)+'</div>'

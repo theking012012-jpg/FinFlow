@@ -2691,7 +2691,8 @@ app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
 app.get('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   try {
     // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
-    res.json(await db.allByUser('recurring_bills', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
+    const _rbrows = await db.allByUser('recurring_bills', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId));
+    res.json(annotateResolvedPostDate(_rbrows, await _entityCountryMap()));   // F94 B2: annotate the true (F88-shifted) post date
   } catch (e) {
     // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/recurring-bills] failed for user', req.session.userId, ':', e.code, e.message);
@@ -2733,7 +2734,7 @@ app.delete('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
 // The hourly runRecurringScheduler materialises personal_transactions rows.
 app.get('/api/recurring-personal-transactions', requireAuth, wrap(async (req, res) => {
   try {
-    res.json(await db.allByUser('recurring_personal_transactions', req.session.userId));
+    res.json(annotateResolvedPostDate(await db.allByUser('recurring_personal_transactions', req.session.userId), null));   // F94 B2: personal rows have no entity/country ⇒ resolved === nominal
   } catch (e) {
     // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
     console.error('[GET /api/recurring-personal-transactions] failed for user', req.session.userId, ':', e.code, e.message);
@@ -2777,7 +2778,8 @@ app.delete('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (
 // ── RECURRING INVOICES ────────────────────────────────────────────────────────
 app.get('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
-  res.json(await db.allByUser('recurring_invoices', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
+  const _rirows = await db.allByUser('recurring_invoices', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId));
+  res.json(annotateResolvedPostDate(_rirows, await _entityCountryMap()));   // F94 B2: annotate the true (F88-shifted) post date
 }));
 app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
@@ -3951,6 +3953,37 @@ function businessDayShift(ymd, country) {
   if (fwd && fwd.slice(0, 7) === s.slice(0, 7)) return fwd;   // …unless it leaves the month (Y+M)…
   const back = _stepToBusinessDay(s, -1, country);           // …then fall back to the previous business day
   return back || s;
+}
+
+// F94 B2 — RESOLVED POST DATE. The day a recurring row will ACTUALLY post is businessDayShift(next_run,
+// entityCountry) (F88 Modified Following). The Scheduled-Documents radar must show that true day, but the
+// shift needs date-holidays (server-only) — so we ANNOTATE it here and the browser never re-implements it
+// (Rule 10). PURE + ADDITIVE + DEFENSIVE: a bad/blank row passes through untouched, and resolved_post_date
+// === next_run whenever nothing shifts (no country, a weekday, a personal row). Never throws.
+function annotateResolvedPostDate(rows, countryByEntityId) {
+  if (!Array.isArray(rows)) return rows;
+  const cmap = countryByEntityId || new Map();
+  return rows.map(r => {
+    try {
+      if (!r || !r.next_run) return r;
+      const nominal = String(r.next_run).slice(0, 10);
+      const country = (r.entity_id != null ? cmap.get(r.entity_id) : null) || null;
+      const resolved = businessDayShift(r.next_run, country);
+      const ok = /^\d{4}-\d{2}-\d{2}$/.test(resolved);
+      return Object.assign({}, r, {
+        resolved_post_date: ok ? resolved : nominal,
+        post_shifted: ok && resolved !== nominal,
+      });
+    } catch (_) { return r; }
+  });
+}
+// One query → id→country map for the recurring GET routes (mirrors the scheduler's _entCountry build).
+// Failure ⇒ empty map ⇒ every row resolves to its nominal date (the list never breaks on this).
+async function _entityCountryMap() {
+  try {
+    const { rows } = await pool.query(`SELECT id, data->>'country' AS country FROM entities`);
+    return new Map(rows.map(e => [e.id, e.country || null]));
+  } catch (_) { return new Map(); }
 }
 
 function nextRunDate(currentDate, frequency) {
@@ -7158,6 +7191,7 @@ module.exports.runRecurringScheduler = runRecurringScheduler;
 // asserted directly (no behavior change in prod).
 module.exports.nextRunDate = nextRunDate;
 module.exports.businessDayShift = businessDayShift;   // F88 step 6 — per-country business-day shift (test surface)
+module.exports.annotateResolvedPostDate = annotateResolvedPostDate;   // F94 B2 — resolved post-date annotator (test surface)
 // Test hooks: Plaid access-token encryption at rest (assert round-trip + tamper detection).
 module.exports._encTok = encTok;
 module.exports._decTok = decTok;

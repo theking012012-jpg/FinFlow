@@ -6187,6 +6187,13 @@ async function _loadEntitiesFromDBImpl(){
       color:    e.color || '#c9a84c',
       currency: e.currency || 'USD',
       active:   e.is_active == 1 || e.is_active === true,
+      // F88/F191 + F94 B3: these live in the entity's `data` JSONB (spread onto the row by rowToObj) and
+      // must travel onto the in-memory entity, or the client never sees them after a reload — the F88
+      // timezone/country chips read blank and the Scheduled-Documents runway (opening_cash) reverts to
+      // its honest line even right after a save (saveRegion → reload() rebuilds ENTITIES right here).
+      timezone:     e.timezone || null,
+      country:      e.country || null,
+      opening_cash: (e.opening_cash != null && e.opening_cash !== '' ? Number(e.opening_cash) : null),
       data:     {rev:0,cogs:0,grossProfit:0,opex:0,netProfit:0},
       // F196 Tier 2: the entity's OWN letterhead profile. A document is issued BY this entity, so
       // its business name/address/contact/tax-id must travel with it rather than being read from the

@@ -8,6 +8,26 @@ the top item for the next session. Environment note: the local Linux workspace (
 all session; everything went through `device_stage_files` / `device_commit_files`. Owner runs verify +
 commit in PowerShell.
 
+## ‼️ NEXT SESSION — DO THIS FIRST (owner directive)
+**Before ANY further building or the Total Billed fix: do a FULL live walkthrough of the app in the browser
+and check EVERYTHING.** The harnesses pass but STUB their data, so two real production bugs (the `f9792d8`
+mapper drop, and Total Billed counting future-dated invoices) sailed past a green sweep this session. Trust
+the live app, not the harnesses.
+- **App:** https://finflow-production-dab2.up.railway.app/app (owner is logged in; active entity "Saige Holdings LLC").
+- **Get a browser connected first.** This session the Claude-in-Chrome extension was NOT connected and the
+  desktop built-in browser was intermittent. Confirm a working browser before starting.
+- **Walk every page** and, for each, check: does it load without console errors; does the data match reality;
+  do the money figures **reconcile** (Billed − Collected = Outstanding; revenue/AR/AP vs the reports); do
+  created / edited / deleted rows **persist across a reload**; do entity switches scope correctly; do the
+  F88 timezone/holiday and multi-currency surfaces behave. Pages: Dashboard, Invoices (money-in), Expenses /
+  Bills (money-out), Scheduled Documents, Payroll, Reports, Banking / connections, Customers / Vendors,
+  Settings / entity editor, Personal finance.
+- **Known-live going in:** (1) Total Billed counts future-dated invoices (see below); (2) verify the `f9792d8`
+  mapper fix actually DEPLOYED — set opening cash + a timezone, hard-reload (Ctrl+Shift+R), confirm they
+  persist and the runway/chips hold.
+- **Produce the full defect catalogue FIRST**, then fix in priority order. Don't build new features until
+  the walkthrough is done.
+
 ## Committed this session (all on `main`, pushed)
 - `6c25124` Phase 4 — clickable calendar (day-click filter + "+ New on this day"). Harness `verify-f94-dayclick.js` (20/0).
 - `b4393c2` **B2** — true F88-resolved post dates. `finflow-f94.js` + `server.js` (`annotateResolvedPostDate` on the 3 recurring GET routes). Harness `verify-f94-resolved-dates.js` (10/0).

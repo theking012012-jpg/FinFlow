@@ -4442,11 +4442,11 @@ function renderInvestments(){
     return`<div class="inv-holding-row">
       <div class="inv-ticker-badge" style="background:${bg}22;color:${bg};border-color:${bg}44;font-size:9px">${esc(h.ticker.slice(0,4))}</div>
       <div>
-        <div style="font-weight:500;font-size:12.5px">${esc(h.name)} <span class="badge b-blue" style="font-size:9px;padding:1px 5px">${esc(h.type)}</span></div>
+        <div style="font-weight:500;font-size:12.5px">${esc(h.name)} <span class="badge b-blue" style="font-size:9px;padding:1px 5px">${esc(h.type)}</span>${h._noQuote?' <span title="No live price — check the ticker symbol (e.g. enter MSFT, not Microsoft; BTC, not Bitcoin)" style="color:var(--amber,#e0a500);font-size:10px;font-weight:600">⚠ check ticker</span>':((h._resolved&&h._resolved!==String(h.ticker||'').toUpperCase())?` <span title="Quoted as ${esc(h._resolved)}" style="color:var(--t3);font-size:10px">→ ${esc(h._resolved)}</span>`:'')}</div>
         <div style="font-size:11px;color:var(--t3)">${(val/totalValue*100).toFixed(1)}% of portfolio</div>
         <div class="inv-alloc-bar"><div class="inv-alloc-fill" style="width:${(val/totalValue*100).toFixed(1)}%;background:${bg}"></div></div>
       </div>
-      <div style="text-align:right;font-family:var(--font-mono)">$${h.price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="text-align:right;font-family:var(--font-mono);color:${h._noQuote?'var(--t3)':'inherit'}" title="${h._noQuote?'Cost basis — no live price':'Live price'}">$${h.price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
       <div style="text-align:right;color:var(--t2)">${h.shares}</div>
       <div style="text-align:right;font-family:var(--font-mono);font-weight:500">${S2(val)}</div>
       <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${S2(cost)}</div>
@@ -4632,6 +4632,7 @@ function openAddHoldingModal(scope){
   // Clear any edit state so this is a fresh ADD — otherwise the patched saveHolding
   // (which routes on #holding-edit-id) would PUT-update the last-edited holding.
   const _eid=document.getElementById('holding-edit-id'); if(_eid) _eid.value='';
+  if(typeof window._ffHoldingHideSuggest==='function') window._ffHoldingHideSuggest();   // clear any stale symbol-picker results
   const _modal=document.getElementById('holding-modal');
   if(_modal){ const _t=_modal.querySelector('.modal-title'); if(_t) _t.textContent='Add holding';
     const _b=_modal.querySelector('button[onclick*="saveHolding"]'); if(_b) _b.textContent='Add holding'; }

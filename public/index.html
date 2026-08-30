@@ -1928,13 +1928,13 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 
       <!-- ADD HOLDING MODAL -->
       <div class="modal-overlay hidden" id="holding-modal">
-        <div class="modal">
+        <div class="modal" style="max-width:min(660px,calc(100vw - 2rem))">
           <div class="modal-header">
             <div><div class="modal-title">Add holding</div><div class="modal-sub">Track a new investment position</div></div>
             <button class="modal-close" onclick="closeModal('holding-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <div class="field-group">
-            <div class="field-wrap" style="position:relative"><label class="field-label" for="h-ticker">Ticker / Symbol</label><input class="finput" id="h-ticker" placeholder="Type a symbol or name — e.g. AAPL or Microsoft" style="text-transform:uppercase" autocomplete="off" oninput="ffHoldingSearch&&ffHoldingSearch()" onkeydown="ffHoldingSearchKey&&ffHoldingSearchKey(event)" onblur="ffHoldingTickerBlur&&ffHoldingTickerBlur()"><div id="h-ticker-suggest" role="listbox" style="display:none;position:absolute;z-index:60;left:0;right:0;top:100%;margin-top:3px;background:var(--bg1);border:1px solid var(--bd2);border-radius:8px;max-height:230px;overflow:auto;box-shadow:0 12px 34px rgba(0,0,0,.45)"></div></div>
+            <div class="field-wrap" style="position:relative"><label class="field-label" for="h-ticker">Ticker / Symbol</label><input class="finput" id="h-ticker" placeholder="Type a symbol or name — e.g. AAPL or Microsoft" style="text-transform:uppercase" autocomplete="off" oninput="ffHoldingSearch&&ffHoldingSearch()" onkeydown="ffHoldingSearchKey&&ffHoldingSearchKey(event)" onblur="ffHoldingTickerBlur&&ffHoldingTickerBlur()"><div id="h-ticker-suggest" role="listbox" style="display:none;position:absolute;z-index:60;left:0;right:auto;width:min(calc(200% - 40px),calc(100vw - 4rem));top:100%;margin-top:3px;background:var(--bg1);border:1px solid var(--bd2);border-radius:8px;max-height:300px;overflow:auto;box-shadow:0 12px 34px rgba(0,0,0,.45)"></div></div>
             <div class="field-wrap"><label class="field-label" for="h-type">Asset type</label><select class="finput" id="h-type" onchange="ffHoldingSearch&&ffHoldingSearch()"><option>Stock</option><option>ETF</option><option>Bond</option><option>Crypto</option><option>Cash</option><option>Other</option></select></div>
           </div>
           <div class="field-group">
@@ -1965,12 +1965,16 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           var b=box(); if(!b) return;
           if(!items.length){ hide(); return; }
           b.innerHTML = items.map(function(r,i){
+            // Compact the asset-class label so the right column stays narrow (Finnhub returns verbose
+            // strings like "Common Stock"). Keeps the row from clipping at the dropdown edge.
+            var ty = String(r.type||'');
+            if(/common stock/i.test(ty)) ty='Stock'; else if(/^crypto/i.test(ty)) ty='Crypto'; else if(/etp|etf|fund/i.test(ty)) ty='ETF';
             return '<div data-i="'+i+'" onmousedown="event.preventDefault();window.ffHoldingPick('+i+')" '
-              +'style="padding:8px 10px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--bd);'
+              +'style="padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--bd);'
               +(i===active?'background:var(--acc-bg,#2a2418)':'')+'">'
-              +'<span style="font-weight:700;color:var(--t1);font-family:var(--font-mono);min-width:58px">'+esc(r.symbol||'')+'</span>'
-              +'<span style="flex:1;color:var(--t2);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.description||'')+'</span>'
-              +'<span style="color:var(--t3);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em">'+esc(r.type||'')+'</span>'
+              +'<span style="font-weight:700;color:var(--t1);font-family:var(--font-mono);min-width:66px;flex-shrink:0;font-size:13px">'+esc(r.symbol||'')+'</span>'
+              +'<span style="flex:1;min-width:0;color:var(--t2);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.description||'')+'</span>'
+              +'<span style="color:var(--t3);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;min-width:38px;text-align:right">'+esc(ty)+'</span>'
               +'</div>';
           }).join('');
           b.style.display='block';

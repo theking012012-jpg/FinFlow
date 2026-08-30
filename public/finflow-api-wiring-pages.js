@@ -86,7 +86,7 @@
             <span style="font-weight:500">${esc(q.client)}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(q.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(q.amount)}</span>
-            <span style="color:var(--t2)">${esc(q.expiry_date || '—')}</span>
+            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(q.expiry_date,{year:true}):(q.expiry_date||''))||'—')}</span>
             <span><span class="badge ${cls[q.status] || 'b-amber'}">${esc(q.status)}</span></span>
             <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewQuote(${q.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteQuote(${q.id})">✕</button></div>
           </div>`).join('')
@@ -171,7 +171,7 @@
             <span style="font-weight:500">${esc(r.customer || '')}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc(r.date || '')}</span>
+            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
             <span style="color:var(--t2)">${esc(r.method || '')}</span>
             <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewReceipt(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteReceipt(${r.id})">✕</button></div>
           </div>`).join('')
@@ -508,7 +508,7 @@
             <span style="font-weight:500">${esc(r.customer || '')}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc(r.date || '')}</span>
+            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
             <span><span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status || 'Open')}</span></span>
             <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewCreditNote(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteCreditNote(${r.id})">✕</button></div>
           </div>`).join('')
@@ -709,7 +709,7 @@
             <span style="font-weight:500">${esc(b.vendor)}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(b.amount)}</span>
-            <span style="color:${b.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc(b.due_date || '—')}</span>
+            <span style="color:${b.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.due_date,{year:true}):(b.due_date||''))||'—')}</span>
             <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${cls[b.status?.toLowerCase()] || 'b-amber'}">${esc(b.status)}</span></span>
             <div style="display:flex;gap:4px">
               <button class="btn btn-ghost btn-sm" onclick="viewBill(${b.id})">View</button>
@@ -902,7 +902,7 @@
             <span style="font-weight:500">${esc(r.vendor || '')}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.ref || '')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc(r.date || '')}</span>
+            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
             <span style="color:var(--t2)">${esc(r.method || '')}</span>
             <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewPaymentMade(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deletePaymentMade(${r.id})">✕</button></div>
           </div>`).join('')
@@ -1133,7 +1133,7 @@
             <span style="font-weight:500">${esc(r.vendor || '')}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc(r.date || '')}</span>
+            <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
             <span><span class="badge ${cls[r.status] || 'b-amber'}">${esc(r.status || 'Open')}</span></span>
             <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewVendorCredit(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteVendorCredit(${r.id})">✕</button></div>
           </div>`).join('')

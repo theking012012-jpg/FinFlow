@@ -7201,7 +7201,7 @@ app.get('/api/symbol-search', requireAuth, async (req, res) => {
       if (!r.ok) return res.json({ query: q, symbol: null, results: [], error: 'CoinGecko HTTP ' + r.status });
       const d = await r.json();
       const coins = Array.isArray(d && d.coins) ? d.coins : [];
-      const results = coins.slice(0, 8).map(c => ({ symbol: String(c.symbol || '').toUpperCase(), description: c.name || '', type: 'Crypto' }));
+      const results = coins.slice(0, 20).map(c => ({ symbol: String(c.symbol || '').toUpperCase(), description: c.name || '', type: 'Crypto' }));
       const out = { query: q, symbol: results[0] ? results[0].symbol : null, description: results[0] ? results[0].description : '', results, matches: coins.length };
       _symSearchCache.set(ck, { data: out, ts: Date.now() });
       return res.json(out);
@@ -7213,7 +7213,7 @@ app.get('/api/symbol-search', requireAuth, async (req, res) => {
     if (!r.ok) return res.json({ query: q, symbol: null, results: [], error: 'Finnhub HTTP ' + r.status });
     const d = await r.json();
     const rows = Array.isArray(d && d.result) ? d.result : [];
-    const results = rows.filter(x => x && x.symbol && !x.symbol.includes('.')).slice(0, 8)
+    const results = rows.filter(x => x && x.symbol && !x.symbol.includes('.')).slice(0, 20)
       .map(x => ({ symbol: String(x.symbol).toUpperCase(), description: x.description || '', type: x.type || 'Stock' }));
     // Prefer a US-primary common stock; else the first result.
     const pick = rows.find(x => x && x.symbol && !x.symbol.includes('.') && (x.type === 'Common Stock' || !x.type)) || rows[0] || null;

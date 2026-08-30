@@ -4947,11 +4947,29 @@ function clearAIChat(){
     const div    = parseFloat(document.getElementById('h-div')?.value) || 0;
     const type   = document.getElementById('h-type')?.value || 'Stock';
     if (!ticker || !shares) { tip('Ticker and shares are required', true); return; }
+    // Entry-time symbol validation (prevents the "no live data" trap at the source): resolve the typed
+    // ticker/name to a real exchange symbol — company/coin NAMES and wrong tickers get corrected HERE,
+    // not silently stored. Crypto routes to CoinGecko, everything else to Finnhub. If nothing resolves
+    // (a private/OTC/unlisted holding), we still allow it — but the user confirms, and it saves with
+    // whatever they typed so the live view can flag it. Cash is never a market symbol.
+    let storeTicker = ticker;
+    if (type !== 'Cash' && typeof window._ffResolveSymbol === 'function') {
+      let resolved = null;
+      try { resolved = await window._ffResolveSymbol(ticker, type); } catch (_) {}
+      if (resolved && resolved !== 'CASH') {
+        storeTicker = resolved;                    // "MICROSOFT" → "MSFT", "Bitcoin" → "BTC"
+        if (resolved !== ticker) tip('Saved as ' + resolved);
+      } else {
+        const msg = 'No live market symbol found for “' + ticker + '”. Save it anyway? It will use your entered price with no live quotes. For live prices use an exchange ticker (e.g. MSFT, BTC).';
+        const ok = (typeof window._confirmModal === 'function') ? await window._confirmModal(msg) : true;
+        if (!ok) return;
+      }
+    }
     // Scope the write to the page the modal was opened from (personal vs business entity).
     const scope = window._holdingScope === 'business' ? 'business' : 'personal';
     try {
       await api('POST', '/api/holdings', {
-        ticker, name, asset_type: type, shares, cost_per: cost, price, dividend: div, scope,
+        ticker: storeTicker, name, asset_type: type, shares, cost_per: cost, price, dividend: div, scope,
       });
       if (typeof closeModal === 'function') closeModal('holding-modal');
       tip(`${e(ticker)} added to portfolio`);

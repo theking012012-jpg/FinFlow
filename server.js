@@ -7066,6 +7066,31 @@ const _quoteCache   = new Map();          // SYMBOL -> { data, ts }
 const _QUOTE_TTL_MS = 60 * 1000;          // 60s freshness
 const _provCooldown = { finnhub: 0, coingecko: 0 }; // epoch ms until which we back off
 
+// Dynamic crypto id resolution — the CRYPTO_IDS map above is only a fast-path for the majors; it is
+// NOT the ceiling. Any coin the client marks as crypto is resolved to its CoinGecko id via the search
+// endpoint (ranked by market cap, so a shared ticker picks the real coin), cached for the process life.
+const _cgIdCache = new Map();             // SYMBOL -> coingecko id (or null if unresolvable)
+async function _coingeckoId(symbol) {
+  const sym = String(symbol || '').toUpperCase();
+  if (CRYPTO_IDS[sym]) return CRYPTO_IDS[sym];
+  if (_cgIdCache.has(sym)) return _cgIdCache.get(sym);
+  const key = process.env.COINGECKO_API_KEY;
+  if (!key) return null;
+  try {
+    const r = await fetch(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(sym)}`, {
+      headers: { 'x-cg-demo-api-key': key, accept: 'application/json' },
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const coins = Array.isArray(d && d.coins) ? d.coins : [];
+    // Prefer an exact ticker match (CoinGecko returns them market-cap ranked); else the top hit.
+    const exact = coins.find(c => c && String(c.symbol || '').toUpperCase() === sym);
+    const id = (exact && exact.id) || (coins[0] && coins[0].id) || null;
+    _cgIdCache.set(sym, id);
+    return id;
+  } catch (e) { return null; }
+}
+
 // F31-class guard: reject implausible feed output so a bad quote can never surface a
 // fabricated number (the "+3,513,999,900%" astronomical-value bug). Bad → null, never a guess.
 function _saneQuote(q) {
@@ -7086,7 +7111,11 @@ app.get('/api/stock-price', requireAuth, async (req, res) => {
   const cached = _quoteCache.get(symbol);
   if (cached && Date.now() - cached.ts < _QUOTE_TTL_MS) return res.json(cached.data);
 
-  const isCrypto = Object.prototype.hasOwnProperty.call(CRYPTO_IDS, symbol);
+  // Asset class: the client passes &type= from the holding (crypto vs stock/etf/…). That both routes to
+  // the right provider AND disambiguates cross-class ticker collisions (e.g. ARB = Arbor Realty stock
+  // vs Arbitrum crypto). Absent type falls back to the majors map, preserving old behaviour.
+  const typeHint = (req.query.type || '').toString().toLowerCase();
+  const isCrypto = typeHint === 'crypto' || (typeHint === '' && Object.prototype.hasOwnProperty.call(CRYPTO_IDS, symbol));
   const now = Date.now();
   try {
     let out;
@@ -7096,7 +7125,8 @@ app.get('/api/stock-price', requireAuth, async (req, res) => {
       if (now < _provCooldown.coingecko) {
         return res.json(cached ? cached.data : { symbol, price: null, error: 'rate-limited (CoinGecko); retry shortly' });
       }
-      const id = CRYPTO_IDS[symbol];
+      const id = await _coingeckoId(symbol);   // majors map → else CoinGecko search (any coin), cached
+      if (!id) return res.json({ symbol, price: null, error: 'Unknown crypto symbol: ' + symbol });
       // Demo (free) key → public base + x-cg-demo-api-key header. NOT pro-api (rejects demo keys → 401).
       const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`, {
         headers: { 'x-cg-demo-api-key': key, accept: 'application/json' },
@@ -7146,6 +7176,52 @@ app.get('/api/stock-price', requireAuth, async (req, res) => {
     // Transient network error → serve stale cache if we have it, else a clean error.
     if (cached) return res.json(cached.data);
     return res.json({ symbol, price: null, error: e.message });
+  }
+});
+
+// ── SYMBOL SEARCH — resolve a company/crypto NAME to its exchange ticker (Finnhub, keyed) ─
+// Investors type "Microsoft" or "Bitcoin"; the quote APIs need "MSFT" / "BTC". The client maps the
+// common cases itself; this proxy is the fallback for arbitrary names. Server-side & keyed like the
+// quote proxy; a missing key returns a clear error, never a crash. Cached ~1h (names don't move).
+const _symSearchCache = new Map();       // q(lower) -> { data, ts }
+const _SYM_TTL_MS = 60 * 60 * 1000;
+app.get('/api/symbol-search', requireAuth, async (req, res) => {
+  const q = (req.query.q || '').toString().trim();
+  if (!q) return res.status(400).json({ error: 'q required' });
+  const type = (req.query.type || '').toString().toLowerCase();   // '' | 'crypto'
+  const ck = type + '|' + q.toLowerCase();
+  const hit = _symSearchCache.get(ck);
+  if (hit && Date.now() - hit.ts < _SYM_TTL_MS) return res.json(hit.data);
+  try {
+    if (type === 'crypto') {
+      // CRYPTO branch → CoinGecko search (covers ~15k coins), ranked by market cap.
+      const key = process.env.COINGECKO_API_KEY;
+      if (!key) return res.json({ query: q, symbol: null, results: [], error: 'COINGECKO_API_KEY not set' });
+      const r = await fetch(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(q)}`, { headers: { 'x-cg-demo-api-key': key, accept: 'application/json' } });
+      if (!r.ok) return res.json({ query: q, symbol: null, results: [], error: 'CoinGecko HTTP ' + r.status });
+      const d = await r.json();
+      const coins = Array.isArray(d && d.coins) ? d.coins : [];
+      const results = coins.slice(0, 8).map(c => ({ symbol: String(c.symbol || '').toUpperCase(), description: c.name || '', type: 'Crypto' }));
+      const out = { query: q, symbol: results[0] ? results[0].symbol : null, description: results[0] ? results[0].description : '', results, matches: coins.length };
+      _symSearchCache.set(ck, { data: out, ts: Date.now() });
+      return res.json(out);
+    }
+    // STOCK/ETF/etc. branch → Finnhub search.
+    const key = process.env.FINNHUB_API_KEY;
+    if (!key) return res.json({ query: q, symbol: null, results: [], error: 'FINNHUB_API_KEY not set' });
+    const r = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${encodeURIComponent(key)}`, { headers: { accept: 'application/json' } });
+    if (!r.ok) return res.json({ query: q, symbol: null, results: [], error: 'Finnhub HTTP ' + r.status });
+    const d = await r.json();
+    const rows = Array.isArray(d && d.result) ? d.result : [];
+    const results = rows.filter(x => x && x.symbol && !x.symbol.includes('.')).slice(0, 8)
+      .map(x => ({ symbol: String(x.symbol).toUpperCase(), description: x.description || '', type: x.type || 'Stock' }));
+    // Prefer a US-primary common stock; else the first result.
+    const pick = rows.find(x => x && x.symbol && !x.symbol.includes('.') && (x.type === 'Common Stock' || !x.type)) || rows[0] || null;
+    const out = { query: q, symbol: pick ? String(pick.symbol).toUpperCase() : null, description: pick ? (pick.description || '') : '', results, matches: rows.length };
+    _symSearchCache.set(ck, { data: out, ts: Date.now() });
+    return res.json(out);
+  } catch (e) {
+    return res.json({ query: q, symbol: null, results: [], error: e.message });
   }
 });
 

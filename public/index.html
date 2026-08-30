@@ -2046,16 +2046,23 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
 
       <!-- BANKING PAGE — COMING SOON -->
       <div class="page" id="page-banking">
-        <div class="card" style="max-width:480px;margin:3rem auto;text-align:center;padding:2.5rem 2rem">
-          <div style="width:56px;height:56px;border-radius:14px;background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:24px">🏦</div>
-          <div style="font-family:var(--font-display);font-size:22px;font-style:italic;color:var(--acc-light);margin-bottom:.5rem">Bank Sync — Coming Soon</div>
-          <div style="font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.5rem">Real-time bank feed powered by Plaid will sync transactions from 12,000+ institutions, auto-categorise them, and import your balances automatically.</div>
-          <div style="display:flex;flex-direction:column;gap:8px;text-align:left;margin-bottom:1.5rem">
-            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--green)">✓</span> 12,000+ bank & credit union support</div>
-            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--green)">✓</span> Automatic transaction categorisation</div>
-            <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t2)"><span style="color:var(--green)">✓</span> Live balance sync every 15 minutes</div>
+        <div class="metrics-grid">
+          <div class="mc"><div class="mc-label">Total Balance</div><div class="mc-val" id="bank-total-bal">—</div><div class="mc-change neutral">Across all accounts</div></div>
+          <div class="mc"><div class="mc-label">Inflow (MTD)</div><div class="mc-val" id="bank-inflow">—</div><div class="mc-change" id="bank-inflow-chg"></div></div>
+          <div class="mc"><div class="mc-label">Outflow (MTD)</div><div class="mc-val" id="bank-outflow">—</div><div class="mc-change neutral">This month</div></div>
+          <div class="mc"><div class="mc-label">Uncategorized</div><div class="mc-val" id="bank-uncat" style="color:var(--amber)">—</div><div class="mc-change dn">Need review</div></div>
+        </div>
+        <div class="two-col">
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><h2 class="card-title">Bank Accounts</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="ffBankLinkFromPage()">🔗 Link bank</button><button class="btn btn-ghost btn-sm" onclick="ffImportStatement()" title="Import an OFX/QFX/CSV statement from any bank">⬆ Import</button><button class="btn btn-ghost btn-sm" onclick="openReconcileModal()">⇌ Reconcile</button><button class="btn btn-primary btn-sm" onclick="openAddAccountModal()">+ Add Account</button></div></div>
+            <!-- Real Plaid-linked banks (populated from /api/plaid/items; empty until a bank is linked). -->
+            <div id="plaid-linked-strip"></div>
+            <div id="bank-accounts-list"></div>
           </div>
-          <span class="badge b-amber" style="font-size:11px;padding:4px 12px">Plaid integration — requires PLAID_CLIENT_ID + PLAID_SECRET env vars</span>
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><h2 class="card-title">Recent Transactions</h2><button class="btn btn-ghost btn-sm" onclick="openAddTxnModal()">+ Add</button></div>
+            <div id="bank-txns-list"></div>
+          </div>
         </div>
       </div>
 
@@ -2480,6 +2487,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
                 +'<div class="conn-card-desc">'+item.desc+'</div>'
                 +'<div class="conn-card-footer">'
                 +(on?'<span class="conn-connected-badge">&#10003; Connected</span>':(built?'<span style="font-size:10px;color:var(--green)">Available</span>':'<span></span>'))
+                +((on&&SYNC_MAP[item.name])?'<button class="conn-toggle-btn disconn" data-sync="'+item.name+'" style="margin-right:6px" title="Pull the latest data from '+item.name+'" onclick="event.stopPropagation();connSyncNow(\''+item.name+'\')">&#8635; Sync now</button>':'')
                 +((on&&item.name==='Codat')?'<button class="conn-toggle-btn conn" style="margin-right:6px" title="Import your existing accounting data into FinFlow" onclick="event.stopPropagation();ffCodatMigrate()">&#8681; Import books</button>':'')
                 +'<button class="conn-toggle-btn '+(on?'conn':'disconn')+'" onclick="connToggle('+idx+')">'+(on?'Disconnect':(built?'Connect':'Request'))+'</button>'
                 +'</div>';
@@ -2595,6 +2603,42 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               .then(function(r){return r.json().catch(function(){return {};});})
               .then(function(j){ if(typeof notify==='function') notify(j.requested===false ? ('You\'ve already requested '+n+'.') : ('Request recorded for '+n+' — we prioritise by demand.')); })
               .catch(function(){ if(typeof notify==='function') notify('Couldn\'t record the request. Try again.', true); });
+          };
+
+          // A2 — "Sync now": pull the latest data through the connector's EXISTING /sync route, report
+          // the count the server returns, and refresh the owning surface. Never writes to the books —
+          // sync is display/feed only; books-import stays the separate owner-gated step (Codat: Import
+          // books). Idempotent server-side (Plaid dedupes on plaid_txn_id).
+          var SYNC_MAP={
+            'Plaid': {ep:'plaid/sync', count:'added',     unit:'transaction', surfaces:['banking','bank-rec']},
+            'Finch': {ep:'finch/sync', count:'employees', unit:'employee',    surfaces:['payroll']},
+            'Stripe':{ep:'stripe/sync',count:'available', unit:'balance',     surfaces:[], money:true},
+            'Belvo': {ep:'belvo/sync', count:'accounts',  unit:'account',     surfaces:['banking','bank-rec']},
+            'Codat': {ep:'codat/sync', count:'accounts',  unit:'account',     surfaces:[]}
+          };
+          window.connSyncNow=function(name){
+            var m=SYNC_MAP[name]; if(!m) return;
+            var note=function(msg,e){ if(typeof notify==='function') notify(msg, !!e); };
+            var btns=document.querySelectorAll('button[data-sync="'+name+'"]');
+            btns.forEach(function(b){ b.disabled=true; b.dataset._t=b.textContent; b.textContent='Syncing…'; });
+            var done=function(){ btns.forEach(function(b){ b.disabled=false; if(b.dataset._t) b.textContent=b.dataset._t; }); };
+            fetch('/api/'+m.ep,{method:'POST',credentials:'include'}).then(function(r){
+              return r.json().catch(function(){return {};}).then(function(j){ return {ok:r.ok, j:j}; });
+            }).then(function(res){
+              done();
+              if(!res.ok){ return note((res.j&&res.j.error)||('Could not sync '+name), true); }
+              var n=res.j[m.count], msg;
+              if(m.money){
+                // Stripe returns `available` as an array of {amount(cents),currency}; sum to a balance.
+                var bal=Array.isArray(n)?n.reduce(function(s,x){return s+((x&&x.amount)||0);},0)/100:(parseFloat(n)||0);
+                msg=name+' synced — balance '+(typeof S==='function'?S(bal):bal);
+              }
+              else if(typeof n==='number'){ msg=name+' synced — '+n+' '+m.unit+(n===1?'':'s')+(m.ep==='plaid/sync'?' added':' read'); }
+              else { msg=name+' synced ✓'; }
+              note(msg);
+              try{ if(window.finflow&&window.finflow.refresh&&m.surfaces.length) window.finflow.refresh(m.surfaces); }catch(e){}
+              try{ hydrateStates(); }catch(e){}
+            }).catch(function(){ done(); note('Network error syncing '+name, true); });
           };
 
           window.connFilterAll=function(){
@@ -2926,26 +2970,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
       </div>
 
       <!-- BANKING (biz ledger view) -->
-      <div class="page" id="page-banking-biz">
-        <div class="metrics-grid">
-          <div class="mc"><div class="mc-label">Total Balance</div><div class="mc-val" id="bank-total-bal">—</div><div class="mc-change neutral">Across all accounts</div></div>
-          <div class="mc"><div class="mc-label">Inflow (MTD)</div><div class="mc-val" id="bank-inflow">—</div><div class="mc-change" id="bank-inflow-chg"></div></div>
-          <div class="mc"><div class="mc-label">Outflow (MTD)</div><div class="mc-val" id="bank-outflow">—</div><div class="mc-change neutral">This month</div></div>
-          <div class="mc"><div class="mc-label">Uncategorized</div><div class="mc-val" id="bank-uncat" style="color:var(--amber)">—</div><div class="mc-change dn">Need review</div></div>
-        </div>
-        <div class="two-col">
-          <div class="card" style="margin-bottom:0">
-            <div class="card-header"><h2 class="card-title">Bank Accounts</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="ffBankLinkFromPage()">🔗 Link bank</button><button class="btn btn-ghost btn-sm" onclick="ffImportStatement()" title="Import an OFX/QFX/CSV statement from any bank">⬆ Import</button><button class="btn btn-ghost btn-sm" onclick="openReconcileModal()">⇌ Reconcile</button><button class="btn btn-primary btn-sm" onclick="openAddAccountModal()">+ Add Account</button></div></div>
-            <!-- Real Plaid-linked banks (populated from /api/plaid/items; empty until a bank is linked). -->
-            <div id="plaid-linked-strip"></div>
-            <div id="bank-accounts-list"></div>
-          </div>
-          <div class="card" style="margin-bottom:0">
-            <div class="card-header"><h2 class="card-title">Recent Transactions</h2><button class="btn btn-ghost btn-sm" onclick="openAddTxnModal()">+ Add</button></div>
-            <div id="bank-txns-list"></div>
-          </div>
-        </div>
-      </div>
+      <!-- page-banking-biz retired (F192/A4): its content now lives in #page-banking, which the nav actually reaches -->
 
       <!-- QUOTES -->
       <div class="page" id="page-quotes">
@@ -4517,8 +4542,25 @@ window.renderPlaidLinked = async function(){
       <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--red)" onclick="ffBankUnlink('${it.item_id}')">Unlink</button>
     </div>`).join('') + `<div style="font-size:11px;color:var(--t3);margin:2px 0 10px">Linked via Plaid (${(d.env||'sandbox')}). Sync pulls new transactions into your books.</div>`;
 };
-window.ffBankLinkFromPage = function(){
-  window.ffLinkBank(()=>{ renderPlaidLinked(); if(typeof loadBankingFromDB==='function') loadBankingFromDB(); });
+// F192/A4 — route "Link bank" by the active entity's COUNTRY to the provider that serves it, falling
+// back to whichever aggregator is actually configured, and finally to manual statement import (always
+// available via the ⬆ Import button). No dishonest "coming soon" — an unserved region is told plainly
+// to use Import. Belvo covers Latin America; Plaid covers US/CA/UK/EU.
+window.ffBankLinkFromPage = async function(){
+  const ent = (window.ENTITIES||[]).find(e=>e.active) || (window.ENTITIES||[])[0] || {};
+  const country = String(ent.country||'').toUpperCase();
+  const BELVO_MARKETS = ['MX','BR','CO','AR','CL','PE','EC','BO','PY','UY','VE','GT','CR','PA','DO'];
+  const onDone = ()=>{ try{ renderPlaidLinked(); }catch(e){} if(typeof loadBankingFromDB==='function') loadBankingFromDB(); };
+  const cfg = async (path, key) => { try{ return !!(await (await fetch(path,{credentials:'include'})).json())[key]; }catch(e){ return false; } };
+  const plaidOk = await cfg('/api/plaid/items','configured');
+  const belvoOk = await cfg('/api/belvo/status','configured');
+  const preferBelvo = BELVO_MARKETS.indexOf(country) >= 0;
+  // Try the region's provider first, then the other configured one.
+  const order = preferBelvo ? [['belvo',belvoOk],['plaid',plaidOk]] : [['plaid',plaidOk],['belvo',belvoOk]];
+  const pick = order.find(o=>o[1]);
+  if (pick){ return pick[0]==='belvo' ? window.ffLinkBelvo(onDone) : window.ffLinkBank(onDone); }
+  // Neither auto-link provider is configured for this region → manual statement import is the path.
+  if(typeof notify==='function') notify('Automatic bank linking isn’t enabled'+(country?(' for '+country):'')+' yet — use “⬆ Import” to add an OFX/QFX/CSV statement from any bank.', true);
 };
 window.ffBankSync = async function(){
   if(typeof notify==='function') notify('Syncing bank transactions…');
@@ -5455,7 +5497,7 @@ async function loadBankRec(){
         <div class="tx-row" style="cursor:pointer;border-left:2px solid transparent;padding-left:8px;transition:border-color .15s" id="bbtx-${b.id}"
           onclick="selectBankTx(${b.id},this)">
           <div><div class="tx-name">${esc(b.description||b.merchant||'Transaction')}</div>
-          <div class="tx-cat">${esc(b.date||'')} · ${esc(b.account_name||'')}</div></div>
+          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.date,{year:true}):(b.date||''))||'—')} · ${esc(b.account_name||'')}</div></div>
           <div class="tx-amt ${parseFloat(b.amount)>=0?'up':'dn'}">${parseFloat(b.amount)>=0?'+':''}${S(Math.abs(parseFloat(b.amount)))}</div>
         </div>`).join('')
         :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All bank transactions matched</div>';
@@ -5464,7 +5506,7 @@ async function loadBankRec(){
       payList.innerHTML=unpay.length?unpay.map(p=>`
         <div class="tx-row" style="cursor:pointer" onclick="matchBankRec(_brecBankSelected,${p.id})">
           <div><div class="tx-name">${esc(p.client||'Invoice payment')}</div>
-          <div class="tx-cat">${esc(p.payment_date||'')} · ${esc(p.method||'')}</div></div>
+          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(p.payment_date,{year:true}):(p.payment_date||''))||'—')} · ${esc(p.method||'')}</div></div>
           <div class="tx-amt up">+${S(parseFloat(p.amount))}</div>
         </div>`).join('')
         :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All payments matched</div>';
@@ -5578,7 +5620,7 @@ async function loadPayrollRuns(){
       <div class="tx-row" style="align-items:flex-start">
         <div style="flex:1">
           <div class="tx-name">${esc(r.period)}</div>
-          <div class="tx-cat">${esc(r.run_date||'')} · Gross: ${S(parseFloat(r.total_gross||0))} · Net: ${S(parseFloat(r.total_net||0))}</div>
+          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.run_date,{year:true}):(r.run_date||''))||'—')} · Gross: ${S(parseFloat(r.total_gross||0))} · Net: ${S(parseFloat(r.total_net||0))}</div>
         </div>
         <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
           <span class="badge ${statusBadge[r.status]||'b-amber'}" style="font-size:9px">${esc(r.status)}</span>
@@ -7668,36 +7710,85 @@ document.addEventListener('click', e=>{
     page.insertBefore(pill, page.firstChild);
   }
 
+  // ── Symbol resolution — the quote APIs need an exchange TICKER (MSFT, BTC), but investors type
+  // company / coin NAMES ("Microsoft", "Bitcoin") or wrong symbols. Unresolved → no live price, which
+  // read as "the feed is broken" when it wasn't. Resolve NAME→TICKER: a built-in map for the common
+  // stocks + every supported crypto, a plain-ticker passthrough, then the /api/symbol-search fallback.
+  // Cached per raw string so an unknown name is searched at most once per session.
+  var NAME2TICKER = {
+    MICROSOFT:'MSFT', APPLE:'AAPL', TESLA:'TSLA', AMAZON:'AMZN', GOOGLE:'GOOGL', ALPHABET:'GOOGL',
+    META:'META', FACEBOOK:'META', NVIDIA:'NVDA', NETFLIX:'NFLX', WALMART:'WMT', DISNEY:'DIS',
+    'COCA COLA':'KO', 'COCA-COLA':'KO', PEPSI:'PEP', PEPSICO:'PEP', INTEL:'INTC',
+    'ADVANCED MICRO DEVICES':'AMD', ORACLE:'ORCL', SALESFORCE:'CRM', ADOBE:'ADBE', PAYPAL:'PYPL',
+    VISA:'V', MASTERCARD:'MA', JPMORGAN:'JPM', 'JP MORGAN':'JPM', 'JPMORGAN CHASE':'JPM', BOEING:'BA',
+    NIKE:'NKE', STARBUCKS:'SBUX', MCDONALDS:'MCD', "MCDONALD'S":'MCD', UBER:'UBER', AIRBNB:'ABNB',
+    SHOPIFY:'SHOP', SPOTIFY:'SPOT', 'BERKSHIRE HATHAWAY':'BRK.B',
+    // crypto NAMES → the symbols the quote proxy's CRYPTO_IDS understands
+    BITCOIN:'BTC', ETHEREUM:'ETH', SOLANA:'SOL', CARDANO:'ADA', RIPPLE:'XRP', DOGECOIN:'DOGE',
+    POLKADOT:'DOT', POLYGON:'MATIC', LITECOIN:'LTC', CHAINLINK:'LINK', AVALANCHE:'AVAX',
+    UNISWAP:'UNI', COSMOS:'ATOM', STELLAR:'XLM', ALGORAND:'ALGO', TETHER:'USDT', 'USD COIN':'USDC',
+    TRON:'TRX', 'BITCOIN CASH':'BCH', 'SHIBA INU':'SHIB', BINANCE:'BNB'
+  };
+  var _symResolveCache = {};
+  // type: 'crypto' routes the search fallback to CoinGecko (~15k coins); anything else → Finnhub
+  // (stocks/ETFs — including metal ETFs like GLD/SLV). The built-in map is only a fast-path, never
+  // the ceiling: unknown names fall through to the live search so coverage is the provider's, not a list.
+  async function resolveSymbol(raw, type){
+    var s = String(raw||'').trim().toUpperCase();
+    if(!s || s==='CASH') return s || null;
+    var isCrypto = String(type||'').toLowerCase() === 'crypto';
+    var ck = (isCrypto?'C|':'S|') + s;
+    if(Object.prototype.hasOwnProperty.call(_symResolveCache, ck)) return _symResolveCache[ck];
+    if(NAME2TICKER[s]) return (_symResolveCache[ck] = NAME2TICKER[s]);
+    // Already a plausible ticker (letters, up to ~5 chars, optional .A/-B suffix) → use as-is. For crypto
+    // the ticker IS the symbol (BTC, PEPE) — the server resolves it to a CoinGecko id dynamically.
+    if(/^[A-Z0-9]{1,6}([.\-][A-Z0-9]{1,4})?$/.test(s)) return (_symResolveCache[ck] = s);
+    // A longer / multi-word name → ask the keyed search proxy (crypto→CoinGecko, else Finnhub).
+    try{
+      var r = await fetch('/api/symbol-search?q='+encodeURIComponent(raw)+(isCrypto?'&type=crypto':''), { credentials:'include', signal: AbortSignal.timeout(8000) });
+      var j = await r.json().catch(function(){ return {}; });
+      return (_symResolveCache[ck] = (j && j.symbol ? String(j.symbol).toUpperCase() : null));
+    }catch(e){ return (_symResolveCache[ck] = null); }
+  }
+  window._ffResolveSymbol = resolveSymbol;   // exposed for tests
+
   // ── Stock price fetch via server-side proxy (/api/stock-price) ───
   // Avoids CORS errors and Edge tracking-prevention blocks from direct
   // Yahoo Finance or allorigins.win calls in the browser.
-  async function fetchQuote(ticker){
-    const cached = window.getCachedQuote && window.getCachedQuote(ticker);
-    if(cached) return cached;
+  async function fetchQuote(ticker, type){
+    const sym = await resolveSymbol(ticker, type);
+    if(!sym || sym === 'CASH') throw new Error('Unresolved symbol: ' + ticker);
+    const isCrypto = String(type||'').toLowerCase() === 'crypto';
+    const cacheKey = (isCrypto?'C:':'S:') + sym;
+    const cached = window.getCachedQuote && window.getCachedQuote(cacheKey);
+    if(cached) return Object.assign({}, cached, { ticker });   // key the result by the holding's own ticker
 
-    const res = await fetch(`/api/stock-price?symbol=${encodeURIComponent(ticker)}`, {
+    const res = await fetch(`/api/stock-price?symbol=${encodeURIComponent(sym)}${isCrypto?'&type=crypto':''}`, {
       credentials: 'include',
       signal: AbortSignal.timeout(8000),
     });
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const d = await res.json();
-    if(d.price == null) throw new Error('No price for ' + ticker);
+    if(d.price == null) throw new Error('No price for ' + ticker + ' (resolved ' + sym + ')');
     const result = {
-      ticker,
+      ticker,                 // original holding ticker, so applyQuotes maps it back
+      resolved:     sym,      // the exchange symbol actually quoted
       price:        d.price,
       prevClose:    d.prevClose ?? d.price,
       dayChange:    d.dayChange ?? 0,
       dayChangePct: d.dayChangePct ?? 0,
       dividend:     d.dividend ?? 0,
     };
-    if(window.setCachedQuote) window.setCachedQuote(ticker, result);
+    if(window.setCachedQuote) window.setCachedQuote(cacheKey, result);
     return result;
   }
 
-  async function fetchQuotes(tickers){
-    // Fetch all in parallel; individual failures return null (graceful degradation)
+  async function fetchQuotes(tickers, typeMap){
+    // Fetch all in parallel; individual failures return null (graceful degradation).
+    // typeMap: { TICKER: 'crypto' } so each quote routes to the right provider.
+    typeMap = typeMap || {};
     const results = await Promise.all(
-      tickers.map(t => fetchQuote(t).catch(() => null))
+      tickers.map(t => fetchQuote(t, typeMap[t]).catch(() => null))
     );
     const map = {};
     results.forEach(r => { if(r) map[r.ticker] = r; });
@@ -7709,9 +7800,16 @@ document.addEventListener('click', e=>{
     let updated = 0;
     holdings.forEach(h => {
       const q = quotes[h.ticker];
-      if(!q) return;
+      if(!q){
+        // No live quote AND not cash → the symbol didn't resolve/quote. Flag it so the row can say
+        // "check ticker" rather than silently showing cost basis as if it were a live price.
+        if(String(h.ticker||'').toUpperCase() !== 'CASH') h._noQuote = true;
+        return;
+      }
       h.price    = q.price;
       h.dayChgPx = q.dayChange;
+      h._resolved = q.resolved || h.ticker;
+      h._noQuote = false;
       if(q.dividend > 0) h.div = q.dividend;
       updated++;
     });
@@ -7755,10 +7853,10 @@ document.addEventListener('click', e=>{
       return `<div style="display:grid;grid-template-columns:36px 1fr 90px 80px 75px 75px 80px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
         <div style="width:30px;height:30px;border-radius:7px;background:${color}22;border:1px solid ${color}44;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:${color}">${sym3}</div>
         <div>
-          <div style="font-weight:500;color:var(--t1)">${esc(h.ticker)}</div>
+          <div style="font-weight:500;color:var(--t1)">${esc(h.ticker)}${h._noQuote?' <span title="No live price — check the ticker symbol (e.g. enter MSFT, not Microsoft; BTC, not Bitcoin)" style="color:var(--amber,#e0a500);font-size:10px;font-weight:600">⚠ check ticker</span>':((h._resolved&&h._resolved!==String(h.ticker||'').toUpperCase())?` <span title="Quoted as ${esc(h._resolved)}" style="color:var(--t3);font-size:10px">→ ${esc(h._resolved)}</span>`:'')}</div>
           <div style="font-size:11px;color:var(--t3)">${esc(h.type||'Stock')} · ${esc(String(shares))} units</div>
         </div>
-        <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">$${price.toFixed(2)}</div>
+        <div style="text-align:right;font-family:var(--font-mono);color:${h._noQuote?'var(--t3)':'var(--t1)'}" title="${h._noQuote?'Cost basis — no live price':'Live price'}">$${price.toFixed(2)}</div>
         <div style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${window._fmtMoney(val,'$')}</div>
         <div style="text-align:right;font-family:var(--font-mono);color:var(--t3)">${window._fmtMoney(cost,'$')}</div>
         <div style="text-align:right;font-family:var(--font-mono);color:${pos?'var(--green)':'var(--red)'}">${pos?'+':''}${glPct}%</div>
@@ -7793,9 +7891,14 @@ document.addEventListener('click', e=>{
   function applyBizQuotes(quotes){
     (window.bizHoldings||[]).forEach(h => {
       const q = quotes[h.ticker];
-      if(!q) return;
+      if(!q){
+        if(String(h.ticker||'').toUpperCase() !== 'CASH') h._noQuote = true;
+        return;
+      }
       h.price = q.price;
       h._dayChg = q.dayChange;
+      h._resolved = q.resolved || h.ticker;
+      h._noQuote = false;
       if(q.dividend > 0) h.div = q.dividend;
     });
     renderBizInvestments();
@@ -7832,7 +7935,12 @@ document.addEventListener('click', e=>{
 
   // ── Main refresh loop ──────────────────────────────────────────
   async function refreshAll(){
-    // Collect all unique tickers (skip CASH — not exchange-traded)
+    // Collect all unique tickers (skip CASH — not exchange-traded) and note each one's asset class so
+    // crypto routes to CoinGecko and cross-class ticker collisions (ARB stock vs Arbitrum coin) resolve.
+    const typeMap = {};
+    const noteType = h => { if(!h || !h.ticker || h.ticker==='CASH') return; if(/crypto/i.test(h.type||'')) typeMap[h.ticker] = 'crypto'; else if(!(h.ticker in typeMap)) typeMap[h.ticker] = ''; };
+    holdings.forEach(noteType);
+    (window.bizHoldings||[]).forEach(noteType);
     const personalTickers = holdings.map(h=>h.ticker).filter(t=>t!=='CASH');
     const bizTickers      = (window.bizHoldings||[]).map(h=>h.ticker).filter(t=>t && t!=='CASH');
     const allTickers      = [...new Set([...personalTickers, ...bizTickers])];
@@ -7840,7 +7948,7 @@ document.addEventListener('click', e=>{
     ['investments','biz-investments'].forEach(id => setLiveStatus(id, 'loading', 'Fetching quotes…'));
 
     try {
-      const quotes = await fetchQuotes(allTickers);
+      const quotes = await fetchQuotes(allTickers, typeMap);
       const now = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
       const fetchedCount = Object.keys(quotes).length;
       const ok = fetchedCount > 0;

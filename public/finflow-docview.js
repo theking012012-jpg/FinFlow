@@ -105,6 +105,11 @@
     }
     var tax = parseFloat(doc.tax) || 0;
     var total = subtotal + tax;
+    // Balance actually OWED nets any payment already made — a fully-paid invoice/bill must show 0, not its
+    // full total. `amount_paid` is passed by the invoice/bill viewers; status 'paid' forces 0 as a fallback.
+    var _paid = parseFloat(doc.amount_paid) || 0;
+    var balanceOwed = ((doc.status || '').toLowerCase() === 'paid') ? 0 : Math.max(0, total - _paid);
+    var _balanceVal = (K.balanceLabel === 'Balance Due' || K.balanceLabel === 'Amount Due') ? balanceOwed : total;
 
     var logoHTML = L.logo
       ? '<img src="'+esc(L.logo)+'" style="max-height:52px;max-width:180px;object-fit:contain" alt="">'
@@ -124,7 +129,7 @@
     var totalsHTML =
         '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#555"><span>Subtotal</span><span>'+money(subtotal, cur)+'</span></div>'
       + (tax ? '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#555"><span>Tax</span><span>'+money(tax, cur)+'</span></div>' : '')
-      + '<div style="display:flex;justify-content:space-between;padding:12px 0 0;margin-top:6px;border-top:2px solid #222;font-size:15px;font-weight:700;color:#111"><span>'+K.balanceLabel+'</span><span>'+money(total, cur)+'</span></div>';
+      + '<div style="display:flex;justify-content:space-between;padding:12px 0 0;margin-top:6px;border-top:2px solid #222;font-size:15px;font-weight:700;color:#111"><span>'+K.balanceLabel+'</span><span>'+money(_balanceVal, cur)+'</span></div>';
 
     return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
       + '<style>*{box-sizing:border-box;margin:0;padding:0}'

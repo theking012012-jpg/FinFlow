@@ -812,9 +812,7 @@
                    data-client="${esc(inv.client)}"
                    data-amount="${esc(S(inv.amount))}">Remind ↗</button>`
               : ''}
-            ${inv.status?.toLowerCase() === 'paid'
-              ? `<button class="btn btn-ghost btn-sm" onclick="viewInvoice(${idx})">View</button>`
-              : ''}
+            <button class="btn btn-ghost btn-sm" onclick="viewInvoice(${idx})">View</button>
             ${(inv.status?.toLowerCase() === 'pending' || inv.status?.toLowerCase() === 'partial')
               ? `<button class="btn btn-ghost btn-sm" onclick="openRecordPaymentModal(window.userInvoices[${idx}])">Record Payment</button>`
                 + `<button class="btn btn-ghost btn-sm" title="Generate a hosted payment link via a connected processor" onclick="ffInvoicePayLinkChoose(window.userInvoices[${idx}]._dbId)">Pay link ↗</button>`
@@ -2792,7 +2790,7 @@ function clearAIChat(){
             <span style="font-weight:500">${esc(_prInv?.client || '—')}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.num || '—')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc(r.payment_date || '')}</span>
+            <span style="color:var(--t2)">${esc((window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.payment_date, {year:true}) : (r.payment_date || '')) || '—')}</span>
             <span style="color:var(--t2)">${esc(r.method || '')}</span>
             <button class="btn btn-ghost btn-sm" style="justify-self:end" onclick="viewPaymentReceived(${r.id})">View</button>
           </div>`;
@@ -3854,7 +3852,10 @@ function clearAIChat(){
       document.body.appendChild(modal);
     }
 
-    document.getElementById('ivm-sub').textContent = 'Paid invoice — ' + (inv.client || '');
+    const _st = (inv.status || '').toLowerCase();
+    const _stTitle = _st ? _st.charAt(0).toUpperCase() + _st.slice(1) : 'Invoice';
+    const _stBadge = { paid:'b-green', pending:'b-amber', partial:'b-blue', overdue:'b-red' }[_st] || 'b-amber';
+    document.getElementById('ivm-sub').textContent = _stTitle + ' invoice — ' + (inv.client || '');
     document.getElementById('ivm-body').innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px">
         <div>
@@ -3871,7 +3872,7 @@ function clearAIChat(){
         </div>
         <div>
           <div style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Status</div>
-          <div style="margin-top:4px"><span class="badge b-green">${e(inv.status)}</span></div>
+          <div style="margin-top:4px"><span class="badge ${_stBadge}">${e(inv.status)}</span></div>
         </div>
       </div>
       ${inv.notes ? `<div style="margin-top:16px;padding:10px;background:var(--bg2);border-radius:var(--radius);font-size:12px;color:var(--t2);line-height:1.5">${e(inv.notes)}</div>` : ''}
@@ -4096,6 +4097,13 @@ function clearAIChat(){
 
       const mcs  = document.querySelectorAll('#page-reports .mc-val');
       const chgs = document.querySelectorAll('#page-reports .mc-change');
+      // The three cards' static labels ("Reports Available"/"Last Generated"/"Scheduled") described a
+      // different set of stats than the figures this wrapper actually paints (records-on-file / revenue /
+      // net result). Relabel them so the title, value and caption of each card agree.
+      const lbls = document.querySelectorAll('#page-reports .mc-label');
+      if (lbls[0]) lbls[0].textContent = 'Records on File';
+      if (lbls[1]) lbls[1].textContent = 'Revenue';
+      if (lbls[2]) lbls[2].textContent = 'Net Result';
       if (mcs[0])  mcs[0].textContent  = invoices.length + expenses.length;
       if (chgs[0]) chgs[0].textContent  = 'Invoices & expenses on file';
       if (mcs[1])  mcs[1].textContent  = _m(revenue);
@@ -5914,8 +5922,19 @@ function clearAIChat(){
     const _arP = (typeof window._arOutstanding === 'function')
       ? window._arOutstanding(invs)
       : { total: 0, count: 0, overdueTotal: 0, overdueCount: 0 };
-    const totalBilled  = invs.reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const collected    = invs.reduce((a, i) => a + (parseFloat(i.amount_paid) || 0), 0);
+    // D2 (mirror of _arOutstanding + the server): Billed / Collected / % must use the SAME recognized,
+    // NON-future set as Outstanding. Summing every invoice let a future-dated (scheduled) invoice inflate
+    // Billed and drag the collection % down, and broke reconciliation (Billed − Collected ≠ Outstanding).
+    // A future-dated doc is scheduled, not yet on the books (server.js:6312) — excluded until its date.
+    const _recToday = (window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : new Date().toISOString().slice(0,10));
+    const _REC = ['pending', 'overdue', 'partial', 'paid'];
+    const _recognized = invs.filter(i => {
+      if (!_REC.includes((i.status || '').toLowerCase())) return false;
+      const _d = window.FinFlowDates ? window.FinFlowDates._toYmd(i.issue_date || i.created_at || i.date) : (i.issue_date || i.created_at || i.date || '').slice(0, 10);
+      return _d != null && _d <= _recToday;   // exclude scheduled (future-dated) invoices
+    });
+    const totalBilled  = _recognized.reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
+    const collected    = _recognized.reduce((a, i) => a + (parseFloat(i.amount_paid) || 0), 0);
     const outstanding  = _arP.total;
     const overdue      = _arP.overdueTotal;
     const overdueCount = _arP.overdueCount;

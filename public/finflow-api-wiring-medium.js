@@ -246,9 +246,7 @@
                    data-client="${esc(inv.client)}"
                    data-amount="${esc(S(inv.amount))}">Remind ↗</button>`
               : ''}
-            ${inv.status?.toLowerCase() === 'paid'
-              ? `<button class="btn btn-ghost btn-sm" onclick="viewInvoice(${idx})">View</button>`
-              : ''}
+            <button class="btn btn-ghost btn-sm" onclick="viewInvoice(${idx})">View</button>
             ${(inv.status?.toLowerCase() === 'pending' || inv.status?.toLowerCase() === 'partial')
               ? `<button class="btn btn-ghost btn-sm" onclick="openRecordPaymentModal(window.userInvoices[${idx}])">Record Payment</button>`
                 + `<button class="btn btn-ghost btn-sm" title="Generate a hosted payment link via a connected processor" onclick="ffInvoicePayLinkChoose(window.userInvoices[${idx}]._dbId)">Pay link ↗</button>`

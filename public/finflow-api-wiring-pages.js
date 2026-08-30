@@ -286,7 +286,7 @@
             <span style="font-weight:500">${esc(_prInv?.client || '—')}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.num || '—')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
-            <span style="color:var(--t2)">${esc(r.payment_date || '')}</span>
+            <span style="color:var(--t2)">${esc((window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.payment_date, {year:true}) : (r.payment_date || '')) || '—')}</span>
             <span style="color:var(--t2)">${esc(r.method || '')}</span>
             <button class="btn btn-ghost btn-sm" style="justify-self:end" onclick="viewPaymentReceived(${r.id})">View</button>
           </div>`;

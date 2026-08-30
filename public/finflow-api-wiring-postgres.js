@@ -300,8 +300,19 @@
     const _arP = (typeof window._arOutstanding === 'function')
       ? window._arOutstanding(invs)
       : { total: 0, count: 0, overdueTotal: 0, overdueCount: 0 };
-    const totalBilled  = invs.reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
-    const collected    = invs.reduce((a, i) => a + (parseFloat(i.amount_paid) || 0), 0);
+    // D2 (mirror of _arOutstanding + the server): Billed / Collected / % must use the SAME recognized,
+    // NON-future set as Outstanding. Summing every invoice let a future-dated (scheduled) invoice inflate
+    // Billed and drag the collection % down, and broke reconciliation (Billed − Collected ≠ Outstanding).
+    // A future-dated doc is scheduled, not yet on the books (server.js:6312) — excluded until its date.
+    const _recToday = (window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : new Date().toISOString().slice(0,10));
+    const _REC = ['pending', 'overdue', 'partial', 'paid'];
+    const _recognized = invs.filter(i => {
+      if (!_REC.includes((i.status || '').toLowerCase())) return false;
+      const _d = window.FinFlowDates ? window.FinFlowDates._toYmd(i.issue_date || i.created_at || i.date) : (i.issue_date || i.created_at || i.date || '').slice(0, 10);
+      return _d != null && _d <= _recToday;   // exclude scheduled (future-dated) invoices
+    });
+    const totalBilled  = _recognized.reduce((a, i) => a + (parseFloat(i.amount) || 0), 0);
+    const collected    = _recognized.reduce((a, i) => a + (parseFloat(i.amount_paid) || 0), 0);
     const outstanding  = _arP.total;
     const overdue      = _arP.overdueTotal;
     const overdueCount = _arP.overdueCount;

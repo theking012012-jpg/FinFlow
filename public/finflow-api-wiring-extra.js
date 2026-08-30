@@ -60,7 +60,10 @@
       document.body.appendChild(modal);
     }
 
-    document.getElementById('ivm-sub').textContent = 'Paid invoice — ' + (inv.client || '');
+    const _st = (inv.status || '').toLowerCase();
+    const _stTitle = _st ? _st.charAt(0).toUpperCase() + _st.slice(1) : 'Invoice';
+    const _stBadge = { paid:'b-green', pending:'b-amber', partial:'b-blue', overdue:'b-red' }[_st] || 'b-amber';
+    document.getElementById('ivm-sub').textContent = _stTitle + ' invoice — ' + (inv.client || '');
     document.getElementById('ivm-body').innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px">
         <div>
@@ -77,7 +80,7 @@
         </div>
         <div>
           <div style="font-size:10px;text-transform:uppercase;color:var(--t3);letter-spacing:.08em">Status</div>
-          <div style="margin-top:4px"><span class="badge b-green">${e(inv.status)}</span></div>
+          <div style="margin-top:4px"><span class="badge ${_stBadge}">${e(inv.status)}</span></div>
         </div>
       </div>
       ${inv.notes ? `<div style="margin-top:16px;padding:10px;background:var(--bg2);border-radius:var(--radius);font-size:12px;color:var(--t2);line-height:1.5">${e(inv.notes)}</div>` : ''}
@@ -302,6 +305,13 @@
 
       const mcs  = document.querySelectorAll('#page-reports .mc-val');
       const chgs = document.querySelectorAll('#page-reports .mc-change');
+      // The three cards' static labels ("Reports Available"/"Last Generated"/"Scheduled") described a
+      // different set of stats than the figures this wrapper actually paints (records-on-file / revenue /
+      // net result). Relabel them so the title, value and caption of each card agree.
+      const lbls = document.querySelectorAll('#page-reports .mc-label');
+      if (lbls[0]) lbls[0].textContent = 'Records on File';
+      if (lbls[1]) lbls[1].textContent = 'Revenue';
+      if (lbls[2]) lbls[2].textContent = 'Net Result';
       if (mcs[0])  mcs[0].textContent  = invoices.length + expenses.length;
       if (chgs[0]) chgs[0].textContent  = 'Invoices & expenses on file';
       if (mcs[1])  mcs[1].textContent  = _m(revenue);

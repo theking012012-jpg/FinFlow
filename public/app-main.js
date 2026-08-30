@@ -505,6 +505,10 @@ function openCreateBusinessPage(fromPage){
     const _ne=document.getElementById('nb-email');     if(_ne&&!_ne.value&&_cu.email) _ne.value=_cu.email;
     if(typeof nbAutoInitials==='function') nbAutoInitials();
   }
+  // F191 fix: populate the Timezone/Country selects from the curated F94 region list
+  // every time the page opens (init-time fill can run before this DOM exists, leaving
+  // only the placeholder option). Idempotent — _fillRegionSelect rebuilds the options.
+  try { if (typeof window._f94FillRegion === 'function') window._f94FillRegion(); } catch(_){}
   showPage('create-business', null);
 }
 
@@ -1209,8 +1213,12 @@ async function renderCOALive(){
     const accounts=await res.json();
 
     // Update KPI cards with real data
-    const assets = accounts.filter(a=>a.type==='Asset').reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
-    const liabs  = accounts.filter(a=>a.type==='Liability').reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
+    // Accounts are stored with `category` (e.g. 'Assets','Liabilities'), NOT `type` — matching a.type here
+    // meant the totals were always $0 and the group header below rendered 'undefined'. Match on category,
+    // case/plural-tolerant, falling back to type for any legacy row.
+    const _coaCat = a => (a.category || a.type || '');
+    const assets = accounts.filter(a=>/^asset/i.test(_coaCat(a))).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
+    const liabs  = accounts.filter(a=>/^liab/i.test(_coaCat(a))).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
     const equity = assets - liabs;
     const S = n=>'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
     const setEl = (id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
@@ -1224,7 +1232,7 @@ async function renderCOALive(){
       return;
     }
     const grouped={};
-    accounts.forEach(a=>{if(!grouped[a.type])grouped[a.type]=[];grouped[a.type].push(a);});
+    accounts.forEach(a=>{const k=a.category||a.type||'Other';if(!grouped[k])grouped[k]=[];grouped[k].push(a);});
     l.innerHTML=Object.entries(grouped).map(([type,accs])=>`
       <div style="margin-bottom:1rem">
         <div style="font-size:11px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;padding:.5rem 0;border-bottom:1px solid var(--bd)">${type}</div>

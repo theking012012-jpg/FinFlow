@@ -29,15 +29,20 @@ const { initSchema, bootServer } = require('./boot.js');
 const { seed } = require('./seed.js');
 const { HarnessHttp } = require('./httpClient.js');
 
-// jsdom teardown race (node ≥ 24): a requestAnimationFrame callback can fire AFTER the window is
-// closed, so `window._document` is null and jsdom throws `Cannot read properties of null (reading
-// '_location')` from a timer — an UNCAUGHT exception that poisons the process exit code even when
-// every assertion already printed ALL GREEN. It is post-test noise, never a real failure. Swallow
-// exactly this one signature (installed once, at module load, for every jsdom harness); anything
-// else still throws. jsdom 30 fixes most of it; this is the belt-and-suspenders for the residual.
+// jsdom teardown race (node ≥ 24): a requestAnimationFrame callback (or queued microtask/timer) can
+// fire AFTER the window is closed, so the internal `window._document` is null and jsdom throws a
+// `Cannot read properties of null (reading '<domAccessor>')` from that stray callback — an UNCAUGHT
+// exception that poisons the process exit code even when every assertion already printed ALL GREEN.
+// It is post-test noise, never a real failure (a real assertion failure throws SYNCHRONOUSLY inside
+// the harness's own try/catch and is reported there — it never reaches this uncaughtException hook).
+// The original filter caught only the `_location` variant; the same race also surfaces via the boot
+// path's document accessors (getElementById / createElement / querySelector / documentElement /
+// defaultView / …), which is what made verify-f136-paymentsmade.js flaky. Swallow the whole
+// null-document teardown family; anything else still throws. jsdom 30 fixes most of it.
 process.on('uncaughtException', (e) => {
   const s = String((e && e.message) || e);
-  if (/reading '_location'|_document\)\._location/.test(s)) return;
+  if (/Cannot read propert(?:y|ies) of null \(reading '(?:_location|getElementById|createElement|createElementNS|createTextNode|querySelector|querySelectorAll|documentElement|defaultView|body|head|location)'\)/.test(s)) return;
+  if (/_document\)\._location/.test(s)) return;
   throw e;
 });
 

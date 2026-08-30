@@ -7780,8 +7780,9 @@ document.addEventListener('click', e=>{
     if(!el) return;
     const dot = el.querySelector('.live-dot');
     const lbl = el.querySelector('.live-label');
-    if(dot) dot.style.background = state === 'live' ? 'var(--green)' :
-                                    state === 'err'  ? 'var(--red)'   : 'var(--t3)';
+    if(dot) dot.style.background = state === 'live'     ? 'var(--green)' :
+                                    state === 'updating' ? 'var(--amber,#e0a500)' :
+                                    state === 'err'      ? 'var(--red)'   : 'var(--t3)';
     if(lbl) lbl.textContent = text;
   }
 
@@ -8045,12 +8046,14 @@ document.addEventListener('click', e=>{
         if(typeof renderInvestments === 'function') renderInvestments();
         setLiveStatus('investments', 'live', `Live · ${now}`);
       } else {
-        setLiveStatus('investments', 'err', 'Offline · cached prices');
+        // No fresh quotes this pass (rate-limit window, or a transient miss) — we retry every 60s and
+        // are still showing last-known values, so this is "Updating…", not an outage.
+        setLiveStatus('investments', 'updating', 'Updating…');
       }
 
       // Business
       applyBizQuotes(quotes);
-      setLiveStatus('biz-investments', ok ? 'live' : 'err', ok ? `Live · ${now}` : 'Offline · cached prices');
+      setLiveStatus('biz-investments', ok ? 'live' : 'updating', ok ? `Live · ${now}` : 'Updating…');
 
       if(ok && fetchedCount < allTickers.length){
         const missed = allTickers.filter(t => !quotes[t]).join(', ');
@@ -8058,7 +8061,7 @@ document.addEventListener('click', e=>{
       }
     } catch(err){
       console.error('[FinFlow] Market data error:', err);
-      ['investments','biz-investments'].forEach(id => setLiveStatus(id, 'err', 'Offline · cached prices'));
+      ['investments','biz-investments'].forEach(id => setLiveStatus(id, 'updating', 'Updating…'));
     }
   }
 

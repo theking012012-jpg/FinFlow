@@ -4413,20 +4413,36 @@ function calcPortfolio(){
 function renderInvestments(){
   const{totalValue,totalCost,totalGain,totalDiv,dayChg}=calcPortfolio();
   const gainPct=totalCost>0?((totalGain/totalCost)*100).toFixed(1):0;
-  const hasDay = dayChg != null;
+  // Don't paint STORED (entry-time) prices as a live portfolio value on a cold load: holdings load from
+  // the DB with a stored price, then live quotes overwrite it ~1s later. On a fresh boot (`_invBootPending`,
+  // set by the investments init() and cleared when the first refresh pass finishes) show a neutral loading
+  // state until a live quote lands (`_invLive`). `needsQuote` keeps an all-cash / empty book instant; and
+  // because the flag is only set by the real boot, direct render calls (tests, mid-session nav) show values.
+  const needsQuote = holdings.some(h => String(h.ticker||'').toUpperCase() !== 'CASH');
+  const invLoading = needsQuote && window._invBootPending && !window._invLive;
+  const hasDay = !invLoading && dayChg != null;
   const dayPct = (hasDay && totalValue>0) ? (dayChg/totalValue*100).toFixed(2) : null;
   const gainPos=totalGain>=0;
 
   // Metrics
-  document.getElementById('inv-total-val').textContent=S2(totalValue);
-  const tChg=document.getElementById('inv-total-chg');tChg.textContent=(gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% all time';tChg.className='mc-change '+(gainPos?'up':'dn');
-  document.getElementById('inv-gain').textContent=(gainPos?'+':'')+S2(totalGain);
-  const gLbl=document.getElementById('inv-gain-lbl');gLbl.textContent=(gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% return';gLbl.className='mc-change '+(gainPos?'up':'dn');
-  // Day change — real (prior-day snapshot) or honest "—" until one exists.
+  const tChg=document.getElementById('inv-total-chg');
+  const gLbl=document.getElementById('inv-gain-lbl');
+  if(invLoading){
+    document.getElementById('inv-total-val').textContent='—';
+    tChg.textContent='Fetching live prices…'; tChg.className='mc-change neutral';
+    document.getElementById('inv-gain').textContent='—';
+    gLbl.textContent='Fetching live prices…'; gLbl.className='mc-change neutral';
+  } else {
+    document.getElementById('inv-total-val').textContent=S2(totalValue);
+    tChg.textContent=(gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% all time'; tChg.className='mc-change '+(gainPos?'up':'dn');
+    document.getElementById('inv-gain').textContent=(gainPos?'+':'')+S2(totalGain);
+    gLbl.textContent=(gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% return'; gLbl.className='mc-change '+(gainPos?'up':'dn');
+  }
+  // Day change — real (prior-day snapshot) or honest "—" until one exists (or while loading).
   document.getElementById('inv-day-chg').textContent = hasDay ? ((dayChg>=0?'+':'')+S2(dayChg)) : '—';
   const dLbl=document.getElementById('inv-day-lbl');
   if(hasDay){ dLbl.textContent=(dayChg>=0?'▲ ':'▼ ')+Math.abs(dayPct)+'% today'; dLbl.className='mc-change '+(dayChg>=0?'up':'dn'); }
-  else { dLbl.textContent='Builds after 1 day'; dLbl.className='mc-change neutral'; }
+  else { dLbl.textContent = invLoading ? 'Fetching live prices…' : 'Builds after 1 day'; dLbl.className='mc-change neutral'; }
   document.getElementById('inv-yield').textContent=S2(totalDiv);
 
   // Holdings list

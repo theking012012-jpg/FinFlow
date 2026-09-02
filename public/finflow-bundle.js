@@ -4142,7 +4142,13 @@ function clearAIChat(){
       // so renderInvestments() picks up the API data
       if (typeof holdings !== 'undefined') {
         holdings.splice(0, holdings.length, ...mapped);
+        // Fresh DB rows carry STORED (entry-time) prices, not live market prices. Clear the live flag so
+        // renderInvestments shows its loading state rather than flashing the stale figure, then re-seed
+        // from any live quote held in memory this session (warm cache → a reload/switch stays live).
+        window._invLive = false;
+        if (typeof window._reseedLive === 'function') window._reseedLive(holdings, 'personal');
         if (typeof renderInvestments === 'function') renderInvestments();
+        if (typeof window._kickMarketRefresh === 'function') window._kickMarketRefresh();
       }
     } catch (err) { console.warn('[Holdings]', err.message); }
   }

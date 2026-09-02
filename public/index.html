@@ -7898,10 +7898,32 @@ document.addEventListener('click', e=>{
       h._resolved = q.resolved || h.ticker;
       h._noQuote = false;
       if(q.dividend > 0) h.div = q.dividend;
+      (window._lastLive || (window._lastLive = {}))[h.ticker] = { price:q.price, dayChange:q.dayChange, resolved:q.resolved||h.ticker, dividend:q.dividend||0 };
       updated++;
     });
+    if(updated > 0) window._invLive = true;   // in-memory PERSONAL holdings now carry LIVE prices
     return updated;
   }
+
+  // ── Re-apply this session's last-known LIVE quotes to a freshly (re)loaded holdings array, so an
+  // entity switch or post-mutation reload keeps live prices instead of flashing the stored DB price.
+  // In-memory only (the app is DB-only / zero-localStorage) — a cold page load has no seed and simply
+  // shows the loading state until the market refresh lands.
+  function _reseedLive(arr, scope){
+    const cache = window._lastLive || {};
+    let seeded = 0;
+    (arr||[]).forEach(h => {
+      const q = cache[h.ticker];
+      if(!q) return;
+      h.price = q.price; h._resolved = q.resolved || h.ticker; h._noQuote = false;
+      if(scope === 'biz') h._dayChg = q.dayChange; else h.dayChgPx = q.dayChange;
+      if(q.dividend > 0) h.div = q.dividend;
+      seeded++;
+    });
+    if(seeded > 0){ if(scope === 'biz') window._bizInvLive = true; else window._invLive = true; }
+    return seeded;
+  }
+  window._reseedLive = _reseedLive;   // the personal holdings loader (bundle) calls this
 
   // ── Render the BUSINESS portfolio (#biz-inv-holdings-list) from window.bizHoldings ─
   // Entity-scoped DB rows (DB shape: id/ticker/name/type/shares/cost/price/div/color).
@@ -7957,6 +7979,25 @@ document.addEventListener('click', e=>{
       </div>`;
     });
     list.innerHTML = rows.join('');
+    const bizChg=(id,txt,cls)=>{ const e=document.getElementById(id); if(e){e.textContent=txt;e.className='mc-change '+cls;} };
+    // Don't paint STORED (entry-time) prices as a live portfolio value on a cold load. On a fresh boot
+    // (`_invBootPending`, set by init() and cleared when the first refresh finishes) show a neutral
+    // loading state until a live quote lands (`_bizInvLive`). `bizNeedsQuote` keeps an all-cash book
+    // instant; income (dividends) is stored data so it renders regardless. The flag is only set by the
+    // real boot, so direct render calls (tests, mid-session nav) paint values immediately.
+    const bizNeedsQuote = hs.some(h => String(h.ticker||'').toUpperCase() !== 'CASH');
+    const bizLoading = bizNeedsQuote && window._invBootPending && !window._bizInvLive;
+    if(bizLoading){
+      ['biz-inv-total','biz-inv-gain','biz-inv-daychg'].forEach(id => bizEl(id,'—'));
+      bizEl('biz-inv-income', S2b(totalIncome)+'/yr');
+      bizChg('biz-inv-total-chg', 'Fetching live prices…', 'neutral');
+      bizChg('biz-inv-gain-chg',  'Fetching live prices…', 'neutral');
+      bizChg('biz-inv-daychg-chg', '', 'neutral');
+      const pp=document.getElementById('biz-perf-port'); const ps=document.getElementById('biz-perf-summary');
+      if(pp){ pp.textContent='—'; pp.style.color='var(--t3)'; pp.style.fontWeight='600'; }
+      if(ps) ps.textContent='Fetching live prices…';
+      return;
+    }
     bizEl('biz-inv-total',  S2b(totalValue));
     bizEl('biz-inv-gain',   (totalGain>=0?'+':'')+S2b(totalGain));
     bizEl('biz-inv-income', S2b(totalIncome)+'/yr');
@@ -7964,10 +8005,10 @@ document.addEventListener('click', e=>{
     const gainPos=totalGain>=0;
     const gainPct=totalCost>0?(totalGain/totalCost*100).toFixed(1):'0.0';
     const dayPct=(haveDay&&totalValue>0)?(totalDayChg/totalValue*100).toFixed(2):'0.00';
-    const bizChg=(id,txt,cls)=>{ const e=document.getElementById(id); if(e){e.textContent=txt;e.className='mc-change '+cls;} };
     bizChg('biz-inv-total-chg', (gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% all time', gainPos?'up':'dn');
     bizChg('biz-inv-gain-chg',  (gainPos?'▲ ':'▼ ')+Math.abs(gainPct)+'% return',   gainPos?'up':'dn');
     if(haveDay) bizChg('biz-inv-daychg-chg', (totalDayChg>=0?'▲ ':'▼ ')+Math.abs(dayPct)+'% today', totalDayChg>=0?'up':'dn');
+    else bizChg('biz-inv-daychg-chg', 'Builds after 1 day', 'neutral');
     // F155: business Performance box from BUSINESS data (was cross-wired to personal renderInvestments).
     { const pp=document.getElementById('biz-perf-port'); const ps=document.getElementById('biz-perf-summary');
       if(pp){ pp.textContent=(gainPos?'+':'')+Math.abs(parseFloat(gainPct))+'%'; pp.style.color=gainPos?'var(--green)':'var(--red)'; pp.style.fontWeight='600'; }
@@ -7976,6 +8017,7 @@ document.addEventListener('click', e=>{
 
   // Apply live quotes into window.bizHoldings, then repaint.
   function applyBizQuotes(quotes){
+    let updated = 0;
     (window.bizHoldings||[]).forEach(h => {
       const q = quotes[h.ticker];
       if(!q){
@@ -7987,7 +8029,10 @@ document.addEventListener('click', e=>{
       h._resolved = q.resolved || h.ticker;
       h._noQuote = false;
       if(q.dividend > 0) h.div = q.dividend;
+      (window._lastLive || (window._lastLive = {}))[h.ticker] = { price:q.price, dayChange:q.dayChange, resolved:q.resolved||h.ticker, dividend:q.dividend||0 };
+      updated++;
     });
+    if(updated > 0) window._bizInvLive = true;   // in-memory BUSINESS holdings now carry LIVE prices
     renderBizInvestments();
   }
 
@@ -8006,7 +8051,13 @@ document.addEventListener('click', e=>{
         _dbId:r.id, id:r.id, ticker:r.ticker, name:r.name, type:r.asset_type,
         shares:r.shares, cost:r.cost_per, price:r.price, div:r.dividend, color:r.color,
       }));
+      // Fresh DB rows carry the STORED (entry-time) price, not the live market price. Drop the live
+      // flag so the KPI cards don't flash that stale figure, then re-seed from any live quote still
+      // held in memory this session (warm cache → a switch/reload stays live with no flash).
+      window._bizInvLive = false;
+      if(window._reseedLive) window._reseedLive(window.bizHoldings, 'biz');
       renderBizInvestments();
+      if(window._kickMarketRefresh) window._kickMarketRefresh();   // pull fresh quotes promptly (cold view / new ticker)
       if(typeof window._refreshDashboardUI === 'function') window._refreshDashboardUI();
     }catch(err){ console.warn('[BizHoldings]', err.message); }
   }
@@ -8062,11 +8113,14 @@ document.addEventListener('click', e=>{
     } catch(err){
       console.error('[FinFlow] Market data error:', err);
       ['investments','biz-investments'].forEach(id => setLiveStatus(id, 'updating', 'Updating…'));
+    } finally {
+      window._invBootPending = false;   // first refresh pass done — KPI cards may now paint values (live if we got them)
     }
   }
 
   // ── Bootstrap once DOM is ready ────────────────────────────────
   function init(){
+    window._invBootPending = true;   // cold boot: hold KPI cards in a loading state until the first live refresh lands
     injectStatusPill('investments');
     injectStatusPill('biz-investments');
     loadBizHoldingsFromDB();          // load real entity-scoped business positions on boot
@@ -8082,6 +8136,9 @@ document.addEventListener('click', e=>{
 
   // Expose for manual refresh (e.g. from AI panel)
   window.refreshMarketData = refreshAll;
+  // Debounced kick so boot / entity-switch / mutation reloads coalesce into ONE prompt refresh
+  // (the 55s in-memory quote cache dedupes the network side; this dedupes the calls).
+  window._kickMarketRefresh = function(){ clearTimeout(window._mktKickT); window._mktKickT = setTimeout(function(){ try{ refreshAll(); }catch(_){} }, 150); };
 })();
 
 // Also wire up the biz-investments metric card IDs expected by applyBizQuotes

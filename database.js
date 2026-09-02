@@ -852,6 +852,18 @@ async function initDB() {
     )`);
   } catch (e) { console.warn('[DB] platform_fees table:', e.message.slice(0, 80)); }
 
+  // F117: durable Stripe-webhook idempotency ledger. Stripe RETRIES delivery on any non-2xx or
+  // network hiccup, so the same event.id can arrive more than once. The webhook claims each event.id
+  // (INSERT ON CONFLICT DO NOTHING) and skips the handlers on a replay — closing the non-idempotent
+  // platform_fees INSERT and any other at-most-once side effect in the handler.
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+      event_id     TEXT PRIMARY KEY,
+      event_type   TEXT,
+      processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  } catch (e) { console.warn('[DB] stripe_webhook_events table:', e.message.slice(0, 80)); }
+
   return pool;
 }
 

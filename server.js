@@ -132,6 +132,27 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
+  // F117: idempotent webhook. Stripe retries delivery, so a replay of the same event.id must not
+  // re-run the handlers (e.g. a second platform_fees INSERT). Claim the event durably BEFORE
+  // processing: INSERT ... ON CONFLICT DO NOTHING RETURNING — no row back ⇒ already handled ⇒ ack 200
+  // (a 2xx tells Stripe to stop retrying) and stop. The money paths keep their own per-writer keys
+  // (invoice_payments/session id, earnings/payment_intent id), so this event-level guard is additive.
+  // On a claim-query error (e.g. an un-migrated DB missing the table) we fall through and process as
+  // before — losing dedupe but never dropping a live event.
+  try {
+    const _claim = await pool.query(
+      `INSERT INTO stripe_webhook_events (event_id, event_type) VALUES ($1, $2)
+         ON CONFLICT (event_id) DO NOTHING RETURNING event_id`,
+      [event.id, event.type]
+    );
+    if (_claim.rowCount === 0) {
+      console.log('[Stripe Webhook] duplicate event ignored:', event.id, event.type);
+      return res.json({ received: true, duplicate: true });
+    }
+  } catch (e) {
+    console.error('[Stripe Webhook] idempotency claim failed (processing anyway):', e.message);
+  }
+
   const userId = event.data.object?.metadata?.userId;
 
   if (event.type === 'checkout.session.completed') {

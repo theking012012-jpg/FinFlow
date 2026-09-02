@@ -170,6 +170,30 @@ for (const mod of ['http', 'https']) {
   };
 }
 
+// ── 4 · F83 · Fail-latch (output scan → forced nonzero exit) ──────────────────
+// A jsdom harness reports internal failure with `process.exitCode = 1`, but some Node/OS + jsdom
+// teardown combinations write process.exitCode back to 0 during shutdown, so an internally-FAILED
+// harness can exit 0 and slip past a plain `exit-code == 0` CI gate (the F83 masking hazard). The
+// sweep runner already defends by scanning each harness's OUTPUT for a nonzero tally; do the same
+// here, centrally, so ANY consumer of the exit code is safe. process.exitCode is non-configurable
+// (can't add a setter), but setting it inside a 'exit' handler IS honoured — so: watch console output
+// for the runner's own failure signatures, and if a failure was printed but the code was left at 0,
+// force it nonzero on the way out. The signatures are anchored exactly as the runner anchors them, so
+// a description like "3 failed logins" can't false-latch.
+const _util = require('util');
+let __ffFailSeen = false;
+const _ffScan = (line) => {
+  if (__ffFailSeen) return;
+  if (/\b[1-9]\d*\s+FAILED\b/.test(line)
+    || /\bpassed,\s*[1-9]\d*\s+failed\b/.test(line)
+    || /\bFATAL:|PROBE ERROR\b/.test(line)) __ffFailSeen = true;
+};
+for (const stream of ['log', 'error']) {
+  const _orig = console[stream].bind(console);
+  console[stream] = (...args) => { try { _ffScan(_util.format(...args)); } catch (_) { /* never let the guard break output */ } return _orig(...args); };
+}
+process.on('exit', () => { if (__ffFailSeen && !process.exitCode) process.exitCode = 1; });
+
 module.exports = {
   TZ,
   OFFSET_MIN: offsetMin,          // minutes WEST of UTC at the pinned instant (240 = UTC-4)

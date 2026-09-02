@@ -117,7 +117,8 @@ L5 canaries (`c6-hdrain`, `f132-readonly`) green standalone (f132's one sequenti
    was ATTEMPTED and REVERTED — it broke `c6-hdrain` + `f132-readonly` even after AST-precise analysis (the
    functions have non-obvious boot-timing coupling). Must be done **one function at a time, each re-verified
    against the full suite**. Zero functional benefit (runtime already correct); pure maintainability.
-- **F192 — bank-linking: region→provider routing + uncovered-region fallback. ⛔ BLOCKED on an owner decision.**
+- **F192 — bank-linking: region→provider routing — ✅ SHIPPED (reconciled 2026-09-02).** Country-based routing is live: LatAm→Belvo, else→Plaid, fallback→manual OFX/CSV; Banking tab un-orphaned. Verified `verify-banking-region-routing.js` (11/0). REMAINING owner call (not blocking): whether to source a regional aggregator for the ~30 uncovered countries, or leave manual import as the answer. Original blocked-scope note kept below for that decision:
+- **(original) F192 uncovered-region decision. ⛔ was BLOCKED on an owner decision.**
   Two aggregators are built — Plaid (US/CA/UK/EU) + Belvo (LatAm) — but the UI leads with Plaid for everyone,
   and **~30 of the ~53 supported countries** (the entire Caribbean incl. TT, Central America, much of South
   America) have **no aggregator wired at all** (WiPay is Caribbean *payments*, not aggregation). The "Banking"
@@ -266,17 +267,17 @@ item for real-user email is Resend domain verification (§ H); Stripe + Plaid + 
 - [x] **F139 — tax-worksheet single-source. ALREADY DONE (committed `bc8cd70`).** Client Income-Tax worksheet and accountant Tax Summary now read one `computeBooks` deductible leg. Re-verified GREEN on real scratch Postgres 2026-08-13: client taxable === accountant taxable === 12000, deductible 2000 includes the 100/50 variants, client revenue is accrual 14000 (not cash 4000). The prior "HELD awaiting commit" note was stale. **Harness caveat:** `verify-f139-tax-consistency.js` had to be updated to run — its seed inserted `entity_id=NULL`, which the F150 constraint (`chk_*_entity_nn`, added afterward) now rejects (code 23514); the seed now creates one active entity and stamps it. That harness-seed fix is the only F139 item left, and it's test-debt, not a money fix.
 
 ### 2. Root architecture
-- [ ] **F88 / C3-server — entity-timezone recognition (+F85 carry-period).** Roots the C3 server half. Genuine timestamps (run_date=NOW()) and any server date default must resolve against the ENTITY timezone, not UTC/created_at; better, events carry their intended period explicitly (F85). Do NOT add a created_at fallback to receipts — breaks the F34 recognition==filter invariant (Rule 6). Client C3 half already shipped+verified.
+- [x] **F88 / C3-server — DONE 2026-09-02 (commit `18fa5e6`).** `entityTodayYmd(entityId)` routes every dateless server transaction default (expenses, journals, sales-receipts, payments received/made, credit/vendor notes, bank tx) through the ENTITY timezone; no entity / no tz → UTC, byte-identical (verify-f88-utc-parity 49/0). No created_at fallback added (F34 invariant preserved). Verified: `verify-f88-server-date-default.js` (11/0, discriminating). **F85 carry-period** (events carry intended period explicitly) is a deeper, separate model change — still open, not required by this fix.
 
 ### 3. Duplicate-submit rollout (money paths DONE 2026-08-13; only non-money routes remain)
 - [x] **Client double-submit guard helper — DONE (`26c395e`, 2026-08-13).** Shared `withSubmitGuard(btn, fn, opts)` added (`app-main.js`): re-entry refused in-flight, always re-enables in `finally`, label restore. Adopted in the 2 money-adjacent handlers that lacked a lock (`addFXRate`/`addFXTransaction`). The 13 money-mutating handlers already had `if(window._savingXxx)return` re-entry locks ("C1 Wave 1b") — the old "88 sites / 9 guarded" note was stale. Verified: `verify-f117-client-submit-guard.js` 18/18, fail-then-pass. Did NOT churn the 13 already-locked handlers (no-op rename = risk without benefit near launch).
 - [x] **Bank-rec match idempotency — DONE (`d2fe703`, 2026-08-13).** Legacy `POST /api/bank-reconciliation/match` (no client caller) hardened with natural-key SELECT-before-INSERT, mirroring `/match-batch`. No migration. Verified: `verify-f117-bankrec-match-idempotent.js` 5/5, double-POST → 1 link (unfixed → 2).
-- [ ] **C1/F117 — remaining server token rollout: NON-MONEY routes only.** 2026-08-13 audit of all 63 POST routes: every money route is covered (idempotency_key or heuristic + client lock); `/match-batch`, `/inventory/:id/restock`, `/fx-transactions/:id/settle` confirmed already idempotent (not gaps). Only non-money routes still lack a durable key — `stripe/webhook` (should key off Stripe event id), `team/accept` (gated, F54), `ai` (ai_cache), `accountant-messages`, `connections` (audit_trail). None create a financial duplicate. Low priority, post-launch. Detail in the C1 block of `AUDIT_MASTER.md`.
+- [x] **C1/F117 — stripe/webhook DONE 2026-09-02 (pending push).** The highest-value non-money gap: Stripe retries webhooks, so a replayed `event.id` could re-run handlers (notably a 2nd `platform_fees` INSERT). Webhook now claims each `event.id` in a durable `stripe_webhook_events` ledger (ON CONFLICT DO NOTHING) and acks 200 on replay without processing. Verified: `verify-f117-webhook-idempotent.js` (9/0, discriminating). REMAINING (low-pri, post-launch, none create a financial duplicate): `team/accept` (gated, F54), `ai` (ai_cache), `accountant-messages`, `connections` (audit_trail).
 
 ### 4. Owner decisions (nothing broken — current behaviour silently becomes the decision)
 - [x] **F128 — RULED 2026-08-23: CLOSED as done.** (Superseded — this old "revive dead-shadowed bodies?"
   framing is stale: the reports already render rich + canonical, and the app-main shadow was deleted. See §C.4.)
-- [ ] **F94 — scheduled-doc UI (design call).** Blocked on F88 (period resolution).
+- [x] **F94 — scheduled-doc UI: ALREADY BUILT (this entry was stale — reconciled 2026-09-02).** Live: 'Scheduled Documents' nav → `page-scheduled-documents`, rendered from live entities via `finflow-f94.js`. 8 green harnesses: `verify-f94-{agenda-sections,create-labeling,dayclick,missed-posts,resolved-dates,runway,scheduled-page,scheduled}`. Handoff docs `PHASE3_DOCVIEW_HANDOFF.md` / `PHASE4_CALENDAR_HANDOFF.md`.
 - [x] **F86 / D1 scope — RULED 2026-08-23** (see §C.6 / §C.7). F86: invoice_payments canonical, A7.4 stamped.
   D1: no combined figure, "tax paid" stays "Not tracked." **F90 still open**: audit trail before launch, as rated?
 - [ ] **F110/F111 — harness re-pin strategy.** 4 options (advance pin+seed in lockstep · seed relative to pin · freeze DB clock · fail drift loudly). Test-debt.
@@ -284,14 +285,14 @@ item for real-user email is Resend domain verification (§ H); Stripe + Plaid + 
 
 ### 5. Display / FX polish (medium; only affects display currency ≠ entity currency)
 - [ ] **F126 — FX-convert MRR/ARR + Scenario planner.** F124 made these honest, not converted — the tick is not coverage.
-- [ ] **F125 — sweep let-bindings reached via window.** Chart render itself now closed (F152/F153). "Done when": no code reads `window.<name>` for a binding app-main declares with let/const; every chart dataset has one writer. F153's `_setMonthlyArrays` is the model pattern.
-- [ ] **F129 + F64 — display polish.** Cosmetic.
+- [ ] **F125 — dead `window.charts` references (hygiene only, ZERO functional value).** Verified 2026-09-02: `app-main` declares `let charts={}` (never a window prop), so the `window.charts` reads in `finflow-api-wiring-dashboard.js` are dead — but they already fall through correctly (F152 fixed the real render bug), so removing them changes nothing a user sees. Pure cleanup; safe to leave. "Done when": no code reads `window.<name>` for an app-main let/const binding.
+- [x] **F129 + F64 — DONE (reconciled 2026-09-02).** **F64**: `_fmtMoney`/`_fmtMoneyExact` render exact and honour 'Show cents' (`app-main.js:621`); green `verify-f64-showcents`, `f64-money-formatter`. **F129**: budget variance (`index.html` renderBudget), Chart-of-Accounts totals + Journals debit/credit KPIs (`app-main.js`) now use `_nativeSymbol()` not literal `$`; verified `verify-f129-entity-symbol.js` (7/0). Investment `$` deliberately LEFT — those are unconverted USD prices (that's **F126**, honest labelling, not F129).
 
 ### 6. The real "done" gate
 - [ ] **Full VERIFICATION.md re-sweep.** Run EVERY check on real seeded data (run all → freeze failure list → fix → re-run all). This — not the AUDIT_MASTER ledger — is what establishes correctness. Do before launch sign-off.
 
 ### 7. Deferred / accepted (no launch blockers)
-- [ ] **F54 / F107 / F108** (team/multi-tenant), **F92** (structural dead-shadow elimination), **F19** (DB TLS, verified, deferred), **F109** (close-position feature, owner-gated), **F83** (harness exits 0 even on failure — CI hazard).
+- [ ] **F54 / F107 / F108** (team/multi-tenant), **F92** (structural dead-shadow elimination), **F19** (DB TLS, verified, deferred), **F109** (close-position feature, owner-gated). — **F83 DONE 2026-09-02 (commit `03fceaf`):** clock.js latches a nonzero exit code (output-scan + 'exit' handler) so a masked jsdom failure can't exit 0; `verify-f83-exit-latch.js` 6/0.
 
 ---
 

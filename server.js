@@ -1200,6 +1200,22 @@ const _badTimezone = v => {
 const _COUNTRY_RE = /^[A-Za-z]{2}$/;
 const _badCountry = v => v != null && v !== '' && !_COUNTRY_RE.test(String(v));
 
+// F88/C3-server: the ENTITY's calendar "today" (Y-M-D) for stamping a genuine-timestamp DEFAULT when the
+// client omits the date. resolvedToday phase 2 resolves the server instant into the entity's zone, so an
+// entity east/west of UTC gets its own local today — a receipt/expense entered late in the local evening
+// lands on the correct local date, not the UTC day. No entity / no timezone => UTC today, byte-identical
+// to phase 1 (the UTC-parity regression guard, verify-f88-utc-parity). Rule 6 / F34: this only chooses the
+// default DATE; it never infers a date from created_at.
+async function entityTodayYmd(entityId) {
+  if (entityId == null) return FinFlowDates.resolvedToday(new Date());
+  let tz = null;
+  try {
+    const { rows } = await pool.query(`SELECT data->>'timezone' AS tz FROM entities WHERE id = $1 LIMIT 1`, [entityId]);
+    if (rows[0] && rows[0].tz) tz = rows[0].tz;
+  } catch (_) { tz = null; }
+  return FinFlowDates.resolvedToday(new Date(), tz);
+}
+
 // F196 Tier 2: PER-ENTITY BUSINESS PROFILE (letterhead). A document is issued BY an entity, but the
 // letterhead was read from the ACCOUNT-wide user_settings row (ONE per account, no entity scoping),
 // so every entity's documents printed the same business name / address / tax-id. That is the Rule 10
@@ -1378,7 +1394,7 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   const { description, category = 'Other', amount, deductible = 'no', expense_date, entity_id } = req.body || {};
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
   const eid = entity_id || req.entityId || null;
-  const edate = expense_date || new Date().toISOString().slice(0,10);
+  const edate = expense_date || await entityTodayYmd(eid);
   if (await isLocked(req.session.userId, edate)) return res.status(403).json({ error: 'Period is locked.' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: the token-blind 5s findRecentDuplicate pre-check runs ONLY for token-less callers
@@ -2152,7 +2168,7 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   try {
     ({ row } = await db.insert('journals', {
       user_id: scopeId(req), entity_id: req.entityId || null,
-      date: date || new Date().toISOString().slice(0,10),
+      date: date || await entityTodayYmd(req.entityId),
       description: description.trim().slice(0,500), ref: num,
       debit: totalDebit, credit: totalCredit, lines: JSON.stringify(lines), status,
       idempotency_key: idem,
@@ -2858,7 +2874,7 @@ app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
       customer: String(customer).trim().slice(0, 200),
       num: String(num || 'SR-' + String(Date.now()).slice(-4)).slice(0, 30),
       amount: parseFloat(amount) || 0,
-      date: date || new Date().toISOString().slice(0, 10),
+      date: date || await entityTodayYmd(req.entityId),
       method: String(method).slice(0, 50),
       idempotency_key: idem,
     }));
@@ -2943,7 +2959,7 @@ app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
       customer: String(customer).trim().slice(0, 200),
       invoice_ref: String(invoice_ref || '').slice(0, 50),
       amount: parseFloat(amount) || 0,
-      date: date || new Date().toISOString().slice(0, 10),
+      date: date || await entityTodayYmd(req.entityId),
       method: String(method).slice(0, 50),
       idempotency_key: idem,
     }));
@@ -3018,7 +3034,7 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
       customer: String(customer).trim().slice(0, 200),
       num: String(num || 'CN-' + String(Date.now()).slice(-4)).slice(0, 30),
       amount: parseFloat(amount) || 0,
-      date: date || new Date().toISOString().slice(0, 10),
+      date: date || await entityTodayYmd(req.entityId),
       status: validStatuses.includes(status) ? status : 'Open',
       reason: String(reason).slice(0, 300),
       idempotency_key: idem,
@@ -3091,7 +3107,7 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
       entity_id: req.entityId || null,
       vendor: (vendor || '').trim().slice(0, 200),
       amount: parseFloat(amount) || 0,
-      date: date || new Date().toISOString().slice(0, 10),
+      date: date || await entityTodayYmd(req.entityId),
       method: (method || '').slice(0, 50),
       notes: (notes || '').slice(0, 500),
       ref: (ref || '').slice(0, 100),
@@ -3179,7 +3195,7 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
       vendor: String(vendor).trim().slice(0, 200),
       num: String(num || 'VC-' + String(Date.now()).slice(-4)).slice(0, 30),
       amount: parseFloat(amount) || 0,
-      date: date || new Date().toISOString().slice(0, 10),
+      date: date || await entityTodayYmd(req.entityId),
       status: validStatuses.includes(status) ? status : 'Open',
       reason: String(reason).slice(0, 300),
       idempotency_key: idem,
@@ -4162,7 +4178,7 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
     description: desc, amount: parseFloat(amount) || 0,
     // F23: standardize on tx_type/tx_date to match the rest of personal_transactions
     // (legacy rows written as type/date are still read via fallback below and on GET).
-    tx_type: type || 'debit', tx_date: date || new Date().toISOString().slice(0, 10),
+    tx_type: type || 'debit', tx_date: date || await entityTodayYmd(req.entityId),
     category: cat || 'Other', source: 'banking',
   });
   res.status(201).json(row);

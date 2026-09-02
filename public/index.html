@@ -5169,7 +5169,8 @@ requestAnimationFrame(renderBudget);
 async function loadMRRData(){
   try {
     // Calculate MRR from real recurring invoices
-    const res = await fetch('/api/recurring-invoices',{credentials:'include'});
+    const _dispCcy = window._displayCurrency || null;   // F126: view MRR/ARR in the chosen display currency
+    const res = await fetch('/api/recurring-invoices'+(_dispCcy?('?display='+encodeURIComponent(_dispCcy)):''),{credentials:'include'});
     // F96 class: a non-ok response must NOT silently leave MRR/ARR reading $0, which looks like
     // "no subscriptions" (money surface). 401/403 = logged out; anything else is a real failure —
     // surface it and leave the cards on their prior/placeholder value rather than a fabricated $0.
@@ -5204,11 +5205,24 @@ async function loadMRRData(){
     // symbol moves. (That the two disagree on abbreviation is pre-existing and left alone: it is a
     // formatting question, and changing it inside a currency commit would hide one change behind
     // another.)
-    const els = {
-      'mrr-val': window._nativeSymbol()+Math.round(monthlyTotal).toLocaleString(),
-      'arr-val': window._fmtMoneyNative(arr),
-    };
-    Object.entries(els).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.textContent=val; });
+    // F126: render in the display currency when one is active AND the server could convert (amounts
+    // above are already converted). No FX rate for the pair ⇒ _fx.ok=false ⇒ honest "—" (never a
+    // relabelled native number, mirroring _applyConvertedKPIs). No display currency ⇒ native, byte-
+    // identical to before.
+    const _fx = (_dispCcy && rows.length) ? (rows[0]._fx || null) : null;
+    const _fxOk = !_dispCcy || !_fx || _fx.ok !== false;
+    const _sym = (_dispCcy && _fxOk)
+      ? ((window.CURRENCIES && window.CURRENCIES[_dispCcy] && window.CURRENCIES[_dispCcy].symbol) || _dispCcy)
+      : window._nativeSymbol();
+    const _mv=document.getElementById('mrr-val'), _av=document.getElementById('arr-val');
+    if(_dispCcy && !_fxOk){
+      const _hint='No FX rate for '+((_fx&&_fx.from)||'')+'→'+_dispCcy+'. Add one under FX / Currency to convert.';
+      if(_mv){ _mv.textContent='—'; _mv.title=_hint; }
+      if(_av){ _av.textContent='—'; _av.title=_hint; }
+    } else {
+      if(_mv){ _mv.textContent=_sym+Math.round(monthlyTotal).toLocaleString(); _mv.title=''; }
+      if(_av){ _av.textContent=window._fmtMoney(arr, _sym); _av.title=''; }
+    }
     // F127: build a REAL trailing-12-month MRR series so the chart is not a permanent flat zero line
     // (window._mrrChartData previously had NO writer anywhere). Each currently-active recurring invoice
     // contributes its monthly value from its start month (created_at) forward — the ramp of the active

@@ -2834,7 +2834,25 @@ app.delete('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (
 app.get('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   // F146: entity-scope (null-inclusive) — stores entity_id but was user-scoped only. Display-only.
   const _rirows = await db.allByUser('recurring_invoices', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId));
-  res.json(annotateResolvedPostDate(_rirows, await _entityCountryMap()));   // F94 B2: annotate the true (F88-shifted) post date
+  let _out = annotateResolvedPostDate(_rirows, await _entityCountryMap());   // F94 B2: annotate the true (F88-shifted) post date
+  // F126: optional display-currency conversion for the MRR/ARR view. Convert each amount from the
+  // ACTIVE entity's native currency → the requested display currency at today's rate (carry-forward,
+  // rateAsOf). HONEST like _applyConvertedKPIs/F34: if no FX rate exists for the pair, amounts are
+  // left NATIVE and _fx.ok=false so the client shows "—" rather than a relabelled number. Absent the
+  // ?display= param the response is byte-identical to before (no conversion, no _fx field).
+  const _disp = String(req.query.display || '').toUpperCase();
+  if (/^[A-Z]{3}$/.test(_disp)) {
+    const _ent  = await activeEntity(req.session.userId);
+    const _from = String((_ent && _ent.currency) || 'USD').toUpperCase();
+    const _rate = await rateAsOf(pool, scopeId(req), _from, _disp, FinFlowDates.resolvedToday(new Date()));
+    const _ok   = _rate != null;   // rateAsOf → null when the pair has no rate (never fabricated)
+    _out = _out.map(r => ({
+      ...r,
+      amount: _ok ? (Number(r.amount) || 0) * _rate : r.amount,
+      _fx: { display: _disp, from: _from, rate: _ok ? _rate : null, ok: _ok },
+    }));
+  }
+  res.json(_out);
 }));
 app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;

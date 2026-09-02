@@ -1220,7 +1220,7 @@ async function renderCOALive(){
     const assets = accounts.filter(a=>/^asset/i.test(_coaCat(a))).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
     const liabs  = accounts.filter(a=>/^liab/i.test(_coaCat(a))).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
     const equity = assets - liabs;
-    const S = n=>'$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+    const S = n=>_nativeSymbol()+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});   // F129: entity symbol, not literal $ (COA balances are entity-currency)
     const setEl = (id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
     setEl('coa-count', accounts.length);
     setEl('coa-assets', S(assets));
@@ -1276,7 +1276,7 @@ async function renderJournalsLive(){
     const journals=await res.json();
 
     // Update KPI cards with real data
-    const S = n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+    const S = n=>_nativeSymbol()+n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});   // F129: entity symbol, not literal $ (journal amounts are entity-currency)
     const setEl = (id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
     const totalDebits  = journals.reduce((s,j)=>s+(parseFloat(j.debit)||0),0);
     const totalCredits = journals.reduce((s,j)=>s+(parseFloat(j.credit)||0),0);

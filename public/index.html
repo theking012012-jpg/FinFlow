@@ -5147,7 +5147,7 @@ function renderBudget(){
     const over=r.actual>r.budget;
     const variance=r.budget-r.actual;
     const varColor=over?'var(--red)':'var(--green)';
-    const varStr=(over?'-':'+')+window._fmtMoney(Math.abs(variance),'$');
+    const varStr=(over?'-':'+')+window._fmtMoney(Math.abs(variance),window._nativeSymbol());   // F129: entity symbol, matches this row's actual/budget
     return `<div class="budget-row" style="margin-top:8px">
       <span class="budget-label">${r.cat}</span>
       <div class="budget-track">

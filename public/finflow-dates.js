@@ -170,8 +170,26 @@
     return s;
   };
 
+  // Payroll run `period` → accrual date 'YYYY-MM-01'. F-H1: the client stores period as a DISPLAY
+  // string ("July 2026", toLocaleString month:'long'+year), not 'YYYY-MM' — so the old
+  // period.slice(0,7)+'-01' produced "July 2-01" (invalid), payroll matched no period and never hit
+  // opex/net profit. Handles 'YYYY-MM', 'YYYY-MM-DD', and 'Month YYYY'; falls back to run_date.
+  var payrollPeriodYmd = function (period, runDate) {
+    var p = period == null ? '' : String(period).trim();
+    var m = p.match(/^(\d{4})-(\d{2})/);
+    if (m) return m[1] + '-' + m[2] + '-01';
+    m = p.match(/^([A-Za-z]+)\s+(\d{4})$/);
+    if (m) {
+      var name = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase();
+      var idx = _LBL_LONG.indexOf(name);
+      if (idx >= 0) return m[2] + '-' + (idx + 1 < 10 ? '0' : '') + (idx + 1) + '-01';
+    }
+    return _toYmd(runDate) || null;
+  };
+
   return {
     resolvedToday: resolvedToday,
+    payrollPeriodYmd: payrollPeriodYmd,
     resolvePeriod: resolvePeriod,
     inWindow: inWindow,
     _toYmd: _toYmd,   // exposed for tests (calendar-date reducer)

@@ -1361,10 +1361,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><h2 class="card-title">Expense breakdown</h2></div>
-            <div class="bar-row"><span class="bar-label">Salaries</span><div class="bar-track"><div class="bar-fill" id="exp-sal-bar" style="width:72%;background:var(--acc)"></div></div><span class="bar-val" id="exp-sal">—</span></div>
-            <div class="bar-row"><span class="bar-label">Rent</span><div class="bar-track"><div class="bar-fill" id="exp-rent-bar" style="width:18%;background:#c9a84c99"></div></div><span class="bar-val" id="exp-rent">—</span></div>
-            <div class="bar-row"><span class="bar-label">Software</span><div class="bar-track"><div class="bar-fill" id="exp-sw-bar" style="width:8%;background:#c9a84c66"></div></div><span class="bar-val" id="exp-sw">—</span></div>
-            <div class="bar-row"><span class="bar-label">Marketing</span><div class="bar-track"><div class="bar-fill" id="exp-mkt-bar" style="width:5%;background:#c9a84c44"></div></div><span class="bar-val" id="exp-mkt">—</span></div>
+            <div class="bar-row"><span class="bar-label" id="exp-sal-lbl">Salaries</span><div class="bar-track"><div class="bar-fill" id="exp-sal-bar" style="width:72%;background:var(--acc)"></div></div><span class="bar-val" id="exp-sal">—</span></div>
+            <div class="bar-row"><span class="bar-label" id="exp-rent-lbl">Rent</span><div class="bar-track"><div class="bar-fill" id="exp-rent-bar" style="width:18%;background:#c9a84c99"></div></div><span class="bar-val" id="exp-rent">—</span></div>
+            <div class="bar-row"><span class="bar-label" id="exp-sw-lbl">Software</span><div class="bar-track"><div class="bar-fill" id="exp-sw-bar" style="width:8%;background:#c9a84c66"></div></div><span class="bar-val" id="exp-sw">—</span></div>
+            <div class="bar-row"><span class="bar-label" id="exp-mkt-lbl">Marketing</span><div class="bar-track"><div class="bar-fill" id="exp-mkt-bar" style="width:5%;background:#c9a84c44"></div></div><span class="bar-val" id="exp-mkt">—</span></div>
           </div>
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><h2 class="card-title">Business transactions</h2></div>
@@ -2069,10 +2069,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <button class="btn btn-ghost btn-sm" onclick="notify('Rebalancing suggestions are coming soon')">Rebalance ↗</button>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-              <div class="bar-row"><span class="bar-label">Equities</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--acc)"></div></div><span class="bar-val">$0</span></div>
-              <div class="bar-row"><span class="bar-label">Fixed income</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--teal)"></div></div><span class="bar-val">$0</span></div>
-              <div class="bar-row"><span class="bar-label">Real estate</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--purple)"></div></div><span class="bar-val">$0</span></div>
-              <div class="bar-row"><span class="bar-label">Cash</span><div class="bar-track"><div class="bar-fill" style="width:0%;background:var(--green)"></div></div><span class="bar-val">$0</span></div>
+              <div class="bar-row"><span class="bar-label">Equities</span><div class="bar-track"><div class="bar-fill" id="biz-alloc-eq-bar" style="width:0%;background:var(--acc)"></div></div><span class="bar-val" id="biz-alloc-eq">$0</span></div>
+              <div class="bar-row"><span class="bar-label">Fixed income</span><div class="bar-track"><div class="bar-fill" id="biz-alloc-fi-bar" style="width:0%;background:var(--teal)"></div></div><span class="bar-val" id="biz-alloc-fi">$0</span></div>
+              <div class="bar-row"><span class="bar-label">Real estate</span><div class="bar-track"><div class="bar-fill" id="biz-alloc-re-bar" style="width:0%;background:var(--purple)"></div></div><span class="bar-val" id="biz-alloc-re">$0</span></div>
+              <div class="bar-row"><span class="bar-label">Cash</span><div class="bar-track"><div class="bar-fill" id="biz-alloc-cash-bar" style="width:0%;background:var(--green)"></div></div><span class="bar-val" id="biz-alloc-cash">$0</span></div>
             </div>
           </div>
           <div class="card" style="margin-bottom:0">
@@ -2356,7 +2356,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="mc"><div class="mc-label">Total SKUs</div><div class="mc-val" id="inv-skus">0</div><div class="mc-change neutral">Active products</div></div>
           <div class="mc"><div class="mc-label">Inventory value</div><div class="mc-val" id="inv-value">$0</div><div class="mc-change up">At cost</div></div>
           <div class="mc"><div class="mc-label">Low stock alerts</div><div class="mc-val" style="color:var(--amber)" id="inv-lowstock">0</div><div class="mc-change dn">Reorder needed</div></div>
-          <div class="mc"><div class="mc-label">COGS this month</div><div class="mc-val" id="inv-cogs">$0</div><div class="mc-change neutral">MAC method</div></div>
+          <div class="mc"><div class="mc-label">COGS this month</div><div class="mc-val" id="inv-cogs">$0</div><div class="mc-change neutral">FIFO method</div></div>
         </div>
         <div class="card">
           <div class="card-header"><h2 class="card-title">Stock levels</h2><button class="btn btn-ghost btn-sm" onclick="openProductModal()">+ Add product</button></div>
@@ -2431,7 +2431,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="conn-hub-controls">
             <div class="conn-search-wrap">
               <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input type="text" id="conn-search" placeholder="Search 755+ integrations…" oninput="connFilterAll()">
+              <input type="text" id="conn-search" placeholder="Search integrations…" oninput="connFilterAll()">
             </div>
           </div>
         </div>
@@ -3113,7 +3113,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="metrics-grid">
           <div class="mc"><div class="mc-label">Active Profiles</div><div class="mc-val">0</div><div class="mc-change neutral">Recurring setups</div></div>
           <div class="mc"><div class="mc-label">Monthly Value</div><div class="mc-val">$0</div><div class="mc-change neutral">Auto-generated</div></div>
-          <div class="mc"><div class="mc-label">Next Run</div><div class="mc-val">—</div><div class="mc-change neutral">No profiles yet</div></div>
+          <div class="mc"><div class="mc-label">Next Run</div><div class="mc-val">—</div><div class="mc-change neutral">Next occurrence</div></div>
           <div class="mc"><div class="mc-label">YTD Generated</div><div class="mc-val">$0</div><div class="mc-change neutral">From recurring</div></div>
         </div>
         <div class="card">
@@ -3187,7 +3187,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="metrics-grid">
           <div class="mc"><div class="mc-label">Active Profiles</div><div class="mc-val">0</div><div class="mc-change neutral">Recurring bills</div></div>
           <div class="mc"><div class="mc-label">Monthly Cost</div><div class="mc-val">$0</div><div class="mc-change neutral">Auto-recurring</div></div>
-          <div class="mc"><div class="mc-label">Next Due</div><div class="mc-val">—</div><div class="mc-change neutral">No profiles yet</div></div>
+          <div class="mc"><div class="mc-label">Next Due</div><div class="mc-val">—</div><div class="mc-change neutral">Next occurrence</div></div>
           <div class="mc"><div class="mc-label">YTD Total</div><div class="mc-val">$0</div><div class="mc-change neutral">Recurring spend</div></div>
         </div>
         <div class="card">
@@ -5249,6 +5249,23 @@ async function loadMRRData(){
     window._mrrChartData = _series;
     window._mrrChartLabels = _mlabels;
     if(typeof renderMRRChart==='function') renderMRRChart();
+    // F-F1: Revenue by customer — group active recurring subs by client (was a permanent "Loading…"
+    // placeholder that no code ever populated).
+    const _byCust = {};
+    _active.forEach(r=>{ const c=(r.client||'—'); _byCust[c]=(_byCust[c]||0)+_monthlyVal(r); });
+    const _custEl = document.getElementById('mrr-by-customer');
+    if(_custEl){
+      const _entries = Object.entries(_byCust).sort((a,b)=>b[1]-a[1]);
+      _custEl.innerHTML = _entries.length
+        ? _entries.map(([c,v])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--t1)">${esc(c)}</span><span style="font-family:var(--font-mono);color:var(--t2)">${_sym+Math.round(v).toLocaleString()}/mo</span></div>`).join('')
+        : '<div style="padding:1rem;text-align:center;color:var(--t3)">No active subscriptions yet.</div>';
+    }
+    // F-F2: Active customers = distinct clients with an active subscription. Net MRR = current active MRR.
+    // New/Churned/Expansion require period-over-period cohort history that is NOT retained server-side
+    // (see the F127 note above) — left as "—" rather than fabricated.
+    const _mc = document.getElementById('mrr-customers'); if(_mc) _mc.textContent = Object.keys(_byCust).length;
+    const _netEl = document.getElementById('mrr-net');
+    if(_netEl) _netEl.textContent = (_dispCcy && !_fxOk) ? '—' : (_sym+Math.round(monthlyTotal).toLocaleString());
   } catch(e){
     // F96 class — NETWORK-failure path (fetch rejected). Same visibility as the !res.ok branch:
     // a dropped connection must not read as "no subscriptions" ($0).
@@ -7473,7 +7490,9 @@ window.updateScenario = function(){
   const projExp = Math.round((BASE.exp + addSalaries + invest) * (1 - efficiency));
   const projProfit = projRev - projExp;
   const newBurn = Math.max(0, Math.round((projExp - projRev/12)/12));
-  const runway = newBurn > 0 ? Math.round(BASE.cash / newBurn) : 99;
+  // F-J2: cash runway is meaningless when cash isn't tracked (BASE.cash≈0) — show "N/A" instead of a
+  // misleading "0 mo". -1 = not applicable; 99 = infinite (no burn).
+  const runway = !(BASE.cash > 0) ? -1 : (newBurn > 0 ? Math.round(BASE.cash / newBurn) : 99);
 
   // F124: was `const S = v => window._fmtMoney(v, '$')` — a LOCAL S shadowing the global money
   // renderer inside this function, so every scenario figure carried a hardcoded '$' regardless of
@@ -7490,7 +7509,8 @@ window.updateScenario = function(){
   set('sc-rev', S(projRev));
   set('sc-exp', S(projExp));
   set('sc-profit', S(projProfit));
-  set('sc-runway', runway===99?'∞ mo':runway+' mo');
+  set('sc-runway', runway===-1 ? 'N/A' : runway===99?'∞ mo':runway+' mo');
+  { const _rc=document.getElementById('sc-runway-chg'); if(_rc) _rc.textContent = runway===-1 ? 'Cash not tracked' : 'At current burn'; }
   set('sc-rev-chg', (revGrowth>=0?'+':'')+Math.round(revGrowth*100)+'% growth');
   set('sc-profit-chg', Math.round(projProfit/projRev*100)+'% margin');
 
@@ -8016,6 +8036,23 @@ document.addEventListener('click', e=>{
     bizEl('biz-inv-gain',   (totalGain>=0?'+':'')+S2b(totalGain));
     bizEl('biz-inv-income', S2b(totalIncome)+'/yr');
     bizEl('biz-inv-daychg', haveDay?((totalDayChg>=0?'+':'')+S2b(totalDayChg)):'—');
+    // F-E2: populate the business asset-allocation bars (were static $0). Classify each holding by type.
+    (function(){
+      let _eq=0,_fi=0,_re=0,_csh=0;
+      hs.forEach(h=>{
+        const v=(parseFloat(h.price)||0)*(parseFloat(h.shares)||0);
+        const t=String(h.type||'').toLowerCase(), tk=String(h.ticker||'').toUpperCase();
+        if(tk==='CASH'||t==='cash') _csh+=v;
+        else if(/bond|fixed|treasur|note|bill|gilt/.test(t)) _fi+=v;
+        else if(/reit|real\s*estate|property/.test(t)) _re+=v;
+        else _eq+=v;   // stock / etf / crypto / default → equities
+      });
+      const _tot=(_eq+_fi+_re+_csh)||1;
+      const _setA=(vId,bId,amt)=>{ const ve=document.getElementById(vId), be=document.getElementById(bId);
+        if(ve) ve.textContent=S2b(amt); if(be) be.style.setProperty('width', Math.round(amt/_tot*100)+'%','important'); };
+      _setA('biz-alloc-eq','biz-alloc-eq-bar',_eq); _setA('biz-alloc-fi','biz-alloc-fi-bar',_fi);
+      _setA('biz-alloc-re','biz-alloc-re-bar',_re); _setA('biz-alloc-cash','biz-alloc-cash-bar',_csh);
+    })();
     const gainPos=totalGain>=0;
     const gainPct=totalCost>0?(totalGain/totalCost*100).toFixed(1):'0.0';
     const dayPct=(haveDay&&totalValue>0)?(totalDayChg/totalValue*100).toFixed(2):'0.00';

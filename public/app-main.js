@@ -1939,7 +1939,7 @@ function computeExpenseBreakdown(period, monthIdx){
     // F85 (2026-08-07, accrual): recognise the run in the PERIOD IT IS FOR — first of the run's
     // `period` month ('YYYY-MM' → 'YYYY-MM-01'), a tz-free calendar date — not run_date (creation
     // time). Mirrors the server computeBooks _payDate so client and server agree. run_date is metadata.
-    if(!inPeriod(r.period ? String(r.period).slice(0,7)+'-01' : r.run_date)) return;
+    if(!inPeriod(window.FinFlowDates.payrollPeriodYmd(r.period, r.run_date))) return;   // F-H1: robust period parse
     payrollRunCount++;
     if(!PAYROLL_RECOGNIZED.includes(String(r.status||'').toLowerCase())) return;   // draft ⇒ 0
     (r.lines||[]).forEach(l=>{
@@ -2094,7 +2094,9 @@ function arOutstanding(invoices){
     const due=Math.max(0,(parseFloat(i.amount)||0)-(parseFloat(i.amount_paid)||0));
     if(due<=0) return;
     total+=due; count++;
-    if(st==='overdue'){ overdueTotal+=due; overdueCount++; }
+    // F-C1: overdue = unpaid & past its due date (entity-local today), not a literal 'overdue' status.
+    const _ovd=window.FinFlowDates._toYmd(i.due_date);
+    if(st==='overdue' || (_ovd!=null && _ovd<_arToday)){ overdueTotal+=due; overdueCount++; }
   });
   return { total, count, overdueTotal, overdueCount };
 }
@@ -4395,18 +4397,19 @@ let invDonutChart=null;
 function S2(n){return _fmtMoney(n, '$');}   // personal-investments '$' figures — shared rollover
 
 function calcPortfolio(){
-  let totalValue=0,totalCost=0,totalDiv=0;
+  let totalValue=0,totalCost=0,totalDiv=0,_dayChgSum=0,_haveDay=false;
   holdings.forEach(h=>{
     totalValue+=h.price*h.shares;
     totalCost+=h.cost*h.shares;
     totalDiv+=(h.div||0)*h.shares;
+    // F-E1: day change = Σ (per-holding live day-change price × shares) — the actual intraday price
+    // movement, identical to the business-investments engine (index.html applyBizQuotes).
+    if(typeof h.dayChgPx==='number'){ _dayChgSum += h.dayChgPx*h.shares; _haveDay=true; }
   });
-  // REAL day change = current value − most recent PRIOR-day snapshot. null when
-  // there's no prior-day snapshot yet (shown as "—"). No simulated figure.
-  const _snaps=(window._portSnapshots||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
-  const _today=todayLocal();
-  const _prior=_snaps.filter(s=>s.date && s.date<_today).pop();
-  const dayChg = _prior ? (totalValue - (parseFloat(_prior.value)||0)) : null;
+  // F-E1: the old "current value − prior-day SNAPSHOT" compared two DIFFERENT portfolio
+  // compositions (holdings added/removed since the snapshot) and reported a nonsensical figure
+  // (e.g. −151% of the portfolio) whenever the snapshot predated a holdings change.
+  const dayChg = _haveDay ? _dayChgSum : null;
   return{totalValue,totalCost,totalGain:totalValue-totalCost,totalDiv,dayChg};
 }
 

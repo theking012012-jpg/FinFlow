@@ -4119,7 +4119,7 @@ async function runRecurringScheduler() {
         await db.updateById('recurring_invoices', r.id, { status: 'completed' });
         continue;
       }
-      await db.insert('invoices', {
+      const { row: _invRow } = await db.insert('invoices', {
         user_id: r.user_id, entity_id: r.entity_id || null,
         // F88 step 6: stamp the due date on a business day for the entity's country (Modified Following);
         // next_run (the schedule anchor) stays unadjusted so the cadence never drifts.
@@ -4127,6 +4127,8 @@ async function runRecurringScheduler() {
         status: 'pending', notes: `Auto-generated from recurring schedule`,
         recurring_invoice_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
       });
+      // F-L1: audit scheduler-created invoices (were bypassing the audit trail; system actor, no req).
+      try { await recordAudit(pool, { userId: r.user_id, entityId: r.entity_id || null, table: 'invoices', recordId: _invRow && _invRow.id, action: 'CREATE', newData: _invRow }); } catch (_) {}
       const _nextRun = nextRunDate(r.next_run, r.frequency);
       const _patch = { next_run: _nextRun };
       if (r.end_date && _nextRun > r.end_date) _patch.status = 'completed';
@@ -4148,13 +4150,15 @@ async function runRecurringScheduler() {
         continue;
       }
       const num = 'BILL-' + String(Date.now()).slice(-4);
-      await db.insert('bills', {
+      const { row: _billRow } = await db.insert('bills', {
         user_id: r.user_id, entity_id: r.entity_id || null,
         // F88 step 6: business-day-shifted due date (Modified Following, entity's country); anchor unadjusted.
         vendor: r.vendor, num, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
         status: 'unpaid', notes: `Auto-generated from recurring schedule`,
         recurring_bill_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
       });
+      // F-L1: audit scheduler-created bills (were bypassing the audit trail; system actor, no req).
+      try { await recordAudit(pool, { userId: r.user_id, entityId: r.entity_id || null, table: 'bills', recordId: _billRow && _billRow.id, action: 'CREATE', newData: _billRow }); } catch (_) {}
       const _nextRun = nextRunDate(r.next_run, r.frequency);
       const _patch = { next_run: _nextRun };
       if (r.end_date && _nextRun > r.end_date) _patch.status = 'completed';
@@ -4408,7 +4412,18 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     ]);
     const revenue = books.revenue;
     const outstanding = books.outstanding;
-    const overdue = (invoices || []).filter(i => (i.status || '').toLowerCase() === 'overdue').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+    // F-C1: overdue = unpaid-ish invoices whose due date has passed (entity-local today), balance-based.
+    // The old literal status==='overdue' never fired — nothing transitions pending→overdue when the
+    // due date passes — so past-due pending/partial invoices read as $0 everywhere.
+    const _ovToday = await entityTodayYmd(eid);
+    const _OV_UNPAID = new Set(['pending', 'overdue', 'partial', 'unpaid', 'sent', 'due_soon']);
+    const overdue = (invoices || []).reduce((s, i) => {
+      const st = (i.status || '').toLowerCase();
+      if (!_OV_UNPAID.has(st)) return s;                    // paid / draft / void excluded
+      const d = i.due_date ? String(i.due_date).slice(0, 10) : null;
+      if (!d || d >= _ovToday) return s;                    // no due date, or not yet past due
+      return s + Math.max(0, (parseFloat(i.amount) || 0) - (parseFloat(i.amount_paid) || 0));
+    }, 0);
     const totalExp = books.opex;
     const netProfit = books.netProfit;
     const margin = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;
@@ -4521,7 +4536,7 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
       [uid, eid]
     );
     _prl.filter(l => ['approved', 'paid'].includes(String(l.status || '').toLowerCase()))
-        .forEach(l => bump((l.period ? String(l.period).slice(0, 7) + '-01' : l.run_date), 'expenses', (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0)));
+        .forEach(l => bump(FinFlowDates.payrollPeriodYmd(l.period, l.run_date), 'expenses', (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0)));   // F-H1
   } catch (_) { /* payroll optional — leave buckets unchanged on error */ }
   // Sort by YYYY-MM key ('Unknown' sorts last); format the label at render (F15).
   const rows = Object.keys(monthMap).sort().map(k => ({
@@ -6573,7 +6588,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // placement (inPeriod) and the sumFX rate date — a June expense converts at June's rate, the
   // correct accrual treatment. run_date is now audit metadata; the fallback to it is defensive
   // (period is required at POST, so a run without one should not exist).
-  const _payDate = l => (l && l.period ? String(l.period).slice(0, 7) + '-01' : (l && l.run_date));
+  const _payDate = l => FinFlowDates.payrollPeriodYmd(l && l.period, l && l.run_date);   // F-H1: robust parse ('Month YYYY' + 'YYYY-MM')
   // F80 / VERIFICATION.md decision 2: recognise the payroll expense at `approved`; `draft` contributes
   // 0; `paid` adds nothing further (already recognised at approved). MUST be IN ('approved','paid'),
   // NOT ='approved' — a paid run was approved first, so approved-only would DROP the expense on

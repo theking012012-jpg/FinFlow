@@ -266,6 +266,23 @@ item for real-user email is Resend domain verification (§ H); Stripe + Plaid + 
 
 ## Priority order
 
+### 0. LIVE AUDIT BUGS (2026-09-02) — ✅ ALL FIXED + VERIFIED (see `AUDIT_2026-09-02_live-visual.md`)
+Every item below shipped with a discriminating harness (red→green) + full canary sweep green. Commit: audit-fixes 2026-09-02.
+- [x] **F-C1 — Overdue FIXED (verify-fc1-overdue-date.js 9/0).** `server.js:4411` filters `status==='overdue'` (literal) — nothing transitions pending→overdue on due date, so past-due unpaid invoices/bills never count ($13,000 invoices + $250 bill read as $0 across Dashboard/Invoices/Payments/Bills/Vendors). Fix: overdue = unpaid-ish status AND due_date < entityTodayYmd; mirror on client KPIs. Bills path ~`server.js:5871` same pattern. Discriminating harness + own commit. Outstanding/payables logic is CORRECT — only overdue is broken.
+- [x] **F-H1 — Payroll now in Expenses/Net Profit FIXED (verify-fh1-payroll-in-opex.js 13/0; also resolves F-D1 P&L 'Jul 01' bucket).** `/api/reports` expenses $4,100 / netProfit $37,990 excludes the $7,000 July payroll run; P&L labels it "incl. payroll", AI Insights says "payroll-to-rev 0%". Decide treatment → fix calc (Net Profit overstated ~$7K) or fix label. Harness + own commit.
+- [x] **F-E1 — Personal day change FIXED (verify-fe1-personal-daychange.js 5/0).** Correct = dayChgPx(-3.92)×210 shares = -$823. Business path correct; bug is personal day-change aggregation.
+- [x] **F-A1 — Dashboard expense label FIXED (verify-fa1-dashboard-expense-label.js 6/0).** Renders server row `{Rent,2850}` under hardcoded "Salaries" slot (positional bind). Bind to `row.category`.
+- [x] **F-E2 — Business asset allocation FIXED (verify-fe2-biz-allocation.js 5/0).**
+- [x] **F-K1 — Inventory COGS FIXED (verify-fk1-inventory-cogs.js 6/0).**
+- [x] **F-G1 — Budget usage FIXED (verify-fg1-budget-usage.js 6/0).**
+- [x] **F-F1/F-F2 — MRR revenue-by-customer + active/net wired FIXED (verify-ff1-mrr-by-customer.js 7/0); churn/new/expansion left honest (no cohort history).**
+- [x] **F-L1 — Scheduler rows now audited FIXED (verify-fl1-scheduler-audit.js 6/0).**
+- [x] **Polish (verify-polish-batch.js 10/0):** recurring subtitle→"Next occurrence" (F-B1); payment-method enums humanized (F-B2); scenario runway→"N/A" when cash untracked (F-J2); stale "755+" dropped (F-L2); P&L "Jul 01" bucket resolved via F-H1 (F-D1).
+- [ ] **Deferred cosmetic (judged low-value / needs product decision):** "This month" subtitle relabels (F-B5, ambiguous scope), app-wide date-format unification (F-B6), FX rate dedupe-on-entry (F-I1, test data), 6.79→6.80 header rounding (F-I2), "Find Advisor"→Find Accountant (F-M1, intentional redirect), bank-rec "all matched" wording (F-J1, accurate as-is).
+- Note: NONE are regressions from this session. Investments stale-price, FX display conversion, F94, F126 all verified working live.
+
+
+
 ### 1. Ready to ship — one approval away
 - [x] **F139 — tax-worksheet single-source. ALREADY DONE (committed `bc8cd70`).** Client Income-Tax worksheet and accountant Tax Summary now read one `computeBooks` deductible leg. Re-verified GREEN on real scratch Postgres 2026-08-13: client taxable === accountant taxable === 12000, deductible 2000 includes the 100/50 variants, client revenue is accrual 14000 (not cash 4000). The prior "HELD awaiting commit" note was stale. **Harness caveat:** `verify-f139-tax-consistency.js` had to be updated to run — its seed inserted `entity_id=NULL`, which the F150 constraint (`chk_*_entity_nn`, added afterward) now rejects (code 23514); the seed now creates one active entity and stamps it. That harness-seed fix is the only F139 item left, and it's test-debt, not a money fix.
 

@@ -252,7 +252,7 @@
       }
       if (lblEl && cat != null) lblEl.textContent = cat;
     };
-    for (let i = 0; i < 4; i++) _paint(i, null, null);          // clear
+    for (let i = 0; i < 4; i++) _paint(i, '', null);            // F-A1: clear label too (empty rows), not just value
     sorted.slice(0, 4).forEach(([cat, amt], i) => _paint(i, cat, amt));   // then paint
   }
 

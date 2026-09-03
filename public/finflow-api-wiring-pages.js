@@ -13,6 +13,15 @@
   // in-flight promise collapses those duplicates into ONE request. GET-only (never mutations),
   // and the entry clears as soon as it settles, so a later reload still fetches fresh data.
   const _inflightGets = new Map();
+  // F-B2: humanize raw payment-method enums ("bank_transfer"→"Bank transfer", "other"→"Other").
+  // Already-formatted values ("Card (Stripe)") are left untouched.
+  window._humanPayMethod = function (m) {
+    const s = String(m || '').trim();
+    if (!s) return '';
+    if (/[A-Z(]/.test(s)) return s;            // already nicely formatted
+    return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ');
+  };
+
   async function api(method, path, body) {
     const opts = { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } };
     if (body !== undefined) opts.body = JSON.stringify(body);
@@ -172,7 +181,7 @@
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
             <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
-            <span style="color:var(--t2)">${esc(r.method || '')}</span>
+            <span style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
             <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewReceipt(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteReceipt(${r.id})">✕</button></div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No receipts yet</div>';
@@ -287,7 +296,7 @@
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(_prInv?.num || '—')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
             <span style="color:var(--t2)">${esc((window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.payment_date, {year:true}) : (r.payment_date || '')) || '—')}</span>
-            <span style="color:var(--t2)">${esc(r.method || '')}</span>
+            <span style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
             <button class="btn btn-ghost btn-sm" style="justify-self:end" onclick="viewPaymentReceived(${r.id})">View</button>
           </div>`;
           }).join('')
@@ -621,6 +630,20 @@
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No vendors yet</div>';
     }
 
+    // F-C1: bills/vendors overdue = Σ balance of UNPAID bills past their due date (entity-local today).
+    // Replaces the old status==='overdue' literal (never set) and the hardcoded null on vendors.
+    window._billsOverdueSum = function (bills) {
+      const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : new Date().toISOString().slice(0, 10);
+      const UNPAID = ['unpaid', 'due_soon', 'overdue', 'partial', 'pending'];
+      return (bills || []).reduce((s, b) => {
+        const st = (b.status || '').toLowerCase();
+        if (!UNPAID.includes(st)) return s;
+        const d = b.due_date ? String(b.due_date).slice(0, 10) : null;
+        if (!d || d >= today) return s;   // no due date, or not yet past due
+        return s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0));
+      }, 0);
+    };
+
     window.renderVendors = function () {
       if (!_vendorsFetched) { loadVendors(); return; }
       renderVendorRows(_vendorsData);
@@ -629,7 +652,8 @@
       // bill owes only its remaining balance (mirrors the server AP leg, server.js:3779-3790).
       const _vPayables = _billsData.filter(b => b.status?.toLowerCase() !== 'paid').reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
       const _vPaid = _paymentsMadeData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-      setKpiCards('page-vendors', [_vendorsData.length, S(_vPayables), null, S(_vPaid)]);
+      const _vOverdue = window._billsOverdueSum(_billsData);   // F-C1: was hardcoded null → static $0
+      setKpiCards('page-vendors', [_vendorsData.length, S(_vPayables), S(_vOverdue), S(_vPaid)]);
       window._refreshDashboardUI?.();
     };
 
@@ -724,7 +748,7 @@
       const badge = document.getElementById('badge-bills');
       if (badge) { badge.textContent = overdue; badge.style.display = overdue > 0 ? '' : 'none'; }
       // KPI cards: count · due-this-week sum · overdue sum · paid sum
-      const _blOverdue = _billsData.filter(b => b.status?.toLowerCase() === 'overdue').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+      const _blOverdue = window._billsOverdueSum(_billsData);   // F-C1: date-based (due_date past + unpaid), not status-literal
       const _blPaid = _billsData.filter(b => b.status?.toLowerCase() === 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
       const _blToday = new Date(); _blToday.setHours(0, 0, 0, 0);
       const _weekAhead = new Date(); _weekAhead.setDate(_weekAhead.getDate() + 7);
@@ -903,7 +927,7 @@
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(r.ref || '')}</span>
             <span style="font-family:var(--font-mono)">${S(r.amount)}</span>
             <span style="color:var(--t2)">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.date,{year:true}):(r.date||''))||'—')}</span>
-            <span style="color:var(--t2)">${esc(r.method || '')}</span>
+            <span style="color:var(--t2)">${esc(window._humanPayMethod(r.method))}</span>
             <div style="display:flex;gap:4px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="viewPaymentMade(${r.id})">View</button><button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deletePaymentMade(${r.id})">✕</button></div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No payments made yet</div>';

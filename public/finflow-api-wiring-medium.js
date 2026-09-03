@@ -573,7 +573,10 @@
       _invKpi('inv-skus', window.inventory.length);
       _invKpi('inv-value', S(window.inventory.reduce((s, i) => s + (parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0), 0)));
       _invKpi('inv-lowstock', lowCount);
-      _invKpi('inv-cogs',  S(window.inventory.reduce((s, i) => s + (parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0), 0)));
+      // F-K1: COGS is cost of goods SOLD (FIFO, server /api/cogs), NOT inventory value (units×cost).
+      // The old units×cost duplicated the Inventory-value KPI and contradicted the FIFO COGS Summary.
+      _invKpi('inv-cogs',  S(window._cogsTotal || 0));
+      if (typeof window.loadCOGS === 'function' && window._cogsTotal == null) { try { window.loadCOGS(); } catch (e) {} }
       window._refreshDashboardUI?.();
       const badge2 = document.getElementById('badge-inv2');
       if (badge2) {
@@ -1218,13 +1221,16 @@
         const COLORS = ['#c9a84c','#5aaa9e','#9e8fbf','#7db87d','#d4964a','#c46a5a'];
         const bd = window.BUDGET_DATA;
         if (bd) { bd.length = 0; }
-        let totalBudget = 0;
-        const totalSpent = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+        // F-G1: only actuals of BUDGETED categories count toward budget usage. Summing ALL expenses
+        // (incl. unbudgeted categories like Rent) against a partial budget produced a nonsensical
+        // "570% over budget" while the one budgeted category was actually under.
+        let totalBudget = 0, totalSpent = 0;
 
         Object.entries(targets).forEach(([cat, budget], i) => {
           const bAmt = parseFloat(budget) || 0;
           const actual = catActuals[cat.toLowerCase()] || 0;
           totalBudget += bAmt;
+          totalSpent += actual;   // F-G1: budgeted-category actuals only
           if (bd) bd.push({ cat, budget: bAmt, actual, color: COLORS[i % COLORS.length] });
         });
 

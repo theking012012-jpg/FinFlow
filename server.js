@@ -6319,7 +6319,12 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
      WHERE br.user_id = $1 ORDER BY br.matched_at DESC`,
     [scopeId(req)]
   );
-  res.json({ unmatchedBanking, unmatchedPayments, matched });
+  // MONEY-OUT side: business debits not yet actioned + open bills to match them against.
+  const _debits = banking.filter(r => String(r.tx_type || 'debit') === 'debit' && !r.reconcile_state && r.entity_id != null);
+  const _openBills = (await db.allByUser('bills', uid, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)))
+    .filter(b => String(b.status || '').toLowerCase() !== 'paid')
+    .map(b => ({ id: b.id, vendor: b.vendor, amount: parseFloat(b.amount) || 0, amount_paid: parseFloat(b.amount_paid) || 0, status: b.status, due_date: b.due_date }));
+  res.json({ unmatchedBanking, unmatchedPayments, matched, unmatchedDebits: _debits, openBills: _openBills });
 }));
 
 app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) => {
@@ -6343,6 +6348,83 @@ app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) =>
     [scopeId(req), req.entityId || null, parseInt(banking_id), parseInt(invoice_payment_id)]
   );
   res.status(201).json(rows[0]);
+}));
+
+// ── MONEY-OUT BANK RECONCILE ─────────────────────────────────────────────────
+// The mirror of the credit→invoice-payment reconcile above: a bank DEBIT (money out) becomes either a
+// direct EXPENSE, or a payment MATCHED to a bill (settles AP, no double-count — the bill already accrued
+// the expense), or is IGNORED. Business/personal boundary is structural: expenses/payments_made are
+// entity-required, so only a business banking row (entity set) can book to business books; a personal
+// bank row (no entity) already lives in the personal ledger and is refused here. Each action stamps the
+// banking row's reconcile_state, which is BOTH the idempotency guard and what the feed reads.
+async function _bankDebitForAction(req, bankingId) {
+  const { rows: [r] } = await pool.query(`SELECT * FROM personal_transactions WHERE id=$1 AND user_id=$2 LIMIT 1`, [bankingId, scopeId(req)]);
+  if (!r) return { err: { status: 404, msg: 'Bank transaction not found.' } };
+  const row = rowToObj(r);
+  if (row.source !== 'banking') return { err: { status: 400, msg: 'Not a bank-feed transaction.' } };
+  if ((row.tx_type || 'debit') !== 'debit') return { err: { status: 400, msg: 'Only a debit (money out) can be booked as an expense or matched to a bill.' } };
+  if (row.reconcile_state) return { done: row };   // already actioned → idempotent
+  if (row.entity_id == null) return { err: { status: 400, msg: 'This is a personal bank transaction — it stays in your personal ledger, not a business\'s books.', code: 'PERSONAL_TXN' } };
+  return { row };
+}
+
+app.post('/api/bank-reconciliation/book-expense', requireAuth, wrap(async (req, res) => {
+  const bankingId = parseInt(req.body && req.body.banking_id, 10);
+  if (!Number.isInteger(bankingId) || bankingId <= 0) return res.status(400).json({ error: 'A valid banking_id is required.' });
+  const g = await _bankDebitForAction(req, bankingId);
+  if (g.err) return res.status(g.err.status).json({ error: g.err.msg, code: g.err.code });
+  if (g.done) return res.json({ ok: true, duplicate: true, reconcile_state: g.done.reconcile_state });
+  const row = g.row;
+  const { row: expense } = await db.insert('expenses', {
+    user_id: scopeId(req), entity_id: row.entity_id,
+    description: String(row.description || 'Bank transaction').slice(0, 300),
+    category: String((req.body && req.body.category) || row.category || 'Other').slice(0, 60),
+    amount: parseFloat(row.amount) || 0, deductible: 'no',
+    expense_date: row.tx_date || row.date || await entityTodayYmd(row.entity_id),
+    idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),
+  });
+  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id, table: 'expenses', recordId: expense.id, action: 'CREATE', newData: expense, req });
+  await db.updateById('personal_transactions', bankingId, { reconcile_state: 'expense', reconcile_ref: expense.id });
+  res.json({ ok: true, booked: true, expense });
+}));
+
+app.post('/api/bank-reconciliation/match-bill', requireAuth, wrap(async (req, res) => {
+  const bankingId = parseInt(req.body && req.body.banking_id, 10);
+  const billId = parseInt(req.body && req.body.bill_id, 10);
+  if (!Number.isInteger(bankingId) || bankingId <= 0) return res.status(400).json({ error: 'A valid banking_id is required.' });
+  if (!Number.isInteger(billId) || billId <= 0) return res.status(400).json({ error: 'A valid bill_id is required.' });
+  const g = await _bankDebitForAction(req, bankingId);
+  if (g.err) return res.status(g.err.status).json({ error: g.err.msg, code: g.err.code });
+  if (g.done) return res.json({ ok: true, duplicate: true, reconcile_state: g.done.reconcile_state });
+  const row = g.row;
+  const { rows: [br] } = await pool.query(`SELECT * FROM bills WHERE id=$1 AND user_id=$2 LIMIT 1`, [billId, scopeId(req)]);
+  if (!br) return res.status(404).json({ error: 'Bill not found.' });
+  const bill = rowToObj(br);
+  // Linked payment settles AP (the bill already carries the expense) — booking a fresh expense too
+  // would double-count, so this records a payments_made LINKED to the bill and adds NO new expense row.
+  const { row: payment } = await db.insert('payments_made', {
+    user_id: scopeId(req), entity_id: row.entity_id,
+    vendor: String(bill.vendor || row.description || '').slice(0, 200),
+    amount: parseFloat(row.amount) || 0, date: row.tx_date || row.date || await entityTodayYmd(row.entity_id),
+    method: 'Bank', notes: 'Matched from bank feed', ref: '', bill_id: billId,
+    idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),
+  });
+  await recalcBillStatus(pool, billId, req.session.userId);
+  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id, table: 'payments_made', recordId: payment.id, action: 'CREATE', newData: payment, req });
+  await db.updateById('personal_transactions', bankingId, { reconcile_state: 'bill', reconcile_ref: payment.id, reconcile_bill_id: billId });
+  res.json({ ok: true, matched: true, bill_id: billId, payment });
+}));
+
+app.post('/api/bank-reconciliation/ignore', requireAuth, wrap(async (req, res) => {
+  const bankingId = parseInt(req.body && req.body.banking_id, 10);
+  if (!Number.isInteger(bankingId) || bankingId <= 0) return res.status(400).json({ error: 'A valid banking_id is required.' });
+  const { rows: [r] } = await pool.query(`SELECT * FROM personal_transactions WHERE id=$1 AND user_id=$2 LIMIT 1`, [bankingId, scopeId(req)]);
+  if (!r) return res.status(404).json({ error: 'Bank transaction not found.' });
+  const row = rowToObj(r);
+  if (row.source !== 'banking') return res.status(400).json({ error: 'Not a bank-feed transaction.' });
+  if (row.reconcile_state) return res.json({ ok: true, duplicate: true, reconcile_state: row.reconcile_state });
+  await db.updateById('personal_transactions', bankingId, { reconcile_state: 'ignored' });
+  res.json({ ok: true, ignored: true });
 }));
 
 // F101: BATCH match — collapse a whole reconciliation session (100–300 pairs) into ONE request

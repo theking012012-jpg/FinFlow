@@ -1640,6 +1640,10 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
           <div class="card-header"><h2 class="card-title">Matched Pairs</h2><button class="btn btn-ghost btn-sm" onclick="loadBankRec()">Refresh</button></div>
           <div id="brec-matched-list" style="font-size:12px"></div>
         </div>
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">Money Out \u2014 bank debits to reconcile</h2><button class="btn btn-ghost btn-sm" onclick="loadBankRec()">Refresh</button></div>
+          <div id="brec-debits-list" style="font-size:12px"></div>
+        </div>
       </div>
 
       <!-- FX / CURRENCY PAGE -->
@@ -5822,8 +5826,40 @@ async function loadBankRec(){
         :(_brecPending.length?'':'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No matched pairs yet — select a bank transaction then a payment to match.</div>');
       matchedList.innerHTML=pendingHtml+savedHtml;
     }
+    const debEl=document.getElementById('brec-debits-list');
+    if(debEl){
+      const debits=data.unmatchedDebits||[];
+      const billOpts=(data.openBills||[]).map(function(b){return '<option value="'+b.id+'">'+esc((b.vendor||'Bill')+' - '+S(b.amount))+'</option>';}).join('');
+      debEl.innerHTML=debits.length?debits.map(function(d){
+        const when=(window.FinFlowDates?window.FinFlowDates.fmtLabel(d.tx_date||d.date,{year:true}):(d.tx_date||d.date||''))||'—';
+        const billSel=billOpts?('<select id="brec-bill-'+d.id+'" style="font-size:10px;background:var(--card);color:var(--t2);border:1px solid var(--bd);border-radius:5px;padding:2px 4px">'+billOpts+'</select><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="ffBankMatchBill('+d.id+')">Match bill</button>'):'';
+        return '<div class="tx-row" style="align-items:center">'+
+          '<div><div class="tx-name">'+esc(d.description||'Debit')+'</div><div class="tx-cat">'+esc(when)+' - money out</div></div>'+
+          '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end">'+
+            '<div class="tx-amt dn" style="margin-right:6px">'+S(Math.abs(parseFloat(d.amount)||0))+'</div>'+
+            '<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="ffBankBookExpense('+d.id+')">Book expense</button>'+
+            billSel+
+            '<button class="btn btn-ghost btn-sm" style="font-size:10px;opacity:.7" onclick="ffBankIgnore('+d.id+')">Ignore</button>'+
+          '</div></div>';
+      }).join(''):'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">No unreconciled business debits.</div>';
+    }
   }catch(e){if(typeof notify==='function')notify('Could not load bank reconciliation');}
 }
+async function _brecAction(url,body,okMsg){
+  try{
+    const r=await fetch(url,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    if(typeof notify==='function') notify(d.duplicate?'Already reconciled':okMsg,false);
+    await loadBankRec();
+    if(typeof window.refreshFinancials==='function'){ try{ await window.refreshFinancials('all'); }catch(_){} }
+    if(typeof window.updateDashboard==='function') window.updateDashboard();
+    if(typeof window._refreshDashboardUI==='function') window._refreshDashboardUI();
+  }catch(e){ if(typeof notify==='function') notify('Could not reconcile - '+(e.message||'try again'),true); }
+}
+window.ffBankBookExpense=function(id){ _brecAction('/api/bank-reconciliation/book-expense',{banking_id:id},'Booked as expense'); };
+window.ffBankIgnore=function(id){ _brecAction('/api/bank-reconciliation/ignore',{banking_id:id},'Ignored'); };
+window.ffBankMatchBill=function(id){ const sel=document.getElementById('brec-bill-'+id); const billId=sel?parseInt(sel.value,10):0; if(!billId){ if(typeof notify==='function')notify('Pick a bill first',true); return; } _brecAction('/api/bank-reconciliation/match-bill',{banking_id:id,bill_id:billId},'Matched to bill - marked paid'); };
 function selectBankTx(id,el){
   _brecBankSelected=id;
   document.querySelectorAll('[id^="bbtx-"]').forEach(el2=>{el2.style.borderLeftColor='transparent';});

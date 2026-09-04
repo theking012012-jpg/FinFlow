@@ -5150,11 +5150,16 @@ async function startStripeFeed(){
       const dt=c.created?new Date(c.created).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
       const st=c.refunded?'refunded':c.status;
       const canBook=(c.status==='succeeded' && !c.refunded);
-      const bookCtl=c.inBooks
-        ? '<span style="font-size:10px;color:var(--green);white-space:nowrap">\u2713 in books</span>'
-        : (canBook
-            ? '<button type="button" onclick="ffImportStripeCharge(\''+esc(c.id)+'\',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--t2);cursor:pointer;white-space:nowrap">Add to books</button>'
-            : '');
+      let bookCtl='';
+      if(c.refunded && c.inBooks){
+        bookCtl = c.refundInBooks
+          ? '<span style="font-size:10px;color:var(--amber);white-space:nowrap">refund recorded</span>'
+          : '<button type="button" onclick="ffImportStripeRefund(\''+esc(c.id)+'\',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--amber);cursor:pointer;white-space:nowrap">Record refund</button>';
+      } else if(c.inBooks){
+        bookCtl = '<span style="font-size:10px;color:var(--green);white-space:nowrap">\u2713 in books</span>';
+      } else if(canBook){
+        bookCtl = '<button type="button" onclick="ffImportStripeCharge(\''+esc(c.id)+'\',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--t2);cursor:pointer;white-space:nowrap">Add to books</button>';
+      }
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'+
         '<div style="min-width:0"><div style="color:var(--t1);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.description||c.email||'Payment')+'</div>'+
         '<div style="color:var(--t3);font-size:11px">'+esc(dt)+' · <span style="color:'+col+'">'+esc(st)+'</span></div></div>'+
@@ -5174,23 +5179,57 @@ window.startStripeFeed=startStripeFeed;
 window.ffImportStripeCharge=async function(chargeId,btn){
   if(!chargeId) return;
   const orig=btn?btn.textContent:'';
+  const _reset=()=>{ if(btn){ btn.disabled=false; btn.textContent=orig||'Add to books'; btn.style.opacity='1'; } };
   if(btn){ btn.disabled=true; btn.textContent='Adding\u2026'; btn.style.opacity='0.6'; }
-  try{
-    const r=await fetch('/api/stripe/import-charge',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({charge_id:chargeId})});
+  const _post=async(confirmed)=>{
+    const r=await fetch('/api/stripe/import-charge',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(confirmed?{charge_id:chargeId,confirm:true}:{charge_id:chargeId})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    return d;
+  };
+  try{
+    let d=await _post(false);
+    // Stopgap: server flags a charge whose amount matches an OPEN invoice (likely that invoice's payment,
+    // so importing a 2nd time would double-count). Confirm with the owner before booking it.
+    if(d && d.needsConfirm){
+      const m=d.match||{};
+      const msg='Heads up - this charge matches an open invoice'+(m.num?(' ('+m.num+(m.client?(' - '+m.client):'')+')'):'')+'. Adding it to your books records the payment as a SEPARATE sales receipt - it will NOT mark that invoice paid. If this charge already paid the invoice, the money would be counted twice.\n\nAdd to books anyway?';
+      if(!(typeof window.confirm==='function' && window.confirm(msg))){ _reset(); return; }
+      d=await _post(true);
+    }
     if(typeof notify==='function') notify(d.duplicate?'That charge is already in your books':'Added to your books · booked on the payment date',false);
     await startStripeFeed();
     // The imported charge is a sales receipt → it lands in window.receipts, which is what the dashboard
     // revenue card and the Sales Receipts page both read. refreshFinancials only reloads invoices/expenses,
     // so we MUST reload receipts too, then let the canonical writer (updateDashboard) repaint d-rev.
     if(typeof window.loadReceipts==='function'){ try{ await window.loadReceipts(); }catch(_){} }
-    if(typeof window.refreshFinancials==='function'){ try{ await window.refreshFinancials('invoices'); }catch(_){} }
+    if(typeof window.refreshFinancials==='function'){ try{ await window.refreshFinancials('all'); }catch(_){} }
     if(typeof window.updateDashboard==='function') window.updateDashboard();
     if(typeof window._refreshDashboardUI==='function') window._refreshDashboardUI();
   }catch(e){
-    if(typeof notify==='function') notify('Could not add to books \u2014 '+(e.message||'try again'),true);
-    if(btn){ btn.disabled=false; btn.textContent=orig||'Add to books'; btn.style.opacity='1'; }
+    if(typeof notify==='function') notify('Could not add to books - '+(e.message||'try again'),true);
+    _reset();
+  }
+};
+window.ffImportStripeRefund=async function(chargeId,btn){
+  if(!chargeId) return;
+  const orig=btn?btn.textContent:'';
+  const _reset=()=>{ if(btn){ btn.disabled=false; btn.textContent=orig||'Record refund'; btn.style.opacity='1'; } };
+  if(!(typeof window.confirm==='function' && window.confirm('Record this refund? It adds a negative sales receipt so your revenue nets down. The Stripe fee is NOT reversed (Stripe keeps it on refunds).'))) return;
+  if(btn){ btn.disabled=true; btn.textContent='Recording\u2026'; btn.style.opacity='0.6'; }
+  try{
+    const r=await fetch('/api/stripe/import-refund',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({charge_id:chargeId})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    if(typeof notify==='function') notify(d.duplicate?'That refund is already recorded':'Refund recorded - revenue adjusted',false);
+    await startStripeFeed();
+    if(typeof window.loadReceipts==='function'){ try{ await window.loadReceipts(); }catch(_){} }
+    if(typeof window.refreshFinancials==='function'){ try{ await window.refreshFinancials('all'); }catch(_){} }
+    if(typeof window.updateDashboard==='function') window.updateDashboard();
+    if(typeof window._refreshDashboardUI==='function') window._refreshDashboardUI();
+  }catch(e){
+    if(typeof notify==='function') notify('Could not record refund - '+(e.message||'try again'),true);
+    _reset();
   }
 };
 document.addEventListener('DOMContentLoaded',startStripeFeed);

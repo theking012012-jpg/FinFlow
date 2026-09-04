@@ -5515,7 +5515,8 @@ app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
     }));
     // Annotate which charges are ALREADY recorded in the books (imported via reconcile), so the UI can
     // offer "Add to books" only for the rest and never invite a double-post. Keyed on the charge id.
-    const _idemKeys = charges.map(c => 'stripe-charge:' + c.id);
+    const _idemKeys = [];
+    charges.forEach(c => { _idemKeys.push('stripe-charge:' + c.id); _idemKeys.push('stripe-refund:' + c.id); });
     let _booked = new Set();
     if (_idemKeys.length) {
       try {
@@ -5525,7 +5526,7 @@ app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
         _booked = new Set(rows.map(r => r.k));
       } catch (_) { /* annotation is best-effort; import stays idempotent regardless */ }
     }
-    charges.forEach(c => { c.inBooks = _booked.has('stripe-charge:' + c.id); });
+    charges.forEach(c => { c.inBooks = _booked.has('stripe-charge:' + c.id); c.refundInBooks = _booked.has('stripe-refund:' + c.id); });
     const total = charges.filter(c => c.status === 'succeeded' && !c.refunded).reduce((sum, c) => sum + c.amount, 0);
     res.json({ configured: true, connected: true, account: value.stripe_user_id, charges, total, livemode: charges.length ? charges[0].livemode : null });
   } catch (e) {
@@ -5556,7 +5557,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
   // Re-fetch the charge from Stripe (authoritative amount/status — never trust the client).
   let c;
   try {
-    const resp = await fetch('https://api.stripe.com/v1/charges/' + encodeURIComponent(chargeId), {
+    const resp = await fetch('https://api.stripe.com/v1/charges/' + encodeURIComponent(chargeId) + '?expand[]=balance_transaction', {
       headers: { 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY, 'Stripe-Account': value.stripe_user_id },
     });
     c = await resp.json();
@@ -5566,6 +5567,28 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
   const amount = (Number(c.amount) || 0) / 100;
   const customer = String(c.description || (c.billing_details && c.billing_details.name) || (c.billing_details && c.billing_details.email) || c.receipt_email || 'Stripe payment').slice(0, 200);
   const dateYmd = c.created ? new Date(c.created * 1000).toISOString().slice(0, 10) : await entityTodayYmd(req.entityId);
+  // STOPGAP guard (pre match-to-invoice): a charge whose amount equals an OPEN invoice's total OR its
+  // remaining balance is LIKELY that invoice's payment — importing it as a fresh sales receipt would
+  // DOUBLE-COUNT the revenue (the invoice already accrues it). So unless the owner explicitly confirms,
+  // return needsConfirm with the matched invoice and DON'T insert. Advisory only: the guard never blocks
+  // a legit import, and its own failure never blocks. Full match-to-invoice (mark the invoice paid instead
+  // of a 2nd receipt) is the planned follow-up (PLAN_INTEGRATIONS_WAVE1.md §2.5).
+  if (!(req.body && req.body.confirm === true)) {
+    try {
+      const _eid = req.entityId || null;
+      const _openInv = (await db.allByUser('invoices', scopeId(req), r => r.entity_id == null || (_eid != null && r.entity_id === _eid)))
+        .filter(i => { const st = String(i.status || '').toLowerCase(); return st === 'pending' || st === 'overdue' || st === 'partial'; })
+        .find(i => {
+          const total = parseFloat(i.amount) || 0;
+          const remaining = total - (parseFloat(i.amount_paid) || 0);
+          return Math.abs(total - amount) < 0.005 || Math.abs(remaining - amount) < 0.005;
+        });
+      if (_openInv) {
+        return res.json({ ok: false, needsConfirm: true, reason: 'invoice_match',
+          match: { num: _openInv.num || null, client: _openInv.client || null, amount: parseFloat(_openInv.amount) || 0, status: _openInv.status || null } });
+      }
+    } catch (e) { console.error('[stripe import guard]', e.message); /* advisory — never block a legit import */ }
+  }
   let row;
   try {
     ({ row } = await db.insert('sales_receipts', {
@@ -5579,7 +5602,79 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
     throw e;
   }
   await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
-  res.json({ ok: true, imported: true, receipt: row });
+  // MONEY-OUT parity: Stripe's processing fee is real money out. Gross revenue stays on the receipt above;
+  // the fee is booked as a SEPARATE expense (the QuickBooks/Xero treatment) so profit is net-correct and
+  // cash reconciles to the payout. Idempotent on the charge ('stripe-fee:'+id) — never double-booked.
+  // Best-effort: a fee-booking failure never fails the (already-committed) revenue import.
+  let feeRow = null;
+  const feeCents = c.balance_transaction && Number.isFinite(Number(c.balance_transaction.fee)) ? Number(c.balance_transaction.fee) : 0;
+  if (feeCents > 0) {
+    const feeIdem = ('stripe-fee:' + chargeId).slice(0, 64);
+    try {
+      const _ex = await pool.query(`SELECT * FROM expenses WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), feeIdem]);
+      if (_ex.rows[0]) { feeRow = rowToObj(_ex.rows[0]); }
+      else {
+        ({ row: feeRow } = await db.insert('expenses', {
+          user_id: scopeId(req), entity_id: req.entityId || null,
+          description: 'Stripe processing fee \u00b7 ' + chargeId, category: 'Payment processing',
+          amount: feeCents / 100, deductible: 'yes', expense_date: dateYmd, idempotency_key: feeIdem,
+        }));
+        await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
+      }
+    } catch (e) { console.error('[stripe import fee]', e.message); }
+  }
+  res.json({ ok: true, imported: true, receipt: row, fee: feeRow });
+}));
+
+// Owner-approved: record a REFUND of a Stripe charge you already booked, as a contra sales receipt
+// (NEGATIVE amount) so revenue nets down. Requires the original income to be on the books (else there is
+// nothing to reverse). Idempotent on the charge ('stripe-refund:'+id). The processing fee is NOT reversed
+// (Stripe keeps its fee on refunds), so the fee expense stays — the correct treatment.
+app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
+  if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe not configured.', code: 'STRIPE_NOT_CONFIGURED' });
+  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
+  if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account.' });
+  const chargeId = String((req.body && req.body.charge_id) || '').trim();
+  if (!/^ch_[A-Za-z0-9]+$/.test(chargeId)) return res.status(400).json({ error: 'A valid charge_id is required.' });
+  const refundIdem = ('stripe-refund:' + chargeId).slice(0, 64);
+  // Idempotency: this refund already recorded?
+  {
+    const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), refundIdem]);
+    if (rows[0]) return res.json({ ok: true, duplicate: true, receipt: rowToObj(rows[0]) });
+  }
+  // The original income must already be booked, or there is nothing to reverse (never record a bare refund).
+  const origIdem = ('stripe-charge:' + chargeId).slice(0, 64);
+  const { rows: origRows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), origIdem]);
+  if (!origRows[0]) return res.status(400).json({ error: 'This charge was never added to your books, so there is no income to refund.', code: 'NOT_BOOKED' });
+  let c;
+  try {
+    const resp = await fetch('https://api.stripe.com/v1/charges/' + encodeURIComponent(chargeId), {
+      headers: { 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY, 'Stripe-Account': value.stripe_user_id },
+    });
+    c = await resp.json();
+    if (!resp.ok) throw new Error((c && c.error && c.error.message) || ('Stripe HTTP ' + resp.status));
+  } catch (e) { console.error('[stripe refund]', e.message); return res.status(502).json({ error: 'Could not read the Stripe charge: ' + e.message }); }
+  const refundedCents = Number(c.amount_refunded) || 0;
+  if (refundedCents <= 0) return res.status(400).json({ error: 'This charge has no refund on Stripe yet.' });
+  const refundAmt = refundedCents / 100;
+  const _orig = rowToObj(origRows[0]);
+  const customer = String(_orig.customer || c.description || 'Stripe refund').slice(0, 200);
+  const _rfList = (c.refunds && c.refunds.data) || [];
+  const _rfCreated = _rfList.length ? _rfList[_rfList.length - 1].created : null;
+  const dateYmd = _rfCreated ? new Date(_rfCreated * 1000).toISOString().slice(0, 10) : await entityTodayYmd(req.entityId);
+  let row;
+  try {
+    ({ row } = await db.insert('sales_receipts', {
+      user_id: scopeId(req), entity_id: req.entityId || null,
+      customer, num: 'SR-RF-' + chargeId.slice(-6), amount: -refundAmt, date: dateYmd, method: 'Card (Stripe) refund',
+      notes: 'Refund of Stripe charge \u00b7 ' + chargeId, idempotency_key: refundIdem,
+    }));
+  } catch (e) {
+    if (e.code === '23505') { const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), refundIdem]); if (rows[0]) return res.json({ ok: true, duplicate: true, receipt: rowToObj(rows[0]) }); }
+    throw e;
+  }
+  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
+  res.json({ ok: true, refunded: true, receipt: row });
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════

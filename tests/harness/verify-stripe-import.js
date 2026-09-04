@@ -30,9 +30,11 @@ const OWNER = { email: 'stripeimport-owner@finflow.test', password: 'harness-pas
 // 2026 charges (inside the clock-pinned reports year 2026-07-25 America/Port_of_Spain) so an imported
 // receipt lands in the current /api/reports window. ch_1 = $50, ch_2 = $25 (both succeeded), ch_3 failed.
 const CH = {
-  ch_1: { id: 'ch_1', amount: 5000, currency: 'usd', status: 'succeeded', paid: true, refunded: false, description: 'Order #1001', billing_details: { email: 'a@b.com' }, payment_intent: 'pi_1', created: 1784548800, livemode: false },
+  ch_1: { id: 'ch_1', amount: 5000, currency: 'usd', status: 'succeeded', paid: true, refunded: false, description: 'Order #1001', billing_details: { email: 'a@b.com' }, payment_intent: 'pi_1', balance_transaction: { fee: 175, currency: 'usd', net: 4825 }, created: 1784548800, livemode: false },
   ch_2: { id: 'ch_2', amount: 2500, currency: 'usd', status: 'succeeded', paid: true, refunded: false, description: 'Order #1002', created: 1784376000, livemode: false },
   ch_3: { id: 'ch_3', amount: 9900, currency: 'usd', status: 'failed', paid: false, refunded: false, description: 'Order #1003', created: 1784376000, livemode: false },
+  ch_4: { id: 'ch_4', amount: 7700, currency: 'usd', status: 'succeeded', paid: true, refunded: false, description: 'Invoice payment', created: 1784548800, livemode: false },
+  ch_5: { id: 'ch_5', amount: 4000, currency: 'usd', status: 'succeeded', paid: true, refunded: false, description: 'Order #1005', balance_transaction: { fee: 146, currency: 'usd', net: 3854 }, created: 1784548800, livemode: false },
 };
 
 (async () => {
@@ -72,6 +74,7 @@ const CH = {
 
     const recCount = async () => (await c.query(`SELECT COUNT(*)::int n FROM sales_receipts WHERE user_id=$1`, [uid])).rows[0].n;
     const revenue = async () => { const r = await http.get('/api/reports'); return (r.json && r.json.revenue) || 0; };
+    const expenses = async () => { const r = await http.get('/api/reports'); return (r.json && r.json.expenses) || 0; };
 
     // ── Baseline: feed annotates inBooks=false for everything; no receipts; capture revenue. ──
     const rev0 = await revenue();
@@ -95,6 +98,10 @@ const CH = {
     A('receipt date from the charge (2026-07-20, inside the reports year)', row1.date === '2026-07-20', `date=${row1.date}`);
     const rev1 = await revenue();
     A('revenue rose by exactly 50 (charge now counts on /api/reports)', Math.abs((rev1 - rev0) - 50) < 1e-6, `rev0=${rev0} rev1=${rev1}`);
+    A('MONEY-OUT: import booked the Stripe fee (imp response carries fee $1.75)', imp1.json && imp1.json.fee && Math.abs(Number(imp1.json.fee.amount) - 1.75) < 1e-6, JSON.stringify(imp1.json && imp1.json.fee));
+    const _feeRow = (await c.query(`SELECT data FROM expenses WHERE user_id=$1 AND data->>'idempotency_key'=$2`, [uid, 'stripe-fee:ch_1'])).rows[0];
+    A('fee is a separate expense (amount 1.75, category Payment processing)', _feeRow && Number(_feeRow.data.amount) === 1.75 && _feeRow.data.category === 'Payment processing', JSON.stringify(_feeRow && _feeRow.data));
+    A('gross revenue unchanged by the fee (revenue still +50, fee sits in expenses)', Math.abs((rev1 - rev0) - 50) < 1e-6);
 
     // ── Feed now flags ch_1 inBooks=true, others still false. ──
     const f1 = await http.get('/api/stripe/feed');
@@ -124,6 +131,40 @@ const CH = {
     const rev2 = await revenue();
     A('revenue rose by exactly 25 more (independent charges sum, no interference)', Math.abs((rev2 - rev1) - 25) < 1e-6, `rev1=${rev1} rev2=${rev2}`);
 
+    // ── Invoice-match guard (stopgap before match-to-invoice): a charge whose amount == an OPEN invoice's
+    //    total must WARN (needsConfirm) rather than silently create a 2nd revenue line; owner confirm overrides. ──
+    await c.query(`INSERT INTO invoices (user_id,entity_id,data,created_at,updated_at) VALUES ($1,$2,$3,NOW(),NOW())`,
+      [uid, eid, { client: 'Acme Co', num: 'INV-777', amount: 77, amount_paid: 0, status: 'pending', issue_date: '2026-07-20' }]);
+    const recBeforeGuard = await recCount();
+    const revBeforeGuard = await revenue();
+    const g1 = await http.post('/api/stripe/import-charge', { charge_id: 'ch_4' });
+    A('charge matching an OPEN invoice → needsConfirm (not booked blindly)', g1.status === 200 && g1.json && g1.json.needsConfirm === true && g1.json.ok === false, JSON.stringify(g1.json).slice(0,160));
+    A('guard names the matched invoice (INV-777)', g1.json && g1.json.match && g1.json.match.num === 'INV-777', JSON.stringify(g1.json && g1.json.match));
+    A('guard did NOT create a receipt', (await recCount()) === recBeforeGuard);
+    A('guard did NOT move revenue', Math.abs((await revenue()) - revBeforeGuard) < 1e-6);
+    const g2 = await http.post('/api/stripe/import-charge', { charge_id: 'ch_4', confirm: true });
+    A('owner confirm:true → imported anyway', g2.status === 200 && g2.json && g2.json.imported === true, JSON.stringify(g2.json).slice(0,160));
+    A('confirm created exactly one receipt', (await recCount()) === recBeforeGuard + 1);
+    A('confirm booked the $77 (revenue +77 on the owner\'s explicit call)', Math.abs((await revenue()) - (revBeforeGuard + 77)) < 1e-6, `before=${revBeforeGuard}`);
+    // (A non-matching charge never triggers the guard: ch_1/ch_2 imported earlier with no confirm, proven above.)
+
+    // ── MONEY-OUT: a refund of a booked charge is a contra receipt (revenue nets down); the fee is NOT reversed. ──
+    const impFee = await http.post('/api/stripe/import-charge', { charge_id: 'ch_5' });
+    A('ch_5 imported with its fee', impFee.status === 200 && impFee.json.imported === true && impFee.json.fee && Math.abs(Number(impFee.json.fee.amount) - 1.46) < 1e-6, JSON.stringify(impFee.json && impFee.json.fee));
+    const revAfterCh5 = await revenue();
+    const expAfterCh5 = await expenses();
+    // Stripe now reports ch_5 as refunded in full.
+    CH.ch_5.refunded = true; CH.ch_5.amount_refunded = 4000; CH.ch_5.refunds = { data: [{ id: 're_5', created: 1784548800 }] };
+    const rf = await http.post('/api/stripe/import-refund', { charge_id: 'ch_5' });
+    A('refund recorded as a contra receipt', rf.status === 200 && rf.json && rf.json.refunded === true, JSON.stringify(rf.json).slice(0,140));
+    A('contra receipt is NEGATIVE (-40)', rf.json && rf.json.receipt && Number(rf.json.receipt.amount) === -40, JSON.stringify(rf.json && rf.json.receipt && rf.json.receipt.amount));
+    A('revenue nets down by 40 after the refund', Math.abs((await revenue()) - (revAfterCh5 - 40)) < 1e-6, `before=${revAfterCh5}`);
+    A('the Stripe fee is NOT reversed (expenses unchanged by the refund)', Math.abs((await expenses()) - expAfterCh5) < 1e-6);
+    const rfDup = await http.post('/api/stripe/import-refund', { charge_id: 'ch_5' });
+    A('re-refund is idempotent (duplicate, no second contra)', rfDup.status === 200 && rfDup.json.duplicate === true, JSON.stringify(rfDup.json).slice(0,120));
+    const rfNever = await http.post('/api/stripe/import-refund', { charge_id: 'ch_3' });
+    A('refund of a charge never booked → 400 (nothing to reverse)', rfNever.status === 400 && /NOT_BOOKED|never added/.test(JSON.stringify(rfNever.json||{})), `status=${rfNever.status}`);
+
     // ── STRUCTURAL — server + client wiring is actually present. ──
     const srv = fs.readFileSync(path.join(process.cwd(), 'server.js'), 'utf8');
     AS('server: import-charge idempotency guard SELECTs by idempotency_key BEFORE inserting',
@@ -145,6 +186,16 @@ const CH = {
     const bundle = fs.readFileSync(path.join(process.cwd(), 'public', 'finflow-bundle.js'), 'utf8');
     AS('bundle: window.loadReceipts is exposed (the handler above depends on it)',
       /window\.loadReceipts\s*=\s*loadReceipts/.test(bundle));
+    AS('server: warns (needsConfirm/invoice_match) on an open-invoice amount match unless confirm:true',
+      /needsConfirm: true[\s\S]*?reason: 'invoice_match'/.test(srv) && /req\.body && req\.body\.confirm === true/.test(srv));
+    AS('client: handler surfaces the confirm and re-POSTs with confirm on approval',
+      /needsConfirm[\s\S]*?window\.confirm[\s\S]*?_post\(true\)/.test(html));
+    AS('server: books the Stripe fee as a separate expense, idempotent on the charge',
+      /stripe-fee:/.test(srv) && /db\.insert\('expenses'/.test(srv) && /balance_transaction/.test(srv));
+    AS('server: import-refund books a NEGATIVE contra, requires the original booked, keeps the fee',
+      /app\.post\('\/api\/stripe\/import-refund'/.test(srv) && /amount: -refundAmt/.test(srv) && /NOT_BOOKED/.test(srv));
+    AS('client: Record-refund control + handler are wired',
+      /Record refund/.test(html) && /ffImportStripeRefund/.test(html) && /import-refund/.test(html));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (Stripe reconcile → books)`);
   } catch (e) { console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); fail++; }

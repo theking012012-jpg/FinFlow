@@ -137,6 +137,14 @@ const CH = {
       /c\.inBooks/.test(html) && /Add to books/.test(html) && /ffImportStripeCharge/.test(html));
     AS('client: ffImportStripeCharge POSTs import-charge then refreshes money surfaces',
       /ffImportStripeCharge[\s\S]*?\/api\/stripe\/import-charge[\s\S]*?(refreshFinancials|updateDashboard)/.test(html));
+    // Regression guard for the "booked but the dashboard didn't move" bug: the dashboard revenue card
+    // reads window.receipts, and refreshFinancials reloads ONLY invoices/expenses — so the import handler
+    // MUST reload receipts (window.loadReceipts) or the new revenue never repaints until a full reload.
+    AS('client: import handler reloads sales_receipts (loadReceipts) so revenue repaints without a reload',
+      /ffImportStripeCharge[\s\S]*?loadReceipts/.test(html));
+    const bundle = fs.readFileSync(path.join(process.cwd(), 'public', 'finflow-bundle.js'), 'utf8');
+    AS('bundle: window.loadReceipts is exposed (the handler above depends on it)',
+      /window\.loadReceipts\s*=\s*loadReceipts/.test(bundle));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (Stripe reconcile → books)`);
   } catch (e) { console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); fail++; }

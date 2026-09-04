@@ -5179,11 +5179,15 @@ window.ffImportStripeCharge=async function(chargeId,btn){
     const r=await fetch('/api/stripe/import-charge',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({charge_id:chargeId})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
-    if(typeof notify==='function') notify(d.duplicate?'That charge is already in your books':'Added to your books',false);
+    if(typeof notify==='function') notify(d.duplicate?'That charge is already in your books':'Added to your books · booked on the payment date',false);
     await startStripeFeed();
-    if(typeof window.refreshFinancials==='function') window.refreshFinancials();
+    // The imported charge is a sales receipt → it lands in window.receipts, which is what the dashboard
+    // revenue card and the Sales Receipts page both read. refreshFinancials only reloads invoices/expenses,
+    // so we MUST reload receipts too, then let the canonical writer (updateDashboard) repaint d-rev.
+    if(typeof window.loadReceipts==='function'){ try{ await window.loadReceipts(); }catch(_){} }
+    if(typeof window.refreshFinancials==='function'){ try{ await window.refreshFinancials('invoices'); }catch(_){} }
     if(typeof window.updateDashboard==='function') window.updateDashboard();
-    else if(typeof window._refreshDashboardUI==='function') window._refreshDashboardUI();
+    if(typeof window._refreshDashboardUI==='function') window._refreshDashboardUI();
   }catch(e){
     if(typeof notify==='function') notify('Could not add to books \u2014 '+(e.message||'try again'),true);
     if(btn){ btn.disabled=false; btn.textContent=orig||'Add to books'; btn.style.opacity='1'; }

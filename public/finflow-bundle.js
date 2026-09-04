@@ -2678,6 +2678,7 @@ function clearAIChat(){
         renderReceipts();
       } catch (e) { console.warn('[Receipts]', e.message); }
     }
+    window.loadReceipts = loadReceipts;   // expose so other flows (e.g. Stripe reconcile → books) can reload window.receipts + repaint
     loadReceipts();
 
     window.renderReceipts = function () {

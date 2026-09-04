@@ -2,6 +2,28 @@
 
 ---
 
+## 🟢 DONE 2026-09-04 — Reconcile system (Stripe + Bank, money in & out)
+Full detail: **`SESSION_HANDOVER_2026-09-04.md`**. Committed through `926eac4`; 188/188 sweep green;
+verified live on production (non-destructive). Features: Stripe add-to-books (idempotent), processing
+**fees** → expense, **refunds** → contra receipt, **connection scoping** (entity/Personal binding),
+**match-to-invoice** (no double-count), **payouts** view, **bank money-out** (book expense / match bill
+/ ignore), and the money-in reconcile UI key fix.
+
+### ⬜ UNCOMMITTED (this turn — commit in PowerShell)
+- Stripe feed **entity gating** (`startStripeFeed`/`startStripePayouts`) — feed hides on entities the
+  Stripe account isn't bound to; shows "books to <X>" note instead.
+- Money-flow **river stale-currency clear** in `switchEntity` (−TT$210-on-CAD lingering fix).
+- New harness `tests/harness/verify-stripe-feed-entity-gate.js` (6/0). Files: `public/index.html` + harness.
+
+### 🔴 OPEN — needs a decision (NOT built)
+- **Per-entity connections (BIG):** connectors are account-level (`scopeId`), shared across all entities
+  (same Stripe/Plaid on every business). Owner wants each business to own its connections → re-architect
+  connection storage to key on entity_id + per-entity connect/disconnect UI. Binding work (`b7f743e`) is step 1.
+- **Live bank feed:** wire Belvo/WiPay to auto-populate bank debits (today: OFX/CSV import feeds them).
+- Note: "C$" is the CORRECT CAD symbol — not a bug.
+
+---
+
 ## 🔴 IN FLIGHT — Money In/Out rich viewer + line items (F194) — 2026-08-27
 
 Full spec + handoff: **`F194_MONEY_VIEWER_HANDOFF.md`** (repo root). Cross-account handoff for the code

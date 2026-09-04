@@ -5144,6 +5144,18 @@ async function startStripeFeed(){
       feed.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">Connect Stripe to see live payment transactions</div>';
       if(label)label.textContent=''; return;
     }
+    // Entity gating: this Stripe account books to ONE entity. On any OTHER entity, don't render its
+    // charges / in-books status as if they belong here — show where it books instead.
+    const _actE=(window.ENTITIES||[]).find(e=>e.active); const _actId=_actE?(_actE._dbId||_actE.id):null;
+    window._stripeBooksEntity=(d.books&&d.books.entity_id!=null)?d.books.entity_id:null;
+    if(d.books&&d.books.scope==='business'&&d.books.entity_id!=null&&_actId!=null&&d.books.entity_id!==_actId){
+      const _be=(window.ENTITIES||[]).find(e=>(e._dbId||e.id)===d.books.entity_id);
+      const _bn=_be?(_be.name||_be.business_name||'another business'):'another business';
+      feed.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">This Stripe account books to <span style="color:var(--t2)">'+esc(_bn)+'</span>. Switch to that business to see and reconcile its payments.</div>';
+      if(label)label.textContent='';
+      const _pb0=document.getElementById('stripe-payouts'); if(_pb0)_pb0.innerHTML='';
+      return;
+    }
     const charges=d.charges||[];
     const _bk=d.books||null;
     let bindingBar='';
@@ -5269,6 +5281,8 @@ window.ffChooseStripeBinding=function(){
 };
 async function startStripePayouts(){
   const box=document.getElementById('stripe-payouts'); if(!box)return;
+  const _pae=(window.ENTITIES||[]).find(e=>e.active); const _paid=_pae?(_pae._dbId||_pae.id):null;
+  if(window._stripeBooksEntity!=null && _paid!=null && window._stripeBooksEntity!==_paid){ box.innerHTML=''; return; }
   const _symOf=c=>((window.CURRENCIES&&window.CURRENCIES[c]&&window.CURRENCIES[c].symbol)||(c==='USD'?'$':(c||'')+' '));
   const _m=n=>(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
   try{
@@ -6925,6 +6939,11 @@ window.switchEntity=async function(idx){
     var _cflag = document.getElementById('currency-flag'); if(_cflag) _cflag.textContent = (CURRENCIES[activeCurrency] && CURRENCIES[activeCurrency].flag) || '🇺🇸';
     var _clabel = document.getElementById('currency-code-label'); if(_clabel) _clabel.textContent = activeCurrency;
   } catch(e2){ console.warn('[Entity] currency reset failed:', e2 && e2.message); }
+
+  // F-ENT: the money-flow river is a rendered SVG with the PREVIOUS entity's figures + currency baked in
+  // (e.g. -TT$210 lingering on a CAD entity). Resetting currencySymbol above does NOT re-render existing
+  // SVG, so clear it now; buildRiver repaints with the new entity's data + currency once it loads.
+  try { var _rw=document.getElementById('river-wrap'); if(_rw) _rw.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12.5px">Loading…</div>'; var _rs=document.getElementById('river-sub'); if(_rs) _rs.textContent='Where every dollar goes'; } catch(_e){}
 
   // Refresh entity list UI
   renderEntities();

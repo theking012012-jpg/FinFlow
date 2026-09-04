@@ -35,6 +35,8 @@ const CH = {
   ch_3: { id: 'ch_3', amount: 9900, currency: 'usd', status: 'failed', paid: false, refunded: false, description: 'Order #1003', created: 1784376000, livemode: false },
   ch_4: { id: 'ch_4', amount: 7700, currency: 'usd', status: 'succeeded', paid: true, refunded: false, description: 'Invoice payment', created: 1784548800, livemode: false },
   ch_5: { id: 'ch_5', amount: 4000, currency: 'usd', status: 'succeeded', paid: true, refunded: false, description: 'Order #1005', balance_transaction: { fee: 146, currency: 'usd', net: 3854 }, created: 1784548800, livemode: false },
+  ch_7: { id: 'ch_7', amount: 6000, currency: 'usd', status: 'succeeded', paid: true, refunded: false, description: 'Bound-entity sale', created: 1784548800, livemode: false },
+  ch_8: { id: 'ch_8', amount: 9000, currency: 'usd', status: 'succeeded', paid: true, refunded: false, description: 'Invoice INV-M payment', balance_transaction: { fee: 290, currency: 'usd', net: 8710 }, created: 1784548800, livemode: false },
 };
 
 (async () => {
@@ -54,6 +56,12 @@ const CH = {
         const id = decodeURIComponent(u.split('/v1/charges/')[1].split('?')[0]);
         if (CH[id]) return { ok: true, status: 200, json: async () => CH[id] };
         return { ok: false, status: 404, json: async () => ({ error: { message: 'No such charge: ' + id } }) };
+      }
+      if (u.startsWith('https://api.stripe.com/v1/payouts')) {
+        return { ok: true, status: 200, json: async () => ({ object: 'list', data: [
+          { id: 'po_1', amount: 194200, currency: 'usd', status: 'paid', arrival_date: 1784548800, method: 'standard', livemode: false },
+          { id: 'po_2', amount: 50000, currency: 'usd', status: 'in_transit', arrival_date: 1784635200, method: 'standard', livemode: false },
+        ] }) };
       }
       if (u.startsWith('https://api.stripe.com/v1/charges')) {
         return { ok: true, status: 200, json: async () => ({ object: 'list', data: [CH.ch_1, CH.ch_2, CH.ch_3] }) };
@@ -165,6 +173,45 @@ const CH = {
     const rfNever = await http.post('/api/stripe/import-refund', { charge_id: 'ch_3' });
     A('refund of a charge never booked → 400 (nothing to reverse)', rfNever.status === 400 && /NOT_BOOKED|never added/.test(JSON.stringify(rfNever.json||{})), `status=${rfNever.status}`);
 
+    // ── PAYOUTS (money-out settlement to the bank): display-only reconciliation aid. ──
+    const po = await http.get('/api/stripe/payouts');
+    A('GET /api/stripe/payouts exists + connected', po.status === 200 && po.json && po.json.connected === true, `status=${po.status}`);
+    A('2 payouts mapped, amounts cents→major (194200→1942.00)', (po.json.payouts||[]).length === 2 && po.json.payouts[0].amount === 1942 && po.json.payouts[1].amount === 500, JSON.stringify((po.json.payouts||[]).map(x=>x.amount)));
+    A('payout status + arrival_date carried through', po.json.payouts[0].status === 'paid' && po.json.payouts[0].arrival_date === '2026-07-20', JSON.stringify(po.json.payouts[0]));
+
+    // ── MATCH-TO-INVOICE: applying a charge to an invoice marks it PAID and adds NO new revenue (the invoice
+    //    already recognized it on issue) — that is what stops the double-count. The fee is still booked. ──
+    const invM = (await c.query(`INSERT INTO invoices (user_id,entity_id,data,created_at,updated_at) VALUES ($1,$2,$3,NOW(),NOW()) RETURNING id`,
+      [uid, eid, { client: 'Beta LLC', num: 'INV-M', amount: 90, amount_paid: 0, status: 'pending', issue_date: '2026-07-20' }])).rows[0].id;
+    const recBeforeMatch = await recCount();
+    const revBeforeMatch = await revenue();   // already includes the $90 issued invoice
+    const expBeforeMatch = await expenses();
+    const mm = await http.post('/api/stripe/match-invoice', { charge_id: 'ch_8', invoice_id: invM });
+    A('match applied to the invoice', mm.status === 200 && mm.json && mm.json.matched === true, JSON.stringify(mm.json).slice(0,140));
+    const _invRow = (await c.query(`SELECT data FROM invoices WHERE id=$1`, [invM])).rows[0].data;
+    A('invoice marked PAID (amount_paid = 90)', Number(_invRow.amount_paid) === 90 && String(_invRow.status) === 'paid', JSON.stringify(_invRow));
+    A('NO new sales receipt created for the matched charge', (await recCount()) === recBeforeMatch && (await c.query(`SELECT COUNT(*)::int n FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2`, [uid, 'stripe-charge:ch_8'])).rows[0].n === 0);
+    A('revenue UNCHANGED by the match (no double-count — invoice already recognized it)', Math.abs((await revenue()) - revBeforeMatch) < 1e-6, `before=${revBeforeMatch} after=${await revenue()}`);
+    A('the Stripe fee WAS booked on the match ($2.90)', mm.json.fee && Math.abs(Number(mm.json.fee.amount) - 2.90) < 1e-6 && Math.abs((await expenses()) - (expBeforeMatch + 2.90)) < 1e-6, JSON.stringify(mm.json.fee));
+    const mmDup = await http.post('/api/stripe/match-invoice', { charge_id: 'ch_8', invoice_id: invM });
+    A('re-match is idempotent (no second payment, invoice stays paid at 90)', mmDup.status === 200 && (await c.query(`SELECT COUNT(*)::int n FROM invoice_payments WHERE user_id=$1 AND idempotency_key=$2`, [uid, 'stripe-invpay:ch_8'])).rows[0].n === 1);
+    const mmBooked = await http.post('/api/stripe/match-invoice', { charge_id: 'ch_1', invoice_id: invM });
+    A('a charge already booked as income cannot also be matched (400 ALREADY_BOOKED)', mmBooked.status === 400 && /ALREADY_BOOKED|already in your books/.test(JSON.stringify(mmBooked.json||{})), `status=${mmBooked.status}`);
+
+    // ── CONNECTION SCOPING: a charge books to the entity the connection is BOUND to, not the active one. ──
+    const eidB = (await c.query(`INSERT INTO entities (user_id,entity_id,data,created_at,updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
+      [uid, { name: 'Business B', currency: 'USD', is_active: 0 }])).rows[0].id;
+    // Bind the Stripe connection to Business B (the active entity is still the first one, 'eid').
+    await c.query(`UPDATE user_settings SET data=$1 WHERE user_id=$2 AND data->>'key'='stripe_conn'`,
+      [{ key: 'stripe_conn', value: JSON.stringify({ stripe_user_id: 'acct_test123', books: { scope: 'business', entity_id: eidB } }) }, uid]);
+    const impB = await http.post('/api/stripe/import-charge', { charge_id: 'ch_7' });
+    A('bound import succeeds', impB.status === 200 && impB.json.imported === true, JSON.stringify(impB.json).slice(0,120));
+    const _rowB = (await c.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2`, [uid, 'stripe-charge:ch_7'])).rows[0];
+    A('charge booked to the BOUND entity (Business B), not the active one', _rowB && _rowB.entity_id === eidB && eidB !== eid, `booked=${_rowB && _rowB.entity_id} bound=${eidB} active=${eid}`);
+    // feed exposes the binding
+    const fB = await http.get('/api/stripe/feed');
+    A('feed reports the binding (books.entity_id = Business B)', fB.json && fB.json.books && fB.json.books.entity_id === eidB, JSON.stringify(fB.json && fB.json.books));
+
     // ── STRUCTURAL — server + client wiring is actually present. ──
     const srv = fs.readFileSync(path.join(process.cwd(), 'server.js'), 'utf8');
     AS('server: import-charge idempotency guard SELECTs by idempotency_key BEFORE inserting',
@@ -196,6 +243,18 @@ const CH = {
       /app\.post\('\/api\/stripe\/import-refund'/.test(srv) && /amount: -refundAmt/.test(srv) && /NOT_BOOKED/.test(srv));
     AS('client: Record-refund control + handler are wired',
       /Record refund/.test(html) && /ffImportStripeRefund/.test(html) && /import-refund/.test(html));
+    AS('server: import books to the BOUND entity (connection scoping), not the active one',
+      /_stripeBooksTarget/.test(srv) && /entity_id: _bookEid/.test(srv) && /app\.post\('\/api\/stripe\/binding'/.test(srv));
+    AS('server: match-invoice applies a payment (no new receipt), guards ALREADY_BOOKED, books the fee',
+      /app\.post\('\/api\/stripe\/match-invoice'/.test(srv) && /recordExternalInvoicePayment/.test(srv) && /ALREADY_BOOKED/.test(srv));
+    AS('server: feed hints a matching open invoice + flags charges already applied to an invoice',
+      /c\.matchInvoice = /.test(srv) && /appliedToInvoice/.test(srv));
+    AS('client: feed offers Match + the match handler is wired',
+      /matchInvoice/.test(html) && /ffMatchStripeInvoice/.test(html) && /match-invoice/.test(html));
+    AS('server: payouts endpoint reads net settlements (display-only)',
+      /app\.get\('\/api\/stripe\/payouts'/.test(srv) && /v1\/payouts/.test(srv));
+    AS('client: payouts view is wired',
+      /startStripePayouts/.test(html) && /stripe-payouts/.test(html));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (Stripe reconcile → books)`);
   } catch (e) { console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); fail++; }

@@ -5448,7 +5448,7 @@ app.get('/api/stripe/callback', requireAuth, requirePerm('bank:manage'), wrap(as
     if (!resp.ok || !j.stripe_user_id) throw new Error(j.error_description || j.error || ('Stripe OAuth HTTP ' + resp.status));
     const uid = scopeId(req);
     const { id } = await _providerBlob(uid, 'stripe_conn');
-    await _saveProviderBlob(uid, id, 'stripe_conn', { stripe_user_id: j.stripe_user_id, access_token: j.access_token ? encTok(j.access_token) : null, linked_at: new Date().toISOString() });
+    await _saveProviderBlob(uid, id, 'stripe_conn', { stripe_user_id: j.stripe_user_id, access_token: j.access_token ? encTok(j.access_token) : null, linked_at: new Date().toISOString(), books: { scope: 'business', entity_id: req.entityId || null } });
     return done('Stripe connected ✓ You can close this window.');
   } catch (e) { console.error('[stripe connect callback]', e.message); return done('Could not link Stripe: ' + e.message); }
 }));
@@ -5484,6 +5484,35 @@ app.post('/api/stripe/sync', requireAuth, requirePerm('bank:manage'), wrap(async
     const available = (j.available || []).map(b => ({ amount: b.amount, currency: b.currency }));
     res.json({ ok: true, available, note: 'Balance shown for display. Importing revenue into the books is a separate, owner-approved step.' });
   } catch (e) { console.error('[stripe sync]', e.message); res.status(502).json({ error: 'Could not read Stripe balance: ' + e.message }); }
+}));
+
+// Which books a connected Stripe account posts to. A connection is bound to ONE context — a specific
+// business entity, or Personal — so a multi-entity owner never mis-books, and personal money never lands
+// in a business's P&L. Default (older links / unset): the active business entity, preserving old behavior.
+function _stripeBooksTarget(value, req) {
+  const b = (value && value.books) || null;
+  if (b && b.scope === 'personal') return { scope: 'personal', entity_id: null };
+  const eid = b && Number.isInteger(b.entity_id) ? b.entity_id : (req.entityId || null);
+  return { scope: 'business', entity_id: eid };
+}
+
+// Set/change which context this Stripe account books to (owner-only). scope:'business' needs an entity_id
+// the owner owns; scope:'personal' books to the Personal ledger.
+app.post('/api/stripe/binding', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  const uid = scopeId(req);
+  const { id, value } = await _providerBlob(uid, 'stripe_conn');
+  if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account.' });
+  const scope = (req.body && req.body.scope) === 'personal' ? 'personal' : 'business';
+  let entity_id = null;
+  if (scope === 'business') {
+    const _e = parseInt(req.body && req.body.entity_id, 10);
+    if (!Number.isInteger(_e) || _e <= 0) return res.status(400).json({ error: 'Choose which business this Stripe account books to.' });
+    const owned = await pool.query('SELECT id FROM entities WHERE id=$1 AND user_id=$2', [_e, uid]);
+    if (!owned.rows[0]) return res.status(403).json({ error: 'Business not found.' });
+    entity_id = _e;
+  }
+  await _saveProviderBlob(uid, id, 'stripe_conn', Object.assign({}, value, { books: { scope, entity_id } }));
+  res.json({ ok: true, books: { scope, entity_id } });
 }));
 
 // Recent payments on the connected Stripe account — powers the dashboard "Stripe live feed".
@@ -5527,12 +5556,56 @@ app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
       } catch (_) { /* annotation is best-effort; import stays idempotent regardless */ }
     }
     charges.forEach(c => { c.inBooks = _booked.has('stripe-charge:' + c.id); c.refundInBooks = _booked.has('stripe-refund:' + c.id); });
+    try {
+      const _payKeys = charges.map(c => ('stripe-invpay:' + c.id).slice(0, 64));
+      const { rows: _pr } = await pool.query(`SELECT idempotency_key AS k FROM invoice_payments WHERE user_id=$1 AND idempotency_key = ANY($2)`, [scopeId(req), _payKeys]);
+      const _applied = new Set(_pr.map(r => r.k));
+      charges.forEach(c => { c.appliedToInvoice = _applied.has(('stripe-invpay:' + c.id).slice(0, 64)); });
+    } catch (_) { /* applied-hint best-effort */ }
+    try {
+      const _mt = _stripeBooksTarget(value, req);
+      const _open = (await db.allByUser('invoices', scopeId(req), r => r.entity_id == null || (_mt.entity_id != null && r.entity_id === _mt.entity_id)))
+        .filter(i => { const st = String(i.status || '').toLowerCase(); return st === 'pending' || st === 'overdue' || st === 'partial'; });
+      charges.forEach(c => {
+        if (c.inBooks || c.appliedToInvoice || c.status !== 'succeeded' || c.refunded) return;
+        const m = _open.find(i => { const t = parseFloat(i.amount) || 0; const rem = t - (parseFloat(i.amount_paid) || 0); return Math.abs(t - c.amount) < 0.005 || Math.abs(rem - c.amount) < 0.005; });
+        if (m) c.matchInvoice = { id: m.id, num: m.num || null, client: m.client || null, amount: parseFloat(m.amount) || 0 };
+      });
+    } catch (_) { /* match hint is best-effort */ }
     const total = charges.filter(c => c.status === 'succeeded' && !c.refunded).reduce((sum, c) => sum + c.amount, 0);
-    res.json({ configured: true, connected: true, account: value.stripe_user_id, charges, total, livemode: charges.length ? charges[0].livemode : null });
+    res.json({ configured: true, connected: true, account: value.stripe_user_id, charges, total, livemode: charges.length ? charges[0].livemode : null, books: _stripeBooksTarget(value, req) });
   } catch (e) {
     console.error('[stripe feed]', e.message);
     res.status(502).json({ error: 'Could not read Stripe payments: ' + e.message });
   }
+}));
+
+// Stripe PAYOUTS — the net settlements Stripe deposits to the bank (gross charges minus fees/refunds).
+// DISPLAY ONLY (Rules 2 & 12): this is the reconciliation aid — match each payout to the matching bank
+// deposit. It writes nothing; full auto-reconcile to a bank line arrives with the bank-feed reconcile.
+app.get('/api/stripe/payouts', requireAuth, wrap(async (req, res) => {
+  if (!stripeConnectConfigured()) return res.json({ configured: false, connected: false, payouts: [] });
+  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
+  if (!value || !value.stripe_user_id) return res.json({ configured: true, connected: false, payouts: [] });
+  const limit = Math.min(30, Math.max(1, parseInt(req.query.limit, 10) || 10));
+  try {
+    const resp = await fetch('https://api.stripe.com/v1/payouts?limit=' + limit, {
+      headers: { 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY, 'Stripe-Account': value.stripe_user_id },
+    });
+    let j = {}; try { j = await resp.json(); } catch (_) {}
+    if (!resp.ok) throw new Error((j.error && j.error.message) || ('Stripe HTTP ' + resp.status));
+    const payouts = (j.data || []).map(p => ({
+      id: p.id,
+      amount: (Number(p.amount) || 0) / 100,              // net deposited to the bank
+      currency: String(p.currency || 'usd').toUpperCase(),
+      status: p.status || '',                              // paid | in_transit | pending | failed | canceled
+      arrival_date: p.arrival_date ? new Date(p.arrival_date * 1000).toISOString().slice(0, 10) : null,
+      method: p.method || '',
+      description: p.description || '',
+      livemode: !!p.livemode,
+    }));
+    res.json({ configured: true, connected: true, payouts, livemode: payouts.length ? payouts[0].livemode : null });
+  } catch (e) { console.error('[stripe payouts]', e.message); res.status(502).json({ error: 'Could not read Stripe payouts: ' + e.message }); }
 }));
 
 // Owner-approved: record ONE connected-Stripe charge into the books as income (a sales receipt →
@@ -5548,6 +5621,9 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
   if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account.' });
   const chargeId = String((req.body && req.body.charge_id) || '').trim();
   if (!/^ch_[A-Za-z0-9]+$/.test(chargeId)) return res.status(400).json({ error: 'A valid charge_id is required.' });
+  const _bt = _stripeBooksTarget(value, req);
+  if (_bt.scope === 'personal') return res.status(400).json({ error: 'This Stripe account is set to Personal. Booking personal Stripe income arrives with the bank-feed reconcile; bind it to a business to add charges to business books.', code: 'PERSONAL_NOT_SUPPORTED' });
+  const _bookEid = _bt.entity_id;
   const idem = ('stripe-charge:' + chargeId).slice(0, 64);
   // Idempotency guard FIRST — if this charge was already imported, return the original, never a dupe.
   {
@@ -5575,7 +5651,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
   // of a 2nd receipt) is the planned follow-up (PLAN_INTEGRATIONS_WAVE1.md §2.5).
   if (!(req.body && req.body.confirm === true)) {
     try {
-      const _eid = req.entityId || null;
+      const _eid = _bookEid;
       const _openInv = (await db.allByUser('invoices', scopeId(req), r => r.entity_id == null || (_eid != null && r.entity_id === _eid)))
         .filter(i => { const st = String(i.status || '').toLowerCase(); return st === 'pending' || st === 'overdue' || st === 'partial'; })
         .find(i => {
@@ -5592,7 +5668,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
   let row;
   try {
     ({ row } = await db.insert('sales_receipts', {
-      user_id: scopeId(req), entity_id: req.entityId || null,
+      user_id: scopeId(req), entity_id: _bookEid,
       customer, num: 'SR-' + chargeId.slice(-6), amount, date: dateYmd, method: 'Card (Stripe)',
       notes: 'Imported from Stripe · ' + chargeId + (c.payment_intent ? ' · ' + c.payment_intent : ''),
       idempotency_key: idem,
@@ -5601,7 +5677,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
     if (e.code === '23505') { const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]); if (rows[0]) return res.json({ ok: true, duplicate: true, receipt: rowToObj(rows[0]) }); }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
+  await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
   // MONEY-OUT parity: Stripe's processing fee is real money out. Gross revenue stays on the receipt above;
   // the fee is booked as a SEPARATE expense (the QuickBooks/Xero treatment) so profit is net-correct and
   // cash reconciles to the payout. Idempotent on the charge ('stripe-fee:'+id) — never double-booked.
@@ -5615,11 +5691,11 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
       if (_ex.rows[0]) { feeRow = rowToObj(_ex.rows[0]); }
       else {
         ({ row: feeRow } = await db.insert('expenses', {
-          user_id: scopeId(req), entity_id: req.entityId || null,
+          user_id: scopeId(req), entity_id: _bookEid,
           description: 'Stripe processing fee \u00b7 ' + chargeId, category: 'Payment processing',
           amount: feeCents / 100, deductible: 'yes', expense_date: dateYmd, idempotency_key: feeIdem,
         }));
-        await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
+        await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
       }
     } catch (e) { console.error('[stripe import fee]', e.message); }
   }
@@ -5636,6 +5712,9 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
   if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account.' });
   const chargeId = String((req.body && req.body.charge_id) || '').trim();
   if (!/^ch_[A-Za-z0-9]+$/.test(chargeId)) return res.status(400).json({ error: 'A valid charge_id is required.' });
+  const _bt = _stripeBooksTarget(value, req);
+  if (_bt.scope === 'personal') return res.status(400).json({ error: 'This Stripe account is set to Personal.', code: 'PERSONAL_NOT_SUPPORTED' });
+  const _bookEid = _bt.entity_id;
   const refundIdem = ('stripe-refund:' + chargeId).slice(0, 64);
   // Idempotency: this refund already recorded?
   {
@@ -5661,11 +5740,11 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
   const customer = String(_orig.customer || c.description || 'Stripe refund').slice(0, 200);
   const _rfList = (c.refunds && c.refunds.data) || [];
   const _rfCreated = _rfList.length ? _rfList[_rfList.length - 1].created : null;
-  const dateYmd = _rfCreated ? new Date(_rfCreated * 1000).toISOString().slice(0, 10) : await entityTodayYmd(req.entityId);
+  const dateYmd = _rfCreated ? new Date(_rfCreated * 1000).toISOString().slice(0, 10) : await entityTodayYmd(_bookEid);
   let row;
   try {
     ({ row } = await db.insert('sales_receipts', {
-      user_id: scopeId(req), entity_id: req.entityId || null,
+      user_id: scopeId(req), entity_id: _bookEid,
       customer, num: 'SR-RF-' + chargeId.slice(-6), amount: -refundAmt, date: dateYmd, method: 'Card (Stripe) refund',
       notes: 'Refund of Stripe charge \u00b7 ' + chargeId, idempotency_key: refundIdem,
     }));
@@ -5673,8 +5752,63 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
     if (e.code === '23505') { const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), refundIdem]); if (rows[0]) return res.json({ ok: true, duplicate: true, receipt: rowToObj(rows[0]) }); }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
+  await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
   res.json({ ok: true, refunded: true, receipt: row });
+}));
+
+// Owner-approved: APPLY a Stripe charge to a FinFlow invoice (mark it paid) instead of booking a second
+// income line. The invoice already recognized the revenue when it was issued, so we record an
+// invoice_payment (the SINGLE idempotent writer, capped to the balance) and add NO new sales receipt —
+// that is what prevents the double-count. The processing fee IS still booked (fees apply either way).
+app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
+  if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe not configured.', code: 'STRIPE_NOT_CONFIGURED' });
+  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
+  if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account.' });
+  const _bt = _stripeBooksTarget(value, req);
+  if (_bt.scope === 'personal') return res.status(400).json({ error: 'This Stripe account is set to Personal.', code: 'PERSONAL_NOT_SUPPORTED' });
+  const _bookEid = _bt.entity_id;
+  const chargeId = String((req.body && req.body.charge_id) || '').trim();
+  if (!/^ch_[A-Za-z0-9]+$/.test(chargeId)) return res.status(400).json({ error: 'A valid charge_id is required.' });
+  const invoiceId = parseInt(req.body && req.body.invoice_id, 10);
+  if (!Number.isInteger(invoiceId) || invoiceId <= 0) return res.status(400).json({ error: 'A valid invoice_id is required.' });
+  // Never both: if this charge is already booked as income, applying it to an invoice too would double-count.
+  const chargeIdem = ('stripe-charge:' + chargeId).slice(0, 64);
+  {
+    const { rows } = await pool.query(`SELECT id FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 LIMIT 1`, [scopeId(req), chargeIdem]);
+    if (rows[0]) return res.status(400).json({ error: 'This charge is already in your books as income. Remove that receipt first if you meant to apply it to an invoice instead.', code: 'ALREADY_BOOKED' });
+  }
+  const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id=$1 AND user_id=$2 LIMIT 1`, [invoiceId, scopeId(req)]);
+  if (!ir) return res.status(404).json({ error: 'Invoice not found.' });
+  let c;
+  try {
+    const resp = await fetch('https://api.stripe.com/v1/charges/' + encodeURIComponent(chargeId) + '?expand[]=balance_transaction', {
+      headers: { 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY, 'Stripe-Account': value.stripe_user_id },
+    });
+    c = await resp.json();
+    if (!resp.ok) throw new Error((c && c.error && c.error.message) || ('Stripe HTTP ' + resp.status));
+  } catch (e) { console.error('[stripe match]', e.message); return res.status(502).json({ error: 'Could not read the Stripe charge: ' + e.message }); }
+  if (c.status !== 'succeeded' || c.refunded) return res.status(400).json({ error: 'Only a succeeded, non-refunded charge can be applied to an invoice.' });
+  const applied = await recordExternalInvoicePayment({ invoiceId, amountMinor: Number(c.amount) || 0, method: 'Card (Stripe)', idemKey: ('stripe-invpay:' + chargeId).slice(0, 64) });
+  // Fee expense (idempotent on the charge), booked to the bound entity — fees apply to invoice payments too.
+  let feeRow = null;
+  const feeCents = c.balance_transaction && Number.isFinite(Number(c.balance_transaction.fee)) ? Number(c.balance_transaction.fee) : 0;
+  if (feeCents > 0) {
+    const feeIdem = ('stripe-fee:' + chargeId).slice(0, 64);
+    try {
+      const _ex = await pool.query(`SELECT * FROM expenses WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), feeIdem]);
+      if (_ex.rows[0]) { feeRow = rowToObj(_ex.rows[0]); }
+      else {
+        const _dateYmd = c.created ? new Date(c.created * 1000).toISOString().slice(0, 10) : await entityTodayYmd(_bookEid);
+        ({ row: feeRow } = await db.insert('expenses', {
+          user_id: scopeId(req), entity_id: _bookEid,
+          description: 'Stripe processing fee \u00b7 ' + chargeId, category: 'Payment processing',
+          amount: feeCents / 100, deductible: 'yes', expense_date: _dateYmd, idempotency_key: feeIdem,
+        }));
+        await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
+      }
+    } catch (e) { console.error('[stripe match fee]', e.message); }
+  }
+  res.json({ ok: true, matched: true, invoice_id: invoiceId, applied, fee: feeRow });
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════

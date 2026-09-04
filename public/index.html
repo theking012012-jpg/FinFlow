@@ -1402,6 +1402,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             </div>
           </div>
           <div class="stripe-feed" id="stripe-feed"></div>
+          <div id="stripe-payouts" style="margin-top:12px"></div>
         </div>
       </div>
 
@@ -5140,12 +5141,15 @@ async function startStripeFeed(){
       if(label)label.textContent=''; return;
     }
     const charges=d.charges||[];
+    const _bk=d.books||null;
+    let bindingBar='';
+    if(_bk){ const _ent=(window.ENTITIES||[]).find(e=>(e._dbId||e.id)===_bk.entity_id); const _lbl=_bk.scope==='personal'?'Personal':(_ent?(_ent.name||_ent.business_name||'Business'):'a business'); bindingBar='<div id="stripe-binding-bar" style="font-size:10px;color:var(--t3);padding:0 0 6px 0">Books to: <button type="button" onclick="ffChooseStripeBinding()" style="font-size:10px;color:var(--t2);background:none;border:1px solid var(--bd);border-radius:5px;padding:2px 6px;cursor:pointer">'+esc(_lbl)+' \u25be</button></div>'; }
     const mode=(d.livemode===false)?'Test mode · ':'';
     if(!charges.length){
-      feed.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">No payments yet on your connected Stripe account.</div>';
+      feed.innerHTML=bindingBar+'<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">No payments yet on your connected Stripe account.</div>';
       if(label)label.textContent=mode.trim(); return;
     }
-    feed.innerHTML=charges.map(c=>{
+    feed.innerHTML=bindingBar+charges.map(c=>{
       const col=c.status==='succeeded'?'var(--green)':(c.status==='failed'?'var(--red)':'var(--amber)');
       const dt=c.created?new Date(c.created).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
       const st=c.refunded?'refunded':c.status;
@@ -5157,8 +5161,16 @@ async function startStripeFeed(){
           : '<button type="button" onclick="ffImportStripeRefund(\''+esc(c.id)+'\',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--amber);cursor:pointer;white-space:nowrap">Record refund</button>';
       } else if(c.inBooks){
         bookCtl = '<span style="font-size:10px;color:var(--green);white-space:nowrap">\u2713 in books</span>';
+      } else if(c.appliedToInvoice){
+        bookCtl = '<span style="font-size:10px;color:var(--green);white-space:nowrap">\u2713 applied to invoice</span>';
       } else if(canBook){
-        bookCtl = '<button type="button" onclick="ffImportStripeCharge(\''+esc(c.id)+'\',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--t2);cursor:pointer;white-space:nowrap">Add to books</button>';
+        const _addBtn = '<button type="button" onclick="ffImportStripeCharge(\''+esc(c.id)+'\',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--t2);cursor:pointer;white-space:nowrap">'+(c.matchInvoice?'Add as income':'Add to books')+'</button>';
+        if(c.matchInvoice){
+          const _mnum = esc(c.matchInvoice.num||('INV-'+c.matchInvoice.id));
+          bookCtl = '<button type="button" onclick="ffMatchStripeInvoice(\''+esc(c.id)+'\','+(c.matchInvoice.id)+',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--green);border-radius:6px;background:var(--card);color:var(--green);cursor:pointer;white-space:nowrap">Match '+_mnum+'</button>'+_addBtn;
+        } else {
+          bookCtl = _addBtn;
+        }
       }
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'+
         '<div style="min-width:0"><div style="color:var(--t1);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.description||c.email||'Payment')+'</div>'+
@@ -5232,9 +5244,70 @@ window.ffImportStripeRefund=async function(chargeId,btn){
     _reset();
   }
 };
+window.ffSetStripeBinding=async function(scope,entityId){
+  try{
+    const r=await fetch('/api/stripe/binding',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:scope,entity_id:entityId})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    if(typeof notify==='function') notify('Stripe now books to '+(scope==='personal'?'Personal':'the selected business'),false);
+    await startStripeFeed();
+  }catch(e){ if(typeof notify==='function') notify('Could not change where Stripe books - '+(e.message||'try again'),true); }
+};
+window.ffChooseStripeBinding=function(){
+  const wrap=document.getElementById('stripe-binding-bar'); if(!wrap) return;
+  const ents=(window.ENTITIES||[]);
+  const sel=document.createElement('select');
+  sel.style.cssText='font-size:10px;background:var(--card);color:var(--t2);border:1px solid var(--bd);border-radius:5px;padding:2px 6px';
+  ents.forEach(function(e){ const id=e._dbId||e.id; const o=document.createElement('option'); o.value='biz:'+id; o.textContent=e.name||e.business_name||('Business '+id); sel.appendChild(o); });
+  const op=document.createElement('option'); op.value='personal'; op.textContent='Personal'; sel.appendChild(op);
+  sel.addEventListener('change',function(){ const v=this.value; if(v==='personal') window.ffSetStripeBinding('personal',null); else window.ffSetStripeBinding('business',parseInt(v.split(':')[1],10)); });
+  wrap.textContent='Books to: '; wrap.appendChild(sel);
+};
+async function startStripePayouts(){
+  const box=document.getElementById('stripe-payouts'); if(!box)return;
+  const _symOf=c=>((window.CURRENCIES&&window.CURRENCIES[c]&&window.CURRENCIES[c].symbol)||(c==='USD'?'$':(c||'')+' '));
+  const _m=n=>(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  try{
+    const r=await fetch('/api/stripe/payouts?limit=6',{credentials:'include'});
+    if(!r.ok){ if(r.status===401||r.status===403) return; box.innerHTML=''; return; }
+    const d=await r.json();
+    if(!d.connected||!(d.payouts||[]).length){ box.innerHTML=''; return; }
+    const rows=d.payouts.map(function(p){
+      const col=p.status==='paid'?'var(--green)':((p.status==='failed'||p.status==='canceled')?'var(--red)':'var(--amber)');
+      const when=p.arrival_date?new Date(p.arrival_date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)">'+
+        '<div style="min-width:0"><div style="color:var(--t2);font-size:12px">Payout to bank</div>'+
+        '<div style="color:var(--t3);font-size:11px">'+esc(when)+' \u00b7 <span style="color:'+col+'">'+esc(p.status)+'</span></div></div>'+
+        '<div style="font-family:var(--font-mono);color:var(--t1);white-space:nowrap;margin-left:10px">'+_symOf(p.currency)+_m(p.amount)+'</div></div>';
+    }).join('');
+    box.innerHTML='<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;padding:8px 0 4px">Payouts to your bank</div>'+rows+'<div style="font-size:10px;color:var(--t3);padding:6px 0 0">Match each to the matching deposit on your bank statement.</div>';
+  }catch(e){ box.innerHTML=''; }
+}
+window.startStripePayouts=startStripePayouts;
+window.ffMatchStripeInvoice=async function(chargeId,invoiceId,btn){
+  if(!chargeId||!invoiceId) return;
+  const orig=btn?btn.textContent:'';
+  const _reset=()=>{ if(btn){ btn.disabled=false; btn.textContent=orig||'Match'; btn.style.opacity='1'; } };
+  if(btn){ btn.disabled=true; btn.textContent='Matching\u2026'; btn.style.opacity='0.6'; }
+  try{
+    const r=await fetch('/api/stripe/match-invoice',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({charge_id:chargeId,invoice_id:invoiceId})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    if(typeof notify==='function') notify('Matched - invoice marked paid, no double revenue',false);
+    await startStripeFeed();
+    if(typeof window.loadReceipts==='function'){ try{ await window.loadReceipts(); }catch(_){} }
+    if(typeof window.refreshFinancials==='function'){ try{ await window.refreshFinancials('all'); }catch(_){} }
+    if(typeof window.updateDashboard==='function') window.updateDashboard();
+    if(typeof window._refreshDashboardUI==='function') window._refreshDashboardUI();
+  }catch(e){
+    if(typeof notify==='function') notify('Could not match to invoice - '+(e.message||'try again'),true);
+    _reset();
+  }
+};
 document.addEventListener('DOMContentLoaded',startStripeFeed);
+document.addEventListener('DOMContentLoaded',startStripePayouts);
 // Gentle live refresh: only while the dashboard is actually visible (keeps Stripe API calls minimal).
-setInterval(function(){ const dp=document.getElementById('page-dashboard'); if(dp && dp.offsetParent!==null) startStripeFeed(); }, 60000);
+setInterval(function(){ const dp=document.getElementById('page-dashboard'); if(dp && dp.offsetParent!==null){ startStripeFeed(); startStripePayouts(); } }, 60000);
 
 // ── 4. BUDGET MODULE ────────────────────────────────────────────────────────
 window.BUDGET_DATA=window.BUDGET_DATA||[];

@@ -41,7 +41,7 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
         return { ok: true, status: 201, json: async () => ({ matched: (JSON.parse(opts.body||'{}').matches||[]).length, skipped: 0, rows: [] }) };
       }
       // GET /api/bank-reconciliation (loadBankRec refresh) — minimal valid shape
-      return { ok: true, status: 200, json: async () => ({ unmatched_bank: [], unmatched_payments: [], matched: [] }) };
+      return { ok: true, status: 200, json: async () => ({ unmatchedBanking: [], unmatchedPayments: [], matched: [] }) };
     };
 
     // Stage 3 pairs (the same two-click interaction, three times).

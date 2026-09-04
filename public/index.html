@@ -5772,8 +5772,8 @@ async function loadBankRec(){
     const upEl=document.getElementById('brec-unmatched-pay');
     const mcEl=document.getElementById('brec-matched-count');
 
-    let unbank=data.unmatched_bank||[];
-    let unpay=data.unmatched_payments||[];
+    let unbank=data.unmatchedBanking||data.unmatched_bank||[];
+    let unpay=data.unmatchedPayments||data.unmatched_payments||[];
     const matched=data.matched||[];
 
     // F101: hide staged bank tx + payments from the "unmatched" columns so the same row can't be

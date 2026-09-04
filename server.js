@@ -5513,12 +5513,73 @@ app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
       created: c.created ? new Date(c.created * 1000).toISOString() : null,
       livemode: !!c.livemode,
     }));
+    // Annotate which charges are ALREADY recorded in the books (imported via reconcile), so the UI can
+    // offer "Add to books" only for the rest and never invite a double-post. Keyed on the charge id.
+    const _idemKeys = charges.map(c => 'stripe-charge:' + c.id);
+    let _booked = new Set();
+    if (_idemKeys.length) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT data->>'idempotency_key' AS k FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key' = ANY($2)`,
+          [scopeId(req), _idemKeys]);
+        _booked = new Set(rows.map(r => r.k));
+      } catch (_) { /* annotation is best-effort; import stays idempotent regardless */ }
+    }
+    charges.forEach(c => { c.inBooks = _booked.has('stripe-charge:' + c.id); });
     const total = charges.filter(c => c.status === 'succeeded' && !c.refunded).reduce((sum, c) => sum + c.amount, 0);
     res.json({ configured: true, connected: true, account: value.stripe_user_id, charges, total, livemode: charges.length ? charges[0].livemode : null });
   } catch (e) {
     console.error('[stripe feed]', e.message);
     res.status(502).json({ error: 'Could not read Stripe payments: ' + e.message });
   }
+}));
+
+// Owner-approved: record ONE connected-Stripe charge into the books as income (a sales receipt →
+// counts as revenue, flows to the dashboard/reports). DISPLAY→BOOKS is an EXPLICIT per-charge owner
+// action (Rules 2 & 12), never automatic. Idempotent on the charge id — the same charge can never
+// post twice. Amounts are re-fetched from Stripe (never trusted from the client). NOTE: a charge that
+// already paid a FinFlow invoice via a pay-link is recorded separately by the webhook (keyed on the
+// checkout session id, not the charge), so it cannot be auto-matched here — the owner decides per
+// charge; a "match to invoice" reconcile is the planned follow-up (PLAN_INTEGRATIONS_WAVE1.md).
+app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
+  if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe not configured.', code: 'STRIPE_NOT_CONFIGURED' });
+  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
+  if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account.' });
+  const chargeId = String((req.body && req.body.charge_id) || '').trim();
+  if (!/^ch_[A-Za-z0-9]+$/.test(chargeId)) return res.status(400).json({ error: 'A valid charge_id is required.' });
+  const idem = ('stripe-charge:' + chargeId).slice(0, 64);
+  // Idempotency guard FIRST — if this charge was already imported, return the original, never a dupe.
+  {
+    const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+    if (rows[0]) return res.json({ ok: true, duplicate: true, receipt: rowToObj(rows[0]) });
+  }
+  // Re-fetch the charge from Stripe (authoritative amount/status — never trust the client).
+  let c;
+  try {
+    const resp = await fetch('https://api.stripe.com/v1/charges/' + encodeURIComponent(chargeId), {
+      headers: { 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY, 'Stripe-Account': value.stripe_user_id },
+    });
+    c = await resp.json();
+    if (!resp.ok) throw new Error((c && c.error && c.error.message) || ('Stripe HTTP ' + resp.status));
+  } catch (e) { console.error('[stripe import]', e.message); return res.status(502).json({ error: 'Could not read the Stripe charge: ' + e.message }); }
+  if (c.status !== 'succeeded' || c.refunded) return res.status(400).json({ error: 'Only a succeeded, non-refunded charge can be added to the books.' });
+  const amount = (Number(c.amount) || 0) / 100;
+  const customer = String(c.description || (c.billing_details && c.billing_details.name) || (c.billing_details && c.billing_details.email) || c.receipt_email || 'Stripe payment').slice(0, 200);
+  const dateYmd = c.created ? new Date(c.created * 1000).toISOString().slice(0, 10) : await entityTodayYmd(req.entityId);
+  let row;
+  try {
+    ({ row } = await db.insert('sales_receipts', {
+      user_id: scopeId(req), entity_id: req.entityId || null,
+      customer, num: 'SR-' + chargeId.slice(-6), amount, date: dateYmd, method: 'Card (Stripe)',
+      notes: 'Imported from Stripe · ' + chargeId + (c.payment_intent ? ' · ' + c.payment_intent : ''),
+      idempotency_key: idem,
+    }));
+  } catch (e) {
+    if (e.code === '23505') { const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]); if (rows[0]) return res.json({ ok: true, duplicate: true, receipt: rowToObj(rows[0]) }); }
+    throw e;
+  }
+  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
+  res.json({ ok: true, imported: true, receipt: row });
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════

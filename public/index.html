@@ -5149,10 +5149,19 @@ async function startStripeFeed(){
       const col=c.status==='succeeded'?'var(--green)':(c.status==='failed'?'var(--red)':'var(--amber)');
       const dt=c.created?new Date(c.created).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
       const st=c.refunded?'refunded':c.status;
+      const canBook=(c.status==='succeeded' && !c.refunded);
+      const bookCtl=c.inBooks
+        ? '<span style="font-size:10px;color:var(--green);white-space:nowrap">\u2713 in books</span>'
+        : (canBook
+            ? '<button type="button" onclick="ffImportStripeCharge(\''+esc(c.id)+'\',this)" style="font-size:10px;padding:3px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--t2);cursor:pointer;white-space:nowrap">Add to books</button>'
+            : '');
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'+
         '<div style="min-width:0"><div style="color:var(--t1);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.description||c.email||'Payment')+'</div>'+
         '<div style="color:var(--t3);font-size:11px">'+esc(dt)+' · <span style="color:'+col+'">'+esc(st)+'</span></div></div>'+
-        '<div style="font-family:var(--font-mono);color:var(--t1);white-space:nowrap;margin-left:10px">'+_symOf(c.currency)+_m(c.amount)+'</div></div>';
+        '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin-left:10px">'+
+          '<div style="font-family:var(--font-mono);color:var(--t1);white-space:nowrap">'+_symOf(c.currency)+_m(c.amount)+'</div>'+
+          bookCtl+
+        '</div></div>';
     }).join('');
     if(label) label.textContent=mode+_symOf((charges[0]||{}).currency)+_m(d.total)+' collected';
   }catch(e){
@@ -5160,6 +5169,26 @@ async function startStripeFeed(){
   }
 }
 window.startStripeFeed=startStripeFeed;
+// Owner action: record ONE connected-Stripe charge into the books (server re-fetches the charge,
+// is idempotent on the charge id, and counts it as revenue). Then refresh the feed + money surfaces.
+window.ffImportStripeCharge=async function(chargeId,btn){
+  if(!chargeId) return;
+  const orig=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Adding\u2026'; btn.style.opacity='0.6'; }
+  try{
+    const r=await fetch('/api/stripe/import-charge',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({charge_id:chargeId})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    if(typeof notify==='function') notify(d.duplicate?'That charge is already in your books':'Added to your books',false);
+    await startStripeFeed();
+    if(typeof window.refreshFinancials==='function') window.refreshFinancials();
+    if(typeof window.updateDashboard==='function') window.updateDashboard();
+    else if(typeof window._refreshDashboardUI==='function') window._refreshDashboardUI();
+  }catch(e){
+    if(typeof notify==='function') notify('Could not add to books \u2014 '+(e.message||'try again'),true);
+    if(btn){ btn.disabled=false; btn.textContent=orig||'Add to books'; btn.style.opacity='1'; }
+  }
+};
 document.addEventListener('DOMContentLoaded',startStripeFeed);
 // Gentle live refresh: only while the dashboard is actually visible (keeps Stripe API calls minimal).
 setInterval(function(){ const dp=document.getElementById('page-dashboard'); if(dp && dp.offsetParent!==null) startStripeFeed(); }, 60000);

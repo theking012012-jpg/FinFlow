@@ -5486,6 +5486,41 @@ app.post('/api/stripe/sync', requireAuth, requirePerm('bank:manage'), wrap(async
   } catch (e) { console.error('[stripe sync]', e.message); res.status(502).json({ error: 'Could not read Stripe balance: ' + e.message }); }
 }));
 
+// Recent payments on the connected Stripe account — powers the dashboard "Stripe live feed".
+// DISPLAY ONLY (Rules 2 & 12): reads charges via the Connect account header, never writes to the books.
+// Mirrors /api/stripe/sync's auth pattern. Honest states: not-configured / not-connected return empty,
+// so the widget shows the connect prompt instead of a fabricated feed.
+app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
+  if (!stripeConnectConfigured()) return res.json({ configured: false, connected: false, charges: [], total: 0 });
+  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
+  if (!value || !value.stripe_user_id) return res.json({ configured: true, connected: false, charges: [], total: 0 });
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+  try {
+    const resp = await fetch('https://api.stripe.com/v1/charges?limit=' + limit, {
+      headers: { 'Authorization': 'Bearer ' + process.env.STRIPE_SECRET_KEY, 'Stripe-Account': value.stripe_user_id },
+    });
+    let j = {}; try { j = await resp.json(); } catch (_) {}
+    if (!resp.ok) throw new Error((j.error && j.error.message) || ('Stripe HTTP ' + resp.status));
+    const charges = (j.data || []).map(c => ({
+      id: c.id,
+      amount: (Number(c.amount) || 0) / 100,
+      currency: String(c.currency || 'usd').toUpperCase(),
+      status: c.status || 'unknown',
+      paid: !!c.paid,
+      refunded: !!c.refunded,
+      description: c.description || (c.billing_details && c.billing_details.name) || '',
+      email: (c.billing_details && c.billing_details.email) || c.receipt_email || '',
+      created: c.created ? new Date(c.created * 1000).toISOString() : null,
+      livemode: !!c.livemode,
+    }));
+    const total = charges.filter(c => c.status === 'succeeded' && !c.refunded).reduce((sum, c) => sum + c.amount, 0);
+    res.json({ configured: true, connected: true, account: value.stripe_user_id, charges, total, livemode: charges.length ? charges[0].livemode : null });
+  } catch (e) {
+    console.error('[stripe feed]', e.message);
+    res.status(502).json({ error: 'Could not read Stripe payments: ' + e.message });
+  }
+}));
+
 // ════════════════════════════════════════════════════════════════════════════════
 // REGIONAL AGGREGATORS — BELVO (Latin America bank data) + WIPAY (Caribbean payments).
 // ════════════════════════════════════════════════════════════════════════════════

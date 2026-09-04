@@ -5126,14 +5126,43 @@ window.sendAIQuery = async function(text){
 };
 
 // ── 3. STRIPE LIVE FEED ─────────────────────────────────────────────────────
-function startStripeFeed(){
-  const feed=document.getElementById('stripe-feed');
-  if(!feed)return;
-  feed.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">Connect Stripe to see live payment transactions</div>';
+async function startStripeFeed(){
+  const feed=document.getElementById('stripe-feed'); if(!feed)return;
   const label=document.getElementById('stripe-total-label');
-  if(label)label.textContent='';
+  const _symOf=c=>((window.CURRENCIES&&window.CURRENCIES[c]&&window.CURRENCIES[c].symbol)||(c==='USD'?'$':(c||'')+' '));
+  const _m=n=>(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  try{
+    const r=await fetch('/api/stripe/feed?limit=20',{credentials:'include'});
+    if(!r.ok){ if(r.status===401||r.status===403) return; throw new Error('HTTP '+r.status); }
+    const d=await r.json();
+    if(!d.connected){
+      feed.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">Connect Stripe to see live payment transactions</div>';
+      if(label)label.textContent=''; return;
+    }
+    const charges=d.charges||[];
+    const mode=(d.livemode===false)?'Test mode · ':'';
+    if(!charges.length){
+      feed.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">No payments yet on your connected Stripe account.</div>';
+      if(label)label.textContent=mode.trim(); return;
+    }
+    feed.innerHTML=charges.map(c=>{
+      const col=c.status==='succeeded'?'var(--green)':(c.status==='failed'?'var(--red)':'var(--amber)');
+      const dt=c.created?new Date(c.created).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+      const st=c.refunded?'refunded':c.status;
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)">'+
+        '<div style="min-width:0"><div style="color:var(--t1);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.description||c.email||'Payment')+'</div>'+
+        '<div style="color:var(--t3);font-size:11px">'+esc(dt)+' · <span style="color:'+col+'">'+esc(st)+'</span></div></div>'+
+        '<div style="font-family:var(--font-mono);color:var(--t1);white-space:nowrap;margin-left:10px">'+_symOf(c.currency)+_m(c.amount)+'</div></div>';
+    }).join('');
+    if(label) label.textContent=mode+_symOf((charges[0]||{}).currency)+_m(d.total)+' collected';
+  }catch(e){
+    feed.innerHTML='<div style="padding:1.5rem;text-align:center;color:var(--t3);font-size:12px">Could not load Stripe payments — '+esc(e.message||'try again')+'</div>';
+  }
 }
+window.startStripeFeed=startStripeFeed;
 document.addEventListener('DOMContentLoaded',startStripeFeed);
+// Gentle live refresh: only while the dashboard is actually visible (keeps Stripe API calls minimal).
+setInterval(function(){ const dp=document.getElementById('page-dashboard'); if(dp && dp.offsetParent!==null) startStripeFeed(); }, 60000);
 
 // ── 4. BUDGET MODULE ────────────────────────────────────────────────────────
 window.BUDGET_DATA=window.BUDGET_DATA||[];

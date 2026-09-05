@@ -18,7 +18,9 @@ verified live on production (non-destructive). Features: Stripe add-to-books (id
 ### 🟢 ENTITY-GATING (started 2026-09-05)
 - ✅ **Bank Rec** entity-scoped (money-in lists + money-out debits; null-inclusive, nothing lost). `verify-bank-money-out` 20/0.
 - ✅ **Templates** entity-scoped (null-inclusive; new tag to active entity). `verify-templates-entity-scope` 5/0.
-- ⬜ Remaining to scope (same null-inclusive pattern): **Time Tracking (timesheet), Audit trail, Documents, Team & roles** (all carry entity_id already — GET filter + POST tag).
+- ✅ **Time Tracking (timesheet)** entity-scoped (null-inclusive GET filter + POST entity_id tag + entity-scoped dedup) AND switchEntity now REFETCHES timesheet on switch (renderTimesheet paints from an in-memory cache, so server scoping alone left stale cross-entity rows on screen). `verify-timesheet-entity-scope` 7/0.
+  - NOTE: **Templates has the same latent client-cache staleness** — its server scoping is correct + harnessed, but switchEntity does NOT refetch templates on switch (templatesData is boot-cached like timesheetData was). Same one-line fix if it surfaces: add `window._loadTemplatesFromDB` (expose it in wiring first) to the switchEntity Promise.all set in index.html.
+- ⬜ Remaining to scope (same null-inclusive pattern): **Audit trail, Documents, Team & roles** (all carry entity_id already — GET filter + POST tag; check each for the same boot-cache/refetch-on-switch gap timesheet had).
 - ⬜ **Nav restructure**: pull FX/Currency, Accountant, Find Advisor, Entities, Personal into a separate account-level section (owner confirmed FX/Entities/Personal go there too). Fiddly: Accountant is a dropdown.
 - ⬜ **API connections per-entity** (re-architecture — heaviest, do last).
 

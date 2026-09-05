@@ -3278,15 +3278,16 @@ app.delete('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
 
 // ── TIMESHEET ─────────────────────────────────────────────────────────────────
 app.get('/api/timesheet', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('timesheet', req.session.userId, null, (a, b) => b.id - a.id));
+  res.json(await db.allByUser('timesheet', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/timesheet', requireAuth, wrap(async (req, res) => {
   const { employee, project = '', date, hours, billable = 'Yes', rate = 0 } = req.body || {};
   if (!employee || hours == null) return res.status(400).json({ error: 'employee and hours required' });
-  const _dup = await findRecentDuplicate('timesheet', req.session.userId, null, { textMatch: { employee: employee.trim().slice(0,100), project: project.trim().slice(0,200) }, numMatch: { hours: parseFloat(hours)||0 } });
+  const _dup = await findRecentDuplicate('timesheet', req.session.userId, req.entityId || null, { textMatch: { employee: employee.trim().slice(0,100), project: project.trim().slice(0,200) }, numMatch: { hours: parseFloat(hours)||0 } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('timesheet', {
     user_id:  req.session.userId,
+    entity_id: req.entityId || null,
     employee: employee.trim().slice(0, 100),
     project:  project.trim().slice(0, 200),
     date:     date || new Date().toISOString().slice(0, 10),

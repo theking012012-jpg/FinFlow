@@ -6994,7 +6994,7 @@ window.switchEntity=async function(idx){
     window._loadCreditNotesFromDB,  window._loadVendorCreditsFromDB,
     window._loadBillsFromDB,        window._loadReceiptsFromDB,
     window._loadPaymentsMadeFromDB, window._loadPaymentsRecvFromDB,
-    window._loadVendorsFromDB,
+    window._loadVendorsFromDB,      window._loadTimesheetFromDB,
   ].map(fn => { try { return typeof fn === 'function' ? Promise.resolve(fn()).catch(()=>{}) : null; } catch(e){ return null; } }));
   if(typeof updateDashboard === 'function'){ try { updateDashboard(); } catch(e){} }
 

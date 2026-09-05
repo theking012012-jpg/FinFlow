@@ -34,6 +34,9 @@ const OWNER = { email: 'bankout-owner@finflow.test', password: 'harness-password
     const d2 = await mkBank(200, 'Acme Supplies inv', eid);  // → match to bill
     const d3 = await mkBank(50, 'Unknown debit', eid);       // → ignore
     const dP = await mkBank(30, 'Personal netflix', null);   // personal (no entity) → refused
+    const eidB = (await c.query(`INSERT INTO entities (user_id,entity_id,data,created_at,updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
+      [uid, { name: 'Other Co', currency: 'USD', is_active: 0 }])).rows[0].id;
+    const dB = await mkBank(999, 'OTHER-ENTITY debit', eidB);   // belongs to a DIFFERENT business
     const billId = (await c.query(`INSERT INTO bills (user_id,entity_id,data,created_at,updated_at) VALUES ($1,$2,$3,NOW(),NOW()) RETURNING id`,
       [uid, eid, { vendor: 'Acme Supplies', amount: 200, amount_paid: 0, status: 'unpaid', issue_date: '2026-07-20' }])).rows[0].id;
 
@@ -49,6 +52,11 @@ const OWNER = { email: 'bankout-owner@finflow.test', password: 'harness-password
     A('GET returns unmatchedDebits + openBills (money-out side)',
       recon.status === 200 && Array.isArray(recon.json.unmatchedDebits) && recon.json.unmatchedDebits.length === 3 && Array.isArray(recon.json.openBills) && recon.json.openBills.length === 1,
       JSON.stringify({ d: (recon.json.unmatchedDebits||[]).length, b: (recon.json.openBills||[]).length }));
+    // ENTITY GATING: the active entity's debits show; a DIFFERENT business's debit must NOT leak here.
+    const _debIds = (recon.json.unmatchedDebits||[]).map(d=>d.id);
+    A('active entity debits present (d1/d2/d3)', _debIds.includes(d1) && _debIds.includes(d2) && _debIds.includes(d3));
+    A('OTHER entity debit is NOT shown (bank-rec entity-scoped)', !_debIds.includes(dB), 'leaked id=' + dB);
+    A('personal (no-entity) debit is NOT in the business debits list', !_debIds.includes(dP));
 
     // ── book a debit as a direct expense ──
     const exp0 = await repExpenses(), n0 = await expCount();

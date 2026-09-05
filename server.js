@@ -6299,14 +6299,14 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
   const matchedBankSet = new Set(matchedBankIds.rows.map(r => r.banking_id));
   const matchedPaySet  = new Set(matchedPayIds.rows.map(r => r.invoice_payment_id));
 
-  const banking = await db.allByUser('personal_transactions', uid, r => r.source === 'banking');
+  const banking = await db.allByUser('personal_transactions', uid, r => r.source === 'banking' && (r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
   const unmatchedBanking = banking.filter(r => !matchedBankSet.has(r.id));
 
   const { rows: payments } = await pool.query(
     `SELECT ip.*, i.data->>'client' AS client FROM invoice_payments ip
      LEFT JOIN invoices i ON i.id = ip.invoice_id
-     WHERE ip.user_id = $1 ORDER BY ip.payment_date DESC`,
-    [scopeId(req)]
+     WHERE ip.user_id = $1 AND ($2::int IS NULL OR ip.entity_id IS NULL OR ip.entity_id = $2) ORDER BY ip.payment_date DESC`,
+    [scopeId(req), req.entityId || null]
   );
   const unmatchedPayments = payments.filter(r => !matchedPaySet.has(r.id));
 

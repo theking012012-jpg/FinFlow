@@ -61,3 +61,23 @@ Commit block is in the chat; files: `public/index.html` + the new harness.
   PowerShell (`del .git\index.lock` first every time).
 - Pre-commit hook auto-rebuilds the bundle from staged sources + runs verification-sync (both must pass).
 - `index.html` is ship-direct (no bundle). Wiring files (`finflow-api-wiring-*.js`) → `node bundle.js`.
+
+---
+
+## 2026-09-05 — Entity-scoping sweep (Time Tracking leak fix)
+
+**Context:** user found business tabs leaking data across all 4 entities. Worked through the left-nav gating.
+
+**Done + verified (all committed/deployed):**
+- **Bank Rec** entity-scoped — `verify-bank-money-out` 20/0.
+- **Templates** entity-scoped (null-inclusive; server-side, harnessed) — `verify-templates-entity-scope` 5/0. NOTE: switchEntity does NOT refetch templates (boot-cached), so its client view can go stale on switch — same one-line fix as timesheet if it surfaces.
+- **Time Tracking — BOTH pages** now STRICTLY per-entity:
+  - **Timesheet** — null-inclusive GET filter + POST `entity_id` tag + entity-scoped dedup + switchEntity refetch. `verify-timesheet-entity-scope` 7/0.
+  - **Projects** — was TOTALLY ungated (GET passed null, POST never tagged). Same fix + switchEntity refetch. `verify-projects-entity-scope` 9/0.
+  - **DESIGN CHANGE:** projects/timesheet were intentionally EXCLUDED from the NOT-NULL entity_id invariant (NULL = account-level, shown on every business). Per product decision they are now strictly per-entity. Idempotent **DB-init backfill** (database.js, before init COMMIT) homes orphan NULL projects/timesheet rows to each user's FIRST (min-id) entity. Runs on deploy/boot. Orphan rows land on the first entity (Saige), not necessarily true home — reassign/delete.
+
+**Root-cause pattern for these leaks:** a page shows cross-entity data when EITHER (a) the server GET isn't entity-filtered, OR (b) rows have NULL entity_id and the filter is null-inclusive (shows NULL everywhere), OR (c) the client caches rows at boot and switchEntity doesn't refetch. Check all three per surface.
+
+**Remaining to scope (same pattern — GET filter + POST tag + switchEntity refetch + consider backfill):**
+- **Documents, Team & roles, Audit trail** — all carry entity_id; documents/templates still account-level-NULL-capable.
+- **API connections per-entity** — the heavy re-architecture, do last (connectors are account-level via scopeId, shared across entities).

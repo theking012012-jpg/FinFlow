@@ -807,6 +807,21 @@ async function initDB() {
       END $ent$;
     `);
 
+    // ── TIME-TRACKING ENTITY HOMING (idempotent) ─────────────────────────────────
+    // projects/timesheet were account-level-capable: a NULL entity_id row showed on EVERY entity
+    // (the "leaks into all businesses" report). Per product decision Time Tracking is now STRICTLY
+    // per-entity (GET filters by entity_id, POST tags it). Home any pre-existing orphan NULL rows to
+    // the user's FIRST (oldest) entity so they stop appearing on every business and nothing is lost.
+    // Idempotent: only touches NULL rows, and only for users that actually have an entity.
+    await client.query(`
+      UPDATE projects p SET entity_id = (SELECT MIN(e.id) FROM entities e WHERE e.user_id = p.user_id)
+       WHERE p.entity_id IS NULL AND EXISTS (SELECT 1 FROM entities e2 WHERE e2.user_id = p.user_id);
+    `);
+    await client.query(`
+      UPDATE timesheet t SET entity_id = (SELECT MIN(e.id) FROM entities e WHERE e.user_id = t.user_id)
+       WHERE t.entity_id IS NULL AND EXISTS (SELECT 1 FROM entities e2 WHERE e2.user_id = t.user_id);
+    `);
+
     await client.query('COMMIT');
     console.log('[DB] PostgreSQL schema ready');
   } catch (err) {

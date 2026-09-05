@@ -1867,7 +1867,7 @@ app.delete('/api/goals/:id', requireAuth, wrap(async (req, res) => {
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
 app.get('/api/projects', requireAuth, wrap(async (req, res) => {
   try {
-    const rows = await db.allByUser('projects', req.session.userId, null, (a, b) => b.id - a.id);
+    const rows = await db.allByUser('projects', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id);
     res.json(rows);
   } catch (e) {
     // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
@@ -1879,10 +1879,11 @@ app.post('/api/projects', requireAuth, wrap(async (req, res) => {
   const { name, client = '', budget = 0, status = 'In Progress' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required.' });
   const validStatuses = ['In Progress', 'Completed', 'On Hold'];
-  const _dup = await findRecentDuplicate('projects', req.session.userId, null, { textMatch: { name: name.trim().slice(0,200), client: client.trim().slice(0,200) } });
+  const _dup = await findRecentDuplicate('projects', req.session.userId, req.entityId || null, { textMatch: { name: name.trim().slice(0,200), client: client.trim().slice(0,200) } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('projects', {
     user_id:  req.session.userId,
+    entity_id: req.entityId || null,
     name:     name.trim().slice(0, 200),
     client:   client.trim().slice(0, 200),
     budget:   parseFloat(budget) || 0,

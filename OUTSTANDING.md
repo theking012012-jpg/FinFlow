@@ -15,6 +15,13 @@ verified live on production (non-destructive). Features: Stripe add-to-books (id
 - Money-flow **river stale-currency clear** in `switchEntity` (−TT$210-on-CAD lingering fix).
 - New harness `tests/harness/verify-stripe-feed-entity-gate.js` (6/0). Files: `public/index.html` + harness.
 
+### 🟢 ENTITY-GATING (started 2026-09-05)
+- ✅ **Bank Rec** entity-scoped (money-in lists + money-out debits; null-inclusive, nothing lost). `verify-bank-money-out` 20/0.
+- ✅ **Templates** entity-scoped (null-inclusive; new tag to active entity). `verify-templates-entity-scope` 5/0.
+- ⬜ Remaining to scope (same null-inclusive pattern): **Time Tracking (timesheet), Audit trail, Documents, Team & roles** (all carry entity_id already — GET filter + POST tag).
+- ⬜ **Nav restructure**: pull FX/Currency, Accountant, Find Advisor, Entities, Personal into a separate account-level section (owner confirmed FX/Entities/Personal go there too). Fiddly: Accountant is a dropdown.
+- ⬜ **API connections per-entity** (re-architecture — heaviest, do last).
+
 ### 🔴 OPEN — needs a decision (NOT built)
 - **Per-entity connections (BIG):** connectors are account-level (`scopeId`), shared across all entities
   (same Stripe/Plaid on every business). Owner wants each business to own its connections → re-architect

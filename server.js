@@ -2327,12 +2327,12 @@ app.delete('/api/documents/:id', requireAuth, wrap(async (req, res) => {
 
 // ── TEMPLATES ─────────────────────────────────────────────────────────────────
 app.get('/api/templates', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('templates', req.session.userId, null, (a,b) => a.id - b.id));
+  res.json(await db.allByUser('templates', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.id - b.id));
 }));
 app.post('/api/templates', requireAuth, wrap(async (req, res) => {
   const { name, type = 'invoice', preview = '', is_default = 0, accent_color = '#c9a84c' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required.' });
-  const { row } = await db.insert('templates', { user_id: req.session.userId, name: name.slice(0,200), type, preview, is_default: is_default ? 1 : 0, accent_color });
+  const { row } = await db.insert('templates', { user_id: req.session.userId, entity_id: req.entityId || null, name: name.slice(0,200), type, preview, is_default: is_default ? 1 : 0, accent_color });
   res.status(201).json(row);
 }));
 app.put('/api/templates/:id', requireAuth, wrap(async (req, res) => {

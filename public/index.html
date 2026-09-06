@@ -7016,6 +7016,13 @@ window.switchEntity=async function(idx){
     if(_docPage && _docPage.classList.contains('active') && typeof renderDocuments === 'function') renderDocuments();
   } catch(e){}
 
+  // Audit trail is entity-scoped server-side (/api/audit-log reads audit_trail, active-entity + account
+  // events). Re-fetch if the page is open so a switch shows the new entity's history, not the old one's.
+  try {
+    var _audPage = document.getElementById('page-audit');
+    if(_audPage && _audPage.classList.contains('active') && typeof loadAuditTrail === 'function') loadAuditTrail();
+  } catch(e){}
+
   notify('Switched to '+e.name+' ✦');
 };
 

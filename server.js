@@ -2283,11 +2283,23 @@ app.delete('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
 
 // ── AUDIT LOG ─────────────────────────────────────────────────────────────────
 app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
-  const { page = 1, limit = 50, type } = req.query;
-  let rows = await db.allByUser('audit_log', req.session.userId, null, (a,b) => b.id - a.id);
-  if (type && type !== 'all') rows = rows.filter(r => r.table_name === type);
-  const start = (parseInt(page) - 1) * parseInt(limit);
-  res.json({ total: rows.length, rows: rows.slice(start, start + parseInt(limit)) });
+  // Reads the REAL append-only trail (audit_trail). The old audit_log table has had zero writers since
+  // the F90 unification (logAudit -> recordAudit -> audit_trail), so this route used to serve a dead
+  // table and the Audit page showed nothing. Entity-scoped null-inclusive: events under the active
+  // entity + account-level events written with no active entity (entity_id NULL). NOTE (deferred): an
+  // account-level action performed WHILE an entity was active is stamped with that entity, so it shows
+  // only there for now — the always-show-account-events refinement is a later pass.
+  const { limit = 500, type } = req.query;
+  const params = [scopeId(req)];
+  let q = `SELECT id, user_id, entity_id, table_name, record_id, action, field_name,
+                  old_value, new_value, old_data, new_data, actor_type, actor_id, changed_at AS created_at
+             FROM audit_trail WHERE user_id = $1`;
+  if (req.entityId != null) { params.push(req.entityId); q += ` AND (entity_id IS NULL OR entity_id = $${params.length})`; }
+  if (type && type !== 'all') { params.push(type); q += ` AND table_name = $${params.length}`; }
+  const lim = Math.min(Math.max(parseInt(limit) || 500, 1), 10000);
+  q += ` ORDER BY changed_at DESC LIMIT ${lim}`;
+  const { rows } = await pool.query(q, params);
+  res.json({ total: rows.length, rows });
 }));
 
 // ── DOCUMENTS ─────────────────────────────────────────────────────────────────

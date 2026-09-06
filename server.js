@@ -5103,6 +5103,31 @@ const _saveProviderBlob = async (uid, id, key, value) => {
   else await db.insert('user_settings', { user_id: uid, key, value: data });
 };
 
+// Per-entity provider connection (Stripe): each business can link its OWN connection. Reads try the
+// active entity's blob first, then FALL BACK to a legacy account-level blob (entity_id NULL) so a
+// pre-existing single connection keeps working until each business links its own. Writes are EXACT
+// (always to the given entity) so connecting business A never overwrites the shared legacy blob.
+const _providerBlobE = async (uid, key, entityId, fallback = true) => {
+  let { rows: [r] } = await pool.query(
+    `SELECT * FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`,
+    [uid, key, entityId == null ? null : entityId]);
+  if (!r && fallback && entityId != null) {
+    ({ rows: [r] } = await pool.query(
+      `SELECT * FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 AND entity_id IS NULL LIMIT 1`, [uid, key]));
+  }
+  const row = r ? rowToObj(r) : null;
+  let value = null; try { value = row && row.value ? JSON.parse(row.value) : null; } catch (_) {}
+  return { id: r ? r.id : null, value };
+};
+const _saveProviderBlobE = async (uid, key, value, entityId) => {
+  const data = JSON.stringify(value);
+  const { rows: [r] } = await pool.query(
+    `SELECT id FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`,
+    [uid, key, entityId == null ? null : entityId]);
+  if (r) await db.updateById('user_settings', r.id, { value: data });
+  else await db.insert('user_settings', { user_id: uid, entity_id: entityId == null ? null : entityId, key, value: data });
+};
+
 // ── FINCH ──
 const finchConfigured = () => !!(process.env.FINCH_CLIENT_ID && process.env.FINCH_CLIENT_SECRET);
 const FINCH_API = 'https://api.tryfinch.com';
@@ -5494,7 +5519,7 @@ const stripeConnectConfigured = () => !!(process.env.STRIPE_SECRET_KEY && proces
 const _stripeRedirectUri = () => process.env.STRIPE_CONNECT_REDIRECT_URI || (appUrl() + '/api/stripe/callback');
 
 app.get('/api/stripe/status', requireAuth, wrap(async (req, res) => {
-  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
+  const { value } = await _providerBlobE(scopeId(req), 'stripe_conn', req.entityId);
   res.json({ configured: stripeConnectConfigured(), connected: !!(value && value.stripe_user_id), account: value ? value.stripe_user_id || null : null });
 }));
 
@@ -5520,16 +5545,15 @@ app.get('/api/stripe/callback', requireAuth, requirePerm('bank:manage'), wrap(as
     let j = {}; try { j = await resp.json(); } catch (_) {}
     if (!resp.ok || !j.stripe_user_id) throw new Error(j.error_description || j.error || ('Stripe OAuth HTTP ' + resp.status));
     const uid = scopeId(req);
-    const { id } = await _providerBlob(uid, 'stripe_conn');
-    await _saveProviderBlob(uid, id, 'stripe_conn', { stripe_user_id: j.stripe_user_id, access_token: j.access_token ? encTok(j.access_token) : null, linked_at: new Date().toISOString(), books: { scope: 'business', entity_id: req.entityId || null } });
+    await _saveProviderBlobE(uid, 'stripe_conn', { stripe_user_id: j.stripe_user_id, access_token: j.access_token ? encTok(j.access_token) : null, linked_at: new Date().toISOString(), books: { scope: 'business', entity_id: req.entityId || null } }, req.entityId);
     return done('Stripe connected ✓ You can close this window.');
   } catch (e) { console.error('[stripe connect callback]', e.message); return done('Could not link Stripe: ' + e.message); }
 }));
 
 app.post('/api/stripe/disconnect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'stripe_conn');
-  if (!value || !value.stripe_user_id) return res.status(404).json({ error: 'No linked Stripe account.' });
+  const { id, value } = await _providerBlobE(uid, 'stripe_conn', req.entityId, false);
+  if (!value || !value.stripe_user_id) return res.status(404).json({ error: 'No linked Stripe account for this business.' });
   if (stripeConnectConfigured()) {
     try {
       await fetch('https://connect.stripe.com/oauth/deauthorize', {
@@ -5546,7 +5570,7 @@ app.post('/api/stripe/disconnect', requireAuth, requirePerm('bank:manage'), wrap
 app.post('/api/stripe/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe payments linking is not set up yet. Add STRIPE keys to enable it.', code: 'STRIPE_NOT_CONFIGURED' });
   const uid = scopeId(req);
-  const { value } = await _providerBlob(uid, 'stripe_conn');
+  const { value } = await _providerBlobE(uid, 'stripe_conn', req.entityId);
   if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account. Connect one first.' });
   try {
     const resp = await fetch('https://api.stripe.com/v1/balance', {
@@ -5573,7 +5597,7 @@ function _stripeBooksTarget(value, req) {
 // the owner owns; scope:'personal' books to the Personal ledger.
 app.post('/api/stripe/binding', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'stripe_conn');
+  const { value } = await _providerBlobE(uid, 'stripe_conn', req.entityId);
   if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account.' });
   const scope = (req.body && req.body.scope) === 'personal' ? 'personal' : 'business';
   let entity_id = null;
@@ -5584,7 +5608,7 @@ app.post('/api/stripe/binding', requireAuth, requirePerm('bank:manage'), wrap(as
     if (!owned.rows[0]) return res.status(403).json({ error: 'Business not found.' });
     entity_id = _e;
   }
-  await _saveProviderBlob(uid, id, 'stripe_conn', Object.assign({}, value, { books: { scope, entity_id } }));
+  await _saveProviderBlobE(uid, 'stripe_conn', Object.assign({}, value, { books: { scope, entity_id } }), req.entityId);
   res.json({ ok: true, books: { scope, entity_id } });
 }));
 
@@ -5594,7 +5618,7 @@ app.post('/api/stripe/binding', requireAuth, requirePerm('bank:manage'), wrap(as
 // so the widget shows the connect prompt instead of a fabricated feed.
 app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
   if (!stripeConnectConfigured()) return res.json({ configured: false, connected: false, charges: [], total: 0 });
-  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
+  const { value } = await _providerBlobE(scopeId(req), 'stripe_conn', req.entityId);
   if (!value || !value.stripe_user_id) return res.json({ configured: true, connected: false, charges: [], total: 0 });
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
   try {
@@ -5658,7 +5682,7 @@ app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
 // deposit. It writes nothing; full auto-reconcile to a bank line arrives with the bank-feed reconcile.
 app.get('/api/stripe/payouts', requireAuth, wrap(async (req, res) => {
   if (!stripeConnectConfigured()) return res.json({ configured: false, connected: false, payouts: [] });
-  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
+  const { value } = await _providerBlobE(scopeId(req), 'stripe_conn', req.entityId);
   if (!value || !value.stripe_user_id) return res.json({ configured: true, connected: false, payouts: [] });
   const limit = Math.min(30, Math.max(1, parseInt(req.query.limit, 10) || 10));
   try {
@@ -5690,7 +5714,7 @@ app.get('/api/stripe/payouts', requireAuth, wrap(async (req, res) => {
 // charge; a "match to invoice" reconcile is the planned follow-up (PLAN_INTEGRATIONS_WAVE1.md).
 app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
   if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe not configured.', code: 'STRIPE_NOT_CONFIGURED' });
-  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
+  const { value } = await _providerBlobE(scopeId(req), 'stripe_conn', req.entityId);
   if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account.' });
   const chargeId = String((req.body && req.body.charge_id) || '').trim();
   if (!/^ch_[A-Za-z0-9]+$/.test(chargeId)) return res.status(400).json({ error: 'A valid charge_id is required.' });
@@ -5781,7 +5805,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
 // (Stripe keeps its fee on refunds), so the fee expense stays — the correct treatment.
 app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
   if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe not configured.', code: 'STRIPE_NOT_CONFIGURED' });
-  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
+  const { value } = await _providerBlobE(scopeId(req), 'stripe_conn', req.entityId);
   if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account.' });
   const chargeId = String((req.body && req.body.charge_id) || '').trim();
   if (!/^ch_[A-Za-z0-9]+$/.test(chargeId)) return res.status(400).json({ error: 'A valid charge_id is required.' });
@@ -5835,7 +5859,7 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
 // that is what prevents the double-count. The processing fee IS still booked (fees apply either way).
 app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
   if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe not configured.', code: 'STRIPE_NOT_CONFIGURED' });
-  const { value } = await _providerBlob(scopeId(req), 'stripe_conn');
+  const { value } = await _providerBlobE(scopeId(req), 'stripe_conn', req.entityId);
   if (!value || !value.stripe_user_id) return res.status(400).json({ error: 'No linked Stripe account.' });
   const _bt = _stripeBooksTarget(value, req);
   if (_bt.scope === 'personal') return res.status(400).json({ error: 'This Stripe account is set to Personal.', code: 'PERSONAL_NOT_SUPPORTED' });

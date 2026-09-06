@@ -2659,6 +2659,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             });
           }
 
+          // Per-entity connections: re-hydrate this page for the active business (switchEntity calls it).
+          window._connHydrate=function(){ try{hydrateStates();}catch(e){} try{updateStats();}catch(e){} };
+
           window.connToggle=function(idx){
             var item=INTEGRATIONS[idx];
             if(!item)return;
@@ -7030,6 +7033,12 @@ window.switchEntity=async function(idx){
   try {
     var _lockPage = document.getElementById('page-transaction-locking');
     if(_lockPage && _lockPage.classList.contains('active') && typeof renderLockHistory === 'function') renderLockHistory();
+  } catch(e){}
+
+  // API connections are per-entity (Stripe); repaint the Connections page for the new business if open.
+  try {
+    var _connPage = document.getElementById('page-connections');
+    if(_connPage && _connPage.classList.contains('active') && typeof window._connHydrate === 'function') window._connHydrate();
   } catch(e){}
 
   notify('Switched to '+e.name+' ✦');

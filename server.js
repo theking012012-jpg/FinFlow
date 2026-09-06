@@ -2293,7 +2293,7 @@ app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (re
 // ── DOCUMENTS ─────────────────────────────────────────────────────────────────
 const MAX_DOC_SIZE = 5 * 1024 * 1024; // 5MB in bytes before base64 (~3.75MB actual)
 app.get('/api/documents', requireAuth, wrap(async (req, res) => {
-  const rows = await db.allByUser('documents', req.session.userId, null, (a,b) => b.id - a.id);
+  const rows = await db.allByUser('documents', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id);
   // Strip file_data from list responses to keep payload small
   res.json(rows.map(({ file_data, ...meta }) => meta));
 }));
@@ -2304,6 +2304,7 @@ app.post('/api/documents', requireAuth, wrap(async (req, res) => {
   if (bytes > MAX_DOC_SIZE) return res.status(413).json({ error: 'File too large. Maximum size is 5 MB.' });
   const { row } = await db.insert('documents', {
     user_id: req.session.userId,
+    entity_id: req.entityId || null,
     name: name.slice(0,255), type, media_type,
     size: bytes, file_data, uploaded_at: new Date().toISOString(),
   });

@@ -7008,6 +7008,14 @@ window.switchEntity=async function(idx){
     if(_sdPage && _sdPage.classList.contains('active') && typeof window._f94Open === 'function') window._f94Open();
   } catch(e){}
 
+  // Documents are entity-scoped server-side (GET /api/documents null-inclusive). renderDocuments()
+  // refetches fresh, so if the Documents page is open when a sidebar/entity-card switch happens,
+  // repaint it for the new entity rather than leaving the PREVIOUS entity's files on screen.
+  try {
+    var _docPage = document.getElementById('page-documents');
+    if(_docPage && _docPage.classList.contains('active') && typeof renderDocuments === 'function') renderDocuments();
+  } catch(e){}
+
   notify('Switched to '+e.name+' ✦');
 };
 

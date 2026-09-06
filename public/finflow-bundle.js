@@ -5020,13 +5020,9 @@ function clearAIChat(){
   // ══════════════════════════════════════════════════════
   // 11. TEAM INVITE — modal + POST /api/team
   // ══════════════════════════════════════════════════════
-  window.openInviteModal = function () {
-    // F54: member invites disabled for launch (server also rejects POST /api/team/invite
-    // with 403 — this just avoids opening a modal that would fail). Accountant client-access
-    // (request-access / approve, accountant-routes.js) is a separate flow and is untouched.
-    // Reversible: delete this early return to re-enable.
-    if (typeof tip === 'function') tip('Team invites are coming soon.', true);
-    return;
+  window.openInviteModal = async function () {
+    // Member invites re-enabled with per-entity access (was F54 "coming soon"). The invitee is granted
+    // only the businesses checked below; the server binds role + account + entity grant to the invite row.
     let modal = document.getElementById('invite-modal');
     if (!modal) {
       modal = document.createElement('div');
@@ -5049,6 +5045,11 @@ function clearAIChat(){
               <option value="viewer">Viewer</option>
             </select>
           </div>
+          <div><label class="flabel">Businesses this member can access</label>
+            <div id="inv-entities" style="display:flex;flex-direction:column;gap:6px;max-height:150px;overflow:auto;border:1px solid var(--bd);border-radius:var(--radius);padding:8px">
+              <div style="font-size:12px;color:var(--t3)">Loading…</div>
+            </div>
+          </div>
         </div>
         <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('invite-modal').classList.add('hidden')">Cancel</button>
@@ -5061,18 +5062,28 @@ function clearAIChat(){
     const roleEl = document.getElementById('inv-role');
     if (roleEl) roleEl.value = 'accountant';
     modal.classList.remove('hidden');
+    // Populate the per-entity checkboxes from the account's businesses (all checked = full access).
+    try {
+      const ents = await api('GET', '/api/entities');
+      const box = document.getElementById('inv-entities');
+      if (box) box.innerHTML = (ents && ents.length)
+        ? ents.map(en => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t1);cursor:pointer"><input type="checkbox" class="inv-ent-cb" value="${en.id}" checked> ${e(en.name || ('Business ' + en.id))}</label>`).join('')
+        : '<div style="font-size:12px;color:var(--t3)">No businesses yet</div>';
+    } catch (_) {}
   };
 
   window.sendInvite = async function () {
     const name  = (document.getElementById('inv-name')?.value || '').trim();
     const email = (document.getElementById('inv-email')?.value || '').trim();
     const role  = document.getElementById('inv-role')?.value || 'viewer';
+    const entity_ids = Array.from(document.querySelectorAll('#inv-entities .inv-ent-cb:checked')).map(cb => Number(cb.value));
     if (!name || !email) { tip('Name and email are required', true); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { tip('Invalid email address', true); return; }
+    if (!entity_ids.length) { tip('Select at least one business this member can access', true); return; }
     try {
       // Real RBAC invite (Step A): creates a pending membership + emails a secure,
-      // single-use accept link. Role/account are bound to the invite row server-side.
-      await api('POST', '/api/team/invite', { name, email, role });
+      // single-use accept link. Role/account/entity-grant are bound to the invite row server-side.
+      await api('POST', '/api/team/invite', { name, email, role, entity_ids });
       document.getElementById('invite-modal').classList.add('hidden');
       tip(`Invitation emailed to ${e(email)}`);
       if (typeof window.renderTeam === 'function') window.renderTeam();

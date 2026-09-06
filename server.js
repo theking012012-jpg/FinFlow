@@ -876,9 +876,10 @@ app.use('/api', async (req, res, next) => {
   if (!uid) { req.accountId = undefined; return next(); }  // logged out: parity w/ old scopeId
   req.accountId   = uid;                                    // default: owner of own account
   req.accountRole = req.session.userRole || 'owner';        // inert spine until Step 4 enforcement
+  req.entityAccess = null;   // null = ALL entities (owner, or a member with no per-entity grant)
   try {
     const { rows } = await pool.query(
-      `SELECT user_id AS account_owner_id, data->>'role' AS role
+      `SELECT user_id AS account_owner_id, data->>'role' AS role, data->'entity_access' AS entity_access
          FROM team_members
         WHERE data->>'member_user_id' = $1::text
           AND data->>'status'         = 'active'
@@ -890,10 +891,14 @@ app.use('/api', async (req, res, next) => {
     if (m && m.account_owner_id && m.account_owner_id !== uid) {
       req.accountId   = m.account_owner_id;                 // scope to the account they joined
       req.accountRole = m.role || 'viewer';                 // role within that account
+      // Per-entity grant: an array = only those entities; absent/null = ALL (backward-compat — every
+      // existing member with no entity_access keeps full account access on deploy).
+      req.entityAccess = Array.isArray(m.entity_access) ? m.entity_access.map(Number).filter(n => n > 0) : null;
     }
   } catch (e) {
     req.accountId   = uid;                                  // fail-safe: own id, never escalate
     req.accountRole = req.session.userRole || 'owner';
+    req.entityAccess = null;
   }
   next();
 });
@@ -945,6 +950,26 @@ app.use('/api', async (req, res, next) => {
     } catch (e) { req.entityId = null; }
   } else {
     req.entityId = null;
+  }
+  next();
+});
+
+// ── PER-ENTITY MEMBER ACCESS GATE (fail-closed) ────────────────────────────────
+// A scoped member may only operate on entities they were granted. req.entityAccess (set by the account
+// resolver) is null for owners / all-access members; an array = only those entity ids. Runs AFTER the
+// entity resolver so req.entityId is already resolved. Explicit ?entity_id/body targeting a non-granted
+// entity is refused (403); a stale session or blank fallback is snapped to a granted entity instead.
+app.use('/api', (req, res, next) => {
+  const acc = req.entityAccess;
+  if (!Array.isArray(acc)) return next();                     // owner / all-access → unaffected
+  const explicit = req.query.entity_id || (req.body && req.body.entity_id);
+  if (req.entityId != null && !acc.includes(req.entityId)) {
+    if (explicit) return res.status(403).json({ error: 'You do not have access to this business.', code: 'ENTITY_FORBIDDEN' });
+    req.entityId = acc.length ? acc[0] : null;                // stale/implicit → snap to a granted entity
+    req.session.entityId = req.entityId;
+  } else if (req.entityId == null && acc.length) {
+    req.entityId = acc[0];
+    req.session.entityId = req.entityId;
   }
   next();
 });
@@ -1097,7 +1122,9 @@ async function isLocked(userId, entityId, date) {
 
 // ── ENTITIES ──────────────────────────────────────────────────────────────────
 app.get('/api/entities', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('entities', scopeId(req), null, (a, b) => a.sort_order - b.sort_order));
+  // Per-entity access: a member with an entity_access grant sees only those businesses in the switcher;
+  // owners / all-access members (req.entityAccess null) see all.
+  res.json(await db.allByUser('entities', scopeId(req), r => !Array.isArray(req.entityAccess) || req.entityAccess.includes(r.id), (a, b) => a.sort_order - b.sort_order));
 }));
 app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const { name, currency = 'USD', color = '#c9a84c', timezone, country } = req.body || {};
@@ -3437,6 +3464,11 @@ app.put('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (re
   const { role } = req.body || {};
   const validRoles = ['admin', 'accountant', 'viewer'];
   if (role && validRoles.includes(role)) await db.updateById('team_members', row.id, { role });
+  // Per-entity grant update (absent ⇒ unchanged; [] ⇒ no businesses). Validate ⊆ account entities.
+  if (Array.isArray(req.body?.entity_ids)) {
+    const _own = (await pool.query(`SELECT id FROM entities WHERE user_id = $1`, [scopeId(req)])).rows.map(r => r.id);
+    await db.updateById('team_members', row.id, { entity_access: req.body.entity_ids.map(Number).filter(n => _own.includes(n)) });
+  }
   const { rows: [_tmr] } = await pool.query(`SELECT * FROM team_members WHERE id = $1 LIMIT 1`, [row.id]);
   res.json(_tmr ? rowToObj(_tmr) : {});
 }));
@@ -3479,6 +3511,12 @@ app.post('/api/team/invite', inviteLimiter, requireAuth, requirePerm('team:manag
   if (!INVITE_ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role.' });  // rejects 'owner'
   const emailLc  = email.toLowerCase().slice(0, 200);
   const dispName = (name || '').trim().slice(0, 100) || emailLc;
+  // Per-entity grant on the invite (absent ⇒ ALL businesses). Validate ⊆ this account's own entities.
+  let inviteEntityAccess = null;
+  if (Array.isArray(req.body?.entity_ids)) {
+    const _own = (await pool.query(`SELECT id FROM entities WHERE user_id = $1`, [ownerId])).rows.map(r => r.id);
+    inviteEntityAccess = req.body.entity_ids.map(Number).filter(n => _own.includes(n));
+  }
 
   // Can't invite the account owner's own email.
   const { rows: [ownerRow] } = await pool.query(`SELECT data->>'email' AS email FROM users WHERE id = $1 LIMIT 1`, [ownerId]);
@@ -3511,6 +3549,9 @@ app.post('/api/team/invite', inviteLimiter, requireAuth, requirePerm('team:manag
        ) WHERE id = $1`,
       [pending.id, dispName, role, tokenHash, expires, String(req.session.userId)]
     );
+    if (inviteEntityAccess !== null) {
+      await pool.query(`UPDATE team_members SET data = data || jsonb_build_object('entity_access', $2::jsonb) WHERE id = $1`, [pending.id, JSON.stringify(inviteEntityAccess)]);
+    }
   } else {
     await db.insert('team_members', {
       user_id: ownerId,
@@ -3521,6 +3562,7 @@ app.post('/api/team/invite', inviteLimiter, requireAuth, requirePerm('team:manag
       invite_token_hash: tokenHash,
       invite_expires:    expires,
       invited_by:        String(req.session.userId),
+      ...(inviteEntityAccess !== null ? { entity_access: inviteEntityAccess } : {}),
     });
   }
 

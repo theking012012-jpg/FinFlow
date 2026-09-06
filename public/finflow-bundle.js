@@ -4213,6 +4213,7 @@ function clearAIChat(){
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
             <span class="role-badge ${roleCls}">${e(roleLabel)}</span>
             <span style="font-size:10px;color:var(--t3)">${e(m.lastSeen || 'Active')}</span>
+            ${m._tmId ? `<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick='openMemberAccess(${m._tmId}, ${JSON.stringify(m.entity_access || null)})'>Businesses</button>` : ''}
           </div>
         </div>`;
       }).join('');
@@ -4220,6 +4221,59 @@ function clearAIChat(){
       const mcs = document.querySelectorAll('#page-team .mc-val');
       if (mcs[0]) mcs[0].textContent = members.length;
     } catch (err) { console.warn('[Team]', err.message); }
+  };
+
+  // Edit which businesses an existing member can access → PUT /api/team/:id { entity_ids }.
+  // `access` is the member's current grant (array) or null (= all businesses).
+  window.openMemberAccess = async function (tmId, access) {
+    let modal = document.getElementById('member-access-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'member-access-modal';
+      modal.className = 'modal-overlay hidden';
+      modal.innerHTML = `<div class="modal" style="max-width:360px">
+        <div class="modal-header">
+          <div class="modal-title">Business access</div>
+          <button class="modal-close" onclick="document.getElementById('member-access-modal').classList.add('hidden')">
+            <svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg>
+          </button>
+        </div>
+        <div style="margin-top:8px"><label class="flabel">Businesses this member can access</label>
+          <div id="ma-entities" style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto;border:1px solid var(--bd);border-radius:var(--radius);padding:8px">
+            <div style="font-size:12px;color:var(--t3)">Loading…</div>
+          </div>
+        </div>
+        <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('member-access-modal').classList.add('hidden')">Cancel</button>
+          <button class="btn btn-primary btn-sm" onclick="saveMemberAccess()">Save access</button>
+        </div>
+      </div>`;
+      document.body.appendChild(modal);
+    }
+    modal.dataset.tmId = tmId;
+    modal.classList.remove('hidden');
+    try {
+      const ents = await api('GET', '/api/entities');
+      const granted = Array.isArray(access) ? access.map(Number) : null;   // null = all currently
+      const box = document.getElementById('ma-entities');
+      if (box) box.innerHTML = (ents && ents.length)
+        ? ents.map(en => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t1);cursor:pointer"><input type="checkbox" class="ma-ent-cb" value="${en.id}" ${(!granted || granted.includes(en.id)) ? 'checked' : ''}> ${e(en.name || ('Business ' + en.id))}</label>`).join('')
+        : '<div style="font-size:12px;color:var(--t3)">No businesses yet</div>';
+    } catch (_) {}
+  };
+
+  window.saveMemberAccess = async function () {
+    const modal = document.getElementById('member-access-modal');
+    if (!modal) return;
+    const tmId = modal.dataset.tmId;
+    const entity_ids = Array.from(modal.querySelectorAll('.ma-ent-cb:checked')).map(cb => Number(cb.value));
+    if (!entity_ids.length) { tip('Select at least one business', true); return; }
+    try {
+      await api('PUT', '/api/team/' + tmId, { entity_ids });
+      modal.classList.add('hidden');
+      tip('Business access updated');
+      if (typeof window.renderTeam === 'function') window.renderTeam();
+    } catch (err) { tip('Could not update access — ' + err.message, true); }
   };
 
   // ══════════════════════════════════════════════════════

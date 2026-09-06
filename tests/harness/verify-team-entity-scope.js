@@ -53,6 +53,15 @@ const MEMBALL={ email:'team-allaccess@finflow.test', password:'harness-password-
     A('owner sees all businesses', entsO.some(e=>e.name==='A Co')&&entsO.some(e=>e.name==='B Co'), JSON.stringify(entsO.map(e=>e.name)));
     A('owner reading business B is allowed (not gated)', (await hO.get('/api/invoices?entity_id='+eidB)).status===200);
 
+    // ── editor: owner changes the A-only member's grant to B (PUT /api/team/:id) ──
+    const tmId=(await c.query(`SELECT id FROM team_members WHERE data->>'member_user_id'=$1`,[String(memberId)])).rows[0].id;
+    const upd=await hO.put('/api/team/'+tmId,{entity_ids:[eidB]});
+    A('owner updates member business access (PUT) 200', upd.status===200, 'status '+upd.status);
+    const hM2=new HarnessHttp(server.baseUrl); await hM2.post('/api/auth/login',MEMBER);
+    const after=((await hM2.get('/api/entities')).json||[]).map(e=>e.name);
+    A('after edit, member now sees B and NOT A', after.includes('B Co')&&!after.includes('A Co'), JSON.stringify(after));
+    A('after edit, member is now refused A (403)', (await hM2.get('/api/invoices?entity_id='+eidA)).status===403);
+
     console.log(`\n  ${fail===0?'ALL GREEN':fail+' FAILED'} — ${pass} passed, ${fail} failed  (team per-entity access)\n`);
   }catch(e){ console.error('\n  FATAL:',e&&e.stack||e); fail++; }
   finally{ try{if(server)await server.close();}catch{} try{if(scratch)await scratch.stop();}catch{} }

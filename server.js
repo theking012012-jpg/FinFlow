@@ -3396,6 +3396,7 @@ app.get('/api/team', requireAuth, wrap(async (req, res) => {
       role:     m.role,
       emp_type: 'Invited',
       lastSeen: 'Invited',
+      entity_access: Array.isArray(m.entity_access) ? m.entity_access : null,   // null = all businesses
     })),
   ];
   res.json(members);

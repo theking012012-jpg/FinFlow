@@ -7023,6 +7023,13 @@ window.switchEntity=async function(idx){
     if(_audPage && _audPage.classList.contains('active') && typeof loadAuditTrail === 'function') loadAuditTrail();
   } catch(e){}
 
+  // Books-lock is per-entity; if the Transaction Locking page is open, repaint it for the new business
+  // so the toggle reflects THIS business's lock, not the previous one's.
+  try {
+    var _lockPage = document.getElementById('page-transaction-locking');
+    if(_lockPage && _lockPage.classList.contains('active') && typeof renderLockHistory === 'function') renderLockHistory();
+  } catch(e){}
+
   notify('Switched to '+e.name+' ✦');
 };
 

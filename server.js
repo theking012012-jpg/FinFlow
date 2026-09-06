@@ -1079,15 +1079,20 @@ async function logAudit(req, action, tableName, recordId, oldData, newData) {
 }
 
 // ── LOCK HELPER ───────────────────────────────────────────────────────────────
-async function isLocked(userId, date) {
+async function isLocked(userId, entityId, date) {
   if (!date) return false;
+  // Per-entity books lock (null-inclusive): a per-business lock (entity_id = this business) OR a legacy
+  // account-wide lock (entity_id NULL, from before locks were per-entity) can close the period. Personal
+  // writes never call isLocked, so a NULL row only ever acts as a legacy business-wide lock.
   const { rows } = await pool.query(
-    `SELECT * FROM lock_settings WHERE user_id = $1 AND (data->>'enabled')::int = 1 LIMIT 1`,
-    [userId]
+    `SELECT * FROM lock_settings WHERE user_id = $1 AND (entity_id IS NULL OR entity_id = $2) AND (data->>'enabled')::int = 1`,
+    [userId, entityId == null ? null : entityId]
   );
-  const s = rows[0] ? rowToObj(rows[0]) : null;
-  if (!s || !s.lock_date) return false;
-  return date <= s.lock_date;
+  for (const r of rows) {
+    const s = rowToObj(r);
+    if (s && s.lock_date && date <= s.lock_date) return true;
+  }
+  return false;
 }
 
 // ── ENTITIES ──────────────────────────────────────────────────────────────────
@@ -1313,7 +1318,7 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required.' });
   if (_badStatus(INVOICE_STATUSES, status)) return res.status(400).json({ error: 'Invalid invoice status.' });
   const eid = entity_id || req.entityId || null;
-  if (await isLocked(req.session.userId, due_date)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(req.session.userId, eid, due_date)) return res.status(403).json({ error: 'Period is locked.' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // Layer 3 (fast path): the 5s findRecentDuplicate pre-check is TOKEN-BLIND — it matches on
   // client+amount only, never the idempotency key. Run it ONLY for token-less requests (old
@@ -1365,7 +1370,7 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
 app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('invoices', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  if (await isLocked(req.session.userId, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(req.session.userId, row.entity_id, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
   const { client, amount, due_date, status, notes, issue_date } = req.body || {};
   // F194: same invariant on edit — line_items present ⇒ amount = derived Σ qty×rate (Rule 2).
@@ -1401,7 +1406,7 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
 app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('invoices', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  if (await isLocked(req.session.userId, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(req.session.userId, row.entity_id, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.deleteById('invoices', parseInt(req.params.id));
   logAudit(req, 'DELETE', 'invoices', row.id, row, null);
   res.json({ ok: true });
@@ -1416,7 +1421,7 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
   const eid = entity_id || req.entityId || null;
   const edate = expense_date || await entityTodayYmd(eid);
-  if (await isLocked(req.session.userId, edate)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(req.session.userId, eid, edate)) return res.status(403).json({ error: 'Period is locked.' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: the token-blind 5s findRecentDuplicate pre-check runs ONLY for token-less callers
   // (old clients / API). When a token IS present, the partial unique index (idx_expenses_idem_key)
@@ -1446,7 +1451,7 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
 app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('expenses', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  if (await isLocked(req.session.userId, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(req.session.userId, row.entity_id, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
   const b = req.body || {};
   if (b.description != null) patch.description = b.description;
@@ -1463,7 +1468,7 @@ app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
 app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('expenses', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  if (await isLocked(req.session.userId, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(req.session.userId, row.entity_id, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.deleteById('expenses', parseInt(req.params.id));
   logAudit(req, 'DELETE', 'expenses', row.id, row, null);
   res.json({ ok: true });
@@ -2143,8 +2148,10 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
 
 // ── LOCK SETTINGS ─────────────────────────────────────────────────────────────
 app.get('/api/lock-settings', requireAuth, wrap(async (req, res) => {
+  // Per-entity: the Settings lock control reflects the ACTIVE business's own lock row.
   const { rows: [_lsGet] } = await pool.query(
-    `SELECT * FROM lock_settings WHERE user_id = $1 LIMIT 1`, [scopeId(req)]
+    `SELECT * FROM lock_settings WHERE user_id = $1 AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`,
+    [scopeId(req), req.entityId == null ? null : req.entityId]
   );
   const s = _lsGet ? rowToObj(_lsGet) : null;
   res.json(s || { enabled: 0, lock_date: null });
@@ -2154,11 +2161,12 @@ app.post('/api/lock-settings', requireAuth, requirePerm('settings:manage'), wrap
   const uid = scopeId(req);
   const patch = { enabled: enabled ? 1 : 0, lock_date: lock_date || null };
   if (password) patch.password_hash = bcrypt.hashSync(password, 10);
+  const eid = req.entityId == null ? null : req.entityId;
   const { rows: [_lsUp] } = await pool.query(
-    `SELECT * FROM lock_settings WHERE user_id = $1 LIMIT 1`, [scopeId(req)]
+    `SELECT * FROM lock_settings WHERE user_id = $1 AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`, [scopeId(req), eid]
   );
   if (_lsUp) await db.updateById('lock_settings', _lsUp.id, patch);
-  else await db.insert('lock_settings', { user_id: uid, ...patch });
+  else await db.insert('lock_settings', { user_id: uid, entity_id: eid, ...patch });
   logAudit(req, enabled ? 'LOCK_ENABLED' : 'LOCK_DISABLED', 'lock_settings', null, null, patch);
   res.json({ ok: true });
 }));
@@ -2173,7 +2181,7 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   const totalDebit  = lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0);
   const totalCredit = lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
   if (Math.abs(totalDebit - totalCredit) > 0.01) return res.status(400).json({ error: 'Journal does not balance — debits must equal credits.' });
-  if (await isLocked(req.session.userId, date)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(req.session.userId, req.entityId, date)) return res.status(403).json({ error: 'Period is locked.' });
   const num = 'JE-' + String(Date.now()).slice(-4);
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
@@ -2286,15 +2294,22 @@ app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (re
   // Reads the REAL append-only trail (audit_trail). The old audit_log table has had zero writers since
   // the F90 unification (logAudit -> recordAudit -> audit_trail), so this route used to serve a dead
   // table and the Audit page showed nothing. Entity-scoped null-inclusive: events under the active
-  // entity + account-level events written with no active entity (entity_id NULL). NOTE (deferred): an
-  // account-level action performed WHILE an entity was active is stamped with that entity, so it shows
-  // only there for now — the always-show-account-events refinement is a later pass.
+  // entity + account-level events written with no active entity (entity_id NULL) + the account-level
+  // ALLOWLIST (entities, users) regardless of which business is active — so "business created" and
+  // "password changed" show on every business. Money events stay strictly per-business. lock_settings
+  // and team_members are per-entity now, so they are NOT in the allowlist (they scope like money); add
+  // them back only if they ever revert to account-level.
+  const ACCOUNT_LEVEL_TABLES = ['entities', 'users'];
   const { limit = 500, type } = req.query;
   const params = [scopeId(req)];
   let q = `SELECT id, user_id, entity_id, table_name, record_id, action, field_name,
                   old_value, new_value, old_data, new_data, actor_type, actor_id, changed_at AS created_at
              FROM audit_trail WHERE user_id = $1`;
-  if (req.entityId != null) { params.push(req.entityId); q += ` AND (entity_id IS NULL OR entity_id = $${params.length})`; }
+  if (req.entityId != null) {
+    params.push(req.entityId);
+    const _al = ACCOUNT_LEVEL_TABLES.map(t => `'${t}'`).join(',');
+    q += ` AND (entity_id IS NULL OR entity_id = $${params.length} OR table_name IN (${_al}))`;
+  }
   if (type && type !== 'all') { params.push(type); q += ` AND table_name = $${params.length}`; }
   const lim = Math.min(Math.max(parseInt(limit) || 500, 1), 10000);
   q += ` ORDER BY changed_at DESC LIMIT ${lim}`;
@@ -5364,7 +5379,7 @@ async function _codatImportType(uid, entityId, sessionUserId, companyId, platfor
     if (!m) { tally.skipped++; continue; }
     const dup = await pool.query(`SELECT 1 FROM ${m.table} WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, m.key]);
     if (dup.rows.length) { tally.duplicate++; continue; }
-    if (m.date && await isLocked(sessionUserId, m.date)) { tally.locked++; continue; }
+    if (m.date && await isLocked(sessionUserId, entityId, m.date)) { tally.locked++; continue; }
     if (tally.sample.length < 3) tally.sample.push(m.data);
     if (dryRun) { tally.added++; continue; }
     try {

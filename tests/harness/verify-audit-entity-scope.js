@@ -30,6 +30,8 @@ const OWNER={ email:'audit-owner@finflow.test', password:'harness-password-not-a
     await mkT(eidA,'invoices','A-evt');
     await mkT(eidB,'invoices','B-evt');
     await mkT(null,'lock_settings','ACCT-evt');
+    // account-level allowlist: an `entities` event tagged to business B must still show while A is active
+    await mkT(eidB,'entities','ENT-B-evt');
     // seed the DEAD table (audit_log) — must never resurface
     await c.query(`INSERT INTO audit_log (user_id,entity_id,data,created_at,updated_at) VALUES ($1,$2,$3,NOW(),NOW())`,
       [uid,eidA,{table_name:'expenses',action:'CREATE',new_data:{marker:'DEAD-evt'}}]);
@@ -42,7 +44,8 @@ const OWNER={ email:'audit-owner@finflow.test', password:'harness-password-not-a
     A('endpoint returns audit_trail data (repoint off the dead table)', rows.length>0, 'rows='+rows.length);
     A('active entity A event shows', has('A-evt'), JSON.stringify(rows.map(r=>r.table_name)));
     A('account-level event (no entity) shows everywhere', has('ACCT-evt'));
-    A('other business B event does NOT leak in', !has('B-evt'));
+    A('other business B money event does NOT leak in', !has('B-evt'));
+    A('account-level event (entities) shows on every business — allowlist', has('ENT-B-evt'), JSON.stringify(rows.map(r=>r.table_name)));
     A('dead audit_log row never resurfaces', !has('DEAD-evt'));
     console.log(`\n  ${fail===0?'ALL GREEN':fail+' FAILED'} — ${pass} passed, ${fail} failed  (audit trail repointed + entity-scoped)\n`);
   }catch(e){ console.error('\n  FATAL:',e&&e.stack||e); fail++; }

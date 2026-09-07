@@ -2562,7 +2562,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               updateStats();
               return;
             }
-            var BUILT=['Plaid','Finch','Codat','Stripe','Belvo','WiPay','dLocal','Mercado Pago','Wise','QuickBooks','Xero'];
+            var BUILT=['Plaid','Finch','Codat','Stripe','Belvo','WiPay','dLocal','Mercado Pago','Wise','QuickBooks','Xero','Zoho Books','Square','PayPal'];
             function _isBuilt(n){return BUILT.indexOf(n)>=0;}
             function _connCard(item){
               var on=!!connStates[item.name];
@@ -2635,7 +2635,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               fetch('/api/stripe/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0}),
               fetch('/api/belvo/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0}),
               fetch('/api/wipay/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0})
-            ].concat(['dlocal','mercadopago','wise','quickbooks','xero'].map(function(k){
+            ].concat(['dlocal','mercadopago','wise','quickbooks','xero','zohobooks','square','paypal'].map(function(k){
               return fetch('/api/'+k+'/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0});
             }))).then(function(a){ el.textContent = a.reduce(function(s,n){return s+n;},0); });
           }
@@ -2647,7 +2647,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               ['Plaid', fetch('/api/plaid/items',{credentials:'include'}).then(function(r){return r.ok?r.json():{};}).then(function(d){return (d.items&&d.items.length)?1:0;}).catch(function(){return 0;})],
               ['Finch','finch'],['Codat','codat'],['Stripe','stripe'],['Belvo','belvo'],
               ['WiPay','wipay'],['dLocal','dlocal'],['Mercado Pago','mercadopago'],
-              ['Wise','wise'],['QuickBooks','quickbooks'],['Xero','xero']
+              ['Wise','wise'],['QuickBooks','quickbooks'],['Xero','xero'],
+              ['Zoho Books','zohobooks'],['Square','square'],['PayPal','paypal']
             ];
             var proms=probes.map(function(pr){
               if(typeof pr[1]!=='string') return pr[1];
@@ -2670,7 +2671,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             // connect flow, so "Disconnect" never disconnected). Plaid is per-bank on the Banking page.
             if(connStates[item.name]){
               if(n==='Plaid'){ if(typeof notify==='function') notify('Manage linked banks on the Banking page.'); return; }
-              var DKEY={'Finch':'finch','Codat':'codat','Stripe':'stripe','Belvo':'belvo','WiPay':'wipay','dLocal':'dlocal','Mercado Pago':'mercadopago','Wise':'wise','QuickBooks':'quickbooks','Xero':'xero'}[n];
+              var DKEY={'Finch':'finch','Codat':'codat','Stripe':'stripe','Belvo':'belvo','WiPay':'wipay','dLocal':'dlocal','Mercado Pago':'mercadopago','Wise':'wise','QuickBooks':'quickbooks','Xero':'xero','Zoho Books':'zohobooks','Square':'square','PayPal':'paypal'}[n];
               if(DKEY){
                 (async function(){
                   if(window._confirmModal && !(await window._confirmModal('Disconnect '+n+'?'))) return;
@@ -2690,6 +2691,9 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             if(n==='Stripe'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/stripe/connect-url',urlKey:'connect_url',statusEndpoint:'/api/stripe/status',onConnected:function(){hydrateStates();}}); return; }
             if(n==='QuickBooks'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/quickbooks/connect-url',urlKey:'connect_url',statusEndpoint:'/api/quickbooks/status',onConnected:function(){hydrateStates();}}); return; }
             if(n==='Xero'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/xero/connect-url',urlKey:'connect_url',statusEndpoint:'/api/xero/status',onConnected:function(){hydrateStates();}}); return; }
+            if(n==='Zoho Books'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/zohobooks/connect-url',urlKey:'connect_url',statusEndpoint:'/api/zohobooks/status',onConnected:function(){hydrateStates();}}); return; }
+            if(n==='Square'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/square/connect-url',urlKey:'connect_url',statusEndpoint:'/api/square/status',onConnected:function(){hydrateStates();}}); return; }
+            if(n==='PayPal'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/paypal/connect-url',urlKey:'connect_url',statusEndpoint:'/api/paypal/status',onConnected:function(){hydrateStates();}}); return; }
             if(n==='Belvo'){ if(window.ffLinkBelvo) window.ffLinkBelvo(function(){ hydrateStates(); }); return; }
             if(n==='WiPay'){ if(window.ffConnectWiPay) window.ffConnectWiPay(function(){ hydrateStates(); }); return; }
             var CRED_MAP={'dLocal':'dlocal','Mercado Pago':'mercadopago','Wise':'wise'};

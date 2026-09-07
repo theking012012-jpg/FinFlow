@@ -5160,28 +5160,37 @@ function registerOAuthConnector(spec) {
   const redirectUri = () => (spec.redirectEnv && process.env[spec.redirectEnv]) || (appUrl() + '/api/' + spec.key + '/callback');
   const basicAuth = () => 'Basic ' + Buffer.from(String(process.env[spec.clientIdEnv]) + ':' + String(process.env[spec.secretEnv])).toString('base64');
 
-  // Token endpoint: confidential client, HTTP Basic auth + form-urlencoded body (QBO + Xero both).
-  async function tokenPost(params) {
-    const resp = await fetch(spec.tokenUrl, {
-      method: 'POST',
-      headers: { 'Authorization': basicAuth(), 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-      body: new URLSearchParams(params).toString(),
-    });
+  // Token endpoint. Default: confidential client, HTTP Basic auth + form-urlencoded body (QBO, Xero,
+  // PayPal). Per-spec knobs cover the variants: tokenAuth:'body' puts client_id/secret in the body
+  // (Zoho, Square); tokenFormat:'json' sends a JSON body (Square); `tokenUrl` overrides the endpoint
+  // (Zoho's data-center-specific token host, captured from the callback). Everything else is unchanged.
+  async function tokenPost(params, tokenUrl) {
+    const url = tokenUrl || spec.tokenUrl;
+    const inBody = spec.tokenAuth === 'body';
+    const asJson = spec.tokenFormat === 'json';
+    const body = inBody ? Object.assign({}, params, { client_id: process.env[spec.clientIdEnv], client_secret: process.env[spec.secretEnv] }) : params;
+    const headers = { 'Accept': 'application/json', 'Content-Type': asJson ? 'application/json' : 'application/x-www-form-urlencoded' };
+    if (!inBody) headers['Authorization'] = basicAuth();
+    const resp = await fetch(url, { method: 'POST', headers, body: asJson ? JSON.stringify(body) : new URLSearchParams(body).toString() });
     let j = {}; try { j = await resp.json(); } catch (_) {}
-    if (!resp.ok || !j.access_token) throw new Error(j.error_description || j.error || (spec.label + ' token HTTP ' + resp.status));
+    if (!resp.ok || !j.access_token) throw new Error(j.error_description || (j.error && (j.error.message || j.error)) || (spec.label + ' token HTTP ' + resp.status));
     return j;
   }
+  // Absolute expiry (ms) from a token response: providers send either expires_in (seconds) or, like
+  // Square, an absolute expires_at timestamp — spec.expiresAt overrides for the latter.
+  const expiryOf = (t, prev) => spec.expiresAt ? spec.expiresAt(t) : (t.expires_in ? Date.now() + Number(t.expires_in) * 1000 : (prev != null ? prev : null));
 
   // Return a valid access token, refreshing (and re-storing, exact per-entity) if it's within 60s of expiry.
+  // Refresh hits the same data-center token host the connection was minted on (conn.token_url).
   async function freshToken(uid, entityId, conn) {
     let access = decTok(conn.access_token);
     if (conn.refresh_token && conn.expires_at && Date.now() > (conn.expires_at - 60000)) {
-      const t = await tokenPost({ grant_type: 'refresh_token', refresh_token: decTok(conn.refresh_token) });
+      const t = await tokenPost({ grant_type: 'refresh_token', refresh_token: decTok(conn.refresh_token) }, conn.token_url);
       access = t.access_token;
       conn = Object.assign({}, conn, {
         access_token: encTok(t.access_token),
         refresh_token: t.refresh_token ? encTok(t.refresh_token) : conn.refresh_token,
-        expires_at: t.expires_in ? Date.now() + t.expires_in * 1000 : conn.expires_at,
+        expires_at: expiryOf(t, conn.expires_at),
       });
       await _saveProviderBlobE(uid, blobKey, conn, entityId);
     }
@@ -5210,17 +5219,26 @@ function registerOAuthConnector(spec) {
     const code = req.query.code || '';
     if (!code) return done('No authorization code returned.');
     try {
-      const t = await tokenPost({ grant_type: 'authorization_code', code, redirect_uri: redirectUri() });
-      let account = null;
-      try { account = await spec.resolveAccount(t, req, t.access_token); } catch (e) { console.error('[' + spec.key + ' resolveAccount]', e.message); }
+      // Zoho: the token host is the data-center accounts-server returned on the callback.
+      const tokenUrl = spec.authTokenUrl ? spec.authTokenUrl(req) : spec.tokenUrl;
+      const t = await tokenPost({ grant_type: 'authorization_code', code, redirect_uri: redirectUri() }, tokenUrl);
+      // resolveAccount may return a bare account id, or {account, ...extra} where extra (e.g. api_base
+      // for a data-center provider) is merged into the stored blob and read back by sync.
+      let account = null, extra = {};
+      try {
+        const r = await spec.resolveAccount(t, req, t.access_token);
+        if (r && typeof r === 'object') { account = r.account || null; extra = Object.assign({}, r); delete extra.account; }
+        else account = r || null;
+      } catch (e) { console.error('[' + spec.key + ' resolveAccount]', e.message); }
       const uid = scopeId(req);
-      await _saveProviderBlobE(uid, blobKey, {
+      await _saveProviderBlobE(uid, blobKey, Object.assign({
         access_token: encTok(t.access_token),
         refresh_token: t.refresh_token ? encTok(t.refresh_token) : null,
-        account: account || null,
-        expires_at: t.expires_in ? Date.now() + Number(t.expires_in) * 1000 : null,
+        account: account,
+        expires_at: expiryOf(t, null),
         connected_at: new Date().toISOString(),
-      }, req.entityId);
+        token_url: tokenUrl,
+      }, extra), req.entityId);
       return done(spec.label + ' connected ✓ You can close this window.');
     } catch (e) { console.error('[' + spec.key + ' callback]', e.message); return done('Could not link ' + spec.label + ': ' + e.message); }
   }));
@@ -6215,6 +6233,97 @@ registerOAuthConnector({
     const invoices = (invR && Array.isArray(invR.Invoices)) ? invR.Invoices.length : 0;
     const accounts = (acctR && Array.isArray(acctR.Accounts)) ? acctR.Accounts.length : 0;
     return { invoices, accounts };
+  },
+});
+
+// Zoho Books. MULTI-DATA-CENTER: the user authorizes on their region's Zoho (com/eu/in/com.au/jp), and
+// the callback returns `accounts-server` (the DC token host) + `location`. The token exchange must hit
+// THAT host, and the data API lives on the matching zohoapis.<dc> domain — both captured at link time
+// and stored (token_url + api_base) so refresh and sync stay on the right DC. Creds go in the FORM body
+// (not Basic); the API uses a `Zoho-oauthtoken` header (not Bearer). account = organization_id.
+registerOAuthConnector({
+  key: 'zohobooks', label: 'Zoho Books', perm: 'books:write',
+  clientIdEnv: 'ZOHO_CLIENT_ID', secretEnv: 'ZOHO_CLIENT_SECRET', redirectEnv: 'ZOHO_REDIRECT_URI',
+  authorizeUrl: 'https://accounts.zoho.com/oauth/v2/auth',
+  tokenUrl: 'https://accounts.zoho.com/oauth/v2/token',
+  scopes: 'ZohoBooks.fullaccess.READ',
+  tokenAuth: 'body', tokenFormat: 'form',
+  extraAuthParams: { access_type: 'offline', prompt: 'consent' },
+  authTokenUrl: (req) => {
+    const s = String((req.query && req.query['accounts-server']) || 'https://accounts.zoho.com').replace(/\/+$/, '');
+    return s + '/oauth/v2/token';
+  },
+  resolveAccount: async (t, req, access) => {
+    const srv = String((req.query && req.query['accounts-server']) || 'https://accounts.zoho.com');
+    const m = srv.match(/accounts\.zoho\.([a-z.]+)$/);
+    const apiBase = 'https://www.zohoapis.' + (m ? m[1] : 'com');
+    let orgId = null;
+    try {
+      const r = await fetch(apiBase + '/books/v3/organizations', { headers: { 'Authorization': 'Zoho-oauthtoken ' + access } });
+      const j = await r.json();
+      orgId = (j && Array.isArray(j.organizations) && j.organizations[0] && j.organizations[0].organization_id) || null;
+    } catch (_) {}
+    return { account: orgId, api_base: apiBase };
+  },
+  sync: async (conn, { access }) => {
+    const base = conn.api_base || 'https://www.zohoapis.com';
+    const org = encodeURIComponent(conn.account || '');
+    const hdr = { headers: { 'Authorization': 'Zoho-oauthtoken ' + access } };
+    const invR = await (await fetch(base + '/books/v3/invoices?organization_id=' + org + '&per_page=1', hdr)).json();
+    const acctR = await (await fetch(base + '/books/v3/chartofaccounts?organization_id=' + org, hdr)).json();
+    const invoices = (invR && invR.page_context && invR.page_context.total) || (Array.isArray(invR && invR.invoices) ? invR.invoices.length : 0);
+    const accounts = Array.isArray(acctR && acctR.chartofaccounts) ? acctR.chartofaccounts.length : 0;
+    return { invoices, accounts };
+  },
+});
+
+// Square (payments). Token exchange is JSON body with client_id/secret IN the body (no Basic auth), and
+// returns merchant_id + an ABSOLUTE expires_at. Host flips sandbox↔production on SQUARE_ENV. account =
+// merchant_id (straight from the token response). Data API is the same connect host + a Square-Version.
+const _SQ = String(process.env.SQUARE_ENV || 'sandbox').toLowerCase() === 'production'
+  ? 'https://connect.squareup.com' : 'https://connect.squareupsandbox.com';
+registerOAuthConnector({
+  key: 'square', label: 'Square', perm: 'bank:manage',
+  clientIdEnv: 'SQUARE_APP_ID', secretEnv: 'SQUARE_APP_SECRET', redirectEnv: 'SQUARE_REDIRECT_URI',
+  authorizeUrl: _SQ + '/oauth2/authorize',
+  tokenUrl: _SQ + '/oauth2/token',
+  scopes: 'PAYMENTS_READ ORDERS_READ MERCHANT_PROFILE_READ',
+  tokenAuth: 'body', tokenFormat: 'json',
+  resolveAccount: (t) => (t && t.merchant_id) || null,
+  expiresAt: (t) => (t && t.expires_at) ? Date.parse(t.expires_at) : null,
+  sync: async (conn, { call }) => {
+    const r = await call(_SQ + '/v2/payments?limit=100', { headers: { 'Square-Version': '2025-01-23' } });
+    const j = await r.json().catch(() => ({}));
+    const payments = Array.isArray(j && j.payments) ? j.payments.length : 0;
+    return { payments };
+  },
+});
+
+// PayPal. Basic-auth + form token exchange (like QBO). account = payer_id via the Identity userinfo
+// endpoint. NOTE: reading a user's transactions needs PayPal's reporting scope, which is app-review
+// gated — so this ships as CONNECT + identity only; transaction import is a labelled fast-follow once
+// the scope is approved (never a fabricated feed — Rules 2 & 12 / honesty). Host flips on PAYPAL_ENV.
+const _PP = String(process.env.PAYPAL_ENV || 'sandbox').toLowerCase() === 'live'
+  ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+const _PPWEB = String(process.env.PAYPAL_ENV || 'sandbox').toLowerCase() === 'live'
+  ? 'https://www.paypal.com' : 'https://www.sandbox.paypal.com';
+registerOAuthConnector({
+  key: 'paypal', label: 'PayPal', perm: 'bank:manage',
+  clientIdEnv: 'PAYPAL_CLIENT_ID', secretEnv: 'PAYPAL_CLIENT_SECRET', redirectEnv: 'PAYPAL_REDIRECT_URI',
+  authorizeUrl: _PPWEB + '/signin/authorize',
+  tokenUrl: _PP + '/v1/oauth2/token',
+  scopes: 'openid email',
+  resolveAccount: async (t, req, access) => {
+    try {
+      const r = await fetch(_PP + '/v1/identity/oauth2/userinfo?schema=paypalv1.1', { headers: { 'Authorization': 'Bearer ' + access } });
+      const j = await r.json();
+      return (j && (j.payer_id || j.user_id)) || null;
+    } catch (_) { return null; }
+  },
+  sync: async (conn, { access }) => {
+    const r = await fetch(_PP + '/v1/identity/oauth2/userinfo?schema=paypalv1.1', { headers: { 'Authorization': 'Bearer ' + access } });
+    const j = await r.json().catch(() => ({}));
+    return { account: conn.account, email: (j && j.email) || null, note: 'PayPal connected. Transaction import needs PayPal to approve the reporting scope (pending) — identity only for now (Rules 2 & 12).' };
   },
 });
 

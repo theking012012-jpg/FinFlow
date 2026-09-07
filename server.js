@@ -5204,11 +5204,15 @@ function registerOAuthConnector(spec) {
 
   app.post(`/api/${spec.key}/connect-url`, requireAuth, requirePerm(perm), wrap(async (req, res) => {
     if (!cfg()) return res.status(502).json({ error: spec.label + ' linking is not set up yet. Add ' + spec.clientIdEnv + ' and ' + spec.secretEnv + ' to enable it.', code: CODE });
+    // Per-shop providers (Shopify) build the authorize host from a validated request param; a bad/missing
+    // one is a clean 400, never a request to an arbitrary host.
+    const authorizeBase = spec.authorizeUrlFor ? spec.authorizeUrlFor(req) : spec.authorizeUrl;
+    if (!authorizeBase) return res.status(400).json({ error: spec.paramError || 'A required parameter is missing or invalid.', code: 'BAD_PARAM' });
     const params = new URLSearchParams(Object.assign({
       client_id: process.env[spec.clientIdEnv], response_type: 'code',
       redirect_uri: redirectUri(), scope: spec.scopes, state: String(scopeId(req)),
     }, spec.extraAuthParams || {}));
-    res.json({ connect_url: spec.authorizeUrl + '?' + params.toString() });
+    res.json({ connect_url: authorizeBase + '?' + params.toString() });
   }));
 
   // Callback under /api so the account+entity resolvers run (sets req.accountId/req.entityId). The
@@ -6326,6 +6330,88 @@ registerOAuthConnector({
     return { account: conn.account, email: (j && j.email) || null, note: 'PayPal connected. Transaction import needs PayPal to approve the reporting scope (pending) — identity only for now (Rules 2 & 12).' };
   },
 });
+
+// Coinbase (crypto). Straight OAuth2 — creds in the FORM body, refreshable. account = the Coinbase user
+// id (GET /v2/user). Every data call carries a CB-VERSION header. Ties into the Investments module.
+registerOAuthConnector({
+  key: 'coinbase', label: 'Coinbase', perm: 'bank:manage',
+  clientIdEnv: 'COINBASE_CLIENT_ID', secretEnv: 'COINBASE_CLIENT_SECRET', redirectEnv: 'COINBASE_REDIRECT_URI',
+  authorizeUrl: 'https://login.coinbase.com/oauth2/auth',
+  tokenUrl: 'https://login.coinbase.com/oauth2/token',
+  scopes: 'wallet:accounts:read wallet:transactions:read',
+  tokenAuth: 'body', tokenFormat: 'form',
+  resolveAccount: async (t, req, access) => {
+    try {
+      const r = await fetch('https://api.coinbase.com/v2/user', { headers: { 'Authorization': 'Bearer ' + access, 'CB-VERSION': '2024-10-01' } });
+      const j = await r.json();
+      return (j && j.data && j.data.id) || null;
+    } catch (_) { return null; }
+  },
+  sync: async (conn, { access }) => {
+    const r = await fetch('https://api.coinbase.com/v2/accounts', { headers: { 'Authorization': 'Bearer ' + access, 'CB-VERSION': '2024-10-01' } });
+    const j = await r.json().catch(() => ({}));
+    return { accounts: Array.isArray(j && j.data) ? j.data.length : 0 };
+  },
+});
+
+// Shopify — PER-SHOP OAuth: the merchant's own {shop}.myshopify.com is the authorize + token host, so
+// the driver builds both from a validated `shop` param (connect-url query, then the callback query).
+// The domain is strictly validated (…myshopify.com only) so we never build a request to an arbitrary
+// host. Token exchange is a JSON body (client_id/secret/code); offline tokens don't expire (no refresh).
+// The Admin API uses an X-Shopify-Access-Token header (not Bearer). account = shop domain.
+const _shopifyShopOK = (s) => /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(String(s || ''));
+registerOAuthConnector({
+  key: 'shopify', label: 'Shopify', perm: 'bank:manage',
+  clientIdEnv: 'SHOPIFY_API_KEY', secretEnv: 'SHOPIFY_API_SECRET', redirectEnv: 'SHOPIFY_REDIRECT_URI',
+  authorizeUrl: 'https://invalid.example/never', tokenUrl: 'https://invalid.example/never', // never used; per-shop below
+  scopes: 'read_orders',
+  tokenAuth: 'body', tokenFormat: 'json',
+  paramError: 'A valid Shopify store domain (yourstore.myshopify.com) is required.',
+  authorizeUrlFor: (req) => { const s = req.query && req.query.shop; return _shopifyShopOK(s) ? ('https://' + s + '/admin/oauth/authorize') : null; },
+  authTokenUrl: (req) => { const s = req.query && req.query.shop; return _shopifyShopOK(s) ? ('https://' + s + '/admin/oauth/access_token') : 'https://invalid.example/never'; },
+  resolveAccount: (t, req) => { const s = req.query && req.query.shop; return _shopifyShopOK(s) ? { account: String(s), api_base: 'https://' + s } : null; },
+  sync: async (conn, { access }) => {
+    const base = conn.api_base || ('https://' + conn.account);
+    const r = await fetch(base + '/admin/api/2024-10/orders/count.json?status=any', { headers: { 'X-Shopify-Access-Token': access } });
+    const j = await r.json().catch(() => ({}));
+    return { orders: (j && typeof j.count === 'number') ? j.count : 0 };
+  },
+});
+
+// ── WOOCOMMERCE — per-STORE REST keys (not OAuth). Owner enters store URL + consumer key/secret
+// (WP admin → WooCommerce → Advanced → REST API). Per-entity like every connector. Keys encTok'd at
+// rest; store_url kept plaintext (it's the API base, not a secret). Sync = order count via the WC REST
+// API (Basic ck:cs). DISPLAY-ONLY (Rules 2 & 12).
+const _wooUrlOK = (s) => /^https?:\/\/[^\s"'<>]+$/i.test(String(s || ''));
+app.get('/api/woocommerce/status', requireAuth, wrap(async (req, res) => {
+  const { value } = await _providerBlobE(scopeId(req), 'woocommerce_conn', req.entityId);
+  res.json({ connected: !!(value && value.connected), store: value ? value.store_url || null : null, provider: 'WooCommerce' });
+}));
+app.post('/api/woocommerce/connect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  const b = req.body || {};
+  const store = String(b.store_url || '').trim().replace(/\/+$/, '');
+  const ck = String(b.consumer_key || '').trim(), cs = String(b.consumer_secret || '').trim();
+  if (!_wooUrlOK(store) || !ck || !cs) return res.status(400).json({ error: 'WooCommerce requires a store URL (https://…), consumer_key and consumer_secret.' });
+  await _saveProviderBlobE(scopeId(req), 'woocommerce_conn', { connected: true, provider: 'WooCommerce', store_url: store, consumer_key: encTok(ck), consumer_secret: encTok(cs), linked_at: new Date().toISOString() }, req.entityId);
+  res.status(201).json({ ok: true, store });
+}));
+app.post('/api/woocommerce/disconnect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  const { id, value } = await _providerBlobE(scopeId(req), 'woocommerce_conn', req.entityId, false);
+  if (!value || !value.connected) return res.status(404).json({ error: 'No WooCommerce store connected.' });
+  if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+  res.json({ ok: true });
+}));
+app.post('/api/woocommerce/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  const { value } = await _providerBlobE(scopeId(req), 'woocommerce_conn', req.entityId);
+  if (!value || !value.connected) return res.status(400).json({ error: 'No WooCommerce store connected. Connect one first.' });
+  try {
+    const auth = 'Basic ' + Buffer.from(decTok(value.consumer_key) + ':' + decTok(value.consumer_secret)).toString('base64');
+    const r = await fetch(value.store_url + '/wp-json/wc/v3/orders?per_page=1', { headers: { 'Authorization': auth } });
+    if (!r.ok) throw new Error('WooCommerce HTTP ' + r.status);
+    const total = parseInt((r.headers && r.headers.get && r.headers.get('X-WP-Total')) || '0', 10) || 0;
+    res.json({ ok: true, orders: total, note: 'Orders read for display. Importing into the books is a separate, owner-approved step (Rules 2 & 12).' });
+  } catch (e) { console.error('[woocommerce sync]', e.message); res.status(502).json({ error: 'Could not sync WooCommerce: ' + e.message }); }
+}));
 
 // ── INTEGRATION REQUESTS — the catalogue's ~750 unbuilt logos register real demand instead of a
 //    dead toast. Deduped per account (one row per account per integration); owners/admins see the

@@ -2562,7 +2562,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               updateStats();
               return;
             }
-            var BUILT=['Plaid','Finch','Codat','Stripe','Belvo','WiPay','dLocal','Mercado Pago','Wise','QuickBooks','Xero','Zoho Books','Square','PayPal'];
+            var BUILT=['Plaid','Finch','Codat','Stripe','Belvo','WiPay','dLocal','Mercado Pago','Wise','QuickBooks','Xero','Zoho Books','Square','PayPal','Coinbase','Shopify','WooCommerce'];
             function _isBuilt(n){return BUILT.indexOf(n)>=0;}
             function _connCard(item){
               var on=!!connStates[item.name];
@@ -2635,7 +2635,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               fetch('/api/stripe/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0}),
               fetch('/api/belvo/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0}),
               fetch('/api/wipay/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0})
-            ].concat(['dlocal','mercadopago','wise','quickbooks','xero','zohobooks','square','paypal'].map(function(k){
+            ].concat(['dlocal','mercadopago','wise','quickbooks','xero','zohobooks','square','paypal','coinbase','shopify','woocommerce'].map(function(k){
               return fetch('/api/'+k+'/status',{credentials:'include'}).then(function(r){return r.ok?r.json():{}}).then(function(d){return d.connected?1:0}).catch(function(){return 0});
             }))).then(function(a){ el.textContent = a.reduce(function(s,n){return s+n;},0); });
           }
@@ -2648,7 +2648,8 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               ['Finch','finch'],['Codat','codat'],['Stripe','stripe'],['Belvo','belvo'],
               ['WiPay','wipay'],['dLocal','dlocal'],['Mercado Pago','mercadopago'],
               ['Wise','wise'],['QuickBooks','quickbooks'],['Xero','xero'],
-              ['Zoho Books','zohobooks'],['Square','square'],['PayPal','paypal']
+              ['Zoho Books','zohobooks'],['Square','square'],['PayPal','paypal'],
+              ['Coinbase','coinbase'],['Shopify','shopify'],['WooCommerce','woocommerce']
             ];
             var proms=probes.map(function(pr){
               if(typeof pr[1]!=='string') return pr[1];
@@ -2671,7 +2672,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             // connect flow, so "Disconnect" never disconnected). Plaid is per-bank on the Banking page.
             if(connStates[item.name]){
               if(n==='Plaid'){ if(typeof notify==='function') notify('Manage linked banks on the Banking page.'); return; }
-              var DKEY={'Finch':'finch','Codat':'codat','Stripe':'stripe','Belvo':'belvo','WiPay':'wipay','dLocal':'dlocal','Mercado Pago':'mercadopago','Wise':'wise','QuickBooks':'quickbooks','Xero':'xero','Zoho Books':'zohobooks','Square':'square','PayPal':'paypal'}[n];
+              var DKEY={'Finch':'finch','Codat':'codat','Stripe':'stripe','Belvo':'belvo','WiPay':'wipay','dLocal':'dlocal','Mercado Pago':'mercadopago','Wise':'wise','QuickBooks':'quickbooks','Xero':'xero','Zoho Books':'zohobooks','Square':'square','PayPal':'paypal','Coinbase':'coinbase','Shopify':'shopify','WooCommerce':'woocommerce'}[n];
               if(DKEY){
                 (async function(){
                   if(window._confirmModal && !(await window._confirmModal('Disconnect '+n+'?'))) return;
@@ -2694,6 +2695,15 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             if(n==='Zoho Books'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/zohobooks/connect-url',urlKey:'connect_url',statusEndpoint:'/api/zohobooks/status',onConnected:function(){hydrateStates();}}); return; }
             if(n==='Square'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/square/connect-url',urlKey:'connect_url',statusEndpoint:'/api/square/status',onConnected:function(){hydrateStates();}}); return; }
             if(n==='PayPal'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/paypal/connect-url',urlKey:'connect_url',statusEndpoint:'/api/paypal/status',onConnected:function(){hydrateStates();}}); return; }
+            if(n==='Coinbase'){ if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/coinbase/connect-url',urlKey:'connect_url',statusEndpoint:'/api/coinbase/status',onConnected:function(){hydrateStates();}}); return; }
+            if(n==='Shopify'){
+              var shop=(window.prompt('Enter your Shopify store domain (e.g. yourstore.myshopify.com):')||'').trim().replace(/^https?:\/\//,'').replace(/\/.*$/,'');
+              if(!shop){ return; }
+              if(!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(shop)){ if(typeof notify==='function') notify('That doesn’t look like a myshopify.com store domain.', true); return; }
+              if(window.ffConnectProvider) window.ffConnectProvider({urlEndpoint:'/api/shopify/connect-url?shop='+encodeURIComponent(shop),urlKey:'connect_url',statusEndpoint:'/api/shopify/status',onConnected:function(){hydrateStates();}});
+              return;
+            }
+            if(n==='WooCommerce'){ if(window.ffConnectCreds) window.ffConnectCreds('woocommerce', function(){ hydrateStates(); }); return; }
             if(n==='Belvo'){ if(window.ffLinkBelvo) window.ffLinkBelvo(function(){ hydrateStates(); }); return; }
             if(n==='WiPay'){ if(window.ffConnectWiPay) window.ffConnectWiPay(function(){ hydrateStates(); }); return; }
             var CRED_MAP={'dLocal':'dlocal','Mercado Pago':'mercadopago','Wise':'wise'};
@@ -4400,7 +4410,8 @@ window.ffConnectWiPay = function(onConnected){
 window.FF_CRED = {
   dlocal:{label:'dLocal',fields:[{k:'x_login',l:'X-Login'},{k:'x_trans_key',l:'X-Trans-Key'},{k:'secret_key',l:'Secret key',s:1}]},
   mercadopago:{label:'Mercado Pago',fields:[{k:'access_token',l:'Access token',s:1}]},
-  wise:{label:'Wise',fields:[{k:'api_token',l:'API token',s:1}]}
+  wise:{label:'Wise',fields:[{k:'api_token',l:'API token',s:1}]},
+  woocommerce:{label:'WooCommerce',fields:[{k:'store_url',l:'Store URL (https://yourstore.com)'},{k:'consumer_key',l:'Consumer key'},{k:'consumer_secret',l:'Consumer secret',s:1}]}
 };
 window.ffConnectCreds = function(key, onConnected){
   var cfg=window.FF_CRED[key]; if(!cfg) return;

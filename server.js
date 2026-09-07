@@ -4957,27 +4957,40 @@ function decTok(stored) {
   throw lastErr || new Error('decTok: no configured key could decrypt this value.');
 }
 
-// Linked items live in user_settings under key='plaid_items' as a JSON array (mirrors the
-// connections blob) — no schema migration, and scoped by scopeId like every other read.
-async function _getPlaidItems(uid) {
-  const { rows: [r] } = await pool.query(
-    `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' = 'plaid_items' LIMIT 1`, [uid]);
+// Linked items live in user_settings under key='plaid_items' as a JSON array (mirrors the connections
+// blob) — no schema migration. Per-entity Plaid items: each business links its OWN banks. Reads try the active entity's list first,
+// then FALL BACK to a legacy account-level list (entity_id NULL) so pre-per-entity links keep working
+// until each business links its own. Writes are EXACT (to the given entity) — the legacy list is never
+// mutated by a per-entity change, so unlinking a shared legacy bank on one business (and Plaid's global
+// /item/remove) can't strand the others; each business claims its own copy on first write. Transaction
+// booking stays idempotent on Plaid's transaction_id scoped by user_id, so no cross-entity double-book.
+async function _getPlaidItemsE(uid, entityId, fallback = true) {
+  let { rows: [r] } = await pool.query(
+    `SELECT * FROM user_settings WHERE user_id=$1 AND data->>'key'='plaid_items' AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`,
+    [uid, entityId == null ? null : entityId]);
+  if (!r && fallback && entityId != null) {
+    ({ rows: [r] } = await pool.query(
+      `SELECT * FROM user_settings WHERE user_id=$1 AND data->>'key'='plaid_items' AND entity_id IS NULL LIMIT 1`, [uid]));
+  }
   const row = r ? rowToObj(r) : null;
   let items = [];
   try { items = row && row.value ? JSON.parse(row.value) : []; } catch (_) { items = []; }
   return { id: r ? r.id : null, items: Array.isArray(items) ? items : [] };
 }
-async function _savePlaidItems(uid, existingId, items) {
+async function _savePlaidItemsE(uid, items, entityId) {
   const data = JSON.stringify(items);
-  if (existingId) await db.updateById('user_settings', existingId, { value: data });
-  else await db.insert('user_settings', { user_id: uid, key: 'plaid_items', value: data });
+  const { rows: [r] } = await pool.query(
+    `SELECT id FROM user_settings WHERE user_id=$1 AND data->>'key'='plaid_items' AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`,
+    [uid, entityId == null ? null : entityId]);
+  if (r) await db.updateById('user_settings', r.id, { value: data });
+  else await db.insert('user_settings', { user_id: uid, entity_id: entityId == null ? null : entityId, key: 'plaid_items', value: data });
 }
 const _publicItem = i => ({ item_id: i.item_id, institution_name: i.institution_name, linked_at: i.linked_at });
 
 // GET the real linked-bank state (tokens NEVER leave the server). `configured` lets the UI show
 // an honest "needs setup" state instead of a Link button that would 502.
 app.get('/api/plaid/items', requireAuth, wrap(async (req, res) => {
-  const { items } = await _getPlaidItems(scopeId(req));
+  const { items } = await _getPlaidItemsE(scopeId(req), req.entityId);
   res.json({ configured: plaidConfigured(), env: PLAID_ENV_NAME, items: items.map(_publicItem) });
 }));
 
@@ -5017,10 +5030,10 @@ app.post('/api/plaid/exchange', requireAuth, requirePerm('bank:manage'), wrap(as
       }
     } catch (_) { /* institution name is best-effort; the link still succeeds */ }
     const uid = scopeId(req);
-    const { id, items } = await _getPlaidItems(uid);
+    const { items } = await _getPlaidItemsE(uid, req.entityId);
     const next = items.filter(it => it.item_id !== ex.item_id); // idempotent re-link
     next.push({ item_id: ex.item_id, access_token: encTok(ex.access_token), institution_name: institution, linked_at: new Date().toISOString(), cursor: null });
-    await _savePlaidItems(uid, id, next);
+    await _savePlaidItemsE(uid, next, req.entityId);
     res.status(201).json({ ok: true, institution_name: institution, item_id: ex.item_id, items: next.map(_publicItem) });
   } catch (e) {
     console.error('[plaid exchange]', e.message, e.plaid || '');
@@ -5033,11 +5046,11 @@ app.post('/api/plaid/unlink', requireAuth, requirePerm('bank:manage'), wrap(asyn
   const uid = scopeId(req);
   const itemId = (req.body && req.body.item_id) || '';
   if (!itemId) return res.status(400).json({ error: 'item_id is required.' });
-  const { id, items } = await _getPlaidItems(uid);
+  const { items } = await _getPlaidItemsE(uid, req.entityId, false);
   const target = items.find(it => it.item_id === itemId);
   if (!target) return res.status(404).json({ error: 'No such linked bank.' });
   if (plaidConfigured()) { try { await plaidCall('/item/remove', { access_token: decTok(target.access_token) }); } catch (_) {} }
-  await _savePlaidItems(uid, id, items.filter(it => it.item_id !== itemId));
+  await _savePlaidItemsE(uid, items.filter(it => it.item_id !== itemId), req.entityId);
   res.json({ ok: true, items: items.filter(it => it.item_id !== itemId).map(_publicItem) });
 }));
 
@@ -5047,7 +5060,7 @@ app.post('/api/plaid/unlink', requireAuth, requirePerm('bank:manage'), wrap(asyn
 app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
   const uid = scopeId(req);
-  const { id, items } = await _getPlaidItems(uid);
+  const { items } = await _getPlaidItemsE(uid, req.entityId);
   if (!items.length) return res.status(400).json({ error: 'No linked bank. Link a bank first.' });
   let added = 0;
   for (const it of items) {
@@ -5078,7 +5091,7 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
       it.cursor = cursor;
     } catch (e) { console.error('[plaid sync]', e.message, e.plaid || ''); }
   }
-  await _savePlaidItems(uid, id, items);
+  await _savePlaidItemsE(uid, items, req.entityId);
   res.json({ ok: true, added });
 }));
 

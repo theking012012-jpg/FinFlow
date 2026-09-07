@@ -7036,10 +7036,18 @@ window.switchEntity=async function(idx){
     if(_lockPage && _lockPage.classList.contains('active') && typeof renderLockHistory === 'function') renderLockHistory();
   } catch(e){}
 
-  // API connections are per-entity (Stripe); repaint the Connections page for the new business if open.
+  // API connections are per-entity (Stripe, Finch, Codat, Belvo, WiPay); repaint the Connections page
+  // for the new business if open.
   try {
     var _connPage = document.getElementById('page-connections');
     if(_connPage && _connPage.classList.contains('active') && typeof window._connHydrate === 'function') window._connHydrate();
+  } catch(e){}
+
+  // Plaid-linked banks are per-entity; if the Banking page is open, repaint the linked-bank strip for
+  // the new business so it shows THIS business's banks, not the previous one's.
+  try {
+    var _bankPage = document.getElementById('page-banking');
+    if(_bankPage && _bankPage.classList.contains('active') && typeof window.renderPlaidLinked === 'function') window.renderPlaidLinked();
   } catch(e){}
 
   notify('Switched to '+e.name+' ✦');

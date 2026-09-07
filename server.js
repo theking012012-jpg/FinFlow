@@ -5106,19 +5106,7 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
 // only. They do NOT auto-write payroll_runs / journals / invoices — letting an external source
 // silently author a money figure is the multi-writer defect this codebase exists to prevent.
 // Materialising external payroll/accounting data into the books is a separate, owner-gated import.
-const _providerBlob = async (uid, key) => {
-  const { rows: [r] } = await pool.query(`SELECT * FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 LIMIT 1`, [uid, key]);
-  const row = r ? rowToObj(r) : null;
-  let value = null; try { value = row && row.value ? JSON.parse(row.value) : null; } catch (_) {}
-  return { id: r ? r.id : null, value };
-};
-const _saveProviderBlob = async (uid, id, key, value) => {
-  const data = JSON.stringify(value);
-  if (id) await db.updateById('user_settings', id, { value: data });
-  else await db.insert('user_settings', { user_id: uid, key, value: data });
-};
-
-// Per-entity provider connection (Stripe): each business can link its OWN connection. Reads try the
+// Per-entity provider connection: each business can link its OWN connection. Reads try the
 // active entity's blob first, then FALL BACK to a legacy account-level blob (entity_id NULL) so a
 // pre-existing single connection keeps working until each business links its own. Writes are EXACT
 // (always to the given entity) so connecting business A never overwrites the shared legacy blob.
@@ -5511,7 +5499,7 @@ app.post('/api/codat/import', requireAuth, requirePerm('books:write'), wrap(asyn
 // (bank:manage, matching the generic connector). Never writes to the books.
 app.post('/api/wise/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   const uid = scopeId(req);
-  const { value } = await _providerBlob(uid, 'wise_conn');
+  const { value } = await _providerBlobE(uid, 'wise_conn', req.entityId);
   if (!value || !value.connected || !value.api_token) return res.status(400).json({ error: 'No Wise account connected. Connect one first.' });
   try {
     const token = decTok(value.api_token);
@@ -6038,8 +6026,11 @@ const CRED_CONNECTORS = {
 };
 for (const [ckey, cfg] of Object.entries(CRED_CONNECTORS)) {
   const blobKey = ckey + '_conn';
+  // Per-entity like the other connectors: each business connects its OWN merchant account. Reads fall
+  // back to a legacy account-level blob (entity_id NULL); disconnect is exact (fallback=false) so a
+  // business clears only its own. Payment-links already resolve these by the invoice's entity.
   app.get(`/api/${ckey}/status`, requireAuth, wrap(async (req, res) => {
-    const { value } = await _providerBlob(scopeId(req), blobKey);
+    const { value } = await _providerBlobE(scopeId(req), blobKey, req.entityId);
     res.json({ connected: !!(value && value.connected), provider: cfg.label });
   }));
   app.post(`/api/${ckey}/connect`, requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
@@ -6049,13 +6040,12 @@ for (const [ckey, cfg] of Object.entries(CRED_CONNECTORS)) {
     const stored = { connected: true, provider: cfg.label, linked_at: new Date().toISOString() };
     for (const f of cfg.fields) stored[f] = encTok(String(body[f]).trim());  // every credential encrypted at rest
     const uid = scopeId(req);
-    const { id } = await _providerBlob(uid, blobKey);
-    await _saveProviderBlob(uid, id, blobKey, stored);
+    await _saveProviderBlobE(uid, blobKey, stored, req.entityId);
     res.status(201).json({ ok: true, provider: cfg.label });
   }));
   app.post(`/api/${ckey}/disconnect`, requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
     const uid = scopeId(req);
-    const { id, value } = await _providerBlob(uid, blobKey);
+    const { id, value } = await _providerBlobE(uid, blobKey, req.entityId, false);
     if (!value || !value.connected) return res.status(404).json({ error: `No ${cfg.label} account connected.` });
     if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
     res.json({ ok: true });

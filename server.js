@@ -5131,6 +5131,122 @@ const _saveProviderBlobE = async (uid, key, value, entityId) => {
   else await db.insert('user_settings', { user_id: uid, entity_id: entityId == null ? null : entityId, key, value: data });
 };
 
+// ════════════════════════════════════════════════════════════════════════════════
+// SHARED OAUTH2 CONNECTOR DRIVER — registerOAuthConnector(spec)
+// ════════════════════════════════════════════════════════════════════════════════
+// Given one provider spec, registers /api/<key>/{status,connect-url,callback,sync,disconnect} so each
+// OAuth2 provider is a config object + a display-only sync mapper — not a hand-rolled quintet. Every
+// connector born on this driver is PER-ENTITY (each business links its OWN account; reads fall back to
+// a legacy account-level blob at entity_id NULL; the callback writes EXACTLY to the active entity;
+// disconnect clears only the entity's own). Access/refresh tokens are encTok'd at rest, auto-refreshed
+// when expired. Honest states throughout: not-configured → 502 with a code, not-connected → connected:false.
+// DISPLAY-ONLY (Rules 2 & 12): sync READS and maps for display; materialising provider data into the
+// books is a separate, owner-approved import — the driver never writes to the ledger.
+//
+// spec = {
+//   key, label,                         // 'quickbooks' → routes /api/quickbooks/*, blob 'quickbooks_conn'
+//   clientIdEnv, secretEnv, redirectEnv,// env var NAMES (redirectEnv optional; else APP_URL+/callback)
+//   authorizeUrl, tokenUrl, scopes,     // provider OAuth endpoints + scope string
+//   perm,                               // RBAC perm (default 'bank:manage')
+//   extraAuthParams,                    // optional {} merged into the authorize query
+//   resolveAccount,                     // async (tokenResp, req, accessToken) => account id (realmId/tenantId/…)
+//   sync,                               // async (conn, {req, call, access}) => display object; `call` adds Bearer + refresh
+// }
+function registerOAuthConnector(spec) {
+  const blobKey = spec.key + '_conn';
+  const CODE = spec.key.toUpperCase().replace(/[^A-Z0-9]+/g, '_') + '_NOT_CONFIGURED';
+  const perm = spec.perm || 'bank:manage';
+  const cfg = () => !!(process.env[spec.clientIdEnv] && process.env[spec.secretEnv]);
+  const redirectUri = () => (spec.redirectEnv && process.env[spec.redirectEnv]) || (appUrl() + '/api/' + spec.key + '/callback');
+  const basicAuth = () => 'Basic ' + Buffer.from(String(process.env[spec.clientIdEnv]) + ':' + String(process.env[spec.secretEnv])).toString('base64');
+
+  // Token endpoint: confidential client, HTTP Basic auth + form-urlencoded body (QBO + Xero both).
+  async function tokenPost(params) {
+    const resp = await fetch(spec.tokenUrl, {
+      method: 'POST',
+      headers: { 'Authorization': basicAuth(), 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+      body: new URLSearchParams(params).toString(),
+    });
+    let j = {}; try { j = await resp.json(); } catch (_) {}
+    if (!resp.ok || !j.access_token) throw new Error(j.error_description || j.error || (spec.label + ' token HTTP ' + resp.status));
+    return j;
+  }
+
+  // Return a valid access token, refreshing (and re-storing, exact per-entity) if it's within 60s of expiry.
+  async function freshToken(uid, entityId, conn) {
+    let access = decTok(conn.access_token);
+    if (conn.refresh_token && conn.expires_at && Date.now() > (conn.expires_at - 60000)) {
+      const t = await tokenPost({ grant_type: 'refresh_token', refresh_token: decTok(conn.refresh_token) });
+      access = t.access_token;
+      conn = Object.assign({}, conn, {
+        access_token: encTok(t.access_token),
+        refresh_token: t.refresh_token ? encTok(t.refresh_token) : conn.refresh_token,
+        expires_at: t.expires_in ? Date.now() + t.expires_in * 1000 : conn.expires_at,
+      });
+      await _saveProviderBlobE(uid, blobKey, conn, entityId);
+    }
+    return { access, conn };
+  }
+
+  app.get(`/api/${spec.key}/status`, requireAuth, wrap(async (req, res) => {
+    const { value } = await _providerBlobE(scopeId(req), blobKey, req.entityId);
+    res.json({ configured: cfg(), connected: !!(value && (value.account || value.access_token)), account: value ? value.account || null : null, provider: spec.label });
+  }));
+
+  app.post(`/api/${spec.key}/connect-url`, requireAuth, requirePerm(perm), wrap(async (req, res) => {
+    if (!cfg()) return res.status(502).json({ error: spec.label + ' linking is not set up yet. Add ' + spec.clientIdEnv + ' and ' + spec.secretEnv + ' to enable it.', code: CODE });
+    const params = new URLSearchParams(Object.assign({
+      client_id: process.env[spec.clientIdEnv], response_type: 'code',
+      redirect_uri: redirectUri(), scope: spec.scopes, state: String(scopeId(req)),
+    }, spec.extraAuthParams || {}));
+    res.json({ connect_url: spec.authorizeUrl + '?' + params.toString() });
+  }));
+
+  // Callback under /api so the account+entity resolvers run (sets req.accountId/req.entityId). The
+  // active entity comes from the session (set when the owner launched the popup) — same as Stripe/Finch.
+  app.get(`/api/${spec.key}/callback`, requireAuth, requirePerm(perm), wrap(async (req, res) => {
+    const done = (msg) => res.set('Content-Type', 'text/html').send(`<!doctype html><meta charset=utf-8><body style="font-family:system-ui;background:#16120d;color:#f2e8d5;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><p>${msg}</p><script>try{window.opener&&window.opener.postMessage({provider:${JSON.stringify(spec.key)},status:'done'},'*')}catch(e){};setTimeout(()=>window.close(),1200)</script></div>`);
+    if (!cfg()) return done(spec.label + ' linking is not set up.');
+    const code = req.query.code || '';
+    if (!code) return done('No authorization code returned.');
+    try {
+      const t = await tokenPost({ grant_type: 'authorization_code', code, redirect_uri: redirectUri() });
+      let account = null;
+      try { account = await spec.resolveAccount(t, req, t.access_token); } catch (e) { console.error('[' + spec.key + ' resolveAccount]', e.message); }
+      const uid = scopeId(req);
+      await _saveProviderBlobE(uid, blobKey, {
+        access_token: encTok(t.access_token),
+        refresh_token: t.refresh_token ? encTok(t.refresh_token) : null,
+        account: account || null,
+        expires_at: t.expires_in ? Date.now() + Number(t.expires_in) * 1000 : null,
+        connected_at: new Date().toISOString(),
+      }, req.entityId);
+      return done(spec.label + ' connected ✓ You can close this window.');
+    } catch (e) { console.error('[' + spec.key + ' callback]', e.message); return done('Could not link ' + spec.label + ': ' + e.message); }
+  }));
+
+  app.post(`/api/${spec.key}/sync`, requireAuth, requirePerm(perm), wrap(async (req, res) => {
+    if (!cfg()) return res.status(502).json({ error: spec.label + ' linking is not set up yet.', code: CODE });
+    const uid = scopeId(req);
+    const { value } = await _providerBlobE(uid, blobKey, req.entityId);
+    if (!value || !value.access_token) return res.status(400).json({ error: 'No linked ' + spec.label + ' account. Connect one first.' });
+    try {
+      const { access, conn } = await freshToken(uid, req.entityId, value);
+      const call = (url, opts = {}) => fetch(url, Object.assign({}, opts, { headers: Object.assign({ 'Authorization': 'Bearer ' + access, 'Accept': 'application/json' }, opts.headers || {}) }));
+      const out = await spec.sync(conn, { req, call, access });
+      res.json(Object.assign({ ok: true }, out, { note: (out && out.note) || (spec.label + ' data read for display. Importing into the books is a separate, owner-approved step (Rules 2 & 12).') }));
+    } catch (e) { console.error('[' + spec.key + ' sync]', e.message); res.status(502).json({ error: 'Could not sync ' + spec.label + ': ' + e.message }); }
+  }));
+
+  app.post(`/api/${spec.key}/disconnect`, requireAuth, requirePerm(perm), wrap(async (req, res) => {
+    const uid = scopeId(req);
+    const { id, value } = await _providerBlobE(uid, blobKey, req.entityId, false);
+    if (!value || !(value.account || value.access_token)) return res.status(404).json({ error: 'No linked ' + spec.label + ' account for this business.' });
+    if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
+    res.json({ ok: true });
+  }));
+}
+
 // ── FINCH ──
 const finchConfigured = () => !!(process.env.FINCH_CLIENT_ID && process.env.FINCH_CLIENT_SECRET);
 const FINCH_API = 'https://api.tryfinch.com';
@@ -6051,6 +6167,56 @@ for (const [ckey, cfg] of Object.entries(CRED_CONNECTORS)) {
     res.json({ ok: true });
   }));
 }
+
+// ── ACCOUNTING-MIGRATION OAUTH CONNECTORS (on the shared driver) ──────────────────
+// QuickBooks + Xero: the top growth lever (accounting migration). Owner-gated (books:write, matching
+// Codat). DISPLAY-ONLY sync — pulls invoice/account counts for the hub; the books import stays the
+// separate owner-approved Codat/manual path (Rules 2 & 12).
+
+// QuickBooks Online (Intuit). realmId (the company id) arrives on the CALLBACK query, not the token.
+// API host differs sandbox vs production (QBO_ENV). 100-day refresh token.
+registerOAuthConnector({
+  key: 'quickbooks', label: 'QuickBooks', perm: 'books:write',
+  clientIdEnv: 'QBO_CLIENT_ID', secretEnv: 'QBO_CLIENT_SECRET', redirectEnv: 'QBO_REDIRECT_URI',
+  authorizeUrl: 'https://appcenter.intuit.com/connect/oauth2',
+  tokenUrl: 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer',
+  scopes: 'com.intuit.quickbooks.accounting',
+  resolveAccount: (t, req) => (req.query && req.query.realmId) || null,
+  sync: async (conn, { call }) => {
+    const base = (String(process.env.QBO_ENV || 'sandbox').toLowerCase() === 'production'
+      ? 'https://quickbooks.api.intuit.com' : 'https://sandbox-quickbooks.api.intuit.com')
+      + '/v3/company/' + encodeURIComponent(conn.account);
+    const q = (s) => base + '/query?minorversion=65&query=' + encodeURIComponent(s);
+    const invR = await (await call(q('SELECT COUNT(*) FROM Invoice'))).json();
+    const acctR = await (await call(q('SELECT COUNT(*) FROM Account'))).json();
+    const invoices = (invR && invR.QueryResponse && invR.QueryResponse.totalCount) || 0;
+    const accounts = (acctR && acctR.QueryResponse && acctR.QueryResponse.totalCount) || 0;
+    return { invoices, accounts };
+  },
+});
+
+// Xero. tenantId (the org id) is fetched from GET /connections AFTER the token, and sent as the
+// Xero-tenant-id header on every data call. 30-min access token, 60-day refresh token.
+registerOAuthConnector({
+  key: 'xero', label: 'Xero', perm: 'books:write',
+  clientIdEnv: 'XERO_CLIENT_ID', secretEnv: 'XERO_CLIENT_SECRET', redirectEnv: 'XERO_REDIRECT_URI',
+  authorizeUrl: 'https://login.xero.com/identity/connect/authorize',
+  tokenUrl: 'https://identity.xero.com/connect/token',
+  scopes: 'openid profile email accounting.transactions.read accounting.settings.read offline_access',
+  resolveAccount: async (t, req, access) => {
+    const r = await fetch('https://api.xero.com/connections', { headers: { 'Authorization': 'Bearer ' + access, 'Accept': 'application/json' } });
+    let j = []; try { j = await r.json(); } catch (_) {}
+    return (Array.isArray(j) && j[0] && j[0].tenantId) || null;
+  },
+  sync: async (conn, { call }) => {
+    const hdr = { headers: { 'Xero-tenant-id': conn.account } };
+    const invR = await (await call('https://api.xero.com/api.xro/2.0/Invoices?page=1', hdr)).json();
+    const acctR = await (await call('https://api.xero.com/api.xro/2.0/Accounts', hdr)).json();
+    const invoices = (invR && Array.isArray(invR.Invoices)) ? invR.Invoices.length : 0;
+    const accounts = (acctR && Array.isArray(acctR.Accounts)) ? acctR.Accounts.length : 0;
+    return { invoices, accounts };
+  },
+});
 
 // ── INTEGRATION REQUESTS — the catalogue's ~750 unbuilt logos register real demand instead of a
 //    dead toast. Deduped per account (one row per account per integration); owners/admins see the

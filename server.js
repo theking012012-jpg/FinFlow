@@ -293,7 +293,9 @@ app.get('/api/wipay/callback', async (req, res) => {
     const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
     if (!ir) return res.redirect(back);
     const inv = rowToObj(ir);
-    const { value: conn } = await _providerBlob(ir.user_id, 'wipay_conn');
+    // Per-entity: verify against the WiPay account of the invoice's OWN business (the key that hashed
+    // the link), falling back to a legacy account-level connection for pre-per-entity invoices.
+    const { value: conn } = await _providerBlobE(ir.user_id, 'wipay_conn', ir.entity_id);
     if (!conn || !conn.account_number) return res.redirect(back);
     if (String(q.status) === 'success' && q.hash && q.transaction_id) {
       let key; try { key = decTok(conn.api_key); } catch (_) { return res.redirect(back); }
@@ -5143,7 +5145,7 @@ async function finchCall(pathname, accessToken, opts = {}) {
 }
 
 app.get('/api/finch/status', requireAuth, wrap(async (req, res) => {
-  const { value } = await _providerBlob(scopeId(req), 'finch_conn');
+  const { value } = await _providerBlobE(scopeId(req), 'finch_conn', req.entityId);
   res.json({ configured: finchConfigured(), connected: !!(value && value.access_token), provider: value ? value.provider_name || null : null, employees: value ? (value.employee_count ?? null) : null });
 }));
 
@@ -5205,8 +5207,7 @@ app.get('/api/finch/callback', requireAuth, requirePerm('payroll:write'), wrap(a
     let providerName = null;
     try { const intro = await finchCall('/introspect', j.access_token); providerName = (intro && (intro.payroll_provider_id || intro.provider_id)) || null; } catch (_) {}
     const uid = scopeId(req);
-    const { id } = await _providerBlob(uid, 'finch_conn');
-    await _saveProviderBlob(uid, id, 'finch_conn', { access_token: encTok(j.access_token), provider_name: providerName, linked_at: new Date().toISOString(), employee_count: null });
+    await _saveProviderBlobE(uid, 'finch_conn', { access_token: encTok(j.access_token), provider_name: providerName, linked_at: new Date().toISOString(), employee_count: null }, req.entityId);
     return done('Payroll connected ✓ You can close this window.');
   } catch (e) { console.error('[finch callback]', e.message, e.provider || ''); return done('Could not link payroll: ' + e.message); }
 }));
@@ -5215,19 +5216,19 @@ app.get('/api/finch/callback', requireAuth, requirePerm('payroll:write'), wrap(a
 app.post('/api/finch/sync', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   if (!finchConfigured()) return res.status(502).json({ error: 'Payroll linking is not set up yet. Add FINCH keys to enable it.', code: 'FINCH_NOT_CONFIGURED' });
   const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'finch_conn');
+  const { value } = await _providerBlobE(uid, 'finch_conn', req.entityId);
   if (!value || !value.access_token) return res.status(400).json({ error: 'No linked payroll. Connect a provider first.' });
   try {
     const dir = await finchCall('/employer/directory', decTok(value.access_token));
     const count = Array.isArray(dir.individuals) ? dir.individuals.length : (dir.paging && dir.paging.count) || 0;
-    await _saveProviderBlob(uid, id, 'finch_conn', Object.assign({}, value, { employee_count: count, last_synced: new Date().toISOString() }));
+    await _saveProviderBlobE(uid, 'finch_conn', Object.assign({}, value, { employee_count: count, last_synced: new Date().toISOString() }), req.entityId);
     res.json({ ok: true, employees: count, note: 'Directory pulled for display. Importing payroll into the books is a separate, owner-approved step (Rule 12).' });
   } catch (e) { console.error('[finch sync]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not sync payroll: ' + e.message }); }
 }));
 
 app.post('/api/finch/disconnect', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'finch_conn');
+  const { id, value } = await _providerBlobE(uid, 'finch_conn', req.entityId, false);
   if (!value) return res.status(404).json({ error: 'No linked payroll.' });
   if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
   res.json({ ok: true });
@@ -5256,7 +5257,7 @@ async function codatCall(pathname, opts = {}) {
 }
 
 app.get('/api/codat/status', requireAuth, wrap(async (req, res) => {
-  const { value } = await _providerBlob(scopeId(req), 'codat_conn');
+  const { value } = await _providerBlobE(scopeId(req), 'codat_conn', req.entityId);
   let platform = value ? value.platform || null : null, connected = false;
   if (codatConfigured() && value && value.company_id) {
     try {
@@ -5273,7 +5274,7 @@ app.post('/api/codat/link-url', requireAuth, requirePerm('books:write'), wrap(as
   if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
   try {
     const uid = scopeId(req);
-    const { id, value } = await _providerBlob(uid, 'codat_conn');
+    const { value } = await _providerBlobE(uid, 'codat_conn', req.entityId);
     let companyId = value && value.company_id;
     let company;
     if (!companyId) {
@@ -5283,7 +5284,7 @@ app.post('/api/codat/link-url', requireAuth, requirePerm('books:write'), wrap(as
       company = await codatCall(`/companies/${companyId}`);
     }
     const linkUrl = (company.redirect) || (company.links && company.links.self) || null;
-    await _saveProviderBlob(uid, id, 'codat_conn', Object.assign({}, value || {}, { company_id: companyId, linked_at: new Date().toISOString() }));
+    await _saveProviderBlobE(uid, 'codat_conn', Object.assign({}, value || {}, { company_id: companyId, linked_at: new Date().toISOString() }), req.entityId);
     if (!linkUrl) return res.status(502).json({ error: 'Codat did not return a link URL.' });
     res.json({ link_url: linkUrl, company_id: companyId });
   } catch (e) { console.error('[codat link-url]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not start accounting linking: ' + e.message }); }
@@ -5291,7 +5292,7 @@ app.post('/api/codat/link-url', requireAuth, requirePerm('books:write'), wrap(as
 
 app.post('/api/codat/disconnect', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
   const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'codat_conn');
+  const { id, value } = await _providerBlobE(uid, 'codat_conn', req.entityId, false);
   if (!value) return res.status(404).json({ error: 'No linked accounting platform.' });
   if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
   res.json({ ok: true });
@@ -5302,7 +5303,7 @@ app.post('/api/codat/disconnect', requireAuth, requirePerm('books:write'), wrap(
 app.post('/api/codat/sync', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
   if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
   const uid = scopeId(req);
-  const { value } = await _providerBlob(uid, 'codat_conn');
+  const { value } = await _providerBlobE(uid, 'codat_conn', req.entityId);
   if (!value || !value.company_id) return res.status(400).json({ error: 'No linked accounting platform. Connect one first.' });
   try {
     const data = await codatCall(`/companies/${value.company_id}/data/accounts?pageSize=100`);
@@ -5416,9 +5417,10 @@ function _codatMappers(companyId, platform) {
 // The eight Codat data types we migrate, in dependency order (masters before transactions).
 const CODAT_IMPORT_TYPES = ['accounts', 'customers', 'suppliers', 'invoices', 'bills', 'payments', 'billPayments', 'journalEntries'];
 
-// Resolve the connected company id + platform name (for labels/preview).
-async function _codatCompany(uid) {
-  const { value } = await _providerBlob(uid, 'codat_conn');
+// Resolve the connected company id + platform name (for labels/preview). Per-entity: reads the active
+// entity's Codat company, falling back to a legacy account-level connection (entity_id NULL).
+async function _codatCompany(uid, entityId) {
+  const { value } = await _providerBlobE(uid, 'codat_conn', entityId);
   if (!value || !value.company_id) { const e = new Error('No linked accounting platform. Connect one first.'); e.status = 400; throw e; }
   let platform = value.platform || null;
   try {
@@ -5468,7 +5470,7 @@ app.post('/api/codat/import-preview', requireAuth, requirePerm('books:write'), w
   if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
   const uid = scopeId(req);
   if (!req.entityId) return res.status(400).json({ error: 'Select a business entity to import into first.', code: 'NO_ACTIVE_ENTITY' });
-  let company; try { company = await _codatCompany(uid); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
+  let company; try { company = await _codatCompany(uid, req.entityId); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
   const datasets = {};
   for (const type of CODAT_IMPORT_TYPES) {
     datasets[type] = await _codatImportType(uid, req.entityId, req.session.userId, company.companyId, company.platform, type, { dryRun: true });
@@ -5482,7 +5484,7 @@ app.post('/api/codat/import', requireAuth, requirePerm('books:write'), wrap(asyn
   if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
   const uid = scopeId(req);
   if (!req.entityId) return res.status(400).json({ error: 'Select a business entity to import into first.', code: 'NO_ACTIVE_ENTITY' });
-  let company; try { company = await _codatCompany(uid); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
+  let company; try { company = await _codatCompany(uid, req.entityId); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
   const results = {}; let totalAdded = 0;
   for (const type of CODAT_IMPORT_TYPES) {
     const t = await _codatImportType(uid, req.entityId, req.session.userId, company.companyId, company.platform, type, { dryRun: false });
@@ -5934,7 +5936,7 @@ async function belvoCall(pathname, opts = {}) {
 }
 
 app.get('/api/belvo/status', requireAuth, wrap(async (req, res) => {
-  const { value } = await _providerBlob(scopeId(req), 'belvo_conn');
+  const { value } = await _providerBlobE(scopeId(req), 'belvo_conn', req.entityId);
   const links = (value && value.links) || [];
   res.json({ configured: belvoConfigured(), connected: links.length > 0, institutions: links.map(l => l.institution).filter(Boolean) });
 }));
@@ -5955,18 +5957,18 @@ app.post('/api/belvo/exchange', requireAuth, requirePerm('bank:manage'), wrap(as
     let institution = null;
     try { const d = await belvoCall('/api/links/' + encodeURIComponent(link) + '/'); institution = d.institution || null; } catch (_) {}
     const uid = scopeId(req);
-    const { id, value } = await _providerBlob(uid, 'belvo_conn');
+    const { value } = await _providerBlobE(uid, 'belvo_conn', req.entityId);
     const links = (value && value.links) || [];
     const next = links.filter(l => l.link !== link);
     next.push({ link, institution, linked_at: new Date().toISOString() });
-    await _saveProviderBlob(uid, id, 'belvo_conn', { links: next });
+    await _saveProviderBlobE(uid, 'belvo_conn', { links: next }, req.entityId);
     res.status(201).json({ ok: true, institution, institutions: next.map(l => l.institution).filter(Boolean) });
   } catch (e) { console.error('[belvo exchange]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not link bank: ' + e.message }); }
 }));
 
 app.post('/api/belvo/disconnect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'belvo_conn');
+  const { id, value } = await _providerBlobE(uid, 'belvo_conn', req.entityId, false);
   if (!value || !((value.links || []).length)) return res.status(404).json({ error: 'No linked LatAm bank.' });
   if (belvoConfigured()) { for (const l of value.links) { try { await belvoCall('/api/links/' + encodeURIComponent(l.link) + '/', { method: 'DELETE' }); } catch (_) {} } }
   if (id) await db.updateById('user_settings', id, { value: JSON.stringify({ links: [] }) });
@@ -5976,7 +5978,7 @@ app.post('/api/belvo/disconnect', requireAuth, requirePerm('bank:manage'), wrap(
 app.post('/api/belvo/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
   const uid = scopeId(req);
-  const { value } = await _providerBlob(uid, 'belvo_conn');
+  const { value } = await _providerBlobE(uid, 'belvo_conn', req.entityId);
   const links = (value && value.links) || [];
   if (!links.length) return res.status(400).json({ error: 'No linked LatAm bank. Link one first.' });
   let accounts = 0;
@@ -5988,7 +5990,7 @@ app.post('/api/belvo/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
 //    enters their OWN WiPay account number + API key (encrypted); used to generate hosted payment
 //    links on invoices. The credentials ARE the connection, so there is no env gate. ──
 app.get('/api/wipay/status', requireAuth, wrap(async (req, res) => {
-  const { value } = await _providerBlob(scopeId(req), 'wipay_conn');
+  const { value } = await _providerBlobE(scopeId(req), 'wipay_conn', req.entityId);
   res.json({ connected: !!(value && value.account_number), account: value ? value.account_number || null : null, country: value ? value.country || null : null });
 }));
 
@@ -6000,14 +6002,13 @@ app.post('/api/wipay/connect', requireAuth, requirePerm('bank:manage'), wrap(asy
   if (!account || !apiKey) return res.status(400).json({ error: 'WiPay account number and API key are required.' });
   if (!ALLOWED.includes(country)) return res.status(400).json({ error: 'country must be one of ' + ALLOWED.join(', ') + '.' });
   const uid = scopeId(req);
-  const { id } = await _providerBlob(uid, 'wipay_conn');
-  await _saveProviderBlob(uid, id, 'wipay_conn', { account_number: account, api_key: encTok(apiKey), country, linked_at: new Date().toISOString() });
+  await _saveProviderBlobE(uid, 'wipay_conn', { account_number: account, api_key: encTok(apiKey), country, linked_at: new Date().toISOString() }, req.entityId);
   res.status(201).json({ ok: true, account, country });
 }));
 
 app.post('/api/wipay/disconnect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   const uid = scopeId(req);
-  const { id, value } = await _providerBlob(uid, 'wipay_conn');
+  const { id, value } = await _providerBlobE(uid, 'wipay_conn', req.entityId, false);
   if (!value || !value.account_number) return res.status(404).json({ error: 'No WiPay account connected.' });
   if (id) await db.updateById('user_settings', id, { value: JSON.stringify({}) });
   res.json({ ok: true });
@@ -6146,7 +6147,10 @@ app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write
   const order = requested ? [String(requested)] : PAY;
   let provider = null, conn = null;
   for (const p of order) {
-    const { value } = await _providerBlob(uid, (p === 'stripe' ? 'stripe' : p) + '_conn');
+    // Per-entity: resolve the processor connection for the INVOICE's own business (so a multi-entity
+    // owner never bills through the wrong business's Stripe/WiPay). Legacy account-level creds
+    // (dLocal/Mercado Pago) still resolve via the null-entity fallback.
+    const { value } = await _providerBlobE(uid, (p === 'stripe' ? 'stripe' : p) + '_conn', inv.entity_id);
     const isConn = p === 'stripe' ? !!(value && value.stripe_user_id) : p === 'wipay' ? !!(value && value.account_number) : !!(value && value.connected);
     if (isConn) { provider = p; conn = value; break; }
   }

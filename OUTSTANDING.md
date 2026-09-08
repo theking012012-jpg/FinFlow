@@ -2,6 +2,29 @@
 
 ---
 
+## 🟢 STATUS UPDATE — 2026-09-08 (see SESSION_HANDOVER_2026-09-08.md for full detail)
+
+Full sweep **209/209 GREEN, 0 RED**. Three big arcs closed since the entries below were written:
+
+1. **Per-entity connections — COMPLETE.** ALL connectors (Stripe, Finch, Codat, Belvo, WiPay, Plaid,
+   dLocal, Mercado Pago, Wise) are now per-entity via `_providerBlobE`/`_getPlaidItemsE` (legacy NULL
+   fallback). This closes the "🔴 OPEN — Per-entity connections (BIG)" item further down.
+2. **Wave-1 integrations — SHIPPED.** Shared `registerOAuthConnector` driver + 8 net-new connectors
+   (QuickBooks, Xero, Zoho Books, Square, PayPal, Coinbase, Shopify, WooCommerce). 13 real backends now.
+3. **Launch-readiness QA pass — fixes shipped.** Fabricated-review + accountant-dashboard XSS fixed;
+   accountant-portal mobile nav + overdue deadlines fixed; legal pages (terms/privacy/security) created
+   and all dead links wired; nav/label/polish fixes. New harnesses: verify-marketplace-review-modal,
+   verify-accountant-dashboard-qa, plus the per-connector suite.
+
+Also DONE since these entries (all green in the sweep): the entire "🟢 ENTITY-GATING" list below —
+Audit trail, Documents, Team & roles, Nav restructure — and the F194 viewer/line-items/calendar arc,
+and F196 per-entity business profile (verify-entity-profile 20/0).
+
+**Still genuinely open:** mobile JS minification (Perf ~54); live bank feed (Belvo/WiPay auto-pull);
+Resend domain verification (owner/ops); provider go-live env keys (owner/ops).
+
+---
+
 ## 🟢 DONE 2026-09-04 — Reconcile system (Stripe + Bank, money in & out)
 Full detail: **`SESSION_HANDOVER_2026-09-04.md`**. Committed through `926eac4`; 188/188 sweep green;
 verified live on production (non-destructive). Features: Stripe add-to-books (idempotent), processing

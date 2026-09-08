@@ -1422,14 +1422,14 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const result = await pool.query(`
       SELECT
         ac.user_id,
-        ac.created_at   AS requested_at,
+        ac.invited_at   AS requested_at,
         u.data->>'email' AS client_email,
         u.data->>'name'  AS client_name,
         u.data->>'plan'  AS client_plan
       FROM accountant_clients ac
       JOIN users u ON u.id = ac.user_id
       WHERE ac.accountant_id = $1 AND ac.status = 'pending'
-      ORDER BY ac.created_at DESC
+      ORDER BY ac.invited_at DESC
     `, [req.session.accountantId]);
     return res.json(result.rows);
   }));

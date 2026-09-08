@@ -299,9 +299,16 @@
   .finput{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg2);color:var(--text);font-family:'Jost',sans-serif;outline:none;appearance:none;}
   .finput:focus{border-color:var(--gold-dim);}
 
+  .nav-hamburger { display: none; background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text2); cursor: pointer; padding: 6px 9px; font-size: 16px; line-height: 1; }
+  .sidebar-scrim { display: none; position: fixed; inset: 57px 0 0 0; background: rgba(0,0,0,0.5); z-index: 55; }
+  .sidebar-scrim.open { display: block; }
+
   @media (max-width: 900px) {
     .layout { grid-template-columns: 1fr; }
     .sidebar { display: none; }
+    .nav-hamburger { display: inline-flex; }
+    /* Mobile: the sidebar slides in as an overlay so every page stays reachable (was fully hidden). */
+    .sidebar.mobile-open { display: block; position: fixed; top: 57px; left: 0; bottom: 0; width: 250px; z-index: 60; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.6); }
     .stat-grid { grid-template-columns: 1fr 1fr; }
     .earnings-grid { grid-template-columns: 1fr; }
     .profile-grid { grid-template-columns: 1fr; }
@@ -313,6 +320,7 @@
 <!-- NAV -->
 <nav>
   <div class="nav-left">
+    <button class="nav-hamburger" onclick="toggleSidebar()" aria-label="Open navigation menu">☰</button>
     <div class="nav-brand">FinFlow</div>
     <div class="nav-role">Accountant Portal</div>
   </div>
@@ -322,6 +330,7 @@
     <button class="nav-logout" onclick="logout()">Sign out</button>
   </div>
 </nav>
+<div class="sidebar-scrim" id="sidebar-scrim" onclick="toggleSidebar()"></div>
 
 <div class="layout">
 
@@ -729,6 +738,30 @@ let deadlines = [];
 
 const APP_URL = window.location.origin;
 
+// Escape any user-derived string before it goes into innerHTML. Client names/emails and deadline text
+// are attacker-controllable (a linked client sets their own name), so every interpolation of them is
+// escaped to prevent stored XSS in the accountant's session.
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Promise-based confirm modal (replaces native confirm() — consistent styling, non-blocking).
+function confirmModal(message, opts){
+  opts = opts || {};
+  return new Promise(function(resolve){
+    var done = false;
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px';
+    ov.innerHTML = '<div style="background:var(--card);border:1px solid var(--border2);border-radius:16px;padding:24px;width:400px;max-width:90vw">'
+      + '<p style="font-size:14px;color:var(--text);line-height:1.5;margin-bottom:20px">' + esc(message) + '</p>'
+      + '<div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-outline" id="cm-no">Cancel</button>'
+      + '<button class="btn ' + (opts.danger ? 'btn-danger' : 'btn-gold') + '" id="cm-yes">' + esc(opts.okLabel || 'Confirm') + '</button></div></div>';
+    document.body.appendChild(ov);
+    var close = function(v){ if(done) return; done = true; try{ov.remove();}catch(e){} resolve(v); };
+    ov.querySelector('#cm-no').onclick = function(){ close(false); };
+    ov.querySelector('#cm-yes').onclick = function(){ close(true); };
+    ov.onclick = function(e){ if(e.target===ov) close(false); };
+  });
+}
+
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 async function boot() {
   try {
@@ -775,8 +808,8 @@ async function loadPendingRequests() {
         <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--card);border:1px solid rgba(196,138,42,0.35);border-radius:10px;">
           <div style="width:36px;height:36px;border-radius:50%;background:rgba(196,138,42,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">👤</div>
           <div style="flex:1;">
-            <div style="font-size:13px;color:var(--text);font-weight:500;">${name}</div>
-            <div style="font-size:12px;color:var(--text3);margin-top:2px;">${r.client_email} · <span class="badge badge-gold">${plan}</span> · Requested ${date}</div>
+            <div style="font-size:13px;color:var(--text);font-weight:500;">${esc(name)}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px;">${esc(r.client_email)} · <span class="badge badge-gold">${esc(plan)}</span> · Requested ${esc(date)}</div>
           </div>
           <div style="display:flex;gap:8px;">
             <button class="btn btn-gold btn-sm" onclick="approveRequest(${r.user_id}, this)">Approve</button>
@@ -814,7 +847,7 @@ async function approveRequest(userId, btn) {
 }
 
 async function declineRequest(userId, btn) {
-  if (!confirm('Decline this access request? The client will not be notified.')) return;
+  if (!(await confirmModal('Decline this access request? The client will not be notified.', {danger:true, okLabel:'Decline'}))) return;
   btn.disabled = true;
   try {
     await fetch('/api/accountants/decline-request', {
@@ -845,7 +878,7 @@ async function activateClient(userId) {
 }
 
 async function rejectClient(userId) {
-  if (!confirm('Reject this client request? They will remain on the platform but will not be linked to you.')) return;
+  if (!(await confirmModal('Reject this client request? They will remain on the platform but will not be linked to you.', {danger:true, okLabel:'Reject'}))) return;
   try {
     const res = await fetch('/api/accountants/reject-client', {
       method: 'POST', credentials: 'include',
@@ -936,15 +969,15 @@ function renderClients() {
     ? '<tr class="loading-row"><td colspan="8">No clients yet. <a style="color:var(--gold);cursor:pointer" onclick="showPage(\'invite\')">Invite your first client &rarr;</a></td></tr>'
     : clients.map(c => `
       <tr>
-        <td class="primary">${(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</td>
-        <td style="font-size:12px;color:var(--text3)">${c.client_email || '&mdash;'}</td>
-        <td><span class="badge badge-gold">${c.client_plan || 'trial'}</span></td>
+        <td class="primary">${esc(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</td>
+        <td style="font-size:12px;color:var(--text3)">${esc(c.client_email) || '&mdash;'}</td>
+        <td><span class="badge badge-gold">${esc(c.client_plan || 'trial')}</span></td>
         <td><span class="badge ${c.status === 'active' ? 'badge-green' : c.status === 'pending' ? 'badge-amber' : 'badge-red'}">${c.status === 'active' ? 'Active' : c.status === 'pending' ? 'Pending' : c.status === 'invited' ? 'Invited' : 'Pending'}</span></td>
         <td>${activityBadge(c)}</td>
         <td>${c.referral_month ?? 0}/${c.referral_months_total ?? 0} months</td>
         <td>${c.status === 'pending'
           ? `<button class="btn btn-gold btn-sm" onclick="activateClient(${c.id})">Approve</button> <button class="btn btn-outline btn-sm" style="color:var(--red,#c0392b);border-color:var(--red,#c0392b)" onclick="rejectClient(${c.id})">Reject</button>`
-          : `<button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,'')}')">View books</button>`
+          : `<button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${esc(((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,''))}')">View books</button>`
         }</td>
       </tr>`).join('');
 
@@ -953,12 +986,12 @@ function renderClients() {
   // Dashboard preview (first 5)
   const dashRows = clients.slice(0, 5).map(c => `
     <tr>
-      <td class="primary">${(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</td>
-      <td><span class="badge badge-gold">${c.client_plan || 'trial'}</span></td>
+      <td class="primary">${esc(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</td>
+      <td><span class="badge badge-gold">${esc(c.client_plan || 'trial')}</span></td>
       <td><span class="badge ${c.status === 'active' ? 'badge-green' : 'badge-amber'}">${c.status === 'active' ? 'Active' : c.status === 'pending' ? 'Pending' : c.status === 'invited' ? 'Invited' : 'Pending'}</span></td>
       <td>${activityBadge(c)}</td>
       <td>${c.activated_at ? new Date(c.activated_at).toLocaleDateString() : '&mdash;'}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,'')}')">View books</button></td>
+      <td><button class="btn btn-outline btn-sm" onclick="viewBooks(${c.id},'${esc(((c.client_name&&c.client_name.trim())?c.client_name:c.client_email||'').replace(/'/g,''))}')">View books</button></td>
     </tr>`).join('') || '<tr class="loading-row"><td colspan="6">No clients yet.</td></tr>';
   document.getElementById('dashboard-clients-tbody').innerHTML = dashRows;
 }
@@ -1032,7 +1065,7 @@ async function loadEarnings() {
         <tr>
           <td>${e.period_month ? new Date(e.period_month).toLocaleDateString('en-US', {month:'short',year:'numeric'}) : '—'}</td>
           <td><span class="badge ${e.type === 'referral' ? 'badge-gold' : 'badge-green'}">${e.type === 'referral' ? 'Referral' : 'Service'}</span></td>
-          <td>${e.description || '—'}</td>
+          <td>${esc(e.description || '—')}</td>
           <td class="gold">$${(e.amount_cents / 100).toFixed(2)}</td>
           <td><span class="badge ${e.status === 'paid' ? 'badge-green' : 'badge-amber'}">${e.status}</span></td>
         </tr>`).join('');
@@ -1045,55 +1078,46 @@ async function loadEarnings() {
 
 // ── DEADLINES ─────────────────────────────────────────────────────────────────
 function renderDeadlines() {
-  const today = new Date();
-  const sorted = [...deadlines].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const DAY = 86400000;
+  // OVERDUE (past-due) items are the most urgent and must NOT be hidden — show them FIRST (most overdue
+  // at top), then upcoming soonest-first. Only truly-future items were shown before, so overdue filings
+  // silently vanished.
+  const open = [...deadlines].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const overdue = open.filter(d => new Date(d.date) < today).reverse(); // most overdue first
+  const upcoming = open.filter(d => new Date(d.date) >= today);
+  const ordered = overdue.concat(upcoming);
 
-  const upcoming = sorted.filter(d => new Date(d.date) >= today);
-  const count = upcoming.length;
-  document.getElementById('stat-deadlines').textContent = count;
+  // Stat = items needing attention: overdue + due within the next 30 days.
+  const needsAttention = ordered.filter(d => Math.ceil((new Date(d.date) - today) / DAY) <= 30).length;
+  document.getElementById('stat-deadlines').textContent = needsAttention;
 
-  const html = upcoming.length === 0
-    ? '<div style="color:var(--text3);font-size:13px;padding:16px 0;text-align:center;">No upcoming deadlines. <a style="color:var(--gold);cursor:pointer" onclick="openDeadlineModal()">Add one →</a></div>'
-    : upcoming.slice(0, 5).map(d => {
-        const due = new Date(d.date);
-        const diff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
-        const urgency = diff <= 7 ? 'urgent' : diff <= 21 ? 'soon' : 'ok';
-        const daysLabel = diff === 0 ? 'Due today' : diff < 0 ? `${Math.abs(diff)} days overdue` : `${diff} days left`;
-        return `
-          <div class="deadline-item ${urgency}">
-            <div class="deadline-dot ${urgency}"></div>
-            <div class="deadline-info">
-              <div class="deadline-client">${d.client}</div>
-              <div class="deadline-type">${d.type}</div>
-            </div>
-            <div class="deadline-date">
-              <div>${due.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})}</div>
-              <div class="deadline-days ${urgency}">${daysLabel}</div>
-            </div>
-          </div>`;
-      }).join('');
+  const row = d => {
+    const due = new Date(d.date);
+    const diff = Math.ceil((due - today) / DAY);
+    const urgency = diff < 0 ? 'urgent' : diff <= 7 ? 'urgent' : diff <= 21 ? 'soon' : 'ok';
+    const daysLabel = diff === 0 ? 'Due today' : diff < 0 ? `${Math.abs(diff)} days overdue` : `${diff} days left`;
+    return `
+      <div class="deadline-item ${urgency}">
+        <div class="deadline-dot ${urgency}"></div>
+        <div class="deadline-info">
+          <div class="deadline-client">${esc(d.client)}</div>
+          <div class="deadline-type">${esc(d.type)}</div>
+        </div>
+        <div class="deadline-date">
+          <div>${due.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})}</div>
+          <div class="deadline-days ${urgency}">${daysLabel}</div>
+        </div>
+      </div>`;
+  };
 
-  document.getElementById('dashboard-deadlines').innerHTML = html;
-  document.getElementById('all-deadlines').innerHTML = upcoming.length === 0
+  document.getElementById('dashboard-deadlines').innerHTML = ordered.length === 0
+    ? '<div style="color:var(--text3);font-size:13px;padding:16px 0;text-align:center;">No deadlines. <a style="color:var(--gold);cursor:pointer" onclick="openDeadlineModal()">Add one →</a></div>'
+    : ordered.slice(0, 5).map(row).join('');
+
+  document.getElementById('all-deadlines').innerHTML = ordered.length === 0
     ? '<div style="color:var(--text3);font-size:13px;padding:16px 0;text-align:center;">No deadlines yet.</div>'
-    : upcoming.map(d => {
-        const due = new Date(d.date);
-        const diff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
-        const urgency = diff <= 7 ? 'urgent' : diff <= 21 ? 'soon' : 'ok';
-        const daysLabel = diff === 0 ? 'Due today' : diff < 0 ? `${Math.abs(diff)} days overdue` : `${diff} days left`;
-        return `
-          <div class="deadline-item ${urgency}">
-            <div class="deadline-dot ${urgency}"></div>
-            <div class="deadline-info">
-              <div class="deadline-client">${d.client}</div>
-              <div class="deadline-type">${d.type}</div>
-            </div>
-            <div class="deadline-date">
-              <div>${due.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'})}</div>
-              <div class="deadline-days ${urgency}">${daysLabel}</div>
-            </div>
-          </div>`;
-      }).join('');
+    : ordered.map(row).join('');
 }
 
 function openDeadlineModal() { document.getElementById('deadline-modal').classList.add('open'); }
@@ -1177,6 +1201,19 @@ function showPage(name) {
   document.querySelectorAll('.sidebar-item').forEach(s => s.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   document.querySelector(`[onclick="showPage('${name}')"]`)?.classList.add('active');
+  closeSidebar(); // collapse the mobile overlay after choosing a page
+}
+
+// Mobile sidebar overlay toggle.
+function toggleSidebar() {
+  const sb = document.querySelector('.sidebar');
+  const scrim = document.getElementById('sidebar-scrim');
+  const open = sb.classList.toggle('mobile-open');
+  if (scrim) scrim.classList.toggle('open', open);
+}
+function closeSidebar() {
+  document.querySelector('.sidebar')?.classList.remove('mobile-open');
+  document.getElementById('sidebar-scrim')?.classList.remove('open');
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
@@ -1195,6 +1232,7 @@ async function checkStripeStatus() {
     const data = await res.json();
     const banner = document.getElementById('stripe-banner');
     const badge  = document.getElementById('stripe-connected-badge');
+    const main   = document.querySelector('.main');
     if (data.connected) {
       if (banner) banner.style.display = 'none';
       if (badge)  badge.style.display = 'flex';
@@ -1202,6 +1240,9 @@ async function checkStripeStatus() {
       if (banner) banner.style.display = 'flex';
       if (badge)  badge.style.display = 'none';
     }
+    // The banner/badge are position:fixed over the top of the content — pad the scroll area so they
+    // never cover the page header.
+    if (main) main.style.paddingTop = (data.connected ? 40 : 44) + 'px';
   } catch(e) {}
 }
 

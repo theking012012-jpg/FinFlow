@@ -682,6 +682,21 @@ async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_messages_accountant ON accountant_messages(accountant_id)`);
+    // Legacy-schema repair: production created accountant_messages with a `client_id` column (the old
+    // shape) before it was renamed to `user_id` in code. CREATE TABLE IF NOT EXISTS never migrates an
+    // existing table, so the column stayed `client_id` and every route querying `user_id` silently
+    // returned empty (wrapped in .catch). Ensure `user_id` exists and backfill it from `client_id`
+    // where present — this must run BEFORE the indexes below (a missing column aborts the whole init
+    // transaction and crash-loops the server). Idempotent: a fresh table already has user_id.
+    await client.query(`ALTER TABLE accountant_messages ADD COLUMN IF NOT EXISTS user_id INTEGER`);
+    await client.query(`DO $accmsg$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'accountant_messages' AND column_name = 'client_id') THEN
+          UPDATE accountant_messages SET user_id = client_id WHERE user_id IS NULL;
+        END IF;
+      END
+      $accmsg$;`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_messages_user       ON accountant_messages(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_messages_thread     ON accountant_messages(accountant_id, user_id, created_at)`);
 

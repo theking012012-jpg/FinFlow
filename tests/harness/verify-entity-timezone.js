@@ -29,7 +29,9 @@ const REG = { email: 'f88-tz@finflow.test', password: 'harness-password-not-a-se
     A('register owner → 2xx (session cookie set)', (await http.post('/api/auth/register', REG)).ok);
 
     // ── 1 · REJECT a junk timezone BEFORE any entity exists (so it can't be the plan cap masking it) ──
-    const badTz = await http.post('/api/entities', { name: 'Bad Zone Co', timezone: 'Pluto/Central' });
+    // country is now required on create, and it's validated BEFORE timezone — so supply a valid country
+    // here, otherwise the "Country is required" 400 would fire first and this would stop testing timezone.
+    const badTz = await http.post('/api/entities', { name: 'Bad Zone Co', timezone: 'Pluto/Central', country: 'CA' });
     A('junk timezone → 400 (not stored, not a 500/402)', badTz.status === 400, `status ${badTz.status}: ${badTz.text?.slice(0,120)}`);
     A('junk timezone 400 names the field', badTz.status === 400 && /timezone/i.test(badTz.text || ''), badTz.text?.slice(0,120));
 

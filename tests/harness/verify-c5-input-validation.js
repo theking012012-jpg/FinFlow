@@ -35,8 +35,10 @@ const LOGIN = { email: 'c5@finflow.test', password: 'harness-password-not-a-secr
 
     // ── CURRENCY — 8 sites ───────────────────────────────────────────────────
     // entities POST/PUT
-    A('entities POST bad currency -> 400', (await http.post('/api/entities', { name: 'E1', currency: BAD })).status === 400);
-    const ent = await http.post('/api/entities', { name: 'E2', currency: 'EUR' });
+    // country is now required on create (drives tax/filing), so every create here carries a valid one —
+    // otherwise the country check would mask the currency check under test.
+    A('entities POST bad currency -> 400', (await http.post('/api/entities', { name: 'E1', currency: BAD, country: 'CA' })).status === 400);
+    const ent = await http.post('/api/entities', { name: 'E2', currency: 'EUR', country: 'CA' });
     A('entities POST valid currency -> 2xx (control)', ent.status < 400, 'status=' + ent.status);
     const entId = idOf(ent.json);
     A('entities PUT bad currency -> 400', (await http.put(`/api/entities/${entId}`, { currency: BAD })).status === 400);

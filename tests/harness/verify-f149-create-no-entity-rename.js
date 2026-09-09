@@ -56,6 +56,12 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     const setV = (id, v) => { const el = doc.getElementById(id); if (el) el.value = v; return !!el; };
     A('create-business name field present in DOM', setV('nb-name', NEW));
     setV('nb-currency', 'USD'); setV('nb-industry', 'Other');
+    // country is now required by submitCreateBusiness (client mirror of the server rule). The region
+    // <select> may have no options in jsdom (page never opened), so inject a CA option and select it —
+    // otherwise the handler aborts before POSTing and no entity is created.
+    (() => { const cc = doc.getElementById('nb-country'); if (!cc) return;
+      if (![...cc.options].some(o => o.value === 'CA')) { const o = doc.createElement('option'); o.value = 'CA'; o.textContent = 'Canada'; cc.appendChild(o); }
+      cc.value = 'CA'; })();
     A('submitCreateBusiness is the live handler', typeof window.submitCreateBusiness === 'function');
 
     const wireBase = wireLog.length;

@@ -45,7 +45,7 @@ async function runProbe(scenario, statusRaw) {
   const PATHS = {
     banking: '/api/banking',
     mrr: '/api/recurring-invoices',
-    accountant: '/api/accountant-messages',
+    accountant: '/api/accountants/my-accountant/messages',   // chat client-load endpoint (was /api/accountant-messages)
     prefill: '/api/recurring-personal-transactions',
   };
 

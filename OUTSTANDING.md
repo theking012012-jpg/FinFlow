@@ -40,8 +40,10 @@ RED-proven, a real SSE socket receives the peer's message live. Both portal UIs 
 1. **Onboarding** — finish provisions no entity; "Skip" → empty workspace; settings save swallowed but
    onboarded flag still set (silent loss). Provision first entity (name+currency+country) server-side,
    confirm save before flagging.
-2. **Required entity fields** — `POST /api/entities` requires only `name`. Recommend country + currency
-   required (server + UI), grandfather legacy entities. **Decision needed: exact required set.**
+2. **Required entity fields** — ✅ **DONE (2026-09-09).** `POST /api/entities` now requires
+   name + country + currency (country drives tax/filing); create-business UI validates country before
+   submit; UPDATE path left lenient so legacy entities are grandfathered. Proof:
+   **verify-entity-required-fields 8/0**. (Currency effectively always supplied by the UI/default.)
 3. **Accountant verification** — make credential doc mandatory (≥1 of {doc, membership no.}); upgrade
    admin review surface. Real registry/KYC = separate scope. **Decision needed: mandatory-proof only,
    or also scope KYC.**

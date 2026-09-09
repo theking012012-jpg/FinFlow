@@ -536,6 +536,15 @@ async function submitCreateBusiness(){
   // Both optional; server validates (IANA / ISO-2) and allows blank. Selects populated by finflow-f94.js.
   const timezone=(document.getElementById('nb-timezone')||{}).value||'';
   const country=(document.getElementById('nb-country')||{}).value||'';
+  // Country is required on create (mirrors the server rule) — it drives tax + filing. Reset the
+  // in-flight guard/button so the user can pick one and resubmit.
+  if(!country){
+    notify('Please select a country');
+    _cbSubmitting=false;
+    if(_cbBtn){ _cbBtn.disabled=false; _cbBtn.innerHTML=_cbBtnHtml; }
+    const _cc=document.getElementById('nb-country'); if(_cc&&_cc.focus) _cc.focus();
+    return;
+  }
   const isFirst=typeof ENTITIES==='undefined'||ENTITIES.length===0;
   const color='#c9a84c';
   const tag=isFirst?'Parent':'Subsidiary';

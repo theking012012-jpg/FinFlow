@@ -1130,7 +1130,13 @@ app.get('/api/entities', requireAuth, wrap(async (req, res) => {
 }));
 app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const { name, currency = 'USD', color = '#c9a84c', timezone, country } = req.body || {};
-  if (!name) return res.status(400).json({ error: 'Name is required.' });
+  if (!name || !String(name).trim()) return res.status(400).json({ error: 'Name is required.' });
+  // Tightened create requirements: country is mandatory on CREATE (it drives tax + filing; an entity
+  // with no jurisdiction is not useful downstream). currency is always supplied (defaulted above).
+  // Only enforced on CREATE — the PUT/update path stays lenient so pre-existing (legacy) entities that
+  // were created before this rule can still be edited without being forced to backfill.
+  if (!country || !String(country).trim()) return res.status(400).json({ error: 'Country is required.' });
+  if (!currency || !String(currency).trim()) return res.status(400).json({ error: 'Currency is required.' });
   if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
   if (_badTimezone(timezone)) return res.status(400).json({ error: 'Invalid timezone. Use an IANA zone such as America/Toronto.' });
   if (_badCountry(country)) return res.status(400).json({ error: 'Invalid country code. Use a 2-letter ISO code such as CA.' });

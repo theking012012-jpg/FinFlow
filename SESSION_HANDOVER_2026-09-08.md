@@ -196,3 +196,18 @@ exists). Idempotent — a fresh table already has user_id. Proven against a simu
 **Lesson:** the sandbox always builds tables FRESH (with user_id), so it never exercised prod's
 legacy-schema path. Any new column/index on a long-lived table must ship with `ADD COLUMN IF NOT
 EXISTS` + a backfill guard — `CREATE TABLE IF NOT EXISTS` does not migrate existing tables.
+
+---
+
+## 2026-09-09 — Required entity fields — SHIPPED
+
+Tightened entity creation (item 2 of the four). `POST /api/entities` now rejects a create missing
+name, country, or currency (country drives tax + filing). The UPDATE path is left lenient so
+pre-existing (legacy) entities created before this rule can still be edited without being forced to
+backfill a country. The only live create UI (`submitCreateBusiness` on the create-business page —
+`openAddEntityModal`/`+ Add business` both route here) validates country before POST; the older
+`addBusiness()` wiring is dead (no button binds it). Files: server.js (POST /api/entities),
+public/app-main.js (submitCreateBusiness). Proof: verify-entity-required-fields 8/0 (RED-proven).
+
+Next of the four: onboarding (provision the first entity server-side with these required fields +
+confirm save before setting the onboarded flag), then accountant verification (require ≥1 real proof).

@@ -33,6 +33,8 @@ read-columns + a message thread index; hub-backed routes under `/api/accountants
 `/api/accountants/clients/:id/{stream,typing,unread}`. Proof: **verify-accountant-chat 23/0**,
 RED-proven, a real SSE socket receives the peer's message live. Both portal UIs upgraded.
 
+**Post-deploy hotfix (2026-09-09):** the first deploy crash-looped — production `accountant_messages` still had the legacy `client_id` column, so the new `user_id` index aborted initDB. Fixed in database.js (ADD COLUMN IF NOT EXISTS user_id + backfill from client_id, before indexing). Chat harness still 23/0.
+
 **Remaining 3 of the 4 requested items — ADVISORY, not yet built (Shaq to confirm scope):**
 
 1. **Onboarding** — finish provisions no entity; "Skip" → empty workspace; settings save swallowed but

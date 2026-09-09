@@ -173,3 +173,26 @@ enters the thread). Auto-included in the sweep (`^verify-.*\.js$`).
   live). Weaknesses: credential doc is OPTIONAL; membership lookup is mock-only; no KYC. Path: require
   at least one of {credential doc, membership no.}, upgrade admin review surface; real registry/KYC to
   be scoped separately.
+
+---
+
+## Post-deploy HOTFIX · 2026-09-09 — accountant_messages legacy schema (crash-loop)
+
+The FIRST chat deploy crash-looped production: `column "user_id" does not exist` in `ComputeIndexAttrs`
+(initDB, database.js). Root cause: production's `accountant_messages` table was created under the OLD
+schema with a `client_id` column; `CREATE TABLE IF NOT EXISTS` never migrates an existing table, so it
+stayed `client_id` and the new `idx_acc_messages_user` index referenced a column that isn't there —
+initDB runs in ONE transaction, so it rolled back and the server never booted. (Side effect now
+understood: the pre-existing message routes queried `user_id` against this table and silently returned
+empty via `.catch` — so chat never actually worked in prod before this.)
+
+**Fix (database.js, before the accountant_messages indexes):**
+`ALTER TABLE accountant_messages ADD COLUMN IF NOT EXISTS user_id INTEGER`, then a guarded
+`UPDATE ... SET user_id = client_id WHERE user_id IS NULL` (only if a legacy `client_id` column
+exists). Idempotent — a fresh table already has user_id. Proven against a simulated legacy table
+(client_id 42 -> user_id 42, indexes built, no crash); chat harness still 23/0. Shipped as the
+`hotfix(db)` commit after the chat commit.
+
+**Lesson:** the sandbox always builds tables FRESH (with user_id), so it never exercised prod's
+legacy-schema path. Any new column/index on a long-lived table must ship with `ADD COLUMN IF NOT
+EXISTS` + a backfill guard — `CREATE TABLE IF NOT EXISTS` does not migrate existing tables.

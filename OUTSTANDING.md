@@ -25,7 +25,9 @@ Resend domain verification (owner/ops); provider go-live env keys (owner/ops).
 
 ---
 
-## 🟢 STATUS UPDATE — 2026-09-09 — In-app CHAT shipped (see SESSION_HANDOVER_2026-09-08.md addendum)
+## 🟢 STATUS UPDATE — 2026-09-09 — In-app CHAT + required entity fields shipped (see SESSION_HANDOVER_2026-09-08.md addendum)
+
+**Session scoreboard — 4 requested items:** ✅ 1) In-app chat (real-time, 23/0) · ✅ 2) Required entity fields (8/0) · ⏳ 3) Onboarding · ⏳ 4) Accountant verification. Chat first deploy crash-looped (legacy accountant_messages schema) and was hotfixed; production recovered. Entity-fields deploy is additive (no migration).
 
 **In-app accountant↔client CHAT — COMPLETE.** Real-time (SSE hub, not polling), read receipts
 ("✓ Seen"), typing indicators, unread badges, full per-link isolation. Two `accountant_clients`
@@ -35,7 +37,7 @@ RED-proven, a real SSE socket receives the peer's message live. Both portal UIs 
 
 **Post-deploy hotfix (2026-09-09):** the first deploy crash-looped — production `accountant_messages` still had the legacy `client_id` column, so the new `user_id` index aborted initDB. Fixed in database.js (ADD COLUMN IF NOT EXISTS user_id + backfill from client_id, before indexing). Chat harness still 23/0.
 
-**Remaining 3 of the 4 requested items — ADVISORY, not yet built (Shaq to confirm scope):**
+**The 4 requested items — current status** (chat + entity fields shipped; onboarding + verification still open):
 
 1. **Onboarding** — finish provisions no entity; "Skip" → empty workspace; settings save swallowed but
    onboarded flag still set (silent loss). Provision first entity (name+currency+country) server-side,

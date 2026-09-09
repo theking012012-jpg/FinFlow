@@ -211,3 +211,9 @@ public/app-main.js (submitCreateBusiness). Proof: verify-entity-required-fields 
 
 Next of the four: onboarding (provision the first entity server-side with these required fields +
 confirm save before setting the onboarded flag), then accountant verification (require ≥1 real proof).
+
+---
+
+## Final sweep state (2026-09-09)
+
+**214/214 GREEN, 0 RED.** The chat + required-entity-fields work created test-side fallout that the sweep caught and that is now fixed: three entity-create harnesses (verify-c5-input-validation, verify-entity-timezone, verify-f149-create-no-entity-rename) now pass the newly-required country; and boot-failures-gate.js was repointed from the retired /api/accountant-messages to the new /api/accountants/my-accountant/messages chat endpoint. All committed + pushed. Remaining of the four requested items: onboarding, accountant verification.

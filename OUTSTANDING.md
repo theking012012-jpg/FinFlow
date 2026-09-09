@@ -27,7 +27,7 @@ Resend domain verification (owner/ops); provider go-live env keys (owner/ops).
 
 ## 🟢 STATUS UPDATE — 2026-09-09 — In-app CHAT + required entity fields shipped (see SESSION_HANDOVER_2026-09-08.md addendum)
 
-**Session scoreboard — 4 requested items:** ✅ 1) In-app chat (real-time, 23/0) · ✅ 2) Required entity fields (8/0) · ⏳ 3) Onboarding · ⏳ 4) Accountant verification. Chat first deploy crash-looped (legacy accountant_messages schema) and was hotfixed; production recovered. Entity-fields deploy is additive (no migration).
+**Session scoreboard — 4 requested items:** ✅ 1) In-app chat (real-time, 23/0) · ✅ 2) Required entity fields (8/0) · ⏳ 3) Onboarding · ⏳ 4) Accountant verification. Chat first deploy crash-looped (legacy accountant_messages schema) and was hotfixed; production recovered. Entity-fields deploy is additive (no migration). **Full sweep: 214/214 GREEN, 0 RED** (2026-09-09) after fixing test-side fallout from these two features: 3 entity-create harnesses (verify-c5-input-validation / verify-entity-timezone / verify-f149-create-no-entity-rename) now supply the required country, and boot-failures-gate points at the new chat endpoint.
 
 **In-app accountant↔client CHAT — COMPLETE.** Real-time (SSE hub, not polling), read receipts
 ("✓ Seen"), typing indicators, unread badges, full per-link isolation. Two `accountant_clients`

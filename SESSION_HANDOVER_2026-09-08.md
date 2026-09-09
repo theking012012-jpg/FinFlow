@@ -99,3 +99,77 @@ accountant password-reset route yet, so a link would be dead; add the route firs
 - **Email launch blocker (owner/ops)** — verify a domain in Resend + set `EMAIL_FROM`, else real users
   get no password-reset email.
 - **Provider go-live (owner/ops)** — Railway env keys + redirect URIs for the new connectors.
+
+---
+
+# ADDENDUM · 2026-09-09 — In-app CHAT (accountant ↔ client), real-time
+
+First of the four "industry-standard-but-better" items Shaq requested (chat · onboarding · required
+entity fields · accountant verification). **Chat is COMPLETE.** The other three are still advisory
+(see PLAN below).
+
+## What shipped
+Two-way accountant↔client messaging with **real-time delivery**, read receipts, typing indicators,
+and unread badges — built on the existing `accountant_messages` table (extended, not rebuilt).
+
+- **Real-time = SSE hub, not polling.** `accountant-routes.js` module scope holds an in-process
+  pub/sub (`_chatHub`, keyed `${accountantId}:${userId}`): `_chatSubscribe` / `_chatBroadcast` /
+  `_openSse`. Each side opens one `EventSource`; a new message / `read` / `typing` event fans out to
+  the thread's subscribers instantly. Compression is app-wide (server.js:60) and buffers a stream, so
+  every write is followed by `res.flush()`. Keep-alive ping every 25s; `X-Accel-Buffering: no`.
+  **Single-instance safe (Railway one web proc); for horizontal scale swap the Map for Redis pub/sub —
+  the subscribe/broadcast surface is the only seam.** Both clients also slow-poll (20s) as a fallback,
+  so a dropped stream degrades to "slightly delayed", never "lost".
+- **Read receipts.** Two columns on `accountant_clients`: `accountant_last_read`, `client_last_read`
+  (TIMESTAMPTZ, NULL = never opened). Opening the thread (GET) stamps the caller's column and
+  broadcasts a `read` event; the peer's GET returns `otherLastRead`, which the UI turns into a
+  "✓ Seen" tick on the last message the peer has read. O(1) — no per-row read flag.
+- **Unread.** Accountant: `GET /api/accountants/clients/:userId/unread` (client messages after
+  `accountant_last_read`). Client: folded into `GET /api/accountants/my-accountant` as `unread`
+  (accountant messages after `client_last_read`). Both drive a `.nav-badge`.
+- **Typing.** `POST .../typing` (throttled to 1/2s client-side) broadcasts a transient `typing` event
+  to the peer only (`exceptSide`), never persisted.
+
+## Routes (all in accountant-routes.js unless noted)
+- Client: `GET/POST /api/accountants/my-accountant/messages`, `POST .../typing`, `GET .../stream` (SSE).
+  Client GET returns `{ messages, otherLastRead, accountantId }`; every route resolves the caller's OWN
+  active link (owner-scoped by `req.session.userId`) — sender is server-forced `'client'`.
+- Accountant: existing `GET/POST /api/accountants/clients/:userId/message[s]` now broadcast + mark-read;
+  new `GET .../stream` (SSE), `POST .../typing`, `GET .../unread`. Access-gated by the active
+  `accountant_clients` link (403 otherwise). Plural GET now returns `{ messages, otherLastRead }`.
+- **Legacy note:** the old client route `GET/POST /api/accountant-messages` (server.js:3857/3877) still
+  works but does NOT broadcast; the client UI has been repointed to the hub-backed routes above. Left in
+  place as a harmless alias (boot-failures-gate.js references it).
+
+## UI
+- **Client (index.html):** My Accountant page chat panel rewritten — SSE stream, seen ticks, typing
+  ("Your accountant is typing…"), nav unread badge, Enter-to-send, optimistic append with id de-dupe.
+  Thread auto-opens (and marks read) only when the page is actually visible, so the badge isn't cleared
+  on boot.
+- **Accountant (accountant-client.html):** "Message Client" tab upgraded to the same live thread
+  (SSE, seen, typing, nav badge). `msg-input` gets `oninput`/`onkeydown` handlers.
+
+## Schema (database.js)
+`accountant_clients` += `accountant_last_read`, `client_last_read` (idempotent ALTERs).
+`accountant_messages` += indexes `idx_acc_messages_user`, `idx_acc_messages_thread(accountant_id,user_id,created_at)`.
+
+## Proof
+`verify-accountant-chat.js` — **23/0 GREEN**, RED-proven (endpoints 404 before build). Drives a REAL
+SSE socket: a live listener on one side receives the other side's POSTed message within ~400ms
+(actual hub fan-out, not polling). Also proves two-way ordering, unread before/after open, otherLastRead
+receipts, typing over the socket, and full isolation (unlinked accountant 403 on
+read/post/stream/typing; unlinked client empty thread + 404 on post/stream; no intrusion message ever
+enters the thread). Auto-included in the sweep (`^verify-.*\.js$`).
+
+## Still ADVISORY (not built) — the other three
+- **Onboarding:** finish creates a settings string but **no entity** (per-entity connectors then have
+  nothing to attach to); "Skip" dumps into an empty workspace; settings save is swallowed yet the
+  onboarded flag is still set (silent data loss on failure). Path: provision the first entity
+  server-side (name+currency+country), confirm save before flagging, make identity required / keep
+  connections optional.
+- **Required entity fields:** `POST /api/entities` requires only `name`. Recommend country + currency
+  required server-side + UI, grandfathering legacy entities via a "complete your entity" prompt.
+- **Accountant verification:** backbone is solid (all pending → manual admin approve; status re-checked
+  live). Weaknesses: credential doc is OPTIONAL; membership lookup is mock-only; no KYC. Path: require
+  at least one of {credential doc, membership no.}, upgrade admin review surface; real registry/KYC to
+  be scoped separately.

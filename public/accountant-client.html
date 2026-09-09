@@ -240,6 +240,13 @@
     .msg-accountant{background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.15);align-self:flex-end;color:var(--text);}
     .msg-client{background:var(--card2);border:1px solid var(--border);align-self:flex-start;color:var(--text2);}
     .msg-meta{font-size:10px;color:var(--text3);margin-top:4px;}
+    .msg-meta .seen{color:var(--gold);margin-left:6px;font-weight:600;}
+    .msg-bubble.sending{opacity:.55;}
+    .typing-row{font-size:11px;color:var(--text3);padding:2px 4px 0;font-style:italic;min-height:16px;transition:opacity .15s;}
+    .typing-row .tdot{display:inline-block;animation:tblink 1.2s infinite;}
+    .typing-row .tdot:nth-child(2){animation-delay:.2s}.typing-row .tdot:nth-child(3){animation-delay:.4s}
+    @keyframes tblink{0%,60%,100%{opacity:.25}30%{opacity:1}}
+    .nav-badge{display:inline-block;min-width:16px;height:16px;line-height:16px;text-align:center;font-size:10px;font-weight:700;background:var(--gold);color:#0e0e0c;border-radius:9px;padding:0 5px;margin-left:6px;}
     /* AI */
     .ai-bullet{display:flex;align-items:flex-start;gap:10px;padding:12px 0;border-bottom:1px solid rgba(42,40,32,.5);font-size:13px;color:var(--text2);line-height:1.6;}
     .ai-bullet:last-child{border:none;}
@@ -700,11 +707,12 @@
       <div class="page-hdr">
         <div><div class="page-title">Message Client</div></div>
       </div>
-      <div class="card" style="margin-bottom:16px;min-height:240px;max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:16px" id="messages-thread">
+      <div class="card" style="margin-bottom:8px;min-height:240px;max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:16px" id="messages-thread">
         <div class="empty" style="margin:auto">No messages yet.</div>
       </div>
+      <div class="typing-row" id="msg-typing"></div>
       <div class="card">
-        <textarea class="notes-textarea" id="msg-input" placeholder="Write a message to your client…" style="min-height:70px"></textarea>
+        <textarea class="notes-textarea" id="msg-input" placeholder="Write a message to your client…" style="min-height:70px" oninput="onMsgTyping()" onkeydown="onMsgKey(event)"></textarea>
         <div style="display:flex;justify-content:flex-end;margin-top:10px">
           <button class="topbar-btn primary" onclick="sendMessage()"><i class="ti ti-send"></i> Send</button>
         </div>
@@ -759,6 +767,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (!_userId || !/^\d+$/.test(_userId)) { location.href = '/accountant'; return; }
   setClientInfo();
   await loadData();
+  updateMsgNavBadge();   // badge the "Message Client" nav item with unread client messages
 });
 
 function setClientInfo() {
@@ -1449,38 +1458,137 @@ async function loadChecklist() {
   renderChecklist();
 }
 
-// ── MESSAGES ───────────────────────────────────────────────────────────────
+// ── MESSAGES — real-time (SSE) with read receipts, typing, and a poll fallback ──
+let _msgs = [], _otherLastRead = null, _msgSse = null, _msgPoll = null;
+let _typingSentAt = 0, _typingHideTimer = null;
+
+function renderMessages() {
+  const el = document.getElementById('messages-thread');
+  if (!el) return;
+  if (!_msgs.length) { el.innerHTML = '<div class="empty" style="margin:auto">No messages yet. Start the conversation.</div>'; return; }
+  // "Seen" tick: the last accountant message the CLIENT has read (created_at <= their last_read).
+  const readTs = _otherLastRead ? new Date(_otherLastRead).getTime() : 0;
+  let lastSeenIdx = -1;
+  _msgs.forEach((m, i) => { if (m.sender === 'accountant' && new Date(m.created_at).getTime() <= readTs) lastSeenIdx = i; });
+  el.innerHTML = _msgs.map((m, i) => {
+    const body = esc(m.content != null ? m.content : m.message);
+    const seen = i === lastSeenIdx ? '<span class="seen">✓ Seen</span>' : '';
+    return `<div class="msg-bubble msg-${esc(m.sender)}${m._sending ? ' sending' : ''}">
+        <div>${body}</div>
+        <div class="msg-meta">${m.sender === 'accountant' ? 'You' : 'Client'} · ${fmtDate(m.created_at)}${seen}</div>
+      </div>`;
+  }).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
 async function loadMessages() {
   const el = document.getElementById('messages-thread');
   if (!el) return;
   try {
-    const r = await fetch(`/api/accountants/clients/${_userId}/message`, {credentials:'include'});
+    const r = await fetch(`/api/accountants/clients/${_userId}/messages`, {credentials:'include'});
     if (!r.ok) { el.innerHTML = '<div class="empty" style="margin:auto">Could not load messages.</div>'; return; }
-    const msgs = await r.json();
-    if (!msgs.length) { el.innerHTML = '<div class="empty" style="margin:auto">No messages yet. Start the conversation.</div>'; return; }
-    el.innerHTML = msgs.map(m => `
-      <div class="msg-bubble msg-${esc(m.sender)}">
-        <div>${esc(m.message)}</div>
-        <div class="msg-meta">${m.sender === 'accountant' ? 'You' : 'Client'} · ${fmtDate(m.created_at)}</div>
-      </div>`).join('');
-    el.scrollTop = el.scrollHeight;
+    const data = await r.json();
+    _msgs = data.messages || [];
+    _otherLastRead = data.otherLastRead || null;
+    renderMessages();
+    clearMsgNavBadge();
+    openMsgStream();
+    if (!_msgPoll) _msgPoll = setInterval(refreshMessages, 20000);  // backstop if SSE ever drops
   } catch(e) { el.innerHTML = '<div class="empty" style="margin:auto">Could not load messages.</div>'; }
 }
+
+// Light re-fetch used by the poll fallback (no stream reconnect churn).
+async function refreshMessages() {
+  try {
+    const r = await fetch(`/api/accountants/clients/${_userId}/messages`, {credentials:'include'});
+    if (!r.ok) return;
+    const data = await r.json();
+    _msgs = data.messages || [];
+    _otherLastRead = data.otherLastRead || null;
+    renderMessages();
+  } catch(e) {}
+}
+
+function openMsgStream() {
+  if (_msgSse) return;
+  try {
+    _msgSse = new EventSource(`/api/accountants/clients/${_userId}/stream`, { withCredentials: true });
+    _msgSse.addEventListener('message', (e) => {
+      const d = JSON.parse(e.data);
+      if (_msgs.some(m => m.id === d.id)) return;   // de-dupe our own echoed send
+      _msgs.push(d);
+      renderMessages();
+      // A message we're seeing live is read by us the moment it lands — tell the other side.
+      if (d.sender === 'client') markRead();
+    });
+    _msgSse.addEventListener('read', (e) => {
+      const d = JSON.parse(e.data);
+      if (d.by === 'client') { _otherLastRead = d.at; renderMessages(); }
+    });
+    _msgSse.addEventListener('typing', (e) => {
+      const d = JSON.parse(e.data);
+      if (d.by === 'client') showTyping();
+    });
+    _msgSse.onerror = () => { try { _msgSse.close(); } catch(_){} _msgSse = null; setTimeout(openMsgStream, 4000); };
+  } catch(e) { _msgSse = null; }
+}
+
+function showTyping() {
+  const t = document.getElementById('msg-typing');
+  if (!t) return;
+  t.innerHTML = 'Client is typing<span class="tdot">.</span><span class="tdot">.</span><span class="tdot">.</span>';
+  clearTimeout(_typingHideTimer);
+  _typingHideTimer = setTimeout(() => { t.innerHTML = ''; }, 3000);
+}
+
+function onMsgTyping() {
+  const now = Date.now();
+  if (now - _typingSentAt < 2000) return;   // throttle: at most one signal / 2s
+  _typingSentAt = now;
+  fetch(`/api/accountants/clients/${_userId}/typing`, { method:'POST', credentials:'include' }).catch(()=>{});
+}
+function onMsgKey(ev) {
+  if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); sendMessage(); }
+}
+async function markRead() {
+  // Re-open (GET) is what stamps accountant_last_read server-side; cheap and idempotent.
+  fetch(`/api/accountants/clients/${_userId}/messages`, {credentials:'include'}).catch(()=>{});
+}
+
 async function sendMessage() {
   const input = document.getElementById('msg-input');
   const message = (input?.value || '').trim();
   if (!message) return;
+  input.value = '';
   try {
-    const r = await fetch(`/api/accountants/clients/${_userId}/message`, {
+    const r = await fetch(`/api/accountants/clients/${_userId}/messages`, {
       method:'POST', credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({message}),
+      body: JSON.stringify({content: message}),
     });
-    if (!r.ok) { showToast('Send failed', 'error'); return; }
-    input.value = '';
-    await loadMessages();
-  } catch(e) { showToast('Send failed', 'error'); }
+    if (!r.ok) { showToast('Send failed', 'error'); input.value = message; return; }
+    const row = await r.json();
+    if (!_msgs.some(m => m.id === row.id)) { _msgs.push({ ...row, sender:'accountant' }); renderMessages(); }
+  } catch(e) { showToast('Send failed', 'error'); input.value = message; }
 }
+
+// Nav unread badge for the "Message Client" item.
+async function updateMsgNavBadge() {
+  try {
+    const r = await fetch(`/api/accountants/clients/${_userId}/unread`, {credentials:'include'});
+    if (!r.ok) return;
+    const { unread } = await r.json();
+    setMsgNavBadge(unread || 0);
+  } catch(e) {}
+}
+function setMsgNavBadge(n) {
+  const nav = document.querySelector('.nav-item[onclick*="messages"]');
+  if (!nav) return;
+  let b = nav.querySelector('.nav-badge');
+  if (n > 0) { if (!b) { b = document.createElement('span'); b.className = 'nav-badge'; nav.appendChild(b); } b.textContent = n; }
+  else if (b) b.remove();
+}
+function clearMsgNavBadge() { setMsgNavBadge(0); }
 
 // ── UTILS ──────────────────────────────────────────────────────────────────
 function set(id, val) { const el=document.getElementById(id); if(el) el.textContent=val; }

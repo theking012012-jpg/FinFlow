@@ -354,6 +354,12 @@ async function initDB() {
     // Add notes and checklist columns if missing (safe ALTER TABLE for existing deployments)
     await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''`);
     await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS checklist JSONB DEFAULT '{}'`);
+    // In-app chat read receipts: how far each side has read the shared thread. NULL = never
+    // opened. Drives unread badges (messages after my last_read) and "Seen" ticks (the other
+    // side's last_read vs my sent message's created_at). Two columns, not a per-row read flag —
+    // O(1) to update and to compare (F-chat).
+    await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS accountant_last_read TIMESTAMPTZ`);
+    await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS client_last_read      TIMESTAMPTZ`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_earnings (
@@ -676,6 +682,8 @@ async function initDB() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_messages_accountant ON accountant_messages(accountant_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_messages_user       ON accountant_messages(user_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_messages_thread     ON accountant_messages(accountant_id, user_id, created_at)`);
 
     // ── ACCOUNTANT DEADLINES ─────────────────────────────────────────────────────
     await client.query(`

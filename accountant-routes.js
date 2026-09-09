@@ -175,6 +175,50 @@ async function lookupMembership(body, membershipNumber) {
 }
 
 
+// ── REAL-TIME CHAT HUB (Server-Sent Events) ────────────────────────────────────
+// In-process pub/sub keyed by conversation = `${accountantId}:${userId}`. Every open
+// EventSource (one per side) registers its res here; a new message / typing / read event
+// fans out to the thread's subscribers INSTANTLY — no polling lag. Two design notes:
+//   · Single-instance safe (Railway runs one web process). For horizontal scale, swap this
+//     Map for a Redis pub/sub — the publish/subscribe surface below is the only seam to change.
+//   · The clients ALSO poll on a slow interval as a fallback, and every send returns the row,
+//     so a dropped stream degrades to "slightly delayed", never "lost message".
+// Compression is enabled app-wide (server.js:60), which buffers a stream; each write is followed
+// by res.flush() (the method the compression middleware adds) so every event leaves immediately.
+const _chatHub = new Map();  // convKey -> Set<{ res, side }>
+const _convKey = (accountantId, userId) => `${accountantId}:${userId}`;
+
+function _chatSubscribe(key, entry) {
+  let set = _chatHub.get(key);
+  if (!set) { set = new Set(); _chatHub.set(key, set); }
+  set.add(entry);
+  return () => { const s = _chatHub.get(key); if (s) { s.delete(entry); if (s.size === 0) _chatHub.delete(key); } };
+}
+
+function _chatBroadcast(key, event, data, opts = {}) {
+  const set = _chatHub.get(key);
+  if (!set) return;
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const entry of set) {
+    if (opts.exceptSide && entry.side === opts.exceptSide) continue;  // don't echo the sender's own typing back
+    try { entry.res.write(payload); if (typeof entry.res.flush === 'function') entry.res.flush(); } catch (_) {}
+  }
+}
+
+/** Open an SSE response: headers, no-buffering hints, an immediate ready event, and a 25s
+ *  keep-alive ping so proxies don't idle-close the stream. Returns nothing — caller wires close. */
+function _openSse(res) {
+  res.status(200).set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+  res.write('event: ready\ndata: {}\n\n');
+  if (typeof res.flush === 'function') res.flush();
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1173,6 +1217,13 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
        WHERE accountant_id = $1 AND user_id = $2 ORDER BY created_at ASC LIMIT 100`,
       [req.session.accountantId, userId]
     ).catch(() => ({ rows: [] }));
+    // Opening the thread marks the client's messages as read by the accountant, and tells the
+    // client side (via SSE) to flip its sent bubbles to "Seen".
+    await pool.query(
+      `UPDATE accountant_clients SET accountant_last_read = NOW() WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
+      [req.session.accountantId, userId]
+    ).catch(() => {});
+    _chatBroadcast(_convKey(req.session.accountantId, userId), 'read', { by: 'accountant', at: new Date().toISOString() });
     return res.json(msgs.rows);
   }));
 
@@ -1191,6 +1242,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
        VALUES ($1, $2, $3, 'accountant') RETURNING id, message, sender, created_at`,
       [req.session.accountantId, userId, message.trim().slice(0, 2000)]
     );
+    _chatBroadcast(_convKey(req.session.accountantId, userId), 'message',
+      { ...row.rows[0], content: row.rows[0].message, sender_name: 'Your accountant' });
     await _audit(pool, { userId: parseInt(userId), table: 'accountant_messages', recordId: row.rows[0]?.id || null, action: 'MESSAGE', req });  // F90 residual: accountant workflow audit
     return res.json(row.rows[0]);
   }));
@@ -1209,7 +1262,19 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
        WHERE accountant_id = $1 AND user_id = $2 ORDER BY created_at ASC LIMIT 200`,
       [req.session.accountantId, userId]
     ).catch(() => ({ rows: [] }));
-    res.json(rows.map(r => ({ ...r, sender_name: r.sender === 'accountant' ? 'Your accountant' : 'Client' })));
+    const link = await pool.query(
+      `SELECT client_last_read FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
+      [req.session.accountantId, userId]
+    ).catch(() => ({ rows: [] }));
+    await pool.query(
+      `UPDATE accountant_clients SET accountant_last_read = NOW() WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
+      [req.session.accountantId, userId]
+    ).catch(() => {});
+    _chatBroadcast(_convKey(req.session.accountantId, userId), 'read', { by: 'accountant', at: new Date().toISOString() });
+    res.json({
+      messages: rows.map(r => ({ ...r, sender_name: r.sender === 'accountant' ? 'Your accountant' : 'Client' })),
+      otherLastRead: link.rows[0]?.client_last_read || null,   // how far the CLIENT has read → "Seen" ticks
+    });
   }));
 
   app.post('/api/accountants/clients/:userId/messages', requireAccountant, apiLimiter, wrap(async (req, res) => {
@@ -1227,8 +1292,52 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
        VALUES ($1, $2, $3, 'accountant', NOW()) RETURNING id, message AS content, sender, created_at`,
       [req.session.accountantId, userId, content]
     );
+    _chatBroadcast(_convKey(req.session.accountantId, userId), 'message',
+      { ...row.rows[0], sender_name: 'Your accountant' });
     await _audit(pool, { userId: parseInt(userId), table: 'accountant_messages', recordId: row.rows[0]?.id || null, action: 'MESSAGE', req });  // F90 residual: accountant workflow audit
     res.json(row.rows[0]);
+  }));
+
+  // ── ACCOUNTANT: live thread stream (SSE) + typing + unread badge ────────────
+  app.get('/api/accountants/clients/:userId/stream', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).end();
+    const access = await pool.query(
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).end();
+    _openSse(res);
+    const key = _convKey(req.session.accountantId, userId);
+    const entry = { res, side: 'accountant' };
+    const unsub = _chatSubscribe(key, entry);
+    const ping = setInterval(() => { try { res.write(': ping\n\n'); if (res.flush) res.flush(); } catch (_) {} }, 25000);
+    req.on('close', () => { clearInterval(ping); unsub(); });
+  }));
+
+  app.post('/api/accountants/clients/:userId/typing', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).end();
+    const access = await pool.query(
+      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
+      [req.session.accountantId, userId]
+    );
+    if (!access.rows[0]) return res.status(403).end();
+    _chatBroadcast(_convKey(req.session.accountantId, userId), 'typing', { by: 'accountant' }, { exceptSide: 'accountant' });
+    res.json({ ok: true });
+  }));
+
+  app.get('/api/accountants/clients/:userId/unread', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM accountant_messages m
+        JOIN accountant_clients ac ON ac.accountant_id = m.accountant_id AND ac.user_id = m.user_id
+        WHERE m.accountant_id = $1 AND m.user_id = $2 AND m.sender = 'client'
+          AND (ac.accountant_last_read IS NULL OR m.created_at > ac.accountant_last_read)`,
+      [req.session.accountantId, userId]
+    ).catch(() => ({ rows: [{ n: 0 }] }));
+    res.json({ unread: rows[0]?.n || 0 });
   }));
 
   // ── ACCOUNTANT LOGOUT ─────────────────────────────────────────────────────
@@ -1325,7 +1434,11 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
     const result = await pool.query(`
       SELECT a.id, a.first_name, a.last_name, a.firm, a.country, a.specialisation, a.experience, a.bio,
-             ac.status, ac.access_level
+             ac.status, ac.access_level,
+             (SELECT COUNT(*)::int FROM accountant_messages m
+               WHERE m.accountant_id = ac.accountant_id AND m.user_id = ac.user_id
+                 AND m.sender = 'accountant'
+                 AND (ac.client_last_read IS NULL OR m.created_at > ac.client_last_read)) AS unread
       FROM accountant_clients ac
       JOIN accountants a ON a.id = ac.accountant_id
       WHERE ac.user_id = $1 AND ac.status IN ('active', 'pending')
@@ -1361,6 +1474,81 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     await _audit(pool, { userId: req.session.userId, table: 'accountant_clients', recordId: null,
       action: access_level === 'filing' ? 'GRANT_FILING' : 'SET_VIEW', field: 'access_level', newValue: access_level, req });
     res.json({ access_level: row.access_level });
+  }));
+
+  // ── CLIENT: CHAT WITH THEIR LINKED ACCOUNTANT ─────────────────────────────
+  // The client half of the shared thread. Every route resolves the caller's OWN active link
+  // (owner-scoped by req.session.userId) — a client can only ever read/write the conversation
+  // with the accountant they are actually linked to. sender is hard-set 'client' server-side;
+  // the browser cannot forge it. Mirrors the accountant routes above for real-time + receipts.
+  const _clientLink = async (userId) => {
+    const { rows } = await pool.query(
+      `SELECT accountant_id, accountant_last_read FROM accountant_clients
+        WHERE user_id = $1 AND status = 'active' ORDER BY invited_at DESC LIMIT 1`,
+      [userId]
+    ).catch(() => ({ rows: [] }));
+    return rows[0] || null;
+  };
+
+  app.get('/api/accountants/my-accountant/messages', wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const link = await _clientLink(req.session.userId);
+    if (!link) return res.json({ messages: [], otherLastRead: null, accountantId: null });
+    const accId = link.accountant_id;
+    const { rows } = await pool.query(
+      `SELECT id, message AS content, sender, created_at FROM accountant_messages
+        WHERE accountant_id = $1 AND user_id = $2 ORDER BY created_at ASC LIMIT 500`,
+      [accId, req.session.userId]
+    ).catch(() => ({ rows: [] }));
+    // Opening the thread marks the accountant's messages as read by the client + notifies the
+    // accountant side so their sent bubbles flip to "Seen".
+    await pool.query(
+      `UPDATE accountant_clients SET client_last_read = NOW() WHERE user_id = $1 AND accountant_id = $2 AND status = 'active'`,
+      [req.session.userId, accId]
+    ).catch(() => {});
+    _chatBroadcast(_convKey(accId, req.session.userId), 'read', { by: 'client', at: new Date().toISOString() });
+    res.json({
+      messages: rows.map(r => ({ ...r, sender_name: r.sender === 'accountant' ? 'Your accountant' : 'You' })),
+      otherLastRead: link.accountant_last_read || null,   // how far the ACCOUNTANT has read → "Seen" ticks
+      accountantId: accId,
+    });
+  }));
+
+  app.post('/api/accountants/my-accountant/messages', apiLimiter, wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const content = String(req.body.content || req.body.message || '').trim().slice(0, 2000);
+    if (!content) return res.status(400).json({ error: 'Message required.' });
+    const link = await _clientLink(req.session.userId);
+    if (!link) return res.status(404).json({ error: 'No linked accountant.' });
+    const accId = link.accountant_id;
+    const row = await pool.query(
+      `INSERT INTO accountant_messages (accountant_id, user_id, message, sender, created_at)
+       VALUES ($1, $2, $3, 'client', NOW()) RETURNING id, message AS content, sender, created_at`,
+      [accId, req.session.userId, content]
+    );
+    _chatBroadcast(_convKey(accId, req.session.userId), 'message',
+      { ...row.rows[0], sender_name: 'Client' });
+    res.json(row.rows[0]);
+  }));
+
+  app.post('/api/accountants/my-accountant/typing', wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).end();
+    const link = await _clientLink(req.session.userId);
+    if (!link) return res.status(404).end();
+    _chatBroadcast(_convKey(link.accountant_id, req.session.userId), 'typing', { by: 'client' }, { exceptSide: 'client' });
+    res.json({ ok: true });
+  }));
+
+  app.get('/api/accountants/my-accountant/stream', wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).end();
+    const link = await _clientLink(req.session.userId);
+    if (!link) return res.status(404).end();
+    _openSse(res);
+    const key = _convKey(link.accountant_id, req.session.userId);
+    const entry = { res, side: 'client' };
+    const unsub = _chatSubscribe(key, entry);
+    const ping = setInterval(() => { try { res.write(': ping\n\n'); if (res.flush) res.flush(); } catch (_) {} }, 25000);
+    req.on('close', () => { clearInterval(ping); unsub(); });
   }));
 
   // ── CLIENT: REQUEST ACCESS FROM AN ACCOUNTANT ─────────────────────────────

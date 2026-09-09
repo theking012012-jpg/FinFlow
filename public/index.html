@@ -8977,6 +8977,7 @@ myAccPage.innerHTML = `
     <div style="padding:10px 12px;border-top:1px solid var(--bd);display:flex;gap:8px;align-items:center">
       <input id="acct-chat-input" class="finput" type="text" placeholder="Message your accountant…"
         style="flex:1;margin:0;padding:9px 12px"
+        oninput="onAccountantTyping()"
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsgToAccountant();}">
       <button class="btn btn-primary btn-sm" onclick="sendMsgToAccountant()" style="white-space:nowrap">Send →</button>
     </div>
@@ -9193,39 +9194,118 @@ function renderLinkedAccountant() {
   if (_fCb) _fCb.checked = (a.access_level === 'filing');
   const _vCb = document.getElementById('acc-perm-view');
   if (_vCb) _vCb.checked = true;
-  if (typeof window.loadAccountantMessages === 'function') window.loadAccountantMessages();
+  // Badge unread on the nav item, but only auto-open the thread (which marks read) if the
+  // client is actually on the My Accountant page — otherwise defer to showPage on navigation.
+  setMyAccNavBadge(a.unread || 0);
+  const onPage = document.getElementById('page-my-accountant')?.classList.contains('active');
+  if (onPage && typeof window.loadAccountantMessages === 'function') window.loadAccountantMessages();
+}
+
+// ── ACCOUNTANT CHAT — real-time (SSE), read receipts, typing, poll fallback ──
+// Uses the hub-backed endpoints under /api/accountants/my-accountant/* (server-scoped to the
+// caller's own active link). The legacy /api/accountant-messages route still works but does not
+// broadcast — this is the live path.
+let _acctMsgs = [], _acctOtherRead = null, _acctSse = null, _acctPoll = null;
+let _acctTypingAt = 0, _acctTypingHide = null;
+const _acctEsc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function renderAccountantMessages() {
+  const el = document.getElementById('acct-chat-thread');
+  if (!el) return;
+  if (!_acctMsgs.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--t3);font-size:13px;padding:40px 0">No messages yet. Start the conversation below.</div>';
+    return;
+  }
+  // "Seen" on my last message the accountant has read (created_at <= their last_read).
+  const readTs = _acctOtherRead ? new Date(_acctOtherRead).getTime() : 0;
+  let lastSeen = -1;
+  _acctMsgs.forEach((m,i) => { if (m.sender === 'client' && new Date(m.created_at).getTime() <= readTs) lastSeen = i; });
+  el.innerHTML = _acctMsgs.map((m,i) => {
+    const isMe = m.sender === 'client';
+    const dateStr = new Date(m.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+    const seen = i === lastSeen ? ' · <span style="color:var(--acc)">✓ Seen</span>' : '';
+    return `<div style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:2px">
+      <div style="max-width:80%;background:${isMe?'var(--acc)':'var(--bg3)'};color:${isMe?'#0e0b08':'var(--t1)'};padding:9px 13px;border-radius:${isMe?'14px 14px 4px 14px':'14px 14px 14px 4px'};font-size:13.5px;line-height:1.5">${_acctEsc(m.content)}</div>
+      <div style="font-size:11px;color:var(--t3);padding:0 4px">${_acctEsc(m.sender_name)} · ${dateStr}${seen}</div>
+    </div>`;
+  }).join('');
+  el.scrollTop = el.scrollHeight;
 }
 
 window.loadAccountantMessages = async function() {
   try {
-    const res = await fetch('/api/accountant-messages', {credentials:'include'});
-    // F96 class (lighter — not a money surface): don't swallow a real failure silently. 401/403 =
-    // logged out; anything else is logged so a failed load is diagnosable rather than looking like
-    // "no messages".
+    const res = await fetch('/api/accountants/my-accountant/messages', {credentials:'include'});
     if (!res.ok){
       if (res.status !== 401 && res.status !== 403) console.error('[AccountantMessages] load failed (HTTP '+res.status+')');
       return;
     }
-    const msgs = await res.json();
-    const el = document.getElementById('acct-chat-thread');
+    const data = await res.json();
+    _acctMsgs = data.messages || [];
+    _acctOtherRead = data.otherLastRead || null;
     const panel = document.getElementById('acct-chat-panel');
-    if (!el || !panel) return;
-    panel.style.display = 'block';
-    const fn = typeof esc === 'function' ? esc : s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    if (!msgs.length) {
-      el.innerHTML = '<div style="text-align:center;color:var(--t3);font-size:13px;padding:40px 0">No messages yet. Start the conversation below.</div>';
-    } else {
-      el.innerHTML = msgs.map(m => {
-        const isMe = m.sender === 'client';
-        const dateStr = new Date(m.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-        return `<div style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:2px">
-          <div style="max-width:80%;background:${isMe?'var(--acc)':'var(--bg3)'};color:${isMe?'#0e0b08':'var(--t1)'};padding:9px 13px;border-radius:${isMe?'14px 14px 4px 14px':'14px 14px 14px 4px'};font-size:13.5px;line-height:1.5">${fn(m.content)}</div>
-          <div style="font-size:11px;color:var(--t3);padding:0 4px">${fn(m.sender_name)} · ${dateStr}</div>
-        </div>`;
-      }).join('');
-      el.scrollTop = el.scrollHeight;
-    }
+    if (panel) panel.style.display = 'block';
+    renderAccountantMessages();
+    setMyAccNavBadge(0);   // opening the thread clears the badge
+    openAccountantStream();
+    if (!_acctPoll) _acctPoll = setInterval(refreshAccountantMessages, 20000);
   } catch(e) { console.warn('[Chat] load failed:', e.message); }
+};
+
+async function refreshAccountantMessages() {
+  try {
+    const res = await fetch('/api/accountants/my-accountant/messages', {credentials:'include'});
+    if (!res.ok) return;
+    const data = await res.json();
+    _acctMsgs = data.messages || [];
+    _acctOtherRead = data.otherLastRead || null;
+    renderAccountantMessages();
+  } catch(e) {}
+}
+
+function openAccountantStream() {
+  if (_acctSse) return;
+  try {
+    _acctSse = new EventSource('/api/accountants/my-accountant/stream', { withCredentials: true });
+    _acctSse.addEventListener('message', (e) => {
+      const d = JSON.parse(e.data);
+      if (_acctMsgs.some(m => m.id === d.id)) return;
+      _acctMsgs.push(d);
+      renderAccountantMessages();
+      if (d.sender === 'accountant') { fetch('/api/accountants/my-accountant/messages',{credentials:'include'}).catch(()=>{}); }  // mark read
+    });
+    _acctSse.addEventListener('read', (e) => {
+      const d = JSON.parse(e.data);
+      if (d.by === 'accountant') { _acctOtherRead = d.at; renderAccountantMessages(); }
+    });
+    _acctSse.addEventListener('typing', (e) => {
+      const d = JSON.parse(e.data);
+      if (d.by === 'accountant') showAccountantTyping();
+    });
+    _acctSse.onerror = () => { try { _acctSse.close(); } catch(_){} _acctSse = null; setTimeout(openAccountantStream, 4000); };
+  } catch(e) { _acctSse = null; }
+}
+
+function showAccountantTyping() {
+  const el = document.getElementById('acct-chat-thread');
+  if (!el) return;
+  let t = document.getElementById('acct-typing');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'acct-typing';
+    t.style.cssText = 'font-size:12px;color:var(--t3);font-style:italic;padding:2px 4px';
+    el.appendChild(t);
+  }
+  t.textContent = 'Your accountant is typing…';
+  el.scrollTop = el.scrollHeight;
+  clearTimeout(_acctTypingHide);
+  _acctTypingHide = setTimeout(() => { t.remove(); }, 3000);
+}
+
+window.onAccountantTyping = function() {
+  const now = Date.now();
+  if (now - _acctTypingAt < 2000) return;
+  _acctTypingAt = now;
+  fetch('/api/accountants/my-accountant/typing', { method:'POST', credentials:'include' }).catch(()=>{});
 };
 
 window.sendMsgToAccountant = async function() {
@@ -9234,22 +9314,36 @@ window.sendMsgToAccountant = async function() {
   if (!content) return;
   const btn = document.querySelector('#acct-chat-panel .btn-primary');
   if (btn) btn.disabled = true;
+  if (input) input.value = '';
   try {
-    const res = await fetch('/api/accountant-messages', {
+    const res = await fetch('/api/accountants/my-accountant/messages', {
       method:'POST', credentials:'include',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({content})
     });
-    if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
-    if (input) input.value = '';
-    await window.loadAccountantMessages();
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || 'Send failed'); }
+    const row = await res.json();
+    if (!_acctMsgs.some(m => m.id === row.id)) { _acctMsgs.push({ ...row, sender:'client', sender_name:'You' }); renderAccountantMessages(); }
   } catch(e) {
+    if (input) input.value = content;
     if(typeof notify==='function') notify('Failed to send: ' + e.message, true); else alert('Failed to send: ' + e.message);
   } finally {
     if (btn) btn.disabled = false;
     if (input) input.focus();
   }
 };
+
+// Unread badge on the "My Accountant" nav item (fed by my-accountant GET's `unread`).
+function setMyAccNavBadge(n) {
+  const nav = document.querySelector('.nav-item[onclick*="my-accountant"]');
+  if (!nav) return;
+  let b = nav.querySelector('.nav-badge');
+  if (n > 0) {
+    if (!b) { b = document.createElement('span'); b.className = 'nav-badge';
+      b.style.cssText = 'display:inline-block;min-width:16px;height:16px;line-height:16px;text-align:center;font-size:10px;font-weight:700;background:var(--acc);color:#0e0b08;border-radius:9px;padding:0 5px;margin-left:6px'; nav.appendChild(b); }
+    b.textContent = n;
+  } else if (b) b.remove();
+}
 
 window.requestAccountant = async function(accountantId, name) {
   try {

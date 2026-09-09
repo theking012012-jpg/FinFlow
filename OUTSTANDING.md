@@ -25,6 +25,27 @@ Resend domain verification (owner/ops); provider go-live env keys (owner/ops).
 
 ---
 
+## 🟢 STATUS UPDATE — 2026-09-09 — In-app CHAT shipped (see SESSION_HANDOVER_2026-09-08.md addendum)
+
+**In-app accountant↔client CHAT — COMPLETE.** Real-time (SSE hub, not polling), read receipts
+("✓ Seen"), typing indicators, unread badges, full per-link isolation. Two `accountant_clients`
+read-columns + a message thread index; hub-backed routes under `/api/accountants/my-accountant/*` and
+`/api/accountants/clients/:id/{stream,typing,unread}`. Proof: **verify-accountant-chat 23/0**,
+RED-proven, a real SSE socket receives the peer's message live. Both portal UIs upgraded.
+
+**Remaining 3 of the 4 requested items — ADVISORY, not yet built (Shaq to confirm scope):**
+
+1. **Onboarding** — finish provisions no entity; "Skip" → empty workspace; settings save swallowed but
+   onboarded flag still set (silent loss). Provision first entity (name+currency+country) server-side,
+   confirm save before flagging.
+2. **Required entity fields** — `POST /api/entities` requires only `name`. Recommend country + currency
+   required (server + UI), grandfather legacy entities. **Decision needed: exact required set.**
+3. **Accountant verification** — make credential doc mandatory (≥1 of {doc, membership no.}); upgrade
+   admin review surface. Real registry/KYC = separate scope. **Decision needed: mandatory-proof only,
+   or also scope KYC.**
+
+---
+
 ## 🟢 DONE 2026-09-04 — Reconcile system (Stripe + Bank, money in & out)
 Full detail: **`SESSION_HANDOVER_2026-09-04.md`**. Committed through `926eac4`; 188/188 sweep green;
 verified live on production (non-destructive). Features: Stripe add-to-books (idempotent), processing

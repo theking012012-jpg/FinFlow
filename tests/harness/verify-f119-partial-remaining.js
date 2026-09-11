@@ -28,11 +28,24 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
       },
     });
     const { window, settle } = boot;
-    await settle(5, 100);
 
-    // Ensure invoices are loaded into the client store (loadEntityData runs at boot; nudge if present).
-    if (typeof window.loadEntityData === 'function') { try { await window.loadEntityData(); } catch (e) {} }
-    await settle(3, 100);
+    // Wait UNTIL the boot load has populated the store, not for a fixed interval. Measured (probe,
+    // 2026-09-10, both HEAD and working tree): window.userInvoices lands ~1.0-1.3 s after jsdom boot.
+    // The original fixed budget here was 800 ms (settle(5,100) + settle(3,100)), so this harness was
+    // a race by construction — it went red 1 run in ~4 in isolation and red in the 2026-09-10 sweep
+    // with the product code unchanged on this path. A fixed sleep shorter than the thing it waits
+    // for is not a wait; it is a coin. Poll up to 12 s (well past the measured latency, well under
+    // the sweep's 180 s cap) and fall through to the assertions either way, so a genuinely-empty
+    // store still fails loudly rather than hanging.
+    for (let i = 0; i < 240; i++) {
+      if (Array.isArray(window.userInvoices) && window.userInvoices.some(x => x && x.client === 'F119 Co')) break;
+      await settle(1, 50);
+    }
+    // Nudge once if the boot load still hasn't landed (loadEntityData runs at boot; harmless if it has).
+    if (!(Array.isArray(window.userInvoices) && window.userInvoices.length) && typeof window.loadEntityData === 'function') {
+      try { await window.loadEntityData(); } catch (e) {}
+      await settle(6, 100);
+    }
 
     const invs = Array.isArray(window.userInvoices) ? window.userInvoices : [];
     const inv = invs.find(i => i && i.client === 'F119 Co');

@@ -265,6 +265,17 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
       return res.status(400).json({ error: credDoc.error });
     }
 
+    // MANDATORY PROOF (F#) — an accountant must supply at least ONE concrete, reviewable proof of
+    // credentials before entering the pending queue: a valid credential document, OR a professional
+    // membership / registration number. A verification METHOD alone (a radio choice) is not proof —
+    // it is a claim. Admin review then confirms it. Real registry/KYC is a separate, later step.
+    const _membershipNo = (verification && verification.membershipNumber && String(verification.membershipNumber).trim())
+      || (req.body.memberships && String(req.body.memberships).trim()) || '';
+    const _hasCredDoc = credDoc.present && credDoc.ok;
+    if (!_hasCredDoc && !_membershipNo) {
+      return res.status(400).json({ error: 'Proof of credentials is required: upload a credential document (certificate, practising licence, or membership card) or provide your professional membership number.' });
+    }
+
     const client = await pool.connect();
     try {
       // Check for existing accountant with this email

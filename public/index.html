@@ -1885,6 +1885,39 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
       </div>
 
+      <!-- ENTITY BUSINESS PROFILE MODAL (F196 Tier 2) -->
+      <div class="modal-overlay hidden" id="entity-profile-modal">
+        <div class="modal">
+          <div class="modal-header">
+            <div><div class="modal-title">Business profile</div><div class="modal-sub" id="ep-sub">The letterhead used on this entity\u2019s invoices, quotes & receipts</div></div>
+            <button class="modal-close" onclick="closeModal('entity-profile-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
+          </div>
+          <input type="hidden" id="ep-entity-id">
+          <div class="field-wrap"><label class="field-label" for="ep-business-name">Business name <span style="color:var(--t3);font-weight:400">\u00b7 blank = use the entity name</span></label><input class="finput" id="ep-business-name" placeholder="Shown on documents"></div>
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label" for="ep-email">Email</label><input class="finput" type="email" id="ep-email" placeholder="billing@business.com"></div>
+            <div class="field-wrap"><label class="field-label" for="ep-phone">Phone</label><input class="finput" type="tel" id="ep-phone" placeholder="+1 (555) 000-0000"></div>
+          </div>
+          <div class="field-group">
+            <div class="field-wrap"><label class="field-label" for="ep-tax-id">Tax ID / VAT</label><input class="finput" id="ep-tax-id" placeholder="XX-XXXXXXX"></div>
+            <div class="field-wrap"><label class="field-label" for="ep-website">Website</label><input class="finput" id="ep-website" placeholder="https://business.com"></div>
+          </div>
+          <div class="field-wrap"><label class="field-label" for="ep-address">Business address</label><textarea class="finput" id="ep-address" style="min-height:60px" placeholder="Street, City, State, Country"></textarea></div>
+          <div class="field-wrap">
+            <label class="field-label">Logo <span style="color:var(--t3);font-weight:400">\u00b7 PNG/JPG/SVG, max 256\u00a0KB \u00b7 appears on documents</span></label>
+            <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
+              <img id="ep-logo-preview" alt="" style="max-height:44px;max-width:120px;object-fit:contain;border:1px solid var(--bd);border-radius:6px;padding:4px;display:none">
+              <input type="file" id="ep-logo-file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" onchange="epLogoPick(this)" style="font-size:12px">
+              <button type="button" class="btn btn-ghost btn-sm" id="ep-logo-remove" onclick="epLogoClear()" style="display:none">Remove</button>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="closeModal('entity-profile-modal')">Cancel</button>
+            <button class="btn btn-primary" id="ep-save-btn" onclick="saveEntityProfile(this)">Save profile</button>
+          </div>
+        </div>
+      </div>
+
       <!-- FX TRANSACTION MODAL -->
       <div class="modal-overlay hidden" id="fx-tx-modal">
         <div class="modal">
@@ -4823,6 +4856,10 @@ overlay.innerHTML = `
           <option value="CAD">🇨🇦 CAD — Canadian Dollar</option>
         </select>
       </div>
+      <div class="ob-field">
+        <label class="ob-label" for="ob-country">Country *</label>
+        <select class="ob-input" aria-label="Country" id="ob-country"><option value="">Select a country…</option><option value="CA">Canada</option><option value="US">United States</option><option value="MX">Mexico</option><option value="GT">Guatemala</option><option value="BZ">Belize</option><option value="SV">El Salvador</option><option value="HN">Honduras</option><option value="NI">Nicaragua</option><option value="CR">Costa Rica</option><option value="PA">Panama</option><option value="BR">Brazil</option><option value="AR">Argentina</option><option value="CO">Colombia</option><option value="CL">Chile</option><option value="PE">Peru</option><option value="VE">Venezuela</option><option value="EC">Ecuador</option><option value="BO">Bolivia</option><option value="PY">Paraguay</option><option value="UY">Uruguay</option><option value="GY">Guyana</option><option value="SR">Suriname</option><option value="TT">Trinidad &amp; Tobago</option><option value="JM">Jamaica</option><option value="BB">Barbados</option><option value="BS">Bahamas</option><option value="DO">Dominican Republic</option><option value="HT">Haiti</option><option value="GD">Grenada</option><option value="LC">St. Lucia</option><option value="VC">St. Vincent</option><option value="AG">Antigua &amp; Barbuda</option><option value="DM">Dominica</option><option value="KN">St. Kitts &amp; Nevis</option><option value="CU">Cuba</option><option value="PR">Puerto Rico</option><option value="GB">United Kingdom</option><option value="IE">Ireland</option><option value="FR">France</option><option value="DE">Germany</option><option value="ES">Spain</option><option value="PT">Portugal</option><option value="IT">Italy</option><option value="NL">Netherlands</option><option value="BE">Belgium</option><option value="SE">Sweden</option><option value="NO">Norway</option><option value="DK">Denmark</option><option value="FI">Finland</option><option value="PL">Poland</option><option value="CH">Switzerland</option><option value="AT">Austria</option><option value="GR">Greece</option></select>
+      </div>
     </div>
 
     <!-- STEP 2: Business type -->
@@ -4979,36 +5016,65 @@ async function finishOnboarding(){
   const email=(document.getElementById('ob-email')?.value||'').trim();
   const address=(document.getElementById('ob-address')?.value||'').trim();
   const currency=document.getElementById('ob-currency')?.value||'USD';
-  if(bizName||bizType||currency){
-    try{
-      await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',
-        body:JSON.stringify({
-          business_name:bizName,
-          business_type:bizType||'',
-          industry,
-          email,
-          address,
-          name:userName,
-          currency,
-          onboarding_done:1
-        })});
-    }catch(e){}
+  const country=(document.getElementById('ob-country')?.value||'').trim();
+  return _completeOnboarding({bizName,userName,industry,email,address,currency,country});
+}
+
+// Server-confirmed completion. Provisions the FIRST entity server-side (name+country+currency are
+// REQUIRED by POST /api/entities) and saves account settings, and ONLY marks the user onboarded
+// when BOTH round-trips succeed. A failed save no longer silently sets the onboarded flag and
+// strands the user in an empty workspace (the old bug: empty try/catch + unconditional flag).
+async function _completeOnboarding(d){
+  if(!d.bizName){ if(typeof notify==='function') notify('Business name is required', true); _obGotoStep(1); return; }
+  if(!d.country){ if(typeof notify==='function') notify('Country is required \u2014 it sets tax & filing for your business', true); _obGotoStep(1); return; }
+  const _btn=document.getElementById('ob-next-btn'); if(_btn) _btn.disabled=true;
+  try{
+    // 1) Provision the first entity. Clean path is a single POST (201). On a 402 (entity cap) a PRIOR
+    //    half-completed attempt already created this account's one entity but its settings save failed;
+    //    outside the 5s dedupe window a blind re-create would dead-end the retry (Rule 9). So on 402
+    //    only, verify an entity actually exists and, if so, complete onboarding off it. A real input
+    //    error (400) / server error (500) still aborts.
+    const entRes=await fetch('/api/entities',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
+      body:JSON.stringify({name:d.bizName,currency:d.currency,country:d.country})});
+    if(!entRes.ok){
+      let _entityExists=false;
+      if(entRes.status===402){
+        try{ const gr=await fetch('/api/entities',{credentials:'include'}); if(gr.ok){ const rows=await gr.json(); _entityExists=Array.isArray(rows)&&rows.length>0; } }catch(_e){}
+      }
+      if(!_entityExists){ const e=await entRes.json().catch(()=>({})); if(typeof notify==='function') notify(e.error||'Could not create your business. Please try again.', true); if(_btn)_btn.disabled=false; return; }
+    }
+    // 2) Save account settings.
+    const setRes=await fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',
+      body:JSON.stringify({business_name:d.bizName,business_type:bizType||'',industry:d.industry,email:d.email,address:d.address,name:d.userName,currency:d.currency,onboarding_done:1})});
+    if(!setRes.ok){ const e=await setRes.json().catch(()=>({})); if(typeof notify==='function') notify(e.error||'Could not save your settings. Please try again.', true); if(_btn)_btn.disabled=false; return; }
+  }catch(err){
+    if(typeof notify==='function') notify('Network error finishing setup \u2014 please try again.', true);
+    if(_btn)_btn.disabled=false; return;
   }
+  // Only now that BOTH the entity and the settings persisted do we mark the user onboarded.
   try{ localStorage.setItem('ff_onboarded','1'); }catch(e){}
   try{ sessionStorage.setItem('ff_onboarded','1'); }catch(e){}
   const o=document.getElementById('ob-overlay');
-  o.style.opacity='0';o.style.transition='opacity .25s ease';
-  setTimeout(()=>o.remove(),260);
-  if(typeof doLogin==='function'){
-    doLogin();
-  }else{
-    const ls=document.getElementById('login-screen');
-    if(ls)ls.style.display='none';
-  }
-  notify('Welcome to FinFlow Pro! Your workspace is ready ✦');
+  if(o){ o.style.opacity='0'; o.style.transition='opacity .25s ease'; setTimeout(()=>o.remove(),260); }
+  if(typeof doLogin==='function'){ doLogin(); }
+  else{ const ls=document.getElementById('login-screen'); if(ls)ls.style.display='none'; }
+  notify('Welcome to FinFlow! Your workspace is ready \u2726');
+}
+
+// Jump the onboarding wizard back to a given step (used when a required field is missing at finish).
+function _obGotoStep(n){
+  try{
+    for(let i=1;i<=STEPS;i++){ const st=document.getElementById('ob-s'+i); if(st) st.classList.toggle('active', i===n); }
+    currentStep=n; if(typeof updateDots==='function') updateDots(currentStep);
+    const nb=document.getElementById('ob-next-btn'); if(nb){ nb.textContent='Continue \u2192'; nb.disabled=false; }
+    const sk=document.querySelector('.ob-skip'); if(sk) sk.style.display='';
+  }catch(e){}
 }
 
 window.skipOnboarding = function(){
+  // Skip no longer drops the user into an empty workspace: it still provisions the first entity via
+  // the same server-confirmed path. If the minimum (name + country) isn't set, it routes back to
+  // Step 1 instead of completing.
   finishOnboarding();
 };
 
@@ -6924,11 +6990,95 @@ window.renderEntities=function(){
         <div class="entity-stat-val">${revConverted}</div>
         <div class="entity-stat-lbl">${_unavail ? 'Failed to load' : (margin!==null?'Revenue · '+margin+'% margin':'—')}</div>
       </div>
+      <button class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="event.stopPropagation();openEntityProfile(${i})" title="Edit business profile / letterhead">Profile</button>
       ${e.active?`<span class="badge b-green" style="flex-shrink:0">Active</span>`:`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();switchEntity(${i})">Switch</button>`}
     </div>`;
   }).join('');
 
   renderConsolPL();
+};
+
+// ── F196 Tier 2 — PER-ENTITY BUSINESS PROFILE editor ────────────────────────────────────────────
+// The server (POST/PUT /api/entities, normalizeEntityProfile) and the docview letterhead already
+// support a per-entity profile with an account-wide fallback; this is the missing WRITE UI. A blank
+// text field is a deliberate clear (stored null → falls back to the account blob). The logo mirrors
+// the server guard exactly (data: URI, image types, 256 KB) so the client never sends what the
+// server would 400.
+var _epLogo;              // undefined = untouched, null = cleared, string = new data URI
+var _EP_LOGO_MAX = 256 * 1024;
+var _EP_LOGO_RE = /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,/i;
+
+window.openEntityProfile = function(i){
+  var e = (typeof ENTITIES !== 'undefined') ? ENTITIES[i] : null;
+  if(!e){ if(typeof notify==='function') notify('Entity not found', true); return; }
+  var p = e.profile || {};
+  _epLogo = undefined;
+  var set = function(id,v){ var el=document.getElementById(id); if(el) el.value = v || ''; };
+  set('ep-entity-id', e._dbId);
+  set('ep-business-name', p.business_name);
+  set('ep-email', p.email);
+  set('ep-phone', p.phone);
+  set('ep-tax-id', p.tax_id);
+  set('ep-website', p.website);
+  set('ep-address', p.address);
+  var sub=document.getElementById('ep-sub'); if(sub) sub.textContent = 'Letterhead for ' + (e.name||'this entity') + ' \u2014 invoices, quotes & receipts';
+  var fileEl=document.getElementById('ep-logo-file'); if(fileEl) fileEl.value='';
+  _epRenderLogo(p.logo || null);
+  if(typeof openModal==='function') openModal('entity-profile-modal');
+};
+
+function _epRenderLogo(dataUrl){
+  var img=document.getElementById('ep-logo-preview'); var rm=document.getElementById('ep-logo-remove');
+  if(dataUrl){ if(img){ img.src=dataUrl; img.style.display=''; } if(rm) rm.style.display=''; }
+  else { if(img){ img.removeAttribute('src'); img.style.display='none'; } if(rm) rm.style.display='none'; }
+}
+
+window.epLogoClear = function(){
+  _epLogo = null;                               // explicit clear → PUT sends logo:null
+  var f=document.getElementById('ep-logo-file'); if(f) f.value='';
+  _epRenderLogo(null);
+};
+
+window.epLogoPick = function(input){
+  var file = input && input.files && input.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(){
+    var url = String(reader.result||'');
+    if(!_EP_LOGO_RE.test(url)){ if(typeof notify==='function') notify('Logo must be a PNG, JPG, WebP, GIF or SVG image', true); input.value=''; return; }
+    if(url.length > _EP_LOGO_MAX){ if(typeof notify==='function') notify('Logo is too large (max 256\u00a0KB)', true); input.value=''; return; }
+    _epLogo = url;
+    _epRenderLogo(url);
+  };
+  reader.onerror = function(){ if(typeof notify==='function') notify('Could not read that image', true); };
+  reader.readAsDataURL(file);
+};
+
+window.saveEntityProfile = async function(btn){
+  var id = (document.getElementById('ep-entity-id')||{}).value;
+  if(!id){ if(typeof notify==='function') notify('No entity selected', true); return; }
+  var v = function(x){ return ((document.getElementById(x)||{}).value||'').trim(); };
+  // Text fields are always sent — a blank is a deliberate clear (server stores null → account fallback).
+  var body = {
+    business_name: v('ep-business-name'),
+    email:         v('ep-email'),
+    phone:         v('ep-phone'),
+    tax_id:        v('ep-tax-id'),
+    website:       v('ep-website'),
+    address:       v('ep-address'),
+  };
+  if(_epLogo !== undefined) body.logo = _epLogo;   // only send logo when the user changed it
+  if(btn){ btn.disabled=true; }
+  try{
+    var res = await fetch('/api/entities/'+encodeURIComponent(id), {method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)});
+    if(!res.ok){ var er=await res.json().catch(()=>({})); if(typeof notify==='function') notify(er.error||'Could not save profile', true); if(btn) btn.disabled=false; return; }
+    if(typeof loadEntitiesFromDB==='function') await loadEntitiesFromDB(true);
+    if(typeof renderEntities==='function') renderEntities();
+    if(typeof closeModal==='function') closeModal('entity-profile-modal');
+    if(typeof notify==='function') notify('Business profile saved \u2726');
+  }catch(err){
+    if(typeof notify==='function') notify('Network error saving profile \u2014 please try again', true);
+  } finally { if(btn) btn.disabled=false; }
 };
 
 window.switchEntity=async function(idx){

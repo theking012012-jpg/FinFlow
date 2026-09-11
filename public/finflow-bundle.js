@@ -102,8 +102,11 @@
 
   async function ffOnAuth(user) {
     var gate=document.getElementById('ff-auth-gate'); if(gate) gate.remove();
-    try{sessionStorage.setItem('ff_onboarded','1');}catch(e){}
-    var ob=document.getElementById('ob-overlay'); if(ob) ob.remove();
+    // F197: do NOT tear the onboarding wizard down here. This block ran for EVERY authenticated user
+    // and unconditionally marked them onboarded, so a brand-new user's wizard was destroyed at boot
+    // and their first entity was never provisioned (empty-workspace bug). Onboarded state is now
+    // honoured from the server's onboarding_done in loadSettingsFromDB (finflow-api-wiring.js); a
+    // genuinely new user keeps the wizard so onboarding can provision their first entity.
     var ls=document.getElementById('login-screen'); if(ls) ls.style.display='none';
     if(user&&user.name){var ne=document.querySelector('.user-name');if(ne)ne.textContent=user.name;}
     try{ await ffLoadData(); }catch(e){ console.warn('[FinFlow] data load failed:',e.message); }
@@ -272,6 +275,15 @@
     async function loadSettingsFromDB() {
       try {
         const s = await api('GET', '/api/settings');
+        // F197: honour the server's onboarding_done — the ONLY correct "this user finished onboarding"
+        // signal. Suppress + remove the wizard for onboarded users; a user WITHOUT the flag keeps the
+        // wizard so onboarding can provision their first entity. (Replaces the unconditional teardown
+        // that ffOnAuth used to do for every authenticated user — the F197 empty-workspace root cause.)
+        if (s && (s.onboarding_done == 1 || s.onboarding_done === true)) {
+          try { localStorage.setItem('ff_onboarded', '1'); } catch (e) {}
+          try { sessionStorage.setItem('ff_onboarded', '1'); } catch (e) {}
+          const _ob = document.getElementById('ob-overlay'); if (_ob) _ob.remove();
+        }
         // Apply currency
         if (s.currency) {
           const sel = document.getElementById('s-currency');

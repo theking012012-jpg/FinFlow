@@ -103,6 +103,15 @@
     async function loadSettingsFromDB() {
       try {
         const s = await api('GET', '/api/settings');
+        // F197: honour the server's onboarding_done — the ONLY correct "this user finished onboarding"
+        // signal. Suppress + remove the wizard for onboarded users; a user WITHOUT the flag keeps the
+        // wizard so onboarding can provision their first entity. (Replaces the unconditional teardown
+        // that ffOnAuth used to do for every authenticated user — the F197 empty-workspace root cause.)
+        if (s && (s.onboarding_done == 1 || s.onboarding_done === true)) {
+          try { localStorage.setItem('ff_onboarded', '1'); } catch (e) {}
+          try { sessionStorage.setItem('ff_onboarded', '1'); } catch (e) {}
+          const _ob = document.getElementById('ob-overlay'); if (_ob) _ob.remove();
+        }
         // Apply currency
         if (s.currency) {
           const sel = document.getElementById('s-currency');

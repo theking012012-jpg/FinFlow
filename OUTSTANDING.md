@@ -52,6 +52,36 @@ RED-proven, a real SSE socket receives the peer's message live. Both portal UIs 
 
 ---
 
+## 🔒 SECURITY / LAUNCH HARDENING — added 2026-09-12 (OPEN)
+
+Two launch-hardening items, captured so they don't get lost. Neither is a money bug.
+
+1. **Cloudflare (WAF + DDoS) — OPEN, owner-run (~15 min DNS, no code change).** Put FinFlow behind
+   Cloudflare: point the domain's DNS through Cloudflare (proxied / orange-cloud), set TLS mode to
+   **Full (strict)**, and enable the managed WAF ruleset. **Free tier ($0)** already includes a managed
+   WAF ruleset + **unmetered DDoS** — enough to launch behind. **Pro ~$25/mo** for the fuller managed
+   WAF (do this around launch); **Business ~$250/mo** only once custom WAF rules are actually needed.
+   No application change — this is an infra/ops step.
+
+2. **Internal security audit + tenant-isolation harness — OPEN, assistant-buildable.** A code-level
+   security review plus a permanent automated **multi-tenant isolation / IDOR harness** (attacker
+   tenant B attempts to read / modify / delete tenant A's rows across every money resource; assert
+   deny AND DB-verify A's row is untouched) as a regression test, mirroring a grey-box pentester's
+   authz section. **Preliminary recon 2026-09-12 (NOT a full pass yet):** injection clean (queries
+   parameterized; the two interpolations are server-defined table names / placeholder strings);
+   isolation model relies on `ownedBy`/`WHERE user_id` before the by-PK `db.updateById`/`deleteById`
+   (spot-checks clean, but 88 call sites × 324 routes want the dynamic harness to prove it exhaustively);
+   auth posture strong (helmet, CSP, HSTS, httpOnly+secure+sameSite cookies, bcrypt cost 12, Stripe
+   webhook signature-verified + idempotent, uploads size-capped + served as forced attachments w/
+   nosniff, secrets gitignored). **`npm audit`: 3 moderate** (all `qs` via express/body-parser — DoS +
+   array-limit bypass; `npm audit fix` clears them). **Note:** CSP keeps `script-src 'unsafe-inline'`
+   (mitigated by output escaping; full removal is the separate L3 item). **External follow-on:** a
+   third-party web-app pen test (~$10k–$15k, grey-box) near launch, or when a customer/deal requires
+   it; SOC 2 later (~$25k–$50k first year) only when enterprise deals demand it. Prep is free and is
+   the same isolation-harness work.
+
+---
+
 ## 🟢 DONE 2026-09-04 — Reconcile system (Stripe + Bank, money in & out)
 Full detail: **`SESSION_HANDOVER_2026-09-04.md`**. Committed through `926eac4`; 188/188 sweep green;
 verified live on production (non-destructive). Features: Stripe add-to-books (idempotent), processing

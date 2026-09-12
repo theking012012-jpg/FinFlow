@@ -272,6 +272,31 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     }
   }
 
+  // ── Stripe Identity (KYC / IDV) — Phase B ──────────────────────────────────────────────────
+  // Identity results arrive as identity.verification_session.* on this SAME webhook. Map the session
+  // (metadata.accountantId) → accountants.kyc_status. Idempotent via the event-id claim above.
+  // verified ⇒ stamp kyc_verified_at; requires_input/canceled ⇒ failed; processing ⇒ pending.
+  if (String(event.type).startsWith('identity.verification_session.')) {
+    const vs = event.data.object || {};
+    const accId = parseInt(vs.metadata?.accountantId, 10);
+    const _kyc = event.type === 'identity.verification_session.verified'       ? 'verified'
+               : event.type === 'identity.verification_session.processing'      ? 'pending'
+               : (event.type === 'identity.verification_session.requires_input'
+                  || event.type === 'identity.verification_session.canceled')   ? 'failed'
+               : null;
+    if (accId && _kyc) {
+      await pool.query(
+        `UPDATE accountants
+            SET kyc_status = $1::text,
+                kyc_session_id = COALESCE(kyc_session_id, $2::text),
+                kyc_verified_at = CASE WHEN $1::text = 'verified' THEN NOW() ELSE kyc_verified_at END
+          WHERE id = $3::int`,
+        [_kyc, vs.id || null, accId]
+      ).catch(err => console.error('[Stripe Identity] kyc update failed:', err.message));
+      console.log(`[Stripe Identity] accountant ${accId} kyc_status → ${_kyc} (${vs.id})`);
+    }
+  }
+
   res.json({ received: true });
 });
 

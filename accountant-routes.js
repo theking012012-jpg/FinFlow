@@ -1589,6 +1589,32 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     }
   }));
 
+  // ── KYC / IDENTITY VERIFICATION (Stripe Identity, Phase B) ─────────────────────────────────
+  // The accountant starts a hosted Stripe Identity session; the result arrives async on the platform
+  // Stripe webhook (server.js) and writes accountants.kyc_status. Reuses the existing Stripe wiring —
+  // no new key. Requires Stripe Identity to be ENABLED on the Stripe account (owner/ops).
+  app.post('/api/accountants/kyc/start', requireAccountant, wrap(async (req, res) => {
+    if (!stripe) return res.status(400).json({ error: 'Identity verification is not configured yet.' });
+    const accId = req.session.accountantId;
+    let session;
+    try {
+      session = await stripe.identity.verificationSessions.create({
+        type: 'document',
+        metadata: { accountantId: String(accId) },
+        options: { document: { require_matching_selfie: true } },
+      });
+    } catch (e) {
+      return res.status(502).json({ error: 'Could not start identity verification: ' + e.message });
+    }
+    await pool.query(`UPDATE accountants SET kyc_session_id = $1, kyc_status = 'pending' WHERE id = $2`, [session.id, accId]);
+    res.json({ id: session.id, client_secret: session.client_secret, url: session.url, status: 'pending' });
+  }));
+
+  app.get('/api/accountants/kyc/status', requireAccountant, wrap(async (req, res) => {
+    const { rows } = await pool.query(`SELECT kyc_status, kyc_verified_at FROM accountants WHERE id = $1`, [req.session.accountantId]);
+    res.json({ kyc_status: rows[0]?.kyc_status || 'not_started', kyc_verified_at: rows[0]?.kyc_verified_at || null });
+  }));
+
   // ── CLIENT: GET MY LINKED ACCOUNTANT ──────────────────────────────────────
   app.get('/api/accountants/my-accountant', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });

@@ -126,6 +126,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       SELECT a.id, a.first_name, a.last_name, a.email, a.firm, a.country,
              a.specialisation, a.experience, a.status, a.verification_method,
              a.verification_data, a.credentials, a.memberships, a.confirmed_credentials, a.avg_rating, a.preferred_partner,
+             a.kyc_status, a.kyc_verified_at,
              a.review_count, a.stripe_onboarded, a.created_at, a.verified_at,
              COUNT(ac.id) AS client_count,
              COALESCE(SUM(ae.amount_cents),0) AS total_earnings_cents

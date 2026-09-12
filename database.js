@@ -381,6 +381,11 @@ async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_earnings_accountant ON accountant_earnings(accountant_id)`);
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS stripe_account_id TEXT`);
+    // KYC / Identity verification (Stripe Identity, Phase B) — additive, no migration. kyc_status:
+    // not_started | pending | verified | failed. Set human proof (mandatory-proof gate) stays separate.
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS kyc_status VARCHAR(20) DEFAULT 'not_started'`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS kyc_session_id TEXT`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS kyc_verified_at TIMESTAMPTZ`);
     await client.query(`ALTER TABLE accountant_earnings ADD COLUMN IF NOT EXISTS client_id INTEGER`);
     // F17 money-split ledger: a service_commission row records the full breakdown of a
     // client bill. amount_cents = the accountant's NET (billed − Stripe fee − FinFlow

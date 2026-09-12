@@ -1025,6 +1025,7 @@ function openReview(accountant) {
     ${vData.institution ? `<div class="detail-row"><span class="detail-label">Institution</span><span class="detail-val">${esc(vData.institution)} · ${esc(vData.degree || '')}</span></div>` : ''}
     ${accountant.credentials ? `<div class="detail-row"><span class="detail-label">Credentials</span><span class="detail-val">${esc(accountant.credentials)}</span></div>` : ''}
     ${accountant.memberships ? `<div class="detail-row"><span class="detail-label">Memberships</span><span class="detail-val">${esc(accountant.memberships)}</span></div>` : ''}
+    <div class="detail-row"><span class="detail-label">Identity (KYC)</span><span class="detail-val">${(function(k){var m={verified:['b-green','✓ Verified'],pending:['b-amber','⏳ Pending'],failed:['b-red','✗ Failed'],not_started:['b-grey','Not started']};var v=m[k||'not_started']||m.not_started;return '<span class="badge '+v[0]+'">'+v[1]+'</span>'+(accountant.kyc_verified_at?(' · '+new Date(accountant.kyc_verified_at).toLocaleDateString()):'');})(accountant.kyc_status)}</span></div>
     <div class="detail-row"><span class="detail-label">Credential proof</span><span class="detail-val" id="modal-documents">Loading…</span></div>
     <div class="detail-row"><span class="detail-label">Applied</span><span class="detail-val">${new Date(accountant.created_at).toLocaleString()}</span></div>
   `;

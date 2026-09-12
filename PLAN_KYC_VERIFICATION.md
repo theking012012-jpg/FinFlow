@@ -1,6 +1,9 @@
 # FinFlow — Accountant KYC / Registry Verification (spec, owner decision required)
 
-**Status:** SPEC ONLY — not built. Sequenced AFTER the shipped "mandatory proof" gate.
+**Status:** ✅ DECIDED — **Stripe Identity** (reuses existing Stripe wiring, ~US$1.50/verification).
+**Phase B BUILT 2026-09-12** (`verify-accountant-kyc` 14/0). Sequenced after the shipped "mandatory proof" gate.
+**Remaining:** (ops) enable Stripe Identity in the Stripe dashboard — no new key, uses `STRIPE_SECRET_KEY`;
+(code) Phase C structured registry-portal workflow (one-click "verify member" links per body + record outcome).
 **Date:** 2026-09-10
 
 ---

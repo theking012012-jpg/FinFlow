@@ -230,6 +230,44 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
   // changed. A no-op fallback keeps the module loadable if ever called without it.
   const _audit = typeof recordAudit === 'function' ? recordAudit : async () => {};
 
+  // ── PER-ENTITY + PERSONAL ACCESS MODEL ────────────────────────────────────────────────────
+  // accountant_clients.entity_access JSONB is the owner's fine-grained grant. NULL = legacy: every
+  // business entity at the row's account-wide `access_level`, personal finances NOT exposed — so
+  // links created before this feature behave byte-for-byte as before. When set:
+  //   { entities: { "<entityId>": "none"|"view"|"filing" }, personal: "none"|"view"|"filing" }
+  // Unlisted entity ⇒ 'none' (hidden). 'none' = fully hidden, 'view' = read, 'filing' = read+write.
+  const _ACCESS_LEVELS = new Set(['none', 'view', 'filing']);
+  // Normalize an arbitrary stored/posted value into the canonical shape, or null (legacy sentinel).
+  function normalizeEntityAccess(raw) {
+    if (raw == null) return null;
+    let obj = raw;
+    if (typeof obj === 'string') { try { obj = JSON.parse(obj); } catch (_) { return null; } }
+    if (!obj || typeof obj !== 'object') return null;
+    const out = { entities: {}, personal: 'none' };
+    const ent = obj.entities && typeof obj.entities === 'object' ? obj.entities : {};
+    for (const [k, v] of Object.entries(ent)) {
+      if (/^[1-9][0-9]*$/.test(String(k)) && _ACCESS_LEVELS.has(v)) out.entities[String(k)] = v;
+    }
+    if (_ACCESS_LEVELS.has(obj.personal)) out.personal = obj.personal;
+    return out;
+  }
+  // Effective access level for one business entity, honoring the legacy sentinel.
+  function entityLevel(ea, accountWideLevel, entityId) {
+    // Legacy (no fine-grained map): the pre-feature rule was "any active link can read; only an
+    // account-wide level of exactly 'view' is read-only" — so 'filing', the legacy 'edit', and a
+    // NULL level were all write-capable. Preserve that exactly: 'view' ⇒ 'view', anything else ⇒
+    // 'filing'. (The fine-grained map is the only place 'none'/'view'/'filing' are taken verbatim.)
+    if (ea == null) return (accountWideLevel === 'view' ? 'view' : 'filing');
+    return ea.entities[String(entityId)] || 'none';
+  }
+  // Effective access level for the owner's PERSONAL finances.
+  function personalLevel(ea) {
+    if (ea == null) return 'none';                 // legacy: personal never exposed
+    return _ACCESS_LEVELS.has(ea.personal) ? ea.personal : 'none';
+  }
+  const _canRead  = lvl => lvl === 'view' || lvl === 'filing';
+  const _canWrite = lvl => lvl === 'filing';
+
   // ── 1. REGISTER AS ACCOUNTANT ─────────────────────────────────────────────
   app.post('/api/accountants/register', authLimiter, wrap(async (req, res) => {
     const {
@@ -585,12 +623,14 @@ If you cannot find a field, use null. Be concise.`;
 
     // Verify access SOLELY via a consented, active client relationship (F1).
     const access = await pool.query(
-      `SELECT ac.access_level FROM accountant_clients ac
+      `SELECT ac.access_level, ac.entity_access FROM accountant_clients ac
        WHERE ac.accountant_id = $1 AND ac.user_id = $2 AND ac.status = 'active'
        LIMIT 1`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access to this client.' });
+    const _accountWide = access.rows[0].access_level;
+    const _ea = normalizeEntityAccess(access.rows[0].entity_access);   // null = legacy (all entities)
 
     // Fetch all client data
     const [invoices, expenses, entities, settings, payroll, journals, customers, bills] = await Promise.all([
@@ -598,8 +638,8 @@ If you cannot find a field, use null. Be concise.`;
       pool.query(`SELECT id, entity_id, data FROM expenses WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT id, data->>'name' AS name, data->>'color' AS color, data->>'currency' AS currency FROM entities WHERE user_id = $1 ORDER BY id`, [userId]),
       pool.query(`SELECT data FROM users WHERE id = $1 LIMIT 1`, [userId]),
-      pool.query(`SELECT data FROM payroll WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
-      pool.query(`SELECT data FROM journals WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
+      pool.query(`SELECT entity_id, data FROM payroll WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+      pool.query(`SELECT entity_id, data FROM journals WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
       pool.query(`SELECT data FROM customers WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT id, entity_id, data FROM bills WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
     ]);
@@ -630,18 +670,108 @@ If you cannot find a field, use null. Be concise.`;
     // receipts, less credit notes — NOT paid-only, and payments_received is no longer a revenue leg.
     // OpEx = expenses + issued bills + orphan payments made + payroll (basis C); NetProfit subtracts
     // FIFO COGS. Deductible (F139) rides along in books.tax for the Tax Summary, from this same call.
-    const books = await computeBooks(userId, entityId, period, null, fyStartIdx);
-    // Per-entity canonical summaries (same period) so the portal's entity tabs reconcile.
+    // ── Resolve fine-grained access (per-entity + personal) ──────────────────────────────────
+    // Effective read/write level per business entity. A 'none' entity is fully hidden: never listed,
+    // never summed, its rows stripped from every array below. Legacy (_ea == null) ⇒ every entity at
+    // the account-wide level, so nothing is filtered and behavior is byte-for-byte as before.
+    const _entLevel = {};                                   // entityId → 'none'|'view'|'filing'
+    for (const er of entities.rows) _entLevel[er.id] = entityLevel(_ea, _accountWide, er.id);
+    const _permittedIds = entities.rows.filter(er => _canRead(_entLevel[er.id])).map(er => er.id);
+    const _permitted    = new Set(_permittedIds);
+    const _personalLvl  = personalLevel(_ea);
+    // A specific ?entity_id= scope must itself be permitted, else the accountant could read a hidden
+    // entity's canonical books directly by guessing its id.
+    if (entityId != null && !_permitted.has(entityId)) {
+      return res.status(403).json({ error: 'No access to this entity.' });
+    }
+    // Does a row (by its entity_id) belong to a permitted entity? Legacy ⇒ everything visible.
+    const _permit = eid => _ea == null ? true : (eid != null && _permitted.has(eid));
+    // Sum per-entity book summaries into one aggregate — the SAME raw-native sum the owner's own
+    // all-entities view performs (F24 step-4 currency mapping is deferred there too), so a subset
+    // total never leaks a hidden entity and reconciles with the owner's dashboard by construction.
+    const _aggregateBooks = (arr) => {
+      const agg = { revenue:0, cogs:0, grossProfit:0, opex:0, netProfit:0, outstanding:0,
+                    tax:{ deductible:0, deductibleFull:0, deductibleHalf:0 }, parts:{ payroll:0 } };
+      for (const b of (arr || []).filter(Boolean)) {
+        agg.revenue     += (+b.revenue     || 0);
+        agg.cogs        += (+b.cogs        || 0);
+        agg.grossProfit += (+b.grossProfit || 0);
+        agg.opex        += (+b.opex        || 0);
+        agg.netProfit   += (+b.netProfit   || 0);
+        agg.outstanding += (+b.outstanding || 0);
+        if (b.tax) {
+          agg.tax.deductible     += (+b.tax.deductible     || 0);
+          agg.tax.deductibleFull += (+b.tax.deductibleFull || 0);
+          agg.tax.deductibleHalf += (+b.tax.deductibleHalf || 0);
+        }
+        if (b.parts && typeof b.parts === 'object') {
+          for (const [k, v] of Object.entries(b.parts)) {
+            if (typeof v === 'number') agg.parts[k] = (agg.parts[k] || 0) + v;
+          }
+        }
+      }
+      return agg;
+    };
+
+    // Per-entity canonical summaries — PERMITTED entities only (same period) so tabs reconcile.
     const summariesByEntity = {};
-    for (const er of entities.rows) summariesByEntity[er.id] = await computeBooks(userId, er.id, period, null, fyStartIdx);
+    for (const er of entities.rows) {
+      if (!_canRead(_entLevel[er.id])) continue;
+      summariesByEntity[er.id] = await computeBooks(userId, er.id, period, null, fyStartIdx);
+    }
+    // Top-line books (F9). Legacy: the requested scope unchanged. Scoped + specific entity: that
+    // entity's own summary. Scoped + all: the sum of PERMITTED entity summaries only.
+    let books;
+    if (_ea == null) {
+      books = await computeBooks(userId, entityId, period, null, fyStartIdx);
+    } else if (entityId != null) {
+      books = summariesByEntity[entityId] || await computeBooks(userId, entityId, period, null, fyStartIdx);
+    } else {
+      books = _aggregateBooks(_permittedIds.map(id => summariesByEntity[id]));
+    }
+
+    // ── Personal finances — served ONLY when the owner granted personal access (never for legacy
+    // links). Net worth mirrors the owner's own computation (personal_accounts assets − liabilities
+    // + live portfolio; app-main.js:computePersNetWorth) so the two reconcile by construction.
+    let _personal = null;
+    if (_canRead(_personalLvl)) {
+      const [ptx, pacc, phold] = await Promise.all([
+        pool.query(`SELECT id, data FROM personal_transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 200`, [userId]),
+        pool.query(`SELECT id, data FROM personal_accounts     WHERE user_id = $1 ORDER BY id`, [userId]),
+        pool.query(`SELECT data     FROM holdings              WHERE user_id = $1`, [userId]),
+      ]);
+      const _n = v => parseFloat(v) || 0;
+      const _assets = pacc.rows.filter(r => r.data?.kind === 'asset')    .reduce((a,r)=>a+_n(r.data?.value),0);
+      const _liabs  = pacc.rows.filter(r => r.data?.kind === 'liability').reduce((a,r)=>a+_n(r.data?.value),0);
+      const _port   = phold.rows.reduce((a,r)=>a+_n(r.data?.price)*_n(r.data?.shares),0);
+      const _inc    = ptx.rows.filter(r => r.data?.tx_type === 'income').reduce((a,r)=>a+_n(r.data?.amount),0);
+      const _exp    = ptx.rows.filter(r => r.data?.tx_type !== 'income').reduce((a,r)=>a+_n(r.data?.amount),0);
+      _personal = {
+        access:       _personalLvl,
+        netWorth:     (_assets + _port - _liabs).toFixed(2),
+        assets:       _assets.toFixed(2),
+        liabilities:  _liabs.toFixed(2),
+        portfolio:    _port.toFixed(2),
+        income:       _inc.toFixed(2),
+        expense:      _exp.toFixed(2),
+        transactions: ptx.rows.map(r => ({ ...r.data, id: r.id })),
+        accounts:     pacc.rows.map(r => ({ ...r.data, id: r.id })),
+      };
+    }
 
     // Accounts payable (unpaid bills), entity-scoped to match the selected view.
     const unpaidBills = bills.rows
-      .filter(r => r.data?.status === 'unpaid' && entMatch(r.entity_id))
+      .filter(r => r.data?.status === 'unpaid' && entMatch(r.entity_id) && _permit(r.entity_id))
       .reduce((s, r) => s + (parseFloat(r.data?.amount) || 0), 0);
 
     return res.json({
       accessLevel: access.rows[0].access_level,
+      // Fine-grained grants so the accountant UI hides 'none' entities and disables writes on
+      // 'view' ones. entityAccess maps every entity the OWNER has to its effective level (permitted
+      // or not), but the arrays below carry ONLY permitted-entity rows.
+      entityAccess: Object.fromEntries(entities.rows.map(er => [er.id, _entLevel[er.id]])),
+      personalAccess: _personalLvl,
+      personal: _personal,
       taxRate,
       taxLines,
       entityId, // echoes the scope applied (null = all entities)
@@ -665,19 +795,21 @@ If you cannot find a field, use null. Be concise.`;
         parts:         books.parts,
       },
       summariesByEntity,
-      entities:    entities.rows.map(r => ({ id: r.id, name: r.name, color: r.color || '#c9a84c', currency: r.currency || 'USD' })),
-      allInvoices: invoices.rows.map(r => ({ ...r.data, id: r.id, entity_id: r.entity_id })),
-      allExpenses: expenses.rows.map(r => ({ ...r.data, id: r.id, entity_id: r.entity_id })),
-      allPayroll:  access.rows[0].access_level === 'view' ? [] : payroll.rows.map(r => r.data),
-      allJournals: journals.rows.map(r => r.data),
+      entities:    entities.rows.filter(r => _permit(r.id)).map(r => ({ id: r.id, name: r.name, color: r.color || '#c9a84c', currency: r.currency || 'USD' })),
+      allInvoices: invoices.rows.filter(r => _permit(r.entity_id)).map(r => ({ ...r.data, id: r.id, entity_id: r.entity_id })),
+      allExpenses: expenses.rows.filter(r => _permit(r.entity_id)).map(r => ({ ...r.data, id: r.id, entity_id: r.entity_id })),
+      // Payroll is filing-only (unchanged rule): legacy ⇒ account-wide filing sees all; scoped ⇒
+      // only rows on entities where the accountant holds 'filing'.
+      allPayroll:  payroll.rows.filter(r => _ea == null ? _accountWide !== 'view' : _entLevel[r.entity_id] === 'filing').map(r => r.data),
+      allJournals: journals.rows.filter(r => _permit(r.entity_id)).map(r => r.data),
       allCustomers: customers.rows.map(r => r.data),
       balanceSheet: {
         accountsReceivable: books.outstanding.toFixed(2),
         accountsPayable:    unpaidBills.toFixed(2),
-        totalPayroll:       books.parts.payroll.toFixed(2),
+        totalPayroll:       (books.parts.payroll || 0).toFixed(2),
       },
-      recentInvoices: invoices.rows.map(r => r.data).slice(0, 10),
-      recentExpenses: expenses.rows.map(r => r.data).slice(0, 10),
+      recentInvoices: invoices.rows.filter(r => _permit(r.entity_id)).map(r => r.data).slice(0, 10),
+      recentExpenses: expenses.rows.filter(r => _permit(r.entity_id)).map(r => r.data).slice(0, 10),
     });
   }));
 
@@ -687,11 +819,18 @@ If you cannot find a field, use null. Be concise.`;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const { date, description, lines } = req.body || {};
     const access = await pool.query(
-      `SELECT access_level FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
+      `SELECT access_level, entity_access FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
-    if (access.rows[0].access_level === 'view') return res.status(403).json({ error: 'View-only access.' });
+    const _ea = normalizeEntityAccess(access.rows[0].entity_access);
+    // Optional explicit target entity — must belong to THIS client (legacy grants any id account-wide,
+    // so validate ownership here or an accountant could post into another user's entity).
+    const _bodyEid = (req.body && /^[1-9][0-9]*$/.test(String(req.body.entity_id))) ? parseInt(req.body.entity_id) : null;
+    if (_bodyEid != null) {
+      const _own = await pool.query(`SELECT 1 FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [_bodyEid, parseInt(userId)]);
+      if (!_own.rows[0]) return res.status(400).json({ error: 'Invalid entity for this client.' });
+    }
     // F150-class: a journal created on the client's behalf MUST carry the client's entity_id.
     // Omitting it stored the row account-wide (entity_id NULL) — the null-inclusive read filter
     // would surface it under EVERY one of the client's entities (the cross-entity leak F150 fixed
@@ -702,8 +841,12 @@ If you cannot find a field, use null. Be concise.`;
       `SELECT id FROM entities WHERE user_id = $1 ORDER BY (CASE WHEN (data->>'is_active')::int = 1 THEN 0 ELSE 1 END), id ASC LIMIT 1`,
       [parseInt(userId)]
     );
-    const _clientEntityId = _entRow.rows[0]?.id ?? null;
+    const _clientEntityId = _bodyEid != null ? _bodyEid : (_entRow.rows[0]?.id ?? null);
     if (_clientEntityId == null) return res.status(400).json({ error: 'Client has no entity to post against.' });
+    // A journal is a WRITE — require 'filing' on the TARGET entity (legacy ⇒ account-wide filing).
+    if (!_canWrite(entityLevel(_ea, access.rows[0].access_level, _clientEntityId))) {
+      return res.status(403).json({ error: 'View-only access.' });
+    }
     const { row } = await db.insert('journals', {
       user_id: parseInt(userId),
       entity_id: _clientEntityId,
@@ -722,11 +865,17 @@ If you cannot find a field, use null. Be concise.`;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const { period, locked } = req.body || {};
     const access = await pool.query(
-      `SELECT access_level FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
+      `SELECT access_level, entity_access FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
-    if (access.rows[0].access_level === 'view') return res.status(403).json({ error: 'View-only access.' });
+    // Period locks are account-wide (lock_settings keyed by period, not entity): require 'filing'
+    // capability on at least one entity (legacy ⇒ account-wide filing).
+    const _eaLock = normalizeEntityAccess(access.rows[0].entity_access);
+    const _hasFiling = _eaLock == null
+      ? access.rows[0].access_level !== 'view'   // legacy: any non-view level (filing/edit/null) can lock
+      : Object.values(_eaLock.entities).some(l => l === 'filing');
+    if (!_hasFiling) return res.status(403).json({ error: 'View-only access.' });
     const { rows: [_lsAcc] } = await pool.query(
       `SELECT * FROM lock_settings WHERE user_id = $1 AND data->>'period' = $2 LIMIT 1`,
       [parseInt(userId), period]
@@ -1445,7 +1594,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
     const result = await pool.query(`
       SELECT a.id, a.first_name, a.last_name, a.firm, a.country, a.specialisation, a.experience, a.bio,
-             ac.status, ac.access_level,
+             ac.status, ac.access_level, ac.entity_access,
              (SELECT COUNT(*)::int FROM accountant_messages m
                WHERE m.accountant_id = ac.accountant_id AND m.user_id = ac.user_id
                  AND m.sender = 'accountant'
@@ -1470,21 +1619,42 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // ungrantable. Owner-scoped: updates only THIS user's own active accountant link.
   app.put('/api/accountants/my-accountant/access', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
-    const { access_level } = req.body || {};
-    if (access_level !== 'view' && access_level !== 'filing') {
-      return res.status(400).json({ error: "access_level must be 'view' or 'filing'." });
+    const body = req.body || {};
+    // Two accepted shapes. Legacy: { access_level:'view'|'filing' } — an account-wide grant that
+    // CLEARS any fine-grained map (reverts to legacy: all entities at that level, personal hidden).
+    // Fine-grained: { entity_access:{ entities:{ "<id>":lvl }, personal:lvl } } — wins when present.
+    let entityAccessJson = null, accountWide = null;
+    if (body.entity_access !== undefined) {
+      const ea = normalizeEntityAccess(body.entity_access);
+      if (ea == null) return res.status(400).json({ error: 'Invalid entity_access.' });
+      // Keep only entities this owner actually has (drop stale/foreign ids before persisting).
+      const mine = await pool.query(`SELECT id FROM entities WHERE user_id = $1`, [req.session.userId]);
+      const ownIds = new Set(mine.rows.map(r => String(r.id)));
+      const cleanEnt = {};
+      for (const [k, v] of Object.entries(ea.entities)) if (ownIds.has(k)) cleanEnt[k] = v;
+      const clean = { entities: cleanEnt, personal: ea.personal };
+      entityAccessJson = JSON.stringify(clean);
+      // Back-compat account-wide mirror for any legacy reader: 'filing' if ANY grant is filing.
+      const anyFiling = Object.values(cleanEnt).some(l => l === 'filing') || clean.personal === 'filing';
+      accountWide = anyFiling ? 'filing' : 'view';
+    } else {
+      const { access_level } = body;
+      if (access_level !== 'view' && access_level !== 'filing') {
+        return res.status(400).json({ error: "access_level must be 'view' or 'filing'." });
+      }
+      accountWide = access_level;   // legacy grant → entity_access stays NULL (cleared below)
     }
     const { rows: [row] } = await pool.query(
-      `UPDATE accountant_clients SET access_level = $1
-        WHERE user_id = $2 AND status = 'active'
-        RETURNING accountant_id, access_level`,
-      [access_level, req.session.userId]
+      `UPDATE accountant_clients SET access_level = $1, entity_access = $2::jsonb
+        WHERE user_id = $3 AND status = 'active'
+        RETURNING accountant_id, access_level, entity_access`,
+      [accountWide, entityAccessJson, req.session.userId]
     );
     if (!row) return res.status(404).json({ error: 'No active accountant to update.' });
     // F90: audit the owner-initiated access change on their own account.
     await _audit(pool, { userId: req.session.userId, table: 'accountant_clients', recordId: null,
-      action: access_level === 'filing' ? 'GRANT_FILING' : 'SET_VIEW', field: 'access_level', newValue: access_level, req });
-    res.json({ access_level: row.access_level });
+      action: accountWide === 'filing' ? 'GRANT_FILING' : 'SET_VIEW', field: 'access_level', newValue: accountWide, req });
+    res.json({ access_level: row.access_level, entity_access: row.entity_access });
   }));
 
   // ── CLIENT: CHAT WITH THEIR LINKED ACCOUNTANT ─────────────────────────────

@@ -354,6 +354,11 @@ async function initDB() {
     // Add notes and checklist columns if missing (safe ALTER TABLE for existing deployments)
     await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''`);
     await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS checklist JSONB DEFAULT '{}'`);
+    // Per-entity + personal accountant access scoping. NULL = legacy (all business entities at the
+    // account-wide access_level; personal NOT exposed) so existing links behave exactly as before.
+    // When set: { entities: { "<entityId>": "none"|"view"|"filing" }, personal: "none"|"view"|"filing" }.
+    // Unlisted entity ⇒ 'none' (hidden). 'view' = read, 'filing' = read+write, 'none' = fully hidden.
+    await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS entity_access JSONB DEFAULT NULL`);
     // In-app chat read receipts: how far each side has read the shared thread. NULL = never
     // opened. Drives unread badges (messages after my last_read) and "Seen" ticks (the other
     // side's last_read vs my sent message's created_at). Two columns, not a per-row read flag —
@@ -694,6 +699,11 @@ async function initDB() {
         IF EXISTS (SELECT 1 FROM information_schema.columns
                     WHERE table_name = 'accountant_messages' AND column_name = 'client_id') THEN
           UPDATE accountant_messages SET user_id = client_id WHERE user_id IS NULL;
+          -- The legacy column was created NOT NULL. New inserts write user_id only (no client_id),
+          -- so a lingering NOT NULL on client_id makes every message INSERT fail (prod chat 500).
+          -- Drop it here; idempotent (no-op if already nullable). ALTER inside DO needs no EXECUTE
+          -- because the column is confirmed present by the enclosing IF.
+          ALTER TABLE accountant_messages ALTER COLUMN client_id DROP NOT NULL;
         END IF;
       END
       $accmsg$;`);

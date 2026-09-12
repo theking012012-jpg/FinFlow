@@ -799,6 +799,19 @@ async function fetchBooks() {
   return true;
 }
 
+// Per-entity edit capability. entityAccess maps entityId → level; legacy links have no map, so
+// fall back to the account-wide accessLevel. 'all' view is editable if ANY entity is filing.
+window._canEditActive = function() {
+  const ea = _data && _data.entityAccess;
+  if (!ea) return !!(_data && _data.accessLevel === 'filing');
+  if (_activeEntity === 'all') return Object.values(ea).some(l => l === 'filing');
+  return ea[String(_activeEntity)] === 'filing';
+};
+window._refreshEditAffordances = function() {
+  window._acctCanEdit = window._canEditActive();
+  document.querySelectorAll('[onclick="toggleJournalForm()"]').forEach(b => { b.style.display = window._acctCanEdit ? '' : 'none'; });
+};
+
 async function loadData() {
   try {
     if (!(await fetchBooks())) return;
@@ -809,8 +822,7 @@ async function loadData() {
     // 'filing' = run the books (post journals + lock periods); 'view' = review only. The server
     // enforces this with a 403 either way; hiding the edit affordances just avoids showing a button
     // that would fail. Default to view (most restrictive) if the level is missing.
-    window._acctCanEdit = (_data.accessLevel === 'filing');
-    document.querySelectorAll('[onclick="toggleJournalForm()"]').forEach(b => { b.style.display = window._acctCanEdit ? '' : 'none'; });
+    window._refreshEditAffordances();
     buildEntityTabs();
     renderAll();
     loadNotes();
@@ -829,8 +841,44 @@ function buildEntityTabs() {
     const color = BAR_COLORS[i % BAR_COLORS.length];
     list.innerHTML += `<div class="entity-item" data-entity="${parseInt(e.id)||0}" onclick="switchEntity('${parseInt(e.id)||0}',this)"><div class="entity-dot" style="background:${color}"></div>${esc(e.name)}</div>`;
   });
+  if (_data.personalAccess && _data.personalAccess !== 'none' && _data.personal) {
+    list.innerHTML += `<div class="entity-item" data-entity="__personal" onclick="openPersonalPanel()"><div class="entity-dot" style="background:#9b6bcc"></div>Personal finances <span style="margin-left:auto;font-size:10px;color:var(--text3)">${esc(_data.personalAccess)}</span></div>`;
+  }
   document.getElementById('topbar-entity-name').textContent = 'All entities';
 }
+
+// Personal finances — a self-contained overlay populated from the server's `personal` block
+// (served only when the owner granted personal access). Read-only; net worth mirrors the owner's
+// own computation so the two reconcile.
+window.openPersonalPanel = function() {
+  const pd = _data && _data.personal;
+  if (!pd) return;
+  const fmt = v => Number(v||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const accts = (pd.accounts||[]).map(a => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">${esc(a.name||a.kind||'—')} <span style="font-size:10px;color:var(--text3)">${esc(a.kind||'')}</span></span><span style="font-family:var(--mono,monospace);color:var(--text1)">${fmt(a.value)}</span></div>`).join('') || '<div style="color:var(--text3);font-size:12px">No accounts</div>';
+  const txns = (pd.transactions||[]).slice(0,25).map(t => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">${esc(t.description||t.category||'—')} <span style="font-size:10px;color:var(--text3)">${esc(t.tx_date||'')}</span></span><span style="font-family:var(--mono,monospace);color:${t.tx_type==='income'?'#4a9c6d':'var(--text1)'}">${t.tx_type==='income'?'+':'−'}${fmt(t.amount)}</span></div>`).join('') || '<div style="color:var(--text3);font-size:12px">No transactions</div>';
+  let ov = document.getElementById('personal-overlay');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'personal-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div style="background:var(--bg1,#14110c);border:1px solid var(--border,#2a2419);border-radius:14px;max-width:560px;width:100%;max-height:85vh;overflow:auto;padding:22px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div><div style="font-size:16px;color:var(--text1,#f2e8d5);font-weight:600">Personal finances</div>
+      <div style="font-size:11px;color:var(--text3)">${esc(_data.personalAccess)} access · read-only</div></div>
+      <button onclick="document.getElementById('personal-overlay').remove()" style="background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:5px 10px;cursor:pointer">Close</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div style="border:1px solid var(--border);border-radius:10px;padding:12px"><div style="font-size:11px;color:var(--text3)">Net worth</div><div style="font-size:20px;font-weight:600;color:var(--gold,#c9a84c);font-family:var(--mono,monospace)">${fmt(pd.netWorth)}</div></div>
+      <div style="border:1px solid var(--border);border-radius:10px;padding:12px"><div style="font-size:11px;color:var(--text3)">Portfolio</div><div style="font-size:20px;font-weight:600;color:var(--text1);font-family:var(--mono,monospace)">${fmt(pd.portfolio)}</div></div>
+      <div style="border:1px solid var(--border);border-radius:10px;padding:12px"><div style="font-size:11px;color:var(--text3)">Assets</div><div style="font-size:16px;color:#4a9c6d;font-family:var(--mono,monospace)">${fmt(pd.assets)}</div></div>
+      <div style="border:1px solid var(--border);border-radius:10px;padding:12px"><div style="font-size:11px;color:var(--text3)">Liabilities</div><div style="font-size:16px;color:#c05a5a;font-family:var(--mono,monospace)">${fmt(pd.liabilities)}</div></div>
+    </div>
+    <div style="font-size:12px;color:var(--text2);font-weight:600;margin-bottom:6px">Assets &amp; liabilities</div>${accts}
+    <div style="font-size:12px;color:var(--text2);font-weight:600;margin:16px 0 6px">Recent personal transactions</div>${txns}
+  </div>`;
+  document.body.appendChild(ov);
+};
 
 async function switchEntity(id, el) {
   _activeEntity = id;
@@ -839,6 +887,7 @@ async function switchEntity(id, el) {
   const name = el?.textContent?.trim() || 'All entities';
   document.getElementById('topbar-entity-name').textContent = name;
   await fetchBooks();   // re-fetch: canonical summary is scoped server-side per entity+period
+  window._refreshEditAffordances();
   renderAll();
 }
 
@@ -1277,7 +1326,7 @@ async function submitJournal() {
     const res = await fetch(`/api/accountants/clients/${_userId}/journal`, {
       method:'POST', credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({date, description, lines}),
+      body: JSON.stringify(Object.assign({date, description, lines}, (_activeEntity && _activeEntity !== 'all') ? { entity_id: parseInt(_activeEntity) } : {})),
     });
     if (!res.ok) throw new Error((await res.json()).error);
     toggleJournalForm();

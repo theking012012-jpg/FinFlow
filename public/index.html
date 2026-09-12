@@ -153,7 +153,7 @@ input,select,textarea,button{touch-action:manipulation}
   --purple:#5a4880;--purple-bg:#f0eef8;--purple-bd:#c8bce8;
   --teal:#2a7870;--teal-bg:#e4f4f2;
 }
-body{font-family:var(--font);background:transparent;font-size:13px;letter-spacing:.01em;-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:none;overflow-x:hidden}
+body{font-family:var(--font);background:transparent;color:var(--t1);font-size:13px;letter-spacing:.01em;-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:none;overflow-x:hidden}
 html{overflow-x:hidden;background:var(--bg0)}/* PWA: dark root so the notch/status-bar safe area never shows white (viewport-fit=cover + black-translucent draw the app under the status bar) */
 .app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;min-height:100svh;height:100svh;overflow:hidden;background:var(--bg0);position:relative}
 .app::after{content:'';position:absolute;inset:0;background:var(--grain);pointer-events:none;z-index:9999;border-radius:var(--radius-xl)}
@@ -5735,8 +5735,8 @@ async function loadAuditTrail(){
       const badge=actionBadge[r.action]||'b-amber';
       return _auditDiff(r.action,r.old_data,r.new_data).map(f=>`<tr style="border-bottom:1px solid var(--bd)">
         <td style="padding:5px 8px;color:var(--t2);font-size:11px;white-space:nowrap">${esc(dStr)}</td>
-        <td style="padding:5px 8px;font-family:var(--font-mono);font-size:11px">${esc(r.table_name||'')}</td>
-        <td style="padding:5px 8px;font-family:var(--font-mono);font-size:11px">${r.record_id||'—'}</td>
+        <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${esc(r.table_name||'')}</td>
+        <td style="padding:5px 8px;color:var(--t1);font-family:var(--font-mono);font-size:11px">${r.record_id||'—'}</td>
         <td style="padding:5px 8px"><span class="badge ${badge}" style="font-size:9px">${esc(r.action||'')}</span></td>
         <td style="padding:5px 8px;color:var(--t2)">${esc(f.field||'—')}</td>
         <td style="padding:5px 8px;color:var(--red);font-family:var(--font-mono);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(f.old||'')}">${esc(f.old||'—')}</td>
@@ -6375,8 +6375,8 @@ async function loadFXData(){
         const glText=!hasGL?'—':`${gl>=0?'+':''}${S(Math.abs(gl))}`;
         const glTitle=!hasGL?' title="No current rate entered for this currency — add one under FX Rates to see unrealised P/L"':'';
         return`<tr style="border-bottom:1px solid var(--bd)">
-          <td style="padding:5px 6px;font-family:var(--font-mono)">${esc(t.foreign_currency)}</td>
-          <td style="padding:5px 6px;font-family:var(--font-mono)">${S(parseFloat(t.foreign_amount))}</td>
+          <td style="padding:5px 6px;color:var(--t1);font-family:var(--font-mono)">${esc(t.foreign_currency)}</td>
+          <td style="padding:5px 6px;color:var(--t1);font-family:var(--font-mono)">${S(parseFloat(t.foreign_amount))}</td>
           <td style="padding:5px 6px;font-family:var(--font-mono);color:var(--t2)">${parseFloat(t.rate_at_transaction||0).toFixed(4)}</td>
           <td style="padding:5px 6px;font-family:var(--font-mono);color:${glColor}"${glTitle}>${glText}</td>
           <td style="padding:5px 6px"><span class="badge ${t.status==='settled'?'b-green':'b-amber'}" style="font-size:9px">${esc(t.status)}</span></td>
@@ -6690,6 +6690,17 @@ async function _loadEntitiesFromDBImpl(){
 
     // If none active, activate first one
     if(ENTITIES.length && !ENTITIES.some(e=>e.active)) ENTITIES[0].active = true;
+
+    // F197-followup: an account that already HAS entities is, by definition, past onboarding — even if
+    // its legacy user_settings row never persisted onboarding_done (the OLD ffOnAuth suppressed the
+    // wizard via browser storage ONLY, never server-side, so the flag was never truly saved). Dismiss
+    // the wizard on this definitive signal so a set-up account never sees it in a browser that lacks
+    // the stale local flag. Only a genuinely empty + not-onboarded account still reaches the wizard.
+    if (ENTITIES.length > 0) {
+      try{ localStorage.setItem('ff_onboarded','1'); }catch(e){}
+      try{ sessionStorage.setItem('ff_onboarded','1'); }catch(e){}
+      var _obw = document.getElementById('ob-overlay'); if (_obw) _obw.remove();
+    }
 
     // Sync businesses sidebar with real entities
     if(typeof businesses !== 'undefined'){
@@ -9137,16 +9148,8 @@ myAccPage.innerHTML = `
   <div id="my-acc-access" style="display:none;margin-top:1rem">
     <div class="card" style="padding:1.25rem">
       <div style="font-size:13px;font-weight:500;color:var(--t1);margin-bottom:1rem">Access permissions</div>
-      <div style="display:flex;flex-direction:column;gap:12px">
-        <label for="acc-perm-view" style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--t2);cursor:pointer">
-          <span>View my books & reports</span>
-          <input type="checkbox" id="acc-perm-view" checked onchange="updateAccPermission('view',this.checked)" style="width:16px;height:16px;accent-color:var(--acc)">
-        </label>
-        <label for="acc-perm-filing" style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--t2);cursor:pointer">
-          <span>File tax returns on my behalf</span>
-          <input type="checkbox" id="acc-perm-filing" onchange="updateAccPermission('filing',this.checked)" style="width:16px;height:16px;accent-color:var(--acc)">
-        </label>
-      </div>
+      <div style="font-size:11.5px;color:var(--t3);margin:-6px 0 12px">Choose what your accountant can see and do — for each business and for your personal finances, independently. <strong style="color:var(--t2)">None</strong> = fully hidden. <strong style="color:var(--t2)">View</strong> = read only. <strong style="color:var(--t2)">Filing</strong> = read, post entries &amp; lock periods.</div>
+      <div id="acc-perm-matrix" style="display:flex;flex-direction:column;gap:8px"></div>
       <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--bd);display:flex;gap:8px">
         <button class="btn btn-ghost" style="font-size:12px" onclick="leaveReview(linkedAccountant&&linkedAccountant.id)">★ Leave a review</button>
         <button class="btn btn-ghost" style="font-size:12px;color:var(--danger)" onclick="revokeAccountant()">Revoke access</button>
@@ -9338,12 +9341,8 @@ function renderLinkedAccountant() {
     </div>`;
 
   if (access) access.style.display = 'block';
-  // Reflect the access level the owner has actually granted: filing = "run the books"
-  // (post entries + lock periods), otherwise view = review-only. Read access is the base.
-  const _fCb = document.getElementById('acc-perm-filing');
-  if (_fCb) _fCb.checked = (a.access_level === 'filing');
-  const _vCb = document.getElementById('acc-perm-view');
-  if (_vCb) _vCb.checked = true;
+  // Render the per-entity + personal access matrix from the owner's current grant.
+  if (typeof window.renderAccessMatrix === 'function') window.renderAccessMatrix();
   // Badge unread on the nav item, but only auto-open the thread (which marks read) if the
   // client is actually on the My Accountant page — otherwise defer to showPage on navigation.
   setMyAccNavBadge(a.unread || 0);
@@ -9598,6 +9597,58 @@ window.updateAccPermission = async function(type, val) {
     if (typeof notify === 'function') notify('Could not update access — are you logged in?');
   }
 }
+
+window.renderAccessMatrix = async function() {
+  const wrap = document.getElementById('acc-perm-matrix');
+  if (!wrap) return;
+  const a = linkedAccountant || {};
+  // Current grant. entity_access null/absent = legacy: every entity at the account-wide level,
+  // personal hidden. A stored JSON string is parsed too.
+  let ea = a.entity_access;
+  if (typeof ea === 'string') { try { ea = JSON.parse(ea); } catch (_) { ea = null; } }
+  const legacyLvl = a.access_level === 'filing' ? 'filing' : 'view';
+  const entLvl = id => (ea && ea.entities && ea.entities[String(id)]) ? ea.entities[String(id)] : (ea ? 'none' : legacyLvl);
+  const perLvl = () => (ea && ea.personal) ? ea.personal : 'none';
+  // Entities: prefer the in-memory list, else fetch.
+  let ents = (window.ENTITIES || []).map(e => ({ id: e._dbId || e.id, name: e.name || e.business_name || 'Business' }));
+  if (!ents.length) {
+    try { const r = await fetch('/api/entities', { credentials: 'include' });
+      if (r.ok) { const rows = await r.json(); ents = (rows || []).map(x => ({ id: x.id, name: (x.data && (x.data.name || x.data.business_name)) || x.name || 'Business' })); } } catch (_) {}
+  }
+  const _esc = (typeof esc === 'function') ? esc : (t => String(t == null ? '' : t).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])));
+  const opt = (v, cur) => '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + (v[0].toUpperCase() + v.slice(1)) + '</option>';
+  const sel = (id, cur, kind) => '<select data-perm-kind="' + kind + '" data-perm-id="' + id + '" onchange="saveAccessMatrix()" class="finput" style="width:118px;font-size:12px;padding:5px 8px">' + opt('none', cur) + opt('view', cur) + opt('filing', cur) + '</select>';
+  const rowHtml = (label, sub, control) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--bd);border-radius:8px"><div style="min-width:0"><div style="font-size:13px;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div>' + (sub ? '<div style="font-size:11px;color:var(--t3)">' + sub + '</div>' : '') + '</div>' + control + '</div>';
+  let html = '';
+  if (!ents.length) html += '<div style="font-size:12px;color:var(--t3)">No businesses yet.</div>';
+  for (const e of ents) html += rowHtml(_esc(e.name), 'Business', sel(e.id, entLvl(e.id), 'entity'));
+  html += rowHtml('Personal finances', 'Net worth, personal income &amp; accounts', sel('personal', perLvl(), 'personal'));
+  wrap.innerHTML = html;
+};
+
+window.saveAccessMatrix = async function() {
+  const wrap = document.getElementById('acc-perm-matrix');
+  if (!wrap) return;
+  const entities = {};
+  let personal = 'none';
+  wrap.querySelectorAll('select[data-perm-kind]').forEach(sl => {
+    if (sl.getAttribute('data-perm-kind') === 'personal') personal = sl.value;
+    else entities[sl.getAttribute('data-perm-id')] = sl.value;
+  });
+  try {
+    const res = await fetch('/api/accountants/my-accountant/access', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ entity_access: { entities, personal } }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      if (linkedAccountant) { linkedAccountant.entity_access = data.entity_access; linkedAccountant.access_level = data.access_level; }
+      if (typeof notify === 'function') notify('\u2713 Access updated');
+    } else if (typeof notify === 'function') notify('\u26a0 ' + (data.error || 'Could not update access'));
+  } catch (e) {
+    if (typeof notify === 'function') notify('Could not update access — are you logged in?');
+  }
+};
 
 window.revokeAccountant = async function() {
   if (!(await window._confirmModal('Are you sure you want to revoke this accountant\'s access?', {danger:true}))) return;

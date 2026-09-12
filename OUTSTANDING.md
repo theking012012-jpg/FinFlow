@@ -2,6 +2,41 @@
 
 ---
 
+## ✅ RECONCILED — 2026-09-12 (verify-first; checked against CODE + the 218/218 sweep, not the log below)
+
+The dated blocks further down had DRIFTED — several items marked open/⏳ have since shipped. This block
+is the AUTHORITATIVE current status; where it conflicts with an older entry below, THIS wins. Every
+"done" here was confirmed in the source this session, not read off a tracking note.
+
+**Verified DONE in code (older "open"/⏳ entries below are superseded):**
+- **Onboarding** — server-side entity provisioning (`_completeOnboarding` / `onboarding_done` / `ob-country`; wiring reads `onboarding_done`). `verify-onboarding-provision` 31/0.
+- **Accountant verification — mandatory proof** — registration requires ≥1 concrete proof (credential doc OR membership/registration no.), `accountant-routes.js` register gate. `verify-accountant-proof-required` 18/0. (Real KYC/registry is a SEPARATE open decision — see below.)
+- **F196 Tier 2 — per-entity business profile on documents** — docview letterhead reads `entity.profile` (name/address/tax-id/email/phone) with the account blob as fallback; entity-profile modal writes it. `verify-entity-profile` 47/0. (Minor: document-logo is captured on the profile but the letterhead logo render is optional/not wired — cosmetic.)
+- **F194 arc** — invoice + bill + quote line items (server-derived amount), docview across all money types, clickable calendar day-click. `finflow-lineitems.js` + `finflow-docview.js`; `verify-bill-line-items` 19/0, `verify-quote-line-items` 19/0, `verify-docview-alltypes` 9/0, `verify-f94-dayclick` 20/0.
+- **Per-entity connections** — all connectors per-entity (`verify-connections-entity-scope` 23/0). (Already noted at the 2026-09-08 block.)
+- **Per-entity + personal accountant access** — shipped 2026-09-12, `verify-accountant-entity-scope` 36/0; durable chat legacy-schema fix `verify-accountant-chat-legacy-schema` 6/0. Full sweep **218/218 GREEN**.
+
+**Genuinely OPEN — launch / ops (confirmed still open in code or owner-gated):**
+- **Resend domain verification** — code default sender is now `noreply@finflow.app` (NOT the sandbox `onboarding@resend.dev` — that note is stale). OPEN = confirm the `finflow.app` domain is verified in Resend (SPF/DKIM) and `EMAIL_FROM` set in Railway. Owner/ops; until done, real-user reset/receipt email is unreliable.
+- **Provider go-live keys** — Plaid still sandbox, Belvo not configured, + 8 connectors need live keys + one sandbox txn each. Code built + verified to the network boundary; dark until keys set. Owner/ops.
+- **Bank region-strict routing** — CONFIRMED open: `ffBankLinkFromPage` (index.html) still has the cross-region fallback `order.find(o=>o[1])` and no `PLAID_MARKETS` list, so a Belvo-market country can be sent to Plaid. Do the code fix WITH the key-set so it verifies end-to-end.
+- **Mobile performance (Lighthouse 54)** — CONFIRMED: `app-main.js` ~410 KB + `finflow-bundle.js` ~374 KB shipped UNMINIFIED. Needs a build/minify step. Non-blocking but real.
+
+**Genuinely OPEN — decisions (nothing breaks; current behaviour silently becomes the decision):**
+- **Real KYC/registry verification** for accountants — provider choice (`PLAN_KYC_VERIFICATION.md`).
+- **Pro "50/month" invoice cap is UNENFORCED** — CONFIRMED: `POST /api/invoices` (server.js:1347) has no plan/count/limit check; Pro invoicing is effectively unlimited. Decide: relabel to "unlimited" + drop the upsell, OR build a real per-month cap + harness.
+
+**Genuinely OPEN — the real done-gate:**
+- **Full VERIFICATION.md re-sweep** on real seeded data before launch sign-off (the doc is explicit this, not the ledger, establishes correctness).
+
+**OPEN — this session's new backlog (see the 🔒 SECURITY and 🌍 WORLD-CLASS sections below):** security hardening checklist (MFA, tested backups+PITR, least-privilege DB role, Sentry, anomaly alerts, `npm audit fix`, RLS, …) + Cloudflare; and the world-class roadmap (FX base-currency consolidation #1, provable books, marketplace+KYC, import+bank-rec, localized tax, SQL-aggregation ceiling).
+
+**OPEN — housekeeping, not in the log:** prod test-data cleanup (QA Tester + Claude TestCPA links/rows).
+
+**Test-debt / deferred (low, non-blocking, unchanged):** F110/F111 harness re-pin · F125 dead `window.charts` refs · F54/F107/F108 team multi-tenant · F92 dead-shadow elimination · F19 DB TLS · F109 close-position · sub-national holidays (post-launch) · deferred cosmetics (F-B5/B6, F-I1/I2, F-M1, F-J1).
+
+---
+
 ## 🟢 STATUS UPDATE — 2026-09-08 (see SESSION_HANDOVER_2026-09-08.md for full detail)
 
 Full sweep **209/209 GREEN, 0 RED**. Three big arcs closed since the entries below were written:
@@ -27,7 +62,7 @@ Resend domain verification (owner/ops); provider go-live env keys (owner/ops).
 
 ## 🟢 STATUS UPDATE — 2026-09-09 — In-app CHAT + required entity fields shipped (see SESSION_HANDOVER_2026-09-08.md addendum)
 
-**Session scoreboard — 4 requested items:** ✅ 1) In-app chat (real-time, 23/0) · ✅ 2) Required entity fields (8/0) · ⏳ 3) Onboarding · ⏳ 4) Accountant verification. Chat first deploy crash-looped (legacy accountant_messages schema) and was hotfixed; production recovered. Entity-fields deploy is additive (no migration). **Full sweep: 214/214 GREEN, 0 RED** (2026-09-09) after fixing test-side fallout from these two features: 3 entity-create harnesses (verify-c5-input-validation / verify-entity-timezone / verify-f149-create-no-entity-rename) now supply the required country, and boot-failures-gate points at the new chat endpoint.
+**Session scoreboard — 4 requested items:** ✅ 1) In-app chat (real-time, 23/0) · ✅ 2) Required entity fields (8/0) · ✅ 3) Onboarding (verify-onboarding-provision 31/0) · ✅ 4) Accountant verification — mandatory proof (verify-accountant-proof-required 18/0); real KYC/registry = decision open. [reconciled 2026-09-12] Chat first deploy crash-looped (legacy accountant_messages schema) and was hotfixed; production recovered. Entity-fields deploy is additive (no migration). **Full sweep: 214/214 GREEN, 0 RED** (2026-09-09) after fixing test-side fallout from these two features: 3 entity-create harnesses (verify-c5-input-validation / verify-entity-timezone / verify-f149-create-no-entity-rename) now supply the required country, and boot-failures-gate points at the new chat endpoint.
 
 **In-app accountant↔client CHAT — COMPLETE.** Real-time (SSE hub, not polling), read receipts
 ("✓ Seen"), typing indicators, unread badges, full per-link isolation. Two `accountant_clients`

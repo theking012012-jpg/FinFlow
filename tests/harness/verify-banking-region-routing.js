@@ -37,8 +37,8 @@ const ROOT = path.join(__dirname, '..', '..');
 
     // ── 2. Region routing (behaviour) ──
     const mFn = html.match(/window\.ffBankLinkFromPage = async function\(\)\{[\s\S]*?\n\};/);
-    A('ffBankLinkFromPage is country-aware (async, reads entity country)',
-      !!mFn && /country/.test(mFn[0]) && /BELVO_MARKETS/.test(mFn[0]), 'routing not country-aware');
+    A('ffBankLinkFromPage is country-aware + region-strict (BELVO_MARKETS + PLAID_MARKETS)',
+      !!mFn && /country/.test(mFn[0]) && /BELVO_MARKETS/.test(mFn[0]) && /PLAID_MARKETS/.test(mFn[0]), 'routing not region-strict');
     if (!mFn) { console.log('\n  RED — ' + pass + ' passed, ' + fail + ' failed'); process.exit(1); }
 
     const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'https://x.test/app' });
@@ -76,8 +76,24 @@ const ROOT = path.join(__dirname, '..', '..');
     A('Mexico entity → Belvo (region-preferred over Plaid)', launched[0] === 'belvo', JSON.stringify(launched));
     await run('BR', false, true);
     A('Brazil with only Belvo configured → Belvo', launched[0] === 'belvo', JSON.stringify(launched));
+    // REGION-STRICT: a Belvo-market country is NEVER routed to Plaid, even when only Plaid is
+    // configured — the cross-region fallback was the bug (a Belvo bank can't be found via Plaid).
     await run('MX', true, false);
-    A('Mexico but only Plaid configured → falls back to Plaid', launched[0] === 'plaid', JSON.stringify(launched));
+    A('Mexico with ONLY Plaid configured → NO cross-region fallback (manual import)',
+      launched.length === 0 && notes.some(n => n.e && /Import/.test(n.m)), JSON.stringify({ launched, notes }));
+    // And the reverse: a Plaid-market country never routes to Belvo.
+    await run('GB', false, true);
+    A('UK with ONLY Belvo configured → NO cross-region fallback (manual import)',
+      launched.length === 0 && notes.some(n => n.e && /Import/.test(n.m)), JSON.stringify({ launched, notes }));
+    await run('GB', true, false);
+    A('UK (Plaid market) with Plaid configured → Plaid', launched[0] === 'plaid', JSON.stringify(launched));
+    await run('FR', true, true);
+    A('France (EU / Plaid market) → Plaid', launched[0] === 'plaid', JSON.stringify(launched));
+    // Uncovered region (Trinidad & Tobago and most of the Caribbean have no aggregator) → manual,
+    // even if BOTH aggregators are configured — never the wrong-region provider.
+    await run('TT', true, true);
+    A('Trinidad & Tobago (uncovered) with BOTH configured → manual import, no wrong-region link',
+      launched.length === 0 && notes.some(n => n.e && /Import/.test(n.m)), JSON.stringify({ launched, notes }));
     await run('JP', false, false);
     A('unserved region, neither configured → no auto-link, points to manual Import',
       launched.length === 0 && notes.some(n => n.e && /Import/.test(n.m)), JSON.stringify({ launched, notes }));

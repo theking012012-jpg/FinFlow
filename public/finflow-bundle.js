@@ -625,8 +625,10 @@
     const p = (async () => {
       const res = await fetch(path, opts);
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `API error ${res.status}`);
+        const data = await res.json().catch(() => ({}));
+        const err = new Error(data.error || `API error ${res.status}`);
+        err.status = res.status; err.code = data.code;   // preserve machine-readable code (e.g. INVOICE_LIMIT)
+        throw err;
       }
       return res.json();
     })();
@@ -768,7 +770,13 @@
       } catch (e) {
         // Keep _invIdemKey so a manual retry of this SAME submit is idempotent: if the row did land
         // server-side despite the error, the retry carries the same token → 23505 → original row, no dup.
-        notify('Could not save invoice — ' + e.message, true);
+        if (e && e.code === 'INVOICE_LIMIT') {
+          // Pro monthly cap (server 402) — show the upgrade path, not a generic error.
+          if (typeof showUpgradeModal === 'function') showUpgradeModal('invoice_limit');
+          else notify(e.message || 'Monthly invoice limit reached — upgrade for unlimited invoicing.', true);
+        } else {
+          notify('Could not save invoice — ' + e.message, true);
+        }
       } finally {
         window._savingInvoice = false;
         if (_saveBtn) _saveBtn.disabled = false;

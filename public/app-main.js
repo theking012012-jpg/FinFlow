@@ -716,7 +716,7 @@ window._applySessionUser = function (user) {
 // PL#3: client-side entity cap — MUST mirror the server ENTITY_LIMITS (server.js POST /api/entities).
 // The server is the real enforcer (returns 402); this just shows the upgrade modal instead of a
 // failed create. business now caps at 5 (was silently unbounded on the client).
-const ENTITY_LIMITS = { trial: 1, pro: 1, business: 5 };
+const ENTITY_LIMITS = { trial: 1, pro: 1, business: 5, scale: 10 };
 function _entityCapReached(){
   if(typeof ENTITIES === 'undefined') return false;
   return ENTITIES.length >= (ENTITY_LIMITS[currentUserPlan] ?? 1);

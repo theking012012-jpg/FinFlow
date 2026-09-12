@@ -3026,7 +3026,7 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         </div>
 
         <!-- PLAN CARDS -->
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:1.5rem" id="plan-grid">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:12px;margin-bottom:1.5rem" id="plan-grid">
 
           <!-- PRO -->
           <div class="card" style="margin-bottom:0;position:relative">
@@ -3046,13 +3046,26 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
             <div style="position:absolute;top:-1px;left:50%;transform:translateX(-50%);background:var(--acc);color:#0e0b08;font-size:10px;font-weight:700;padding:3px 14px;border-radius:0 0 8px 8px;letter-spacing:.06em;white-space:nowrap">MOST POPULAR</div>
             <div style="font-size:11px;font-weight:600;color:var(--acc);text-transform:uppercase;letter-spacing:.12em;margin-bottom:.75rem;margin-top:.5rem">Business</div>
             <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:4px">
-              <span style="font-size:36px;font-weight:300;font-family:var(--font-display);font-style:italic;color:var(--acc-light)" id="price-biz">$199</span>
+              <span style="font-size:36px;font-weight:300;font-family:var(--font-display);font-style:italic;color:var(--acc-light)" id="price-biz">$249</span>
               <span style="font-size:13px;color:var(--t3)">/mo</span>
             </div>
             <div style="font-size:11.5px;color:var(--t3);margin-bottom:1.25rem" id="price-biz-sub">Billed monthly</div>
             <button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px" onclick="startTrial('business')">Start free trial</button>
             <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">Everything in Pro, plus</div>
             <div id="biz-features"></div>
+          </div>
+
+          <!-- SCALE -->
+          <div class="card" style="margin-bottom:0;position:relative">
+            <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:.75rem">Scale</div>
+            <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:4px">
+              <span style="font-size:36px;font-weight:300;font-family:var(--font-display);font-style:italic;color:var(--t1)" id="price-scale">$400</span>
+              <span style="font-size:13px;color:var(--t3)">/mo</span>
+            </div>
+            <div style="font-size:11.5px;color:var(--t3);margin-bottom:1.25rem" id="price-scale-sub">Billed monthly</div>
+            <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px" onclick="startTrial('scale')">Start free trial</button>
+            <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">Everything in Business, plus</div>
+            <div id="scale-features"></div>
           </div>
 
           <!-- ENTERPRISE -->
@@ -3072,17 +3085,17 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
         <div class="card" style="margin-bottom:1.25rem">
           <div class="card-header">
             <h2 class="card-title">How we compare</h2>
-            <span style="font-size:11px;color:var(--t3)">At Business tier · per month</span>
+            <span style="font-size:11px;color:var(--t3)">For a business running 5 entities · per month</span>
           </div>
           <div style="overflow-x:auto">
             <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px">
               <thead>
                 <tr style="border-bottom:1px solid var(--bd)">
                   <th style="text-align:left;padding:6px 8px;color:var(--t3);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em">Feature</th>
-                  <th style="padding:6px 8px;color:var(--acc);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;text-align:center;background:var(--acc-bg);border-radius:4px 4px 0 0">FinFlow<br><span style="font-size:13px;font-family:var(--font-display);font-style:italic;font-weight:300">$199</span></th>
-                  <th style="padding:6px 8px;color:var(--t3);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;text-align:center">QuickBooks<br><span style="font-size:11px;font-weight:400;color:var(--t3);text-transform:none;letter-spacing:0">$275/mo</span></th>
-                  <th style="padding:6px 8px;color:var(--t3);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;text-align:center">Xero<br><span style="font-size:11px;font-weight:400;color:var(--t3);text-transform:none;letter-spacing:0">$90/mo</span></th>
-                  <th style="padding:6px 8px;color:var(--t3);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;text-align:center">FreshBooks<br><span style="font-size:11px;font-weight:400;color:var(--t3);text-transform:none;letter-spacing:0">$60/mo</span></th>
+                  <th style="padding:6px 8px;color:var(--acc);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;text-align:center;background:var(--acc-bg);border-radius:4px 4px 0 0">FinFlow<br><span style="font-size:13px;font-family:var(--font-display);font-style:italic;font-weight:300">$249</span></th>
+                  <th style="padding:6px 8px;color:var(--t3);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;text-align:center">QuickBooks<br><span style="font-size:11px;font-weight:400;color:var(--t3);text-transform:none;letter-spacing:0">$375 (5×)</span></th>
+                  <th style="padding:6px 8px;color:var(--t3);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;text-align:center">Xero<br><span style="font-size:11px;font-weight:400;color:var(--t3);text-transform:none;letter-spacing:0">$450 (5×)</span></th>
+                  <th style="padding:6px 8px;color:var(--t3);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;text-align:center">FreshBooks<br><span style="font-size:11px;font-weight:400;color:var(--t3);text-transform:none;letter-spacing:0">✗ multi</span></th>
                 </tr>
               </thead>
               <tbody id="compare-table-body"></tbody>
@@ -4695,18 +4708,29 @@ window.renderPlaidLinked = async function(){
 window.ffBankLinkFromPage = async function(){
   const ent = (window.ENTITIES||[]).find(e=>e.active) || (window.ENTITIES||[])[0] || {};
   const country = String(ent.country||'').toUpperCase();
+  // Region markets. BELVO = LatAm; PLAID = US/CA/UK + EU open-banking (per Plaid's supported-country
+  // list). A country outside BOTH (e.g. TT and most of the Caribbean) has no aggregator → manual only.
   const BELVO_MARKETS = ['MX','BR','CO','AR','CL','PE','EC','BO','PY','UY','VE','GT','CR','PA','DO'];
+  const PLAID_MARKETS = ['US','CA','GB','AT','BE','DK','EE','FI','FR','DE','IE','IT','LV','LT','NL','NO','PL','PT','ES','SE'];
   const onDone = ()=>{ try{ renderPlaidLinked(); }catch(e){} if(typeof loadBankingFromDB==='function') loadBankingFromDB(); };
   const cfg = async (path, key) => { try{ return !!(await (await fetch(path,{credentials:'include'})).json())[key]; }catch(e){ return false; } };
-  const plaidOk = await cfg('/api/plaid/items','configured');
-  const belvoOk = await cfg('/api/belvo/status','configured');
-  const preferBelvo = BELVO_MARKETS.indexOf(country) >= 0;
-  // Try the region's provider first, then the other configured one.
-  const order = preferBelvo ? [['belvo',belvoOk],['plaid',plaidOk]] : [['plaid',plaidOk],['belvo',belvoOk]];
-  const pick = order.find(o=>o[1]);
-  if (pick){ return pick[0]==='belvo' ? window.ffLinkBelvo(onDone) : window.ffLinkBank(onDone); }
-  // Neither auto-link provider is configured for this region → manual statement import is the path.
-  if(typeof notify==='function') notify('Automatic bank linking isn’t enabled'+(country?(' for '+country):'')+' yet — use “⬆ Import” to add an OFX/QFX/CSV statement from any bank.', true);
+  const manual = (why) => { if(typeof notify==='function') notify(why, true); };
+  const IMPORT = ' — use “⬆ Import” to add an OFX/QFX/CSV statement from any bank.';
+  // REGION-STRICT: a country uses ONLY its own region's aggregator. Never the wrong-region provider —
+  // pointing a Belvo-market bank at Plaid (or a Plaid-market bank at Belvo) simply can't find the
+  // institution, so a cross-region "fallback" is a dead end, not a help. Uncovered → manual import.
+  const region = BELVO_MARKETS.indexOf(country) >= 0 ? 'belvo'
+               : PLAID_MARKETS.indexOf(country) >= 0 ? 'plaid'
+               : null;
+  if (region === 'belvo') {
+    if (await cfg('/api/belvo/status','configured')) return window.ffLinkBelvo(onDone);
+    return manual('Automatic bank linking for '+country+' (via Belvo) isn’t enabled yet'+IMPORT);
+  }
+  if (region === 'plaid') {
+    if (await cfg('/api/plaid/items','configured')) return window.ffLinkBank(onDone);
+    return manual('Automatic bank linking for '+country+' (via Plaid) isn’t enabled yet'+IMPORT);
+  }
+  return manual('Automatic bank linking isn’t available'+(country?(' for '+country):'')+' yet'+IMPORT);
 };
 window.ffBankSync = async function(){
   if(typeof notify==='function') notify('Syncing bank transactions…');
@@ -6536,7 +6560,7 @@ const FEATURE_INFO = {
   banking:       { title: 'Live Bank Sync',           perks: ['Connect any bank via Plaid','Automatic transaction import','Real-time balance sync'] },
   scanner:       { title: 'AI Receipt Scanner',       perks: ['Claude Vision extracts vendor, amount & date','Supports photos and PDFs','Auto-categorise in one tap'] },
   ai_limit:      { title: 'Unlimited AI Queries',     perks: ['No monthly cap — ask anything','Full financial analysis access','Priority AI processing'] },
-  invoice_limit: { title: 'Unlimited Invoices',       perks: ['No 50/month cap','Unlimited recurring profiles','Priority invoice delivery'] },
+  invoice_limit: { title: 'Uncapped Invoicing',       perks: ['Beyond Pro\'s 500/mo fair-use ceiling','Unlimited recurring profiles','Priority invoice delivery'] },
   entity:        { title: 'Multiple Entities',        perks: ['Up to 5 separate ledgers','Consolidated multi-entity P&L','Independent chart of accounts per entity'] },
 };
 
@@ -7391,7 +7415,7 @@ requestAnimationFrame(()=>{if(window.CMD_ITEMS)CMD_ITEMS.push(..._extraCmds);});
 const PRO_FEATURES=[
   {text:'1 business entity',ok:true},
   {text:'Up to 3 team members',ok:true},
-  {text:'Invoicing & quotes (up to 50/month)',ok:true},
+  {text:'Unlimited invoicing & quotes',ok:true},
   {text:'Expense tracking',ok:true},
   {text:'Stripe live feed',ok:true},
   {text:'Budget vs actuals',ok:true},
@@ -7420,6 +7444,15 @@ const BIZ_FEATURES=[
   {text:'Priority email support',ok:true},
 ];
 
+const SCALE_FEATURES=[
+  {text:'Up to 10 entities (separate ledgers)',ok:true},
+  {text:'Everything in Business',ok:true},
+  {text:'Consolidated group reporting',ok:true},
+  {text:'5,000 AI queries / month',ok:true},
+  {text:'Priority support',ok:true},
+  {text:'Onboarding assistance',ok:true},
+];
+
 const ENT_FEATURES=[
   {text:'Unlimited entities',ok:true},
   {text:'Unlimited team members',ok:true},
@@ -7434,8 +7467,9 @@ const ENT_FEATURES=[
 ];
 
 const COMPARE_ROWS=[
-  {feature:'Pro plan price',ff:'$79/mo',qb:'$35/mo',xero:'$29/mo',fb:'$19/mo',ffWins:false},
-  {feature:'Business plan price',ff:'$199/mo',qb:'$275/mo',xero:'$90/mo',fb:'$60/mo',ffWins:true},
+  {feature:'Single business /mo (multi-currency tier)',ff:'$79 (Pro)',qb:'$75',xero:'$55',fb:'$30',ffWins:false},
+  {feature:'5 businesses — total /mo',ff:'$249 (one plan)',qb:'$375 (5 subs)',xero:'$450 (5 orgs)',fb:'✗',ffWins:true},
+  {feature:'10 businesses — total /mo',ff:'$400 (Scale)',qb:'$750 (10 subs)',xero:'$900 (10 orgs)',fb:'✗',ffWins:true},
   {feature:'Native AI assistant',ff:'✓ Claude (Business)',qb:'Limited',xero:'✗',fb:'✗',ffWins:true},
   {feature:'Multi-entity (same plan)',ff:'✓ Business',qb:'✗ Extra sub',xero:'✗ Extra org',fb:'✗',ffWins:true},
   {feature:'AI receipt scanner',ff:'✓ Business',qb:'Basic OCR',xero:'Basic OCR',fb:'✗',ffWins:true},
@@ -7463,15 +7497,20 @@ window.toggleBilling=function(){
   const cb=document.getElementById('billing-toggle');
   isAnnual=cb?cb.checked:!isAnnual;
   const pro=isAnnual?63:79;
-  const biz=isAnnual?159:199;
+  const biz=isAnnual?199:249;
+  const scale=isAnnual?320:400;
   const proEl=document.getElementById('price-pro');
   const bizEl=document.getElementById('price-biz');
+  const scaleEl=document.getElementById('price-scale');
   const proSub=document.getElementById('price-pro-sub');
   const bizSub=document.getElementById('price-biz-sub');
+  const scaleSub=document.getElementById('price-scale-sub');
   if(proEl)proEl.textContent='$'+pro;
   if(bizEl)bizEl.textContent='$'+biz;
+  if(scaleEl)scaleEl.textContent='$'+scale;
   if(proSub)proSub.textContent=isAnnual?`$${pro*12}/yr · save $${(79-pro)*12}`:'Billed monthly';
-  if(bizSub)bizSub.textContent=isAnnual?`$${biz*12}/yr · save $${(199-biz)*12}`:'Billed monthly';
+  if(bizSub)bizSub.textContent=isAnnual?`$${biz*12}/yr · save $${(249-biz)*12}`:'Billed monthly';
+  if(scaleSub)scaleSub.textContent=isAnnual?`$${scale*12}/yr · save $${(400-scale)*12}`:'Billed monthly';
 };
 
 function check(ok){
@@ -7528,6 +7567,7 @@ window.toggleFAQ=function(i){
 function initPricing(){
   renderFeatureList('pro-features',PRO_FEATURES);
   renderFeatureList('biz-features',BIZ_FEATURES);
+  renderFeatureList('scale-features',SCALE_FEATURES);
   renderFeatureList('ent-features',ENT_FEATURES);
   renderCompareTable();
   renderFAQ();

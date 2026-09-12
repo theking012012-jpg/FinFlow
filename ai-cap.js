@@ -18,6 +18,7 @@ const CAPS = {
   trial:      { shared: int(process.env.AI_CAP_TRIAL_SHARED, 30),       scan: int(process.env.AI_CAP_TRIAL_SCAN, 3) },
   pro:        { shared: int(process.env.AI_CAP_PRO_SHARED, 500),        scan: int(process.env.AI_CAP_PRO_SCAN, 15) },
   business:   { shared: int(process.env.AI_CAP_BUSINESS_SHARED, 2000),  scan: int(process.env.AI_CAP_BUSINESS_SCAN, 50) },
+  scale:      { shared: int(process.env.AI_CAP_SCALE_SHARED, 5000),     scan: int(process.env.AI_CAP_SCALE_SCAN, 100) },
   accountant: { shared: int(process.env.AI_CAP_ACCOUNTANT_SHARED, 300), scan: int(process.env.AI_CAP_ACCOUNTANT_SCAN, 10) },
 };
 
@@ -25,7 +26,7 @@ const CAPS = {
 // lowest (trial) tier. Keeps 'pro' and 'business' distinct (the Pro-vs-Business check).
 function planTier(plan) {
   const p = String(plan || '').toLowerCase();
-  return (p === 'pro' || p === 'business') ? p : 'trial';
+  return (p === 'pro' || p === 'business' || p === 'scale') ? p : 'trial';
 }
 
 function capFor(plan, kind) {

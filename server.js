@@ -624,10 +624,10 @@ const wrap = fn => async (req, res, next) => {
 app.post('/api/stripe/checkout', requireAuth, wrap(async (req, res) => {
   if (!stripe) return res.status(400).json({ error: 'Stripe not configured.' });
   const { plan } = req.body;
-  if (!plan || !['pro', 'business'].includes(plan)) {
+  if (!plan || !['pro', 'business', 'scale'].includes(plan)) {
     return res.status(400).json({ error: 'Invalid plan. Must be "pro" or "business".' });
   }
-  const priceId = plan === 'business' ? process.env.STRIPE_PRICE_BUSINESS : process.env.STRIPE_PRICE_PRO;
+  const priceId = process.env['STRIPE_PRICE_' + plan.toUpperCase()];   // STRIPE_PRICE_PRO | _BUSINESS | _SCALE
   if (!priceId) return res.status(500).json({ error: `STRIPE_PRICE_${plan.toUpperCase()} env var not set.` });
   const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
   const session = await stripe.checkout.sessions.create({
@@ -1147,7 +1147,7 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
   // entities, not HOW MANY. Without this a direct API call bypasses the UI gate and creates unlimited
   // entities past the plan. req.userPlan is attached by the trial-expiry middleware. Dedupe runs
   // first so a retried duplicate is never counted against the cap. (Dedupe short-circuits above.)
-  const ENTITY_LIMITS = { trial: 1, pro: 1, business: 5 };
+  const ENTITY_LIMITS = { trial: 1, pro: 1, business: 5, scale: 10 };
   const _entCount = (await db.allByUser('entities', scopeId(req))).length;
   if (_entCount >= (ENTITY_LIMITS[req.userPlan] ?? 1)) {
     return res.status(402).json({ error: 'Entity limit reached for your plan.' });
@@ -1366,6 +1366,16 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
     const _dup = await findRecentDuplicate('invoices', scopeId(req), eid, { textMatch: { client: client.trim().slice(0,200) }, numMatch: { amount: parseFloat(_effAmount)||0 } });
     if (_dup) return res.status(200).json(_dup);
   }
+  // Idempotency pre-check (token path): if this exact submit already created an invoice, return it
+  // BEFORE the cap check below — a retry at the monthly cap must yield the ORIGINAL row, not a 402.
+  // (The 23505 insert-catch still covers the concurrent-race loser; this is the fast sequential path.)
+  if (idem) {
+    const { rows: _prev } = await pool.query(
+      `SELECT * FROM invoices WHERE user_id = $1 AND data->>'idempotency_key' = $2 ORDER BY id ASC LIMIT 1`,
+      [scopeId(req), idem]
+    );
+    if (_prev[0]) return res.status(200).json(rowToObj(_prev[0]));
+  }
   // F36: issue_date is the user-editable business issue date recognition keys on (Step 2).
   // Store only when supplied — legacy/API rows with no issue_date fall back to created_at at
   // recognition time. Not defaulted server-side (server "today" is UTC; the UI sends a LOCAL
@@ -1384,6 +1394,30 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   // (app-main.js:2360), so there is otherwise NO path to ever set it. Matches the boot-backfill
   // (database.js) + recalcInvoiceStatus semantics (paid ⇒ amount_paid = amount). A new invoice has
   // no payments, so this is unambiguous; the payment path (recalcInvoiceStatus) still owns it after.
+  // ── Pro plan monthly invoice cap (advertised "up to 50/month" on the Pro pricing card) ──────
+  // Business = unlimited; trial = uncapped during the trial window (then checkPlan makes it
+  // read-only). Pro = 50 invoices per calendar month, counted per ACCOUNT (scopeId) across all
+  // entities by created_at (issue_date is user-editable and could be back-dated to dodge the cap;
+  // created_at cannot). Placed AFTER the dup/idempotency short-circuits so an idempotent retry of
+  // an already-created invoice is returned, never blocked. The `invoice_limit` add-on is advertised
+  // but not yet wired to an entitlement store — when it is, exempt it here.
+  const _planRow = await pool.query(`SELECT data->>'plan' AS plan FROM users WHERE id = $1`, [scopeId(req)]);
+  if ((_planRow.rows[0]?.plan || 'trial') === 'pro') {
+    const { rows: [_ic] } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM invoices WHERE user_id = $1 AND created_at >= date_trunc('month', now())`,
+      [scopeId(req)]
+    );
+    // Pro invoicing is marketed as unlimited; this is a FAIR-USE / anti-abuse ceiling only (a runaway
+    // script can't hammer the DB/email into a cost spike). 500/month is far above any real SMB volume.
+    // Business/Scale are truly uncapped. Env-tunable so it can be raised without a deploy.
+    const _cap = parseInt(process.env.PRO_INVOICE_CEILING, 10) || 500;
+    if (_ic.n >= _cap) {
+      return res.status(402).json({
+        error: 'You have reached the ' + _cap + '/month fair-use ceiling on Pro. Contact us to lift it or upgrade to Business for uncapped invoicing.',
+        code: 'INVOICE_LIMIT',
+      });
+    }
+  }
   const _amt = parseFloat(_effAmount) || 0;
   const _amountPaid = String(status).toLowerCase() === 'paid' ? _amt : 0;
   let row;
@@ -3990,7 +4024,7 @@ app.get('/register', (req, res) => {
   const ref = String(req.query.ref || req.query.referralCode || '').slice(0, 50);
   if (ref) params.set('ref', ref);
   const plan = String(req.query.plan || '');
-  if (plan === 'pro' || plan === 'business') params.set('plan', plan);
+  if (['pro', 'business', 'scale'].includes(plan)) params.set('plan', plan);
   res.redirect('/app?' + params.toString());
 });
 app.get('/accountant', (req, res) => {

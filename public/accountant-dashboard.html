@@ -641,6 +641,15 @@
           <div class="profile-field"><label for="pf-bio">Bio</label><textarea id="pf-bio" rows="4"></textarea></div>
         </div>
       </div>
+      <div class="profile-card" style="margin-top:20px">
+        <h3>Identity Verification (KYC)</h3>
+        <p style="font-size:12px;color:var(--text3);margin:-4px 0 14px">Verify your identity with a government ID and selfie (secure, via Stripe Identity). Verified accountants build client trust, and admins see your status during review.</p>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <span id="kyc-badge" class="badge badge-amber">Loading…</span>
+          <button class="btn btn-gold" id="kyc-start-btn" onclick="startKyc()" style="display:none">Start identity verification</button>
+          <span id="kyc-msg" style="font-size:12px;color:var(--text3)"></span>
+        </div>
+      </div>
       <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
         <div style="font-size:12px;color:var(--text3)">Verification status: <span id="pf-status" style="color:var(--amber)">—</span></div>
       </div>
@@ -926,6 +935,7 @@ function initUI() {
   document.getElementById('pf-spec').value = accountant.specialisation || '';
   document.getElementById('pf-exp').value = accountant.experience || '';
   document.getElementById('pf-bio').value = accountant.bio || '';
+  if (typeof loadKyc === 'function') loadKyc(accountant.kyc_status, accountant.kyc_verified_at);
 
   // Status line
   document.getElementById('status-line').textContent = accountant.status === 'verified'
@@ -1325,6 +1335,38 @@ async function submitBill() {
     toast('Could not create payment link', 'error');
   }
 }
+
+// ── KYC / Identity verification (Stripe Identity, Phase B) ──────────────────────
+function _kycRender(status, verifiedAt){
+  const badge=document.getElementById('kyc-badge'), btn=document.getElementById('kyc-start-btn'), msg=document.getElementById('kyc-msg');
+  if(!badge) return;
+  const map={verified:['badge-green','\u2713 Verified'],pending:['badge-amber','\u23f3 In review'],failed:['badge-red','\u2717 Not verified \u2014 retry'],not_started:['badge-amber','Not verified']};
+  const m=map[status||'not_started']||map.not_started;
+  badge.className='badge '+m[0]; badge.textContent=m[1];
+  if(btn) btn.style.display=(status==='verified'||status==='pending')?'none':'inline-flex';
+  if(msg){ msg.style.color='var(--text3)'; msg.textContent=(status==='verified'&&verifiedAt)?('Verified on '+new Date(verifiedAt).toLocaleDateString()):''; }
+}
+async function loadKyc(preStatus, preVerifiedAt){
+  if(preStatus){ _kycRender(preStatus, preVerifiedAt); return; }
+  try{
+    const r=await fetch('/api/accountants/kyc/status',{credentials:'include'});
+    if(!r.ok){ _kycRender('not_started'); return; }
+    const d=await r.json(); _kycRender(d.kyc_status, d.kyc_verified_at);
+  }catch(e){ _kycRender('not_started'); }
+}
+async function startKyc(){
+  const btn=document.getElementById('kyc-start-btn'), msg=document.getElementById('kyc-msg');
+  if(btn){ btn.disabled=true; btn.textContent='Starting\u2026'; }
+  if(msg){ msg.style.color='var(--text3)'; msg.textContent=''; }
+  try{
+    const r=await fetch('/api/accountants/kyc/start',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok && d.url){ window.location.href=d.url; return; }
+    if(msg){ msg.style.color='var(--red)'; msg.textContent=d.error||'Could not start verification \u2014 please try again.'; }
+  }catch(e){ if(msg){ msg.style.color='var(--red)'; msg.textContent='Could not start verification \u2014 please try again.'; } }
+  if(btn){ btn.disabled=false; btn.textContent='Start identity verification'; }
+}
+window.startKyc=startKyc; window.loadKyc=loadKyc;
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 boot();

@@ -54,7 +54,7 @@ RED-proven, a real SSE socket receives the peer's message live. Both portal UIs 
 
 ## 🔒 SECURITY / LAUNCH HARDENING — added 2026-09-12 (OPEN)
 
-Two launch-hardening items, captured so they don't get lost. Neither is a money bug.
+Launch-hardening + security items, captured so they don't get lost. None is a money bug.
 
 1. **Cloudflare (WAF + DDoS) — OPEN, owner-run (~15 min DNS, no code change).** Put FinFlow behind
    Cloudflare: point the domain's DNS through Cloudflare (proxied / orange-cloud), set TLS mode to
@@ -79,6 +79,56 @@ Two launch-hardening items, captured so they don't get lost. Neither is a money 
    third-party web-app pen test (~$10k–$15k, grey-box) near launch, or when a customer/deal requires
    it; SOC 2 later (~$25k–$50k first year) only when enterprise deals demand it. Prep is free and is
    the same isolation-harness work.
+
+3. **Security hardening checklist — the discrete items (status per 2026-09-12 recon; verify-first).**
+   *Already in place (confirmed this recon — listed so they're not re-done):* helmet + CSP + HSTS;
+   httpOnly+secure+sameSite cookies; bcrypt cost 12; login rate-limit (`authLimiter`); L1 session
+   regen; L2 hashed single-use reset tokens; Stripe webhook signature-verified + idempotent; uploads
+   size-capped + forced-attachment + nosniff; parameterized queries; secrets gitignored + a repo
+   secret-scanner (`audit.js`); connector creds encrypted (`CONNECTOR_ENC_KEY`, M1).
+   *Open — before launch:*
+   - [ ] **MFA / 2FA — accountants first (highest-value target: one login = many clients' books), then owners.** Build.
+   - [ ] **Tested backups + point-in-time restore** — a restore actually run, not just configured. Owner/ops (Supabase/Railway plan).
+   - [ ] **`npm audit fix`** — clears the 3 moderate `qs` advisories. Quick.
+   - [ ] **Bump the one bcrypt cost-10 call site to 12** (server.js:2198) — trivial consistency fix.
+   - [ ] **Verify every bank/OAuth token is encrypted at rest** via `CONNECTOR_ENC_KEY` (confirm coverage across all 13 connectors, not just the ones spot-checked).
+   *Open — assume-breach / detect fast:*
+   - [ ] **Least-privilege DB role** — app connects as a non-superuser that cannot DROP/ALTER schema. Owner/ops (DB config).
+   - [ ] **Audit-log anomaly alerting** — the audit trail exists; wire alerts on the scary signals (mass export, one accountant touching many clients, impossible-travel logins, access spikes). Build.
+   - [ ] **Error monitoring (Sentry) + uptime alerting** — know something broke before users do. Build/ops.
+   - [ ] **Secrets rotation cadence** — rotate DB URL / Stripe / connector keys on a schedule + on any suspected exposure. Owner/ops.
+   - [ ] **Postgres Row-Level Security (belt-and-suspenders)** — DB-level tenant isolation so a route that ever forgets `WHERE user_id` still can't leak. Build (pairs with the isolation harness in item 2).
+   *Cross-ref:* CSP `script-src 'unsafe-inline'` removal is the existing **§A.L3** item (623 inline handlers → `addEventListener`).
+
+---
+
+## 🌍 WORLD-CLASS ROADMAP — added 2026-09-12 (product, not launch-blocking)
+
+What separates "solid" from world-class for a money product: the core promise is provably right, and
+one thing is genuinely better than QuickBooks/Xero for the Caribbean/SMB market. Ranked by leverage.
+
+1. **FX base-currency consolidation — the #1 credibility item.** `computeBooks` all-entities aggregate
+   is currently a RAW NATIVE SUM across entities (F24 base-currency conversion deferred), so a TTD
+   entity + a USD entity produce a "total" that adds unlike currencies. For a *multi-currency* product
+   this is the gap a sharp user/accountant catches day one. Convert to a base/reporting currency
+   everywhere (dashboard, reports, accountant portal) with FX rates dated to each transaction. (This is
+   also what the per-entity accountant aggregate inherits — see the F24 note in accountant-routes `/books`.)
+2. **Make "the books are correct" a provable, marketed asset.** Leverage the existing verification
+   discipline (real-PG harnesses, RED-proving, discriminating seeds, owner oracle): a trial balance
+   that always ties to zero, an immutable audit trail, period locks that truly lock, reversing entries
+   instead of edits — then say it publicly as a trust wedge.
+3. **Finish the accountant-marketplace moat.** Real KYC/registry verification (see
+   `PLAN_KYC_VERIFICATION.md`), reviews with teeth, secure document exchange, e-signature, and
+   invisible commission/billing. The per-entity + personal access grant (shipped 2026-09-12) is step 1.
+4. **Time-to-value: import + bank rec.** Frictionless import (QuickBooks/Xero/CSV) + genuinely good
+   bank-feed auto-matching — turns a signup into a retained user. Connectors are started; make them excellent.
+5. **Localized tax & filing.** TT VAT et al., auto-computed, filing-ready — the killer local feature that
+   makes "file on my behalf" real. (Tax lines/worksheet exist; the localized returns are the gap.)
+6. **Architecture ceiling (cheap now, expensive later):** the single `data JSONB` column + JS-side
+   aggregation (`computeBooks` pulls all rows and sums in Node) has a scale ceiling — fine for SMB
+   volumes, push aggregation into SQL before anyone has ~5 years of data.
+
+**If only two:** #1 (FX consolidation — credibility) and #3 (marketplace + KYC — moat).
 
 ---
 

@@ -9,6 +9,7 @@ const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
 const { db, initDB, pool, rowToObj } = require('./database');
+const totp = require('./totp');
 const FinFlowDates = require('./public/finflow-dates.js'); // F87 — canonical calendar-date/period resolver (Rule 10)
 const Holidays     = require('date-holidays');            // F88 step 6 — per-country public-holiday calendar (offline, no network)
 const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
@@ -759,6 +760,16 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
     if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Invalid email or password.' });
+    // Owner MFA gate (mirrors the accountant flow): once the owner has enabled TOTP, a correct
+    // password is NOT enough — a valid 6-digit code is required before the session is granted. The
+    // deny returns {mfaRequired:true} so the login UI can reveal the code field. Byte-identical to
+    // the old flow for any owner who has not enabled MFA (user.mfa_enabled falsy).
+    if (user.mfa_enabled) {
+      const _mfaTok = req.body && req.body.token;
+      let _mfaOk = false;
+      if (_mfaTok) { try { _mfaOk = totp.verify(_mfaTok, totp.decSecret(user.mfa_secret)); } catch (_) { _mfaOk = false; } }
+      if (!_mfaOk) return res.status(401).json({ error: 'Enter your authenticator code to finish signing in.', mfaRequired: true });
+    }
     // (L1) Regenerate the session id on login (session-fixation hardening).
     await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
     req.session.userId = user.id;
@@ -788,6 +799,47 @@ app.post('/api/auth/logout', (req, res) => {
     res.json({ ok: true });
   });
 });
+
+// ── OWNER MFA (TOTP) — enroll / enable / disable. Secret lives in users.data (JSONB, no migration),
+// stored ENCRYPTED via totp.encSecret. Mirrors the accountant MFA flow. The login gate above reads
+// user.mfa_enabled / user.mfa_secret (rowToObj spreads data to the top level). ──────────────────
+app.get('/api/auth/mfa/status', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query(`SELECT data->>'mfa_enabled' AS e FROM users WHERE id = $1`, [req.session.userId]);
+  res.json({ mfa_enabled: !!(rows[0] && rows[0].e === 'true') });
+}));
+
+app.post('/api/auth/mfa/setup', requireAuth, wrap(async (req, res) => {
+  const { rows } = await pool.query(`SELECT data->>'email' AS email, data->>'mfa_enabled' AS e FROM users WHERE id = $1`, [req.session.userId]);
+  const u = rows[0];
+  if (u && u.e === 'true') return res.status(400).json({ error: 'MFA is already enabled. Disable it first to re-enroll.' });
+  const secret = totp.newSecret();
+  await pool.query(`UPDATE users SET data = data || jsonb_build_object('mfa_pending_secret', $1::text) WHERE id = $2`, [totp.encSecret(secret), req.session.userId]);
+  res.json({ secret, otpauth: totp.otpauthUri(secret, (u && u.email) || 'account') });
+}));
+
+app.post('/api/auth/mfa/enable', requireAuth, wrap(async (req, res) => {
+  const token = req.body && req.body.token;
+  const { rows } = await pool.query(`SELECT data->>'mfa_pending_secret' AS p FROM users WHERE id = $1`, [req.session.userId]);
+  const penc = rows[0] && rows[0].p;
+  if (!penc) return res.status(400).json({ error: 'Start MFA setup first.' });
+  let ok = false;
+  try { ok = totp.verify(token, totp.decSecret(penc)); } catch (_) { ok = false; }
+  if (!ok) return res.status(400).json({ error: 'Invalid code — check your authenticator app and try again.' });
+  await pool.query(`UPDATE users SET data = (data - 'mfa_pending_secret') || jsonb_build_object('mfa_secret', $1::text, 'mfa_enabled', true) WHERE id = $2`, [penc, req.session.userId]);
+  res.json({ mfa_enabled: true });
+}));
+
+app.post('/api/auth/mfa/disable', requireAuth, wrap(async (req, res) => {
+  const token = req.body && req.body.token;
+  const { rows } = await pool.query(`SELECT data->>'mfa_enabled' AS e, data->>'mfa_secret' AS s FROM users WHERE id = $1`, [req.session.userId]);
+  const u = rows[0];
+  if (!u || u.e !== 'true') return res.status(400).json({ error: 'MFA is not enabled.' });
+  let ok = false;
+  try { ok = totp.verify(token, totp.decSecret(u.s)); } catch (_) { ok = false; }
+  if (!ok) return res.status(400).json({ error: 'Invalid code.' });
+  await pool.query(`UPDATE users SET data = (data - 'mfa_secret' - 'mfa_pending_secret') || jsonb_build_object('mfa_enabled', false) WHERE id = $1`, [req.session.userId]);
+  res.json({ mfa_enabled: false });
+}));
 
 app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
   try {

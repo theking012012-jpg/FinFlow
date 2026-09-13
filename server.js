@@ -398,6 +398,8 @@ async function _recordPageView(v) {
 //   3) req.ip as a last resort.
 // Strip an IPv4-mapped IPv6 prefix so geo + dedupe see a clean dotted-quad.
 function _clientIp(req) {
+  const cf = req.headers['cf-connecting-ip'];
+  if (cf && String(cf).trim()) return String(cf).trim().replace(/^::ffff:/i, '');
   const envoy = req.headers['x-envoy-external-address'];
   if (envoy && String(envoy).trim()) return String(envoy).trim().replace(/^::ffff:/i, '');
   const xff = req.headers['x-forwarded-for'];
@@ -502,7 +504,15 @@ app.use(session({
   },
 }));
 
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
+// Cloudflare/Railway-aware client IP for IP-keyed limiters. Behind Cloudflare, CF-Connecting-IP is
+// the single authoritative client address (no fragile hop-counting); _clientIp handles the
+// Railway/Envoy chain and the pre-Cloudflare topology too. Degrade to a UNIQUE key — never a shared
+// bucket (F103) — when no IP resolves. SPOOF NOTE: CF-Connecting-IP/XFF are client-settable unless
+// the Railway origin only accepts Cloudflare's IP ranges; lock the origin down (see INFRA_RUNBOOK)
+// so these headers are trustworthy. (Raw req.ip was already header-spoofable direct-to-origin, so
+// this is neutral pre-lockdown and strictly correct post-lockdown.)
+const _ipKey = (req) => { const ip = _clientIp(req); return ip ? 'ip:' + ip : 'anon:' + crypto.randomUUID(); };
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyGenerator: _ipKey });
 
 // F100 — key AUTHENTICATED /api traffic on the USER, not req.ip. `trust proxy:1` (above) makes
 // req.ip the client's forwarded IP, so every user behind one NAT/CGNAT address shared a single
@@ -522,8 +532,7 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
 // socket, which drops the request rather than delivering it under a shared key).
 const _rlKey = (req) =>
   (req.session && req.session.userId) ? 'u:' + req.session.userId
-  : req.ip ? 'ip:' + req.ip
-  : 'anon:' + crypto.randomUUID();
+  : _ipKey(req);
 
 // F99 — split idempotent READS from mutating WRITES, and size reads for the app's OWN boot cost.
 // A cold dashboard boot is ~69 requests (66 GET / 3 write; MEASURED — tests/harness/
@@ -550,7 +559,7 @@ const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 300, keyGenerator: _rl
 // to the tight auth cadence to cap brute-force/enumeration even though the 32-byte
 // token is unguessable.
 const inviteLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 30, keyGenerator: _rlKey });
-const acceptLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });   // public/token surface — keep IP
+const acceptLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyGenerator: _ipKey });   // public/token surface — CF-aware IP key
 
 // F99/F100 — reads and writes each to their own per-user limiter.
 app.use('/api', (req, res, next) =>

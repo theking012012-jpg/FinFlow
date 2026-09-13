@@ -20,6 +20,9 @@ class HarnessHttp {
     // rate-limited surface (e.g. authLimiter, max:10) many times under the pinned clock (whose
     // window never advances). Omitted ⇒ no header ⇒ identical to the original behaviour.
     this.xff = opts.xff || null;
+    // Optional CF-Connecting-IP — Cloudflare's single authoritative client IP. The CF-aware
+    // IP-key limiters prefer it over XFF/req.ip, so a distinct cf gives a client its OWN bucket.
+    this.cf = opts.cf || null;
   }
 
   _cookieHeader() {
@@ -45,6 +48,7 @@ class HarnessHttp {
     const cookie = this._cookieHeader();
     if (cookie) headers.Cookie = cookie;
     if (this.xff) headers['X-Forwarded-For'] = this.xff;
+    if (this.cf) headers['CF-Connecting-IP'] = this.cf;
 
     const res = await fetch(this.baseUrl + urlPath, {
       method,

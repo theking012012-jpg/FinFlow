@@ -37,8 +37,8 @@ _All feature/security code from the recent sessions is shipped and green. What's
 - [ ] **Audit-log anomaly alerting** — the audit trail exists; wire alerts on the scary signals (mass export, one accountant touching many clients, impossible-travel logins, access spikes).
 - [ ] **Error monitoring (Sentry) + uptime alerting** — build side is quick; needs a DSN from you (ops).
 - [ ] **Mobile performance** — the `.min.js` minify build (esbuild/terser → minified siblings, update index.html + SW refs, keep `no-store`, add a Playwright smoke of the built output). Compression + region routing already done; this is the last perf lever. Deliberate babysat pass, non-blocking.
-- [ ] **Confirm connector-token encryption coverage** across all 13 connectors (spot-checked clean; prove it exhaustively).
-- [ ] **KYC Phase C** — registry-portal one-click verify links per professional body (admin already has the Google-search verify link + status badge; the per-body portal links are the remaining piece).
+- [x] **Connector-token encryption coverage — ✅ VERIFIED 2026-09-13** — audit across all 13 connectors: every stored credential is encTok'd (AES-256-GCM, `CONNECTOR_ENC_KEY`); Codat/Belvo store no per-user secret. No gaps.
+- [ ] **KYC Phase C — per-body registry-portal links (DEFERRED, needs URL verification).** v1 (Google-search verify link + status badge) is the working stopgap; per-body direct links need each portal URL verified (US CPA/cpaverify.org, ACCA, ICAEW, CPA Canada, ICATT, …) — do in a pass with web access, don't hardcode unverified URLs.
 - [ ] **`express` 4 → 5** — clears the last remaining `qs` moderate advisory (didn't force it; it's a major bump).
 - [ ] **CSP `script-src 'unsafe-inline'` removal (L3)** — 623 inline handlers → `addEventListener`, page by page. Big, low-urgency; rest of the CSP is already tight.
 

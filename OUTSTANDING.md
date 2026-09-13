@@ -103,7 +103,7 @@ Launch-hardening + security items, captured so they don't get lost. None is a mo
    WAF (do this around launch); **Business ~$250/mo** only once custom WAF rules are actually needed.
    No application change — this is an infra/ops step.
 
-2. **Internal security audit + tenant-isolation harness — OPEN, assistant-buildable.** A code-level
+2. **Internal security audit + tenant-isolation harness — ✅ HARNESS DONE 2026-09-13 (`verify-tenant-isolation` 47/0).** Attacker-tenant IDOR sweep across 9 money resources (read/modify/delete all denied, DB-verified untouched); caught + fixed a `DELETE /api/bills/:id` fake-success (now 404). Full external pen test still the paid follow-on below. Original scope note: A code-level
    security review plus a permanent automated **multi-tenant isolation / IDOR harness** (attacker
    tenant B attempts to read / modify / delete tenant A's rows across every money resource; assert
    deny AND DB-verify A's row is untouched) as a regression test, mirroring a grey-box pentester's
@@ -127,10 +127,10 @@ Launch-hardening + security items, captured so they don't get lost. None is a mo
    size-capped + forced-attachment + nosniff; parameterized queries; secrets gitignored + a repo
    secret-scanner (`audit.js`); connector creds encrypted (`CONNECTOR_ENC_KEY`, M1).
    *Open — before launch:*
-   - [ ] **MFA / 2FA — accountants first (highest-value target: one login = many clients' books), then owners.** Build.
+   - [x] **MFA / 2FA — accountants: ✅ DONE 2026-09-13.** TOTP (RFC 6238, `totp.js`, no new dep); enroll/enable/disable endpoints + login gate (`mfaRequired`); secret AES-256-GCM at rest; login-page code prompt + dashboard enroll UI. `verify-accountant-mfa` 17/0 (RED-proven). Owners' MFA still TODO.
    - [ ] **Tested backups + point-in-time restore** — a restore actually run, not just configured. Owner/ops (Supabase/Railway plan).
-   - [ ] **`npm audit fix`** — clears the 3 moderate `qs` advisories. Quick.
-   - [ ] **Bump the one bcrypt cost-10 call site to 12** (server.js:2198) — trivial consistency fix.
+   - [x] **`npm audit fix` — ✅ DONE 2026-09-13 (3→2).** Remaining 2 are `qs` transitive via express 4.22.2; clearing needs an express 4→5 upgrade (deliberate migration, not force-fixed).
+   - [x] **Bcrypt cost-10 → 12 — ✅ DONE 2026-09-12** (server.js password-update path; now cost-12 everywhere).
    - [ ] **Verify every bank/OAuth token is encrypted at rest** via `CONNECTOR_ENC_KEY` (confirm coverage across all 13 connectors, not just the ones spot-checked).
    *Open — assume-breach / detect fast:*
    - [ ] **Least-privilege DB role** — app connects as a non-superuser that cannot DROP/ALTER schema. Owner/ops (DB config).

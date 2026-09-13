@@ -386,6 +386,10 @@ async function initDB() {
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS kyc_status VARCHAR(20) DEFAULT 'not_started'`);
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS kyc_session_id TEXT`);
     await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS kyc_verified_at TIMESTAMPTZ`);
+    // Accountant MFA (TOTP). Secrets stored AES-256-GCM at rest (totp.encSecret); pending during enrollment.
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN DEFAULT FALSE`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS mfa_secret TEXT`);
+    await client.query(`ALTER TABLE accountants ADD COLUMN IF NOT EXISTS mfa_pending_secret TEXT`);
     await client.query(`ALTER TABLE accountant_earnings ADD COLUMN IF NOT EXISTS client_id INTEGER`);
     // F17 money-split ledger: a service_commission row records the full breakdown of a
     // client bill. amount_cents = the accountant's NET (billed − Stripe fee − FinFlow

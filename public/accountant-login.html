@@ -108,6 +108,10 @@
       <label>Password</label>
       <input type="password" id="password" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
     </div>
+    <div class="form-group" id="mfa-group" style="display:none">
+      <label>Authenticator code</label>
+      <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" id="mfa-code" placeholder="6-digit code" onkeydown="if(event.key==='Enter')login()">
+    </div>
 
     <button class="btn-primary" id="login-btn" onclick="login()">Sign in →</button>
 
@@ -130,6 +134,7 @@
 async function login() {
   const email = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
+  const token = (document.getElementById('mfa-code') || {}).value ? document.getElementById('mfa-code').value.trim() : '';
   const btn = document.getElementById('login-btn');
   const err = document.getElementById('error-msg');
 
@@ -143,9 +148,15 @@ async function login() {
     const res = await fetch('/api/accountants/login', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(token ? { email, password, token } : { email, password }),
     });
     const data = await res.json();
+    if (data.mfaRequired) {
+      document.getElementById('mfa-group').style.display = 'block';
+      const mc = document.getElementById('mfa-code'); if (mc) mc.focus();
+      showError(token ? 'Invalid authenticator code — please try again.' : 'Enter the 6-digit code from your authenticator app.');
+      return;
+    }
     if (data.error) { showError(data.error); return; }
     window.location.href = '/accountant';
   } catch(e) {

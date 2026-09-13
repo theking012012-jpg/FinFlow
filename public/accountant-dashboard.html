@@ -650,6 +650,37 @@
           <span id="kyc-msg" style="font-size:12px;color:var(--text3)"></span>
         </div>
       </div>
+      <div class="profile-card" style="margin-top:20px">
+        <h3>Two-Factor Authentication (2FA)</h3>
+        <p style="font-size:12px;color:var(--text3);margin:-4px 0 14px">Protect your login with an authenticator app (Google Authenticator, Authy, 1Password). Strongly recommended — your login controls access to every client's books.</p>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <span id="mfa-badge" class="badge badge-amber">Loading…</span>
+          <button class="btn btn-gold" id="mfa-enable-btn" onclick="startMfaSetup()" style="display:none">Enable 2FA</button>
+          <button class="btn btn-outline" id="mfa-disable-btn" onclick="showMfaDisable()" style="display:none">Disable 2FA</button>
+          <span id="mfa-msg" style="font-size:12px;color:var(--red)"></span>
+        </div>
+        <div id="mfa-setup-panel" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+          <p style="font-size:12px;color:var(--text2);margin:0 0 6px">1. Add this key to your authenticator app:</p>
+          <code id="mfa-secret" style="display:block;font-size:14px;letter-spacing:2px;background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:10px;margin:0 0 6px;word-break:break-all;color:var(--text1)"></code>
+          <a id="mfa-otpauth" href="#" style="font-size:11px;color:var(--gold)">Open in authenticator app ↗</a>
+          <p style="font-size:12px;color:var(--text2);margin:12px 0 6px">2. Enter the 6-digit code it shows:</p>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <input type="text" inputmode="numeric" maxlength="6" id="mfa-setup-code" placeholder="000000" style="width:130px;padding:9px 12px;background:var(--bg1);border:1px solid var(--border);border-radius:8px;color:var(--text1);font-size:14px;letter-spacing:2px">
+            <button class="btn btn-gold" onclick="confirmMfaEnable()">Confirm &amp; enable</button>
+            <button class="btn btn-outline" onclick="cancelMfa()">Cancel</button>
+          </div>
+          <div id="mfa-setup-msg" style="font-size:12px;color:var(--red);margin-top:8px"></div>
+        </div>
+        <div id="mfa-disable-panel" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+          <p style="font-size:12px;color:var(--text2);margin:0 0 6px">Enter a current 6-digit code to disable 2FA:</p>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <input type="text" inputmode="numeric" maxlength="6" id="mfa-disable-code" placeholder="000000" style="width:130px;padding:9px 12px;background:var(--bg1);border:1px solid var(--border);border-radius:8px;color:var(--text1);font-size:14px;letter-spacing:2px">
+            <button class="btn btn-danger" onclick="confirmMfaDisable()">Disable 2FA</button>
+            <button class="btn btn-outline" onclick="cancelMfa()">Cancel</button>
+          </div>
+          <div id="mfa-disable-msg" style="font-size:12px;color:var(--red);margin-top:8px"></div>
+        </div>
+      </div>
       <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
         <div style="font-size:12px;color:var(--text3)">Verification status: <span id="pf-status" style="color:var(--amber)">—</span></div>
       </div>
@@ -936,6 +967,7 @@ function initUI() {
   document.getElementById('pf-exp').value = accountant.experience || '';
   document.getElementById('pf-bio').value = accountant.bio || '';
   if (typeof loadKyc === 'function') loadKyc(accountant.kyc_status, accountant.kyc_verified_at);
+  if (typeof loadMfa === 'function') loadMfa();
 
   // Status line
   document.getElementById('status-line').textContent = accountant.status === 'verified'
@@ -1367,6 +1399,48 @@ async function startKyc(){
   if(btn){ btn.disabled=false; btn.textContent='Start identity verification'; }
 }
 window.startKyc=startKyc; window.loadKyc=loadKyc;
+
+// ── 2FA / MFA (TOTP) ─────────────────────────────────────────────────────────────
+async function loadMfa(){
+  try{ const r=await fetch('/api/accountants/mfa/status',{credentials:'include'}); if(!r.ok)return; const d=await r.json(); _mfaRender(!!d.mfa_enabled); }catch(e){}
+}
+function _mfaRender(enabled){
+  const b=document.getElementById('mfa-badge'),en=document.getElementById('mfa-enable-btn'),dis=document.getElementById('mfa-disable-btn');
+  if(!b)return;
+  b.className='badge '+(enabled?'badge-green':'badge-amber'); b.textContent=enabled?'\u2713 Enabled':'Not enabled';
+  if(en)en.style.display=enabled?'none':'inline-flex';
+  if(dis)dis.style.display=enabled?'inline-flex':'none';
+  cancelMfa();
+}
+async function startMfaSetup(){
+  const msg=document.getElementById('mfa-msg'); if(msg)msg.textContent='';
+  try{
+    const r=await fetch('/api/accountants/mfa/setup',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ if(msg)msg.textContent=d.error||'Could not start setup.'; return; }
+    document.getElementById('mfa-secret').textContent=d.secret;
+    const a=document.getElementById('mfa-otpauth'); if(a&&d.otpauth)a.href=d.otpauth;
+    document.getElementById('mfa-disable-panel').style.display='none';
+    document.getElementById('mfa-setup-panel').style.display='block';
+  }catch(e){ if(msg)msg.textContent='Could not start setup.'; }
+}
+async function confirmMfaEnable(){
+  const code=(document.getElementById('mfa-setup-code').value||'').trim(); const msg=document.getElementById('mfa-setup-msg'); if(msg)msg.textContent='';
+  try{ const r=await fetch('/api/accountants/mfa/enable',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:code})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok&&d.mfa_enabled){ _mfaRender(true); } else if(msg){ msg.textContent=d.error||'Invalid code.'; }
+  }catch(e){ if(msg)msg.textContent='Could not enable 2FA.'; }
+}
+function showMfaDisable(){ document.getElementById('mfa-setup-panel').style.display='none'; document.getElementById('mfa-disable-panel').style.display='block'; }
+async function confirmMfaDisable(){
+  const code=(document.getElementById('mfa-disable-code').value||'').trim(); const msg=document.getElementById('mfa-disable-msg'); if(msg)msg.textContent='';
+  try{ const r=await fetch('/api/accountants/mfa/disable',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:code})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok&&d.mfa_enabled===false){ _mfaRender(false); } else if(msg){ msg.textContent=d.error||'Invalid code.'; }
+  }catch(e){ if(msg)msg.textContent='Could not disable 2FA.'; }
+}
+function cancelMfa(){ var a=document.getElementById('mfa-setup-panel'),b=document.getElementById('mfa-disable-panel'); if(a)a.style.display='none'; if(b)b.style.display='none'; }
+window.startMfaSetup=startMfaSetup; window.confirmMfaEnable=confirmMfaEnable; window.showMfaDisable=showMfaDisable; window.confirmMfaDisable=confirmMfaDisable; window.cancelMfa=cancelMfa; window.loadMfa=loadMfa;
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 boot();

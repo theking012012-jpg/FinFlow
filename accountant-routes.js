@@ -72,6 +72,7 @@ const { db, pool: _dbPool, rowToObj: _rowToObj } = require('./database');
 const { tierForAccountant, commissionRateFor, splitBilling, estimateStripeFeeCents } = require('./tier-config'); // F17 — single tier source
 const aiCap = require('./ai-cap'); // F18 — central AI cost caps
 const { appUrl } = require('./app-url'); // F29 — single source of truth for app links
+const totp = require('./totp'); // accountant MFA (TOTP, RFC 6238)
 
 // Step F — accountant credential-proof upload (base64-in-Postgres, accountant-scoped).
 const CREDENTIAL_MAX_BYTES = 5 * 1024 * 1024; // 5 MB decoded
@@ -552,6 +553,15 @@ If you cannot find a field, use null. Be concise.`;
         ? 'Your application was not approved. Please contact support or reapply with updated credentials.'
         : 'Your accountant account is currently suspended. Please contact support.';
       return res.status(403).json({ error: msg, status: acc.status });
+    }
+
+    // MFA gate: a verified accountant with MFA enabled must present a valid TOTP before ANY session
+    // is established. Missing/invalid code → 401 {mfaRequired:true}, and crucially NO session set.
+    if (acc.mfa_enabled) {
+      const token = (req.body && req.body.token) ? String(req.body.token) : '';
+      let ok = false;
+      if (token) { try { ok = totp.verify(token, totp.decSecret(acc.mfa_secret)); } catch (_) { ok = false; } }
+      if (!ok) return res.status(401).json({ error: token ? 'Invalid authenticator code.' : 'Authenticator code required.', mfaRequired: true });
     }
 
     req.session.accountantId = acc.id;
@@ -1613,6 +1623,48 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   app.get('/api/accountants/kyc/status', requireAccountant, wrap(async (req, res) => {
     const { rows } = await pool.query(`SELECT kyc_status, kyc_verified_at FROM accountants WHERE id = $1`, [req.session.accountantId]);
     res.json({ kyc_status: rows[0]?.kyc_status || 'not_started', kyc_verified_at: rows[0]?.kyc_verified_at || null });
+  }));
+
+  // ── ACCOUNTANT MFA (TOTP, RFC 6238) ────────────────────────────────────────────────────────
+  // Two-step enrollment: /setup mints + stores an ENCRYPTED pending secret and returns it once for
+  // the authenticator app; /enable verifies a code against the pending secret and only then flips
+  // mfa_enabled. Login requires a valid code whenever mfa_enabled. Secrets are AES-256-GCM at rest.
+  app.get('/api/accountants/mfa/status', requireAccountant, wrap(async (req, res) => {
+    const { rows } = await pool.query('SELECT mfa_enabled FROM accountants WHERE id = $1', [req.session.accountantId]);
+    res.json({ mfa_enabled: !!(rows[0] && rows[0].mfa_enabled) });
+  }));
+
+  app.post('/api/accountants/mfa/setup', requireAccountant, wrap(async (req, res) => {
+    const { rows } = await pool.query('SELECT email, mfa_enabled FROM accountants WHERE id = $1', [req.session.accountantId]);
+    const acc = rows[0];
+    if (acc && acc.mfa_enabled) return res.status(400).json({ error: 'MFA is already enabled. Disable it first to re-enroll.' });
+    const secret = totp.newSecret();
+    await pool.query('UPDATE accountants SET mfa_pending_secret = $1 WHERE id = $2', [totp.encSecret(secret), req.session.accountantId]);
+    res.json({ secret, otpauth: totp.otpauthUri(secret, (acc && acc.email) || 'account') });
+  }));
+
+  app.post('/api/accountants/mfa/enable', requireAccountant, wrap(async (req, res) => {
+    const token = req.body && req.body.token;
+    const { rows } = await pool.query('SELECT mfa_pending_secret FROM accountants WHERE id = $1', [req.session.accountantId]);
+    const penc = rows[0] && rows[0].mfa_pending_secret;
+    if (!penc) return res.status(400).json({ error: 'Start MFA setup first.' });
+    let ok = false;
+    try { ok = totp.verify(token, totp.decSecret(penc)); } catch (_) { ok = false; }
+    if (!ok) return res.status(400).json({ error: 'Invalid code — check your authenticator app and try again.' });
+    await pool.query('UPDATE accountants SET mfa_secret = mfa_pending_secret, mfa_pending_secret = NULL, mfa_enabled = TRUE WHERE id = $1', [req.session.accountantId]);
+    res.json({ mfa_enabled: true });
+  }));
+
+  app.post('/api/accountants/mfa/disable', requireAccountant, wrap(async (req, res) => {
+    const token = req.body && req.body.token;
+    const { rows } = await pool.query('SELECT mfa_enabled, mfa_secret FROM accountants WHERE id = $1', [req.session.accountantId]);
+    const acc = rows[0];
+    if (!acc || !acc.mfa_enabled) return res.status(400).json({ error: 'MFA is not enabled.' });
+    let ok = false;
+    try { ok = totp.verify(token, totp.decSecret(acc.mfa_secret)); } catch (_) { ok = false; }
+    if (!ok) return res.status(400).json({ error: 'Invalid code.' });
+    await pool.query('UPDATE accountants SET mfa_enabled = FALSE, mfa_secret = NULL, mfa_pending_secret = NULL WHERE id = $1', [req.session.accountantId]);
+    res.json({ mfa_enabled: false });
   }));
 
   // ── CLIENT: GET MY LINKED ACCOUNTANT ──────────────────────────────────────

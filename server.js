@@ -2860,6 +2860,7 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
 }));
 app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_bold] } = await pool.query('SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
+  if (!_bold) return res.status(404).json({ error: 'Not found.' });   // cross-tenant / nonexistent id → 404, not fake-success 200
   await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   if (_bold) await recordAudit(pool, { userId: req.session.userId, entityId: _bold.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_bold), req });  // F90 Phase B
   res.json({ ok: true });

@@ -15,6 +15,7 @@
       var err = new Error(data.error || res.status);
       err.status = res.status;
       err.code = data.code;
+      err.mfaRequired = data.mfaRequired;  // owner MFA login gate reveals the code field on this
       if (data.code === 'TRIAL_EXPIRED' && typeof window._ffShowTrialExpired === 'function') {
         window._ffShowTrialExpired(data.error);
       }
@@ -25,7 +26,7 @@
 
   window.FF_API = {
     register:     function(e,p,n) { return api('POST','/api/auth/register',{email:e,password:p,name:n}); },
-    login:        function(e,p)   { return api('POST','/api/auth/login',{email:e,password:p}); },
+    login:        function(e,p,t) { return api('POST','/api/auth/login', t ? {email:e,password:p,token:t} : {email:e,password:p}); },
     logout:       function()      { return api('POST','/api/auth/logout'); },
     me:           function()      { return api('GET','/api/auth/me'); },
     getInvoices:  function()      { return api('GET','/api/invoices'); },
@@ -41,7 +42,7 @@
     var gate = document.createElement('div');
     gate.id = 'ff-auth-gate';
     gate.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0e0b08;font-family:Jost,system-ui,sans-serif';
-    gate.innerHTML = '<style>#ff-box{width:100%;max-width:380px;padding:2rem 2.25rem;background:#16120d;border:1px solid #3d3222;border-radius:14px}.ff-t{font-size:22px;font-family:"Cormorant Garamond",serif;font-style:italic;color:#e4c97a;margin-bottom:4px}.ff-s{font-size:13px;color:#7d7060;margin-bottom:1.5rem}.ff-tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:#0e0b08;border-radius:8px;padding:4px}.ff-tab{flex:1;padding:6px;border:none;border-radius:5px;font-size:12.5px;cursor:pointer;color:#7d7060;background:transparent}.ff-tab.on{background:#1c1712;color:#f2e8d5}.ff-err{font-size:12px;color:#c46a5a;background:#1e0d0a;border:1px solid #3d1a14;border-radius:6px;padding:8px;margin-bottom:1rem;display:none}.ff-lbl{font-size:11.5px;color:#9e8e73;display:block;margin-bottom:5px}.ff-inp{width:100%;padding:9px 11px;border:1px solid #3d3222;border-radius:6px;background:#1c1712;color:#f2e8d5;font-size:13px;outline:none;margin-bottom:.9rem;box-sizing:border-box;font-family:Jost,system-ui}.ff-btn{width:100%;padding:10px;border:none;border-radius:6px;background:#c9a84c;color:#0e0b08;font-size:13.5px;font-weight:600;cursor:pointer}.ff-btn:disabled{opacity:.5}.ff-hint{font-size:11.5px;color:#7d7060;text-align:center;margin-top:1rem}.ff-hint span{color:#c9a84c;cursor:pointer}</style><div id="ff-box"><div class="ff-t">FinFlow</div><div class="ff-s">Sign in to your workspace</div><div class="ff-tabs"><button class="ff-tab on" id="fft-li" onclick="ffTab(\'login\')">Sign in</button><button class="ff-tab" id="fft-re" onclick="ffTab(\'register\')">Create account</button></div><div id="ff-err" class="ff-err"></div><div id="ff-li"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-le" type="email" placeholder="you@example.com"><label class="ff-lbl">Password</label><input class="ff-inp" id="ff-lp" type="password" placeholder="••••••••"><button class="ff-btn" id="ff-lb" onclick="ffLogin()">Sign in &rarr;</button><div class="ff-hint" style="margin-top:.75rem"><span onclick="ffTab(\'forgot\')">Forgot password?</span></div><div class="ff-hint">No account? <span onclick="ffTab(\'register\')">Create one</span></div></div><div id="ff-re" style="display:none"><label class="ff-lbl">Name</label><input class="ff-inp" id="ff-rn" type="text" placeholder="Your name"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-re2" type="email" placeholder="you@example.com"><label class="ff-lbl">Password (min 6 chars)</label><input class="ff-inp" id="ff-rp" type="password" placeholder="Choose a password"><button class="ff-btn" id="ff-rb" onclick="ffRegister()">Create account &rarr;</button><div class="ff-hint">Have one? <span onclick="ffTab(\'login\')">Sign in</span></div></div><div id="ff-fp" style="display:none"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-fe" type="email" placeholder="you@example.com"><button class="ff-btn" id="ff-fb" onclick="ffForgot()">Send reset link &rarr;</button><div class="ff-hint"><span onclick="ffTab(\'login\')">&larr; Back to sign in</span></div></div></div>';
+    gate.innerHTML = '<style>#ff-box{width:100%;max-width:380px;padding:2rem 2.25rem;background:#16120d;border:1px solid #3d3222;border-radius:14px}.ff-t{font-size:22px;font-family:"Cormorant Garamond",serif;font-style:italic;color:#e4c97a;margin-bottom:4px}.ff-s{font-size:13px;color:#7d7060;margin-bottom:1.5rem}.ff-tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:#0e0b08;border-radius:8px;padding:4px}.ff-tab{flex:1;padding:6px;border:none;border-radius:5px;font-size:12.5px;cursor:pointer;color:#7d7060;background:transparent}.ff-tab.on{background:#1c1712;color:#f2e8d5}.ff-err{font-size:12px;color:#c46a5a;background:#1e0d0a;border:1px solid #3d1a14;border-radius:6px;padding:8px;margin-bottom:1rem;display:none}.ff-lbl{font-size:11.5px;color:#9e8e73;display:block;margin-bottom:5px}.ff-inp{width:100%;padding:9px 11px;border:1px solid #3d3222;border-radius:6px;background:#1c1712;color:#f2e8d5;font-size:13px;outline:none;margin-bottom:.9rem;box-sizing:border-box;font-family:Jost,system-ui}.ff-btn{width:100%;padding:10px;border:none;border-radius:6px;background:#c9a84c;color:#0e0b08;font-size:13.5px;font-weight:600;cursor:pointer}.ff-btn:disabled{opacity:.5}.ff-hint{font-size:11.5px;color:#7d7060;text-align:center;margin-top:1rem}.ff-hint span{color:#c9a84c;cursor:pointer}</style><div id="ff-box"><div class="ff-t">FinFlow</div><div class="ff-s">Sign in to your workspace</div><div class="ff-tabs"><button class="ff-tab on" id="fft-li" onclick="ffTab(\'login\')">Sign in</button><button class="ff-tab" id="fft-re" onclick="ffTab(\'register\')">Create account</button></div><div id="ff-err" class="ff-err"></div><div id="ff-li"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-le" type="email" placeholder="you@example.com"><label class="ff-lbl">Password</label><input class="ff-inp" id="ff-lp" type="password" placeholder="••••••••"><div id="ff-mfa-group" style="display:none"><label class="ff-lbl">Authenticator code</label><input class="ff-inp" id="ff-lm" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code"></div><button class="ff-btn" id="ff-lb" onclick="ffLogin()">Sign in &rarr;</button><div class="ff-hint" style="margin-top:.75rem"><span onclick="ffTab(\'forgot\')">Forgot password?</span></div><div class="ff-hint">No account? <span onclick="ffTab(\'register\')">Create one</span></div></div><div id="ff-re" style="display:none"><label class="ff-lbl">Name</label><input class="ff-inp" id="ff-rn" type="text" placeholder="Your name"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-re2" type="email" placeholder="you@example.com"><label class="ff-lbl">Password (min 6 chars)</label><input class="ff-inp" id="ff-rp" type="password" placeholder="Choose a password"><button class="ff-btn" id="ff-rb" onclick="ffRegister()">Create account &rarr;</button><div class="ff-hint">Have one? <span onclick="ffTab(\'login\')">Sign in</span></div></div><div id="ff-fp" style="display:none"><label class="ff-lbl">Email</label><input class="ff-inp" id="ff-fe" type="email" placeholder="you@example.com"><button class="ff-btn" id="ff-fb" onclick="ffForgot()">Send reset link &rarr;</button><div class="ff-hint"><span onclick="ffTab(\'login\')">&larr; Back to sign in</span></div></div></div>';
     document.body.appendChild(gate);
     gate.addEventListener('keydown', function(e) {
       if (e.key !== 'Enter') return;
@@ -58,6 +59,7 @@
     document.getElementById('fft-li').className = 'ff-tab'+(t==='login'?' on':'');
     document.getElementById('fft-re').className = 'ff-tab'+(t==='register'?' on':'');
     document.getElementById('ff-err').style.display = 'none';
+    var _mg=document.getElementById('ff-mfa-group'); if(_mg){_mg.style.display='none'; var _lm=document.getElementById('ff-lm'); if(_lm)_lm.value='';}
   };
 
   function ffErr(m) { var e=document.getElementById('ff-err'); e.textContent=m; e.style.display=m?'block':'none'; }
@@ -66,14 +68,26 @@
   window.ffLogin = async function() {
     var e=document.getElementById('ff-le').value.trim(), p=document.getElementById('ff-lp').value;
     if(!e||!p){ffErr('Please fill in all fields.');return;}
+    var _mg=document.getElementById('ff-mfa-group');
+    var _lm=document.getElementById('ff-lm');
+    var tok=(_lm && _lm.value.trim())||'';
     ffBusy('ff-lb',true);
     // On success, RELOAD rather than an in-page transition. The dashboard + all money data are painted
     // by the separate wiring boot (finflow-api-wiring-final.js `_run` → _ffApiBootEasy/Medium → the
     // entity path), which runs ONCE on page load and 401s while logged-out; it does not re-run after an
     // in-page login, so ffOnAuth's partial ffLoadData left the app blank until a manual refresh. A reload
     // re-enters that wiring boot with the now-durable session — identical to the refresh that already works.
-    try { await FF_API.login(e,p); location.reload(); }
-    catch(err) { ffErr(err.message||'Login failed.'); ffBusy('ff-lb',false); }
+    try { await FF_API.login(e,p,tok||undefined); location.reload(); }
+    catch(err) {
+      if (err && err.mfaRequired) {
+        if(_mg) _mg.style.display='';
+        if(_lm) _lm.focus();
+        ffErr(tok ? 'That code didn\'t match — try again.' : 'Enter the 6-digit code from your authenticator app to finish signing in.');
+        ffBusy('ff-lb',false);
+        return;
+      }
+      ffErr(err.message||'Login failed.'); ffBusy('ff-lb',false);
+    }
   };
 
   window.ffRegister = async function() {

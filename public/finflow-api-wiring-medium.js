@@ -1404,7 +1404,7 @@
         if (id === 'budget')     loadBudgetFromDB();
         if (id === 'timesheet')  _setTimesheetTitle();
         if (id === 'documents')  { if (typeof window.renderDocuments === 'function') window.renderDocuments(); }
-        if (id === 'settings')   { const _sEl = document.getElementById('settings-user-email'); if (_sEl) _sEl.textContent = window.CURRENT_USER?.email || ''; }
+        if (id === 'settings')   { const _sEl = document.getElementById('settings-user-email'); if (_sEl) _sEl.textContent = window.CURRENT_USER?.email || ''; if (window.loadOwnerMfa) window.loadOwnerMfa(); }
       };
     }
 

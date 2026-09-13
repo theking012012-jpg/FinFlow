@@ -3717,6 +3717,25 @@ input[type=range].ff-range::-moz-range-thumb{width:16px;height:16px;border-radiu
               <div class="field-wrap"><label class="field-label" for="s-new-pw">New password</label><input class="finput" type="password" id="s-new-pw" placeholder="At least 8 characters"></div>
               <button class="btn btn-ghost" style="margin-top:.5rem" onclick="changePassword()">Update password</button>
             </div>
+            <div class="settings-section" id="owner-mfa-section" style="margin-top:1rem">
+              <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="8" rx="1.2"/><path d="M5 7V5a3 3 0 016 0v2"/><circle cx="8" cy="11" r="1"/></svg>Two-factor authentication (2FA)</div>
+              <div style="font-size:12px;color:var(--t3);margin-bottom:.6rem">Require a one-time code from an authenticator app (Google Authenticator, Authy, 1Password) at sign-in. Strongly recommended \u2014 your account holds your books.</div>
+              <div id="owner-mfa-status" style="font-size:12.5px;color:var(--t2);margin-bottom:.6rem">Loading\u2026</div>
+              <button class="btn btn-ghost" id="owner-mfa-enable-btn" style="display:none" onclick="startOwnerMfaSetup()">Enable 2FA</button>
+              <div id="owner-mfa-setup" style="display:none;margin-top:.5rem">
+                <div style="font-size:12px;color:var(--t2);margin-bottom:.4rem">1. Add this secret to your authenticator app:</div>
+                <div id="owner-mfa-secret" style="font-family:monospace;font-size:13px;background:var(--bg2,#1c1712);padding:8px;border-radius:6px;letter-spacing:1px;word-break:break-all;margin-bottom:.5rem"></div>
+                <div class="field-wrap"><label class="field-label" for="owner-mfa-code">2. Enter the 6-digit code to confirm</label><input class="finput" id="owner-mfa-code" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code"></div>
+                <button class="btn btn-primary" onclick="confirmOwnerMfaEnable()">Confirm &amp; enable</button>
+                <button class="btn btn-ghost" onclick="cancelOwnerMfaSetup()">Cancel</button>
+                <div id="owner-mfa-setup-err" style="font-size:12px;color:var(--red);margin-top:.4rem;display:none"></div>
+              </div>
+              <div id="owner-mfa-disable" style="display:none;margin-top:.5rem">
+                <div class="field-wrap"><label class="field-label" for="owner-mfa-dcode">Enter a current code to turn off 2FA</label><input class="finput" id="owner-mfa-dcode" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code"></div>
+                <button class="btn btn-ghost" onclick="disableOwnerMfa()">Disable 2FA</button>
+                <div id="owner-mfa-disable-err" style="font-size:12px;color:var(--red);margin-top:.4rem;display:none"></div>
+              </div>
+            </div>
             <div class="settings-section" style="margin-top:1rem;border-color:var(--red-bd)">
               <div class="settings-title" style="color:var(--red)"><svg viewBox="0 0 16 16"><polyline points="2,4 14,4"/><path d="M5 4V2h6v2"/><rect x="3" y="4" width="10" height="10" rx="1"/></svg>Danger zone</div>
               <div style="font-size:12px;color:var(--t3);margin-bottom:.75rem">Permanently delete your account and all associated data. This action cannot be undone.</div>
@@ -8688,6 +8707,7 @@ document.addEventListener('click', e=>{
      10 individual finflow-api*.js files. To regenerate after edits, run
      `node bundle.js` in the project root. -->
 <script src="/finflow-bundle.js" defer></script>
+<script src="/finflow-owner-mfa.js" defer></script>
 <script src="/finflow-f94.js" defer></script>
 <!-- Rich document viewer for Money In / Money Out records. Loads AFTER the bundle so its
      window.viewInvoice override is the runtime winner (Rule 1). Ships direct — no bundle regen. -->

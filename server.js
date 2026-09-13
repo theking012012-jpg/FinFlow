@@ -2254,7 +2254,7 @@ app.post('/api/lock-settings', requireAuth, requirePerm('settings:manage'), wrap
   const { enabled, lock_date, password } = req.body || {};
   const uid = scopeId(req);
   const patch = { enabled: enabled ? 1 : 0, lock_date: lock_date || null };
-  if (password) patch.password_hash = bcrypt.hashSync(password, 10);
+  if (password) patch.password_hash = bcrypt.hashSync(password, 12);   // match the cost-12 used everywhere else
   const eid = req.entityId == null ? null : req.entityId;
   const { rows: [_lsUp] } = await pool.query(
     `SELECT * FROM lock_settings WHERE user_id = $1 AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`, [scopeId(req), eid]

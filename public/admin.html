@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-w8DLSxP3qmMD4HNiV74xCeRWIwMVtM1YN/Tj5+R1wAi5t6dIhSmFoHbr4mIqkCu" crossorigin="anonymous" defer></script>
+<script src="kyc-registry.js"></script>
 <style>
 :root {
   --bg:#0a0806;--bg1:#111009;--bg2:#181410;--bg3:#201a12;
@@ -1021,7 +1022,7 @@ function openReview(accountant) {
     <div class="detail-row"><span class="detail-label">Experience</span><span class="detail-val">${esc(accountant.experience || '—')}</span></div>
     <div class="detail-row"><span class="detail-label">Verify method</span><span class="detail-val"><span class="badge b-amber">${esc(accountant.verification_method || '—')}</span></span></div>
     ${vData.profBody ? `<div class="detail-row"><span class="detail-label">Prof body</span><span class="detail-val">${esc(vData.profBody)} · ${esc(vData.membershipNumber || '')}</span></div>` : ''}
-    ${vData.profBody && vData.membershipNumber ? `<div class="detail-row"><span class="detail-label">Registry check</span><span class="detail-val"><a href="https://www.google.com/search?q=${encodeURIComponent(vData.profBody + ' verify member ' + vData.membershipNumber)}" target="_blank" rel="noopener noreferrer" style="color:var(--acc,#c9a84c);text-decoration:underline">Open ${esc(vData.profBody)} member check for ${esc(vData.membershipNumber)} ↗</a></span></div>` : ''}
+    ${(window._kycRegistryRow ? window._kycRegistryRow(vData.profBody, vData.membershipNumber, esc) : '')}
     ${vData.employerFirm ? `<div class="detail-row"><span class="detail-label">Employer</span><span class="detail-val">${esc(vData.employerFirm)} · ${esc(vData.employerContact || '')} · ${esc(vData.employerPhone || '')}</span></div>` : ''}
     ${vData.institution ? `<div class="detail-row"><span class="detail-label">Institution</span><span class="detail-val">${esc(vData.institution)} · ${esc(vData.degree || '')}</span></div>` : ''}
     ${accountant.credentials ? `<div class="detail-row"><span class="detail-label">Credentials</span><span class="detail-val">${esc(accountant.credentials)}</span></div>` : ''}

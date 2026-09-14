@@ -760,7 +760,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     if (user && (user.data?.deleted === 'true' || user.deleted === 'true')) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
-    if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Invalid email or password.' });
+    if (!user || !bcrypt.compareSync(password, user.password)) { logAudit(req, 'LOGIN_FAILED', 'users', null, null, { email: String(email || '').slice(0, 120) }); return res.status(401).json({ error: 'Invalid email or password.' }); }
     // Owner MFA gate (mirrors the accountant flow): once the owner has enabled TOTP, a correct
     // password is NOT enough — a valid 6-digit code is required before the session is granted. The
     // deny returns {mfaRequired:true} so the login UI can reveal the code field. Byte-identical to

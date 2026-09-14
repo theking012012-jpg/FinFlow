@@ -538,10 +538,10 @@ If you cannot find a field, use null. Be concise.`;
 
     const result = await pool.query('SELECT * FROM accountants WHERE email = $1', [email.toLowerCase()]);
     const acc = result.rows[0];
-    if (!acc) return res.status(401).json({ error: 'Invalid credentials.' });
+    if (!acc) { try { recordAudit(pool, { userId: null, table: 'accountants', action: 'LOGIN_FAILED', req, newData: { email: String(email || '').slice(0, 120) } }); } catch (_) {} return res.status(401).json({ error: 'Invalid credentials.' }); }
 
     const match = require('bcryptjs').compareSync(password, acc.password_hash);
-    if (!match) return res.status(401).json({ error: 'Invalid credentials.' });
+    if (!match) { try { recordAudit(pool, { userId: null, table: 'accountants', recordId: acc.id, action: 'LOGIN_FAILED', req, newData: { email: String(email || '').slice(0, 120) } }); } catch (_) {} return res.status(401).json({ error: 'Invalid credentials.' }); }
 
     // F16: only an admin-approved (status='verified') accountant gets a session.
     // Pending/rejected/suspended authenticate correctly but receive NO session and

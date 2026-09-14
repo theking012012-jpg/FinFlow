@@ -28,6 +28,7 @@ function thresholds(over = {}) {
     massDelete:    _int(over.massDelete    ?? process.env.AUDIT_ANOMALY_MASS_DELETE, 10),
     loginIps:      _int(over.loginIps      ?? process.env.AUDIT_ANOMALY_LOGIN_IPS, 3),
     massExport:    _int(over.massExport    ?? process.env.AUDIT_ANOMALY_MASS_EXPORT, 20),
+    failedLogins:  _int(over.failedLogins  ?? process.env.AUDIT_ANOMALY_FAILED_LOGINS, 10),
   };
 }
 
@@ -101,6 +102,20 @@ async function detectAuditAnomalies(pool, over = {}) {
     type: 'mass_export', severity: 'high', actor_type: r.actor_type, actor_id: r.actor_id,
     count: Number(r.n), threshold: t.massExport, window_minutes: t.windowMinutes,
     message: `${r.actor_type} ${r.actor_id} exported/downloaded ${r.n} items in the last ${t.windowMinutes}m (threshold ${t.massExport}).`,
+  });
+
+  // 6) failed-login burst from a single IP (brute-force / credential-stuffing). Grouped by IP because
+  // a failed login has no authenticated actor.
+  const fb = await pool.query(
+    `SELECT ip_address, COUNT(*) AS n
+       FROM audit_trail
+      WHERE action = 'LOGIN_FAILED' AND ip_address IS NOT NULL AND ${since}
+      GROUP BY ip_address HAVING COUNT(*) >= $1
+      ORDER BY n DESC`, [t.failedLogins]);
+  for (const r of fb.rows) anomalies.push({
+    type: 'failed_login_burst', severity: 'high', ip_address: r.ip_address, actor_type: 'anonymous', actor_id: null,
+    count: Number(r.n), threshold: t.failedLogins, window_minutes: t.windowMinutes,
+    message: `${r.n} failed logins from IP ${r.ip_address} in the last ${t.windowMinutes}m (threshold ${t.failedLogins}).`,
   });
 
   return { generated_at: new Date().toISOString(), thresholds: t, count: anomalies.length, anomalies };

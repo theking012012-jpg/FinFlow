@@ -15,17 +15,22 @@ f137-tax-reports 20/0). COGS now converts per-item entity currency; payroll alre
 for a multi-entity account — it snaps to the first entity. So computeBooks(null) is reached by SERVER
 callers (accountant "all" view, report routes), NOT by the main dashboard. The **main dashboard's
 consolidated total is summed CLIENT-SIDE** (`finflow-api-wiring-medium.js` renderConsolPL + the
-per-entity loop), which still RAW-SUMS native per-entity results. So the visible-dashboard bug needs the
-CLIENT layer too.
+per-entity loop), which does NOT raw-sum: it RE-CONVERTS each entity's server total via STATIC spot rates
+(`getConsolTotal`/`fxConvert` in index.html, `window.CURRENCIES[ccy].rate`) — arguably WORSE than a raw
+sum: (a) it DIVERGES from the server's per-leg recognition-date conversion whenever a rate has moved
+(Rule 2 multi-writer), and (b) it DOUBLE-CONVERTS when a display currency is active — the per-entity fetch
+already passes `&display=`, so the server converts native→display and fxConvert then converts again. The
+visible-dashboard bug needs the CLIENT layer too.
 
 **REMAINING (2 small, focused steps — each reuses the now-correct pieces):**
 1. **Make the consolidated aggregate reachable over HTTP:** support `?entity_id=all` → entityId=null in
    the entity middleware (owners/all-access only; scoped members stay restricted to granted entities).
    Then `/api/reports?entity_id=all` returns the correctly-converted consolidated. Small + testable.
-2. **Point the client consolidated at base currency:** either (a) have renderConsolPL/the loop call
-   `/api/reports?entity_id=all` (server does the conversion — single source), OR (b) fetch each entity
-   with `?display=<base>` (reuses the PROVEN single-entity conversion) and sum the already-base results.
-   (a) is cleaner. Either removes the client-side native raw-sum.
+2. **Point the client at the server AND remove the client-side fxConvert:** have renderConsolPL/the loop
+   call `/api/reports?entity_id=all` (server does the conversion — single source) and sum the returned
+   totals DIRECTLY. The current `getConsolTotal` → `fxConvert(val, e.currency, consolCurrency)` MUST be
+   removed; leaving it keeps the divergence and, with `&display=` active, the double-conversion. (Option
+   (b) — fetch each entity `?display=<base>` and sum — also works, but ONLY if the client drops fxConvert.)
 
 Everything below is the original design; the SERVER LAYER section of it is now implemented.
 

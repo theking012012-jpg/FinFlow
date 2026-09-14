@@ -1,5 +1,37 @@
 # FinFlow — Outstanding Work (session handoff)
 
+## ⏭️ NEXT-SESSION TASKS (verified 2026-09-14 — for the code account)
+
+**TASK 1 — FX client-consolidation bug (code-read, real money bug; NOT test-caught).**
+The consolidated dashboard total is computed CLIENT-SIDE and is wrong. Verified by reading the code:
+`getConsolTotal` (`public/index.html:6938`) sums `fxConvert(val, e.currency, consolCurrency)`, and
+`fxConvert` (`index.html:6923`) uses STATIC spot rates (`window.CURRENCIES[ccy].rate`). The per-entity
+loop (`finflow-api-wiring-medium.js:1119-1133`) fetches `/api/reports?entity_id=<id>&display=<_displayCurrency>`
+— already server-converted. Two defects: (a) DIVERGES from the server's per-leg recognition-date
+conversion whenever a rate has moved (Rule 2 multi-writer); (b) DOUBLE-CONVERTS when a display currency
+is active (server native→display, then fxConvert converts again treating the value as native). The 239-harness
+sweep is green because NO harness exercises the client consolidation path — it is off the list (unverified ≠ correct).
+  FIX: (1) support `?entity_id=all` → `entityId=null` in the entity middleware (`server.js` ~1010-1017),
+  owners/all-access only (scoped members stay restricted to granted entities). (2) Point the client
+  consolidation at `/api/reports?entity_id=all` and sum the returned totals DIRECTLY — DELETE the
+  client-side `fxConvert` re-conversion in `getConsolTotal`. (3) Write `verify-fx-client-consolidation.js`
+  that RED-proves the divergence on today's code (server vs client disagree for a moved rate / active
+  display) and goes GREEN after — so the client path is finally ON the VERIFICATION list.
+  Server layer already shipped (`c005cbd`, `verify-fx-consolidation` 12/0) — this is the client half.
+
+**TASK 2 — Known flaky harnesses (make deterministic; all green standalone, red only under full-sweep load).**
+Same class: jsdom client harnesses racing the async bundle/boot under load. Fix the race (poll for the
+async bundle / settle boot data before driving; per-process bootServer), don't just widen a filter.
+  - `verify-c2-confirm-modal.js` — async-teardown race in `renderEntities` (10/0 standalone).
+  - `verify-c6-hdrain-logging.js` — occasional under max full-sweep load (passes standalone).
+  - `verify-f132-readonly.js` — one sequential-load red (known flake).
+  - `verify-f136-paymentsmade.js` — known FLAKY boot-race.
+  Definition of done: 3 consecutive FULL sweeps with 0 flaky reds (the M2 pass used this bar for the
+  earlier 4 client flakes). Until then, a full sweep's "green minus these" is the real baseline, and any
+  red must be re-run standalone (standalone-green = flake, standalone-red = real).
+
+
+
 ---
 
 ## ✅ RECONCILED — 2026-09-12 (verify-first; checked against CODE + the 218/218 sweep, not the log below)
@@ -148,7 +180,7 @@ Launch-hardening + security items, captured so they don't get lost. None is a mo
 What separates "solid" from world-class for a money product: the core promise is provably right, and
 one thing is genuinely better than QuickBooks/Xero for the Caribbean/SMB market. Ranked by leverage.
 
-1. **FX base-currency consolidation — the #1 credibility item. SERVER LAYER ✅ SHIPPED 2026-09-14 (`c005cbd`); design in `FX_CONSOLIDATION_DESIGN.md`.** `computeBooks(entityId=null)` now converts every leg per-entity to base (`users.data.base_currency` → first-entity currency → USD); `verify-fx-consolidation` 12/0, money sweep 65/65 green, single-currency byte-identical. REMAINING (client layer): the main dashboard consolidated is summed client-side (`renderConsolPL`) and still raw-sums native — point it at `?entity_id=all` (add that → entityId=null in the middleware) or fetch each entity with `?display=base` and sum. See the design doc STATUS block.** Background: this reused the existing F34 Path B per-leg recognition-dated engine (`computeBooks(display)` + `fx_rates` + `fxCoverage`); the server change enabled it for the consolidated (entityId=null) path with a base-currency default. (Historical context, now superseded by the SHIPPED status above: the consolidated aggregate was a raw
+1. **FX base-currency consolidation — the #1 credibility item. SERVER LAYER ✅ SHIPPED 2026-09-14 (`c005cbd`); design in `FX_CONSOLIDATION_DESIGN.md`.** `computeBooks(entityId=null)` now converts every leg per-entity to base (`users.data.base_currency` → first-entity currency → USD); `verify-fx-consolidation` 12/0, money sweep 65/65 green, single-currency byte-identical. REMAINING (client layer): the main dashboard consolidated is summed client-side by `getConsolTotal`/`fxConvert` (index.html), which does NOT raw-sum — it RE-CONVERTS each entity's server total via STATIC spot rates, so it DIVERGES from the server's per-leg recognition-date conversion (Rule 2 multi-writer) and DOUBLE-CONVERTS when a display currency is active. Fix: add `?entity_id=all` → entityId=null in the middleware, point the client at it, and REMOVE the client-side fxConvert. See the design doc STATUS block.** Background: this reused the existing F34 Path B per-leg recognition-dated engine (`computeBooks(display)` + `fx_rates` + `fxCoverage`); the server change enabled it for the consolidated (entityId=null) path with a base-currency default. (Historical context, now superseded by the SHIPPED status above: the consolidated aggregate was a raw
    native sum across currencies before the server layer landed; converting the accountant-portal `/books`
    consolidated inherits the same fix. The remaining piece is the client dashboard consolidation.)
 2. **Make "the books are correct" a provable, marketed asset.** Leverage the existing verification

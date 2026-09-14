@@ -54,7 +54,7 @@ _All feature/security code from the recent sessions is shipped and green. What's
 
 Ranked by leverage. If only two: **#1 and #3.**
 
-1. **FX base-currency consolidation** — the #1 credibility item. `computeBooks` all-entities aggregate currently raw-sums across currencies (a TTD + a USD entity produce a nonsense "total"). Convert to a base/reporting currency everywhere with transaction-dated FX rates.
+1. **FX base-currency consolidation** — the #1 credibility item. **SERVER LAYER ✅ SHIPPED 2026-09-14 (`c005cbd`):** `computeBooks(entityId=null)` now converts every leg per-entity to the account base currency (`verify-fx-consolidation` 12/0; 65/65 money sweep; single-currency byte-identical). **REMAINING (client layer):** the main dashboard consolidated is summed client-side (`renderConsolPL`) and still raw-sums native — point it at `?entity_id=all` (add → entityId=null in the middleware) or fetch each entity `?display=base` and sum. Full detail: `FX_CONSOLIDATION_DESIGN.md` STATUS block.
 2. **Make "the books are provably correct" a marketed asset** — trial balance always ties to zero, immutable audit trail, period locks that truly lock, reversing entries instead of edits. Then say it publicly as a trust wedge.
 3. **Finish the accountant-marketplace moat** — KYC (step 1 shipped), reviews with teeth, secure document exchange, e-signature, invisible commission/billing.
 4. **Time-to-value: import + bank rec** — frictionless QuickBooks/Xero/CSV import + genuinely good bank-feed auto-matching.

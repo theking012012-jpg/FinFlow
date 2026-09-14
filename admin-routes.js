@@ -14,7 +14,7 @@ const wrap = fn => async (req, res, next) => {
   try { await fn(req, res, next); } catch (e) { next(e); }
 };
 
-const { detectAuditAnomalies } = require('./audit-anomalies');
+const { detectAuditAnomalies, notifyAnomalies } = require('./audit-anomalies');
 
 function requireAdmin(req, res, next) {
   if (!req.session.isAdmin) return res.status(401).json({ error: 'Admin login required.' });
@@ -57,6 +57,16 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       if (req.query.window) over.windowMinutes = parseInt(req.query.window, 10);
       res.json(await detectAuditAnomalies(pool, over));
     } catch (e) { console.error('[admin] audit-anomalies scan failed:', e.message); res.status(500).json({ error: 'Anomaly scan failed.' }); }
+  });
+
+  // Scan + email a digest via Resend (delivery channel for the anomaly detector). Recipient from
+  // SECURITY_ALERT_EMAIL. Safe no-ops (sent:false + reason) when nothing to send or email unconfigured.
+  app.post('/api/admin/audit-anomalies/notify', requireAdmin, async (req, res) => {
+    try {
+      const over = {};
+      if (req.query.window) over.windowMinutes = parseInt(req.query.window, 10);
+      res.json(await notifyAnomalies(pool, resendClient, { over }));
+    } catch (e) { console.error('[admin] audit-anomalies notify failed:', e.message); res.status(500).json({ error: 'Notify failed.' }); }
   });
 
   // ── PLATFORM OVERVIEW ─────────────────────────────────────────────────────

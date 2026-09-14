@@ -77,4 +77,35 @@ async function detectAuditAnomalies(pool, over = {}) {
   return { generated_at: new Date().toISOString(), thresholds: t, count: anomalies.length, anomalies };
 }
 
-module.exports = { detectAuditAnomalies, thresholds };
+
+function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// Pure: turn a detect result into an email {subject, html, text}. No side effects (testable alone).
+function formatAnomalyEmail(result) {
+  const a = (result && result.anomalies) || [];
+  const win = result && result.thresholds ? result.thresholds.windowMinutes : '';
+  const subject = `[FinFlow security] ${a.length} audit anomal${a.length === 1 ? 'y' : 'ies'} detected`;
+  const items = a.map(x => `<li><b>${_esc(x.type)}</b> <span style="color:#b45">(${_esc(x.severity)})</span> — ${_esc(x.message)}</li>`).join('');
+  const html = `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:24px">
+    <h2 style="color:#c9a84c;margin:0 0 8px">FinFlow — security alert</h2>
+    <p>${a.length} anomal${a.length === 1 ? 'y' : 'ies'} detected in the last ${_esc(win)} minutes:</p>
+    <ul>${items}</ul>
+    <p style="color:#888;font-size:12px">Automated scan of the audit trail. Review in the admin console.</p></div>`;
+  const text = `FinFlow security alert — ${a.length} anomaly(ies):\n` + a.map(x => `- [${x.severity}] ${x.type}: ${x.message}`).join('\n');
+  return { subject, html, text };
+}
+
+// Scan + (if anomalies) email a digest via the Resend client. Returns a status object; never throws
+// on a missing recipient/client (returns sent:false with a reason). Delivery for the anomaly detector.
+async function notifyAnomalies(pool, resendClient, opts = {}) {
+  const result = await detectAuditAnomalies(pool, opts.over || {});
+  const to = opts.to || process.env.SECURITY_ALERT_EMAIL || null;
+  if (result.count === 0) return { count: 0, sent: false, reason: 'no anomalies', to };
+  if (!resendClient)      return { count: result.count, sent: false, reason: 'email not configured (no Resend client)', to };
+  if (!to)                return { count: result.count, sent: false, reason: 'no recipient (set SECURITY_ALERT_EMAIL)', to: null };
+  const mail = formatAnomalyEmail(result);
+  await resendClient.emails.send({ from: opts.from || process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>', to, subject: mail.subject, html: mail.html });
+  return { count: result.count, sent: true, to, subject: mail.subject, anomalies: result.anomalies };
+}
+
+module.exports = { detectAuditAnomalies, thresholds, formatAnomalyEmail, notifyAnomalies };

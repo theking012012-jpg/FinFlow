@@ -10,6 +10,7 @@ const path         = require('path');
 const crypto       = require('crypto');
 const { db, initDB, pool, rowToObj } = require('./database');
 const totp = require('./totp');
+const { startAnomalyMonitor } = require('./audit-anomalies');
 const FinFlowDates = require('./public/finflow-dates.js'); // F87 — canonical calendar-date/period resolver (Rule 10)
 const Holidays     = require('date-holidays');            // F88 step 6 — per-country public-holiday calendar (offline, no network)
 const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
@@ -8339,6 +8340,8 @@ if (require.main === module) {
     // Run scheduler on boot, then every hour
     runRecurringScheduler();
     setInterval(runRecurringScheduler, 60 * 60 * 1000);
+    // Security: periodic audit-anomaly scan → email alert (no-op unless SECURITY_ALERT_EMAIL is set)
+    startAnomalyMonitor(pool, resendClient);
   }).catch(err => {
     console.error('Failed to init database:', err);
     process.exit(1);

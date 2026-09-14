@@ -137,4 +137,25 @@ async function notifyAnomalies(pool, resendClient, opts = {}) {
   return { count: result.count, sent: true, to, subject: mail.subject, anomalies: result.anomalies };
 }
 
-module.exports = { detectAuditAnomalies, thresholds, formatAnomalyEmail, notifyAnomalies };
+// Periodic background scan → alert. Guarded: does nothing unless a recipient is configured
+// (SECURITY_ALERT_EMAIL) or opts.enabled is set. The timer is unref'd so it never holds the process
+// open. Returns { handle, tick, everyMinutes } when armed, or null when disabled. Overlap-safe.
+function startAnomalyMonitor(pool, resendClient, opts = {}) {
+  const enabled = opts.enabled != null ? opts.enabled : !!process.env.SECURITY_ALERT_EMAIL;
+  if (!enabled) return null;
+  const everyMinutes = _int(opts.everyMinutes ?? process.env.AUDIT_ANOMALY_SCAN_MIN, 60);
+  let running = false;
+  const tick = async () => {
+    if (running) return; running = true;
+    try {
+      const r = await notifyAnomalies(pool, resendClient, opts);
+      if (r && r.sent) console.log('[anomaly-monitor] alert emailed —', r.count, 'anomaly(ies)');
+    } catch (e) { console.error('[anomaly-monitor] tick failed:', e.message); }
+    finally { running = false; }
+  };
+  const handle = setInterval(tick, everyMinutes * 60 * 1000);
+  if (handle.unref) handle.unref();
+  return { handle, tick, everyMinutes };
+}
+
+module.exports = { detectAuditAnomalies, thresholds, formatAnomalyEmail, notifyAnomalies, startAnomalyMonitor };

@@ -1012,6 +1012,17 @@ app.use('/api', async (req, res, next) => {
   // Allow explicit entity_id override from query param or body - this is the source of truth
   const explicitEntityId = req.query.entity_id || req.body?.entity_id;
   if (explicitEntityId) {
+    // FX consolidation: ?entity_id=all → entityId=null (the consolidated aggregate computeBooks(null)
+    // returns, base-currency-converted per leg). Owners / all-access only; a scoped member with
+    // per-entity grants cannot pull the whole-account consolidated. req.entityAccess is set by the
+    // account resolver above: null = owner/all-access, Array = scoped grants.
+    if (String(explicitEntityId) === 'all') {
+      if (Array.isArray(req.entityAccess)) {
+        return res.status(403).json({ error: 'You do not have access to the consolidated view.', code: 'ENTITY_FORBIDDEN' });
+      }
+      req.entityId = null;
+      return next();
+    }
     const entityIdInt = parseInt(explicitEntityId, 10);
     if (isNaN(entityIdInt) || entityIdInt <= 0) {
       return res.status(400).json({ error: 'Invalid entity ID.' });

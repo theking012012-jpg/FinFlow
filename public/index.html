@@ -6919,6 +6919,7 @@ window.addEventListener('ff:authed', function(){ setTimeout(_ffEnsureCompleteBoo
 // window.CURRENCIES is already set from the full CURRENCIES const above.
 
 let consolCurrency = 'USD'; // default consolidation currency
+window.consolCurrency = consolCurrency; // exposed so the wiring fetches the consolidated report in this currency
 
 function fxConvert(amount, fromCurrency, toCurrency){
   // Convert via USD as base
@@ -6928,23 +6929,21 @@ function fxConvert(amount, fromCurrency, toCurrency){
   return inUSD * rates[toCurrency].rate;
 }
 
-function fmtConsol(valueUSD_native, fromCurrency){
-  // Convert from native currency to consolCurrency
-  const converted = fxConvert(valueUSD_native, fromCurrency, consolCurrency);
+function fmtConsol(value, fromCurrency){
+  // `value` is ALREADY in the consolidation currency (per-entity server conversion) — format directly,
+  // no client static-rate re-conversion.
   const sym = (window.CURRENCIES[consolCurrency]||{symbol:'$'}).symbol;
-  return window._fmtMoney(converted, sym);   // shared K→M→B rollover in the consol currency
+  return window._fmtMoney(value, sym);   // shared K→M→B rollover in the consol currency
 }
 
 function getConsolTotal(rowKey){
-  // F31: if ANY entity's data failed to load, we cannot honestly consolidate —
-  // return null so callers render "—" (same principle as F3's missing FX rate:
-  // never fabricate a figure from incomplete data). A genuinely-empty entity
-  // ($0 from a 200) is NOT unavailable and still counts as a real 0.
+  // FX-CONSOLIDATION FIX: each entity's e.data is ALREADY in the consolidation currency (the per-entity
+  // loop fetches /api/reports?entity_id=<id>&display=<consolCurrency> — server per-leg conversion), so
+  // the consolidated total is a PLAIN SUM. No client static-rate re-conversion (that diverged from the
+  // engine + double-converted when a display currency was active; verify-fx-client-consolidation). F31:
+  // any entity that failed to load ⇒ honest "—", never a fabricated figure from incomplete data.
   if (ENTITIES.some(e => e.data && e.data.unavailable)) return null;
-  return ENTITIES.reduce((sum, e) => {
-    const val = (e.data && e.data[rowKey]) || 0;
-    return sum + fxConvert(val, e.currency, consolCurrency);
-  }, 0);
+  return ENTITIES.reduce((sum, e) => sum + ((e.data && e.data[rowKey]) || 0), 0);
 }
 
 function fmtTotal(val){
@@ -6963,6 +6962,7 @@ const CONSOL_ROW_DEFS=[
 
 window.setConsolCurrency = function(code){
   consolCurrency = code;
+  window.consolCurrency = code;
   // Update selector UI
   document.querySelectorAll('.consol-cur-btn').forEach(b=>{
     b.classList.toggle('active-preset', b.dataset.code===code);
@@ -6977,7 +6977,10 @@ window.setConsolCurrency = function(code){
       rateEl.textContent = 'Base currency · no conversion';
     }
   }
-  renderConsolPL();
+  // Refetch every entity in the new currency (server per-leg conversion), then re-render — renderEntities
+  // re-runs the per-entity loop with display=<code>. Fall back to a plain render if the wiring isn't loaded.
+  if (typeof window.renderEntities === 'function') window.renderEntities();
+  else renderConsolPL();
 };
 
 function renderConsolPL(){

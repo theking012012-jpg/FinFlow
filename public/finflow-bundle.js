@@ -1707,13 +1707,19 @@
       // real figures and COGS was hardcoded 0 (so gross profit == revenue). The consolidated
       // KPI cards (ent-consol-rev/profit/margin) are then set by the original renderEntities
       // from getConsolTotal(e.data). Guarded so a re-render we trigger doesn't loop/refetch.
+      // FX-CONSOLIDATION FIX: fetch EACH entity in the consolidation currency (server per-leg
+      // conversion) so e.data is consol-native; getConsolTotal then plain-SUMS across entities — no
+      // client static-rate re-sum (the dashboard consolidated bug), and no extra aggregate fetch.
       if (!window._consolFetching && ents.length) {
         window._consolFetching = true;
         Promise.all(ents.map(e => {
           const _id = e._dbId || e.id;
           if (!_id) return Promise.resolve();
-          // F34 Step 2: thread the active display currency so each entity card converts too.
-          const _fxDisp = window._displayCurrency ? ('&display=' + encodeURIComponent(window._displayCurrency)) : '';
+          // Fetch in the CONSOLIDATION currency so columns + total are server-converted & consistent.
+          // Skip &display when the entity is ALREADY in that currency (native identity) — avoids running
+          // the server FX-conversion path for same-currency entities (perf; result is byte-identical).
+          const _cc = window.consolCurrency;
+          const _fxDisp = (_cc && _cc !== e.currency) ? ('&display=' + encodeURIComponent(_cc)) : '';
           return fetch('/api/reports?entity_id=' + _id + _fxDisp, { credentials: 'same-origin' })
             // F31: a 200 with real figures (incl. an honest $0 for a genuinely empty
             // entity) populates e.data; a 500 / failed fetch marks the entity UNAVAILABLE
@@ -1724,8 +1730,8 @@
             .catch(() => { e.data = { unavailable: true }; });
         })).then(() => {
           window._consolFetching = false;
-          if (typeof _medOrigRenderEntities === 'function') _medOrigRenderEntities(); // recompute KPI cards from real e.data
-          if (typeof renderConsolPL === 'function') renderConsolPL();                 // fill the consolidated table
+          if (typeof _medOrigRenderEntities === 'function') _medOrigRenderEntities(); // recompute KPI cards (getConsolTotal sums e.data)
+          if (typeof renderConsolPL === 'function') renderConsolPL();                 // consolidated table from server-converted e.data
         });
       }
     };

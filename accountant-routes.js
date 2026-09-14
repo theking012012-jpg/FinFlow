@@ -565,6 +565,7 @@ If you cannot find a field, use null. Be concise.`;
     }
 
     req.session.accountantId = acc.id;
+    try { recordAudit(pool, { userId: null, table: 'accountants', recordId: acc.id, action: 'LOGIN', req }); } catch (_) {}   // audit accountant LOGIN (ip)
     await new Promise((resolve, reject) => {
       req.session.save(err => err ? reject(err) : resolve());
     });

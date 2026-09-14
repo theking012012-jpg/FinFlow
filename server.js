@@ -775,6 +775,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     req.session.userId = user.id;
     req.session.userRole = user.role || 'owner';
     req.session.userEmail = user.email;
+    logAudit(req, 'LOGIN', 'users', user.id, null, null);   // audit LOGIN (ip captured) — feeds login-multi-IP anomaly
     // Track last login time
     await pool.query(
       `UPDATE users SET data = data || jsonb_build_object('last_login', $1::text) WHERE id = $2`,
@@ -2497,6 +2498,7 @@ app.post('/api/documents', requireAuth, wrap(async (req, res) => {
 app.get('/api/documents/:id/download', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('documents', req.params.id, req.session.userId);
   if (!row) return res.status(404).json({ error: 'Not found.' });
+  logAudit(req, 'EXPORT', 'documents', row.id, null, null);   // audit document download (mass-export/exfil signal)
   const buf = Buffer.from(row.file_data, 'base64');
   const safeName = (row.name || 'export').replace(/[^\w\s.\-]/g, '_');
   res.setHeader('Content-Type', row.media_type || 'application/octet-stream');

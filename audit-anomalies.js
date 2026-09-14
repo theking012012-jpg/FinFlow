@@ -26,6 +26,8 @@ function thresholds(over = {}) {
     crossClient:   _int(over.crossClient   ?? process.env.AUDIT_ANOMALY_CROSS_CLIENT, 5),
     activity:      _int(over.activity      ?? process.env.AUDIT_ANOMALY_ACTIVITY, 100),
     massDelete:    _int(over.massDelete    ?? process.env.AUDIT_ANOMALY_MASS_DELETE, 10),
+    loginIps:      _int(over.loginIps      ?? process.env.AUDIT_ANOMALY_LOGIN_IPS, 3),
+    massExport:    _int(over.massExport    ?? process.env.AUDIT_ANOMALY_MASS_EXPORT, 20),
   };
 }
 
@@ -72,6 +74,33 @@ async function detectAuditAnomalies(pool, over = {}) {
     type: 'mass_delete', severity: 'high', actor_type: r.actor_type, actor_id: r.actor_id,
     count: Number(r.n), threshold: t.massDelete, window_minutes: t.windowMinutes,
     message: `${r.actor_type} ${r.actor_id} deleted ${r.n} records in the last ${t.windowMinutes}m (threshold ${t.massDelete}).`,
+  });
+
+  // 4) one principal logging in from many DISTINCT IPs (breach-pivot / shared-credential signal).
+  // Honest scope: distinct-IP-count, not true geo-velocity "impossible travel" (needs a geo service).
+  const li = await pool.query(
+    `SELECT actor_type, actor_id, COUNT(DISTINCT ip_address) AS ips
+       FROM audit_trail
+      WHERE action = 'LOGIN' AND actor_id IS NOT NULL AND ip_address IS NOT NULL AND ${since}
+      GROUP BY actor_type, actor_id HAVING COUNT(DISTINCT ip_address) >= $1
+      ORDER BY ips DESC`, [t.loginIps]);
+  for (const r of li.rows) anomalies.push({
+    type: 'login_multi_ip', severity: 'high', actor_type: r.actor_type, actor_id: r.actor_id,
+    count: Number(r.ips), threshold: t.loginIps, window_minutes: t.windowMinutes,
+    message: `${r.actor_type} ${r.actor_id} logged in from ${r.ips} distinct IPs in the last ${t.windowMinutes}m (threshold ${t.loginIps}).`,
+  });
+
+  // 5) mass export/download by a single actor (data-exfil signal).
+  const me = await pool.query(
+    `SELECT actor_type, actor_id, COUNT(*) AS n
+       FROM audit_trail
+      WHERE action = 'EXPORT' AND actor_id IS NOT NULL AND ${since}
+      GROUP BY actor_type, actor_id HAVING COUNT(*) >= $1
+      ORDER BY n DESC`, [t.massExport]);
+  for (const r of me.rows) anomalies.push({
+    type: 'mass_export', severity: 'high', actor_type: r.actor_type, actor_id: r.actor_id,
+    count: Number(r.n), threshold: t.massExport, window_minutes: t.windowMinutes,
+    message: `${r.actor_type} ${r.actor_id} exported/downloaded ${r.n} items in the last ${t.windowMinutes}m (threshold ${t.massExport}).`,
   });
 
   return { generated_at: new Date().toISOString(), thresholds: t, count: anomalies.length, anomalies };

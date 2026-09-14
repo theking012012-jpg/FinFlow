@@ -148,7 +148,7 @@ Launch-hardening + security items, captured so they don't get lost. None is a mo
 What separates "solid" from world-class for a money product: the core promise is provably right, and
 one thing is genuinely better than QuickBooks/Xero for the Caribbean/SMB market. Ranked by leverage.
 
-1. **FX base-currency consolidation — the #1 credibility item.** `computeBooks` all-entities aggregate
+1. **FX base-currency consolidation — the #1 credibility item. DESIGN WRITTEN 2026-09-14 → `FX_CONSOLIDATION_DESIGN.md`.** Key finding: the per-leg recognition-dated conversion engine ALREADY exists (F34 Path B `computeBooks(display)` + `fx_rates` + `fxCoverage` flag); the real gap is (a) no account base-currency setting and (b) the CONSOLIDATED (entityId=null) view defaults to native raw-sum instead of converting to base. Fix reuses the F34 engine — much smaller than 'build FX'. `computeBooks` all-entities aggregate
    is currently a RAW NATIVE SUM across entities (F24 base-currency conversion deferred), so a TTD
    entity + a USD entity produce a "total" that adds unlike currencies. For a *multi-currency* product
    this is the gap a sharp user/accountant catches day one. Convert to a base/reporting currency

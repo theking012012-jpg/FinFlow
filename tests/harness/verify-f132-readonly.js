@@ -18,7 +18,10 @@ const LOGIN = { email: 'f132@finflow.test', password: 'harness-password-not-a-se
       `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
       [{ email: LOGIN.email, name: 'F132', plan: 'trial', trial_ends: past, role: 'owner', password: bcrypt.hashSync(LOGIN.password, 10) }]
     )).rows[0].id;
-    const http = new HarnessHttp(server.baseUrl);
+    // De-flake (sequential-load class): a unique X-Forwarded-For gives this harness its OWN
+    // rate-limit bucket, so it can never inherit a near-exhausted authLimiter window from other
+    // harnesses under the pinned clock (whose window never advances). See httpClient.js.
+    const http = new HarnessHttp(server.baseUrl, { xff: '203.0.113.132' });
     const login = await http.post('/api/auth/login', LOGIN);
     A('login 200 (auth open even when expired)', login.status === 200, `status=${login.status} ${(login.text||'').slice(0,120)}`);
     const g = await http.get('/api/invoices');

@@ -9,7 +9,8 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
   try {
     boot = await bootSpaInJsdom({});
     const { window, settle, consoleErrors } = boot;
-    await settle(20, 25);
+    const poll = async (fn, t = 5000, step = 25) => { const end = Date.now() + t; while (Date.now() < end) { if (fn()) return true; await new Promise(r => setTimeout(r, step)); } return fn(); };
+    await poll(() => typeof window._loadPaymentsMadeFromDB === 'function' && Array.isArray(window.paymentsMade));  // settle boot before asserting (load-independent)
     // pages.js runtime winners that must survive (live page: render/add/delete + the money loader)
     for (const fn of ['renderPaymentsMade', 'openMakePaymentModal', 'savePaymentMade', 'deletePaymentMade', '_loadPaymentsMadeFromDB']) {
       A(`window.${fn} defined (pages.js winner survives)`, typeof window[fn] === 'function');

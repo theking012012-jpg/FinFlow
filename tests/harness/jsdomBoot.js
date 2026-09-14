@@ -39,12 +39,18 @@ const { HarnessHttp } = require('./httpClient.js');
 // path's document accessors (getElementById / createElement / querySelector / documentElement /
 // defaultView / …), which is what made verify-f136-paymentsmade.js flaky. Swallow the whole
 // null-document teardown family; anything else still throws. jsdom 30 fixes most of it.
-process.on('uncaughtException', (e) => {
+// Post-teardown DOM-accessor noise arrives as BOTH the null AND the undefined variant, and via BOTH
+// uncaughtException (a sync stray timer/rAF) AND unhandledRejection (an async boot chain — fetch →
+// loadEntityData → render — that resolves AFTER window.close()). Same class, same swallow. A REAL
+// assertion failure throws SYNCHRONOUSLY inside the harness's own try/catch and is reported there —
+// it never reaches these hooks. (Root cause is the race; harnesses also poll boot before driving.)
+const _isTeardownNoise = (e) => {
   const s = String((e && e.message) || e);
-  if (/Cannot read propert(?:y|ies) of null \(reading '(?:_location|getElementById|createElement|createElementNS|createTextNode|querySelector|querySelectorAll|documentElement|defaultView|body|head|location)'\)/.test(s)) return;
-  if (/_document\)\._location/.test(s)) return;
-  throw e;
-});
+  return /Cannot read propert(?:y|ies) of (?:null|undefined) \(reading '(?:_location|getElementById|createElement|createElementNS|createTextNode|querySelector|querySelectorAll|documentElement|defaultView|body|head|location)'\)/.test(s)
+      || /_document\)\._location/.test(s);
+};
+process.on('uncaughtException', (e) => { if (_isTeardownNoise(e)) return; throw e; });
+process.on('unhandledRejection', (e) => { if (_isTeardownNoise(e)) return; throw e; });
 
 const LOGIN = { email: 'seed@finflow.test', password: 'harness-password-not-a-secret' };
 

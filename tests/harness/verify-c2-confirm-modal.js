@@ -17,7 +17,8 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
   try {
     boot = await bootSpaInJsdom({});
     const { window, settle, consoleErrors } = boot;
-    await settle(20, 25);
+    const poll = async (fn, t = 5000, step = 25) => { const end = Date.now() + t; let v; while (Date.now() < end) { v = fn(); if (v) return v; await new Promise(r => setTimeout(r, step)); } return fn(); };
+    await poll(() => typeof window.deleteInvoice === 'function' && typeof window._confirmModal === 'function');  // settle boot before driving (load-independent)
     const doc = window.document;
 
     A('window._confirmModal exists (the in-app dialog)', typeof window._confirmModal === 'function');
@@ -29,8 +30,7 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     // ── CANCEL path: modal opens, Cancel aborts the delete ──
     const errBefore = consoleErrors.length;
     const p1 = window.deleteInvoice(0);          // runs sync up to `await _confirmModal(...)` → overlay created
-    await new Promise(r => setTimeout(r, 30));
-    const overlay1 = doc.getElementById('_confirm-overlay');
+    const overlay1 = await poll(() => doc.getElementById('_confirm-overlay'));
     A('delete opens the IN-APP modal (#_confirm-overlay), not a native dialog', !!overlay1);
     A('no native window.confirm/alert attempted', !consoleErrors.slice(errBefore).some(l => /not implemented.*(confirm|alert)/i.test(l)),
       consoleErrors.slice(errBefore).filter(l => /confirm|alert/i.test(l)).join(' | '));
@@ -43,8 +43,8 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
 
     // ── CONFIRM path: modal opens, Confirm proceeds (overlay closes) ──
     const p2 = window.deleteInvoice(0);
-    await new Promise(r => setTimeout(r, 30));
-    A('second delete re-opens the modal', !!doc.getElementById('_confirm-overlay'));
+    const overlay2 = await poll(() => doc.getElementById('_confirm-overlay'));
+    A('second delete re-opens the modal', !!overlay2);
     const okBtn = doc.getElementById('_confirm-yes');
     A('modal has a Confirm button', !!okBtn);
     if (okBtn) okBtn.click();

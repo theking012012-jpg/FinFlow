@@ -2,6 +2,18 @@
 
 ## ⏭️ NEXT-SESSION TASKS (verified 2026-09-14 — for the code account)
 
+**FOLLOW-UPS ✅ 2026-09-14 (Cowork; HOLD for commit):** per-entity CONSOL COLUMNS now server-sourced too —
+the loop fetches each entity `?display=<consolCurrency>` and `getConsolTotal` PLAIN-SUMS (no client static-rate
+re-convert anywhere); the extra `entity_id=all` aggregate fetch was removed (perf) and `&display` is skipped for
+same-currency entities. `verify-f132-readonly` given its own rate-limit bucket (unique XFF) to kill the
+sequential-load flake. All green standalone (fx-client 4/0, entity-switch-currency 10/0, entity-profile 47/0, f132 5/0).
+
+**TASK 1 — FX client-consolidation bug — ✅ FIXED + VERIFIED 2026-09-14 (Cowork session; HOLD for owner commit).**
+Shipped: server `?entity_id=all`→entityId=null (owners/all-access only, `server.js` entity resolver); client
+`getConsolTotal` now reads `window._consolServer` (server `/api/reports?entity_id=all`), static-rate `fxConvert`
+re-sum deleted (`index.html`); `window._loadConsolServer` fetch added (`finflow-api-wiring-medium.js`). New harness
+`verify-fx-client-consolidation.js` RED-proven (114.71≠150) → GREEN (150=150). No regressions. ORIGINAL FINDING BELOW.
+
 **TASK 1 — FX client-consolidation bug (code-read, real money bug; NOT test-caught).**
 The consolidated dashboard total is computed CLIENT-SIDE and is wrong. Verified by reading the code:
 `getConsolTotal` (`public/index.html:6938`) sums `fxConvert(val, e.currency, consolCurrency)`, and
@@ -18,6 +30,11 @@ sweep is green because NO harness exercises the client consolidation path — it
   that RED-proves the divergence on today's code (server vs client disagree for a moved rate / active
   display) and goes GREEN after — so the client path is finally ON the VERIFICATION list.
   Server layer already shipped (`c005cbd`, `verify-fx-consolidation` 12/0) — this is the client half.
+
+**TASK 2 — Known flaky harnesses — ✅ FIX APPLIED 2026-09-14 (standalone-verified; owner confirm with 3 full sweeps).**
+Shipped: `jsdomBoot.js` swallows the `undefined` teardown variant + adds an `unhandledRejection` hook; `verify-c2-confirm-modal`
+and `verify-f136-paymentsmade` POLL for boot/DOM instead of fixed sleeps; `verify-c6-hdrain-logging` relies on the shared
+swallow. `verify-f132-readonly` left as-is (HTTP sequential-load — different mechanism). All touched harnesses green standalone. ORIGINAL NOTES BELOW.
 
 **TASK 2 — Known flaky harnesses (make deterministic; all green standalone, red only under full-sweep load).**
 Same class: jsdom client harnesses racing the async bundle/boot under load. Fix the race (poll for the

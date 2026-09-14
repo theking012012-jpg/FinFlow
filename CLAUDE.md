@@ -225,9 +225,13 @@ without it. Per-button patches are the failure mode, not the fix.
 '2026-06-01' has no time and no timezone. Converting it to an instant forces a timezone to be
 chosen, and that choice makes the answer depend on WHO IS ASKING.
 
-Confirmed by execution (F87). Period windows are built at the VIEWER'S local midnight
-(app-main.js:1744, `new Date(fyStartYear, fyStartIdx + idx, 1)`) and compared instant-to-instant
-against `new Date(value)` (server.js:3978), where a date-only string parses to UTC midnight.
+Confirmed by execution, then FIXED (F87). ORIGINAL BUG: period windows were built at the VIEWER'S
+local midnight and compared instant-to-instant against `new Date(value)`, where a date-only string
+parses to UTC midnight. FIX SHIPPED — periods are now compared as date STRINGS, half-open
+[winStart, winEnd) (server.js:7418-7430, `FinFlowDates._toYmd` + `inPeriod`); the remaining client
+`new Date(fyStartYear, fyStartIdx + i, 1)` (app-main.js:1400) only builds display LABELS, never
+comparison bounds. Verified live: `finflow-dates.test.js` 16/0 + `verify-date-label-tz`. Kept as a
+standing rule — never compare an accounting date as a Date; compare date strings to date strings.
 Consequences:
 
 - Two users in different timezones see DIFFERENT TOTALS for the same books. In the accountant

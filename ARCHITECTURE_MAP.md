@@ -44,7 +44,7 @@ scanning).
    └──────────────┘
 ```
 
-The pg `Pool` is created once in [database.js:18](database.js#L18) with
+The pg `Pool` is created once in [database.js:39](database.js#L39) with
 `ssl: { rejectUnauthorized: false }` in production — required because Railway +
 Supabase present self-signed TLS certs.
 
@@ -52,8 +52,8 @@ Supabase present self-signed TLS certs.
 
 ## 2. STARTUP / BOOT SEQUENCE
 
-**Server boot.** [server.js:3121](server.js#L3121) calls `initDB()` (creates all
-tables/indexes idempotently, [database.js:41](database.js#L41)), then
+**Server boot.** [server.js:8375](server.js#L8375) calls `initDB()` (creates all
+tables/indexes idempotently, [database.js:63](database.js#L63)), then
 `app.listen` and kicks off the recurring-bills/invoices scheduler on an hourly
 `setInterval` ([server.js:3128](server.js#L3128)).
 

@@ -1,6 +1,6 @@
 # FinFlow — Postgres Row-Level Security (RLS) Design
 
-_Design only — no code shipped. This de-risks the RLS pass so it can be done fast and safely later._
+_Design only — no tenant-isolation RLS shipped on the business tables yet. (One pre-existing exception: `page_views` already has RLS enabled — `database.js:487`.) This de-risks the business-table RLS pass so it can be done fast and safely later._
 _Written 2026-09-14 against the real query path (`database.js`)._
 
 ## Goal

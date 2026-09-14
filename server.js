@@ -679,6 +679,19 @@ app.post('/api/stripe/checkout', requireAuth, wrap(async (req, res) => {
 }));
 
 // ── AUTH ──────────────────────────────────────────────────────────────────────
+// Public health check for uptime monitors (Cloudflare / Railway / UptimeRobot). Unauthenticated and
+// leaks nothing sensitive — liveness + DB reachability only. 200 healthy, 503 when the DB is down.
+app.get('/healthz', async (req, res) => {
+  const t0 = Date.now();
+  res.set('Cache-Control', 'no-store');
+  try {
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok', db: 'up', uptime_s: Math.round(process.uptime()), latency_ms: Date.now() - t0, time: new Date().toISOString() });
+  } catch (e) {
+    res.status(503).json({ status: 'degraded', db: 'down', time: new Date().toISOString() });
+  }
+});
+
 app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const { email, password, name } = req.body || {};

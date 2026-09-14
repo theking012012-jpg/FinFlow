@@ -138,7 +138,7 @@ Launch-hardening + security items, captured so they don't get lost. None is a mo
    - [x] **Audit-log anomaly DETECTION — ✅ DONE 2026-09-14.** `audit-anomalies.js` (read-only, env-tunable thresholds) + `GET /api/admin/audit-anomalies` (admin) detects accountant cross-client access, per-actor activity spikes, and mass delete off `audit_trail`. `verify-audit-anomalies` 10/0 (RED-proven: under-threshold + out-of-window actors stay silent). REMAINING: (a) delivery to a real alert channel (push/email — ties into Sentry/uptime item); (b) mass-EXPORT + impossible-travel signals need export/login events written to the trail first (not audited today).
    - [ ] **Error monitoring (Sentry) + uptime alerting** — know something broke before users do. Build/ops.
    - [ ] **Secrets rotation cadence** — rotate DB URL / Stripe / connector keys on a schedule + on any suspected exposure. Owner/ops.
-   - [ ] **Postgres Row-Level Security (belt-and-suspenders)** — DB-level tenant isolation so a route that ever forgets `WHERE user_id` still can't leak. Build (pairs with the isolation harness in item 2).
+   - [ ] **Postgres Row-Level Security (belt-and-suspenders)** — DB-level tenant isolation so a route that ever forgets `WHERE user_id` still can't leak. **Design written 2026-09-14 → `RLS_DESIGN.md`** (GUC-per-transaction approach, FORCE-RLS owner gotcha, accountant-dimension, staged rollout). Build (pairs with the isolation harness in item 2).
    *Cross-ref:* CSP `script-src 'unsafe-inline'` removal is the existing **§A.L3** item (623 inline handlers → `addEventListener`).
 
 ---

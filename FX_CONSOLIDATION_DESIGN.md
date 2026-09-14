@@ -1,7 +1,36 @@
 # FinFlow — FX Base-Currency Consolidation (Design)
 
-_Design only — no code shipped. World-class roadmap item #1 (the multi-currency credibility gap)._
-_Written 2026-09-14 against the real code (`computeBooks`, `fx_rates`, F34 Path B)._
+_World-class roadmap item #1 (the multi-currency credibility gap). Updated 2026-09-14._
+
+## STATUS (2026-09-14)
+
+**SERVER LAYER — ✅ DONE + TESTED.** `computeBooks(entityId=null)` now converts EVERY leg (revenue,
+expenses, bills, payments, payroll, credit notes, COGS) from its OWN entity's currency to the account
+BASE currency (`users.data.base_currency`, else first entity's currency, else USD). Single-entity views
+unchanged; single-currency accounts byte-identical (from===base ⇒ rate 1). `verify-fx-consolidation`
+12/0 (RED-proven: converted totals ≠ raw native sum), and no regression (entity-leakage 18/0, e2e 11/0,
+f137-tax-reports 20/0). COGS now converts per-item entity currency; payroll already carried entity_id.
+
+**ARCHITECTURE FINDING (important).** The `/api/reports` entity middleware NEVER yields entityId=null
+for a multi-entity account — it snaps to the first entity. So computeBooks(null) is reached by SERVER
+callers (accountant "all" view, report routes), NOT by the main dashboard. The **main dashboard's
+consolidated total is summed CLIENT-SIDE** (`finflow-api-wiring-medium.js` renderConsolPL + the
+per-entity loop), which still RAW-SUMS native per-entity results. So the visible-dashboard bug needs the
+CLIENT layer too.
+
+**REMAINING (2 small, focused steps — each reuses the now-correct pieces):**
+1. **Make the consolidated aggregate reachable over HTTP:** support `?entity_id=all` → entityId=null in
+   the entity middleware (owners/all-access only; scoped members stay restricted to granted entities).
+   Then `/api/reports?entity_id=all` returns the correctly-converted consolidated. Small + testable.
+2. **Point the client consolidated at base currency:** either (a) have renderConsolPL/the loop call
+   `/api/reports?entity_id=all` (server does the conversion — single source), OR (b) fetch each entity
+   with `?display=<base>` (reuses the PROVEN single-entity conversion) and sum the already-base results.
+   (a) is cleaner. Either removes the client-side native raw-sum.
+
+Everything below is the original design; the SERVER LAYER section of it is now implemented.
+
+---
+
 
 ## The problem (one sentence)
 

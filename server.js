@@ -7445,10 +7445,23 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // no rate is flagged in fxCoverage and EXCLUDED (never summed native into a converted total).
   const _entRows = await db.allByUser('entities', userId);
   const entCur = {}; for (const e of _entRows) entCur[e.id] = (e.currency || 'USD');
-  const viewedCur = (entityId != null ? entCur[entityId] : null) || 'USD';
-  const _disp = (typeof display === 'string' && /^[A-Z]{3}$/.test(display)) ? display : null;
-  const canConvert = entityId != null;                 // single-entity only this step
-  const displayCur = (canConvert && _disp && _disp !== viewedCur) ? _disp : null; // null ⇒ native identity path
+  // F24 — CONSOLIDATED base-currency resolution. Single-entity keeps native identity unless an explicit
+  // display != native is requested (unchanged). The ALL-ENTITIES view resolves to the account BASE
+  // currency (users.data.base_currency, else the first entity's currency, else USD) and converts EVERY
+  // leg from its OWN entity's currency to base — so a TTD entity + a USD entity no longer raw-sum. For a
+  // single-currency account base === every entity currency => from===to => rate 1 => BYTE-IDENTICAL.
+  let baseCur = null;
+  if (entityId == null) {
+    let _setBase = null;
+    try { _setBase = (await pool.query(`SELECT data->>'base_currency' AS b FROM users WHERE id=$1`, [userId])).rows[0]; } catch (_) {}
+    baseCur = ((_setBase && typeof _setBase.b === 'string' && /^[A-Z]{3}$/i.test(_setBase.b)) ? _setBase.b.toUpperCase() : null)
+              || (_entRows[0] && _entRows[0].currency) || 'USD';
+  }
+  const viewedCur = (entityId != null ? entCur[entityId] : baseCur) || 'USD';
+  const _disp = (typeof display === 'string' && /^[A-Z]{3}$/.test(display)) ? display.toUpperCase() : null;
+  const displayCur = entityId != null
+    ? ((_disp && _disp !== viewedCur) ? _disp : null)   // single-entity: unchanged
+    : (_disp || baseCur);                                // consolidated: ALWAYS to base (identity if single-currency)
   const fxCoverage = { display: displayCur || viewedCur, complete: true, unconvertible: [], convertedRows: 0, totalRows: 0 };
   let _fxRows = [];
   if (displayCur) { _fxRows = (await pool.query(`SELECT from_currency, to_currency, rate, rate_date FROM fx_rates WHERE user_id=$1`, [userId])).rows; }
@@ -7644,19 +7657,23 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   let cogs = 0, cogsUncoveredItems = 0;
   try {
     const { rows: items } = await pool.query(
-      `SELECT DISTINCT im.inventory_id FROM inventory_movements im
+      `SELECT im.inventory_id, MIN(im.entity_id) AS entity_id FROM inventory_movements im
        WHERE im.user_id = $1 AND im.type = 'sale'
-         AND ($2::int IS NULL OR im.entity_id IS NULL OR im.entity_id = $2)`,
+         AND ($2::int IS NULL OR im.entity_id IS NULL OR im.entity_id = $2)
+       GROUP BY im.inventory_id`,
       [userId, entityId]
     );
     for (const it of items) {
+      // F24: each item's COGS converts from ITS entity's currency (inventory is per-entity). Falls back
+      // to the viewed/base currency for account-level (null-entity) items.
+      const _itemFrom = (it.entity_id != null && entCur[it.entity_id]) ? entCur[it.entity_id] : viewedCur;
       const sales = await fifoItemSales(pool, it.inventory_id);
       let itemUncovered = 0;
       for (const s of sales) {
         if (!inPeriod(s.date)) continue;                    // F25: period-scope
         // Native ⇒ raw per-sale FIFO cost. Converting ⇒ convert at the sale's own movement date
-        // (F34 Step 1b); a sale with no rate flags + excludes, never native-summed into a total.
-        cogs += displayCur ? _fxAccrual(s.cogs, s.date, 'cogs', viewedCur) : s.cogs;
+        // (F34 Step 1b) from the item's entity currency; a sale with no rate flags + excludes.
+        cogs += displayCur ? _fxAccrual(s.cogs, s.date, 'cogs', _itemFrom) : s.cogs;
         if (s.uncovered > 0) itemUncovered = 1;
       }
       cogsUncoveredItems += itemUncovered;

@@ -14,6 +14,8 @@ const wrap = fn => async (req, res, next) => {
   try { await fn(req, res, next); } catch (e) { next(e); }
 };
 
+const { detectAuditAnomalies } = require('./audit-anomalies');
+
 function requireAdmin(req, res, next) {
   if (!req.session.isAdmin) return res.status(401).json({ error: 'Admin login required.' });
   next();
@@ -47,6 +49,15 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   });
 
   app.get('/api/admin/me', requireAdmin, (req, res) => res.json({ admin: true }));
+
+  // Read-only anomaly scan over the append-only audit trail (assume-breach / detect-fast).
+  app.get('/api/admin/audit-anomalies', requireAdmin, async (req, res) => {
+    try {
+      const over = {};
+      if (req.query.window) over.windowMinutes = parseInt(req.query.window, 10);
+      res.json(await detectAuditAnomalies(pool, over));
+    } catch (e) { console.error('[admin] audit-anomalies scan failed:', e.message); res.status(500).json({ error: 'Anomaly scan failed.' }); }
+  });
 
   // ── PLATFORM OVERVIEW ─────────────────────────────────────────────────────
   app.get('/api/admin/overview', requireAdmin, wrap(async (req, res) => {

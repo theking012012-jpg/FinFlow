@@ -40,6 +40,12 @@ harnesses and run the individual new ones, then hand him the commit.
 now-required Industry/Business-address). Hardened `jsdomBoot.js` against a pre-existing jsdom teardown flake
 (server.js's prod `uncaughtException`→exit(1) was tripping on post-close rAF noise in SPA harnesses).
 
+**Cleanup at end of session:** the old `window.ffHelp` getting-started overlay was retired (orphaned once
+the sidebar was repointed to the new Help Center); its dead code was removed from `index.html` and its
+now-superseded harness `verify-help-panel.js` was **deleted** (`git rm`). Final owner-run 3× sweep in
+PowerShell is **301/301 green** on every run after that deletion (was 301/302 with the lone stale
+`verify-help-panel` red).
+
 **Launch wiring (features degrade gracefully, but set these on Railway or they silently no-op):**
 `RESEND_API_KEY` + `EMAIL_FROM` (offline chat nudges, support/admin/proposal/task emails), `ADMIN_EMAIL`
 (support notifications), `ANTHROPIC_API_KEY` (Ask FinFlow — falls back to deep links without it).

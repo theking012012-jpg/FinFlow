@@ -116,19 +116,28 @@ stays the source of truth until the GL is proven equal across the full `VERIFICA
 - **Phase 0** — this design. ✅
 - **Phase 1** — schema only: `ledger_accounts` upgrade + `ledger_entries` + `ledger_lines`, idempotent DDL,
   seed a default typed COA (incl. AR, AP, Cash, Revenue, COGS, Payroll, Retained Earnings) per entity. No
-  behavior change. Harness: schema + seed integrity.
-- **Phase 2** — posting engine, **one source type per commit**, **dual-write shadow**: the source doc still
-  writes its row AND posts a ledger entry; reports still read `computeBooks`. Per type: harness proves the
-  entry balances AND the posted leg == the computeBooks leg on a discriminating seed (Rule 4). Order:
-  invoice → invoice_payment → expense → bill → bill_payment → sales_receipt → payroll → inventory/COGS →
-  credit/vendor notes → fx.
-- **Phase 3** — trial balance / balance sheet / P&L endpoints read from the GL; assert `== computeBooks`
-  across the VERIFICATION seed (RED-provable). Trial balance ties to zero.
-- **Phase 4** — **backfill** (owner-gated, Rule 8, its own commit): replay historical source docs through
+  behavior change. Harness: schema + seed integrity. ✅ (`verify-ledger-schema.js`)
+- **Phase 2** — posting engine, **dual-write shadow**: the source doc still writes its row AND posts a
+  ledger entry; reports still read `computeBooks`. Per type: harness proves the entry balances AND the
+  posted leg == the computeBooks leg on a discriminating seed (Rule 4). ✅ **ALL TYPES DONE** —
+  invoice, invoice_payment, expense, bill, bill_payment, sales_receipt, payroll, inventory/COGS,
+  credit_note, vendor_credit, fx. Each has its own `verify-gl-post-*.js` (all GREEN, oracle-parity +
+  trial-balance-ties-to-zero). FX has no computeBooks leg (the dashboard reports fxRealised separately),
+  so it is checked against the independent realised-GL formula (Rule 6).
+- **Phase 3** — trial balance / balance sheet / P&L / journal / accounts endpoints read PURELY from the GL
+  (`glFinancials` + `/api/gl/*`, additive — no existing report path touched). ✅ Capstone
+  `verify-gl-statements.js` seeds one of every P&L type at once and proves: TB ties to zero, balance sheet
+  balances (A = L + E), and the ledger P&L reconciles to `computeBooks` to the cent (income==revenue,
+  expenses==cogs+opex, netProfit==netProfit). GL P&L is period-scoped with the SAME FinFlowDates window +
+  D2 as computeBooks; the balance sheet is an as-of-today snapshot. Entity-scoped (consolidated
+  multi-currency GL statements are a later enhancement).
+- **Phase 4** — **backfill** (⛔ OWNER-GATED, Rule 8, its own commit): replay historical source docs through
   the posting engine to build opening balances; reconcile GL to computeBooks for all history. No source
-  table is mutated.
-- **Phase 5** — flip source of truth to the GL; keep `computeBooks` as a **continuous cross-check** (a live
-  "books balanced ✓" signal — a marketable trust indicator).
+  table is mutated. NOT STARTED — needs owner go-ahead (it writes real books).
+- **Phase 5** — flip source of truth to the GL (⛔ OWNER-GATED): keep `computeBooks` as a **continuous
+  cross-check** (a live "books balanced ✓" signal — a marketable trust indicator). NOT STARTED — this is
+  the user-facing go-live and must not happen without explicit owner approval; the dual-write shadow keeps
+  the GL fully proven until then.
 
 ## Non-negotiables (map to CLAUDE.md)
 

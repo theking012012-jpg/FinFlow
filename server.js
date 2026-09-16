@@ -3176,6 +3176,17 @@ app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
     throw e;
   }
   await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  // GL Phase 2 (dual-write shadow): a walk-in cash sale is Dr Cash / Cr Revenue at its date (matches
+  // computeBooks' salesReceipts revenue leg). Best-effort.
+  try {
+    const _sa = parseFloat(row.amount) || 0;
+    await postLedgerEntry(pool, {
+      userId: scopeId(req), entityId: row.entity_id, date: row.date,
+      description: 'Sales receipt — ' + (row.customer || ''),
+      sourceType: 'sales_receipt', sourceId: row.id, idempotencyKey: 'sales_receipt:' + row.id,
+      lines: [{ code: '1000', debit: _sa, credit: 0 }, { code: '4000', debit: 0, credit: _sa }],
+    });
+  } catch (glErr) { console.error('[GL] sales-receipt posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(row);
 }));
 app.put('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
@@ -3337,6 +3348,23 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
     throw e;
   }
   await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'credit_notes', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  // GL Phase 2 (dual-write shadow): a credit note is the REVENUE CONTRA (F58) — Dr Revenue (4000) /
+  // Cr Accounts Receivable (1100) at its date, when status ∈ {Open,Applied} (Void contributes 0,
+  // mirroring RECOGNIZED_CREDIT in computeBooks). This reduces BOTH revenue (matching computeBooks'
+  // revenue leg) and AR — the GL correctly nets receivables, an improvement over the shoebox
+  // aggregate, which leaves AR unreduced (F58 "deferred to after launch"). Best-effort.
+  if (['open', 'applied'].includes(String(row.status || '').toLowerCase())) {
+    try {
+      const _amt = parseFloat(row.amount) || 0;
+      if (_amt > 0) await postLedgerEntry(pool, {
+        userId: scopeId(req), entityId: row.entity_id || null,
+        date: row.date || (row.created_at ? String(row.created_at).slice(0, 10) : null),
+        description: 'Credit note — ' + String(row.customer || '').slice(0, 80),
+        sourceType: 'credit_note', sourceId: row.id, idempotencyKey: 'credit_note:' + row.id,
+        lines: [{ code: '4000', debit: _amt, credit: 0 }, { code: '1100', debit: 0, credit: _amt }],
+      });
+    } catch (glErr) { console.error('[GL] credit note posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  }
   res.json(row);
 }));
 app.put('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
@@ -3413,6 +3441,26 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   }
   if (_billId != null) await recalcBillStatus(pool, _billId, req.session.userId);
   await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'payments_made', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  // GL Phase 2 (dual-write shadow): a bill-LINKED payment SETTLES AP (Dr AP / Cr Cash); an ORPHAN
+  // payment (no bill) is a direct disbursement EXPENSE (Dr Opex / Cr Cash) — mirrors computeBooks'
+  // bill_id-IS-NULL split (linked settles, orphan expenses; no double count). Best-effort.
+  try {
+    const _pmAmt = parseFloat(row.amount) || 0;
+    let _pmEnt = row.entity_id, _lines;
+    if (_billId != null) {
+      const { rows: _br } = await pool.query(`SELECT entity_id FROM bills WHERE id=$1 AND user_id=$2 LIMIT 1`, [_billId, scopeId(req)]);
+      if (_br[0] && _br[0].entity_id != null) _pmEnt = _br[0].entity_id;
+      _lines = [{ code: '2000', debit: _pmAmt, credit: 0 }, { code: '1000', debit: 0, credit: _pmAmt }];   // settle AP
+    } else {
+      _lines = [{ code: '6000', debit: _pmAmt, credit: 0 }, { code: '1000', debit: 0, credit: _pmAmt }];   // direct expense
+    }
+    await postLedgerEntry(pool, {
+      userId: scopeId(req), entityId: _pmEnt, date: row.date,
+      description: 'Payment made — ' + (row.vendor || ''),
+      sourceType: 'bill_payment', sourceId: row.id, idempotencyKey: 'payment_made:' + row.id,
+      lines: _lines,
+    });
+  } catch (glErr) { console.error('[GL] payment-made posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(row);
 }));
 app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
@@ -3498,6 +3546,23 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
     throw e;
   }
   await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'vendor_credits', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  // GL Phase 2 (dual-write shadow): a vendor credit is the OPEX CONTRA (F58) — the exact mirror of a
+  // credit note on revenue — Dr Accounts Payable (2000) / Cr Operating Expenses (6000) at its date,
+  // when status ∈ {Open,Applied} (Void contributes 0, mirroring RECOGNIZED_CREDIT). Reduces opex
+  // (matching computeBooks) AND nets AP down — the GL improves on the shoebox aggregate, which leaves
+  // AP unreduced. Best-effort.
+  if (['open', 'applied'].includes(String(row.status || '').toLowerCase())) {
+    try {
+      const _amt = parseFloat(row.amount) || 0;
+      if (_amt > 0) await postLedgerEntry(pool, {
+        userId: scopeId(req), entityId: row.entity_id || null,
+        date: row.date || (row.created_at ? String(row.created_at).slice(0, 10) : null),
+        description: 'Vendor credit — ' + String(row.vendor || '').slice(0, 80),
+        sourceType: 'vendor_credit', sourceId: row.id, idempotencyKey: 'vendor_credit:' + row.id,
+        lines: [{ code: '2000', debit: _amt, credit: 0 }, { code: '6000', debit: 0, credit: _amt }],
+      });
+    } catch (glErr) { console.error('[GL] vendor credit posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  }
   res.json(row);
 }));
 app.put('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
@@ -7304,6 +7369,24 @@ app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
   await recordAudit(pool, { userId: req.session.userId, entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'APPROVE', field: 'status', newValue: 'approved', req });  // F90 Phase B: payroll recognised at approve
+  // GL Phase 2 (dual-write shadow): payroll recognised at APPROVE (F80/F85) — Dr Payroll Expense
+  // (6100) / Cr Payroll Liabilities (2200), summed from the run's LINES (basis C, Rule 12), dated at
+  // the period the run is FOR (payrollPeriodYmd), to the run's entity. Mark-paid adds nothing further
+  // (already recognised here), mirroring computeBooks' PAYROLL_RECOGNIZED set. Best-effort.
+  try {
+    const _run = rows[0];
+    const { rows: _pl } = await pool.query(`SELECT gross, bonus, overtime FROM payroll_run_lines WHERE run_id=$1`, [_run.id]);
+    const _amt = Math.round(_pl.reduce((s, l) => s + (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0), 0) * 100) / 100;
+    if (_amt > 0) {
+      await postLedgerEntry(pool, {
+        userId: scopeId(req), entityId: _run.entity_id || null,
+        date: FinFlowDates.payrollPeriodYmd(_run.period, _run.run_date),
+        description: 'Payroll — ' + String(_run.period || '').slice(0, 80),
+        sourceType: 'payroll_run', sourceId: _run.id, idempotencyKey: 'payroll_run:' + _run.id,
+        lines: [{ code: '6100', debit: _amt, credit: 0 }, { code: '2200', debit: 0, credit: _amt }],
+      });
+    }
+  } catch (glErr) { console.error('[GL] payroll posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(rows[0]);
 }));
 
@@ -7486,6 +7569,77 @@ async function postLedgerEntry(client, { userId, entityId, date, description, so
       [entryId, userId, entityId, idByCode[l.code], l.debit, l.credit]);
   }
   return entryId;
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// GL PHASE 3 — FINANCIAL STATEMENTS FROM THE LEDGER (read-only, additive)
+// Trial balance, income statement, and balance sheet computed PURELY from ledger_lines /
+// ledger_accounts — the real double-entry books, not the source-document aggregate. Entity-scoped
+// (a single entity's books; consolidated multi-currency GL is a later enhancement). The P&L is
+// period-scoped by entry_date using the SAME window resolver + D2 rule as computeBooks (FinFlowDates),
+// so a GL P&L for a period reconciles to computeBooks for that period to the cent. The balance sheet
+// is an as-of-today snapshot (all posted entries up to today). Because every entry balances, the trial
+// balance ties to zero and assets == liabilities + equity + net profit by construction.
+async function glFinancials(userId, entityId, period = 'year', fyStartIdx = 0, monthIdx = null) {
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const _today = FinFlowDates.resolvedToday(new Date());
+  const periodKind = (period === 'month' || period === 'quarter') ? period : 'year';
+  const _rp = FinFlowDates.resolvePeriod({ period: periodKind, monthIdx, fyStartMonth: fyStartIdx, today: _today });
+  const winStart = _rp.start, winEnd = _rp.end;
+  // Per-account rollup: all-time (balance sheet, as of today) + period-scoped (P&L / TB for the window).
+  // D2 (never recognise an entry dated after today) is applied to BOTH columns so a future-dated entry
+  // never inflates the statements — identical to computeBooks' inPeriod bound.
+  const { rows } = await pool.query(
+    `SELECT la.code, la.name, la.type, la.normal,
+       COALESCE(SUM(CASE WHEN le.entry_date <= $5::date THEN ll.debit  ELSE 0 END),0)::float AS debit_all,
+       COALESCE(SUM(CASE WHEN le.entry_date <= $5::date THEN ll.credit ELSE 0 END),0)::float AS credit_all,
+       COALESCE(SUM(CASE WHEN le.entry_date >= $3::date AND le.entry_date < $4::date AND le.entry_date <= $5::date THEN ll.debit  ELSE 0 END),0)::float AS debit_p,
+       COALESCE(SUM(CASE WHEN le.entry_date >= $3::date AND le.entry_date < $4::date AND le.entry_date <= $5::date THEN ll.credit ELSE 0 END),0)::float AS credit_p
+     FROM ledger_accounts la
+     LEFT JOIN ledger_lines ll   ON ll.account_id = la.id
+     LEFT JOIN ledger_entries le ON le.id = ll.entry_id AND le.status = 'posted'
+     WHERE la.user_id = $1 AND la.entity_id = $2
+     GROUP BY la.id, la.code, la.name, la.type, la.normal
+     ORDER BY la.code`,
+    [userId, entityId, winStart, winEnd, _today]
+  );
+  const accounts = rows.map(a => {
+    const netAll = r2(a.debit_all - a.credit_all);       // debit-positive
+    const netP   = r2(a.debit_p   - a.credit_p);
+    return {
+      code: a.code, name: a.name, type: a.type, normal: a.normal,
+      debit_all: r2(a.debit_all), credit_all: r2(a.credit_all), net_all: netAll,
+      debit_period: r2(a.debit_p), credit_period: r2(a.credit_p), net_period: netP,
+      // presentation balance in the account's NATURAL direction (assets/expenses debit; the rest credit)
+      balance: r2(a.normal === 'debit' ? netAll : -netAll),
+    };
+  });
+  // Trial balance (as of today): every account's residual debit/credit; the two columns must be equal.
+  const tb = accounts.map(a => ({ code: a.code, name: a.name,
+    debit: a.net_all > 0 ? a.net_all : 0, credit: a.net_all < 0 ? r2(-a.net_all) : 0 }));
+  const tbDebit = r2(tb.reduce((s, l) => s + l.debit, 0));
+  const tbCredit = r2(tb.reduce((s, l) => s + l.credit, 0));
+  // Income statement (period): income is credit-natural, expenses debit-natural.
+  const income = r2(accounts.filter(a => a.type === 'income').reduce((s, a) => s + (-a.net_period), 0));
+  const expenses = r2(accounts.filter(a => a.type === 'expense').reduce((s, a) => s + a.net_period, 0));
+  const netProfit = r2(income - expenses);
+  // Balance sheet (as of today): assets debit-natural; liabilities & equity credit-natural. Net profit
+  // for the period-to-date (all-time up to today) is the un-closed earnings that make A = L + E hold.
+  const assets = r2(accounts.filter(a => a.type === 'asset').reduce((s, a) => s + a.net_all, 0));
+  const liabilities = r2(accounts.filter(a => a.type === 'liability').reduce((s, a) => s + (-a.net_all), 0));
+  const equityPosted = r2(accounts.filter(a => a.type === 'equity').reduce((s, a) => s + (-a.net_all), 0));
+  const earningsAll = r2(
+    accounts.filter(a => a.type === 'income').reduce((s, a) => s + (-a.net_all), 0) -
+    accounts.filter(a => a.type === 'expense').reduce((s, a) => s + a.net_all, 0)
+  );
+  const equity = r2(equityPosted + earningsAll);          // posted equity + retained (un-closed) earnings
+  return {
+    entityId, period: periodKind, window: { start: winStart, end: winEnd, today: _today },
+    accounts,
+    trialBalance: { lines: tb, totalDebit: tbDebit, totalCredit: tbCredit, balanced: Math.abs(tbDebit - tbCredit) < 0.01 },
+    incomeStatement: { income, expenses, netProfit },
+    balanceSheet: { assets, liabilities, equity, balanced: Math.abs(assets - (liabilities + equity)) < 0.01 },
+  };
 }
 
 async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null) {
@@ -7964,6 +8118,32 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
     units: newUnits, low_stock: newUnits < newMax * 0.1 ? 1 : 0
   });
 
+  // GL Phase 2 (dual-write shadow): a stock movement posts at its moved_at date. A SALE relieves
+  // inventory at FIFO cost — Dr COGS (5000) / Cr Inventory (1200) = cogs (the exact leg
+  // computeBooks recognises). A PURCHASE capitalises stock — Dr Inventory (1200) / Cr Cash (1000)
+  // = qty*unit_cost. Entry date via _toYmd(moved_at), the SAME reducer computeBooks uses to place the
+  // sale in its period. (adjustment: no cash/COGS effect modelled here.) Best-effort.
+  try {
+    const _mDate = FinFlowDates._toYmd(movement.moved_at);
+    const _ent = req.entityId || null;
+    if (type === 'sale' && cogs != null && +cogs > 0) {
+      await postLedgerEntry(pool, {
+        userId: scopeId(req), entityId: _ent, date: _mDate,
+        description: 'COGS — sale of ' + String(item.name || '').slice(0, 80),
+        sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
+        lines: [{ code: '5000', debit: +cogs, credit: 0 }, { code: '1200', debit: 0, credit: +cogs }],
+      });
+    } else if (type === 'purchase') {
+      const _cap = Math.round(qty * (parseFloat(unit_cost) || 0) * 100) / 100;
+      if (_cap > 0) await postLedgerEntry(pool, {
+        userId: scopeId(req), entityId: _ent, date: _mDate,
+        description: 'Inventory purchase — ' + String(item.name || '').slice(0, 80),
+        sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
+        lines: [{ code: '1200', debit: _cap, credit: 0 }, { code: '1000', debit: 0, credit: _cap }],
+      });
+    }
+  } catch (glErr) { console.error('[GL] inventory movement posting failed (shadow, non-fatal):', glErr && glErr.message); }
+
   res.status(201).json({ ...movement, cogs });
 }));
 
@@ -8214,7 +8394,88 @@ app.post('/api/fx-transactions/:id/settle', requireAuth, wrap(async (req, res) =
      WHERE id=$3 RETURNING *`,
     [settlementRate, realisedGL, tx.id]
   );
+  // GL Phase 2 (dual-write shadow): settling an FX position REALISES a gain/loss. 7000 (FX Gain/Loss)
+  // is an expense-type account (a loss debits it, a gain credits it — a gain reads as negative
+  // expense), Cash (1000) is the settlement contra. computeBooks does NOT fold FX into netProfit (the
+  // dashboard reports fxRealised as its own line), so this leg has no computeBooks oracle — its
+  // harness checks the ledger against the independent realised-GL formula. Dated at settlement. Best-effort.
+  try {
+    const _gl = Math.round((parseFloat(realisedGL) || 0) * 100) / 100;
+    if (_gl !== 0) {
+      const _lines = _gl > 0
+        ? [{ code: '1000', debit: _gl, credit: 0 }, { code: '7000', debit: 0, credit: _gl }]   // gain
+        : [{ code: '7000', debit: -_gl, credit: 0 }, { code: '1000', debit: 0, credit: -_gl }]; // loss
+      await postLedgerEntry(pool, {
+        userId: scopeId(req), entityId: tx.entity_id || null,
+        date: FinFlowDates._toYmd(updated.settled_at) || FinFlowDates.resolvedToday(new Date()),
+        description: 'FX settlement — ' + String(tx.foreign_currency || '').slice(0, 12),
+        sourceType: 'fx_settle', sourceId: tx.id, idempotencyKey: 'fx_settle:' + tx.id,
+        lines: _lines,
+      });
+    }
+  } catch (glErr) { console.error('[GL] fx settle posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(updated);
+}));
+
+// ── GL PHASE 3 — financial-statement read endpoints (additive; the ledger is still a dual-write
+// shadow, so these expose the books WITHOUT changing any existing dashboard/report path). All are
+// entity-scoped to req.entityId; the consolidated (all-entity) GL view is a later enhancement. ──
+function _glPeriodArgs(req) {
+  const q = req.query || {};
+  const period = (q.period === 'month' || q.period === 'quarter') ? q.period : 'year';
+  const fy = parseInt(q.fyStart, 10); const fyStart = Number.isInteger(fy) && fy >= 0 && fy <= 11 ? fy : 0;
+  let monthIdx = null;
+  if (period !== 'year') { const mi = parseInt(q.monthIdx, 10); if (Number.isInteger(mi) && mi >= 0 && mi <= 11) monthIdx = mi; }
+  return { period, fyStart, monthIdx };
+}
+app.get('/api/gl/statements', requireAuth, wrap(async (req, res) => {
+  if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity (consolidated GL is not yet available).', code: 'GL_ENTITY_REQUIRED' });
+  const { period, fyStart, monthIdx } = _glPeriodArgs(req);
+  res.json(await glFinancials(scopeId(req), req.entityId, period, fyStart, monthIdx));
+}));
+app.get('/api/gl/trial-balance', requireAuth, wrap(async (req, res) => {
+  if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity.', code: 'GL_ENTITY_REQUIRED' });
+  const { period, fyStart, monthIdx } = _glPeriodArgs(req);
+  const f = await glFinancials(scopeId(req), req.entityId, period, fyStart, monthIdx);
+  res.json({ entityId: f.entityId, window: f.window, ...f.trialBalance });
+}));
+app.get('/api/gl/pnl', requireAuth, wrap(async (req, res) => {
+  if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity.', code: 'GL_ENTITY_REQUIRED' });
+  const { period, fyStart, monthIdx } = _glPeriodArgs(req);
+  const f = await glFinancials(scopeId(req), req.entityId, period, fyStart, monthIdx);
+  const lines = f.accounts.filter(a => a.type === 'income' || a.type === 'expense')
+    .map(a => ({ code: a.code, name: a.name, type: a.type, amount: a.type === 'income' ? -a.net_period : a.net_period }));
+  res.json({ entityId: f.entityId, period: f.period, window: f.window, lines, ...f.incomeStatement });
+}));
+app.get('/api/gl/balance-sheet', requireAuth, wrap(async (req, res) => {
+  if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity.', code: 'GL_ENTITY_REQUIRED' });
+  const { period, fyStart, monthIdx } = _glPeriodArgs(req);
+  const f = await glFinancials(scopeId(req), req.entityId, period, fyStart, monthIdx);
+  const grp = t => f.accounts.filter(a => a.type === t).map(a => ({ code: a.code, name: a.name, balance: a.balance }));
+  res.json({ entityId: f.entityId, window: f.window, assets: grp('asset'), liabilities: grp('liability'), equity: grp('equity'), totals: f.balanceSheet });
+}));
+app.get('/api/gl/accounts', requireAuth, wrap(async (req, res) => {
+  if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity.', code: 'GL_ENTITY_REQUIRED' });
+  const f = await glFinancials(scopeId(req), req.entityId, 'year');
+  res.json({ entityId: f.entityId, accounts: f.accounts });
+}));
+app.get('/api/gl/journal', requireAuth, wrap(async (req, res) => {
+  if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity.', code: 'GL_ENTITY_REQUIRED' });
+  const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 200));
+  const { rows: entries } = await pool.query(
+    `SELECT id, entry_date::text AS entry_date, description, source_type, source_id, currency, status, created_at
+       FROM ledger_entries WHERE user_id=$1 AND entity_id=$2 ORDER BY entry_date DESC, id DESC LIMIT $3`,
+    [scopeId(req), req.entityId, limit]);
+  const ids = entries.map(e => e.id);
+  let linesByEntry = {};
+  if (ids.length) {
+    const { rows: lines } = await pool.query(
+      `SELECT ll.entry_id, la.code, la.name, ll.debit::float AS debit, ll.credit::float AS credit, ll.memo
+         FROM ledger_lines ll JOIN ledger_accounts la ON la.id=ll.account_id
+        WHERE ll.entry_id = ANY($1::int[]) ORDER BY ll.id ASC`, [ids]);
+    for (const l of lines) { (linesByEntry[l.entry_id] = linesByEntry[l.entry_id] || []).push(l); }
+  }
+  res.json({ entityId: req.entityId, entries: entries.map(e => ({ ...e, lines: linesByEntry[e.id] || [] })) });
 }));
 
 app.get('/api/fx-summary', requireAuth, wrap(async (req, res) => {
@@ -8484,6 +8745,7 @@ module.exports = app;
 // Test hook: expose the canonical books calculator for harness verification (no behavior
 // change in prod — the app is still the default export).
 module.exports.computeBooks = computeBooks;
+module.exports.glFinancials = glFinancials;   // GL Phase 3 — ledger-derived financial statements (test surface)
 // Test hook: expose the recurring scheduler for harness verification (no behavior change in
 // prod — it still runs on boot + on its interval; this only makes it drivable under test).
 module.exports.runRecurringScheduler = runRecurringScheduler;

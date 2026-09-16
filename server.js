@@ -1641,6 +1641,17 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
     throw e;
   }
   logAudit(req, 'CREATE', 'expenses', row.id, null, row);
+  // GL Phase 2 (dual-write shadow): an expense is Dr Operating Expenses / Cr Cash at the expense date
+  // (cash basis — matches computeBooks' expense leg; bills carry the AP/unpaid side separately). Best-effort.
+  try {
+    const _ea = parseFloat(row.amount) || 0;
+    await postLedgerEntry(pool, {
+      userId: scopeId(req), entityId: eid, date: edate,
+      description: 'Expense — ' + description.trim().slice(0, 80),
+      sourceType: 'expense', sourceId: row.id, idempotencyKey: 'expense:' + row.id,
+      lines: [{ code: '6000', debit: _ea, credit: 0 }, { code: '1000', debit: 0, credit: _ea }],
+    });
+  } catch (glErr) { console.error('[GL] expense posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.status(201).json(row);
 }));
 app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
@@ -6912,6 +6923,18 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   }
   await recalcInvoiceStatus(pool, parseInt(invoice_id), req.session.userId);
   await auditLog(pool, { userId: req.session.userId, entityId: req.entityId, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE', req });
+  // GL Phase 2 (dual-write shadow): a payment settles the receivable — Dr Cash / Cr AR at the payment
+  // date (revenue is untouched; it was recognized at issue). Posts to the INVOICE's entity so it nets
+  // against that AR. Best-effort — never breaks recording a payment.
+  try {
+    await postLedgerEntry(pool, {
+      userId: req.session.userId, entityId: inv.entity_id,
+      date: _pDate,
+      description: 'Invoice payment — ' + (inv.client || ('#' + invoice_id)),
+      sourceType: 'invoice_payment', sourceId: rows[0].id, idempotencyKey: 'invoice_payment:' + rows[0].id,
+      lines: [{ code: '1000', debit: amt, credit: 0 }, { code: '1100', debit: 0, credit: amt }],
+    });
+  } catch (glErr) { console.error('[GL] invoice payment posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.status(201).json(rows[0]);
 }));
 

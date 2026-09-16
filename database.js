@@ -684,6 +684,59 @@ async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_fx_transactions_user ON fx_transactions(user_id)`);
 
+    // ── GENERAL LEDGER (double-entry) — GL_DESIGN.md ─────────────────────────────
+    // Typed tables (not JSONB), mirroring invoice_payments/payroll_runs. The ledger becomes the
+    // future source of truth; Phase 1 = schema + seeded chart of accounts (no behaviour change yet).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ledger_accounts (
+        id          SERIAL PRIMARY KEY, user_id INTEGER, entity_id INTEGER,
+        code        TEXT, name TEXT,
+        type        TEXT,                      -- asset | liability | equity | income | expense
+        normal      TEXT,                      -- debit | credit  (side that INCREASES the account)
+        currency    TEXT,
+        is_system   BOOLEAN DEFAULT FALSE,     -- posting anchors (AR/AP/Cash/...) — never deletable
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_ledger_accounts_user ON ledger_accounts(user_id)`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_accounts_uniq ON ledger_accounts(user_id, entity_id, code)`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ledger_entries (
+        id          SERIAL PRIMARY KEY, user_id INTEGER, entity_id INTEGER,
+        entry_date  DATE,                       -- calendar date (Rule 10: compared as YYYY-MM-DD strings)
+        description TEXT,
+        source_type TEXT,                       -- invoice|invoice_payment|expense|bill|bill_payment|sales_receipt|payroll_run|inventory|cogs|credit_note|vendor_credit|fx|manual
+        source_id   INTEGER,
+        currency    TEXT,
+        status      TEXT DEFAULT 'posted',      -- posted | reversed
+        reversal_of INTEGER,
+        idempotency_key TEXT,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_ledger_entries_user ON ledger_entries(user_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_ledger_entries_scope ON ledger_entries(user_id, entity_id, entry_date)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_ledger_entries_source ON ledger_entries(source_type, source_id)`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_entries_idem ON ledger_entries(user_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ledger_lines (
+        id          SERIAL PRIMARY KEY,
+        entry_id    INTEGER REFERENCES ledger_entries(id) ON DELETE CASCADE,
+        user_id     INTEGER, entity_id INTEGER,
+        account_id  INTEGER,
+        debit       NUMERIC(14,2) DEFAULT 0,
+        credit      NUMERIC(14,2) DEFAULT 0,
+        debit_base  NUMERIC(14,2) DEFAULT 0,    -- converted to account base currency (reuses the FX engine)
+        credit_base NUMERIC(14,2) DEFAULT 0,
+        memo        TEXT
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_ledger_lines_entry ON ledger_lines(entry_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_ledger_lines_account ON ledger_lines(account_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_ledger_lines_scope ON ledger_lines(user_id, entity_id)`);
+
     // ── ACCOUNTANT MESSAGES ──────────────────────────────────────────────────────
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_messages (
@@ -1073,4 +1126,40 @@ const db = {
 // To restore demo seeding for development only, add it behind:
 //   if (process.env.NODE_ENV !== 'production') { ... }
 
-module.exports = { db, initDB, pool, rowToObj };
+// ── GENERAL LEDGER — default chart of accounts (GL_DESIGN.md) ─────────────────────
+// A standard small-business chart. `normal` is the side that INCREASES the account. is_system
+// accounts are the posting anchors and must never be deleted. Seeded per entity.
+const DEFAULT_COA = [
+  { code: '1000', name: 'Cash',                 type: 'asset',     normal: 'debit',  is_system: true  },
+  { code: '1100', name: 'Accounts Receivable',  type: 'asset',     normal: 'debit',  is_system: true  },
+  { code: '1200', name: 'Inventory',            type: 'asset',     normal: 'debit',  is_system: true  },
+  { code: '2000', name: 'Accounts Payable',     type: 'liability', normal: 'credit', is_system: true  },
+  { code: '2100', name: 'Tax Payable',          type: 'liability', normal: 'credit', is_system: true  },
+  { code: '2200', name: 'Payroll Liabilities',  type: 'liability', normal: 'credit', is_system: true  },
+  { code: '3000', name: 'Retained Earnings',    type: 'equity',    normal: 'credit', is_system: true  },
+  { code: '3100', name: "Owner's Equity",       type: 'equity',    normal: 'credit', is_system: false },
+  { code: '4000', name: 'Revenue',              type: 'income',    normal: 'credit', is_system: true  },
+  { code: '5000', name: 'Cost of Goods Sold',   type: 'expense',   normal: 'debit',  is_system: true  },
+  { code: '6000', name: 'Operating Expenses',   type: 'expense',   normal: 'debit',  is_system: true  },
+  { code: '6100', name: 'Payroll Expense',      type: 'expense',   normal: 'debit',  is_system: true  },
+  { code: '7000', name: 'FX Gain/Loss',         type: 'expense',   normal: 'debit',  is_system: true  },
+];
+
+// Idempotently seed the default chart of accounts for one entity. Safe to call repeatedly.
+async function ensureLedgerAccountsForEntity(client, userId, entityId, currency = 'USD') {
+  for (const a of DEFAULT_COA) {
+    await client.query(
+      `INSERT INTO ledger_accounts (user_id, entity_id, code, name, type, normal, currency, is_system)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (user_id, entity_id, code) DO NOTHING`,
+      [userId, entityId, a.code, a.name, a.type, a.normal, currency, !!a.is_system]
+    );
+  }
+  const { rows } = await client.query(
+    `SELECT * FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2 ORDER BY code`,
+    [userId, entityId]
+  );
+  return rows;
+}
+
+module.exports = { db, initDB, pool, rowToObj, DEFAULT_COA, ensureLedgerAccountsForEntity };

@@ -2929,6 +2929,20 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
     throw e;
   }
   await recordAudit(pool, { userId: req.session.userId, entityId: _billEnt, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  // GL Phase 2 (dual-write shadow): an issued bill accrues expense — Dr Operating Expenses / Cr AP at
+  // its issue date (mirror of the invoice revenue leg; RECOGNIZED_BILL allowlist). A bill payment
+  // settles AP separately (payments_made). Best-effort.
+  if (RECOGNIZED_BILL.has(String(status).toLowerCase())) {
+    try {
+      await postLedgerEntry(pool, {
+        userId: scopeId(req), entityId: _billEnt,
+        date: issue_date || (row.created_at ? String(row.created_at).slice(0, 10) : null),
+        description: 'Bill — ' + String(vendor).slice(0, 80),
+        sourceType: 'bill', sourceId: row.id, idempotencyKey: 'bill:' + row.id,
+        lines: [{ code: '6000', debit: _amt, credit: 0 }, { code: '2000', debit: 0, credit: _amt }],
+      });
+    } catch (glErr) { console.error('[GL] bill posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  }
   res.json(row);
 }));
 app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {

@@ -8,7 +8,7 @@ const cors         = require('cors');
 const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
-const { db, initDB, pool, rowToObj } = require('./database');
+const { db, initDB, pool, rowToObj, ensureLedgerAccountsForEntity } = require('./database');
 const totp = require('./totp');
 const { startAnomalyMonitor } = require('./audit-anomalies');
 const FinFlowDates = require('./public/finflow-dates.js'); // F87 — canonical calendar-date/period resolver (Rule 10)
@@ -1546,6 +1546,20 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
     throw e;
   }
   logAudit(req, 'CREATE', 'invoices', row.id, null, row);
+  // GL Phase 2 (dual-write shadow): an ISSUED invoice is Dr AR / Cr Revenue at its issue date —
+  // mirrors computeBooks' issue-based accrual (draft is not recognized, so posts nothing). Best-effort:
+  // a shadow posting failure must NEVER break invoice creation (reports read computeBooks until Phase 5).
+  if (String(status).toLowerCase() !== 'draft') {
+    try {
+      await postLedgerEntry(pool, {
+        userId: scopeId(req), entityId: eid,
+        date: issue_date || (row.created_at ? String(row.created_at).slice(0, 10) : null),
+        description: 'Invoice — ' + client.trim().slice(0, 80),
+        sourceType: 'invoice', sourceId: row.id, idempotencyKey: 'invoice:' + row.id,
+        lines: [{ code: '1100', debit: _amt, credit: 0 }, { code: '4000', debit: 0, credit: _amt }],
+      });
+    } catch (glErr) { console.error('[GL] invoice posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  }
   res.status(201).json(row);
 }));
 app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
@@ -7397,6 +7411,46 @@ async function fifoItemSales(pool, inventoryId) {
 // NOTE (F26): sales_receipts / payments_received have no entity_id, so they are always
 //   user-level; for multi-entity users they attribute to whichever entity is viewed
 //   (tracked as F26). Every other source is entity-scoped.
+// ── GENERAL LEDGER — posting engine (GL_DESIGN.md Phase 2) ────────────────────────
+// Post ONE balanced double-entry for a source event. DUAL-WRITE SHADOW: reports still read
+// computeBooks; this posts alongside so the ledger can be proven equal to it (computeBooks is the
+// oracle). Balanced-or-throw. Idempotent on idempotencyKey (+ 23505 race recovery). base==native for
+// now (per-entity parity); consolidation base conversion is Phase 3.
+async function postLedgerEntry(client, { userId, entityId, date, description, sourceType, sourceId = null, currency = 'USD', idempotencyKey = null, lines = [] }) {
+  let { rows: accts } = await client.query(`SELECT id, code FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2`, [userId, entityId]);
+  if (!accts.length) { await ensureLedgerAccountsForEntity(client, userId, entityId, currency); ({ rows: accts } = await client.query(`SELECT id, code FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2`, [userId, entityId])); }
+  const idByCode = Object.fromEntries(accts.map(a => [a.code, a.id]));
+  const norm = lines.map(l => ({ code: l.code, debit: +(+l.debit || 0).toFixed(2), credit: +(+l.credit || 0).toFixed(2) }));
+  const totD = norm.reduce((sm, l) => sm + l.debit, 0), totC = norm.reduce((sm, l) => sm + l.credit, 0);
+  if (Math.abs(totD - totC) > 0.01) throw new Error('ledger entry does not balance: debit=' + totD + ' credit=' + totC + ' (' + sourceType + ')');
+  for (const l of norm) if (!idByCode[l.code]) throw new Error('ledger account not found: ' + l.code);
+  if (idempotencyKey) {
+    const { rows: ex } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [userId, idempotencyKey]);
+    if (ex[0]) return ex[0].id;
+  }
+  let entryId;
+  try {
+    const { rows: [entry] } = await client.query(
+      `INSERT INTO ledger_entries (user_id, entity_id, entry_date, description, source_type, source_id, currency, status, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'posted',$8) RETURNING id`,
+      [userId, entityId, date, (description || '').slice(0, 500), sourceType, sourceId, currency, idempotencyKey]);
+    entryId = entry.id;
+  } catch (e) {
+    if (e.code === '23505' && idempotencyKey) {
+      const { rows: ex } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [userId, idempotencyKey]);
+      if (ex[0]) return ex[0].id;
+    }
+    throw e;
+  }
+  for (const l of norm) {
+    await client.query(
+      `INSERT INTO ledger_lines (entry_id, user_id, entity_id, account_id, debit, credit, debit_base, credit_base)
+       VALUES ($1,$2,$3,$4,$5,$6,$5,$6)`,
+      [entryId, userId, entityId, idByCode[l.code], l.debit, l.credit]);
+  }
+  return entryId;
+}
+
 async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const num = v => parseFloat(v) || 0;

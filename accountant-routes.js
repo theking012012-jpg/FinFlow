@@ -224,7 +224,7 @@ function _openSse(res) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit) {
+module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile) {
   // F90 Phase B: recordAudit is the single audited write path (threaded from server.js). Accountant
   // actions on a client's books log with actor_type='accountant' + actor_id=accountantId (derived
   // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
@@ -775,8 +775,27 @@ If you cannot find a field, use null. Be concise.`;
       .filter(r => r.data?.status === 'unpaid' && entMatch(r.entity_id) && _permit(r.entity_id))
       .reduce((s, r) => s + (parseFloat(r.data?.amount) || 0), 0);
 
+    // ── FinFlux GL CERTIFICATION (Phase 5 moat) — for each PERMITTED entity, FinFlux's own ledger
+    // says whether the books tie out: trial balance to zero, balance sheet balances, and the GL P&L
+    // equals the canonical reports (ex-FX). `certified` is the AND across permitted entities — a trust
+    // signal no competitor has: an accountant sees the client's books are FinFlux-certified before
+    // touching them. Best-effort: if the GL isn't reconcilable (e.g. never backfilled), certified=null.
+    const certification = { certified: null, entities: {} };
+    if (typeof glReconcile === 'function') {
+      try {
+        let allBalanced = _permittedIds.length > 0;
+        for (const id of _permittedIds) {
+          const rec = await glReconcile(userId, id, fyStartIdx);
+          certification.entities[id] = { booksBalanced: rec.booksBalanced, trialBalanced: rec.trialBalanced, balanceSheetBalanced: rec.balanceSheetBalanced, reconciledToReports: rec.reconciledToReports };
+          if (!rec.booksBalanced) allBalanced = false;
+        }
+        certification.certified = allBalanced;
+      } catch (e) { certification.certified = null; certification.error = 'unavailable'; }
+    }
+
     return res.json({
       accessLevel: access.rows[0].access_level,
+      certification,
       // Fine-grained grants so the accountant UI hides 'none' entities and disables writes on
       // 'view' ones. entityAccess maps every entity the OWNER has to its effective level (permitted
       // or not), but the arrays below carry ONLY permitted-entity rows.

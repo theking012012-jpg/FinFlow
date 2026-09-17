@@ -4153,7 +4153,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
 const registerAccountantRoutes = require('./accountant-routes');
 // computeBooks is a hoisted declaration (defined below) closing over db+pool — pass it so
 // the accountant /books view shares the one canonical, entity-scoped basis (F9).
-registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit);  // F90 Phase B: pass the single audited write path
+registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
 
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.
@@ -7120,6 +7120,18 @@ app.post('/api/bank-reconciliation/book-expense', requireAuth, wrap(async (req, 
   });
   await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id, table: 'expenses', recordId: expense.id, action: 'CREATE', newData: expense, req });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'expense', reconcile_ref: expense.id });
+  // GL Phase 2 (dual-write): a bank debit booked as an expense posts EXACTLY like POST /api/expenses —
+  // Dr Operating Expenses / Cr Cash at the expense date, keyed 'expense:'+id (so it is identical to what
+  // the backfill would produce; db.insert above bypasses the route's own posting). Best-effort.
+  try {
+    const _ea = parseFloat(expense.amount) || 0;
+    await postLedgerEntry(pool, {
+      userId: scopeId(req), entityId: row.entity_id, date: expense.expense_date,
+      description: 'Expense \u2014 ' + String(expense.description || '').slice(0, 80),
+      sourceType: 'expense', sourceId: expense.id, idempotencyKey: 'expense:' + expense.id,
+      lines: [{ code: '6000', debit: _ea, credit: 0 }, { code: '1000', debit: 0, credit: _ea }],
+    });
+  } catch (glErr) { console.error('[GL] bank book-expense posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true, booked: true, expense });
 }));
 
@@ -7147,6 +7159,20 @@ app.post('/api/bank-reconciliation/match-bill', requireAuth, wrap(async (req, re
   await recalcBillStatus(pool, billId, req.session.userId);
   await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id, table: 'payments_made', recordId: payment.id, action: 'CREATE', newData: payment, req });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'bill', reconcile_ref: payment.id, reconcile_bill_id: billId });
+  // GL Phase 2 (dual-write): a bank debit matched to a bill SETTLES AP, EXACTLY like a linked
+  // POST /api/payments-made — Dr Accounts Payable / Cr Cash, to the bill's entity, keyed
+  // 'payment_made:'+id (the bill already accrued the expense; no double count). Best-effort.
+  try {
+    const _pmAmt = parseFloat(payment.amount) || 0;
+    let _pmEnt = row.entity_id;
+    if (br.entity_id != null) _pmEnt = br.entity_id;
+    await postLedgerEntry(pool, {
+      userId: scopeId(req), entityId: _pmEnt, date: payment.date,
+      description: 'Payment made \u2014 ' + String(payment.vendor || ''),
+      sourceType: 'bill_payment', sourceId: payment.id, idempotencyKey: 'payment_made:' + payment.id,
+      lines: [{ code: '2000', debit: _pmAmt, credit: 0 }, { code: '1000', debit: 0, credit: _pmAmt }],
+    });
+  } catch (glErr) { console.error('[GL] bank match-bill posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true, matched: true, bill_id: billId, payment });
 }));
 
@@ -7642,6 +7668,135 @@ async function glFinancials(userId, entityId, period = 'year', fyStartIdx = 0, m
   };
 }
 
+
+// ════════════════════════════════════════════════════════════════════════════════
+// GL PHASE 4 — HISTORICAL BACKFILL (owner-gated, idempotent, additive)
+// Replays every existing source document through the SAME posting rules the dual-write routes use,
+// with the SAME idempotency keys ('<type>:<id>'). Because postLedgerEntry is idempotent on that key,
+// a doc that already posted (via dual-write) is a no-op — so backfill and dual-write coexist safely
+// and re-running is free. No source table is mutated. Recognition rules mirror each route exactly:
+// invoice(status≠draft), bill(RECOGNIZED_BILL), payroll(approved|paid, Σ lines), inventory(FIFO cogs /
+// capitalised purchase), credit/vendor notes(Open|Applied), fx(settled). Reports per-type posted vs
+// already-present. dryRun computes the report WITHOUT writing.
+async function backfillLedgerForUser(userId, opts = {}) {
+  const onlyEntity = (opts.entityId != null && opts.entityId !== '') ? Number(opts.entityId) : null;
+  const dry = !!opts.dryRun;
+  const keep = r => onlyEntity == null || r.entity_id === onlyEntity;        // JSONB rows: post to their own entity
+  const report = { posted: 0, existing: 0, byType: {} };
+  const note = (t, existed) => { const r = report.byType[t] = report.byType[t] || { posted: 0, existing: 0 }; if (existed) { r.existing++; report.existing++; } else { r.posted++; report.posted++; } };
+  if (!dry) {
+    const { rows: ents } = await pool.query(`SELECT id FROM entities WHERE user_id=$1`, [userId]);
+    for (const e of ents) if (onlyEntity == null || e.id === onlyEntity) await ensureLedgerAccountsForEntity(pool, userId, e.id);
+  }
+  const post = async ({ entityId, date, description, sourceType, sourceId, idempotencyKey, lines }) => {
+    const { rows: pre } = await pool.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [userId, idempotencyKey]);
+    const existed = !!pre[0];
+    if (!dry && !existed) await postLedgerEntry(pool, { userId, entityId: entityId || null, date, description, sourceType, sourceId, idempotencyKey, lines });
+    note(sourceType, existed);
+  };
+  const slice10 = v => v ? String(v).slice(0, 10) : null;
+  // 1) invoices — issued (status ≠ draft) → Dr AR / Cr Revenue at issue_date
+  for (const inv of await db.allByUser('invoices', userId, keep)) {
+    if (String(inv.status || '').toLowerCase() === 'draft') continue;
+    const amt = parseFloat(inv.amount) || 0;
+    await post({ entityId: inv.entity_id, date: inv.issue_date || slice10(inv.created_at), description: 'Invoice — ' + String(inv.client || '').slice(0, 80), sourceType: 'invoice', sourceId: inv.id, idempotencyKey: 'invoice:' + inv.id, lines: [{ code: '1100', debit: amt, credit: 0 }, { code: '4000', debit: 0, credit: amt }] });
+  }
+  // 2) invoice payments → Dr Cash / Cr AR at payment_date, to the invoice's entity
+  { const { rows } = await pool.query(`SELECT ip.id, ip.amount, ip.payment_date::text AS payment_date, i.entity_id AS inv_entity, i.data->>'client' AS client FROM invoice_payments ip JOIN invoices i ON i.id=ip.invoice_id WHERE ip.user_id=$1`, [userId]);
+    for (const p of rows) { if (onlyEntity != null && p.inv_entity !== onlyEntity) continue; const amt = parseFloat(p.amount) || 0;
+      await post({ entityId: p.inv_entity, date: p.payment_date, description: 'Invoice payment — ' + (p.client || ''), sourceType: 'invoice_payment', sourceId: p.id, idempotencyKey: 'invoice_payment:' + p.id, lines: [{ code: '1000', debit: amt, credit: 0 }, { code: '1100', debit: 0, credit: amt }] }); } }
+  // 3) expenses → Dr Opex / Cr Cash at expense_date
+  for (const e of await db.allByUser('expenses', userId, keep)) {
+    const amt = parseFloat(e.amount) || 0;
+    await post({ entityId: e.entity_id, date: e.expense_date, description: 'Expense — ' + String(e.description || '').slice(0, 80), sourceType: 'expense', sourceId: e.id, idempotencyKey: 'expense:' + e.id, lines: [{ code: '6000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }] });
+  }
+  // 4) bills — RECOGNIZED_BILL → Dr Opex / Cr AP at issue_date
+  for (const b of await db.allByUser('bills', userId, keep)) {
+    if (!RECOGNIZED_BILL.has(String(b.status || '').toLowerCase())) continue;
+    const amt = parseFloat(b.amount) || 0;
+    await post({ entityId: b.entity_id, date: b.issue_date || slice10(b.created_at), description: 'Bill — ' + String(b.vendor || '').slice(0, 80), sourceType: 'bill', sourceId: b.id, idempotencyKey: 'bill:' + b.id, lines: [{ code: '6000', debit: amt, credit: 0 }, { code: '2000', debit: 0, credit: amt }] });
+  }
+  // 5) payments made — linked settles AP (Dr AP / Cr Cash); orphan is a direct expense (Dr Opex / Cr Cash)
+  for (const pm of await db.allByUser('payments_made', userId, () => true)) {
+    const amt = parseFloat(pm.amount) || 0;
+    const billId = (pm.bill_id != null && pm.bill_id !== '') ? Number(pm.bill_id) : null;
+    let ent = pm.entity_id, lines;
+    if (billId != null) { const { rows: br } = await pool.query(`SELECT entity_id FROM bills WHERE id=$1 AND user_id=$2 LIMIT 1`, [billId, userId]); if (br[0] && br[0].entity_id != null) ent = br[0].entity_id; lines = [{ code: '2000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }]; }
+    else lines = [{ code: '6000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }];
+    if (onlyEntity != null && ent !== onlyEntity) continue;
+    await post({ entityId: ent, date: pm.date, description: 'Payment made — ' + String(pm.vendor || ''), sourceType: 'bill_payment', sourceId: pm.id, idempotencyKey: 'payment_made:' + pm.id, lines });
+  }
+  // 6) sales receipts → Dr Cash / Cr Revenue at date
+  for (const s of await db.allByUser('sales_receipts', userId, keep)) {
+    const amt = parseFloat(s.amount) || 0;
+    await post({ entityId: s.entity_id, date: s.date, description: 'Sales receipt — ' + String(s.customer || ''), sourceType: 'sales_receipt', sourceId: s.id, idempotencyKey: 'sales_receipt:' + s.id, lines: [{ code: '1000', debit: amt, credit: 0 }, { code: '4000', debit: 0, credit: amt }] });
+  }
+  // 7) payroll — approved|paid → Dr Payroll Expense / Cr Payroll Liabilities = Σ(gross+bonus+overtime) at period
+  { const { rows } = await pool.query(`SELECT pr.id, pr.entity_id, pr.period, pr.run_date::text AS run_date, COALESCE(SUM(COALESCE(prl.gross,0)+COALESCE(prl.bonus,0)+COALESCE(prl.overtime,0)),0)::float AS amt FROM payroll_runs pr LEFT JOIN payroll_run_lines prl ON prl.run_id=pr.id WHERE pr.user_id=$1 AND lower(pr.status) IN ('approved','paid') GROUP BY pr.id`, [userId]);
+    for (const r of rows) { if (onlyEntity != null && r.entity_id !== onlyEntity) continue; const amt = Math.round((r.amt || 0) * 100) / 100; if (!(amt > 0)) continue;
+      await post({ entityId: r.entity_id, date: FinFlowDates.payrollPeriodYmd(r.period, r.run_date), description: 'Payroll — ' + String(r.period || '').slice(0, 80), sourceType: 'payroll_run', sourceId: r.id, idempotencyKey: 'payroll_run:' + r.id, lines: [{ code: '6100', debit: amt, credit: 0 }, { code: '2200', debit: 0, credit: amt }] }); } }
+  // 8) inventory — purchase capitalises (Dr Inventory / Cr Cash); sale relieves at FIFO cost (Dr COGS / Cr Inventory)
+  { const { rows: items } = await pool.query(`SELECT DISTINCT inventory_id, entity_id FROM inventory_movements WHERE user_id=$1`, [userId]);
+    for (const it of items) {
+      if (onlyEntity != null && it.entity_id !== onlyEntity) continue;
+      const { rows: purch } = await pool.query(`SELECT id, quantity, unit_cost, moved_at::text AS moved FROM inventory_movements WHERE user_id=$1 AND inventory_id=$2 AND type='purchase' ORDER BY moved_at ASC, id ASC`, [userId, it.inventory_id]);
+      for (const p of purch) { const cap = Math.round((parseFloat(p.quantity) || 0) * (parseFloat(p.unit_cost) || 0) * 100) / 100; if (!(cap > 0)) continue;
+        await post({ entityId: it.entity_id, date: FinFlowDates._toYmd(p.moved), description: 'Inventory purchase', sourceType: 'inventory_movement', sourceId: p.id, idempotencyKey: 'inventory_movement:' + p.id, lines: [{ code: '1200', debit: cap, credit: 0 }, { code: '1000', debit: 0, credit: cap }] }); }
+      const sales = await fifoItemSales(pool, it.inventory_id);
+      const { rows: saleRows } = await pool.query(`SELECT id, moved_at::text AS moved FROM inventory_movements WHERE inventory_id=$1 AND type='sale' ORDER BY moved_at ASC, id ASC`, [it.inventory_id]);
+      for (let i = 0; i < saleRows.length && i < sales.length; i++) { const s = sales[i], m = saleRows[i]; const cogs = Math.round((s.cogs || 0) * 100) / 100; if (!(cogs > 0)) continue;
+        await post({ entityId: it.entity_id, date: FinFlowDates._toYmd(m.moved), description: 'COGS — sale', sourceType: 'inventory_movement', sourceId: m.id, idempotencyKey: 'inventory_movement:' + m.id, lines: [{ code: '5000', debit: cogs, credit: 0 }, { code: '1200', debit: 0, credit: cogs }] }); } } }
+  // 9) credit notes — Open|Applied → Dr Revenue / Cr AR (contra) at date
+  for (const cn of await db.allByUser('credit_notes', userId, keep)) {
+    if (!['open', 'applied'].includes(String(cn.status || '').toLowerCase())) continue;
+    const amt = parseFloat(cn.amount) || 0; if (!(amt > 0)) continue;
+    await post({ entityId: cn.entity_id, date: cn.date || slice10(cn.created_at), description: 'Credit note — ' + String(cn.customer || '').slice(0, 80), sourceType: 'credit_note', sourceId: cn.id, idempotencyKey: 'credit_note:' + cn.id, lines: [{ code: '4000', debit: amt, credit: 0 }, { code: '1100', debit: 0, credit: amt }] });
+  }
+  // 10) vendor credits — Open|Applied → Dr AP / Cr Opex (contra) at date
+  for (const vc of await db.allByUser('vendor_credits', userId, keep)) {
+    if (!['open', 'applied'].includes(String(vc.status || '').toLowerCase())) continue;
+    const amt = parseFloat(vc.amount) || 0; if (!(amt > 0)) continue;
+    await post({ entityId: vc.entity_id, date: vc.date || slice10(vc.created_at), description: 'Vendor credit — ' + String(vc.vendor || '').slice(0, 80), sourceType: 'vendor_credit', sourceId: vc.id, idempotencyKey: 'vendor_credit:' + vc.id, lines: [{ code: '2000', debit: amt, credit: 0 }, { code: '6000', debit: 0, credit: amt }] });
+  }
+  // 11) fx settlements — Dr/Cr Cash ↔ FX Gain/Loss = realised gain/loss at settled_at
+  { const { rows } = await pool.query(`SELECT id, entity_id, realised_gain_loss, settled_at::text AS settled FROM fx_transactions WHERE user_id=$1 AND status='settled'`, [userId]);
+    for (const t of rows) { if (onlyEntity != null && t.entity_id !== onlyEntity) continue; const gl = Math.round((parseFloat(t.realised_gain_loss) || 0) * 100) / 100; if (gl === 0) continue;
+      const lines = gl > 0 ? [{ code: '1000', debit: gl, credit: 0 }, { code: '7000', debit: 0, credit: gl }] : [{ code: '7000', debit: -gl, credit: 0 }, { code: '1000', debit: 0, credit: -gl }];
+      await post({ entityId: t.entity_id, date: FinFlowDates._toYmd(t.settled) || FinFlowDates.resolvedToday(new Date()), description: 'FX settlement — ' + String(t.foreign_currency || '').slice(0, 12), sourceType: 'fx_settle', sourceId: t.id, idempotencyKey: 'fx_settle:' + t.id, lines }); } }
+  return report;
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════════
+// GL PHASE 5 — CONTINUOUS CROSS-CHECK + "BOOKS BALANCED ✓" TRUST SIGNAL
+// The GL is the certified book of record. computeBooks stays the display/consolidation engine, but is
+// now continuously proven against the ledger: for each entity we confirm (a) the trial balance ties to
+// zero, (b) the balance sheet balances (A = L + E), and (c) the ledger P&L equals computeBooks for the
+// parts the aggregate tracks (revenue, and cogs+opex excluding FX which computeBooks doesn't fold in).
+// booksBalanced is the AND of all three — a live trust indicator the product can surface. It is
+// RED-provable: break any ledger entry and the signal drops to false (see verify-gl-verify.js).
+async function glReconcile(userId, entityId, fyStartIdx = 0) {
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const f = await glFinancials(userId, entityId, 'year', fyStartIdx);
+  const books = await computeBooks(userId, entityId, 'year', null, fyStartIdx);
+  const glExpNonFx = r2(f.accounts.filter(a => a.type === 'expense' && a.code !== '7000').reduce((s, a) => s + a.net_period, 0));
+  const revenueOk = Math.abs(f.incomeStatement.income - books.revenue) < 0.01;
+  const expenseOk = Math.abs(glExpNonFx - (books.cogs + books.opex)) < 0.01;
+  const trialBalanced = f.trialBalance.balanced;
+  const balanceSheetBalanced = f.balanceSheet.balanced;
+  const reconciledToReports = revenueOk && expenseOk;
+  return {
+    entityId,
+    booksBalanced: trialBalanced && balanceSheetBalanced && reconciledToReports,
+    trialBalanced, balanceSheetBalanced, reconciledToReports,
+    detail: {
+      trialDebit: f.trialBalance.totalDebit, trialCredit: f.trialBalance.totalCredit,
+      assets: f.balanceSheet.assets, liabilities: f.balanceSheet.liabilities, equity: f.balanceSheet.equity,
+      glRevenue: f.incomeStatement.income, reportsRevenue: r2(books.revenue),
+      glExpensesExFx: glExpNonFx, reportsCogsOpex: r2(books.cogs + books.opex),
+    },
+  };
+}
 async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const num = v => parseFloat(v) || 0;
@@ -8428,6 +8583,43 @@ function _glPeriodArgs(req) {
   if (period !== 'year') { const mi = parseInt(q.monthIdx, 10); if (Number.isInteger(mi) && mi >= 0 && mi <= 11) monthIdx = mi; }
   return { period, fyStart, monthIdx };
 }
+app.post('/api/gl/backfill', requireAuth, wrap(async (req, res) => {
+  // ⛔ OWNER-GATED (Phase 4, Rule 8): only the account owner / all-access may rebuild the books.
+  if (Array.isArray(req.entityAccess)) return res.status(403).json({ error: 'Only the account owner can backfill the ledger.', code: 'GL_OWNER_ONLY' });
+  const dry = req.query.dry === '1' || req.query.dry === 'true';
+  const entityId = (req.query.entity_id && req.query.entity_id !== 'all') ? parseInt(req.query.entity_id, 10) : null;
+  const report = await backfillLedgerForUser(scopeId(req), { entityId, dryRun: dry });
+  // Reconciliation (post-backfill): per entity, GL == computeBooks for the parts the aggregate tracks.
+  // computeBooks does NOT fold FX (7000) into netProfit, so it is excluded from the expense side here.
+  const recon = [];
+  const { rows: ents } = entityId != null
+    ? await pool.query(`SELECT id, data->>'name' AS name FROM entities WHERE user_id=$1 AND id=$2`, [scopeId(req), entityId])
+    : await pool.query(`SELECT id, data->>'name' AS name FROM entities WHERE user_id=$1`, [scopeId(req)]);
+  for (const e of ents) {
+    const f = await glFinancials(scopeId(req), e.id, 'year');
+    const books = await computeBooks(scopeId(req), e.id, 'year');
+    const glExpNonFx = Math.round(f.accounts.filter(a => a.type === 'expense' && a.code !== '7000').reduce((s, a) => s + a.net_period, 0) * 100) / 100;
+    const reconciled = Math.abs(f.incomeStatement.income - books.revenue) < 0.01 && Math.abs(glExpNonFx - (books.cogs + books.opex)) < 0.01;
+    recon.push({ entityId: e.id, name: e.name, trialBalanced: f.trialBalance.balanced, balanceSheetBalanced: f.balanceSheet.balanced, glRevenue: f.incomeStatement.income, oracleRevenue: books.revenue, glExpensesExFx: glExpNonFx, oracleCogsOpex: Math.round((books.cogs + books.opex) * 100) / 100, reconciled });
+  }
+  res.json({ dryRun: dry, entityId, ...report, reconciliation: recon });
+}));
+
+app.get('/api/gl/verify', requireAuth, wrap(async (req, res) => {
+  // The live "books balanced ✓" signal. Entity-scoped like the other GL reads; for an owner with no
+  // entity selected it reports every entity and an overall booksBalanced (AND across entities).
+  const one = req.entityId;
+  if (one != null) {
+    const rec = await glReconcile(scopeId(req), one);
+    return res.json({ booksBalanced: rec.booksBalanced, entities: [rec] });
+  }
+  if (Array.isArray(req.entityAccess)) return res.status(400).json({ error: 'Select an entity to verify its books.', code: 'GL_ENTITY_REQUIRED' });
+  const { rows: ents } = await pool.query(`SELECT id FROM entities WHERE user_id=$1 ORDER BY id`, [scopeId(req)]);
+  const entities = [];
+  for (const e of ents) entities.push(await glReconcile(scopeId(req), e.id));
+  res.json({ booksBalanced: entities.length > 0 && entities.every(x => x.booksBalanced), entities });
+}));
+
 app.get('/api/gl/statements', requireAuth, wrap(async (req, res) => {
   if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity (consolidated GL is not yet available).', code: 'GL_ENTITY_REQUIRED' });
   const { period, fyStart, monthIdx } = _glPeriodArgs(req);
@@ -8746,6 +8938,8 @@ module.exports = app;
 // change in prod — the app is still the default export).
 module.exports.computeBooks = computeBooks;
 module.exports.glFinancials = glFinancials;   // GL Phase 3 — ledger-derived financial statements (test surface)
+module.exports.backfillLedgerForUser = backfillLedgerForUser;   // GL Phase 4 — historical backfill (test surface)
+module.exports.glReconcile = glReconcile;   // GL Phase 5 — books-balanced cross-check (test surface)
 // Test hook: expose the recurring scheduler for harness verification (no behavior change in
 // prod — it still runs on boot + on its interval; this only makes it drivable under test).
 module.exports.runRecurringScheduler = runRecurringScheduler;

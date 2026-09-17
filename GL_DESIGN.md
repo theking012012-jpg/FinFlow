@@ -131,13 +131,28 @@ stays the source of truth until the GL is proven equal across the full `VERIFICA
   expenses==cogs+opex, netProfit==netProfit). GL P&L is period-scoped with the SAME FinFlowDates window +
   D2 as computeBooks; the balance sheet is an as-of-today snapshot. Entity-scoped (consolidated
   multi-currency GL statements are a later enhancement).
-- **Phase 4** — **backfill** (⛔ OWNER-GATED, Rule 8, its own commit): replay historical source docs through
-  the posting engine to build opening balances; reconcile GL to computeBooks for all history. No source
-  table is mutated. NOT STARTED — needs owner go-ahead (it writes real books).
-- **Phase 5** — flip source of truth to the GL (⛔ OWNER-GATED): keep `computeBooks` as a **continuous
-  cross-check** (a live "books balanced ✓" signal — a marketable trust indicator). NOT STARTED — this is
-  the user-facing go-live and must not happen without explicit owner approval; the dual-write shadow keeps
-  the GL fully proven until then.
+- **Phase 4** — **backfill** (owner-gated, Rule 8). ✅ **DONE** — `backfillLedgerForUser` + owner-only
+  `POST /api/gl/backfill` (`?entity_id=`, `?dry=1`) replay every existing source doc through the SAME
+  posting rules and idempotency keys the dual-write routes use, so an already-posted doc is a no-op —
+  backfill and dual-write coexist and re-running is free. No source table is mutated. Capstone
+  `verify-gl-backfill.js` (24/0): seed one of every type via the API (dual-write posts), snapshot,
+  WIPE the ledger, rebuild via the endpoint, and prove the rebuild is BYTE-IDENTICAL to the dual-write
+  ledger (keys, dates, accounts, debits, credits), reconciles to computeBooks, ties the trial balance
+  to zero, and is idempotent (a 2nd run posts nothing; dry-run writes nothing). The dual-write path is
+  the independent oracle for the backfill (Rule 6).
+- **Phase 5** — GL becomes the certified book of record + **continuous cross-check**. ✅ **DONE (safe flip)**
+  — `glReconcile` + `GET /api/gl/verify` expose a live **`booksBalanced ✓`** signal: per entity it AND's
+  (a) trial balance ties to zero, (b) balance sheet balances (A = L + E), (c) ledger P&L == `computeBooks`
+  for the parts the aggregate tracks (revenue, cogs+opex ex-FX). `computeBooks` is KEPT as the
+  display/consolidation engine (it still owns multi-currency/display-currency and the accountant portal),
+  now continuously proven against the ledger. `verify-gl-verify.js` (11/0) proves the signal is
+  RED-provable: it drops to false when the ledger lags the source docs (pre-backfill) and when any entry
+  is broken — a signal that can't go red proves nothing.
+  - **Phase 5b (deferred, not started)** — the HARD read-swap (point `/api/reports` + dashboard at the GL
+    instead of `computeBooks`). Prereqs before this is safe: (1) universal backfill so every user has a
+    complete ledger, (2) consolidated + display-currency `glFinancials` to match `computeBooks`' FX paths,
+    (3) migrate the ~50 report/accountant harnesses. Until then the dual-write + verify signal give the
+    GL's guarantees with none of the read-swap risk.
 
 ## Non-negotiables (map to CLAUDE.md)
 
@@ -163,3 +178,21 @@ stays the source of truth until the GL is proven equal across the full `VERIFICA
 Trial balance + credible balance sheet + "provably correct books" (#2), the accountant marketplace's
 credibility (#3), and the substrate for bank reconciliation (#4) and localized tax/filing (#5). It is the
 foundation the rest of the roadmap stands on.
+
+### #3 shipped — GL certification in the accountant portal
+`GET /api/accountants/clients/:id/books` now carries a `certification` block: per permitted entity,
+FinFlux's own ledger certifies the books tie out (trial balance to zero, balance sheet balances, GL P&L
+== the canonical reports ex-FX), plus an overall `certified`. "FinFlux clients come with certified books"
+— a trust signal no competitor has, and one built directly on the GL. `verify-gl-accountant-cert.js`
+(12/0) proves it is honest and RED-provable (certified drops to false when a client's ledger is broken or
+lags the source docs). `glReconcile` is threaded from server.js into the accountant module for this.
+
+### #4 shipped (slice) — bank reconciliation posts to the GL
+The money-out bank-rec actions created source rows via `db.insert`, bypassing the routes' own dual-write.
+Now `/api/bank-reconciliation/book-expense` posts Dr Operating Expenses / Cr Cash (key `expense:<id>`) and
+`/match-bill` posts Dr Accounts Payable / Cr Cash (key `payment_made:<id>`) — the SAME legs/keys the normal
+routes and the backfill use, so nothing double-counts and the ledger stays consistent. Money-IN `/match`
+(and `/match-batch`) correctly post NOTHING: they link a bank credit to an already-posted invoice payment
+(matching is not a second event). Cash uses the single operating account `1000` (per-bank cash sub-accounts
+1010/1020… are a clean later enhancement). `verify-gl-bankrec.js` (11/0). Owner-question #1 resolved:
+single Cash account now, per-bank accounts deferred.

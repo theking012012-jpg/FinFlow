@@ -196,3 +196,17 @@ routes and the backfill use, so nothing double-counts and the ledger stays consi
 (matching is not a second event). Cash uses the single operating account `1000` (per-bank cash sub-accounts
 1010/1020… are a clean later enhancement). `verify-gl-bankrec.js` (11/0). Owner-question #1 resolved:
 single Cash account now, per-bank accounts deferred.
+
+### GL hardening - reversal on void/delete (shipped)
+`reverseLedgerEntry` posts a MIRROR-IMAGE entry (debits<->credits) dated at the original's date, linked via
+`reversal_of`, idempotent on `reverse:<type>:<id>`, wired into every void/delete route (invoice, expense,
+bill, sales_receipt, credit_note, vendor_credit, payments_made, invoice_payment, payroll void). Voiding or
+deleting a recognised doc now nets its ledger to zero exactly as computeBooks drops it, so the certified
+books stay correct through the full document lifecycle. `verify-gl-reversal.js` (16/0) - baseline non-zero,
+then delete/void -> every P&L account nets to 0, still reconciled, trial balance ties, one reversal per doc.
+
+### #5 localized estimate defaults (shipped, estimator-only)
+FinFlow calculates NO real tax by design (D1 - licensing/liability). `GET /api/tax/suggested-rate` returns a
+per-country SUGGESTED starting rate + local label to pre-fill the estimator, every response flagged
+non-authoritative ("not tax advice") with the owner's saved rate surfaced as `savedRate` (always wins).
+Purely additive - no existing estimate/report path reads it. `verify-tax-suggested-rate.js` (7/0).

@@ -1603,6 +1603,7 @@ app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.entity_id, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.deleteById('invoices', parseInt(req.params.id));
+  try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'invoice', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] invoice reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   logAudit(req, 'DELETE', 'invoices', row.id, row, null);
   res.json({ ok: true });
 }));
@@ -1676,6 +1677,7 @@ app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   if (!row) return res.status(404).json({ error: 'Not found.' });
   if (await isLocked(req.session.userId, row.entity_id, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.deleteById('expenses', parseInt(req.params.id));
+  try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'expense', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] expense reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   logAudit(req, 'DELETE', 'expenses', row.id, row, null);
   res.json({ ok: true });
 }));
@@ -2989,6 +2991,7 @@ app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_bold] } = await pool.query('SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   if (!_bold) return res.status(404).json({ error: 'Not found.' });   // cross-tenant / nonexistent id → 404, not fake-success 200
   await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'bill', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] bill reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   if (_bold) await recordAudit(pool, { userId: req.session.userId, entityId: _bold.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_bold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
@@ -3208,6 +3211,7 @@ app.put('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
 app.delete('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_srold] } = await pool.query('SELECT * FROM sales_receipts WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM sales_receipts WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'sales_receipt', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] sales_receipt reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   if (_srold) await recordAudit(pool, { userId: req.session.userId, entityId: _srold.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_srold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
@@ -3390,6 +3394,7 @@ app.put('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
 app.delete('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_cnold] } = await pool.query('SELECT * FROM credit_notes WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM credit_notes WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'credit_note', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] credit_note reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   if (_cnold) await recordAudit(pool, { userId: req.session.userId, entityId: _cnold.entity_id || null, table: 'credit_notes', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_cnold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
@@ -3492,6 +3497,7 @@ app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_pmrow] } = await pool.query('SELECT * FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   const _billId = _pmrow && _pmrow.data && _pmrow.data.bill_id != null ? Number(_pmrow.data.bill_id) : null;
   await pool.query('DELETE FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'bill_payment', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] bill_payment reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   if (_billId != null) await recalcBillStatus(pool, _billId, req.session.userId);
   if (_pmrow) await recordAudit(pool, { userId: req.session.userId, entityId: _pmrow.entity_id || null, table: 'payments_made', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_pmrow), req });  // F90 Phase B
   res.json({ ok: true });
@@ -3588,6 +3594,7 @@ app.put('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
 app.delete('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_vcold] } = await pool.query('SELECT * FROM vendor_credits WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM vendor_credits WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'vendor_credit', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] vendor_credit reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   if (_vcold) await recordAudit(pool, { userId: req.session.userId, entityId: _vcold.entity_id || null, table: 'vendor_credits', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vcold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
@@ -5039,6 +5046,45 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
 // /books and the accountant portal read, so the client Income-Tax worksheet can never diverge from
 // those surfaces again (F139). The rate is the OWNER's saved tax_rate (Settings), defaulting to 25%
 // only until they set it; the multi-line worksheet on the frontend refines it per tax line.
+// #5 localized ESTIMATE defaults. FinFlow calculates no real tax (D1); these are SUGGESTED starting
+// rates + local terminology per the entity's country, to pre-fill the estimator. Every response is
+// explicitly flagged as a non-authoritative suggestion, and the owner's own saved tax_rate always
+// overrides it. Purely additive: no existing estimate/report path reads this. Rates are approximate
+// standard corporate/income rates and may change - a convenience starting point, not advice.
+const TAX_SUGGESTIONS = {
+  TT: { rate: 30, label: 'Corporation Tax' },
+  US: { rate: 21, label: 'Federal Corporate Income Tax' },
+  GB: { rate: 25, label: 'Corporation Tax' },
+  CA: { rate: 15, label: 'Federal Corporate Income Tax' },
+  AU: { rate: 30, label: 'Company Tax' },
+  NG: { rate: 30, label: 'Companies Income Tax' },
+  IN: { rate: 25, label: 'Corporate Tax' },
+  ZA: { rate: 27, label: 'Corporate Income Tax' },
+  JM: { rate: 25, label: 'Corporate Income Tax' },
+  BB: { rate: 9,  label: 'Corporation Tax' },
+};
+const TAX_SUGGESTION_DEFAULT = { rate: 25, label: 'Income Tax' };
+function suggestedTax(country) {
+  const cc = String(country || '').toUpperCase();
+  const known = TAX_SUGGESTIONS[cc];
+  const s = known || TAX_SUGGESTION_DEFAULT;
+  return {
+    country: cc || null, rate: s.rate, label: s.label,
+    isSuggestion: true, isDefault: !known,
+    note: 'Suggested starting estimate only - not tax advice. Confirm your actual rate; your saved rate always overrides this.',
+  };
+}
+app.get('/api/tax/suggested-rate', requireAuth, wrap(async (req, res) => {
+  let cc = req.query.country;
+  if (!cc && req.entityId != null) {
+    const { rows } = await pool.query(`SELECT data->>'country' AS country FROM entities WHERE id=$1 AND user_id=$2 LIMIT 1`, [req.entityId, scopeId(req)]);
+    cc = rows[0] && rows[0].country;
+  }
+  const { rows: [_trs] } = await pool.query(`SELECT data->>'tax_rate' AS tax_rate FROM user_settings WHERE user_id=$1 AND data->>'key' IS NULL LIMIT 1`, [scopeId(req)]);
+  const savedRate = _trs && _trs.tax_rate != null && _trs.tax_rate !== '' ? parseFloat(_trs.tax_rate) : null;
+  res.json({ ...suggestedTax(cc), savedRate });
+}));
+
 app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
   try {
     const uid = scopeId(req);
@@ -7024,6 +7070,7 @@ app.delete('/api/invoice-payments/:id', requireAuth, wrap(async (req, res) => {
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
   await recalcInvoiceStatus(pool, rows[0].invoice_id, req.session.userId);
+  try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'invoice_payment', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] invoice_payment reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
 
@@ -7441,6 +7488,7 @@ app.put('/api/payroll-runs/:id/void', requireAuth, requirePerm('payroll:write'),
   if (st === 'draft') return res.status(409).json({ error: 'A draft run is deleted, not voided. Use DELETE /api/payroll-runs/:id.' });
   const { rows } = await pool.query(
     `UPDATE payroll_runs SET status='voided' WHERE id=$1 AND user_id=$2 RETURNING *`, [id, scopeId(req)]);
+  try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_run', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_run reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   await auditLog(pool, { userId: req.session.userId, entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'VOID', req });
   res.json(rows[0]);
 }));
@@ -7595,6 +7643,36 @@ async function postLedgerEntry(client, { userId, entityId, date, description, so
       [entryId, userId, entityId, idByCode[l.code], l.debit, l.credit]);
   }
   return entryId;
+}
+
+// GL Phase 2 (dual-write shadow) - REVERSAL. When a recognised source doc is voided or deleted, post a
+// MIRROR-IMAGE entry (debits<->credits) dated at the ORIGINAL entry's date, so that period nets to zero
+// exactly as computeBooks drops the voided/deleted doc. Both entries stay 'posted' and cancel; the
+// reversal links to the original via reversal_of. Idempotent on 'reverse:<type>:<id>'. Best-effort - a
+// shadow reversal failure must never block the user's delete/void.
+async function reverseLedgerEntry(client, { userId, sourceType, sourceId }) {
+  const revKey = 'reverse:' + sourceType + ':' + sourceId;
+  const { rows: already } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [userId, revKey]);
+  if (already[0]) return already[0].id;                                   // already reversed - idempotent
+  const { rows: orig } = await client.query(
+    `SELECT id, entity_id, entry_date::text AS entry_date, description, currency FROM ledger_entries
+      WHERE user_id=$1 AND source_type=$2 AND source_id=$3 AND reversal_of IS NULL AND status='posted' ORDER BY id ASC LIMIT 1`,
+    [userId, sourceType, sourceId]);
+  if (!orig[0]) return null;                                             // nothing posted for this source
+  const o = orig[0];
+  const { rows: lines } = await client.query(`SELECT account_id, debit, credit, debit_base, credit_base FROM ledger_lines WHERE entry_id=$1`, [o.id]);
+  if (!lines.length) return null;
+  const { rows: [rev] } = await client.query(
+    `INSERT INTO ledger_entries (user_id, entity_id, entry_date, description, source_type, source_id, currency, status, reversal_of, idempotency_key)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'posted',$8,$9) RETURNING id`,
+    [userId, o.entity_id, o.entry_date, ('Reversal - ' + (o.description || '')).slice(0, 500), sourceType, sourceId, o.currency, o.id, revKey]);
+  for (const l of lines) {
+    await client.query(
+      `INSERT INTO ledger_lines (entry_id, user_id, entity_id, account_id, debit, credit, debit_base, credit_base)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [rev.id, userId, o.entity_id, l.account_id, l.credit, l.debit, l.credit_base, l.debit_base]);   // swap debit<->credit
+  }
+  return rev.id;
 }
 
 // ════════════════════════════════════════════════════════════════════════════════

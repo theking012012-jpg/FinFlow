@@ -148,7 +148,10 @@ stays the source of truth until the GL is proven equal across the full `VERIFICA
   now continuously proven against the ledger. `verify-gl-verify.js` (11/0) proves the signal is
   RED-provable: it drops to false when the ledger lags the source docs (pre-backfill) and when any entry
   is broken — a signal that can't go red proves nothing.
-  - **Phase 5b (deferred, not started)** — the HARD read-swap (point `/api/reports` + dashboard at the GL
+  - **Phase 5b (IN PROGRESS)** — the read-swap onto the GL, done SAFELY via a reconcile-gated read with
+    `computeBooks` as oracle fallback (see the 5b section below). P&L statement slice SHIPPED. Remaining:
+    balance sheet (unlocks real GL cash), the dashboard `GET /api/reports`, then harness migration.
+  - **Phase 5b (original plan)** — the HARD read-swap (point `/api/reports` + dashboard at the GL
     instead of `computeBooks`). Prereqs before this is safe: (1) universal backfill so every user has a
     complete ledger, (2) consolidated + display-currency `glFinancials` to match `computeBooks`' FX paths,
     (3) migrate the ~50 report/accountant harnesses. Until then the dual-write + verify signal give the
@@ -247,3 +250,20 @@ SW cache manifest and the bundle drift-guard are all untouched. Purely additive 
 minify failure, or a stale artifact all fall back to the readable original. `prestart` runs it after
 `bundle.js`; `public/.min/` is gitignored (regenerated on deploy). ~43% smaller (905 KB -> 517 KB across the
 8 targets). `verify-min-serving.js` (8/0).
+
+
+### GL Phase 5b (slice 1) - P&L reads from the ledger, oracle-fallback (shipped 2026-09-25)
+The read-swap is done WITHOUT the big-bang prereqs (universal backfill, consolidated/FX glFinancials),
+by gating the flip per-request: `glProfitLoss(userId, entityId, {period, display})` computes the GL P&L
+AND computeBooks, and serves the LEDGER numbers only when every P&L line (revenue, COGS, payroll, opex,
+gross, net) matches computeBooks to the cent AND the trial balance ties; otherwise it serves computeBooks
+unchanged and logs the divergence (`[GL 5b] P&L divergence ...`). So the user never sees a wrong number:
+an incomplete ledger (no backfill), a consolidated view (entityId null), an FX/display-currency request,
+or any GL read error all fall back automatically, and each request upgrades to the ledger the moment that
+entity's books are provably complete. `POST /api/reports/profit-loss` now sources its canonical totals
+through this helper and returns `source: 'gl' | 'computeBooks'` for observability (response shape and
+numbers otherwise unchanged - verify-f137g-pl-statement stays 17/0). computeBooks remains the oracle.
+`verify-gl-pl-readswap.js` (16/0) proves gl-served parity, broken-ledger fallback with correct numbers,
+and consolidated/FX fallback, at both the helper and the live endpoint. The monthly `rows` chart stays
+source-doc-derived this slice. NEXT: balance sheet (real GL cash vs today's AR-only stub), then the
+dashboard read, then migrate the report/accountant harnesses so the sweep asserts GL as the source.

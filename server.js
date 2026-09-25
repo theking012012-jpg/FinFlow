@@ -4966,16 +4966,20 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   // `rows` above stay native this step — they get server-converted buckets in Step 3.
   const _display = (req.query.display || '').toUpperCase();
   const display = /^[A-Z]{3}$/.test(_display) ? _display : null;
-  const books = await computeBooks(uid, eid, 'year', display);
+  // GL Phase 5b: the canonical totals now come from the LEDGER when it reconciles to computeBooks for
+  // this entity+period (else computeBooks unchanged) - same numbers, sourced from the double-entry books.
+  // The monthly `rows` chart stays source-doc-derived this slice. `source` travels for observability.
+  const pl = await glProfitLoss(uid, eid, { period: 'year', display });
   res.json({
     rows,
-    totalRevenue:  books.revenue,
-    cogs:          books.cogs,
-    grossProfit:   books.grossProfit,
-    payroll:       books.parts.payroll,
-    totalExpenses: books.opex,
-    netProfit:     books.netProfit,
-    fxCoverage:    books.fxCoverage,   // F34
+    totalRevenue:  pl.totalRevenue,
+    cogs:          pl.cogs,
+    grossProfit:   pl.grossProfit,
+    payroll:       pl.payroll,
+    totalExpenses: pl.totalExpenses,
+    netProfit:     pl.netProfit,
+    fxCoverage:    pl.fxCoverage,   // F34
+    source:        pl.source,       // 'gl' | 'computeBooks'
   });
 }));
 
@@ -8064,6 +8068,74 @@ async function glReconcile(userId, entityId, fyStartIdx = 0) {
     },
   };
 }
+// ════════════════════════════════════════════════════════════════════════════════
+// GL PHASE 5b - RECONCILE-GATED read of the P&L from the ledger, with computeBooks as ORACLE FALLBACK.
+// The read only flips to the GL when the GL's own P&L reconciles to computeBooks to the CENT for this
+// entity+period AND the trial balance ties; otherwise it serves computeBooks unchanged (and logs the
+// divergence). So the user NEVER sees a wrong number: an incomplete ledger (no backfill), a consolidated
+// view (entityId null), or an FX/display-currency request all fall back automatically, and each request
+// upgrades to the ledger the moment that entity's books are provably complete. Response numbers are
+// therefore identical to today when served from the GL - the win is provenance (double-entry books),
+// not a value change. `source` ('gl' | 'computeBooks') travels with the result for observability.
+async function glProfitLoss(userId, entityId, opts = {}) {
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const period = opts.period || 'year';
+  const fyStartIdx = Number.isInteger(opts.fyStartIdx) ? opts.fyStartIdx : 0;
+  const monthIdx = opts.monthIdx != null ? opts.monthIdx : null;
+  const display = opts.display || null;
+  const fromBooks = (books, source) => ({
+    source,
+    totalRevenue: r2(books.revenue), cogs: r2(books.cogs), grossProfit: r2(books.grossProfit),
+    payroll: r2(books.parts ? books.parts.payroll : 0), totalExpenses: r2(books.opex), netProfit: r2(books.netProfit),
+    fxCoverage: books.fxCoverage,
+  });
+  // Consolidated (all entities) and display-currency/FX are not yet matched by glFinancials -> oracle.
+  if (entityId == null || display) {
+    const books = await computeBooks(userId, entityId, period, display, fyStartIdx, monthIdx);
+    return fromBooks(books, 'computeBooks');
+  }
+  let books, f;
+  try {
+    [books, f] = await Promise.all([
+      computeBooks(userId, entityId, period, null, fyStartIdx, monthIdx),
+      glFinancials(userId, entityId, period, fyStartIdx, monthIdx),
+    ]);
+  } catch (e) {
+    // Any GL read error -> oracle. Never let the ledger path break a report.
+    const b = await computeBooks(userId, entityId, period, null, fyStartIdx, monthIdx);
+    console.error('[GL 5b] glFinancials read failed, serving computeBooks:', e && e.message);
+    return fromBooks(b, 'computeBooks');
+  }
+  const acct = code => { const a = f.accounts.find(x => x.code === code); return a ? a.net_period : 0; };
+  // GL-derived P&L lines (ex-FX, exactly as computeBooks constructs them: opex includes payroll,
+  // netProfit excludes 7000 FX gain/loss).
+  const glRevenue = r2(f.incomeStatement.income);
+  const glCogs = r2(acct('5000'));
+  const glPayroll = r2(acct('6100'));
+  const glOpex = r2(acct('6000') + acct('6100'));
+  const glGross = r2(glRevenue - glCogs);
+  const glNet = r2(glRevenue - glCogs - glOpex);
+  const eq = (a, b) => Math.abs(r2(a) - r2(b)) < 0.01;
+  const reconciled =
+    f.trialBalance.balanced &&
+    eq(glRevenue, books.revenue) && eq(glCogs, books.cogs) && eq(glGross, books.grossProfit) &&
+    eq(glPayroll, books.parts ? books.parts.payroll : 0) && eq(glOpex, books.opex) && eq(glNet, books.netProfit);
+  if (!reconciled) {
+    // Books incomplete or diverging for this entity/period -> serve the proven oracle, log for signal.
+    console.warn('[GL 5b] P&L divergence (serving computeBooks) uid=' + userId + ' eid=' + entityId +
+      ' gl{rev:' + glRevenue + ',cogs:' + glCogs + ',opex:' + glOpex + ',net:' + glNet + '}' +
+      ' books{rev:' + r2(books.revenue) + ',cogs:' + r2(books.cogs) + ',opex:' + r2(books.opex) + ',net:' + r2(books.netProfit) + '}' +
+      ' tb=' + f.trialBalance.balanced);
+    return fromBooks(books, 'computeBooks');
+  }
+  return {
+    source: 'gl',
+    totalRevenue: glRevenue, cogs: glCogs, grossProfit: glGross,
+    payroll: glPayroll, totalExpenses: glOpex, netProfit: glNet,
+    fxCoverage: books.fxCoverage,
+  };
+}
+
 async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const num = v => parseFloat(v) || 0;
@@ -9206,7 +9278,8 @@ module.exports = app;
 module.exports.computeBooks = computeBooks;
 module.exports.glFinancials = glFinancials;   // GL Phase 3 — ledger-derived financial statements (test surface)
 module.exports.backfillLedgerForUser = backfillLedgerForUser;   // GL Phase 4 — historical backfill (test surface)
-module.exports.glReconcile = glReconcile;   // GL Phase 5 — books-balanced cross-check (test surface)
+module.exports.glReconcile = glReconcile;
+module.exports.glProfitLoss = glProfitLoss;   // GL Phase 5b - reconcile-gated P&L read (test surface)   // GL Phase 5 — books-balanced cross-check (test surface)
 // Test hook: expose the recurring scheduler for harness verification (no behavior change in
 // prod — it still runs on boot + on its interval; this only makes it drivable under test).
 module.exports.runRecurringScheduler = runRecurringScheduler;

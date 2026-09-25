@@ -9,6 +9,7 @@
  *   node -r ./tests/harness/clock.js tests/harness/verify-min-serving.js
  */
 require('./clock.js');
+process.env.FINFLOW_SERVE_MIN = '1';   // this harness explicitly tests the production min-serving path
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');

@@ -455,6 +455,10 @@ app.get('/tier-config.js', (req, res) => {
 const _minFs = require('fs');
 const _MIN_DIR = path.join(__dirname, 'public', '.min');
 app.get(/\.js$/, (req, res, next) => {
+  // Serve minified only in production (or when explicitly enabled). The verification harnesses run with
+  // NODE_ENV=test and inspect the real, UN-minified source over HTTP (function bodies, symbol names), so
+  // they must never receive minified bytes. Prod (Railway sets NODE_ENV=production) gets the minified win.
+  if (process.env.NODE_ENV !== 'production' && process.env.FINFLOW_SERVE_MIN !== '1') return next();
   try {
     const rel = decodeURIComponent(req.path).replace(/^\/+/, '');
     if (!rel || rel.includes('..') || rel.indexOf('\0') !== -1) return next();

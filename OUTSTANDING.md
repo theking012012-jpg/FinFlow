@@ -247,7 +247,7 @@ verified live on production (non-destructive). Features: Stripe add-to-books (id
 - **Per-entity connections (BIG):** connectors are account-level (`scopeId`), shared across all entities
   (same Stripe/Plaid on every business). Owner wants each business to own its connections → re-architect
   connection storage to key on entity_id + per-entity connect/disconnect UI. Binding work (`b7f743e`) is step 1.
-- **Live bank feed:** wire Belvo/WiPay to auto-populate bank debits (today: OFX/CSV import feeds them).
+- **Live bank feed:** ✅ Belvo sync now imports transactions into the reconciliation feed (personal_transactions source:'banking'), parity with Plaid — idempotent on Belvo's txn id, OUTFLOW→debit/INFLOW→credit; env-gated until BELVO keys are set (`verify-belvo-sync` 11/0). (WiPay is a card processor, not a bank feed — invoice pay-links, not auto-pull.)
 - Note: "C$" is the CORRECT CAD symbol — not a bug.
 
 ---

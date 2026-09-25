@@ -6423,6 +6423,25 @@ async function belvoCall(pathname, opts = {}) {
   return json;
 }
 
+// Map a Belvo transaction to a personal_transactions row (source:'banking'), the SAME feed store Plaid
+// uses, so a linked LatAm bank actually feeds the reconciliation river. Belvo: `type` is 'INFLOW' (money
+// in) / 'OUTFLOW' (money out) and `amount` is positive - mirror Plaid's convention (debit = money out,
+// credit = money in). Idempotent on Belvo's stable transaction `id` (belvo_txn_id). Pure + exported so
+// the mapping is unit-tested without a live Belvo call.
+function belvoTxnToRow(t, uid, entityId) {
+  const typ = String((t && t.type) || '').toUpperCase();
+  const _d = (t && (t.value_date || t.accounting_date)) || new Date().toISOString().slice(0, 10);
+  return {
+    user_id: uid, entity_id: entityId || null,
+    description: (t && (t.description || (t.merchant && t.merchant.name))) || 'Bank transaction',
+    amount: Math.abs(Number(t && t.amount) || 0),
+    tx_type: typ === 'OUTFLOW' ? 'debit' : 'credit',
+    tx_date: String(_d).slice(0, 10),
+    category: (t && t.category) || 'Other',
+    source: 'banking', belvo_txn_id: t && t.id,
+  };
+}
+
 app.get('/api/belvo/status', requireAuth, wrap(async (req, res) => {
   const { value } = await _providerBlobE(scopeId(req), 'belvo_conn', req.entityId);
   const links = (value && value.links) || [];
@@ -6469,9 +6488,33 @@ app.post('/api/belvo/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
   const { value } = await _providerBlobE(uid, 'belvo_conn', req.entityId);
   const links = (value && value.links) || [];
   if (!links.length) return res.status(400).json({ error: 'No linked LatAm bank. Link one first.' });
-  let accounts = 0;
-  for (const l of links) { try { const a = await belvoCall('/api/accounts/', { method: 'POST', body: { link: l.link } }); accounts += Array.isArray(a) ? a.length : (a.count || 0); } catch (_) {} }
-  res.json({ ok: true, accounts, note: 'Accounts read for display. Importing into the books is a separate, owner-approved step (Rule 2/12).' });
+  // Pull the last 90 days of transactions from each link into personal_transactions (source:'banking'),
+  // so the linked LatAm bank FEEDS the reconciliation river - parity with the Plaid sync. Idempotent on
+  // Belvo's stable transaction id; a re-run only adds new activity. Bounded pagination (Belvo returns
+  // {results,next} or a bare array). Best-effort per link - one failing link never fails the whole sync.
+  const _to = new Date().toISOString().slice(0, 10);
+  const _from = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  let added = 0, accounts = 0;
+  for (const l of links) {
+    try { const a = await belvoCall('/api/accounts/', { method: 'POST', body: { link: l.link } }); accounts += Array.isArray(a) ? a.length : (a.count || 0); } catch (_) {}
+    try {
+      let page = 1, hasMore = true;
+      while (hasMore && page <= 20) {
+        const j = await belvoCall('/api/transactions/?page=' + page, { method: 'POST', body: { link: l.link, date_from: _from, date_to: _to } });
+        const list = Array.isArray(j) ? j : (j.results || []);
+        for (const t of list) {
+          if (!t || !t.id) continue;
+          const { rows: [dup] } = await pool.query(`SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'belvo_txn_id'=$2 LIMIT 1`, [uid, String(t.id)]);
+          if (dup) continue;
+          await db.insert('personal_transactions', belvoTxnToRow(t, uid, req.entityId || null));
+          added++;
+        }
+        hasMore = !Array.isArray(j) && !!j.next;
+        page++;
+      }
+    } catch (e) { console.error('[belvo sync]', e.message, e.provider || ''); }
+  }
+  res.json({ ok: true, accounts, added });
 }));
 
 // ── WIPAY (Caribbean card payments) — merchant-credentials model (no platform OAuth). The owner
@@ -9329,3 +9372,4 @@ module.exports.finchConfigured = finchConfigured;
 module.exports.codatConfigured = codatConfigured;
 module.exports.stripeConnectConfigured = stripeConnectConfigured;
 module.exports.belvoConfigured = belvoConfigured;
+module.exports.belvoTxnToRow = belvoTxnToRow;   // Belvo transaction -> feed-row mapping (test surface)

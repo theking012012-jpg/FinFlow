@@ -267,3 +267,16 @@ numbers otherwise unchanged - verify-f137g-pl-statement stays 17/0). computeBook
 and consolidated/FX fallback, at both the helper and the live endpoint. The monthly `rows` chart stays
 source-doc-derived this slice. NEXT: balance sheet (real GL cash vs today's AR-only stub), then the
 dashboard read, then migrate the report/accountant harnesses so the sweep asserts GL as the source.
+
+### GL Phase 5b (slice 2) - payroll cash-out completes the GL cash flow (shipped 2026-09-25)
+Prereq for a trustworthy balance-sheet cash figure. Payroll recognised its expense at approve
+(Dr Payroll Expense / Cr Payroll Liabilities) but never posted the CASH-OUT when a run was marked paid,
+so Payroll Liabilities (2200) never cleared and GL cash was overstated - which is exactly why the
+balance-sheet cash upgrade could not be trusted yet. Now `PUT /api/payroll-runs/:id/mark-paid` posts
+Dr Payroll Liabilities (2200) / Cr Cash (1000) for the run's line total, keyed `payroll_paid:<id>`
+(idempotent), dated at the pay date (run_date, else the period) - mirroring the cash-flow report's F122
+paid-payroll outflow. So 2200 nets to zero on payment and GL cash reflects it. Void reverses BOTH legs;
+backfill replays the cash-out for every `paid` run (idempotent). P&L is unaffected (both legs are
+balance-sheet accounts), so glReconcile/certification are unchanged. `verify-gl-payroll-cashout.js`
+(16/0). With this, the remaining cash-completeness question for the balance-sheet cash upgrade is closed
+for payroll; the BS cash slice can proceed next (gate cash on trial-balance + P&L + AR + AP reconciling).

@@ -7564,6 +7564,25 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
   await recordAudit(pool, { userId: req.session.userId, entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'MARK_PAID', field: 'status', newValue: 'paid', req });  // F90 Phase B: cash-out event
+  // GL Phase 5b (cash completeness): mark-paid is the CASH-OUT event - settle the payroll liability with
+  // cash: Dr Payroll Liabilities (2200) / Cr Cash (1000), summed from the run's LINES (same basis as the
+  // approve accrual), so 2200 nets to zero and GL cash reflects the payment (mirrors the cash-flow report's
+  // F122 paid-payroll outflow). Keyed 'payroll_paid:<id>' (idempotent), dated at the pay date (run_date,
+  // else the period). Best-effort - never blocks marking a run paid.
+  try {
+    const _run = rows[0];
+    const { rows: _pl } = await pool.query(`SELECT gross, bonus, overtime FROM payroll_run_lines WHERE run_id=$1`, [_run.id]);
+    const _amt = Math.round(_pl.reduce((s, l) => s + (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0), 0) * 100) / 100;
+    if (_amt > 0) {
+      await postLedgerEntry(pool, {
+        userId: scopeId(req), entityId: _run.entity_id || null,
+        date: FinFlowDates._toYmd(_run.run_date) || FinFlowDates.payrollPeriodYmd(_run.period, _run.run_date),
+        description: 'Payroll paid - ' + String(_run.period || '').slice(0, 80),
+        sourceType: 'payroll_paid', sourceId: _run.id, idempotencyKey: 'payroll_paid:' + _run.id,
+        lines: [{ code: '2200', debit: _amt, credit: 0 }, { code: '1000', debit: 0, credit: _amt }],
+      });
+    }
+  } catch (glErr) { console.error('[GL] payroll cash-out posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(rows[0]);
 }));
 
@@ -7583,6 +7602,7 @@ app.put('/api/payroll-runs/:id/void', requireAuth, requirePerm('payroll:write'),
   const { rows } = await pool.query(
     `UPDATE payroll_runs SET status='voided' WHERE id=$1 AND user_id=$2 RETURNING *`, [id, scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_run', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_run reversal failed (shadow, non-fatal):', glErr && glErr.message); }
+  try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_paid', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_paid reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   await auditLog(pool, { userId: req.session.userId, entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'VOID', req });
   res.json(rows[0]);
 }));
@@ -8003,9 +8023,11 @@ async function backfillLedgerForUser(userId, opts = {}) {
     await post({ entityId: s.entity_id, date: s.date, description: 'Sales receipt — ' + String(s.customer || ''), sourceType: 'sales_receipt', sourceId: s.id, idempotencyKey: 'sales_receipt:' + s.id, lines: [{ code: '1000', debit: amt, credit: 0 }, { code: '4000', debit: 0, credit: amt }] });
   }
   // 7) payroll — approved|paid → Dr Payroll Expense / Cr Payroll Liabilities = Σ(gross+bonus+overtime) at period
-  { const { rows } = await pool.query(`SELECT pr.id, pr.entity_id, pr.period, pr.run_date::text AS run_date, COALESCE(SUM(COALESCE(prl.gross,0)+COALESCE(prl.bonus,0)+COALESCE(prl.overtime,0)),0)::float AS amt FROM payroll_runs pr LEFT JOIN payroll_run_lines prl ON prl.run_id=pr.id WHERE pr.user_id=$1 AND lower(pr.status) IN ('approved','paid') GROUP BY pr.id`, [userId]);
+  { const { rows } = await pool.query(`SELECT pr.id, pr.entity_id, pr.period, pr.run_date::text AS run_date, lower(pr.status) AS status, COALESCE(SUM(COALESCE(prl.gross,0)+COALESCE(prl.bonus,0)+COALESCE(prl.overtime,0)),0)::float AS amt FROM payroll_runs pr LEFT JOIN payroll_run_lines prl ON prl.run_id=pr.id WHERE pr.user_id=$1 AND lower(pr.status) IN ('approved','paid') GROUP BY pr.id`, [userId]);
     for (const r of rows) { if (onlyEntity != null && r.entity_id !== onlyEntity) continue; const amt = Math.round((r.amt || 0) * 100) / 100; if (!(amt > 0)) continue;
-      await post({ entityId: r.entity_id, date: FinFlowDates.payrollPeriodYmd(r.period, r.run_date), description: 'Payroll — ' + String(r.period || '').slice(0, 80), sourceType: 'payroll_run', sourceId: r.id, idempotencyKey: 'payroll_run:' + r.id, lines: [{ code: '6100', debit: amt, credit: 0 }, { code: '2200', debit: 0, credit: amt }] }); } }
+      await post({ entityId: r.entity_id, date: FinFlowDates.payrollPeriodYmd(r.period, r.run_date), description: 'Payroll — ' + String(r.period || '').slice(0, 80), sourceType: 'payroll_run', sourceId: r.id, idempotencyKey: 'payroll_run:' + r.id, lines: [{ code: '6100', debit: amt, credit: 0 }, { code: '2200', debit: 0, credit: amt }] });
+      // GL Phase 5b: a PAID run also had its cash-out — Dr Payroll Liabilities / Cr Cash, keyed 'payroll_paid:<id>'.
+      if (r.status === 'paid') await post({ entityId: r.entity_id, date: FinFlowDates._toYmd(r.run_date) || FinFlowDates.payrollPeriodYmd(r.period, r.run_date), description: 'Payroll paid - ' + String(r.period || '').slice(0, 80), sourceType: 'payroll_paid', sourceId: r.id, idempotencyKey: 'payroll_paid:' + r.id, lines: [{ code: '2200', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }] }); } }
   // 8) inventory — purchase capitalises (Dr Inventory / Cr Cash); sale relieves at FIFO cost (Dr COGS / Cr Inventory)
   { const { rows: items } = await pool.query(`SELECT DISTINCT inventory_id, entity_id FROM inventory_movements WHERE user_id=$1`, [userId]);
     for (const it of items) {

@@ -18,6 +18,12 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
   try {
     boot = await bootSpaInJsdom({});
     const { window, settle } = boot;
+    // Deterministic: poll until the feed reaches the expected TERMINAL render instead of racing a fixed
+    // delay (the async fetch->render chain occasionally lands after settle(4,60), leaving the placeholder).
+    // Failure semantics are preserved: a broken gate never reaches `want`, so waitFeed times out and the
+    // assertion below still fails on the wrong content.
+    const feedHtml = () => (window.document.getElementById('stripe-feed')||{}).innerHTML || '';
+    const waitFeed = async (want) => { for (let i=0;i<80;i++){ const h=feedHtml(); if (want.test(h)) return h; await settle(1,50); } return feedHtml(); };
     for (let i=0;i<250 && typeof window.startStripeFeed!=='function';i++) await settle(1,100);
     await settle(6,100);
     A('startStripeFeed present', typeof window.startStripeFeed==='function');
@@ -30,15 +36,15 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
 
     // CASE 1 — bound to 99, active is 1 → feed must NOT show the charge, shows the "books to" note.
     window.fetch = async (u)=> /\/api\/stripe\/feed/.test(String(u)) ? { ok:true, status:200, json:async()=>feedResp(99) } : { ok:true, status:200, json:async()=>({}) };
-    await window.startStripeFeed(); await settle(4,60);
-    const feedHtml1 = (window.document.getElementById('stripe-feed')||{}).innerHTML || '';
+    await window.startStripeFeed();
+    const feedHtml1 = await waitFeed(/books to/i);
     A('on a non-bound entity: charge + in-books are NOT shown', !/2,000/.test(feedHtml1) && !/in books/.test(feedHtml1), feedHtml1.slice(0,160));
     A('on a non-bound entity: shows "books to Bound Co" note', /books to/i.test(feedHtml1) && /Bound Co/.test(feedHtml1), feedHtml1.slice(0,160));
 
     // CASE 2 — bound to 1, active is 1 → feed DOES show the charge.
     window.fetch = async (u)=> /\/api\/stripe\/feed/.test(String(u)) ? { ok:true, status:200, json:async()=>feedResp(1) } : { ok:true, status:200, json:async()=>({}) };
-    await window.startStripeFeed(); await settle(4,60);
-    const feedHtml2 = (window.document.getElementById('stripe-feed')||{}).innerHTML || '';
+    await window.startStripeFeed();
+    const feedHtml2 = await waitFeed(/2,000/);
     A('on the bound entity: the charge renders normally', /2,000/.test(feedHtml2) && /in books/.test(feedHtml2), feedHtml2.slice(0,160));
 
     // STRUCTURAL — switchEntity clears the money-flow river so stale currency/data can't linger.

@@ -1577,12 +1577,34 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
     try {
       await postLedgerEntry(pool, {
         userId: scopeId(req), entityId: eid,
-        date: issue_date || (row.created_at ? String(row.created_at).slice(0, 10) : null),
+        date: issue_date || FinFlowDates._toYmd(row.created_at),
         description: 'Invoice — ' + client.trim().slice(0, 80),
         sourceType: 'invoice', sourceId: row.id, idempotencyKey: 'invoice:' + row.id,
         lines: [{ code: '1100', debit: _amt, credit: 0 }, { code: '4000', debit: 0, credit: _amt }],
       });
     } catch (glErr) { console.error('[GL] invoice posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  }
+  // F133 + GL: an invoice created already PAID must record a real settling invoice_payment for the full
+  // amount, not just carry amount_paid. The cash-flow report reads invoice_payments canonically (F95),
+  // so without this row a paid-on-create invoice's cash was INVISIBLE there; and the GL only had the
+  // accrual (Dr AR / Cr Revenue), leaving AR outstanding on the balance sheet. Recording the payment
+  // makes the invoice_payment GL leg (Dr Cash / Cr AR), its reversal, backfill and the cash-flow report
+  // all handle it uniformly - no double count (cash-flow does not read amount_paid; AR/Collected already
+  // use the stored amount_paid, which equals this payment). Idempotent on 'invoice_create_paid:<id>' so a
+  // retry never books a second payment. Best-effort: never breaks invoice creation.
+  if (String(status).toLowerCase() === 'paid' && _amt > 0) {
+    try {
+      const _pDate = issue_date || (FinFlowDates._toYmd(row.created_at) || new Date().toISOString().slice(0, 10));
+      const _pKey = ('invoice_create_paid:' + row.id).slice(0, 64);
+      const { rows: _pr } = await pool.query(
+        `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING RETURNING *`,
+        [scopeId(req), eid, row.id, _amt, _pDate, 'Paid on creation', null, 'Auto-recorded: invoice created as paid', _pKey]);
+      if (_pr[0]) {
+        try { await postSourceLedger(pool, { userId: scopeId(req), sourceType: 'invoice_payment', row: { ..._pr[0], client } }); }
+        catch (glErr) { console.error('[GL] paid-on-create cash leg failed (shadow, non-fatal):', glErr && glErr.message); }
+      }
+    } catch (payErr) { console.error('[invoices] paid-on-create settling payment failed (non-fatal):', payErr && payErr.message); }
   }
   res.status(201).json(row);
 }));
@@ -1626,7 +1648,7 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
     const _iAmt = parseFloat(updated.amount) || 0;
     await resyncDocLedger(pool, {
       userId: scopeId(req), entityId: row.entity_id, sourceType: 'invoice', sourceId: row.id,
-      date: updated.issue_date || (updated.created_at ? String(updated.created_at).slice(0, 10) : null),
+      date: updated.issue_date || FinFlowDates._toYmd(updated.created_at),
       description: 'Invoice - ' + String(updated.client || '').slice(0, 80),
       recognized: String(updated.status || '').toLowerCase() !== 'draft',
       lines: [{ code: '1100', debit: _iAmt, credit: 0 }, { code: '4000', debit: 0, credit: _iAmt }],
@@ -2974,7 +2996,7 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
     try {
       await postLedgerEntry(pool, {
         userId: scopeId(req), entityId: _billEnt,
-        date: issue_date || (row.created_at ? String(row.created_at).slice(0, 10) : null),
+        date: issue_date || FinFlowDates._toYmd(row.created_at),
         description: 'Bill — ' + String(vendor).slice(0, 80),
         sourceType: 'bill', sourceId: row.id, idempotencyKey: 'bill:' + row.id,
         lines: [{ code: '6000', debit: _amt, credit: 0 }, { code: '2000', debit: 0, credit: _amt }],
@@ -3029,7 +3051,7 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
     const _bIssue = patch.issue_date != null ? patch.issue_date : row.issue_date;
     await resyncDocLedger(pool, {
       userId: scopeId(req), entityId: row.entity_id, sourceType: 'bill', sourceId: Number(req.params.id),
-      date: _bIssue || (row.created_at ? String(row.created_at).slice(0, 10) : null),
+      date: _bIssue || FinFlowDates._toYmd(row.created_at),
       description: 'Bill - ' + String(patch.vendor != null ? patch.vendor : row.vendor || '').slice(0, 80),
       recognized: RECOGNIZED_BILL.has(_bStatus),
       lines: [{ code: '6000', debit: _bAmt, credit: 0 }, { code: '2000', debit: 0, credit: _bAmt }],
@@ -3412,7 +3434,7 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
       const _amt = parseFloat(row.amount) || 0;
       if (_amt > 0) await postLedgerEntry(pool, {
         userId: scopeId(req), entityId: row.entity_id || null,
-        date: row.date || (row.created_at ? String(row.created_at).slice(0, 10) : null),
+        date: row.date || FinFlowDates._toYmd(row.created_at),
         description: 'Credit note — ' + String(row.customer || '').slice(0, 80),
         sourceType: 'credit_note', sourceId: row.id, idempotencyKey: 'credit_note:' + row.id,
         lines: [{ code: '4000', debit: _amt, credit: 0 }, { code: '1100', debit: 0, credit: _amt }],
@@ -3612,7 +3634,7 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
       const _amt = parseFloat(row.amount) || 0;
       if (_amt > 0) await postLedgerEntry(pool, {
         userId: scopeId(req), entityId: row.entity_id || null,
-        date: row.date || (row.created_at ? String(row.created_at).slice(0, 10) : null),
+        date: row.date || FinFlowDates._toYmd(row.created_at),
         description: 'Vendor credit — ' + String(row.vendor || '').slice(0, 80),
         sourceType: 'vendor_credit', sourceId: row.id, idempotencyKey: 'vendor_credit:' + row.id,
         lines: [{ code: '2000', debit: _amt, credit: 0 }, { code: '6000', debit: 0, credit: _amt }],

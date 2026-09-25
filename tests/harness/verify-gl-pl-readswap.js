@@ -6,7 +6,7 @@
  *   - POST /api/reports/profit-loss?entity_id=<e> returns source 'gl' with the same totals + shape.
  *   - BROKEN ledger (a line deleted -> trial balance breaks) -> source 'computeBooks', numbers STILL
  *     correct (served from source docs, unaffected by the ledger corruption). The safety net works.
- *   - consolidated (entity_id=all -> null) -> source 'computeBooks' (glFinancials is single-entity).
+ *   - consolidated (entity_id=all) -> source 'gl' (glConsolidated reconciles); missing-rate FX falls back.
  *   - FX/display-currency -> source 'computeBooks'.
  *   node -r ./tests/harness/clock.js tests/harness/verify-gl-pl-readswap.js
  */
@@ -52,11 +52,11 @@ async function main() {
     A('endpoint totals correct + shape intact (rows/totalRevenue/netProfit present)',
       Array.isArray(ep.rows) && near(ep.totalRevenue, 1000) && near(ep.totalExpenses, 500) && near(ep.netProfit, 500), JSON.stringify({ tr: ep.totalRevenue, te: ep.totalExpenses, np: ep.netProfit, rows: Array.isArray(ep.rows) }));
 
-    // 3) consolidated + FX -> oracle fallback
-    A('consolidated (entityId null) -> source computeBooks', (await glProfitLoss(uid, null, { period: 'year' })).source === 'computeBooks');
+    // 3) consolidated -> gl (reconciles); FX with no rate -> fallback
+    A('consolidated (entityId null) -> source gl (single-currency consolidation reconciles)', (await glProfitLoss(uid, null, { period: 'year' })).source === 'gl');
     A('FX/display -> source computeBooks', (await glProfitLoss(uid, eid, { period: 'year', display: 'EUR' })).source === 'computeBooks');
     const epAll = JSON.parse((await http.post('/api/reports/profit-loss?entity_id=all', {})).text);
-    A('endpoint consolidated -> source computeBooks', epAll.source === 'computeBooks', JSON.stringify({ source: epAll.source }));
+    A('endpoint consolidated -> source gl', epAll.source === 'gl', JSON.stringify({ source: epAll.source }));
 
     // 4) BROKEN ledger -> fallback to computeBooks, numbers STILL correct
     const del = await c.query(`DELETE FROM ledger_lines WHERE user_id=$1 AND credit>0 AND account_id=(SELECT id FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2 AND code='4000')`, [uid, eid]);

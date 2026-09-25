@@ -5,7 +5,7 @@
  * computeBooks, else computeBooks. Non-P&L fields (outstanding, monthly) stay computeBooks-derived.
  *   - complete ledger -> source 'gl', figures correct, outstanding + monthly still present.
  *   - broken ledger  -> source 'computeBooks', figures STILL correct (safety net).
- *   - consolidated (?entity_id=all) -> source 'computeBooks'.
+ *   - consolidated (?entity_id=all) -> source 'gl' (glConsolidated reconciles).
  *   node -r ./tests/harness/clock.js tests/harness/verify-gl-dashboard-readswap.js
  */
 require('./clock.js');
@@ -43,9 +43,9 @@ async function main() {
       JSON.stringify({ rev: r.revenue, exp: r.expenses, net: r.netProfit, gross: r.grossProfit, cogs: r.cogs }));
     A('non-P&L fields intact (outstanding 1000, monthly + expenseBreakdown present)', near(r.outstanding, 1000) && ('monthly' in r) && ('expenseBreakdown' in r), JSON.stringify({ outstanding: r.outstanding, hasMonthly: 'monthly' in r, hasBreakdown: 'expenseBreakdown' in r }));
 
-    // 2) consolidated -> computeBooks
+    // 2) consolidated -> gl
     const rAll = await rep('?entity_id=all');
-    A('consolidated (entity_id=all) -> source computeBooks', rAll.source === 'computeBooks', JSON.stringify({ source: rAll.source }));
+    A('consolidated (entity_id=all) -> source gl', rAll.source === 'gl', JSON.stringify({ source: rAll.source }));
 
     // 3) broken ledger -> fallback, figures still correct
     const del = await c.query(`DELETE FROM ledger_lines WHERE user_id=$1 AND credit>0 AND account_id=(SELECT id FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2 AND code='4000')`, [uid, eid]);

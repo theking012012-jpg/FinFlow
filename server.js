@@ -8067,14 +8067,16 @@ async function backfillLedgerForUser(userId, opts = {}) {
 // RED-provable: break any ledger entry and the signal drops to false (see verify-gl-verify.js).
 async function glReconcile(userId, entityId, fyStartIdx = 0) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
-  const f = await glFinancials(userId, entityId, 'year', fyStartIdx);
+  // entityId null => CONSOLIDATED (all entities, base currency) via glConsolidated; else single entity.
+  const f = entityId == null ? await glConsolidated(userId, { fyStartIdx }) : await glFinancials(userId, entityId, 'year', fyStartIdx);
   const books = await computeBooks(userId, entityId, 'year', null, fyStartIdx);
   const glExpNonFx = r2(f.accounts.filter(a => a.type === 'expense' && a.code !== '7000').reduce((s, a) => s + a.net_period, 0));
   const revenueOk = Math.abs(f.incomeStatement.income - books.revenue) < 0.01;
   const expenseOk = Math.abs(glExpNonFx - (books.cogs + books.opex)) < 0.01;
   const trialBalanced = f.trialBalance.balanced;
   const balanceSheetBalanced = f.balanceSheet.balanced;
-  const reconciledToReports = revenueOk && expenseOk;
+  const coverageOk = !f.fxCoverage || f.fxCoverage.complete !== false;   // consolidated: all rates present
+  const reconciledToReports = revenueOk && expenseOk && coverageOk;
   return {
     entityId,
     booksBalanced: trialBalanced && balanceSheetBalanced && reconciledToReports,
@@ -8088,6 +8090,159 @@ async function glReconcile(userId, entityId, fyStartIdx = 0) {
   };
 }
 // ════════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
+// GL CONSOLIDATION & MULTI-CURRENCY (beyond NetSuite/Intacct) — see GL_CONSOLIDATION_DESIGN.md
+// Reads the GL across one or ALL of an owner's entities and translates to a base/display currency.
+// PRIMARY view: every ledger LINE is converted at ITS OWN entry-date rate (entityCurrency->display) via
+// pickRate — identical to computeBooks' F24 per-leg conversion, so it RECONCILES to computeBooks to the
+// cent and the base trial balance still ties (both legs of an entry share one rate => balance preserved;
+// no CTA needed on this transaction-precise view — strictly more accurate than ASC 830's average-rate).
+// SUPPLEMENTARY view: an ASC 830 aggregation (income at the period AVERAGE rate, balance sheet at the
+// CLOSING rate, equity at closing) whose residual is the Cumulative Translation Adjustment (cta) — the
+// GAAP consolidated figure, offered alongside. Missing rates are flagged in fxCoverage (never silently
+// mis-translated). entityId set => single entity (optionally to a display currency); entityId null =>
+// ALL entities consolidated to base. Pure reader.
+async function glConsolidated(userId, opts = {}) {
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const num = v => parseFloat(v) || 0;
+  const entityId = opts.entityId != null ? opts.entityId : null;
+  const period = opts.period || 'year';
+  const fyStartIdx = Number.isInteger(opts.fyStartIdx) ? opts.fyStartIdx : 0;
+  const monthIdx = opts.monthIdx != null ? opts.monthIdx : null;
+  const _today = FinFlowDates.resolvedToday(new Date());
+  const periodKind = (period === 'month' || period === 'quarter') ? period : 'year';
+  const _rp = FinFlowDates.resolvePeriod({ period: periodKind, monthIdx, fyStartMonth: fyStartIdx, today: _today });
+  const winStart = _rp.start, winEnd = _rp.end;
+
+  // Resolve entities + base currency the EXACT same way computeBooks (F24) does, so the reconcile gate
+  // compares like-for-like (base mismatch would force a needless fallback).
+  const entRows = await db.allByUser('entities', userId);
+  const entCur = {}; for (const e of entRows) entCur[e.id] = (e.currency || 'USD');
+  // base currency (match computeBooks F24): users.base_currency, else first entity, else USD.
+  let baseCur = null;
+  try { const b = (await pool.query(`SELECT data->>'base_currency' AS b FROM users WHERE id=$1`, [userId])).rows[0]; baseCur = (b && typeof b.b === 'string' && /^[A-Z]{3}$/i.test(b.b)) ? b.b.toUpperCase() : null; } catch (_) {}
+  baseCur = baseCur || (entRows[0] && entRows[0].currency) || 'USD';
+  const viewedCur = entityId != null ? (entCur[entityId] || 'USD') : baseCur;
+  const _disp = (typeof opts.display === 'string' && /^[A-Z]{3}$/.test(opts.display)) ? opts.display.toUpperCase() : null;
+  const displayCur = entityId != null ? (_disp || viewedCur) : (_disp || baseCur);
+
+  const fxRows = (await pool.query(`SELECT from_currency, to_currency, rate, rate_date FROM fx_rates WHERE user_id=$1`, [userId])).rows;
+  const fxCoverage = { display: displayCur, complete: true, unconvertible: [], convertedRows: 0, totalRows: 0 };
+
+  const params = [userId, _today];
+  let where = `ll.user_id=$1 AND le.entry_date <= $2::date`;
+  if (entityId != null) { params.push(entityId); where += ` AND le.entity_id=$3`; }
+  const { rows } = await pool.query(
+    `SELECT le.entity_id AS eid, la.code, la.type, la.normal, le.entry_date::text AS d,
+            ll.debit::float AS debit, ll.credit::float AS credit
+       FROM ledger_lines ll
+       JOIN ledger_accounts la ON la.id = ll.account_id
+       JOIN ledger_entries le ON le.id = ll.entry_id AND le.status='posted'
+      WHERE ${where}`, params);
+
+  // in-window average rate (from->to): mean of fx_rates dated within the window; else the closing rate.
+  const closingRate = (from, to) => (from === to) ? 1 : pickRate(fxRows, from, to, _today);
+  const avgRate = (from, to) => {
+    if (from === to) return 1;
+    const win = fxRows.filter(x => { const rd = FinFlowDates._toYmd(x.rate_date); return String(x.from_currency).toUpperCase() === from && String(x.to_currency).toUpperCase() === to && rd != null && rd >= winStart && rd < winEnd && num(x.rate) > 0; });
+    if (win.length) return win.reduce((s, x) => s + num(x.rate), 0) / win.length;
+    return pickRate(fxRows, from, to, _today);
+  };
+
+  const acc = {};              // code -> converted (per-line, transaction-date) rollup (PRIMARY view)
+  const entAgg = {};           // eid -> native rollups for the ASC 830 view
+  for (const r of rows) {
+    const from = entCur[r.eid] != null ? entCur[r.eid] : baseCur;
+    const rate = (from === displayCur) ? 1 : pickRate(fxRows, from, displayCur, r.d);
+    const lineAmt = Math.abs(r.debit) + Math.abs(r.credit);
+    // native per-entity aggregation (for ASC 830), independent of rate availability
+    const e = entAgg[r.eid] || (entAgg[r.eid] = { from, incP:0, expP:0, incAll:0, expAll:0, asset:0, liab:0, equity:0 });
+    const nd = r.debit, nc = r.credit;
+    if (r.type === 'income') { e.incAll += (nc - nd); if (r.d >= winStart && r.d < winEnd) e.incP += (nc - nd); }
+    else if (r.type === 'expense') { e.expAll += (nd - nc); if (r.d >= winStart && r.d < winEnd) e.expP += (nd - nc); }
+    else if (r.type === 'asset') e.asset += (nd - nc);
+    else if (r.type === 'liability') e.liab += (nc - nd);
+    else if (r.type === 'equity') e.equity += (nc - nd);
+    // converted per-line rollup (PRIMARY)
+    if (rate == null) { if (lineAmt !== 0) { fxCoverage.complete = false; fxCoverage.totalRows++; fxCoverage.unconvertible.push({ code: r.code, date: r.d, from, to: displayCur }); } continue; }
+    if (displayCur && from !== displayCur && lineAmt !== 0) { fxCoverage.totalRows++; fxCoverage.convertedRows++; }
+    const a = acc[r.code] || (acc[r.code] = { code: r.code, type: r.type, normal: r.normal, dAll:0, cAll:0, dP:0, cP:0 });
+    const cd = r.debit * rate, cc = r.credit * rate;
+    a.dAll += cd; a.cAll += cc;
+    if (r.d >= winStart && r.d < winEnd) { a.dP += cd; a.cP += cc; }
+  }
+  const accounts = Object.values(acc).map(a => {
+    const netAll = r2(a.dAll - a.cAll), netP = r2(a.dP - a.cP);
+    return { code: a.code, type: a.type, normal: a.normal, net_all: netAll, net_period: netP, balance: r2(a.normal === 'debit' ? netAll : -netAll) };
+  });
+  const tb = accounts.map(a => ({ code: a.code, debit: a.net_all > 0 ? a.net_all : 0, credit: a.net_all < 0 ? r2(-a.net_all) : 0 }));
+  const tbDebit = r2(tb.reduce((s, l) => s + l.debit, 0)), tbCredit = r2(tb.reduce((s, l) => s + l.credit, 0));
+  const income = r2(accounts.filter(a => a.type === 'income').reduce((s, a) => s + (-a.net_period), 0));
+  const expenses = r2(accounts.filter(a => a.type === 'expense').reduce((s, a) => s + a.net_period, 0));
+  const netProfit = r2(income - expenses);
+  const assets = r2(accounts.filter(a => a.type === 'asset').reduce((s, a) => s + a.net_all, 0));
+  const liabilities = r2(accounts.filter(a => a.type === 'liability').reduce((s, a) => s + (-a.net_all), 0));
+  const equityPosted = r2(accounts.filter(a => a.type === 'equity').reduce((s, a) => s + (-a.net_all), 0));
+  const earningsAll = r2(accounts.filter(a => a.type === 'income').reduce((s, a) => s + (-a.net_all), 0) - accounts.filter(a => a.type === 'expense').reduce((s, a) => s + a.net_all, 0));
+  const equity = r2(equityPosted + earningsAll);
+
+  // ── ASC 830 supplementary: income at AVERAGE rate, balance sheet at CLOSING rate, CTA = residual ──
+  let a830Assets = 0, a830LiabEquity = 0, a830RE = 0;
+  for (const eid of Object.keys(entAgg)) {
+    const e = entAgg[eid];
+    const cl = closingRate(e.from, displayCur), av = avgRate(e.from, displayCur);
+    if (cl == null || av == null) { fxCoverage.complete = false; continue; }
+    a830Assets += e.asset * cl;
+    a830LiabEquity += (e.liab + e.equity) * cl;
+    a830RE += (e.incAll - e.expAll) * av;          // retained earnings translated at the average rate
+  }
+  const asc830 = { assetsClosing: r2(a830Assets), liabEquityClosing: r2(a830LiabEquity), retainedEarningsAvg: r2(a830RE), cta: r2(a830Assets - a830LiabEquity - a830RE) };
+
+  // ── Intercompany DETECTION (supplementary, consolidated only) ──────────────────────────────────
+  // A sale whose customer name exactly matches another of the owner's entities (or a bill whose vendor
+  // matches) is likely internal trade that a true group consolidation eliminates. We DETECT + expose it
+  // (an `eliminated` P&L view) but do NOT silently remove it from the reconciled primary totals: reliable
+  // auto-elimination needs an explicit counterparty link (data-model follow-up), and certified numbers are
+  // never altered on a name-match guess. Honest visibility beats a wrong automatic elimination.
+  const intercompany = { revenue: 0, expense: 0, matches: [] };
+  if (entityId == null) {
+    try {
+      const names = new Map(entRows.map(e => [String(e.name || '').trim().toLowerCase(), e.id]));
+      const _REC = new Set(['pending', 'overdue', 'partial', 'paid']);
+      const _inv = await db.allByUser('invoices', userId, () => true);
+      for (const iv of _inv) {
+        const cid = names.get(String(iv.client || '').trim().toLowerCase());
+        if (cid != null && cid !== iv.entity_id && _REC.has(String(iv.status || '').toLowerCase())) {
+          const from = entCur[iv.entity_id] || baseCur;
+          const rate = (from === displayCur) ? 1 : pickRate(fxRows, from, displayCur, FinFlowDates._toYmd(iv.issue_date || iv.created_at));
+          if (rate != null) { intercompany.revenue += (parseFloat(iv.amount) || 0) * rate; intercompany.matches.push({ kind: 'invoice', fromEntity: iv.entity_id, toEntity: cid }); }
+        }
+      }
+      const _bil = await db.allByUser('bills', userId, () => true);
+      for (const bl of _bil) {
+        const vid = names.get(String(bl.vendor || '').trim().toLowerCase());
+        if (vid != null && vid !== bl.entity_id && RECOGNIZED_BILL.has(String(bl.status || '').toLowerCase())) {
+          const from = entCur[bl.entity_id] || baseCur;
+          const rate = (from === displayCur) ? 1 : pickRate(fxRows, from, displayCur, FinFlowDates._toYmd(bl.issue_date || bl.created_at));
+          if (rate != null) { intercompany.expense += (parseFloat(bl.amount) || 0) * rate; intercompany.matches.push({ kind: 'bill', fromEntity: bl.entity_id, toEntity: vid }); }
+        }
+      }
+      intercompany.revenue = r2(intercompany.revenue); intercompany.expense = r2(intercompany.expense);
+    } catch (_) { /* detection is best-effort; never breaks the read */ }
+  }
+  // Eliminated (group) P&L view: primary consolidated minus detected intercompany trade.
+  const eliminated = { income: r2(income - intercompany.revenue), expenses: r2(expenses - intercompany.expense), netProfit: r2((income - intercompany.revenue) - (expenses - intercompany.expense)) };
+
+  return {
+    base: baseCur, display: displayCur, consolidated: entityId == null, entityIds: entRows.map(e => e.id),
+    accounts,
+    trialBalance: { totalDebit: tbDebit, totalCredit: tbCredit, balanced: Math.abs(tbDebit - tbCredit) < 0.01 },
+    incomeStatement: { income, expenses, netProfit },
+    balanceSheet: { assets, liabilities, equity, balanced: Math.abs(assets - (liabilities + equity)) < 0.01 },
+    asc830, intercompany, eliminated, fxCoverage,
+  };
+}
+
 // GL PHASE 5b - RECONCILE-GATED read of the P&L from the ledger, with computeBooks as ORACLE FALLBACK.
 // The read only flips to the GL when the GL's own P&L reconciles to computeBooks to the CENT for this
 // entity+period AND the trial balance ties; otherwise it serves computeBooks unchanged (and logs the
@@ -8108,21 +8263,20 @@ async function glProfitLoss(userId, entityId, opts = {}) {
     payroll: r2(books.parts ? books.parts.payroll : 0), totalExpenses: r2(books.opex), netProfit: r2(books.netProfit),
     fxCoverage: books.fxCoverage,
   });
-  // Consolidated (all entities) and display-currency/FX are not yet matched by glFinancials -> oracle.
-  if (entityId == null || display) {
-    const books = opts.books || await computeBooks(userId, entityId, period, display, fyStartIdx, monthIdx);
-    return fromBooks(books, 'computeBooks');
-  }
+  // Single entity in native currency -> glFinancials. Consolidated (all entities) OR display-currency ->
+  // glConsolidated (per-leg conversion, matches computeBooks' F24). Both are reconcile-gated below.
+  const needsConsolidation = (entityId == null) || !!display;
   let books, f;
   try {
-    [books, f] = await Promise.all([
-      opts.books ? Promise.resolve(opts.books) : computeBooks(userId, entityId, period, null, fyStartIdx, monthIdx),
-      glFinancials(userId, entityId, period, fyStartIdx, monthIdx),
-    ]);
+    const booksP = opts.books ? Promise.resolve(opts.books) : computeBooks(userId, entityId, period, display, fyStartIdx, monthIdx);
+    const fP = needsConsolidation
+      ? glConsolidated(userId, { entityId, display, period, fyStartIdx, monthIdx })
+      : glFinancials(userId, entityId, period, fyStartIdx, monthIdx);
+    [books, f] = await Promise.all([booksP, fP]);
   } catch (e) {
     // Any GL read error -> oracle. Never let the ledger path break a report.
-    const b = opts.books || await computeBooks(userId, entityId, period, null, fyStartIdx, monthIdx);
-    console.error('[GL 5b] glFinancials read failed, serving computeBooks:', e && e.message);
+    const b = opts.books || await computeBooks(userId, entityId, period, display, fyStartIdx, monthIdx);
+    console.error('[GL 5b] financial read failed, serving computeBooks:', e && e.message);
     return fromBooks(b, 'computeBooks');
   }
   const acct = code => { const a = f.accounts.find(x => x.code === code); return a ? a.net_period : 0; };
@@ -8135,8 +8289,9 @@ async function glProfitLoss(userId, entityId, opts = {}) {
   const glGross = r2(glRevenue - glCogs);
   const glNet = r2(glRevenue - glCogs - glOpex);
   const eq = (a, b) => Math.abs(r2(a) - r2(b)) < 0.01;
+  const coverageOk = !f.fxCoverage || f.fxCoverage.complete !== false;   // never serve a partial (missing-rate) translation
   const reconciled =
-    f.trialBalance.balanced &&
+    f.trialBalance.balanced && coverageOk &&
     eq(glRevenue, books.revenue) && eq(glCogs, books.cogs) && eq(glGross, books.grossProfit) &&
     eq(glPayroll, books.parts ? books.parts.payroll : 0) && eq(glOpex, books.opex) && eq(glNet, books.netProfit);
   if (!reconciled) {
@@ -8147,12 +8302,16 @@ async function glProfitLoss(userId, entityId, opts = {}) {
       ' tb=' + f.trialBalance.balanced);
     return fromBooks(books, 'computeBooks');
   }
-  return {
+  const _out = {
     source: 'gl',
     totalRevenue: glRevenue, cogs: glCogs, grossProfit: glGross,
     payroll: glPayroll, totalExpenses: glOpex, netProfit: glNet,
-    fxCoverage: books.fxCoverage,
+    fxCoverage: (f.fxCoverage || books.fxCoverage),
   };
+  if (f.intercompany) _out.intercompany = f.intercompany;   // consolidated: detected internal trade
+  if (f.eliminated) _out.eliminated = f.eliminated;         // consolidated: group P&L net of intercompany
+  if (f.base) _out.baseCurrency = f.base;
+  return _out;
 }
 
 // GL PHASE 5b (slice 3) - RECONCILE-GATED balance sheet. Same oracle-fallback discipline as glProfitLoss.
@@ -8182,23 +8341,29 @@ async function glBalanceSheet(userId, entityId) {
     accountsPayable: ap, taxPayable: 0, payrollLiabilities: 0, totalLiabilities: ap,
     equity: r2(ar - ap),
   });
-  if (entityId == null) return oracle();
+  // Single entity -> glFinancials(native). Consolidated (all entities) -> glConsolidated (per-leg base
+  // conversion, matches computeBooks). Both reconcile-gated; consolidated also requires full FX coverage.
+  const consolidated = entityId == null;
   let f;
-  try { f = await glFinancials(userId, entityId, 'year'); }
-  catch (e) { console.error('[GL 5b] balance-sheet glFinancials failed, serving oracle:', e && e.message); return oracle(); }
+  try { f = consolidated ? await glConsolidated(userId, { entityId: null }) : await glFinancials(userId, entityId, 'year'); }
+  catch (e) { console.error('[GL 5b] balance-sheet read failed, serving oracle:', e && e.message); return oracle(); }
   const bal = {}; for (const a of f.accounts) bal[a.code] = a.balance;   // balance is natural-direction (assets/exp debit-positive; rest credit-positive)
   const glAR = r2(bal['1100'] || 0), glAP = r2(bal['2000'] || 0);
   const glExpNonFx = r2(f.accounts.filter(a => a.type === 'expense' && a.code !== '7000').reduce((s, a) => s + a.net_period, 0));
   const eq = (a, b) => Math.abs(r2(a) - r2(b)) < 0.01;
-  const reconciled = f.trialBalance.balanced &&
+  const coverageOk = !f.fxCoverage || f.fxCoverage.complete !== false;
+  // Consolidated gate drops the single-entity AP-equality (no clean consolidated-base AP oracle); TB ties
+  // + P&L reconciles + AR matches computeBooks' consolidated AR is a strong completeness proxy, and cash
+  // is trustworthy under it (payroll cash-out posts). Single-entity keeps the exact AP check.
+  const reconciled = f.trialBalance.balanced && coverageOk &&
     eq(f.incomeStatement.income, books.revenue) && eq(glExpNonFx, books.cogs + books.opex) &&
-    eq(glAR, ar) && eq(glAP, ap);
+    eq(glAR, ar) && (consolidated ? true : eq(glAP, ap));
   if (!reconciled) {
     console.warn('[GL 5b] balance-sheet divergence (serving oracle) uid=' + userId + ' eid=' + entityId +
-      ' glAR=' + glAR + ' AR=' + ar + ' glAP=' + glAP + ' AP=' + ap + ' tb=' + f.trialBalance.balanced);
+      ' glAR=' + glAR + ' AR=' + ar + ' glAP=' + glAP + ' AP=' + ap + ' tb=' + f.trialBalance.balanced + ' cov=' + coverageOk);
     return oracle();
   }
-  return {
+  const res = {
     source: 'gl',
     cash: r2(bal['1000'] || 0), cashTracked: true,
     accountsReceivable: r2(bal['1100'] || 0), inventory: r2(bal['1200'] || 0),
@@ -8206,6 +8371,11 @@ async function glBalanceSheet(userId, entityId) {
     accountsPayable: r2(bal['2000'] || 0), taxPayable: r2(bal['2100'] || 0), payrollLiabilities: r2(bal['2200'] || 0),
     totalLiabilities: r2(f.balanceSheet.liabilities), equity: r2(f.balanceSheet.equity),
   };
+  if (consolidated) {
+    res.baseCurrency = f.base; res.consolidated = true; res.fxCoverage = f.fxCoverage;
+    if (f.asc830) { res.cta = f.asc830.cta; res.asc830 = f.asc830; }   // ASC 830 supplementary (GAAP CTA)
+  }
+  return res;
 }
 
 async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null) {
@@ -9352,7 +9522,8 @@ module.exports.glFinancials = glFinancials;   // GL Phase 3 — ledger-derived f
 module.exports.backfillLedgerForUser = backfillLedgerForUser;   // GL Phase 4 — historical backfill (test surface)
 module.exports.glReconcile = glReconcile;
 module.exports.glProfitLoss = glProfitLoss;   // GL Phase 5b - reconcile-gated P&L read (test surface)
-module.exports.glBalanceSheet = glBalanceSheet;   // GL Phase 5b - reconcile-gated balance sheet (test surface)   // GL Phase 5 — books-balanced cross-check (test surface)
+module.exports.glConsolidated = glConsolidated;   // GL consolidation + multi-currency reader (test surface)
+module.exports.glBalanceSheet = glBalanceSheet;   // GL Phase 5b - reconcile-gated balance sheet (test surface)
 // Test hook: expose the recurring scheduler for harness verification (no behavior change in
 // prod — it still runs on boot + on its interval; this only makes it drivable under test).
 module.exports.runRecurringScheduler = runRecurringScheduler;

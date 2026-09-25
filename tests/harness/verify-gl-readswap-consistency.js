@@ -3,7 +3,7 @@
  * verify-gl-readswap-consistency.js - GL Phase 5b (slice 5, migration): with a COMPLETE, route-seeded
  * ledger, every swapped read reports source:'gl' AND the surfaces AGREE - the dashboard, the P&L
  * statement and the balance sheet are one coherent set of ledger-sourced numbers. Also proves the
- * consolidated view falls back consistently (all three source:'computeBooks').
+ * consolidated view is ledger-sourced consistently (all three source:'gl').
  *   node -r ./tests/harness/clock.js tests/harness/verify-gl-readswap-consistency.js
  */
 require('./clock.js');
@@ -58,14 +58,14 @@ async function main() {
     A('balance sheet A = L + E (800 = 300 + 500)', near(bs.totalAssets, bs.totalLiabilities + bs.equity) && near(bs.totalAssets, 800) && near(bs.equity, 500), JSON.stringify({ ta: bs.totalAssets, tl: bs.totalLiabilities, eq: bs.equity }));
     A('balance sheet equity == P&L netProfit (retained earnings)', near(bs.equity, pl.netProfit), 'eq=' + bs.equity + ' net=' + pl.netProfit);
 
-    // 4) consolidated view falls back consistently across all three
+    // 4) consolidated view is ledger-sourced across all three
     const qa = '?entity_id=all';
     const dashA = await getRep(qa), plA = await pnl(qa), bsA = await bsheet(qa);
-    A('consolidated: all three source = computeBooks', dashA.source === 'computeBooks' && plA.source === 'computeBooks' && bsA.source === 'computeBooks', JSON.stringify({ dash: dashA.source, pl: plA.source, bs: bsA.source }));
-    A('consolidated balance sheet reverts to AR-only stub (cash not tracked)', bsA.cashTracked === false && bsA.totalAssetsExcludesCash === true, JSON.stringify({ cashTracked: bsA.cashTracked }));
+    A('consolidated: all three source = gl (consolidation reconciles)', dashA.source === 'gl' && plA.source === 'gl' && bsA.source === 'gl', JSON.stringify({ dash: dashA.source, pl: plA.source, bs: bsA.source }));
+    A('consolidated balance sheet shows real cash (ledger-sourced)', bsA.cashTracked === true && bsA.totalAssetsExcludesCash === false, JSON.stringify({ cashTracked: bsA.cashTracked }));
 
     console.log('\n' + '-'.repeat(78));
-    console.log(fail ? ('  ' + fail + ' FAILED - ' + pass + ' passed, ' + fail + ' failed') : ('  ALL GREEN - ' + pass + ' passed, 0 failed  (all reads ledger-sourced + coherent; consolidated falls back)'));
+    console.log(fail ? ('  ' + fail + ' FAILED - ' + pass + ' passed, ' + fail + ' failed') : ('  ALL GREEN - ' + pass + ' passed, 0 failed  (all reads ledger-sourced + coherent; consolidated ledger-sourced)'));
     console.log('-'.repeat(78) + '\n');
   } finally { if (server && server.close) await server.close(); await scratch.stop(); }
   process.exit(fail ? 1 : 0);

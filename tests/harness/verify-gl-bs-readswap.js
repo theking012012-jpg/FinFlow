@@ -5,7 +5,7 @@
  * trial balance ties + P&L reconciles + GL AR/AP == canonical AR/AP.
  *   - complete ledger: source 'gl', cashTracked true, real cash, assets = cash+AR (+inv), A = L + E.
  *   - broken ledger: source 'computeBooks', cash null, cashTracked false (safety net).
- *   - consolidated (entity null): source 'computeBooks' (glFinancials is single-entity).
+ *   - consolidated (entity null): source 'gl' with real cash (single-currency consolidation reconciles).
  *   - live POST /api/reports/balance-sheet?entity_id=<e> reflects the same.
  *   node -r ./tests/harness/clock.js tests/harness/verify-gl-bs-readswap.js
  */
@@ -50,9 +50,9 @@ async function main() {
     const ep = JSON.parse((await http.post('/api/reports/balance-sheet?entity_id=' + eid, {})).text);
     A('endpoint source gl + cash 800 + excludesCash false', ep.source === 'gl' && near(ep.cash, 800) && ep.cashTracked === true && ep.totalAssetsExcludesCash === false, JSON.stringify({ source: ep.source, cash: ep.cash, excl: ep.totalAssetsExcludesCash }));
 
-    // 3) consolidated -> oracle stub
+    // 3) consolidated -> gl (real cash)
     const bsAll = await glBalanceSheet(uid, null);
-    A('consolidated (entity null) -> source computeBooks + cash null', bsAll.source === 'computeBooks' && bsAll.cash === null && bsAll.cashTracked === false, JSON.stringify(bsAll));
+    A('consolidated (entity null) -> source gl + real cash', bsAll.source === 'gl' && typeof bsAll.cash === 'number' && bsAll.cashTracked === true, JSON.stringify(bsAll));
 
     // 4) broken ledger -> fallback stub
     const del = await c.query(`DELETE FROM ledger_lines WHERE user_id=$1 AND account_id=(SELECT id FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2 AND code='1000') AND debit>0`, [uid, eid]);

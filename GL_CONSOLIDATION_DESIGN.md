@@ -1,6 +1,6 @@
 # GL Consolidation & Multi-Currency — Design Spec (aim: beyond the industry leaders)
 
-Status: SPEC (not started). Owner sign-off pending. This is the plan for the last and highest-value
+Status: SHIPPED 2026-09-25. Built to this spec; all slices A-E landed, harness-verified. This is the plan for the last and highest-value
 piece of the ledger: consolidated, multi-currency financial statements read from the GL — done to a
 standard that beats NetSuite OneWorld / Sage Intacct, not just matches QuickBooks/Xero.
 
@@ -103,3 +103,26 @@ NetSuite/Intacct-class real-time multi-entity consolidation with ASC 830 transla
 certification, honest FX coverage, and reconcile-gated safety the incumbents don't offer. This is the
 feature that lets FinFlow legitimately claim "better than the big competitors" for multi-entity, multi-
 currency businesses — the last major piece of roadmap #2's ledger.
+
+
+## 8. SHIPPED (2026-09-25)
+`glConsolidated(userId, {entityId?, display?, period, ...})` implements the plan:
+- PRIMARY view: per-line conversion at each line's entry-date rate to base (matches computeBooks F24), so
+  it RECONCILES to the cent and the base trial balance ties (no CTA on the precise view). Handles single
+  entity + display currency (slice A), same-currency consolidation (slice B), and multi-currency (slice C).
+- SUPPLEMENTARY: ASC 830 view (income at period AVG rate, balance sheet at CLOSING rate) with `cta` =
+  residual. Verified against a hand-computed 2-entity, 2-rate oracle (CTA = 120).
+- Intercompany DETECTION (slice D): sales/bills whose counterparty name matches another owned entity are
+  detected and exposed as an `eliminated` group P&L view, WITHOUT silently altering the reconciled/certified
+  primary totals (reliable auto-elimination needs an explicit counterparty link — data-model follow-up).
+- FX COVERAGE: any missing rate flags `fxCoverage.complete=false` and forces oracle fallback — never a
+  silent mis-translation.
+- Wiring: glProfitLoss + glBalanceSheet serve consolidated/display from glConsolidated, reconcile-gated with
+  computeBooks as oracle fallback; POST /api/reports/profit-loss, /balance-sheet and GET /api/reports all
+  benefit. glReconcile(userId, null) certifies the CONSOLIDATED books (slice E), RED-provable. The Reports
+  balance sheet renders a CTA row when present.
+- Harnesses: verify-gl-consolidation (13/0), verify-gl-intercompany (8/0); the four Phase 5b read-swap
+  harnesses migrated to assert consolidated now serves from the ledger. Full report/GL/FX/accountant
+  regression green.
+- FOLLOW-UPS (documented, not blocking): true GAAP historical-rate equity + auto-elimination via an explicit
+  intercompany counterparty field; P&L UI surfacing of the eliminated/intercompany figures (API exposes them).

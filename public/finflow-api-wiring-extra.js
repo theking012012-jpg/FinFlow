@@ -702,6 +702,8 @@
         const _taxP = parseFloat(bs.taxPayable) || 0;
         const _payL = parseFloat(bs.payrollLiabilities) || 0;
         const _taLabel = bs.totalAssetsExcludesCash ? 'Total Assets (excl. untracked cash)' : 'Total Assets';
+        // GL consolidation: ASC 830 Cumulative Translation Adjustment (consolidated multi-currency only).
+        const _cta = (typeof bs.cta === 'number') ? bs.cta : 0;
         _rptBody(
           tiles([
             tile('Total Assets', m(ta), bs.totalAssetsExcludesCash ? 'excl. untracked cash' : 'incl. cash', 'var(--green)'),
@@ -722,6 +724,7 @@
           + (_taxP > 0 ? row('Tax Payable', m(_taxP), { color: 'var(--red)' }) : '')
           + (_payL > 0 ? row('Payroll Liabilities', m(_payL), { color: 'var(--red)' }) : '')
           + row('Total Liabilities', m(tl), { color: 'var(--red)', bold: true })
+          + (Math.abs(_cta) >= 0.01 ? row('Cumulative Translation Adjustment (ASC 830)', m(_cta), { color: 'var(--t2)' }) : '')
           + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="font-family:var(--font-mono);color:${eq >= 0 ? 'var(--green)' : 'var(--red)'}">${m(eq)}</span></div>`);
         return;
       }

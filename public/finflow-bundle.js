@@ -4558,9 +4558,16 @@ function clearAIChat(){
         const cashCell = bs.cashTracked === false ? '<span style="color:var(--t3)">Not tracked</span>' : m(bs.cash);
         const ta = parseFloat(bs.totalAssets) || 0, tl = parseFloat(bs.totalLiabilities) || 0, eq = parseFloat(bs.equity) || 0;
         const denomBS = Math.max(1, ta, tl);
+        // GL Phase 5b: the balance sheet may now be ledger-sourced (bs.source==='gl') with a REAL cash
+        // balance and extra lines; labels/rows below are DATA-DRIVEN so the AR-only stub renders exactly
+        // as before when served from computeBooks (bs.totalAssetsExcludesCash===true).
+        const _inv = parseFloat(bs.inventory) || 0;
+        const _taxP = parseFloat(bs.taxPayable) || 0;
+        const _payL = parseFloat(bs.payrollLiabilities) || 0;
+        const _taLabel = bs.totalAssetsExcludesCash ? 'Total Assets (excl. untracked cash)' : 'Total Assets';
         _rptBody(
           tiles([
-            tile('Total Assets', m(ta), 'excl. untracked cash', 'var(--green)'),
+            tile('Total Assets', m(ta), bs.totalAssetsExcludesCash ? 'excl. untracked cash' : 'incl. cash', 'var(--green)'),
             tile('Total Liabilities', m(tl), 'accounts payable', 'var(--red)'),
             tile('Equity', m(eq), 'assets − liabilities', eq >= 0 ? 'var(--green)' : 'var(--red)'),
             tile('Receivable', m(bs.accountsReceivable), 'outstanding AR'),
@@ -4571,9 +4578,12 @@ function clearAIChat(){
           + hdr('Assets')
           + row('Cash & Equivalents', cashCell)
           + row('Accounts Receivable', m(bs.accountsReceivable), { color: 'var(--green)' })
-          + row('Total Assets (excl. untracked cash)', m(ta), { bold: true })
+          + (_inv > 0 ? row('Inventory', m(_inv), { color: 'var(--green)' }) : '')
+          + row(_taLabel, m(ta), { bold: true })
           + hdr('Liabilities')
           + row('Accounts Payable', m(bs.accountsPayable), { color: 'var(--red)' })
+          + (_taxP > 0 ? row('Tax Payable', m(_taxP), { color: 'var(--red)' }) : '')
+          + (_payL > 0 ? row('Payroll Liabilities', m(_payL), { color: 'var(--red)' }) : '')
           + row('Total Liabilities', m(tl), { color: 'var(--red)', bold: true })
           + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="font-family:var(--font-mono);color:${eq >= 0 ? 'var(--green)' : 'var(--red)'}">${m(eq)}</span></div>`);
         return;

@@ -280,3 +280,20 @@ backfill replays the cash-out for every `paid` run (idempotent). P&L is unaffect
 balance-sheet accounts), so glReconcile/certification are unchanged. `verify-gl-payroll-cashout.js`
 (16/0). With this, the remaining cash-completeness question for the balance-sheet cash upgrade is closed
 for payroll; the BS cash slice can proceed next (gate cash on trial-balance + P&L + AR + AP reconciling).
+
+### GL Phase 5b (slice 3) - balance sheet reports REAL cash from the ledger (shipped 2026-09-25)
+The balance sheet now serves a REAL cash balance (account 1000) from the ledger - the F123 stub could only
+say cash "not tracked" (assets = AR only), because there was no cash account to compute from. `glBalanceSheet`
+applies the same oracle-fallback discipline as the P&L, with a STRONGER gate for cash trust: serve the GL
+balance sheet only when the trial balance ties, the P&L reconciles to computeBooks, AND GL AR/AP equal the
+canonical AR/AP (a completeness proxy - and payroll cash-out now posts too, so cash is trustworthy under
+this gate). Otherwise the honest AR-only stub, unchanged. Consolidated (entityId null) always falls back.
+`POST /api/reports/balance-sheet` delegates to the helper and returns `source`, plus `cash`/`cashTracked`,
+`inventory`, `taxPayable`, `payrollLiabilities`, and `totalAssetsExcludesCash`. The Reports-page render
+(finflow-api-wiring-extra.js) is now DATA-DRIVEN off `totalAssetsExcludesCash`: real cash + an "incl. cash"
+label + Inventory/Tax-Payable/Payroll-Liability lines when GL-sourced; the exact AR-only "excl. untracked
+cash" view when served from computeBooks. SQL-seeded harnesses (empty ledger) fall back automatically, so
+f123-balance-sheet-cash (13/0) and verify-f137-balance-sheet-report (6/0) stay green unchanged.
+`verify-gl-bs-readswap.js` (15/0): real cash 800 with A = L + E when reconciled; cash null + AR-only on a
+broken ledger; consolidated fallback; live endpoint parity. NEXT 5b: the dashboard `GET /api/reports` read,
+then migrate report/accountant harnesses to assert GL as the source where appropriate.

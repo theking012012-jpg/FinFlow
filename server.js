@@ -4988,62 +4988,11 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
 // AP = unpaid bills (entity-scoped). No real cash-account model, so cash is a retained-
 // earnings proxy (max(0, netProfit)) — noted, not a tracked balance.
 app.post('/api/reports/balance-sheet', requireAuth, wrap(async (req, res) => {
+  // GL Phase 5b (slice 3): served from the LEDGER when the entity's books provably reconcile (real cash),
+  // else the honest AR-only stub (cash 'not tracked'). glBalanceSheet encapsulates both + the gate.
   const uid = scopeId(req);
   const eid = req.entityId || null;
-  const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
-  const [books, bills] = await Promise.all([
-    computeBooks(uid, eid, 'year'),
-    db.allByUser('bills', uid, matchEnt),
-  ]);
-  // F123: cash is NOT TRACKED, and is no longer fabricated.
-  //
-  // This was `Math.max(0, books.netProfit)` — the ACCRUAL bottom line, clamped at zero, returned
-  // as `cash` and rendered on the Reports page under the caption "Cash & Equivalents"
-  // (app-main.js). Three things were wrong at once: wrong basis (accrual counts an unpaid invoice
-  // as revenue; decision 3 says cash is money that actually moved), wrong shape (net profit is a
-  // period FLOW, cash on a balance sheet is a position at a date — and the call passes 'year'),
-  // and the max(0,…) floor silently reported 0 for any loss-making account, i.e. exactly the
-  // reader who most needs the number. It also propagated into totalAssets and equity, so three
-  // lines of a six-line report were wrong, not one.
-  //
-  // There is nothing to compute it from. The schema has no cash account: no bank-balance record
-  // type, and `personal_transactions source='banking'` is an imported statement feed, not a
-  // general-ledger cash account. Σ(inflow) − Σ(outflow) from /api/reports/cash-flow is NOT the
-  // substitute — that is a period flow too, so it would repeat the shape error with a better
-  // basis and look more defensible while doing it.
-  //
-  // So the honest answer is the one D1 already ruled for tax: report that it is not tracked, and
-  // never a number. `cash: null` + `cashTracked: false`; the client renders "Not tracked".
-  // totalAssets is AR ONLY and is labelled as excluding untracked cash — which also makes this
-  // balance sheet structurally match the accountant portal's (accountant-routes.js), whose assets
-  // have always been AR alone.
-  const cash = null;
-  const ar   = books.outstanding;                     // canonical unpaid AR
-  // F38 Step 4 (AP amendment): AP = Σ max(0, amount − amount_paid) over ALL RECOGNIZED_BILL
-  // bills — payables now ARITHMETIC-driven, not status-driven. Excluding 'paid' bought nothing
-  // (a truly paid bill has amount_paid == amount → contributes 0 anyway) but let a WRONGLY-set
-  // 'paid' status hide a real liability (reachable via a direct PUT /api/bills {status:'paid'} —
-  // the mark-paid path Step 5 fixes). The max(0, …) floor stops an overpayment (amount_paid >
-  // amount) driving AP negative. amount_paid is written by recalcBillStatus (Step 3). Unknown
-  // statuses are still excluded, never counted.
-  // D2 — a future-dated bill is SCHEDULED, not yet payable, exactly as INV-6 is not yet
-  // receivable (the AR leg, computeBooks). Same exclusion so a future bill can't inflate AP.
-  const _apToday = FinFlowDates.resolvedToday(new Date());
-  const ap   = (bills || [])
-    .filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()))
-    .filter(b => { const _y = FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date); return _y != null && _y <= _apToday; })
-    .reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
-  // F123: AR only. `cash + ar` with cash === null would coerce to `0 + ar` and quietly report the
-  // same total while claiming cash is untracked — the arithmetic must state the exclusion, not
-  // rely on a coercion that reads like a bug to the next person.
-  const totalAssets      = Math.round(ar * 100) / 100;
-  const totalLiabilities = Math.round(ap * 100) / 100;
-  res.json({
-    cash, cashTracked: false,
-    accountsReceivable: ar, totalAssets, totalAssetsExcludesCash: true,
-    accountsPayable: totalLiabilities, totalLiabilities,
-    equity: Math.round((totalAssets - totalLiabilities) * 100) / 100,
-  });
+  res.json(await glBalanceSheet(uid, eid));
 }));
 
 // POST /api/reports/cash-flow — monthly inflows vs outflows (entity-scoped, CASH basis).
@@ -8158,6 +8107,59 @@ async function glProfitLoss(userId, entityId, opts = {}) {
   };
 }
 
+// GL PHASE 5b (slice 3) - RECONCILE-GATED balance sheet. Same oracle-fallback discipline as glProfitLoss.
+// The GL balance sheet reports REAL cash (account 1000) - which the old stub could not (F123: cash "not
+// tracked", assets = AR only). We only serve it when the ledger is provably complete for this entity:
+// trial balance ties, the P&L reconciles to computeBooks, AND GL AR/AP equal the canonical AR/AP - a
+// strong completeness proxy (payroll cash-out is now posted too, so cash is trustworthy under this gate).
+// Otherwise we serve the exact honest stub as before (cash null, assets = AR only). Consolidated
+// (entityId null) always falls back (glFinancials is single-entity). `source` travels for observability.
+async function glBalanceSheet(userId, entityId) {
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const matchEnt = r => r.entity_id == null || (entityId != null && r.entity_id === entityId);
+  const books = await computeBooks(userId, entityId, 'year');
+  const bills = await db.allByUser('bills', userId, matchEnt);
+  const _apToday = FinFlowDates.resolvedToday(new Date());
+  const ar = r2(books.outstanding);
+  const ap = r2((bills || [])
+    .filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()))
+    .filter(b => { const _y = FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date); return _y != null && _y <= _apToday; })
+    .reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0));
+  // Oracle = today's honest stub (cash not tracked, assets = AR only).
+  const oracle = () => ({
+    source: 'computeBooks',
+    cash: null, cashTracked: false,
+    accountsReceivable: ar, inventory: 0,
+    totalAssets: ar, totalAssetsExcludesCash: true,
+    accountsPayable: ap, taxPayable: 0, payrollLiabilities: 0, totalLiabilities: ap,
+    equity: r2(ar - ap),
+  });
+  if (entityId == null) return oracle();
+  let f;
+  try { f = await glFinancials(userId, entityId, 'year'); }
+  catch (e) { console.error('[GL 5b] balance-sheet glFinancials failed, serving oracle:', e && e.message); return oracle(); }
+  const bal = {}; for (const a of f.accounts) bal[a.code] = a.balance;   // balance is natural-direction (assets/exp debit-positive; rest credit-positive)
+  const glAR = r2(bal['1100'] || 0), glAP = r2(bal['2000'] || 0);
+  const glExpNonFx = r2(f.accounts.filter(a => a.type === 'expense' && a.code !== '7000').reduce((s, a) => s + a.net_period, 0));
+  const eq = (a, b) => Math.abs(r2(a) - r2(b)) < 0.01;
+  const reconciled = f.trialBalance.balanced &&
+    eq(f.incomeStatement.income, books.revenue) && eq(glExpNonFx, books.cogs + books.opex) &&
+    eq(glAR, ar) && eq(glAP, ap);
+  if (!reconciled) {
+    console.warn('[GL 5b] balance-sheet divergence (serving oracle) uid=' + userId + ' eid=' + entityId +
+      ' glAR=' + glAR + ' AR=' + ar + ' glAP=' + glAP + ' AP=' + ap + ' tb=' + f.trialBalance.balanced);
+    return oracle();
+  }
+  return {
+    source: 'gl',
+    cash: r2(bal['1000'] || 0), cashTracked: true,
+    accountsReceivable: r2(bal['1100'] || 0), inventory: r2(bal['1200'] || 0),
+    totalAssets: r2(f.balanceSheet.assets), totalAssetsExcludesCash: false,
+    accountsPayable: r2(bal['2000'] || 0), taxPayable: r2(bal['2100'] || 0), payrollLiabilities: r2(bal['2200'] || 0),
+    totalLiabilities: r2(f.balanceSheet.liabilities), equity: r2(f.balanceSheet.equity),
+  };
+}
+
 async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const num = v => parseFloat(v) || 0;
@@ -9301,7 +9303,8 @@ module.exports.computeBooks = computeBooks;
 module.exports.glFinancials = glFinancials;   // GL Phase 3 — ledger-derived financial statements (test surface)
 module.exports.backfillLedgerForUser = backfillLedgerForUser;   // GL Phase 4 — historical backfill (test surface)
 module.exports.glReconcile = glReconcile;
-module.exports.glProfitLoss = glProfitLoss;   // GL Phase 5b - reconcile-gated P&L read (test surface)   // GL Phase 5 — books-balanced cross-check (test surface)
+module.exports.glProfitLoss = glProfitLoss;   // GL Phase 5b - reconcile-gated P&L read (test surface)
+module.exports.glBalanceSheet = glBalanceSheet;   // GL Phase 5b - reconcile-gated balance sheet (test surface)   // GL Phase 5 — books-balanced cross-check (test surface)
 // Test hook: expose the recurring scheduler for harness verification (no behavior change in
 // prod — it still runs on boot + on its interval; this only makes it drivable under test).
 module.exports.runRecurringScheduler = runRecurringScheduler;

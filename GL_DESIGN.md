@@ -148,9 +148,11 @@ stays the source of truth until the GL is proven equal across the full `VERIFICA
   now continuously proven against the ledger. `verify-gl-verify.js` (11/0) proves the signal is
   RED-provable: it drops to false when the ledger lags the source docs (pre-backfill) and when any entry
   is broken — a signal that can't go red proves nothing.
-  - **Phase 5b (IN PROGRESS)** — the read-swap onto the GL, done SAFELY via a reconcile-gated read with
-    `computeBooks` as oracle fallback (see the 5b section below). P&L statement slice SHIPPED. Remaining:
-    balance sheet (unlocks real GL cash), the dashboard `GET /api/reports`, then harness migration.
+  - **Phase 5b (COMPLETE)** — the read-swap onto the GL, done SAFELY via a reconcile-gated read with
+    `computeBooks` as oracle fallback (see the 5b sections below). All report reads (P&L statement, balance
+    sheet with real cash, dashboard `GET /api/reports`) are ledger-sourced when the entity's books provably
+    reconcile, else computeBooks. Payroll cash-out completes GL cash. A cross-surface consistency test
+    asserts the ledger is actually serving and the surfaces agree. computeBooks remains the oracle/fallback.
   - **Phase 5b (original plan)** — the HARD read-swap (point `/api/reports` + dashboard at the GL
     instead of `computeBooks`). Prereqs before this is safe: (1) universal backfill so every user has a
     complete ledger, (2) consolidated + display-currency `glFinancials` to match `computeBooks`' FX paths,
@@ -310,3 +312,15 @@ consolidated (entity_id=all) and display-currency requests reuse it and fall bac
 present, broken-ledger fallback with correct numbers, consolidated fallback. Regression green
 (dashboard-render 9/0, fx-consolidation 12/0, f128-reports-canonical 7/0). NEXT 5b: harness-migration pass
 so the report/accountant suite asserts GL as the source where it now is (then Phase 5b is complete).
+
+
+### GL Phase 5b (slice 5, migration) - cross-surface consistency (shipped 2026-09-25)
+The suite now proves the ledger is actually SERVING, not just that numbers happen to match. With a
+COMPLETE, route-seeded ledger, `verify-gl-readswap-consistency.js` (18/0) asserts the dashboard, the P&L
+statement and the balance sheet all report `source:'gl'` AND agree with each other (dashboard revenue ==
+P&L totalRevenue, net == net, balance sheet AR == dashboard outstanding, balance sheet equity == P&L
+netProfit, A = L + E with real cash), and that the consolidated view falls back consistently across all
+three (`source:'computeBooks'`, balance sheet reverts to the AR-only stub). The existing report harnesses
+(f137g, f137-balance-sheet, f123) keep validating the numbers via the fallback path (they SQL-seed an
+empty ledger), so they were left as-is. **Phase 5b is complete**: every report read is ledger-sourced under
+the reconcile gate, with computeBooks as the proven oracle fallback and full observability via `source`.

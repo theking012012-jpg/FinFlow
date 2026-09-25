@@ -447,6 +447,30 @@ app.get('/tier-config.js', (req, res) => {
 });
 
 // ── STATIC FILES — served before session so DB issues never block index.html ──
+// Mobile-perf (F-min): serve the minified copy of an app script (public/.min/<name>) when it exists and
+// is at least as new as its source. App JS is no-store by design (the service worker is the freshness
+// layer), so the win is fewer BYTES to parse/execute - this ships the minified bytes under the SAME URL,
+// leaving index.html, the SW cache manifest and the bundle drift-guard untouched. Fail-safe: any miss or
+// error falls through to express.static serving the readable original. Registered BEFORE express.static.
+const _minFs = require('fs');
+const _MIN_DIR = path.join(__dirname, 'public', '.min');
+app.get(/\.js$/, (req, res, next) => {
+  try {
+    const rel = decodeURIComponent(req.path).replace(/^\/+/, '');
+    if (!rel || rel.includes('..') || rel.indexOf('\0') !== -1) return next();
+    const min = path.join(_MIN_DIR, rel);
+    if (!min.startsWith(_MIN_DIR + path.sep)) return next();
+    const src = path.join(__dirname, 'public', rel);
+    if (_minFs.existsSync(min) && _minFs.existsSync(src) && _minFs.statSync(min).mtimeMs >= _minFs.statSync(src).mtimeMs) {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      return res.sendFile(min);
+    }
+  } catch (_) { /* fall through to the readable original */ }
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: false,
   setHeaders: (res, filePath) => {
@@ -1596,6 +1620,18 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_iur] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [row.id]);
   const updated = _iur ? rowToObj(_iur) : {};
   logAudit(req, 'UPDATE', 'invoices', row.id, row, updated);
+  // GL Phase 2 (shadow) - keep the ledger in lockstep with the edited invoice: a flip to/from 'draft'
+  // recognises/de-recognises it, and an amount/issue-date edit trues-up its lines. Best-effort.
+  try {
+    const _iAmt = parseFloat(updated.amount) || 0;
+    await resyncDocLedger(pool, {
+      userId: scopeId(req), entityId: row.entity_id, sourceType: 'invoice', sourceId: row.id,
+      date: updated.issue_date || (updated.created_at ? String(updated.created_at).slice(0, 10) : null),
+      description: 'Invoice - ' + String(updated.client || '').slice(0, 80),
+      recognized: String(updated.status || '').toLowerCase() !== 'draft',
+      lines: [{ code: '1100', debit: _iAmt, credit: 0 }, { code: '4000', debit: 0, credit: _iAmt }],
+    });
+  } catch (glErr) { console.error('[GL] invoice resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(updated);
 }));
 app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
@@ -2985,6 +3021,20 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   }
   await db.updateById('bills', Number(req.params.id), patch);
   await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
+  // GL Phase 2 (shadow) - keep the ledger in lockstep with the edited bill: a status change into/out of
+  // RECOGNIZED_BILL recognises/de-recognises it, and an amount/issue-date edit trues-up its lines.
+  try {
+    const _bStatus = String(patch.status != null ? patch.status : row.status || '').toLowerCase();
+    const _bAmt = parseFloat(patch.amount != null ? patch.amount : row.amount) || 0;
+    const _bIssue = patch.issue_date != null ? patch.issue_date : row.issue_date;
+    await resyncDocLedger(pool, {
+      userId: scopeId(req), entityId: row.entity_id, sourceType: 'bill', sourceId: Number(req.params.id),
+      date: _bIssue || (row.created_at ? String(row.created_at).slice(0, 10) : null),
+      description: 'Bill - ' + String(patch.vendor != null ? patch.vendor : row.vendor || '').slice(0, 80),
+      recognized: RECOGNIZED_BILL.has(_bStatus),
+      lines: [{ code: '6000', debit: _bAmt, credit: 0 }, { code: '2000', debit: 0, credit: _bAmt }],
+    });
+  } catch (glErr) { console.error('[GL] bill resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
 app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
@@ -4469,6 +4519,7 @@ async function runRecurringScheduler() {
       });
       // F-L1: audit scheduler-created invoices (were bypassing the audit trail; system actor, no req).
       try { await recordAudit(pool, { userId: r.user_id, entityId: r.entity_id || null, table: 'invoices', recordId: _invRow && _invRow.id, action: 'CREATE', newData: _invRow }); } catch (_) {}
+      try { await postSourceLedger(pool, { userId: r.user_id, sourceType: 'invoice', row: _invRow }); } catch (glErr) { console.error('[GL] recurring invoice posting failed (shadow, non-fatal):', glErr && glErr.message); }
       const _nextRun = nextRunDate(r.next_run, r.frequency);
       const _patch = { next_run: _nextRun };
       if (r.end_date && _nextRun > r.end_date) _patch.status = 'completed';
@@ -4499,6 +4550,7 @@ async function runRecurringScheduler() {
       });
       // F-L1: audit scheduler-created bills (were bypassing the audit trail; system actor, no req).
       try { await recordAudit(pool, { userId: r.user_id, entityId: r.entity_id || null, table: 'bills', recordId: _billRow && _billRow.id, action: 'CREATE', newData: _billRow }); } catch (_) {}
+      try { await postSourceLedger(pool, { userId: r.user_id, sourceType: 'bill', row: _billRow }); } catch (glErr) { console.error('[GL] recurring bill posting failed (shadow, non-fatal):', glErr && glErr.message); }
       const _nextRun = nextRunDate(r.next_run, r.frequency);
       const _patch = { next_run: _nextRun };
       if (r.end_date && _nextRun > r.end_date) _patch.status = 'completed';
@@ -6241,6 +6293,10 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
       }
     } catch (e) { console.error('[stripe import fee]', e.message); }
   }
+  // GL Phase 2 (shadow): book the imported revenue (Dr Cash / Cr Revenue) and, if present, the fee
+  // expense - live, with backfill's canonical keys (idempotent). Best-effort.
+  try { await postSourceLedger(pool, { userId: scopeId(req), sourceType: 'sales_receipt', row }); } catch (glErr) { console.error('[GL] stripe import receipt posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  if (feeRow) try { await postSourceLedger(pool, { userId: scopeId(req), sourceType: 'expense', row: feeRow }); } catch (glErr) { console.error('[GL] stripe import fee posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true, imported: true, receipt: row, fee: feeRow });
 }));
 
@@ -6295,6 +6351,8 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
     throw e;
   }
   await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
+  // GL Phase 2 (shadow): a refund is a contra sales receipt (negative amount) - nets revenue down.
+  try { await postSourceLedger(pool, { userId: scopeId(req), sourceType: 'sales_receipt', row }); } catch (glErr) { console.error('[GL] stripe refund posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true, refunded: true, receipt: row });
 }));
 
@@ -6350,6 +6408,9 @@ app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
       }
     } catch (e) { console.error('[stripe match fee]', e.message); }
   }
+  // GL Phase 2 (shadow): the payment leg posts inside recordExternalInvoicePayment; here we book the
+  // processing fee expense if one was recorded.
+  if (feeRow) try { await postSourceLedger(pool, { userId: scopeId(req), sourceType: 'expense', row: feeRow }); } catch (glErr) { console.error('[GL] stripe match fee posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true, matched: true, invoice_id: invoiceId, applied, fee: feeRow });
 }));
 
@@ -6899,6 +6960,9 @@ async function recordExternalInvoicePayment({ invoiceId, amountMinor, method, id
     );
     await recalcInvoiceStatus(pool, invoiceId, uid);
     try { await auditLog(pool, { userId: uid, entityId: ir.entity_id, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE' }); } catch (_) {}
+    // GL Phase 2 (shadow): settle the receivable live - Dr Cash / Cr AR, key 'invoice_payment:'+id
+    // (same as the manual route + backfill, so all three are mutually idempotent). Best-effort.
+    try { await postSourceLedger(pool, { userId: uid, sourceType: 'invoice_payment', row: { ...rows[0], client: inv.client } }); } catch (glErr) { console.error('[GL] external invoice payment posting failed (shadow, non-fatal):', glErr && glErr.message); }
     return { recorded: true, id: rows[0].id, amount: bookAmt };
   } catch (e) {
     if (e.code === '23505') return { recorded: false, reason: 'duplicate' };   // idempotent: already recorded
@@ -7676,6 +7740,105 @@ async function reverseLedgerEntry(client, { userId, sourceType, sourceId }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
+// GL Phase 2 (dual-write shadow) - RESYNC on edit. A source doc's PUT can change whether it is
+// recognised (draft <-> issued) or change its amount/date. Keep the canonical ledger entry (key
+// '<type>:<id>') in lockstep with computeBooks so certification stays honest:
+//   - not recognised now            -> ensure it is reversed (net zero); the period drops it.
+//   - recognised, never posted       -> post it fresh (e.g. a draft that is now issued).
+//   - recognised, previously reversed -> remove the reversal to re-instate, then true-up its lines.
+//   - recognised, live, amount/date changed -> true-up the live entry's lines in place.
+// The canonical key is preserved throughout, so backfill stays idempotent. Best-effort - a shadow
+// resync failure must never block the user's edit.
+async function resyncDocLedger(client, { userId, entityId, sourceType, sourceId, date, description, currency = 'USD', recognized, lines }) {
+  const key = sourceType + ':' + sourceId;
+  const { rows: origs } = await client.query(
+    `SELECT id, entity_id FROM ledger_entries
+      WHERE user_id=$1 AND source_type=$2 AND source_id=$3 AND reversal_of IS NULL AND status='posted' ORDER BY id ASC LIMIT 1`,
+    [userId, sourceType, sourceId]);
+  const orig = origs[0] || null;
+  let reversal = null;
+  if (orig) {
+    const { rows: rev } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND reversal_of=$2 ORDER BY id ASC LIMIT 1`, [userId, orig.id]);
+    reversal = rev[0] || null;
+  }
+  const live = !!(orig && !reversal);
+  if (!recognized) {
+    if (live) await reverseLedgerEntry(client, { userId, sourceType, sourceId });
+    return;
+  }
+  // recognized: validate the desired lines balance before mutating anything.
+  const norm = (lines || []).map(l => ({ code: l.code, debit: +(+l.debit || 0).toFixed(2), credit: +(+l.credit || 0).toFixed(2) }));
+  const totD = norm.reduce((m, l) => m + l.debit, 0), totC = norm.reduce((m, l) => m + l.credit, 0);
+  if (Math.abs(totD - totC) > 0.01) throw new Error('resync lines do not balance: d=' + totD + ' c=' + totC + ' (' + sourceType + ')');
+  if (!orig) {
+    await postLedgerEntry(client, { userId, entityId, date, description, sourceType, sourceId, currency, idempotencyKey: key, lines: norm });
+    return;
+  }
+  const ent = orig.entity_id;
+  if (reversal) { await client.query(`DELETE FROM ledger_lines WHERE entry_id=$1`, [reversal.id]); await client.query(`DELETE FROM ledger_entries WHERE id=$1`, [reversal.id]); }
+  await client.query(`UPDATE ledger_entries SET entry_date=$1, description=$2 WHERE id=$3`, [date, ('' + (description || '')).slice(0, 500), orig.id]);
+  await client.query(`DELETE FROM ledger_lines WHERE entry_id=$1`, [orig.id]);
+  const { rows: accts } = await client.query(`SELECT id, code FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2`, [userId, ent]);
+  const idByCode = Object.fromEntries(accts.map(a => [a.code, a.id]));
+  for (const l of norm) {
+    if (!idByCode[l.code]) throw new Error('ledger account not found: ' + l.code);
+    await client.query(`INSERT INTO ledger_lines (entry_id, user_id, entity_id, account_id, debit, credit, debit_base, credit_base) VALUES ($1,$2,$3,$4,$5,$6,$5,$6)`,
+      [orig.id, userId, ent, idByCode[l.code], l.debit, l.credit]);
+  }
+}
+
+// GL Phase 2 (dual-write shadow) - post the canonical GL entry for a source row created from a
+// NON-primary path (recurring scheduler, Stripe import, processor webhook), so the ledger is written
+// live instead of only by backfill. Same canonical keys + legs as backfill => the two are mutually
+// idempotent. Recognises exactly what the reports do (draft invoice / non-recognised bill / 0 amount
+// post nothing). Best-effort - the caller wraps this so a shadow failure never breaks the write.
+async function postSourceLedger(client, { userId, sourceType, row }) {
+  if (!row || row.id == null) return null;
+  const eid = row.entity_id != null ? row.entity_id : null;
+  const amt = Math.round((parseFloat(row.amount) || 0) * 100) / 100;
+  const d10 = v => (FinFlowDates && FinFlowDates._toYmd ? FinFlowDates._toYmd(v) : (v ? String(v).slice(0, 10) : null)) || null;
+  let date, description, key, lines;
+  switch (sourceType) {
+    case 'invoice':
+      if (String(row.status || '').toLowerCase() === 'draft' || !amt) return null;
+      date = d10(row.issue_date) || d10(row.created_at);
+      description = 'Invoice - ' + String(row.client || '').slice(0, 80);
+      key = 'invoice:' + row.id;
+      lines = [{ code: '1100', debit: amt, credit: 0 }, { code: '4000', debit: 0, credit: amt }];
+      break;
+    case 'bill':
+      if (!RECOGNIZED_BILL.has(String(row.status || '').toLowerCase()) || !amt) return null;
+      date = d10(row.issue_date) || d10(row.created_at);
+      description = 'Bill - ' + String(row.vendor || '').slice(0, 80);
+      key = 'bill:' + row.id;
+      lines = [{ code: '6000', debit: amt, credit: 0 }, { code: '2000', debit: 0, credit: amt }];
+      break;
+    case 'sales_receipt':
+      if (!amt) return null;                 // amt may be negative (a refund contra) - that is fine
+      date = d10(row.date) || d10(row.created_at);
+      description = 'Sales receipt - ' + String(row.customer || '').slice(0, 80);
+      key = 'sales_receipt:' + row.id;
+      lines = [{ code: '1000', debit: amt, credit: 0 }, { code: '4000', debit: 0, credit: amt }];
+      break;
+    case 'expense':
+      if (!amt) return null;
+      date = d10(row.expense_date) || d10(row.created_at);
+      description = 'Expense - ' + String(row.description || '').slice(0, 80);
+      key = 'expense:' + row.id;
+      lines = [{ code: '6000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }];
+      break;
+    case 'invoice_payment':
+      if (!amt) return null;
+      date = d10(row.payment_date) || d10(row.created_at);
+      description = 'Invoice payment - ' + String(row.client || ('#' + (row.invoice_id || ''))).slice(0, 80);
+      key = 'invoice_payment:' + row.id;
+      lines = [{ code: '1000', debit: amt, credit: 0 }, { code: '1100', debit: 0, credit: amt }];
+      break;
+    default: return null;
+  }
+  return postLedgerEntry(client, { userId, entityId: eid, date, description, sourceType, sourceId: row.id, idempotencyKey: key, lines });
+}
+
 // GL PHASE 3 — FINANCIAL STATEMENTS FROM THE LEDGER (read-only, additive)
 // Trial balance, income statement, and balance sheet computed PURELY from ledger_lines /
 // ledger_accounts — the real double-entry books, not the source-document aggregate. Entity-scoped
@@ -9021,6 +9184,8 @@ module.exports.glReconcile = glReconcile;   // GL Phase 5 — books-balanced cro
 // Test hook: expose the recurring scheduler for harness verification (no behavior change in
 // prod — it still runs on boot + on its interval; this only makes it drivable under test).
 module.exports.runRecurringScheduler = runRecurringScheduler;
+module.exports.recordExternalInvoicePayment = recordExternalInvoicePayment;   // GL - external (Stripe/webhook) payment writer (test surface)
+module.exports.postSourceLedger = postSourceLedger;   // GL - non-primary-path canonical poster (test surface)
 // Test hook: expose the pure recurrence-date helper so the Rule 10 timezone-free math can be
 // asserted directly (no behavior change in prod).
 module.exports.nextRunDate = nextRunDate;

@@ -4,12 +4,13 @@
   "description": "FinFlow full-stack backend",
   "main": "server.js",
   "scripts": {
-    "build": "node bundle.js",
-    "prestart": "node bundle.js",
+    "build": "node bundle.js && node scripts/minify.js",
+    "prestart": "node bundle.js && node scripts/minify.js",
     "bundle:check": "node bundle.js --check",
     "postinstall": "node scripts/install-hooks.js",
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "minify": "node scripts/minify.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -24,7 +25,8 @@
     "helmet": "^7.1.0",
     "pg": "^8.20.0",
     "resend": "^3.2.0",
-    "stripe": "^14.0.0"
+    "stripe": "^14.0.0",
+    "terser": "^5.51.2"
   },
   "devDependencies": {
     "embedded-postgres": "17.10.0-beta.17",

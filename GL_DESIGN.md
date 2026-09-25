@@ -210,3 +210,40 @@ FinFlow calculates NO real tax by design (D1 - licensing/liability). `GET /api/t
 per-country SUGGESTED starting rate + local label to pre-fill the estimator, every response flagged
 non-authoritative ("not tax advice") with the owner's saved rate surfaced as `savedRate` (always wins).
 Purely additive - no existing estimate/report path reads it. `verify-tax-suggested-rate.js` (7/0).
+
+### GL hardening - edit lockstep + live dual-write on non-primary paths (shipped 2026-09-24)
+Two gaps that could make the certification signal falsely fail (or the balance sheet drift) are now closed.
+
+**1) Edit (PUT) keeps the ledger in lockstep.** Reversal previously fired only on DELETE/void. Now
+`resyncDocLedger` runs on invoice/bill PUT and reconciles the canonical entry (`<type>:<id>`) to the doc's
+current state: flip to `draft` / out of `RECOGNIZED_BILL` -> reversed (net zero); flip back -> re-instated
+(the reversal is removed, canonical key preserved); amount/issue-date edit while live -> the entry's lines
+are trued-up in place. The canonical key is never versioned, so backfill stays idempotent. Because
+`reconciledToReports` is P&L-based, an un-synced edit would have shown certified=false against a correct
+computeBooks; this keeps them equal through the whole lifecycle. `verify-gl-status-reversal.js` (25/0).
+
+**2) Non-primary write paths post LIVE, not just via backfill.** `postSourceLedger` posts the canonical
+entry (same legs + keys as backfill, mutually idempotent) from every path that created source rows with a
+bare `db.insert`: the recurring scheduler (`runRecurringScheduler` -> invoice + bill), the Stripe import
+(sales receipt + processing-fee expense), the Stripe refund (contra receipt) and match-invoice (fee), and
+`recordExternalInvoicePayment` (pay-link / webhook cash leg, Dr Cash / Cr AR). The books are now correct the
+moment the row is written, not only after a backfill. `verify-gl-dualwrite.js` (13/0).
+
+**Deferred (documented, low value / thorny):** paid-on-create invoice cash leg. When an invoice is created
+already `paid`, GL records only the accrual (Dr AR / Cr Revenue), so the balance sheet shows AR outstanding
+instead of Cash collected. This is P&L-NEUTRAL (both legs are balance-sheet accounts), so it does NOT affect
+`reconciledToReports`, `booksBalanced`, or the certification signal - it is purely a Cash-vs-AR
+classification on the balance sheet. The coherent fix is to record a real `invoice_payment` row on paid
+creation (so the existing payment posting + reversal + backfill all handle it uniformly), rather than a
+synthetic cash leg that a later reversal/resync would leave dangling. Left as a clean follow-up.
+
+### Mobile perf - front-end minify build (shipped 2026-09-24)
+App JS is served `no-store` by design (the service worker is the freshness layer, so a stale HTTP cache can
+never pin old money-computing code). With HTTP caching off and gzip already on, the remaining mobile lever
+is fewer BYTES to parse/execute -> minification. `scripts/minify.js` (terser) writes minified copies of the
+served app scripts into `public/.min/`; server.js transparently serves `public/.min/<name>` for `/<name>`
+when it exists and is at least as new as its source (mtime guard), under the SAME URL - so index.html, the
+SW cache manifest and the bundle drift-guard are all untouched. Purely additive + fail-safe: no terser, a
+minify failure, or a stale artifact all fall back to the readable original. `prestart` runs it after
+`bundle.js`; `public/.min/` is gitignored (regenerated on deploy). ~43% smaller (905 KB -> 517 KB across the
+8 targets). `verify-min-serving.js` (8/0).

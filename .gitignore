@@ -30,3 +30,6 @@ AUDIT_2026-07-13.md
 AUDIT_CODE.md
 AUDIT_MASTER_ARCHIVE_2026-07-22.md
 CODE_AUDIT_2026-07-09.md
+
+# generated: minified front-end build artifacts (server serves these transparently; prestart regenerates)
+public/.min/

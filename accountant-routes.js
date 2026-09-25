@@ -994,7 +994,7 @@ If you cannot find a field, use null. Be concise.`;
               has invited${name ? ` ${name}` : ' you'} to manage your finances on FinFlow.
             </p>
             <p style="color:#9a9278;margin-bottom:24px;">
-              Start your free 14-day trial — no credit card required.
+              Start your free 30-day trial — no credit card required.
               ${accountant.first_name} will have access to your books to help with your filing and accounting needs.
             </p>
             <a href="${refUrl}" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">

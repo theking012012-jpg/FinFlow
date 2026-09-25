@@ -4828,7 +4828,11 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       db.allByUser('invoices', uid, matchEnt),
       db.allByUser('expenses', uid, matchEnt),
     ]);
-    const revenue = books.revenue;
+    // GL Phase 5b: the dashboard's P&L figures come from the LEDGER when it reconciles to computeBooks
+    // (else computeBooks, unchanged). Non-P&L fields (outstanding, overdue, monthly, expenseBreakdown,
+    // transactions) stay computeBooks-derived. `books` is reused by the helper (no double compute).
+    const _pl = await glProfitLoss(uid, eid, { period: bookPeriod, fyStartIdx, monthIdx: monthIdxArg, display, books });
+    const revenue = _pl.totalRevenue;
     const outstanding = books.outstanding;
     // F-C1: overdue = unpaid-ish invoices whose due date has passed (entity-local today), balance-based.
     // The old literal status==='overdue' never fired — nothing transitions pending→overdue when the
@@ -4842,10 +4846,10 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       if (!d || d >= _ovToday) return s;                    // no due date, or not yet past due
       return s + Math.max(0, (parseFloat(i.amount) || 0) - (parseFloat(i.amount_paid) || 0));
     }, 0);
-    const totalExp = books.opex;
-    const netProfit = books.netProfit;
+    const totalExp = _pl.totalExpenses;
+    const netProfit = _pl.netProfit;
     const margin = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;
-    const totalCOGS = books.cogs;
+    const totalCOGS = _pl.cogs;
     const cogsUncoveredItems = books.parts.cogsUncoveredItems;
 
     // FX gain/loss — realised from settled positions; unrealised COMPUTED at read time for
@@ -4879,6 +4883,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       grossProfit: Math.round((revenue - totalCOGS) * 100) / 100,
       cogsMethod: 'fifo',
       cogsUncoveredItems,
+      source: _pl.source,   // GL Phase 5b: 'gl' | 'computeBooks' for the P&L figures
       fx_realised: fxRealised,
       fx_unrealised: fxUnrealised,
       // F34 B surface 4: Investments are the personal holdings path (USD-priced) — NOT in computeBooks.
@@ -8062,18 +8067,18 @@ async function glProfitLoss(userId, entityId, opts = {}) {
   });
   // Consolidated (all entities) and display-currency/FX are not yet matched by glFinancials -> oracle.
   if (entityId == null || display) {
-    const books = await computeBooks(userId, entityId, period, display, fyStartIdx, monthIdx);
+    const books = opts.books || await computeBooks(userId, entityId, period, display, fyStartIdx, monthIdx);
     return fromBooks(books, 'computeBooks');
   }
   let books, f;
   try {
     [books, f] = await Promise.all([
-      computeBooks(userId, entityId, period, null, fyStartIdx, monthIdx),
+      opts.books ? Promise.resolve(opts.books) : computeBooks(userId, entityId, period, null, fyStartIdx, monthIdx),
       glFinancials(userId, entityId, period, fyStartIdx, monthIdx),
     ]);
   } catch (e) {
     // Any GL read error -> oracle. Never let the ledger path break a report.
-    const b = await computeBooks(userId, entityId, period, null, fyStartIdx, monthIdx);
+    const b = opts.books || await computeBooks(userId, entityId, period, null, fyStartIdx, monthIdx);
     console.error('[GL 5b] glFinancials read failed, serving computeBooks:', e && e.message);
     return fromBooks(b, 'computeBooks');
   }

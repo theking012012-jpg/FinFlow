@@ -297,3 +297,16 @@ f123-balance-sheet-cash (13/0) and verify-f137-balance-sheet-report (6/0) stay g
 `verify-gl-bs-readswap.js` (15/0): real cash 800 with A = L + E when reconciled; cash null + AR-only on a
 broken ledger; consolidated fallback; live endpoint parity. NEXT 5b: the dashboard `GET /api/reports` read,
 then migrate report/accountant harnesses to assert GL as the source where appropriate.
+
+### GL Phase 5b (slice 4) - dashboard GET /api/reports P&L from the ledger (shipped 2026-09-25)
+The dashboard endpoint now sources its P&L figures (revenue, expenses, netProfit, grossProfit, cogs)
+through `glProfitLoss` - ledger when reconciled, computeBooks otherwise - so the dashboard matches the P&L
+statement exactly and both come from the double-entry books when provably complete. The non-P&L fields
+(outstanding/AR, overdue, monthly buckets, expenseBreakdown, transactions, fxCoverage) stay
+computeBooks-derived (they are not glFinancials concepts). `glProfitLoss` now accepts an already-computed
+`books` so the endpoint - which needs `books` for those non-P&L fields anyway - does NOT double-compute;
+consolidated (entity_id=all) and display-currency requests reuse it and fall back. Response gains
+`source: 'gl' | 'computeBooks'`. `verify-gl-dashboard-readswap.js` (11/0): gl figures + non-P&L fields
+present, broken-ledger fallback with correct numbers, consolidated fallback. Regression green
+(dashboard-render 9/0, fx-consolidation 12/0, f128-reports-canonical 7/0). NEXT 5b: harness-migration pass
+so the report/accountant suite asserts GL as the source where it now is (then Phase 5b is complete).

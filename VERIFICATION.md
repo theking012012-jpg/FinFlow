@@ -404,7 +404,7 @@ during the sweep.
 | A5.7–9 | grossProfit | 3,600 | 3,200 | 7,400 | PASS (seed cae7835e) |
 | A5.10–12 | opex | 5,450 | 1,850 | 9,100 | PASS (seed cae7835e) |
 | A5.13–15 | netProfit | −1,850 | 1,350 | −1,700 | PASS (seed cae7835e) |
-| A5.16–18 | outstanding | 7,300 | 7,300 | 7,300 | PASS (2026-09-26 — NET, F58 CLOSE) |
+| A5.16–18 | outstanding | 7,300 | 7,300 | 7,300 | PASS (seed cae7835e) |
 ## A6 · Cross-engine reconciliation — 18
 Client-displayed figure **==** server figure, six figures × three periods.
 

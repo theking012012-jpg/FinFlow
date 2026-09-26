@@ -6,6 +6,11 @@ reversible steps. Written 2026-09-16 against the real code (`server.js` computeB
 
 ## Why this exists
 
+> **STATUS 2026-09-26:** SHIPPED. The double-entry general ledger is live and is the source of truth for
+> the P&L, balance sheet and dashboard when an entity's ledger reconciles (run `POST /api/gl/backfill` to
+> populate historical data). AR nets credit notes and AP nets vendor credits (F58 closed). The "shoebox"
+> description below is the ORIGINAL PREMISE this design set out to fix — kept for context, no longer current.
+
 FinFlow today is a **source-document (shoebox) system**: each feature (invoice, expense, bill, payroll
 run, payment) stores a row, and every report is `computeBooks` **re-summing those rows**. It works, but:
 
@@ -267,7 +272,7 @@ through this helper and returns `source: 'gl' | 'computeBooks'` for observabilit
 numbers otherwise unchanged - verify-f137g-pl-statement stays 17/0). computeBooks remains the oracle.
 `verify-gl-pl-readswap.js` (16/0) proves gl-served parity, broken-ledger fallback with correct numbers,
 and consolidated/FX fallback, at both the helper and the live endpoint. The monthly `rows` chart stays
-source-doc-derived this slice. NEXT: balance sheet (real GL cash vs today's AR-only stub), then the
+source-doc-derived this slice. [DONE] balance sheet now serves real GL cash when reconciled (F58 closed), then the
 dashboard read, then migrate the report/accountant harnesses so the sweep asserts GL as the source.
 
 ### GL Phase 5b (slice 2) - payroll cash-out completes the GL cash flow (shipped 2026-09-25)
@@ -289,7 +294,10 @@ say cash "not tracked" (assets = AR only), because there was no cash account to 
 applies the same oracle-fallback discipline as the P&L, with a STRONGER gate for cash trust: serve the GL
 balance sheet only when the trial balance ties, the P&L reconciles to computeBooks, AND GL AR/AP equal the
 canonical AR/AP (a completeness proxy - and payroll cash-out now posts too, so cash is trustworthy under
-this gate). Otherwise the honest AR-only stub, unchanged. Consolidated (entityId null) always falls back.
+this gate). F58 CLOSE (2026-09-26): the canonical AR nets open|applied credit notes and the canonical AP
+nets open|applied vendor credits, so those match the GL and credit/vendor-credit accounts reconcile too.
+Otherwise the honest AR-only stub. Consolidated (entityId null) now serves the GL when it reconciles with
+full FX coverage (via glConsolidated), falling back to the stub only when it does not.
 `POST /api/reports/balance-sheet` delegates to the helper and returns `source`, plus `cash`/`cashTracked`,
 `inventory`, `taxPayable`, `payrollLiabilities`, and `totalAssetsExcludesCash`. The Reports-page render
 (finflow-api-wiring-extra.js) is now DATA-DRIVEN off `totalAssetsExcludesCash`: real cash + an "incl. cash"

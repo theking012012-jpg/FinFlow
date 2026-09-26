@@ -736,6 +736,20 @@ async function initDB() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_ledger_lines_entry ON ledger_lines(entry_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_ledger_lines_account ON ledger_lines(account_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_ledger_lines_scope ON ledger_lines(user_id, entity_id)`);
+    // Legacy-schema repair (same class as accountant_messages below): CREATE TABLE IF NOT EXISTS never
+    // adds a column to a table that already exists, so a production ledger created before these columns
+    // were introduced is missing them — reads (which don't select them) succeed, but every ledger WRITE
+    // (postLedgerEntry / backfill) 500s on the missing column. Add them idempotently so the ledger
+    // populates on prod. Safe no-op on a fresh table that already has them.
+    await client.query(`ALTER TABLE ledger_lines ADD COLUMN IF NOT EXISTS debit_base NUMERIC(14,2) DEFAULT 0`);
+    await client.query(`ALTER TABLE ledger_lines ADD COLUMN IF NOT EXISTS credit_base NUMERIC(14,2) DEFAULT 0`);
+    await client.query(`ALTER TABLE ledger_lines ADD COLUMN IF NOT EXISTS memo TEXT`);
+    await client.query(`ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS source_type TEXT`);
+    await client.query(`ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS source_id INTEGER`);
+    await client.query(`ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS currency TEXT`);
+    await client.query(`ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'posted'`);
+    await client.query(`ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS reversal_of INTEGER`);
+    await client.query(`ALTER TABLE ledger_entries ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
 
     // ── ACCOUNTANT MESSAGES ──────────────────────────────────────────────────────
     await client.query(`

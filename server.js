@@ -7725,6 +7725,10 @@ async function postLedgerEntry(client, { userId, entityId, date, description, so
   let { rows: accts } = await client.query(`SELECT id, code FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2`, [userId, entityId]);
   if (!accts.length) { await ensureLedgerAccountsForEntity(client, userId, entityId, currency); ({ rows: accts } = await client.query(`SELECT id, code FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2`, [userId, entityId])); }
   const idByCode = Object.fromEntries(accts.map(a => [a.code, a.id]));
+  // entry_date is a DATE column — a malformed non-null string ('' or a non-ISO value) breaks the INSERT.
+  // Coerce to a clean YYYY-MM-DD, else null (nullable column, safe). Belt-and-suspenders for prod data.
+  { const _ds = date == null ? null : String(date).slice(0, 10);
+    date = (_ds && /^\d{4}-\d{2}-\d{2}$/.test(_ds)) ? _ds : null; }
   const norm = lines.map(l => ({ code: l.code, debit: +(+l.debit || 0).toFixed(2), credit: +(+l.credit || 0).toFixed(2) }));
   const totD = norm.reduce((sm, l) => sm + l.debit, 0), totC = norm.reduce((sm, l) => sm + l.credit, 0);
   if (Math.abs(totD - totC) > 0.01) throw new Error('ledger entry does not balance: debit=' + totD + ' credit=' + totC + ' (' + sourceType + ')');
@@ -9190,7 +9194,15 @@ app.post('/api/gl/backfill', requireAuth, wrap(async (req, res) => {
   if (Array.isArray(req.entityAccess)) return res.status(403).json({ error: 'Only the account owner can backfill the ledger.', code: 'GL_OWNER_ONLY' });
   const dry = req.query.dry === '1' || req.query.dry === 'true';
   const entityId = (req.query.entity_id && req.query.entity_id !== 'all') ? parseInt(req.query.entity_id, 10) : null;
-  const report = await backfillLedgerForUser(scopeId(req), { entityId, dryRun: dry });
+  let report;
+  try {
+    report = await backfillLedgerForUser(scopeId(req), { entityId, dryRun: dry });
+  } catch (e) {
+    // Owner-gated route → surface the real DB error so a prod-only backfill failure is diagnosable
+    // (the generic wrap() 500 hides it). Not sensitive: it is the owner's own ledger write error.
+    console.error('[GL backfill] failed for user', scopeId(req), ':', e && e.code, e && e.message);
+    return res.status(500).json({ error: 'Ledger backfill failed.', detail: (e && e.message) || String(e), code: (e && e.code) || null, where: (e && e.where) || 'backfill' });
+  }
   // Reconciliation (post-backfill): per entity, GL == computeBooks for the parts the aggregate tracks.
   // computeBooks does NOT fold FX (7000) into netProfit, so it is excluded from the expense side here.
   const recon = [];

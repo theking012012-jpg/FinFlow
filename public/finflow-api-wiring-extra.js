@@ -958,7 +958,20 @@
           + hdr('Operating Expenses')
           + catList.map(catBar).join('')
           + row('Total Operating Expenses', m(exp), { bold: true, color: 'var(--red)' })
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Net Profit ${pill(pct(net, rev) + ' net margin')}</span><span style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`);
+          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:700"><span>Net Profit ${pill(pct(net, rev) + ' net margin')}</span><span style="font-family:var(--font-mono);color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${m(net)}</span></div>`
+          + ((() => {
+              // GL consolidation: when viewing the consolidated group, surface DETECTED intercompany trade
+              // and the eliminated group P&L. Only renders when the server returns intercompany data
+              // (consolidated view); single-entity reports are unaffected.
+              const ic = d.intercompany, el = d.eliminated;
+              const icRev = ic ? (parseFloat(ic.revenue) || 0) : 0, icExp = ic ? (parseFloat(ic.expense) || 0) : 0;
+              if (!ic || (Math.abs(icRev) < 0.01 && Math.abs(icExp) < 0.01)) return '';
+              return hdr('Intercompany (group consolidation)')
+                + row('Intercompany revenue (detected)', '\u2212 ' + m(icRev), { color: 'var(--t2)' })
+                + row('Intercompany expense (detected)', '\u2212 ' + m(icExp), { color: 'var(--t2)' })
+                + (el ? `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bd);display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:700"><span>Group Net Profit (eliminated) ${pill('intercompany removed')}</span><span style="font-family:var(--font-mono);color:${(parseFloat(el.netProfit)||0) >= 0 ? 'var(--green)' : 'var(--red)'}">${m(parseFloat(el.netProfit)||0)}</span></div>` : '')
+                + `<div style="font-size:10px;color:var(--t3);margin-top:6px">Detected by matching a customer/vendor name to another of your entities. The figures above are the primary (transaction-precise) consolidation; eliminated is the group view net of internal trade.</div>`;
+            })()));
         return;
       }
 

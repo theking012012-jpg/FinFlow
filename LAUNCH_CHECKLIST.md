@@ -5,6 +5,13 @@ tax estimator, connectors, security hardening — all harness-verified). What re
 credentials/DNS and the final verification sweep. Every item below is something only the owner can do
 (keys, DNS, dashboards). Env vars are set in Railway → project → Variables unless noted.
 
+>> ⚠️ **REVERT-BEFORE-LAUNCH — search indexing is OFF.** The app ships with indexing BLOCKED
+>> (`X-Robots-Tag: noindex, nofollow` + a `Disallow: /` robots.txt) so nothing gets indexed while
+>> testing. **At launch, set `ALLOW_INDEXING=1` in Railway → Variables and redeploy** to let search
+>> engines in. Verify afterwards: `curl -sI https://<yourdomain>/ | grep -i x-robots-tag` should be
+>> EMPTY, and `curl -s https://<yourdomain>/robots.txt` should show `Allow: /`. (Boot logs print
+>> `[SEO] Indexing BLOCKED …` until you flip it.)
+
 ## 1. CRITICAL — billing + email are WRONG until these are done
 - [ ] **Stripe Business price = $249/mo.** Update the existing Business Price in the Stripe dashboard (or
       customers keep getting charged the old $199). `STRIPE_PRICE_BUSINESS` already points at the Business price.

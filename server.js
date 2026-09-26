@@ -40,6 +40,29 @@ try {
   console.warn('[Stripe] Not available:', e.message);
 }
 
+// ── SENTRY (error tracking / APM) ───────────────────────────────────────────────
+// Optional + guarded like Stripe/Resend: no-ops until `npm install @sentry/node` AND SENTRY_DSN is
+// set. Once both are present, unhandled errors, rejections and uncaught exceptions are reported with
+// release + environment so you find out about failures BEFORE a customer emails you.
+let Sentry = null;
+try {
+  if (process.env.SENTRY_DSN) {
+    Sentry = require('@sentry/node');
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV || 'development',
+      release: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT || undefined,
+      tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE || 0),
+    });
+    console.log('[Sentry] Initialized');
+  } else {
+    console.log('[Sentry] SENTRY_DSN not set — error tracking disabled.');
+  }
+} catch (e) {
+  console.warn('[Sentry] Package not installed — error tracking skipped. (npm i @sentry/node)');
+}
+const captureErr = (err, ctx) => { try { if (Sentry) Sentry.captureException(err, ctx ? { extra: ctx } : undefined); } catch (_) {} };
+
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
@@ -57,6 +80,16 @@ process.on('unhandledRejection', (reason) => {
     return;
   }
   console.error('[Unhandled Rejection]', reason);
+  captureErr(reason instanceof Error ? reason : new Error('unhandledRejection: ' + String(reason && reason.message || reason)));
+});
+
+// F-ops: an uncaught exception leaves the process in an undefined state — report it, then let the
+// platform (Railway) restart cleanly rather than limping on. Give Sentry a moment to flush first.
+process.on('uncaughtException', (err) => {
+  console.error('[Uncaught Exception]', err);
+  captureErr(err);
+  try { if (Sentry && Sentry.close) { Sentry.close(2000).then(() => process.exit(1)); return; } } catch (_) {}
+  setTimeout(() => process.exit(1), 200);
 });
 
 app.use(compression({ level: 6 }));
@@ -87,6 +120,41 @@ app.use((req, res, next) => {
   }
   next();
 });
+// ── REQUEST LOGGING + CORRELATION IDs ────────────────────────────────────────────
+// One structured JSON line per request (method/path/status/ms/uid) + a correlation id echoed as the
+// X-Request-Id response header and attached to Sentry — so a user-reported failure maps to ONE exact
+// request in the logs. No dependency. Turn the access log off with LOG_REQUESTS=off; health/static
+// asset noise is skipped either way.
+const _LOG_REQUESTS = !/^(0|false|off)$/i.test(String(process.env.LOG_REQUESTS || 'on'));
+const _LOG_SKIP_RE = /^\/(healthz|favicon|robots\.txt|sitemap|.*\.(?:js|css|png|jpe?g|svg|ico|woff2?|map))(?:\?|$)/i;
+app.use((req, res, next) => {
+  const id = (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(8).toString('hex'));
+  req.id = id;
+  res.setHeader('X-Request-Id', id);
+  if (_LOG_REQUESTS && !_LOG_SKIP_RE.test(req.path)) {
+    const t0 = Date.now();
+    res.on('finish', () => {
+      try {
+        const line = JSON.stringify({ t: new Date().toISOString(), id, method: req.method, path: req.path,
+          status: res.statusCode, ms: Date.now() - t0, uid: (req.session && req.session.userId) || null });
+        (res.statusCode >= 500 ? console.error : console.log)(line);
+      } catch (_) {}
+    });
+  }
+  next();
+});
+
+// ── SEARCH-INDEXING GATE ─────────────────────────────────────────────────────────
+// Default: the site is NOT indexable (safe while testing / pre-launch). Flip ALLOW_INDEXING=1 in the
+// env at launch to let search engines in. Works on ANY host (the Railway URL included), independent of
+// Cloudflare — an X-Robots-Tag header + a Disallow robots.txt, both gated on the same flag.
+const _indexingAllowed = /^(1|true|yes)$/i.test(String(process.env.ALLOW_INDEXING || ''));
+if (!_indexingAllowed) console.warn('[SEO] Indexing BLOCKED (ALLOW_INDEXING not set) — search engines will not index this deployment. Set ALLOW_INDEXING=1 at launch.');
+app.use((req, res, next) => { if (!_indexingAllowed) res.setHeader('X-Robots-Tag', 'noindex, nofollow'); next(); });
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain').send(_indexingAllowed ? 'User-agent: *\nAllow: /\n' : 'User-agent: *\nDisallow: /\n');
+});
+
 app.use(cors({
   origin: process.env.ALLOWED_ORIGIN || (process.env.NODE_ENV === 'production' ? false : 'http://localhost:3000'),
   credentials: true,
@@ -9248,6 +9316,19 @@ app.get('/api/gl/verify', requireAuth, wrap(async (req, res) => {
   res.json({ booksBalanced: entities.length > 0 && entities.every(x => x.booksBalanced), entities });
 }));
 
+// GL SAFETY-NET — on-demand reconcile check for the signed-in owner. Classifies each entity as
+// ok | divergent (ledger populated but does NOT tie to computeBooks — an integrity problem) |
+// not_backfilled (books have activity but the ledger is empty — run POST /api/gl/backfill?reset=1).
+// This is the read the scheduled monitor uses; exposed so an owner can self-check any time.
+app.get('/api/gl/reconcile-check', requireAuth, wrap(async (req, res) => {
+  if (Array.isArray(req.entityAccess)) return res.status(403).json({ error: 'Only the account owner can run the reconcile check.', code: 'GL_OWNER_ONLY' });
+  const { rows: ents } = await pool.query(`SELECT id, data->>'name' AS name FROM entities WHERE user_id=$1 ORDER BY id`, [scopeId(req)]);
+  const out = [];
+  for (const e of ents) out.push(await _classifyReconcile(scopeId(req), e.id, e.name));
+  const problems = out.filter(x => x.status !== 'ok');
+  res.json({ ok: problems.length === 0, entities: out, problems });
+}));
+
 app.get('/api/gl/statements', requireAuth, wrap(async (req, res) => {
   if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity (consolidated GL is not yet available).', code: 'GL_ENTITY_REQUIRED' });
   const { period, fyStart, monthIdx } = _glPeriodArgs(req);
@@ -9534,6 +9615,7 @@ app.use((err, req, res, _next) => {
     return res.status(err.status).json({ error: err.message });
   }
   console.error('[Unhandled Error]', err);
+  captureErr(err, { requestId: req.id, path: req.path, method: req.method, userId: req.session && req.session.userId });
   res.status(500).json({ error: 'An unexpected error occurred. Please try again.' });
 });
 
@@ -9543,6 +9625,61 @@ app.use((err, req, res, _next) => {
 // write to whatever DATABASE_URL is set, including production. The entire boot sequence,
 // including initDB() itself, is therefore gated behind require.main === module so requiring
 // this file only builds the Express app and does zero DDL, zero writes, zero listening.
+// ── GL RECONCILE SAFETY-NET ──────────────────────────────────────────────────────
+// Classify one entity's ledger health against the canonical computeBooks oracle.
+async function _classifyReconcile(userId, entityId, name) {
+  try {
+    const rec = await glReconcile(userId, entityId);
+    const d = rec.detail || {};
+    const populated = (d.trialDebit || 0) > 0 || (d.trialCredit || 0) > 0;
+    const hasBooks = (d.reportsRevenue || 0) > 0 || (d.reportsCogsOpex || 0) > 0;
+    let status = 'ok';
+    if (populated && !rec.reconciledToReports) status = 'divergent';       // ledger exists but doesn't tie — integrity issue
+    else if (!populated && hasBooks) status = 'not_backfilled';            // books have activity, ledger empty — needs backfill
+    return { entityId, name: name || null, status, booksBalanced: rec.booksBalanced, reconciledToReports: rec.reconciledToReports,
+             glRevenue: d.glRevenue, oracleRevenue: d.reportsRevenue };
+  } catch (e) {
+    return { entityId, name: name || null, status: 'error', error: (e && e.message) || String(e) };
+  }
+}
+
+// Scan EVERY account's entities and surface divergences. Read-only. Alerts (Sentry + optional email)
+// only when a real problem is found — a not_backfilled entity is reported but is not paged on by default.
+async function glReconcileScan(opts = {}) {
+  const limit = Number(opts.limit || 20000);
+  const { rows: ents } = await pool.query(`SELECT e.id, e.user_id, e.data->>'name' AS name FROM entities e ORDER BY e.user_id, e.id LIMIT $1`, [limit]);
+  const results = [];
+  for (const e of ents) results.push(await _classifyReconcile(e.user_id, e.id, e.name));
+  const divergent = results.filter(r => r.status === 'divergent' || r.status === 'error');
+  const notBackfilled = results.filter(r => r.status === 'not_backfilled');
+  return { scanned: results.length, divergent, notBackfilled, okCount: results.filter(r => r.status === 'ok').length };
+}
+
+// Scheduled monitor: periodic scan → log + Sentry + optional email on divergences. No-op-safe.
+async function _runReconcileScan(resend) {
+  try {
+    const r = await glReconcileScan();
+    if (r.divergent.length) {
+      const msg = '[GL reconcile] ' + r.divergent.length + ' entity ledger(s) DIVERGENT/errored out of ' + r.scanned +
+        ' — ' + r.divergent.slice(0, 20).map(d => `u${d.userId ?? '?'}/e${d.entityId}:${d.status}`).join(', ');
+      console.error(msg);
+      captureErr(new Error(msg), { divergent: r.divergent.slice(0, 50) });
+      const to = process.env.GL_ALERT_EMAIL || process.env.SECURITY_ALERT_EMAIL;
+      if (to && resend) {
+        try { await resend.emails.send({ from: process.env.EMAIL_FROM || 'alerts@finflow.app', to, subject: `FinFlow: ${r.divergent.length} ledger(s) not reconciling`, text: msg }); }
+        catch (e) { console.warn('[GL reconcile] alert email failed:', e.message); }
+      }
+    } else {
+      console.log(`[GL reconcile] OK — ${r.okCount}/${r.scanned} entities tie; ${r.notBackfilled.length} awaiting backfill.`);
+    }
+  } catch (e) { console.error('[GL reconcile] scan failed:', e && e.message); captureErr(e); }
+}
+function startReconcileMonitor(resend) {
+  const hours = Number(process.env.GL_RECONCILE_INTERVAL_HOURS || 6);
+  setTimeout(() => _runReconcileScan(resend), 60 * 1000);                 // first pass a minute after boot
+  setInterval(() => _runReconcileScan(resend), Math.max(1, hours) * 60 * 60 * 1000);
+}
+
 if (require.main === module) {
   initDB().then(() => {
     app.listen(PORT, () => {
@@ -9555,6 +9692,9 @@ if (require.main === module) {
     setInterval(runRecurringScheduler, 60 * 60 * 1000);
     // Security: periodic audit-anomaly scan → email alert (no-op unless SECURITY_ALERT_EMAIL is set)
     startAnomalyMonitor(pool, resendClient);
+    // GL integrity: periodic reconcile scan → Sentry + email alert on any ledger that stops tying to
+    // the canonical books (closes the class of silent divergence that hid the empty prod ledger).
+    startReconcileMonitor(resendClient);
   }).catch(err => {
     console.error('Failed to init database:', err);
     process.exit(1);
@@ -9568,6 +9708,7 @@ module.exports.computeBooks = computeBooks;
 module.exports.glFinancials = glFinancials;   // GL Phase 3 — ledger-derived financial statements (test surface)
 module.exports.backfillLedgerForUser = backfillLedgerForUser;   // GL Phase 4 — historical backfill (test surface)
 module.exports.glReconcile = glReconcile;
+module.exports.glReconcileScan = glReconcileScan;   // GL safety-net — scan all entities for divergence (test surface)
 module.exports.glProfitLoss = glProfitLoss;   // GL Phase 5b - reconcile-gated P&L read (test surface)
 module.exports.glConsolidated = glConsolidated;   // GL consolidation + multi-currency reader (test surface)
 module.exports.glBalanceSheet = glBalanceSheet;   // GL Phase 5b - reconcile-gated balance sheet (test surface)

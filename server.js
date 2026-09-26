@@ -8078,6 +8078,17 @@ async function backfillLedgerForUser(userId, opts = {}) {
   { const { rows } = await pool.query(`SELECT ip.id, ip.amount, ip.payment_date::text AS payment_date, i.entity_id AS inv_entity, i.data->>'client' AS client FROM invoice_payments ip JOIN invoices i ON i.id=ip.invoice_id WHERE ip.user_id=$1`, [userId]);
     for (const p of rows) { if (onlyEntity != null && p.inv_entity !== onlyEntity) continue; const amt = parseFloat(p.amount) || 0;
       await post({ entityId: p.inv_entity, date: p.payment_date, description: 'Invoice payment — ' + (p.client || ''), sourceType: 'invoice_payment', sourceId: p.id, idempotencyKey: 'invoice_payment:' + p.id, lines: [{ code: '1000', debit: amt, credit: 0 }, { code: '1100', debit: 0, credit: amt }] }); } }
+  // 2b) SETTLE amount_paid NOT backed by an invoice_payments row. Historical invoices marked paid
+  //     (pre-F133) carry amount_paid but have no settling payment row; computeBooks counts amount_paid
+  //     as collected, so without this the GL AR stays high and the balance sheet never reconciles.
+  //     Dr Cash / Cr AR for the uncovered remainder, keyed 'invoice_paidgap:<id>' (idempotent).
+  { const { rows: ipSums } = await pool.query(`SELECT invoice_id, COALESCE(SUM(amount),0)::float AS paid FROM invoice_payments WHERE user_id=$1 GROUP BY invoice_id`, [userId]);
+    const byInv = {}; for (const r of ipSums) byInv[String(r.invoice_id)] = r.paid;
+    for (const inv of await db.allByUser('invoices', userId, keep)) {
+      if (String(inv.status || '').toLowerCase() === 'draft') continue;
+      const gap = Math.round(((parseFloat(inv.amount_paid) || 0) - (byInv[String(inv.id)] || 0)) * 100) / 100;
+      if (gap > 0.005) await post({ entityId: inv.entity_id, date: inv.issue_date || slice10(inv.created_at), description: 'Invoice collected (backfill) — ' + String(inv.client || '').slice(0, 80), sourceType: 'invoice_paidgap', sourceId: inv.id, idempotencyKey: 'invoice_paidgap:' + inv.id, lines: [{ code: '1000', debit: gap, credit: 0 }, { code: '1100', debit: 0, credit: gap }] });
+    } }
   // 3) expenses → Dr Opex / Cr Cash at expense_date
   for (const e of await db.allByUser('expenses', userId, keep)) {
     const amt = parseFloat(e.amount) || 0;
@@ -8099,6 +8110,15 @@ async function backfillLedgerForUser(userId, opts = {}) {
     if (onlyEntity != null && ent !== onlyEntity) continue;
     await post({ entityId: ent, date: pm.date, description: 'Payment made — ' + String(pm.vendor || ''), sourceType: 'bill_payment', sourceId: pm.id, idempotencyKey: 'payment_made:' + pm.id, lines });
   }
+  // 5b) SETTLE bill amount_paid NOT backed by a payments_made row (historical bills marked paid,
+  //     pre-F135). AP must drop to match computeBooks. Dr AP / Cr Cash for the uncovered remainder.
+  { const pmByBill = {};
+    for (const pm of await db.allByUser('payments_made', userId, () => true)) { const bid = (pm.bill_id != null && pm.bill_id !== '') ? Number(pm.bill_id) : null; if (bid != null) pmByBill[bid] = (pmByBill[bid] || 0) + (parseFloat(pm.amount) || 0); }
+    for (const b of await db.allByUser('bills', userId, keep)) {
+      if (!RECOGNIZED_BILL.has(String(b.status || '').toLowerCase())) continue;
+      const gap = Math.round(((parseFloat(b.amount_paid) || 0) - (pmByBill[b.id] || 0)) * 100) / 100;
+      if (gap > 0.005) await post({ entityId: b.entity_id, date: b.issue_date || slice10(b.created_at), description: 'Bill paid (backfill) — ' + String(b.vendor || '').slice(0, 80), sourceType: 'bill_paidgap', sourceId: b.id, idempotencyKey: 'bill_paidgap:' + b.id, lines: [{ code: '2000', debit: gap, credit: 0 }, { code: '1000', debit: 0, credit: gap }] });
+    } }
   // 6) sales receipts → Dr Cash / Cr Revenue at date
   for (const s of await db.allByUser('sales_receipts', userId, keep)) {
     const amt = parseFloat(s.amount) || 0;

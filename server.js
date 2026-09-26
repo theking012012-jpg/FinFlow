@@ -8,7 +8,7 @@ const cors         = require('cors');
 const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
-const { db, initDB, pool, rowToObj, ensureLedgerAccountsForEntity } = require('./database');
+const { db, initDB, pool, rowToObj, ensureLedgerAccountsForEntity, runMigrations } = require('./database');
 const totp = require('./totp');
 const { startAnomalyMonitor } = require('./audit-anomalies');
 const FinFlowDates = require('./public/finflow-dates.js'); // F87 — canonical calendar-date/period resolver (Rule 10)
@@ -9701,7 +9701,11 @@ function startReconcileMonitor(resend) {
 }
 
 if (require.main === module) {
-  initDB().then(() => {
+  initDB().then(async () => {
+    // Versioned migrations run AFTER the idempotent baseline schema, BEFORE serving — each in its own
+    // transaction, so a bad one fails loudly without bricking boot. New schema changes go here.
+    try { const _m = await runMigrations(pool); if (_m.failed.length) captureErr(new Error('[migrate] ' + _m.failed.length + ' migration(s) failed: ' + _m.failed.map(x => x.name).join(', '))); }
+    catch (e) { console.error('[migrate] runner error (boot continues):', e && e.message); captureErr(e); }
     app.listen(PORT, () => {
       warnIfUnset(); // F29 — loud one-time warning if APP_URL is unset
       console.log(`  ✦ FinFlow backend running → http://localhost:${PORT}`);
@@ -9729,6 +9733,7 @@ module.exports.glFinancials = glFinancials;   // GL Phase 3 — ledger-derived f
 module.exports.backfillLedgerForUser = backfillLedgerForUser;   // GL Phase 4 — historical backfill (test surface)
 module.exports.glReconcile = glReconcile;
 module.exports.glReconcileScan = glReconcileScan;   // GL safety-net — scan all entities for divergence (test surface)
+module.exports.runMigrations = runMigrations;   // versioned migration runner (test surface)
 module.exports.glProfitLoss = glProfitLoss;   // GL Phase 5b - reconcile-gated P&L read (test surface)
 module.exports.glConsolidated = glConsolidated;   // GL consolidation + multi-currency reader (test surface)
 module.exports.glBalanceSheet = glBalanceSheet;   // GL Phase 5b - reconcile-gated balance sheet (test surface)

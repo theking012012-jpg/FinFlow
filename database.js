@@ -14,6 +14,8 @@
  */
 
 const { Pool } = require('pg');
+const fs = require('fs');
+const path = require('path');
 
 // ── F19: DB TLS ────────────────────────────────────────────────────────────────
 // In production we connect over TLS. By default the server certificate is NOT
@@ -1176,4 +1178,42 @@ async function ensureLedgerAccountsForEntity(client, userId, entityId, currency 
   return rows;
 }
 
-module.exports = { db, initDB, pool, rowToObj, DEFAULT_COA, ensureLedgerAccountsForEntity };
+// ── VERSIONED MIGRATIONS ──────────────────────────────────────────────────────────
+// Tracked, ordered, forward-only migration runner. The boot-time CREATE-IF-NOT-EXISTS DDL in initDB()
+// stays as the idempotent BASELINE; every NEW schema change from here on is a numbered .sql file in
+// scripts/migrations/ (lexicographic order — prefix with an ISO date, e.g. 2026-09-27-add-x.sql).
+// Each pending file runs in its OWN transaction and is recorded in schema_migrations on success, so a
+// bad migration fails visibly and alone (rolled back, retried next boot) WITHOUT bricking boot — the
+// exact discipline the 2026-07-25 one-shot note asked for, now automated. Write migrations idempotent
+// (IF NOT EXISTS / ADD COLUMN IF NOT EXISTS) so a retry is always safe.
+async function runMigrations(dbPool = pool, dir = path.join(__dirname, 'scripts', 'migrations')) {
+  const result = { applied: [], failed: [], alreadyApplied: 0 };
+  let files;
+  try { files = fs.readdirSync(dir).filter(f => f.endsWith('.sql')).sort(); }
+  catch (e) { console.warn('[migrate] migrations dir not found (' + dir + ') — nothing to run'); return result; }
+  await dbPool.query('CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW())');
+  const { rows } = await dbPool.query('SELECT name FROM schema_migrations');
+  const done = new Set(rows.map(r => r.name));
+  for (const f of files) {
+    if (done.has(f)) { result.alreadyApplied++; continue; }
+    const sql = fs.readFileSync(path.join(dir, f), 'utf8');
+    const client = await dbPool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(sql);
+      await client.query('INSERT INTO schema_migrations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [f]);
+      await client.query('COMMIT');
+      result.applied.push(f);
+      console.log('[migrate] applied ' + f);
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      result.failed.push({ name: f, error: e.message });
+      console.error('[migrate] FAILED ' + f + ' — ' + e.message + ' (will retry next boot; boot continues)');
+    } finally { client.release(); }
+  }
+  if (result.applied.length || result.failed.length)
+    console.log('[migrate] applied ' + result.applied.length + ', failed ' + result.failed.length + ', already-applied ' + result.alreadyApplied);
+  return result;
+}
+
+module.exports = { db, initDB, pool, rowToObj, DEFAULT_COA, ensureLedgerAccountsForEntity, runMigrations };

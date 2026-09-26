@@ -809,6 +809,7 @@
       if (name === 'Accounts Payable') {
         const bs = await api('POST', '/api/reports/balance-sheet', {});
         const bills = (await api('GET', '/api/bills')) || [];
+        const _apVCs = (await api('GET', '/api/vendor-credits')) || [];   // F58: net vendor credits per vendor
         const REC = ['unpaid', 'due_soon', 'overdue', 'partial', 'paid'];
         const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : null;
         const byVendor = {};
@@ -820,6 +821,18 @@
           if (due <= 0) return;
           const v = b.vendor || '—'; byVendor[v] = (byVendor[v] || 0) + due;
         });
+        // F58 CLOSE (AP side): net open|applied vendor credits into each vendor's balance (payables
+        // contra), D2-bounded, so Σ rows == the canonical net AP total. An unmatched vendor's credit
+        // reduces an explicit 'Unattributed credits' bucket — the breakdown never drifts from the total.
+        _apVCs.forEach(vc => {
+          const st = (vc.status || '').toLowerCase(); if (st !== 'open' && st !== 'applied') return;
+          const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(vc.date || vc.created_at) : null;
+          if (today != null && (dy == null || dy > today)) return;
+          const amt = parseFloat(vc.amount) || 0; if (amt <= 0) return;
+          const v = vc.vendor || '—';
+          if (byVendor[v] != null) byVendor[v] -= amt; else byVendor['Unattributed credits'] = (byVendor['Unattributed credits'] || 0) - amt;
+        });
+        Object.keys(byVendor).forEach(k => { if (Math.abs(byVendor[k]) < 0.005) delete byVendor[k]; });
         const apTotal = parseFloat(bs.accountsPayable) || 0;
         const entries = Object.entries(byVendor).sort((a, b) => b[1] - a[1]);
         const rows = entries.map(([v, amt]) => shareRow(v, amt, apTotal || 1, 'var(--red)')).join('');

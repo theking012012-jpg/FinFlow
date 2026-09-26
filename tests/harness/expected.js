@@ -86,7 +86,10 @@ const BALANCES = {
   // This is the figure the dashboard "Outstanding" KPI and the balance-sheet accountsReceivable now show
   // (computeBooks.outstanding / client arOutstanding both net it), so the ledger reconciles and real cash serves.
   arNet: 7300,                   // 8,500 − 1,200 (CN-1 open, Customer A)
-  apOutstanding: 1100,           // B0 300 + B1 800 (both unpaid); B2 paid ⇒ 0
+  apOutstanding: 1100,           // GROSS bills AP: B0 300 + B1 800 (both unpaid); B2 paid ⇒ 0. Bills-table figure (DB gate).
+  // F58 CLOSE (AP): NET payable = gross bills AP − open|applied vendor credits (VC-1 = 300). This is the
+  // balance-sheet accountsPayable now (glBalanceSheet nets it), matching the GL so the ledger reconciles.
+  apNet: 800,                    // 1,100 − 300 (VC-1 open, Vendor Two)
   customerA: 1500,               // GROSS (invoice-only)
   customerANet: 300,             // NET: 1,500 − 1,200 (CN-1)
   customerB: 7000,               // INV-3 3,000 + INV-5 4,000; INV-6 future ⇒ 0

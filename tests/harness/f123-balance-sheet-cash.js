@@ -100,10 +100,10 @@ async function main() {
     // ── 2 · the rest of the balance sheet is unchanged and still correct ──
     console.log('\n-- 2 - AR / AP / assets / equity --');
     A('accountsReceivable == VERIFICATION AR',  j.accountsReceivable, EXPECTED.BALANCES.arNet);
-    A('accountsPayable == VERIFICATION AP',     j.accountsPayable,    EXPECTED.BALANCES.apOutstanding);
+    A('accountsPayable == VERIFICATION AP',     j.accountsPayable,    EXPECTED.BALANCES.apNet);
     A('totalAssets is AR alone',                j.totalAssets,        EXPECTED.BALANCES.arNet);
     A('equity == assets − liabilities',         j.equity,
-      Math.round((EXPECTED.BALANCES.arNet - EXPECTED.BALANCES.apOutstanding) * 100) / 100);
+      Math.round((EXPECTED.BALANCES.arNet - EXPECTED.BALANCES.apNet) * 100) / 100);
 
     // The collision this probe exists to warn about, asserted rather than commented.
     console.log('\n-- 3 - DISCRIMINATION: totalAssets CANNOT tell the two implementations apart --');

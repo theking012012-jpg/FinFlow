@@ -14,7 +14,7 @@ run, payment) stores a row, and every report is `computeBooks` **re-summing thos
    harnesses whose whole job is proving *these rows sum to that figure* — exists **because** there is no
    ledger where the numbers tie out by construction. A real double-entry GL makes those bug classes
    impossible, not merely tested.
-2. **No trial balance, no credible balance sheet.** `/api/reports/balance-sheet` today is AR-only (cash
+2. **[UPDATED 2026-09-26 — F58 CLOSED] Balance sheet serves real GL cash when the ledger reconciles.** `glBalanceSheet` returns tracked cash + A=L+E once the entity's ledger is backfilled and reconciles to computeBooks; the AR-only stub is now only the honest fallback for an unpopulated/divergent ledger. AR nets open|applied credit notes and AP nets open|applied vendor credits (matching the GL), so credit/vendor-credit accounts reconcile too. Historical note (pre-F58): `/api/reports/balance-sheet` was AR-only (cash
    is `null`/untracked, `server.js:~4810`). There is no trial balance because there is nothing for a
    "difference = 0" to fall out of.
 3. **Accountant credibility (roadmap #3).** Every serious competitor (QuickBooks, Xero, Zoho, Wave,

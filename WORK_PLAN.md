@@ -50,7 +50,7 @@ Never bundle multiple batches into one prompt. Supersedes the stale `OPEN_WORK_2
 - One systematic sweep; string-date discipline (the F87 fix, applied to writes).
 
 ### Batch 6 · AP/AR outstanding correctness  ⚠ money + oracle change (netting ruled: per-customer)
-- **F58 phase 2** — credit notes reduce AR, vendor credits reduce AP, netted per-customer, floored at 0
+- **F58 phase 2** — credit notes reduce AR, vendor credits reduce AP, netted per-customer, floored at 0 — **DONE 2026-09-26**: computeBooks.outstanding + client arOutstanding + AR report net credit notes; glBalanceSheet oracle AP + AP report net vendor credits; balance sheet now serves real GL cash. Gross invoice AR (8,500)/bills AP (1,100) kept for DB gates; net receivable 7,300 / net payable 800 on the statements. Golden master + VERIFICATION.md split gross/net. Full sweep 273/273.
 - **F72** — AP overstated for partially-paid bills
 - Both touch payables/receivables outstanding. Full seed/verify loop.
 

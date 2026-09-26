@@ -316,7 +316,7 @@ produces a different number rather than the same 6,000.
 > (July must stay incomplete). At this clock, Q3 == Jul is a property to keep.
 
 **AR Outstanding — GROSS invoice table (all-time): 8,500** · **NET receivable (balance-sheet / dashboard, after open|applied credit notes — F58 CLOSE): 7,300** *(8,500 − CN-1 1,200)*
-**AP Outstanding (all-time): 1,100**  *(B0 300 + B1 800; B2 paid)*
+**AP Outstanding — GROSS bills table (all-time): 1,100** *(B0 300 + B1 800; B2 paid)* · **NET payable (balance-sheet, after open|applied vendor credits — F58 CLOSE): 800** *(1,100 − VC-1 300)*
 
 ## P&L (accrual) — decisions 1 and 2
 `opex = manual expenses + bills issued + payroll` — payments made excluded (settlement).

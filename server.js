@@ -8326,12 +8326,22 @@ async function glBalanceSheet(userId, entityId) {
   const matchEnt = r => r.entity_id == null || (entityId != null && r.entity_id === entityId);
   const books = await computeBooks(userId, entityId, 'year');
   const bills = await db.allByUser('bills', userId, matchEnt);
+  const vendorCredits = await db.allByUser('vendor_credits', userId, matchEnt);
   const _apToday = FinFlowDates.resolvedToday(new Date());
   const ar = r2(books.outstanding);
-  const ap = r2((bills || [])
+  const _apGross = (bills || [])
     .filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()))
     .filter(b => { const _y = FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date); return _y != null && _y <= _apToday; })
-    .reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0));
+    .reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
+  // F58 CLOSE (AP side): an open|applied vendor credit is a payables contra — the business owes that
+  // much less. The GL nets it out of AP (Dr 2000); netting it here too aligns the oracle AP with the
+  // ledger so the balance sheet serves the GL (real cash) instead of the AR/AP-only fallback. Same
+  // basis as the vendor-credit opex-contra leg: status open|applied, at the credit's date, D2-bounded.
+  const _apCredits = (vendorCredits || [])
+    .filter(vc => ['open', 'applied'].includes(String(vc.status || '').toLowerCase()))
+    .filter(vc => { const _y = FinFlowDates._toYmd(vc.date || vc.created_at); return _y != null && _y <= _apToday; })
+    .reduce((s, vc) => s + (parseFloat(vc.amount) || 0), 0);
+  const ap = r2(Math.max(0, _apGross - _apCredits));
   // Oracle = today's honest stub (cash not tracked, assets = AR only).
   const oracle = () => ({
     source: 'computeBooks',

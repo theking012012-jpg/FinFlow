@@ -298,7 +298,7 @@ function buildCurrencyMenu(search){
       >
         <span style="font-size:14px;width:20px;text-align:center;flex-shrink:0">${c.flag}</span>
         <span style="font-weight:600;color:var(--t1);width:36px;flex-shrink:0">${code}</span>
-        <span style="color:var(--t3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name||''}</span>
+        <span style="color:var(--t3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name||'')}</span>
         <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--t3);flex-shrink:0">${code==='USD'?'base':(typeof c.rate==='number'?'×'+c.rate.toFixed(2):'')}</span>
         ${activeCurrency===code?'<span style="color:var(--acc);font-size:12px;flex-shrink:0">✓</span>':''}
       </div>`).join('')}
@@ -336,7 +336,7 @@ function selectCountry(country, currencyCode){
   const cur = CURRENCIES[currencyCode];
   const chip = document.getElementById('nb-currency-chip');
   document.getElementById('nb-chip-flag').textContent = cur?.flag||'🌐';
-  document.getElementById('nb-chip-text').textContent = `${currencyCode} — ${cur?.name||currencyCode}`;
+  document.getElementById('nb-chip-text').textContent = `${currencyCode} — ${esc(cur?.name||currencyCode)}`;
   document.getElementById('nb-chip-rate').textContent = currencyCode==='USD'?'base':'1 '+currencyCode+' = '+(1/cur.rate).toFixed(4)+' USD';
   document.getElementById('nb-currency-preview').textContent = currencyCode;
   chip.style.display = 'flex';
@@ -358,7 +358,7 @@ function filterCurrencyOverride(q){
       style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;font-size:12px;transition:background .1s"
       onmouseenter="this.style.background='var(--bg1)'" onmouseleave="this.style.background=''">
       <span>${c.flag}</span><span style="font-weight:600;color:var(--t1)">${code}</span>
-      <span style="color:var(--t3);flex:1">${c.name}</span>
+      <span style="color:var(--t3);flex:1">${esc(c.name)}</span>
     </div>`).join('');
 }
 
@@ -366,7 +366,7 @@ function pickOverrideCurrency(code){
   document.getElementById('nb-currency').value = code;
   const cur = CURRENCIES[code];
   document.getElementById('nb-chip-flag').textContent = cur?.flag||'🌐';
-  document.getElementById('nb-chip-text').textContent = `${code} — ${cur?.name||code} (overridden)`;
+  document.getElementById('nb-chip-text').textContent = `${code} — ${esc(cur?.name||code)} (overridden)`;
   document.getElementById('nb-chip-rate').textContent = code==='USD'?'base':'1 '+code+' = '+(1/cur.rate).toFixed(4)+' USD';
   document.getElementById('nb-currency-preview').textContent = code;
   document.getElementById('nb-currency-override').style.display = 'none';
@@ -1141,7 +1141,7 @@ function renderJELines(){
     <div style="display:grid;grid-template-columns:1fr 90px 90px 28px;gap:6px;margin-bottom:5px" id="je-line-${i}">
       <select class="finput" style="font-size:12px" onchange="jeLineChange(${i},'code',this.value)">
         <option value="">— Select account —</option>
-        ${COA_ACCOUNTS.map(a=>`<option value="${a.code}" ${line.code===a.code?'selected':''}>${a.code} ${a.name}</option>`).join('')}
+        ${COA_ACCOUNTS.map(a=>`<option value="${a.code}" ${line.code===a.code?'selected':''}>${a.code} ${esc(a.name)}</option>`).join('')}
       </select>
       <input class="finput" type="number" placeholder="0.00" style="font-size:12px" value="${line.dr||''}"
         oninput="jeLineChange(${i},'dr',parseFloat(this.value)||0)" min="0">
@@ -1288,7 +1288,7 @@ async function renderCOALive(){
           const changed=liveBalance!==a.balance;
           return `<div style="display:grid;grid-template-columns:60px 1fr 90px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
             <span style="color:var(--t3);font-family:var(--font-mono)">${a.code}</span>
-            <span style="color:var(--t1)">${a.name}</span>
+            <span style="color:var(--t1)">${esc(a.name)}</span>
             <span style="font-family:var(--font-mono);text-align:right;color:${changed?'var(--acc)':'var(--t1)'};font-weight:${changed?600:400}">$${liveBalance.toLocaleString()}${changed?'<span style="font-size:10px;color:var(--acc);margin-left:3px">●</span>':''}</span>
             <span style="color:var(--t3);text-align:right">${a.nature}</span>
           </div>`;
@@ -2595,7 +2595,7 @@ document.addEventListener('click', function(e){
   if(!btn) return;
   const client = btn.getAttribute('data-client') || 'the client';
   const amount = btn.getAttribute('data-amount') || 'the outstanding amount';
-  sendPrompt(`Write a professional overdue invoice reminder for ${client} — amount due: ${amount}`);
+  sendPrompt(`Write a professional overdue invoice reminder for ${esc(client)} — amount due: ${amount}`);
 });
 function markInvoicePaid(idx){
   userInvoices[idx].status='paid';
@@ -2635,7 +2635,7 @@ function saveInvoice(){
   userInvoices.push({client,amount,due:dueStr,color:status==='overdue'?'var(--red)':'var(--t2)',status});
   closeModal('invoice-modal');
   renderInvoices();
-  notify(`Invoice created for ${client}`);
+  notify(`Invoice created for ${esc(client)}`);
 }
 
 // ════════════════════════════════════════════
@@ -2934,7 +2934,7 @@ function renderOwnerModalTabs(){
 
   const entity = ENTITIES[activeOwnerEntityIdx];
   const cur = window.CURRENCIES[entity?.currency] || {symbol:'$',name:'USD'};
-  if(curLabel) curLabel.textContent = `Entering salary in ${entity?.currency || 'USD'} (${cur.name}) — automatically converted to USD in Personal Finance`;
+  if(curLabel) curLabel.textContent = `Entering salary in ${entity?.currency || 'USD'} (${esc(cur.name)}) — automatically converted to USD in Personal Finance`;
 
   const symEl = document.getElementById('own-currency-sym');
   if(symEl) symEl.textContent = `(${cur.symbol})`;
@@ -3075,7 +3075,7 @@ function saveOwnerPayroll(){
   renderPayroll();
 
   const entityNames = Object.entries(ownerPayrollByEntity).map(([i])=>ENTITIES[i]?.name||'Entity').join(', ');
-  notify(`Payroll saved for ${entityNames} — Personal Finance synced ✦`);
+  notify(`Payroll saved for ${esc(entityNames)} — Personal Finance synced ✦`);
 }
 
 function removeOwnerFromPayroll(){
@@ -3092,7 +3092,7 @@ function removeOwnerFromPayroll(){
   document.getElementById('own-net-preview').value = '—';
   document.getElementById('owner-remove-btn').style.display = 'none';
   renderPayroll();
-  notify(`Removed from ${entity?.name||'entity'} payroll ✦`);
+  notify(`Removed from ${esc(entity?.name||'entity')} payroll ✦`);
 }
 
 // (Removed autoSetPayrollJurisdiction — FinFlow no longer has jurisdictions.)
@@ -3183,7 +3183,7 @@ function syncAllPayrollsToPersonal(){
     const _txCur = ep.currency || entity?.currency || 'USD';
     const netUSD = Math.round(_safeFX(ep.net, _txCur, 'USD'));
     persTransactions.unshift({
-      desc:`Salary — ${entity?.name||'Entity'} (April)`,
+      desc:`Salary — ${esc(entity?.name||'Entity')} (April)`,
       cat:'Income',
       amount: netUSD,
       type:'income',
@@ -3201,7 +3201,7 @@ function syncAllPayrollsToPersonal(){
       if(entries.length === 1){
         const [_idx0, _ep0] = entries[0];
         const _ent0 = _bannerEnts[parseInt(_idx0)];
-        salaryEl.textContent = `${_ent0?.name||'Entity'} — ${_ep0.fname} ${_ep0.lname} · ${SP(totalUSD)}/mo net (${persCurrency})`;
+        salaryEl.textContent = `${esc(_ent0?.name||'Entity')} — ${esc(_ep0.fname)} ${esc(_ep0.lname)} · ${SP(totalUSD)}/mo net (${persCurrency})`;
       } else {
         salaryEl.textContent = `${entries.length} entities · ${SP(totalUSD)}/mo combined net (${persCurrency})`;
       }
@@ -3222,8 +3222,8 @@ function syncAllPayrollsToPersonal(){
         return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:11.5px;border-bottom:1px solid var(--bd)">
           <span style="display:flex;align-items:center;gap:5px">
             <span style="width:14px;height:14px;border-radius:3px;background:${entity?.color||'var(--acc)'};display:inline-block;flex-shrink:0"></span>
-            <span style="color:var(--t1);font-weight:500">${entity?.name||'Entity'}</span>
-            <span style="color:var(--t3);font-size:10px">${ep.fname} ${ep.lname} · ${entity?.currency||'USD'}</span>
+            <span style="color:var(--t1);font-weight:500">${esc(entity?.name||'Entity')}</span>
+            <span style="color:var(--t3);font-size:10px">${esc(ep.fname)} ${esc(ep.lname)} · ${entity?.currency||'USD'}</span>
           </span>
           <span style="font-family:var(--font-mono);color:var(--green)">${entCur.symbol}${ep.net.toLocaleString()}/mo <span style="color:var(--t3);font-size:10px">≈ ${_dispCur.symbol}${netDisp.toLocaleString()}</span></span>
         </div>`;
@@ -3434,7 +3434,7 @@ function renderPersonal(){
       const _pEnts = (typeof ENTITIES!=='undefined'?ENTITIES:null)||window.ENTITIES||[];
       const _lineItems = Object.entries(ownerPayrollByEntity).map(([idx,ep])=>{
         const ent = _pEnts[parseInt(idx)];
-        return `${ent?.name||'Entity'}: ${SP(_safeFX(ep.net, ep.currency||ent?.currency||'USD', 'USD'))}`;
+        return `${esc(ent?.name||'Entity')}: ${SP(_safeFX(ep.net, ep.currency||ent?.currency||'USD', 'USD'))}`;
       });
       _incSrcEl.textContent = _lineItems.join(' · ') + (entityCount>1 ? ' · Total' : ' net');
     }
@@ -5620,7 +5620,7 @@ function renderBanking(){
     <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="width:36px;height:36px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--acc)">🏦</div>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${a.name}</div><div style="font-size:11px;color:var(--t3)">${a.bank} · ****${a.last4}</div></div>
+        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(a.name)}</div><div style="font-size:11px;color:var(--t3)">${a.bank} · ****${a.last4}</div></div>
       </div>
       <div style="text-align:right"><div style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">$${a.balance.toLocaleString()}</div><div style="font-size:10px;color:var(--t3)">${a.type} · ${a.updated}</div></div>
     </div>`).join('');
@@ -5655,7 +5655,7 @@ function renderProjects(){
   l.innerHTML=projectsData.map(p=>`
     <div style="padding:10px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${p.name}</div><div style="font-size:11px;color:var(--t3)">${p.client} · ${p.hours}h logged</div></div>
+        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(p.name)}</div><div style="font-size:11px;color:var(--t3)">${esc(p.client)} · ${p.hours}h logged</div></div>
         <div style="display:flex;align-items:center;gap:12px">
           <div style="text-align:right"><div style="font-size:11px;color:var(--t3)">Billed / Budget</div><div style="font-size:12px;font-weight:600;font-family:var(--font-mono)">$${p.billed.toLocaleString()} / $${p.budget.toLocaleString()}</div></div>
           <span class="badge ${p.status==='Completed'?'b-green':'b-blue'}">${p.status}</span>
@@ -5719,7 +5719,7 @@ function renderCOA(){
       ${section.accounts.map(a=>`
         <div style="display:grid;grid-template-columns:60px 1fr 80px 70px;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px">
           <span style="color:var(--t3);font-family:var(--font-mono)">${a.code}</span>
-          <span style="color:var(--t1)">${a.name}</span>
+          <span style="color:var(--t1)">${esc(a.name)}</span>
           <span style="font-family:var(--font-mono);text-align:right;color:var(--t1)">$${(a.balance||0).toLocaleString()}</span>
           <span style="color:var(--t3);text-align:right">${a.nature}</span>
         </div>`).join('')}
@@ -5877,18 +5877,18 @@ async function renderReports(){
     <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:18px">${r.icon}</span>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${r.name}</div><div style="font-size:11px;color:var(--t3)">${r.desc}</div></div>
+        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(r.name)}</div><div style="font-size:11px;color:var(--t3)">${esc(r.desc)}</div></div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="generateReport('${r.name}')">Generate ↗</button>
+      <button class="btn btn-ghost btn-sm" onclick="generateReport('${esc(r.name)}')">Generate ↗</button>
     </div>`).join('');
   const t=document.getElementById('tax-reports-list');if(!t)return;
   t.innerHTML=taxReportsData.map(r=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;gap:10px">
         <span style="font-size:18px">${r.icon}</span>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${r.name}</div><div style="font-size:11px;color:var(--t3)">${r.desc}</div></div>
+        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(r.name)}</div><div style="font-size:11px;color:var(--t3)">${esc(r.desc)}</div></div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="generateReport('${r.name}')">Generate ↗</button>
+      <button class="btn btn-ghost btn-sm" onclick="generateReport('${esc(r.name)}')">Generate ↗</button>
     </div>`).join('');
 }
 
@@ -5918,7 +5918,7 @@ async function renderDocuments(){
     <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="width:32px;height:32px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:14px">${(d.name||'').endsWith('.pdf')?'📄':'📊'}</div>
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${d.name||''}</div><div style="font-size:11px;color:var(--t3)">${d.size||''} · ${d.uploaded_at?d.uploaded_at.slice(0,10):''} · ${d.type||''}</div></div>
+        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(d.name||'')}</div><div style="font-size:11px;color:var(--t3)">${d.size||''} · ${d.uploaded_at?d.uploaded_at.slice(0,10):''} · ${d.type||''}</div></div>
       </div>
       <div style="display:flex;gap:6px">
         <span class="badge b-blue">${d.type||'file'}</span>
@@ -6016,7 +6016,7 @@ function renderTemplates(){
     <div style="padding:10px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
         <div style="min-width:0">
-          <div style="font-size:13px;font-weight:500;color:var(--t1)">${t.name} ${t.default?'<span class="badge b-green" style="font-size:9px">Default</span>':''}</div>
+          <div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(t.name)} ${t.default?'<span class="badge b-green" style="font-size:9px">Default</span>':''}</div>
           <div style="font-size:11px;color:var(--t3)">${t.type} · ${t.preview}</div>
         </div>
         <div style="display:flex;gap:5px;flex-shrink:0">
@@ -6029,8 +6029,8 @@ function renderTemplates(){
   if(el)el.innerHTML=emailTemplatesData.map(t=>`
     <div style="padding:9px 0;border-bottom:1px solid var(--bd)">
       <div style="display:flex;align-items:center;justify-content:space-between">
-        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${t.name}</div><div style="font-size:11px;color:var(--t3)">${t.trigger}</div></div>
-        <button class="btn btn-ghost btn-sm" onclick="openEmailTemplateEditor('${t.name}')">Edit</button>
+        <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(t.name)}</div><div style="font-size:11px;color:var(--t3)">${t.trigger}</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="openEmailTemplateEditor('${esc(t.name)}')">Edit</button>
       </div>
     </div>`).join('');
 }
@@ -6046,7 +6046,7 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
   const poweredBy = settings.poweredBy !== false;
   const logoHTML = logoDataURL
     ? `<img src="${logoDataURL}" style="max-height:52px;max-width:160px;object-fit:contain">`
-    : `<div style="font-size:22px;font-weight:700;color:${acc};font-family:Georgia,serif;font-style:italic">${bizName}</div>`;
+    : `<div style="font-size:22px;font-weight:700;color:${acc};font-family:Georgia,serif;font-style:italic">${esc(bizName)}</div>`;
 
   const items = [
     {desc:'Product design & strategy',qty:1,rate:4800,total:4800},
@@ -6059,7 +6059,7 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
 
   const itemRows = items.map(i=>`
     <tr>
-      <td style="padding:10px 0;border-bottom:1px solid #eee;color:#333">${i.desc}</td>
+      <td style="padding:10px 0;border-bottom:1px solid #eee;color:#333">${esc(i.desc)}</td>
       <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:center;color:#666">${i.qty}</td>
       <td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;color:#666">$${i.rate.toLocaleString()}</td>
       <td style="padding:10px 0;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:500">$${i.total.toLocaleString()}</td>
@@ -6081,7 +6081,7 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
     <div class="hdr">${logoHTML}<div style="margin-top:8px;font-size:10px;color:#888">${bizEmail}</div>
     <div style="margin-top:8px;font-size:11px;font-weight:700">RECEIPT #INV-1042</div>
     <div style="font-size:10px;color:#888">April 28, 2026 · TechCorp Inc.</div></div>
-    ${items.map(i=>`<div class="row"><span>${i.desc}</span><span>$${i.total.toLocaleString()}</span></div>`).join('')}
+    ${items.map(i=>`<div class="row"><span>${esc(i.desc)}</span><span>$${i.total.toLocaleString()}</span></div>`).join('')}
     <div class="row" style="color:#888;margin-top:4px"><span>Subtotal</span><span>$${subtotal.toLocaleString()}</span></div>
     <div class="row" style="color:#888"><span>Tax (12.5%)</span><span>$${tax.toLocaleString()}</span></div>
     <div class="row total"><span>TOTAL</span><span style="color:${acc}">$${total.toLocaleString()}</span></div>
@@ -6109,7 +6109,7 @@ function buildInvoiceHTML(templateId, logoDataURL, settings){
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px">
     <div>
       <div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">From</div>
-      <div style="font-weight:600;font-size:14px">${bizName}</div>
+      <div style="font-weight:600;font-size:14px">${esc(bizName)}</div>
       <div style="color:#888;font-size:12px;margin-top:4px">${bizEmail}<br>New York, NY 10001</div>
     </div>
     <div>
@@ -6156,7 +6156,7 @@ window.openTemplatePreview = function(id){
   overlay.innerHTML=`
     <div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:780px;max-height:90vh;display:flex;flex-direction:column;box-shadow:var(--shadow-lg);overflow:hidden">
       <div style="padding:.85rem 1.25rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-        <div style="font-size:14px;font-weight:500;color:var(--t1)">Preview — ${t.name}</div>
+        <div style="font-size:14px;font-weight:500;color:var(--t1)">Preview — ${esc(t.name)}</div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost btn-sm" onclick="openTemplateEditor('${id}');document.getElementById('tmpl-preview-overlay').remove()">Edit template</button>
           <button class="btn btn-ghost btn-sm" onclick="printTemplate('${id}')">⬇ Download PDF</button>
@@ -6201,7 +6201,7 @@ window.openTemplateEditor = function(id){
   overlay.innerHTML=`
     <div style="background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:820px;max-height:92vh;display:flex;flex-direction:column;box-shadow:var(--shadow-lg);overflow:hidden">
       <div style="padding:.85rem 1.25rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-        <div style="font-size:14px;font-weight:500;color:var(--t1)">Edit — ${t.name}</div>
+        <div style="font-size:14px;font-weight:500;color:var(--t1)">Edit — ${esc(t.name)}</div>
         <button onclick="document.getElementById('tmpl-editor-overlay').remove()" style="padding:5px 10px;background:none;border:1px solid var(--bd2);border-radius:var(--radius);cursor:pointer;color:var(--t2);font-family:var(--font);font-size:12px">✕ Close</button>
       </div>
       <div style="display:grid;grid-template-columns:280px 1fr;flex:1;overflow:hidden">

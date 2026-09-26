@@ -81,9 +81,14 @@ const CASHFLOW = {
 
 // ── Balance-sheet / all-time figures (no period window by design) ────────────
 const BALANCES = {
-  arOutstanding: 8500,           // INV-6 (future) excluded under D2
+  arOutstanding: 8500,           // GROSS invoice AR: Σ max(0, amount−paid) over issued invoices (INV-6 future excluded, D2). Invoice-table figure — used by the DB/invoice-level gates.
+  // F58 CLOSE — NET receivable = gross invoice AR − open|applied credit notes (CN-1 = 1,200, Customer A).
+  // This is the figure the dashboard "Outstanding" KPI and the balance-sheet accountsReceivable now show
+  // (computeBooks.outstanding / client arOutstanding both net it), so the ledger reconciles and real cash serves.
+  arNet: 7300,                   // 8,500 − 1,200 (CN-1 open, Customer A)
   apOutstanding: 1100,           // B0 300 + B1 800 (both unpaid); B2 paid ⇒ 0
-  customerA: 1500,
+  customerA: 1500,               // GROSS (invoice-only)
+  customerANet: 300,             // NET: 1,500 − 1,200 (CN-1)
   customerB: 7000,               // INV-3 3,000 + INV-5 4,000; INV-6 future ⇒ 0
   investments: 6000,
   rosterMonthly: 5000,
@@ -166,7 +171,8 @@ function serverFigures(period) {
     grossProfit: PL[period].grossProfit,
     opex: PL[period].opex,
     netProfit: PL[period].netProfit,
-    outstanding: BALANCES.arOutstanding,
+    // F58: the server AR (computeBooks.outstanding) is NET of open|applied credit notes, like revenue above.
+    outstanding: BALANCES.arNet,
   };
 }
 

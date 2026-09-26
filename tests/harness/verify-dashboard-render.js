@@ -44,12 +44,12 @@ function num(s) {
     console.log('\n── A1 · rendered dashboard KPI cards (FY / year view) ──');
     const rev = num(text('d-rev')), exp = num(text('d-exp')), prof = num(text('d-profit')),
           out = num(text('d-outstanding')), inv = num(text('d-invest'));
-    // FY oracle: rev 8800, exp 9100, net -1700, out 8500, inv 6000. Rounded display tolerance ±60.
+    // FY oracle: rev 8800, exp 9100, net -1700, out 7300 (net of CN-1), inv 6000. Rounded display tolerance ±60.
     A('A1.3  rendered Revenue (FY) ≈ 8,800', Math.abs(rev - 8800) <= 60, `d-rev="${text('d-rev')}" → ${rev}`);
     A('A1.6  rendered Expenses (FY) ≈ 9,100', Math.abs(exp - 9100) <= 60, `d-exp="${text('d-exp')}" → ${exp}`);
     A('A1.9  rendered Net Profit (FY) ≈ −1,700 (oracle)', Math.abs(prof - EXPECTED.PL.fy.netProfit) <= 60,
       `d-profit="${text('d-profit')}" → ${prof} · oracle ${EXPECTED.PL.fy.netProfit} · _cogsTotal=${w._cogsTotal} (all-time 1650 ⇒ −1950 is the render bug)`);
-    A('A1.12 rendered Outstanding ≈ 8,500', Math.abs(out - 8500) <= 5, `d-outstanding="${text('d-outstanding')}" → ${out}`);
+    A('A1.12 rendered Outstanding ≈ 7,300 (net of credit notes)', Math.abs(out - 7300) <= 5, `d-outstanding="${text('d-outstanding')}" → ${out}`);
     A('A1.15 rendered Investments ≈ 6,000', Math.abs(inv - 6000) <= 5, `d-invest="${text('d-invest')}" → ${inv}`);
 
     // ── A4 · transactions list ──

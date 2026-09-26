@@ -149,9 +149,13 @@ Basis: **ACCRUAL, ISSUE-BASED.** Recognised: `pending`, `overdue`, `partial`, `p
 Each of the three plausible bugs gives a different, recognisable number: counting face value
 → 3,000; leaking the draft → 11,499; counting only unsettled-by-status → 2,000.
 
-**A + B must equal AR Outstanding (8,500).** That cross-check is the point of the split —
-per-customer balances and the AR total are computed by different code, and this is the only
-check that makes them reconcile.
+**A + B must equal GROSS invoice AR (8,500).** That cross-check is the point of the split —
+per-customer invoice balances and the invoice-table AR total are computed by different code, and
+this is the only check that makes them reconcile. *(F58 CLOSE, 2026-09-26: the balance sheet,
+dashboard "Outstanding" and the AR report now show the NET receivable = 8,500 − open/applied
+credit notes. CN-1 is 1,200 (Customer A), so net AR = 7,300 and the AR report's per-customer
+rows read A = 300 · B = 7,000 · A+B = 7,300. The 8,500 gross figure remains the invoice-table
+value asserted by step2-gate / step3-gate A7.1.)*
 
 ## Payment events (required for Cash Flow — decision 3)
 | Event | date | amount | direction |
@@ -311,7 +315,7 @@ produces a different number rather than the same 6,000.
 > Making Q3 ≠ Jul would require moving the clock so Aug/Sep are past, which conflicts with **F82**
 > (July must stay incomplete). At this clock, Q3 == Jul is a property to keep.
 
-**AR Outstanding (all-time, balance-sheet — deliberately ignores the period selector): 8,500**
+**AR Outstanding — GROSS invoice table (all-time): 8,500** · **NET receivable (balance-sheet / dashboard, after open|applied credit notes — F58 CLOSE): 7,300** *(8,500 − CN-1 1,200)*
 **AP Outstanding (all-time): 1,100**  *(B0 300 + B1 800; B2 paid)*
 
 ## P&L (accrual) — decisions 1 and 2
@@ -365,7 +369,7 @@ during the sweep.
 | A1.1–3 | Revenue | 3,800 / 4,000 / 8,800 | PASS (2026-08-21) — `verify-verification-cells.js` (engine 26/0) + `verify-dashboard-render.js` (rendered card). |
 | A1.4–6 | Expenses | 5,450 / 1,850 / 9,100 | PASS (2026-08-21) — same harnesses. |
 | A1.7–9 | Net Profit | −1,850 / 1,350 / −1,700 | PASS (2026-08-21, **after F186 fix**) — the rendered Net painted ALL-TIME COGS at boot (−1,950 at FY) via a two-writer race on `window._cogsTotal`; fixed to period-scoped COGS (`finflow-api-wiring-dashboard.js`). Verified FAIL→PASS. |
-| A1.10–12 | Outstanding | 8,500 all three (all-time by design) | PASS (2026-08-21) |
+| A1.10–12 | Outstanding | 7,300 all three (all-time by design; NET of credit notes — F58 CLOSE) | PASS (2026-09-26) |
 | A1.13–15 | Investments | **6,000** — identical all three (balance, not a period figure) | PASS (2026-08-21) |
 
 ## A2 · Dashboard expense breakdown bars — 6
@@ -395,12 +399,12 @@ during the sweep.
 ## A5 · Server engine — `/api/reports` and `/books` — 18
 | # | Figure | Jun | Jul | FY | Result |
 |---|---|---|---|---|---|
-| A5.1–3 | revenue | 3,800 | 4,000 | 8,800 | PASS (seed 3c322e0f) |
-| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (seed 3c322e0f) |
-| A5.7–9 | grossProfit | 3,600 | 3,200 | 7,400 | PASS (seed 3c322e0f) |
-| A5.10–12 | opex | 5,450 | 1,850 | 9,100 | PASS (seed 3c322e0f) |
-| A5.13–15 | netProfit | −1,850 | 1,350 | −1,700 | PASS (seed 3c322e0f) |
-| A5.16–18 | outstanding | 8,500 | 8,500 | 8,500 | PASS (seed 3c322e0f) |
+| A5.1–3 | revenue | 3,800 | 4,000 | 8,800 | PASS (seed cae7835e) |
+| A5.4–6 | cogs | 200 | 800 | 1,400 | PASS (seed cae7835e) |
+| A5.7–9 | grossProfit | 3,600 | 3,200 | 7,400 | PASS (seed cae7835e) |
+| A5.10–12 | opex | 5,450 | 1,850 | 9,100 | PASS (seed cae7835e) |
+| A5.13–15 | netProfit | −1,850 | 1,350 | −1,700 | PASS (seed cae7835e) |
+| A5.16–18 | outstanding | 7,300 | 7,300 | 7,300 | PASS (2026-09-26 — NET, F58 CLOSE) |
 ## A6 · Cross-engine reconciliation — 18
 Client-displayed figure **==** server figure, six figures × three periods.
 
@@ -419,7 +423,7 @@ Client-displayed figure **==** server figure, six figures × three periods.
 | A7.2 | Invoices | count excludes draft | 4 of 5 | |
 | A7.3 | Invoices | subtitle wording | "1 overdue" (never "All invoices paid") | |
 | A7.4 | Payments Received | total received | 1,500 | PASS (2026-08-23) — **F86 ruled: `invoice_payments` (Store B) is canonical Payments Received.** `step3-gate.js` A7.4 (via `GET /api/bank-reconciliation`.unmatchedPayments) **and** A7.4b (`GET /api/invoice-payments`, no-arg, exactly 2 rows resolving to INV-1/INV-2) both total **1,500**; full gate **56/0**. `payments_received` (Store A) is empty on the seed and orphaned in prod — see `f86-payments-source-instrument.js` (Store B $1,500 vs Store A $0 across DB **and** every live endpoint; a source swap would read $0 — Rule-4 discriminating). |
-| A7.5 | Customer detail | per-customer balance | **A = 1,500 · B = 7,000 · A+B = 8,500 (== AR)** | |
+| A7.5 | Customer detail | per-customer balance | **A = 300 · B = 7,000 · A+B = 7,300 (== NET AR; F58 CLOSE, A netted of CN-1 1,200)** | |
 | A7.6 | Expenses page | period total | 750 (Jun) | |
 | A7.7 | COGS page | period COGS | 200 (Jun) | |
 | A7.8 | COGS page | no-period call | 1,650 all-time | |
@@ -591,7 +595,7 @@ A9 assertions come with the client probe.
 |---|---|---|---|
 | A9.1 | Future invoice contributes 0 to **FY** revenue | FY revenue 8,800, not 13,800 | PASS (2026-08-13) — `verify-a9-future-dated.js`; INV-6 excluded, and a fresh future invoice moves FY revenue by 0. |
 | A9.2 | Contributes 0 to its **quarter** (Q3, Jul–Sep) | Q3 revenue 4,000, not 9,000 | PASS (2026-08-13) — `verify-a9-future-dated.js` (`?period=quarter&monthIdx=6`). |
-| A9.3 | Contributes 0 to **AR outstanding** | 8,500, not 13,500 | PASS (2026-08-13) — `verify-a9-future-dated.js`; AR leg carries the D2 bound (server.js:5037). |
+| A9.3 | Contributes 0 to **AR outstanding** | 7,300, not 12,300 (NET; F58 CLOSE) | PASS (2026-09-26) — `verify-a9-future-dated.js`; AR leg carries the D2 bound + credit-note contra. |
 | A9.4 | Appears in a visible **scheduled** state — excluded from totals but NOT invisible | labelled, not vanished (**F94**) | PASS (2026-08-13) — `verify-a9-future-dated.js` (present + future-dated) and `verify-f94-scheduled.js`. |
 
 > ✅ **A9 PASSES — D2 is implemented (updated 2026-08-13).** The recognition legs carry a D2 upper

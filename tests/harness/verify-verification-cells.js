@@ -92,8 +92,8 @@ async function main() {
     A(`A1 expenses ${k}`, near(exp, EXPECTED.PL[k].opex), `got ${exp} want ${EXPECTED.PL[k].opex}`);
     A(`A1 netProfit ${k}`, near(net, EXPECTED.PL[k].netProfit), `got ${net} want ${EXPECTED.PL[k].netProfit}`);
   }
-  A('A1 outstanding (all-time, engine)', near(api.arOutstanding(loadEngine().win._realInvoices).total, EXPECTED.BALANCES.arOutstanding),
-    `got ${api.arOutstanding(loadEngine().win._realInvoices).total} want ${EXPECTED.BALANCES.arOutstanding}`);
+  A('A1 outstanding (all-time, engine)', near(api.arOutstanding(loadEngine().win._realInvoices).total, EXPECTED.BALANCES.arNet),
+    `got ${api.arOutstanding(loadEngine().win._realInvoices).total} want ${EXPECTED.BALANCES.arNet}`);
   A('A1 investments (Σ shares×price)', near(investExpected, EXPECTED.BALANCES.investments), `got ${investExpected} want ${EXPECTED.BALANCES.investments}`);
 
   // ── A2 · Expense breakdown bars (ENGINE) — Jun ──

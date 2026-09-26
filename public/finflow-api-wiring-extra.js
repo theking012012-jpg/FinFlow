@@ -763,6 +763,8 @@
       // not a second implementation of the total. ─────────────────────────────────────────────────
       if (name === 'Accounts Receivable') {
         const invs = (await api('GET', '/api/invoices')) || [];
+        const _arCNs = (await api('GET', '/api/credit-notes')) || [];   // F58: fetched, not a global — robust
+        window.creditNotes = _arCNs;   // refresh the global so _arOutstanding's net TOTAL uses the same fetched list as the per-customer rows below (Σ rows == total)
         const ar = (typeof window._arOutstanding === 'function') ? window._arOutstanding(invs) : { total: 0 };
         const REC = ['pending', 'overdue', 'partial', 'paid'];
         const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : null;
@@ -775,6 +777,19 @@
           if (due <= 0) return;
           const cst = i.client || '—'; byCust[cst] = (byCust[cst] || 0) + due;
         });
+        // F58 CLOSE: net open|applied credit notes into each customer's balance (receivable contra),
+        // D2-bounded, so Σ rows == the canonical net _arOutstanding total. A note whose customer does
+        // not match an AR customer reduces an explicit 'Unattributed credits' bucket (mirrors the
+        // Sales-by-Customer unattributed leg), so the breakdown never silently drifts from the total.
+        _arCNs.forEach(cn => {
+          const cst = (cn.status || '').toLowerCase(); if (cst !== 'open' && cst !== 'applied') return;
+          const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(cn.date || cn.created_at) : null;
+          if (today != null && (dy == null || dy > today)) return;
+          const amt = parseFloat(cn.amount) || 0; if (amt <= 0) return;
+          const c = cn.customer || '—';
+          if (byCust[c] != null) byCust[c] -= amt; else byCust['Unattributed credits'] = (byCust['Unattributed credits'] || 0) - amt;
+        });
+        Object.keys(byCust).forEach(k => { if (Math.abs(byCust[k]) < 0.005) delete byCust[k]; });
         const entries = Object.entries(byCust).sort((a, b) => b[1] - a[1]);
         const rows = entries.map(([c, amt]) => shareRow(c, amt, ar.total || 1, 'var(--red)')).join('');
         _rptBody(

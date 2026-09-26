@@ -8687,11 +8687,22 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // but is now driven by amount_paid, not a status flag. The max(0, …) floor keeps an over-credited
   // invoice from ever subtracting from receivables.
   // AR converts at each invoice's issue date (same recognition date as the revenue leg).
-  const outstanding = r2(sumFX(
+  const _arGross = sumFX(
     issuedInv.filter(i => { const _y = FinFlowDates._toYmd(_invDate(i)); return _y != null && _y <= _today; }),  // D2: future-dated invoices are scheduled, not receivable
     i => Math.max(0, num(i.amount) - num(i.amount_paid)),
     _invDate, 'ar'
-  ));
+  );
+  // F58 CLOSE: an open|applied credit note is a receivable contra — the customer owes that much less.
+  // The GL already nets it out of AR (Cr 1100); netting it here too aligns the canonical AR with the
+  // ledger, so the balance sheet serves the GL (real tracked cash) instead of the AR-only fallback.
+  // Same recognition basis as the credit-note REVENUE leg: status open|applied, at the note's own date,
+  // converted on the 'ar' FX leg. D2-bounded (<= today) like the invoice AR leg above.
+  const _arCreditContra = sumFX(
+    creditNotes.filter(cn => RECOGNIZED_CREDIT.has(String(cn.status || '').toLowerCase()) &&
+      (function(){ const _y = FinFlowDates._toYmd(_cnDate(cn)); return _y != null && _y <= _today; })()),
+    cn => num(cn.amount), _cnDate, 'ar'
+  );
+  const outstanding = r2(Math.max(0, _arGross - _arCreditContra));
   const grossProfit = r2(revenue - cogs);
   const netProfit   = r2(revenue - cogs - opex);
 

@@ -44,7 +44,7 @@ const LOGIN = { email: 'seed-owner@example.test', password: 'harness-pw-1' };
 // Oracle (Rule 6) — net revenue = gross − credit notes; the server reports revenue NET (F58).
 const FY_REV = EXPECTED.COMPONENTS.fy.revenue - (EXPECTED.COMPONENTS.fy.creditNotes || 0);   // 8,800
 const Q3_REV = EXPECTED.COMPONENTS.q3.revenue - (EXPECTED.COMPONENTS.q3.creditNotes || 0);   // 4,000
-const AR_OUT = 8500;                                                                          // VERIFICATION.md
+const AR_OUT = 7300;   // F58: server AR now nets CN-1 (1,200); gross invoice AR is 8,500                                                                          // VERIFICATION.md
 const INV6_AMOUNT = 5000;   // the seeded future invoice, for the "would-be" discriminators
 const FUT_AMOUNT = 7777;    // a fresh future invoice we add for the seed-independent delta
 

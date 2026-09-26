@@ -1217,9 +1217,30 @@ const _origRenderJournals = renderJournals;
 async function renderCOALive(){
   const l=document.getElementById('coa-list');if(!l)return;
   try{
-    const res=await fetch('/api/chart-of-accounts',{credentials:'include'});
-    if(!res.ok)throw new Error();
-    const accounts=await res.json();
+    // The REAL chart of accounts is the general ledger — live double-entry balances (/api/gl/accounts).
+    // User-defined manual accounts (/api/chart-of-accounts) are merged ON TOP so any custom accounts a
+    // user added still appear. GL wins for a shared code (its balance is the real, computed one). This
+    // is why the page now shows the business's actual account balances, not an empty manual list.
+    const [glRes, manualRes] = await Promise.all([
+      fetch('/api/gl/accounts',{credentials:'include'}).catch(()=>null),
+      fetch('/api/chart-of-accounts',{credentials:'include'}).catch(()=>null),
+    ]);
+    const glJson  = (glRes && glRes.ok) ? await glRes.json().catch(()=>null) : null;
+    const manual  = (manualRes && manualRes.ok) ? await manualRes.json().catch(()=>[]) : [];
+    if(!glJson && (!manualRes || !manualRes.ok)) throw new Error();   // both failed → error state below
+    const _CAT = { asset:'Assets', liability:'Liabilities', equity:'Equity', income:'Revenue', expense:'Expenses' };
+    const byCode = {};
+    (glJson && Array.isArray(glJson.accounts) ? glJson.accounts : []).forEach(a=>{
+      // GL balance is natural-direction; show its magnitude. Nature from the account type.
+      byCode[a.code] = { code:a.code, name:a.name, category:_CAT[a.type]||a.type||'Other',
+        balance:parseFloat(a.balance)||0, nature:(a.type==='asset'||a.type==='expense')?'Debit':'Credit' };
+    });
+    (Array.isArray(manual)?manual:[]).forEach(a=>{
+      if(a && a.code!=null && byCode[a.code]==null)
+        byCode[a.code] = { code:a.code, name:a.name, category:a.category||a.type||'Other',
+          balance:parseFloat(a.balance)||0, nature:a.nature||'Debit' };
+    });
+    const accounts = Object.values(byCode).sort((x,y)=>String(x.code||'').localeCompare(String(y.code||'')));
 
     // Update KPI cards with real data
     // Accounts are stored with `category` (e.g. 'Assets','Liabilities'), NOT `type` — matching a.type here
@@ -2107,6 +2128,19 @@ function arOutstanding(invoices){
     const _ovd=window.FinFlowDates._toYmd(i.due_date);
     if(st==='overdue' || (_ovd!=null && _ovd<_arToday)){ overdueTotal+=due; overdueCount++; }
   });
+  // F58 CLOSE: open|applied credit notes are a receivable contra — the customer owes that much less.
+  // Net them out of the AR TOTAL so the dashboard Outstanding, the AR report total and the server
+  // balance sheet (computeBooks.outstanding) all agree on the SAME net receivable. Same basis as the
+  // server: status open|applied, D2-bounded (date <= today). Floored at 0. Overdue is invoice-only.
+  let _cnTotal=0;
+  (window.creditNotes||[]).forEach(cn=>{
+    const cst=(cn.status||'').toLowerCase();
+    if(cst!=='open'&&cst!=='applied') return;
+    const _cy=window.FinFlowDates._toYmd(cn.date||cn.created_at);
+    if(_cy==null||_cy>_arToday) return;
+    _cnTotal+=parseFloat(cn.amount)||0;
+  });
+  total=Math.max(0,total-_cnTotal);
   return { total, count, overdueTotal, overdueCount };
 }
 window._arOutstanding = arOutstanding;
@@ -4166,8 +4200,8 @@ async function loadPersonalFinance(){
       const aRes=await fetch('/api/personal-accounts',{credentials:'include'});
       window._persAccounts = aRes.ok ? ((await aRes.json())||[]).map(a=>({_dbId:a.id,kind:a.kind||'asset',name:a.name||'',type:a.type||'other',value:parseFloat(a.value)||0})) : (window._persAccounts||[]);
     }catch(_){ window._persAccounts=window._persAccounts||[]; }
-    // Capture this month's net-worth snapshot — fire-and-forget, never blocks render.
-    fetch('/api/snapshots/capture',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'networth'})}).catch(()=>{});
+    // Capture this month's net-worth snapshot — throttled (render path), never blocks render.
+    _ffCaptureSnap('networth');
     try{
       const sRes=await fetch('/api/snapshots?kind=networth',{credentials:'include'});
       window._nwSnapshots = sRes.ok ? ((await sRes.json())||[]).map(s=>({value:parseFloat(s.value)||0,date:s.date||''})) : (window._nwSnapshots||[]);
@@ -4268,8 +4302,8 @@ window.saveAccount=async function(){
     }
     closeModal('account-modal');
     await loadPersonalAccounts();
-    // Net worth changed → capture a fresh snapshot (fire-and-forget) + re-render.
-    fetch('/api/snapshots/capture',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'networth'})}).catch(()=>{});
+    // Net worth changed → capture a fresh snapshot immediately (forced) + re-render.
+    _ffCaptureSnap('networth', true);
     if(typeof renderPersonal==='function') renderPersonal();
     if(typeof renderPersonalSections==='function') renderPersonalSections();
     notify(kind==='liability'?'Liability saved ✦':'Asset saved ✦');
@@ -4281,7 +4315,7 @@ window.deletePersAccount=async function(id){
     const r=await fetch('/api/personal-accounts/'+id,{method:'DELETE',credentials:'include'});
     if(!r.ok) throw new Error('Failed');
     await loadPersonalAccounts();
-    fetch('/api/snapshots/capture',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'networth'})}).catch(()=>{});
+    _ffCaptureSnap('networth', true);
     if(typeof renderPersonal==='function') renderPersonal();
     if(typeof renderPersonalSections==='function') renderPersonalSections();
     notify('Account deleted');
@@ -4549,11 +4583,24 @@ function buildInvDonut(hs,totalValue){
     </div>`).join('');
 }
 
+// F-poll: throttle snapshot captures. A snapshot is a daily (portfolio) / monthly (networth) UPSERT,
+// so re-POSTing it every 60s render is pure chatter. Render paths capture at most once / 5 min per kind;
+// real data changes (add/edit/delete an account) pass force=true to record the new value immediately.
+window._ffSnapLast = window._ffSnapLast || {};
+function _ffCaptureSnap(kind, force){
+  try{
+    const now = Date.now();
+    if(!force && (now - (window._ffSnapLast[kind] || 0) < 5*60*1000)) return;
+    window._ffSnapLast[kind] = now;
+    fetch('/api/snapshots/capture',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind})}).catch(()=>{});
+  }catch(_){}
+}
+
 // Fire-and-forget: capture today's portfolio value, load the REAL stored series,
 // then render. Never throws into the render path.
 async function loadPortfolioSnapshots(){
   try{
-    fetch('/api/snapshots/capture',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'portfolio'})}).catch(()=>{});
+    _ffCaptureSnap('portfolio');
     const r=await fetch('/api/snapshots?kind=portfolio',{credentials:'include'});
     window._portSnapshots = r.ok ? ((await r.json())||[]).map(s=>({value:parseFloat(s.value)||0,date:s.date||''})) : (window._portSnapshots||[]);
   }catch(_){ window._portSnapshots=window._portSnapshots||[]; }

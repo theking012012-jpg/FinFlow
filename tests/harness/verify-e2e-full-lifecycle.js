@@ -191,8 +191,11 @@ async function main() {
     const oracleCn = await computeBooks(uid, e1, 'year');
     A('P&L still reconciles after the credit note (revenue dropped by the $100 contra)', near(plCn.json.totalRevenue, oracleCn.revenue) && near(plCn.json.totalRevenue, pl1.json.totalRevenue - 100), `after=${plCn.json.totalRevenue} before=${pl1.json.totalRevenue} oracle=${oracleCn.revenue}`);
     const bsCn = await client.post(`/api/reports/balance-sheet?entity_id=${e1}`, {});
-    A('the balance-sheet gate SAFELY falls back to the oracle (GL nets AR, oracle defers → F58)', bsCn.json.source === 'computeBooks', JSON.stringify({ src: bsCn.json && bsCn.json.source }));
-    A('the fallback number is still correct and the sheet still balances (never a wrong figure)', near(bsCn.json.totalAssets, bsCn.json.totalLiabilities + bsCn.json.equity), JSON.stringify({ ta: bsCn.json.totalAssets, tl: bsCn.json.totalLiabilities, eq: bsCn.json.equity }));
+    // F58 CLOSED: the canonical AR now nets open|applied credit notes, matching the GL, so the balance
+    // sheet keeps serving the LEDGER (real tracked cash) even with a credit note present — no fallback.
+    A('the balance sheet STILL serves the ledger after a credit note (F58 closed — real cash, no fallback)', bsCn.json.source === 'gl' && bsCn.json.cashTracked === true, JSON.stringify({ src: bsCn.json && bsCn.json.source, cashTracked: bsCn.json && bsCn.json.cashTracked }));
+    A('AR is reduced by the $100 credit note (canonical AR now nets the contra, ties to the GL)', near(bsCn.json.accountsReceivable, bs1.json.accountsReceivable - 100), `afterCN=${bsCn.json.accountsReceivable} before=${bs1.json.accountsReceivable}`);
+    A('the balance sheet still balances after the credit note', near(bsCn.json.totalAssets, bsCn.json.totalLiabilities + bsCn.json.equity), JSON.stringify({ ta: bsCn.json.totalAssets, tl: bsCn.json.totalLiabilities, eq: bsCn.json.equity }));
 
     // ═══════════════════════════════════════════════════════════════════════════════════════
     section('5 · ACCOUNTANT SIDE — register (pending) → blocked login → verify → login');

@@ -99,11 +99,11 @@ async function main() {
 
     // ── 2 · the rest of the balance sheet is unchanged and still correct ──
     console.log('\n-- 2 - AR / AP / assets / equity --');
-    A('accountsReceivable == VERIFICATION AR',  j.accountsReceivable, EXPECTED.BALANCES.arOutstanding);
+    A('accountsReceivable == VERIFICATION AR',  j.accountsReceivable, EXPECTED.BALANCES.arNet);
     A('accountsPayable == VERIFICATION AP',     j.accountsPayable,    EXPECTED.BALANCES.apOutstanding);
-    A('totalAssets is AR alone',                j.totalAssets,        EXPECTED.BALANCES.arOutstanding);
+    A('totalAssets is AR alone',                j.totalAssets,        EXPECTED.BALANCES.arNet);
     A('equity == assets − liabilities',         j.equity,
-      Math.round((EXPECTED.BALANCES.arOutstanding - EXPECTED.BALANCES.apOutstanding) * 100) / 100);
+      Math.round((EXPECTED.BALANCES.arNet - EXPECTED.BALANCES.apOutstanding) * 100) / 100);
 
     // The collision this probe exists to warn about, asserted rather than commented.
     console.log('\n-- 3 - DISCRIMINATION: totalAssets CANNOT tell the two implementations apart --');
@@ -112,7 +112,7 @@ async function main() {
     A('…so the OLD clamp would also have produced cash = 0', Math.max(0, fyNet), 0,
       'if a future seed makes FY profitable this assertion fails and the warning must be revisited');
     A('…and totalAssets would be identical either way (COLLISION)',
-      Math.round((Math.max(0, fyNet) + EXPECTED.BALANCES.arOutstanding) * 100) / 100, j.totalAssets);
+      Math.round((Math.max(0, fyNet) + EXPECTED.BALANCES.arNet) * 100) / 100, j.totalAssets);
     console.log('        ^ therefore only the `cash` FIELD discriminates. Section 1 is the real check.');
     console.log('        ^ and note what the old code told this user: cash 0, on a year they lost ' +
                 Math.abs(fyNet) + '.');

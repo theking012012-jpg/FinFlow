@@ -7973,8 +7973,16 @@ async function glFinancials(userId, entityId, period = 'year', fyStartIdx = 0, m
 async function backfillLedgerForUser(userId, opts = {}) {
   const onlyEntity = (opts.entityId != null && opts.entityId !== '') ? Number(opts.entityId) : null;
   const dry = !!opts.dryRun;
+  const reset = !!opts.reset;
   const keep = r => onlyEntity == null || r.entity_id === onlyEntity;        // JSONB rows: post to their own entity
-  const report = { posted: 0, existing: 0, byType: {} };
+  const report = { posted: 0, existing: 0, reset, byType: {} };
+  // RESET (rebuild): the ledger is a derived shadow of the source documents, so it can always be
+  // rebuilt from them. Clear the scope's entries first (lines cascade) so a re-run re-posts every
+  // document with corrected data (e.g. entries a prior run wrote with a bad/null entry_date).
+  if (reset && !dry) {
+    if (onlyEntity == null) await pool.query(`DELETE FROM ledger_entries WHERE user_id=$1`, [userId]);
+    else await pool.query(`DELETE FROM ledger_entries WHERE user_id=$1 AND entity_id=$2`, [userId, onlyEntity]);
+  }
   const note = (t, existed) => { const r = report.byType[t] = report.byType[t] || { posted: 0, existing: 0 }; if (existed) { r.existing++; report.existing++; } else { r.posted++; report.posted++; } };
   if (!dry) {
     const { rows: ents } = await pool.query(`SELECT id FROM entities WHERE user_id=$1`, [userId]);
@@ -7986,7 +7994,12 @@ async function backfillLedgerForUser(userId, opts = {}) {
     if (!dry && !existed) await postLedgerEntry(pool, { userId, entityId: entityId || null, date, description, sourceType, sourceId, idempotencyKey, lines });
     note(sourceType, existed);
   };
-  const slice10 = v => v ? String(v).slice(0, 10) : null;
+  // Use the canonical date normaliser (handles pg Date OBJECTS and strings alike), NOT a naive
+  // String(v).slice — a pg timestamptz comes back as a Date, and String(Date) is 'Thu Sep 15 2026 …',
+  // whose first 10 chars are not a YYYY-MM-DD, so the old slice produced a garbage date that the
+  // entry_date guard then nulled → those docs fell outside the GL period and the ledger under-reported
+  // revenue vs computeBooks (which uses _toYmd). This is the exact created_at fallback computeBooks uses.
+  const slice10 = v => FinFlowDates._toYmd(v);
   // 1) invoices — issued (status ≠ draft) → Dr AR / Cr Revenue at issue_date
   for (const inv of await db.allByUser('invoices', userId, keep)) {
     if (String(inv.status || '').toLowerCase() === 'draft') continue;
@@ -9194,9 +9207,10 @@ app.post('/api/gl/backfill', requireAuth, wrap(async (req, res) => {
   if (Array.isArray(req.entityAccess)) return res.status(403).json({ error: 'Only the account owner can backfill the ledger.', code: 'GL_OWNER_ONLY' });
   const dry = req.query.dry === '1' || req.query.dry === 'true';
   const entityId = (req.query.entity_id && req.query.entity_id !== 'all') ? parseInt(req.query.entity_id, 10) : null;
+  const reset = req.query.reset === '1' || req.query.reset === 'true';
   let report;
   try {
-    report = await backfillLedgerForUser(scopeId(req), { entityId, dryRun: dry });
+    report = await backfillLedgerForUser(scopeId(req), { entityId, dryRun: dry, reset });
   } catch (e) {
     // Owner-gated route → surface the real DB error so a prod-only backfill failure is diagnosable
     // (the generic wrap() 500 hides it). Not sensitive: it is the owner's own ledger write error.

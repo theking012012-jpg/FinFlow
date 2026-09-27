@@ -5110,6 +5110,19 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
   }
 }));
 
+// GET /api/reports/ar-by-customer — per-customer AR breakdown (F204). Server-computed from the same
+// canonical set as `outstanding`, so Σ(rows) == total. Lets the AR report render without the client
+// holding the full invoice list (the dependency that blocks invoice-list pagination).
+app.get('/api/reports/ar-by-customer', requireAuth, wrap(async (req, res) => {
+  try {
+    const books = await computeBooks(scopeId(req), req.entityId || null, 'year');
+    res.json({ rows: books.arByCustomer || [], total: books.outstanding });
+  } catch (e) {
+    console.error('[GET /api/reports/ar-by-customer]', e.message);
+    res.status(500).json({ error: 'Could not load AR breakdown.' });
+  }
+}));
+
 // POST /api/reports/profit-loss — monthly P&L breakdown (entity-scoped).
 // Monthly rows show DATED cash activity (paid invoices + receipts + payments received in;
 // expenses + payments made out). The TOTALS come from computeBooks so the bottom line is
@@ -8957,6 +8970,32 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     cn => num(cn.amount), _cnDate, 'ar'
   );
   const outstanding = r2(Math.max(0, _arGross - _arCreditContra));
+
+  // F204 — per-customer AR breakdown, built from the EXACT same recognized+D2 set and FX path as
+  // `outstanding` above, so Σ(rows) == outstanding by construction (the F58 invariant). This lets the
+  // AR report render per-customer balances WITHOUT the client holding the full invoice list, which is
+  // the dependency that keeps the invoice list from paginating. Read-only; changes no existing figure.
+  const _arByCustomer = {};
+  const _arAdd = (key, amt) => { const k = (key == null || key === '') ? 'Other' : key; _arByCustomer[k] = (_arByCustomer[k] || 0) + amt; };
+  const _fxConvRow = (amt, entId, date) => {                     // mirrors sumFX's per-row conversion
+    if (!displayCur) return amt;
+    if (amt === 0) return 0;
+    const from = entCur[entId] != null ? entCur[entId] : viewedCur;
+    const rate = (from === displayCur) ? 1 : pickRate(_fxRows, from, displayCur, date);
+    return rate == null ? 0 : amt * rate;                        // null rate already flagged by the outstanding pass
+  };
+  issuedInv
+    .filter(i => { const _y = FinFlowDates._toYmd(_invDate(i)); return _y != null && _y <= _today; })
+    .forEach(i => { const g = Math.max(0, num(i.amount) - num(i.amount_paid)); if (g) _arAdd(i.client, _fxConvRow(g, i.entity_id, _invDate(i))); });
+  creditNotes
+    .filter(cn => RECOGNIZED_CREDIT.has(String(cn.status || '').toLowerCase()) &&
+      (function () { const _y = FinFlowDates._toYmd(_cnDate(cn)); return _y != null && _y <= _today; })())
+    .forEach(cn => { const c = num(cn.amount); if (c) _arAdd(cn.customer || cn.client || 'Unattributed credits', -_fxConvRow(c, cn.entity_id, _cnDate(cn))); });
+  const arByCustomer = Object.entries(_arByCustomer)
+    .map(([customer, amount]) => ({ customer, amount: r2(amount) }))
+    .filter(r => Math.abs(r.amount) > 0.005)
+    .sort((a, b) => b.amount - a.amount);
+
   const grossProfit = r2(revenue - cogs);
   const netProfit   = r2(revenue - cogs - opex);
 
@@ -9036,7 +9075,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const transactions = [..._invTx, ..._expTx].sort(_txByDate).slice(0, 6).map(t => ({ name: t.name, cat: t.cat, type: t.type, amount: t.amount }));
 
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, period, monthly, expenseBreakdown, transactions,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, arByCustomer, period, monthly, expenseBreakdown, transactions,
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the
     // client worksheet (GET /api/tax-filing) and the accountant Tax Summary so taxable reconciles.

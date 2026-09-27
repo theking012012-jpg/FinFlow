@@ -52,6 +52,13 @@ const LOGIN = { email: 'seed@finflow.test', password: 'harness-password-not-a-se
     A('Customer B == 7,000 (INV-6 future-dated is D2-excluded)', near(byName['Customer B'], 7000), JSON.stringify(byName));
     A('no draft invoice leaked in (INV-4 draft excluded)', rows.every(r => r.amount > 0) && !rows.some(r => near(r.amount, 9999)));
 
+    // Report metadata (so the AR report no longer needs the full invoice list for its tiles).
+    A('openCount == 3 (INV-2, INV-3, INV-5; paid/draft/future excluded)', res.json?.openCount === 3, 'openCount=' + res.json?.openCount);
+    // seed.js sets due_date = issue_date, so every open invoice (all <= pinned today) is overdue by the
+    // shared rule (matches client arOutstanding exactly): INV-2 1,500 + INV-3 3,000 + INV-5 4,000 = 8,500.
+    A('overdueCount == 3 (all open invoices past due_date=issue_date)', res.json?.overdueCount === 3, 'overdueCount=' + res.json?.overdueCount);
+    A('overdueTotal == 8,500 (1,500+3,000+4,000)', near(res.json?.overdueTotal, 8500), 'overdueTotal=' + res.json?.overdueTotal);
+
     console.log('\n' + (fail === 0 ? '  ALL GREEN — ' + pass + ' passed, 0 failed  (per-customer AR reconciles to canonical outstanding)'
                                    : '  ' + fail + ' FAILED, ' + pass + ' passed'));
   } catch (e) {

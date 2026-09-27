@@ -4625,35 +4625,45 @@ function clearAIChat(){
       // Σ max(0, amount − amount_paid)), so Σ rows == total by construction (asserted in the harness),
       // not a second implementation of the total. ─────────────────────────────────────────────────
       if (name === 'Accounts Receivable') {
-        const invs = (await api('GET', '/api/invoices')) || [];
-        const _arCNs = (await api('GET', '/api/credit-notes')) || [];   // F58: fetched, not a global — robust
-        window.creditNotes = _arCNs;   // refresh the global so _arOutstanding's net TOTAL uses the same fetched list as the per-customer rows below (Σ rows == total)
-        const ar = (typeof window._arOutstanding === 'function') ? window._arOutstanding(invs) : { total: 0 };
-        const REC = ['pending', 'overdue', 'partial', 'paid'];
-        const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : null;
-        const byCust = {};
-        invs.forEach(i => {
-          const st = (i.status || '').toLowerCase(); if (!REC.includes(st)) return;
-          const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(i.issue_date || i.created_at || i.date) : null;
-          if (today != null && (dy == null || dy > today)) return;
-          const due = Math.max(0, (parseFloat(i.amount) || 0) - (parseFloat(i.amount_paid) || 0));
-          if (due <= 0) return;
-          const cst = i.client || '—'; byCust[cst] = (byCust[cst] || 0) + due;
-        });
-        // F58 CLOSE: net open|applied credit notes into each customer's balance (receivable contra),
-        // D2-bounded, so Σ rows == the canonical net _arOutstanding total. A note whose customer does
-        // not match an AR customer reduces an explicit 'Unattributed credits' bucket (mirrors the
-        // Sales-by-Customer unattributed leg), so the breakdown never silently drifts from the total.
-        _arCNs.forEach(cn => {
-          const cst = (cn.status || '').toLowerCase(); if (cst !== 'open' && cst !== 'applied') return;
-          const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(cn.date || cn.created_at) : null;
-          if (today != null && (dy == null || dy > today)) return;
-          const amt = parseFloat(cn.amount) || 0; if (amt <= 0) return;
-          const c = cn.customer || '—';
-          if (byCust[c] != null) byCust[c] -= amt; else byCust['Unattributed credits'] = (byCust['Unattributed credits'] || 0) - amt;
-        });
-        Object.keys(byCust).forEach(k => { if (Math.abs(byCust[k]) < 0.005) delete byCust[k]; });
-        const entries = Object.entries(byCust).sort((a, b) => b[1] - a[1]);
+        // F204: prefer the SERVER-computed per-customer AR (GET /api/reports/ar-by-customer) so this
+        // report no longer loads the full invoice list. Σ(rows)==total is guaranteed server-side
+        // (built from the same recognized+D2 set + FX path as computeBooks.outstanding). If the
+        // endpoint is unavailable, fall back to the identical client computation so it degrades safely.
+        let ar, entries;
+        try {
+          const srv = await api('GET', '/api/reports/ar-by-customer');
+          if (srv && Array.isArray(srv.rows)) {
+            ar = { total: srv.total, count: srv.openCount, overdueTotal: srv.overdueTotal, overdueCount: srv.overdueCount };
+            entries = srv.rows.map(r => [r.customer, r.amount]).filter(e => Math.abs(e[1]) >= 0.005).sort((a, b) => b[1] - a[1]);
+          }
+        } catch (_) { /* fall through to the client computation below */ }
+        if (!ar) {
+          const invs = (await api('GET', '/api/invoices')) || [];
+          const _arCNs = (await api('GET', '/api/credit-notes')) || [];
+          window.creditNotes = _arCNs;
+          ar = (typeof window._arOutstanding === 'function') ? window._arOutstanding(invs) : { total: 0 };
+          const REC = ['pending', 'overdue', 'partial', 'paid'];
+          const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : null;
+          const byCust = {};
+          invs.forEach(i => {
+            const st = (i.status || '').toLowerCase(); if (!REC.includes(st)) return;
+            const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(i.issue_date || i.created_at || i.date) : null;
+            if (today != null && (dy == null || dy > today)) return;
+            const due = Math.max(0, (parseFloat(i.amount) || 0) - (parseFloat(i.amount_paid) || 0));
+            if (due <= 0) return;
+            const cst = i.client || '—'; byCust[cst] = (byCust[cst] || 0) + due;
+          });
+          _arCNs.forEach(cn => {
+            const cst = (cn.status || '').toLowerCase(); if (cst !== 'open' && cst !== 'applied') return;
+            const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(cn.date || cn.created_at) : null;
+            if (today != null && (dy == null || dy > today)) return;
+            const amt = parseFloat(cn.amount) || 0; if (amt <= 0) return;
+            const c = cn.customer || '—';
+            if (byCust[c] != null) byCust[c] -= amt; else byCust['Unattributed credits'] = (byCust['Unattributed credits'] || 0) - amt;
+          });
+          Object.keys(byCust).forEach(k => { if (Math.abs(byCust[k]) < 0.005) delete byCust[k]; });
+          entries = Object.entries(byCust).sort((a, b) => b[1] - a[1]);
+        }
         const rows = entries.map(([c, amt]) => shareRow(c, amt, ar.total || 1, 'var(--red)')).join('');
         _rptBody(
           tiles([

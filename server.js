@@ -5116,7 +5116,8 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
 app.get('/api/reports/ar-by-customer', requireAuth, wrap(async (req, res) => {
   try {
     const books = await computeBooks(scopeId(req), req.entityId || null, 'year');
-    res.json({ rows: books.arByCustomer || [], total: books.outstanding });
+    const sum = books.arSummary || { total: books.outstanding, openCount: 0, overdueTotal: 0, overdueCount: 0 };
+    res.json({ rows: books.arByCustomer || [], total: sum.total, openCount: sum.openCount, overdueTotal: sum.overdueTotal, overdueCount: sum.overdueCount });
   } catch (e) {
     console.error('[GET /api/reports/ar-by-customer]', e.message);
     res.status(500).json({ error: 'Could not load AR breakdown.' });
@@ -8984,9 +8985,19 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     const rate = (from === displayCur) ? 1 : pickRate(_fxRows, from, displayCur, date);
     return rate == null ? 0 : amt * rate;                        // null rate already flagged by the outstanding pass
   };
+  let _arOpenCount = 0, _arOverdueTotal = 0, _arOverdueCount = 0;
   issuedInv
     .filter(i => { const _y = FinFlowDates._toYmd(_invDate(i)); return _y != null && _y <= _today; })
-    .forEach(i => { const g = Math.max(0, num(i.amount) - num(i.amount_paid)); if (g) _arAdd(i.client, _fxConvRow(g, i.entity_id, _invDate(i))); });
+    .forEach(i => {
+      const gRaw = Math.max(0, num(i.amount) - num(i.amount_paid));
+      if (!gRaw) return;
+      const g = _fxConvRow(gRaw, i.entity_id, _invDate(i));
+      _arAdd(i.client, g);
+      _arOpenCount++;
+      // F-C1 (mirrors client arOutstanding): overdue = unpaid AND (literal 'overdue' status OR past its due date).
+      const _ovd = FinFlowDates._toYmd(i.due_date);
+      if (String(i.status || '').toLowerCase() === 'overdue' || (_ovd != null && _ovd < _today)) { _arOverdueTotal += g; _arOverdueCount++; }
+    });
   creditNotes
     .filter(cn => RECOGNIZED_CREDIT.has(String(cn.status || '').toLowerCase()) &&
       (function () { const _y = FinFlowDates._toYmd(_cnDate(cn)); return _y != null && _y <= _today; })())
@@ -8995,6 +9006,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     .map(([customer, amount]) => ({ customer, amount: r2(amount) }))
     .filter(r => Math.abs(r.amount) > 0.005)
     .sort((a, b) => b.amount - a.amount);
+  const arSummary = { total: outstanding, openCount: _arOpenCount, overdueTotal: r2(_arOverdueTotal), overdueCount: _arOverdueCount };
 
   const grossProfit = r2(revenue - cogs);
   const netProfit   = r2(revenue - cogs - opex);
@@ -9075,7 +9087,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const transactions = [..._invTx, ..._expTx].sort(_txByDate).slice(0, 6).map(t => ({ name: t.name, cat: t.cat, type: t.type, amount: t.amount }));
 
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, arByCustomer, period, monthly, expenseBreakdown, transactions,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, arByCustomer, arSummary, period, monthly, expenseBreakdown, transactions,
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the
     // client worksheet (GET /api/tax-filing) and the accountant Tax Summary so taxable reconciles.

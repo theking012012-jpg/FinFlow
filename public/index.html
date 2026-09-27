@@ -520,7 +520,7 @@ body.sidebar-open .mob-bottom-nav,body.sidebar-open .mobile-fab{display:none!imp
 #page-fx{color:var(--t1)}
 .table-row:last-child{border-bottom:none}
 .table-row:hover{background:var(--bg2);margin:0 -1rem;padding:7px 1rem;border-radius:var(--radius)}
-.table-actions{display:flex;gap:4px;justify-content:flex-end}
+.table-actions{display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap}
 .inv-cols{grid-template-columns:1fr 80px 72px 84px 80px}
 /* PAYROLL */
 .payroll-row{display:flex;align-items:center;justify-content:space-between;padding:8px 4px;border-bottom:1px solid var(--bd);transition:background .1s}
@@ -2147,7 +2147,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         </div>
         <div class="card">
           <div class="card-header">
-            <div><h2 class="card-title">Holdings</h2><div class="card-sub">Business investment positions</div></div>
+            <div><h2 class="card-title">Holdings</h2><div class="card-sub">Business investment positions · tracked separately — not posted to the books or the balance sheet</div></div>
             <div style="display:flex;gap:6px">
               <button class="btn btn-ghost btn-sm" onclick="openAddHoldingModal('business')">+ Add holding</button>
               <button class="btn btn-primary btn-sm" onclick="openAIPanel&&openAIPanel();sendAIQuery&&sendAIQuery('Analyse our business investment portfolio — flag concentration risks, tax efficiency, and how it aligns with our cash flow needs.')">&#10022; AI analysis</button>
@@ -3739,6 +3739,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
                 <button class="btn btn-ghost" onclick="disableOwnerMfa()">Disable 2FA</button>
                 <div id="owner-mfa-disable-err" style="font-size:12px;color:var(--red);margin-top:.4rem;display:none"></div>
               </div>
+            </div>
+            <div class="settings-section" style="margin-top:1rem">
+              <div class="settings-title"><svg viewBox="0 0 16 16"><path d="M8 1v9"/><polyline points="4.5,6.5 8,10 11.5,6.5"/><path d="M2 13h12"/></svg>Your data</div>
+              <div style="font-size:12px;color:var(--t3);margin-bottom:.75rem">Download a complete copy of everything in your account — invoices, expenses, customers, payroll, ledger and settings — as a JSON file (GDPR data export).</div>
+              <button class="btn btn-ghost" onclick="window.location.href='/api/auth/export'">⬇ Download my data</button>
             </div>
             <div class="settings-section" style="margin-top:1rem;border-color:var(--red-bd)">
               <div class="settings-title" style="color:var(--red)"><svg viewBox="0 0 16 16"><polyline points="2,4 14,4"/><path d="M5 4V2h6v2"/><rect x="3" y="4" width="10" height="10" rx="1"/></svg>Danger zone</div>

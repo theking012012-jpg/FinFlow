@@ -1028,7 +1028,7 @@ function openReconcileModal(){
         <div style="font-size:11px;color:var(--t3)">${esc(t.cat||'')} · ${esc(t.date||'')}</div>
       </div>
       <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;flex-shrink:0;color:${t.type==='credit'?'var(--green)':'var(--red)'}">
-        ${t.type==='credit'?'+':'-'}$${Math.abs(t.amount).toLocaleString()}
+        ${t.type==='credit'?'+':'-'}${S(t.amount)}
       </span>
     </label>`).join('');
   if(reconState.lastReconBal){
@@ -5631,7 +5631,7 @@ function renderBanking(){
         <div class="tx-icon" style="background:${t.type==='credit'?'var(--green-bg)':'var(--red-bg)'};color:${t.type==='credit'?'var(--green)':'var(--red)'}"><svg viewBox="0 0 16 16"><line x1="8" y1="3" x2="8" y2="13"/><polyline points="${t.type==='credit'?'4,9 8,13 12,9':'4,7 8,3 12,7'}"/></svg></div>
         <div><div class="tx-name">${esc(t.desc||'')}</div><div class="tx-cat">${esc(t.cat||'')} · ${esc(t.date||'')}</div></div>
       </div>
-      <span class="tx-amt" style="color:${t.type==='credit'?'var(--green)':'var(--red)'}">${t.type==='credit'?'+':''}$${Math.abs(t.amount).toLocaleString()}</span>
+      <span class="tx-amt" style="color:${t.type==='credit'?'var(--green)':'var(--red)'}">${t.type==='credit'?'+':''}${S(t.amount)}</span>
     </div>`).join('');
 }
 function openAddAccountModal(){notify('Connect or add a bank account');}

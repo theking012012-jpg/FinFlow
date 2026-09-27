@@ -40,11 +40,13 @@ const LOGIN = { email: 'seed@finflow.test', password: 'harness-password-not-a-se
 
 let pass = 0, fail = 0;
 const failures = [];
+const results = {};  // id -> { ok, got } — lets the writer stamp any measured check, not just A5
 
 function check(id, name, got, want) {
   const ok = (typeof want === 'number' && typeof got === 'number')
     ? Math.abs(got - want) < 0.005
     : got === want;
+  results[id] = { ok, got };
   if (ok) { pass++; console.log(`  PASS  ${id.padEnd(9)} ${name}`); }
   else {
     fail++;
@@ -276,9 +278,9 @@ async function main() {
     // A7.22 — AP-D2 (balance-sheet AP leg): a FUTURE-dated bill is SCHEDULED, not yet payable, and
     // must contribute 0 to AP, exactly as INV-6 does to AR (A7.1). The seed has no future bill, so
     // insert a transient one via the API, confirm the server-computed AP is unchanged, then remove
-    // it. Without the D2 filter this 4242 bill would inflate AP to 5342.
+    // it. Without the D2 filter this 4242 bill would inflate AP to 5042 (800 net + 4242).
     const _bsBefore = await http.post('/api/reports/balance-sheet', {});
-    check('A7.22a', 'balance-sheet AP baseline (no future bill)', _bsBefore.json && _bsBefore.json.accountsPayable, 1100);
+    check('A7.22a', 'balance-sheet AP baseline (no future bill, NET of vendor credits — F58)', _bsBefore.json && _bsBefore.json.accountsPayable, EXPECTED.BALANCES.apNet);
     const _futBill = await http.post('/api/bills', { vendor: 'FUTURE PROBE D2', amount: 4242, status: 'unpaid', issue_date: '2027-03-15' });
     // H3: assert the insert ACTUALLY happened before trusting A7.22b. If this POST fails, no bill is
     // created and A7.22b passes trivially — AP is unchanged because nothing was added, not because D2
@@ -287,7 +289,7 @@ async function main() {
     check('A7.22-insert', 'probe future-dated bill was actually created (2xx + non-null id)',
       _futCreated ? true : `HTTP ${_futBill.status}, id ${_futBill.json && _futBill.json.id}`, true);
     const _bsAfter = await http.post('/api/reports/balance-sheet', {});
-    check('A7.22b', 'future-dated bill contributes 0 to AP (D2)', _bsAfter.json && _bsAfter.json.accountsPayable, 1100);
+    check('A7.22b', 'future-dated bill contributes 0 to AP (D2)', _bsAfter.json && _bsAfter.json.accountsPayable, EXPECTED.BALANCES.apNet);
     if (_futBill.json && _futBill.json.id != null) await http.del('/api/bills/' + _futBill.json.id);
 
     // A7.21 — the roster is a TEMPLATE. Basis C: it must produce no expense figure. The card
@@ -406,6 +408,21 @@ async function main() {
       toWrite[rowId] = ok
         ? `PASS (seed ${fp})`
         : `**FAIL** — actual ${got.map(fmtN).join(' / ')} (seed ${fp})`;
+    }
+    // A7 cash-flow rows are measured above but were historically hand-stamped, so they silently
+    // went stale when the seed changed (F112 fingerprint drift). Stamp them from the same run that
+    // measured them — grouped exactly as VERIFICATION.md lists them (Jun / Jul / FY per row).
+    const A7_GROUPS = {
+      'A7.9–11':  ['A7.9', 'A7.10', 'A7.11'],
+      'A7.12–14': ['A7.12', 'A7.13', 'A7.14'],
+      'A7.15–17': ['A7.15', 'A7.16', 'A7.17'],
+    };
+    for (const [rowId, ids] of Object.entries(A7_GROUPS)) {
+      if (!ids.every((i) => results[i])) continue;   // block wasn't reached (e.g. cash-flow HTTP != 200)
+      const okAll = ids.every((i) => results[i].ok);
+      toWrite[rowId] = okAll
+        ? `PASS (seed ${fp})`
+        : `**FAIL** — actual ${ids.map((i) => fmtN(results[i].got)).join(' / ')} (seed ${fp})`;
     }
     const written = writeResults(toWrite);
     console.log(`  ${written.length} Result cell(s) updated: ${written.join(', ') || '(none matched)'}`);

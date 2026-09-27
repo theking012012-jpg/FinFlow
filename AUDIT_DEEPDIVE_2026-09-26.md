@@ -12,7 +12,7 @@ This is the live status document — current grades, what's done, and exactly wh
 | Ledger / correctness | **A** | Double-entry reconciles to the cent on live data; 298 harnesses; account-deletion purge now covered. |
 | Data lifecycle | **A+** | Erasure purges the full ledger; GDPR data export added. Both tested. |
 | Security | **A** | Params, tight auth throttle, hashed/expiring tokens, helmet + hardened CSP + HSTS + **Permissions-Policy**, CI npm-audit gate (0 vulns). A+ blocked only by `unsafe-inline` (see below). |
-| Operational maturity | **A‑** | Sentry, reconcile monitor, structured logs, migrations, env docs, CI; **least-priv role + restore-drill scripts shipped** — A+ once you run them. |
+| Operational maturity | **A‑** | Sentry, reconcile monitor, structured logs, migrations, env docs, CI; least-priv role + migrate entrypoint + restore drill **shipped & tested** — A+ once you adopt them on Railway. |
 | Performance / scale | **A‑** | Composite (user_id, created_at) index + keyset pagination on the hot lists (back-compat). |
 | Payments robustness | **A‑** | Signed + idempotent Stripe webhook, dup-safe money writes, overpayment rejected, suspend on past_due. |
 | Accessibility | **A** | 0 axe violations across all 10 pages (was 64); critical label bugs fixed; keyboard focus rings + reduced-motion added. Full A+ wants a live color-contrast/keyboard pass. |
@@ -47,7 +47,12 @@ Each of these needs a real verification surface — I won't grade them up on cod
 
 **Accessibility → A+ — final live pass.** Done: axe audit (`tests/harness/a11y-audit.js`) is clean on all 10 static pages incl. the full app shell; critical form-label bugs fixed; content wrapped in landmarks; global `:focus-visible` + `prefers-reduced-motion` added. Remaining for A+: a live-browser color-contrast + keyboard-navigation/focus-trap pass (axe-in-jsdom can't measure contrast or focus order).
 
-**Ops → A+ — run the two shipped scripts.** `scripts/db-app-role.sql` (least-privilege `finflow_app` role — no DDL/superuser) and `scripts/restore-drill.sh` (proves the prod dump restores into a scratch DB with core tables non-empty). Run them (drill on a schedule; role once, then point the app's DATABASE_URL at `finflow_app`) and Ops is A+.
+**Ops → A+ — adopt the shipped, tested least-priv setup on Railway.** All three pieces are built and test-covered (`verify-db-app-role` 12/0, `verify-migrate-entrypoint` 3/0, `verify-boot-modes` 3/0):
+1. Run `scripts/db-app-role.sql` once as the DB owner (`psql "$OWNER_URL" -v app_pw='<strong>' -f scripts/db-app-role.sql`) to create the `finflow_app` role (reads/writes data, cannot CREATE/DROP/ALTER/TRUNCATE).
+2. Set the web service's release/pre-deploy command to `node scripts/migrate.js` (owner `DATABASE_URL`) — applies schema + migrations.
+3. Point the web process's `DATABASE_URL` at `finflow_app` and set `SKIP_INIT_DDL=1`.
+4. Schedule `scripts/restore-drill.sh` (needs `pg_dump`/`pg_restore`; runs where those + prod access exist) to prove backups restore.
+Do that and Ops is A+ — the app can no longer drop or alter its own schema even if its credential leaks.
 
 ---
 

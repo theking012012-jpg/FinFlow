@@ -28,9 +28,11 @@ BEGIN
   END IF;
 END $$;
 
--- Connect + schema usage, but NOT create/drop objects.
-GRANT CONNECT ON DATABASE :"DBNAME" TO finflow_app;  -- if this errors, replace :"DBNAME" with your db name
+-- Schema usage, but NOT create/drop objects. (CONNECT is granted to PUBLIC by default on managed
+-- Postgres incl. Railway; if your DB revoked it, run:  GRANT CONNECT ON DATABASE <dbname> TO finflow_app;)
 GRANT USAGE ON SCHEMA public TO finflow_app;
+-- Belt-and-braces: make sure finflow_app can never create objects directly in the public schema.
+REVOKE CREATE ON SCHEMA public FROM finflow_app;
 
 -- Data-plane rights on everything that exists now …
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES    IN SCHEMA public TO finflow_app;

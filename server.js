@@ -9840,11 +9840,20 @@ function startReconcileMonitor(resend) {
 }
 
 if (require.main === module) {
-  initDB().then(async () => {
-    // Versioned migrations run AFTER the idempotent baseline schema, BEFORE serving — each in its own
-    // transaction, so a bad one fails loudly without bricking boot. New schema changes go here.
-    try { const _m = await runMigrations(pool); if (_m.failed.length) captureErr(new Error('[migrate] ' + _m.failed.length + ' migration(s) failed: ' + _m.failed.map(x => x.name).join(', '))); }
-    catch (e) { console.error('[migrate] runner error (boot continues):', e && e.message); captureErr(e); }
+  // F202 — least-privilege deploys: when the web process runs as a role WITHOUT DDL rights
+  // (scripts/db-app-role.sql → finflow_app), set SKIP_INIT_DDL=1 and apply schema+migrations in a
+  // separate owner-run release step (`node scripts/migrate.js`). Default (unset) keeps the original
+  // behavior — boot runs the idempotent baseline schema + migrations itself.
+  const _skipDDL = /^(1|true|yes)$/i.test(process.env.SKIP_INIT_DDL || '');
+  const _prepare = _skipDDL
+    ? Promise.resolve().then(() => console.log('[boot] SKIP_INIT_DDL set — skipping initDB()/migrations (expects an owner-run migrate step)'))
+    : initDB().then(async () => {
+        // Versioned migrations run AFTER the idempotent baseline schema, BEFORE serving — each in its own
+        // transaction, so a bad one fails loudly without bricking boot. New schema changes go here.
+        try { const _m = await runMigrations(pool); if (_m.failed.length) captureErr(new Error('[migrate] ' + _m.failed.length + ' migration(s) failed: ' + _m.failed.map(x => x.name).join(', '))); }
+        catch (e) { console.error('[migrate] runner error (boot continues):', e && e.message); captureErr(e); }
+      });
+  _prepare.then(async () => {
     app.listen(PORT, () => {
       warnIfUnset(); // F29 — loud one-time warning if APP_URL is unset
       console.log(`  ✦ FinFlow backend running → http://localhost:${PORT}`);

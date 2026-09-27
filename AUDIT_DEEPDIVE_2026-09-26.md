@@ -11,8 +11,8 @@ This is the live status document — current grades, what's done, and exactly wh
 |---|---|---|
 | Ledger / correctness | **A** | Double-entry reconciles to the cent on live data; 298 harnesses; account-deletion purge now covered. |
 | Data lifecycle | **A+** | Erasure purges the full ledger; GDPR data export added. Both tested. |
-| Security | **A** | Parameterized queries, tight auth throttle, hashed/expiring tokens, helmet + hardened CSP + HSTS, CI npm-audit gate (0 vulns). |
-| Operational maturity | **A‑** | Sentry, GL reconcile monitor, structured logs + request IDs, versioned migrations; env vars documented; CI added. |
+| Security | **A** | Params, tight auth throttle, hashed/expiring tokens, helmet + hardened CSP + HSTS + **Permissions-Policy**, CI npm-audit gate (0 vulns). A+ blocked only by `unsafe-inline` (see below). |
+| Operational maturity | **A‑** | Sentry, reconcile monitor, structured logs, migrations, env docs, CI; **least-priv role + restore-drill scripts shipped** — A+ once you run them. |
 | Performance / scale | **A‑** | Composite (user_id, created_at) index + keyset pagination on the hot lists (back-compat). |
 | Payments robustness | **A‑** | Signed + idempotent Stripe webhook, dup-safe money writes, overpayment rejected, suspend on past_due. |
 | Accessibility | **A** | 0 axe violations across all 10 pages (was 64); critical label bugs fixed; keyboard focus rings + reduced-motion added. Full A+ wants a live color-contrast/keyboard pass. |
@@ -39,15 +39,15 @@ Regression check after all of the above: `verify-f137-balance-sheet-report` 6/0,
 
 Each of these needs a real verification surface — I won't grade them up on code I can't test.
 
-**Security → A+ — drop `script-src 'unsafe-inline'` via CSP nonces.** Everything else in the CSP is already locked (`frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'`, nosniff, HSTS). Removing `unsafe-inline` means stamping a per-response nonce onto every inline `<script>` and removing inline handlers, then exercising the full UI. A tested migration, not a blind edit.
+**Security → A+ — drop `script-src/style-src 'unsafe-inline'`.** Everything else is locked (frame-ancestors none, object-src none, base-uri self, nosniff, HSTS, Permissions-Policy). Blocker is architectural, not a config toggle: index.html has **513 inline `on*` handlers + 1,106 inline `style=` attributes**; hashes/nonces don't cover inline handlers, so removing `unsafe-inline` requires refactoring all 513 handlers to `addEventListener` and moving 1,106 inline styles to classes, then exercising the full UI. A dedicated, tested refactor — deliberately not done blind.
 
-**Payments → A+ — dunning email + refund/dispute handling.** The access side already works (a failed charge → subscription `past_due` → suspend). The increments — a graduated dunning email, a grace banner, and `charge.refunded` / `charge.dispute.created` reconciliation — touch the money path and need Stripe **test-mode** (test keys + signed test events) to verify. Drop in test keys and I'll build and prove it.
+**Payments → A+ — done bar the UI grace banner.** Added on the signed webhook: `invoice.payment_failed` → dunning (mark past_due + timestamp + best-effort email), `charge.dispute.created` → operator alert (no book mutation), `charge.refunded` → idempotent AR reversal (negative invoice_payment, recalc, best-effort GL). All proven offline with `verify-webhook-dunning-refund` (13/0, real signed events). Remaining for A+: a customer-facing grace banner + multi-touch dunning schedule (Stripe smart-retries already drive the cadence).
 
 **Performance → A+ — paginate the client.** The server primitive is done; the last step is pointing the heaviest app screens (invoices, transactions) at the `{rows,nextCursor}` shape so the browser stops loading full lists.
 
 **Accessibility → A+ — final live pass.** Done: axe audit (`tests/harness/a11y-audit.js`) is clean on all 10 static pages incl. the full app shell; critical form-label bugs fixed; content wrapped in landmarks; global `:focus-visible` + `prefers-reduced-motion` added. Remaining for A+: a live-browser color-contrast + keyboard-navigation/focus-trap pass (axe-in-jsdom can't measure contrast or focus order).
 
-**Ops → A+ — infra you run.** Execute the restore drill from `INFRA_RUNBOOK.md`, and apply a least-privilege DB app role (no SUPERUSER/DROP). Documented; not code.
+**Ops → A+ — run the two shipped scripts.** `scripts/db-app-role.sql` (least-privilege `finflow_app` role — no DDL/superuser) and `scripts/restore-drill.sh` (proves the prod dump restores into a scratch DB with core tables non-empty). Run them (drill on a schedule; role once, then point the app's DATABASE_URL at `finflow_app`) and Ops is A+.
 
 ---
 

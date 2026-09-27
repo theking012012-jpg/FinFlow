@@ -103,6 +103,10 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // F201 — lock down powerful browser features the app never uses (defence-in-depth; safe — none of
+  // these are used by FinFlow, Plaid Link, or Stripe, which run in iframes/redirects). browsing-topics
+  // opts out of the Topics/FLoC ad API.
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), usb=(), magnetometer=(), accelerometer=(), gyroscope=(), browsing-topics=()');
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; " +
     "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com https://cdn.belvo.io; " +   // Plaid Link + Belvo widget SDKs
@@ -365,6 +369,90 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       ).catch(err => console.error('[Stripe Identity] kyc update failed:', err.message));
       console.log(`[Stripe Identity] accountant ${accId} kyc_status → ${_kyc} (${vs.id})`);
     }
+  }
+
+  // ── F200 · Payments robustness: dunning, disputes, refunds ────────────────────────────────────
+  // All three are idempotent via the event-id claim above; each resolves its own account/invoice by
+  // Stripe id, so nothing here can touch another tenant. Email is best-effort (never blocks the ack).
+  const _emailEsc = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const _appBase = process.env.APP_URL || (req.protocol + '://' + req.get('host'));
+
+  // Dunning — a recurring subscription charge failed. Stripe also flips the subscription to past_due
+  // (handled above → suspend); here we timestamp it and send a best-effort "update your card" email so
+  // the customer can recover before losing access. No money mutation.
+  if (event.type === 'invoice.payment_failed') {
+    const inv = event.data.object || {};
+    const duId = parseInt(inv.subscription_details?.metadata?.userId || inv.metadata?.userId || inv.lines?.data?.[0]?.metadata?.userId, 10);
+    if (duId) {
+      await setSubscriptionStatus(duId, 'past_due');
+      await pool.query(`UPDATE users SET data = data || jsonb_build_object('paymentFailedAt', $1::text) WHERE id = $2`, [new Date().toISOString(), duId]).catch(() => {});
+      if (resendClient) {
+        try {
+          const { rows: [u] } = await pool.query(`SELECT data->>'email' AS email, data->>'name' AS name FROM users WHERE id=$1`, [duId]);
+          if (u && u.email) await resendClient.emails.send({
+            from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
+            to: u.email,
+            subject: 'Your FinFlow payment failed — action needed',
+            html: `<p>Hi ${_emailEsc(u.name) || 'there'},</p><p>We couldn't process your latest FinFlow subscription payment. Please update your payment method to keep your account active.</p><p><a href="${_appBase}/#billing">Update payment method →</a></p>`,
+          });
+        } catch (e) { console.error('[Stripe] dunning email failed:', e.message); }
+      }
+      console.log('[Stripe] dunning: invoice.payment_failed → user ' + duId + ' marked past_due');
+    }
+  }
+
+  // Dispute (chargeback) opened — alert the operator; never auto-mutate the books on a dispute.
+  if (event.type === 'charge.dispute.created') {
+    const d = event.data.object || {};
+    console.error(`[Stripe] DISPUTE opened ${d.id} charge=${d.charge} amount=${d.amount} reason=${d.reason} status=${d.status}`);
+    if (resendClient && process.env.ADMIN_EMAIL) {
+      try {
+        await resendClient.emails.send({
+          from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
+          to: process.env.ADMIN_EMAIL,
+          subject: 'Stripe dispute opened: ' + d.id,
+          html: `<p>A dispute (chargeback) was opened and needs a response.</p><p>Dispute: ${_emailEsc(d.id)}<br>Charge: ${_emailEsc(d.charge)}<br>Amount (minor): ${_emailEsc(d.amount)}<br>Reason: ${_emailEsc(d.reason)}<br>Status: ${_emailEsc(d.status)}</p>`,
+        });
+      } catch (e) { console.error('[Stripe] dispute alert email failed:', e.message); }
+    }
+  }
+
+  // Refund — a Stripe invoice payment was refunded. Reverse it so AR reflects the money returned:
+  // find the original external payment by charge id and book a reversing (negative) invoice_payment,
+  // idempotent on the refund id. recalcInvoiceStatus re-sums (incl. the negative) → amount_paid drops
+  // and status reverts. Only the direct-charge scheme (`stripe-invpay:<chargeId>`) is auto-reversible;
+  // anything else is logged for manual handling rather than guessed at.
+  if (event.type === 'charge.refunded') {
+    const ch = event.data.object || {};
+    const chargeId = ch.id;
+    const refundObj = (ch.refunds && ch.refunds.data && ch.refunds.data[0]) || {};
+    const refundId = refundObj.id || ('chg-' + chargeId + '-' + (ch.amount_refunded || 0));
+    const refundMajor = Math.round((Number(ch.amount_refunded) || 0)) / 100;
+    try {
+      const { rows: [orig] } = await pool.query(
+        `SELECT * FROM invoice_payments WHERE idempotency_key = $1 LIMIT 1`, ['stripe-invpay:' + chargeId]);
+      if (orig && refundMajor > 0) {
+        const alreadyPaid = parseFloat(orig.amount) || 0;
+        const reverseAmt = -Math.min(refundMajor, alreadyPaid);   // never reverse more than was booked
+        const idem = ('stripe-refund:' + refundId).slice(0, 64);
+        const ins = await pool.query(
+          `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING *`,
+          [orig.user_id, orig.entity_id || null, orig.invoice_id, reverseAmt, new Date().toISOString().slice(0, 10),
+           'Refund (Stripe)', idem, 'Auto-reversal of refunded Stripe charge ' + chargeId, idem]);
+        if (ins.rowCount) {
+          await recalcInvoiceStatus(pool, orig.invoice_id, orig.user_id);
+          try { await postSourceLedger(pool, { userId: orig.user_id, sourceType: 'invoice_payment', row: ins.rows[0] }); } catch (glErr) { console.error('[GL] refund reversal posting failed (shadow, non-fatal):', glErr && glErr.message); }
+          try { await auditLog(pool, { userId: orig.user_id, entityId: orig.entity_id, table: 'invoice_payments', recordId: ins.rows[0].id, action: 'REFUND' }); } catch (_) {}
+          console.log('[Stripe] refund reversed invoice ' + orig.invoice_id + ' by ' + reverseAmt);
+        } else {
+          console.log('[Stripe] refund ' + refundId + ' already reversed (idempotent)');
+        }
+      } else if (!orig) {
+        console.warn('[Stripe] charge.refunded for ' + chargeId + ' — no auto-reversible invoice payment found; manual review');
+      }
+    } catch (e) { console.error('[Stripe] refund reversal failed:', e.message); }
   }
 
   res.json({ received: true });

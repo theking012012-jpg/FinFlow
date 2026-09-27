@@ -119,6 +119,21 @@ app.use((req, res, next) => {
     "object-src 'none'; " +
     "base-uri 'self';"
   );
+  // F207 — CSP nonce/hash migration, measurement phase. When CSP_REPORT_ONLY=1, ALSO send a STRICT
+  // report-only policy (no 'unsafe-inline') that BLOCKS NOTHING but reports every inline script/handler/
+  // style to /api/csp-report. Browsing the app then yields the exact list to fix before flipping the
+  // enforced policy. Off by default (no overhead/noise) — turn on only while measuring.
+  if (/^(1|true|yes)$/i.test(process.env.CSP_REPORT_ONLY || '')) {
+    res.setHeader('Content-Security-Policy-Report-Only',
+      "default-src 'self'; " +
+      "script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com https://cdn.belvo.io; " +
+      "style-src 'self' https://fonts.googleapis.com; " +
+      "font-src https://fonts.gstatic.com; img-src 'self' data: blob:; " +
+      "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com https://*.plaid.com https://*.belvo.io https://*.belvo.com; " +
+      "frame-src https://cdn.plaid.com https://*.plaid.com https://*.belvo.io; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; " +
+      "report-uri /api/csp-report;"
+    );
+  }
   if (process.env.NODE_ENV === 'production') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
@@ -9559,6 +9574,39 @@ app.get('/api/gl/verify', requireAuth, wrap(async (req, res) => {
 // ok | divergent (ledger populated but does NOT tie to computeBooks — an integrity problem) |
 // not_backfilled (books have activity but the ledger is empty — run POST /api/gl/backfill?reset=1).
 // This is the read the scheduled monitor uses; exposed so an owner can self-check any time.
+// ── F207 — CSP violation collector (report-only measurement) ──────────────────────────────────
+// The browser POSTs violations here (report-uri) unauthenticated, so this is public but does nothing
+// except aggregate in memory (capped) — no writes, no side effects. The owner reads the aggregate via
+// GET. Signature = directive|blocked|source so 5,000 identical inline-handler hits collapse to one row.
+const _cspReports = new Map();
+const _CSP_CAP = 800;
+app.post('/api/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '256kb' }), (req, res) => {
+  try {
+    const body = req.body || {};
+    const list = Array.isArray(body) ? body : [body];
+    for (const r of list) {
+      const cr = (r && (r['csp-report'] || r.body)) || r || {};
+      const directive = cr['violated-directive'] || cr.effectiveDirective || cr.violatedDirective || 'unknown';
+      const blocked = cr['blocked-uri'] || cr.blockedURL || cr.blockedUri || '';
+      const source = String(cr['source-file'] || cr.sourceFile || '') + (cr['line-number'] != null ? ':' + cr['line-number'] : '');
+      const sample = cr['script-sample'] || cr.sample || '';
+      const sig = directive + '|' + blocked + '|' + source;
+      const prev = _cspReports.get(sig);
+      if (prev) prev.count++;
+      else if (_cspReports.size < _CSP_CAP) _cspReports.set(sig, { directive, blocked, source, sample: String(sample).slice(0, 160), count: 1 });
+    }
+  } catch (_) { /* never let a malformed report error */ }
+  res.status(204).end();
+});
+// Owner-only: read the aggregated violations (what a strict CSP would block) + a by-directive summary.
+app.get('/api/csp-report', requireAuth, wrap(async (req, res) => {
+  if (Array.isArray(req.entityAccess)) return res.status(403).json({ error: 'Only the account owner can read CSP reports.', code: 'CSP_OWNER_ONLY' });
+  const rows = [..._cspReports.values()].sort((a, b) => b.count - a.count);
+  const byDirective = {};
+  for (const r of rows) byDirective[r.directive] = (byDirective[r.directive] || 0) + r.count;
+  res.json({ enabled: /^(1|true|yes)$/i.test(process.env.CSP_REPORT_ONLY || ''), total: rows.reduce((s, r) => s + r.count, 0), unique: rows.length, byDirective, rows });
+}));
+
 app.get('/api/gl/reconcile-check', requireAuth, wrap(async (req, res) => {
   if (Array.isArray(req.entityAccess)) return res.status(403).json({ error: 'Only the account owner can run the reconcile check.', code: 'GL_OWNER_ONLY' });
   const { rows: ents } = await pool.query(`SELECT id, data->>'name' AS name FROM entities WHERE user_id=$1 ORDER BY id`, [scopeId(req)]);

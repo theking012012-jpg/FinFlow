@@ -59,3 +59,23 @@ Current scorecard:
 - `ALLOW_INDEXING` is unset → site serves `noindex` + `Disallow: /`. **Set `ALLOW_INDEXING=1` at launch.**
 - 19 Result cells in VERIFICATION.md are still empty (A7.5–8, A7.18, A8a/A8b) — they ARE gate-tested but their gates don't call `writeResults`, and the gate check-IDs don't map 1:1 to those doc rows, so auto-stamping was deliberately NOT done (would risk a wrong verdict).
 - `app-main.js` is served directly and minified on deploy; `index.html` (775KB) holds the app shell + hidden view templates.
+
+---
+
+## Continued 2026-09-27 (session 2) — Perf & Security push, then measured stop
+
+`main` @ `ff42ebe`, clean, pushed. All test-backed.
+
+**Perf A‑ → A.** Decoupled aggregation from the full invoice list so heavy views scale:
+- `GET /api/reports/ar-by-customer` — per-customer AR, built from the same recognized+D2+FX path as `computeBooks.outstanding` (Σ rows == total). AR report client now consumes it; **verified live** (no `/api/invoices` call, numbers reconcile). `verify-ar-by-customer` 15/0.
+- `GET /api/reports/top-clients` — recognized revenue by client (matches client `_topClients`).
+- Invoice table renders incrementally (first 100 + "Show more"), full array untouched. `verify-list-pagination` 13/0 (server keyset), composite `(user_id,created_at,id)` indexes.
+- **Wire-level fetch removal NOT done (intentional):** `_realInvoices`/`userInvoices` feed dozens of money features across 6 files (KPIs, transactions, revenue, YTD, recurring detection, payment-party resolution) — removing the full fetch is an app-wide rewrite, not worth the risk.
+
+**Security stays A.** Added `Permissions-Policy`, CI `npm audit`, and a CSP report-only backstop (`CSP_REPORT_ONLY=1` → strict report-only → `/api/csp-report`; POST collector public, GET owner-only). `verify-security-headers` 13/0, `verify-csp-report` 10/0.
+- **Measured the `unsafe-inline` drop** (static scan): 25 inline scripts (hashable), 1,105 inline styles (keep `style-src 'unsafe-inline'`), **502 inline `on*` handlers = the blocker** (need event-delegation refactor; CSP3 ignores `unsafe-inline` once hashes are present, so all-or-nothing). Multi-day render-layer rewrite for a defense-in-depth gain on an already-`esc()`-hardened app — deliberately not done.
+
+**New harnesses:** verify-ar-by-customer 15/0, verify-security-headers 13/0, verify-csp-report 10/0 (plus session-1 set).
+**New endpoints:** `/api/reports/ar-by-customer`, `/api/reports/top-clients`, `/api/csp-report` (GET owner + POST collector). **New env:** `CSP_REPORT_ONLY` (off by default).
+
+**Final grades:** Data lifecycle A+ · Ledger/Accessibility/Payments/Security/Perf A · Ops A− (A+ on running the Railway role/migrate/drill). The two remaining A+ bumps (502-handler CSP refactor, wire-level invoice pagination) are large rewrites — measured, and their risk outweighs the gain. Recommendation: ship.

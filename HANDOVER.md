@@ -18,9 +18,19 @@ Since 09-14, an "everything → A+" pass shipped (all test-backed, all pushed):
 - **Security → A / Ops → A-:** `Permissions-Policy` + CI npm-audit gate; least-privilege DB role + `SKIP_INIT_DDL` boot gate + `scripts/migrate.js` + `scripts/restore-drill.sh` (all tested). New env vars in `.env.example`.
 - **Perf → A-:** composite `(user_id,created_at)` index + opt-in keyset pagination (`db.pageByUser`).
 
-**Still open for straight A+ (need a deploy-and-verify loop — don't do blind):** Security `unsafe-inline`
-removal (513 inline handlers + 1,106 inline styles), and client-side pagination adoption. Ops → A+ is
-one Railway config step (adopt `finflow_app` + `SKIP_INIT_DDL` + release-cmd `node scripts/migrate.js`).
+**Update (session 2, `ff42ebe`):** Perf → **A** (server-aggregated AR report [verified live] + top-clients
+endpoints + incremental invoice-table render + keyset pagination). Security stays **A** (Permissions-Policy,
+CI npm audit, CSP report-only backstop). Final grades: **Data lifecycle A+ · Ledger/Accessibility/Payments/
+Security/Perf A · Ops A− (A+ on running the Railway role/migrate/drill).**
+
+**The two remaining A+ bumps were MEASURED and deliberately NOT done — do not attempt blind:**
+- Security `unsafe-inline` drop needs refactoring **502 inline `on*` handlers** to event-delegation (25 inline
+  scripts are hashable; 1,105 inline styles stay as `style-src 'unsafe-inline'`). Multi-day render-layer rewrite.
+- Wire-level invoice pagination needs re-sourcing **all** money features off the full invoice array
+  (`_realInvoices`/`userInvoices` across 6 files) — an app-wide rewrite.
+Both are large rewrites whose risk outweighs the gain on an app that already escapes output via `esc()` and
+loads bounded per-entity data. **Recommendation: ship.** See `AUDIT_DEEPDIVE_2026-09-26.md` (FINAL STATE) and
+`SESSION_HANDOVER_2026-09-27.md` (Continued session 2).
 
 ---
 

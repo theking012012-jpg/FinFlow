@@ -800,3 +800,10 @@ tax-reports.js` 20/0 (VAT "not tracked", worksheet persists, no fabricated numbe
 - `verify-migrate-entrypoint.js` (3/0) — owner-run `scripts/migrate.js` builds schema, idempotent.
 - `verify-boot-modes.js` (3/0) — default boot and `SKIP_INIT_DDL=1` boot both serve `/healthz`.
 - `a11y-audit.js` — jsdom + axe-core structural a11y audit; 0 violations across all 10 static pages.
+
+## Session 2026-09-27 (continued) — perf + CSP harnesses
+
+- `verify-ar-by-customer.js` (15/0) — server per-customer AR + top-clients; Σ(rows)==canonical outstanding; matches golden seed.
+- `verify-security-headers.js` (13/0) — CSP/HSTS/Permissions-Policy/nosniff/X-Frame-Options/noindex present & correct.
+- `verify-csp-report.js` (10/0) — CSP report-only measurement: strict report-only header (no unsafe-inline), Reporting API delivery, owner-only aggregate reader; enforced CSP unchanged.
+- `verify-list-pagination.js` (13/0) — keyset pagination, back-compat array default.

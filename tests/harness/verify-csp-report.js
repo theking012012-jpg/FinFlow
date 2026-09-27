@@ -30,6 +30,8 @@ const A = (n, ok, d) => { ok ? (pass++, console.log('  PASS  ' + n)) : (fail++, 
     A('report-only header present when CSP_REPORT_ONLY=1', !!ro);
     A('report-only script-src has NO unsafe-inline (strict)', /script-src 'self'/.test(ro) && !/script-src[^;]*unsafe-inline/.test(ro), ro.slice(0, 120));
     A('report-only points at the collector', /report-uri \/api\/csp-report/.test(ro));
+    A('report-only uses the Reporting API (report-to)', /report-to csp-endpoint/.test(ro), ro.slice(0,160));
+    A('Reporting-Endpoints header names the collector', /csp-endpoint="\/api\/csp-report"/.test(res.headers.get('reporting-endpoints') || ''), res.headers.get('reporting-endpoints'));
     A('ENFORCED CSP is unchanged (still unsafe-inline — nothing blocked)', /script-src[^;]*'unsafe-inline'/.test(enforced));
 
     // Collector accepts an unauthenticated report and aggregates it.

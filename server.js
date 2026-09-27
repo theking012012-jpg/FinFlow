@@ -124,6 +124,9 @@ app.use((req, res, next) => {
   // style to /api/csp-report. Browsing the app then yields the exact list to fix before flipping the
   // enforced policy. Off by default (no overhead/noise) — turn on only while measuring.
   if (/^(1|true|yes)$/i.test(process.env.CSP_REPORT_ONLY || '')) {
+    // Modern Chromium delivers CSP violations via the Reporting API (report-to + Reporting-Endpoints),
+    // having largely deprecated report-uri. Send both so old and new browsers report.
+    res.setHeader('Reporting-Endpoints', 'csp-endpoint="/api/csp-report"');
     res.setHeader('Content-Security-Policy-Report-Only',
       "default-src 'self'; " +
       "script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com https://cdn.belvo.io; " +
@@ -131,7 +134,7 @@ app.use((req, res, next) => {
       "font-src https://fonts.gstatic.com; img-src 'self' data: blob:; " +
       "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com https://*.plaid.com https://*.belvo.io https://*.belvo.com; " +
       "frame-src https://cdn.plaid.com https://*.plaid.com https://*.belvo.io; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; " +
-      "report-uri /api/csp-report;"
+      "report-to csp-endpoint; report-uri /api/csp-report;"
     );
   }
   if (process.env.NODE_ENV === 'production') {
@@ -9588,7 +9591,8 @@ app.post('/api/csp-report', express.json({ type: ['application/csp-report', 'app
       const cr = (r && (r['csp-report'] || r.body)) || r || {};
       const directive = cr['violated-directive'] || cr.effectiveDirective || cr.violatedDirective || 'unknown';
       const blocked = cr['blocked-uri'] || cr.blockedURL || cr.blockedUri || '';
-      const source = String(cr['source-file'] || cr.sourceFile || '') + (cr['line-number'] != null ? ':' + cr['line-number'] : '');
+      const _ln = cr['line-number'] != null ? cr['line-number'] : cr.lineNumber;
+      const source = String(cr['source-file'] || cr.sourceFile || '') + (_ln != null ? ':' + _ln : '');
       const sample = cr['script-sample'] || cr.sample || '';
       const sig = directive + '|' + blocked + '|' + source;
       const prev = _cspReports.get(sig);

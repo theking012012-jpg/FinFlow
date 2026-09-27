@@ -786,3 +786,17 @@ of revenue, or a fixed amount; `finflow-api-wiring-extra.js` F137-k), the VAT Re
 is a FAIL. Verified this session: `verify-tax-rate.js` 14/0 (rate is owner-supplied), `verify-f139-
 tax-consistency.js` 12/0 (client worksheet taxable == accountant Tax Summary taxable), `verify-f137-
 tax-reports.js` 20/0 (VAT "not tracked", worksheet persists, no fabricated numbers). No code change.
+
+---
+
+## Session 2026-09-27 — new harnesses
+
+- `verify-account-deletion-purge.js` (11/0) — account deletion purges every user-scoped table incl. the ledger + ai_usage.
+- `verify-account-export.js` (9/0) — GDPR export returns the caller's data only, tenant-isolated.
+- `verify-list-pagination.js` (13/0) — list endpoints keep the back-compat array by default; correct keyset pages on `?limit`/`?before`.
+- `verify-webhook-dunning-refund.js` (13/0) — signed-webhook dunning + dispute + idempotent refund reversal.
+- `verify-security-headers.js` (13/0) — CSP/HSTS/Permissions-Policy/nosniff/X-Frame-Options/noindex all present & correct.
+- `verify-db-app-role.js` (12/0) — least-privilege `finflow_app` role: data yes, schema no.
+- `verify-migrate-entrypoint.js` (3/0) — owner-run `scripts/migrate.js` builds schema, idempotent.
+- `verify-boot-modes.js` (3/0) — default boot and `SKIP_INIT_DDL=1` boot both serve `/healthz`.
+- `a11y-audit.js` — jsdom + axe-core structural a11y audit; 0 violations across all 10 static pages.

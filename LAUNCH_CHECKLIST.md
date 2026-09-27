@@ -61,3 +61,15 @@ credentials/DNS and the final verification sweep. Every item below is something 
       consolidated → connect one bank (sandbox) → accountant invite. Confirm email actually arrives.
 
 Once section 4 is green, FinFlow is live.
+
+---
+
+## Update 2026-09-27 — env vars + ops hardening added
+
+New environment variables (documented in `.env.example`):
+- [ ] `ALLOW_INDEXING=1` at launch (default is `noindex` while testing) — **revert-to-index gate**.
+- [ ] `SENTRY_DSN` — set + `npm i @sentry/node` to activate error tracking (optional but recommended).
+- [ ] `LOG_REQUESTS=1` in production for structured JSON access logs + `X-Request-Id`.
+- [ ] `SKIP_INIT_DDL=1` **only** on the web process if you adopt the least-privilege DB role (see INFRA_RUNBOOK §4 update); schema then applied by `node scripts/migrate.js` in the release step.
+
+Shipped this pass (all test-backed): complete account-deletion erasure (ledger included) + `GET /api/auth/export` (GDPR), list keyset pagination, `Permissions-Policy` header + security-headers regression test, Stripe **dunning + dispute + refund** webhook handling, an accessibility pass (0 axe violations across 10 pages), and CI `npm audit` gate.

@@ -118,3 +118,17 @@ Cadence to actually put on the calendar: **quarterly** for `DATABASE_URL` + `SES
 ## Suggested order
 
 1 (repo move) → 2 (Cloudflare) → 4 (DB role, in staging first) → 3 (restore drill) → 5 (write the rotation reminders down). 1 and 2 are quick and unblock everything else; 4 needs a careful staging test; 3 is the one that actually proves you can survive a bad day.
+
+---
+
+## Update 2026-09-27 — these steps are now shipped as tested scripts
+
+The manual steps in §3 and §4 above are now codified and test-covered (run against a scratch Postgres):
+
+- **Least-privilege role (§4):** `scripts/db-app-role.sql` creates `finflow_app` (data-plane only; no CREATE/DROP/ALTER/TRUNCATE). Proven by `tests/harness/verify-db-app-role.js` (12/0).
+- **Boot without DDL:** the app now honours `SKIP_INIT_DDL=1` so the web process can run as `finflow_app`; schema + migrations are applied by an owner-run release step, `node scripts/migrate.js`. Proven by `verify-migrate-entrypoint.js` (3/0) and `verify-boot-modes.js` (3/0 — both boot modes serve).
+- **Restore drill (§3):** `scripts/restore-drill.sh` dumps → restores into a scratch DB → verifies core tables are non-empty. Run it where `pg_dump`/`pg_restore` exist (Railway shell or a local checkout); refuses a DEST that looks like production.
+
+Adoption order on Railway: (1) run `db-app-role.sql` as owner, (2) set release command `node scripts/migrate.js` (owner creds), (3) web `DATABASE_URL`→`finflow_app` + `SKIP_INIT_DDL=1`, (4) schedule `restore-drill.sh`.
+
+Note: this project deploys on **Railway** (not Supabase); the backup UI in §3 is Railway → Postgres → Backups, but the drill script is provider-agnostic.

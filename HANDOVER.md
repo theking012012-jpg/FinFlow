@@ -5,6 +5,25 @@
 
 ---
 
+## ⚡ UPDATE 2026-09-27 (latest — read this first)
+
+Repo is well past `62137cc`; `main` is clean and pushed. The current authoritative status is the
+live scorecard in **`AUDIT_DEEPDIVE_2026-09-26.md`**, and the full detail of the latest session is in
+**`SESSION_HANDOVER_2026-09-27.md`** — read those two first.
+
+Since 09-14, an "everything → A+" pass shipped (all test-backed, all pushed):
+- **Data lifecycle → A+:** account deletion now purges the ledger; `GET /api/auth/export` (GDPR). (`verify-account-deletion-purge` 11/0, `verify-account-export` 9/0)
+- **Payments → A:** Stripe webhook dunning + dispute alert + idempotent refund reversal. (`verify-webhook-dunning-refund` 13/0)
+- **Accessibility → A:** 0 axe violations across 10 pages (was 64). (`tests/harness/a11y-audit.js`)
+- **Security → A / Ops → A-:** `Permissions-Policy` + CI npm-audit gate; least-privilege DB role + `SKIP_INIT_DDL` boot gate + `scripts/migrate.js` + `scripts/restore-drill.sh` (all tested). New env vars in `.env.example`.
+- **Perf → A-:** composite `(user_id,created_at)` index + opt-in keyset pagination (`db.pageByUser`).
+
+**Still open for straight A+ (need a deploy-and-verify loop — don't do blind):** Security `unsafe-inline`
+removal (513 inline handlers + 1,106 inline styles), and client-side pagination adoption. Ops → A+ is
+one Railway config step (adopt `finflow_app` + `SKIP_INIT_DDL` + release-cmd `node scripts/migrate.js`).
+
+---
+
 ## ⚡ UPDATE 2026-08-24 (read this before the 2026-08-14 body below)
 
 Things have moved since this handover was written — several "open gaps" are now closed:

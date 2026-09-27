@@ -15,7 +15,7 @@ This is the live status document — current grades, what's done, and exactly wh
 | Operational maturity | **A‑** | Sentry, GL reconcile monitor, structured logs + request IDs, versioned migrations; env vars documented; CI added. |
 | Performance / scale | **A‑** | Composite (user_id, created_at) index + keyset pagination on the hot lists (back-compat). |
 | Payments robustness | **A‑** | Signed + idempotent Stripe webhook, dup-safe money writes, overpayment rejected, suspend on past_due. |
-| Accessibility | **C+** | Marketing page is rich; the app UI is still thin on ARIA / roles / focus. |
+| Accessibility | **A** | 0 axe violations across all 10 pages (was 64); critical label bugs fixed; keyboard focus rings + reduced-motion added. Full A+ wants a live color-contrast/keyboard pass. |
 
 The money engine is world-class — correct, observable, and self-checking on live data. What's left is edge hardening, not core risk.
 
@@ -45,7 +45,7 @@ Each of these needs a real verification surface — I won't grade them up on cod
 
 **Performance → A+ — paginate the client.** The server primitive is done; the last step is pointing the heaviest app screens (invoices, transactions) at the `{rows,nextCursor}` shape so the browser stops loading full lists.
 
-**Accessibility → A+ — measured app-shell pass.** Run `axe-core` / `pa11y` against the running app, then fix what it flags: modal focus-trap, labelled icon buttons, table semantics, visible focus rings. Needs the app running to measure; I won't guess labels blind.
+**Accessibility → A+ — final live pass.** Done: axe audit (`tests/harness/a11y-audit.js`) is clean on all 10 static pages incl. the full app shell; critical form-label bugs fixed; content wrapped in landmarks; global `:focus-visible` + `prefers-reduced-motion` added. Remaining for A+: a live-browser color-contrast + keyboard-navigation/focus-trap pass (axe-in-jsdom can't measure contrast or focus order).
 
 **Ops → A+ — infra you run.** Execute the restore drill from `INFRA_RUNBOOK.md`, and apply a least-privilege DB app role (no SUPERUSER/DROP). Documented; not code.
 

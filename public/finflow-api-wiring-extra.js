@@ -725,7 +725,15 @@
           + (_payL > 0 ? row('Payroll Liabilities', m(_payL), { color: 'var(--red)' }) : '')
           + row('Total Liabilities', m(tl), { color: 'var(--red)', bold: true })
           + (Math.abs(_cta) >= 0.01 ? row('Cumulative Translation Adjustment (ASC 830)', m(_cta), { color: 'var(--t2)' }) : '')
-          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="font-family:var(--font-mono);color:${eq >= 0 ? 'var(--green)' : 'var(--red)'}">${m(eq)}</span></div>`);
+          + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="font-family:var(--font-mono);color:${eq >= 0 ? 'var(--green)' : 'var(--red)'}">${m(eq)}</span></div>`
+          // F207: business investment holdings are tracked in the Investments module but are NOT posted to
+          // the double-entry ledger, so they are intentionally excluded here (this statement ties to the GL).
+          // Surface that explicitly so the two screens never *silently* disagree.
+          + (() => {
+              const _h = window.bizHoldings || [];
+              const _mv = _h.reduce((s, x) => s + (parseFloat(x.shares) || 0) * (parseFloat(x.price) || parseFloat(x._lastPrice) || parseFloat(x.costPer) || parseFloat(x.cost) || 0), 0);
+              return _mv > 0 ? `<div style="margin-top:12px;font-size:11px;color:var(--t3);line-height:1.5">Note: business investment holdings (market value ${m(_mv)}) are tracked in <strong>Investments</strong> and are not posted to the double-entry books, so they are excluded from this balance sheet. It reflects only booked activity.</div>` : '';
+            })());
         return;
       }
 

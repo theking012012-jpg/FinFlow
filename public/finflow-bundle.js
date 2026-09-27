@@ -833,7 +833,15 @@
       const badgeCls = { paid: 'b-green', pending: 'b-amber', partial: 'b-blue', overdue: 'b-red' };
       const el = document.getElementById('invoice-list');
       if (!el) return;
-      el.innerHTML = (window.userInvoices||[]).map((inv, idx) => `
+      // F206 (perf): render the table incrementally. The full window.userInvoices array is untouched
+      // (every aggregation still sees all rows) — only the DOM is capped so an account with thousands
+      // of invoices never paints thousands of <div>s at once. `idx` still indexes the FULL array
+      // (slice keeps 0-based indices), so every onclick handler (viewInvoice/deleteInvoice/…) stays valid.
+      const _allInv = window.userInvoices || [];
+      if (typeof window._invRenderLimit !== 'number') window._invRenderLimit = 100;
+      const _shownInv = _allInv.slice(0, window._invRenderLimit);
+      window._invShowMore = function () { window._invRenderLimit += 200; if (typeof window.renderInvoices === 'function') window.renderInvoices(); };
+      el.innerHTML = _shownInv.map((inv, idx) => `
         <div class="table-row inv-cols">
           <span>${esc(inv.client)}</span>
           <span style="font-weight:600;font-family:var(--font-mono)">${esc(S(inv.amount))}</span>
@@ -854,7 +862,10 @@
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7"
               onclick="deleteInvoice(${idx})">✕</button>
           </span>
-        </div>`).join('');
+        </div>`).join('')
+        + (_allInv.length > _shownInv.length
+            ? `<div class="table-row" style="justify-content:center;padding:10px"><button class="btn btn-ghost btn-sm" onclick="window._invShowMore()">Show more — ${_allInv.length - _shownInv.length} of ${_allInv.length} hidden</button></div>`
+            : '');
     };
 
 

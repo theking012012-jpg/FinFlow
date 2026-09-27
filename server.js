@@ -746,6 +746,21 @@ function safeUser(u) {
   return { id: u.id, email: u.email, name: u.name || '', plan: u.plan || 'trial', trial_ends: u.trial_ends || null, role: u.role || 'owner' };
 }
 
+// F199 — shared list responder. Default (no query params) returns the full array exactly as before
+// (back-compat: clients that expect an array, and client-side aggregation, are untouched). When a
+// caller opts in with ?limit or ?before, it returns a keyset page { rows, nextCursor, hasMore, total }
+// so large accounts never have to ship an unbounded list. Entity scope is identical in both modes.
+const _entityScopeFilter = (req) => (r) => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId);
+async function respondList(req, res, table) {
+  if (req.query.limit != null || req.query.before != null) {
+    const page = await db.pageByUser(table, scopeId(req), {
+      limit: req.query.limit, before: req.query.before, entityId: req.entityId == null ? null : req.entityId,
+    });
+    return res.json(page);
+  }
+  res.json(await db.allByUser(table, scopeId(req), _entityScopeFilter(req), (a, b) => b.id - a.id));
+}
+
 // Wraps async route handlers so any thrown error is forwarded to Express error handler
 const wrap = fn => async (req, res, next) => {
   try { await fn(req, res, next); } catch (e) { next(e); }
@@ -1433,9 +1448,7 @@ app.post('/api/entities/:id/activate', requireAuth, requirePerm('entities:manage
 }));
 
 // ── INVOICES ──────────────────────────────────────────────────────────────────
-app.get('/api/invoices', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('invoices', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
-}));
+app.get('/api/invoices', requireAuth, wrap(async (req, res) => respondList(req, res, 'invoices')));
 // F79: status value-domains — app-layer validation (the DB CHECK constraints in database.js are the
 // backstop). Case-insensitive; an unknown status is rejected 400, never silently stored. credit_notes
 // / vendor_credits already validate via their own validStatuses; payroll_runs status is code-set only.
@@ -1739,9 +1752,7 @@ app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
 }));
 
 // ── EXPENSES ──────────────────────────────────────────────────────────────────
-app.get('/api/expenses', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('expenses', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
-}));
+app.get('/api/expenses', requireAuth, wrap(async (req, res) => respondList(req, res, 'expenses')));
 app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   const { description, category = 'Other', amount, deductible = 'no', expense_date, entity_id } = req.body || {};
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
@@ -2455,6 +2466,45 @@ app.put('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── AUTH — EXPORT MY DATA (GDPR Art. 20 portability) ────────────────────────────
+// Owner-scoped full dump of everything the account owns, as one JSON document. Every table is
+// user_id-scoped and queried by the caller's own id, so it can only ever return the caller's data.
+// Security tokens (password_resets) are deliberately excluded — they are not the user's "data",
+// and exporting them would be a credential-leak surface.
+const EXPORT_TABLES = [
+  'entities','invoices','invoice_payments','expenses','customers','vendors','bills',
+  'payments_received','payments_made','credit_notes','vendor_credits','sales_receipts',
+  'quotes','items','inventory','inventory_movements','projects','timesheet','payroll',
+  'payroll_runs','payroll_run_lines','journals','chart_of_accounts','budget_targets',
+  'recurring_invoices','recurring_bills','autocat_rules','bank_reconciliation',
+  'fx_rates','fx_transactions','holdings','goals','personal_accounts','personal_transactions',
+  'snapshots','documents','templates','team_members','lock_settings','user_settings',
+  'audit_trail','audit_log','ledger_accounts','ledger_entries','ledger_lines',
+];
+app.get('/api/auth/export', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const { rows: [_u] } = await pool.query(`SELECT * FROM users WHERE id=$1 LIMIT 1`, [uid]);
+  const out = {
+    export_format: 'finflow.account.v1',
+    exported_at: new Date().toISOString(),
+    account: safeUser(_u ? rowToObj(_u) : null),
+    data: {},
+  };
+  for (const t of EXPORT_TABLES) {
+    try {
+      const { rows } = await pool.query(`SELECT * FROM ${t} WHERE user_id=$1 ORDER BY id`, [uid]);
+      out.data[t] = rows.map(rowToObj);
+    } catch (e) {
+      // A table the DB doesn't have (older schema) is simply absent from the export, not an error.
+      if (e.code !== '42P01' && e.code !== '42703') throw e;
+    }
+  }
+  logAudit(req, 'EXPORT_DATA', 'users', uid, null, { tables: Object.keys(out.data).length });
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="finflow-export-${uid}-${new Date().toISOString().slice(0,10)}.json"`);
+  res.send(JSON.stringify(out, null, 2));
+}));
+
 // ── AUTH — DELETE ACCOUNT ─────────────────────────────────────────────────────
 app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
@@ -2474,6 +2524,9 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
     'audit_trail','invoice_payments','bank_reconciliation','payroll_runs',
     'payroll_run_lines','inventory_movements','fx_rates','fx_transactions',
     'personal_accounts','snapshots',
+    // F198: the GL is user-scoped too — omitting it orphaned the entire double-entry ledger
+    // after erasure (books survived the account delete). ai_usage is per-user billing history.
+    'ledger_lines','ledger_entries','ledger_accounts','ai_usage',
   ];
   for (const t of allTables) {
     await db.deleteByUser(t, uid).catch(() => {});
@@ -3015,9 +3068,7 @@ app.delete('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
 }));
 
 // ── BILLS ─────────────────────────────────────────────────────────────────────
-app.get('/api/bills', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('bills', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
-}));
+app.get('/api/bills', requireAuth, wrap(async (req, res) => respondList(req, res, 'bills')));
 app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, due_date, status = 'unpaid', notes = '', issue_date } = req.body;
   // F194 Phase 2b: line_items present ⇒ the DERIVED Σ qty×rate is the canonical amount (Rule 2).

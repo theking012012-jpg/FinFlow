@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  audit:
+    name: Dependency audit + harness smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+      # Supply-chain gate: fail the build on a HIGH or CRITICAL advisory in production deps.
+      # (moderate/low are reported but do not block, to avoid churn on transitive dev noise.)
+      - name: npm audit (prod, high+)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Syntax check core files
+        run: node -c server.js && node -c database.js

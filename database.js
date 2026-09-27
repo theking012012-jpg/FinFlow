@@ -80,6 +80,11 @@ async function initDB() {
       `);
       await client.query(`CREATE INDEX IF NOT EXISTS idx_${table}_user_id ON ${table}(user_id)`);
       await client.query(`CREATE INDEX IF NOT EXISTS idx_${table}_entity_id ON ${table}(entity_id)`);
+      // F199 (perf): allByUser and every list route sort `ORDER BY created_at DESC` within a user.
+      // A plain user_id index leaves that sort to an in-memory quicksort over all of a user's rows;
+      // this composite lets Postgres return the newest rows straight from the index (and makes the
+      // keyset `id < $cursor` pagination on listByUser a clean index range scan).
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_${table}_user_created ON ${table}(user_id, created_at DESC, id DESC)`);
     }
 
     // ── RBAC Phase 2, Step 2 — membership functional indexes ────────────────────
@@ -1109,6 +1114,44 @@ const db = {
       // Unknown/typo'd/renamed table (or a creation failure) → THROW. Returning []
       // here is exactly the silent-empty-on-failure bug that hid F14's dead tables.
       if (err.code === '42P01' && await _ensureTable(table)) return [];
+      throw err;
+    }
+  },
+
+  // pageByUser() — keyset (cursor) pagination for LIST ENDPOINTS. Distinct from allByUser on purpose:
+  // allByUser stays uncapped because computeBooks / the backfill must see EVERY row to be correct;
+  // pageByUser bounds what an HTTP list ships. Newest-first by (created_at, id); `before` is the id of
+  // the last row of the previous page (keyset, not OFFSET — stable under inserts, index-served by
+  // idx_<table>_user_created). Returns { rows, nextCursor, hasMore, total }.
+  async pageByUser(table, userId, { limit = 50, before = null, entityId = undefined } = {}) {
+    const lim = Math.max(1, Math.min(500, parseInt(limit, 10) || 50));
+    // Entity scope mirrors the list-route filter EXACTLY, but in SQL so `total` and page size are
+    // accurate: rows with no entity are always visible; a set active entity also shows its own rows.
+    // (entityId === undefined means "no scoping" — the caller wants every entity.)
+    const scope = [];
+    const params = [userId];
+    if (entityId !== undefined) {
+      if (entityId == null) scope.push(`entity_id IS NULL`);
+      else { params.push(entityId); scope.push(`(entity_id IS NULL OR entity_id = $${params.length})`); }
+    }
+    const whereScope = scope.length ? ` AND ${scope.join(' AND ')}` : '';
+    const countParams = params.slice();
+    let q = `SELECT * FROM ${table} WHERE user_id = $1${whereScope}`;
+    if (before != null && Number.isFinite(+before)) { params.push(+before); q += ` AND id < $${params.length}`; }
+    q += ` ORDER BY created_at DESC, id DESC LIMIT ${lim + 1}`;
+    try {
+      const [pageRes, countRes] = await Promise.all([
+        pool.query(q, params),
+        pool.query(`SELECT COUNT(*)::int AS n FROM ${table} WHERE user_id = $1${whereScope}`, countParams),
+      ]);
+      const total = countRes.rows[0].n;
+      let rows = pageRes.rows.map(rowToObj);
+      const hasMore = rows.length > lim;
+      if (hasMore) rows = rows.slice(0, lim);
+      const nextCursor = hasMore && rows.length ? rows[rows.length - 1].id : null;
+      return { rows, nextCursor, hasMore, total };
+    } catch (err) {
+      if (err.code === '42P01' && await _ensureTable(table)) return { rows: [], nextCursor: null, hasMore: false, total: 0 };
       throw err;
     }
   },

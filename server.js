@@ -5124,6 +5124,18 @@ app.get('/api/reports/ar-by-customer', requireAuth, wrap(async (req, res) => {
   }
 }));
 
+// GET /api/reports/top-clients — recognized revenue by client (F205). Server mirror of the client
+// _topClients ranking, so the dashboard income-source bars drop their full-invoice-list dependency.
+app.get('/api/reports/top-clients', requireAuth, wrap(async (req, res) => {
+  try {
+    const books = await computeBooks(scopeId(req), req.entityId || null, 'year');
+    res.json({ rows: books.topClients || [], revenue: books.revenue });
+  } catch (e) {
+    console.error('[GET /api/reports/top-clients]', e.message);
+    res.status(500).json({ error: 'Could not load top clients.' });
+  }
+}));
+
 // POST /api/reports/profit-loss — monthly P&L breakdown (entity-scoped).
 // Monthly rows show DATED cash activity (paid invoices + receipts + payments received in;
 // expenses + payments made out). The TOTALS come from computeBooks so the bottom line is
@@ -9008,6 +9020,23 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     .sort((a, b) => b.amount - a.amount);
   const arSummary = { total: outstanding, openCount: _arOpenCount, overdueTotal: r2(_arOverdueTotal), overdueCount: _arOverdueCount };
 
+  // F205 — top clients by recognized revenue (mirrors the client _topClients: recognized statuses,
+  // summed by client at FULL amount, no period/D2 filter — it is an all-time revenue ranking, not a
+  // reconciled money total). Lets the dashboard's income-source bars + AI insight drop their
+  // dependence on the full invoice list. FX-converted per-row like every other leg.
+  const _byClient = {};
+  issuedInv.forEach(i => {
+    const amt = _fxConvRow(num(i.amount), i.entity_id, _invDate(i));
+    if (!amt) return;
+    const k = i.client || 'Other';
+    _byClient[k] = (_byClient[k] || 0) + amt;
+  });
+  const topClients = Object.entries(_byClient)
+    .map(([label, total]) => ({ label, total: r2(total) }))
+    .filter(r => r.total > 0)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 8);
+
   const grossProfit = r2(revenue - cogs);
   const netProfit   = r2(revenue - cogs - opex);
 
@@ -9087,7 +9116,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const transactions = [..._invTx, ..._expTx].sort(_txByDate).slice(0, 6).map(t => ({ name: t.name, cat: t.cat, type: t.type, amount: t.amount }));
 
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, arByCustomer, arSummary, period, monthly, expenseBreakdown, transactions,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the
     // client worksheet (GET /api/tax-filing) and the accountant Tax Summary so taxable reconciles.

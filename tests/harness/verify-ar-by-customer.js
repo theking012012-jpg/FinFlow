@@ -59,6 +59,16 @@ const LOGIN = { email: 'seed@finflow.test', password: 'harness-password-not-a-se
     A('overdueCount == 3 (all open invoices past due_date=issue_date)', res.json?.overdueCount === 3, 'overdueCount=' + res.json?.overdueCount);
     A('overdueTotal == 8,500 (1,500+3,000+4,000)', near(res.json?.overdueTotal, 8500), 'overdueTotal=' + res.json?.overdueTotal);
 
+    // ── F205: top-clients endpoint (recognized revenue by client, all-time, matches client _topClients)
+    const tc = await http.get('/api/reports/top-clients');
+    A('top-clients endpoint 200', tc.status === 200, 'HTTP ' + tc.status);
+    const tcRows = tc.json?.rows || [];
+    const tcByName = Object.fromEntries(tcRows.map(r => [r.label, r.total]));
+    A('Customer B revenue == 12,000 (INV-3+INV-5+INV-6, no D2 filter — matches client)', near(tcByName['Customer B'], 12000), JSON.stringify(tcByName));
+    A('Customer A revenue == 3,000 (INV-1+INV-2; INV-4 draft excluded)', near(tcByName['Customer A'], 3000), JSON.stringify(tcByName));
+    A('ranked highest-first', tcRows.length >= 2 && tcRows[0].total >= tcRows[1].total);
+    A('no draft invoice in ranking (INV-4 9,999 absent)', !tcRows.some(r => near(r.total, 9999)));
+
     console.log('\n' + (fail === 0 ? '  ALL GREEN — ' + pass + ' passed, 0 failed  (per-customer AR reconciles to canonical outstanding)'
                                    : '  ' + fail + ' FAILED, ' + pass + ' passed'));
   } catch (e) {

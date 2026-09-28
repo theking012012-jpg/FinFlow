@@ -4798,34 +4798,58 @@ function _helpLinkChips(links){
     return '<button class="btn btn-ghost btn-sm" onclick="if(window.showPage)window.showPage(\''+l.page+'\')">'+_helpEsc(l.label)+' \u2192</button>';
   }).join('')+'</div>';
 }
-window.helpAsk = function(q){
+// Threaded, multi-turn conversation state (survives navigation; cleared by "New chat").
+var _helpConvo=[];
+function _helpRenderThread(){
+  var t=document.getElementById('help-ask-thread'); if(!t) return;
+  if(!_helpConvo.length){ t.innerHTML='<div style="color:var(--t3);font-size:12.5px;padding:6px 2px">Ask anything about using FinFlow \u2014 e.g. \u201chow do I consolidate my two businesses?\u201d It remembers the conversation, so you can follow up.</div>'; return; }
+  var html=_helpConvo.map(function(m){
+    if(m.role==='user') return '<div style="text-align:right;margin:8px 0"><span style="display:inline-block;background:var(--acc);color:#16120d;border-radius:12px 12px 3px 12px;padding:8px 11px;font-size:12.7px;max-width:85%;text-align:left">'+_helpEsc(m.content)+'</span></div>';
+    if(m.role==='assistant') return '<div style="margin:8px 0"><div style="display:inline-block;background:var(--bg3);border:1px solid var(--bd);border-radius:12px 12px 12px 3px;padding:9px 12px;font-size:12.9px;color:var(--t1);line-height:1.55;white-space:pre-wrap;max-width:92%">'+_helpEsc(m.content)+'</div>'+(m.links?_helpLinkChips(m.links):'')+'</div>';
+    return '<div style="margin:8px 0;font-size:12px;color:var(--green);background:var(--green-bg);border:1px solid var(--green-bd);border-radius:8px;padding:8px 11px">'+_helpEsc(m.content)+'</div>';
+  }).join('');
+  var hasAnswer=_helpConvo.some(function(m){return m.role==='assistant'&&!m.pending;});
+  if(hasAnswer) html+='<div style="display:flex;justify-content:flex-end;margin-top:4px"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="window.helpEscalate(this)">Still need help? Send this to support \u2192</button></div>';
+  t.innerHTML=html; t.scrollTop=t.scrollHeight;
+}
+window.helpNewChat=function(){ _helpConvo=[]; _helpRenderThread(); var i=document.getElementById('help-ask-input'); if(i)i.value=''; };
+window.helpAsk=function(q){
   var input=document.getElementById('help-ask-input');
   var question=(q!=null?q:(input?input.value:''))||''; question=String(question).trim();
-  var out=document.getElementById('help-ask-out'); if(!out) return;
-  if(!question){ out.innerHTML=''; return; }
-  if(input && q!=null) input.value=question;
-  out.style.display='block';
-  out.innerHTML='<div style="color:var(--t3);font-size:12.5px;padding:4px 0">Thinking\u2026</div>';
-  fetch('/api/help/ask',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({question:question})})
+  if(!question) return;
+  if(input) input.value='';
+  var history=_helpConvo.filter(function(m){return m.role==='user'||m.role==='assistant';}).map(function(m){return {role:m.role,content:m.content};});
+  _helpConvo.push({role:'user',content:question});
+  _helpConvo.push({role:'assistant',content:'Thinking\u2026',pending:true});
+  _helpRenderThread();
+  fetch('/api/help/ask',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({question:question,history:history})})
     .then(function(r){ return r.json().catch(function(){return {};}); })
     .then(function(d){
-      if(d && d.reply){
-        out.innerHTML='<div style="white-space:pre-wrap;font-size:13px;color:var(--t1);line-height:1.6">'+_helpEsc(d.reply)+'</div>'+_helpLinkChips(d.links)
-          +'<div style="font-size:10.5px;color:var(--t3);margin-top:8px">AI-generated from FinFlow\u2019s help \u2014 verify anything important.</div>';
-      } else {
-        var msg=(d&&d.message)||(d&&d.error)||'Here are the guides that match your question.';
-        out.innerHTML='<div style="font-size:12.7px;color:var(--t2)">'+_helpEsc(msg)+'</div>'+_helpLinkChips(d&&d.links);
-      }
+      _helpConvo=_helpConvo.filter(function(m){return !m.pending;});
+      if(d&&d.reply){ _helpConvo.push({role:'assistant',content:d.reply,links:d.links}); }
+      else { _helpConvo.push({role:'assistant',content:(d&&d.message)||(d&&d.error)||'Here are the guides that match your question.',links:d&&d.links}); }
+      _helpRenderThread();
     })
-    .catch(function(){ out.innerHTML='<div style="font-size:12.7px;color:var(--red)">Couldn\u2019t reach help right now \u2014 try the guides below or contact us.</div>'; });
+    .catch(function(){ _helpConvo=_helpConvo.filter(function(m){return !m.pending;}); _helpConvo.push({role:'assistant',content:'Couldn\u2019t reach help right now \u2014 try the guides below or contact us.'}); _helpRenderThread(); });
+};
+window.helpEscalate=function(btn){
+  var turns=_helpConvo.filter(function(m){return (m.role==='user'||m.role==='assistant')&&!m.pending;});
+  if(!turns.length) return;
+  var transcript=turns.map(function(m){ return (m.role==='user'?'You: ':'Ask FinFlow: ')+m.content; }).join('\n\n');
+  if(btn){ btn.disabled=true; btn.textContent='Sending\u2026'; }
+  fetch('/api/support',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({subject:'Help request (via Ask FinFlow)',message:'[Escalated from the Ask FinFlow assistant]\n\n'+transcript,category:'ai-escalation'})})
+    .then(function(r){ return r.ok?r.json():Promise.reject(); })
+    .then(function(){ _helpConvo.push({role:'system',content:'\u2713 Sent to support with this conversation \u2014 we\u2019ll reply by email. Track it under \u201cYour requests\u201d below.'}); _helpRenderThread(); if(typeof renderTickets==='function') renderTickets(); })
+    .catch(function(){ if(btn){ btn.disabled=false; btn.textContent='Still need help? Send this to support \u2192'; } if(typeof notify==='function') notify('Could not send \u2014 please use the contact form below.',true); });
 };
 function renderAskPanel(){
   var el=document.getElementById('help-ask'); if(!el) return;
   el.innerHTML='<div style="background:linear-gradient(180deg,var(--acc-bg),var(--bg1));border:1px solid var(--bd2);border-radius:14px;padding:16px 17px">'
-    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px"><svg viewBox="0 0 16 16" style="width:16px;height:16px;fill:var(--acc)"><path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z"/></svg><span style="font-family:var(--font-display);font-style:italic;font-size:18px;color:var(--acc-light)">Ask FinFlow</span></div>'
-    +'<div style="display:flex;gap:8px"><input id="help-ask-input" placeholder="e.g. how do I consolidate my two businesses?" style="flex:1;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;color:var(--t1);padding:10px 12px;font-size:13px" onkeydown="if(event.key===\'Enter\'){event.preventDefault();window.helpAsk();}">'
-    +'<button class="btn btn-primary btn-sm" onclick="window.helpAsk()">Ask</button></div>'
-    +'<div id="help-ask-out" style="display:none;margin-top:12px;background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:12px 13px"></div></div>';
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px"><svg viewBox="0 0 16 16" style="width:16px;height:16px;fill:var(--acc)"><path d="M8 1l1.6 4.4L14 7l-4.4 1.6L8 13l-1.6-4.4L2 7l4.4-1.6z"/></svg><span style="font-family:var(--font-display);font-style:italic;font-size:18px;color:var(--acc-light)">Ask FinFlow</span><span style="flex:1"></span><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="window.helpNewChat()">New chat</button></div>'
+    +'<div id="help-ask-thread" style="max-height:340px;overflow-y:auto;margin-bottom:10px"></div>'
+    +'<div style="display:flex;gap:8px"><input id="help-ask-input" placeholder="Ask a question\u2026" autocomplete="off" style="flex:1;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;color:var(--t1);padding:10px 12px;font-size:13px" onkeydown="if(event.key===\'Enter\'){event.preventDefault();window.helpAsk();}">'
+    +'<button class="btn btn-primary btn-sm" onclick="window.helpAsk()">Ask</button></div></div>';
+  _helpRenderThread();
 }
 
 // ── Getting-started checklist (live from real data) ─────────────────────────────
@@ -4980,7 +5004,7 @@ window.openHelpPalette=function(){
   function close(){ if(ov.parentNode) ov.parentNode.removeChild(ov); document.removeEventListener('keydown',key); }
   function build(q){
     q=(q||'').trim().toLowerCase(); items=[];
-    if(q){ items.push({t:'\u2728 Ask FinFlow: \u201c'+q+'\u201d',act:function(){ close(); if(window.showPage)window.showPage('help'); setTimeout(function(){ window.helpAsk(q); var hi=document.getElementById('help-ask-input'); if(hi){hi.value=q; hi.scrollIntoView({block:'center'});} },60); },tag:'AI'}); }
+    if(q){ items.push({t:'\u2728 Ask FinFlow: \u201c'+q+'\u201d',act:function(){ close(); if(window.showPage)window.showPage('help'); setTimeout(function(){ window.helpAsk(q); var ap=document.getElementById('help-ask'); if(ap)ap.scrollIntoView({block:'center'}); },60); },tag:'AI'}); }
     HELP_ARTICLES.forEach(function(a){ var hay=(a.c+' '+a.q+' '+a.s.join(' ')).toLowerCase(); if(!q||hay.indexOf(q)>=0) items.push({t:a.q,sub:a.c,act:function(){ close(); if(window.showPage)window.showPage('help'); setTimeout(function(){ window._helpOpenArticle(_helpSlug(a.q)); },60); },tag:'Guide'}); });
     HELP_PALETTE_PAGES.forEach(function(p){ if(!q||p[1].toLowerCase().indexOf(q)>=0) items.push({t:p[1],act:function(){ close(); if(window.showPage)window.showPage(p[0]); },tag:'Page'}); });
     items=items.slice(0,40); sel=0; paint();
@@ -9686,6 +9710,8 @@ myAccPage.innerHTML = `
       <div style="text-align:center;color:var(--t3);font-size:13px;padding:40px 0">No messages yet.</div>
     </div>
     <div style="padding:10px 12px;border-top:1px solid var(--bd);display:flex;gap:8px;align-items:center">
+      <input type="file" id="acct-chat-file" style="display:none" onchange="sendAcctAttachment(this)">
+      <button class="btn btn-ghost btn-sm" title="Attach a file (max 5MB)" onclick="document.getElementById('acct-chat-file').click()" style="white-space:nowrap">📎</button>
       <input id="acct-chat-input" class="finput" type="text" placeholder="Message your accountant…"
         style="flex:1;margin:0;padding:9px 12px"
         oninput="onAccountantTyping()"
@@ -9907,6 +9933,22 @@ function renderLinkedAccountant() {
 let _acctMsgs = [], _acctOtherRead = null, _acctSse = null, _acctPoll = null;
 let _acctTypingAt = 0, _acctTypingHide = null;
 const _acctEsc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const _fmtBytes = n => { n=Number(n)||0; if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(0)+' KB'; return (n/1048576).toFixed(1)+' MB'; };
+const _CHAT_ATT_MAX_CLIENT = 5*1024*1024;
+window.sendAcctAttachment = function(inputEl){
+  var f = inputEl && inputEl.files && inputEl.files[0]; if(!f) return;
+  if(f.size > _CHAT_ATT_MAX_CLIENT){ if(typeof notify==='function') notify('File too large (max 5MB).', true); inputEl.value=''; return; }
+  var reader = new FileReader();
+  reader.onload = function(){
+    var dataB64 = String(reader.result||'');
+    fetch('/api/accountants/my-accountant/attach',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({name:f.name,mime:f.type||'application/octet-stream',dataB64:dataB64})})
+      .then(function(r){ return r.ok?r.json():r.json().then(function(j){throw new Error(j.error||'Upload failed');}); })
+      .then(function(row){ if(!_acctMsgs.some(function(m){return m.id===row.id;})){ _acctMsgs.push(row); renderAccountantMessages(); } })
+      .catch(function(e){ if(typeof notify==='function') notify(e.message||'Upload failed', true); });
+    inputEl.value='';
+  };
+  reader.readAsDataURL(f);
+};
 
 function renderAccountantMessages() {
   const el = document.getElementById('acct-chat-thread');
@@ -9923,8 +9965,10 @@ function renderAccountantMessages() {
     const isMe = m.sender === 'client';
     const dateStr = new Date(m.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
     const seen = i === lastSeen ? ' · <span style="color:var(--acc)">✓ Seen</span>' : '';
+    const att = m.att_name ? `<a href="/api/accountants/chat-attachment/${m.id}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:5px;max-width:80%;background:${isMe?'rgba(0,0,0,.12)':'var(--bg2)'};border:1px solid ${isMe?'rgba(0,0,0,.15)':'var(--bd)'};border-radius:9px;padding:7px 11px;font-size:12.5px;color:${isMe?'#0e0b08':'var(--acc)'};text-decoration:none">📎 ${_acctEsc(m.att_name)}${m.att_size?` · ${_fmtBytes(m.att_size)}`:''}</a>` : '';
     return `<div style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:2px">
       <div style="max-width:80%;background:${isMe?'var(--acc)':'var(--bg3)'};color:${isMe?'#0e0b08':'var(--t1)'};padding:9px 13px;border-radius:${isMe?'14px 14px 4px 14px':'14px 14px 14px 4px'};font-size:13.5px;line-height:1.5">${_acctEsc(m.content)}</div>
+      ${att}
       <div style="font-size:11px;color:var(--t3);padding:0 4px">${_acctEsc(m.sender_name)} · ${dateStr}${seen}</div>
     </div>`;
   }).join('');

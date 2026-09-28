@@ -792,6 +792,12 @@ async function initDB() {
       $accmsg$;`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_messages_user       ON accountant_messages(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_acc_messages_thread     ON accountant_messages(accountant_id, user_id, created_at)`);
+    // Chat attachments: a message may carry ONE file, stored inline (base64) with its metadata. Kept on
+    // the message row (not a side table) so a message + its file are one atomic insert and one delete.
+    await client.query(`ALTER TABLE accountant_messages ADD COLUMN IF NOT EXISTS att_name TEXT`);
+    await client.query(`ALTER TABLE accountant_messages ADD COLUMN IF NOT EXISTS att_mime TEXT`);
+    await client.query(`ALTER TABLE accountant_messages ADD COLUMN IF NOT EXISTS att_size INTEGER`);
+    await client.query(`ALTER TABLE accountant_messages ADD COLUMN IF NOT EXISTS att_data TEXT`);
 
     // ── ACCOUNTANT DEADLINES ─────────────────────────────────────────────────────
     await client.query(`

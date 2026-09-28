@@ -73,6 +73,23 @@ const PW = 'harness-password-not-a-secret';
 
     A('ask empty question → 400', (await a.post('/api/help/ask', { question: '   ' })).status === 400);
 
+    // Threaded: a follow-up carries prior turns as history[] — accepted without error (still graceful
+    // with no key). The multi-turn model/cache-bypass path only runs with a real key; here we assert
+    // the endpoint accepts the shape and stays a 200 non-dead-end.
+    const askT = await a.post('/api/help/ask', { question: 'what about different currencies?', history: [
+      { role: 'user', content: 'how do I consolidate my businesses?' },
+      { role: 'assistant', content: 'Use the consolidated view in the entity picker.' } ] });
+    A('ask accepts history[] (threaded) → 200', askT.status === 200, 'status=' + askT.status);
+    A('ask with history still returns links', askT.json && Array.isArray(askT.json.links), JSON.stringify(askT.json && askT.json.links));
+
+    // Escalation (#4): the client turns a stuck conversation into a ticket via /api/support.
+    const esc = await a.post('/api/support', { subject: 'Help request (via Ask FinFlow)', category: 'ai-escalation',
+      message: '[Escalated from the Ask FinFlow assistant]\n\nYou: how do I consolidate?\n\nAsk FinFlow: use the consolidated view.' });
+    A('escalation ticket created (201)', esc.status === 201, 'status=' + esc.status);
+    const mine = (await a.get('/api/support')).json;
+    const escRow = (mine.requests || []).find(r => r.category === 'ai-escalation');
+    A('escalation ticket stored with category + transcript', !!escRow && /Escalated from the Ask FinFlow/.test(escRow.message || ''), JSON.stringify(escRow));
+
     const anon = new HarnessHttp(server.baseUrl, { xff: '203.0.113.12' });
     A('progress requires auth (401)', (await anon.get('/api/help/progress')).status === 401);
     A('ask requires auth (401)', (await anon.post('/api/help/ask', { question: 'hi' })).status === 401);

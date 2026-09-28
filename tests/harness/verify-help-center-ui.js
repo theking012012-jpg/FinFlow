@@ -101,7 +101,12 @@ const path = require('path');
 
     let askThrew = null; try { w.helpAsk('how do I consolidate'); } catch (e) { askThrew = e.message; }
     await sleep(80);
-    A('[jsdom] Ask renders the AI answer', !askThrew && /consolidate/.test(d.getElementById('help-ask-out').innerHTML), askThrew || d.getElementById('help-ask-out').innerHTML.slice(0, 80));
+    const askThread = d.getElementById('help-ask-thread');
+    A('[jsdom] Ask renders the AI answer in the thread', !askThrew && !!askThread && /consolidate/.test(askThread.innerHTML), askThrew || (askThread ? askThread.innerHTML.slice(0, 80) : 'no thread'));
+    A('[jsdom] Ask shows the escalation action after an answer', !!askThread && /Send this to support/.test(askThread.innerHTML));
+    let newThrew = null; try { w.helpNewChat(); } catch (e) { newThrew = e.message; }
+    const clearedHtml = d.getElementById('help-ask-thread').innerHTML;
+    A('[jsdom] New chat clears the thread (answer gone, empty hint back)', !newThrew && !/consolidated view/.test(clearedHtml) && /Ask anything about using FinFlow/.test(clearedHtml), newThrew || clearedHtml.slice(0, 80));
 
     let palThrew = null; try { w.openHelpPalette(); } catch (e) { palThrew = e.message; }
     A('[jsdom] ⌘K palette opens with results', !palThrew && !!d.getElementById('help-palette') && d.querySelectorAll('#hp-results .hp-row').length > 5, palThrew || ('rows=' + d.querySelectorAll('#hp-results .hp-row').length));

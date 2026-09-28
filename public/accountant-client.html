@@ -713,7 +713,9 @@
       <div class="typing-row" id="msg-typing"></div>
       <div class="card">
         <textarea class="notes-textarea" id="msg-input" placeholder="Write a message to your client…" style="min-height:70px" oninput="onMsgTyping()" onkeydown="onMsgKey(event)"></textarea>
-        <div style="display:flex;justify-content:flex-end;margin-top:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+          <input type="file" id="msg-file" style="display:none" onchange="sendClientAttachment(this)">
+          <button class="topbar-btn" onclick="document.getElementById('msg-file').click()" title="Attach a file (max 5MB)"><i class="ti ti-paperclip"></i> Attach</button>
           <button class="topbar-btn primary" onclick="sendMessage()"><i class="ti ti-send"></i> Send</button>
         </div>
       </div>
@@ -1522,13 +1524,31 @@ function renderMessages() {
   el.innerHTML = _msgs.map((m, i) => {
     const body = esc(m.content != null ? m.content : m.message);
     const seen = i === lastSeenIdx ? '<span class="seen">✓ Seen</span>' : '';
+    const att = m.att_name ? `<a href="/api/accountants/chat-attachment/${m.id}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;margin-top:5px;background:rgba(0,0,0,.15);border-radius:8px;padding:6px 10px;font-size:12px;color:inherit;text-decoration:none">📎 ${esc(m.att_name)}${m.att_size?` · ${_fmtBytes(m.att_size)}`:''}</a>` : '';
     return `<div class="msg-bubble msg-${esc(m.sender)}${m._sending ? ' sending' : ''}">
         <div>${body}</div>
+        ${att}
         <div class="msg-meta">${m.sender === 'accountant' ? 'You' : 'Client'} · ${fmtDate(m.created_at)}${seen}</div>
       </div>`;
   }).join('');
   el.scrollTop = el.scrollHeight;
 }
+
+const _fmtBytes = n => { n=Number(n)||0; if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(0)+' KB'; return (n/1048576).toFixed(1)+' MB'; };
+window.sendClientAttachment = function(inputEl){
+  const f = inputEl && inputEl.files && inputEl.files[0]; if(!f) return;
+  if(f.size > 5*1024*1024){ alert('File too large (max 5MB).'); inputEl.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = function(){
+    fetch('/api/accountants/clients/attach', {method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
+      body: JSON.stringify({ userId: _userId, name: f.name, mime: f.type||'application/octet-stream', dataB64: String(reader.result||'') })})
+      .then(r => r.ok ? r.json() : r.json().then(j => { throw new Error(j.error||'Upload failed'); }))
+      .then(row => { if(!_msgs.some(m => m.id === row.id)){ _msgs.push(row); renderMessages(); } })
+      .catch(e => alert(e.message || 'Upload failed'));
+    inputEl.value='';
+  };
+  reader.readAsDataURL(f);
+};
 
 async function loadMessages() {
   const el = document.getElementById('messages-thread');

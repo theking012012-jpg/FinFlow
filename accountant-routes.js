@@ -206,6 +206,20 @@ function _chatBroadcast(key, event, data, opts = {}) {
   }
 }
 
+// Is a given side (client|accountant) currently watching this conversation over SSE? Used to decide
+// whether a message needs an offline EMAIL nudge — if the recipient's stream is open they got it live.
+function _sideOnline(key, side) {
+  const set = _chatHub.get(key);
+  if (!set) return false;
+  for (const e of set) if (e.side === side) return true;
+  return false;
+}
+// Per (conversation + recipient side) cooldown so a burst of messages to an offline party sends ONE
+// nudge, not one per message. In-memory (single web process, same as _chatHub); a restart at worst
+// allows one extra email. Cleared when the recipient opens the thread, so the next burst re-arms.
+const _lastChatNotify = new Map();
+const _CHAT_NOTIFY_COOLDOWN_MS = 5 * 60 * 1000;
+
 /** Open an SSE response: headers, no-buffering hints, an immediate ready event, and a 25s
  *  keep-alive ping so proxies don't idle-close the stream. Returns nothing — caller wires close. */
 function _openSse(res) {
@@ -230,6 +244,70 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
   // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
   // changed. A no-op fallback keeps the module loadable if ever called without it.
   const _audit = typeof recordAudit === 'function' ? recordAudit : async () => {};
+
+  // ── CHAT: offline email notify + attachment helpers ─────────────────────────────
+  const _chatEsc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  async function _accountantName(id) {
+    try { const r = await pool.query(`SELECT first_name, last_name, firm FROM accountants WHERE id=$1`, [id]); const a = r.rows[0]; if (!a) return 'Your accountant'; return ((a.first_name || '') + ' ' + (a.last_name || '')).trim() || a.firm || 'Your accountant'; } catch (_) { return 'Your accountant'; }
+  }
+  async function _clientDisplayName(userId) {
+    try { const r = await pool.query(`SELECT data FROM users WHERE id=$1`, [userId]); const d = (r.rows[0] && r.rows[0].data) || {}; return d.company_name || d.name || d.email || 'Your client'; } catch (_) { return 'Your client'; }
+  }
+  // Fire-and-forget: nudge the recipient by email ONLY when they aren't watching the thread live.
+  function _notifyOfflineMessage({ recipientSide, accountantId, userId, preview }) {
+    (async () => {
+      try {
+        if (!resendClient || !process.env.EMAIL_FROM) return;
+        const key = _convKey(accountantId, userId);
+        if (_sideOnline(key, recipientSide)) return;                 // live via SSE → no email
+        const nk = key + ':' + recipientSide, now = Date.now();
+        if (now - (_lastChatNotify.get(nk) || 0) < _CHAT_NOTIFY_COOLDOWN_MS) return;   // debounce
+        let to = null, senderName;
+        if (recipientSide === 'client') {
+          const r = await pool.query(`SELECT data->>'email' AS e FROM users WHERE id=$1`, [userId]); to = r.rows[0] && r.rows[0].e;
+          senderName = await _accountantName(accountantId);
+        } else {
+          const r = await pool.query(`SELECT email FROM accountants WHERE id=$1`, [accountantId]); to = r.rows[0] && r.rows[0].email;
+          senderName = await _clientDisplayName(userId);
+        }
+        if (!to) return;
+        _lastChatNotify.set(nk, now);
+        let link = 'https://finflow.app'; try { link = appUrl(); } catch (_) {}
+        await resendClient.emails.send({
+          from: process.env.EMAIL_FROM, to,
+          subject: 'New message from ' + senderName,
+          html: `<p><b>${_chatEsc(senderName)}</b> sent you a message on FinFlow:</p>`
+            + `<blockquote style="border-left:3px solid #c9a84c;padding-left:12px;color:#555">${_chatEsc(String(preview).slice(0, 300))}</blockquote>`
+            + `<p><a href="${link}">Open FinFlow to reply</a></p>`,
+        });
+      } catch (e) { console.error('[chat notify]', e.message); }
+    })();
+  }
+  const _CHAT_ATT_MAX = 5 * 1024 * 1024;   // 5 MB decoded
+  const _attClean = n => String(n || 'file').replace(/[^\w.\- ]/g, '_').slice(0, 120);
+  function _decodeAttachment(body) {
+    const name = _attClean(body && body.name);
+    const mime = String((body && body.mime) || 'application/octet-stream').slice(0, 100);
+    let b64 = String((body && (body.dataB64 || body.data)) || '');
+    const comma = b64.indexOf(',');
+    if (comma >= 0 && b64.slice(0, comma).indexOf('base64') >= 0) b64 = b64.slice(comma + 1);   // strip data: URL prefix
+    b64 = b64.replace(/\s/g, '');
+    const size = Math.floor(b64.length * 3 / 4);
+    return { name, mime, b64, size };
+  }
+  // Authorize + fetch one attachment row for download. Returns the row or null (caller 404/403s).
+  async function _attachmentFor(req, id) {
+    const r = await pool.query(`SELECT accountant_id, user_id, att_name, att_mime, att_data FROM accountant_messages WHERE id=$1`, [id]);
+    const row = r.rows[0];
+    if (!row || !row.att_data) return null;
+    if (req.session && req.session.userId) { if (Number(row.user_id) !== Number(req.session.userId)) return null; }
+    else if (req.session && req.session.accountantId) {
+      if (Number(row.accountant_id) !== Number(req.session.accountantId)) return null;
+      const ok = await pool.query(`SELECT 1 FROM accountant_clients WHERE accountant_id=$1 AND user_id=$2 AND status='active' LIMIT 1`, [row.accountant_id, row.user_id]);
+      if (!ok.rows[0]) return null;
+    } else return null;
+    return row;
+  }
 
   // ── PER-ENTITY + PERSONAL ACCESS MODEL ────────────────────────────────────────────────────
   // accountant_clients.entity_access JSONB is the owner's fine-grained grant. NULL = legacy: every
@@ -1448,10 +1526,11 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
     const { rows } = await pool.query(
-      `SELECT id, message AS content, sender, created_at FROM accountant_messages
+      `SELECT id, message AS content, sender, created_at, att_name, att_mime, att_size FROM accountant_messages
        WHERE accountant_id = $1 AND user_id = $2 ORDER BY created_at ASC LIMIT 200`,
       [req.session.accountantId, userId]
     ).catch(() => ({ rows: [] }));
+    _lastChatNotify.delete(_convKey(req.session.accountantId, userId) + ':accountant');   // reader caught up → re-arm nudges
     const link = await pool.query(
       `SELECT client_last_read FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
       [req.session.accountantId, userId]
@@ -1484,6 +1563,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     );
     _chatBroadcast(_convKey(req.session.accountantId, userId), 'message',
       { ...row.rows[0], sender_name: 'Your accountant' });
+    _notifyOfflineMessage({ recipientSide: 'client', accountantId: req.session.accountantId, userId: parseInt(userId), preview: content });
     await _audit(pool, { userId: parseInt(userId), table: 'accountant_messages', recordId: row.rows[0]?.id || null, action: 'MESSAGE', req });  // F90 residual: accountant workflow audit
     res.json(row.rows[0]);
   }));
@@ -1775,10 +1855,11 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!link) return res.json({ messages: [], otherLastRead: null, accountantId: null });
     const accId = link.accountant_id;
     const { rows } = await pool.query(
-      `SELECT id, message AS content, sender, created_at FROM accountant_messages
+      `SELECT id, message AS content, sender, created_at, att_name, att_mime, att_size FROM accountant_messages
         WHERE accountant_id = $1 AND user_id = $2 ORDER BY created_at ASC LIMIT 500`,
       [accId, req.session.userId]
     ).catch(() => ({ rows: [] }));
+    _lastChatNotify.delete(_convKey(accId, req.session.userId) + ':client');   // reader caught up → re-arm nudges
     // Opening the thread marks the accountant's messages as read by the client + notifies the
     // accountant side so their sent bubbles flip to "Seen".
     await pool.query(
@@ -1807,6 +1888,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     );
     _chatBroadcast(_convKey(accId, req.session.userId), 'message',
       { ...row.rows[0], sender_name: 'Client' });
+    _notifyOfflineMessage({ recipientSide: 'accountant', accountantId: accId, userId: req.session.userId, preview: content });
     res.json(row.rows[0]);
   }));
 
@@ -1828,6 +1910,62 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     const unsub = _chatSubscribe(key, entry);
     const ping = setInterval(() => { try { res.write(': ping\n\n'); if (res.flush) res.flush(); } catch (_) {} }, 25000);
     req.on('close', () => { clearInterval(ping); unsub(); });
+  }));
+
+  // ── CHAT ATTACHMENTS ────────────────────────────────────────────────────────
+  // A message can carry one file (≤5MB), stored inline. Two send paths (client / accountant) mirror
+  // the text-message endpoints; one authorized download path serves either party of the conversation.
+  app.post('/api/accountants/my-accountant/attach', apiLimiter, wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const link = await _clientLink(req.session.userId);
+    if (!link) return res.status(404).json({ error: 'No linked accountant.' });
+    const accId = link.accountant_id;
+    const a = _decodeAttachment(req.body);
+    if (!a.b64) return res.status(400).json({ error: 'No file provided.' });
+    if (a.size > _CHAT_ATT_MAX) return res.status(413).json({ error: 'File too large (max 5MB).' });
+    const caption = String((req.body && req.body.caption) || '').trim().slice(0, 2000) || ('📎 ' + a.name);
+    const row = await pool.query(
+      `INSERT INTO accountant_messages (accountant_id, user_id, message, sender, created_at, att_name, att_mime, att_size, att_data)
+       VALUES ($1,$2,$3,'client',NOW(),$4,$5,$6,$7) RETURNING id, message AS content, sender, created_at, att_name, att_mime, att_size`,
+      [accId, req.session.userId, caption, a.name, a.mime, a.size, a.b64]
+    );
+    _chatBroadcast(_convKey(accId, req.session.userId), 'message', { ...row.rows[0], sender_name: 'Client' });
+    _notifyOfflineMessage({ recipientSide: 'accountant', accountantId: accId, userId: req.session.userId, preview: '📎 ' + a.name });
+    res.json(row.rows[0]);
+  }));
+
+  app.post('/api/accountants/clients/attach', requireAccountant, apiLimiter, wrap(async (req, res) => {
+    const userId = String((req.body && req.body.userId) || '');
+    if (!/^[1-9][0-9]*$/.test(userId)) return res.status(400).json({ error: 'Invalid userId.' });
+    const access = await pool.query(`SELECT 1 FROM accountant_clients WHERE accountant_id=$1 AND user_id=$2 AND status='active' LIMIT 1`, [req.session.accountantId, userId]);
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    const a = _decodeAttachment(req.body);
+    if (!a.b64) return res.status(400).json({ error: 'No file provided.' });
+    if (a.size > _CHAT_ATT_MAX) return res.status(413).json({ error: 'File too large (max 5MB).' });
+    const caption = String((req.body && req.body.caption) || '').trim().slice(0, 2000) || ('📎 ' + a.name);
+    const row = await pool.query(
+      `INSERT INTO accountant_messages (accountant_id, user_id, message, sender, created_at, att_name, att_mime, att_size, att_data)
+       VALUES ($1,$2,$3,'accountant',NOW(),$4,$5,$6,$7) RETURNING id, message AS content, sender, created_at, att_name, att_mime, att_size`,
+      [req.session.accountantId, userId, caption, a.name, a.mime, a.size, a.b64]
+    );
+    _chatBroadcast(_convKey(req.session.accountantId, userId), 'message', { ...row.rows[0], sender_name: 'Your accountant' });
+    _notifyOfflineMessage({ recipientSide: 'client', accountantId: req.session.accountantId, userId: parseInt(userId), preview: '📎 ' + a.name });
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_messages', recordId: row.rows[0]?.id || null, action: 'MESSAGE_ATTACH', req });
+    res.json(row.rows[0]);
+  }));
+
+  // Download — either party of the conversation may fetch; anyone else 404s (no existence leak).
+  app.get('/api/accountants/chat-attachment/:id', wrap(async (req, res) => {
+    if (!(req.session && (req.session.userId || req.session.accountantId))) return res.status(401).json({ error: 'Login required.' });
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Bad id.' });
+    const row = await _attachmentFor(req, id);
+    if (!row) return res.status(404).json({ error: 'Not found.' });
+    const buf = Buffer.from(row.att_data, 'base64');
+    res.setHeader('Content-Type', row.att_mime || 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment; filename="' + (row.att_name || 'file').replace(/"/g, '') + '"');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(buf);
   }));
 
   // ── CLIENT: REQUEST ACCESS FROM AN ACCOUNTANT ─────────────────────────────

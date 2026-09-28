@@ -679,7 +679,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // Conditional ensures the global parser doesn't 413 a large body before its route runs.
 const bigJson = express.json({ limit: '10mb' });
 const smallJson = express.json({ limit: '500kb' });
-const LARGE_PAYLOAD_PATHS = ['/api/ai/scan', '/api/documents', '/api/ai/extract-document', '/api/accountants/extract-resume', '/api/accountants/register'];
+const LARGE_PAYLOAD_PATHS = ['/api/ai/scan', '/api/documents', '/api/ai/extract-document', '/api/accountants/extract-resume', '/api/accountants/register', '/api/accountants/my-accountant/attach', '/api/accountants/clients/attach'];
 app.use((req, res, next) => (LARGE_PAYLOAD_PATHS.includes(req.path) ? bigJson : smallJson)(req, res, next));
 app.use(express.urlencoded({ extended: false, limit: '500kb' }));
 app.set('trust proxy', 1);
@@ -2739,12 +2739,22 @@ app.post('/api/help/ask', requireAuth, apiLimiter, wrap(async (req, res) => {
       message: 'AI answers aren’t enabled on this deployment yet — here are the guides that match your question.' });
   }
 
+  // Multi-turn: an optional prior [{role,content}] thread. A follow-up answer depends on the whole
+  // conversation, so we ONLY cache single-shot questions (empty history) — a multi-turn turn is unique.
+  const history = (Array.isArray(req.body && req.body.history) ? req.body.history : [])
+    .filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content)
+    .slice(-8)
+    .map(m => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
+  const multiTurn = history.length > 0;
+
   const qKey = 'help:' + question.toLowerCase();
-  const cached = await pool.query(
-    `SELECT answer, model FROM ai_cache WHERE user_id=$1 AND question=$2 AND created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at DESC LIMIT 1`,
-    [scopeId(req), qKey]
-  );
-  if (cached.rows.length) return res.json({ reply: cached.rows[0].answer, model: cached.rows[0].model, links, cached: true });
+  if (!multiTurn) {
+    const cached = await pool.query(
+      `SELECT answer, model FROM ai_cache WHERE user_id=$1 AND question=$2 AND created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at DESC LIMIT 1`,
+      [scopeId(req), qKey]
+    );
+    if (cached.rows.length) return res.json({ reply: cached.rows[0].answer, model: cached.rows[0].model, links, cached: true });
+  }
 
   const gate = await aiCap.checkUserCap(pool, scopeId(req), req.userPlan, 'shared');
   if (!gate.ok) {
@@ -2777,8 +2787,11 @@ app.post('/api/help/ask', requireAuth, apiLimiter, wrap(async (req, res) => {
       },
       body: JSON.stringify({
         model, max_tokens: 700,
-        system: [{ type: 'text', text: systemInstruction, cache_control: { type: 'ephemeral' } }],
-        messages: [{ role: 'user', content: [{ type: 'text', text: contextText }, { type: 'text', text: 'Question: ' + question }] }],
+        system: [
+          { type: 'text', text: systemInstruction, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: contextText },
+        ],
+        messages: [...history, { role: 'user', content: 'Question: ' + question }],
       }),
     });
   } catch (e) {
@@ -2792,7 +2805,7 @@ app.post('/api/help/ask', requireAuth, apiLimiter, wrap(async (req, res) => {
   const data = await response.json();
   const reply = (data.content && data.content[0] && data.content[0].text) || 'No answer available.';
   aiCap.recordUser(pool, scopeId(req), 'shared', 1);
-  pool.query(`INSERT INTO ai_cache (user_id, question, answer, model) VALUES ($1,$2,$3,$4)`, [uid, qKey, reply, model]).catch(e => console.error('[help/ask cache]', e.message));
+  if (!multiTurn) pool.query(`INSERT INTO ai_cache (user_id, question, answer, model) VALUES ($1,$2,$3,$4)`, [uid, qKey, reply, model]).catch(e => console.error('[help/ask cache]', e.message));
   res.json({ reply, model, links, cached: false });
 }));
 

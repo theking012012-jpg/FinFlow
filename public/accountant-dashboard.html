@@ -327,6 +327,7 @@
   <div class="nav-right">
     <span class="nav-name" id="nav-name">—</span>
     <span class="nav-badge" id="nav-badge">Pending</span>
+    <button class="nav-logout" onclick="acctHelp()" title="Help & support" style="margin-right:6px">Help</button>
     <button class="nav-logout" onclick="logout()">Sign out</button>
   </div>
 </nav>
@@ -782,6 +783,50 @@ const APP_URL = window.location.origin;
 // are attacker-controllable (a linked client sets their own name), so every interpolation of them is
 // escaped to prevent stored XSS in the accountant's session.
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+window.acctHelp = function(){
+  try{ var ex=document.getElementById('acct-help-ov'); if(ex) ex.remove(); }catch(e){}
+  var HOW=[
+    ['Accept a client','A business invites you or requests a review. Open Requests, review it, and Approve to gain the access they granted.'],
+    ['Review a client’s books','Open a client from your list to see their dashboard, reports, P&L, balance sheet and trial balance for the entities you were granted.'],
+    ['Message a client','Use the in-app chat on the client’s page — private to your relationship and visible on both sides.'],
+    ['Certify the books','When a client’s trial balance ties, issue a GL certification from their page — your marketplace trust signal.'],
+    ['Complete verification (KYC)','Finish identity verification in your profile so clients see you as verified; your professional body links to its official register.'],
+    ['Tax summary','Open a client → Tax Summary for deductible totals and the income-tax worksheet, scoped to their fiscal year.'],
+    ['Getting paid','Referral months and commissions are tracked in your earnings; new paying clients advance your tier automatically.']
+  ];
+  var esc2=function(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+  var ov=document.createElement('div'); ov.id='acct-help-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:500;display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto';
+  var how=HOW.map(function(h){ return '<details style="border-top:1px solid #2e2619;padding:9px 0"><summary style="cursor:pointer;font-size:13.5px;color:#f2e8d5;font-weight:500">'+esc2(h[0])+'</summary><div style="font-size:12.5px;color:#9e8e73;margin-top:6px;line-height:1.6">'+esc2(h[1])+'</div></details>'; }).join('');
+  ov.innerHTML='<div style="max-width:560px;width:100%;background:#171208;border:1px solid #2e2619;border-radius:14px;padding:20px 22px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px"><div style="font-family:Georgia,serif;font-style:italic;font-size:22px;color:#e4c97a">Help & support</div><button id="ah-x" aria-label="Close" style="background:none;border:none;color:#9e8e73;font-size:18px;cursor:pointer">&#10005;</button></div>'
+    +'<div style="font-family:monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c9a84c;margin:8px 0 0">Working in the portal</div>'+how
+    +'<div style="border-top:1px solid #2e2619;margin-top:16px;padding-top:14px"><div style="font-family:monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c9a84c;margin-bottom:8px">Contact FinFlow</div>'
+    +'<input id="ah-subject" placeholder="Subject" style="width:100%;box-sizing:border-box;background:#201910;border:1px solid #2e2619;border-radius:7px;color:#f2e8d5;padding:9px 11px;font-size:13px;margin-bottom:8px">'
+    +'<textarea id="ah-msg" placeholder="How can we help?" style="width:100%;box-sizing:border-box;min-height:80px;resize:vertical;background:#201910;border:1px solid #2e2619;border-radius:7px;color:#f2e8d5;padding:9px 11px;font-size:13px"></textarea>'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span style="font-size:11.5px;color:#6a5c44">or email <a href="mailto:support@finflow.app" style="color:#c9a84c">support@finflow.app</a></span><button id="ah-send" style="background:#c9a84c;color:#16120d;border:none;border-radius:7px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">Send</button></div>'
+    +'<div id="ah-status" style="font-size:12px;margin-top:6px"></div></div></div>';
+  document.body.appendChild(ov);
+  var close=function(){ try{ov.remove();}catch(e){} };
+  document.getElementById('ah-x').onclick=close;
+  ov.onclick=function(e){ if(e.target===ov) close(); };
+  var b=document.getElementById('ah-send');
+  if(b) b.onclick=async function(){
+    var subj=(document.getElementById('ah-subject')||{}).value||'';
+    var msg=(document.getElementById('ah-msg')||{}).value||'';
+    var st=document.getElementById('ah-status');
+    if(!msg.trim()){ if(st){ st.style.color='#d0705f'; st.textContent='Please add a message.'; } return; }
+    b.disabled=true; b.textContent='Sending…';
+    try{
+      var r=await fetch('/api/support',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({subject:subj,message:msg,category:'accountant'})});
+      if(!r.ok){ var j=await r.json().catch(function(){return {};}); if(st){ st.style.color='#d0705f'; st.textContent=j.error||'Could not send — please email us instead.'; } b.disabled=false; b.textContent='Send'; return; }
+      if(st){ st.style.color='#7db87d'; st.textContent='Sent ✓ We’ll reply by email.'; }
+      var s1=document.getElementById('ah-subject'), m1=document.getElementById('ah-msg'); if(s1)s1.value=''; if(m1)m1.value='';
+      b.textContent='Sent ✓';
+    }catch(e){ if(st){ st.style.color='#d0705f'; st.textContent='Network error — please email us instead.'; } b.disabled=false; b.textContent='Send'; }
+  };
+};
 
 // Promise-based confirm modal (replaces native confirm() — consistent styling, non-blocking).
 function confirmModal(message, opts){

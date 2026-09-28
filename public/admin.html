@@ -262,6 +262,12 @@ td.amber{color:var(--amber)}
         Costs & Usage
       </div>
 
+      <div class="nav-item" onclick="showPage('support')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3h12v9H6l-3 2v-2H2z"/><line x1="5" y1="6.5" x2="11" y2="6.5"/><line x1="5" y1="9" x2="9" y2="9"/></svg>
+        Support
+        <span class="nav-badge" id="support-count" style="display:none">0</span>
+      </div>
+
       <div class="sidebar-section-label">System</div>
       <div class="nav-item" onclick="showPage('log')">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="1" width="12" height="14" rx="1.2"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="11" x2="9" y2="11"/></svg>
@@ -387,6 +393,26 @@ td.amber{color:var(--amber)}
             <tbody id="reports-tbody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
           </table>
         </div>
+      </div>
+
+      <!-- SUPPORT -->
+      <div class="page" id="page-support">
+        <div class="page-title">Support Inbox</div>
+        <div class="page-sub">Tickets from clients and accountants &middot; <span id="support-updated">loading...</span></div>
+        <div class="filter-row">
+          <select class="filter-select" id="support-status-filter" onchange="loadSupport()">
+            <option value="open">Open</option>
+            <option value="">All statuses</option>
+            <option value="resolved">Resolved</option>
+          </select>
+          <select class="filter-select" id="support-actor-filter" onchange="loadSupport()">
+            <option value="">All senders</option>
+            <option value="client">Clients</option>
+            <option value="accountant">Accountants</option>
+          </select>
+          <button class="btn-sm" onclick="loadSupport()">&#8635; Refresh</button>
+        </div>
+        <div id="support-list" style="display:flex;flex-direction:column;gap:10px;margin-top:6px"><div class="empty">Loading...</div></div>
       </div>
 
       <!-- USERS -->
@@ -761,6 +787,7 @@ function showPage(name) {
     traffic: loadTraffic,
     accountants: () => loadAccountants('', ''),
     reports: loadReports,
+    support: loadSupport,
     users: () => loadUsers('', ''),
     earnings: loadEarnings,
     costs: loadCosts,
@@ -768,6 +795,60 @@ function showPage(name) {
     flags: loadFlags,
   };
   if (loaders[name]) loaders[name]();
+}
+
+// ── SUPPORT INBOX ───────────────────────────────────────────────────────────
+async function loadSupport() {
+  const status = (document.getElementById('support-status-filter')||{}).value ?? 'open';
+  const actor  = (document.getElementById('support-actor-filter')||{}).value || '';
+  const list = document.getElementById('support-list');
+  list.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    const qs = new URLSearchParams(); if (status) qs.set('status', status); if (actor) qs.set('actor', actor);
+    const res = await fetch('/api/admin/support?' + qs.toString(), { credentials: 'include' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    const badge = document.getElementById('support-count');
+    if (badge) { badge.textContent = d.openCount; badge.style.display = d.openCount > 0 ? '' : 'none'; }
+    const up = document.getElementById('support-updated'); if (up) up.textContent = d.openCount + ' open · ' + new Date().toLocaleTimeString();
+    if (!d.requests.length) { list.innerHTML = '<div class="empty">No tickets' + (status ? ' (' + esc(status) + ')' : '') + '.</div>'; return; }
+    list.innerHTML = d.requests.map(t => {
+      const open = (t.status || 'open') === 'open';
+      const badgeC = open ? 'background:var(--amber-bg);color:var(--amber)' : 'background:var(--green-bg);color:var(--green)';
+      const actorC = t.actor === 'accountant' ? 'background:var(--purple-bg,#140f20);color:var(--purple,#9e8fbf)' : 'background:var(--bg3);color:var(--t2)';
+      const when = t.created_at ? new Date(t.created_at).toLocaleString() : '';
+      const resp = t.response ? '<div style="margin-top:8px;padding:8px 10px;background:var(--bg2);border-left:2px solid var(--acc);border-radius:5px;font-size:12.5px;color:var(--t2);white-space:pre-wrap">'+esc(t.response)+'</div>' : '';
+      return '<div style="background:var(--bg1,#16120d);border:1px solid var(--bd,#2e2619);border-radius:12px;padding:14px 16px">'
+        + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:14px;color:var(--t1);font-weight:500">'+esc(t.subject)+'</span>'
+        + '<span style="font-size:10px;padding:2px 8px;border-radius:10px;'+badgeC+'">'+(open?'Open':'Resolved')+'</span>'
+        + '<span style="font-size:10px;padding:2px 8px;border-radius:10px;'+actorC+'">'+esc(t.actor)+'</span>'
+        + '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--bg3);color:var(--t3)">'+esc(t.category)+'</span>'
+        + '<span style="margin-left:auto;font-size:11px;color:var(--t3)">#'+t.id+' · '+esc(when)+'</span></div>'
+        + '<div style="margin-top:8px;font-size:13px;color:var(--t2);white-space:pre-wrap">'+esc(t.message)+'</div>'
+        + (t.email ? '<div style="margin-top:6px;font-size:11.5px;color:var(--t3)">From: '+esc(t.email)+'</div>' : '')
+        + resp
+        + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'
+        + '<input id="sup-reply-'+t.id+'" placeholder="Write a reply (emails the sender if configured)…" style="flex:1;min-width:200px;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:8px 10px;font-size:12.5px">'
+        + '<button class="btn-sm" onclick="replySupport('+t.id+')">Send reply</button>'
+        + (open ? '<button class="btn-sm" onclick="resolveSupport('+t.id+',true)">Mark resolved</button>' : '<button class="btn-sm" onclick="resolveSupport('+t.id+',false)">Reopen</button>')
+        + '</div></div>';
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="empty">Could not load tickets: ' + esc(e.message) + '</div>';
+  }
+}
+async function _supPost(id, body) {
+  const res = await fetch('/api/admin/support/' + id, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(body) });
+  return res.ok;
+}
+async function resolveSupport(id, resolved) {
+  if (await _supPost(id, { status: resolved ? 'resolved' : 'open' })) loadSupport();
+}
+async function replySupport(id) {
+  const el = document.getElementById('sup-reply-' + id);
+  const response = (el && el.value || '').trim();
+  if (!response) { if (el) el.focus(); return; }
+  if (await _supPost(id, { response, status: 'resolved' })) loadSupport();
 }
 
 // ── TRAFFIC / VISITOR ANALYTICS ─────────────────────────────────────────────
@@ -865,6 +946,11 @@ async function loadOverview() {
 
     // Update pending badge
     document.getElementById('pending-count').textContent = d.accountants.pending;
+    // Support open-ticket badge (fire-and-forget)
+    fetch('/api/admin/support?status=open', { credentials:'include' }).then(r => r.ok ? r.json() : null).then(s => {
+      if (!s) return; const b = document.getElementById('support-count');
+      if (b) { b.textContent = s.openCount; b.style.display = s.openCount > 0 ? '' : 'none'; }
+    }).catch(()=>{});
     if (d.reports.recent > 0) {
       document.getElementById('reports-count').textContent = d.reports.recent;
       document.getElementById('reports-count').style.display = 'inline';

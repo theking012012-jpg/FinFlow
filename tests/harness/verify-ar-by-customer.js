@@ -54,10 +54,14 @@ const LOGIN = { email: 'seed@finflow.test', password: 'harness-password-not-a-se
 
     // Report metadata (so the AR report no longer needs the full invoice list for its tiles).
     A('openCount == 3 (INV-2, INV-3, INV-5; paid/draft/future excluded)', res.json?.openCount === 3, 'openCount=' + res.json?.openCount);
-    // seed.js sets due_date = issue_date, so every open invoice (all <= pinned today) is overdue by the
-    // shared rule (matches client arOutstanding exactly): INV-2 1,500 + INV-3 3,000 + INV-5 4,000 = 8,500.
+    // seed.js sets due_date = issue_date, so every open invoice (all <= pinned today) is overdue.
+    // Gross overdue = INV-2 1,500 + INV-3 3,000 + INV-5 4,000 = 8,500, but H1: overdue NETS unapplied
+    // AR credits on the same basis as outstanding. CN-1 (open, 1,200 vs Customer A) reduces it, so the
+    // correct overdue total is 8,500 - 1,200 = 7,300 — exactly AR outstanding here (Customer A net 300 +
+    // Customer B 7,000), consistent with the "Customer A netted of CN-1 == 300" assertion above. The
+    // count is still 3: netting lowers the amount, it does not zero out INV-2 (Customer A still owes 300).
     A('overdueCount == 3 (all open invoices past due_date=issue_date)', res.json?.overdueCount === 3, 'overdueCount=' + res.json?.overdueCount);
-    A('overdueTotal == 8,500 (1,500+3,000+4,000)', near(res.json?.overdueTotal, 8500), 'overdueTotal=' + res.json?.overdueTotal);
+    A('overdueTotal == 7,300 (H1: 8,500 gross - 1,200 open CN-1)', near(res.json?.overdueTotal, 7300), 'overdueTotal=' + res.json?.overdueTotal);
 
     // ── F205: top-clients endpoint (recognized revenue by client, all-time, matches client _topClients)
     const tc = await http.get('/api/reports/top-clients');

@@ -2610,6 +2610,192 @@ const EXPORT_TABLES = [
   'snapshots','documents','templates','team_members','lock_settings','user_settings',
   'audit_trail','audit_log','ledger_accounts','ledger_entries','ledger_lines',
 ];
+// ── IN-APP SUPPORT ────────────────────────────────────────────────────────────────────────────
+// A real support channel (replaces the dead mailto): the user submits from inside the app, it is
+// stored server-side AND emailed to ADMIN_EMAIL, and the user can see their own requests. Best-effort
+// email — support still works before Resend / ADMIN_EMAIL are configured (the request is always stored).
+app.post('/api/support', wrap(async (req, res) => {
+  const _uid = req.session && req.session.userId;
+  const _aid = req.session && req.session.accountantId;
+  if (!_uid && !_aid) return res.status(401).json({ error: 'Please sign in to contact support.' });
+  const subject = String((req.body && req.body.subject) || '').trim().slice(0, 200);
+  const message = String((req.body && req.body.message) || '').trim().slice(0, 5000);
+  const category = String((req.body && req.body.category) || 'general').trim().slice(0, 40);
+  if (!message) return res.status(400).json({ error: 'Please include a message.' });
+  const actor = _uid ? 'client' : 'accountant';
+  const uid = _uid ? scopeId(req) : null;
+  let email = '';
+  try {
+    if (_uid) { const u = (await pool.query(`SELECT data->>'email' AS e FROM users WHERE id=$1`, [req.session.userId])).rows[0]; email = (u && u.e) || ''; }
+    else { const a = (await pool.query(`SELECT data->>'email' AS e FROM accountants WHERE id=$1`, [_aid])).rows[0]; email = (a && a.e) || ''; }
+  } catch (_) {}
+  const { row } = await db.insert('support_requests', { user_id: uid, accountant_id: _aid || null, actor, subject: subject || '(no subject)', message, category, email, status: 'open' });
+  try { logAudit(req, 'CREATE', 'support_requests', row && row.id, null, { category, actor }); } catch (_) {}
+  if (resendClient && process.env.ADMIN_EMAIL) {
+    try {
+      await resendClient.emails.send({
+        from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
+        to: process.env.ADMIN_EMAIL,
+        subject: 'Support request (' + actor + '): ' + (subject || '(no subject)'),
+        html: `<p><b>From:</b> ${_emailEsc(email || (actor + ' #' + (_uid || _aid)))} (${actor})</p><p><b>Category:</b> ${_emailEsc(category)}</p><p><b>Message:</b></p><p>${_emailEsc(message).replace(/\n/g, '<br>')}</p>`,
+      });
+    } catch (e) { console.error('[support] admin email failed:', e.message); }
+  }
+  res.status(201).json({ ok: true, id: row && row.id });
+}));
+
+app.get('/api/support', wrap(async (req, res) => {
+  const _uid = req.session && req.session.userId;
+  const _aid = req.session && req.session.accountantId;
+  if (!_uid && !_aid) return res.status(401).json({ error: 'Please sign in.' });
+  const q = _uid
+    ? await pool.query(`SELECT id, data, created_at FROM support_requests WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100`, [scopeId(req)])
+    : await pool.query(`SELECT id, data, created_at FROM support_requests WHERE data->>'accountant_id'=$1 ORDER BY created_at DESC LIMIT 100`, [String(_aid)]);
+  res.json({ requests: (q.rows || []).map(r => ({ id: r.id, subject: r.data.subject, message: r.data.message, category: r.data.category, status: r.data.status || 'open', response: r.data.response || '', resolved_at: r.data.resolved_at || null, created_at: r.created_at })) });
+}));
+
+// ── HELP: getting-started progress (live, read from real data) ─────────────────
+// Powers the Help Center checklist. Each step reflects an ACTUAL milestone in the
+// account's own data, so the list ticks off as the user really uses the product —
+// never a static graphic. Tenant-scoped via scopeId; single cheap read per table.
+app.get('/api/help/progress', requireAuth, apiLimiter, wrap(async (req, res) => {
+  const uid = scopeId(req);
+  const eid = req.entityId == null ? null : req.entityId;
+  const [entities, invoices, expenses, bills, payrollN, bankingN, plaidN] = await Promise.all([
+    db.allByUser('entities', uid),
+    db.allByUser('invoices', uid),
+    db.allByUser('expenses', uid),
+    db.allByUser('bills', uid),
+    pool.query(`SELECT COUNT(*)::int n FROM payroll_runs WHERE user_id=$1`, [uid]).then(r => r.rows[0].n).catch(() => 0),
+    pool.query(`SELECT COUNT(*)::int n FROM personal_transactions WHERE user_id=$1 AND data->>'source'='banking'`, [uid]).then(r => r.rows[0].n).catch(() => 0),
+    pool.query(`SELECT COUNT(*)::int n FROM user_settings WHERE user_id=$1 AND data->>'key'='plaid_items'`, [uid]).then(r => r.rows[0].n).catch(() => 0),
+  ]);
+  let booksBalanced = false;
+  if (entities.length > 0) { try { booksBalanced = !!(await glReconcile(uid, eid)).booksBalanced; } catch (_) {} }
+  const steps = [
+    { key: 'entity',   label: 'Set up your business',        done: entities.length > 0, tour: 'add-entity',    page: 'entities' },
+    { key: 'invoice',  label: 'Create your first invoice',   done: invoices.length > 0, tour: 'create-invoice', page: 'invoices' },
+    { key: 'expense',  label: 'Log an expense or bill',      done: expenses.length > 0 || bills.length > 0, tour: 'log-expense', page: 'expenses' },
+    { key: 'bank',     label: 'Connect a bank feed',         done: bankingN > 0 || plaidN > 0, tour: 'connect-bank', page: 'banking' },
+    { key: 'payroll',  label: 'Run payroll',                 done: payrollN > 0, tour: 'run-payroll', page: 'payroll' },
+    { key: 'books',    label: 'Confirm your books balance',  done: booksBalanced, tour: null, page: 'reports' },
+  ];
+  const completed = steps.filter(s => s.done).length;
+  res.json({ steps, completed, total: steps.length, allDone: completed === steps.length });
+}));
+
+// ── HELP: "Ask FinFlow" — grounded AI help assistant ───────────────────────────
+// Answers how-to/product questions (and light questions about the caller's own
+// figures) from a compact knowledge base. Mirrors /api/ai discipline: cost-capped
+// (fail-closed), 24h cached, tenant-scoped, and DEGRADES GRACEFULLY — with no API
+// key it returns the best deep links instead of erroring, so help is never a dead end.
+const HELP_LINK_RULES = [
+  [/(invoice|bill to|get paid|receivable|pay ?link|recurring invoice)/i, 'invoices', 'Invoices'],
+  [/(expense|receipt|spend|categor)/i,                                    'expenses', 'Expenses'],
+  [/(\bbill\b|vendor|supplier|accounts payable|payable)/i,                'bills', 'Bills'],
+  [/(payroll|employee|salary|wage|pay run)/i,                             'payroll', 'Payroll'],
+  [/(bank|reconcil|plaid|belvo|statement|feed)/i,                         'banking', 'Banking'],
+  [/(report|p&l|profit|loss|balance sheet|trial balance|tax|financials)/i,'reports', 'Reports'],
+  [/(inventory|stock|cogs|cost of goods)/i,                               'inventory', 'Inventory'],
+  [/(entit|business|consolidat|multi-?currency|subsidiar)/i,              'entities', 'Businesses'],
+  [/(import|migrat|quickbooks|xero|codat|csv)/i,                          'connections', 'API connections'],
+  [/(accountant|certif|kyc|review my books)/i,                            'my-accountant', 'My accountant'],
+  [/(team|role|permission|invite)/i,                                      'team', 'Team & roles'],
+  [/(2fa|two.?factor|password|security|lock|close.*period)/i,            'settings', 'Settings'],
+  [/(export|delete|download my data|gdpr)/i,                              'settings', 'Settings'],
+  [/(quote|estimate)/i,                                                   'quotes', 'Quotes'],
+  [/(customer|client list)/i,                                            'customers', 'Customers'],
+];
+function suggestHelpLinks(q) {
+  const out = [];
+  for (const [re, page, label] of HELP_LINK_RULES) {
+    if (re.test(q) && !out.some(l => l.page === page)) out.push({ page, label });
+    if (out.length >= 3) break;
+  }
+  if (!out.length) out.push({ page: 'help', label: 'Browse all guides' });
+  return out;
+}
+const HELP_KB = [
+  'FinFlow is a multi-entity, multi-currency double-entry accounting web app for SMBs and their accountants.',
+  'Businesses (entities): Sidebar > Businesses to add one (name, currency, country; timezone is inferred). Each entity is its own set of books; switch the active one with the entity picker. The consolidated view converts every entity to your base currency at each transaction’s own FX rate — no double-counting.',
+  'Invoices: Sidebar > Invoices > New. Pick a customer, add line items, set issue and due dates. It posts to the books and shows in Outstanding until paid. Record payment (partial allowed) from the invoice. Pay links generate a hosted checkout via a connected processor. Recurring invoices issue on a schedule.',
+  'Expenses & bills: Log expenses under Expenses (or Scan receipt to auto-extract vendor/amount/date). A supplier bill (accounts payable) goes under Bills; paying a bill settles AP and is not a second expense.',
+  'Payroll: Sidebar > Payroll, add employees, create a run, review gross/bonus/overtime, then Approve (posts to books). Mark paid records the cash-out; a paid run cannot be reverted.',
+  'Banking & reconciliation: Link a bank feed (Plaid for US/CA/UK/EU, Belvo for Latin America) or Import an OFX/QFX/CSV statement from any bank. Reconcile matches feed/imported lines to invoices, bills and expenses; matched items post once, never twice.',
+  'Inventory: add items with a unit cost; record purchases and sales as movements; FinFlow computes FIFO cost of goods sold automatically.',
+  'Reports, GL & tax: Reports generates the Profit & Loss and Balance Sheet for any period from the double-entry ledger, so they always tie out. A books-balanced signal shows when the trial balance ties to zero. Tax uses your saved rate against taxable profit.',
+  'Importing & migrating: API connections > Codat to import from QuickBooks/Xero; a preview shows what will import and FinFlow then verifies the trial balance ties. CSV import (invoices, expenses, bills, customers, vendors) auto-detects columns and safely de-duplicates re-imports.',
+  'Working with your accountant: My accountant to invite by email or find one in the directory; grant per-entity access; use the built-in private chat.',
+  'Account & security: Settings for two-factor auth, saved tax rate, data export and account deletion; Team & roles to invite members with per-entity roles; Transaction locking to lock a closed period per business.',
+].join('\n');
+app.post('/api/help/ask', requireAuth, apiLimiter, wrap(async (req, res) => {
+  const question = String((req.body && req.body.question) || '').trim().slice(0, 1000);
+  if (!question) return res.status(400).json({ error: 'Please enter a question.' });
+  const links = suggestHelpLinks(question);
+
+  // No key configured → never a dead end: hand back the best guides.
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.json({ reply: null, unavailable: true, links,
+      message: 'AI answers aren’t enabled on this deployment yet — here are the guides that match your question.' });
+  }
+
+  const qKey = 'help:' + question.toLowerCase();
+  const cached = await pool.query(
+    `SELECT answer, model FROM ai_cache WHERE user_id=$1 AND question=$2 AND created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at DESC LIMIT 1`,
+    [scopeId(req), qKey]
+  );
+  if (cached.rows.length) return res.json({ reply: cached.rows[0].answer, model: cached.rows[0].model, links, cached: true });
+
+  const gate = await aiCap.checkUserCap(pool, scopeId(req), req.userPlan, 'shared');
+  if (!gate.ok) {
+    if (gate.failClosed) return res.status(503).json({ error: 'AI help temporarily unavailable — please retry.', links });
+    return res.json({ reply: null, unavailable: true, links, message: 'You’ve reached this month’s AI limit — here are the guides that match.', code: 'AI_CAP_REACHED' });
+  }
+
+  // Light, tenant-scoped figure context so it can answer "why is X" without leaking anything.
+  const uid = scopeId(req);
+  let contextText = 'No account figures available.';
+  try {
+    const [invoices, expenses] = await Promise.all([db.allByUser('invoices', uid), db.allByUser('expenses', uid)]);
+    const rev = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
+    const exp = expenses.reduce((s, e) => s + (e.amount || 0), 0);
+    contextText = `Caller’s own figures (for grounding only): paid revenue $${rev.toLocaleString()}, expenses $${exp.toLocaleString()}, open invoices ${invoices.filter(i => i.status !== 'paid').length}.`;
+  } catch (_) {}
+
+  const model = process.env.AI_MODEL_SIMPLE || 'claude-haiku-4-5-20251001';
+  const systemInstruction = 'You are "Ask FinFlow", the in-app help assistant for the FinFlow accounting product. Answer the user’s how-to and product questions using ONLY the KNOWLEDGE BASE below and the caller’s own figures when relevant. Be concise (2-5 sentences or short numbered steps), use the product’s own terms, and never invent features or menus not in the knowledge base. If the answer isn’t in the knowledge base, say so briefly and suggest contacting support. Do not answer questions unrelated to FinFlow.\n\nKNOWLEDGE BASE:\n' + HELP_KB;
+
+  let response;
+  try {
+    response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY?.trim(),
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'prompt-caching-2024-07-31',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model, max_tokens: 700,
+        system: [{ type: 'text', text: systemInstruction, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content: [{ type: 'text', text: contextText }, { type: 'text', text: 'Question: ' + question }] }],
+      }),
+    });
+  } catch (e) {
+    console.error('[help/ask] fetch failed:', e.message);
+    return res.status(502).json({ error: 'AI help unavailable right now.', links });
+  }
+  if (!response.ok) {
+    console.error('[help/ask] Anthropic error:', (await response.text().catch(() => '')).slice(0, 200));
+    return res.status(502).json({ error: 'AI help unavailable right now.', links });
+  }
+  const data = await response.json();
+  const reply = (data.content && data.content[0] && data.content[0].text) || 'No answer available.';
+  aiCap.recordUser(pool, scopeId(req), 'shared', 1);
+  pool.query(`INSERT INTO ai_cache (user_id, question, answer, model) VALUES ($1,$2,$3,$4)`, [uid, qKey, reply, model]).catch(e => console.error('[help/ask cache]', e.message));
+  res.json({ reply, model, links, cached: false });
+}));
+
 app.get('/api/auth/export', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const { rows: [_u] } = await pool.query(`SELECT * FROM users WHERE id=$1 LIMIT 1`, [uid]);

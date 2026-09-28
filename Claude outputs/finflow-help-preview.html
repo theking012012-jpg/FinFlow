@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinFlow Help</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --font:Jost,system-ui,sans-serif;--font-display:'Cormorant Garamond',Georgia,serif;--font-mono:'JetBrains Mono',monospace;
+  --bg0:#0e0b08;--bg1:#16120d;--bg2:#1c1712;--bg3:#231d16;--bg4:#2c2419;
+  --bd:#2e2619;--bd2:#3d3222;--t1:#f2e8d5;--t2:#9e8e73;--t3:#5a4e3a;
+  --acc:#c9a84c;--acc2:#9e7a2a;--acc-light:#e4c97a;--acc-bg:#1e1808;--acc-glow:rgba(201,168,76,.18);
+  --green:#7db87d;--green-bg:#0d1a0d;--green-bd:#1e3320;--red:#c46a5a;--red-bg:#1e0d0a;--red-bd:#3d1a14;
+  --radius:6px;--radius-lg:10px;--radius-xl:14px;
+}
+.light-mode{
+  --bg0:#faf6ef;--bg1:#ffffff;--bg2:#f5f0e8;--bg3:#ede6d8;--bg4:#e4dace;
+  --bd:#d8ceb8;--bd2:#c4b89a;--t1:#1e1810;--t2:#6b5c42;--t3:#a89878;
+  --acc:#9e7a2a;--acc2:#7a5c18;--acc-light:#c9a84c;--acc-bg:#fdf5e4;--acc-glow:rgba(158,122,42,.12);
+  --green:#3a7a40;--green-bg:#edf6ee;--green-bd:#b8d8bc;--red:#8a3a30;--red-bg:#fdecea;--red-bd:#f0bcb4;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg0);color:var(--t1);font-family:var(--font);font-size:13px}
+.topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--bg1);border-bottom:1px solid var(--bd)}
+.brand{font-family:var(--font-display);font-style:italic;font-size:20px;color:var(--acc-light);margin-right:8px}
+.tab{background:none;border:1px solid var(--bd);color:var(--t2);border-radius:999px;padding:6px 14px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.tab.on{background:var(--acc);color:#16120d;border-color:var(--acc);font-weight:600}
+.spacer{flex:1}
+.themebtn{background:var(--bg3);border:1px solid var(--bd);color:var(--t1);border-radius:8px;padding:6px 12px;cursor:pointer;font-family:inherit;font-size:12px}
+.wrap{padding:24px 16px}
+.card-header{display:flex;align-items:center}
+.card-title{font-family:var(--font-display);font-size:26px;font-weight:600;margin:0;color:var(--t1)}
+.btn{font-family:inherit;cursor:pointer;border-radius:7px;border:1px solid var(--bd)}
+.btn-primary{background:var(--acc);color:#16120d;border-color:var(--acc);font-weight:600}
+.btn-sm{padding:8px 14px;font-size:13px}
+a{color:var(--acc)}
+.view{display:none}.view.on{display:block}
+.note{max-width:920px;margin:0 auto 14px;color:var(--t3);font-size:11.5px;font-family:var(--font-mono);letter-spacing:.06em;text-transform:uppercase}
+.acctpane{max-width:560px;margin:0 auto;background:var(--bg1);border:1px solid var(--bd);border-radius:14px;padding:22px;text-align:center}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="brand">FinFlow</span>
+  <button class="tab on" id="t-client" onclick="showTab('client')">Client · Help Center</button>
+  <button class="tab" id="t-acct" onclick="showTab('acct')">Accountant · Help</button>
+  <span class="spacer"></span>
+  <button class="themebtn" onclick="document.body.classList.toggle('light-mode')">Toggle light / dark</button>
+</div>
+
+<div class="wrap">
+  <div class="note">Faithful standalone preview — rendered from the real page markup, HELP_ARTICLES data, and render code in your app.</div>
+
+  <div id="view-client" class="view on">
+    <div class="page" id="page-help">
+        <div style="max-width:920px;margin:0 auto">
+          <div class="card-header" style="border:none;padding-left:0;margin-bottom:4px"><h2 class="card-title">Help Center</h2></div>
+          <p style="color:var(--t2);font-size:13px;margin:0 0 14px">Step-by-step guides for everything in FinFlow, plus a way to reach us.</p>
+          <input id="help-search" placeholder="Search help \u2014 e.g. \u201chow do I create an invoice\u201d" style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;color:var(--t1);padding:11px 14px;font-size:14px;margin-bottom:8px">
+          <div id="help-empty" style="display:none;color:var(--t3);font-size:13px;padding:14px 2px">No guides match that search. Try different words, or contact us below.</div>
+          <div id="help-cats"></div>
+          <div id="help-contact" style="margin-top:26px"></div>
+        </div>
+      </div>
+  </div>
+
+  <div id="view-acct" class="view">
+    <div class="acctpane">
+      <div style="font-family:var(--font-display);font-style:italic;font-size:22px;color:var(--acc-light);margin-bottom:6px">Accountant portal help</div>
+      <p style="color:var(--t2);font-size:13px;margin:0 0 16px">In the portal this opens from the <b>Help</b> button in the top nav. Click below to open the real overlay.</p>
+      <button class="btn btn-primary btn-sm" onclick="acctHelp()">Open Help &amp; support overlay</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- real client Help Center code (verbatim from index.html) ----
+var HELP_ARTICLES = [
+ {c:'Getting started', q:'Set up your business', s:['On first login the setup wizard captures your business name, industry, address, currency and country.','Each business you add is its own set of books; the dashboard consolidates them.','You can reopen this Help Center anytime from the sidebar.']},
+ {c:'Getting started', q:'Read your dashboard', s:['Revenue, Expenses, Net profit and Outstanding show your live position for the selected period.','Use the period switcher to view month, quarter or year.','Investments are tracked separately from the books.']},
+ {c:'Businesses & entities', q:'Add another business (entity)', s:['Sidebar → Account → Entities → add a business.','Set its name, currency and country — the timezone is inferred automatically.','Switch the active business from the entity picker at the top.']},
+ {c:'Businesses & entities', q:'See all businesses combined', s:['Switch the entity picker to the consolidated view.','FinFlow converts each business to your base currency at each transaction’s own FX rate — no double-counting.']},
+ {c:'Invoices & income', q:'Create an invoice', s:['Sidebar → Invoices → + New invoice.','Pick the customer, add line items, set issue and due dates.','Save — it posts to your books and shows in Outstanding until paid.']},
+ {c:'Invoices & income', q:'Record a payment', s:['Open the invoice → Record payment.','Enter the amount and date; partial payments are supported.','Outstanding updates automatically.']},
+ {c:'Invoices & income', q:'Send a pay link', s:['On an invoice choose Pay link to generate a hosted checkout via a connected processor.','Share the link; when it is paid it reconciles against the invoice.']},
+ {c:'Invoices & income', q:'Set up recurring invoices', s:['Sidebar → Recurring invoices.','Choose the customer, amount and cadence; FinFlow issues each on schedule and logs it in the audit trail.']},
+ {c:'Expenses & bills', q:'Log an expense', s:['Sidebar → Expenses → add the amount, category and date.','Or use Scan receipt to pull the vendor, amount and date from a photo or PDF.']},
+ {c:'Expenses & bills', q:'Add and pay a bill', s:['Sidebar → Bills → + New for a supplier bill (accounts payable).','When you pay it, record a payment against the bill — that settles AP, it is not a second expense.']},
+ {c:'Payroll', q:'Run payroll', s:['Sidebar → Payroll → add employees.','Create a run for the period, review gross/bonus/overtime, then Approve.','Approved runs post to the books; Mark paid records the cash-out. A paid run can’t be reverted.']},
+ {c:'Banking & reconciliation', q:'Connect a bank feed', s:['Sidebar → Banking → Link bank (Plaid for US/CA/UK/EU, Belvo for Latin America).','No coverage in your country? Use Import to upload an OFX/QFX/CSV statement from any bank.']},
+ {c:'Banking & reconciliation', q:'Reconcile transactions', s:['Banking → Reconcile.','Match feed or imported lines to invoices, bills and expenses; matched items post to the books once, never twice.']},
+ {c:'Inventory', q:'Track inventory & COGS', s:['Sidebar → Inventory → add items with a unit cost.','Record purchases and sales as movements; FinFlow computes FIFO cost of goods sold automatically.']},
+ {c:'Reports, GL & tax', q:'View P&L and Balance Sheet', s:['Sidebar → Reports → generate the Profit & Loss or Balance Sheet for any period.','They read from the double-entry ledger, so they always tie out.']},
+ {c:'Reports, GL & tax', q:'Confirm your books are balanced', s:['Reports show a books-balanced signal when the trial balance ties to zero.','If anything ever diverges, the reconcile monitor flags it for you.']},
+ {c:'Reports, GL & tax', q:'Estimate income tax', s:['Reports → Tax uses your saved rate against taxable profit.','Set your rate in Settings; tax paid stays “not tracked” unless you record payments.']},
+ {c:'Importing & migrating', q:'Import from QuickBooks or Xero', s:['Sidebar → API connections → Codat → Import books.','Preview shows what will import; confirm to write it.','FinFlow then verifies the trial balance ties — proof your books came over clean.']},
+ {c:'Importing & migrating', q:'Import a CSV export', s:['Invoices page → Import CSV (invoices; expenses, bills, customers and vendors are supported too).','Columns are auto-detected, and re-importing the same file is safely de-duplicated.']},
+ {c:'Working with your accountant', q:'Invite your accountant', s:['Sidebar → My accountant → invite by email, or find one in the directory.','Grant per-entity access; they review your books in their own portal.']},
+ {c:'Working with your accountant', q:'Message your accountant', s:['Open My accountant → use the built-in chat.','Messages are private to your relationship and visible on both sides.']},
+ {c:'Account & security', q:'Turn on two-factor auth (2FA)', s:['Sidebar → Settings → Two-factor authentication → Enable 2FA.','Scan the code with an authenticator app and confirm.']},
+ {c:'Account & security', q:'Add team members & roles', s:['Sidebar → Account → Team & roles → invite by email.','Grant each member specific businesses and a role; access is enforced per entity.']},
+ {c:'Account & security', q:'Lock a closed period', s:['Sidebar → Transaction locking → set a lock date per business.','Entries on or before that date can no longer be changed.']},
+ {c:'Account & security', q:'Export or delete your data', s:['Settings → Your data → Download my data for a full export.','Danger Zone → delete your account permanently erases your data, including the ledger.']}
+];
+var _helpEsc = function(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+window.renderHelpCenter = function(){
+  var root=document.getElementById('help-cats'); if(!root) return;
+  var cats=[]; var byCat={};
+  HELP_ARTICLES.forEach(function(a){ if(!byCat[a.c]){ byCat[a.c]=[]; cats.push(a.c); } byCat[a.c].push(a); });
+  root.innerHTML=cats.map(function(cat){
+    var items=byCat[cat].map(function(a){
+      var steps=a.s.map(function(st){ return '<li style="margin:4px 0">'+_helpEsc(st)+'</li>'; }).join('');
+      return '<details class="help-art" data-text="'+_helpEsc((cat+' '+a.q+' '+a.s.join(' ')).toLowerCase())+'" style="border-top:1px solid var(--bd);padding:9px 0">'
+        +'<summary style="cursor:pointer;font-size:13.5px;color:var(--t1);font-weight:500">'+_helpEsc(a.q)+'</summary>'
+        +'<ol style="margin:8px 0 2px;padding-left:20px;color:var(--t2);font-size:12.5px;line-height:1.6">'+steps+'</ol></details>';
+    }).join('');
+    return '<div class="help-cat" style="margin-bottom:18px"><div style="font-family:var(--font-mono,monospace);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);margin-bottom:2px">'+_helpEsc(cat)+'</div>'+items+'</div>';
+  }).join('');
+  // contact form (reuses /api/support)
+  var cel=document.getElementById('help-contact');
+  if(cel && !cel.getAttribute('data-wired')){
+    cel.setAttribute('data-wired','1');
+    cel.innerHTML='<div style="border-top:1px solid var(--bd);padding-top:16px"><div style="font-family:var(--font-mono,monospace);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);margin-bottom:8px">Still stuck? Contact us</div>'
+      +'<input id="hc-subject" placeholder="Subject" style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:9px 11px;font-size:13px;margin-bottom:8px">'
+      +'<textarea id="hc-msg" placeholder="How can we help?" style="width:100%;box-sizing:border-box;min-height:90px;resize:vertical;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:9px 11px;font-size:13px"></textarea>'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span style="font-size:11.5px;color:var(--t3)">or email <a href="mailto:support@finflow.app" style="color:var(--acc)">support@finflow.app</a></span><button id="hc-send" class="btn btn-primary btn-sm">Send message</button></div>'
+      +'<div id="hc-status" style="font-size:12px;margin-top:6px"></div></div>';
+    var btn=document.getElementById('hc-send');
+    if(btn) btn.onclick=async function(){
+      var subj=(document.getElementById('hc-subject')||{}).value||'';
+      var msg=(document.getElementById('hc-msg')||{}).value||'';
+      var st=document.getElementById('hc-status');
+      if(!msg.trim()){ if(st){ st.style.color='var(--red)'; st.textContent='Please add a message.'; } return; }
+      btn.disabled=true; btn.textContent='Sending…';
+      try{
+        var r=await fetch('/api/support',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({subject:subj,message:msg,category:'help-center'})});
+        if(!r.ok){ var j=await r.json().catch(function(){return {};}); if(st){ st.style.color='var(--red)'; st.textContent=j.error||'Could not send — please email us instead.'; } btn.disabled=false; btn.textContent='Send message'; return; }
+        if(st){ st.style.color='var(--green)'; st.textContent='Sent ✓ We’ll reply by email.'; }
+        var s1=document.getElementById('hc-subject'), m1=document.getElementById('hc-msg'); if(s1)s1.value=''; if(m1)m1.value='';
+        btn.textContent='Sent ✓';
+      }catch(e){ if(st){ st.style.color='var(--red)'; st.textContent='Network error — please email us instead.'; } btn.disabled=false; btn.textContent='Send message'; }
+    };
+  }
+  // search filter
+  var sb=document.getElementById('help-search');
+  if(sb && !sb.getAttribute('data-wired')){
+    sb.setAttribute('data-wired','1');
+    sb.addEventListener('input',function(){
+      var q=sb.value.trim().toLowerCase(); var any=false;
+      document.querySelectorAll('#help-cats .help-art').forEach(function(el){ var m=!q||el.getAttribute('data-text').indexOf(q)>=0; el.style.display=m?'':'none'; if(m)any=true; if(q&&m)el.setAttribute('open','open'); if(!q)el.removeAttribute('open'); });
+      document.querySelectorAll('#help-cats .help-cat').forEach(function(cat){ var vis=[].some.call(cat.querySelectorAll('.help-art'),function(a){return a.style.display!=='none';}); cat.style.display=vis?'':'none'; });
+      var em=document.getElementById('help-empty'); if(em) em.style.display=any?'none':'';
+    });
+  }
+};
+(function(){ var _sp=window.showPage; if(_sp){ window.showPage=function(id,el){ var r=_sp.apply(this,arguments); if(id==='help'){ try{ renderHelpCenter(); }catch(e){} } return r; }; } })();
+// ---- real accountant help overlay (verbatim from accountant-dashboard.html) ----
+window.acctHelp = function(){
+  try{ var ex=document.getElementById('acct-help-ov'); if(ex) ex.remove(); }catch(e){}
+  var HOW=[
+    ['Accept a client','A business invites you or requests a review. Open Requests, review it, and Approve to gain the access they granted.'],
+    ['Review a client’s books','Open a client from your list to see their dashboard, reports, P&L, balance sheet and trial balance for the entities you were granted.'],
+    ['Message a client','Use the in-app chat on the client’s page — private to your relationship and visible on both sides.'],
+    ['Certify the books','When a client’s trial balance ties, issue a GL certification from their page — your marketplace trust signal.'],
+    ['Complete verification (KYC)','Finish identity verification in your profile so clients see you as verified; your professional body links to its official register.'],
+    ['Tax summary','Open a client → Tax Summary for deductible totals and the income-tax worksheet, scoped to their fiscal year.'],
+    ['Getting paid','Referral months and commissions are tracked in your earnings; new paying clients advance your tier automatically.']
+  ];
+  var esc2=function(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+  var ov=document.createElement('div'); ov.id='acct-help-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:500;display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto';
+  var how=HOW.map(function(h){ return '<details style="border-top:1px solid #2e2619;padding:9px 0"><summary style="cursor:pointer;font-size:13.5px;color:#f2e8d5;font-weight:500">'+esc2(h[0])+'</summary><div style="font-size:12.5px;color:#9e8e73;margin-top:6px;line-height:1.6">'+esc2(h[1])+'</div></details>'; }).join('');
+  ov.innerHTML='<div style="max-width:560px;width:100%;background:#171208;border:1px solid #2e2619;border-radius:14px;padding:20px 22px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px"><div style="font-family:Georgia,serif;font-style:italic;font-size:22px;color:#e4c97a">Help & support</div><button id="ah-x" aria-label="Close" style="background:none;border:none;color:#9e8e73;font-size:18px;cursor:pointer">&#10005;</button></div>'
+    +'<div style="font-family:monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c9a84c;margin:8px 0 0">Working in the portal</div>'+how
+    +'<div style="border-top:1px solid #2e2619;margin-top:16px;padding-top:14px"><div style="font-family:monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#c9a84c;margin-bottom:8px">Contact FinFlow</div>'
+    +'<input id="ah-subject" placeholder="Subject" style="width:100%;box-sizing:border-box;background:#201910;border:1px solid #2e2619;border-radius:7px;color:#f2e8d5;padding:9px 11px;font-size:13px;margin-bottom:8px">'
+    +'<textarea id="ah-msg" placeholder="How can we help?" style="width:100%;box-sizing:border-box;min-height:80px;resize:vertical;background:#201910;border:1px solid #2e2619;border-radius:7px;color:#f2e8d5;padding:9px 11px;font-size:13px"></textarea>'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span style="font-size:11.5px;color:#6a5c44">or email <a href="mailto:support@finflow.app" style="color:#c9a84c">support@finflow.app</a></span><button id="ah-send" style="background:#c9a84c;color:#16120d;border:none;border-radius:7px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">Send</button></div>'
+    +'<div id="ah-status" style="font-size:12px;margin-top:6px"></div></div></div>';
+  document.body.appendChild(ov);
+  var close=function(){ try{ov.remove();}catch(e){} };
+  document.getElementById('ah-x').onclick=close;
+  ov.onclick=function(e){ if(e.target===ov) close(); };
+  var b=document.getElementById('ah-send');
+  if(b) b.onclick=async function(){
+    var subj=(document.getElementById('ah-subject')||{}).value||'';
+    var msg=(document.getElementById('ah-msg')||{}).value||'';
+    var st=document.getElementById('ah-status');
+    if(!msg.trim()){ if(st){ st.style.color='#d0705f'; st.textContent='Please add a message.'; } return; }
+    b.disabled=true; b.textContent='Sending…';
+    try{
+      var r=await fetch('/api/support',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({subject:subj,message:msg,category:'accountant'})});
+      if(!r.ok){ var j=await r.json().catch(function(){return {};}); if(st){ st.style.color='#d0705f'; st.textContent=j.error||'Could not send — please email us instead.'; } b.disabled=false; b.textContent='Send'; return; }
+      if(st){ st.style.color='#7db87d'; st.textContent='Sent ✓ We’ll reply by email.'; }
+      var s1=document.getElementById('ah-subject'), m1=document.getElementById('ah-msg'); if(s1)s1.value=''; if(m1)m1.value='';
+      b.textContent='Sent ✓';
+    }catch(e){ if(st){ st.style.color='#d0705f'; st.textContent='Network error — please email us instead.'; } b.disabled=false; b.textContent='Send'; }
+  };
+};
+
+function showTab(which){
+  document.getElementById('t-client').classList.toggle('on', which==='client');
+  document.getElementById('t-acct').classList.toggle('on', which==='acct');
+  document.getElementById('view-client').classList.toggle('on', which==='client');
+  document.getElementById('view-acct').classList.toggle('on', which==='acct');
+  if(which==='client'){ try{ renderHelpCenter(); }catch(e){ console.error(e); } }
+}
+// Neutralize the real network POST in this offline preview so the contact forms demo cleanly.
+window.fetch = function(){ return Promise.resolve({ ok:true, json:function(){return Promise.resolve({ok:true,id:'preview'});} }); };
+try{ renderHelpCenter(); }catch(e){ console.error(e); }
+</script>
+</body>
+</html>

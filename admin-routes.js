@@ -697,4 +697,66 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     });
   }));
 
+  // ── SUPPORT INBOX — triage tickets from clients and accountants ─────────────
+  // support_requests is a generic JSONB table (id, user_id, data, created_at). Tickets
+  // come from BOTH audiences (data.actor = 'client' | 'accountant'). Admin can filter,
+  // read, and resolve; resolving stamps status + an optional reply note server-side.
+  app.get('/api/admin/support', requireAdmin, wrap(async (req, res) => {
+    const status = String(req.query.status || '').trim();   // '', 'open', 'resolved'
+    const actor  = String(req.query.actor  || '').trim();   // '', 'client', 'accountant'
+    const conds = [], params = [];
+    if (status) { params.push(status); conds.push(`data->>'status' = $${params.length}`); }
+    if (actor)  { params.push(actor);  conds.push(`data->>'actor'  = $${params.length}`); }
+    const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
+    const q = await pool.query(
+      `SELECT id, user_id, data, created_at FROM support_requests ${where} ORDER BY created_at DESC LIMIT 300`, params);
+    const openCount = (await pool.query(`SELECT COUNT(*)::int n FROM support_requests WHERE data->>'status'='open' OR data->>'status' IS NULL`)).rows[0].n;
+    res.json({
+      openCount,
+      requests: q.rows.map(r => ({
+        id: r.id,
+        user_id: r.user_id,
+        actor: r.data.actor || 'client',
+        subject: r.data.subject || '(no subject)',
+        message: r.data.message || '',
+        category: r.data.category || 'general',
+        email: r.data.email || '',
+        status: r.data.status || 'open',
+        response: r.data.response || '',
+        resolved_at: r.data.resolved_at || null,
+        created_at: r.created_at,
+      })),
+    });
+  }));
+
+  // Update one ticket: set status ('open'|'resolved') and/or attach a reply note. When a
+  // reply is given and Resend + the submitter email are present, it is emailed to them.
+  app.post('/api/admin/support/:id', requireAdmin, wrap(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Bad id.' });
+    const status   = req.body && req.body.status ? String(req.body.status).trim() : null;
+    const response = req.body && req.body.response != null ? String(req.body.response).slice(0, 5000) : null;
+    if (status && !['open', 'resolved'].includes(status)) return res.status(400).json({ error: 'status must be open or resolved.' });
+
+    const cur = (await pool.query(`SELECT data FROM support_requests WHERE id=$1`, [id])).rows[0];
+    if (!cur) return res.status(404).json({ error: 'Ticket not found.' });
+    const data = Object.assign({}, cur.data);
+    if (status) { data.status = status; data.resolved_at = status === 'resolved' ? new Date().toISOString() : null; }
+    if (response != null) data.response = response;
+    await pool.query(`UPDATE support_requests SET data=$2 WHERE id=$1`, [id, data]);
+
+    if (response && resendClient && data.email && process.env.EMAIL_FROM) {
+      const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      try {
+        await resendClient.emails.send({
+          from: process.env.EMAIL_FROM,
+          to: data.email,
+          subject: 'Re: ' + (data.subject || 'your FinFlow support request'),
+          html: `<p>${esc(response).replace(/\n/g, '<br>')}</p><hr><p style="color:#888;font-size:12px">In reply to: ${esc(data.message || '')}</p>`,
+        });
+      } catch (e) { console.error('[admin support reply email]', e.message); }
+    }
+    res.json({ ok: true, id, status: data.status, response: data.response || '' });
+  }));
+
 }; // end registerAdminRoutes

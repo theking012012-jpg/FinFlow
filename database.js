@@ -59,7 +59,7 @@ const TABLES = [
   'payments_made', 'vendor_credits', 'items', 'timesheet', 'projects',
   'team_members', 'budget_targets',
   'journals', 'chart_of_accounts', 'lock_settings', 'audit_log',
-  'documents', 'templates', 'autocat_rules',
+  'documents', 'templates', 'autocat_rules', 'support_requests',
 ];
 
 async function initDB() {

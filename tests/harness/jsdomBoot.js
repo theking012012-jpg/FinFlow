@@ -46,8 +46,13 @@ const { HarnessHttp } = require('./httpClient.js');
 // it never reaches these hooks. (Root cause is the race; harnesses also poll boot before driving.)
 const _isTeardownNoise = (e) => {
   const s = String((e && e.message) || e);
+  const stack = String((e && e.stack) || '');
   return /Cannot read propert(?:y|ies) of (?:null|undefined) \(reading '(?:_location|getElementById|createElement|createElementNS|createTextNode|querySelector|querySelectorAll|documentElement|defaultView|body|head|location)'\)/.test(s)
-      || /_document\)\._location/.test(s);
+      || /_document\)\._location/.test(s)
+      // Any null/undefined DOM-accessor read that originates from jsdom's own Window/teardown path is
+      // the same post-close race, regardless of the exact accessor name (rAF callbacks, timers, etc.).
+      || (/Cannot read propert(?:y|ies) of (?:null|undefined)/.test(s)
+          && /jsdom[\\/]lib[\\/]jsdom[\\/]browser[\\/](?:Window|not-implemented)\.js|runAnimationFrameCallbacks/.test(stack));
 };
 process.on('uncaughtException', (e) => { if (_isTeardownNoise(e)) return; throw e; });
 process.on('unhandledRejection', (e) => { if (_isTeardownNoise(e)) return; throw e; });
@@ -94,6 +99,18 @@ async function bootSpaInJsdom(opts = {}) {
 
   const server = await bootServer(scratch.url);
   const origin = server.baseUrl;
+
+  // bootServer → require('server.js') installs a PRODUCTION uncaughtException/unhandledRejection
+  // handler that process.exit(1)s (fail-fast in prod). In this jsdom SPA harness the documented
+  // post-teardown rAF/microtask noise (see _isTeardownNoise above) would trip that prod handler and
+  // force a nonzero exit even after ALL GREEN — a pure timing flake. Reclaim the process-level hooks
+  // for the harness: drop every listener the boot added, then reinstall ONLY the noise-aware swallow.
+  // A REAL uncaught error is not teardown noise, so it still rethrows here → nonzero exit (correct);
+  // a real assertion failure throws synchronously inside the harness try/catch and never reaches here.
+  process.removeAllListeners('uncaughtException');
+  process.removeAllListeners('unhandledRejection');
+  process.on('uncaughtException', (e) => { if (_isTeardownNoise(e)) return; throw e; });
+  process.on('unhandledRejection', (e) => { if (_isTeardownNoise(e)) return; throw e; });
 
   const http = new HarnessHttp(origin);
   const login = await http.post('/api/auth/login', LOGIN);

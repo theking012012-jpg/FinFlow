@@ -130,9 +130,12 @@ async function main() {
     const toastText = () => { const t = doc.getElementById('notif-text'); return t ? (t.textContent || '').trim() : ''; };
     const stepActive = (n) => ((doc.getElementById('ob-s' + n) || {}).className || '').indexOf('active') !== -1;
     const fill = (over = {}) => {
-      const v = Object.assign({ biz: BIZ, user: OWNER, email: OB_EMAIL, currency: CURRENCY, country: COUNTRY }, over);
+      const v = Object.assign({ biz: BIZ, user: OWNER, email: OB_EMAIL, currency: CURRENCY, country: COUNTRY, industry: 'Technology', address: '1 Market St, San Francisco, USA' }, over);
       const set = (id, val) => { const el = doc.getElementById(id); if (el) el.value = val; return !!el; };
+      // ob-industry and ob-address became REQUIRED at step 1 (onboarding gating). The happy path must
+      // supply them or obNext's step-1 validation correctly blocks the wizard before it can provision.
       return set('ob-biz-name', v.biz) && set('ob-user-name', v.user) && set('ob-email', v.email)
+          && set('ob-industry', v.industry) && set('ob-address', v.address)
           && set('ob-currency', v.currency) && set('ob-country', v.country);
     };
     const resetAccount = async () => { await c.query(BLANK_SQL); };

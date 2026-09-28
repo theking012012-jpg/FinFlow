@@ -4957,6 +4957,83 @@ function parseCSV(text, mapping) {
   return out;
 }
 
+// ── DIRECT CSV IMPORT (aggregator-free migration) ─────────────────────────────────────────────
+// Import accounting DOCUMENTS straight from a CSV export (QuickBooks / Xero / a spreadsheet) with no
+// Codat key required. Header auto-detected (override with `mapping`). Idempotent by a content hash,
+// entity-scoped, owner/books:write gated. Pairs with reconcileAfterImport so the books self-verify.
+const _csvMoney = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return Number.isFinite(n) ? n : NaN; };
+const _csvYmd = v => { const t = String(v == null ? '' : v).trim(); if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10); const d = new Date(t); return isNaN(d) ? null : d.toISOString().slice(0, 10); };
+const _CSV_INV_STATUS = new Set(['pending', 'paid', 'partial', 'overdue', 'draft', 'sent', 'void']);
+const _CSV_BILL_STATUS = new Set(['unpaid', 'paid', 'partial', 'overdue', 'due_soon', 'void']);
+const _csvStatus = (v, def, set) => { const t = String(v || '').trim().toLowerCase(); return set.has(t) ? t : def; };
+const CSV_IMPORT_SPECS = {
+  invoices: { table: 'invoices', money: true,
+    cols: { client: ['client', 'customer', 'customer name', 'name', 'bill to', 'company'], amount: ['amount', 'total', 'amount due', 'invoice total', 'grand total'], status: ['status'], issue_date: ['issue date', 'date', 'invoice date', 'created'], due_date: ['due date', 'due'], number: ['invoice number', 'invoice no', 'number', 'ref', 'invoice #'] },
+    build: g => { const amount = _csvMoney(g.amount); const issue = _csvYmd(g.issue_date) || FinFlowDates.resolvedToday(new Date()); if (!(amount > 0)) return null; const dd = g.due_date ? _csvYmd(g.due_date) : null;
+      return { key: (g.number && String(g.number).trim()) || [g.client, amount, issue].join('|'), date: issue, data: Object.assign({ client: (g.client || 'Customer').slice(0, 120), amount, status: _csvStatus(g.status, 'pending', _CSV_INV_STATUS), issue_date: issue }, dd ? { due_date: dd } : {}, g.number ? { number: String(g.number).slice(0, 60) } : {}) }; } },
+  expenses: { table: 'expenses', money: true,
+    cols: { description: ['description', 'memo', 'details', 'name', 'payee', 'item'], amount: ['amount', 'total', 'value'], category: ['category', 'account', 'type'], expense_date: ['date', 'expense date', 'posted'] },
+    build: g => { const amount = _csvMoney(g.amount); const dt = _csvYmd(g.expense_date) || FinFlowDates.resolvedToday(new Date()); if (!(amount > 0)) return null;
+      return { key: [g.description, amount, dt].join('|'), date: dt, data: { description: (g.description || 'Expense').slice(0, 160), amount, category: (g.category || 'Uncategorized').slice(0, 60), expense_date: dt } }; } },
+  bills: { table: 'bills', money: true,
+    cols: { vendor: ['vendor', 'supplier', 'payee', 'name', 'company'], amount: ['amount', 'total', 'amount due', 'bill total'], status: ['status'], issue_date: ['issue date', 'date', 'bill date'], due_date: ['due date', 'due'], number: ['bill number', 'bill no', 'number', 'ref', 'bill #'] },
+    build: g => { const amount = _csvMoney(g.amount); const issue = _csvYmd(g.issue_date) || FinFlowDates.resolvedToday(new Date()); if (!(amount > 0)) return null; const dd = g.due_date ? _csvYmd(g.due_date) : null;
+      return { key: (g.number && String(g.number).trim()) || [g.vendor, amount, issue].join('|'), date: issue, data: Object.assign({ vendor: (g.vendor || 'Vendor').slice(0, 120), amount, amount_paid: 0, status: _csvStatus(g.status, 'unpaid', _CSV_BILL_STATUS), issue_date: issue }, dd ? { due_date: dd } : {}) }; } },
+  customers: { table: 'customers', money: false,
+    cols: { name: ['name', 'customer', 'customer name', 'company', 'client'], email: ['email', 'e-mail'], phone: ['phone', 'telephone', 'tel'] },
+    build: g => { const name = (g.name || '').trim(); if (!name) return null; return { key: name.toLowerCase(), date: null, data: Object.assign({ name: name.slice(0, 120) }, g.email ? { email: String(g.email).slice(0, 160) } : {}, g.phone ? { phone: String(g.phone).slice(0, 40) } : {}) }; } },
+  vendors: { table: 'vendors', money: false,
+    cols: { name: ['name', 'vendor', 'supplier', 'company'], email: ['email', 'e-mail'], phone: ['phone', 'telephone', 'tel'] },
+    build: g => { const name = (g.name || '').trim(); if (!name) return null; return { key: name.toLowerCase(), date: null, data: Object.assign({ name: name.slice(0, 120) }, g.email ? { email: String(g.email).slice(0, 160) } : {}, g.phone ? { phone: String(g.phone).slice(0, 40) } : {}) }; } },
+};
+async function _csvImport(uid, entityId, sessionUserId, type, content, mapping, dryRun) {
+  const spec = CSV_IMPORT_SPECS[type];
+  if (!spec) { const e = new Error('Unsupported import type: ' + type); e.status = 400; throw e; }
+  const crypto = require('crypto');
+  const lines = String(content).split(/\r?\n/).filter(l => l.trim().length);
+  const tally = { type, total: 0, added: 0, duplicate: 0, skipped: 0, failed: 0, sample: [] };
+  if (!lines.length) return tally;
+  const header = _csvSplit(lines[0]).map(h => h.toLowerCase());
+  const idx = {};
+  for (const field of Object.keys(spec.cols)) {
+    if (mapping && mapping[field] != null && mapping[field] !== '') { idx[field] = +mapping[field]; continue; }
+    idx[field] = -1;
+    for (const cand of spec.cols[field]) { const i = header.indexOf(cand); if (i >= 0) { idx[field] = i; break; } }
+  }
+  for (let r = 1; r < lines.length; r++) {
+    const f = _csvSplit(lines[r]); if (!f.length || f.every(x => !x)) continue;
+    tally.total++;
+    const g = {};
+    for (const field of Object.keys(spec.cols)) g[field] = idx[field] >= 0 ? f[idx[field]] : undefined;
+    let m; try { m = spec.build(g); } catch (e) { tally.failed++; continue; }
+    if (!m) { tally.skipped++; continue; }
+    const importKey = 'csv:' + type + ':' + crypto.createHash('sha1').update(String(m.key)).digest('hex').slice(0, 24);
+    const dup = await pool.query('SELECT 1 FROM ' + spec.table + ' WHERE user_id=$1 AND data->>\'import_key\'=$2 LIMIT 1', [uid, importKey]);
+    if (dup.rows.length) { tally.duplicate++; continue; }
+    if (spec.money && m.date && await isLocked(sessionUserId, entityId, m.date)) { tally.skipped++; continue; }
+    if (tally.sample.length < 3) tally.sample.push(m.data);
+    if (dryRun) { tally.added++; continue; }
+    try { await db.insert(spec.table, Object.assign({ user_id: uid, entity_id: entityId, import_key: importKey, idempotency_key: importKey, source: 'csv' }, m.data)); tally.added++; }
+    catch (e) { if (e.code === '23505') tally.duplicate++; else { tally.failed++; console.error('[csv import ' + type + ']', e.message); } }
+  }
+  return tally;
+}
+app.post('/api/import/csv', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  const { type, content, mapping, dryRun } = req.body || {};
+  if (!CSV_IMPORT_SPECS[type]) return res.status(400).json({ error: 'type must be one of: ' + Object.keys(CSV_IMPORT_SPECS).join(', ') });
+  if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content (the CSV text) is required.' });
+  if (content.length > 5_000_000) return res.status(400).json({ error: 'File too large (max ~5MB).' });
+  if (!req.entityId) return res.status(400).json({ error: 'Select a business entity to import into first.', code: 'NO_ACTIVE_ENTITY' });
+  const uid = scopeId(req);
+  let tally; try { tally = await _csvImport(uid, req.entityId, req.session.userId, type, content, mapping, !!dryRun); }
+  catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
+  if (!dryRun && tally.added > 0) { try { logAudit(req, 'CREATE', 'csv_import', null, null, { entity_id: req.entityId, type, added: tally.added }); } catch (_) {} }
+  // Owner-only auto-reconcile for money docs (scoped members can import but not backfill the ledger).
+  let reconcile = null;
+  if (!dryRun && CSV_IMPORT_SPECS[type].money && tally.added > 0 && !Array.isArray(req.entityAccess)) { try { reconcile = await reconcileAfterImport(uid, req.entityId); } catch (e) { console.error('[csv import] reconcile failed:', e && e.message); } }
+  res.json({ ok: true, entity_id: req.entityId, dryRun: !!dryRun, ...tally, reconcile });
+}));
+
 app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
   const { format, content, mapping } = req.body || {};
   if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content (the statement file text) is required.' });

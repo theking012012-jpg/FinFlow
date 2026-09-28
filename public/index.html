@@ -5174,6 +5174,8 @@ async function finishOnboarding(){
 async function _completeOnboarding(d){
   if(!d.bizName){ if(typeof notify==='function') notify('Business name is required', true); _obGotoStep(1); return; }
   if(!d.country){ if(typeof notify==='function') notify('Country is required \u2014 it sets tax & filing for your business', true); _obGotoStep(1); return; }
+  if(!d.industry){ if(typeof notify==='function') notify('Industry is required', true); _obGotoStep(1); return; }
+  if(!d.address){ if(typeof notify==='function') notify('Business address is required', true); _obGotoStep(1); return; }
   const _btn=document.getElementById('ob-next-btn'); if(_btn) _btn.disabled=true;
   try{
     // 1) Provision the first entity. Clean path is a single POST (201). On a 402 (entity cap) a PRIOR

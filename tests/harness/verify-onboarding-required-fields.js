@@ -20,6 +20,10 @@ A('obNext blocks advancing without Business address', /Business address is requi
 const ob = html.slice(html.indexOf('window.obNext = function'), html.indexOf('window.obNext = function') + 1400);
 A('required checks are inside obNext step 1', /Industry is required/.test(ob) && /Business address is required/.test(ob));
 
+const cg = html.slice(html.indexOf('async function _completeOnboarding'), html.indexOf('async function _completeOnboarding') + 1300);
+A('Skip path gated: _completeOnboarding requires Industry', /Industry is required/.test(cg));
+A('Skip path gated: _completeOnboarding requires Business address', /Business address is required/.test(cg));
+
 console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (onboarding required fields)`);
 console.log('');
 process.exitCode = fail === 0 ? 0 : 1;

@@ -68,8 +68,8 @@ const OWNER = { email: 'fc1-owner@finflow.test', password: 'harness-password-not
 
     // STRUCTURAL — every overdue computation is date-based, not a literal status match.
     const srv = fs.readFileSync(path.join(process.cwd(), 'server.js'), 'utf8');
-    AS('server reports.overdue uses entityTodayYmd + due_date (not just status===overdue)',
-      /entityTodayYmd\(eid\)[\s\S]{0,500}const overdue[\s\S]{0,400}due_date/.test(srv));
+    AS('server reports.overdue is date-based (entityTodayYmd + due_date) AND nets credit notes',
+      /entityTodayYmd\(eid\)[\s\S]{0,700}_overdueGross[\s\S]{0,500}due_date/.test(srv) && /overdue = Math\.min\(outstanding[\s\S]{0,140}arCreditContra/.test(srv));
     const am = fs.readFileSync(path.join(process.cwd(), 'public', 'app-main.js'), 'utf8');
     AS('app-main arOutstanding overdue is due_date-based',
       /function arOutstanding[\s\S]{0,1400}i\.due_date[\s\S]{0,200}overdueTotal/.test(am));

@@ -1647,7 +1647,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div id="brec-matched-list" style="font-size:12px"></div>
         </div>
         <div class="card">
-          <div class="card-header"><h2 class="card-title">Money Out \u2014 bank debits to reconcile</h2><button class="btn btn-ghost btn-sm" onclick="loadBankRec()">Refresh</button></div>
+          <div class="card-header"><h2 class="card-title">Money Out — bank debits to reconcile</h2><button class="btn btn-ghost btn-sm" onclick="loadBankRec()">Refresh</button></div>
           <div id="brec-debits-list" style="font-size:12px"></div>
         </div>
       </div>
@@ -1893,11 +1893,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div class="modal-overlay hidden" id="entity-profile-modal">
         <div class="modal">
           <div class="modal-header">
-            <div><div class="modal-title">Business profile</div><div class="modal-sub" id="ep-sub">The letterhead used on this entity\u2019s invoices, quotes & receipts</div></div>
+            <div><div class="modal-title">Business profile</div><div class="modal-sub" id="ep-sub">The letterhead used on this entity’s invoices, quotes & receipts</div></div>
             <button class="modal-close" onclick="closeModal('entity-profile-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button>
           </div>
           <input type="hidden" id="ep-entity-id">
-          <div class="field-wrap"><label class="field-label" for="ep-business-name">Business name <span style="color:var(--t3);font-weight:400">\u00b7 blank = use the entity name</span></label><input class="finput" id="ep-business-name" placeholder="Shown on documents"></div>
+          <div class="field-wrap"><label class="field-label" for="ep-business-name">Business name <span style="color:var(--t3);font-weight:400">· blank = use the entity name</span></label><input class="finput" id="ep-business-name" placeholder="Shown on documents"></div>
           <div class="field-group">
             <div class="field-wrap"><label class="field-label" for="ep-email">Email</label><input class="finput" type="email" id="ep-email" placeholder="billing@business.com"></div>
             <div class="field-wrap"><label class="field-label" for="ep-phone">Phone</label><input class="finput" type="tel" id="ep-phone" placeholder="+1 (555) 000-0000"></div>
@@ -1908,7 +1908,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           </div>
           <div class="field-wrap"><label class="field-label" for="ep-address">Business address</label><textarea class="finput" id="ep-address" style="min-height:60px" placeholder="Street, City, State, Country"></textarea></div>
           <div class="field-wrap">
-            <label class="field-label">Logo <span style="color:var(--t3);font-weight:400">\u00b7 PNG/JPG/SVG, max 256\u00a0KB \u00b7 appears on documents</span></label>
+            <label class="field-label">Logo <span style="color:var(--t3);font-weight:400">· PNG/JPG/SVG, max 256 KB · appears on documents</span></label>
             <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
               <img id="ep-logo-preview" alt="" style="max-height:44px;max-width:120px;object-fit:contain;border:1px solid var(--bd);border-radius:6px;padding:4px;display:none">
               <input type="file" id="ep-logo-file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" onchange="epLogoPick(this)" style="font-size:12px">
@@ -3723,8 +3723,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             </div>
             <div class="settings-section" id="owner-mfa-section" style="margin-top:1rem">
               <div class="settings-title"><svg viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="8" rx="1.2"/><path d="M5 7V5a3 3 0 016 0v2"/><circle cx="8" cy="11" r="1"/></svg>Two-factor authentication (2FA)</div>
-              <div style="font-size:12px;color:var(--t3);margin-bottom:.6rem">Require a one-time code from an authenticator app (Google Authenticator, Authy, 1Password) at sign-in. Strongly recommended \u2014 your account holds your books.</div>
-              <div id="owner-mfa-status" style="font-size:12.5px;color:var(--t2);margin-bottom:.6rem">Loading\u2026</div>
+              <div style="font-size:12px;color:var(--t3);margin-bottom:.6rem">Require a one-time code from an authenticator app (Google Authenticator, Authy, 1Password) at sign-in. Strongly recommended — your account holds your books.</div>
+              <div id="owner-mfa-status" style="font-size:12.5px;color:var(--t2);margin-bottom:.6rem">Loading…</div>
               <button class="btn btn-ghost" id="owner-mfa-enable-btn" style="display:none" onclick="startOwnerMfaSetup()">Enable 2FA</button>
               <div id="owner-mfa-setup" style="display:none;margin-top:.5rem">
                 <div style="font-size:12px;color:var(--t2);margin-bottom:.4rem">1. Add this secret to your authenticator app:</div>

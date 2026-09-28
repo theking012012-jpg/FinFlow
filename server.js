@@ -6248,7 +6248,21 @@ app.post('/api/codat/import', requireAuth, requirePerm('books:write'), wrap(asyn
     results[type] = t; totalAdded += t.added;
   }
   try { logAudit(req, 'CREATE', 'codat_import', null, null, { entity_id: req.entityId, platform: company.platform, total_added: totalAdded }); } catch (_) {}
-  res.json({ ok: true, platform: company.platform, entity_id: req.entityId, total_added: totalAdded, results });
+  // Migration trust signal: post the imported docs to the shadow ledger and prove the books tie out.
+  let reconcile = null;
+  try { reconcile = await reconcileAfterImport(uid, req.entityId); } catch (e) { console.error('[codat import] reconcile failed:', e && e.message); }
+  res.json({ ok: true, platform: company.platform, entity_id: req.entityId, total_added: totalAdded, results, reconcile });
+}));
+
+// POST /api/import/verify — the "prove my imported books came over clean" action. Owner-gated,
+// entity-scoped. Posts any un-posted source docs into the ledger (idempotent) and returns whether the
+// trial balance ties. Works for ANY import path (Codat, bank statement, future CSV), so a user can
+// self-verify a migration at any time — the wedge incumbents can't match.
+app.post('/api/import/verify', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
+  if (Array.isArray(req.entityAccess)) return res.status(403).json({ error: 'Only the account owner can verify imported books.', code: 'GL_OWNER_ONLY' });
+  if (!req.entityId) return res.status(400).json({ error: 'Select a business entity to verify.', code: 'NO_ACTIVE_ENTITY' });
+  const r = await reconcileAfterImport(scopeId(req), req.entityId);
+  res.json({ ok: true, entity_id: req.entityId, ...r });
 }));
 
 // Wise (global multi-currency): parity sync — read account balances for DISPLAY only. Owner-only
@@ -8413,6 +8427,28 @@ async function glReconcile(userId, entityId, fyStartIdx = 0) {
 }
 // ════════════════════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════════════════════
+// ── RECONCILE-VERIFIED IMPORT (migration trust signal) ────────────────────────────────────────
+// After an import (Codat / bank / CSV) writes source documents, post them into the shadow ledger
+// (idempotent) and confirm the trial balance ties, entity by entity. This is the thing incumbents
+// don't do: "your books came over clean" is PROVEN, not hoped. Reuses the Phase-4 backfill + the
+// reconcile gate. Additive (reset:false) — already-posted docs are skipped by idempotency key.
+async function reconcileAfterImport(userId, entityId) {
+  let ledger = null, ledgerError = null;
+  try { ledger = await backfillLedgerForUser(userId, { entityId, dryRun: false, reset: false }); }
+  catch (e) { ledgerError = (e && e.message) || String(e); }
+  const rec = await glReconcile(userId, entityId);
+  return {
+    tiedOut: rec.booksBalanced,
+    trialBalanced: rec.trialBalanced,
+    balanceSheetBalanced: rec.balanceSheetBalanced,
+    reconciledToReports: rec.reconciledToReports,
+    posted: ledger ? ledger.posted : 0,
+    alreadyPosted: ledger ? ledger.existing : 0,
+    detail: rec.detail,
+    ...(ledgerError ? { ledgerError } : {}),
+  };
+}
+
 // GL CONSOLIDATION & MULTI-CURRENCY (beyond NetSuite/Intacct) — see GL_CONSOLIDATION_DESIGN.md
 // Reads the GL across one or ALL of an owner's entities and translates to a base/display currency.
 // PRIMARY view: every ledger LINE is converted at ITS OWN entry-date rate (entityCurrency->display) via

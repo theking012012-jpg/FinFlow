@@ -55,6 +55,17 @@ const OWNER = { email: 'fc1-owner@finflow.test', password: 'harness-password-not
     A('reports.overdue is NOT 0 (regression guard for the status-literal bug)', Number(rep.overdue) !== 0, `overdue=${rep.overdue}`);
     A('outstanding still includes all unpaid (sanity)', Number(rep.outstanding) > Number(rep.overdue), `outstanding=${rep.outstanding} overdue=${rep.overdue}`);
 
+    // H1 (discriminating, Rule 14) — an OPEN credit note reduces AR. `outstanding` nets it; `overdue`
+    // MUST net it on the same basis, else overdue (gross) can render ABOVE outstanding (net) — an
+    // impossible state, since overdue ⊆ outstanding. Pre-fix overdue stays 1400 (gross) so this block
+    // is RED; post-fix overdue = max(0, 1400 − 400) = 1000 and the subset invariant holds.
+    await c.query(`INSERT INTO credit_notes (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`,
+      [uid, E, { user_id: uid, customer: 'PastDuePending', amount: 400, status: 'open', date: '2026-07-10' }]);
+    const rep2 = (await http.get('/api/reports')).json;
+    A('H1: overdue nets credit notes (1400 gross − 400 open credit = 1000)', Number(rep2.overdue) === 1000, `overdue=${rep2.overdue}`);
+    A('H1: overdue never exceeds outstanding (subset invariant)', Number(rep2.overdue) <= Number(rep2.outstanding), `overdue=${rep2.overdue} outstanding=${rep2.outstanding}`);
+    A('H1: outstanding nets the same 400 credit (sanity)', Math.abs(Number(rep2.outstanding) - (Number(rep.outstanding) - 400)) < 0.005, `before=${rep.outstanding} after=${rep2.outstanding}`);
+
     // STRUCTURAL — every overdue computation is date-based, not a literal status match.
     const srv = fs.readFileSync(path.join(process.cwd(), 'server.js'), 'utf8');
     AS('server reports.overdue uses entityTodayYmd + due_date (not just status===overdue)',

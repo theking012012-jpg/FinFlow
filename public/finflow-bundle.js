@@ -5548,17 +5548,29 @@ function clearAIChat(){
     // shared global lexical scope across classic scripts — hence the typeof guards rather than
     // window.* lookups, which would be undefined.
     const _p = (typeof currentPeriod !== 'undefined') ? currentPeriod : (window.currentPeriod || 'year');
-    const _w = (typeof window._periodWindow === 'function') ? window._periodWindow(_p) : null;
-    const rows = _w ? (expenses || []).filter(e => _w.inWin(e.expense_date || e.date || e.created_at))
-                    : (expenses || []);
+    const _mi = (typeof currentMonthIdx !== 'undefined') ? currentMonthIdx : window.currentMonthIdx;
+    // M1: decompose the SAME period-scoped opex the Expenses KPI shows (computeExpenseBreakdown:
+    // direct categories + payroll + bills − vendor credits) so the four bars reconcile to the KPI
+    // above them, not just direct expenses. Fall back to direct-expense binning only if the engine
+    // is unavailable (keeps the pre-M1 behaviour rather than blanking the widget).
+    const _bd = (typeof computeExpenseBreakdown === 'function') ? computeExpenseBreakdown(_p, _mi) : null;
     const cats = {};
-    rows.forEach(e => {
-      const cat = e.category || 'Other';
-      cats[cat] = (cats[cat] || 0) + (parseFloat(e.amount) || 0);
-    });
-
-    const total = Object.values(cats).reduce((s, v) => s + v, 0) || 1;
-    const sorted = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+    if (_bd) {
+      Object.entries(_bd.byCategory || {}).forEach(([c, v]) => { if (v) cats[c] = (cats[c] || 0) + v; });
+      if (_bd.payroll) cats['Payroll'] = (cats['Payroll'] || 0) + _bd.payroll;
+      const _apNet = (_bd.issuedBills || 0) + (_bd.paymentsMade || 0) - (_bd.vendorCredits || 0);
+      if (_apNet) cats['Bills & vendors'] = (cats['Bills & vendors'] || 0) + _apNet;
+    } else {
+      const _w = (typeof window._periodWindow === 'function') ? window._periodWindow(_p) : null;
+      const _rows = _w ? (expenses || []).filter(e => _w.inWin(e.expense_date || e.date || e.created_at)) : (expenses || []);
+      _rows.forEach(e => { const cat = e.category || 'Other'; cats[cat] = (cats[cat] || 0) + (parseFloat(e.amount) || 0); });
+    }
+    // top 3 categories + an "Other" rollup so Σ(four bars) == the opex total (KPI reconciliation)
+    const _sorted0 = Object.entries(cats).filter(([, v]) => Math.abs(v) > 0.005).sort((a, b) => b[1] - a[1]);
+    const _rest = _sorted0.slice(3).reduce((s, [, v]) => s + v, 0);
+    const sorted = _sorted0.slice(0, 3);
+    if (Math.abs(_rest) > 0.005) sorted.push(['Other', _rest]);
+    const total = (_bd ? (_bd.total || 0) : 0) || sorted.reduce((s, [, v]) => s + v, 0) || 1;
 
     // Update the 4 expense bar rows (sal, rent, sw, mkt) with top 4 categories
     const barIds = [
@@ -5579,7 +5591,7 @@ function clearAIChat(){
       const lblEl = document.getElementById(labelIds[i]);
       if (valEl) valEl.textContent = (amt == null) ? '—' : money(amt);
       if (barEl) {
-        const w = (amt == null) ? '0%' : Math.round(amt / total * 100) + '%';
+        const w = (amt == null) ? '0%' : Math.max(0, Math.round(amt / total * 100)) + '%';
         barEl.style.setProperty('width', w, 'important');
         barEl.style.setProperty('--bar-w', w);
       }

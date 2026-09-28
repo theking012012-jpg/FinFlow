@@ -5674,9 +5674,9 @@ function renderTimesheet(){
   const l=document.getElementById('timesheet-list');if(!l)return;
   l.innerHTML=timesheetData.map(t=>`
     <div class="table-row" style="grid-template-columns:1fr 100px 80px 70px 70px 70px">
-      <span style="font-weight:500">${t.employee}</span>
-      <span style="color:var(--t2)">${t.project}</span>
-      <span style="color:var(--t3)">${t.date}</span>
+      <span style="font-weight:500">${esc(t.employee)}</span>
+      <span style="color:var(--t2)">${esc(t.project)}</span>
+      <span style="color:var(--t3)">${esc(t.date)}</span>
       <span style="font-family:var(--font-mono)">${t.hours} hrs</span>
       <span style="font-family:var(--font-mono);color:${t.billable>0?'var(--green)':'var(--t3)'}">${t.billable} hrs</span>
       <span style="font-family:var(--font-mono)">$${t.rate}/hr</span>

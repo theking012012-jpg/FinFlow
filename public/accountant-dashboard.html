@@ -1308,7 +1308,7 @@ function openBillModal() {
   const activeClients = clients.filter(c => c.status === 'active');
   if (!activeClients.length) { toast('No active clients to bill', 'error'); return; }
   sel.innerHTML = '<option value="">Select client...</option>' +
-    activeClients.map(c => `<option value="${c.id}">${(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</option>`).join('');
+    activeClients.map(c => `<option value="${c.id}">${esc(c.client_name && c.client_name.trim() ? c.client_name : c.client_email)}</option>`).join('');
   document.getElementById('bill-breakdown').style.display = 'none';
   document.getElementById('bill-amount').value = '';
   document.getElementById('bill-description').value = '';

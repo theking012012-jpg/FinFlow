@@ -1483,6 +1483,7 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
   }
   const _entExtra = {};
   if (timezone) _entExtra.timezone = String(timezone);
+  else { const _tz = _inferTimezone(country); if (_tz) _entExtra.timezone = _tz; }   // M2: infer from country → never silent-UTC
   if (country)  _entExtra.country  = String(country).toUpperCase();
   // F196 Tier 2: optional per-entity letterhead profile at create time.
   const _prof = normalizeEntityProfile(req.body || {});
@@ -1587,6 +1588,28 @@ const _badTimezone = v => {
 };
 const _COUNTRY_RE = /^[A-Za-z]{2}$/;
 const _badCountry = v => v != null && v !== '' && !_COUNTRY_RE.test(String(v));
+
+// M2 — map an ISO-3166 country to a representative IANA timezone, so an entity created WITHOUT an
+// explicit timezone never falls back to UTC (which misfiles late-evening local timestamps for any
+// non-UTC business). Multi-zone countries use their primary business zone; the owner can override
+// per entity in settings. Unknown code ⇒ null ⇒ existing UTC behaviour (rare).
+const _COUNTRY_TZ = {
+  TT:'America/Port_of_Spain', JM:'America/Jamaica', BB:'America/Barbados', GY:'America/Guyana',
+  BS:'America/Nassau', DO:'America/Santo_Domingo', HT:'America/Port-au-Prince', PR:'America/Puerto_Rico',
+  US:'America/New_York', CA:'America/Toronto', MX:'America/Mexico_City', BR:'America/Sao_Paulo',
+  AR:'America/Argentina/Buenos_Aires', CL:'America/Santiago', CO:'America/Bogota', PE:'America/Lima',
+  GB:'Europe/London', IE:'Europe/Dublin', FR:'Europe/Paris', DE:'Europe/Berlin', ES:'Europe/Madrid',
+  PT:'Europe/Lisbon', IT:'Europe/Rome', NL:'Europe/Amsterdam', BE:'Europe/Brussels', CH:'Europe/Zurich',
+  AT:'Europe/Vienna', SE:'Europe/Stockholm', NO:'Europe/Oslo', DK:'Europe/Copenhagen', FI:'Europe/Helsinki',
+  PL:'Europe/Warsaw', CZ:'Europe/Prague', GR:'Europe/Athens', RO:'Europe/Bucharest', UA:'Europe/Kyiv',
+  RU:'Europe/Moscow', TR:'Europe/Istanbul', ZA:'Africa/Johannesburg', NG:'Africa/Lagos', GH:'Africa/Accra',
+  KE:'Africa/Nairobi', EG:'Africa/Cairo', MA:'Africa/Casablanca', AE:'Asia/Dubai', SA:'Asia/Riyadh',
+  IL:'Asia/Jerusalem', IN:'Asia/Kolkata', PK:'Asia/Karachi', BD:'Asia/Dhaka', CN:'Asia/Shanghai',
+  HK:'Asia/Hong_Kong', TW:'Asia/Taipei', JP:'Asia/Tokyo', KR:'Asia/Seoul', SG:'Asia/Singapore',
+  MY:'Asia/Kuala_Lumpur', TH:'Asia/Bangkok', VN:'Asia/Ho_Chi_Minh', ID:'Asia/Jakarta', PH:'Asia/Manila',
+  AU:'Australia/Sydney', NZ:'Pacific/Auckland',
+};
+const _inferTimezone = c => (c && _COUNTRY_TZ[String(c).trim().toUpperCase()]) || null;
 
 // F88/C3-server: the ENTITY's calendar "today" (Y-M-D) for stamping a genuine-timestamp DEFAULT when the
 // client omits the date. resolvedToday phase 2 resolves the server instant into the entity's zone, so an
@@ -5064,13 +5087,17 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     // due date passes — so past-due pending/partial invoices read as $0 everywhere.
     const _ovToday = await entityTodayYmd(eid);
     const _OV_UNPAID = new Set(['pending', 'overdue', 'partial', 'unpaid', 'sent', 'due_soon']);
-    const overdue = (invoices || []).reduce((s, i) => {
+    const _overdueGross = (invoices || []).reduce((s, i) => {
       const st = (i.status || '').toLowerCase();
       if (!_OV_UNPAID.has(st)) return s;                    // paid / draft / void excluded
       const d = i.due_date ? String(i.due_date).slice(0, 10) : null;
       if (!d || d >= _ovToday) return s;                    // no due date, or not yet past due
       return s + Math.max(0, (parseFloat(i.amount) || 0) - (parseFloat(i.amount_paid) || 0));
     }, 0);
+    // H1: `outstanding` nets credit notes (gross AR − credit contra) but overdue summed gross, so
+    // overdue could render ABOVE outstanding whenever an open credit note existed — an impossible
+    // state (overdue is a subset of outstanding). Net the same contra and clamp to [0, outstanding].
+    const overdue = Math.min(outstanding, Math.max(0, Math.round((_overdueGross - (books.arCreditContra || 0)) * 100) / 100));
     const totalExp = _pl.totalExpenses;
     const netProfit = _pl.netProfit;
     const margin = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;
@@ -7778,11 +7805,18 @@ app.get('/api/payroll-runs/:id', requireAuth, wrap(async (req, res) => {
 }));
 
 app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+  // State guard: a paid run has already been recognised AND settled — re-approving it would revert
+  // status paid → approved (a backwards state transition). Exclude paid rows from the update and
+  // report the conflict instead of silently reverting.
   const { rows } = await pool.query(
-    `UPDATE payroll_runs SET status='approved' WHERE id=$1 AND user_id=$2 RETURNING *`,
+    `UPDATE payroll_runs SET status='approved' WHERE id=$1 AND user_id=$2 AND lower(status) <> 'paid' RETURNING *`,
     [parseInt(req.params.id), scopeId(req)]
   );
-  if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
+  if (!rows[0]) {
+    const _exists = await ownedBy('payroll_runs', req.params.id, scopeId(req));
+    if (_exists) return res.status(409).json({ error: 'This payroll run is already paid and cannot be reverted to approved.' });
+    return res.status(404).json({ error: 'Not found.' });
+  }
   await recordAudit(pool, { userId: req.session.userId, entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'APPROVE', field: 'status', newValue: 'approved', req });  // F90 Phase B: payroll recognised at approve
   // GL Phase 2 (dual-write shadow): payroll recognised at APPROVE (F80/F85) — Dr Payroll Expense
   // (6100) / Cr Payroll Liabilities (2200), summed from the run's LINES (basis C, Rule 12), dated at
@@ -9036,7 +9070,9 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     .map(([customer, amount]) => ({ customer, amount: r2(amount) }))
     .filter(r => Math.abs(r.amount) > 0.005)
     .sort((a, b) => b.amount - a.amount);
-  const arSummary = { total: outstanding, openCount: _arOpenCount, overdueTotal: r2(_arOverdueTotal), overdueCount: _arOverdueCount };
+  // H1: overdue nets credit notes on the SAME basis as `outstanding` (gross AR − credit contra),
+  // clamped to [0, outstanding] — a past-due figure can never exceed the total it is a subset of.
+  const arSummary = { total: outstanding, openCount: _arOpenCount, overdueTotal: r2(Math.max(0, Math.min(outstanding, _arOverdueTotal - _arCreditContra))), overdueCount: _arOverdueCount };
 
   // F205 — top clients by recognized revenue (mirrors the client _topClients: recognized statuses,
   // summed by client at FULL amount, no period/D2 filter — it is an all-time revenue ranking, not a
@@ -9101,21 +9137,35 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // expense_date rate; a row with no rate is excluded and flags complete=false. native ⇒ identity.
   // Σ(breakdown) reconciles with the converted expenses LEG (parts.expenses, all-time == the sum of
   // these same rows), not the period-scoped opex KPI (which also carries bills/payroll/COGS).
+  // M1 — decompose the SAME period-scoped opex KPI shown above the widget, not just direct expense
+  // rows. opex = direct expenses + payroll + issued bills + orphan payments − vendor credits, so the
+  // breakdown adds Payroll and "Bills & vendors" as their own categories and rolls the tail into
+  // "Other": Σ(rows) == opex by construction (the reconciliation invariant verify-expense-breakdown-
+  // reconcile guards). Each leg is already period-scoped + FX-converted (sumFX) exactly like opex, so
+  // native == identity and display reconciles. `complete` reflects FX coverage across the direct leg.
   const _catTotals = {}; let breakdownComplete = true;
-  for (const e of expenses) {
-    const cat = e.category || 'Other';
-    const a = num(e.amount);
-    if (!displayCur) { _catTotals[cat] = (_catTotals[cat] || 0) + a; continue; }
-    if (a === 0) { if (!(cat in _catTotals)) _catTotals[cat] = 0; continue; }
-    const from = _fromOf(e);
-    const rate = (from === displayCur) ? 1 : pickRate(_fxRows, from, displayCur, _expDate(e));
-    if (rate == null) { breakdownComplete = false; continue; }
-    _catTotals[cat] = (_catTotals[cat] || 0) + a * rate;
-  }
-  const expenseBreakdown = {
-    rows: Object.entries(_catTotals).map(([category, amount]) => ({ category, amount: r2(amount) })).sort((a, b) => b.amount - a.amount),
-    complete: breakdownComplete,
+  const _bdConv = (amt, entId, date) => {
+    const a = num(amt);
+    if (!displayCur) return a;
+    if (a === 0) return 0;
+    const from = entCur[entId] != null ? entCur[entId] : viewedCur;
+    const rate = (from === displayCur) ? 1 : pickRate(_fxRows, from, displayCur, date);
+    if (rate == null) { breakdownComplete = false; return 0; }
+    return a * rate;
   };
+  for (const e of expenses) {
+    if (!inPeriod(_expDate(e))) continue;                         // period-scope to match the opex KPI
+    const cat = e.category || 'Other';
+    _catTotals[cat] = (_catTotals[cat] || 0) + _bdConv(e.amount, e.entity_id, _expDate(e));
+  }
+  if (payrollTotal) _catTotals['Payroll'] = (_catTotals['Payroll'] || 0) + payrollTotal;   // period + FX already
+  const _apNet = r2(issuedBillsTotal + paymentsMadeTotal - vendorCreditsTotal);
+  if (_apNet) _catTotals['Bills & vendors'] = (_catTotals['Bills & vendors'] || 0) + _apNet;
+  const _bdSorted = Object.entries(_catTotals).filter(([, v]) => Math.abs(v) > 0.005).sort((a, b) => b[1] - a[1]);
+  const _bdRows = _bdSorted.slice(0, 3).map(([category, amount]) => ({ category, amount: r2(amount) }));
+  const _bdRest = _bdSorted.slice(3).reduce((s, [, v]) => s + v, 0);
+  if (Math.abs(_bdRest) > 0.005) _bdRows.push({ category: 'Other', amount: r2(_bdRest) });
+  const expenseBreakdown = { rows: _bdRows, total: r2(opex), complete: breakdownComplete };
 
   // ── F34 B (surface 3) — CONVERTED recent business transactions (mirrors the client
   // updateTransactions preview: recent recognized invoices + expenses). Each row's amount converts at
@@ -9134,7 +9184,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const transactions = [..._invTx, ..._expTx].sort(_txByDate).slice(0, 6).map(t => ({ name: t.name, cat: t.cat, type: t.type, amount: t.amount }));
 
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, arCreditContra: r2(_arCreditContra), arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the
     // client worksheet (GET /api/tax-filing) and the accountant Tax Summary so taxable reconciles.

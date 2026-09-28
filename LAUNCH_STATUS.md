@@ -1,0 +1,151 @@
+# FinFlow — Launch Status (authoritative)
+
+**Last verified:** 2026-09-28 · **Repo HEAD at write:** `23880ab` (clean, pushed)
+
+This is the single source of truth for "what's done vs what's left." It supersedes and replaces the
+scattered audit/handover/status/plan docs that used to live in the repo root (all consolidated here on
+2026-09-28). For *how the system works* see the kept reference docs listed at the bottom.
+
+> **Bottom line:** the CODE is launch-complete and harness-backed (275 harnesses). What remains before
+> going public is **ops/config only the owner can do** — the sharp edges are the Resend sending domain
+> and the Stripe prices. Nothing code-side blocks launch.
+
+---
+
+## 1. Genuinely OPEN — owner / ops (external; cannot be done in code)
+
+### Billing (billing is wrong until these are set — Stripe dashboard)
+- [ ] Set the **Business price to $249/mo** (still $199 in Stripe → customers keep being billed $199).
+- [ ] Create the **Scale price ($400/mo)** and set `STRIPE_PRICE_SCALE` in Railway (until then Scale
+      checkout returns "Checkout unavailable"). `STRIPE_PRICE_PRO` / `STRIPE_PRICE_BUSINESS` already wired.
+- [ ] Enable **Stripe Identity** in the dashboard (no new key — reuses `STRIPE_SECRET_KEY`); lights up KYC.
+- [ ] Confirm core Stripe envs: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CONNECT_CLIENT_ID`,
+      `STRIPE_CONNECT_REDIRECT_URI`.
+
+### Email (launch blocker for real users)
+- [ ] Verify **`finflow.app` in Resend** (SPF + DKIM DNS), set `RESEND_API_KEY`,
+      `EMAIL_FROM=noreply@finflow.app`, `ADMIN_EMAIL`. Until done, password-reset / receipt / invite mail
+      to real users is unreliable (currently on the sandbox sender, which only delivers to the owner inbox).
+
+### Provider go-live keys (each integration is DARK — clean 502 — until keyed; add one sandbox txn to confirm)
+- [ ] Plaid → production (`PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=production`).
+- [ ] Belvo (`BELVO_SECRET_ID`, `BELVO_SECRET_PASSWORD`, `BELVO_ENV=production`).
+- [ ] OAuth connectors (client id + secret each): QuickBooks, Xero, Zoho, Square, PayPal, Coinbase, Shopify.
+- [ ] Finch (`FINCH_*`), Codat (`CODAT_API_KEY`), optional market data (`FINNHUB_API_KEY`, `COINGECKO_API_KEY`).
+- [ ] WiPay / WooCommerce need no env keys (per-user merchant creds entered in-app).
+
+### Core env
+- [ ] `SESSION_SECRET` (long random), `APP_URL` (public https), `CONNECTOR_ENC_KEY` (AES-256-GCM for stored
+      connector tokens), `ANTHROPIC_API_KEY` (AI assistant / receipt scan).
+- [ ] **`ALLOW_INDEXING=1` at launch** — ships as `noindex` while testing. Verify after:
+      `curl -sI https://<domain>/ | grep -i x-robots-tag` is EMPTY and `robots.txt` shows `Allow: /`.
+
+### Infra / security hardening (recommended before real users)
+- [ ] Cloudflare in front (DNS proxied, TLS Full (strict), managed WAF). Free tier is enough to launch.
+- [ ] Tested backups + point-in-time restore — actually run a restore (see `scripts/restore-drill.sh`).
+- [ ] Least-privilege DB role — app connects as non-superuser (see `INFRA_RUNBOOK.md` §4 + `scripts/db-app-role.sql`);
+      set `SKIP_INIT_DDL=1` on the web process and apply schema via `node scripts/migrate.js` in the release step.
+- [ ] Secrets rotation cadence (DB URL / Stripe / connector keys) on a schedule + on any suspected exposure.
+- [ ] Uptime monitor on `GET /healthz` (200 healthy / 503 degraded).
+- [ ] Optional: `SENTRY_DSN` (+ `npm i @sentry/node`), `SECURITY_ALERT_EMAIL` (audit-anomaly digest),
+      `LOG_REQUESTS=1`, `CRON_SECRET` (if driving the scheduler externally).
+
+### Housekeeping
+- [ ] **Move the repo out of OneDrive** — this is the cause of the recurring `.git/index.lock` fight on commit.
+- [ ] Prod test-data cleanup — remove QA Tester / Claude TestCPA links + the ZZ-QA sample rows.
+
+### The done-gate (do last, right before flipping public)
+- [ ] 3× full harness sweep GREEN: `node -r ./tests/harness/clock.js tests/harness/run-verification-sweep.js` (0 RED each run).
+- [ ] VERIFICATION.md re-sweep on real seeded data (this — not any tracking ledger — establishes sign-off).
+- [ ] Smoke: sign up -> create entity -> invoice + expense -> record payment -> P&L / balance sheet /
+      consolidated -> connect one bank (sandbox) -> accountant invite. Confirm email actually arrives.
+
+---
+
+## 2. Genuinely OPEN — code (mine to build; all NON-blocking, deferred on purpose)
+
+- **CSP `script-src 'unsafe-inline'`** — ACCEPTED DECISION, not a hole. Escaping is the guarded primary
+  XSS defense (`verify-escaping-sweep` scans every render source; the two real sinks were fixed). Dropping
+  `unsafe-inline` needs 509 inline `on*` handlers rewritten to event delegation (CSP3 is all-or-nothing once
+  hashes are present) — real breakage risk for marginal defense-in-depth gain. Revisit as staged, per-page,
+  verified work only if there's appetite. 25 inline scripts are hashable; 1,107 inline styles stay under
+  `style-src 'unsafe-inline'`.
+- **Wire-level invoice pagination** — `_realInvoices`/`userInvoices` feed money features across 6 files
+  (KPIs, transactions, revenue, YTD, recurring detection, payment-party). Removing the full fetch is an
+  app-wide rewrite; risk > gain. Deferred.
+- **Client adoption of keyset pagination** on the invoices/transactions screens — server side is done +
+  tested (`db.pageByUser`, `verify-list-pagination` 13/0); pointing the heavy screens at `{rows,nextCursor}`
+  needs live-UI regression. Perf A -> A+.
+- **Postgres RLS** — designed (`RLS_DESIGN.md`); currently only `page_views` has RLS. App-level tenant
+  isolation IS tested (`verify-tenant-isolation`, `verify-entity-leakage-sweep`). DB-level RLS is
+  defense-in-depth; needs per-session user threading through the Supabase pooler.
+- **Sentry** wiring (needs a DSN), **express 4 -> 5** (clears the last `qs` moderate advisory; major bump).
+- **GL Phase 4 + 5** (owner-gated) — historical backfill into the ledger, then flip source-of-truth to the
+  GL + live "books balanced ✓". Ties into the investments-on-ledger accounting decision. See `GL_DESIGN.md`.
+- **Per-entity API connections** — connectors are still account-level via scopeId; large re-architecture.
+- **Investments-on-ledger** — currently labeled tracking-only (not posted to the double-entry books);
+  posting them is an accounting decision for the owner.
+- **VERIFICATION.md** has 19 empty Result cells (A7.5–8, A7.18, A8a/A8b) — they ARE gate-tested; the gates
+  just don't auto-stamp those rows. Cosmetic doc gap, not a coverage gap.
+
+---
+
+## 3. CLOSED / shipped (verified against code + harnesses)
+
+Money engine & GL: double-entry GL (dual-write shadow), 12 posting types, reconcile monitor, statements,
+read-swap; **multi-currency consolidation proven live** (`verify-fx-consolidation` 12/12, `verify-gl-consolidation`
+13/13 incl. USD+TTD + ASC 830 CTA, `verify-fx-client-consolidation` 4/4 client==server). Payroll basis-C,
+AP/AR netting (F58), period-scoped opex, FIFO COGS.
+
+Entity isolation: documents, audit trail, transaction-lock, team (invite + edit), templates, timesheet,
+projects, connectors — all per-entity, harness-backed. Cross-tenant IDOR tested (`verify-tenant-isolation`).
+
+Accountant marketplace: client<->accountant handshake, bidirectional chat, per-entity access grants,
+KYC (Stripe Identity + registry links), GL certification, tax summary.
+
+Security: session hardening + cookie flags, layered rate limits, CSRF defense, RBAC matrix, owner + accountant
+TOTP MFA, audit-trail (append-only) + anomaly detection/delivery/monitor (brute-force, cross-client, mass-export),
+connector-token encryption at rest, security headers + Permissions-Policy, upload/download hardening,
+account deletion purge + GDPR export, no secrets in the client bundle (`verify-no-secrets-in-bundle`).
+
+Perf/ops: composite index + keyset pagination (server), server-aggregated AR + top-clients, minify build
+(`prestart` regenerates `public/.min/` on every deploy; served only when newer than source), self-hosted
+Chart.js, compression, region routing, `/healthz`, migrations runner, restore drill, CI npm-audit gate,
+accessibility (0 axe violations across 10 pages).
+
+Integrations live-verified: Stripe, Plaid, WiPay (2026-08-16); Resend email path wired (sandbox sender).
+
+### Fixed this session (2026-09-28) — each with a discriminating harness, all green on real Postgres
+- **H1** overdue nets credit notes, clamped ≤ outstanding (dashboard KPI + AR report) — `verify-fc1-overdue-date` (credit-note seed, RED→GREEN).
+- **M1** expense breakdown decomposes opex so Σ(rows) == Expenses KPI — `verify-expense-breakdown-reconcile`.
+- **H2** escaped two real unescaped sinks (accountant bill dropdown [cross-tenant], timesheet) — `verify-escaping-sweep` (static, all render sources).
+- **M2** entity create infers IANA timezone from country (no silent UTC) — `verify-entity-tz-infer`.
+- **Payroll** approve can't revert a paid run (409) — `verify-payroll-approve-guard`.
+- **Security** no live secret in any client-served file — `verify-no-secrets-in-bundle`.
+- Also: the `\u` escape literals in static HTML rendered as text — fixed.
+
+---
+
+## 4. Verifying (how)
+
+Full sweep (auto-discovers every `verify-*.js` + `-gate.js`):
+`node -r ./tests/harness/clock.js tests/harness/run-verification-sweep.js` (clock pinned 2026-07-25).
+
+Owner runs all git in PowerShell (assistant provides commands, never runs git). Bundle is regenerated by
+`node bundle.js`; `index.html` / `app-main.js` ship direct (not bundled). If `device_bash` can't run the
+Postgres harnesses (OneDrive FUSE), run them in a clean Linux env: fresh `npm install` (unpacks the
+embedded-postgres linux-x64 binary), run AS the `postgres` user
+(`runuser -u postgres -- env SESSION_SECRET=test HOME=<dir> bash -c 'cd <dir> && node -r ./tests/harness/clock.js tests/harness/<FILE>.js'`).
+
+---
+
+## 5. Kept reference docs (not status — these explain how the system works)
+
+- `CLAUDE.md` — the 3 defining failures + 14 non-negotiable rules. Overrides default behavior. Read first.
+- `VERIFICATION.md` — the money-cell ledger; the re-sweep on real data is the launch sign-off.
+- `ARCHITECTURE_MAP.md` — system architecture.
+- `GL_DESIGN.md`, `GL_CONSOLIDATION_DESIGN.md`, `FX_CONSOLIDATION_DESIGN.md` — accounting/FX design specs
+  (note: the FX doc's STATUS header predates the client-layer fix, which is now shipped + verified).
+- `RLS_DESIGN.md` — design for the (open) Postgres RLS work.
+- `INFRA_RUNBOOK.md` — ops runbook (deploy, DB role, restore, env).
+- `REVIEW_RULES.md` — review-layer process.

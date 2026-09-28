@@ -4961,7 +4961,7 @@ overlay.innerHTML = `
         <input class="ob-input" id="ob-biz-name" placeholder="Enter your business name" value="">
       </div>
       <div class="ob-field">
-        <label class="ob-label" for="ob-industry">Industry</label>
+        <label class="ob-label" for="ob-industry">Industry *</label>
         <select class="ob-input" id="ob-industry">
           <option value="">Select an industry…</option>
           <option value="Technology">Technology</option>
@@ -4986,7 +4986,7 @@ overlay.innerHTML = `
         <input class="ob-input" id="ob-email" type="email" placeholder="you@company.com" value="">
       </div>
       <div class="ob-field">
-        <label class="ob-label" for="ob-address">Business address</label>
+        <label class="ob-label" for="ob-address">Business address *</label>
         <textarea class="ob-input" id="ob-address" style="min-height:48px;resize:vertical" placeholder="Street, City, Country"></textarea>
       </div>
       <div class="ob-field">
@@ -5136,6 +5136,10 @@ window.obNext = function(){
     if(!name){ if(typeof notify==='function') notify('Business name is required', true); return; }
     if(!user){ if(typeof notify==='function') notify('Your name is required', true); return; }
     if(!email || !/^.+@.+\..+$/.test(email)){ if(typeof notify==='function') notify('A valid email is required', true); return; }
+    const industry = (document.getElementById('ob-industry')?.value||'').trim();
+    const address = (document.getElementById('ob-address')?.value||'').trim();
+    if(!industry){ if(typeof notify==='function') notify('Industry is required', true); return; }
+    if(!address){ if(typeof notify==='function') notify('Business address is required', true); return; }
     if(name && document.getElementById('sb-brand-name')) document.getElementById('sb-brand-name').textContent=name;
     if(user && document.querySelector('.user-name')) document.querySelector('.user-name').textContent=user;
   }

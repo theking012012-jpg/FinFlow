@@ -33,6 +33,10 @@ These are factual, not stylistic. Getting one wrong wastes the owner's time corr
   the flagship, primary, home, or default market. When something is genuinely region-specific
   (e.g. bank-linking coverage differs by country), name the specific region — never collapse the
   whole product down to one.
+- **Tax = ESTIMATES ONLY. FinFlow is not a tax-filing / compliance product.** It computes an income-tax
+  *estimate* (saved rate × taxable profit, plus custom tax lines) and a tax summary — it does NOT file
+  returns and has NO sales-tax / VAT / GST engine. Do not propose or build a VAT/GST/filing engine; it
+  is out of scope by design.
 
 ---
 

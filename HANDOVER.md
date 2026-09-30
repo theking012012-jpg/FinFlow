@@ -1,0 +1,179 @@
+# FinFlow — session handover (for the next Claude)
+
+**Written:** 2026-08-14 · **Repo state:** `main` at commit `62137cc`, clean, everything pushed.
+**You are picking up a single-founder SaaS build.** The owner (Shaq, Trinidad) plans/approves; you write code.
+
+---
+
+## ⚡ UPDATE 2026-09-30 (latest — read this first)
+
+Big session on **in-app help + support + the accountant marketplace**. All test-backed. The **owner now
+runs the verification sweep himself in PowerShell** (`node -r ./tests/harness/clock.js tests/harness/run-verification-sweep.js`,
+he runs it 3× to catch flakiness) — do NOT run the full sweep in the cloud container unless asked; write
+harnesses and run the individual new ones, then hand him the commit.
+
+**Shipped this session (all synced to the owner's machine; he commits/pushes in PowerShell):**
+- **Help Center rebuild** (`public/index.html` `page-help`): searchable article library (25 articles / 11 categories),
+  category cards, **⌘/Ctrl-K command palette** (search help + jump to any page), **live getting-started checklist**
+  (`GET /api/help/progress`, reads real data), and **guided spotlight tours** for the core workflows.
+- **Ask FinFlow** (`POST /api/help/ask`): grounded AI help — cost-capped (aiCap 'shared'), tenant-scoped, 24h-cached
+  for single-shot, **multi-turn threaded** (accepts `history[]`, bypasses cache), **degrades gracefully with no
+  ANTHROPIC_API_KEY** (returns deep links instead of erroring). One-click **escalation** posts the transcript to
+  `/api/support` (category `ai-escalation`).
+- **In-app support** (`/api/support`): serves BOTH clients and accountants; admin **Support Inbox** in `public/admin.html`
+  (`GET/POST /api/admin/support`) to filter/resolve/reply.
+- **Client↔accountant chat** deepened (`accountant-routes.js`): **offline email notify** (`_notifyOfflineMessage`,
+  only when the recipient's SSE stream is closed, 5-min debounce) + **file attachments** (`/my-accountant/attach`,
+  `/clients/attach`, `/chat-attachment/:id`; ≤5MB inline base64; att_* columns on `accountant_messages`).
+- **Marketplace engagement layer** (`accountant-routes.js` + both HTMLs):
+  - **Proposals** — `accountant_proposals` table; accountant sends scope+fee, client accepts/declines; accepted = engagement of record (authorizes existing `bill-client`).
+  - **Client tasks / document requests** — `accountant_tasks` table; accountant assigns to-dos w/ due dates, client ticks done; overdue flagged.
+  - **Dashboard rollup** — `GET /api/accountants/rollup`: cross-client "needs attention" (pending proposals, open/overdue tasks, unread messages, deadlines) on `accountant-dashboard.html`.
+
+**New tables:** `support_requests`, `accountant_proposals`, `accountant_tasks`; new cols `accountant_messages.att_{name,mime,size,data}`.
+
+**New harnesses (all green here):** `verify-help-endpoints` (24), `verify-help-center-ui` (34, static+jsdom),
+`verify-support-request` (15), `verify-help-center` (23), `verify-admin-support` (17), `verify-chat-attachments` (18),
+`verify-chat-ai-wiring` (21), `verify-accountant-proposals` (21), `verify-accountant-tasks` (18),
+`verify-accountant-rollup` (13), `verify-proposals-ui` (23, static). Two pre-existing stale harnesses were fixed
+(`verify-ar-by-customer` overdue now nets credit notes → 7,300; `verify-onboarding-provision` fill() supplies the
+now-required Industry/Business-address). Hardened `jsdomBoot.js` against a pre-existing jsdom teardown flake
+(server.js's prod `uncaughtException`→exit(1) was tripping on post-close rAF noise in SPA harnesses).
+
+**Launch wiring (features degrade gracefully, but set these on Railway or they silently no-op):**
+`RESEND_API_KEY` + `EMAIL_FROM` (offline chat nudges, support/admin/proposal/task emails), `ADMIN_EMAIL`
+(support notifications), `ANTHROPIC_API_KEY` (Ask FinFlow — falls back to deep links without it).
+
+**Scope reminder (owner correction):** tax = **estimates only**, no filing / VAT / GST engine. See CLAUDE.md Product facts.
+
+---
+
+## ⚡ UPDATE 2026-09-27 (read after the 09-30 update)
+
+Repo is well past `62137cc`; `main` is clean and pushed. The current authoritative status is the
+live scorecard in **`AUDIT_DEEPDIVE_2026-09-26.md`**, and the full detail of the latest session is in
+**`SESSION_HANDOVER_2026-09-27.md`** — read those two first.
+
+Since 09-14, an "everything → A+" pass shipped (all test-backed, all pushed):
+- **Data lifecycle → A+:** account deletion now purges the ledger; `GET /api/auth/export` (GDPR). (`verify-account-deletion-purge` 11/0, `verify-account-export` 9/0)
+- **Payments → A:** Stripe webhook dunning + dispute alert + idempotent refund reversal. (`verify-webhook-dunning-refund` 13/0)
+- **Accessibility → A:** 0 axe violations across 10 pages (was 64). (`tests/harness/a11y-audit.js`)
+- **Security → A / Ops → A-:** `Permissions-Policy` + CI npm-audit gate; least-privilege DB role + `SKIP_INIT_DDL` boot gate + `scripts/migrate.js` + `scripts/restore-drill.sh` (all tested). New env vars in `.env.example`.
+- **Perf → A-:** composite `(user_id,created_at)` index + opt-in keyset pagination (`db.pageByUser`).
+
+**Update (session 2, `ff42ebe`):** Perf → **A** (server-aggregated AR report [verified live] + top-clients
+endpoints + incremental invoice-table render + keyset pagination). Security stays **A** (Permissions-Policy,
+CI npm audit, CSP report-only backstop). Final grades: **Data lifecycle A+ · Ledger/Accessibility/Payments/
+Security/Perf A · Ops A− (A+ on running the Railway role/migrate/drill).**
+
+**The two remaining A+ bumps were MEASURED and deliberately NOT done — do not attempt blind:**
+- Security `unsafe-inline` drop needs refactoring **502 inline `on*` handlers** to event-delegation (25 inline
+  scripts are hashable; 1,105 inline styles stay as `style-src 'unsafe-inline'`). Multi-day render-layer rewrite.
+- Wire-level invoice pagination needs re-sourcing **all** money features off the full invoice array
+  (`_realInvoices`/`userInvoices` across 6 files) — an app-wide rewrite.
+Both are large rewrites whose risk outweighs the gain on an app that already escapes output via `esc()` and
+loads bounded per-entity data. **Recommendation: ship.** See `AUDIT_DEEPDIVE_2026-09-26.md` (FINAL STATE) and
+`SESSION_HANDOVER_2026-09-27.md` (Continued session 2).
+
+---
+
+## ⚡ UPDATE 2026-08-24 (read this before the 2026-08-14 body below)
+
+Things have moved since this handover was written — several "open gaps" are now closed:
+
+- **Live-verified since 08-14:** **Stripe**, **Plaid**, **WiPay** live handshakes done **2026-08-16**
+  (see `VERIFICATION_INTEGRATIONS.md`). Section 5 item 1 below is DONE.
+- **Transactional email (Resend) — WIRED + LIVE (2026-08-24).** `verify-email-resend.js` 10/0 + a real
+  reset email delivered from production. Section 5 item 3's email entry is DONE.
+- **Forgot-password on the live login** (`finflow-api.js` `showAuthGate` — the runtime winner; static login
+  is dead-shadowed): shipped, `verify-forgot-password-ui.js` 10/0. **SW bumped v2→v3.**
+- **Mobile card-stack** + **Chart.js self-hosted** (`public/vendor/chart.umd.js`, off cdnjs) shipped (`965171c`).
+- **F128/D1/F86** owner decisions ruled + re-verified 2026-08-23 (see `OUTSTANDING.md` §C).
+
+**The one remaining launch item for email:** Resend is on the **sandbox sender** (`onboarding@resend.dev`,
+delivers only to the owner's own inbox). Real users need a **verified domain** in Resend + `EMAIL_FROM=
+noreply@<domain>`. See `OUTSTANDING.md` § H. Everything else in the email path is done.
+
+Repo has advanced well past `62137cc` (many commits since). The current authoritative "what's left" list is
+**`OUTSTANDING.md`** (updated 2026-08-24), not this snapshot.
+
+---
+
+## 0. READ THESE FIRST, IN ORDER
+1. **`CLAUDE.md`** — the project's 3 defining failures + 14 non-negotiable rules. It **OVERRIDES your defaults**. Every rule exists because breaking it caused a real production bug. Do not skim.
+2. **`AUDIT_MASTER.md`** — the findings ledger (F1…F179). Your work this session is F156–F179 near the top.
+3. **`VERIFICATION_INTEGRATIONS.md`** — per-connector status + the exact live-key steps to close each gap.
+4. **`VERIFICATION.md`** — the finite list that defines "done" for money figures.
+
+---
+
+## 1. HARD WORKFLOW RULES (do not violate)
+- **HOLD before every commit.** NEVER run `git commit`/`git push` yourself. Do the work, then give the owner **exact PowerShell commands** to run. They commit from `C:\Users\theki\OneDrive\Desktop\finflow-FINAL7 (4)`.
+- **Scratch Postgres only, never production.** Tests use a real embedded Postgres.
+- **Edit wiring sources, NEVER `public/finflow-bundle.js`.** The F13 pre-commit hook regenerates the bundle from the 10 `public/finflow-api-wiring-*.js` files. `index.html` and `accountant-client.html` ship **directly** (not bundle sources).
+- **Rule 1 (shadowing):** before editing any client function, find the runtime winner. `grep "window.NAME *=" public/finflow-api-wiring-*.js` — if a wiring file assigns `window.NAME`, that wins over `app-main.js`'s copy (unless it saves `_origNAME`). Editing the shadowed copy = clean diff, zero effect. This has burned people repeatedly.
+- **Money changes = one fix per commit.** Never fold two money changes into one commit.
+- **Never fabricate.** If you can't reach data, build a read-only instrument and say so. Report evidence (actual diffs/queries/test output), not conclusions.
+
+---
+
+## 2. HOW TO RUN & VERIFY (the harness setup)
+- **Sandbox:** there is an ext4 working copy at `~/ff-verify` in the bash VM (the OneDrive mount is slow/cloud-synced). Workflow: edit files in the mount via Read/Write/Edit tools → `cp` the changed file into `~/ff-verify/...` → run the harness there.
+- **Run a harness:** `cd ~/ff-verify && node -r ./tests/harness/clock.js tests/harness/verify-XXX.js`
+- **Clock is pinned** to `2026-07-25T12:00:00-04:00` (America/Port_of_Spain) via `clock.js`. Network is **blocked** in-sandbox (that's why live provider calls can't run — they 502, which the tests assert as "dispatch reached").
+- **Each harness boots its own Postgres (~20s).** The bash tool caps at **~180s per call** — batch ~6–7 harnesses per call. `boot.js` + `HarnessHttp` (`httpClient.js`) are the plumbing.
+- **Webhook tests need Stripe keys:** set `process.env.HARNESS_KEEP_STRIPE = '1'` before `bootServer` (boot.js scrubs Stripe env otherwise). Sign synthetic events with the real `stripe` SDK / `crypto.createHmac`.
+- **Full suite** = ~141 harnesses. Money core = the 4 `step*-gate` files + all `verify-c1-*`. Reports = `verify-f137*`. Everything is green as of `62137cc`.
+
+---
+
+## 3. WHAT WAS BUILT THIS SESSION (F156–F179)
+Started as an execution-verified audit, became a full **integrations + payments + banking layer**. All committed, all execution-verified except live provider round-trips.
+
+**Audit/fixes:** F156/F157 (accountant journal entity, no-entity 400), F110/F83/D2/A9/A8c/FX, F88, RBAC audit, F54 (team data-scope → `scopeId`), F111 (access-visibility), F158 (accountant view/filing grant), F159 (**real bug**: `nextRunDate` used timezone-dependent instant math — Rule 10; fixed across server + 2 client mirrors), onboarding (F165), color (F163).
+
+**Integrations (11 connectors, all owner-only, env-gated, encrypted at rest AES-256-GCM):**
+- Data: **Plaid** (F164, banking), **Belvo** (F168, LatAm banking), **Finch** (F166, payroll), **Codat** (F166, accounting), **Wise** (F169/F174, multi-currency).
+- Payments: **Stripe Connect** (F167), **Paystack/Flutterwave/dLocal/Mercado Pago** (F169 generic credential connectors + F174 pay-link builders), **WiPay** (F168, Caribbean).
+- Catalogue: honest "Connect" (built) vs "Request" (records demand, F170); "755" stat card fixed to "In directory" vs "Live connections" (F167).
+
+**Payments loop (ALL 4 processors reconcile — signed, idempotent, single-writer, balance-capped, forgery-rejecting):**
+- Invoice **pay-link** generation (F170) + "Pay link ↗" button on invoices (F172).
+- Webhook reconciliation: **Stripe** (F171), **Paystack** HMAC-SHA512 (F172), **Flutterwave** verif-hash (F173), **WiPay** md5 callback (F175). All route through **one** money writer `recordExternalInvoicePayment` → `invoice_payments` + `recalcInvoiceStatus`.
+- **End-to-end proof** (F177): `verify-e2e-payment-flow.js` — invoice → AR=500 in real report → pay-link → signed webhook → reconcile → AR=0.
+
+**Banking for any bank incl. local Caribbean (F178):** `POST /api/banking/import` — OFX/QFX + CSV statement import, idempotent (FITID / content hash), "⬆ Import" button. Verified server 16/0 + client 8/0.
+
+**Housekeeping (F179):** `.gitattributes` (`* text=auto eol=lf`) killed the OneDrive CRLF churn; refreshed 3 stale probes (f123/f128/f130) to green.
+
+---
+
+## 4. HARD-WON GOTCHAS (will save you hours)
+- **OneDrive CRLF lag** (now mostly fixed by `.gitattributes`): historically the mount flipped LF↔CRLF and **dropped a real one-line change from a commit twice**. If `git status` shows a file `M` you didn't expect, run `git diff --stat` — equal-thousands +/- = churn (safe); a small mixed diff = **real, do not discard**. NEVER blindly `git checkout` a file. After editing via tools, `grep -c $'\r' file` and `sed -i 's/\r$//'` if needed.
+- **Resolver is `/api`-scoped:** `app.use('/api', …)` sets `req.accountId`/`req.accountRole`. Any route OUTSIDE `/api` has neither → `requirePerm` fails closed (403s the owner) and `scopeId` is undefined. Webhook callbacks (Finch/Stripe) MUST live under `/api/...`. (Caught: `/finch/callback` → `/api/finch/callback`.)
+- **`wrap` is a `const`** (~server.js:443). The early webhooks registered before it (before `express.json`, for raw body) must use **bare `async (req,res)=>{}` + try/catch**, not `wrap(...)` (temporal-dead-zone ReferenceError). (Caught: WiPay callback.)
+- **`invoice_payments` is a TYPED table** (real columns), NOT JSONB. Query `idempotency_key`, not `data->>'idempotency_key'`. Most other tables (invoices, personal_transactions, user_settings…) ARE JSONB (`data->>'field'`).
+- **Payment money rule:** creating a pay-link never marks anything paid; only a **signature-verified** webhook does, through the single writer, idempotent on the processor's event id (`idx_invoice_payments_idem_key`), capped to the balance. Sync endpoints are **display-only** — they do NOT auto-write the books (Rules 2 & 12).
+- **WiPay hash** = `md5(transaction_id + ORIGINAL_total(2dp) + api_key)`, no separators — reverse-engineered & confirmed against WiPay's own doc example (sandbox key `123`).
+- **Rule 5 fragile probes:** `f128`/`f130`/etc. use source-extraction + hand DOM stubs. Don't keep patching them; the real figures are verified by `verify-f137*` (real endpoints). f128 was rewritten to a structural invariant this session.
+
+---
+
+## 5. THE ONE OPEN GAP + NEXT STEPS
+**Gap:** every connector's *live provider network call* is UNEXECUTED — the sandbox blocks outbound HTTP; it needs the owner's API keys in Railway. Everything up to that boundary (our code, signature checks, money writes) IS verified. `VERIFICATION_INTEGRATIONS.md` has the exact keys + steps per provider.
+
+**Highest-value next moves (owner-directed):**
+1. **Close a live leg.** Owner adds Stripe **test-mode** keys (they already have `STRIPE_SECRET_KEY`; needs `STRIPE_CONNECT_CLIENT_ID`) or Plaid **sandbox** (free) or WiPay (sandbox key `123`) to Railway → then verify a real round-trip against the deployed app (Chrome browser tools) or a live harness.
+2. **UI polish:** wire "Sync" buttons for **Codat** and **Wise** (endpoints exist — `/api/codat/sync`, `/api/wise/sync` — but no client button yet); a column-mapping step for messy CSVs; PDF statement import (harder).
+3. **Env-gated surfaces still live-unexecuted:** AI categorization (`ANTHROPIC_API_KEY`), transactional email (`RESEND_API_KEY`), mobile/perf — see `AUDIT_2026-08-14_launch-surfaces.md`.
+4. **Slow harnesses** (`c2-runtime-dialog-scan`, `boot-failures-gate`) exceed the 180s cap — shard them if you need them in CI (F162).
+
+---
+
+## 6. WHERE THINGS LIVE
+- Server: `server.js` (Express + Postgres). Integration routes are grouped (Plaid ~4200, Finch/Codat/Stripe ~4480, Belvo/WiPay ~4650, generic credential connectors, payment-link + webhooks near the top for raw-body ones). Money writer `recordExternalInvoicePayment` sits just above `recalcInvoiceStatus`.
+- Client: `public/index.html` (ships directly — connector helpers `ffLinkBank/ffConnectProvider/ffConnectCreds/ffLinkBelvo/ffConnectWiPay/ffInvoicePaymentLink/ffImportStatement`, onboarding, catalogue). Invoice "Pay link" button is in `public/finflow-api-wiring-medium.js` (`renderInvoices`, the runtime winner).
+- Tests: `tests/harness/verify-*.js`. New this session: `verify-plaid-linking`, `verify-finch-codat-linking` (covers 6 connectors + syncs), `verify-requests-paylinks`, `verify-webhook-reconcile`, `verify-paystack-webhook`, `verify-flutterwave-webhook`, `verify-wipay-reconcile`, `verify-invoice-paylink-button`, `verify-e2e-payment-flow`, `verify-bank-import`, `verify-bank-import-client`, `verify-auth-flow`, `verify-export-csv`, `verify-recurring-scheduler`, `verify-recurring-nextrun-tz`.
+- Deploy: Railway, auto-deploys from `main`.
+
+**Owner's style:** enthusiastic, says "keep going / lets go bro." Wants things *actually verified* ("legit and working") — always give the honest execution-verified vs inspection-only breakdown, and flag what needs their keys. They commit in PowerShell and paste the output back; watch for skipped/mis-ordered commits (the CRLF lag caused a couple).

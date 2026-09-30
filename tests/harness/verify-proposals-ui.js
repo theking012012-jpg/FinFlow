@@ -45,7 +45,14 @@ const P = f => fs.readFileSync(path.join(process.cwd(), f), 'utf8');
   A('accountant: createTask/loadTasks/deleteTask wired', /function createTask/.test(acc) && /function loadTasks/.test(acc) && /function deleteTask/.test(acc) && /clients\/\$\{_userId\}\/tasks/.test(acc));
   A('accountant: requests section lazy-loads', /if \(name === 'requests'\) loadTasks\(\)/.test(acc));
 
-  console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (proposals + requests UI wiring)`);
+  // ── Dashboard rollup UI ─────────────────────────────────────────────────────────
+  const dash = P('public/accountant-dashboard.html');
+  A('rollup: attention section mount', /id="attention-section"/.test(dash) && /id="attention-list"/.test(dash));
+  A('rollup: loadRollup reads /api/accountants/rollup', /function loadRollup/.test(dash) && /\/api\/accountants\/rollup/.test(dash));
+  A('rollup: loaded on dashboard boot', /loadRollup\(\);/.test(dash));
+  A('rollup: rows deep-link into the client via viewBooks', /viewBooks\(\$\{cl\.user_id\}/.test(dash));
+
+  console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (marketplace UI wiring: proposals + requests + rollup)`);
   console.log('');
   process.exitCode = fail === 0 ? 0 : 1;
 })();

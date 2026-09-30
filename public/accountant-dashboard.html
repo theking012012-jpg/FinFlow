@@ -430,6 +430,12 @@
         <div id="pending-requests-list" style="display:flex;flex-direction:column;gap:10px"></div>
       </div>
 
+      <!-- NEEDS ATTENTION ROLLUP -->
+      <div id="attention-section" style="display:none;margin-bottom:24px">
+        <div class="section-title" style="color:var(--gold)">Needs your attention <span id="attention-badge" style="background:rgba(201,168,76,0.12);color:var(--gold);border:1px solid var(--gold-dim);border-radius:100px;padding:2px 10px;font-size:11px;font-weight:500"></span></div>
+        <div id="attention-list" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+
       <div class="section-title">
         Recent Clients
         <a onclick="showPage('clients')">View all →</a>
@@ -861,10 +867,48 @@ async function boot() {
     loadEarnings();
     loadPendingRequests();
     loadDeadlines();
+    loadRollup();
   } catch (e) {
     console.error('Boot error:', e);
     window.location.href = '/accountant-login';
   }
+}
+
+async function loadRollup() {
+  const section = document.getElementById('attention-section');
+  const list = document.getElementById('attention-list');
+  if (!section || !list) return;
+  try {
+    const res = await fetch('/api/accountants/rollup', { credentials: 'include' });
+    if (!res.ok) { section.style.display = 'none'; return; }
+    const d = await res.json();
+    const t = d.totals || {};
+    const chips = [];
+    if (t.unreadMessages) chips.push(`<span style="color:var(--gold)">${t.unreadMessages} unread</span>`);
+    if (t.pendingProposals) chips.push(`${t.pendingProposals} proposal${t.pendingProposals>1?'s':''} pending`);
+    if (t.overdueTasks) chips.push(`<span style="color:var(--red,#c0392b)">${t.overdueTasks} overdue request${t.overdueTasks>1?'s':''}</span>`);
+    else if (t.openTasks) chips.push(`${t.openTasks} open request${t.openTasks>1?'s':''}`);
+    const overdueDl = (d.deadlines||[]).filter(x=>x.overdue).length;
+    if (overdueDl) chips.push(`<span style="color:var(--red,#c0392b)">${overdueDl} overdue deadline${overdueDl>1?'s':''}</span>`);
+
+    const clients = d.clients || [];
+    if (!clients.length && !overdueDl) { section.style.display = 'none'; return; }
+    const badge = document.getElementById('attention-badge');
+    if (badge) badge.textContent = clients.length ? (clients.length + (clients.length>1?' clients':' client')) : '';
+    const pill = (txt, danger) => `<span style="font-size:11px;padding:2px 9px;border-radius:100px;background:${danger?'rgba(192,57,43,0.12)':'rgba(201,168,76,0.1)'};color:${danger?'var(--red,#c0392b)':'var(--gold)'};border:1px solid ${danger?'rgba(192,57,43,0.3)':'var(--gold-dim)'}">${txt}</span>`;
+    list.innerHTML = clients.map(cl => {
+      const bits = [];
+      if (cl.unread) bits.push(pill(cl.unread + ' unread', false));
+      if (cl.pendingProposals) bits.push(pill(cl.pendingProposals + ' proposal' + (cl.pendingProposals>1?'s':''), false));
+      if (cl.overdueTasks) bits.push(pill(cl.overdueTasks + ' overdue', true));
+      else if (cl.openTasks) bits.push(pill(cl.openTasks + ' open', false));
+      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card,#161310);border:1px solid var(--border);border-radius:10px;padding:12px 14px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:13.5px;color:var(--text1)">${esc(cl.name)}</span>${bits.join(' ')}</div>
+          <button class="btn btn-outline btn-sm" onclick="viewBooks(${cl.user_id},'${esc(String(cl.name).replace(/'/g,''))}')">Open →</button>
+        </div>`;
+    }).join('') || `<div style="font-size:13px;color:var(--text3);padding:4px 2px">${overdueDl} overdue filing deadline${overdueDl>1?'s':''} — see Deadlines.</div>`;
+    section.style.display = 'block';
+  } catch (e) { section.style.display = 'none'; }
 }
 
 async function loadPendingRequests() {

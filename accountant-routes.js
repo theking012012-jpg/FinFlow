@@ -2145,6 +2145,52 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     res.json({ ok: true, ...r.rows[0] });
   }));
 
+  // ── DASHBOARD ROLLUP — one cross-client "needs your attention" view ─────────────
+  // Aggregates, across the accountant's ACTIVE clients: proposals awaiting a response, open/overdue
+  // requests, unread client messages, and upcoming/overdue filing deadlines. Cheap grouped SQL.
+  app.get('/api/accountants/rollup', requireAccountant, wrap(async (req, res) => {
+    const aid = req.session.accountantId;
+    const [clients, props, tasks, unread, deadlines] = await Promise.all([
+      pool.query(`SELECT ac.user_id, u.data->>'name' AS name, u.data->>'company_name' AS company, u.data->>'email' AS email
+                    FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
+                   WHERE ac.accountant_id=$1 AND ac.status='active'`, [aid]),
+      pool.query(`SELECT user_id, COUNT(*)::int n FROM accountant_proposals WHERE accountant_id=$1 AND status='pending' GROUP BY user_id`, [aid]),
+      pool.query(`SELECT user_id, COUNT(*) FILTER (WHERE status='open')::int AS open_n,
+                         COUNT(*) FILTER (WHERE status='open' AND due_date < CURRENT_DATE)::int AS overdue_n
+                    FROM accountant_tasks WHERE accountant_id=$1 GROUP BY user_id`, [aid]),
+      pool.query(`SELECT m.user_id, COUNT(*)::int n FROM accountant_messages m
+                    JOIN accountant_clients ac ON ac.accountant_id=m.accountant_id AND ac.user_id=m.user_id
+                   WHERE m.accountant_id=$1 AND m.sender='client'
+                     AND (ac.accountant_last_read IS NULL OR m.created_at > ac.accountant_last_read)
+                   GROUP BY m.user_id`, [aid]),
+      pool.query(`SELECT id, client_name, filing_type, due_date FROM accountant_deadlines
+                   WHERE accountant_id=$1 AND due_date <= CURRENT_DATE + INTERVAL '30 days' ORDER BY due_date ASC LIMIT 25`, [aid]),
+    ]);
+    const by = {};
+    for (const c of clients.rows) by[c.user_id] = { user_id: c.user_id, name: (c.company || c.name || c.email || 'Client'), pendingProposals: 0, openTasks: 0, overdueTasks: 0, unread: 0 };
+    for (const p of props.rows) if (by[p.user_id]) by[p.user_id].pendingProposals = p.n;
+    for (const t of tasks.rows) if (by[t.user_id]) { by[t.user_id].openTasks = t.open_n; by[t.user_id].overdueTasks = t.overdue_n; }
+    for (const u of unread.rows) if (by[u.user_id]) by[u.user_id].unread = u.n;
+    const attention = Object.values(by)
+      .filter(c => c.pendingProposals || c.openTasks || c.unread)
+      .sort((a, b) => (b.unread + b.overdueTasks * 2 + b.pendingProposals) - (a.unread + a.overdueTasks * 2 + a.pendingProposals));
+    const todayMs = Date.now();
+    const dls = deadlines.rows.map(d => ({ ...d, overdue: new Date(d.due_date).getTime() < todayMs }));
+    res.json({
+      totals: {
+        activeClients: clients.rows.length,
+        pendingProposals: props.rows.reduce((s, r) => s + r.n, 0),
+        openTasks: tasks.rows.reduce((s, r) => s + r.open_n, 0),
+        overdueTasks: tasks.rows.reduce((s, r) => s + r.overdue_n, 0),
+        unreadMessages: unread.rows.reduce((s, r) => s + r.n, 0),
+        upcomingDeadlines: deadlines.rows.length,
+        attentionClients: attention.length,
+      },
+      clients: attention,
+      deadlines: dls,
+    });
+  }));
+
   // ── CLIENT: REQUEST ACCESS FROM AN ACCOUNTANT ─────────────────────────────
   app.post('/api/accountants/request-access', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });

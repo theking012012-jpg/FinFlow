@@ -5031,78 +5031,7 @@ document.addEventListener('keydown',function(e){ if((e.metaKey||e.ctrlKey)&&!e.a
 
 (function(){ var _sp=window.showPage; if(_sp){ window.showPage=function(id,el){ var r=_sp.apply(this,arguments); if(id==='help'){ try{ renderHelpCenter(); }catch(e){} } return r; }; } })();
 
-window.ffHelp = function(){
-  try{ var ex=document.getElementById('ff-help-ov'); if(ex) ex.remove(); }catch(e){}
-  var KEY='finflow-getstarted';
-  var done={}; try{ done=JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(e){ done={}; }
-  var steps=[
-    ['entity','Set up your business','Create your first entity — sets its currency, country & timezone.','entities'],
-    ['invoice','Add an invoice & an expense','Record real activity so your dashboard and P&L come alive.','invoices'],
-    ['import','Import your existing books','Bring data in from QuickBooks / Xero, then Verify books to prove it ties out.','connections'],
-    ['bank','Connect a bank feed','Auto-import transactions via Plaid, Belvo, or a statement upload.','banking'],
-    ['accountant','Invite your accountant','Give your accountant scoped, per-entity access to review your books.','my-accountant']
-  ];
-  var faqs=[
-    ['Does FinFlow handle multiple businesses?','Yes — each entity keeps its own currency, books and access. The dashboard consolidates every entity to your base currency at each transaction’s own FX rate.'],
-    ['How do I switch from QuickBooks or Xero?','Connections → Import books pulls your data in, then it auto-verifies that the trial balance ties, entity by entity. Re-run Verify books any time.'],
-    ['Is my data secure?','Two-factor auth, an append-only audit trail, encrypted connector tokens, and role-based access. Bank links are read-only.'],
-    ['Can my accountant work in here with me?','Yes — invite them for scoped per-entity access, with built-in secure chat and GL certification.']
-  ];
-  var ov=document.createElement('div'); ov.id='ff-help-ov';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.62);backdrop-filter:blur(4px);z-index:400;display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto';
-  var total=steps.length, doneN=steps.filter(function(x){return done[x[0]];}).length;
-  var stepHtml=steps.map(function(s){
-    var d=!!done[s[0]];
-    return '<div style="display:flex;gap:11px;align-items:flex-start;padding:11px 0;border-top:1px solid var(--bd)">'
-      +'<button data-tick="'+s[0]+'" aria-label="Mark done" style="flex:none;width:20px;height:20px;margin-top:1px;border-radius:5px;border:1.5px solid '+(d?'#294a26':'var(--bd2)')+';background:'+(d?'var(--green-bg,#12200f)':'var(--bg2)')+';color:var(--green,#7db87d);cursor:pointer;font-size:12px;line-height:1">'+(d?'✓':'')+'</button>'
-      +'<div style="flex:1;min-width:0">'
-      +'<div style="font-weight:600;font-size:13.5px;color:var(--t1)'+(d?';text-decoration:line-through;opacity:.6':'')+'">'+s[1]+'</div>'
-      +'<div style="font-size:12px;color:var(--t2);margin:2px 0 6px">'+s[2]+'</div>'
-      +'<button data-go="'+s[3]+'" class="btn btn-ghost btn-sm" style="font-size:11.5px">Go →</button>'
-      +'</div></div>';
-  }).join('');
-  var faqHtml=faqs.map(function(f){
-    return '<details style="border-top:1px solid var(--bd);padding:9px 0"><summary style="cursor:pointer;font-size:13px;color:var(--t1);font-weight:500">'+f[0]+'</summary><div style="font-size:12.5px;color:var(--t2);margin-top:6px;line-height:1.6">'+f[1]+'</div></details>';
-  }).join('');
-  ov.innerHTML='<div class="modal" style="max-width:560px;width:100%">'
-    +'<div class="modal-header"><div><div class="modal-title">Help & getting started</div>'
-    +'<div class="modal-sub" id="ff-help-prog">'+doneN+' of '+total+' steps done</div></div>'
-    +'<button class="modal-close" aria-label="Close">&#10005;</button></div>'
-    +'<div style="font-family:var(--font-mono,monospace);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);margin:6px 0 0">Getting started</div>'
-    +stepHtml
-    +'<div style="font-family:var(--font-mono,monospace);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);margin:22px 0 0">Questions</div>'
-    +faqHtml
-    +'<div style="margin-top:20px;padding-top:14px;border-top:1px solid var(--bd)">'
-    +'<div style="font-family:var(--font-mono,monospace);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);margin-bottom:8px">Contact support</div>'
-    +'<input id="ff-sup-subject" placeholder="Subject" style="width:100%;box-sizing:border-box;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:8px 10px;font-size:13px;margin-bottom:8px">'
-    +'<textarea id="ff-sup-msg" placeholder="How can we help?" style="width:100%;box-sizing:border-box;min-height:70px;resize:vertical;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--t1);padding:8px 10px;font-size:13px"></textarea>'
-    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px"><span style="font-size:11.5px;color:var(--t3)">or email <a href="mailto:support@finflow.app" style="color:var(--acc)">support@finflow.app</a></span><button id="ff-sup-send" class="btn btn-primary btn-sm">Send</button></div>'
-    +'<div id="ff-sup-status" style="font-size:12px;margin-top:6px"></div>'
-    +'</div>'
-    +'</div>';
-  document.body.appendChild(ov);
-  var close=function(){ try{ov.remove();}catch(e){} };
-  ov.querySelector('.modal-close').onclick=close;
-  ov.onclick=function(e){ if(e.target===ov) close(); };
-  document.addEventListener('keydown', function esc(e){ if(e.key==='Escape'){ close(); document.removeEventListener('keydown',esc); } });
-  ov.querySelectorAll('[data-go]').forEach(function(b){ b.onclick=function(){ var id=b.getAttribute('data-go'); close(); try{ if(window.showPage) window.showPage(id); }catch(e){} }; });
-  ov.querySelectorAll('[data-tick]').forEach(function(b){ b.onclick=function(){ var k=b.getAttribute('data-tick'); done[k]=!done[k]; try{ localStorage.setItem(KEY,JSON.stringify(done)); }catch(e){} window.ffHelp(); }; });
-  var _supBtn=ov.querySelector('#ff-sup-send');
-  if(_supBtn) _supBtn.onclick=async function(){
-    var subj=((ov.querySelector('#ff-sup-subject')||{}).value)||'';
-    var msg=((ov.querySelector('#ff-sup-msg')||{}).value)||'';
-    var st=ov.querySelector('#ff-sup-status');
-    if(!msg.trim()){ if(st){ st.style.color='var(--red)'; st.textContent='Please add a message.'; } return; }
-    _supBtn.disabled=true; _supBtn.textContent='Sending\u2026';
-    try{
-      var r=await fetch('/api/support',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({subject:subj,message:msg})});
-      if(!r.ok){ var j=await r.json().catch(function(){return {};}); if(st){ st.style.color='var(--red)'; st.textContent=j.error||'Could not send \u2014 please email us instead.'; } _supBtn.disabled=false; _supBtn.textContent='Send'; return; }
-      if(st){ st.style.color='var(--green)'; st.textContent='Sent \u2713 We\u2019ll reply by email.'; }
-      var s1=ov.querySelector('#ff-sup-subject'), m1=ov.querySelector('#ff-sup-msg'); if(s1)s1.value=''; if(m1)m1.value='';
-      _supBtn.textContent='Sent \u2713';
-    }catch(e){ if(st){ st.style.color='var(--red)'; st.textContent='Network error \u2014 please email us instead.'; } _supBtn.disabled=false; _supBtn.textContent='Send'; }
-  };
-};
+// ffHelp getting-started overlay retired — superseded by the full Help Center (page-help / renderHelpCenter).
 
 // ── Bank statement import: upload an OFX/QFX/CSV file from any bank (incl. local banks). ──
 window.ffImportStatement = function(){

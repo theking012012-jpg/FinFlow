@@ -301,6 +301,24 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
       } catch (e) { console.error('[proposal notify]', e.message); }
     })();
   }
+  // Fire-and-forget: email the client that their accountant assigned a new task/request.
+  function _notifyTask(accountantId, userId, title) {
+    (async () => {
+      try {
+        if (!resendClient || !process.env.EMAIL_FROM) return;
+        const r = await pool.query(`SELECT data->>'email' AS e FROM users WHERE id=$1`, [userId]); const to = r.rows[0] && r.rows[0].e; if (!to) return;
+        const name = await _accountantName(accountantId);
+        let link = 'https://finflow.app'; try { link = appUrl(); } catch (_) {}
+        await resendClient.emails.send({
+          from: process.env.EMAIL_FROM, to,
+          subject: name + ' requested something from you',
+          html: `<p><b>${_chatEsc(name)}</b> added a request for you on FinFlow:</p>`
+            + `<blockquote style="border-left:3px solid #c9a84c;padding-left:12px;color:#555">${_chatEsc(String(title).slice(0, 200))}</blockquote>`
+            + `<p><a href="${link}">Open FinFlow to view it</a></p>`,
+        });
+      } catch (e) { console.error('[task notify]', e.message); }
+    })();
+  }
   const _CHAT_ATT_MAX = 5 * 1024 * 1024;   // 5 MB decoded
   const _attClean = n => String(n || 'file').replace(/[^\w.\- ]/g, '_').slice(0, 120);
   function _decodeAttachment(body) {
@@ -2059,6 +2077,71 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
        RETURNING id,status,accepted_at,declined_at`,
       [id, newStatus, req.session.userId]);
     if (!r.rows[0]) return res.status(409).json({ error: 'This proposal is no longer pending.' });
+    res.json({ ok: true, ...r.rows[0] });
+  }));
+
+  // ── CLIENT TASKS / DOCUMENT REQUESTS ────────────────────────────────────────────
+  app.post('/api/accountants/clients/:userId/tasks', requireAccountant, apiLimiter, wrap(async (req, res) => {
+    const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
+    const access = await pool.query(`SELECT 1 FROM accountant_clients WHERE accountant_id=$1 AND user_id=$2 AND status='active' LIMIT 1`, [req.session.accountantId, userId]);
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    const title = String((req.body && req.body.title) || '').trim().slice(0, 200);
+    if (!title) return res.status(400).json({ error: 'Title required.' });
+    const detail = String((req.body && req.body.detail) || '').trim().slice(0, 2000);
+    let due = (req.body && req.body.due_date) ? String(req.body.due_date).slice(0, 10) : null;
+    if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) due = null;   // accept only a clean YYYY-MM-DD
+    const row = await pool.query(
+      `INSERT INTO accountant_tasks (accountant_id,user_id,title,detail,due_date)
+       VALUES ($1,$2,$3,$4,$5) RETURNING id,title,detail,due_date,status,done_at,created_at`,
+      [req.session.accountantId, userId, title, detail, due]);
+    _notifyTask(req.session.accountantId, parseInt(userId), title);
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_tasks', recordId: row.rows[0].id, action: 'TASK_ASSIGNED', req });
+    res.json(row.rows[0]);
+  }));
+
+  app.get('/api/accountants/clients/:userId/tasks', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
+    const access = await pool.query(`SELECT 1 FROM accountant_clients WHERE accountant_id=$1 AND user_id=$2 AND status='active' LIMIT 1`, [req.session.accountantId, userId]);
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    const { rows } = await pool.query(
+      `SELECT id,title,detail,due_date,status,done_at,created_at FROM accountant_tasks
+        WHERE accountant_id=$1 AND user_id=$2 ORDER BY (status='done'), due_date NULLS LAST, created_at DESC LIMIT 200`,
+      [req.session.accountantId, userId]);
+    res.json({ tasks: rows });
+  }));
+
+  app.delete('/api/accountants/tasks/:id', requireAccountant, wrap(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Bad id.' });
+    const r = await pool.query(`DELETE FROM accountant_tasks WHERE id=$1 AND accountant_id=$2 RETURNING id`, [id, req.session.accountantId]);
+    if (!r.rows[0]) return res.status(404).json({ error: 'Task not found.' });
+    res.json({ ok: true, id });
+  }));
+
+  // Client side
+  app.get('/api/accountants/my-accountant/tasks', wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const link = await _clientLink(req.session.userId);
+    if (!link) return res.json({ tasks: [], accountantId: null });
+    const { rows } = await pool.query(
+      `SELECT id,title,detail,due_date,status,done_at,created_at FROM accountant_tasks
+        WHERE accountant_id=$1 AND user_id=$2 ORDER BY (status='done'), due_date NULLS LAST, created_at DESC LIMIT 200`,
+      [link.accountant_id, req.session.userId]);
+    res.json({ tasks: rows, accountantId: link.accountant_id });
+  }));
+
+  app.post('/api/accountants/my-accountant/tasks/:id/done', apiLimiter, wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Bad id.' });
+    const done = !(req.body && req.body.done === false);   // default → mark done; {done:false} → reopen
+    const r = await pool.query(
+      `UPDATE accountant_tasks SET status=$2, done_at=$3 WHERE id=$1 AND user_id=$4
+       RETURNING id,status,done_at`,
+      [id, done ? 'done' : 'open', done ? new Date() : null, req.session.userId]);
+    if (!r.rows[0]) return res.status(404).json({ error: 'Task not found.' });
     res.json({ ok: true, ...r.rows[0] });
   }));
 

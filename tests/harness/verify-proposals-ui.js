@@ -36,7 +36,16 @@ const P = f => fs.readFileSync(path.join(process.cwd(), f), 'utf8');
   A('accountant: loadProposals + withdraw wired', /function loadProposals/.test(acc) && /function withdrawProposal/.test(acc) && /proposals\/\$\{id\}\/withdraw/.test(acc));
   A('accountant: section lazy-loads proposals', /if \(name === 'proposals'\) loadProposals\(\)/.test(acc));
 
-  console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (engagement proposals UI wiring)`);
+  // ── Client tasks / requests UI ────────────────────────────────────────────────
+  A('db: accountant_tasks table', /CREATE TABLE IF NOT EXISTS accountant_tasks/.test(db) && /due_date/.test(db));
+  A('client: tasks mount + loader', /id="acct-tasks"/.test(idx) && /window\.loadMyTasks/.test(idx) && /\/api\/accountants\/my-accountant\/tasks/.test(idx));
+  A('client: toggleTask posts done state', /window\.toggleTask/.test(idx) && /tasks\/'\+id\+'\/done/.test(idx));
+  A('client: tasks load when the page opens', /if \(typeof loadMyTasks === 'function'\) loadMyTasks\(\)/.test(idx));
+  A('accountant: Requests nav + section + form', /showSection\('requests'/.test(acc) && /id="section-requests"/.test(acc) && /id="task-title"/.test(acc));
+  A('accountant: createTask/loadTasks/deleteTask wired', /function createTask/.test(acc) && /function loadTasks/.test(acc) && /function deleteTask/.test(acc) && /clients\/\$\{_userId\}\/tasks/.test(acc));
+  A('accountant: requests section lazy-loads', /if \(name === 'requests'\) loadTasks\(\)/.test(acc));
+
+  console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (proposals + requests UI wiring)`);
   console.log('');
   process.exitCode = fail === 0 ? 0 : 1;
 })();

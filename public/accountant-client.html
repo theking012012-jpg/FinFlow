@@ -353,6 +353,7 @@
       <div class="nav-item" onclick="showSection('ai',this)"><i class="ti ti-brain"></i>AI Insights</div>
       <div class="nav-item" onclick="showSection('checklist',this)"><i class="ti ti-checklist"></i>Filing Checklist</div>
       <div class="nav-item" onclick="showSection('proposals',this)"><i class="ti ti-file-description"></i>Proposals</div>
+      <div class="nav-item" onclick="showSection('requests',this)"><i class="ti ti-clipboard-check"></i>Requests</div>
       <div class="nav-item" onclick="showSection('messages',this)"><i class="ti ti-message"></i>Message Client</div>
       <div class="nav-item" onclick="showSection('notes',this)"><i class="ti ti-notes"></i>My Notes</div>
     </div>
@@ -721,6 +722,24 @@
         </div>
       </div>
       <div class="card" id="proposals-list" style="padding:8px 16px"><div class="empty" style="margin:auto;padding:20px">No proposals yet.</div></div>
+    </div>
+
+    <!-- ── REQUESTS / TASKS ────────────────────── -->
+    <div class="page-section" id="section-requests">
+      <div class="page-hdr">
+        <div><div class="page-title">Requests</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Ask the client for documents or actions. They tick items off; you see progress.</div></div>
+      </div>
+      <div class="card" style="margin-bottom:12px;padding:16px">
+        <div style="display:grid;gap:10px;max-width:560px">
+          <input id="task-title" class="notes-textarea" placeholder="Request — e.g. Upload Q3 bank statements" style="min-height:0;height:38px">
+          <textarea id="task-detail" class="notes-textarea" placeholder="Details (optional)…" style="min-height:56px"></textarea>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <label style="font-size:12px;color:var(--text3)">Due <input id="task-due" type="date" class="notes-textarea" style="min-height:0;height:38px;width:160px"></label>
+            <button class="topbar-btn primary" onclick="createTask(this)"><i class="ti ti-plus"></i> Add request</button>
+          </div>
+        </div>
+      </div>
+      <div class="card" id="tasks-list" style="padding:8px 16px"><div class="empty" style="margin:auto;padding:20px">No requests yet.</div></div>
     </div>
 
     <!-- ── MESSAGES ────────────────────────────── -->
@@ -1448,7 +1467,54 @@ function showSection(name, el) {
   }
   if (name === 'messages') loadMessages();
   if (name === 'proposals') loadProposals();
+  if (name === 'requests') loadTasks();
   closeClientSidebar(); // collapse the mobile overlay after choosing a section
+}
+
+// ── REQUESTS / TASKS (accountant view) ──────────────────────────────────────
+async function loadTasks() {
+  const el = document.getElementById('tasks-list'); if (!el) return;
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch(`/api/accountants/clients/${_userId}/tasks`, {credentials:'include'});
+    if (!r.ok) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">Could not load requests.</div>'; return; }
+    const tasks = (await r.json()).tasks || [];
+    if (!tasks.length) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">No requests yet — add your first above.</div>'; return; }
+    const due = d => d ? `<span style="font-size:11px;color:var(--text3);margin-left:8px">due ${new Date(d).toLocaleDateString(undefined,{day:'numeric',month:'short'})}</span>` : '';
+    el.innerHTML = tasks.map(t => {
+      const done = t.status === 'done';
+      const tag = done ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(74,156,109,.15);color:#4a9c6d">Done</span>'
+        : '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(212,150,74,.15);color:var(--amber,#d4964a)">Open</span>';
+      return `<div style="border-bottom:1px solid var(--border);padding:12px 0;display:flex;align-items:flex-start;gap:10px">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:13.5px;color:var(--text1);${done?'text-decoration:line-through;color:var(--text3)':''}">${esc(t.title)}</span>${tag}${due(t.due_date)}</div>
+            ${t.detail?`<div style="font-size:12.3px;color:var(--text2);margin-top:3px;white-space:pre-wrap">${esc(t.detail)}</div>`:''}
+          </div>
+          <button class="topbar-btn" onclick="deleteTask(${t.id},this)" title="Remove"><i class="ti ti-trash"></i></button>
+        </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">Could not load requests.</div>'; }
+}
+async function createTask(btn) {
+  const title = (document.getElementById('task-title').value||'').trim();
+  if (!title) { alert('Give the request a title.'); return; }
+  const body = { title, detail: (document.getElementById('task-detail').value||'').trim(), due_date: document.getElementById('task-due').value || null };
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch(`/api/accountants/clients/${_userId}/tasks`, {method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)});
+    if (!r.ok) { const j = await r.json().catch(()=>({})); alert(j.error||'Could not add request.'); if (btn) btn.disabled=false; return; }
+    document.getElementById('task-title').value=''; document.getElementById('task-detail').value=''; document.getElementById('task-due').value='';
+    if (btn) btn.disabled=false;
+    loadTasks();
+  } catch(e) { if (btn) btn.disabled=false; alert('Could not add request.'); }
+}
+async function deleteTask(id, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch(`/api/accountants/tasks/${id}`, {method:'DELETE',credentials:'include'});
+    if (!r.ok) { if (btn) btn.disabled=false; return; }
+    loadTasks();
+  } catch(e) { if (btn) btn.disabled=false; }
 }
 
 // ── ENGAGEMENT PROPOSALS (accountant view) ──────────────────────────────────

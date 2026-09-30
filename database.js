@@ -445,6 +445,25 @@ async function initDB() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_proposals_accountant ON accountant_proposals(accountant_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_proposals_user       ON accountant_proposals(user_id)`);
 
+    // Client tasks / document requests — the "what I need from you" loop. An accountant assigns a
+    // linked client a task (with an optional due date); the client marks it done (and can attach the
+    // requested file through chat). Drives the ongoing engagement.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accountant_tasks (
+        id            SERIAL PRIMARY KEY,
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
+        user_id       INTEGER NOT NULL,
+        title         TEXT NOT NULL,
+        detail        TEXT DEFAULT '',
+        due_date      DATE,
+        status        VARCHAR(20) DEFAULT 'open',
+        done_at       TIMESTAMPTZ,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_accountant ON accountant_tasks(accountant_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_user       ON accountant_tasks(user_id)`);
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_reports (
         id            SERIAL PRIMARY KEY,

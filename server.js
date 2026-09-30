@@ -716,14 +716,33 @@ app.use(session({
 // so these headers are trustworthy. (Raw req.ip was already header-spoofable direct-to-origin, so
 // this is neutral pre-lockdown and strictly correct post-lockdown.)
 const _ipKey = (req) => { const ip = _clientIp(req); return ip ? 'ip:' + ip : 'anon:' + crypto.randomUUID(); };
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyGenerator: _ipKey });
+// ── Auth rate limiting ────────────────────────────────────────
+// JSON 429 with Retry-After so the client can show a real countdown (was a bare 429).
+const _rlHandler = (req, res) => res.status(429).json({
+  error: 'Too many attempts — please wait and try again.',
+  code: 'RATE_LIMITED',
+  retryAfterSeconds: Number(res.getHeader('Retry-After')) || 900,
+});
+// LOGIN surfaces: count FAILURES only (a successful sign-in must never burn budget), key on
+// IP+email so one CGNAT/office IP can't lock out other accounts. No email (verify-membership) => IP.
+const _loginKey = (req) => _ipKey(req) + '|' + String((req.body && req.body.email) || '').toLowerCase().trim();
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 25, keyGenerator: _loginKey,
+  skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false, handler: _rlHandler,
+});
+// SIGNUP / password-reset: count ALL (cap mass-signup + forgot-password email-bombing — these
+// return 2xx even on "success", so skipSuccessful would be wrong here). IP-keyed, own bucket.
+const signupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 20, keyGenerator: _ipKey,
+  standardHeaders: true, legacyHeaders: false, handler: _rlHandler,
+});
 
 // F100 — key AUTHENTICATED /api traffic on the USER, not req.ip. `trust proxy:1` (above) makes
 // req.ip the client's forwarded IP, so every user behind one NAT/CGNAT address shared a single
 // budget and rate-limited each other out (a mobile carrier's CGNAT is one IP for thousands of
 // paying customers). session.userId is already resolved here — the session middleware above runs
 // first; account resolution (req.accountId) does NOT run until later, so key on the actor id.
-// Unauthenticated calls keep IP-keying; the auth routes carry the tight authLimiter already.
+// Unauthenticated calls keep IP-keying; the auth routes carry the tight loginLimiter/signupLimiter already.
 //
 // F103 — the `|| 'unknown'` fallback reintroduced F100's OWN defect. req.ip is undefined only when
 // req.socket.remoteAddress is undefined (a destroyed socket: express 4.19.2 → proxy-addr →
@@ -909,7 +928,7 @@ app.get('/healthz', async (req, res) => {
   }
 });
 
-app.post('/api/auth/register', authLimiter, async (req, res) => {
+app.post('/api/auth/register', signupLimiter, async (req, res) => {
   try {
     const { email, password, name } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
@@ -979,7 +998,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', authLimiter, async (req, res) => {
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
@@ -1073,7 +1092,7 @@ app.post('/api/auth/mfa/disable', requireAuth, wrap(async (req, res) => {
   res.json({ mfa_enabled: false });
 }));
 
-app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
+app.post('/api/auth/forgot-password', signupLimiter, async (req, res) => {
   try {
     const { email } = req.body || {};
     if (!email) return res.status(400).json({ error: 'Email required.' });
@@ -1129,7 +1148,7 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
+app.post('/api/auth/reset-password', signupLimiter, async (req, res) => {
   try {
     const { token, password } = req.body || {};
     if (!token || !password) return res.status(400).json({ error: 'Token and password required.' });
@@ -4683,7 +4702,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
 const registerAccountantRoutes = require('./accountant-routes');
 // computeBooks is a hoisted declaration (defined below) closing over db+pool — pass it so
 // the accountant /books view shares the one canonical, entity-scoped basis (F9).
-registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
+registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
 
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.

@@ -238,7 +238,7 @@ function _openSse(res) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile) {
+module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter) {
   // F90 Phase B: recordAudit is the single audited write path (threaded from server.js). Accountant
   // actions on a client's books log with actor_type='accountant' + actor_id=accountantId (derived
   // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
@@ -384,7 +384,7 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
   const _canWrite = lvl => lvl === 'filing';
 
   // ── 1. REGISTER AS ACCOUNTANT ─────────────────────────────────────────────
-  app.post('/api/accountants/register', authLimiter, wrap(async (req, res) => {
+  app.post('/api/accountants/register', signupLimiter, wrap(async (req, res) => {
     const {
       firstName, lastName, email, password,
       firm, country, specialisation, bio, experience,
@@ -635,7 +635,7 @@ If you cannot find a field, use null. Be concise.`;
   // F16: there is NO automated verification. This endpoint no longer returns a
   // "verified" verdict (the old ≥6-char mock was a fake). It only acknowledges the
   // number and states, honestly, that a FinFlow admin will review it manually.
-  app.post('/api/accountants/verify-membership', authLimiter, wrap(async (req, res) => {
+  app.post('/api/accountants/verify-membership', loginLimiter, wrap(async (req, res) => {
     const { profBody, membershipNumber } = req.body || {};
     if (!profBody || !membershipNumber) {
       return res.status(400).json({ error: 'Professional body and membership number are required.' });
@@ -646,7 +646,7 @@ If you cannot find a field, use null. Be concise.`;
 
 
   // ── 3. ACCOUNTANT LOGIN ───────────────────────────────────────────────────
-  app.post('/api/accountants/login', authLimiter, wrap(async (req, res) => {
+  app.post('/api/accountants/login', loginLimiter, wrap(async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email and password required.' });
 

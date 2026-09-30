@@ -352,6 +352,7 @@
       <div class="nav-section-label">Accountant</div>
       <div class="nav-item" onclick="showSection('ai',this)"><i class="ti ti-brain"></i>AI Insights</div>
       <div class="nav-item" onclick="showSection('checklist',this)"><i class="ti ti-checklist"></i>Filing Checklist</div>
+      <div class="nav-item" onclick="showSection('proposals',this)"><i class="ti ti-file-description"></i>Proposals</div>
       <div class="nav-item" onclick="showSection('messages',this)"><i class="ti ti-message"></i>Message Client</div>
       <div class="nav-item" onclick="showSection('notes',this)"><i class="ti ti-notes"></i>My Notes</div>
     </div>
@@ -700,6 +701,26 @@
         </div>
       </div>
       <div class="card" id="checklist-items"><div class="loading">Loading checklist…</div></div>
+    </div>
+
+    <!-- ── PROPOSALS ───────────────────────────── -->
+    <div class="page-section" id="section-proposals">
+      <div class="page-hdr">
+        <div><div class="page-title">Engagement Proposals</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Send a scope-of-work + fee. The client accepts to start the engagement.</div></div>
+      </div>
+      <div class="card" style="margin-bottom:12px;padding:16px">
+        <div style="display:grid;gap:10px;max-width:560px">
+          <input id="prop-title" class="notes-textarea" placeholder="Title — e.g. Monthly bookkeeping" style="min-height:0;height:38px">
+          <textarea id="prop-scope" class="notes-textarea" placeholder="Scope of work (what's included)…" style="min-height:70px"></textarea>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <input id="prop-fee" type="number" min="0" step="0.01" class="notes-textarea" placeholder="Fee" style="min-height:0;height:38px;width:120px">
+            <select id="prop-currency" class="notes-textarea" style="min-height:0;height:38px;width:90px"><option>USD</option><option>GBP</option><option>EUR</option><option>CAD</option><option>AUD</option><option>TTD</option></select>
+            <select id="prop-billing" class="notes-textarea" style="min-height:0;height:38px;width:120px"><option value="fixed">Fixed</option><option value="monthly">Monthly</option><option value="hourly">Hourly</option></select>
+            <button class="topbar-btn primary" onclick="sendProposal(this)"><i class="ti ti-send"></i> Send proposal</button>
+          </div>
+        </div>
+      </div>
+      <div class="card" id="proposals-list" style="padding:8px 16px"><div class="empty" style="margin:auto;padding:20px">No proposals yet.</div></div>
     </div>
 
     <!-- ── MESSAGES ────────────────────────────── -->
@@ -1426,7 +1447,60 @@ function showSection(name, el) {
     });
   }
   if (name === 'messages') loadMessages();
+  if (name === 'proposals') loadProposals();
   closeClientSidebar(); // collapse the mobile overlay after choosing a section
+}
+
+// ── ENGAGEMENT PROPOSALS (accountant view) ──────────────────────────────────
+const _propFee = (cents, cur) => (cur||'USD') + ' ' + ((Number(cents)||0)/100).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
+async function loadProposals() {
+  const el = document.getElementById('proposals-list'); if (!el) return;
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch(`/api/accountants/clients/${_userId}/proposals`, {credentials:'include'});
+    if (!r.ok) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">Could not load proposals.</div>'; return; }
+    const props = (await r.json()).proposals || [];
+    if (!props.length) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">No proposals yet — send your first above.</div>'; return; }
+    const bill = b => b==='monthly'?'/mo':(b==='hourly'?'/hr':'');
+    const tag = s => s==='pending'?'<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(212,150,74,.15);color:var(--amber,#d4964a)">Pending</span>'
+      : s==='accepted'?'<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(74,156,109,.15);color:#4a9c6d">Accepted</span>'
+      : s==='declined'?'<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(200,90,74,.15);color:#c85a4a">Declined</span>'
+      : '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,.06);color:var(--text3)">Withdrawn</span>';
+    el.innerHTML = props.map(p => `<div style="border-bottom:1px solid var(--border);padding:12px 0">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span style="font-size:14px;color:var(--text1);font-weight:500">${esc(p.title)}</span>${tag(p.status)}</div>
+        ${p.scope?`<div style="font-size:12.5px;color:var(--text2);margin-top:4px;white-space:pre-wrap">${esc(p.scope)}</div>`:''}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
+          <span style="font-size:13px;color:var(--gold);font-family:var(--mono,monospace)">${_propFee(p.fee_cents,p.currency)}<span style="color:var(--text3)">${bill(p.billing)}</span></span>
+          ${p.status==='pending'?`<button class="topbar-btn" onclick="withdrawProposal(${p.id},this)">Withdraw</button>`:''}
+        </div></div>`).join('');
+  } catch(e) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">Could not load proposals.</div>'; }
+}
+async function sendProposal(btn) {
+  const title = (document.getElementById('prop-title').value||'').trim();
+  if (!title) { alert('Give the proposal a title.'); return; }
+  const body = {
+    title,
+    scope: (document.getElementById('prop-scope').value||'').trim(),
+    fee: parseFloat(document.getElementById('prop-fee').value||'0')||0,
+    currency: document.getElementById('prop-currency').value,
+    billing: document.getElementById('prop-billing').value,
+  };
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch(`/api/accountants/clients/${_userId}/proposals`, {method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(body)});
+    if (!r.ok) { const j = await r.json().catch(()=>({})); alert(j.error||'Could not send proposal.'); if (btn) btn.disabled=false; return; }
+    document.getElementById('prop-title').value=''; document.getElementById('prop-scope').value=''; document.getElementById('prop-fee').value='';
+    if (btn) btn.disabled=false;
+    loadProposals();
+  } catch(e) { if (btn) btn.disabled=false; alert('Could not send proposal.'); }
+}
+async function withdrawProposal(id, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch(`/api/accountants/proposals/${id}/withdraw`, {method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:'{}'});
+    if (!r.ok) { const j = await r.json().catch(()=>({})); alert(j.error||'Could not withdraw.'); if (btn) btn.disabled=false; return; }
+    loadProposals();
+  } catch(e) { if (btn) btn.disabled=false; }
 }
 
 // Mobile sidebar overlay toggle (the 220px sidebar is off-canvas under 900px).

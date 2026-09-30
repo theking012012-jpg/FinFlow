@@ -283,6 +283,24 @@ module.exports = function registerAccountantRoutes(app, pool, authLimiter, apiLi
       } catch (e) { console.error('[chat notify]', e.message); }
     })();
   }
+  // Fire-and-forget: email the client that a new engagement proposal is waiting.
+  function _notifyProposal(accountantId, userId, title) {
+    (async () => {
+      try {
+        if (!resendClient || !process.env.EMAIL_FROM) return;
+        const r = await pool.query(`SELECT data->>'email' AS e FROM users WHERE id=$1`, [userId]); const to = r.rows[0] && r.rows[0].e; if (!to) return;
+        const name = await _accountantName(accountantId);
+        let link = 'https://finflow.app'; try { link = appUrl(); } catch (_) {}
+        await resendClient.emails.send({
+          from: process.env.EMAIL_FROM, to,
+          subject: 'New proposal from ' + name,
+          html: `<p><b>${_chatEsc(name)}</b> sent you an engagement proposal on FinFlow:</p>`
+            + `<blockquote style="border-left:3px solid #c9a84c;padding-left:12px;color:#555">${_chatEsc(String(title).slice(0, 200))}</blockquote>`
+            + `<p><a href="${link}">Open FinFlow to review it</a></p>`,
+        });
+      } catch (e) { console.error('[proposal notify]', e.message); }
+    })();
+  }
   const _CHAT_ATT_MAX = 5 * 1024 * 1024;   // 5 MB decoded
   const _attClean = n => String(n || 'file').replace(/[^\w.\- ]/g, '_').slice(0, 120);
   function _decodeAttachment(body) {
@@ -1966,6 +1984,82 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     res.setHeader('Content-Disposition', 'attachment; filename="' + (row.att_name || 'file').replace(/"/g, '') + '"');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.send(buf);
+  }));
+
+  // ── ENGAGEMENT PROPOSALS ──────────────────────────────────────────────────────
+  // Accountant sends a client a proposal (scope + fee); the client accepts/declines. An accepted
+  // proposal is the engagement of record that authorizes the existing bill-client flow.
+  const _PROP_BILLING = ['fixed', 'monthly', 'hourly'];
+  app.post('/api/accountants/clients/:userId/proposals', requireAccountant, apiLimiter, wrap(async (req, res) => {
+    const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
+    const access = await pool.query(`SELECT 1 FROM accountant_clients WHERE accountant_id=$1 AND user_id=$2 AND status='active' LIMIT 1`, [req.session.accountantId, userId]);
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    const title = String((req.body && req.body.title) || '').trim().slice(0, 160);
+    if (!title) return res.status(400).json({ error: 'Title required.' });
+    const scope = String((req.body && req.body.scope) || '').trim().slice(0, 4000);
+    const feeRaw = (req.body && req.body.fee_cents != null) ? Number(req.body.fee_cents) : Number((req.body && req.body.fee) || 0) * 100;
+    const fee_cents = Math.max(0, Math.round(feeRaw || 0));
+    const currency = String((req.body && req.body.currency) || 'USD').trim().toUpperCase().slice(0, 3);
+    const billing = _PROP_BILLING.includes(req.body && req.body.billing) ? req.body.billing : 'fixed';
+    const row = await pool.query(
+      `INSERT INTO accountant_proposals (accountant_id,user_id,title,scope,fee_cents,currency,billing)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,title,scope,fee_cents,currency,billing,status,created_at`,
+      [req.session.accountantId, userId, title, scope, fee_cents, currency, billing]);
+    _notifyProposal(req.session.accountantId, parseInt(userId), title);
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_proposals', recordId: row.rows[0].id, action: 'PROPOSAL_SENT', req });
+    res.json(row.rows[0]);
+  }));
+
+  app.get('/api/accountants/clients/:userId/proposals', requireAccountant, wrap(async (req, res) => {
+    const { userId } = req.params;
+    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
+    const access = await pool.query(`SELECT 1 FROM accountant_clients WHERE accountant_id=$1 AND user_id=$2 AND status='active' LIMIT 1`, [req.session.accountantId, userId]);
+    if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
+    const { rows } = await pool.query(
+      `SELECT id,title,scope,fee_cents,currency,billing,status,accepted_at,declined_at,created_at
+         FROM accountant_proposals WHERE accountant_id=$1 AND user_id=$2 ORDER BY created_at DESC LIMIT 100`,
+      [req.session.accountantId, userId]);
+    res.json({ proposals: rows });
+  }));
+
+  app.post('/api/accountants/proposals/:id/withdraw', requireAccountant, wrap(async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Bad id.' });
+    const r = await pool.query(`UPDATE accountant_proposals SET status='withdrawn' WHERE id=$1 AND accountant_id=$2 AND status='pending' RETURNING id`, [id, req.session.accountantId]);
+    if (!r.rows[0]) return res.status(404).json({ error: 'No pending proposal to withdraw.' });
+    res.json({ ok: true, id });
+  }));
+
+  // Client side
+  app.get('/api/accountants/my-accountant/proposals', wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const link = await _clientLink(req.session.userId);
+    if (!link) return res.json({ proposals: [], accountantId: null });
+    const { rows } = await pool.query(
+      `SELECT id,title,scope,fee_cents,currency,billing,status,accepted_at,declined_at,created_at
+         FROM accountant_proposals WHERE accountant_id=$1 AND user_id=$2 ORDER BY created_at DESC LIMIT 100`,
+      [link.accountant_id, req.session.userId]);
+    res.json({ proposals: rows, accountantId: link.accountant_id });
+  }));
+
+  app.post('/api/accountants/my-accountant/proposals/:id/respond', apiLimiter, wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Bad id.' });
+    const action = String((req.body && req.body.action) || '');
+    if (action !== 'accept' && action !== 'decline') return res.status(400).json({ error: 'action must be accept or decline.' });
+    const cur = await pool.query(`SELECT id, status FROM accountant_proposals WHERE id=$1 AND user_id=$2`, [id, req.session.userId]);
+    if (!cur.rows[0]) return res.status(404).json({ error: 'Proposal not found.' });
+    if (cur.rows[0].status !== 'pending') return res.status(409).json({ error: 'This proposal is no longer pending.' });
+    const newStatus = action === 'accept' ? 'accepted' : 'declined';
+    const stampCol = action === 'accept' ? 'accepted_at' : 'declined_at';
+    const r = await pool.query(
+      `UPDATE accountant_proposals SET status=$2, ${stampCol}=NOW() WHERE id=$1 AND user_id=$3 AND status='pending'
+       RETURNING id,status,accepted_at,declined_at`,
+      [id, newStatus, req.session.userId]);
+    if (!r.rows[0]) return res.status(409).json({ error: 'This proposal is no longer pending.' });
+    res.json({ ok: true, ...r.rows[0] });
   }));
 
   // ── CLIENT: REQUEST ACCESS FROM AN ACCOUNTANT ─────────────────────────────

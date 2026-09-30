@@ -422,6 +422,29 @@ async function initDB() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_reviews_accountant ON accountant_reviews(accountant_id)`);
 
+    // Engagement proposals — the compliance-grade backbone of the marketplace. An accountant sends a
+    // client a proposal (scope of work + agreed fee); the client accepts or declines it. An accepted
+    // proposal is the ENGAGEMENT OF RECORD that authorizes the existing bill-client flow. Fee stored in
+    // cents against a currency; billing shape is fixed / monthly / hourly.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS accountant_proposals (
+        id            SERIAL PRIMARY KEY,
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
+        user_id       INTEGER NOT NULL,
+        title         TEXT NOT NULL,
+        scope         TEXT DEFAULT '',
+        fee_cents     INTEGER DEFAULT 0,
+        currency      VARCHAR(3) DEFAULT 'USD',
+        billing       VARCHAR(20) DEFAULT 'fixed',
+        status        VARCHAR(20) DEFAULT 'pending',
+        accepted_at   TIMESTAMPTZ,
+        declined_at   TIMESTAMPTZ,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_proposals_accountant ON accountant_proposals(accountant_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_proposals_user       ON accountant_proposals(user_id)`);
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_reports (
         id            SERIAL PRIMARY KEY,

@@ -4210,7 +4210,7 @@ app.get('/api/team', requireAuth, wrap(async (req, res) => {
   // access. They belong on the Payroll page, not the Team/RBAC roster.
   const invited = await db.allByUser('team_members', uid);
   const members = [
-    { id: 'u0', name: user?.name || user?.email || 'You', email: user?.email || '', role: 'owner', emp_type: 'Owner', lastSeen: 'Now' },
+    { id: 'u0', name: user?.name || user?.email || 'You', email: user?.email || '', role: 'owner', emp_type: 'Owner', status: 'active', lastSeen: 'Now' },
     ...invited.map(m => ({
       id:       `tm${m.id}`,
       _tmId:    m.id,
@@ -4218,7 +4218,8 @@ app.get('/api/team', requireAuth, wrap(async (req, res) => {
       email:    m.email,
       role:     m.role,
       emp_type: 'Invited',
-      lastSeen: 'Invited',
+      status:   m.status || 'pending',
+      lastSeen: (m.status === 'active' ? 'Active' : 'Invited'),
       entity_access: Array.isArray(m.entity_access) ? m.entity_access : null,   // null = all businesses
     })),
   ];
@@ -4394,6 +4395,7 @@ app.post('/api/team/invite', inviteLimiter, requireAuth, requirePerm('team:manag
   // unconfigured the URL is logged so the flow is fully verifiable without keys.
   const acceptUrl = `${appUrl()}/team-accept.html?token=${token}`;
   const roleEsc   = role.replace(/[^a-z]/gi, '');
+  let emailStatus = 'skipped';   // 'sent' | 'failed' | 'skipped' — surfaced so the UI never claims a send that didn't happen
   if (resendClient) {
     try {
       await resendClient.emails.send({
@@ -4404,12 +4406,13 @@ app.post('/api/team/invite', inviteLimiter, requireAuth, requirePerm('team:manag
                   <p><a href="${acceptUrl}">Accept your invitation</a> — this link expires in 7 days.</p>
                   <p>If you were not expecting this, you can safely ignore this email.</p>`,
       });
-    } catch (e) { console.error('[Invite] email failed:', e.message); }
+      emailStatus = 'sent';
+    } catch (e) { console.error('[Invite] email failed:', e.message); emailStatus = 'failed'; }
   } else {
     console.log(`[Invite] (Resend not configured) accept URL for ${emailLc}: ${acceptUrl}`);
   }
 
-  res.status(201).json({ ok: true, email: emailLc, role });
+  res.status(201).json({ ok: true, email: emailLc, role, emailStatus });
 }));
 
 // GET — invite metadata for the accept page to render. Read-only; never consumes.

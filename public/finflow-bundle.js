@@ -4269,7 +4269,9 @@ function clearAIChat(){
       }).join('');
 
       const mcs = document.querySelectorAll('#page-team .mc-val');
-      if (mcs[0]) mcs[0].textContent = members.length;
+      const pendingCount = members.filter(m => m.status === 'pending').length;
+      if (mcs[0]) mcs[0].textContent = members.length - pendingCount;   // Active users = total − pending
+      if (mcs[1]) mcs[1].textContent = pendingCount;                    // Pending invites (was hardcoded 0)
     } catch (err) { console.warn('[Team]', err.message); }
   };
 
@@ -5259,9 +5261,10 @@ function clearAIChat(){
     try {
       // Real RBAC invite (Step A): creates a pending membership + emails a secure,
       // single-use accept link. Role/account/entity-grant are bound to the invite row server-side.
-      await api('POST', '/api/team/invite', { name, email, role, entity_ids });
+      const _inv = await api('POST', '/api/team/invite', { name, email, role, entity_ids });
       document.getElementById('invite-modal').classList.add('hidden');
-      tip(`Invitation emailed to ${e(email)}`);
+      if (_inv && _inv.emailStatus === 'sent') tip(`Invitation emailed to ${e(email)}`);
+      else tip(`Invite created for ${e(email)}, but the email wasn't sent (email service not configured yet). The accept link is in the server log.`, true);
       if (typeof window.renderTeam === 'function') window.renderTeam();
       if (typeof window.refreshFinancials === 'function') window.refreshFinancials('none');
     } catch (err) { tip('Could not invite — ' + err.message, true); }

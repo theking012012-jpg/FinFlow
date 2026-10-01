@@ -29,6 +29,42 @@
 <link rel="preload" href="/finflow-bundle.js" as="script">
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'">
 <script>window._appReady=false;</script>
+<script>
+/* Boot-scoped in-flight GET coalescer (perf): during the initial boot storm, concurrent DUPLICATE
+   GET /api reads share ONE network round-trip. Each caller still receives an equivalent cloned,
+   fresh response, so no displayed/computed value can change. GET-only, /api-only; skips feeds/
+   streams/exports and any request with a body or abort signal; DISABLES itself after the boot
+   window so steady-state fetch behaviour is identical to before. Fail-open: any error falls back
+   to the original fetch. */
+(function(){
+  try {
+    if (window.__ffFetchCoalesced) return;
+    window.__ffFetchCoalesced = true;
+    var _f = window.fetch.bind(window);
+    var inflight = new Map();
+    var bootUntil = Date.now() + 10000;
+    window.fetch = function(input, init){
+      try {
+        var method = ((init && init.method) || (input && typeof input === 'object' && input.method) || 'GET').toUpperCase();
+        var url = (typeof input === 'string') ? input : (input && input.url) || '';
+        var hasBody = !!(init && init.body);
+        var hasSignal = !!(init && init.signal);
+        if (Date.now() < bootUntil && method === 'GET' && !hasBody && !hasSignal
+            && url.indexOf('/api/') !== -1
+            && !/(feed|stream|events|export|download|sse)/i.test(url)) {
+          var hit = inflight.get(url);
+          if (hit) return hit.then(function(r){ return r.clone(); });
+          var p = _f(input, init);
+          inflight.set(url, p);
+          p.then(function(){ inflight.delete(url); }, function(){ inflight.delete(url); });
+          return p.then(function(r){ return r.clone(); });
+        }
+      } catch(_e){}
+      return _f(input, init);
+    };
+  } catch(_e){}
+})();
+</script>
 <!-- ════════════════════════════════════════
      SECURITY UTILITIES  (loaded first)
      ════════════════════════════════════════ -->

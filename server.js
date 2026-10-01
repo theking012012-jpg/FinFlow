@@ -2953,20 +2953,9 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
     throw e;
   }
   logAudit(req, 'CREATE', 'journals', row.id, null, row);
-  // FIX (manual journals -> GL): a POSTED manual journal must hit the ledger like every other
-  // recognised doc, otherwise it never reaches the Balance Sheet / P&L. Draft journals do not post.
-  // Best-effort dual-write (mirrors invoice/bill posting); idempotent on 'journal:<id>'.
-  if (String(status).toLowerCase() === 'posted') {
-    try {
-      await postLedgerEntry(pool, {
-        userId: scopeId(req), entityId: req.entityId || null,
-        date: row.date || date || await entityTodayYmd(req.entityId),
-        description: 'Journal \u2014 ' + (description || '').trim().slice(0, 80),
-        sourceType: 'journal', sourceId: row.id, idempotencyKey: 'journal:' + row.id,
-        lines: (lines || []).filter(l => l && l.code).map(l => ({ code: String(l.code), debit: +l.debit || 0, credit: +l.credit || 0 })),
-      });
-    } catch (glErr) { console.error('[GL] journal posting failed (shadow, non-fatal):', glErr && glErr.message); }
-  }
+  // NOTE: manual journals are intentionally NOT dual-written to the GL shadow here. computeBooks (the
+  // P&L source of truth) does not yet include manual entries, so posting them to the ledger made the
+  // reconcile scan diverge (shadow != books). Re-enable ONLY together with computeBooks JE support.
   res.status(201).json(row);
 }));
 app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
@@ -2980,22 +2969,6 @@ app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
   await db.updateById('journals', row.id, patch);
   const { rows: [_jr] } = await pool.query(`SELECT * FROM journals WHERE id = $1 LIMIT 1`, [row.id]);
   await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'journals', recordId: row.id, action: 'UPDATE', oldData: row, newData: _jr ? rowToObj(_jr) : { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
-  // FIX: keep the ledger in sync on status transitions. Draft->Posted posts; Posted->Draft reverses.
-  try {
-    const _wasPosted = String(row.status).toLowerCase() === 'posted';
-    const _nowPosted = String(patch.status != null ? patch.status : row.status).toLowerCase() === 'posted';
-    if (!_wasPosted && _nowPosted) {
-      let _ln = row.lines; if (typeof _ln === 'string') { try { _ln = JSON.parse(_ln); } catch (_) { _ln = []; } }
-      await postLedgerEntry(pool, {
-        userId: scopeId(req), entityId: row.entity_id || null,
-        date: patch.date || row.date, description: 'Journal \u2014 ' + String(patch.description || row.description || '').trim().slice(0, 80),
-        sourceType: 'journal', sourceId: row.id, idempotencyKey: 'journal:' + row.id,
-        lines: (Array.isArray(_ln) ? _ln : []).filter(l => l && l.code).map(l => ({ code: String(l.code), debit: +l.debit || 0, credit: +l.credit || 0 })),
-      });
-    } else if (_wasPosted && !_nowPosted) {
-      await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'journal', sourceId: row.id });
-    }
-  } catch (glErr) { console.error('[GL] journal PUT sync failed (non-fatal):', glErr && glErr.message); }
   res.json(_jr ? rowToObj(_jr) : {});
 }));
 app.delete('/api/journals/:id', requireAuth, wrap(async (req, res) => {
@@ -9847,9 +9820,11 @@ async function refreshLiveFxRates() {
         // manual-wins: never overwrite a hand-entered rate for this pair
         const { rows: man } = await pool.query(`SELECT 1 FROM fx_rates WHERE user_id=$1 AND from_currency='USD' AND to_currency=$2 AND source='manual' LIMIT 1`, [uid, cur]);
         if (man[0]) continue;
-        const { rowCount } = await pool.query(`UPDATE fx_rates SET rate=$1 WHERE user_id=$2 AND from_currency='USD' AND to_currency=$3 AND rate_date=$4 AND source='live'`, [rate, uid, cur, today]);
-        if (!rowCount) await pool.query(`INSERT INTO fx_rates (user_id, entity_id, from_currency, to_currency, rate, rate_date, source) VALUES ($1,NULL,'USD',$2,$3,$4,'live')`, [uid, cur, rate, today]);
-        wrote++;
+        try {
+          const { rowCount } = await pool.query(`UPDATE fx_rates SET rate=$1 WHERE user_id=$2 AND from_currency='USD' AND to_currency=$3 AND rate_date=$4 AND source='live'`, [rate, uid, cur, today]);
+          if (!rowCount) await pool.query(`INSERT INTO fx_rates (user_id, entity_id, from_currency, to_currency, rate, rate_date, source) VALUES ($1,NULL,'USD',$2,$3,$4,'live')`, [uid, cur, rate, today]);
+          wrote++;
+        } catch (perCurErr) { /* skip one bad/out-of-range currency; never abort the whole refresh */ }
       }
     }
     console.log('[fx-live] refreshed ' + wrote + ' USD-base rate(s) for ' + us.length + ' user(s) @ ' + today);

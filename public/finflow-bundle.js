@@ -293,11 +293,10 @@
         // signal. Suppress + remove the wizard for onboarded users; a user WITHOUT the flag keeps the
         // wizard so onboarding can provision their first entity. (Replaces the unconditional teardown
         // that ffOnAuth used to do for every authenticated user — the F197 empty-workspace root cause.)
-        if (s && (s.onboarding_done == 1 || s.onboarding_done === true)) {
-          try { localStorage.setItem('ff_onboarded', '1'); } catch (e) {}
-          try { sessionStorage.setItem('ff_onboarded', '1'); } catch (e) {}
-          const _ob = document.getElementById('ob-overlay'); if (_ob) _ob.remove();
-        }
+        // F197-fix: delegate the show/hide decision to the per-user, server-truth resolver
+        // (defined in index.html). It shows the wizard only when THIS user is not onboarded, and
+        // hides it otherwise. `s` is already fetched, so no extra round-trip on the page-load path.
+        try { if (typeof window._ffDecideOnboarding === 'function') window._ffDecideOnboarding(s); } catch (e) {}
         // Apply currency
         if (s.currency) {
           const sel = document.getElementById('s-currency');

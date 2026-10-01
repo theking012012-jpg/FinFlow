@@ -9756,6 +9756,19 @@ app.post('/api/cogs/calculate', requireAuth, wrap(async (req, res) => {
 // pickRate is the pure matcher (over pre-fetched rows) so computeBooks can convert many rows without
 // N queries; rateAsOf is the single-lookup entry point (harness + external callers).
 function pickRate(rows, from, to, date) {
+  // Universal pair resolution (FX-live): direct -> inverse (1/reverse) -> cross via USD. With a
+  // USD-base feed, every pair resolves for ANY entity base, and a rate entered/pulled in one
+  // direction works both ways (A<->B resolves through USD). Date carry logic lives in _pickDirectRate.
+  if (from === to) return 1;
+  const _direct = _pickDirectRate(rows, from, to, date); if (_direct != null) return _direct;
+  const _inv = _pickDirectRate(rows, to, from, date); if (_inv != null && _inv !== 0) return 1 / _inv;
+  if (from !== 'USD' && to !== 'USD') {
+    const _a = pickRate(rows, from, 'USD', date), _b = pickRate(rows, 'USD', to, date);
+    if (_a != null && _b != null) return _a * _b;
+  }
+  return null;
+}
+function _pickDirectRate(rows, from, to, date) {
   if (from === to) return 1;
   // Collect the usable rates for this pair once (numeric rate + valid rate_date).
   const pair = [];
@@ -9787,9 +9800,10 @@ function pickRate(rows, from, to, date) {
 }
 async function rateAsOf(pool, userId, from, to, date) {
   if (from === to) return 1;                    // short-circuit before any DB hit
+  // Fetch ALL the user's rates (not just the direct pair) so pickRate can resolve via inverse/cross.
   const { rows } = await pool.query(
-    `SELECT from_currency, to_currency, rate, rate_date FROM fx_rates WHERE user_id=$1 AND from_currency=$2 AND to_currency=$3`,
-    [userId, from, to]
+    `SELECT from_currency, to_currency, rate, rate_date FROM fx_rates WHERE user_id=$1`,
+    [userId]
   );
   return pickRate(rows, from, to, date);
 }
@@ -9805,6 +9819,44 @@ async function latestFxRates(pool, userId) {
     if (!(key in map)) map[key] = parseFloat(r.rate); // first row per pair is the latest
   }
   return map;
+}
+
+// FX-live: pull a USD-base rate feed (open.er-api.com — free, no key, 168 currencies) and upsert it
+// as USD->X rows (source:'live'). With pickRate's inverse+cross-via-USD resolution, a USD base set
+// covers EVERY pair for ANY entity base, so nothing has to be entered by hand. MANUAL-WINS: a pair a
+// user entered by hand (source:'manual') is never clobbered. Bounded to majors + each user's own
+// entity currencies (cross-via-USD handles the rest); idempotent per (user,pair,day). Best-effort —
+// a feed outage leaves the last-good rates in place and never affects a request.
+const FX_LIVE_MAJORS = ['EUR','GBP','CAD','AUD','JPY','CNY','INR','MXN','BRL','ZAR','CHF','SGD','HKD','NZD'];
+async function refreshLiveFxRates() {
+  try {
+    const resp = await fetch('https://open.er-api.com/v6/latest/USD');
+    if (!resp || !resp.ok) { console.error('[fx-live] fetch failed:', resp && resp.status); return; }
+    const data = await resp.json();
+    if (!data || data.result !== 'success' || !data.rates) { console.error('[fx-live] unexpected payload'); return; }
+    const rates = data.rates;
+    const today = new Date().toISOString().slice(0, 10);
+    const { rows: us } = await pool.query(`SELECT DISTINCT user_id FROM entities WHERE user_id IS NOT NULL`);
+    let wrote = 0;
+    for (const u of us) {
+      const uid = u.user_id;
+      let ents = []; try { ents = await db.allByUser('entities', uid); } catch (_) {}
+      const curs = new Set(FX_LIVE_MAJORS);
+      for (const e of ents) if (e && e.currency) curs.add(String(e.currency).toUpperCase());
+      for (const cur of curs) {
+        if (cur === 'USD') continue;
+        const rate = rates[cur];
+        if (rate == null || !isFinite(rate)) continue;
+        // manual-wins: never overwrite a hand-entered rate for this pair
+        const { rows: man } = await pool.query(`SELECT 1 FROM fx_rates WHERE user_id=$1 AND from_currency='USD' AND to_currency=$2 AND source='manual' LIMIT 1`, [uid, cur]);
+        if (man[0]) continue;
+        const { rowCount } = await pool.query(`UPDATE fx_rates SET rate=$1 WHERE user_id=$2 AND from_currency='USD' AND to_currency=$3 AND rate_date=$4 AND source='live'`, [rate, uid, cur, today]);
+        if (!rowCount) await pool.query(`INSERT INTO fx_rates (user_id, entity_id, from_currency, to_currency, rate, rate_date, source) VALUES ($1,NULL,'USD',$2,$3,$4,'live')`, [uid, cur, rate, today]);
+        wrote++;
+      }
+    }
+    console.log('[fx-live] refreshed ' + wrote + ' USD-base rate(s) for ' + us.length + ' user(s) @ ' + today);
+  } catch (e) { console.error('[fx-live] refresh error:', e && e.message); }
 }
 
 // Unrealised P/L for an OPEN position, in base currency, computed at read time from the
@@ -10416,6 +10468,9 @@ if (require.main === module) {
     // Run scheduler on boot, then every hour
     runRecurringScheduler();
     setInterval(runRecurringScheduler, 60 * 60 * 1000);
+    // FX-live: pull USD-base rates on boot + daily so conversion never depends on hand-entered rates.
+    refreshLiveFxRates();
+    setInterval(refreshLiveFxRates, 24 * 60 * 60 * 1000);
     // Security: periodic audit-anomaly scan → email alert (no-op unless SECURITY_ALERT_EMAIL is set)
     startAnomalyMonitor(pool, resendClient);
     // GL integrity: periodic reconcile scan → Sentry + email alert on any ledger that stops tying to

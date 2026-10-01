@@ -33,7 +33,7 @@ function dbSsl() {
   if (process.env.NODE_ENV !== 'production') return false;         // dev: no TLS (unchanged)
   const ca = process.env.DATABASE_CA_CERT;
   if (ca && ca.trim()) return { ca, rejectUnauthorized: true };    // opt-in: real verification
-  console.warn('⚠️  [F19] DB TLS is ENCRYPTED BUT UNVERIFIED (rejectUnauthorized:false). '
+  if (process.env.STARTUP_VERBOSE === '1') console.warn('⚠️  [F19] DB TLS is ENCRYPTED BUT UNVERIFIED (rejectUnauthorized:false). '
     + 'Set DATABASE_CA_CERT (provider CA, PEM) to enable certificate verification.');
   return { rejectUnauthorized: false };                            // default: unchanged from before
 }

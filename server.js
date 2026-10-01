@@ -56,7 +56,7 @@ try {
     });
     console.log('[Sentry] Initialized');
   } else {
-    console.log('[Sentry] SENTRY_DSN not set — error tracking disabled.');
+    if (process.env.STARTUP_VERBOSE === '1') console.log('[Sentry] SENTRY_DSN not set — error tracking disabled.');
   }
 } catch (e) {
   console.warn('[Sentry] Package not installed — error tracking skipped. (npm i @sentry/node)');
@@ -171,7 +171,7 @@ app.use((req, res, next) => {
 // env at launch to let search engines in. Works on ANY host (the Railway URL included), independent of
 // Cloudflare — an X-Robots-Tag header + a Disallow robots.txt, both gated on the same flag.
 const _indexingAllowed = /^(1|true|yes)$/i.test(String(process.env.ALLOW_INDEXING || ''));
-if (!_indexingAllowed) console.warn('[SEO] Indexing BLOCKED (ALLOW_INDEXING not set) — search engines will not index this deployment. Set ALLOW_INDEXING=1 at launch.');
+if (!_indexingAllowed && process.env.STARTUP_VERBOSE === '1') console.warn('[SEO] Indexing BLOCKED (ALLOW_INDEXING not set) — search engines will not index this deployment. Set ALLOW_INDEXING=1 at launch.');
 app.use((req, res, next) => { if (!_indexingAllowed) res.setHeader('X-Robots-Tag', 'noindex, nofollow'); next(); });
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain').send(_indexingAllowed ? 'User-agent: *\nAllow: /\n' : 'User-agent: *\nDisallow: /\n');

@@ -1542,25 +1542,28 @@ function downloadCSV(filename, rows) {
   a.click();
 }
 
-function exportUsersCSV() {
-  if (!_allUsers.length) { toast('Load users first','error'); return; }
-  const rows = [['ID','Name','Email','Plan','Joined','Accountant']];
-  _allUsers.forEach(u => rows.push([
-    u.id, u.name||'', u.email||'', u.plan||'trial',
-    new Date(u.created_at).toLocaleDateString(),
-    u.accountant_first ? `${u.accountant_first} ${u.accountant_last}` : '',
-  ]));
-  downloadCSV('users.csv', rows);
+async function exportUsersCSV() {
+  // Routed through the server so the PII export is logged to admin_log (see admin-routes.js).
+  try {
+    const res = await fetch('/api/admin/export/users.csv', { credentials: 'include' });
+    if (!res.ok) { toast('Export failed','error'); return; }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'users.csv'; a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { toast('Export failed','error'); }
 }
 
-function exportAccountantsCSV() {
-  if (!_allAccountants.length) { toast('Load accountants first','error'); return; }
-  const rows = [['ID','Name','Firm','Country','Status','Clients','Rating']];
-  _allAccountants.forEach(a => rows.push([
-    a.id, `${a.first_name} ${a.last_name}`, a.firm||'', a.country||'',
-    a.status, a.client_count||0, a.avg_rating ? parseFloat(a.avg_rating).toFixed(1) : '',
-  ]));
-  downloadCSV('accountants.csv', rows);
+async function exportAccountantsCSV() {
+  // Routed through the server so the PII export is logged to admin_log (see admin-routes.js).
+  try {
+    const res = await fetch('/api/admin/export/accountants.csv', { credentials: 'include' });
+    if (!res.ok) { toast('Export failed','error'); return; }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'accountants.csv'; a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { toast('Export failed','error'); }
 }
 </script>
 </body>

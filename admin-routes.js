@@ -303,6 +303,49 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     return res.json(result.rows);
   }));
 
+  // ── AUDITED CSV EXPORTS ─────────────────────────────────────────────────────
+  // PII leaves the system here, so the download goes through the server and writes an
+  // admin_log row — the client-side data: URI export left no trace of who exported what.
+  const _csvEsc = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  app.get('/api/admin/export/users.csv', requireAdmin, wrap(async (req, res) => {
+    const r = await pool.query(`
+      SELECT u.id, u.data->>'name' AS name, u.data->>'email' AS email,
+             u.data->>'plan' AS plan, u.created_at,
+             a.first_name AS accountant_first, a.last_name AS accountant_last
+      FROM users u
+      LEFT JOIN accountant_clients ac ON ac.user_id = u.id AND ac.status = 'active'
+      LEFT JOIN accountants a ON a.id = ac.accountant_id
+      ORDER BY u.created_at DESC LIMIT 10000`);
+    await pool.query(
+      `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('export_users_csv','users',$1,NOW())`,
+      ['Exported ' + r.rows.length + ' users to CSV']);
+    const header = ['ID','Name','Email','Plan','Joined','Accountant'];
+    const body = r.rows.map(u => [u.id, u.name||'', u.email||'', u.plan||'trial',
+      u.created_at ? new Date(u.created_at).toISOString().slice(0,10) : '',
+      u.accountant_first ? (u.accountant_first + ' ' + u.accountant_last) : ''].map(_csvEsc).join(','));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="users.csv"');
+    return res.send([header.join(','), ...body].join('\n'));
+  }));
+
+  app.get('/api/admin/export/accountants.csv', requireAdmin, wrap(async (req, res) => {
+    const r = await pool.query(`
+      SELECT a.id, a.first_name, a.last_name, a.firm, a.country, a.status, a.avg_rating,
+             COUNT(ac.id) AS client_count
+      FROM accountants a
+      LEFT JOIN accountant_clients ac ON ac.accountant_id = a.id AND ac.status = 'active'
+      GROUP BY a.id ORDER BY a.created_at DESC LIMIT 10000`);
+    await pool.query(
+      `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('export_accountants_csv','accountants',$1,NOW())`,
+      ['Exported ' + r.rows.length + ' accountants to CSV']);
+    const header = ['ID','Name','Firm','Country','Status','Clients','Rating'];
+    const body = r.rows.map(a => [a.id, ((a.first_name||'') + ' ' + (a.last_name||'')).trim(), a.firm||'', a.country||'',
+      a.status||'', a.client_count||0, a.avg_rating ? parseFloat(a.avg_rating).toFixed(1) : ''].map(_csvEsc).join(','));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="accountants.csv"');
+    return res.send([header.join(','), ...body].join('\n'));
+  }));
+
   // Suspend / unsuspend user
   app.post('/api/admin/users/:id/suspend', requireAdmin, wrap(async (req, res) => {
     const suspend = req.body?.suspend === true || req.body?.suspend === 'true';
@@ -391,6 +434,11 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     await pool.query(
       `UPDATE accountant_earnings SET status = 'paid' WHERE id = ANY($1)`,
       [ids]
+    );
+    // Audit: a payout state change is a money action — log it like every other admin mutation.
+    await pool.query(
+      `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('earnings_mark_paid','earnings',$1,NOW())`,
+      ['Marked ' + ids.length + ' earning(s) paid: #' + ids.join(', #')]
     );
     return res.json({ success: true, updated: ids.length });
   }));

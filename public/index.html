@@ -426,12 +426,27 @@ html{overflow-x:hidden;background:var(--bg0)}/* PWA: dark root so the notch/stat
    PRINT (for PDF-export use-case)
    ══════════════════════════════════════════════ */
 @media print{
+  /* Force the light palette so dark-theme text isn't invisible on white paper (was printing blank) */
+  :root{
+    --bg0:#faf6ef;--bg1:#ffffff;--bg2:#f5f0e8;--bg3:#ede6d8;--bg4:#e4dace;
+    --bd:#d8ceb8;--bd2:#c4b89a;
+    --t1:#1e1810;--t2:#6b5c42;--t3:#a89878;
+    --acc:#9e7a2a;--acc2:#7a5c18;--acc-light:#c9a84c;--acc-bg:#fdf5e4;--acc-glow:rgba(158,122,42,.12);
+    --green:#3a7a40;--green-bg:#edf6ee;--green-bd:#b8d8bc;
+    --amber:#8a5e1a;--amber-bg:#fdf3e4;--amber-bd:#f0d4a0;
+    --red:#8a3a30;--red-bg:#fdecea;--red-bd:#f0bcb4;
+    --purple:#5a4880;--purple-bg:#f0eef8;--purple-bd:#c8bce8;
+    --teal:#2a7870;--teal-bg:#e4f4f2;
+  }
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  html,body,.app{background:#fff!important}
+  .app::after{display:none!important}
   .sidebar,.mob-bottom-nav,.mob-hamburger,.topbar,.ai-panel,.notif-panel,.cmd-overlay,.notif{display:none!important}
   .app{display:block;border:none;box-shadow:none;border-radius:0}
   .content{max-height:none;overflow:visible;padding:0}
   .page{display:block!important}
   .metrics-grid{grid-template-columns:repeat(4,1fr)}
-  body{font-size:11pt}
+  body{font-size:11pt;color:#1e1810}
 }
 /* ── MOBILE BOTTOM NAV ───────────────────────── */
 .mob-bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:60px;background:var(--bg1);border-top:1px solid var(--bd);z-index:400;align-items:stretch;justify-content:space-around;padding:0 4px;padding-bottom:env(safe-area-inset-bottom)}

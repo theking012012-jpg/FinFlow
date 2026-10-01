@@ -9824,10 +9824,9 @@ async function latestFxRates(pool, userId) {
 // FX-live: pull a USD-base rate feed (open.er-api.com — free, no key, 168 currencies) and upsert it
 // as USD->X rows (source:'live'). With pickRate's inverse+cross-via-USD resolution, a USD base set
 // covers EVERY pair for ANY entity base, so nothing has to be entered by hand. MANUAL-WINS: a pair a
-// user entered by hand (source:'manual') is never clobbered. Bounded to majors + each user's own
-// entity currencies (cross-via-USD handles the rest); idempotent per (user,pair,day). Best-effort —
-// a feed outage leaves the last-good rates in place and never affects a request.
-const FX_LIVE_MAJORS = ['EUR','GBP','CAD','AUD','JPY','CNY','INR','MXN','BRL','ZAR','CHF','SGD','HKD','NZD'];
+// user entered by hand (source:'manual') is never clobbered. Stores EVERY supported currency the
+// feed returns (all of them, USD-base) so cross-via-USD covers all pairs for all entities; idempotent
+// per (user,pair,day). Best-effort — a feed outage leaves the last-good rates in place.
 async function refreshLiveFxRates() {
   try {
     const resp = await fetch('https://open.er-api.com/v6/latest/USD');
@@ -9840,11 +9839,9 @@ async function refreshLiveFxRates() {
     let wrote = 0;
     for (const u of us) {
       const uid = u.user_id;
-      let ents = []; try { ents = await db.allByUser('entities', uid); } catch (_) {}
-      const curs = new Set(FX_LIVE_MAJORS);
-      for (const e of ents) if (e && e.currency) curs.add(String(e.currency).toUpperCase());
-      for (const cur of curs) {
+      for (const cur of Object.keys(rates)) {
         if (cur === 'USD') continue;
+        if (typeof CURRENCY_CODES !== 'undefined' && CURRENCY_CODES.size && !CURRENCY_CODES.has(cur)) continue; // only app-supported codes
         const rate = rates[cur];
         if (rate == null || !isFinite(rate)) continue;
         // manual-wins: never overwrite a hand-entered rate for this pair

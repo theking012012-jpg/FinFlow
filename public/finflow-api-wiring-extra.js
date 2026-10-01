@@ -395,10 +395,11 @@
         </div>`;
       }).join('');
 
-      const mcs = document.querySelectorAll('#page-team .mc-val');
       const pendingCount = members.filter(m => m.status === 'pending').length;
-      if (mcs[0]) mcs[0].textContent = members.length - pendingCount;   // Active users = total − pending
-      if (mcs[1]) mcs[1].textContent = pendingCount;                    // Pending invites (was hardcoded 0)
+      const _tc = document.getElementById('team-count');
+      const _tp = document.getElementById('team-pending');
+      if (_tc) _tc.textContent = members.length - pendingCount;   // Active users = total − pending
+      if (_tp) _tp.textContent = pendingCount;                    // Pending invites (target by id — .mc-val[1] is the Roles tile)
     } catch (err) { console.warn('[Team]', err.message); }
   };
 

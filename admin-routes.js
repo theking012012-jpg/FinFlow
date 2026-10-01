@@ -36,6 +36,17 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     } catch(e) {
       return res.status(401).json({ error: 'Invalid password.' });
     }
+    // Admin MFA (opt-in): once ADMIN_TOTP_SECRET is set, a valid 6-digit TOTP is also required.
+    // Backward-compatible — unset means password-only, so enabling it can't lock you out mid-flight.
+    const ADMIN_TOTP_SECRET = process.env.ADMIN_TOTP_SECRET;
+    if (ADMIN_TOTP_SECRET && ADMIN_TOTP_SECRET.trim()) {
+      const { token } = req.body || {};
+      if (!token) return res.status(401).json({ error: 'MFA code required.', mfaRequired: true });
+      let totp = null; try { totp = require('./totp'); } catch (_) {}
+      if (!totp || !totp.verify(String(token), ADMIN_TOTP_SECRET.trim())) {
+        return res.status(401).json({ error: 'Invalid MFA code.', mfaRequired: true });
+      }
+    }
     req.session.isAdmin = true;
     await new Promise((resolve, reject) => {
       req.session.save(err => err ? reject(err) : resolve());

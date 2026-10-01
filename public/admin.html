@@ -198,6 +198,7 @@ td.amber{color:var(--amber)}
     <div class="login-logo">FinFlow</div>
     <div class="login-sub">Admin Panel</div>
     <input type="password" class="login-input" id="admin-pw" placeholder="Admin password" onkeydown="if(event.key==='Enter')adminLogin()">
+    <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" class="login-input" id="admin-otp" placeholder="6-digit MFA code" style="display:none" onkeydown="if(event.key==='Enter')adminLogin()">
     <button class="login-btn" onclick="adminLogin()">Sign in →</button>
     <div class="login-err" id="login-err"></div>
   </div>
@@ -737,10 +738,11 @@ async function adminLogin() {
     const res = await fetch('/api/admin/login', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pw }),
+      body: JSON.stringify({ password: pw, token: (document.getElementById('admin-otp').value || '').trim() || undefined }),
     });
     const data = await res.json();
     if (data.error) {
+      if (data.mfaRequired) { const o=document.getElementById('admin-otp'); o.style.display=''; o.focus(); }
       err.textContent = data.error;
       fetch('/api/admin/log-security', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'failed_login', notes:'Failed attempt' }) }).catch(()=>{});
       return;

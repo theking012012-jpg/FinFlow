@@ -2199,7 +2199,11 @@ app.get('/api/personal-salary', requireAuth, wrap(async (req, res) => {
 // ── PERSONAL TRANSACTIONS ─────────────────────────────────────────────────────
 app.get('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
   try {
-    res.json(await db.allByUser('personal_transactions', req.session.userId, null, (a,b) => b.id - a.id));
+    // FIX (personal/business isolation): personal_transactions is shared with the bank feed
+    // (POST /api/banking writes rows here with source:'banking' + entity_id). The personal view
+    // must show ONLY true personal rows — never the business bank feed. Mirrors the inverse of
+    // GET /api/banking's `source === 'banking'` filter.
+    res.json(await db.allByUser('personal_transactions', req.session.userId, r => r.source !== 'banking' && r.entity_id == null, (a,b) => b.id - a.id));
   } catch (e) {
     // F62 (F31 class): a query failure must NOT be disguised as "no transactions" — that
     // silently zeroes personal income/expense and Net Worth. db.allByUser already self-heals a
@@ -2949,6 +2953,20 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
     throw e;
   }
   logAudit(req, 'CREATE', 'journals', row.id, null, row);
+  // FIX (manual journals -> GL): a POSTED manual journal must hit the ledger like every other
+  // recognised doc, otherwise it never reaches the Balance Sheet / P&L. Draft journals do not post.
+  // Best-effort dual-write (mirrors invoice/bill posting); idempotent on 'journal:<id>'.
+  if (String(status).toLowerCase() === 'posted') {
+    try {
+      await postLedgerEntry(pool, {
+        userId: scopeId(req), entityId: req.entityId || null,
+        date: row.date || date || await entityTodayYmd(req.entityId),
+        description: 'Journal \u2014 ' + (description || '').trim().slice(0, 80),
+        sourceType: 'journal', sourceId: row.id, idempotencyKey: 'journal:' + row.id,
+        lines: (lines || []).filter(l => l && l.code).map(l => ({ code: String(l.code), debit: +l.debit || 0, credit: +l.credit || 0 })),
+      });
+    } catch (glErr) { console.error('[GL] journal posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  }
   res.status(201).json(row);
 }));
 app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
@@ -2962,11 +2980,34 @@ app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
   await db.updateById('journals', row.id, patch);
   const { rows: [_jr] } = await pool.query(`SELECT * FROM journals WHERE id = $1 LIMIT 1`, [row.id]);
   await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'journals', recordId: row.id, action: 'UPDATE', oldData: row, newData: _jr ? rowToObj(_jr) : { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
+  // FIX: keep the ledger in sync on status transitions. Draft->Posted posts; Posted->Draft reverses.
+  try {
+    const _wasPosted = String(row.status).toLowerCase() === 'posted';
+    const _nowPosted = String(patch.status != null ? patch.status : row.status).toLowerCase() === 'posted';
+    if (!_wasPosted && _nowPosted) {
+      let _ln = row.lines; if (typeof _ln === 'string') { try { _ln = JSON.parse(_ln); } catch (_) { _ln = []; } }
+      await postLedgerEntry(pool, {
+        userId: scopeId(req), entityId: row.entity_id || null,
+        date: patch.date || row.date, description: 'Journal \u2014 ' + String(patch.description || row.description || '').trim().slice(0, 80),
+        sourceType: 'journal', sourceId: row.id, idempotencyKey: 'journal:' + row.id,
+        lines: (Array.isArray(_ln) ? _ln : []).filter(l => l && l.code).map(l => ({ code: String(l.code), debit: +l.debit || 0, credit: +l.credit || 0 })),
+      });
+    } else if (_wasPosted && !_nowPosted) {
+      await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'journal', sourceId: row.id });
+    }
+  } catch (glErr) { console.error('[GL] journal PUT sync failed (non-fatal):', glErr && glErr.message); }
   res.json(_jr ? rowToObj(_jr) : {});
 }));
 app.delete('/api/journals/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('journals', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
+  const _jrow = await ownedBy('journals', req.params.id, scopeId(req));
+  if (!_jrow) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('journals', parseInt(req.params.id));
+  // FIX: deleting a POSTED journal must reverse it out of the ledger (mirror-image), else the GL
+  // keeps a phantom entry. Best-effort; idempotent on 'reverse:journal:<id>'.
+  if (String(_jrow.status).toLowerCase() === 'posted') {
+    try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'journal', sourceId: _jrow.id }); }
+    catch (glErr) { console.error('[GL] journal reversal failed (non-fatal):', glErr && glErr.message); }
+  }
   res.json({ ok: true });
 }));
 

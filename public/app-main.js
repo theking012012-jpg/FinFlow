@@ -5105,11 +5105,24 @@ async function _applyConvertedKPIs(ccy){
     if(window._displayCurrency!==ccy) return; // currency changed while in flight — drop stale
     const cov=j.fxCoverage||{};
     if(cov.complete===false){
-      // F34 Step 6 honesty: no FX rate exists for this currency pair, so every business figure would
-      // be a fabricated $0/relabel. Show "—" + a hint instead — NEVER a silent zero or mislabeled money.
+      // FIX (completes the F34/F59 mislabel guard): no FX rate exists for this pair, so NO surface
+      // can be converted. Blanking only the KPIs (prior behaviour) still left the overview chart,
+      // expense breakdown and txns list repainted with NATIVE magnitudes under the freshly-stamped
+      // foreign symbol -- the axis tick is symbol-only by design (F120) and relies on pre-converted
+      // data, which here does not exist. That is mislabeled money on 3 surfaces. The honest,
+      // non-destructive fix: revert the display to the entity's BASE currency, repaint every surface
+      // consistently, and tell the user to add a rate. _displayCurrency is nulled FIRST so the native
+      // refresh below does not re-enter this path (updateDashboard gates the overlay on it).
       const from=(cov.unconvertible&&cov.unconvertible[0]&&cov.unconvertible[0].from)||_activeEntityCurrency();
-      const hint='No FX rate for '+from+'→'+ccy+'. Add one under FX / Currency to convert.';
-      ['d-rev','d-exp','d-profit','d-outstanding'].forEach(id=>dash(id,hint));
+      const base=_activeEntityCurrency();
+      const _symMap={USD:'$',EUR:'\u20AC',GBP:'\u00A3',TTD:'TT$',CAD:'C$',AUD:'A$'};
+      currencySymbol=_symMap[base]||(window.CURRENCIES&&window.CURRENCIES[base]&&window.CURRENCIES[base].symbol)||'$';
+      activeCurrency=base;
+      window._displayCurrency=null;
+      if(typeof _syncCurrencyControls==='function') _syncCurrencyControls(base);
+      if(typeof notify==='function') notify('No FX rate for '+from+'\u2192'+ccy+'. Add one under FX / Currency to convert. Showing '+base+'.', true);
+      if(typeof refreshAllPeriodData==='function') refreshAllPeriodData();
+      return;
     } else {
       // Server-converted canonical figures (historical per-transaction FX). No client conversion math.
       set('d-rev', j.revenue||0);

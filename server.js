@@ -727,7 +727,7 @@ const _rlHandler = (req, res) => res.status(429).json({
 // IP+email so one CGNAT/office IP can't lock out other accounts. No email (verify-membership) => IP.
 const _loginKey = (req) => _ipKey(req) + '|' + String((req.body && req.body.email) || '').toLowerCase().trim();
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, max: 25, keyGenerator: _loginKey,
+  windowMs: 15 * 60 * 1000, max: 10, keyGenerator: _loginKey,
   skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false, handler: _rlHandler,
 });
 // SIGNUP / password-reset: count ALL (cap mass-signup + forgot-password email-bombing — these
@@ -2199,11 +2199,11 @@ app.get('/api/personal-salary', requireAuth, wrap(async (req, res) => {
 // ── PERSONAL TRANSACTIONS ─────────────────────────────────────────────────────
 app.get('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
   try {
-    // FIX (personal/business isolation): personal_transactions is shared with the bank feed
-    // (POST /api/banking writes rows here with source:'banking' + entity_id). The personal view
-    // must show ONLY true personal rows — never the business bank feed. Mirrors the inverse of
-    // GET /api/banking's `source === 'banking'` filter.
-    res.json(await db.allByUser('personal_transactions', req.session.userId, r => r.source !== 'banking' && r.entity_id == null, (a,b) => b.id - a.id));
+    // PERSONAL/BUSINESS WALL: entity_id is the boundary. entity_id == null is PERSONAL (manual
+    // entries, personal bank/Zelle imports — any source). entity_id != null belongs to a business
+    // entity and NEVER appears here. Actor-scoped (session user) — personal stays per-user, not
+    // per-account (see verify-f54-team-scope). The inverse of /api/banking's entity-scoped filter.
+    res.json(await db.allByUser('personal_transactions', req.session.userId, r => r.entity_id == null, (a,b) => b.id - a.id));
   } catch (e) {
     // F62 (F31 class): a query failure must NOT be disguised as "no transactions" — that
     // silently zeroes personal income/expense and Net Worth. db.allByUser already self-heals a
@@ -5102,7 +5102,9 @@ async function runRecurringScheduler() {
 
 // ── BANKING TRANSACTIONS ──────────────────────────────────────────────────────
 app.get('/api/banking', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('personal_transactions', scopeId(req), r => r.source === 'banking' && (!req.entityId || r.entity_id === req.entityId || r.entity_id == null), (a, b) => new Date(b.tx_date || b.date) - new Date(a.tx_date || a.date)));
+  // BUSINESS bank feed only: source banking AND belongs to the active business entity. entity_id
+  // null (personal bank/Zelle) is PERSONAL and never leaks into a business banking view.
+  res.json(await db.allByUser('personal_transactions', scopeId(req), r => r.source === 'banking' && r.entity_id != null && r.entity_id === req.entityId, (a, b) => new Date(b.tx_date || b.date) - new Date(a.tx_date || a.date)));
 }));
 app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   const { desc, amount, type, date, cat } = req.body || {};
@@ -7776,7 +7778,7 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
   const matchedBankSet = new Set(matchedBankIds.rows.map(r => r.banking_id));
   const matchedPaySet  = new Set(matchedPayIds.rows.map(r => r.invoice_payment_id));
 
-  const banking = await db.allByUser('personal_transactions', uid, r => r.source === 'banking' && (r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId)));
+  const banking = await db.allByUser('personal_transactions', uid, r => r.source === 'banking' && r.entity_id != null && r.entity_id === req.entityId);
   const unmatchedBanking = banking.filter(r => !matchedBankSet.has(r.id));
 
   const { rows: payments } = await pool.query(

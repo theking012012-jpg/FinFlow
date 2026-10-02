@@ -8,6 +8,10 @@ const crypto = require('crypto');
 const { rateLimit } = require('express-rate-limit');
 const { appUrl } = require('./app-url'); // F29 — single source of truth for app links
 
+// Single source of truth for FinFlow subscription prices (monthly USD) — used by both /overview MRR and
+// /costs revenue so the platform figure can never drift between pages (it once hardcoded a stale $199).
+const FF_PLAN_PRICE = { pro: 79, business: 249, scale: 400 };   // enterprise = custom quote
+
 const adminLoginLimiter = rateLimit({ windowMs: 15*60*1000, max: 5, skipSuccessfulRequests: true });
 
 const wrap = fn => async (req, res, next) => {
@@ -116,6 +120,9 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       SELECT data->>'plan' AS plan, COUNT(*) AS count
       FROM users GROUP BY plan ORDER BY count DESC
     `);
+    // Platform MRR, computed server-side (authoritative) so the Overview card never does browser math.
+    const _platformMRR = subBreakdown.rows.reduce(
+      (sum, r) => sum + (FF_PLAN_PRICE[String(r.plan || '').toLowerCase()] || 0) * parseInt(r.count || 0), 0);
 
     return res.json({
       users: {
@@ -148,6 +155,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
         estimatedMonthlyCost: '$' + (parseInt(aiCacheMonth.rows[0].count) * 0.003).toFixed(2),
         estimatedTotalCost: '$' + (parseInt(aiCacheTotal.rows[0].count) * 0.003).toFixed(2),
       },
+      revenue: { mrr: _platformMRR },
     });
   }));
 
@@ -506,17 +514,44 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     const totalQueries = aiTotal.rows.reduce((s, r) => s + parseInt(r.count), 0);
     const estimatedAICost = (totalQueries * SONNET_COST_PER_QUERY).toFixed(2);
 
+    // Monthly AI cost as a number (reused for the net-revenue calc below).
+    const monthlyAIQueries = aiUsage.rows.filter(r => {
+      const m = new Date(r.month); const now = new Date();
+      return m.getMonth() === now.getMonth() && m.getFullYear() === now.getFullYear();
+    }).reduce((s, r) => s + parseInt(r.queries), 0);
+    const monthlyAICost = monthlyAIQueries * SONNET_COST_PER_QUERY;
+
+    // Platform revenue (MRR) — AUTHORITATIVE, computed server-side from active paid plans × plan price.
+    // (The Overview page's old browser-side MRR used a stale $199 for Business; the real prices live here.)
+    const planCounts = await pool.query(`
+      SELECT LOWER(data->>'plan') AS plan, COUNT(*)::int AS count
+      FROM users WHERE data->>'deleted' IS DISTINCT FROM 'true'
+      GROUP BY LOWER(data->>'plan')
+    `);
+    const PLAN_PRICE = FF_PLAN_PRICE;   // shared single source of truth (see top of file)
+    const _planCnt = p => { const r = planCounts.rows.find(x => x.plan === p); return r ? r.count : 0; };
+    const revenueByPlan = Object.keys(PLAN_PRICE).map(p => ({
+      plan: p, count: _planCnt(p), price: PLAN_PRICE[p], subtotal: _planCnt(p) * PLAN_PRICE[p],
+    }));
+    const enterpriseCount = _planCnt('enterprise');
+    const totalMRR = revenueByPlan.reduce((s, r) => s + r.subtotal, 0);
+    const payingClients = revenueByPlan.reduce((s, r) => s + r.count, 0) + enterpriseCount;
+
     return res.json({
       ai: {
         totalQueries,
         byModel: aiTotal.rows,
         monthlyBreakdown: aiUsage.rows,
         estimatedTotalCost: '$' + estimatedAICost,
-        estimatedMonthlyCost: '$' + (aiUsage.rows.filter(r => {
-          const m = new Date(r.month);
-          const now = new Date();
-          return m.getMonth() === now.getMonth() && m.getFullYear() === now.getFullYear();
-        }).reduce((s, r) => s + parseInt(r.queries), 0) * SONNET_COST_PER_QUERY).toFixed(2),
+        estimatedMonthlyCost: '$' + monthlyAICost.toFixed(2),
+      },
+      revenue: {
+        byPlan: revenueByPlan,            // [{plan, count, price, subtotal}]
+        enterpriseCount,
+        totalMRR,
+        payingClients,
+        monthlyAICost: Number(monthlyAICost.toFixed(2)),
+        netMonthly: Number((totalMRR - monthlyAICost).toFixed(2)),
       },
       stripe: stripeBalance ? {
         available: stripeBalance.available.map(b => ({ amount: b.amount, currency: b.currency })),

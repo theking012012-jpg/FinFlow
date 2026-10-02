@@ -33,3 +33,6 @@ CODE_AUDIT_2026-07-09.md
 
 # generated: minified front-end build artifacts (server serves these transparently; prestart regenerates)
 public/.min/
+
+# Generated slim /app build (SLIM_APP)
+public/_gen/

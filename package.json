@@ -4,8 +4,8 @@
   "description": "FinFlow full-stack backend",
   "main": "server.js",
   "scripts": {
-    "build": "node bundle.js && node scripts/minify.js",
-    "prestart": "node bundle.js && node scripts/minify.js",
+    "build": "node bundle.js && node scripts/minify.js && node scripts/externalize-app.js",
+    "prestart": "node bundle.js && node scripts/minify.js && node scripts/externalize-app.js",
     "bundle:check": "node bundle.js --check",
     "postinstall": "node scripts/install-hooks.js",
     "start": "node server.js",

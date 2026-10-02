@@ -390,8 +390,8 @@ td.amber{color:var(--amber)}
         <div class="page-sub">Reports filed by clients against accountants</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Accountant</th><th>Reported By</th><th>Reason</th><th>Date</th><th>Actions</th></tr></thead>
-            <tbody id="reports-tbody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+            <thead><tr><th>Accountant</th><th>Reported By</th><th>Category</th><th>Reason</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+            <tbody id="reports-tbody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1170,24 +1170,40 @@ async function loadReports() {
   try {
     const res = await fetch('/api/admin/reports', { credentials: 'include' });
     const data = await res.json();
-    document.getElementById('reports-tbody').innerHTML = data.length ? data.map(r => `
+    document.getElementById('reports-tbody').innerHTML = data.length ? data.map(r => {
+      const st = r.report_status || 'open';
+      const isOpen = st === 'open';
+      const stBg = isOpen ? '#3a2f12' : '#262420';
+      const stFg = isOpen ? '#e0a93a' : '#8a8268';
+      return `
       <tr>
         <td><div class="primary">${esc(r.first_name)} ${esc(r.last_name)}</div><div style="font-size:11px;color:var(--t3)">${esc(r.firm || '')}</div></td>
         <td>${esc(r.reporter_name || '—')}<div style="font-size:11px;color:var(--t3)">${esc(r.reporter_email || '')}</div></td>
+        <td style="text-transform:capitalize">${esc(r.category || 'other')}</td>
         <td style="max-width:240px">${esc(r.reason)}</td>
+        <td><span style="font-size:11px;padding:2px 8px;border-radius:9px;background:${stBg};color:${stFg};text-transform:capitalize">${esc(st)}</span></td>
         <td>${new Date(r.created_at).toLocaleDateString()}</td>
         <td>
-          <button class="action-btn suspend" onclick="verifyAction(${r.accountant_id},'suspend')">Suspend</button>
-          <button class="action-btn approve" onclick="dismissReport(${r.id})">Dismiss</button>
+          ${isOpen
+            ? `<button class="action-btn suspend" onclick="verifyAction(${r.accountant_id},'suspend')">Suspend</button>
+          <button class="action-btn approve" onclick="resolveReport(${r.id})">Resolve</button>
+          <button class="action-btn" onclick="dismissReport(${r.id})">Dismiss</button>`
+            : `<span style="font-size:11px;color:var(--t3)">${esc(r.resolved_by || 'admin')}${r.resolved_at ? ' · ' + new Date(r.resolved_at).toLocaleDateString() : ''}</span>`}
         </td>
-      </tr>`).join('')
-    : '<tr><td colspan="5" class="empty">No reports filed</td></tr>';
+      </tr>`; }).join('')
+    : '<tr><td colspan="7" class="empty">No reports filed</td></tr>';
   } catch(e) { console.error('Reports error', e); }
 }
 
 async function dismissReport(id) {
   await fetch(`/api/admin/reports/${id}/dismiss`, { method: 'POST', credentials: 'include' });
   toast('Report dismissed', 'success');
+  loadReports();
+}
+
+async function resolveReport(id) {
+  await fetch(`/api/admin/reports/${id}/resolve`, { method: 'POST', credentials: 'include' });
+  toast('Report marked resolved', 'success');
   loadReports();
 }
 

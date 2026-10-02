@@ -1189,7 +1189,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="brand-name" id="sb-brand-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px">Create a business</div>
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--t3)" stroke-width="1.5" stroke-linecap="round" style="flex-shrink:0"><polyline points="2,3 5,7 8,3"/></svg>
         </div>
-        <div class="brand-badge" id="biz-currency-badge">USD · Pro</div>
+        <div class="brand-badge" id="biz-currency-badge">USD · —</div>
       </div>
     </div>
     <!-- Business switcher dropdown -->
@@ -1302,7 +1302,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div onclick="showPage('pricing',null)" style="display:flex;align-items:center;gap:8px;padding:.5rem .85rem .6rem;cursor:pointer;border-top:1px solid var(--bd);transition:background .13s" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background='transparent'">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="var(--t3)" stroke-width="1.5" stroke-linecap="round"><path d="M2 2h7l5 5-6 6-5-5V2z"/><circle cx="6" cy="6" r="1.2" fill="var(--t3)" stroke="none"/></svg>
       <span style="font-size:11.5px;color:var(--t3)">Plans &amp; pricing</span>
-      <span style="margin-left:auto;font-size:9.5px;padding:1px 6px;border-radius:8px;background:var(--acc-bg);color:var(--acc);border:1px solid var(--acc2);font-weight:600">PRO</span>
+      <span id="nav-plan-badge" style="margin-left:auto;font-size:9.5px;padding:1px 6px;border-radius:8px;background:var(--acc-bg);color:var(--acc);border:1px solid var(--acc2);font-weight:600">PRO</span>
     </div>
     <!-- Mobile-only: surface theme + currency in the drawer (top-bar controls are display:none <=768px).
          Thin controls — they drive the SAME #s-dark/#s-currency state + existing toggleTheme()/updateCurrency()
@@ -3094,7 +3094,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <span style="font-size:13px;color:var(--t3)">/mo</span>
             </div>
             <div style="font-size:11.5px;color:var(--t3);margin-bottom:1.25rem" id="price-pro-sub">Billed monthly</div>
-            <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px" onclick="startTrial('pro')">Start free trial</button>
+            <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px" id="cta-pro" onclick="startTrial('pro')">Start free trial</button>
             <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">What's included</div>
             <div id="pro-features"></div>
           </div>
@@ -3108,7 +3108,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <span style="font-size:13px;color:var(--t3)">/mo</span>
             </div>
             <div style="font-size:11.5px;color:var(--t3);margin-bottom:1.25rem" id="price-biz-sub">Billed monthly</div>
-            <button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px" onclick="startTrial('business')">Start free trial</button>
+            <button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px" id="cta-biz" onclick="startTrial('business')">Start free trial</button>
             <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">Everything in Pro, plus</div>
             <div id="biz-features"></div>
           </div>
@@ -3121,7 +3121,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <span style="font-size:13px;color:var(--t3)">/mo</span>
             </div>
             <div style="font-size:11.5px;color:var(--t3);margin-bottom:1.25rem" id="price-scale-sub">Billed monthly</div>
-            <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px" onclick="startTrial('scale')">Start free trial</button>
+            <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px" id="cta-scale" onclick="startTrial('scale')">Start free trial</button>
             <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">Everything in Business, plus</div>
             <div id="scale-features"></div>
           </div>
@@ -3133,7 +3133,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <span style="font-size:36px;font-weight:300;font-family:var(--font-display);font-style:italic;color:var(--t1)">Custom</span>
             </div>
             <div style="font-size:11.5px;color:var(--t3);margin-bottom:1.25rem">Volume pricing available</div>
-            <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px;border-color:var(--purple);color:var(--purple)" onclick="window.location.href='mailto:support@finflow.app?subject=Enterprise%20enquiry'">Contact sales</button>
+            <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-bottom:1.25rem;font-size:12.5px;border-color:var(--purple);color:var(--purple)" id="cta-ent" onclick="window.location.href='mailto:support@finflow.app?subject=Enterprise%20enquiry'">Contact sales</button>
             <div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.65rem">Everything in Business, plus</div>
             <div id="ent-features"></div>
           </div>
@@ -7288,7 +7288,7 @@ async function _loadEntitiesFromDBImpl(){
     const badgeEl = document.getElementById('biz-currency-badge');
     if(active){
       if(nameEl) nameEl.textContent = active.name;
-      if(badgeEl) badgeEl.textContent = active.currency + ' · Pro';
+      if(badgeEl) badgeEl.textContent = active.currency + ' · ' + (typeof _planLabel==='function'?_planLabel():'Pro');
     } else {
       if(nameEl) nameEl.textContent = 'Create a business';
       if(badgeEl) badgeEl.textContent = '';
@@ -7666,7 +7666,7 @@ window.switchEntity=async function(idx){
   const nameEl=document.getElementById('sb-brand-name');
   const badgeEl=document.getElementById('biz-currency-badge');
   if(nameEl) nameEl.textContent=e.name;
-  if(badgeEl) badgeEl.textContent=e.currency+' · Pro';
+  if(badgeEl) badgeEl.textContent=e.currency+' · '+(typeof _planLabel==='function'?_planLabel():'Pro');
 
   // Reset the DISPLAY currency to the new entity's — exactly what boot does (app-main.js:1320-1323).
   // The switch path relabelled the badge to e.currency but never reset activeCurrency, so S() (→
@@ -8098,6 +8098,26 @@ window.toggleFAQ=function(i){
   if(arr)arr.style.transform=open?'':'rotate(180deg)';
 };
 
+function _updatePricingCTAs(){
+  const plan = String((typeof currentUserPlan!=='undefined'?currentUserPlan:'') || '').toLowerCase();
+  const rank = { pro:1, business:2, scale:3, enterprise:4 };
+  const name = { pro:'Pro', business:'Business', scale:'Scale', enterprise:'Enterprise' };
+  const cur = rank[plan] || 0;   // 0 = trial/free → not on a paid plan yet, so the free-trial CTA is valid
+  const setMuted  = (b,txt) => { b.textContent=txt; b.onclick=null; b.disabled=true; b.style.opacity='.55'; b.style.cursor='default'; };
+  const setAction = (b,tier,txt) => { b.disabled=false; b.style.opacity=''; b.style.cursor=''; b.textContent=txt; b.onclick=()=>startTrial(tier); };
+  [['cta-pro','pro'],['cta-biz','business'],['cta-scale','scale']].forEach(([id,tier])=>{
+    const b=document.getElementById(id); if(!b) return;
+    const r=rank[tier];
+    if(cur===0) setAction(b,tier,'Start free trial');          // trial/free user — free trial still applies
+    else if(r===cur) setMuted(b,'Current plan');               // the plan they already pay for
+    else if(r>cur) setAction(b,tier,'Upgrade to '+name[tier]); // upgrades are self-serve
+    else setMuted(b,'Included in your plan');                  // lower tier — NO self-serve downgrade; a higher plan already includes it
+  });
+  const be=document.getElementById('cta-ent');
+  if(be && cur===4) setMuted(be,'Current plan');               // on Enterprise → "Current plan"; else leave "Contact sales"
+}
+window._updatePricingCTAs=_updatePricingCTAs;
+
 function initPricing(){
   renderFeatureList('pro-features',PRO_FEATURES);
   renderFeatureList('biz-features',BIZ_FEATURES);
@@ -8105,6 +8125,7 @@ function initPricing(){
   renderFeatureList('ent-features',ENT_FEATURES);
   renderCompareTable();
   renderFAQ();
+  _updatePricingCTAs();
 }
 
 // Init on page load and when navigated to
@@ -10359,10 +10380,12 @@ window._marketModal = function(opts){
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;display:flex;align-items:center;justify-content:center;padding:16px';
     var starsHtml = opts.rating ? '<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--t2,#9a9278);margin-bottom:6px">Your rating</div><div id="mm-stars" style="display:flex;gap:6px;font-size:28px;line-height:1;cursor:pointer">'
       + [1,2,3,4,5].map(function(n){return '<span data-v="'+n+'" style="color:var(--t3,#5a5040);transition:color .1s">★</span>';}).join('') + '</div></div>' : '';
+    var catHtml = (opts.categories && opts.categories.length) ? '<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--t2,#9a9278);margin-bottom:6px">Category</div><select id="mm-cat" class="finput" style="width:100%">' + opts.categories.map(function(c){return '<option value="'+c.value+'">'+c.label+'</option>';}).join('') + '</select></div>' : '';
     ov.innerHTML = '<div style="background:var(--bg1,#16120d);border:1px solid var(--bd2,#3a3828);border-radius:12px;width:100%;max-width:420px;padding:22px">'
       + '<div style="font-family:var(--font-display,serif);font-style:italic;font-size:19px;color:var(--acc-light,#e4c97a);margin-bottom:4px">'+(opts.title||'')+'</div>'
       + (opts.subtitle ? '<div style="font-size:12px;color:var(--t2,#9a9278);margin-bottom:14px">'+opts.subtitle+'</div>' : '')
       + starsHtml
+      + catHtml
       + '<textarea id="mm-text" class="finput" rows="4" placeholder="'+(opts.placeholder||'')+'" style="margin-bottom:14px;resize:vertical"></textarea>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end"><button id="mm-cancel" class="btn btn-ghost btn-sm">Cancel</button><button id="mm-ok" class="btn btn-primary btn-sm">'+(opts.okLabel||'Submit')+'</button></div></div>';
     document.body.appendChild(ov);
@@ -10383,7 +10406,8 @@ window._marketModal = function(opts){
       var text = (ov.querySelector('#mm-text').value || '').trim();
       if (opts.rating && !chosen) { if(typeof notify==='function') notify('Please pick a star rating.', true); return; }
       if (opts.requireText && !text) { if(typeof notify==='function') notify('Please add a few words.', true); return; }
-      close({ rating: chosen, text: text });
+      var _catEl = ov.querySelector('#mm-cat');
+      close({ rating: chosen, text: text, category: _catEl ? _catEl.value : null });
     };
     setTimeout(function(){ var t = ov.querySelector('#mm-text'); if(t) t.focus(); }, 30);
   });
@@ -10394,13 +10418,20 @@ window.reportAccountant = async function(accountantId, name) {
   const res = await window._marketModal({
     title: 'Report ' + (name || 'this accountant'),
     subtitle: 'Tell us what went wrong. Our team reviews reports within 24 hours.',
+    categories: [
+      { value: 'service',  label: 'Poor or incomplete service' },
+      { value: 'billing',  label: 'Billing / overcharging dispute' },
+      { value: 'conduct',  label: 'Unprofessional conduct' },
+      { value: 'privacy',  label: 'Data or privacy concern' },
+      { value: 'other',    label: 'Something else' },
+    ],
     placeholder: 'Describe the issue…', requireText: true, okLabel: 'Submit report',
   });
   if (!res) return;
   fetch('/api/accountants/report', {
     method: 'POST', credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accountantId, reason: res.text }),
+    body: JSON.stringify({ accountantId, reason: res.text, category: res.category }),
   }).then(r => r.json()).then(data => {
     if(typeof notify==='function') notify(data.error || '✓ Report submitted — our team will review within 24 hours');
   }).catch(() => {

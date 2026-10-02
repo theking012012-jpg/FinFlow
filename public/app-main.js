@@ -453,7 +453,7 @@ function switchBusiness(id){
   document.getElementById('biz-menu').style.display='none';
   // Update UI
   document.getElementById('sb-brand-name').textContent = biz.name;
-  document.getElementById('biz-currency-badge').textContent = biz.currency + ' · Pro';
+  document.getElementById('biz-currency-badge').textContent = biz.currency + ' · ' + _planLabel();
   // Switch display currency
   if(typeof setCurrency==='function') setCurrency(biz.displayCurrency || biz.currency);
   // Switch entity via DB - use _dbId
@@ -699,6 +699,13 @@ const ROLES = {
 };
 let currentRole = 'owner';
 let currentUserPlan = 'trial';   // F132: honest default (was 'pro' — showed "Pro" for trial/expired users until /auth/me landed); set from data.user.plan on auth
+// Human label for the CURRENT plan — used by the workspace badge + nav pill so they never hardcode "Pro".
+function _planLabel(){
+  const p = String(currentUserPlan || '').toLowerCase();
+  return ({ trial:'Trial', free:'Free', pro:'Pro', business:'Business', scale:'Scale', enterprise:'Enterprise' })[p]
+    || (p ? p.charAt(0).toUpperCase() + p.slice(1) : '—');
+}
+window._planLabel = _planLabel;
 // F147: the ONE place every auth path applies the authenticated user to client state (plan +
 // CURRENT_USER + the sidebar plan label). Fresh login and register set the plan inline; the
 // session-restore path (finflow-api-wiring-final.js, GET /api/auth/me) previously set NEITHER, so
@@ -711,6 +718,11 @@ window._applySessionUser = function (user) {
     currentUserPlan = user.plan;
     const planEl = document.getElementById('sb-user-plan');
     if (planEl) planEl.textContent = user.plan.charAt(0).toUpperCase() + user.plan.slice(1) + ' plan';
+    const _navPlan = document.getElementById('nav-plan-badge');
+    if (_navPlan) _navPlan.textContent = _planLabel().toUpperCase();
+    const _bcb = document.getElementById('biz-currency-badge');
+    if (_bcb && /· /.test(_bcb.textContent)) _bcb.textContent = _bcb.textContent.replace(/· .*$/, '· ' + _planLabel());
+    if (typeof _updatePricingCTAs === 'function') _updatePricingCTAs();
   }
 };
 // PL#3: client-side entity cap — MUST mirror the server ENTITY_LIMITS (server.js POST /api/entities).
@@ -1354,7 +1366,7 @@ function initEnhancements(){
   const activeBiz = businesses.find(b=>b.id===activeBizId) || businesses[0];
   if(activeBiz){
     document.getElementById('sb-brand-name').textContent = activeBiz.name;
-    document.getElementById('biz-currency-badge').textContent = `${activeBiz.currency} · Pro`;
+    document.getElementById('biz-currency-badge').textContent = `${activeBiz.currency} · ${_planLabel()}`;
     activeCurrency = activeBiz.displayCurrency || activeBiz.currency;
     currencySymbol = CURRENCIES[activeCurrency]?.symbol || '$';
     document.getElementById('currency-flag').textContent  = CURRENCIES[activeCurrency]?.flag || '🇺🇸';

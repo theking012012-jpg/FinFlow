@@ -53,7 +53,7 @@ const ACC = { email: 'f90r-acc@finflow.test', password: 'harness-password-not-a-
     // ── exercise each residual handler ──
     const calls = [
       ['notes',        () => http.post(`/api/accountants/clients/${active}/notes`,     { note: 'review Q2 payroll' })],
-      ['flag',         () => http.post(`/api/accountants/clients/${active}/flag`,      { type: 'invoice', ref: 'INV-1', message: 'looks off' })],
+      ['flag',         () => http.post(`/api/accountants/clients/${active}/flag`,      { type: 'invoice', ref: 'INV-1', note: 'looks off' })],
       ['checklist',    () => http.post(`/api/accountants/clients/${active}/checklist`, { checklist: { vat: true, payroll: false } })],
       ['message',      () => http.post(`/api/accountants/clients/${active}/message`,   { message: 'hi client' })],
       ['messages',     () => http.post(`/api/accountants/clients/${active}/messages`,  { content: 'follow-up' })],
@@ -72,7 +72,7 @@ const ACC = { email: 'f90r-acc@finflow.test', password: 'harness-password-not-a-
     const has = (t, a, uid) => rows.find(r => r.table_name === t && r.action === a && r.user_id === uid && r.actor_id === accId);
     const expect = [
       ['notes → NOTE_UPDATE',        'accountant_clients',  'NOTE_UPDATE',       active],
-      ['flag → FLAG',                'accountant_reports',  'FLAG',              active],
+      ['flag → FLAG',                'accountant_messages', 'FLAG',              active],   // flag is delivered as a client message, not an abuse report
       ['checklist → CHECKLIST_UPDATE','accountant_clients', 'CHECKLIST_UPDATE',  active],
       ['message → MESSAGE',          'accountant_messages', 'MESSAGE',           active],
       ['notify → NOTIFY_CLIENT',     'accountant_clients',  'NOTIFY_CLIENT',     active],

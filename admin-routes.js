@@ -398,19 +398,33 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // ── REPORTS ───────────────────────────────────────────────────────────────
   app.get('/api/admin/reports', requireAdmin, wrap(async (req, res) => {
     const result = await pool.query(`
-      SELECT r.id, r.reason, r.created_at,
+      SELECT r.id, r.reason, r.category, r.status AS report_status, r.resolved_at, r.resolved_by, r.created_at,
              a.id AS accountant_id, a.first_name, a.last_name, a.firm, a.email, a.status,
              u.data->>'name' AS reporter_name, u.data->>'email' AS reporter_email
       FROM accountant_reports r
       JOIN accountants a ON a.id = r.accountant_id
       LEFT JOIN users u ON u.id = r.reporter_id
-      ORDER BY r.created_at DESC LIMIT 100
+      ORDER BY (r.status = 'open') DESC, r.created_at DESC LIMIT 100
     `);
     return res.json(result.rows);
   }));
 
   app.post('/api/admin/reports/:id/dismiss', requireAdmin, wrap(async (req, res) => {
-    await pool.query(`DELETE FROM accountant_reports WHERE id = $1`, [(parseInt(req.params.id, 10) || 0)]);
+    // Non-destructive: keep the row as the moderation trail (was a hard DELETE, which erased history).
+    // 'dismissed' = reviewed, no action warranted.
+    const note = String((req.body && req.body.note) || '').trim().slice(0, 500);
+    await pool.query(
+      `UPDATE accountant_reports SET status='dismissed', resolved_at=NOW(), resolved_by='admin', resolution=$2 WHERE id=$1`,
+      [(parseInt(req.params.id, 10) || 0), note || null]);
+    return res.json({ success: true });
+  }));
+
+  app.post('/api/admin/reports/:id/resolve', requireAdmin, wrap(async (req, res) => {
+    // 'resolved' = reviewed AND acted on (e.g. accountant warned/suspended). Row retained for the trail.
+    const note = String((req.body && req.body.note) || '').trim().slice(0, 500);
+    await pool.query(
+      `UPDATE accountant_reports SET status='resolved', resolved_at=NOW(), resolved_by='admin', resolution=$2 WHERE id=$1`,
+      [(parseInt(req.params.id, 10) || 0), note || null]);
     return res.json({ success: true });
   }));
 

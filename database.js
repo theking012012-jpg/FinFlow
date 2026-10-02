@@ -473,6 +473,15 @@ async function initDB() {
         created_at    TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    // Report triage fields (added post-launch): a category to route the report, a status so the
+    // moderation queue is a trail (dismiss/resolve keep the row — never a hard DELETE), and a
+    // resolved_at/by/resolution stamp recording who closed it and why.
+    await client.query(`ALTER TABLE accountant_reports ADD COLUMN IF NOT EXISTS category    VARCHAR(40)`);
+    await client.query(`ALTER TABLE accountant_reports ADD COLUMN IF NOT EXISTS status      VARCHAR(20) NOT NULL DEFAULT 'open'`);
+    await client.query(`ALTER TABLE accountant_reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`);
+    await client.query(`ALTER TABLE accountant_reports ADD COLUMN IF NOT EXISTS resolved_by VARCHAR(120)`);
+    await client.query(`ALTER TABLE accountant_reports ADD COLUMN IF NOT EXISTS resolution  TEXT`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_accountant_reports_status ON accountant_reports(status)`);
 
     // Accountant credential proof (Step F). Base64-in-Postgres, mirroring the
     // documents table pattern but ACCOUNTANT-scoped. Kept in its own table so the

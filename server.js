@@ -9060,12 +9060,19 @@ async function glBalanceSheet(userId, entityId) {
   return res;
 }
 
-async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null) {
+async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null, permittedEntityIds = null) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const num = v => parseFloat(v) || 0;
   const sum = (arr, f) => (arr || []).reduce((s, x) => s + f(x), 0);
   // entityId null → all entities (accountant "all" view); set → that entity + unassigned rows.
-  const ent = r => entityId == null || r.entity_id == null || r.entity_id === entityId;
+  // permittedEntityIds: when supplied WITH entityId==null, the consolidated set is restricted to those
+  // entity ids (plus unassigned rows) so the base-currency FX consolidation below runs over exactly the
+  // permitted entities — this is how an accountant's fine-grained "all entities" view consolidates
+  // correctly to base currency instead of raw-summing native amounts. null ⇒ byte-identical to before.
+  const _permSet = Array.isArray(permittedEntityIds) ? new Set(permittedEntityIds.map(Number)) : null;
+  const ent = r => entityId == null
+    ? (r.entity_id == null || !_permSet || _permSet.has(Number(r.entity_id)))
+    : (r.entity_id == null || r.entity_id === entityId);
   // ── F87 / Rule 10 — CANONICAL period resolution (finflow-dates) ─────────────────────────────
   // An accounting date is a CALENDAR date, not an instant. The window and the "today" bound are
   // 'YYYY-MM-DD' STRINGS and every date-in-period test below is a STRING comparison — never

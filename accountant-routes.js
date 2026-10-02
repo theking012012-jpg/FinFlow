@@ -845,14 +845,17 @@ If you cannot find a field, use null. Be concise.`;
       summariesByEntity[er.id] = await computeBooks(userId, er.id, period, null, fyStartIdx);
     }
     // Top-line books (F9). Legacy: the requested scope unchanged. Scoped + specific entity: that
-    // entity's own summary. Scoped + all: the sum of PERMITTED entity summaries only.
+    // entity's own summary. Scoped + all: the PERMITTED entities consolidated to base currency.
     let books;
     if (_ea == null) {
       books = await computeBooks(userId, entityId, period, null, fyStartIdx);
     } else if (entityId != null) {
       books = summariesByEntity[entityId] || await computeBooks(userId, entityId, period, null, fyStartIdx);
     } else {
-      books = _aggregateBooks(_permittedIds.map(id => summariesByEntity[id]));
+      // Consolidate PERMITTED entities to base currency via computeBooks' own per-row FX (the same path
+      // the owner's Consolidated P&L uses) — NOT _aggregateBooks, which raw-summed native currencies
+      // (e.g. TTD + USD) and double-counted unassigned rows. Reconciles with the owner's all view.
+      books = await computeBooks(userId, null, period, null, fyStartIdx, null, _permittedIds);
     }
 
     // ── Personal finances — served ONLY when the owner granted personal access (never for legacy
@@ -1067,17 +1070,30 @@ If you cannot find a field, use null. Be concise.`;
   app.post('/api/accountants/clients/:userId/flag', requireAccountant, apiLimiter, wrap(async (req, res) => {
     const { userId } = req.params;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
-    const { type, ref, message } = req.body || {};
+    const { type, ref, note } = req.body || {};
     const access = await pool.query(
       `SELECT id FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active'`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
-    await pool.query(`
-      INSERT INTO accountant_reports (accountant_id, reporter_id, reason, created_at)
-      VALUES ($1, $2, $3, NOW())
-    `, [req.session.accountantId, parseInt(userId), JSON.stringify({ type, ref, message })]);
-    await _audit(pool, { userId: parseInt(userId), table: 'accountant_reports', action: 'FLAG', newData: { type, ref, message }, req });  // F90 residual: accountant workflow audit
+    // A flag is an issue the accountant RAISES WITH the client (missing receipt, amount mismatch, etc.),
+    // so it is delivered into the shared message thread — the client is actually notified and can reply/
+    // attach. It is NOT an abuse report and must never touch accountant_reports (the admin moderation
+    // queue): routing it there made every flag look like the CLIENT reporting the accountant, and dropped
+    // the note entirely (the route read req.body.message while the client sends `note`).
+    const _kind = (type === 'expense') ? 'expense' : 'invoice';
+    const _refTxt = String(ref || '').slice(0, 120);
+    const _noteTxt = String(note || '').trim().slice(0, 1800);
+    const _flagBody = `⚑ Flagged ${_kind}${_refTxt ? ` "${_refTxt}"` : ''}: ${_noteTxt || 'please review.'}`.slice(0, 2000);
+    const _flagRow = await pool.query(
+      `INSERT INTO accountant_messages (accountant_id, user_id, message, sender, created_at)
+       VALUES ($1, $2, $3, 'accountant', NOW()) RETURNING id, message AS content, sender, created_at`,
+      [req.session.accountantId, parseInt(userId), _flagBody]
+    );
+    _chatBroadcast(_convKey(req.session.accountantId, userId), 'message',
+      { ..._flagRow.rows[0], sender_name: 'Your accountant' });
+    _notifyOfflineMessage({ recipientSide: 'client', accountantId: req.session.accountantId, userId: parseInt(userId), preview: _flagBody });
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_messages', recordId: _flagRow.rows[0]?.id || null, action: 'FLAG', newData: { type, ref, note }, req });  // F90 residual: accountant workflow audit
     res.json({ ok: true });
   }));
 
@@ -1700,13 +1716,15 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   // ── REPORT ACCOUNTANT ─────────────────────────────────────────────────────
   app.post('/api/accountants/report', wrap(async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
-    const { accountantId, reason } = req.body || {};
+    const { accountantId, reason, category } = req.body || {};
     if (!accountantId || !reason) return res.status(400).json({ error: 'Missing fields.' });
+    const _RPT_CATS = ['service', 'billing', 'conduct', 'privacy', 'other'];
+    const _rptCat = _RPT_CATS.includes(String(category)) ? String(category) : 'other';
 
     await pool.query(`
-      INSERT INTO accountant_reports (accountant_id, reporter_id, reason, created_at)
-      VALUES ($1, $2, $3, NOW())
-    `, [accountantId, req.session.userId, reason.trim().slice(0, 1000)]);
+      INSERT INTO accountant_reports (accountant_id, reporter_id, reason, category, status, created_at)
+      VALUES ($1, $2, $3, $4, 'open', NOW())
+    `, [accountantId, req.session.userId, reason.trim().slice(0, 1000), _rptCat]);
 
     return res.json({ success: true });
   }));

@@ -4363,16 +4363,14 @@ window.addEventListener('resize',function(){if(window.innerWidth>768)closeSideba
       el.setAttribute('enterkeyhint', el.id==='ai-input' ? 'send' : 'done');
     });
   }
-  _applyHints(document);
-  // Re-apply for on-demand inputs (modal/list content rendered later). Debounced; only sets a
-  // missing attribute (no reflow, no observer feedback — attribute writes aren't childList).
-  if('MutationObserver' in window){
-    var _pending = false;
-    new MutationObserver(function(){
-      if(_pending) return; _pending = true;
-      setTimeout(function(){ _pending = false; _applyHints(document); }, 400);
-    }).observe(document.body, {childList:true, subtree:true});
-  }
+  // Perf: set enterkeyhint just-in-time on focus instead of scanning every input across all 43
+  // screens at load AND re-scanning the whole document on every DOM mutation (biggest TBT hit).
+  document.addEventListener('focusin', function(e){
+    var el = e.target; if(!el || el.hasAttribute('enterkeyhint')) return;
+    if((el.tagName || '') !== 'INPUT') return;
+    if(/^(checkbox|radio|button|submit|file|range)$/.test(el.type || '')) return;
+    el.setAttribute('enterkeyhint', el.id === 'ai-input' ? 'send' : 'done');
+  }, true);
 
   // Scroll the focused field above the on-screen keyboard (mobile only). The delay lets the
   // keyboard finish animating in before we measure/scroll.

@@ -785,9 +785,12 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       GROUP BY 1 ORDER BY views DESC LIMIT 15
     `);
     const recent = await pool.query(`
-      SELECT ip_address, country, region, city, path, referrer, user_agent,
-             user_id, views, first_seen, last_seen
-      FROM page_views ORDER BY last_seen DESC LIMIT 200
+      SELECT pv.ip_address, pv.country, pv.region, pv.city, pv.path, pv.referrer, pv.user_agent,
+             pv.user_id, pv.views, pv.first_seen, pv.last_seen,
+             u.data->>'name' AS account_name, u.data->>'email' AS account_email
+      FROM page_views pv
+      LEFT JOIN users u ON u.id = pv.user_id
+      ORDER BY pv.last_seen DESC LIMIT 200
     `);
 
     return res.json({

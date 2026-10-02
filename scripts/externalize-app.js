@@ -3,7 +3,7 @@
  * which the browser must parse + compile + run on the main thread during load — the dominant cause
  * of the ~10 s mobile Total Blocking Time. This build step moves every inline app-logic <script>
  * (those AFTER the first external <script>, i.e. the body bundles) into external files under
- * public/_gen and references them with `defer`. The small critical head scripts BEFORE the first
+ * public/_gen and references them as plain external scripts (NOT defer — deferring reordered execution and broke a load-time dependency). The small critical head scripts BEFORE the first
  * external script (theme/_appReady/loadChartJS) stay inline so there is no flash. Deferred scripts
  * execute in document order after parse, so execution order is preserved exactly; existing external
  * body scripts are also marked defer to keep the single ordered queue. Output: public/_gen/index.html
@@ -40,7 +40,7 @@ while ((m = scriptRe.exec(html)) !== null) {
   if (!body.trim()) { out += full; continue; }           // empty inline → skip
   const file = `app-${String(n).padStart(2, '0')}.js`;
   fs.writeFileSync(path.join(OUTDIR, file), body, 'utf8');
-  out += `<script defer src="/_gen/${file}"></script>`;
+  out += `<script src="/_gen/${file}"></script>`;   // PLAIN (no defer): run in exact original inline order, avoids the renderItems race
   n++; externalized++;
 }
 out += html.slice(last);

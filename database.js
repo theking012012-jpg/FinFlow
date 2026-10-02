@@ -1060,6 +1060,17 @@ async function initDB() {
     )`);
   } catch (e) { console.warn('[DB] platform_fees table:', e.message.slice(0, 80)); }
 
+  // Key-value store for admin-managed platform settings (e.g. operating_costs: the external monthly
+  // SaaS bills the app can't read via API — Railway, Supabase, Resend, domain — entered by the admin
+  // so the Costs & Usage net reflects REAL expenses, not just the auto-tracked AI + Stripe fees.
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS platform_settings (
+      key        TEXT PRIMARY KEY,
+      value      JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  } catch (e) { console.warn('[DB] platform_settings table:', e.message.slice(0, 80)); }
+
   // F117: durable Stripe-webhook idempotency ledger. Stripe RETRIES delivery on any non-2xx or
   // network hiccup, so the same event.id can arrive more than once. The webhook claims each event.id
   // (INSERT ON CONFLICT DO NOTHING) and skips the handlers on a replay — closing the non-idempotent

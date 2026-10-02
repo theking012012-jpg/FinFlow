@@ -537,6 +537,39 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
     const totalMRR = revenueByPlan.reduce((s, r) => s + r.subtotal, 0);
     const payingClients = revenueByPlan.reduce((s, r) => s + r.count, 0) + enterpriseCount;
 
+    // ── FULL MONTHLY COST PICTURE ────────────────────────────────────────────
+    // Net has to reflect ALL expenses, not just AI. Three buckets:
+    //  (1) AI — auto, computed above from usage (monthlyAICost).
+    //  (2) Stripe processing fees — estimated from MRR (2.9% + $0.30 per paying client/charge);
+    //      the app can't cheaply pull exact per-charge fees here, and in test mode they're ~$0.
+    //  (3) Operating costs — the external SaaS bills no API exposes to us (Railway, Supabase,
+    //      Resend, domain, …). The admin enters these on the Costs page; we persist them in
+    //      platform_settings so the net is a REAL number, not AI-only.
+    const stripeFeesEst = Number((totalMRR * 0.029 + payingClients * 0.30).toFixed(2));
+
+    let operatingCosts = [];
+    try {
+      const oc = await pool.query(`SELECT value FROM platform_settings WHERE key = 'operating_costs'`);
+      if (oc.rows.length && Array.isArray(oc.rows[0].value)) {
+        operatingCosts = oc.rows[0].value
+          .map(r => ({ label: String(r.label || '').slice(0, 60), monthly: Number(r.monthly) || 0 }))
+          .filter(r => r.label);
+      }
+    } catch (e) { console.warn('[Admin Costs] operating_costs read:', e.message.slice(0, 80)); }
+    if (!operatingCosts.length) {
+      // First load — seed the common vendors at $0 so the admin just fills in the amounts.
+      operatingCosts = [
+        { label: 'Railway (hosting)', monthly: 0 },
+        { label: 'Supabase (database)', monthly: 0 },
+        { label: 'Resend (email)', monthly: 0 },
+        { label: 'Domain', monthly: 0 },
+      ];
+    }
+    const operatingTotal = Number(operatingCosts.reduce((s, r) => s + (Number(r.monthly) || 0), 0).toFixed(2));
+    const mAI = Number(monthlyAICost.toFixed(2));
+    const totalMonthlyCosts = Number((mAI + stripeFeesEst + operatingTotal).toFixed(2));
+    const netMonthly = Number((totalMRR - totalMonthlyCosts).toFixed(2));
+
     return res.json({
       ai: {
         totalQueries,
@@ -550,8 +583,15 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
         enterpriseCount,
         totalMRR,
         payingClients,
-        monthlyAICost: Number(monthlyAICost.toFixed(2)),
-        netMonthly: Number((totalMRR - monthlyAICost).toFixed(2)),
+        monthlyAICost: mAI,
+        netMonthly,                       // MRR − (AI + Stripe fees + operating costs)
+      },
+      costs: {
+        ai: mAI,                          // auto, from usage
+        stripeFeesEst,                    // est. 2.9% + $0.30/paying client
+        operating: operatingCosts,        // [{label, monthly}] — admin-editable, persisted
+        operatingTotal,
+        totalMonthlyCosts,
       },
       stripe: stripeBalance ? {
         available: stripeBalance.available.map(b => ({ amount: b.amount, currency: b.currency })),
@@ -566,6 +606,28 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
         link: 'https://railway.app/dashboard',
       },
     });
+  }));
+
+  // Save the admin-entered operating costs (Railway, Supabase, Resend, domain, …).
+  app.post('/api/admin/operating-costs', requireAdmin, wrap(async (req, res) => {
+    const raw = Array.isArray(req.body && req.body.operating) ? req.body.operating : null;
+    if (!raw) return res.status(400).json({ error: 'operating must be an array of {label, monthly}' });
+    const clean = raw
+      .map(r => ({ label: String((r && r.label) || '').trim().slice(0, 60), monthly: Math.max(0, Number(r && r.monthly) || 0) }))
+      .filter(r => r.label)
+      .slice(0, 30);
+    await pool.query(`
+      INSERT INTO platform_settings (key, value, updated_at)
+      VALUES ('operating_costs', $1::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    `, [JSON.stringify(clean)]);
+    try {
+      await pool.query(
+        `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('operating_costs_update','settings',$1,NOW())`,
+        [`${clean.length} line(s), total $${clean.reduce((a,b)=>a+b.monthly,0).toFixed(2)}/mo`]
+      );
+    } catch (_) {}
+    return res.json({ success: true, operating: clean });
   }));
 
   // ── ADMIN ACTIVITY LOG ────────────────────────────────────────────────────

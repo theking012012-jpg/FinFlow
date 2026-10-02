@@ -487,8 +487,31 @@ td.amber{color:var(--amber)}
           <div id="revenue-rows"><div class="cost-row"><span>Loading…</span><span class="cost-val">—</span></div></div>
           <div class="cost-row" style="border-top:1px solid var(--bd);margin-top:6px;padding-top:8px"><span style="color:var(--t1);font-weight:500">Total MRR</span><span class="cost-val" id="rev-total" style="color:var(--acc);font-size:16px">—</span></div>
           <div class="cost-row"><span>Paying clients</span><span class="cost-val" id="rev-clients">—</span></div>
-          <div class="cost-row"><span>Net / mo (MRR − AI cost)</span><span class="cost-val" id="rev-net">—</span></div>
-          <div style="font-size:10px;color:var(--t3);margin-top:8px">MRR from active paid plans (Pro $79 · Business $249 · Scale $400). Net = MRR − est. monthly AI cost; excludes Stripe fees &amp; Railway.</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:8px">MRR from active paid plans (Pro $79 · Business $249 · Scale $400).</div>
+        </div>
+
+        <!-- MONTHLY COSTS (auto AI + Stripe estimate + admin-entered operating costs) -->
+        <div class="cost-card" style="margin-bottom:16px">
+          <h4>🧾 Monthly Costs</h4>
+          <div class="cost-row"><span>AI — Claude <span style="color:var(--t3);font-size:10px">(auto, from usage)</span></span><span class="cost-val" id="cost-ai">—</span></div>
+          <div class="cost-row"><span>Stripe fees <span style="color:var(--t3);font-size:10px">(est. 2.9% + $0.30/client)</span></span><span class="cost-val" id="cost-stripe">—</span></div>
+          <div style="border-top:1px solid var(--bd);margin:10px 0 8px;padding-top:10px;font-size:11px;color:var(--t2);font-weight:600">Operating costs <span style="color:var(--t3);font-weight:400">— your monthly SaaS bills (Railway, Supabase, Resend, domain…)</span></div>
+          <div id="opex-rows"></div>
+          <button type="button" id="opex-add" style="background:none;border:1px dashed var(--bd);color:var(--t2);padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer;margin-top:4px">+ Add cost line</button>
+          <div class="cost-row" style="border-top:1px solid var(--bd);margin-top:10px;padding-top:8px"><span style="color:var(--t1);font-weight:600">Total monthly costs</span><span class="cost-val" id="cost-total" style="font-size:16px">—</span></div>
+          <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
+            <button type="button" id="opex-save" style="background:var(--acc);border:none;color:#fff;padding:7px 16px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer">Save operating costs</button>
+            <span id="opex-saved" style="font-size:11px;color:#19c37d;display:none">Saved ✓</span>
+          </div>
+        </div>
+
+        <!-- NET -->
+        <div class="cost-card" style="margin-bottom:16px;border:1px solid var(--acc2)">
+          <h4>📊 Net / mo</h4>
+          <div class="cost-row"><span>Revenue (MRR)</span><span class="cost-val" id="net-mrr">—</span></div>
+          <div class="cost-row"><span>− Total monthly costs</span><span class="cost-val" id="net-costs">—</span></div>
+          <div class="cost-row" style="border-top:1px solid var(--bd);margin-top:6px;padding-top:8px"><span style="color:var(--t1);font-weight:600">Net profit / mo</span><span class="cost-val" id="rev-net" style="font-size:18px">—</span></div>
+          <div style="font-size:10px;color:var(--t3);margin-top:8px">Net = MRR − (AI + Stripe fees + operating costs). Railway &amp; Supabase can't be read via their APIs, so enter them above to keep this honest.</div>
         </div>
         <div class="cost-grid">
           <div class="cost-card">
@@ -1323,6 +1346,61 @@ async function markSelectedPaid() {
 }
 
 // ── COSTS ─────────────────────────────────────────────────────────────────────
+function _fmtMoney(n) {
+  const v = Number(n) || 0;
+  return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Operating-cost editor: one row = label + monthly $ + remove. Rendered from the server's list.
+function renderOpex(list) {
+  const box = document.getElementById('opex-rows');
+  if (!box) return;
+  box.innerHTML = '';
+  (list && list.length ? list : []).forEach(r => addOpexRow(r.label, r.monthly));
+}
+function addOpexRow(label, monthly) {
+  const box = document.getElementById('opex-rows');
+  if (!box) return;
+  const row = document.createElement('div');
+  row.className = 'opex-row';
+  row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
+  row.innerHTML =
+    '<input class="opex-label" type="text" placeholder="e.g. Supabase" maxlength="60" '
+      + 'style="flex:1;background:var(--bg2,#1a1a1a);border:1px solid var(--bd);color:var(--t1);padding:6px 8px;border-radius:6px;font-size:12px">'
+    + '<span style="color:var(--t3);font-size:12px">$</span>'
+    + '<input class="opex-amt" type="number" min="0" step="0.01" placeholder="0.00" '
+      + 'style="width:90px;background:var(--bg2,#1a1a1a);border:1px solid var(--bd);color:var(--t1);padding:6px 8px;border-radius:6px;font-size:12px;text-align:right">'
+    + '<button type="button" class="opex-del" title="Remove" '
+      + 'style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px">×</button>';
+  row.querySelector('.opex-label').value = label || '';
+  row.querySelector('.opex-amt').value = (monthly != null && monthly !== '') ? monthly : '';
+  row.querySelector('.opex-del').onclick = () => row.remove();
+  box.appendChild(row);
+}
+async function saveOpex() {
+  const rows = Array.from(document.querySelectorAll('#opex-rows .opex-row')).map(r => ({
+    label: r.querySelector('.opex-label').value.trim(),
+    monthly: Math.max(0, parseFloat(r.querySelector('.opex-amt').value) || 0),
+  })).filter(r => r.label);
+  const btn = document.getElementById('opex-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const res = await fetch('/api/admin/operating-costs', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operating: rows }),
+    });
+    if (!res.ok) throw new Error('save failed');
+    const saved = document.getElementById('opex-saved');
+    if (saved) { saved.style.display = 'inline'; setTimeout(() => { saved.style.display = 'none'; }, 2500); }
+    await loadCosts();   // re-pull so AI + Stripe + operating total + net all reconcile server-side
+  } catch (e) {
+    alert('Could not save operating costs: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save operating costs'; }
+  }
+}
+
 async function loadCosts() {
   try {
     const res = await fetch('/api/admin/costs', { credentials: 'include' });
@@ -1340,7 +1418,22 @@ async function loadCosts() {
       document.getElementById('revenue-rows').innerHTML = rows || '<div class="cost-row"><span>No paying clients yet</span><span class="cost-val">$0</span></div>';
       document.getElementById('rev-total').textContent = '$' + r.totalMRR.toLocaleString();
       document.getElementById('rev-clients').textContent = r.payingClients;
-      document.getElementById('rev-net').textContent = (r.netMonthly < 0 ? '-$' + Math.abs(r.netMonthly).toLocaleString() : '$' + r.netMonthly.toLocaleString());
+      document.getElementById('net-mrr').textContent = '$' + r.totalMRR.toLocaleString();
+      document.getElementById('rev-net').textContent = _fmtMoney(r.netMonthly);
+      document.getElementById('rev-net').style.color = r.netMonthly < 0 ? '#e5484d' : '#19c37d';
+    }
+
+    if (d.costs) {
+      const c = d.costs;
+      document.getElementById('cost-ai').textContent = _fmtMoney(c.ai);
+      document.getElementById('cost-stripe').textContent = _fmtMoney(c.stripeFeesEst);
+      document.getElementById('cost-total').textContent = _fmtMoney(c.totalMonthlyCosts);
+      document.getElementById('net-costs').textContent = _fmtMoney(c.totalMonthlyCosts);
+      renderOpex(c.operating || []);
+      // Wire the operating-cost controls once.
+      const addBtn = document.getElementById('opex-add'), saveBtn = document.getElementById('opex-save');
+      if (addBtn && !addBtn._wired) { addBtn._wired = 1; addBtn.onclick = () => addOpexRow('', ''); }
+      if (saveBtn && !saveBtn._wired) { saveBtn._wired = 1; saveBtn.onclick = saveOpex; }
     }
 
     if (d.stripe) {

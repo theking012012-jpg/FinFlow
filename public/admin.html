@@ -1505,13 +1505,13 @@ async function loadFlags() {
     const data = await res.json();
     document.getElementById('flags-tbody').innerHTML = data.length ? data.map(f => `
       <tr>
-        <td class="primary">${f.target_type||'—'}</td>
-        <td>${f.target_id ? '#'+f.target_id : '—'}</td>
-        <td><span class="badge b-amber">${f.action}</span></td>
-        <td style="max-width:260px;word-break:break-word">${f.notes||'—'}</td>
+        <td class="primary">${esc(((f.first_name||'')+' '+(f.last_name||'')).trim()||'—')}<div style="font-size:11px;color:var(--t3)">${esc(f.firm||'')}</div></td>
+        <td>${esc(f.client_name||'—')}<div style="font-size:11px;color:var(--t3)">${esc(f.client_email||'')}</div></td>
+        <td><span class="badge b-amber" style="text-transform:capitalize">${esc(f.txn_type||'—')}</span>${f.txn_ref?`<div style="font-size:11px;color:var(--t3);word-break:break-word">${esc(f.txn_ref)}</div>`:''}</td>
+        <td style="max-width:260px;word-break:break-word">${esc(f.note||'—')}</td>
         <td>${new Date(f.created_at).toLocaleDateString()}</td>
-        <td><span class="badge ${f.status==='resolved'?'b-green':'b-amber'}">${f.status}</span></td>
-        <td>${f.status!=='resolved'?`<button class="action-btn approve" onclick="resolveFlag(${f.id},this)">Resolve</button>`:''}</td>
+        <td><span class="badge ${f.status==='resolved'?'b-green':'b-amber'}" style="text-transform:capitalize">${esc(f.status||'open')}</span></td>
+        <td>${f.status!=='resolved'?`<button class="action-btn approve" onclick="resolveFlag(${f.id},this)">Resolve</button>`:`<span style="font-size:11px;color:var(--t3)">${esc(f.resolved_by||'admin')}${f.resolved_at?' · '+new Date(f.resolved_at).toLocaleDateString():''}</span>`}</td>
       </tr>`).join('')
     : '<tr><td colspan="7" class="empty">No flagged transactions</td></tr>';
   } catch(e) { console.error('Flags error',e); }

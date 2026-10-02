@@ -604,18 +604,20 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // ── FLAGGED TRANSACTIONS ──────────────────────────────────────────────────
   app.get('/api/admin/flags', requireAdmin, wrap(async (req, res) => {
     const result = await pool.query(`
-      SELECT id, action, target_type, target_id, notes, created_at,
-             CASE WHEN notes LIKE '%[resolved]%' THEN 'resolved' ELSE 'open' END AS status
-      FROM admin_log
-      WHERE action LIKE '%flag%'
-      ORDER BY created_at DESC LIMIT 200
+      SELECT f.id, f.txn_type, f.txn_ref, f.note, f.status, f.created_at, f.resolved_at, f.resolved_by,
+             a.first_name, a.last_name, a.firm,
+             u.data->>'name' AS client_name, u.data->>'email' AS client_email
+      FROM flagged_transactions f
+      JOIN accountants a ON a.id = f.accountant_id
+      LEFT JOIN users u ON u.id = f.user_id
+      ORDER BY (f.status = 'open') DESC, f.created_at DESC LIMIT 200
     `).catch(() => ({ rows: [] }));
     return res.json(result.rows);
   }));
 
   app.post('/api/admin/flags/:id/resolve', requireAdmin, wrap(async (req, res) => {
     await pool.query(
-      `UPDATE admin_log SET notes = COALESCE(notes,'') || ' [resolved]' WHERE id = $1`,
+      `UPDATE flagged_transactions SET status='resolved', resolved_at=NOW(), resolved_by='admin' WHERE id = $1`,
       [(parseInt(req.params.id, 10) || 0)]
     );
     return res.json({ success: true });

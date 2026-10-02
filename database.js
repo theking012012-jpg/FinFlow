@@ -483,6 +483,26 @@ async function initDB() {
     await client.query(`ALTER TABLE accountant_reports ADD COLUMN IF NOT EXISTS resolution  TEXT`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_accountant_reports_status ON accountant_reports(status)`);
 
+    // Accountant transaction flags (admin oversight queue). A flag is ALSO delivered to the client as a
+    // chat message (accountant_messages); this row is the admin-side record the "Flagged Transactions"
+    // admin view reads. Status open→resolved, retained as a trail.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS flagged_transactions (
+        id            SERIAL PRIMARY KEY,
+        accountant_id INTEGER NOT NULL REFERENCES accountants(id) ON DELETE CASCADE,
+        user_id       INTEGER NOT NULL,
+        txn_type      VARCHAR(20),
+        txn_ref       TEXT,
+        note          TEXT,
+        status        VARCHAR(20) NOT NULL DEFAULT 'open',
+        created_at    TIMESTAMPTZ DEFAULT NOW(),
+        resolved_at   TIMESTAMPTZ,
+        resolved_by   VARCHAR(120)
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_flagged_txn_status ON flagged_transactions(status)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_flagged_txn_user   ON flagged_transactions(user_id)`);
+
     // Accountant credential proof (Step F). Base64-in-Postgres, mirroring the
     // documents table pattern but ACCOUNTANT-scoped. Kept in its own table so the
     // multi-MB file_data never bloats the frequently-SELECTed accountants row /

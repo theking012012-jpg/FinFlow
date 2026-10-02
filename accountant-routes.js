@@ -1090,6 +1090,13 @@ If you cannot find a field, use null. Be concise.`;
        VALUES ($1, $2, $3, 'accountant', NOW()) RETURNING id, message AS content, sender, created_at`,
       [req.session.accountantId, parseInt(userId), _flagBody]
     );
+    // Admin oversight: record the flag in the dedicated queue the admin "Flagged Transactions" view reads.
+    // (The client is notified via the chat message above; this row is the admin-side record.)
+    await pool.query(
+      `INSERT INTO flagged_transactions (accountant_id, user_id, txn_type, txn_ref, note, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'open', NOW())`,
+      [req.session.accountantId, parseInt(userId), _kind, _refTxt || null, _noteTxt || null]
+    );
     _chatBroadcast(_convKey(req.session.accountantId, userId), 'message',
       { ..._flagRow.rows[0], sender_name: 'Your accountant' });
     _notifyOfflineMessage({ recipientSide: 'client', accountantId: req.session.accountantId, userId: parseInt(userId), preview: _flagBody });

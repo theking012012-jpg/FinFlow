@@ -655,10 +655,11 @@ td.amber{color:var(--amber)}
         <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 12px">Recent Visitors</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Last seen</th><th>Location</th><th>Page</th><th>Loads</th><th>IP address</th></tr></thead>
-            <tbody id="tf-recent-tbody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+            <thead><tr><th>Last seen</th><th>Account</th><th>Location (approx.)</th><th>Page</th><th>Loads</th><th>IP address</th></tr></thead>
+            <tbody id="tf-recent-tbody"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
           </table>
         </div>
+        <div style="font-size:10px;color:var(--t3);margin-top:8px">Location is estimated from the IP address (offline GeoIP) and is approximate — mobile/ISP addresses often resolve to different nearby towns for the same person. The <strong>Account</strong> column identifies the logged-in user regardless of IP; blank = signed-out visitor.</div>
       </div>
 
     </main>
@@ -911,9 +912,12 @@ async function loadTraffic() {
       ? recent.map(r => {
           const loc = [r.city, r.region, r.country].filter(Boolean).join(', ') || '—';
           const when = r.last_seen ? new Date(r.last_seen).toLocaleString() : '—';
-          return `<tr><td>${esc(when)}</td><td>${esc(loc)}</td><td class="primary">${esc(r.path || '/')}</td><td>${parseInt(r.views || 1).toLocaleString()}</td><td style="color:var(--t3);font-variant-numeric:tabular-nums">${esc(r.ip_address || '—')}</td></tr>`;
+          const acct = r.account_name
+            ? `<span class="primary">${esc(r.account_name)}</span>${r.account_email?`<div style="font-size:11px;color:var(--t3)">${esc(r.account_email)}</div>`:''}`
+            : (r.account_email ? esc(r.account_email) : '<span style="color:var(--t3)">Guest</span>');
+          return `<tr><td>${esc(when)}</td><td>${acct}</td><td>${esc(loc)}</td><td class="primary">${esc(r.path || '/')}</td><td>${parseInt(r.views || 1).toLocaleString()}</td><td style="color:var(--t3);font-variant-numeric:tabular-nums">${esc(r.ip_address || '—')}</td></tr>`;
         }).join('')
-      : '<tr><td colspan="5" class="empty">No visitors recorded yet</td></tr>';
+      : '<tr><td colspan="6" class="empty">No visitors recorded yet</td></tr>';
 
     // Daily chart
     const daily = d.daily || [];

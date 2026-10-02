@@ -1522,9 +1522,7 @@ async function resolveFlag(id, btn) {
   const data = await res.json();
   if (data.error) { toast(data.error,'error'); return; }
   toast('Flag resolved','success');
-  btn.closest('tr').querySelector('.badge').className = 'badge b-green';
-  btn.closest('tr').querySelector('.badge').textContent = 'resolved';
-  btn.remove();
+  loadFlags();   // re-render from server (status→Resolved + stamp); avoids poking the wrong .badge cell
 }
 
 // ── BROADCAST ─────────────────────────────────────────────────────────────────

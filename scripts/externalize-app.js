@@ -34,11 +34,9 @@ while ((m = scriptRe.exec(html)) !== null) {
   last = start + full.length;
   const hasSrc = /\bsrc=/i.test(attrs);
   if (start < firstExt) { out += full; continue; }      // critical head scripts: leave as-is
-  if (hasSrc) {                                          // existing external body script → ensure defer
-    if (/\bdefer\b/i.test(attrs)) { out += full; }
-    else { out += `<script${attrs} defer></script>`; deferredExt++; }
-    continue;
-  }
+  if (hasSrc) { out += full; continue; }                 // existing external script: leave EXACTLY as-is
+                                                         // (deferring app-main.js reorders it before
+                                                         // finflow-bundle.js, breaking renderItems).
   if (!body.trim()) { out += full; continue; }           // empty inline → skip
   const file = `app-${String(n).padStart(2, '0')}.js`;
   fs.writeFileSync(path.join(OUTDIR, file), body, 'utf8');

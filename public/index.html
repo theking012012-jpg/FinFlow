@@ -4237,7 +4237,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
 <script>
 function loadChartJS(callback){
-  if(typeof Chart!=='undefined'){callback();return;}
+  if(typeof Chart!=='undefined'){try{if(Chart.defaults)Chart.defaults.animation=false;}catch(e){}callback();return;}
   if(window._chartJSLoading){(window._chartJSQueue=window._chartJSQueue||[]).push(callback);return;}
   window._chartJSLoading=true;
   window._chartJSQueue=[callback];
@@ -4245,7 +4245,7 @@ function loadChartJS(callback){
   // Self-hosted (2026-08-23): Chart.js 4.4.1 is vendored at /public/vendor/chart.umd.js and served
   // same-origin, so charts render even when a CDN or a strict CSP blocks cdnjs. No crossOrigin needed.
   s.src='/vendor/chart.umd.js';
-  s.onload=function(){(window._chartJSQueue||[]).forEach(function(fn){try{fn();}catch(e){}});window._chartJSQueue=[];};
+  s.onload=function(){try{if(window.Chart&&Chart.defaults)Chart.defaults.animation=false;}catch(e){}(window._chartJSQueue||[]).forEach(function(fn){try{fn();}catch(e){}});window._chartJSQueue=[];};
   s.onerror=function(){console.warn('Chart.js failed to load — charts will be skipped.');};
   document.head.appendChild(s);
 }

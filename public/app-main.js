@@ -4652,7 +4652,7 @@ function buildInvPerfChart(period){
     data:{labels,datasets:[
       {label:'Portfolio value',data:pts,borderColor:'#c9a84c',borderWidth:2,fill:true,backgroundColor:portGrad,tension:0.35,pointRadius:0,pointHoverRadius:4}
     ]},
-    options:{responsive:true,maintainAspectRatio:false,animation:{duration:200},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
       plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(22,18,13,0.95)',titleColor:'#f2e8d5',bodyColor:'#9e8e73',padding:8,cornerRadius:6,callbacks:{label:c=>S2(c.raw)}}},
       scales:{x:{display:false},y:{grid:{color:gc},ticks:{color:tc,font:{size:10},callback:v=>S2(v)},border:{display:false}}}
     }
@@ -5376,7 +5376,7 @@ function buildCharts(){
     ]},
     options:{
       responsive:true,maintainAspectRatio:false,
-      animation:{duration:250,easing:'easeOutQuart'},
+      animation:false,
       plugins:{
         legend:{display:false},
         tooltip:{
@@ -5444,7 +5444,7 @@ function buildCashChart(){
     ]},
     options:{
       responsive:true,maintainAspectRatio:false,
-      animation:{duration:250,easing:'easeOutQuart'},
+      animation:false,
       plugins:{
         legend:{display:false},
         tooltip:{

@@ -1,11 +1,11 @@
 'use strict';
 /**
- * verify-creds-connectors-entity-scope.js — per-entity generic credential connectors (dLocal, Mercado
+ * verify-creds-connectors-entity-scope.js — per-scope generic credential connectors (dLocal, Mercado
  * Pago, Wise). Each business connects its OWN merchant account: A's connection shows only on A, not on
- * B (no cross-entity bleed). A legacy account-level connection (entity_id NULL) still shows on a
- * business that has not connected its own — the backward-compat fallback. Disconnect is per-entity and
- * exact: disconnecting A never touches B or the shared legacy blob; a business seeing only a legacy
- * connection (via fallback) cannot disconnect it (404), so the legacy blob is never mutated per-entity.
+ * B (no cross-entity bleed). FULL INDEPENDENCE: a business with no connection of its own is NOT connected —
+ * it never falls back to the personal/account-level (entity_id NULL) connection. The personal (NULL) scope
+ * keeps its own connection, reachable via ?entity_id=all. Disconnect is per-scope and exact: disconnecting A
+ * never touches B or the personal blob; a business cannot disconnect a connection it does not own (404).
  *   node -r ./tests/harness/clock.js tests/harness/verify-creds-connectors-entity-scope.js
  */
 require('./clock.js');
@@ -42,13 +42,14 @@ const OWNER = { email: 'creds-owner@finflow.test', password: 'harness-password-n
     A('after disconnect, dLocal A is cleared', !(await connected('dlocal', eidA)));
     A('after disconnect A, dLocal B still connected', await connected('dlocal', eidB));
 
-    // ── Mercado Pago: legacy account-level fallback ──
-    A('MP C (no own) falls back to the legacy connection', await connected('mercadopago', eidC));
+    // ── Mercado Pago: personal (NULL) scope independent, no fallback to businesses ──
+    A('[DISCRIMINATING] MP C (no own) is NOT connected — no fallback to personal/legacy', !(await connected('mercadopago', eidC)));
+    A('MP personal (NULL, via ?entity_id=all) keeps its own connection', await connected('mercadopago', 'all'));
     A('MP connect@A its own → 201', (await http.post('/api/mercadopago/connect?entity_id=' + eidA, { access_token: 'tokA' })).status === 201);
     A('MP A connected (own)', await connected('mercadopago', eidA));
     const dcC = await http.post('/api/mercadopago/disconnect?entity_id=' + eidC, {});
-    A('MP C cannot disconnect a fallback-only (legacy) connection → 404', dcC.status === 404, 'status ' + dcC.status);
-    A('MP legacy still serves C after refused disconnect', await connected('mercadopago', eidC));
+    A('MP C cannot disconnect a connection it does not own → 404', dcC.status === 404, 'status ' + dcC.status);
+    A('MP personal connection (via ?entity_id=all) still intact after C\'s refused disconnect', await connected('mercadopago', 'all'));
 
     // ── Wise: per-entity, no bleed ──
     A('Wise connect@A → 201', (await http.post('/api/wise/connect?entity_id=' + eidA, { api_token: 'wtok' })).status === 201);

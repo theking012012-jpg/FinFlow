@@ -1,11 +1,12 @@
 'use strict';
 /**
- * verify-connections-entity-scope.js — per-entity connectors (Finch, Codat, Belvo, WiPay). Each
+ * verify-connections-entity-scope.js — per-scope connectors (Finch, Codat, Belvo, WiPay). Each
  * business links its OWN connection; business A's shows only on A, B's only on B (no cross-entity
- * bleed). A legacy account-level connection (entity_id NULL) still shows on a business that has not
- * linked its own — the backward-compat fallback, so nothing breaks on deploy. Disconnect is per-entity
- * (clearing A never touches B or the legacy row). The public WiPay callback verifies the payment hash
- * against the INVOICE's own business's key — a hash from the wrong entity's key is rejected.
+ * bleed). FULL INDEPENDENCE: a business with no connection of its own is NOT connected — it never falls
+ * back to the personal/account-level (entity_id NULL) connection. The personal (NULL) scope keeps its own
+ * connection, reachable via ?entity_id=all, and a per-scope disconnect never touches it. The public WiPay
+ * callback verifies the payment hash against the INVOICE's own business's key — a hash from the wrong
+ * entity's key is rejected.
  *   node -r ./tests/harness/clock.js tests/harness/verify-connections-entity-scope.js
  */
 require('./clock.js');
@@ -50,7 +51,8 @@ const OWNER = { email: 'conns-owner@finflow.test', password: 'harness-password-n
     A('Finch: A sees its OWN payroll', (await get('/api/finch/status', eidA)).provider === 'gusto_A');
     A('Finch: B sees its OWN payroll', (await get('/api/finch/status', eidB)).provider === 'adp_B');
     A('Finch: A does NOT see B (no bleed)', (await get('/api/finch/status', eidA)).provider !== 'adp_B');
-    A('Finch: C (no own) falls back to legacy', (await get('/api/finch/status', eidC)).provider === 'legacy_payroll');
+    A('[DISCRIMINATING] Finch: C (no own) is NOT connected — no fallback to personal/legacy', !(await get('/api/finch/status', eidC)).provider);
+    A('Finch: personal (NULL, via ?entity_id=all) keeps its own connection', (await get('/api/finch/status', 'all')).provider === 'legacy_payroll');
 
     // ── CODAT ──
     A('Codat: A sees its OWN company', (await get('/api/codat/status', eidA)).company_id === 'co_A');
@@ -62,7 +64,8 @@ const OWNER = { email: 'conns-owner@finflow.test', password: 'harness-password-n
     A('Belvo: A sees its OWN institutions', ((await get('/api/belvo/status', eidA)).institutions || []).includes('Banco_A'));
     A('Belvo: B sees its OWN institutions', ((await get('/api/belvo/status', eidB)).institutions || []).includes('Banco_B'));
     A('Belvo: A does NOT see B (no bleed)', !((await get('/api/belvo/status', eidA)).institutions || []).includes('Banco_B'));
-    A('Belvo: C (no own) falls back to legacy', ((await get('/api/belvo/status', eidC)).institutions || []).includes('Banco_LEGACY'));
+    A('[DISCRIMINATING] Belvo: C (no own) is NOT connected — no fallback to personal/legacy', !((await get('/api/belvo/status', eidC)).institutions || []).includes('Banco_LEGACY'));
+    A('Belvo: personal (NULL, via ?entity_id=all) keeps its own institutions', ((await get('/api/belvo/status', 'all')).institutions || []).includes('Banco_LEGACY'));
 
     // ── WIPAY ──
     A('WiPay: A sees its OWN account', (await get('/api/wipay/status', eidA)).account === 'acct_A');
@@ -74,7 +77,7 @@ const OWNER = { email: 'conns-owner@finflow.test', password: 'harness-password-n
     A('after A disconnect, A is cleared', !(await get('/api/wipay/status', eidA)).account);
     A('after A disconnect, B still linked', (await get('/api/wipay/status', eidB)).account === 'acct_B');
     A('Belvo disconnect A 200', (await http.post('/api/belvo/disconnect?entity_id=' + eidA, {})).status === 200);
-    A('after A disconnect, C still falls back to legacy Belvo', ((await get('/api/belvo/status', eidC)).institutions || []).includes('Banco_LEGACY'));
+    A('after A disconnect, personal/legacy Belvo (via ?entity_id=all) is untouched', ((await get('/api/belvo/status', 'all')).institutions || []).includes('Banco_LEGACY'));
 
     // ── WIPAY CALLBACK: verify hash against the INVOICE's own business's key ──
     // NB: WiPay stores api_key ENCRYPTED (encTok); the callback decTok's it before hashing. The harness

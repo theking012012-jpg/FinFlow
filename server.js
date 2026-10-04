@@ -5798,13 +5798,15 @@ app.put('/api/scenario', requireAuth, wrap(async (req, res) => {
 
 // GET /api/connections + POST /api/connections — connection toggle states
 // (e.g. "Stripe enabled", "QuickBooks enabled"). Stored as a JSON blob in
-// user_settings under key='connections'. Defaults to an empty object so the
+// user_settings under key='connections'. PER-SCOPE: every business entity AND personal
+// (entity_id NULL) keeps its OWN toggle set, independent of every other scope — matching the
+// per-scope connector blobs (verify-connections-isolation). Defaults to an empty object so the
 // frontend can render all toggles off.
 app.get('/api/connections', requireAuth, wrap(async (req, res) => {
   try {
     const { rows: [_connr] } = await pool.query(
-      `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' = 'connections' LIMIT 1`,
-      [scopeId(req)]
+      `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' = 'connections' AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`,
+      [scopeId(req), req.entityId == null ? null : req.entityId]
     );
     const row = _connr ? rowToObj(_connr) : null;
     res.json(row?.value ? JSON.parse(row.value) : {});
@@ -5817,12 +5819,13 @@ app.get('/api/connections', requireAuth, wrap(async (req, res) => {
 app.post('/api/connections', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   try {
     const data = JSON.stringify(req.body || {});
+    const eid = req.entityId == null ? null : req.entityId;
     const { rows: [_conne] } = await pool.query(
-      `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'connections' LIMIT 1`,
-      [scopeId(req)]
+      `SELECT id FROM user_settings WHERE user_id = $1 AND data->>'key' = 'connections' AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`,
+      [scopeId(req), eid]
     );
     if (_conne) await db.updateById('user_settings', _conne.id, { value: data });
-    else await db.insert('user_settings', { user_id: req.session.userId, key: 'connections', value: data });
+    else await db.insert('user_settings', { user_id: scopeId(req), entity_id: eid, key: 'connections', value: data });
     res.json({ ok: true });
   } catch (e) {
     console.error('[POST /api/connections]', e.message);
@@ -5898,13 +5901,12 @@ function decTok(stored) {
 }
 
 // Linked items live in user_settings under key='plaid_items' as a JSON array (mirrors the connections
-// blob) — no schema migration. Per-entity Plaid items: each business links its OWN banks. Reads try the active entity's list first,
-// then FALL BACK to a legacy account-level list (entity_id NULL) so pre-per-entity links keep working
-// until each business links its own. Writes are EXACT (to the given entity) — the legacy list is never
-// mutated by a per-entity change, so unlinking a shared legacy bank on one business (and Plaid's global
-// /item/remove) can't strand the others; each business claims its own copy on first write. Transaction
-// booking stays idempotent on Plaid's transaction_id scoped by user_id, so no cross-entity double-book.
-async function _getPlaidItemsE(uid, entityId, fallback = true) {
+// blob) — no schema migration. Per-scope Plaid items: every business entity AND personal (entity_id
+// NULL) links its OWN banks, fully independent. Reads are EXACT to the given scope — NO fallback to any
+// other scope (default fallback=false), so a business with no bank of its own reads an EMPTY list, never
+// personal's bank. Writes are EXACT (to the given scope). Transaction booking stays idempotent on
+// Plaid's transaction_id scoped by user_id, so no cross-scope double-book.
+async function _getPlaidItemsE(uid, entityId, fallback = false) {
   let { rows: [r] } = await pool.query(
     `SELECT * FROM user_settings WHERE user_id=$1 AND data->>'key'='plaid_items' AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`,
     [uid, entityId == null ? null : entityId]);
@@ -6046,11 +6048,12 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
 // only. They do NOT auto-write payroll_runs / journals / invoices — letting an external source
 // silently author a money figure is the multi-writer defect this codebase exists to prevent.
 // Materialising external payroll/accounting data into the books is a separate, owner-gated import.
-// Per-entity provider connection: each business can link its OWN connection. Reads try the
-// active entity's blob first, then FALL BACK to a legacy account-level blob (entity_id NULL) so a
-// pre-existing single connection keeps working until each business links its own. Writes are EXACT
-// (always to the given entity) so connecting business A never overwrites the shared legacy blob.
-const _providerBlobE = async (uid, key, entityId, fallback = true) => {
+// Per-scope provider connection: every business entity AND personal (entity_id NULL) holds its OWN,
+// fully independent connection. Reads are EXACT to the given scope — NO fallback to any other scope
+// (default fallback=false). A scope with no connection of its own reads not-connected; it never
+// borrows personal's (or a sibling's) blob. Writes are EXACT (always to the given scope). The
+// `fallback` param remains only for the rare opt-in caller; isolation is the default (verify-connections-isolation).
+const _providerBlobE = async (uid, key, entityId, fallback = false) => {
   let { rows: [r] } = await pool.query(
     `SELECT * FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`,
     [uid, key, entityId == null ? null : entityId]);

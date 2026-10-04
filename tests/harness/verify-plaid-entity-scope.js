@@ -1,12 +1,12 @@
 'use strict';
 /**
- * verify-plaid-entity-scope.js — per-entity Plaid bank links. Each business links its OWN banks:
- * business A's linked banks show only on A, B's only on B (no cross-entity bleed). A legacy
- * account-level list (entity_id NULL) still shows on a business that has not linked its own — the
- * backward-compat fallback. Unlink is per-entity and EXACT: unlinking a bank on A prunes only A's own
- * list and never mutates the shared legacy list (so Plaid's global /item/remove can't strand other
- * businesses); a business with no own list (seeing legacy only, via fallback) cannot unlink a legacy
- * bank (404), because the write path never touches the legacy row.
+ * verify-plaid-entity-scope.js — per-scope Plaid bank links. Each business links its OWN banks:
+ * business A's linked banks show only on A, B's only on B (no cross-entity bleed). FULL INDEPENDENCE:
+ * a business with no list of its own sees an EMPTY list — it never falls back to the personal/account-level
+ * (entity_id NULL) banks. The personal (NULL) scope keeps its own list, reachable via ?entity_id=all. Unlink
+ * is per-scope and EXACT: unlinking a bank on A prunes only A's own list and never mutates another scope's
+ * (so Plaid's global /item/remove can't strand other scopes); a business with no own list cannot unlink
+ * anything (404), because the write path never touches another scope's row.
  *   node -r ./tests/harness/clock.js tests/harness/verify-plaid-entity-scope.js
  */
 require('./clock.js');
@@ -43,20 +43,21 @@ const OWNER = { email: 'plaid-ent-owner@finflow.test', password: 'harness-passwo
     A('A sees its OWN bank', names(await insts(eidA)).includes('Chase_A'));
     A('B sees its OWN bank', names(await insts(eidB)).includes('BofA_B'));
     A('A does NOT see B\'s bank (no bleed)', !names(await insts(eidA)).includes('BofA_B'));
-    A('C (no own list) falls back to the legacy bank', names(await insts(eidC)).includes('Republic_LEGACY'));
-    A('A does NOT see the legacy bank (its own list shadows it)', !names(await insts(eidA)).includes('Republic_LEGACY'));
+    A('[DISCRIMINATING] C (no own list) sees an EMPTY list — no fallback to personal/legacy banks', names(await insts(eidC)).length === 0, JSON.stringify(names(await insts(eidC))));
+    A('personal (NULL, via ?entity_id=all) keeps its own bank', names(await insts('all')).includes('Republic_LEGACY'));
+    A('A does NOT see the personal/legacy bank', !names(await insts(eidA)).includes('Republic_LEGACY'));
 
     // ── unlink is per-entity + exact ──
     const un = await http.post('/api/plaid/unlink?entity_id=' + eidA, { item_id: 'itm_A' });
     A('unlink A\'s own bank → 200', un.status === 200, 'status ' + un.status);
     A('after unlink, A\'s list is empty', names(await insts(eidA)).length === 0, JSON.stringify(names(await insts(eidA))));
     A('after unlink A, B still has its bank', names(await insts(eidB)).includes('BofA_B'));
-    A('after unlink A, legacy is untouched (C still sees it)', names(await insts(eidC)).includes('Republic_LEGACY'));
+    A('after unlink A, personal/legacy list (via ?entity_id=all) is untouched', names(await insts('all')).includes('Republic_LEGACY'));
 
-    // C sees the legacy bank via fallback, but cannot unlink it — the write path never touches the legacy row
+    // C has no own list (no fallback), so it cannot unlink the personal/legacy bank — the write path is per-scope
     const unC = await http.post('/api/plaid/unlink?entity_id=' + eidC, { item_id: 'itm_LEG' });
-    A('C cannot unlink a fallback-only (legacy) bank → 404', unC.status === 404, 'status ' + unC.status);
-    A('legacy bank still intact after the refused unlink', names(await insts(eidC)).includes('Republic_LEGACY'));
+    A('C cannot unlink a bank it does not own → 404', unC.status === 404, 'status ' + unC.status);
+    A('personal/legacy bank still intact after the refused unlink', names(await insts('all')).includes('Republic_LEGACY'));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (plaid per-entity)\n`);
   } catch (e) { console.error('\n  FATAL:', e && e.stack || e); fail++; }

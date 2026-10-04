@@ -1,9 +1,10 @@
 'use strict';
 /**
- * verify-stripe-conn-entity-scope.js — per-entity Stripe connections. Each business links its OWN Stripe
- * account: business A's connection shows only on A, B's only on B (no cross-entity bleed). A legacy
- * account-level connection (entity_id NULL) still shows on a business that has not linked its own — the
- * backward-compat fallback, so nothing breaks on deploy.
+ * verify-stripe-conn-entity-scope.js — per-scope Stripe connections. Each business links its OWN Stripe
+ * account: business A's connection shows only on A, B's only on B (no cross-entity bleed). FULL
+ * INDEPENDENCE: a business with no connection of its own is NOT connected — it never falls back to the
+ * personal/account-level (entity_id NULL) connection. The personal (NULL) scope keeps its own connection,
+ * reachable via ?entity_id=all, independent of every business.
  *   node -r ./tests/harness/clock.js tests/harness/verify-stripe-conn-entity-scope.js
  */
 require('./clock.js');
@@ -33,11 +34,12 @@ const OWNER={ email:'sconn-owner@finflow.test', password:'harness-password-not-a
     const http=new HarnessHttp(server.baseUrl);
     A('login 200',(await http.post('/api/auth/login',OWNER)).status===200);
     const status=async eid=>(await http.get('/api/stripe/status?entity_id='+eid)).json||{};
-    const sA=await status(eidA), sB=await status(eidB), sC=await status(eidC);
+    const sA=await status(eidA), sB=await status(eidB), sC=await status(eidC), sP=await status('all');
     A('business A sees its OWN Stripe account', sA.account==='acct_A', JSON.stringify(sA));
     A('business B sees its OWN Stripe account', sB.account==='acct_B', JSON.stringify(sB));
     A('A does NOT see B\'s Stripe account (no cross-entity bleed)', sA.account!=='acct_B');
-    A('business C (no own link) falls back to the legacy account-level connection', sC.account==='acct_LEGACY', JSON.stringify(sC));
+    A('[DISCRIMINATING] business C (no own link) is NOT connected — no fallback to personal/legacy', sC.connected===false && !sC.account, JSON.stringify(sC));
+    A('personal (entity_id NULL, via ?entity_id=all) keeps its OWN connection, independent', sP.account==='acct_LEGACY', JSON.stringify(sP));
     console.log(`\n  ${fail===0?'ALL GREEN':fail+' FAILED'} — ${pass} passed, ${fail} failed  (Stripe connection per-entity)\n`);
   }catch(e){ console.error('\n  FATAL:',e&&e.stack||e); fail++; }
   finally{ try{if(server)await server.close();}catch{} try{if(scratch)await scratch.stop();}catch{} }

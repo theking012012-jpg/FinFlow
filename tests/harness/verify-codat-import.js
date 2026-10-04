@@ -99,9 +99,9 @@ async function main() {
     const entId = (await c.query(
       `INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
       [ownerId, { name: 'CD Co', currency: 'USD', is_active: 1 }])).rows[0].id;
-    // seed the codat connection blob (company linked)
-    await c.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW())`,
-      [ownerId, { key: 'codat_conn', value: JSON.stringify({ company_id: 'co_test', platform: 'QuickBooks Online' }) }]);
+    // seed the codat connection blob on the ACTIVE entity (per-scope connections; no NULL fallback)
+    await c.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`,
+      [ownerId, entId, { key: 'codat_conn', value: JSON.stringify({ company_id: 'co_test', platform: 'QuickBooks Online' }) }]);
     const viewerId = await mkUser('cd-viewer@finflow.test');
     await c.query(`INSERT INTO team_members (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW())`,
       [ownerId, { member_user_id: String(viewerId), status: 'active', role: 'viewer', name: 'V', email: 'cd-viewer@finflow.test' }]);

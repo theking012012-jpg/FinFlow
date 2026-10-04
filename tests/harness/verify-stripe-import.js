@@ -71,11 +71,13 @@ const CH = {
 
     const uid = (await c.query(`INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
       [{ email: OWNER.email, name: 'SI Owner', plan: 'business', role: 'owner', password: bcrypt.hashSync(OWNER.password, 10) }])).rows[0].id;
-    await c.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW())`,
-      [uid, { key: 'stripe_conn', value: JSON.stringify({ stripe_user_id: 'acct_test123', linked_at: '2026-07-01T00:00:00Z' }) }]);
     // sales_receipts is entity-required; the middleware auto-selects the is_active entity on first /api call.
     const eid = (await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
       [uid, { name: 'SI Co', currency: 'USD', is_active: 1 }])).rows[0].id;
+    // Per-scope connections: the Stripe connection lives on the ACTIVE entity doing the import (no NULL
+    // fallback). The connection-scoping section below rebinds where charges BOOK, independent of this.
+    await c.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`,
+      [uid, eid, { key: 'stripe_conn', value: JSON.stringify({ stripe_user_id: 'acct_test123', linked_at: '2026-07-01T00:00:00Z' }) }]);
 
     const http = new HarnessHttp(server.baseUrl);
     A('owner login 200', (await http.post('/api/auth/login', OWNER)).status === 200);

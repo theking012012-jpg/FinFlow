@@ -65,9 +65,9 @@ async function main() {
 
     // connect Stripe + generate the pay-link → dispatch reached (integration wiring is live)
     await http.post('/api/wipay/connect', { account_number: '1234567890', api_key: WP_KEY, country: 'TT' });  // (WiPay for leg 2)
-    // Stripe "connected" via the OAuth store:
-    await c.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW())`,
-      [uid, { key: 'stripe_conn', value: JSON.stringify({ stripe_user_id: 'acct_e2e', linked_at: 'now' }) }]);
+    // Stripe "connected" via the OAuth store — on the ACTIVE entity (per-scope connections; no NULL fallback):
+    await c.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`,
+      [uid, eid, { key: 'stripe_conn', value: JSON.stringify({ stripe_user_id: 'acct_e2e', linked_at: 'now' }) }]);
     const link = await http.post('/api/invoices/' + invA + '/payment-link', { provider: 'stripe' });
     A('generate Stripe pay-link → provider dispatch reached (502, live call blocked)', link.status === 502 && link.json.provider === 'stripe', `status ${link.status}`);
 

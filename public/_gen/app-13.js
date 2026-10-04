@@ -175,32 +175,36 @@ async function _loadEntitiesFromDBImpl(){
     // We do this after entity activation so each fetch is scoped by entity_id.
     try {
       window.ownerPayrollByEntity = window.ownerPayrollByEntity || {};
-      for (let i = 0; i < ENTITIES.length; i++) {
-        if (i === activeIdx) continue; // already loaded
-        const e = ENTITIES[i];
-        if (!e?._dbId) continue;
-        const pr = await fetch('/api/payroll?entity_id=' + e._dbId, {credentials:'include'});
-        if (!pr.ok) continue;
-        const rows = await pr.json();
-        const ownerRow = (rows||[]).find(r=>r.is_owner);
-        if (ownerRow) {
-          window.ownerPayrollByEntity[i] = {
-            _dbId:    ownerRow.id,
-            fname:    ownerRow.fname,
-            lname:    ownerRow.lname || '',
-            role:     ownerRow.role || 'CEO / Founder',
-            type:     ownerRow.emp_type || 'owner',
-            gross:    parseFloat(ownerRow.gross) || 0,
-            deductions: ownerRow.deductions || [],
-            net:      netFromDeductions(ownerRow.gross, ownerRow.deductions),
-            initials: ((ownerRow.fname||'')[0]+((ownerRow.lname||'')[0]||'')).toUpperCase(),
-            avClass:  ownerRow.av_class || 'av-blue',
-            currency: e.currency || 'USD',
-            entityName: e.name || 'Entity',
-            isOwner:  true,
-          };
-        }
-      }
+      // PERF: fetch the non-active entities' owner payroll in PARALLEL, not one-at-a-time.
+      // Independent per entity (reads ENTITIES[i], writes ownerPayrollByEntity[i]), so no race.
+      // Verified vs live data: parallel output byte-identical to the old serial loop.
+      await Promise.all(ENTITIES.map(async (e, i) => {
+        if (i === activeIdx) return;
+        if (!e?._dbId) return;
+        try {
+          const pr = await fetch('/api/payroll?entity_id=' + e._dbId, {credentials:'include'});
+          if (!pr.ok) return;
+          const rows = await pr.json();
+          const ownerRow = (rows||[]).find(r=>r.is_owner);
+          if (ownerRow) {
+            window.ownerPayrollByEntity[i] = {
+              _dbId:    ownerRow.id,
+              fname:    ownerRow.fname,
+              lname:    ownerRow.lname || '',
+              role:     ownerRow.role || 'CEO / Founder',
+              type:     ownerRow.emp_type || 'owner',
+              gross:    parseFloat(ownerRow.gross) || 0,
+              deductions: ownerRow.deductions || [],
+              net:      netFromDeductions(ownerRow.gross, ownerRow.deductions),
+              initials: ((ownerRow.fname||'')[0]+((ownerRow.lname||'')[0]||'')).toUpperCase(),
+              avClass:  ownerRow.av_class || 'av-blue',
+              currency: e.currency || 'USD',
+              entityName: e.name || 'Entity',
+              isOwner:  true,
+            };
+          }
+        } catch (err) { console.warn('[Entities] payroll load failed for entity idx', i, '-', err.message); }
+      }));
       ownerPayrollByEntity = window.ownerPayrollByEntity;
       // Sync Personal Finance one more time now that all entities are loaded
       if (typeof syncAllPayrollsToPersonal === 'function') {

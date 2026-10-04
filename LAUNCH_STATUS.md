@@ -1,12 +1,12 @@
 # FinFlow — Launch Status (authoritative)
 
-**Last verified:** 2026-09-28 · **Repo HEAD at write:** `23880ab` (clean, pushed)
+**Last verified:** 2026-10-04 · **Repo HEAD at write:** latest commit "Connectors: full per-scope isolation" (deployed & Online)
 
 This is the single source of truth for "what's done vs what's left." It supersedes and replaces the
 scattered audit/handover/status/plan docs that used to live in the repo root (all consolidated here on
 2026-09-28). For *how the system works* see the kept reference docs listed at the bottom.
 
-> **Bottom line:** the CODE is launch-complete and harness-backed (275 harnesses). What remains before
+> **Bottom line:** the CODE is launch-complete and harness-backed (308 harnesses). What remains before
 > going public is **ops/config only the owner can do** — the sharp edges are the Resend sending domain
 > and the Stripe prices. Nothing code-side blocks launch.
 
@@ -82,7 +82,6 @@ scattered audit/handover/status/plan docs that used to live in the repo root (al
 - **Sentry** wiring (needs a DSN), **express 4 -> 5** (clears the last `qs` moderate advisory; major bump).
 - **GL Phase 4 + 5** (owner-gated) — historical backfill into the ledger, then flip source-of-truth to the
   GL + live "books balanced ✓". Ties into the investments-on-ledger accounting decision. See `GL_DESIGN.md`.
-- **Per-entity API connections** — connectors are still account-level via scopeId; large re-architecture.
 - **Investments-on-ledger** — currently labeled tracking-only (not posted to the double-entry books);
   posting them is an accounting decision for the owner.
 - **VERIFICATION.md** has 19 empty Result cells (A7.5–8, A7.18, A8a/A8b) — they ARE gate-tested; the gates
@@ -98,7 +97,7 @@ read-swap; **multi-currency consolidation proven live** (`verify-fx-consolidatio
 AP/AR netting (F58), period-scoped opex, FIFO COGS.
 
 Entity isolation: documents, audit trail, transaction-lock, team (invite + edit), templates, timesheet,
-projects, connectors — all per-entity, harness-backed. Cross-tenant IDOR tested (`verify-tenant-isolation`).
+projects, connectors — all per-entity, harness-backed. Connectors are now FULLY per-scope: every connection (Stripe, Plaid, QuickBooks, Xero, PayPal, Zoho, Square, Shopify, WooCommerce, Coinbase, Finch, Codat, Belvo, Wise, WiPay, dLocal, Mercado Pago) + the `/api/connections` toggle state is keyed per business entity AND personal (entity_id NULL) with NO cross-scope fallback (`verify-connections-isolation` 15/15; deployed + verified live 2026-10-04). Cross-tenant IDOR tested (`verify-tenant-isolation`).
 
 Accountant marketplace: client<->accountant handshake, bidirectional chat, per-entity access grants,
 KYC (Stripe Identity + registry links), GL certification, tax summary.
@@ -123,6 +122,15 @@ Integrations live-verified: Stripe, Plaid, WiPay (2026-08-16); Resend email path
 - **Payroll** approve can't revert a paid run (409) — `verify-payroll-approve-guard`.
 - **Security** no live secret in any client-served file — `verify-no-secrets-in-bundle`.
 - Also: the `\u` escape literals in static HTML rendered as text — fixed.
+
+### Added since (2026-09-30 → 10-04) — each harness-backed, deployed
+- **World-class Help Center + support**: in-app help (25 articles / 11 categories), guided tours, ⌘K palette, threaded “Ask FinFlow” AI with grounded deep-links + AI→ticket escalation, 6-step onboarding checklist from real data; support inbox (client/accountant → admin) — `verify-help-*`, `verify-support-request`, `verify-admin-support`.
+- **Client↔accountant chat deepened**: offline-email notify (cooldowned), file attachments, threaded Ask FinFlow — `verify-chat-attachments`, `verify-chat-ai-wiring`.
+- **Accountant marketplace engagement loop**: proposals, client tasks/requests, dashboard attention rollup — `verify-accountant-proposals`, `verify-accountant-tasks`, `verify-accountant-rollup`, `verify-proposals-ui`.
+- **FX-live layer** (pair resolution: direct/inverse/cross-via-USD + USD-base feed, manual-wins, idempotent-per-day) — `verify-fx-live-rates` 14/14.
+- **Admin platform ops** (audited CSV exports, operating-costs / platform_settings round-trip, flagged-transactions lifecycle) — `verify-admin-platform` 16/16.
+- **Full per-scope connector isolation** (above) — `verify-connections-isolation` 15/15; deployed + verified live on prod.
+- Product-scope note: tax = **ESTIMATES only** (no filing / VAT / GST engine) — by design (see `CLAUDE.md`).
 
 ---
 

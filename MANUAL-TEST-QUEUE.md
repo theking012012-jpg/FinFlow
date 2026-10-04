@@ -24,3 +24,9 @@ _Logged 2026-10-01 (01:38 America/La_Paz). These require a real click / real inb
 ## 5. Pay-link (follow-up)
 - `ffInvoicePayLinkChoose()` runs clean but no payment provider is connected on the test account.
 - Test once Stripe/WiPay is connected: generate a pay link on a pending invoice → confirm link opens a working checkout and a paid webhook settles the invoice.
+
+## 6. Per-scope connection isolation (VERIFIED LIVE 2026-10-04)
+- Mechanism: every connector (Stripe, Plaid, QuickBooks, Xero, PayPal, Zoho, Square, Shopify, WooCommerce, Coinbase, Finch, Codat, Belvo, Wise, WiPay, dLocal, Mercado Pago) + the `/api/connections` toggle state is keyed per scope — each business entity AND personal (entity_id NULL) — with NO fallback across scopes.
+- Automated: `verify-connections-isolation` (15/15) proves it on scratch Postgres; the 7 connector-scope harnesses were updated to assert independence (no fallback).
+- Verified live 2026-10-04 on prod: personal held a real Stripe (acct_1U4ul2…) + 1 Plaid bank; all four business entities read NOT connected / 0 banks — no cross-scope bleed.
+- Regression check (re-run after ANY connector change): in Business A connect a provider → switch to Business B and to Personal → confirm each is independent; disconnect A → confirm B and Personal are untouched.

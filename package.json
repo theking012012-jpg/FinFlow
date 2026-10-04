@@ -4,13 +4,14 @@
   "description": "FinFlow full-stack backend",
   "main": "server.js",
   "scripts": {
-    "build": "node bundle.js && node scripts/minify.js && node scripts/externalize-app.js",
-    "prestart": "node bundle.js && node scripts/minify.js && node scripts/externalize-app.js",
+    "build": "node bundle.js && node scripts/minify.js && node scripts/externalize-app.js && node scripts/lazy-pages.js",
+    "prestart": "node bundle.js && node scripts/minify.js && node scripts/externalize-app.js && node scripts/lazy-pages.js",
     "bundle:check": "node bundle.js --check",
     "postinstall": "node scripts/install-hooks.js",
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "minify": "node scripts/minify.js"
+    "minify": "node scripts/minify.js",
+    "gen": "node bundle.js && node scripts/minify.js && node scripts/externalize-app.js && node scripts/lazy-pages.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -26,7 +27,8 @@
     "pg": "^8.20.0",
     "resend": "^3.2.0",
     "stripe": "^14.0.0",
-    "terser": "^5.51.2"
+    "terser": "^5.51.2",
+    "node-html-parser": "^9.0.4"
   },
   "devDependencies": {
     "axe-core": "^4.13.0",

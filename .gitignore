@@ -35,4 +35,4 @@ CODE_AUDIT_2026-07-09.md
 public/.min/
 
 # Generated slim /app build (SLIM_APP)
-public/_gen/
+# public/_gen/

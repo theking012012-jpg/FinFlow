@@ -46,6 +46,8 @@ now-superseded harness `verify-help-panel.js` was **deleted** (`git rm`). Final 
 PowerShell is **301/301 green** on every run after that deletion (was 301/302 with the lone stale
 `verify-help-panel` red).
 
+**Coverage closure (2026-10-04):** a doc-vs-app audit found the owner's later work — live FX refresh, admin CSV exports, operating-costs/`platform_settings`, `flagged_transactions` resolve — had NO harnesses. Closed with two: `verify-fx-live-rates` (14/14 — `pickRate` direct/inverse/cross-via-USD + date carry-forward/backward; `refreshLiveFxRates` USD-base upsert, idempotent-per-day, **manual-wins**, network stubbed) and `verify-admin-platform` (16/16 — audited CSV export +`admin_log`, operating-costs round-trip via `platform_settings`, flagged-transactions lifecycle accountant-flag→admin-list→resolve). Added `pickRate`/`_pickDirectRate`/`refreshLiveFxRates` as test-surface exports in server.js. **Sweep is now 307 harnesses.**
+
 **Launch wiring (features degrade gracefully, but set these on Railway or they silently no-op):**
 `RESEND_API_KEY` + `EMAIL_FROM` (offline chat nudges, support/admin/proposal/task emails), `ADMIN_EMAIL`
 (support notifications), `ANTHROPIC_API_KEY` (Ask FinFlow — falls back to deep links without it).

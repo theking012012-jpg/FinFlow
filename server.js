@@ -10506,3 +10506,6 @@ module.exports.codatConfigured = codatConfigured;
 module.exports.stripeConnectConfigured = stripeConnectConfigured;
 module.exports.belvoConfigured = belvoConfigured;
 module.exports.belvoTxnToRow = belvoTxnToRow;   // Belvo transaction -> feed-row mapping (test surface)
+module.exports.pickRate = pickRate;                 // FX-live - pair resolution: direct / inverse / cross-via-USD + date carry (test surface)
+module.exports._pickDirectRate = _pickDirectRate;   // FX-live - direct-pair carry-forward/backward matcher (test surface)
+module.exports.refreshLiveFxRates = refreshLiveFxRates;   // FX-live - USD-base feed upsert, manual-wins, idempotent-per-day (test surface)

@@ -50,7 +50,13 @@ const OWNER={ email:'proj-owner@finflow.test', password:'harness-password-not-a-
     A('[STRUCTURAL] database.js backfills orphan timesheet to MIN entity', /UPDATE timesheet t SET entity_id[\s\S]*?MIN\(e\.id\)[\s\S]*?IS NULL/.test(dbjs));
     // STRUCTURAL: switchEntity refetches projects on switch
     const ix=fs.readFileSync(path.join(__dirname,'..','..','public','index.html'),'utf8');
-    const seBody=ix.slice(ix.indexOf('window.switchEntity=async function'), ix.indexOf('window.switchEntity=async function')+6000);
+    // Bound the slice to the END of switchEntity (the next top-level `window.*` definition), not a
+    // brittle fixed char window — the function grows over time and a fixed window silently truncated
+    // the _loadProjectsFromDB call (it sat at ~offset 5987, cut off at 6000). Calls inside the body are
+    // indented, so `\nwindow.` (column 0) first matches the NEXT top-level def = the function boundary.
+    const _seStart=ix.indexOf('window.switchEntity=async function');
+    const _seNext=ix.indexOf('\nwindow.', _seStart+30);
+    const seBody=ix.slice(_seStart, _seNext>_seStart ? _seNext : _seStart+12000);
     A('[STRUCTURAL] switchEntity refetches projects (_loadProjectsFromDB)', /_loadProjectsFromDB/.test(seBody));
 
     console.log(`\n  ${fail===0?'ALL GREEN':fail+' FAILED'} — ${pass} passed, ${fail} failed  (projects entity-scoped + backfill)\n`);

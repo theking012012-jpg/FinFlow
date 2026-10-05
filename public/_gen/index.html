@@ -2641,9 +2641,16 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
           function render(){
             var filtered=getFiltered();
+            var browsing=!!connSearch||activeFilter!==null;
+            // Lean default: the directory chrome (brag stats, category pills, result count) only appears
+            // once the user actually searches/filters. Default view is hero → live hubs → one request line.
+            var _pills=document.getElementById('conn-cat-pills');
+            var _stats=document.querySelector('.conn-stats-row');
+            if(_pills)_pills.style.display=browsing?'':'none';
+            if(_stats)_stats.style.display=browsing?'':'none';
             var ct=document.getElementById('conn-results-ct');
             var catalog=document.getElementById('conn-catalog');
-            if(ct)ct.textContent=filtered.length+' integration'+(filtered.length!==1?'s':'');
+            if(ct){ct.textContent=filtered.length+' integration'+(filtered.length!==1?'s':'');ct.style.display=browsing?'':'none';}
             if(!catalog)return;
             catalog.innerHTML='';
             if(!filtered.length){
@@ -2702,7 +2709,6 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               _connSection('Available now','live connection'+(builtItems.length!==1?'s':''),builtItems,'#3aa76d');
             }
             var soonItems=filtered.filter(function(i){return !_isBuilt(i.name);});
-            var browsing=!!connSearch||activeFilter!==null;
             if(!browsing){
               // DEFAULT view: don't flood the page with the full request-directory wall. Lead with the
               // live hubs, then one compact line into search. The directory stays fully searchable.

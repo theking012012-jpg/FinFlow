@@ -53,12 +53,17 @@ const ROOT = path.join(__dirname, '..', '..');
       cards() > 0 && cards() < 40, 'rendered ' + cards() + ' cards by default');
     A('hub cards carry aggregator coverage copy (Plaid → 12,000+ institutions)', /12,000\+ institutions/.test(text()));
     A('hub cards name the Codat-covered platforms (QuickBooks, Xero…)', /QuickBooks, Xero/.test(text()));
+    A('[DISCRIMINATING] category-pill grid hidden by default (not a directory wall of pills)',
+      window.document.getElementById('conn-cat-pills').style.display === 'none', 'pills shown on default load');
+    A('result count hidden by default', window.document.getElementById('conn-results-ct').style.display === 'none');
 
     // ── SEARCH still works: the directory is reachable ───────────────────────────────
     window.document.getElementById('conn-search').value = 'salesforce';
     window.connFilterAll();
     A('[DISCRIMINATING] searching a directory-only tool surfaces it (Salesforce)', /Salesforce/i.test(text()),
       'directory search no longer finds non-hub entries');
+    A('category pills appear once searching (directory browsing enabled)',
+      window.document.getElementById('conn-cat-pills').style.display !== 'none');
 
     // ── clearing search returns to the lean default (no wall) ────────────────────────
     window.document.getElementById('conn-search').value = '';

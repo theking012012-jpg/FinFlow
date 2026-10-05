@@ -15,6 +15,7 @@ const FinFlowDates = require('./public/finflow-dates.js'); // F87 — canonical 
 const Holidays     = require('date-holidays');            // F88 step 6 — per-country public-holiday calendar (offline, no network)
 const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
 const aiCap = require('./ai-cap');                        // F18 — central AI cost caps
+const { buildReviewItems } = require('./books-review');   // cleanup/anomaly queue engine (pure, read-only)
 const { appUrl, warnIfUnset } = require('./app-url');     // F29 — single source of truth for app links
 const { requirePerm } = require('./rbac');                // F5 Step 4 — per-route RBAC (matrix in rbac.js)
 const pgSession = require('connect-pg-simple')(session);
@@ -3434,6 +3435,28 @@ app.delete('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
   await pool.query('DELETE FROM vendors WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   if (_vold) await recordAudit(pool, { userId: req.session.userId, entityId: _vold.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vold), req });  // F90 Phase B
   res.json({ ok: true });
+}));
+
+// ── BOOKS REVIEW / CLEANUP QUEUE ────────────────────────────────────────────
+// READ-ONLY (Rule 7). Loads the current scope's real rows (same scoping as
+// /api/expenses — scopeId + _entityScopeFilter) and hands them to the PURE
+// buildReviewItems engine (books-review.js), which performs NO writes and
+// recomputes NO money KPI (revenue/expense/AR totals live in computeBooks and must
+// not be mirrored here — Rule 2). Detection is deterministic and explainable; the
+// only AI touch-point is the SEPARATE existing /api/autocat-rules/ai-suggest
+// endpoint the client calls to propose categories for the 'uncategorized' bucket.
+// The engine is a pure module so it can be executed directly against discriminating
+// seeds (Rule 4 / Rule 14 — see tests/harness/verify-books-review.js).
+app.get('/api/books-review', requireAuth, wrap(async (req, res) => {
+  const uid = scopeId(req);
+  const scope = _entityScopeFilter(req);
+  const [expenses, invoices, bills] = await Promise.all([
+    db.allByUser('expenses', uid, scope),
+    db.allByUser('invoices', uid, scope),
+    db.allByUser('bills',    uid, scope),
+  ]);
+  const { items, summary } = buildReviewItems({ expenses, invoices, bills });
+  res.json({ items, summary, generated_at: new Date().toISOString() });
 }));
 
 // ── BILLS ─────────────────────────────────────────────────────────────────────

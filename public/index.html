@@ -10670,7 +10670,9 @@ window.addEventListener('ff:authed', function(){ loadDirectory(); }, {once:true}
     if (uncat.length){
       html += '<div style="display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 11px;background:rgba(120,120,120,.07);border-radius:8px">'
         + '<div style="font-size:12px;color:var(--t2)">' + uncat.length + ' uncategorized expense' + (uncat.length===1?'':'s') + '. Let AI propose categories — you approve each one.</div>'
-        + '<button class="btn btn-ghost btn-sm" id="rev-ai-btn" style="margin-left:auto" onclick="ffReviewSuggest&&ffReviewSuggest()">Suggest categories (AI)</button></div>';
+        + '<button class="btn btn-ghost btn-sm" id="rev-ai-btn" style="margin-left:auto" onclick="ffReviewSuggest&&ffReviewSuggest()">Suggest categories (AI)</button>'
+        + (suggestions ? '<button class="btn btn-sm" style="background:var(--amber,#c9a84c);color:#1a140a;border:none" onclick="ffReviewApplyAll(this)">Apply all (' + Object.keys(suggestions).length + ')</button>' : '')
+        + '</div>';
     }
     items.forEach(function(it){
       var sev = SEV[it.severity] || SEV.low;
@@ -10687,6 +10689,9 @@ window.addEventListener('ff:authed', function(){ loadDirectory(); }, {once:true}
         html += '<span style="font-size:11px;color:var(--t2)">→ '+esc(sug.category)+'</span>'
           + '<button class="btn btn-ghost btn-sm" onclick="ffReviewApplyCat('+Number(it.id)+',this)" data-cat="'+esc(sug.category)+'">Apply</button>';
       } else {
+        if (it.type==='duplicate'){
+          html += '<button class="btn btn-ghost btn-sm" style="color:#c94a4a" onclick="ffReviewDeleteDup('+Number(it.id)+',\''+esc(it.kind)+'\',this)">Delete duplicate</button>';
+        }
         html += '<button class="btn btn-ghost btn-sm" onclick="window.showPage&&window.showPage(\''+(PAGE_OF[it.kind]||'dashboard')+'\')">View</button>';
       }
       html += '</div></div>';
@@ -10741,6 +10746,37 @@ window.addEventListener('ff:authed', function(){ loadDirectory(); }, {once:true}
       if (typeof window.notify === 'function') window.notify('Category applied.');
       await window.ffLoadReview();   // re-scan so the item leaves the queue and counts update
     } catch(e){ el.disabled=false; el.textContent='Apply'; if (typeof window.notify==='function') window.notify('Couldn\'t apply category.', true); }
+  };
+
+  window.ffReviewApplyAll = async function(btn){
+    if (!suggestions) return;
+    var ids = Object.keys(suggestions);
+    if (!ids.length) return;
+    if (!window.confirm('Apply ' + ids.length + ' AI-suggested categor' + (ids.length===1?'y':'ies') + '? You can change any of them later.')) return;
+    if (btn){ btn.disabled = true; btn.textContent = 'Applying…'; }
+    var ok = 0, failc = 0;
+    for (var i=0;i<ids.length;i++){
+      var id = ids[i], cat = suggestions[id] && suggestions[id].category;
+      if (!cat) continue;
+      try {
+        var res = await fetch('/api/expenses/'+encodeURIComponent(id), { method:'PUT', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ category: cat }) });
+        if (res.ok){ ok++; delete suggestions[id]; } else failc++;
+      } catch(e){ failc++; }
+    }
+    if (typeof window.notify === 'function') window.notify('Applied ' + ok + ' categor' + (ok===1?'y':'ies') + (failc?(' · '+failc+' failed'):'') + '.', failc>0);
+    await window.ffLoadReview();
+  };
+
+  window.ffReviewDeleteDup = async function(id, kind, el){
+    var noun = kind || 'record';
+    if (!window.confirm('Delete this duplicate ' + noun + '? This permanently removes it and cannot be undone. The original is kept.')) return;
+    if (el){ el.disabled = true; el.textContent = 'Deleting…'; }
+    var path = kind==='invoice' ? '/api/invoices/' : kind==='bill' ? '/api/bills/' : '/api/expenses/';
+    try {
+      var res = await fetch(path+encodeURIComponent(id), { method:'DELETE', credentials:'same-origin', headers:{'Content-Type':'application/json'} });
+      if (res.ok){ if (typeof window.notify==='function') window.notify('Duplicate deleted.'); await window.ffLoadReview(); }
+      else { if (el){ el.disabled=false; el.textContent='Delete duplicate'; } if (typeof window.notify==='function') window.notify('Couldn\'t delete.', true); }
+    } catch(e){ if (el){ el.disabled=false; el.textContent='Delete duplicate'; } if (typeof window.notify==='function') window.notify('Couldn\'t delete.', true); }
   };
 
   // Wrap whichever showPage won the load order so the queue loads on navigation (Rule 1 safe).

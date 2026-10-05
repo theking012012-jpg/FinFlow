@@ -2284,7 +2284,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="mc"><div class="mc-label">Lifetime Revenue</div><div class="mc-val" id="cust-revenue">—</div><div class="mc-change up">All customers</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><div><h2 class="card-title">Customer directory</h2><div class="card-sub">Click any row to edit</div></div><button class="btn btn-primary" onclick="openCustomerModal()">+ Add customer</button></div>
+          <div class="card-header"><div><h2 class="card-title">Customer directory</h2><div class="card-sub">Click any row to edit</div></div><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="ffImportCsv('customers')" title="Import customers from a CSV export (QuickBooks / Xero / spreadsheet)">⬆ Import CSV</button><button class="btn btn-primary" onclick="openCustomerModal()">+ Add customer</button></div></div>
           <div class="search-bar"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4.5"></circle><line x1="10" y1="10" x2="14" y2="14"></line></svg><input type="text" placeholder="Search by name, email or company…" id="cust-search" oninput="filterCustomers()"></div>
           <div style="display:grid;grid-template-columns:34px 1fr 110px 85px 70px 80px;gap:10px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span></span><span>Customer</span><span>Company</span><span>Revenue</span><span>Status</span><span></span></div>
           <div id="customers-list"></div>
@@ -2370,7 +2370,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <div class="bar-row"><span class="bar-label">Travel & other</span><div class="bar-track"><div class="bar-fill" style="width:4%;background:#c9a84c44"></div></div><span class="bar-val" id="ex-other">—</span></div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="card-header"><h2 class="card-title">Recent expenses</h2><button class="btn btn-ghost btn-sm" onclick="openExpenseModal()">+ Add</button></div>
+            <div class="card-header"><h2 class="card-title">Recent expenses</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="ffImportCsv('expenses')" title="Import expenses from a CSV export (QuickBooks / Xero / spreadsheet)">⬆ Import CSV</button><button class="btn btn-ghost btn-sm" onclick="openExpenseModal()">+ Add</button></div></div>
             <div id="expense-list"></div>
           </div>
         </div>
@@ -3308,7 +3308,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="mc"><div class="mc-label">Paid</div><div class="mc-val">$0</div><div class="mc-change neutral">This month</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><h2 class="card-title">Vendors</h2><button class="btn btn-primary btn-sm" onclick="openNewVendorModal()">+ New Vendor</button></div>
+          <div class="card-header"><h2 class="card-title">Vendors</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="ffImportCsv('vendors')" title="Import vendors from a CSV export (QuickBooks / Xero / spreadsheet)">⬆ Import CSV</button><button class="btn btn-primary btn-sm" onclick="openNewVendorModal()">+ New Vendor</button></div></div>
           <div class="search-bar"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"></circle><line x1="10" y1="10" x2="14" y2="14"></line></svg><input type="text" placeholder="Search vendors…" oninput="filterVendorsBySearch(this.value)"></div>
           <div id="vendors-list"></div>
         </div>
@@ -3323,7 +3323,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="mc"><div class="mc-label">Paid</div><div class="mc-val">$0</div><div class="mc-change neutral">This month</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><h2 class="card-title">Bills</h2><button class="btn btn-primary btn-sm" onclick="openNewBillModal()">+ New Bill</button></div>
+          <div class="card-header"><h2 class="card-title">Bills</h2><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="ffImportCsv('bills')" title="Import bills from a CSV export (QuickBooks / Xero / spreadsheet)">⬆ Import CSV</button><button class="btn btn-primary btn-sm" onclick="openNewBillModal()">+ New Bill</button></div></div>
           <div style="display:grid;grid-template-columns:1fr 100px 80px 80px 70px 80px;gap:8px;padding:0 0 6px;font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>Vendor</span><span>Bill #</span><span>Amount</span><span>Due Date</span><span>Status</span><span></span></div>
           <div id="bills-list"></div>
         </div>

@@ -2524,7 +2524,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
         <div class="conn-hub-topbar">
           <div>
-            <p>Connect the tools you already use — payments, banking, healthcare, construction, and 23 more categories.</p>
+            <p>Connect your finances through a few powerful hubs — your bank via <b>Plaid</b>, accounting via <b>Codat</b>, payroll via <b>Finch</b>, card payments via <b>Stripe</b>. One connection each covers thousands of providers. Need something specific? Search the full directory below.</p>
           </div>
           <div class="conn-hub-controls">
             <div class="conn-search-wrap">
@@ -2655,6 +2655,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             }
             var BUILT=['Plaid','Finch','Codat','Stripe','Belvo','WiPay','dLocal','Mercado Pago','Wise','QuickBooks','Xero','Zoho Books','Square','PayPal','Coinbase','Shopify','WooCommerce'];
             function _isBuilt(n){return BUILT.indexOf(n)>=0;}
+            // Aggregator hubs: one connection covers a whole category. The coverage line makes the
+            // "X via Plaid / Y via Codat" model explicit instead of implying each is a bespoke link.
+            var COVERS={
+              'Plaid':'Your bank — 12,000+ institutions (Chase, Mercury, Relay, Revolut &amp; more)',
+              'Codat':'Accounting — QuickBooks, Xero, Sage, NetSuite &amp; more, one link',
+              'Finch':'Payroll &amp; HR — 200+ providers (Gusto, ADP, Rippling &amp; more)',
+              'Stripe':'Card payments &amp; payouts'
+            };
             function _connCard(item){
               var on=!!connStates[item.name];
               var col2=CAT_COLOR[item.cat]||'#888';
@@ -2669,6 +2677,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
                 +'<span class="conn-cat-badge" style="background:'+col2+'22;color:'+col2+'">'+item.cat+'</span>'
                 +'</div></div>'
                 +'<div class="conn-card-desc">'+item.desc+'</div>'
+                +(COVERS[item.name]?'<div style="font-size:10px;color:var(--t3);line-height:1.35;margin-top:-3px">'+COVERS[item.name]+'</div>':'')
                 +'<div class="conn-card-footer">'
                 +(on?'<span class="conn-connected-badge">&#10003; Connected</span>':(built?'<span style="font-size:10px;color:var(--green)">Available</span>':'<span></span>'))
                 +((on&&SYNC_MAP[item.name])?'<button class="conn-toggle-btn disconn" data-sync="'+item.name+'" style="margin-right:6px" title="Pull the latest data from '+item.name+'" onclick="event.stopPropagation();connSyncNow(\''+item.name+'\')">&#8635; Sync now</button>':'')
@@ -2689,17 +2698,26 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               var grid=sec.querySelector('.conn-grid');
               items.forEach(function(item){ grid.appendChild(_connCard(item)); });
             }
-            // SECTION 1 — Available now (real, connectable integrations)
+            // SECTION 1 — Live hubs (real, connectable). The aggregator hubs lead the page.
             var builtItems=filtered.filter(function(i){return _isBuilt(i.name);});
             if(builtItems.length){
-              _connSection('Available now','live integration'+(builtItems.length!==1?'s':''),builtItems,'#3aa76d');
+              _connSection('Available now','live connection'+(builtItems.length!==1?'s':''),builtItems,'#3aa76d');
             }
-            // SECTION 2 — Coming soon (browse & request; not yet live)
             var soonItems=filtered.filter(function(i){return !_isBuilt(i.name);});
-            if(soonItems.length){
+            var browsing=!!connSearch||activeFilter!==null;
+            if(!browsing){
+              // DEFAULT view: don't flood the page with the full request-directory wall. Lead with the
+              // live hubs, then one compact line into search. The directory stays fully searchable.
+              var req=document.createElement('div');
+              req.style.cssText='margin:18px 2px 4px;padding:12px 14px;border:1px dashed var(--bd2);border-radius:var(--radius-lg);color:var(--t2);font-size:12px;line-height:1.5';
+              req.innerHTML='Don’t see what you use? FinFlow reaches '+INTEGRATIONS.length+'+ tools through these hubs and our aggregators. '
+                +'<a style="color:var(--acc);cursor:pointer;text-decoration:underline" onclick="var s=document.getElementById(\'conn-search\');if(s){s.focus();s.scrollIntoView({block:\'center\'});}">Search the directory</a> to find and request a specific one.';
+              catalog.appendChild(req);
+            } else if(soonItems.length){
+              // BROWSING (search/filter active): show the matching directory entries to request.
               var banner=document.createElement('div');
               banner.style.cssText='margin:20px 2px 6px;padding:9px 12px;border-top:1px solid var(--bd);color:var(--t3);font-size:12px;letter-spacing:.02em';
-              banner.textContent='Coming soon — browse '+soonItems.length+' more and request the ones you need';
+              banner.textContent='Request a connection — '+soonItems.length+' match'+(soonItems.length!==1?'es':'');
               catalog.appendChild(banner);
               var grouped={};
               CATS.forEach(function(cat){

@@ -56,6 +56,10 @@ const ROOT = path.join(__dirname, '..', '..');
     A('[DISCRIMINATING] category-pill grid hidden by default (not a directory wall of pills)',
       window.document.getElementById('conn-cat-pills').style.display === 'none', 'pills shown on default load');
     A('result count hidden by default', window.document.getElementById('conn-results-ct').style.display === 'none');
+    // Reach highlight (always visible): the aggregator coverage numbers, each tied to its hub.
+    A('reach highlight present — 12,000+ banks via Plaid, 200+ payroll via Finch, accounting via Codat',
+      /class="conn-reach"/.test(html) && /12,000\+/.test(html) && /200\+/.test(html) && /via Plaid/.test(html) && /via Finch/.test(html) && /via Codat/.test(html),
+      'the aggregator reach highlight is missing');
 
     // ── SEARCH still works: the directory is reachable ───────────────────────────────
     window.document.getElementById('conn-search').value = 'salesforce';

@@ -41,7 +41,7 @@
     if (window.__ffFetchCoalesced) return;
     window.__ffFetchCoalesced = true;
     var _f = window.fetch.bind(window);
-    var inflight = new Map();
+    var cache = new Map();
     var bootUntil = Date.now() + 10000;
     window.fetch = function(input, init){
       try {
@@ -49,15 +49,16 @@
         var url = (typeof input === 'string') ? input : (input && input.url) || '';
         var hasBody = !!(init && init.body);
         var hasSignal = !!(init && init.signal);
-        if (Date.now() < bootUntil && method === 'GET' && !hasBody && !hasSignal
-            && url.indexOf('/api/') !== -1
-            && !/(feed|stream|events|export|download|sse)/i.test(url)) {
-          var hit = inflight.get(url);
-          if (hit) return hit.then(function(r){ return r.clone(); });
-          var p = _f(input, init);
-          inflight.set(url, p);
-          p.then(function(){ inflight.delete(url); }, function(){ inflight.delete(url); });
-          return p.then(function(r){ return r.clone(); });
+        if (Date.now() < bootUntil && url.indexOf('/api/') !== -1) {
+          if (method !== 'GET') { cache.clear(); return _f(input, init); }
+          if (!hasBody && !hasSignal && !/(feed|stream|events|export|download|sse)/i.test(url)) {
+            var hit = cache.get(url);
+            if (hit) return hit.then(function(r){ return r.clone(); });
+            var p = _f(input, init);
+            cache.set(url, p);
+            p.then(function(r){ if (!r || !r.ok) cache.delete(url); }, function(){ cache.delete(url); });
+            return p.then(function(r){ return r.clone(); });
+          }
         }
       } catch(_e){}
       return _f(input, init);

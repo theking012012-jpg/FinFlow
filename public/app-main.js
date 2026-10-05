@@ -922,7 +922,33 @@ function persistAll(){}
 function loadPersistedData(){}
 
 // CSV export — page-aware, exports the data from whichever page is currently active
-window.exportAllCSV = function(){
+// xlsx export — writes the SAME rows the CSV export builds as a real .xlsx, via lazy-loaded
+// SheetJS (vendored at /vendor/xlsx.mini.min.js, same-origin). Loaded only on first xlsx export.
+window._ffLoadXlsx = function(cb){
+  if (window.XLSX) { cb(); return; }
+  if (window._xlsxLoading) { (window._xlsxQ = window._xlsxQ || []).push(cb); return; }
+  window._xlsxLoading = true; window._xlsxQ = [cb];
+  var s = document.createElement('script');
+  s.src = '/vendor/xlsx.mini.min.js';
+  s.onload = function(){ (window._xlsxQ || []).forEach(function(fn){ try{ fn(); }catch(e){} }); window._xlsxQ = []; };
+  s.onerror = function(){ window._xlsxLoading = false; if (typeof notify === 'function') notify('Could not load the spreadsheet exporter.', true); };
+  document.head.appendChild(s);
+};
+window._ffExportXlsx = function(rows, filename){
+  window._ffLoadXlsx(function(){
+    try{
+      var X = window.XLSX;
+      var ws = X.utils.aoa_to_sheet(rows);
+      var wb = X.utils.book_new();
+      var base = String(filename || 'Sheet').replace('.csv', '') || 'Sheet';
+      X.utils.book_append_sheet(wb, ws, base.slice(0, 31));
+      var outName = String(filename || 'export.csv').replace('.csv', '.xlsx');
+      X.writeFile(wb, outName);
+      if (typeof notify === 'function') notify('Exported ' + outName);
+    }catch(e){ if (typeof notify === 'function') notify('XLSX export failed: ' + (e && e.message || e), true); }
+  });
+};
+window.exportAllCSV = function(format){
   const activePage = Array.from(document.querySelectorAll('.page'))
     .find(el => el.classList.contains('active') || (el.style.display && el.style.display !== 'none'))?.id || '';
 
@@ -991,6 +1017,7 @@ window.exportAllCSV = function(){
   }
 
   if (rows.length <= 1) { notify('No data to export.', true); return; }
+  if (String(format) === 'xlsx') { return window._ffExportXlsx(rows, filename); }
   const csv = rows.map(toCSV).join('\r\n');
   const blob = new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);

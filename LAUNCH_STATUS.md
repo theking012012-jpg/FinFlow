@@ -1,6 +1,6 @@
 # FinFlow — Launch Status (authoritative)
 
-**Last verified:** 2026-10-05 · **Repo HEAD at write:** `main` at `95091c2` (13-week cash-flow forecast; deployed & Online)
+**Last verified:** 2026-10-05 · **Repo HEAD at write:** `main` at `cf2050f` (review bulk actions; deployed & Online)
 
 This is the single source of truth for "what's done vs what's left." It supersedes and replaces the
 scattered audit/handover/status/plan docs that used to live in the repo root (all consolidated here on
@@ -136,7 +136,8 @@ Integrations live-verified: Stripe, Plaid, WiPay (2026-08-16); Resend email path
 - **Review / cleanup queue** (`books-review.js`, `GET /api/books-review`): read-only anomaly detector — uncategorized, possible duplicates (create-time identity + exact date), missing required fields, per-category median outliers; AI category suggestions reuse `/api/autocat-rules/ai-suggest`. Pure engine, no money-KPI recompute (Rule 2) — `verify-books-review` 19/19. Verified live (owner opened the tab; flagged a real duplicate invoice + a missing-due-date invoice). (commit `054b9f0`)
 - **AI payment-reminders agent** (`payment-reminders.js`, `GET /api/payment-reminders`, `POST /draft`, `POST /send`): deterministic late-payer prediction from real `invoice_payments` history, severity-tuned drafts, optional Haiku polish (shared-capped, template fallback), supervised one-at-a-time send via Resend (recipient resolved server-side, idempotent 60s, audit-logged) — `verify-payment-reminders` 25/25. Engine-verified; live send needs `RESEND_API_KEY`, AI polish needs `ANTHROPIC_API_KEY` (both degrade clean). (commit `fed2142`)
 - **13-week cash-flow forecast** (`cashflow-forecast.js`, `GET /api/cashflow-forecast`): forward projection from GL cash (`glBalanceSheet`, acct 1000 — authoritative, Rule 2), open AR/AP by due date, recurring invoices/bills (expanded via `nextRunDate`), plus a 90-day opex run-rate; weekly running balance, lowest point, runway; graceful when GL cash untracked. Forecast card on the Cash Flow page — `verify-cashflow-forecast` 19/19. Engine-verified; endpoint sourcing gets first live run on the page. (commit `95091c2`)
-- Origin: closes the AI gaps vs QuickBooks Intuit Assist identified 2026-10-05 (agentic send + real forecasting). Remaining QB-ahead items — classes/locations, public API + Zapier, Google Sheets sync, native app stores — tracked separately, not launch-blocking. In-progress: supervised bulk actions in the review queue (void duplicate, apply-category-to-all).
+- **Supervised bulk actions in the review queue**: confirm-gated "Delete duplicate" (routes through the existing GL-reversing `DELETE /api/{type}/:id`, keeps the original) and "Apply all (N)" AI-suggested categories (batched `PUT /api/expenses/:id` after review). Client-only; reuses audited endpoints, detector engine unchanged. (commit `cf2050f`)
+- Origin: closes the AI gaps vs QuickBooks Intuit Assist identified 2026-10-05 (agentic send + real forecasting + supervised cleanup). Remaining QB-ahead items — classes/locations, public API + Zapier, Google Sheets sync, native app stores — tracked separately, not launch-blocking.
 
 ---
 

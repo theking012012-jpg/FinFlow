@@ -6,7 +6,7 @@ This is the single source of truth for "what's done vs what's left." It supersed
 scattered audit/handover/status/plan docs that used to live in the repo root (all consolidated here on
 2026-09-28). For *how the system works* see the kept reference docs listed at the bottom.
 
-> **Bottom line:** the CODE is launch-complete and harness-backed (311 harnesses). What remains before
+> **Bottom line:** the CODE is launch-complete and harness-backed (312 harnesses). What remains before
 > going public is **ops/config only the owner can do** — the sharp edges are the Resend sending domain
 > and the Stripe prices. Nothing code-side blocks launch.
 
@@ -138,6 +138,9 @@ Integrations live-verified: Stripe, Plaid, WiPay (2026-08-16); Resend email path
 - **13-week cash-flow forecast** (`cashflow-forecast.js`, `GET /api/cashflow-forecast`): forward projection from GL cash (`glBalanceSheet`, acct 1000 — authoritative, Rule 2), open AR/AP by due date, recurring invoices/bills (expanded via `nextRunDate`), plus a 90-day opex run-rate; weekly running balance, lowest point, runway; graceful when GL cash untracked. Forecast card on the Cash Flow page — `verify-cashflow-forecast` 19/19. Engine-verified; endpoint sourcing gets first live run on the page. (commit `95091c2`)
 - **Supervised bulk actions in the review queue**: confirm-gated "Delete duplicate" (routes through the existing GL-reversing `DELETE /api/{type}/:id`, keeps the original) and "Apply all (N)" AI-suggested categories (batched `PUT /api/expenses/:id` after review). Client-only; reuses audited endpoints, detector engine unchanged. (commit `cf2050f`)
 - Origin: closes the AI gaps vs QuickBooks Intuit Assist identified 2026-10-05 (agentic send + real forecasting + supervised cleanup). Remaining QB-ahead items — classes/locations, public API + Zapier, Google Sheets sync, native app stores — tracked separately, not launch-blocking.
+
+### Fixed 2026-10-05 (pm) — entity-switch money leak (client display)
+- **`window.userInvoices` went stale on an entity switch.** `loadEntityData` refreshed the lexical `userInvoices` and `window._realInvoices`, but never `window.userInvoices` — the source the **Invoices table**, **CSV/XLSX export** and **invoice action handlers** read. So switching to e.g. the TT company left those surfaces listing the US entity’s invoices with the new entity’s currency symbol stamped on them (“the TT company is just the US figures converted to TT”). Dashboard KPIs were already correct — they read `window._realInvoices`, which reloads on switch. Fix: keep `window.userInvoices` canonical inside `loadEntityData` under the F151 stale-response guard, and `switchEntity` now clears the money collections synchronously at the currency flip (belt to the boot-splash). `verify-entity-switch-money-clear` 8/8 (RED→GREEN on real Postgres); cross-entity `verify-entity-leakage-sweep` still 18/0. **312 harnesses.** (commit pending)
 
 ---
 

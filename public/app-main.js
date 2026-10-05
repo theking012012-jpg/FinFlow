@@ -1667,6 +1667,13 @@ async function loadEntityData(idx){
     // Store globally for dashboard wiring — MUST update before calling updateDashboard
     window._realInvoices = invoices || [];
     window._realExpenses = expenses || [];
+    // ENTITY-ISOLATION (money leak): window.userInvoices is the Invoices-table + CSV/XLSX-export +
+    // invoice-action source, but loadEntityData only ever refreshed the LEXICAL userInvoices and
+    // window._realInvoices — never window.userInvoices. So on an entity SWITCH it kept the PREVIOUS
+    // entity's invoices (a TT company's Invoices page/export listing the US entity's invoices with the
+    // new entity's currency symbol stamped on them). Keep it canonical on EVERY load, here under the
+    // same stale-response guard so a late in-flight load can't clobber the new entity's rows.
+    window.userInvoices = userInvoices;
 
     // Monthly chart arrays come from the SINGLE canonical fiscal builder (the dashboard
     // wiring's window._buildMonthlyArrays) on the F32 issue-based basis (issued invoices by

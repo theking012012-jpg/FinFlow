@@ -7769,6 +7769,17 @@ window.switchEntity=async function(idx){
     var _clabel = document.getElementById('currency-code-label'); if(_clabel) _clabel.textContent = activeCurrency;
   } catch(e2){ console.warn('[Entity] currency reset failed:', e2 && e2.message); }
 
+  // ENTITY-ISOLATION (money leak): clear the money collections SYNCHRONOUSLY at the switch — before the
+  // async activate+load below — so no repaint in the gap can show the PREVIOUS entity's figures under the
+  // NEW entity's currency symbol. loadEntityData + the reload block below repopulate them scoped to the
+  // new entity (window.userInvoices is now kept canonical in loadEntityData). The boot splash also covers
+  // this gap; this is the belt to its suspenders, closing the window for any surface that paints before settle.
+  try {
+    window._realInvoices = []; window.userInvoices = []; window._realExpenses = [];
+    window.receipts = []; window.bizExpenses = [];
+    if (typeof updateDashboard === 'function') updateDashboard();
+  } catch(_clrE){}
+
   // F-ENT: the money-flow river is a rendered SVG with the PREVIOUS entity's figures + currency baked in
   // (e.g. -TT$210 lingering on a CAD entity). Resetting currencySymbol above does NOT re-render existing
   // SVG, so clear it now; buildRiver repaints with the new entity's data + currency once it loads.

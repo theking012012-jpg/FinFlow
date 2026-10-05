@@ -16,6 +16,7 @@ const Holidays     = require('date-holidays');            // F88 step 6 — per-
 const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
 const aiCap = require('./ai-cap');                        // F18 — central AI cost caps
 const { buildReviewItems } = require('./books-review');   // cleanup/anomaly queue engine (pure, read-only)
+const { buildReminderCandidates, buildDraft, resolveCustomer } = require('./payment-reminders'); // AI reminder agent engine (pure)
 const { appUrl, warnIfUnset } = require('./app-url');     // F29 — single source of truth for app links
 const { requirePerm } = require('./rbac');                // F5 Step 4 — per-route RBAC (matrix in rbac.js)
 const pgSession = require('connect-pg-simple')(session);
@@ -3457,6 +3458,136 @@ app.get('/api/books-review', requireAuth, wrap(async (req, res) => {
   ]);
   const { items, summary } = buildReviewItems({ expenses, invoices, bills });
   res.json({ items, summary, generated_at: new Date().toISOString() });
+}));
+
+// ── PAYMENT REMINDERS (AI agent: predict → draft → approve → send) ──────────
+// Predicts which invoices need chasing (deterministic, from real payment history), drafts a
+// reminder (template; AI-polished on demand when a key is present), and sends ONE reminder at a
+// time only when the owner approves it. The prediction/candidate engine is the pure
+// payment-reminders.js module (executed in tests/harness/verify-payment-reminders.js). This route
+// layer does I/O only. No money KPI is recomputed (Rule 2): `outstanding` is the invoice's own
+// amount - amount_paid. Send is supervised and idempotent — never auto-fired, never bulk.
+async function _reminderContext(req) {
+  const uid = scopeId(req);
+  const scope = _entityScopeFilter(req);
+  const [invoices, customers, payRows] = await Promise.all([
+    db.allByUser('invoices', uid, scope),
+    db.allByUser('customers', uid, scope),
+    pool.query(`SELECT invoice_id, data->>'payment_date' AS payment_date FROM invoice_payments WHERE user_id = $1`, [uid])
+      .then(r => r.rows).catch(() => []),
+  ]);
+  // Business name + currency from the active entity's profile; fall back gracefully.
+  let businessName = '', currency = '';
+  try {
+    if (req.entityId != null) {
+      const { rows } = await pool.query(`SELECT data->>'business_name' AS bn, data->>'currency' AS cur FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [req.entityId, uid]);
+      if (rows[0]) { businessName = rows[0].bn || ''; currency = (rows[0].cur || '').toUpperCase(); }
+    }
+    if (!businessName) {
+      const { rows } = await pool.query(`SELECT data->>'company_name' AS cn FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [uid]);
+      if (rows[0] && rows[0].cn) businessName = rows[0].cn;
+    }
+  } catch (_) {}
+  const today = await entityTodayYmd(req.entityId);
+  return { invoices, customers, payments: payRows, businessName, currency, today };
+}
+
+app.get('/api/payment-reminders', requireAuth, wrap(async (req, res) => {
+  const ctx = await _reminderContext(req);
+  const { items, summary } = buildReminderCandidates(ctx);
+  res.json({ items, summary, business_name: ctx.businessName, currency: ctx.currency || null, generated_at: new Date().toISOString() });
+}));
+
+// AI polish of a single draft. Keeps every FACT from the deterministic draft; only rewords tone.
+// Shared AI budget, fail-closed, template fallback on any failure or missing key.
+app.post('/api/payment-reminders/draft', requireAuth, wrap(async (req, res) => {
+  const invoiceId = parseInt(req.body?.invoice_id, 10);
+  if (!Number.isInteger(invoiceId) || invoiceId <= 0) return res.status(400).json({ error: 'invoice_id required.' });
+  const ctx = await _reminderContext(req);
+  const cand = buildReminderCandidates(ctx).items.find(i => i.invoice_id === invoiceId);
+  if (!cand) return res.status(404).json({ error: 'That invoice is not a current reminder candidate.' });
+
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!apiKey) return res.json({ subject: cand.draft.subject, body: cand.draft.body, source: 'template' });
+
+  const gate = await aiCap.checkUserCap(pool, scopeId(req), req.userPlan, 'shared');
+  if (!gate.ok) {
+    if (gate.failClosed) return res.json({ subject: cand.draft.subject, body: cand.draft.body, source: 'template' });
+    return res.status(402).json({ error: 'Monthly AI limit reached — upgrade for more.', code: 'AI_CAP_REACHED', subject: cand.draft.subject, body: cand.draft.body, source: 'template' });
+  }
+
+  const sys = `You rewrite a payment-reminder email to be warm, professional and concise. You MUST keep every fact exactly: the customer name, the amount owed, the invoice number, the due date, and how overdue it is. Do not invent fees, legal threats, interest, or links. Keep it under 120 words. Reply with ONLY the email body text — no subject line, no markdown.`;
+  const facts = `Business: ${ctx.businessName || 'the business'}\nCustomer: ${cand.customer_name}\nInvoice: ${cand.draft.subject}\nAmount outstanding: ${(ctx.currency ? ctx.currency + ' ' : '') + cand.amount_outstanding.toFixed(2)}\nDue date: ${cand.due_date}\nDays overdue: ${Math.max(0, cand.days_overdue)}\nTone: ${cand.severity === 'high' ? 'firm but courteous' : cand.severity === 'medium' ? 'polite follow-up' : 'friendly heads-up'}\n\nHere is the current draft to improve:\n${cand.draft.body}`;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: process.env.AI_MODEL_SIMPLE || 'claude-haiku-4-5-20251001', max_tokens: 400, system: sys, messages: [{ role: 'user', content: facts }] }),
+    });
+    if (!r.ok) return res.json({ subject: cand.draft.subject, body: cand.draft.body, source: 'template' });
+    aiCap.recordUser(pool, scopeId(req), 'shared', 1);
+    const data = await r.json();
+    const text = (data.content || []).map(b => b.text || '').join('').trim();
+    return res.json({ subject: cand.draft.subject, body: text || cand.draft.body, source: text ? 'ai' : 'template' });
+  } catch (e) {
+    return res.json({ subject: cand.draft.subject, body: cand.draft.body, source: 'template' });
+  }
+}));
+
+// Send ONE reminder. Supervised: the owner approves the exact subject/body. The recipient email is
+// resolved SERVER-SIDE from the invoice's customer (never taken from the client, so a tampered page
+// can't redirect the mail). Idempotent: a second send within 60s of the last returns the prior
+// result instead of emailing the customer twice.
+app.post('/api/payment-reminders/send', requireAuth, wrap(async (req, res) => {
+  const invoiceId = parseInt(req.body?.invoice_id, 10);
+  if (!Number.isInteger(invoiceId) || invoiceId <= 0) return res.status(400).json({ error: 'invoice_id required.' });
+  const subject = String(req.body?.subject || '').trim().slice(0, 200);
+  const body = String(req.body?.body || '').trim().slice(0, 5000);
+  if (!subject || !body) return res.status(400).json({ error: 'subject and body are required.' });
+
+  const invoice = await ownedBy('invoices', invoiceId, scopeId(req));
+  if (!invoice) return res.status(404).json({ error: 'Invoice not found.' });
+  const outstanding = (parseFloat(invoice.amount) || 0) - (parseFloat(invoice.amount_paid) || 0);
+  if (outstanding <= 0.005) return res.status(400).json({ error: 'This invoice has nothing outstanding.' });
+
+  // Idempotency: block an accidental double-send (double-click / retry) within 60 seconds.
+  const lastAt = invoice.last_reminder_at ? Date.parse(invoice.last_reminder_at) : 0;
+  if (lastAt && (Date.now() - lastAt) < 60000) {
+    return res.status(200).json({ ok: true, deduped: true, sent_at: invoice.last_reminder_at, reminder_count: invoice.reminder_count || 1 });
+  }
+
+  // Resolve recipient server-side from the invoice's customer.
+  const customers = await db.allByUser('customers', scopeId(req), _entityScopeFilter(req));
+  const cust = resolveCustomer(invoice.client, customers);
+  const to = cust && cust.email ? String(cust.email).trim() : null;
+  if (!to) return res.status(400).json({ error: 'No email on file for this customer. Add one on the customer record first.', code: 'NO_EMAIL' });
+
+  if (!resendClient) {
+    return res.status(503).json({ error: 'Email isn’t configured (RESEND_API_KEY not set), so reminders can’t be sent yet.', code: 'EMAIL_NOT_CONFIGURED' });
+  }
+
+  const htmlBody = '<div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1a140a;line-height:1.55">'
+    + body.split('\n').map(line => '<p style="margin:0 0 10px">' + line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</p>').join('')
+    + '</div>';
+  try {
+    await resendClient.emails.send({
+      from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
+      to,
+      reply_to: req.session?.email || undefined,
+      subject,
+      html: htmlBody,
+      text: body,
+    });
+  } catch (e) {
+    console.error('[Reminder] send failed:', e && e.message);
+    return res.status(502).json({ error: 'Email service failed to send. Please try again shortly.' });
+  }
+
+  const sentAt = new Date().toISOString();
+  const count = (parseInt(invoice.reminder_count, 10) || 0) + 1;
+  try { await db.updateById('invoices', invoiceId, { last_reminder_at: sentAt, reminder_count: count }); } catch (_) {}
+  try { logAudit(req, 'REMINDER_SENT', 'invoices', invoiceId, null, { to, subject, reminder_count: count }); } catch (_) {}
+  res.json({ ok: true, sent_at: sentAt, to, reminder_count: count });
 }));
 
 // ── BILLS ─────────────────────────────────────────────────────────────────────

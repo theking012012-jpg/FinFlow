@@ -17,6 +17,7 @@ const { tierForAccountant } = require('./tier-config');   // F17 — single tier
 const aiCap = require('./ai-cap');                        // F18 — central AI cost caps
 const { buildReviewItems } = require('./books-review');   // cleanup/anomaly queue engine (pure, read-only)
 const { buildReminderCandidates, buildDraft, resolveCustomer } = require('./payment-reminders'); // AI reminder agent engine (pure)
+const { buildForecast, addDaysYmd: cfAddDays } = require('./cashflow-forecast'); // 13-week cash-flow forecast engine (pure)
 const { appUrl, warnIfUnset } = require('./app-url');     // F29 — single source of truth for app links
 const { requirePerm } = require('./rbac');                // F5 Step 4 — per-route RBAC (matrix in rbac.js)
 const pgSession = require('connect-pg-simple')(session);
@@ -3588,6 +3589,97 @@ app.post('/api/payment-reminders/send', requireAuth, wrap(async (req, res) => {
   try { await db.updateById('invoices', invoiceId, { last_reminder_at: sentAt, reminder_count: count }); } catch (_) {}
   try { logAudit(req, 'REMINDER_SENT', 'invoices', invoiceId, null, { to, subject, reminder_count: count }); } catch (_) {}
   res.json({ ok: true, sent_at: sentAt, to, reminder_count: count });
+}));
+
+// ── CASH-FLOW FORECAST (13-week forward projection) ─────────────────────────
+// A forward look, NOT a booked figure. Starting cash is read from glBalanceSheet (GL account
+// 1000 — the one authoritative cash source, never a recomputed total, Rule 2). Future cash events
+// are: open AR (unpaid invoices at their due date), recurring invoices, open AP (unpaid bills at
+// due date), recurring bills, and an estimated operating-expense run-rate from the last 90 days of
+// directly-logged expenses (a separate stream from bills, so no double count). Recurring rows are
+// expanded with the app's own nextRunDate() so projection dates match how the scheduler actually
+// fires. The projection math lives in the pure cashflow-forecast.js engine (tested in
+// tests/harness/verify-cashflow-forecast.js). When GL cash isn't tracked, the forecast still shows
+// net flow but no balance/runway — and says so, rather than fabricating a starting balance.
+app.get('/api/cashflow-forecast', requireAuth, wrap(async (req, res) => {
+  const uid = scopeId(req);
+  const eid = req.entityId;
+  const scope = _entityScopeFilter(req);
+  const today = await entityTodayYmd(eid);
+  const WEEKS = 13;
+  const horizonEnd = cfAddDays(today, WEEKS * 7);
+
+  let startingCash = null, cashTracked = false, cashSource = 'none';
+  try {
+    const bs = await glBalanceSheet(uid, eid);
+    cashSource = bs.source || 'none';
+    if (bs.cashTracked) { startingCash = bs.cash; cashTracked = true; }
+  } catch (e) { console.error('[forecast] balance sheet read failed:', e && e.message); }
+
+  const [invoices, bills, recInv, recBill, expenses] = await Promise.all([
+    db.allByUser('invoices', uid, scope),
+    db.allByUser('bills', uid, scope),
+    db.allByUser('recurring_invoices', uid, scope),
+    db.allByUser('recurring_bills', uid, scope),
+    db.allByUser('expenses', uid, scope),
+  ]);
+
+  const UNPAID_INV = new Set(['pending', 'overdue', 'partial']);
+  const inflows = [], outflows = [];
+
+  // Open AR → inflow at due date.
+  for (const inv of invoices) {
+    if (!UNPAID_INV.has(String(inv.status || '').toLowerCase())) continue;
+    const outstanding = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
+    if (outstanding <= 0.005 || !inv.due_date) continue;
+    inflows.push({ date: String(inv.due_date).slice(0, 10), amount: outstanding, kind: 'ar', label: (inv.client || 'Invoice') + ' (' + (inv.num || ('#' + inv.id)) + ')' });
+  }
+  // Open AP → outflow at due date.
+  for (const b of bills) {
+    if (!RECOGNIZED_BILL.has(String(b.status || '').toLowerCase())) continue;
+    const outstanding = (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0);
+    if (outstanding <= 0.005 || !b.due_date) continue;
+    outflows.push({ date: String(b.due_date).slice(0, 10), amount: outstanding, kind: 'ap', label: (b.vendor || 'Bill') + ' (' + (b.num || ('#' + b.id)) + ')' });
+  }
+  // Expand a recurring row's occurrences within the horizon using the app's own nextRunDate().
+  const expand = (row, kind, bucket) => {
+    if (String(row.status || '').toLowerCase() !== 'active') return;
+    const amt = parseFloat(row.amount) || 0;
+    if (amt <= 0) return;
+    let d = row.next_run ? String(row.next_run).slice(0, 10) : null;
+    const end = row.end_date ? String(row.end_date).slice(0, 10) : null;
+    let guard = 0;
+    while (d && d <= horizonEnd && guard++ < 60) {
+      if (end && d > end) break;
+      bucket.push({ date: d, amount: amt, kind, label: (row.client || row.vendor || 'Recurring') });
+      d = nextRunDate(d, row.frequency);
+    }
+  };
+  for (const r of recInv) expand(r, 'recurring_in', inflows);
+  for (const r of recBill) expand(r, 'recurring_out', outflows);
+
+  // Estimated operating-expense run-rate (directly-logged expenses only — bills are counted above).
+  const since = cfAddDays(today, -90);
+  let recentOpex = 0;
+  for (const e of expenses) {
+    const d = e.expense_date ? String(e.expense_date).slice(0, 10) : null;
+    if (d && d >= since && d <= today) recentOpex += parseFloat(e.amount) || 0;
+  }
+  const weeklyOpex = recentOpex > 0 ? (recentOpex / 90) * 7 : 0;
+  if (weeklyOpex > 0) {
+    for (let i = 0; i < WEEKS; i++) {
+      outflows.push({ date: cfAddDays(today, i * 7), amount: weeklyOpex, kind: 'opex_estimate', label: 'Estimated operating expenses' });
+    }
+  }
+
+  // Currency (entity native) for display.
+  let currency = '';
+  try {
+    if (eid != null) { const { rows } = await pool.query(`SELECT data->>'currency' AS cur FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [eid, uid]); if (rows[0] && rows[0].cur) currency = String(rows[0].cur).toUpperCase(); }
+  } catch (_) {}
+
+  const { periods, summary } = buildForecast({ startingCash, cashTracked, inflows, outflows, today, weeks: WEEKS });
+  res.json({ periods, summary, cash_source: cashSource, currency: currency || null, today, generated_at: new Date().toISOString() });
 }));
 
 // ── BILLS ─────────────────────────────────────────────────────────────────────

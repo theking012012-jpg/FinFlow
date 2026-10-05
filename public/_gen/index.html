@@ -2300,6 +2300,16 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="card-header"><h2 class="card-title" id="cf-chart-title">Net Profit Trend</h2><div style="display:flex;gap:12px;font-size:11px;color:var(--t2)"><span><span style="display:inline-block;width:8px;height:2px;background:var(--acc);margin-right:4px;vertical-align:middle"></span>Actual</span><span><span style="display:inline-block;width:8px;height:2px;background:var(--green);margin-right:4px;vertical-align:middle"></span>Forecast</span></div></div>
           <div class="canvas-wrap"><canvas id="cashChart" role="img" aria-label="Area chart showing cash flow over time">Cash flow chart</canvas></div>
         </div>
+                <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">13-week cash-flow forecast</h2>
+            <button class="btn btn-ghost btn-sm" onclick="ffLoadForecast&&ffLoadForecast()">Refresh</button>
+          </div>
+          <div style="font-size:12px;color:var(--t2);margin:-4px 0 12px">Projected from open invoices, open bills, recurring items and your recent spending. An estimate to plan around — not booked figures.</div>
+          <div id="cff-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin-bottom:14px"></div>
+          <div id="cff-chart"></div>
+          <div id="cff-table" style="font-size:12px;margin-top:12px;overflow-x:auto"></div>
+        </div>
         <div class="two-col">
           <div class="card" style="margin-bottom:0">
             <div class="card-header"><h2 class="card-title">Top income sources</h2></div>
@@ -4862,6 +4872,7 @@ select.ob-input{cursor:pointer}
 
 <script src="/_gen/app-21.js"></script>
 <script src="/_gen/app-22.js"></script>
+<script src="/_gen/app-23.js"></script>
 
 
 <script>(function(){function H(id){try{var p=document.getElementById(id);if(!p||!p.hasAttribute('data-lz'))return;var t=document.querySelector('template[data-lz="'+id+'"]');if(t){p.appendChild(t.content.cloneNode(true));p.removeAttribute('data-lz');}}catch(e){}}window.__lzHydrate=H;function w(){if(typeof window.showPage!=='function')return false;var o=window.showPage;window.showPage=function(id){try{H('page-'+id);H(id);}catch(e){}return o.apply(this,arguments);};return true;}if(!w()){var i=setInterval(function(){if(w())clearInterval(i);},25);setTimeout(function(){clearInterval(i);},8000);}})();</script></html>

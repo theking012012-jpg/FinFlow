@@ -87,6 +87,13 @@ scattered audit/handover/status/plan docs that used to live in the repo root (al
 - **VERIFICATION.md** has 19 empty Result cells (A7.5–8, A7.18, A8a/A8b) — they ARE gate-tested; the gates
   just don't auto-stamp those rows. Cosmetic doc gap, not a coverage gap.
 
+- **QuickBooks-parity — non-AI ecosystem gaps** (discussed 2026-10-05; deferred, NOT launch-blocking). The AI gaps vs Intuit Assist are closed — review/cleanup queue, reminder agent (predict→draft→approve→send), 13-week cash-flow forecast, supervised bulk actions (all in §3). Remaining, each a future build of its own:
+  - **Classes / locations** — dimensional tags on transactions for P&L splits (no `class_id`/`location_id` today). Highest-value of the four; touches the books directly.
+  - **Public API + Zapier** — a versioned, externally-authenticated public API + Zapier app over the existing internal routes (no public API surface today).
+  - **Google Sheets live sync** — push/pull books into a sheet.
+  - **Native app stores** — iOS/Android presence (web/PWA today; the PWA install prompt is already live).
+- **Mobile performance** — desktop Lighthouse is in the 90s; mobile remains the weaker surface after the earlier parse-wall + chart/boot-path work. Further mobile tuning is optional, ongoing, non-blocking. (A boot-window GET cache was prototyped earlier but never shipped; revisit only if mobile perf needs it.)
+
 ---
 
 ## 3. CLOSED / shipped (verified against code + harnesses)

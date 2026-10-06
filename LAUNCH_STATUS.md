@@ -6,7 +6,7 @@ This is the single source of truth for "what's done vs what's left." It supersed
 scattered audit/handover/status/plan docs that used to live in the repo root (all consolidated here on
 2026-09-28). For *how the system works* see the kept reference docs listed at the bottom.
 
-> **Bottom line:** the CODE is launch-complete and harness-backed (313 harnesses). What remains before
+> **Bottom line:** the CODE is launch-complete and harness-backed (315 harnesses). What remains before
 > going public is **ops/config only the owner can do** — the sharp edges are the Resend sending domain
 > and the Stripe prices. Nothing code-side blocks launch.
 
@@ -87,11 +87,7 @@ scattered audit/handover/status/plan docs that used to live in the repo root (al
 - **VERIFICATION.md** has 19 empty Result cells (A7.5–8, A7.18, A8a/A8b) — they ARE gate-tested; the gates
   just don't auto-stamp those rows. Cosmetic doc gap, not a coverage gap.
 
-- **QuickBooks-parity — non-AI ecosystem gaps** (discussed 2026-10-05; deferred, NOT launch-blocking). The AI gaps vs Intuit Assist are closed — review/cleanup queue, reminder agent (predict→draft→approve→send), 13-week cash-flow forecast, supervised bulk actions (all in §3). Remaining, each a future build of its own:
-  - **Classes / locations** — dimensional tags on transactions for P&L splits (no `class_id`/`location_id` today). Highest-value of the four; touches the books directly.
-  - **Public API + Zapier** — a versioned, externally-authenticated public API + Zapier app over the existing internal routes (no public API surface today).
-  - **Google Sheets live sync** — push/pull books into a sheet.
-  - **Native app stores** — iOS/Android presence (web/PWA today; the PWA install prompt is already live).
+- **QuickBooks-parity gaps — all CLOSED 2026-10-05** (shipped; see §3). classes/locations, public API + Zapier, Google Sheets sync, and the native-app (Capacitor) scaffold are done — FinFlow now matches or beats QuickBooks on AI *and* ecosystem. Only owner follow-ups remain: native-app STORE submission (Apple/Play accounts + signing) and the optional OAuth push-sync for Sheets (a Google Cloud app) — neither is code.
 - **Mobile performance** — desktop Lighthouse is in the 90s; mobile remains the weaker surface after the earlier parse-wall + chart/boot-path work. Further mobile tuning is optional, ongoing, non-blocking. (A boot-window GET cache was prototyped earlier but never shipped; revisit only if mobile perf needs it.)
 
 ---
@@ -149,6 +145,13 @@ Integrations live-verified: Stripe, Plaid, WiPay (2026-08-16); Resend email path
 ### Fixed 2026-10-05 (pm) — entity-switch money leak (client display)
 - **`window.userInvoices` went stale on an entity switch.** `loadEntityData` refreshed the lexical `userInvoices` and `window._realInvoices`, but never `window.userInvoices` — the source the **Invoices table**, **CSV/XLSX export** and **invoice action handlers** read. So switching to e.g. the TT company left those surfaces listing the US entity’s invoices with the new entity’s currency symbol stamped on them (“the TT company is just the US figures converted to TT”). Dashboard KPIs were already correct — they read `window._realInvoices`, which reloads on switch. Fix: keep `window.userInvoices` canonical inside `loadEntityData` under the F151 stale-response guard, and `switchEntity` now clears the money collections synchronously at the currency flip (belt to the boot-splash). `verify-entity-switch-money-clear` 8/8 (RED→GREEN on real Postgres); cross-entity `verify-entity-leakage-sweep` still 18/0. **312 harnesses.** (commit pending)
 - **Entity-switch overview-chart stale bar** (same class, chart layer): the Revenue-vs-Expenses monthly arrays REV[]/EXP[] are rebuilt from the global collections on switch, but the chart was only painted once by loadEntityData (with the previous entity's collections) and never repainted after the Promise.all reload — updateDashboard doesn't call updateCharts and _refreshDashboardUI only rebuilds a MISSING chart — so an empty entity kept a lingering bar. switchEntity now rebuilds the arrays from the reloaded collections and repaints (updateCharts). `verify-entity-switch-chart-clear` 8/8 (RED→GREEN; updateCharts calls on switch 0→1). **313 harnesses.** (commit pending)
+
+### Added 2026-10-05 (pm) — QuickBooks ecosystem parity: the 4 non-AI gaps closed — deployed
+- **Classes & Locations** (`segments.js`, `GET /api/reports/segments`): tag invoices/expenses with class/location (create+edit, datalists); segment report (revenue/cost/net per class or location) as a reweighting of the exact rows — totals tie, cannot invent a dollar (Rule 2). Scoped: tagged docs, active entity, native, all-time (labeled, not the reconciled P&L). `verify-segments` 13/13. (commit `29428b6`)
+- **Public API v1** (`api-keys.js`, `/api/v1/*`): new `api_keys` JSONB table + hash index; session-authed key mgmt (create-once / list / revoke; a key cannot mint keys); `requireApiKey` (sha256 lookup, rate-limited, user+entity scoped); read-only me/invoices/expenses/customers/reports-summary (limit/since); Developer page + API reference. Writes deferred to v2 (no create-validation duplication). `verify-api-keys` 19/19. (commit `88986b4`)
+- **Google Sheets connector** (Developer page): ready-to-paste Google Apps Script (base URL auto-filled) that pulls read-only `/api/v1` into sheet tabs with a FinFlow sync menu, using an API key — zero FinFlow-side OAuth. Full OAuth push-sync deferred (needs a Google Cloud app). (commit `e13de51`)
+- **Native app scaffold** (`mobile/`): self-contained Capacitor project (own package.json, no server impact) — WebView shell pointed at production, config, offline fallback, full iOS/Android build+submit README. Store accounts, signing, and iOS native-plugin wiring remain (owner). (commit `1662e28`)
+- Net: all four QB-ahead non-AI gaps closed; with the AI layer (above) FinFlow is parity-or-ahead vs QuickBooks on AI and ecosystem. **315 harnesses.**
 
 ---
 

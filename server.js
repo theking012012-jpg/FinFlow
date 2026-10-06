@@ -199,14 +199,14 @@ async function setSubscriptionStatus(userId, status) {
   await pool.query(
     `UPDATE users SET data = data || jsonb_build_object('subscriptionStatus', $1::text) WHERE id = $2`,
     [String(status || ''), userId]
-  ).catch(e => console.error('[Stripe] setSubscriptionStatus failed:', e.message));
+  );
 }
 async function suspendClientForUser(userId) {
   if (!userId) return;
   await pool.query(
     `UPDATE accountant_clients SET status = 'suspended' WHERE user_id = $1 AND status = 'active'`,
     [userId]
-  ).catch(e => console.error('[Stripe] suspendClientForUser failed:', e.message));
+  );
 }
 async function reactivateClientForUser(userId) {
   if (!userId) return;
@@ -215,7 +215,7 @@ async function reactivateClientForUser(userId) {
     `UPDATE accountant_clients SET status = 'active'
       WHERE user_id = $1 AND status = 'suspended' AND referral_month < referral_months_total`,
     [userId]
-  ).catch(e => console.error('[Stripe] reactivateClientForUser failed:', e.message));
+  );
 }
 
 // ── STRIPE WEBHOOK ────────────────────────────────────────────────────────────
@@ -252,6 +252,10 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     console.error('[Stripe Webhook] idempotency claim failed (processing anyway):', e.message);
   }
 
+  // N2: if ANY required write below fails, release the claim and 500 so Stripe RETRIES the event.
+  // Previously the claim was committed first and failures were swallowed, so a retry was
+  // discarded as a duplicate and the event was lost for good. Emails stay best-effort.
+  try {
   const userId = event.data.object?.metadata?.userId;
 
   if (event.type === 'checkout.session.completed') {
@@ -273,7 +277,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
         billedCents,
         feeCents,
         session.metadata?.description || 'Platform fee (4%)',
-      ]).catch(err => console.error('[Stripe] platform_fees insert failed:', err.message));
+      ]);
       console.log(`[Stripe] Platform fee logged: $${(feeCents/100).toFixed(2)} (4% of $${(billedCents/100).toFixed(2)}) — accountant ${accountantId}`);
     }
 
@@ -305,7 +309,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       if (invId) {
         const rec = await recordExternalInvoicePayment({
           invoiceId: invId, amountMinor: session.amount_total, method: 'Card (Stripe)', idemKey: 'stripe:' + session.id,
-        }).catch(err => { console.error('[Stripe] invoice reconcile failed:', err.message); return { recorded: false, reason: 'error' }; });
+        });
         console.log('[Stripe] invoice ' + invId + ' payment → ' + JSON.stringify(rec));
       }
     }
@@ -342,7 +346,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                                             - COALESCE($2::int, stripe_fee_cents, 0)
                                             - COALESCE(commission_cents, 0))
        WHERE payment_intent_id = $1
-    `, [pi.id, realFee]).catch(e => console.error('[Stripe] earnings reconcile failed:', e.message));
+    `, [pi.id, realFee]);
   }
 
   if (event.type === 'customer.subscription.deleted') {
@@ -394,7 +398,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                 kyc_verified_at = CASE WHEN $1::text = 'verified' THEN NOW() ELSE kyc_verified_at END
           WHERE id = $3::int`,
         [_kyc, vs.id || null, accId]
-      ).catch(err => console.error('[Stripe Identity] kyc update failed:', err.message));
+      );
       console.log(`[Stripe Identity] accountant ${accId} kyc_status → ${_kyc} (${vs.id})`);
     }
   }
@@ -480,7 +484,14 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       } else if (!orig) {
         console.warn('[Stripe] charge.refunded for ' + chargeId + ' — no auto-reversible invoice payment found; manual review');
       }
-    } catch (e) { console.error('[Stripe] refund reversal failed:', e.message); }
+    } catch (e) { console.error('[Stripe] refund reversal failed:', e.message); throw e; }
+  }
+
+  } catch (procErr) {
+    console.error('[Stripe Webhook] processing failed — releasing claim so Stripe retries:', event.id, event.type, procErr && procErr.message);
+    captureErr(procErr, { stripeEvent: event.id, type: event.type });
+    try { await pool.query(`DELETE FROM stripe_webhook_events WHERE event_id = $1`, [event.id]); } catch (_) {}
+    return res.status(500).json({ error: 'processing failed; retry' });
   }
 
   res.json({ received: true });

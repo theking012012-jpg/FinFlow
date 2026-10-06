@@ -3816,7 +3816,28 @@ app.get('/api/v1/reports/summary', requireApiKey, apiLimiter, wrap(async (req, r
   } catch (e) { console.error('[api] summary failed:', e && e.message); res.status(500).json({ error: 'Could not compute summary.' }); }
 }));
 
+// ── DASHBOARD BOOTSTRAP — one call for the repeated boot fetches (perf) ──────
+// Returns, for the ACTIVE entity, the three list endpoints that go through the shared respondList
+// path: invoices, expenses, bills. Each is BYTE-IDENTICAL to GET /api/<x> — the exact same
+// db.allByUser + _entityScopeFilter + id-desc sort respondList uses — so the client's boot-window
+// cache can serve the repeated boot fetches of these three from this ONE response, then fall back
+// to real fetches for everything else. No new money logic; it reuses the shared read path (Rule 2).
+app.get('/api/dashboard-bootstrap', requireAuth, wrap(async (req, res) => {
+  const uid = scopeId(req), scope = _entityScopeFilter(req), byId = (a, b) => b.id - a.id;
+  const [invoices, expenses, bills] = await Promise.all([
+    db.allByUser('invoices', uid, scope, byId),
+    db.allByUser('expenses', uid, scope, byId),
+    db.allByUser('bills', uid, scope, byId),
+  ]);
+  res.json({
+    entity_id: req.entityId == null ? null : req.entityId,
+    generated_at: new Date().toISOString(),
+    data: { '/api/invoices': invoices, '/api/expenses': expenses, '/api/bills': bills },
+  });
+}));
+
 // ── BILLS ─────────────────────────────────────────────────────────────────────
+
 
 
 app.get('/api/bills', requireAuth, wrap(async (req, res) => respondList(req, res, 'bills')));

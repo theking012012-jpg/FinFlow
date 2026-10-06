@@ -11185,23 +11185,36 @@ async function refreshLiveFxRates() {
     const rates = data.rates;
     const today = new Date().toISOString().slice(0, 10);
     const { rows: us } = await pool.query(`SELECT DISTINCT user_id FROM entities WHERE user_id IS NOT NULL`);
+    // N67: ONE set-based statement per user (was 2–3 queries per currency per user — ~480 per user per refresh).
+    // Same rules: only app-supported codes; manual-wins (a pair with a hand-entered rate is never touched);
+    // today's live row is updated, else inserted. A rate outside the column's range is dropped up front (it
+    // used to be skipped by a per-currency try/catch).
+    const curs = [], vals = [];
+    for (const cur of Object.keys(rates)) {
+      if (cur === 'USD') continue;
+      if (typeof CURRENCY_CODES !== 'undefined' && CURRENCY_CODES.size && !CURRENCY_CODES.has(cur)) continue;
+      const rate = Number(rates[cur]);
+      if (!isFinite(rate) || rate <= 0 || rate >= 1e6) continue;   // fx_rates.rate is NUMERIC(12,6)
+      curs.push(cur); vals.push(rate);
+    }
     let wrote = 0;
     for (const u of us) {
-      const uid = u.user_id;
-      for (const cur of Object.keys(rates)) {
-        if (cur === 'USD') continue;
-        if (typeof CURRENCY_CODES !== 'undefined' && CURRENCY_CODES.size && !CURRENCY_CODES.has(cur)) continue; // only app-supported codes
-        const rate = rates[cur];
-        if (rate == null || !isFinite(rate)) continue;
-        // manual-wins: never overwrite a hand-entered rate for this pair
-        const { rows: man } = await pool.query(`SELECT 1 FROM fx_rates WHERE user_id=$1 AND from_currency='USD' AND to_currency=$2 AND source='manual' LIMIT 1`, [uid, cur]);
-        if (man[0]) continue;
-        try {
-          const { rowCount } = await pool.query(`UPDATE fx_rates SET rate=$1 WHERE user_id=$2 AND from_currency='USD' AND to_currency=$3 AND rate_date=$4 AND source='live'`, [rate, uid, cur, today]);
-          if (!rowCount) await pool.query(`INSERT INTO fx_rates (user_id, entity_id, from_currency, to_currency, rate, rate_date, source) VALUES ($1,NULL,'USD',$2,$3,$4,'live')`, [uid, cur, rate, today]);
-          wrote++;
-        } catch (perCurErr) { /* skip one bad/out-of-range currency; never abort the whole refresh */ }
-      }
+      try {
+        const { rows: [r] } = await pool.query(
+          `WITH v(cur, rate) AS (SELECT * FROM unnest($2::text[], $3::numeric[])),
+                manual AS (SELECT DISTINCT to_currency FROM fx_rates WHERE user_id = $1 AND from_currency = 'USD' AND source = 'manual'),
+                upd AS (UPDATE fx_rates f SET rate = v.rate FROM v
+                         WHERE f.user_id = $1 AND f.from_currency = 'USD' AND f.to_currency = v.cur AND f.rate_date = $4 AND f.source = 'live'
+                           AND v.cur NOT IN (SELECT to_currency FROM manual)
+                     RETURNING f.to_currency),
+                ins AS (INSERT INTO fx_rates (user_id, entity_id, from_currency, to_currency, rate, rate_date, source)
+                        SELECT $1, NULL, 'USD', v.cur, v.rate, $4, 'live' FROM v
+                         WHERE v.cur NOT IN (SELECT to_currency FROM upd) AND v.cur NOT IN (SELECT to_currency FROM manual)
+                     RETURNING 1)
+           SELECT (SELECT COUNT(*) FROM upd) + (SELECT COUNT(*) FROM ins) AS n`,
+          [u.user_id, curs, vals, today]);
+        wrote += Number(r && r.n) || 0;
+      } catch (perUserErr) { console.error('[fx-live] user ' + u.user_id + ':', perUserErr.message); }
     }
     console.log('[fx-live] refreshed ' + wrote + ' USD-base rate(s) for ' + us.length + ' user(s) @ ' + today);
   } catch (e) { console.error('[fx-live] refresh error:', e && e.message); }

@@ -3818,7 +3818,10 @@ async function requireApiKey(req, res, next) {
     if (!row) return res.status(401).json({ error: 'Invalid API key.' });
     req.apiUserId = row.user_id;
     const d = row.data || {};
-    req.apiEntityId = (d.entity_id != null && d.entity_id !== '') ? Number(d.entity_id) : null;   // null = all entities
+    // The key's entity scope is stored as key_entity_id (POST /api/api-keys); it used to be read from
+    // entity_id, which is never set, so every entity-scoped key read ALL entities (N27).
+    const _ke = d.key_entity_id;
+    req.apiEntityId = (_ke != null && _ke !== '') ? Number(_ke) : null;   // null = all entities
     req.apiKeyId = row.id;
     const now = Date.now();                                 // throttled last-used stamp (best-effort)
     if (!d.last_used_at || (now - Date.parse(d.last_used_at)) > 60000) {

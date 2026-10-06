@@ -948,6 +948,41 @@ window._ffExportXlsx = function(rows, filename){
     }catch(e){ if (typeof notify === 'function') notify('XLSX export failed: ' + (e && e.message || e), true); }
   });
 };
+// PDF export — a REAL downloadable .pdf (not just print-to-PDF). Lazy-loads the vendored jsPDF +
+// autotable (self-hosted at /vendor, same-origin → CSP unchanged) on first use, then renders the SAME
+// page-aware rows the CSV/XLSX export builds as a titled table and triggers a file download via doc.save.
+window._ffLoadPdfLib = function(cb){
+  var ready = function(){ return window.jspdf && window.jspdf.jsPDF; };
+  if (ready()) { cb(); return; }
+  if (window._pdfLoading) { (window._pdfQ = window._pdfQ || []).push(cb); return; }
+  window._pdfLoading = true; window._pdfQ = [cb];
+  var load = function(src, next){ var s = document.createElement('script'); s.src = src; s.onload = next; s.onerror = function(){ window._pdfLoading = false; if (typeof notify === 'function') notify('Could not load the PDF exporter.', true); }; document.head.appendChild(s); };
+  // autotable augments the jsPDF prototype, so it MUST load after jsPDF itself.
+  load('/vendor/jspdf.umd.min.js', function(){
+    load('/vendor/jspdf.plugin.autotable.min.js', function(){
+      (window._pdfQ || []).forEach(function(fn){ try{ fn(); }catch(e){} }); window._pdfQ = [];
+    });
+  });
+};
+window._ffExportPdf = function(rows, filename, title){
+  window._ffLoadPdfLib(function(){
+    try{
+      var jsPDF = window.jspdf.jsPDF;
+      var doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      var head = (rows && rows.length) ? [rows[0]] : [[]];
+      var body = (rows && rows.length) ? rows.slice(1) : [];
+      var ttl = title || String(filename || 'Report').replace(/\.(csv|pdf)$/, '');
+      doc.setFontSize(16); doc.text(String(ttl), 40, 40);
+      doc.setFontSize(9); doc.setTextColor(120);
+      doc.text('FinFlow · ' + new Date().toLocaleDateString(), 40, 56);
+      doc.autoTable({ head: head, body: body, startY: 72, styles: { fontSize: 9, cellPadding: 5 }, headStyles: { fillColor: [201,168,76], textColor: 20 }, alternateRowStyles: { fillColor: [245,242,235] }, margin: { left: 40, right: 40 } });
+      var outName = String(filename || 'export.pdf').replace(/\.(csv|xlsx)$/, '.pdf');
+      if (!/\.pdf$/.test(outName)) outName += '.pdf';
+      doc.save(outName);
+      if (typeof notify === 'function') notify('Exported ' + outName + ' ✦');
+    }catch(e){ if (typeof notify === 'function') notify('PDF export failed: ' + (e && e.message || e), true); }
+  });
+};
 window.exportAllCSV = function(format){
   const activePage = Array.from(document.querySelectorAll('.page'))
     .find(el => el.classList.contains('active') || (el.style.display && el.style.display !== 'none'))?.id || '';
@@ -1018,6 +1053,7 @@ window.exportAllCSV = function(format){
 
   if (rows.length <= 1) { notify('No data to export.', true); return; }
   if (String(format) === 'xlsx') { return window._ffExportXlsx(rows, filename); }
+  if (String(format) === 'pdf')  { var _t = String(filename||'Report').replace(/\.csv$/,''); return window._ffExportPdf(rows, _t + '.pdf', _t.charAt(0).toUpperCase() + _t.slice(1)); }
   const csv = rows.map(toCSV).join('\r\n');
   const blob = new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
@@ -5553,6 +5589,14 @@ function updateCharts(d=getPeriodData()){
 // PDF EXPORT
 // ════════════════════════════════════════════
 function exportPDF(){
+  // Downloadable PDF: data pages render a REAL .pdf via jsPDF (exportAllCSV('pdf') reuses the same
+  // page-aware row builder as CSV/XLSX, then doc.save() downloads it). Visual pages with no table
+  // (dashboard, reports, charts) fall back to the browser's print-to-PDF.
+  var ap = (document.querySelector('.page.active') || {}).id || '';
+  var visual = /dashboard|report|mrr|budget|cashflow|investment|scenario|segment|connection|setting|help|audit/.test(ap);
+  if (!visual && typeof window.exportAllCSV === 'function') {
+    try { window.exportAllCSV('pdf'); return; } catch(e){ console.warn('[exportPDF] data path failed, printing:', e && e.message); }
+  }
   const title = document.getElementById('pageTitle')?.textContent || document.querySelector('.page.active .card-title')?.textContent || 'FinFlow Report';
   const orig = document.title;
   document.title = title + ' — FinFlow';

@@ -1248,14 +1248,13 @@ const db = {
 
   // updateById() — fastest single-row update
   async updateById(table, id, patch) {
-    const res = await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
-    if (!res.rows[0]) return;
-    const row = rowToObj(res.rows[0]);
-    const { user_id, entity_id, ...rest } = row;
-    const newData = { ...objToData(rest), ...objToData(patch) };
+    // N92: merge IN THE DATABASE, atomically (data || patch). This read the whole row, merged in JS and wrote the
+    // whole document back, so two concurrent updates to DIFFERENT fields of the same row (e.g. recalcInvoiceStatus
+    // writing status/amount_paid while a PUT writes notes) lost one of them — last writer wins on every field.
+    // Keys whose value is undefined are not part of the patch (as before, they never reached JSON).
     await pool.query(
-      `UPDATE ${table} SET data=$1, updated_at=NOW() WHERE id=$2`,
-      [newData, id]
+      `UPDATE ${table} SET data = COALESCE(data, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2`,
+      [JSON.stringify(objToData(patch)), id]
     );
   },
 

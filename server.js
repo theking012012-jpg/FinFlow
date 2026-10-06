@@ -6617,7 +6617,7 @@ async function _oauthStateConsume(req, provider, checkQuery = true) {
     const want = Buffer.from(st.n);
     if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return null;
   }
-  return { entityId: st.e };
+  return { entityId: st.e, issuedAt: st.x - _OAUTH_STATE_TTL_MS };
 }
 const _OAUTH_STATE_MSG = 'This link request was not started from this session or has expired. Start the connection again from FinFlow.';
 
@@ -7610,23 +7610,41 @@ app.post('/api/belvo/widget-token', requireAuth, requirePerm('bank:manage'), wra
   if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO_SECRET_ID and BELVO_SECRET_PASSWORD to enable it.', code: 'BELVO_NOT_CONFIGURED' });
   try {
     const j = await belvoCall('/api/token/', { method: 'POST', body: { id: process.env.BELVO_SECRET_ID, password: process.env.BELVO_SECRET_PASSWORD, scopes: 'read_institutions,write_links' } });
+    await _oauthStateIssue(req, 'belvo');   // N56: /exchange only accepts a link created in THIS widget session
     res.json({ access: j.access });
   } catch (e) { console.error('[belvo token]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not start LatAm bank linking: ' + e.message }); }
 }));
 
 app.post('/api/belvo/exchange', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
-  const link = (req.body && req.body.link) || '';
+  const link = String((req.body && req.body.link) || '');
   if (!link) return res.status(400).json({ error: 'link is required.' });
+  // N56: the platform Belvo credentials can read EVERY link on the account, so a client-supplied link id
+  // is not proof of ownership — knowing another tenant's link UUID used to be enough to sync their bank.
+  // A link is accepted only if (1) this session opened the widget (pending entry from /widget-token,
+  // single use), (2) Belvo says the link was created AFTER that widget session started, and (3) no other
+  // FinFlow account has already claimed it.
+  const flow = await _oauthStateConsume(req, 'belvo', false);
+  if (!flow) return res.status(409).json({ error: 'Open the bank-linking widget again — this link was not created in the current session.', code: 'BELVO_NO_SESSION' });
+  const sessionStart = flow.issuedAt - 60 * 1000;   // small clock-skew allowance
   try {
-    let institution = null;
-    try { const d = await belvoCall('/api/links/' + encodeURIComponent(link) + '/'); institution = d.institution || null; } catch (_) {}
+    let d;
+    try { d = await belvoCall('/api/links/' + encodeURIComponent(link) + '/'); }
+    catch (e) { return res.status(400).json({ error: 'That bank link was not found.', code: 'BELVO_LINK_UNKNOWN' }); }
+    const created = Date.parse(d && d.created_at);
+    if (!(created >= sessionStart)) return res.status(409).json({ error: 'That bank link was not created in the current linking session.', code: 'BELVO_LINK_NOT_FRESH' });
     const uid = scopeId(req);
-    const { value } = await _providerBlobE(uid, 'belvo_conn', req.entityId);
+    const { rows: claimed } = await pool.query(
+      `SELECT 1 FROM user_settings WHERE data->>'key' = 'belvo_conn' AND user_id <> $1 AND position($2 in COALESCE(data->>'value', '')) > 0 LIMIT 1`,
+      [uid, JSON.stringify(link)]);
+    if (claimed.length) return res.status(409).json({ error: 'That bank link belongs to another account.', code: 'BELVO_LINK_CLAIMED' });
+    const institution = (d && d.institution) || null;
+    const entityId = flow.entityId != null ? flow.entityId : req.entityId;
+    const { value } = await _providerBlobE(uid, 'belvo_conn', entityId);
     const links = (value && value.links) || [];
     const next = links.filter(l => l.link !== link);
     next.push({ link, institution, linked_at: new Date().toISOString() });
-    await _saveProviderBlobE(uid, 'belvo_conn', { links: next }, req.entityId);
+    await _saveProviderBlobE(uid, 'belvo_conn', { links: next }, entityId);
     res.status(201).json({ ok: true, institution, institutions: next.map(l => l.institution).filter(Boolean) });
   } catch (e) { console.error('[belvo exchange]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not link bank: ' + e.message }); }
 }));

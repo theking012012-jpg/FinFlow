@@ -4703,6 +4703,16 @@ app.post('/api/payments-made', requireAuth, lockGuard(LOCK_SPECS.payments_made),
   // F38 Step 3: bill_id links this payment to a bill (nullable). A LINKED payment settles AP
   // (Step 4 excludes it from expense); an UNLINKED (bill_id null) payment stays a direct expense.
   const _billId = (bill_id != null && bill_id !== '') ? Number(bill_id) : null;
+  if (_billId != null) {
+    // A replay of a payment that already landed returns it (before the balance check, which the first
+    // write has already consumed).
+    if (idem) {
+      const { rows: [_prev] } = await pool.query(`SELECT * FROM payments_made WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      if (_prev) return res.status(200).json(rowToObj(_prev));
+    }
+    const _chk = await checkBillPayment(scopeId(req), _billId, amount, req.entityId || null);
+    if (_chk.error) return res.status(_chk.status).json({ error: _chk.error, code: _chk.code });
+  }
   // C1 Wave 1 durable backstop (mirrors invoices/expenses/bills): a same-token double-submit → the
   // 2nd INSERT throws 23505 → recover the ORIGINAL row and return 200. On that path the 2nd payment
   // never lands, so recalcBillStatus below runs only for a genuine first insert — no double-recalc.
@@ -4768,6 +4778,11 @@ app.put('/api/payments-made/:id', requireAuth, requireOwnedRow('payments_made'),
   if (ref != null) patch.ref = String(ref).slice(0, 100);
   let _newBillId = _oldBillId;
   if (bill_id !== undefined) { _newBillId = (bill_id != null && bill_id !== '') ? Number(bill_id) : null; patch.bill_id = _newBillId; }
+  if (_newBillId != null) {
+    const _amt = patch.amount != null ? patch.amount : (parseFloat(_pmchk.data && _pmchk.data.amount) || 0);
+    const _chk = await checkBillPayment(scopeId(req), _newBillId, _amt, _pmchk.entity_id, _pmchk.id);
+    if (_chk.error) return res.status(_chk.status).json({ error: _chk.error, code: _chk.code });
+  }
   await db.updateById('payments_made', _pmchk.id, patch);
   // F38 Step 3: recalc every bill this payment touched — the old link and the new one (deduped),
   // so amount/link changes redraw AP on both the previous and current bill.
@@ -8546,6 +8561,27 @@ async function settleBillRemaining(pool, { userId, billId, date, method, notes, 
   return row;
 }
 
+// N57 class: the ONE check every writer of a bill-LINKED payment passes (POST/PUT /api/payments-made, bank
+// match-bill): the bill is this account's, belongs to the same business as the payment (a legacy
+// entity-less bill or payment matches any), and the payment fits in what is still owed — Σ the bill's
+// OTHER linked payments, read from the payments themselves. Returns { status, error, code } on refusal.
+async function checkBillPayment(userId, billId, amount, paymentEntityId, excludePaymentId = null) {
+  const { rows: [br] } = await pool.query(`SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]);
+  if (!br) return { status: 404, error: 'Bill not found.', code: 'BILL_NOT_FOUND' };
+  if (br.entity_id != null && paymentEntityId != null && Number(br.entity_id) !== Number(paymentEntityId)) {
+    return { status: 400, error: 'That bill belongs to a different business.', code: 'BILL_ENTITY_MISMATCH' };
+  }
+  const { rows: [p] } = await pool.query(
+    `SELECT COALESCE(SUM((data->>'amount')::numeric), 0) AS paid FROM payments_made
+      WHERE user_id = $1 AND data->>'bill_id' = $2 AND ($3::int IS NULL OR id <> $3)`,
+    [userId, String(billId), excludePaymentId]);
+  const remaining = Math.round(((parseFloat(rowToObj(br).amount) || 0) - (parseFloat(p.paid) || 0)) * 100) / 100;
+  if ((parseFloat(amount) || 0) > remaining + 0.005) {
+    return { status: 400, error: `Payment exceeds the bill's remaining balance of ${Math.max(0, remaining).toFixed(2)}.`, code: 'EXCEEDS_BILL_BALANCE', remaining };
+  }
+  return {};
+}
+
 async function recalcBillStatus(pool, billId, userId) {
   const { rows: [_blR] } = await pool.query(
     `SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]
@@ -8790,8 +8826,9 @@ app.post('/api/bank-reconciliation/match-bill', requireAuth, wrap(async (req, re
   if (g.err) return res.status(g.err.status).json({ error: g.err.msg, code: g.err.code });
   if (g.done) return res.json({ ok: true, duplicate: true, reconcile_state: g.done.reconcile_state });
   const row = g.row;
+  const _chk = await checkBillPayment(scopeId(req), billId, row.amount, row.entity_id);
+  if (_chk.error) return res.status(_chk.status).json({ error: _chk.error, code: _chk.code });
   const { rows: [br] } = await pool.query(`SELECT * FROM bills WHERE id=$1 AND user_id=$2 LIMIT 1`, [billId, scopeId(req)]);
-  if (!br) return res.status(404).json({ error: 'Bill not found.' });
   const bill = rowToObj(br);
   // Linked payment settles AP (the bill already carries the expense) — booking a fresh expense too
   // would double-count, so this records a payments_made LINKED to the bill and adds NO new expense row.

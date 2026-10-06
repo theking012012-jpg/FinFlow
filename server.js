@@ -350,9 +350,12 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     const sub = event.data.object;
     const cancelUserId = parseInt(sub.metadata?.userId, 10);
     if (cancelUserId) {
+      // Owner decision 2026-10-06: a cancelled subscription is READ-ONLY (same as an expired trial).
+      // The upgrade path nulls trial_ends, and checkPlan only restricts `trial && trial_ends < now`, so
+      // without stamping trial_ends here a cancelled customer kept unlimited write access forever.
       await pool.query(
-        `UPDATE users SET data = data || jsonb_build_object('plan', 'trial'::text) WHERE id = $1`,
-        [cancelUserId]
+        `UPDATE users SET data = data || jsonb_build_object('plan', 'trial'::text, 'trial_ends', $2::text) WHERE id = $1`,
+        [cancelUserId, new Date().toISOString()]
       );
       // F11: mark not-paying and stop the referral payout immediately.
       await setSubscriptionStatus(cancelUserId, 'canceled');
@@ -863,7 +866,7 @@ async function checkPlan(req, res, next) {
     // the app renders real data instead of the old escapable $0 "broken app". Only genuine MUTATIONS
     // (create/edit/delete) 402 TRIAL_EXPIRED, which the client turns into an upgrade prompt. Locking
     // someone out of viewing their own financial data to sell them a plan is a poor trade.
-    if (plan === 'trial' && trialEnds && trialEnds < new Date()) {
+    if (plan === 'trial' && trialEnds && trialEnds <= new Date()) {   // ended AT now counts as ended (cancel stamps now)
       const m = req.method;
       const isRead = m === 'GET' || m === 'HEAD' || m === 'OPTIONS' || (m === 'POST' && _READONLY_POST_OK(req.path));
       if (!isRead) {

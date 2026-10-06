@@ -753,7 +753,9 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // Conditional ensures the global parser doesn't 413 a large body before its route runs.
 const bigJson = express.json({ limit: '10mb' });
 const smallJson = express.json({ limit: '500kb' });
-const LARGE_PAYLOAD_PATHS = ['/api/ai/scan', '/api/documents', '/api/ai/extract-document', '/api/accountants/extract-resume', '/api/accountants/register', '/api/accountants/my-accountant/attach', '/api/accountants/clients/attach'];
+// N39: the CSV and bank-statement imports accept files up to ~5 MB (their own checks) — they were missing
+// here, so the 500 KB global cap rejected any real statement with a bare 413 before the route ran.
+const LARGE_PAYLOAD_PATHS = ['/api/ai/scan', '/api/documents', '/api/ai/extract-document', '/api/accountants/extract-resume', '/api/accountants/register', '/api/accountants/my-accountant/attach', '/api/accountants/clients/attach', '/api/import/csv', '/api/banking/import'];
 app.use((req, res, next) => (LARGE_PAYLOAD_PATHS.includes(req.path) ? bigJson : smallJson)(req, res, next));
 // N14 class: one body-shape check every /api write passes through (text fields are text, money/quantity
 // fields are numbers) — see body-shape.js.

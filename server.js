@@ -11141,14 +11141,15 @@ function _pickDirectRate(rows, from, to, date) {
   const pair = [];
   for (const r of rows || []) {
     if (r.from_currency !== from || r.to_currency !== to) continue;
-    const rd = new Date(r.rate_date), rate = parseFloat(r.rate);
-    if (!isNaN(rd) && isFinite(rate)) pair.push({ rd, rate });
+    // N107 (Rule 10): rate dates and the recognition date compare as 'YYYY-MM-DD' strings, never as Dates.
+    const rd = FinFlowDates._toYmd(r.rate_date), rate = parseFloat(r.rate);
+    if (rd != null && isFinite(rate)) pair.push({ rd, rate });
   }
   if (pair.length === 0) return null;           // pair has ZERO rates → null (never fabricate)
-  const d = date ? new Date(date) : null;
+  const d = date ? FinFlowDates._toYmd(date) : null;
   // Preferred: the most-recent rate effective ON/BEFORE the recognition date (carry-forward — keeps
   // historical accuracy when several rates exist, standard accounting).
-  if (d && !isNaN(d)) {
+  if (d) {
     let best = null, bestDate = null;
     for (const r of pair) {
       if (r.rd > d) continue;

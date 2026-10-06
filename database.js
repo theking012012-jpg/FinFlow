@@ -13,7 +13,13 @@
  *   DATABASE_URL  — postgres connection string
  */
 
-const { Pool } = require('pg');
+const { Pool, types: _pgTypes } = require('pg');
+// N107 (Rule 10): a Postgres DATE (payment_date, run_date, rate_date, entry_date, due_date, …) is a calendar
+// date. node-pg's default parses it into a JS Date at the SERVER's local midnight; FinFlowDates._toYmd then
+// formats that in UTC, so on a server east of UTC every DATE read one day early (a 1 July payment showed in
+// June's cash flow and reached the client as "2026-06-30T15:00:00.000Z"). Keep it the 'YYYY-MM-DD' string it
+// is. OID 1082 = DATE. Process-wide: every pool/client from this pg module reads DATE the same way.
+_pgTypes.setTypeParser(1082, v => v);
 const fs = require('fs');
 const path = require('path');
 

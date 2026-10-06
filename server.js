@@ -3057,11 +3057,24 @@ app.post('/api/lock-settings', requireAuth, requirePerm('settings:manage'), wrap
   const { enabled, lock_date, password } = req.body || {};
   const uid = scopeId(req);
   const patch = { enabled: enabled ? 1 : 0, lock_date: lock_date || null };
-  if (password) patch.password_hash = bcrypt.hashSync(password, 12);   // match the cost-12 used everywhere else
   const eid = req.entityId == null ? null : req.entityId;
   const { rows: [_lsUp] } = await pool.query(
     `SELECT * FROM lock_settings WHERE user_id = $1 AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`, [scopeId(req), eid]
   );
+  // N19: the lock password was stored and never checked — anyone with settings:manage could disable
+  // the lock or pull the date back. While a lock carries a password, LOOSENING it (disable, or an
+  // earlier / blank lock date) requires that password. Tightening it does not. A new password is set
+  // only when none exists yet, or alongside the correct current one.
+  const _cur = _lsUp ? rowToObj(_lsUp) : null;
+  const _curOn = !!(_cur && Number(_cur.enabled) === 1 && _cur.lock_date);
+  const _curDate = _curOn ? String(_cur.lock_date).slice(0, 10) : null;
+  const _newDate = patch.enabled && patch.lock_date ? String(patch.lock_date).slice(0, 10) : null;
+  const _loosens = _curOn && (!_newDate || _newDate < _curDate);
+  const _pwOk = !!(_cur && _cur.password_hash && password && bcrypt.compareSync(String(password), _cur.password_hash));
+  if (_cur && _cur.password_hash && _loosens && !_pwOk) {
+    return res.status(403).json({ error: password ? 'Incorrect lock password.' : 'This lock is password-protected. Enter the lock password to unlock or move the lock date earlier.', code: 'LOCK_PASSWORD_REQUIRED' });
+  }
+  if (password && (!(_cur && _cur.password_hash) || _pwOk)) patch.password_hash = bcrypt.hashSync(String(password), 12);   // cost 12, as everywhere else
   if (_lsUp) await db.updateById('lock_settings', _lsUp.id, patch);
   else await db.insert('lock_settings', { user_id: uid, entity_id: eid, ...patch });
   logAudit(req, enabled ? 'LOCK_ENABLED' : 'LOCK_DISABLED', 'lock_settings', null, null, patch);

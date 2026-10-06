@@ -45,6 +45,11 @@ async function setPeriodLock(pool, db, userId, entityId, period, lock, extra = {
   let next;
   if (lock) next = curDate && curDate > b.last ? curDate : b.last;
   else next = curDate && curDate >= b.first ? b.dayBefore : curDate;
+  // N19: a password-protected lock is never loosened from here — this path (accountant portal) has no
+  // way to present the owner's lock password.
+  if (cur && cur.password_hash && curDate && (next == null || next < curDate)) {
+    throw Object.assign(new Error('This lock is password-protected by the business owner. Ask them to reopen the period.'), { status: 403, code: 'LOCK_PASSWORD_REQUIRED' });
+  }
   const patch = Object.assign({ enabled: next ? 1 : 0, lock_date: next }, extra);
   if (row) await db.updateById('lock_settings', row.id, patch);
   else await db.insert('lock_settings', Object.assign({ user_id: userId, entity_id: entityId }, patch));

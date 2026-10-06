@@ -1088,7 +1088,9 @@ If you cannot find a field, use null. Be concise.`;
     if (!_canWrite(entityLevel(_ea, access.rows[0].access_level, _ent.id))) return res.status(403).json({ error: 'View-only access.' });
     const _pl = require('./period-lock');
     if (!_pl.periodBounds(period)) return res.status(400).json({ error: 'period must be YYYY-MM.' });
-    const lockDate = await _pl.setPeriodLock(pool, db, parseInt(userId), _ent.id, period, !!locked, { locked_by: `accountant:${req.session.accountantId}` });
+    let lockDate;
+    try { lockDate = await _pl.setPeriodLock(pool, db, parseInt(userId), _ent.id, period, !!locked, { locked_by: `accountant:${req.session.accountantId}` }); }
+    catch (e) { if (e.status) return res.status(e.status).json({ error: e.message, code: e.code }); throw e; }
     await _audit(pool, { userId: parseInt(userId), entityId: _ent.id, table: 'lock_settings', action: locked ? 'LOCK' : 'UNLOCK', field: 'period', newValue: period, newData: { lock_date: lockDate }, req });  // F90 Phase B (accountant)
     res.json({ ok: true, entity_id: _ent.id, lock_date: lockDate });
   }));

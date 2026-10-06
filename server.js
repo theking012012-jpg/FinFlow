@@ -18,6 +18,9 @@ const aiCap = require('./ai-cap');                        // F18 — central AI 
 const { buildReviewItems } = require('./books-review');   // cleanup/anomaly queue engine (pure, read-only)
 const { buildReminderCandidates, buildDraft, resolveCustomer } = require('./payment-reminders'); // AI reminder agent engine (pure)
 const { buildForecast, addDaysYmd: cfAddDays } = require('./cashflow-forecast'); // 13-week cash-flow forecast engine (pure)
+const { buildSegments } = require('./segments'); // Classes & Locations segment grouping (pure)
+// Segment tag (Classes & Locations): trim to 80 chars; empty/absent -> undefined so the row stays untagged.
+const _segTag = (v) => { const t = (v == null ? '' : String(v)).trim().slice(0, 80); return t || undefined; };
 const { appUrl, warnIfUnset } = require('./app-url');     // F29 — single source of truth for app links
 const { requirePerm } = require('./rbac');                // F5 Step 4 — per-route RBAC (matrix in rbac.js)
 const pgSession = require('connect-pg-simple')(session);
@@ -1802,7 +1805,7 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   const _amountPaid = String(status).toLowerCase() === 'paid' ? _amt : 0;
   let row;
   try {
-    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
+    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null, amount_paid: _amountPaid, ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(
@@ -1868,6 +1871,8 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   if (status != null) { if (_badStatus(INVOICE_STATUSES, status)) return res.status(400).json({ error: 'Invalid invoice status.' }); patch.status = String(status).toLowerCase(); }
   if (notes != null) patch.notes = notes;
   if (issue_date != null) patch.issue_date = issue_date;   // F36: editable business issue date
+  if (req.body.class != null) patch.class = _segTag(req.body.class) || null;
+  if (req.body.location != null) patch.location = _segTag(req.body.location) || null;
   // F133 (guarded edit path): a bare status flip to 'paid' must set amount_paid = amount — BUT only
   // when the invoice has NO invoice_payments, so a real partial-payment record (owned by
   // recalcInvoiceStatus) is never clobbered. Effective amount = the patched amount if it is being
@@ -1933,7 +1938,7 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   // misses (Rule 9). Inert until idx_expenses_idem_key exists (no index ⇒ no 23505 ⇒ prior behaviour).
   let row;
   try {
-    ({ row } = await db.insert('expenses', { user_id: scopeId(req), entity_id: eid, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: edate, idempotency_key: idem }));
+    ({ row } = await db.insert('expenses', { user_id: scopeId(req), entity_id: eid, description: description.trim().slice(0,300), category, amount: parseFloat(amount)||0, deductible, expense_date: edate, ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(`SELECT * FROM expenses WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
@@ -1966,6 +1971,8 @@ app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   if (b.amount != null) patch.amount = parseFloat(b.amount);
   if (b.deductible != null) patch.deductible = b.deductible;
   if (b.expense_date != null) patch.expense_date = b.expense_date;
+  if (b.class != null) patch.class = _segTag(b.class) || null;
+  if (b.location != null) patch.location = _segTag(b.location) || null;
   await db.updateById('expenses', row.id, patch);
   const { rows: [_eur] } = await pool.query(`SELECT * FROM expenses WHERE id = $1 LIMIT 1`, [row.id]);
   const updated = _eur ? rowToObj(_eur) : {};
@@ -3682,7 +3689,35 @@ app.get('/api/cashflow-forecast', requireAuth, wrap(async (req, res) => {
   res.json({ periods, summary, cash_source: cashSource, currency: currency || null, today, generated_at: new Date().toISOString() });
 }));
 
+// ── CLASSES & LOCATIONS — SEGMENT REPORT ────────────────────────────────────
+// READ-ONLY. Groups the active entity's TAGGED documents by class or location. Revenue = ISSUED
+// invoices (draft excluded — mirrors computeBooks' issue-based recognition); cost = the expenses
+// table (mirrors computeBooks' expensesTotal). A reweighting of those exact rows via the pure
+// buildSegments engine (tests/harness/verify-segments.js) — segment totals cannot invent or lose a
+// dollar relative to the rows (Rule 2). SCOPE (labeled in the UI): tagged invoices + expenses, one
+// entity, native currency, all time — it does NOT fold in sales receipts, credit notes or cross-entity
+// FX, so it is a segment view, not a restatement of the reconciled P&L.
+app.get('/api/reports/segments', requireAuth, wrap(async (req, res) => {
+  const dim = req.query.dim === 'location' ? 'location' : 'class';
+  const uid = scopeId(req);
+  const scope = _entityScopeFilter(req);
+  const [invoices, expenses] = await Promise.all([
+    db.allByUser('invoices', uid, scope),
+    db.allByUser('expenses', uid, scope),
+  ]);
+  const revenueRows = invoices
+    .filter(i => String(i.status || '').toLowerCase() !== 'draft')
+    .map(i => ({ amount: parseFloat(i.amount) || 0, class: i.class, location: i.location }));
+  const expenseRows = expenses
+    .map(e => ({ amount: parseFloat(e.amount) || 0, class: e.class, location: e.location }));
+  const result = buildSegments({ revenueRows, expenseRows, dim });
+  let currency = '';
+  try { if (req.entityId != null) { const { rows } = await pool.query(`SELECT data->>'currency' AS cur FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [req.entityId, uid]); if (rows[0] && rows[0].cur) currency = String(rows[0].cur).toUpperCase(); } } catch (_) {}
+  res.json({ ...result, currency: currency || null, basis: 'Tagged invoices (revenue) + expenses (cost) · active entity · native currency · all time', generated_at: new Date().toISOString() });
+}));
+
 // ── BILLS ─────────────────────────────────────────────────────────────────────
+
 app.get('/api/bills', requireAuth, wrap(async (req, res) => respondList(req, res, 'bills')));
 app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, due_date, status = 'unpaid', notes = '', issue_date } = req.body;

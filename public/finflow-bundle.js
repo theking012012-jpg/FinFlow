@@ -747,6 +747,8 @@
           status,
           notes,
           entity_id: _entityId,
+          class:    (document.getElementById('inv-class') && document.getElementById('inv-class').value.trim()) || undefined,
+          location: (document.getElementById('inv-location') && document.getElementById('inv-location').value.trim()) || undefined,
           idempotency_key: window._invIdemKey,   // F117 commit B — the token commit A's index enforces
           ...(_lineItems ? { line_items: _lineItems } : {}),
         });
@@ -938,6 +940,8 @@
           deductible:  ded,
           expense_date: (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10)),  // C3/F37: local date, not UTC
           entity_id: _entityId2,
+          class:    (document.getElementById('bexp-class') && document.getElementById('bexp-class').value.trim()) || undefined,
+          location: (document.getElementById('bexp-location') && document.getElementById('bexp-location').value.trim()) || undefined,
           idempotency_key: window._expIdemKey,   // C1 Wave 1 — the token idx_expenses_idem_key enforces
         });
 

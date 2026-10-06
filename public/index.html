@@ -1207,6 +1207,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="nav-item" onclick="showPage('scheduled-documents',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('scheduled-documents',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11.5" rx="1.2"/><line x1="2" y1="5.5" x2="14" y2="5.5"/><line x1="5.5" y1="1" x2="5.5" y2="4"/><line x1="10.5" y1="1" x2="10.5" y2="4"/><circle cx="11.5" cy="10" r="2.2"/><path d="M11.5 8.8v1.2l.8.5"/></svg>Scheduled Documents</div>
     <div class="nav-item" onclick="showPage('review',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('review',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M2 3.5h12M2 8h12M2 12.5h8"/><circle cx="12.5" cy="12" r="2.6"/><path d="M12.5 10.8v1.4l.9.5"/></svg>Review<span class="nav-badge" id="badge-review" style="display:none">0</span></div>
     <div class="nav-item" onclick="showPage('reminders',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('reminders',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3-1.5 4-1.5 4h12s-1.5-1-1.5-4A4.5 4.5 0 0 0 8 1.5z"/><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"/></svg>Reminders<span class="nav-badge" id="badge-reminders" style="display:none">0</span></div>
+    <div class="nav-item" onclick="showPage('segments',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('segments',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1.5" y="8" width="3" height="6.5" rx="0.6"/><rect x="6.5" y="4" width="3" height="10.5" rx="0.6"/><rect x="11.5" y="1.5" width="3" height="13" rx="0.6"/></svg>Classes</div>
 
     <!-- MONEY IN group -->
     <div class="nav-group-header" id="grp-sales" onclick="toggleGroup('sales')" role="button" aria-expanded="false" aria-controls="nav-group-sales" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleGroup('sales')}">
@@ -1739,6 +1740,23 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           </div>
           <div style="font-size:12px;color:var(--t2);margin:-4px 0 12px">Invoices worth chasing, worst first. Review the draft, edit or improve it, then send — nothing goes out until you press Send.</div>
           <div id="rem-list" style="font-size:13px">Loading…</div>
+        </div>
+      </div>
+
+
+      <!-- CLASSES & LOCATIONS (SEGMENTS) PAGE -->
+      <div class="page" id="page-segments">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Classes &amp; Locations</h2>
+            <div style="display:flex;gap:6px;align-items:center">
+              <button class="btn btn-ghost btn-sm" id="seg-dim-class" onclick="ffSegSetDim('class')">By class</button>
+              <button class="btn btn-ghost btn-sm" id="seg-dim-location" onclick="ffSegSetDim('location')">By location</button>
+              <button class="btn btn-ghost btn-sm" onclick="ffLoadSegments&&ffLoadSegments()">Refresh</button>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--t2);margin:-4px 0 12px">Tag invoices and expenses with a class or location (on the Add-expense / New-invoice forms), then see revenue, cost and net per segment. <span id="seg-basis"></span></div>
+          <div id="seg-list" style="font-size:13px">Loading…</div>
         </div>
       </div>
 
@@ -4172,6 +4190,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-client">Client name *</label><input class="finput" id="inv-client" placeholder="Client or company name"></div><div class="field-wrap"><label class="field-label" for="inv-amount">Amount ($) *</label><input class="finput" id="inv-amount" type="number" placeholder="0.00"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-issue">Issue date</label><input class="finput" id="inv-issue" type="date"></div><div class="field-wrap"><label class="field-label" for="inv-due">Due date</label><input class="finput" id="inv-due" type="date"></div></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-status">Status</label><select class="finput" id="inv-status"><option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="inv-class">Class</label><input class="finput" id="inv-class" list="seg-classes-dl" placeholder="e.g. Retail" maxlength="80"></div><div class="field-wrap"><label class="field-label" for="inv-location">Location</label><input class="finput" id="inv-location" list="seg-locations-dl" placeholder="e.g. Downtown" maxlength="80"></div></div>
     <div class="field-wrap" id="inv-li-wrap">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <label class="field-label" style="margin:0">Line items <span style="color:var(--t3,#7a6f57);font-weight:400">— optional; fills the amount above</span></label>
@@ -4202,6 +4221,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
              salary row would rebuild the exact double-count C exists to remove. Non-payroll
              compensation keeps a home under Contractors / Professional Fees, which are general
              expenses and are NOT part of the payroll leg. --><select class="finput" id="bexp-cat"><option>Rent</option><option>Software</option><option>Marketing</option><option>Travel</option><option>Equipment</option><option>Meals</option><option>Contractors</option><option>Professional Fees</option><option>Other</option></select></div><div class="field-wrap"><label class="field-label" for="bexp-ded">Deductible?</label><select class="finput" id="bexp-ded"><option value="yes">Yes — 100%</option><option value="half">Yes — 50%</option><option value="no">No</option></select></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-class">Class</label><input class="finput" id="bexp-class" list="seg-classes-dl" placeholder="e.g. Retail" maxlength="80"></div><div class="field-wrap"><label class="field-label" for="bexp-location">Location</label><input class="finput" id="bexp-location" list="seg-locations-dl" placeholder="e.g. Downtown" maxlength="80"></div></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('expense-modal')">Cancel</button><button class="btn btn-primary" onclick="saveExpense()">Add expense</button></div>
   </div>
 </div>
@@ -11001,5 +11021,80 @@ window.addEventListener('ff:authed', function(){ loadDirectory(); }, {once:true}
   if(!wrap()){ var t=0,iv=setInterval(function(){ if(wrap()||++t>80) clearInterval(iv); },25); }
 })();
 </script>
+<datalist id="seg-classes-dl"></datalist><datalist id="seg-locations-dl"></datalist>
+<script>
+/* ── CLASSES & LOCATIONS / SEGMENTS (self-contained) ───────────────────────────
+   Renders /api/reports/segments (pure buildSegments engine, read-only) and keeps the
+   class/location tag datalists populated from values already in use. Same defensive
+   pattern as the other new surfaces: wraps window.showPage, own credentialed fetches. */
+(function(){
+  var dim='class', loading=false;
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function activeEntityId(){ try{ var e=(window.ENTITIES||[]).find(function(x){return x.active;}); return e&&e._dbId?e._dbId:null; }catch(e){ return null; } }
+  function money(n,cur){ if(n==null) return '—'; var x=Number(n)||0; var neg=x<0; var s=Math.abs(x).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); return (neg?'-':'')+(cur?cur+' ':'')+s; }
+
+  function fillDatalist(id, values){
+    var dl=document.getElementById(id); if(!dl) return;
+    dl.innerHTML=(values||[]).map(function(v){ return '<option value="'+esc(v)+'"></option>'; }).join('');
+  }
+  // Keep the tag suggestion lists current from whatever is already in use.
+  window.ffRefreshSegValues=async function(){
+    try{
+      var eid=activeEntityId(); var q=eid?('&entity_id='+encodeURIComponent(eid)):'';
+      var keysOf=function(d){ return (d.segments||[]).map(function(s){return s.key;}).filter(function(k){return k && k!=='(unassigned)';}); };
+      var rc=await fetch('/api/reports/segments?dim=class'+q,{credentials:'same-origin',headers:{'Content-Type':'application/json'}});
+      if(rc.ok) fillDatalist('seg-classes-dl', keysOf(await rc.json()));
+      var rl=await fetch('/api/reports/segments?dim=location'+q,{credentials:'same-origin',headers:{'Content-Type':'application/json'}});
+      if(rl.ok) fillDatalist('seg-locations-dl', keysOf(await rl.json()));
+    }catch(e){}
+  };
+
+  function render(data){
+    var box=document.getElementById('seg-list'); if(!box) return;
+    var cur=data.currency||'', segs=data.segments||[], t=data.totals||{};
+    var basis=document.getElementById('seg-basis'); if(basis) basis.textContent = data.basis ? ('Basis: '+data.basis+'.') : '';
+    if(!segs.length){ box.innerHTML='<div style="padding:26px 8px;text-align:center;color:var(--t2)">Nothing tagged yet. Add a class or location on an expense or invoice, then come back.</div>'; return; }
+    var rows='<table style="width:100%;border-collapse:collapse;min-width:460px"><thead><tr style="text-align:right;color:var(--t2);font-size:11px">'
+      +'<th style="text-align:left;padding:5px 8px">'+(dim==='class'?'Class':'Location')+'</th><th style="padding:5px 8px">Revenue</th><th style="padding:5px 8px">Cost</th><th style="padding:5px 8px">Net</th></tr></thead><tbody>';
+    segs.forEach(function(s){
+      var un = s.key==='(unassigned)';
+      rows+='<tr style="text-align:right;border-top:1px solid var(--bd,rgba(120,120,120,.12))'+(un?';opacity:.72':'')+'">'
+        +'<td style="text-align:left;padding:5px 8px;font-weight:'+(un?'400':'600')+'">'+esc(s.key)+'</td>'
+        +'<td style="padding:5px 8px">'+money(s.revenue,'')+'</td>'
+        +'<td style="padding:5px 8px">'+money(s.expense,'')+'</td>'
+        +'<td style="padding:5px 8px;font-weight:600;color:'+(s.net<0?'#c94a4a':'inherit')+'">'+money(s.net,'')+'</td></tr>';
+    });
+    rows+='</tbody><tfoot><tr style="text-align:right;border-top:2px solid var(--bd,rgba(120,120,120,.3));font-weight:700">'
+      +'<td style="text-align:left;padding:6px 8px">Total ('+cur+')</td>'
+      +'<td style="padding:6px 8px">'+money(t.revenue,'')+'</td><td style="padding:6px 8px">'+money(t.expense,'')+'</td>'
+      +'<td style="padding:6px 8px;color:'+((t.net||0)<0?'#c94a4a':'inherit')+'">'+money(t.net,'')+'</td></tr></tfoot></table>';
+    box.innerHTML=rows;
+  }
+
+  window.ffSegSetDim=function(d){ dim=(d==='location'?'location':'class');
+    var cb=document.getElementById('seg-dim-class'), lb=document.getElementById('seg-dim-location');
+    if(cb) cb.style.fontWeight=(dim==='class'?'700':''); if(lb) lb.style.fontWeight=(dim==='location'?'700':'');
+    window.ffLoadSegments(); };
+
+  window.ffLoadSegments=async function(){
+    var box=document.getElementById('seg-list'); if(!box) return;
+    if(loading) return; loading=true; box.textContent='Loading…';
+    try{
+      var eid=activeEntityId();
+      var res=await fetch('/api/reports/segments?dim='+dim+(eid?'&entity_id='+encodeURIComponent(eid):''),{credentials:'same-origin',headers:{'Content-Type':'application/json'}});
+      if(!res.ok){ box.innerHTML='<div style="padding:20px 8px;color:var(--t2)">Couldn’t load segments (error '+res.status+').</div>'; loading=false; return; }
+      render(await res.json());
+    }catch(e){ box.innerHTML='<div style="padding:20px 8px;color:var(--t2)">Couldn’t load segments.</div>'; }
+    loading=false;
+  };
+
+  function wrap(){ if(typeof window.showPage!=='function') return false; var o=window.showPage;
+    window.showPage=function(id){ var r=o.apply(this,arguments); if(id==='segments'){ try{ window.ffLoadSegments(); }catch(e){} } return r; }; return true; }
+  if(!wrap()){ var t=0,iv=setInterval(function(){ if(wrap()||++t>80) clearInterval(iv); },25); }
+  // Populate tag datalists shortly after boot so suggestions work on the first expense/invoice.
+  setTimeout(function(){ try{ window.ffRefreshSegValues(); }catch(e){} }, 1500);
+})();
+</script>
+
 </body>
 </html>

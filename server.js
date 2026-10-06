@@ -4163,21 +4163,24 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   // patched amount if it is being changed in this PUT, else the existing row amount. This also makes
   // markBillPaid's benign else-branch PUT {status:'paid'} (already fully covered by payments) a no-op
   // on amount_paid, since that bill DOES have linked payments.
-  if (patch.status != null && String(patch.status).toLowerCase() === 'paid') {
-    const { rows: _pmc } = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2`,
-      [scopeId(req), String(Number(req.params.id))]
-    );
-    if (_pmc[0].n === 0) {
-      patch.amount_paid = (patch.amount != null ? patch.amount : (parseFloat(row.amount) || 0));
-    }
-  }
+  // N33: a flip to 'paid' is settled by a real bill-linked payment for the outstanding balance AFTER
+  // the edit (settleBillRemaining); status/amount_paid are then derived by recalcBillStatus.
+  const _flipPaid = patch.status != null && String(patch.status).toLowerCase() === 'paid';
+  if (_flipPaid) delete patch.status;
   await db.updateById('bills', Number(req.params.id), patch);
+  if (_flipPaid) {
+    await settleBillRemaining(pool, {
+      userId: scopeId(req), billId: Number(req.params.id),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(b.payment_date || '')) ? b.payment_date : await entityTodayYmd(row.entity_id),
+      method: 'other', notes: 'Auto-recorded: bill marked paid', idemKey: 'bill_mark_paid:' + Number(req.params.id),
+    });
+  }
   await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
   // GL Phase 2 (shadow) - keep the ledger in lockstep with the edited bill: a status change into/out of
   // RECOGNIZED_BILL recognises/de-recognises it, and an amount/issue-date edit trues-up its lines.
   try {
-    const _bStatus = String(patch.status != null ? patch.status : row.status || '').toLowerCase();
+    const { rows: [_bNow] } = await pool.query(`SELECT data->>'status' AS st FROM bills WHERE id = $1`, [Number(req.params.id)]);
+    const _bStatus = String((_bNow && _bNow.st) || row.status || '').toLowerCase();
     const _bAmt = parseFloat(patch.amount != null ? patch.amount : row.amount) || 0;
     const _bIssue = patch.issue_date != null ? patch.issue_date : row.issue_date;
     await resyncDocLedger(pool, {
@@ -8462,6 +8465,40 @@ async function recalcInvoiceStatus(pool, invoiceId, userId) {
 // stranding the bill at 'partial'. (AP is arithmetic-driven so the money was already correct, but
 // a 'partial' bill with amount_paid 0 is an incoherent status the UI keys on — fixed here too.)
 // RECOGNIZED_BILL (below) is the allowlist Step 4's expense leg and the balance-sheet AP key on.
+// N33 (payables mirror of N11): the ONE way a bill is marked fully paid without an itemised payment —
+// record a bill-LINKED payments_made for the outstanding balance (amount − Σ linked payments), post its GL
+// settlement (Dr AP / Cr Cash), and let recalcBillStatus derive status and amount_paid. A bare
+// amount_paid stamp never reached the cash-flow report (reads payments_made) and left AP open in the
+// ledger. The idempotency key includes what was already paid, so concurrent requests book one payment.
+async function settleBillRemaining(pool, { userId, billId, date, method, notes, idemKey }) {
+  const { rows: [r] } = await pool.query(`SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]);
+  const bill = r ? rowToObj(r) : null;
+  if (!bill) return null;
+  const { rows: [p] } = await pool.query(`SELECT COALESCE(SUM((data->>'amount')::numeric),0) AS paid FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2`, [userId, String(billId)]);
+  const remaining = Math.round(((parseFloat(bill.amount) || 0) - (parseFloat(p.paid) || 0)) * 100) / 100;
+  let row = null;
+  if (remaining > 0.004) {
+    try {
+      ({ row } = await db.insert('payments_made', {
+        user_id: userId, entity_id: bill.entity_id, vendor: String(bill.vendor || '').slice(0, 200), amount: remaining, date,
+        method: method || 'other', notes: notes || '', ref: '', bill_id: billId,
+        idempotency_key: String(idemKey + ':' + Math.round((parseFloat(p.paid) || 0) * 100)).slice(0, 64),
+      }));
+    } catch (e) { if (e.code !== '23505') throw e; }
+    if (row) {
+      try {
+        await postLedgerEntry(pool, {
+          userId, entityId: bill.entity_id, date: row.date, description: 'Payment made — ' + (row.vendor || ''),
+          sourceType: 'bill_payment', sourceId: row.id, idempotencyKey: 'payment_made:' + row.id,
+          lines: [{ code: '2000', debit: remaining, credit: 0 }, { code: '1000', debit: 0, credit: remaining }],
+        });
+      } catch (glErr) { console.error('[GL] bill settle posting failed (shadow, non-fatal):', glErr && glErr.message); }
+    }
+  }
+  await recalcBillStatus(pool, billId, userId);
+  return row;
+}
+
 async function recalcBillStatus(pool, billId, userId) {
   const { rows: [_blR] } = await pool.query(
     `SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]

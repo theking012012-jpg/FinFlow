@@ -60,10 +60,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
         return failedAdminLogin(req, res, 'Correct password, invalid MFA code', { error: 'Invalid MFA code.', mfaRequired: true });
       }
     }
-    req.session.isAdmin = true;
-    await new Promise((resolve, reject) => {
-      req.session.save(err => err ? reject(err) : resolve());
-    });
+    await require('./session-auth').establishSession(req, { isAdmin: true });   // N73: fresh session id
     return res.json({ success: true });
   }));
 

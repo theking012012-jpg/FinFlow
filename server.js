@@ -9,6 +9,7 @@ const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
 const { db, initDB, pool, rowToObj, ensureLedgerAccountsForEntity, runMigrations } = require('./database');
+const { establishSession } = require('./session-auth');
 const totp = require('./totp');
 const { startAnomalyMonitor } = require('./audit-anomalies');
 const FinFlowDates = require('./public/finflow-dates.js'); // F87 — canonical calendar-date/period resolver (Rule 10)
@@ -1049,10 +1050,7 @@ app.post('/api/auth/register', signupLimiter, async (req, res) => {
 
     // (L1) Regenerate the session id at the privilege change so a pre-auth fixed cookie
     // cannot be promoted to an authenticated session.
-    await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
-    req.session.userId = userId;
-    req.session.userRole = 'owner';
-    req.session.userEmail = email.toLowerCase();
+    await establishSession(req, { userId, userRole: 'owner', userEmail: email.toLowerCase() });
     const { rows: [_ru] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [userId]);
     const user = _ru ? rowToObj(_ru) : null;
     console.log('[Register] New user created, id:', userId);
@@ -1087,10 +1085,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       if (!_mfaOk) return res.status(401).json({ error: 'Enter your authenticator code to finish signing in.', mfaRequired: true });
     }
     // (L1) Regenerate the session id on login (session-fixation hardening).
-    await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
-    req.session.userId = user.id;
-    req.session.userRole = user.role || 'owner';
-    req.session.userEmail = user.email;
+    await establishSession(req, { userId: user.id, userRole: user.role || 'owner', userEmail: user.email });
     logAudit(req, 'LOGIN', 'users', user.id, null, null);   // audit LOGIN (ip captured) — feeds login-multi-IP anomaly
     // Track last login time
     await pool.query(
@@ -5000,10 +4995,9 @@ app.post('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
     await client.query('COMMIT');
 
     // Log them into the account they just joined.
-    req.session.userId    = memberUserId;
-    req.session.userRole  = 'owner';   // own-identity session role; account role comes from resolver
-    req.session.userEmail = inv.email;
-    await saveSession(req);   // F134: durable session row before the response (else immediate GETs 401)
+    // own-identity session role; account role comes from resolver. establishSession regenerates the id
+    // and persists before the response (N73, F134).
+    await establishSession(req, { userId: memberUserId, userRole: 'owner', userEmail: inv.email });
     return res.json({ ok: true, role: inv.role });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch (_) {}

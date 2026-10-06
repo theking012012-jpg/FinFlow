@@ -678,11 +678,9 @@ If you cannot find a field, use null. Be concise.`;
       if (!ok) return res.status(401).json({ error: token ? 'Invalid authenticator code.' : 'Authenticator code required.', mfaRequired: true });
     }
 
-    req.session.accountantId = acc.id;
+    // N73: fresh session id, accountant identity ONLY (any user id held by this browser is dropped).
+    await require('./session-auth').establishSession(req, { accountantId: acc.id });
     try { recordAudit(pool, { userId: null, table: 'accountants', recordId: acc.id, action: 'LOGIN', req }); } catch (_) {}   // audit accountant LOGIN (ip)
-    await new Promise((resolve, reject) => {
-      req.session.save(err => err ? reject(err) : resolve());
-    });
     return res.json({
       id: acc.id,
       firstName: acc.first_name,

@@ -9635,8 +9635,11 @@ async function _postLedgerEntryBody(client, { userId, entityId, date, descriptio
   const idByCode = Object.fromEntries(accts.map(a => [a.code, a.id]));
   // entry_date is a DATE column — a malformed non-null string ('' or a non-ISO value) breaks the INSERT.
   // Coerce to a clean YYYY-MM-DD, else null (nullable column, safe). Belt-and-suspenders for prod data.
-  { const _ds = date == null ? null : String(date).slice(0, 10);
-    date = (_ds && /^\d{4}-\d{2}-\d{2}$/.test(_ds)) ? _ds : null; }
+  // N63: the SAME date reader computeBooks uses, so the ledger and the books agree on legacy values; an
+  // entry with no resolvable date is refused (a NULL entry_date sat outside every period window and the
+  // balance sheet, so the trial balance could never tie) — the caller logs it and reconcile surfaces it.
+  date = FinFlowDates._toYmd(date);
+  if (!date) throw new Error('ledger entry has no valid date (' + sourceType + (sourceId != null ? ' #' + sourceId : '') + ')');
   const norm = lines.map(l => ({ code: l.code, debit: +(+l.debit || 0).toFixed(2), credit: +(+l.credit || 0).toFixed(2) }));
   const totD = norm.reduce((sm, l) => sm + l.debit, 0), totC = norm.reduce((sm, l) => sm + l.credit, 0);
   if (Math.abs(totD - totC) > 0.01) throw new Error('ledger entry does not balance: debit=' + totD + ' credit=' + totC + ' (' + sourceType + ')');

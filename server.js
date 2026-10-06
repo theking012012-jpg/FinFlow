@@ -331,6 +331,9 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     const subUserId = parseInt(sub.metadata?.userId, 10);
     if (subUserId) {
       await setSubscriptionStatus(subUserId, sub.status);
+      // N101: remember WHICH subscription bills this user, so deleting the account can cancel it.
+      await pool.query(`UPDATE users SET data = data || jsonb_build_object('stripe_subscription_id', $2::text, 'stripe_customer_id', $3::text) WHERE id = $1`,
+        [subUserId, String(sub.id || ''), String((sub.customer && sub.customer.id) || sub.customer || '')]);
       if (sub.status === 'active') await reactivateClientForUser(subUserId);
       else if (['canceled', 'unpaid', 'past_due', 'incomplete_expired'].includes(sub.status)) await suspendClientForUser(subUserId);
     }
@@ -3056,6 +3059,18 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
   // requests, recurring personal transactions, flagged transactions, page views were all left behind).
   // Kept on purpose: audit_trail (append-only legal record — its rows outlive the account) and the
   // accountant profile, which is a separate identity (only its link to this user is cleared).
+  // N101: stop the billing first. A deleted account whose Stripe subscription kept running would keep
+  // being charged with no way to log in and cancel. If Stripe refuses, nothing is deleted.
+  if (user.stripe_subscription_id && !['canceled', 'incomplete_expired'].includes(String(user.subscriptionStatus || ''))) {
+    if (!stripe) return res.status(503).json({ error: 'Your subscription could not be cancelled right now — nothing was deleted. Please try again or contact support.' });
+    try { await stripe.subscriptions.cancel(user.stripe_subscription_id); }
+    catch (e) {
+      if (!(e && (e.code === 'resource_missing' || e.statusCode === 404))) {
+        console.error('[account delete] subscription cancel failed:', e && e.message);
+        return res.status(502).json({ error: 'Your subscription could not be cancelled — nothing was deleted. Please try again or contact support.' });
+      }
+    }
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

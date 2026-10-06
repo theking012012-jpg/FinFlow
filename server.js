@@ -10646,6 +10646,9 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   // No params ⇒ all-time (backward compatible: the COGS page and any un-migrated caller are
   // unchanged). A window ⇒ per-item COGS counts only sales whose movement date ∈ [start,end).
   let inWin = () => true;
+  // N68: the same window, handed to computeBooks for the page's Revenue / Gross Profit. All-time = an
+  // unbounded window (computeBooks still applies D2: nothing dated after today).
+  let _bkPeriod = { start: '1900-01-01', end: '9999-12-31', elapsedMonths: 12 }, _bkFy = 0, _bkMi = null;
   // F87 CONTRACT: the client sends INTENT (period + monthIdx + fyStart); the server resolves the
   // calendar window (finflow-dates) + D2. No params ⇒ all-time (the COGS page's default). Mirrors
   // computeBooks so the period-scoped COGS reconciles with the dashboard net.
@@ -10658,6 +10661,7 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
     const _cogsToday = FinFlowDates.resolvedToday(new Date());
     const _rp = FinFlowDates.resolvePeriod({ period: qPeriod, monthIdx: _mi, fyStartMonth: _fyIdx, today: _cogsToday });
     inWin = v => { const y = FinFlowDates._toYmd(v); return y != null && y <= _cogsToday && y >= _rp.start && y < _rp.end; };
+    _bkPeriod = qPeriod; _bkFy = _fyIdx; _bkMi = _mi;
   }
   // Entity-scoped so the total matches computeBooks / the dashboard (the frontend stashes
   // it as window._cogsTotal for the canonical net). $2 NULL → all entities.
@@ -10695,8 +10699,11 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   }
   totalCOGS = Math.round(totalCOGS * 100) / 100;
 
-  const invoices = await db.allByUser('invoices', uid);
-  const revenue = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+  // N68: Revenue is the canonical figure (computeBooks — issue-based accrual, F32) for the SAME entity and
+  // period as the COGS above. It was Σ PAID invoices of EVERY entity over ALL time (cash basis), so the
+  // page's Gross Profit mixed two bases and two scopes.
+  const _books = await computeBooks(uid, eid, _bkPeriod, null, _bkFy, _bkMi);
+  const revenue = Math.round((Number(_books.revenue) || 0) * 100) / 100;
   res.json({
     totalCOGS, grossProfit: Math.round((revenue - totalCOGS) * 100) / 100, revenue,
     breakdown, uncoveredItems, cogsMethod: 'fifo',

@@ -515,7 +515,7 @@ async function voidPayrollRun(id){
 let _stockInIdx=null,_stockOutIdx=null;
 function openStockInModal(idx){
   _stockInIdx=idx;
-  const item=(inventory||[])[idx];
+  const item=(window.inventory||[])[idx];
   const sub=document.getElementById('si-sub');
   if(sub&&item)sub.textContent='Stock in for '+esc(item.name||'');
   const idxEl=document.getElementById('si-item-idx');
@@ -526,7 +526,7 @@ function openStockInModal(idx){
 }
 function openStockOutModal(idx){
   _stockOutIdx=idx;
-  const item=(inventory||[])[idx];
+  const item=(window.inventory||[])[idx];
   const sub=document.getElementById('so-sub');
   if(sub&&item)sub.textContent='Stock out for '+esc(item.name||'');
   const idxEl=document.getElementById('so-item-idx');
@@ -545,8 +545,11 @@ async function submitStockIn(){
   if(isNaN(idx)||idx<0){notify('Invalid item',true);return;}
   if(!qty||qty<=0){notify('Enter a valid quantity',true);return;}
   if(!cost||cost<0){notify('Enter a valid unit cost',true);return;}
-  const item=(inventory||[])[idx];
+  const item=(window.inventory||[])[idx];
   if(!item){notify('Item not found',true);return;}
+  // N110: the item's DATABASE id. This sent item.dbId||idx — items carry _dbId, so the array INDEX went
+  // out as inventory_id and the movement landed on whichever item had that id (or 400 for index 0).
+  if(!item._dbId){notify('Save this item before recording stock against it',true);return;}
   if(window._savingStockIn) return;   // C1 Wave 1b: in-flight re-entry lock
   if(!window._stockInIdemKey) window._stockInIdemKey=(window.crypto?.randomUUID?window.crypto.randomUUID():'sin-'+Date.now()+'-'+Math.random().toString(36).slice(2));
   window._savingStockIn=true;
@@ -556,7 +559,7 @@ async function submitStockIn(){
     const res=await fetch('/api/inventory-movements',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item.dbId||idx,type:'purchase',quantity:qty,unit_cost:cost,notes,idempotency_key:window._stockInIdemKey}),
+      body:JSON.stringify({inventory_id:item._dbId,type:'purchase',quantity:qty,unit_cost:cost,notes,idempotency_key:window._stockInIdemKey}),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
@@ -577,8 +580,9 @@ async function submitStockOut(){
   const ref=document.getElementById('so-ref')?.value||'';
   if(isNaN(idx)||idx<0){notify('Invalid item',true);return;}
   if(!qty||qty<=0){notify('Enter a valid quantity',true);return;}
-  const item=(inventory||[])[idx];
+  const item=(window.inventory||[])[idx];
   if(!item){notify('Item not found',true);return;}
+  if(!item._dbId){notify('Save this item before recording stock against it',true);return;}   // N110
   if(qty>item.units){notify('Quantity exceeds stock on hand',true);return;}
   if(window._savingStockOut) return;   // C1 Wave 1b: in-flight re-entry lock — a double-clicked sale can't double-consume FIFO
   if(!window._stockOutIdemKey) window._stockOutIdemKey=(window.crypto?.randomUUID?window.crypto.randomUUID():'sout-'+Date.now()+'-'+Math.random().toString(36).slice(2));
@@ -589,7 +593,7 @@ async function submitStockOut(){
     const cogsRes=await fetch('/api/cogs/calculate',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item.dbId||idx,quantity_sold:qty}),
+      body:JSON.stringify({inventory_id:item._dbId,quantity:qty}),   // N111: the server reads `quantity` (was quantity_sold → 400 → preview 0)
     });
     const cogsData=await cogsRes.json();
     const cogs=cogsData.cogs||0;
@@ -601,7 +605,7 @@ async function submitStockOut(){
     const res=await fetch('/api/inventory-movements',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item.dbId||idx,type:'sale',quantity:qty,unit_cost:cogs/qty,reference:ref,idempotency_key:window._stockOutIdemKey}),
+      body:JSON.stringify({inventory_id:item._dbId,type:'sale',quantity:qty,unit_cost:cogs/qty,reference:ref,idempotency_key:window._stockOutIdemKey}),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}

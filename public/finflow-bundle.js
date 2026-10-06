@@ -1210,6 +1210,7 @@
           <div class="stock-bar"><div class="stock-fill" style="width:${pct}%;background:${col}"></div></div>
           <span style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${S(val)}</span>
           <span class="table-actions">
+            ${item._dbId ? `<button class="btn btn-ghost btn-sm" onclick="openStockInModal(${idx})" title="Record a purchase (adds a FIFO cost layer)">+ In</button><button class="btn btn-ghost btn-sm" onclick="openStockOutModal(${idx})" title="Record a sale (FIFO cost of goods sold)">− Out</button>` : ''}
             <button class="btn btn-ghost btn-sm" onclick="restockItem(${idx})">Restock</button>
             ${item._dbId ? `<button class="btn btn-ghost btn-sm" onclick="openEditInvModal(${item._dbId})">Edit</button>` : ''}
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7"

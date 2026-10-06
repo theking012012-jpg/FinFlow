@@ -398,11 +398,19 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // Override user plan
   app.post('/api/admin/users/:id/plan', requireAdmin, wrap(async (req, res) => {
     const { plan } = req.body || {};
-    if (!['trial', 'pro', 'business'].includes(plan)) return res.status(400).json({ error: 'Invalid plan.' });
-    await pool.query(
-      `UPDATE users SET data = data || $1 WHERE id = $2`,
-      [JSON.stringify({ plan }), (parseInt(req.params.id, 10) || 0)]
-    );
+    // N87: 'scale' is a real plan (checkout, entity limits, AI caps all know it) but was missing here and
+    // in the admin dropdown — a Scale customer's row showed "Trial" pre-selected, so one Save downgraded
+    // them. Setting 'trial' stamps trial_ends when there is none: checkPlan only restricts a trial WITH an
+    // end date, so a null end meant unlimited write access (the N4 class). An existing end is kept.
+    if (!['trial', 'pro', 'business', 'scale'].includes(plan)) return res.status(400).json({ error: 'Invalid plan.' });
+    const uidT = (parseInt(req.params.id, 10) || 0);
+    if (plan === 'trial') {
+      await pool.query(
+        `UPDATE users SET data = data || jsonb_build_object('plan', 'trial'::text, 'trial_ends', COALESCE(NULLIF(data->>'trial_ends', ''), $2::text)) WHERE id = $1`,
+        [uidT, new Date().toISOString()]);
+    } else {
+      await pool.query(`UPDATE users SET data = data || $1 WHERE id = $2`, [JSON.stringify({ plan }), uidT]);
+    }
     await pool.query(
       `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ($1, 'user', $2, $3, NOW())`,
       ['user_plan_override', (parseInt(req.params.id, 10) || 0), `Set plan to ${plan}`]

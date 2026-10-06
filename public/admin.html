@@ -1262,6 +1262,7 @@ function renderUsers(data, search='') {
           <option value="trial" ${(u.plan||'trial')==='trial'?'selected':''}>Trial</option>
           <option value="pro" ${u.plan==='pro'?'selected':''}>Pro</option>
           <option value="business" ${u.plan==='business'?'selected':''}>Business</option>
+          <option value="scale" ${u.plan==='scale'?'selected':''}>Scale</option>
         </select>
         <button class="action-btn" onclick="event.stopPropagation();setPlan(${u.id})">Save</button>
       </td>

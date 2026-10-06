@@ -980,7 +980,7 @@ const _READONLY_POST_OK = p => p.startsWith('/reports/') || p === '/cogs/calcula
 // Checks trial expiry — attaches req.userPlan for downstream use
 async function checkPlan(req, res, next) {
   try {
-    const user = await pool.query(`SELECT data FROM users WHERE id = $1`, [req.session.userId]);
+    const user = await pool.query(`SELECT data FROM users WHERE id = $1`, [req.accountId != null ? req.accountId : req.session.userId]);
     if (!user.rows[0]) return res.status(401).json({ error: 'User not found.' });
     const u = user.rows[0].data;
     const plan = u.plan || 'trial';
@@ -1332,14 +1332,6 @@ app.get('/api/me', requireAuth, wrap(async (req, res) => {
   res.json({ user: safeUser(user) });
 }));
 
-// Trial / plan enforcement — applies to all /api routes except auth and stripe webhook
-app.use('/api', (req, res, next) => {
-  const open = ['/auth/', '/stripe/', '/accountants', '/admin'];
-  if (open.some(p => req.path.startsWith(p))) return next();
-  if (!req.session?.userId) return next(); // requireAuth handles this
-  checkPlan(req, res, next);
-});
-
 // ── ACCOUNT RESOLVER (RBAC Phase 2, Step 1) ────────────────────────────────────
 // Sets req.accountId = the effective data-scope account for this request.
 //   Owner / brand-new signup / no active membership → own user_id (UNCHANGED).
@@ -1379,6 +1371,17 @@ app.use('/api', async (req, res, next) => {
     req.entityAccess = null;
   }
   next();
+});
+
+// Trial / plan enforcement — applies to all /api routes except auth and stripe webhook.
+// N5: registered AFTER the account resolver and checked against the ACCOUNT being acted on (scopeId),
+// not the acting user: a team member's own trial must not block work in a paying account, and a
+// member who happens to pay for their own account must not write into an expired one.
+app.use('/api', (req, res, next) => {
+  const open = ['/auth/', '/stripe/', '/accountants', '/admin'];
+  if (open.some(p => req.path.startsWith(p))) return next();
+  if (!req.session?.userId) return next(); // requireAuth handles this
+  checkPlan(req, res, next);
 });
 
 // ── ENTITY + RBAC MIDDLEWARE ──────────────────────────────────────────────────

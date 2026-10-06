@@ -2292,15 +2292,25 @@ app.post('/api/inventory', requireAuth, wrap(async (req, res) => {
   const _invEnt = b.entity_id || req.entityId || null;  // F150-class: was body-only → NULL rows leaked into every entity
   const _dup = await findRecentDuplicate('inventory', scopeId(req), _invEnt, { textMatch: { name: (b.name||'').trim().slice(0,200) }, numMatch: { cost: parseFloat(b.cost)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('inventory', { user_id: scopeId(req), entity_id: _invEnt, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: u, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: u < mx * 0.1 ? 1 : 0 });
+  const { row } = await db.insert('inventory', { user_id: scopeId(req), entity_id: _invEnt, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: 0, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: 1 });
   await recordAudit(pool, { userId: req.session.userId, entityId: _invEnt, table: 'inventory', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
-  res.status(201).json(row);
+  // N69: opening units are an OPENING-STOCK purchase movement at the item's cost (a FIFO layer, valued on
+  // the balance sheet against Owner's Equity). They used to be a bare units figure with no cost layer, so
+  // the first sales of that stock had "no cost basis" and COGS was understated.
+  if (u > 0) await recordStockMovement({ userId: scopeId(req), item: row, entityId: _invEnt, type: 'purchase', qty: u, unitCost: parseFloat(b.cost) || 0, reference: 'Opening stock', contraCode: '3100' });
+  const { rows: [_fresh] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
+  res.status(201).json(_fresh ? rowToObj(_fresh) : row);
 }));
 app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('inventory', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
-  const newUnits = b.units != null ? Math.max(0, parseInt(b.units)||0) : row.units;
+  // N69: units on hand change only through stock movements (Stock In / Stock Out / Restock) — a direct
+  // overwrite had no FIFO layer, no COGS and no ledger entry behind it. An unchanged value is accepted.
+  if (b.units != null && Number(b.units) !== Number(row.units)) {
+    return res.status(400).json({ error: 'Change stock with Stock In, Stock Out or Restock so its cost is recorded.', code: 'STOCK_VIA_MOVEMENTS' });
+  }
+  const newUnits = row.units;
   const newMax   = b.max_units != null ? parseInt(b.max_units)||row.max_units : row.max_units;
   const patch = { units: newUnits, max_units: newMax, low_stock: newUnits < newMax * 0.1 ? 1 : 0 };
   if (b.name != null) patch.name = b.name;
@@ -2326,9 +2336,12 @@ app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
     const { rows: [_dupr] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
     return res.json(_dupr ? rowToObj(_dupr) : {});
   }
-  const newUnits = row.units + qty;
-  await db.updateById('inventory', row.id, { units: newUnits, low_stock: newUnits < row.max_units * 0.1 ? 1 : 0,
-    last_restock_qty: qty, last_restock_at: _now });
+  // N69: a restock is a PURCHASE movement (FIFO layer + Dr Inventory / Cr Cash), not a units bump.
+  const _rsCost = req.body && req.body.unit_cost != null && req.body.unit_cost !== '' ? Number(req.body.unit_cost) : (parseFloat(row.cost) || 0);
+  if (!Number.isFinite(_rsCost) || _rsCost < 0) return res.status(400).json({ error: 'unit_cost must be a number of 0 or more.' });
+  if (await refuseIfLocked(res, scopeId(req), row.entity_id, await entityTodayYmd(row.entity_id))) return;
+  await db.updateById('inventory', row.id, { last_restock_qty: qty, last_restock_at: _now });
+  await recordStockMovement({ userId: scopeId(req), item: row, entityId: req.entityId || null, type: 'purchase', qty, unitCost: _rsCost, reference: 'Restock' });
   const { rows: [_rstk] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
   res.json(_rstk ? rowToObj(_rstk) : {});
 }));
@@ -10732,6 +10745,46 @@ app.get('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
+// N69: the ONE writer of stock. Every change to an item's units goes through an inventory movement, so the
+// FIFO layers (purchases), COGS (sales), the units on hand and the ledger always move together. Restock,
+// opening stock and the movements route all call this; units are never set directly (PUT refuses).
+// GL: a sale relieves inventory at FIFO cost (Dr 5000 / Cr 1200); a purchase capitalises it (Dr 1200 / Cr
+// cash 1000, or Owner's Equity 3100 for OPENING stock the business already held). Posted to the MOVEMENT's
+// entity (it used to post to the viewed entity while the row took the item's).
+async function recordStockMovement({ userId, item, entityId = null, type, qty, unitCost = 0, reference = null, notes = null, idem = null, contraCode = '1000' }) {
+  let cogs = null;
+  if (type === 'sale') cogs = await calculateFIFOCOGS(pool, parseInt(item.id), qty);
+  const _mvEnt = item.entity_id != null ? item.entity_id : entityId;
+  const { rows: [movement] } = await pool.query(
+    `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [userId, _mvEnt, parseInt(item.id), type, qty, unitCost || 0, reference || null, notes || null, idem]);
+  const { rows: [_cur] } = await pool.query(`SELECT data->>'units' AS u, data->>'max_units' AS m FROM inventory WHERE id = $1`, [item.id]);
+  const _units = parseFloat(_cur && _cur.u) || 0, _max = parseFloat(_cur && _cur.m) || 200;
+  const newUnits = type === 'purchase' ? _units + qty : Math.max(0, _units - qty);
+  await db.updateById('inventory', parseInt(item.id), { units: newUnits, low_stock: newUnits < _max * 0.1 ? 1 : 0 });
+  try {
+    const _mDate = FinFlowDates._toYmd(movement.moved_at);
+    if (type === 'sale' && cogs != null && +cogs > 0) {
+      await postLedgerEntry(pool, {
+        userId, entityId: _mvEnt, date: _mDate,
+        description: 'COGS — sale of ' + String(item.name || '').slice(0, 80),
+        sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
+        lines: [{ code: '5000', debit: +cogs, credit: 0 }, { code: '1200', debit: 0, credit: +cogs }],
+      });
+    } else if (type === 'purchase') {
+      const _cap = Math.round(qty * (parseFloat(unitCost) || 0) * 100) / 100;
+      if (_cap > 0) await postLedgerEntry(pool, {
+        userId, entityId: _mvEnt, date: _mDate,
+        description: (contraCode === '3100' ? 'Opening stock — ' : 'Inventory purchase — ') + String(item.name || '').slice(0, 80),
+        sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
+        lines: [{ code: '1200', debit: _cap, credit: 0 }, { code: contraCode, debit: 0, credit: _cap }],
+      });
+    }
+  } catch (glErr) { console.error('[GL] inventory movement posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  return { movement, cogs, units: newUnits };
+}
+
 app.post('/api/inventory-movements', requireAuth, lockGuard(LOCK_SPECS.inventory_movements), wrap(async (req, res) => {
   const { inventory_id, type, quantity, unit_cost, reference, notes } = req.body || {};
   if (!inventory_id || !type || !quantity) return res.status(400).json({ error: 'inventory_id, type, quantity required' });
@@ -10758,19 +10811,9 @@ app.post('/api/inventory-movements', requireAuth, lockGuard(LOCK_SPECS.inventory
     // FIFO layers, and re-reporting the original's COGS would double-count it in a summing caller.
     if (_imDup) return res.status(201).json({ ..._imDup, cogs: null });
   }
-  let cogs = null;
-  if (type === 'sale') {
-    cogs = await calculateFIFOCOGS(pool, parseInt(inventory_id), qty);
-  }
-
-  let movement;
+  let out;
   try {
-    ({ rows: [movement] } = await pool.query(
-      `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [scopeId(req), item.entity_id != null ? item.entity_id : (req.entityId || null), parseInt(inventory_id), type, qty,
-       parseFloat(unit_cost) || 0, reference || null, notes || null, idem]
-    ));
+    out = await recordStockMovement({ userId: scopeId(req), item, entityId: req.entityId || null, type, qty, unitCost: parseFloat(unit_cost) || 0, reference, notes, idem });
   } catch (e) {
     if (e.code === '23505' && idem) {
       // Duplicate submit lost the race at the DB → the movement already landed and the units were
@@ -10781,39 +10824,7 @@ app.post('/api/inventory-movements', requireAuth, lockGuard(LOCK_SPECS.inventory
     }
     throw e;
   }
-
-  const newUnits = type === 'purchase' ? item.units + qty : Math.max(0, item.units - qty);
-  const newMax = item.max_units || 200;
-  await db.updateById('inventory', parseInt(inventory_id), {
-    units: newUnits, low_stock: newUnits < newMax * 0.1 ? 1 : 0
-  });
-
-  // GL Phase 2 (dual-write shadow): a stock movement posts at its moved_at date. A SALE relieves
-  // inventory at FIFO cost — Dr COGS (5000) / Cr Inventory (1200) = cogs (the exact leg
-  // computeBooks recognises). A PURCHASE capitalises stock — Dr Inventory (1200) / Cr Cash (1000)
-  // = qty*unit_cost. Entry date via _toYmd(moved_at), the SAME reducer computeBooks uses to place the
-  // sale in its period. (adjustment: no cash/COGS effect modelled here.) Best-effort.
-  try {
-    const _mDate = FinFlowDates._toYmd(movement.moved_at);
-    const _ent = req.entityId || null;
-    if (type === 'sale' && cogs != null && +cogs > 0) {
-      await postLedgerEntry(pool, {
-        userId: scopeId(req), entityId: _ent, date: _mDate,
-        description: 'COGS — sale of ' + String(item.name || '').slice(0, 80),
-        sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
-        lines: [{ code: '5000', debit: +cogs, credit: 0 }, { code: '1200', debit: 0, credit: +cogs }],
-      });
-    } else if (type === 'purchase') {
-      const _cap = Math.round(qty * (parseFloat(unit_cost) || 0) * 100) / 100;
-      if (_cap > 0) await postLedgerEntry(pool, {
-        userId: scopeId(req), entityId: _ent, date: _mDate,
-        description: 'Inventory purchase — ' + String(item.name || '').slice(0, 80),
-        sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
-        lines: [{ code: '1200', debit: _cap, credit: 0 }, { code: '1000', debit: 0, credit: _cap }],
-      });
-    }
-  } catch (glErr) { console.error('[GL] inventory movement posting failed (shadow, non-fatal):', glErr && glErr.message); }
-
+  const { movement, cogs } = out;
   res.status(201).json({ ...movement, cogs });
 }));
 

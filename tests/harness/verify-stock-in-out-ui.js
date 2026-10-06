@@ -17,6 +17,7 @@
  *   "+ In" / "− Out" buttons rendered for each saved item            (bug: absent)
  *   purchase movement on Bolts (qty 10, cost 12)                      (bug: on the item whose id == Bolts' index)
  *   sale movement on Bolts (qty 4); preview shows COGS 48 (4 × 12)    (bug: wrong item; preview 0)
+ *   Restock 3 (N69) → purchase movement 3 @ 12 on Bolts, units 9          (bug: units PUT, no movement)
  *   node -r ./tests/harness/clock.js tests/harness/verify-stock-in-out-ui.js
  */
 require('./clock.js');
@@ -80,6 +81,17 @@ const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fa
     const prev = (window.document.getElementById('so-cogs-preview') || {}).textContent || '';
     const fmt = (typeof window.S === 'function') ? window.S(48) : '48';
     A('Stock Out preview shows FIFO COGS 48 (4 × 12) (bug: 0 — quantity_sold → 400)', prev.replace(/\s+/g, '').includes(String(fmt).replace(/\s+/g, '')), `preview "${prev}" want ${fmt}`);
+    // N69: the Restock button records a PURCHASE movement at the item's unit cost (it used to PUT units += qty
+    // with no cost layer — and the server now refuses a direct units change).
+    window.restockItem(idx);
+    window.document.getElementById('restock-qty').value = '3';
+    await window.saveRestock();
+    await settle(8, 60);
+    const m3 = await mv();
+    const rs = m3.filter(m => m.type === 'purchase');
+    A('Restock 3: a purchase movement 3 @ 12 on Bolts (bug: units overwritten, no movement)', rs.length === 2 && rs[1].inventory_id === bolts._dbId && rs[1].q === 3 && rs[1].uc === 12, JSON.stringify(m3));
+    const u = Number((await c.query(`SELECT data->>'units' u FROM inventory WHERE id=$1`, [bolts._dbId])).rows[0].u);
+    A('  Bolts units = 10 − 4 + 3 = 9', u === 9, 'units ' + u);
     const nuts = inv.find(x => x.name === 'Nuts') || {};
     const nm = (await c.query(`SELECT COUNT(*)::int n FROM inventory_movements WHERE inventory_id=$1`, [nuts._dbId])).rows[0].n;
     A('control: Nuts untouched (no movements)', nm === 0, 'movements on Nuts: ' + nm);

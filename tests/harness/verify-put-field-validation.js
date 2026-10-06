@@ -59,7 +59,8 @@ async function main() {
     A('inventory {cost: "x"} → 400, cost stays 12 (bug: 200, null)', r5.status === 400 && Number(await f('inventory', inv, 'cost')) === 12, `status ${r5.status} cost=${JSON.stringify(await f('inventory', inv, 'cost'))}`);
     A('control: items valid edit applies', (await h.put('/api/items/' + item, { name: '  Gadget ', price: '75.5' })).status === 200 && (await f('items', item, 'name')) === 'Gadget' && Number(await f('items', item, 'price')) === 75.5);
     A('control: payroll valid edit applies', (await h.put('/api/payroll/' + emp, { gross: 3200, fname: 'Patricia' })).status === 200 && Number(await f('payroll', emp, 'gross')) === 3200);
-    A('control: inventory valid edit applies', (await h.put('/api/inventory/' + inv, { units: 80, cost: '13.25', name: 'Bolts M6' })).status === 200 && Number(await f('inventory', inv, 'units')) === 80 && Number(await f('inventory', inv, 'cost')) === 13.25);
+    // N69: units change only through stock movements — a valid edit is name/cost with units unchanged.
+    A('control: inventory valid edit applies', (await h.put('/api/inventory/' + inv, { units: 100, cost: '13.25', name: 'Bolts M6' })).status === 200 && Number(await f('inventory', inv, 'units')) === 100 && Number(await f('inventory', inv, 'cost')) === 13.25);
 
     // ── CLASS PROBE (Rule 13, executed): every PUT /api/<resource>/:id in the live router. One owned row is
     // seeded per resource, then two hostile bodies are sent: wrong-typed TEXT fields (number / object /

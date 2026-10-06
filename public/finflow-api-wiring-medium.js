@@ -551,9 +551,10 @@
       const qty = Math.min(qtyRaw, 100000);
       try {
         if (item._dbId) {
-          const newUnits = item.units + qty;
-          await api('PUT', `/api/inventory/${item._dbId}`, { units: newUnits });
-          item.units = newUnits;
+          // N69: a restock is a purchase at the item's unit cost — the server records the movement (FIFO
+          // layer + ledger) and returns the new units. It used to PUT units += qty with no cost behind it.
+          const saved = await api('POST', `/api/inventory/${item._dbId}/restock`, { qty, unit_cost: item.cost });
+          item.units = parseFloat(saved && saved.units) || (item.units + qty);
         } else {
           item.units += qty;
         }
@@ -882,11 +883,11 @@
       if (!item) { closeModal('edit-inv-modal'); return; }
       const name = document.getElementById('edit-inv-name')?.value?.trim();
       if (!name) { notify('Name is required', true); return; }
-      const units = Math.max(0, parseInt(document.getElementById('edit-inv-units')?.value) || 0);
+      const units = item.units;   // N69: read-only here — Stock In / Stock Out / Restock change it
       const cost  = parseFloat(document.getElementById('edit-inv-cost')?.value)  || 0;
       const max   = Math.max(1, parseInt(document.getElementById('edit-inv-max')?.value)   || 200);
       try {
-        await api('PUT', `/api/inventory/${item._dbId}`, { name, units, cost, max_units: max });
+        await api('PUT', `/api/inventory/${item._dbId}`, { name, cost, max_units: max });   // N69: units change only via stock movements
         item.name  = name;
         item.units = units;
         item.cost  = cost;

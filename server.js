@@ -1553,9 +1553,14 @@ async function ownedBy(table, id, userId) {
   return rows[0] ? rowToObj(rows[0]) : null;
 }
 
-// Resolve the first active entity for the current user (used by several POST routes)
-async function activeEntity(userId) {
-  const rows = await db.allByUser('entities', userId, e => e.is_active);
+// The business a request acts on: req.entityId (resolved and ownership-checked by the entity middleware)
+// when set, else the ACCOUNT's active entity. N31 class: this used to take the ACTOR's id
+// (req.session.userId) and return that user's is_active entity — a team member owns no entities (→ null),
+// and a request scoped to business B still got the account's flagged business A.
+async function activeEntity(req) {
+  const uid = scopeId(req);
+  if (req.entityId != null) { const r = await ownedBy('entities', req.entityId, uid); if (r) return r; }
+  const rows = await db.allByUser('entities', uid, e => e.is_active);
   return rows[0] || null;
 }
 
@@ -2826,7 +2831,7 @@ app.put('/api/settings', requireAuth, requirePerm('settings:manage'), wrap(async
   // rename_active_entity:true; nothing else does. business_name is still persisted as the account
   // profile string above either way — only the entity mutation is gated.
   if (b.business_name && b.rename_active_entity === true) {
-    const ent = await activeEntity(uid2);
+    const ent = await activeEntity(req);
     if (ent) await db.updateById('entities', ent.id, { name: b.business_name.slice(0,100) });
   }
   // Audit log: emit one entry per business-profile field that changed.
@@ -3621,7 +3626,7 @@ app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   if (_li.error) return res.status(400).json({ error: _li.error });
   const _effAmount = _li.present ? _li.amount : amount;
   if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required' });
-  const entity = await activeEntity(req.session.userId);
+  const entity = await activeEntity(req);
   const num = 'QT-' + String(Date.now()).slice(-4);
   const _dup = await findRecentDuplicate('quotes', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(_effAmount) } });
   if (_dup) return res.json(_dup);
@@ -3670,7 +3675,7 @@ app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const status   = String(b.status   || 'active').slice(0, 50);
   const owing    = parseFloat(b.owing)    || 0;
   const ytd_paid = parseFloat(b.ytd_paid) || 0;
-  const entity = await activeEntity(req.session.userId);
+  const entity = await activeEntity(req);
   const _venEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
   const _dup = await findRecentDuplicate('vendors', scopeId(req), _venEnt, { textMatch: { name } });
   if (_dup) return res.json(_dup);
@@ -4145,7 +4150,7 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
   const _effAmount = _li.present ? _li.amount : amount;
   if (!vendor || _effAmount == null) return res.status(400).json({ error: 'vendor and amount required' });
   if (_badStatus(BILL_STATUSES, status)) return res.status(400).json({ error: 'Invalid bill status.' });
-  const entity = await activeEntity(req.session.userId);
+  const entity = await activeEntity(req);
   const _billEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
   const num = 'BILL-' + String(Date.now()).slice(-4);
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
@@ -4275,7 +4280,7 @@ app.get('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
 app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
-  const entity = await activeEntity(req.session.userId);
+  const entity = await activeEntity(req);
   const _dup = await findRecentDuplicate('recurring_bills', scopeId(req), req.entityId || entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('recurring_bills', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
@@ -4360,22 +4365,31 @@ app.get('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   // ?display= param the response is byte-identical to before (no conversion, no _fx field).
   const _disp = String(req.query.display || '').toUpperCase();
   if (/^[A-Z]{3}$/.test(_disp)) {
-    const _ent  = await activeEntity(req.session.userId);
-    const _from = String((_ent && _ent.currency) || 'USD').toUpperCase();
-    const _rate = await rateAsOf(pool, scopeId(req), _from, _disp, FinFlowDates.resolvedToday(new Date()));
-    const _ok   = _rate != null;   // rateAsOf → null when the pair has no rate (never fabricated)
-    _out = _out.map(r => ({
-      ...r,
-      amount: _ok ? (Number(r.amount) || 0) * _rate : r.amount,
-      _fx: { display: _disp, from: _from, rate: _ok ? _rate : null, ok: _ok },
-    }));
+    // N31: each schedule converts from ITS OWN entity's currency (an entity-less legacy row: the entity
+    // being viewed). It used to convert every row from the actor's flagged entity's currency.
+    const _entCur = {};
+    for (const e of await db.allByUser('entities', scopeId(req))) _entCur[e.id] = String(e.currency || 'USD').toUpperCase();
+    const _view = await activeEntity(req);
+    const _viewCur = String((_view && _view.currency) || 'USD').toUpperCase();
+    const _today = FinFlowDates.resolvedToday(new Date());
+    const _rates = {};
+    for (const r of _out) {
+      const f = (r.entity_id != null && _entCur[r.entity_id]) || _viewCur;
+      if (!(f in _rates)) _rates[f] = await rateAsOf(pool, scopeId(req), f, _disp, _today);
+    }
+    _out = _out.map(r => {
+      const _from = (r.entity_id != null && _entCur[r.entity_id]) || _viewCur;
+      const _rate = _rates[_from];
+      const _ok = _rate != null;   // rateAsOf → null when the pair has no rate (never fabricated)
+      return { ...r, amount: _ok ? (Number(r.amount) || 0) * _rate : r.amount, _fx: { display: _disp, from: _from, rate: _ok ? _rate : null, ok: _ok } };
+    });
   }
   res.json(_out);
 }));
 app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
-  const entity = await activeEntity(req.session.userId);
+  const entity = await activeEntity(req);
   const _dup = await findRecentDuplicate('recurring_invoices', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('recurring_invoices', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity

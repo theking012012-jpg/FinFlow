@@ -1023,12 +1023,21 @@ If you cannot find a field, use null. Be concise.`;
     if (!_canWrite(entityLevel(_ea, access.rows[0].access_level, _clientEntityId))) {
       return res.status(403).json({ error: 'View-only access.' });
     }
+    // N76: the same rules as the main app's journal (server.js POST /api/journals) — at least one line,
+    // debits = credits, and never into a closed period. The accountant path enforced none of them.
+    const _lines = Array.isArray(lines) ? lines : [];
+    if (!_lines.length) return res.status(400).json({ error: 'A journal needs at least one line.' });
+    const _dr = _lines.reduce((s, l) => s + (parseFloat(l && l.debit) || 0), 0);
+    const _cr = _lines.reduce((s, l) => s + (parseFloat(l && l.credit) || 0), 0);
+    if (Math.abs(_dr - _cr) > 0.01) return res.status(400).json({ error: 'Journal does not balance — debits must equal credits.' });
+    const _jDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : new Date().toISOString().slice(0, 10);
+    if (await require('./period-lock').isLocked(pool, parseInt(userId), _clientEntityId, _jDate)) return res.status(403).json({ error: 'Period is locked.' });
     const { row } = await db.insert('journals', {
       user_id: parseInt(userId),
       entity_id: _clientEntityId,
       description: (description || '').slice(0, 500),
-      date: date || new Date().toISOString().slice(0, 10),
-      lines: JSON.stringify(lines || []),
+      date: _jDate,
+      lines: JSON.stringify(_lines),
       posted_by: `accountant:${req.session.accountantId}`,
     });
     await _audit(pool, { userId: parseInt(userId), table: 'journals', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B (accountant on client books)
@@ -1045,24 +1054,23 @@ If you cannot find a field, use null. Be concise.`;
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
-    // Period locks are account-wide (lock_settings keyed by period, not entity): require 'filing'
-    // capability on at least one entity (legacy ⇒ account-wide filing).
-    const _eaLock = normalizeEntityAccess(access.rows[0].entity_access);
-    const _hasFiling = _eaLock == null
-      ? access.rows[0].access_level !== 'view'   // legacy: any non-view level (filing/edit/null) can lock
-      : Object.values(_eaLock.entities).some(l => l === 'filing');
-    if (!_hasFiling) return res.status(403).json({ error: 'View-only access.' });
-    const { rows: [_lsAcc] } = await pool.query(
-      `SELECT * FROM lock_settings WHERE user_id = $1 AND data->>'period' = $2 LIMIT 1`,
-      [parseInt(userId), period]
-    );
-    if (_lsAcc) {
-      await db.updateById('lock_settings', _lsAcc.id, { locked: locked ? 1 : 0, locked_by: `accountant:${req.session.accountantId}` });
-    } else {
-      await db.insert('lock_settings', { user_id: parseInt(userId), period, locked: locked ? 1 : 0, locked_by: `accountant:${req.session.accountantId}` });
-    }
-    await _audit(pool, { userId: parseInt(userId), table: 'lock_settings', recordId: _lsAcc ? _lsAcc.id : null, action: locked ? 'LOCK' : 'UNLOCK', field: 'period', newValue: period, req });  // F90 Phase B (accountant)
-    res.json({ ok: true });
+    // N77: write the lock the app actually READS — per-entity { enabled, lock_date } through
+    // period-lock.js (the same module isLocked uses). It wrote { period, locked } rows nothing read,
+    // so an accountant's period lock had no effect on any write. Target entity resolved like the
+    // journal route (explicit body entity of THIS client, else the client's active entity), and the
+    // accountant needs 'filing' on THAT entity.
+    const _ea = normalizeEntityAccess(access.rows[0].entity_access);
+    const _bodyEid = (req.body && /^[1-9][0-9]*$/.test(String(req.body.entity_id))) ? parseInt(req.body.entity_id) : null;
+    const { rows: [_ent] } = _bodyEid != null
+      ? await pool.query(`SELECT id FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [_bodyEid, parseInt(userId)])
+      : await pool.query(`SELECT id FROM entities WHERE user_id = $1 ORDER BY (CASE WHEN (data->>'is_active')::int = 1 THEN 0 ELSE 1 END), id ASC LIMIT 1`, [parseInt(userId)]);
+    if (!_ent) return res.status(400).json({ error: _bodyEid != null ? 'Invalid entity for this client.' : 'Client has no entity to lock.' });
+    if (!_canWrite(entityLevel(_ea, access.rows[0].access_level, _ent.id))) return res.status(403).json({ error: 'View-only access.' });
+    const _pl = require('./period-lock');
+    if (!_pl.periodBounds(period)) return res.status(400).json({ error: 'period must be YYYY-MM.' });
+    const lockDate = await _pl.setPeriodLock(pool, db, parseInt(userId), _ent.id, period, !!locked, { locked_by: `accountant:${req.session.accountantId}` });
+    await _audit(pool, { userId: parseInt(userId), entityId: _ent.id, table: 'lock_settings', action: locked ? 'LOCK' : 'UNLOCK', field: 'period', newValue: period, newData: { lock_date: lockDate }, req });  // F90 Phase B (accountant)
+    res.json({ ok: true, entity_id: _ent.id, lock_date: lockDate });
   }));
 
 

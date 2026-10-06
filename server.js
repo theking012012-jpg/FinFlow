@@ -1561,21 +1561,9 @@ async function logAudit(req, action, tableName, recordId, oldData, newData) {
 }
 
 // ── LOCK HELPER ───────────────────────────────────────────────────────────────
-async function isLocked(userId, entityId, date) {
-  if (!date) return false;
-  // Per-entity books lock (null-inclusive): a per-business lock (entity_id = this business) OR a legacy
-  // account-wide lock (entity_id NULL, from before locks were per-entity) can close the period. Personal
-  // writes never call isLocked, so a NULL row only ever acts as a legacy business-wide lock.
-  const { rows } = await pool.query(
-    `SELECT * FROM lock_settings WHERE user_id = $1 AND (entity_id IS NULL OR entity_id = $2) AND (data->>'enabled')::int = 1`,
-    [userId, entityId == null ? null : entityId]
-  );
-  for (const r of rows) {
-    const s = rowToObj(r);
-    if (s && s.lock_date && date <= s.lock_date) return true;
-  }
-  return false;
-}
+// Single implementation in period-lock.js, shared with the accountant portal (N77).
+const _periodLock = require('./period-lock');
+async function isLocked(userId, entityId, date) { return _periodLock.isLocked(pool, userId, entityId, date); }
 
 // ── ENTITIES ──────────────────────────────────────────────────────────────────
 app.get('/api/entities', requireAuth, wrap(async (req, res) => {

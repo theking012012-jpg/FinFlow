@@ -45,7 +45,7 @@ const ACC = { email: 'f90acc@finflow.test', password: 'harness-password-not-a-se
 
     const act = await http.post('/api/accountants/activate-client', { userId: uid });
     A('activate-client 200', act.status === 200, `status ${act.status} ${JSON.stringify(act.json)}`);
-    const jr = await http.post(`/api/accountants/clients/${uid}/journal`, { date: '2026-06-10', description: 'Adj', lines: [] });
+    const jr = await http.post(`/api/accountants/clients/${uid}/journal`, { date: '2026-06-10', description: 'Adj', lines: [{ account: 'Rent', debit: 10, credit: 0 }, { account: 'Cash', debit: 0, credit: 10 }] });
     A('journal 201', jr.status === 201, `status ${jr.status} ${JSON.stringify(jr.json)}`);
     const lk = await http.post(`/api/accountants/clients/${uid}/lock`, { period: '2026-06', locked: true });
     A('lock 200', lk.status === 200, `status ${lk.status}`);

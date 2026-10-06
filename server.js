@@ -8614,12 +8614,17 @@ app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write
   // status paid → approved (a backwards state transition). Exclude paid rows from the update and
   // report the conflict instead of silently reverting.
   const { rows } = await pool.query(
-    `UPDATE payroll_runs SET status='approved' WHERE id=$1 AND user_id=$2 AND lower(status) <> 'paid' RETURNING *`,
+    // N58: only a draft (or an already-approved run, idempotent) can be approved. A paid run must not
+    // revert, and a VOIDED run must not be resurrected — its ledger entry was reversed under the
+    // canonical key, so re-approving would put it back in the books with no matching ledger entry.
+    `UPDATE payroll_runs SET status='approved' WHERE id=$1 AND user_id=$2 AND lower(status) IN ('draft','approved') RETURNING *`,
     [parseInt(req.params.id), scopeId(req)]
   );
   if (!rows[0]) {
-    const _exists = await ownedBy('payroll_runs', req.params.id, scopeId(req));
-    if (_exists) return res.status(409).json({ error: 'This payroll run is already paid and cannot be reverted to approved.' });
+    const { rows: [_ex] } = await pool.query(`SELECT status FROM payroll_runs WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), scopeId(req)]);
+    if (_ex) return res.status(409).json({ error: String(_ex.status).toLowerCase() === 'paid'
+      ? 'This payroll run is already paid and cannot be reverted to approved.'
+      : 'A voided payroll run cannot be approved. Create a new run instead.' });
     return res.status(404).json({ error: 'Not found.' });
   }
   await recordAudit(pool, { userId: req.session.userId, entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'APPROVE', field: 'status', newValue: 'approved', req });  // F90 Phase B: payroll recognised at approve
@@ -8646,10 +8651,19 @@ app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write
 
 app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   const { rows } = await pool.query(
-    `UPDATE payroll_runs SET status='paid' WHERE id=$1 AND user_id=$2 RETURNING *`,
+    // N58: only an APPROVED run (or an already-paid one, idempotent) can be marked paid. A draft has no
+    // payroll-expense accrual yet (marking it paid posted the cash-out against nothing), and a voided
+    // run must stay out of the books.
+    `UPDATE payroll_runs SET status='paid' WHERE id=$1 AND user_id=$2 AND lower(status) IN ('approved','paid') RETURNING *`,
     [parseInt(req.params.id), scopeId(req)]
   );
-  if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
+  if (!rows[0]) {
+    const { rows: [_ex] } = await pool.query(`SELECT status FROM payroll_runs WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), scopeId(req)]);
+    if (_ex) return res.status(409).json({ error: String(_ex.status).toLowerCase() === 'draft'
+      ? 'Approve this payroll run before marking it paid.'
+      : 'A voided payroll run cannot be marked paid.' });
+    return res.status(404).json({ error: 'Not found.' });
+  }
   await recordAudit(pool, { userId: req.session.userId, entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'MARK_PAID', field: 'status', newValue: 'paid', req });  // F90 Phase B: cash-out event
   // GL Phase 5b (cash completeness): mark-paid is the CASH-OUT event - settle the payroll liability with
   // cash: Dr Payroll Liabilities (2200) / Cr Cash (1000), summed from the run's LINES (same basis as the

@@ -6836,14 +6836,18 @@ async function submitPayrollRun(){
 
 async function approvePayrollRun(id){
   try{
-    await fetch('/api/payroll-runs/'+id+'/approve',{method:'PUT',credentials:'include'});
+    const res=await fetch('/api/payroll-runs/'+id+'/approve',{method:'PUT',credentials:'include'});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok){notify('⚠ '+(d.error||'Could not approve'),true);loadPayrollRuns();return;}   // N58: surface the server's refusal, never a fake ✓
     notify('✓ Payroll approved');
     loadPayrollRuns();
   }catch(e){notify('Could not approve',true);}
 }
 async function markPayrollPaid(id){
   try{
-    await fetch('/api/payroll-runs/'+id+'/mark-paid',{method:'PUT',credentials:'include'});
+    const res=await fetch('/api/payroll-runs/'+id+'/mark-paid',{method:'PUT',credentials:'include'});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok){notify('⚠ '+(d.error||'Could not update'),true);loadPayrollRuns();return;}   // N58: e.g. "Approve this payroll run before marking it paid."
     notify('✓ Payroll marked paid');
     loadPayrollRuns();
   }catch(e){notify('Could not update',true);}

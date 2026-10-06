@@ -3284,9 +3284,13 @@ app.post('/api/journals', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(asyn
     throw e;
   }
   logAudit(req, 'CREATE', 'journals', row.id, null, row);
-  // NOTE: manual journals are intentionally NOT dual-written to the GL shadow here. computeBooks (the
-  // P&L source of truth) does not yet include manual entries, so posting them to the ledger made the
-  // reconcile scan diverge (shadow != books). Re-enable ONLY together with computeBooks JE support.
+  // N20: a POSTED manual journal dual-writes to the GL (Dr/Cr to J-namespaced accounts, typed by the
+  // line's code). computeBooks reads the journal P&L leg back from the GL, so the oracle and glFinancials
+  // stay equal and glReconcile ties. Best-effort — a shadow posting failure must NEVER break the write.
+  if (String(status).toLowerCase() === 'posted') {
+    try { await postJournalToLedger(pool, { userId: scopeId(req), entityId: req.entityId || null, journal: row }); }
+    catch (glErr) { console.error('[GL] journal posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  }
   res.status(201).json(row);
 }));
 app.put('/api/journals/:id', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(async (req, res) => {
@@ -3300,6 +3304,16 @@ app.put('/api/journals/:id', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(a
   await db.updateById('journals', row.id, patch);
   const { rows: [_jr] } = await pool.query(`SELECT * FROM journals WHERE id = $1 LIMIT 1`, [row.id]);
   await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'journals', recordId: row.id, action: 'UPDATE', oldData: row, newData: _jr ? rowToObj(_jr) : { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
+  // N20: keep the GL in step with a status flip. Draft→Posted posts the entry; Posted→Draft reverses it
+  // (mirror-image, idempotent on reverse:journal:<id>). Posted entries are otherwise immutable — editing a
+  // posted journal's amounts/date is void-and-re-enter, standard accounting practice. Best-effort.
+  const _wasPosted = String(row.status || '').toLowerCase() === 'posted';
+  const _newJournal = _jr ? rowToObj(_jr) : { ...row, ...patch };
+  const _nowPosted = String(_newJournal.status || '').toLowerCase() === 'posted';
+  try {
+    if (!_wasPosted && _nowPosted) await postJournalToLedger(pool, { userId: scopeId(req), entityId: row.entity_id || null, journal: _newJournal });
+    else if (_wasPosted && !_nowPosted) await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'journal', sourceId: row.id });
+  } catch (glErr) { console.error('[GL] journal PUT sync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(_jr ? rowToObj(_jr) : {});
 }));
 app.delete('/api/journals/:id', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(async (req, res) => {
@@ -10484,6 +10498,52 @@ async function accountFyStartIdx(userId) {
   } catch (_) { return 0; }
 }
 
+// ── N20 — MANUAL JOURNAL → GL BRIDGE ────────────────────────────────────────────────────────────
+// A journal line's `code` comes from the picker's chart, whose codes collide with the GL's system
+// chart (JE 5000=Salaries vs GL 5000=COGS, etc.), so we NEVER post by raw code. We classify the line
+// by its code's leading digit (standard COA numbering: 1 asset, 2 liability, 3 equity, 4 income,
+// 5-9 expense) and post to a `J`-namespaced ledger account of that type (J5000, J1010 …) — no collision
+// with system accounts, faithful per-account detail. computeBooks reads the journal P&L leg back FROM
+// the GL (source_type='journal'), so the oracle and glFinancials see the SAME lines and glReconcile ties
+// by construction. An untypeable code aborts posting (the entry is NOT booked, and — being absent from
+// the GL — contributes 0 to computeBooks too, so the two never diverge).
+function _journalLineType(code) {
+  const d = String(code == null ? '' : code).trim()[0];
+  return d === '1' ? 'asset' : d === '2' ? 'liability' : d === '3' ? 'equity'
+       : d === '4' ? 'income' : (d >= '5' && d <= '9') ? 'expense' : null;
+}
+const _jeNormalFor = type => (type === 'asset' || type === 'expense') ? 'debit' : 'credit';
+async function postJournalToLedger(client, { userId, entityId, journal }) {
+  let lines = [];
+  try { lines = Array.isArray(journal.lines) ? journal.lines : JSON.parse(journal.lines || '[]'); } catch (_) { lines = []; }
+  const norm = [];
+  for (const l of lines) {
+    const code = (l.code != null ? l.code : l.account);
+    const type = _journalLineType(code);
+    const dr = parseFloat(l.debit  != null ? l.debit  : (parseFloat(l.amount) > 0 ?  parseFloat(l.amount) : 0)) || 0;
+    const cr = parseFloat(l.credit != null ? l.credit : (parseFloat(l.amount) < 0 ? -parseFloat(l.amount) : 0)) || 0;
+    if (!type) return { posted: false, reason: 'untypeable account code ' + code };
+    if (dr === 0 && cr === 0) continue;
+    norm.push({ code: 'J' + String(code).trim(), name: String(l.name || ('Journal ' + code)).slice(0, 120), type, debit: dr, credit: cr });
+  }
+  if (norm.length < 2) return { posted: false, reason: 'fewer than 2 nonzero lines' };
+  let cur = 'USD';
+  try { const { rows: [e] } = entityId != null ? await client.query(`SELECT data->>'currency' AS c FROM entities WHERE id=$1`, [entityId]) : { rows: [] }; cur = String((e && e.c) || 'USD').toUpperCase(); } catch (_) {}
+  for (const l of norm) {
+    await client.query(
+      `INSERT INTO ledger_accounts (user_id, entity_id, code, name, type, normal, currency, is_system)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,false) ON CONFLICT (user_id, entity_id, code) DO NOTHING`,
+      [userId, entityId, l.code, l.name, l.type, _jeNormalFor(l.type), cur]);
+  }
+  await postLedgerEntry(client, {
+    userId, entityId, date: (journal.date || null),
+    description: 'Journal — ' + String(journal.description || journal.ref || '').slice(0, 80),
+    sourceType: 'journal', sourceId: journal.id, idempotencyKey: 'journal:' + journal.id,
+    lines: norm.map(l => ({ code: l.code, debit: l.debit, credit: l.credit })),
+  });
+  return { posted: true };
+}
+
 async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null, permittedEntityIds = null) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const num = v => parseFloat(v) || 0;
@@ -10606,6 +10666,38 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // now/inMonth/inQuarter/_d local-time helpers are gone — every leg files by CALENDAR date, so
   // server and client agree at every period and no figure depends on the viewer's timezone.
 
+  // ── N20 — MANUAL JOURNAL P&L LEG ─────────────────────────────────────────────────────────────
+  // Posted manual journals that are IN THE GL (source_type='journal') flow into the P&L by account type.
+  // Read from the journals table (so each line converts per-row at its own date via sumFX, exactly like
+  // every other leg) but RESTRICTED to journals actually posted to the ledger — so this leg and
+  // glFinancials read the SAME set and glReconcile ties by construction. income ⇒ revenue (credit−debit);
+  // expense ⇒ opex (debit−credit); asset/liability/equity ⇒ no P&L effect.
+  let _postedJeIds = new Set();
+  try {
+    const { rows: _jer } = await pool.query(`SELECT DISTINCT source_id FROM ledger_entries WHERE user_id=$1 AND source_type='journal' AND status='posted'`, [userId]);
+    _postedJeIds = new Set(_jer.map(r => Number(r.source_id)));
+  } catch (_) { _postedJeIds = new Set(); }
+  const _jeIncomeRows = [], _jeExpenseRows = [];
+  if (_postedJeIds.size) {
+    const _journals = await db.allByUser('journals', userId, ent);
+    for (const j of _journals) {
+      if (!_postedJeIds.has(Number(j.id))) continue;
+      const _jd = j.date || j.created_at;
+      if (!inPeriod(_jd)) continue;
+      let _jl = [];
+      try { _jl = Array.isArray(j.lines) ? j.lines : JSON.parse(j.lines || '[]'); } catch (_) { _jl = []; }
+      for (const l of _jl) {
+        const t = _journalLineType(l.code != null ? l.code : l.account);
+        if (t !== 'income' && t !== 'expense') continue;
+        const dr = num(l.debit  != null ? l.debit  : (num(l.amount) > 0 ?  num(l.amount) : 0));
+        const cr = num(l.credit != null ? l.credit : (num(l.amount) < 0 ? -num(l.amount) : 0));
+        (t === 'income' ? _jeIncomeRows : _jeExpenseRows).push({ entity_id: j.entity_id, _amt: (t === 'income' ? cr - dr : dr - cr), _d: _jd });
+      }
+    }
+  }
+  const jeRevenue = sumFX(_jeIncomeRows,  r => r._amt, r => r._d, 'journal_income');
+  const jeOpex    = sumFX(_jeExpenseRows, r => r._amt, r => r._d, 'journal_expense');
+
   // ── Revenue — ISSUE-BASED ACCRUAL (F32). Recognize every ISSUED invoice at its FULL
   // amount, in the period of its ISSUE date (created_at — NOT due_date), plus cash sales
   // receipts. Settlements (invoice_payments / legacy payments_received) draw down AR and
@@ -10648,7 +10740,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const creditNotesTotal = sumFX(creditNotes.filter(c =>
     RECOGNIZED_CREDIT.has((c.status || '').toLowerCase()) && inPeriod(_cnDate(c))
   ), c => c.amount, _cnDate, 'credit_notes');
-  const revenue = r2(issuedInvoices + salesReceipts - creditNotesTotal);
+  const revenue = r2(issuedInvoices + salesReceipts - creditNotesTotal + jeRevenue);   // N20: + posted-journal income leg
 
   // ── OpEx (mirrors frontend computeExpenseBreakdown / E1) — uses the SAME inPeriod as revenue ──
   const _expDate = e => e.expense_date || e.date || e.created_at;
@@ -10751,7 +10843,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const vendorCreditsTotal = sumFX(vendorCredits.filter(v =>
     RECOGNIZED_CREDIT.has((v.status || '').toLowerCase()) && inPeriod(_vcDate(v))
   ), v => v.amount, _vcDate, 'vendor_credits');
-  const opex = r2(expensesTotal + issuedBillsTotal + paymentsMadeTotal + payrollTotal - vendorCreditsTotal);
+  const opex = r2(expensesTotal + issuedBillsTotal + paymentsMadeTotal + payrollTotal - vendorCreditsTotal + jeOpex);   // N20: + posted-journal expense leg
   // N99: ACCOUNTS PAYABLE — the ONE implementation, on the same basis and FX path as AR: recognised bills issued
   // on or before today, Σ max(0, amount − amount_paid), less open|applied vendor credits dated on or before
   // today; each row converted from ITS entity's currency at its own date (consolidated → base). canonicalAP

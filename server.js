@@ -3852,7 +3852,12 @@ const _afterSince = (row, since) => {
 const _badSince = (res) => res.status(400).json({ error: 'since must be an ISO-8601 date or timestamp, e.g. 2026-07-01 or 2026-07-01T00:00:00Z.' });
 
 // ── API KEY MANAGEMENT (session-authed) ──
-app.post('/api/api-keys', requireAuth, apiLimiter, wrap(async (req, res) => {
+// N26: an API key is a standing read credential over the account's books that bypasses session RBAC, so
+// minting, listing and revoking keys is an account-settings action (owner / admin — settings:manage),
+// and a member granted only some entities can only mint keys scoped to one of THOSE entities — never
+// an all-entities key. (Any non-viewer, incl. the external accountant and per-entity members, could
+// mint an all-entities key before.)
+app.post('/api/api-keys', requireAuth, requirePerm('settings:manage'), apiLimiter, wrap(async (req, res) => {
   const name = String(req.body?.name || '').trim().slice(0, 80) || 'API key';
   let entityId = null;
   if (req.body?.entity_id != null && req.body.entity_id !== '' && req.body.entity_id !== 'all') {
@@ -3860,6 +3865,9 @@ app.post('/api/api-keys', requireAuth, apiLimiter, wrap(async (req, res) => {
     if (!Number.isInteger(entityId) || entityId <= 0) return res.status(400).json({ error: 'Invalid entity_id.' });
     const owned = await pool.query('SELECT id FROM entities WHERE id=$1 AND user_id=$2', [entityId, scopeId(req)]);
     if (!owned.rows[0]) return res.status(403).json({ error: 'Entity not found.' });
+  }
+  if (Array.isArray(req.entityAccess) && (entityId == null || !req.entityAccess.includes(entityId))) {
+    return res.status(403).json({ error: 'You can only create API keys for a business you have access to.', code: 'API_KEY_ENTITY_SCOPE' });
   }
   const key = apiKeys.generateKey();
   const { row } = await db.insert('api_keys', {
@@ -3871,11 +3879,11 @@ app.post('/api/api-keys', requireAuth, apiLimiter, wrap(async (req, res) => {
   // The plaintext key is returned ONCE here and never again.
   res.status(201).json({ id: row.id, name, key, display: apiKeys.maskKey(key), entity_id: entityId, created_at: row.data?.created_at || new Date().toISOString() });
 }));
-app.get('/api/api-keys', requireAuth, wrap(async (req, res) => {
+app.get('/api/api-keys', requireAuth, requirePerm('settings:manage'), wrap(async (req, res) => {
   const rows = await db.allByUser('api_keys', scopeId(req), () => true, (a, b) => b.id - a.id);
   res.json(rows.map(r => ({ id: r.id, name: r.name, display: r.display, entity_id: r.key_entity_id ?? null, created_at: r.created_at || null, last_used_at: r.last_used_at || null })));
 }));
-app.delete('/api/api-keys/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/api-keys/:id', requireAuth, requirePerm('settings:manage'), wrap(async (req, res) => {
   const row = await ownedBy('api_keys', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Key not found.' });
   await db.deleteById('api_keys', parseInt(req.params.id));

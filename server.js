@@ -10081,7 +10081,7 @@ async function glProfitLoss(userId, entityId, opts = {}) {
 // The ONE AP figure — the balance sheet below and the accountant portal's /books both read it (N75:
 // /books summed `amount` of status==='unpaid' only, ignoring overdue/partial bills, amounts already
 // paid and vendor credits).
-async function canonicalAP(userId, entityId) {
+async function canonicalAP(userId, entityId, { net = false } = {}) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const matchEnt = r => r.entity_id == null || (entityId != null && r.entity_id === entityId);
   const bills = await db.allByUser('bills', userId, matchEnt);
@@ -10099,13 +10099,16 @@ async function canonicalAP(userId, entityId) {
     .filter(vc => ['open', 'applied'].includes(String(vc.status || '').toLowerCase()))
     .filter(vc => { const _y = FinFlowDates._toYmd(vc.date || vc.created_at); return _y != null && _y <= _apToday; })
     .reduce((s, vc) => s + (parseFloat(vc.amount) || 0), 0);
-  return r2(Math.max(0, _apGross - _apCredits));
+  // net: the signed payables position (negative when vendor credits exceed open bills — the ledger's
+  // AP account carries exactly that). The displayed AP is floored at 0.
+  return net ? r2(_apGross - _apCredits) : r2(Math.max(0, _apGross - _apCredits));
 }
 async function glBalanceSheet(userId, entityId) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const books = await computeBooks(userId, entityId, 'year');
   const ar = r2(books.outstanding);
   const ap = await canonicalAP(userId, entityId);
+  const apNet = await canonicalAP(userId, entityId, { net: true });
   // Oracle = today's honest stub (cash not tracked, assets = AR only).
   const oracle = () => ({
     source: 'computeBooks',
@@ -10131,7 +10134,10 @@ async function glBalanceSheet(userId, entityId) {
   // is trustworthy under it (payroll cash-out posts). Single-entity keeps the exact AP check.
   const reconciled = f.trialBalance.balanced && coverageOk &&
     eq(f.incomeStatement.income, books.revenue) && eq(glExpNonFx, books.cogs + books.opex) &&
-    eq(glAR, ar) && (consolidated ? true : eq(glAP, ap));
+    // N96: compare the ledger's AP with the SIGNED canonical position. With vendor credits above open
+    // bills the ledger's AP is negative while the displayed AP floors at 0, so the old comparison
+    // always failed and the balance sheet fell back to "cash not tracked".
+    eq(glAR, ar) && (consolidated ? true : eq(glAP, apNet));
   if (!reconciled) {
     console.warn('[GL 5b] balance-sheet divergence (serving oracle) uid=' + userId + ' eid=' + entityId +
       ' glAR=' + glAR + ' AR=' + ar + ' glAP=' + glAP + ' AP=' + ap + ' tb=' + f.trialBalance.balanced + ' cov=' + coverageOk);

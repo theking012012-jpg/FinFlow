@@ -8563,15 +8563,29 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(as
   // a token-based table would instead select by the idempotency token. NOTE: inert until the UNIQUE
   // index exists (no index ⇒ no 23505 ⇒ byte-identical to prior behaviour), so it is safe to ship
   // ahead of the migration.
+  // N59: the run header and its lines commit TOGETHER (one transaction). Previously the header was
+  // inserted, then each line separately; a failure part-way left a run whose total_gross disagreed with
+  // Σ lines (Rule 12 — basis C reads the LINES), with no way to tell it was incomplete.
   let run;
+  const _prc = await pool.connect();
   try {
-    const { rows } = await pool.query(
+    await _prc.query('BEGIN');
+    const { rows } = await _prc.query(
       `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net, notes, idempotency_key)
        VALUES ($1,$2,$3,NOW(),$4,$5,$6,$7,$8,$9) RETURNING *`,
       [uid, eid, period, 'draft', totalGross, totalDeductions, totalNet, notes, idem]
     );
     run = rows[0];
+    for (const l of lines) {
+      await _prc.query(
+        `INSERT INTO payroll_run_lines (run_id, payroll_id, employee_name, gross, bonus, overtime, deductions, net_pay)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [run.id, l.payroll_id, l.employee_name, l.gross, l.bonus, l.overtime, JSON.stringify(l.deductions), l.netPay]
+      );
+    }
+    await _prc.query('COMMIT');
   } catch (e) {
+    try { await _prc.query('ROLLBACK'); } catch (_) {}
     if (e.code === '23505') {
       // Recover the ORIGINAL run: by token when the token index caught the dup, else by natural key
       // (user_id, entity_id, period) for the prod-only period index. Return it + its lines, 200 —
@@ -8585,15 +8599,7 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(as
       }
     }
     throw e;
-  }
-
-  for (const l of lines) {
-    await pool.query(
-      `INSERT INTO payroll_run_lines (run_id, payroll_id, employee_name, gross, bonus, overtime, deductions, net_pay)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [run.id, l.payroll_id, l.employee_name, l.gross, l.bonus, l.overtime, JSON.stringify(l.deductions), l.netPay]
-    );
-  }
+  } finally { _prc.release(); }
 
   const { rows: fullLines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id = $1`, [run.id]);
   await auditLog(pool, { userId: req.session.userId, entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', req });

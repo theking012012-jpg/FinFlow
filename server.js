@@ -9386,7 +9386,13 @@ async function postLedgerEntry(client, args) {
     throw e;
   }
 }
-async function _postLedgerEntryBody(client, { userId, entityId, date, description, sourceType, sourceId = null, currency = 'USD', idempotencyKey = null, lines = [] }) {
+async function _postLedgerEntryBody(client, { userId, entityId, date, description, sourceType, sourceId = null, currency = null, idempotencyKey = null, lines = [] }) {
+  // N61: an entry is in its ENTITY's currency unless the caller says otherwise. The default used to be
+  // 'USD' for every entity, so a TTD / JPY / EUR business's whole ledger was labelled USD.
+  if (!currency) {
+    const { rows: [_ec] } = entityId != null ? await client.query(`SELECT data->>'currency' AS c FROM entities WHERE id = $1`, [entityId]) : { rows: [] };
+    currency = String((_ec && _ec.c) || 'USD').toUpperCase();
+  }
   let { rows: accts } = await client.query(`SELECT id, code FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2`, [userId, entityId]);
   if (!accts.length) { await ensureLedgerAccountsForEntity(client, userId, entityId, currency); ({ rows: accts } = await client.query(`SELECT id, code FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2`, [userId, entityId])); }
   const idByCode = Object.fromEntries(accts.map(a => [a.code, a.id]));

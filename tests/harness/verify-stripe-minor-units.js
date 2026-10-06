@@ -68,7 +68,7 @@ async function main() {
     // 1 · webhook pay-now reconciliation in JPY
     const inv = (await c.query(`INSERT INTO invoices (user_id,entity_id,data) VALUES ($1,$2,$3) RETURNING id`,
       [uid, jpy, { client: 'JP Cust', amount: 5000, status: 'pending', amount_paid: 0, issue_date: '2026-07-10' }])).rows[0].id;
-    const evt = { id: 'evt_units_1', type: 'checkout.session.completed', data: { object: { id: 'cs_units_1', mode: 'payment', amount_total: 5000, currency: 'jpy', client_reference_id: String(inv), metadata: { kind: 'invoice_payment', invoice_id: String(inv) } } } };
+    const evt = { id: 'evt_units_1', type: 'checkout.session.completed', data: { object: { payment_status: 'paid', id: 'cs_units_1', mode: 'payment', amount_total: 5000, currency: 'jpy', client_reference_id: String(inv), metadata: { kind: 'invoice_payment', invoice_id: String(inv) } } } };
     const payload = JSON.stringify(evt);
     const wh = await fetch(server.baseUrl + '/api/stripe/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': stripe.webhooks.generateTestHeaderString({ payload, secret: process.env.STRIPE_WEBHOOK_SECRET }) }, body: payload });
     A('JPY pay-now webhook → 200', wh.status === 200, 'status ' + wh.status);

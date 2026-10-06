@@ -37,7 +37,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
     };
     const mkEvent = (id) => JSON.stringify({
       id, type: 'checkout.session.completed',
-      data: { object: { metadata: { accountantId: '4242' }, amount_total: 5000 } },
+      data: { object: { payment_status: 'paid', metadata: { accountantId: '4242' }, amount_total: 5000 } },
     });
     const feeRows = async () => (await c.query(`SELECT count(*)::int AS n FROM platform_fees WHERE accountant_id = 4242`)).rows[0].n;
     const evtRows = async (id) => (await c.query(`SELECT count(*)::int AS n FROM stripe_webhook_events WHERE event_id = $1`, [id])).rows[0].n;

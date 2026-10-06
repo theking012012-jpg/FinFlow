@@ -261,7 +261,14 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   try {
   const userId = event.data.object?.metadata?.userId;
 
-  if (event.type === 'checkout.session.completed') {
+  // N7: a Checkout Session can COMPLETE before it is paid (delayed methods: bank debits, vouchers) —
+  // payment_status 'unpaid'. Plan upgrades, platform-fee rows and invoice payments are booked only once
+  // it is 'paid' (or 'no_payment_required', e.g. a subscription that starts with a trial): on
+  // checkout.session.completed when already paid, else on checkout.session.async_payment_succeeded.
+  const _checkoutEvt = event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded';
+  if (_checkoutEvt && !['paid', 'no_payment_required'].includes(event.data.object && event.data.object.payment_status)) {
+    console.log(`[Stripe] ${event.type} ${event.data.object && event.data.object.id} not paid yet (payment_status=${event.data.object && event.data.object.payment_status}) — waiting for async_payment_succeeded`);
+  } else if (_checkoutEvt) {
     const session = event.data.object;
     const accountantId = session.metadata?.accountantId;
     const billedCents  = session.amount_total;

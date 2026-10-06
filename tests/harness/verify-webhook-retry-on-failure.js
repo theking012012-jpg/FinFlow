@@ -34,7 +34,7 @@ async function main() {
     server = await bootServer(scratch.url);
     const uid = (await c.query(`INSERT INTO users (user_id, entity_id, data) VALUES (NULL,NULL,$1) RETURNING id`,
       [{ email: 'retry@finflow.test', plan: 'trial', trial_ends: new Date(Date.now() + 86400000).toISOString(), role: 'owner', password: bcrypt.hashSync('x', 10) }])).rows[0].id;
-    const evt = { id: 'evt_retry_1', type: 'checkout.session.completed', data: { object: {
+    const evt = { id: 'evt_retry_1', type: 'checkout.session.completed', data: { object: { payment_status: 'paid',
       id: 'cs_retry_1', object: 'checkout.session', mode: 'subscription', amount_total: 7900, metadata: { userId: String(uid), plan: 'pro' } } } };
     const post = async () => {
       const payload = JSON.stringify(evt);

@@ -65,7 +65,7 @@ async function main() {
 
     // Subscriber: upgrade, then cancel.
     const sub = await mkUser('cancelled@finflow.test');
-    const up = await postSigned({ id: 'evt_up_1', type: 'checkout.session.completed', data: { object: {
+    const up = await postSigned({ id: 'evt_up_1', type: 'checkout.session.completed', data: { object: { payment_status: 'paid',
       id: 'cs_sub_1', object: 'checkout.session', mode: 'subscription', amount_total: 7900, metadata: { userId: String(sub), plan: 'pro' } } } });
     A('upgrade webhook → 200', up.status === 200, 'status ' + up.status);
     A('after upgrade: plan=pro', (await userData(sub)).plan === 'pro', JSON.stringify(await userData(sub)));
@@ -90,7 +90,7 @@ async function main() {
     A('no post-cancel expense row was written', Number((await c.query(`SELECT COUNT(*) n FROM expenses WHERE user_id=$1 AND data->>'description'='Post-cancel expense'`, [sub])).rows[0].n) === 0);
 
     // Resubscribe restores write access.
-    const re = await postSigned({ id: 'evt_up_2', type: 'checkout.session.completed', data: { object: {
+    const re = await postSigned({ id: 'evt_up_2', type: 'checkout.session.completed', data: { object: { payment_status: 'paid',
       id: 'cs_sub_2', object: 'checkout.session', mode: 'subscription', amount_total: 7900, metadata: { userId: String(sub), plan: 'pro' } } } });
     A('resubscribe webhook → 200', re.status === 200, 'status ' + re.status);
     const w3 = await S.h.post('/api/expenses', { description: 'Resubscribed expense', amount: 41, expense_date: '2026-07-22' });

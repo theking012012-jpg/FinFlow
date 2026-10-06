@@ -72,7 +72,7 @@ async function main() {
     A('generate Stripe pay-link → provider dispatch reached (502, live call blocked)', link.status === 502 && link.json.provider === 'stripe', `status ${link.status}`);
 
     // customer pays → SIGNED Stripe webhook → reconcile
-    const evt = { id: 'evt_e2e_A', type: 'checkout.session.completed', data: { object: { id: 'cs_e2e_A', mode: 'payment', amount_total: 50000, currency: 'usd', client_reference_id: String(invA), metadata: { kind: 'invoice_payment', invoice_id: String(invA) } } } };
+    const evt = { id: 'evt_e2e_A', type: 'checkout.session.completed', data: { object: { payment_status: 'paid', id: 'cs_e2e_A', mode: 'payment', amount_total: 50000, currency: 'usd', client_reference_id: String(invA), metadata: { kind: 'invoice_payment', invoice_id: String(invA) } } } };
     const payload = JSON.stringify(evt);
     const sig = stripe.webhooks.generateTestHeaderString({ payload, secret: process.env.STRIPE_WEBHOOK_SECRET });
     const wh = await fetch(server.baseUrl + '/api/stripe/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': sig }, body: payload });

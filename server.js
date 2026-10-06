@@ -2558,14 +2558,17 @@ app.post('/api/snapshots/capture', requireAuth, wrap(async (req, res) => {
   let value = 0;
   if (kind === 'networth') {
     // Net worth = manual assets + live investment portfolio − manual liabilities.
-    const accts  = await db.allByUser('personal_accounts', uid, r => (r.entity_id || null) === eid);
+    // N16: the SAME rows the page adds up — GET /api/personal-accounts (personal + this business's rows)
+    // and the personal portfolio GET /api/holdings?scope=personal. The snapshot used exact-entity accounts
+    // and personal+business holdings, so the stored series never matched the net worth on screen.
+    const accts  = await db.allByUser('personal_accounts', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
     const assets = accts.filter(a => a.kind === 'asset').reduce((s, a) => s + (parseFloat(a.value) || 0), 0);
     const liabs  = accts.filter(a => a.kind === 'liability').reduce((s, a) => s + (parseFloat(a.value) || 0), 0);
-    const holds  = await db.allByUser('holdings', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+    const holds  = await db.allByUser('holdings', uid, r => r.entity_id == null);
     const portfolio = holds.reduce((s, h) => s + ((parseFloat(h.shares) || 0) * (parseFloat(h.price) || 0)), 0);
     value = assets + portfolio - liabs;
   } else {
-    const holds = await db.allByUser('holdings', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+    const holds = await db.allByUser('holdings', uid, r => r.entity_id == null);   // N16: the personal portfolio the Investments page charts
     value = holds.reduce((s, h) => s + ((parseFloat(h.shares) || 0) * (parseFloat(h.price) || 0)), 0);
   }
 

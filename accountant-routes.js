@@ -911,7 +911,7 @@ If you cannot find a field, use null. Be concise.`;
       const [ptx, pacc, phold] = await Promise.all([
         pool.query(`SELECT id, data FROM personal_transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 200`, [userId]),
         pool.query(`SELECT id, data FROM personal_accounts     WHERE user_id = $1 ORDER BY id`, [userId]),
-        pool.query(`SELECT data     FROM holdings              WHERE user_id = $1`, [userId]),
+        pool.query(`SELECT data     FROM holdings              WHERE user_id = $1 AND entity_id IS NULL`, [userId]),   // N16: the PERSONAL portfolio, as the owner's net worth counts it (business holdings are business assets)
       ]);
       const _n = v => parseFloat(v) || 0;
       const _assets = pacc.rows.filter(r => r.data?.kind === 'asset')    .reduce((a,r)=>a+_n(r.data?.value),0);

@@ -1431,8 +1431,13 @@ app.use('/api', async (req, res, next) => {
     return next();
   }
   if (req.session.entityId) {
-    req.entityId = req.session.entityId;
-    return next();
+    // N10: the remembered entity must still belong to the account this request acts on (it can be
+    // stale after an account switch, an entity delete, or a value stored by an older build).
+    try {
+      const { rows: [own] } = await pool.query(`SELECT 1 FROM entities WHERE id = $1 AND user_id = $2`, [req.session.entityId, scopeId(req)]);
+      if (own) { req.entityId = req.session.entityId; return next(); }
+      req.session.entityId = null;   // fall through to the account's own default entity
+    } catch (e) { return next(e); }
   }
   if (req.session.userId) {
     try {
@@ -1697,15 +1702,20 @@ app.delete('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wra
 }));
 app.post('/api/entities/:id/activate', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const uid = scopeId(req);
-  const eid = parseInt(req.params.id);
-  await pool.query(
-    `UPDATE entities SET data = data || '{"is_active":0}'::jsonb, updated_at = NOW() WHERE user_id = $1`,
-    [scopeId(req)]
-  );
-  await pool.query(
-    `UPDATE entities SET data = data || '{"is_active":1}'::jsonb, updated_at = NOW() WHERE id = $1 AND user_id = $2`,
-    [eid, scopeId(req)]
-  );
+  const eid = parseInt(req.params.id, 10);
+  // N10: the entity must belong to this account BEFORE anything changes. An id from another account
+  // used to deactivate every one of the caller's own entities (the activate UPDATE matched nothing) and
+  // still store the foreign id as the session's active entity.
+  if (!Number.isInteger(eid) || eid <= 0) return res.status(400).json({ error: 'Invalid entity id.' });
+  const { rows: [own] } = await pool.query(`SELECT id FROM entities WHERE id = $1 AND user_id = $2`, [eid, uid]);
+  if (!own) return res.status(404).json({ error: 'Entity not found.' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`UPDATE entities SET data = data || '{"is_active":0}'::jsonb, updated_at = NOW() WHERE user_id = $1 AND id <> $2`, [uid, eid]);
+    await client.query(`UPDATE entities SET data = data || '{"is_active":1}'::jsonb, updated_at = NOW() WHERE id = $1 AND user_id = $2`, [eid, uid]);
+    await client.query('COMMIT');
+  } catch (e) { try { await client.query('ROLLBACK'); } catch (_) {} throw e; } finally { client.release(); }
   req.session.entityId = eid;
   res.json({ ok: true });
 }));

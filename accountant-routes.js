@@ -270,7 +270,7 @@ function _openSse(res) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP) {
+module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx) {
   // F90 Phase B: recordAudit is the single audited write path (threaded from server.js). Accountant
   // actions on a client's books log with actor_type='accountant' + actor_id=accountantId (derived
   // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
@@ -768,7 +768,6 @@ If you cannot find a field, use null. Be concise.`;
   // set, the client's fiscal-year start — and ONE top-line canonical books read over that scope. /books
   // and ai-insights both go through these, so no accountant reader can widen the grant (ai-insights used
   // to read every entity's invoices/expenses and the payroll ROSTER directly).
-  const _FY_MONTHS_SCOPE = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   async function _clientScope(userId, accessRow) {
     const ea = normalizeEntityAccess(accessRow.entity_access);   // null = legacy (all entities)
     const { rows: entities } = await pool.query(`SELECT id, data->>'name' AS name, data->>'color' AS color, data->>'currency' AS currency FROM entities WHERE user_id = $1 ORDER BY id`, [userId]);
@@ -776,7 +775,8 @@ If you cannot find a field, use null. Be concise.`;
     const entLevel = {};
     for (const er of entities) entLevel[er.id] = entityLevel(ea, accessRow.access_level, er.id);
     const permittedIds = entities.filter(er => _canRead(entLevel[er.id])).map(er => er.id);
-    const fyStartIdx = Math.max(0, _FY_MONTHS_SCOPE.indexOf(String(u?.data?.fiscal_year || 'January')));
+    // N109: the client's fiscal-year setting from where the owner saves it (server.js accountFyStartIdx).
+    const fyStartIdx = await accountFyStartIdx(userId);
     return { ea, entities, entLevel, permittedIds, permitted: new Set(permittedIds), fyStartIdx, userData: u?.data || {} };
   }
   // Legacy: the requested scope unchanged. Scoped + specific entity: that entity. Scoped + all: the
@@ -839,7 +839,7 @@ If you cannot find a field, use null. Be concise.`;
     const entMatch = eid => eid == null || eid === entityId || entityId == null;
     // F140: window computeBooks on the CLIENT's fiscal-year start, not the January default. The
     // client dashboard/reports pass ?fyStart=<0-11>; the accountant portal must use the SAME start —
-    // the client's `fiscal_year` setting (a month name in users.data) — or a non-January fiscal year
+    // the client's `fiscal_year` setting (user_settings, via accountFyStartIdx) — or a non-January fiscal year
     // makes the 'year' window diverge from the client's own dashboard. Default January when unset.
     const fyStartIdx = _scope.fyStartIdx;
 

@@ -35,8 +35,12 @@ const ACC = { email: 'f140-acc@finflow.test', password: 'harness-password-not-a-
     // client user with fiscal_year = April
     const uid = (await c.query(
       `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
-      [{ email: CLIENT.email, name: 'C', plan: 'trial', role: 'owner', fiscal_year: 'April', password: bcrypt.hashSync(CLIENT.password, 10) }]
+      [{ email: CLIENT.email, name: 'C', plan: 'trial', role: 'owner', password: bcrypt.hashSync(CLIENT.password, 10) }]
     )).rows[0].id;
+    // N109 (Rule 3/F79 — real reality): the fiscal year lives where PUT /api/settings writes it — the key-less
+    // user_settings row. This seed used to put it in users.data.fiscal_year, a place the app never writes,
+    // so it passed against a fabricated store while the real portal always used January.
+    await c.query(`INSERT INTO user_settings (user_id, entity_id, data) VALUES ($1, NULL, $2)`, [uid, { fiscal_year: 'April' }]);
     // F150 seed-debt fix: invoices require a non-NULL entity_id (chk_invoices_entity_nn). Create an
     // active entity and stamp it, mirroring production onboarding (which POSTs /api/entities).
     const eid = (await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,

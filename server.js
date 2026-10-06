@@ -5489,7 +5489,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
 const registerAccountantRoutes = require('./accountant-routes');
 // computeBooks is a hoisted declaration (defined below) closing over db+pool — pass it so
 // the accountant /books view shares the one canonical, entity-scoped basis (F9).
-registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
+registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
 
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.
@@ -10098,6 +10098,18 @@ async function glBalanceSheet(userId, entityId) {
     if (f.asc830) { res.cta = f.asc830.cta; res.asc830 = f.asc830; }   // ASC 830 supplementary (GAAP CTA)
   }
   return res;
+}
+
+// The account's fiscal-year start month (0-11) — the ONE server-side reader of the setting the owner saves
+// on the Settings page (PUT /api/settings → user_settings, the key-less row, data.fiscal_year = a month
+// name). N109: the accountant portal read users.data.fiscal_year, which nothing writes, so it always
+// windowed on January while the owner's own dashboard used their fiscal year.
+const _FY_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+async function accountFyStartIdx(userId) {
+  try {
+    const { rows: [r] } = await pool.query(`SELECT data->>'fiscal_year' AS fy FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL ORDER BY id LIMIT 1`, [userId]);
+    return Math.max(0, _FY_MONTH_NAMES.indexOf(String((r && r.fy) || 'January')));
+  } catch (_) { return 0; }
 }
 
 async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null, permittedEntityIds = null) {

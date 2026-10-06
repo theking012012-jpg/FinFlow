@@ -6101,7 +6101,10 @@ const CSV_IMPORT_SPECS = {
       return { key: (g.number && String(g.number).trim()) || [g.vendor, amount, issue].join('|'), date: issue, data: Object.assign({ vendor: (g.vendor || 'Vendor').slice(0, 120), amount, amount_paid: 0, status: _st, issue_date: issue }, dd ? { due_date: dd } : {}) }; } },
   customers: { table: 'customers', money: false,
     cols: { name: ['name', 'customer', 'customer name', 'company', 'client'], email: ['email', 'e-mail'], phone: ['phone', 'telephone', 'tel'] },
-    build: g => { const name = (g.name || '').trim(); if (!name) return null; return { key: name.toLowerCase(), date: null, data: Object.assign({ name: name.slice(0, 120) }, g.email ? { email: String(g.email).slice(0, 160) } : {}, g.phone ? { phone: String(g.phone).slice(0, 40) } : {}) }; } },
+    // N112: a customer record has fname / lname / company / status / revenue (what the customer list, invoices
+    // and reminders read). The import wrote only `name`, so an imported customer listed with a blank name, no
+    // status and a NaN revenue. Same shape as the Codat importer: company = the name, fname/lname split from it.
+    build: g => { const name = (g.name || '').trim(); if (!name) return null; const n = _cdSplitName(name); return { key: name.toLowerCase(), date: null, data: Object.assign({ company: name.slice(0, 200), fname: n.fname, lname: n.lname, status: 'active', revenue: 0, industry: '', notes: 'Imported (CSV)' }, g.email ? { email: String(g.email).slice(0, 160) } : {}, g.phone ? { phone: String(g.phone).slice(0, 40) } : {}) }; } },
   vendors: { table: 'vendors', money: false,
     cols: { name: ['name', 'vendor', 'supplier', 'company'], email: ['email', 'e-mail'], phone: ['phone', 'telephone', 'tel'] },
     build: g => { const name = (g.name || '').trim(); if (!name) return null; return { key: name.toLowerCase(), date: null, data: Object.assign({ name: name.slice(0, 120) }, g.email ? { email: String(g.email).slice(0, 160) } : {}, g.phone ? { phone: String(g.phone).slice(0, 40) } : {}) }; } },

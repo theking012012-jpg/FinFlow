@@ -2422,75 +2422,107 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   });
 
   // ── BILL CLIENT ───────────────────────────────────────────────────────────
+  // N86 / N98: the dashboard sends { clientUserId, description, amountCents } and expects a hosted
+  // payment link (`url`) that the client is emailed. The route used to require { clientId, amount }
+  // (so every dashboard bill was a 400), returned a PaymentIntent client secret to the ACCOUNTANT, sent
+  // no email, booked the earning as 'pending' (the admin payout queue) before anyone paid, and echoed
+  // raw Stripe errors. Now: a Stripe Checkout Session on the accountant's connected account (destination
+  // charge, FinFlow's tier commission as the application fee), emailed to the linked client; the earning
+  // is 'awaiting_payment' until payment_intent.succeeded marks it 'paid' (server.js webhook, matched by
+  // the earning id carried in the PaymentIntent metadata).
+  const _billEsc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   app.post('/api/accountants/bill-client', requireAccountant, async (req, res) => {
+    let earningId = null;
     try {
       if (!stripe) return res.status(503).json({ error: 'Stripe not configured.' });
-      const { clientId, amount, description, currency = 'usd' } = req.body;
-      if (!clientId || !amount) return res.status(400).json({ error: 'clientId and amount required' });
+      const b = req.body || {};
+      const clientId = parseInt(b.clientUserId != null ? b.clientUserId : b.clientId, 10);
+      const description = String(b.description || '').trim().slice(0, 200) || 'Accounting services';
+      const currency = String(b.currency || 'usd').toLowerCase();
+      if (!Number.isInteger(clientId) || clientId <= 0) return res.status(400).json({ error: 'Choose a client to bill.' });
+      if (!/^[a-z]{3}$/.test(currency)) return res.status(400).json({ error: 'Invalid currency.' });
+      const units = require('./stripe-units');
+      // amountCents = minor units (the dashboard); amount = major units (API callers). Currency exponent (N47).
+      const amountMinor = b.amountCents != null ? Number(b.amountCents) : units.majorToMinor(parseFloat(b.amount), currency);
+      if (!Number.isInteger(amountMinor) || amountMinor <= 0) return res.status(400).json({ error: 'Enter a valid amount.' });
+
       const { rows: clientRows } = await pool.query(
-        `SELECT u.id, u.data FROM users u
+        `SELECT u.id, u.data->>'email' AS email, u.data->>'name' AS name FROM users u
          JOIN accountant_clients ac ON ac.user_id = u.id AND ac.accountant_id = $2 AND ac.status = 'active'
          WHERE u.id = $1`,
         [clientId, req.session.accountantId]
       );
       if (!clientRows.length) return res.status(403).json({ error: 'Client not found or not linked to you' });
-      const { rows: accRows } = await pool.query('SELECT stripe_account_id FROM accountants WHERE id = $1', [req.session.accountantId]);
-      const stripeAccountId = accRows[0]?.stripe_account_id;
-      if (!stripeAccountId) return res.status(400).json({ error: 'Connect your Stripe account first' });
-      const amountCents = require('./stripe-units').majorToMinor(parseFloat(amount), currency);   // currency exponent (N47)
+      const cl = clientRows[0];
+      const { rows: accRows } = await pool.query('SELECT stripe_account_id, first_name, last_name, firm FROM accountants WHERE id = $1', [req.session.accountantId]);
+      const acc = accRows[0] || {};
+      if (!acc.stripe_account_id) return res.status(400).json({ error: 'Connect your Stripe account first' });
 
-      // F17: LIVE tier commission (was a flat hardcoded 4%). "Active client" =
-      // consented AND paying (subscriptionStatus='active'); the accountant's first 3
-      // such clients are commission-free (onboarding hook, applied by commissionRateFor).
+      // F17: LIVE tier commission. "Active client" = consented AND paying (subscriptionStatus='active').
       const countRes = await pool.query(
         `SELECT COUNT(*) FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
           WHERE ac.accountant_id = $1 AND ac.status = 'active' AND u.data->>'subscriptionStatus' = 'active'`,
         [req.session.accountantId]
       );
-      const activeCount = parseInt(countRes.rows[0].count) || 0;
-      const rate   = commissionRateFor(activeCount);
-      const feeEst = estimateStripeFeeCents(amountCents);
-      const split  = splitBilling(amountCents, rate, feeEst);
+      const rate  = commissionRateFor(parseInt(countRes.rows[0].count) || 0);
+      const split = splitBilling(amountMinor, rate, estimateStripeFeeCents(amountMinor));
 
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: amountCents,
-        currency,
-        application_fee_amount: split.commissionCents,   // FinFlow's tier commission
-        on_behalf_of: stripeAccountId,                    // accountant is settlement merchant → bears the Stripe fee
-        transfer_data: { destination: stripeAccountId },
-        metadata: {
-          accountant_id: req.session.accountantId,
-          client_id: clientId,
-          description: description || 'Accounting services'
-        }
+      // The earning exists from the start, NOT payable: 'awaiting_payment' (never the 'pending' payout queue).
+      const { rows: [er] } = await pool.query(
+        `INSERT INTO accountant_earnings
+           (accountant_id, client_id, type, amount_cents, billed_cents, commission_cents, stripe_fee_cents, description, status, created_at)
+         VALUES ($1,$2,'service_commission',$3,$4,$5,$6,$7,'awaiting_payment',NOW()) RETURNING id`,
+        [req.session.accountantId, clientId, split.accountantNetCents, split.billedCents, split.commissionCents, split.stripeFeeCents, description]);
+      earningId = er.id;
+
+      const meta = { kind: 'accountant_bill', accountant_id: String(req.session.accountantId), client_id: String(clientId), earning_id: String(earningId) };
+      const session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        customer_email: cl.email || undefined,
+        line_items: [{ price_data: { currency, unit_amount: amountMinor, product_data: { name: description } }, quantity: 1 }],
+        payment_intent_data: {
+          application_fee_amount: split.commissionCents,     // FinFlow's tier commission
+          on_behalf_of: acc.stripe_account_id,                // accountant is the settlement merchant
+          transfer_data: { destination: acc.stripe_account_id },
+          metadata: meta,
+        },
+        metadata: meta,
+        success_url: appUrl() + '/pay-received.html',
+        cancel_url: appUrl() + '/pay-received.html?status=cancelled',
       });
 
-      // Ledger records the FULL split: amount_cents = accountant NET (billed − Stripe
-      // fee − commission), with the fee an ESTIMATE. The payment_intent.succeeded
-      // webhook reconciles to the real balance-transaction fee and flips status→'paid'.
-      await pool.query(
-        `INSERT INTO accountant_earnings
-           (accountant_id, client_id, type, amount_cents, billed_cents, commission_cents,
-            stripe_fee_cents, payment_intent_id, description, status, created_at)
-         VALUES ($1,$2,'service_commission',$3,$4,$5,$6,$7,$8,'pending',NOW())
-         ON CONFLICT DO NOTHING`,
-        [req.session.accountantId, clientId, split.accountantNetCents, split.billedCents,
-         split.commissionCents, split.stripeFeeCents, paymentIntent.id, description || 'Accounting services']
-      );
+      let emailed = false;
+      if (cl.email && resendClient) {
+        const who = (`${acc.first_name || ''} ${acc.last_name || ''}`.trim()) || 'Your accountant';
+        try {
+          await resendClient.emails.send({
+            from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
+            to: cl.email,
+            subject: `Payment request from ${who}${acc.firm ? ' (' + acc.firm + ')' : ''}`,
+            html: `<p>Hi ${_billEsc(cl.name || 'there')},</p>
+                   <p><strong>${_billEsc(who)}</strong>${acc.firm ? ' from <strong>' + _billEsc(acc.firm) + '</strong>' : ''} has sent you a payment request on FinFlow.</p>
+                   <p><strong>${_billEsc(description)}</strong> — ${_billEsc(units.minorToMajor(amountMinor, currency).toFixed(units.currencyExponent(currency)))} ${_billEsc(currency.toUpperCase())}</p>
+                   <p><a href="${_billEsc(session.url)}">Pay securely with Stripe →</a></p>`,
+          });
+          emailed = true;
+        } catch (e) { console.error('[bill-client] client email failed:', e.message); }
+      }
 
-      await _audit(pool, { userId: parseInt(clientId), table: 'accountant_earnings', action: 'BILL_CLIENT', newData: { billed_cents: split.billedCents, commission_cents: split.commissionCents, net_cents: split.accountantNetCents, payment_intent_id: paymentIntent.id, description: description || 'Accounting services' }, req });  // F90 residual: accountant workflow audit
+      await _audit(pool, { userId: clientId, table: 'accountant_earnings', recordId: earningId, action: 'BILL_CLIENT', newData: { billed_cents: split.billedCents, commission_cents: split.commissionCents, net_cents: split.accountantNetCents, checkout_session_id: session.id, description }, req });  // F90 residual: accountant workflow audit
 
       res.json({
-        clientSecret: paymentIntent.client_secret,
-        paymentIntentId: paymentIntent.id,
-        amount: amountCents,
+        url: session.url,
+        emailed,
+        amount: amountMinor,
         commissionRate: rate,
         commissionCents: split.commissionCents,
         estStripeFeeCents: split.stripeFeeCents,
         accountantNetCents: split.accountantNetCents
       });
     } catch (e) {
-      res.status(500).json({ error: e.message });
+      console.error('[bill-client] failed:', e && e.message);
+      if (earningId != null) { try { await pool.query(`DELETE FROM accountant_earnings WHERE id = $1 AND status = 'awaiting_payment'`, [earningId]); } catch (_) {} }
+      res.status(502).json({ error: 'Could not create the payment link. Please try again.' });
     }
   });
 

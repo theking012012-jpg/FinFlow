@@ -341,15 +341,22 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
         realFee = charge.balance_transaction?.fee ?? null;
       }
     } catch (e) { console.error('[Stripe] fee reconcile lookup failed:', e.message); }
+    // N98: a bill created through Checkout has no PaymentIntent id when it is booked; it is matched by the
+    // earning id + accountant id carried in the PaymentIntent metadata, and the PI id is recorded now.
+    const _md = pi.metadata || {};
+    const _eid = /^[1-9][0-9]*$/.test(String(_md.earning_id || '')) ? Number(_md.earning_id) : null;
+    const _aid = /^[1-9][0-9]*$/.test(String(_md.accountant_id || '')) ? Number(_md.accountant_id) : null;
     await pool.query(`
       UPDATE accountant_earnings
-         SET status           = 'paid',
-             stripe_fee_cents = COALESCE($2::int, stripe_fee_cents),
-             amount_cents     = GREATEST(0, COALESCE(billed_cents, amount_cents)
-                                            - COALESCE($2::int, stripe_fee_cents, 0)
-                                            - COALESCE(commission_cents, 0))
+         SET status            = 'paid',
+             payment_intent_id = $1,
+             stripe_fee_cents  = COALESCE($2::int, stripe_fee_cents),
+             amount_cents      = GREATEST(0, COALESCE(billed_cents, amount_cents)
+                                             - COALESCE($2::int, stripe_fee_cents, 0)
+                                             - COALESCE(commission_cents, 0))
        WHERE payment_intent_id = $1
-    `, [pi.id, realFee]);
+          OR (payment_intent_id IS NULL AND type = 'service_commission' AND id = $3::int AND accountant_id = $4::int)
+    `, [pi.id, realFee, _eid, _aid]);
   }
 
   if (event.type === 'customer.subscription.deleted') {
@@ -11178,6 +11185,7 @@ module.exports.annotateResolvedPostDate = annotateResolvedPostDate;   // F94 B2 
 module.exports.normalizeOpeningCash = normalizeOpeningCash;   // F94 B3 — opening-cash validator (test surface)
 // Test hooks: Plaid access-token encryption at rest (assert round-trip + tamper detection).
 module.exports._encTok = encTok;
+module.exports._stripe = () => stripe;   // test surface: the live Stripe client instance (null when unconfigured)
 module.exports._decTok = decTok;
 module.exports.plaidConfigured = plaidConfigured;
 module.exports.finchConfigured = finchConfigured;

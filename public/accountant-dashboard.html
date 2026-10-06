@@ -1451,7 +1451,7 @@ async function submitBill() {
     const data = await res.json();
     if (data.error) { toast(data.error, 'error'); return; }
     document.getElementById('bill-modal').classList.remove('open');
-    toast('Payment link created — client will receive an email ✓', 'success');
+    toast(data.emailed ? 'Payment link created — the client has been emailed ✓' : 'Payment link created — send it to your client ✓', 'success');
     // Open the Stripe checkout in a new tab
     if (data.url) window.open(data.url, '_blank');
   } catch(e) {

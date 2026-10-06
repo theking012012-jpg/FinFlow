@@ -11763,10 +11763,18 @@ async function _runReconcileScan(resend) {
     }
   } catch (e) { console.error('[GL reconcile] scan failed:', e && e.message); captureErr(e); }
 }
+// N72: every scheduled job runs in ONE replica at a time (job-lock.js — a Postgres advisory lock per job); the
+// other replicas skip that tick. They used to run every job in every replica.
+const { runExclusive } = require('./job-lock');
+const _jobs = {
+  recurring: () => runExclusive(pool, 'recurring-scheduler', () => runRecurringScheduler()),
+  fxLive:    () => runExclusive(pool, 'fx-live-refresh', () => refreshLiveFxRates()),
+  reconcile: (resend) => runExclusive(pool, 'gl-reconcile-scan', () => _runReconcileScan(resend)),
+};
 function startReconcileMonitor(resend) {
   const hours = Number(process.env.GL_RECONCILE_INTERVAL_HOURS || 6);
-  setTimeout(() => _runReconcileScan(resend), 60 * 1000);                 // first pass a minute after boot
-  setInterval(() => _runReconcileScan(resend), Math.max(1, hours) * 60 * 60 * 1000);
+  setTimeout(() => _jobs.reconcile(resend).catch(e => captureErr(e)), 60 * 1000);                 // first pass a minute after boot
+  setInterval(() => _jobs.reconcile(resend).catch(e => captureErr(e)), Math.max(1, hours) * 60 * 60 * 1000);
 }
 
 if (require.main === module) {
@@ -11789,14 +11797,15 @@ if (require.main === module) {
       console.log(`  ✦ FinFlow backend running → http://localhost:${PORT}`);
       console.log(`  ✦ Point Lighthouse at:    http://localhost:${PORT}`);
     });
-    // Run scheduler on boot, then every hour
-    runRecurringScheduler();
-    setInterval(runRecurringScheduler, 60 * 60 * 1000);
+    // Run scheduler on boot, then every hour — in one replica at a time (N72).
+    const _logJob = (n) => (e) => { console.error('[' + n + ']', e && e.message); captureErr(e); };
+    _jobs.recurring().catch(_logJob('recurring'));
+    setInterval(() => _jobs.recurring().catch(_logJob('recurring')), 60 * 60 * 1000);
     // FX-live: pull USD-base rates on boot + daily so conversion never depends on hand-entered rates.
-    refreshLiveFxRates();
-    setInterval(refreshLiveFxRates, 24 * 60 * 60 * 1000);
+    _jobs.fxLive().catch(_logJob('fx-live'));
+    setInterval(() => _jobs.fxLive().catch(_logJob('fx-live')), 24 * 60 * 60 * 1000);
     // Security: periodic audit-anomaly scan → email alert (no-op unless SECURITY_ALERT_EMAIL is set)
-    startAnomalyMonitor(pool, resendClient);
+    startAnomalyMonitor(pool, resendClient, { runExclusive: (fn) => runExclusive(pool, 'audit-anomaly-scan', fn) });
     // GL integrity: periodic reconcile scan → Sentry + email alert on any ledger that stops tying to
     // the canonical books (closes the class of silent divergence that hid the empty prod ledger).
     startReconcileMonitor(resendClient);
@@ -11813,6 +11822,7 @@ module.exports.computeBooks = computeBooks;
 module.exports.glFinancials = glFinancials;   // GL Phase 3 — ledger-derived financial statements (test surface)
 module.exports.backfillLedgerForUser = backfillLedgerForUser;   // GL Phase 4 — historical backfill (test surface)
 module.exports.glReconcile = glReconcile;
+module.exports._jobs = _jobs;   // N72 test surface: the replica-exclusive job wrappers
 module.exports.glReconcileScan = glReconcileScan;   // GL safety-net — scan all entities for divergence (test surface)
 module.exports.runMigrations = runMigrations;   // versioned migration runner (test surface)
 module.exports.glProfitLoss = glProfitLoss;   // GL Phase 5b - reconcile-gated P&L read (test surface)

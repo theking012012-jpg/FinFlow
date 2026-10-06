@@ -163,7 +163,9 @@ function startAnomalyMonitor(pool, resendClient, opts = {}) {
   const tick = async () => {
     if (running) return; running = true;
     try {
-      const r = await notifyAnomalies(pool, resendClient, opts);
+      // N72: opts.runExclusive (server.js) makes the scan run in one replica at a time.
+      const _run = () => notifyAnomalies(pool, resendClient, opts);
+      const r = opts.runExclusive ? ((await opts.runExclusive(_run)) || {}).result : await _run();
       if (r && r.sent) console.log('[anomaly-monitor] alert emailed —', r.count, 'anomaly(ies)');
     } catch (e) { console.error('[anomaly-monitor] tick failed:', e.message); }
     finally { running = false; }

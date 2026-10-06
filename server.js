@@ -871,8 +871,18 @@ app.use('/api', (req, res, next) => {
   return next();
 });
 
-function requireAuth(req, res, next) {
+// N88: an account an admin SUSPENDED or soft-DELETED must lose access immediately — including sessions
+// that were already open. Admin writes these flags in two shapes (suspend: the string 'true'/'false';
+// soft-delete: a JSON boolean via jsonb_set), so compare as strings. Single shared check (Rule 9).
+const _isBlockedUser = (d) => !!d && (String(d.suspended) === 'true' || String(d.deleted) === 'true');
+async function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: 'Unauthorised — please log in.' });
+  try {
+    const { rows: [u] } = await pool.query(`SELECT data->'suspended' AS suspended, data->'deleted' AS deleted FROM users WHERE id = $1`, [req.session.userId]);
+    if (!u || _isBlockedUser(u)) {
+      return req.session.destroy(() => res.status(401).json({ error: u ? 'This account is suspended. Please contact support.' : 'Session expired.', code: u ? 'ACCOUNT_SUSPENDED' : undefined }));
+    }
+  } catch (e) { return next(e); }
   next();
 }
 
@@ -1062,7 +1072,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       `SELECT * FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [email]
     );
     const user = _lu ? rowToObj(_lu) : null;
-    if (user && (user.data?.deleted === 'true' || user.deleted === 'true')) {
+    if (user && _isBlockedUser(user)) {   // N88: suspended or soft-deleted (either stored shape)
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
     if (!user || !bcrypt.compareSync(password, user.password)) { logAudit(req, 'LOGIN_FAILED', 'users', null, null, { email: String(email || '').slice(0, 120) }); return res.status(401).json({ error: 'Invalid email or password.' }); }

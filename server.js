@@ -7938,7 +7938,9 @@ registerOAuthConnector({
 // (WP admin → WooCommerce → Advanced → REST API). Per-entity like every connector. Keys encTok'd at
 // rest; store_url kept plaintext (it's the API base, not a secret). Sync = order count via the WC REST
 // API (Basic ck:cs). DISPLAY-ONLY (Rules 2 & 12).
-const _wooUrlOK = (s) => /^https?:\/\/[^\s"'<>]+$/i.test(String(s || ''));
+// The store URL is user-supplied and fetched server-side: it goes through safe-egress (N54) — https only,
+// public addresses only, pinned connect, no redirects — both when it is saved and on every sync.
+const _safeEgress = require('./safe-egress');
 app.get('/api/woocommerce/status', requireAuth, wrap(async (req, res) => {
   const { value } = await _providerBlobE(scopeId(req), 'woocommerce_conn', req.entityId);
   res.json({ connected: !!(value && value.connected), store: value ? value.store_url || null : null, provider: 'WooCommerce' });
@@ -7947,7 +7949,9 @@ app.post('/api/woocommerce/connect', requireAuth, requirePerm('bank:manage'), wr
   const b = req.body || {};
   const store = String(b.store_url || '').trim().replace(/\/+$/, '');
   const ck = String(b.consumer_key || '').trim(), cs = String(b.consumer_secret || '').trim();
-  if (!_wooUrlOK(store) || !ck || !cs) return res.status(400).json({ error: 'WooCommerce requires a store URL (https://…), consumer_key and consumer_secret.' });
+  if (!store || !ck || !cs) return res.status(400).json({ error: 'WooCommerce requires a store URL (https://…), consumer_key and consumer_secret.' });
+  try { await _safeEgress.checkUrl(store); }
+  catch (e) { return res.status(400).json({ error: 'WooCommerce store URL rejected: ' + e.message + '.', code: 'BAD_STORE_URL' }); }
   await _saveProviderBlobE(scopeId(req), 'woocommerce_conn', { connected: true, provider: 'WooCommerce', store_url: store, consumer_key: encTok(ck), consumer_secret: encTok(cs), linked_at: new Date().toISOString() }, req.entityId);
   res.status(201).json({ ok: true, store });
 }));
@@ -7962,7 +7966,7 @@ app.post('/api/woocommerce/sync', requireAuth, requirePerm('bank:manage'), wrap(
   if (!value || !value.connected) return res.status(400).json({ error: 'No WooCommerce store connected. Connect one first.' });
   try {
     const auth = 'Basic ' + Buffer.from(decTok(value.consumer_key) + ':' + decTok(value.consumer_secret)).toString('base64');
-    const r = await fetch(value.store_url + '/wp-json/wc/v3/orders?per_page=1', { headers: { 'Authorization': auth } });
+    const r = await _safeEgress.safeGet(value.store_url + '/wp-json/wc/v3/orders?per_page=1', { headers: { 'Authorization': auth } });
     if (!r.ok) throw new Error('WooCommerce HTTP ' + r.status);
     const total = parseInt((r.headers && r.headers.get && r.headers.get('X-WP-Total')) || '0', 10) || 0;
     res.json({ ok: true, orders: total, note: 'Orders read for display. Importing into the books is a separate, owner-approved step (Rules 2 & 12).' });

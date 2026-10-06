@@ -49,6 +49,9 @@ const OWNER = { email: 'tokhost@finflow.test', password: 'harness-password-not-a
     const eid = (await c.query(`INSERT INTO entities (user_id,entity_id,data) VALUES ($1,NULL,$2) RETURNING id`, [uid, { name: 'Host Co', currency: 'USD', is_active: 1 }])).rows[0].id;
     const http = new HarnessHttp(base);
     A('login 200', (await http.post('/api/auth/login', OWNER)).status === 200);
+    // Each callback carries a VALID state from a flow this session started (N43), so the token-host
+    // check — not the state check — is what has to refuse it.
+    const flow = async (key, q = '') => new URL((await http.post('/api/' + key + '/connect-url?entity_id=' + eid + q, {})).json.connect_url).searchParams.get('state');
     const leaked = (secret) => seen.filter(s => s.body.includes(secret)).map(s => s.url);
     const conn = async (key) => (await c.query(`SELECT data->>'value' v FROM user_settings WHERE user_id=$1 AND data->>'key'=$2`, [uid, key])).rows.map(r => r.v).filter(v => v && v !== '{}');
 
@@ -63,18 +66,21 @@ const OWNER = { email: 'tokhost@finflow.test', password: 'harness-password-not-a
       ['plain http on a real DC name', 'http://accounts.zoho.eu'],
     ]) {
       seen.length = 0;
-      const r = await http.get('/api/zohobooks/callback?entity_id=' + eid + '&code=x&accounts-server=' + encodeURIComponent(srv));
+      const st = await flow('zohobooks');
+      const r = await http.get('/api/zohobooks/callback?entity_id=' + eid + '&code=x&state=' + st + '&accounts-server=' + encodeURIComponent(srv));
       A(`Zoho ${label}: secret sent nowhere (bug: POSTed to ${srv})`, leaked('ZOHO-SECRET').length === 0, 'leaked to ' + JSON.stringify(leaked('ZOHO-SECRET')));
       A(`  page reports the refusal`, r.status === 200 && /Could not link Zoho Books/.test(r.text), r.text.slice(0, 160));
     }
     A('no Zoho connection stored from a refused callback (bug: attacker token stored)', (await conn('zohobooks_conn')).length === 0, JSON.stringify(await conn('zohobooks_conn')));
 
+    const sst = await flow('shopify', '&shop=teststore.myshopify.com');
     seen.length = 0;
-    await http.get('/api/shopify/callback?entity_id=' + eid + '&shop=evil.example.com&code=x');
+    await http.get('/api/shopify/callback?entity_id=' + eid + '&shop=evil.example.com&code=x&state=' + sst);
     A('Shopify invalid shop: no token request at all (bug: secret POSTed to invalid.example)', leaked('SHOPIFY-SECRET').length === 0 && seen.length === 0, JSON.stringify(seen.map(s => s.url)));
 
+    const gst = await flow('zohobooks');
     seen.length = 0;
-    const ok = await http.get('/api/zohobooks/callback?entity_id=' + eid + '&code=good&accounts-server=' + encodeURIComponent('https://accounts.zoho.eu'));
+    const ok = await http.get('/api/zohobooks/callback?entity_id=' + eid + '&code=good&state=' + gst + '&accounts-server=' + encodeURIComponent('https://accounts.zoho.eu'));
     A('control: real EU data center → exchange hits accounts.zoho.eu', seen.some(s => s.url === 'https://accounts.zoho.eu/oauth/v2/token'), JSON.stringify(seen.map(s => s.url)));
     A('control: EU connection stored, page says connected', /connected/.test(ok.text) && (await conn('zohobooks_conn')).length === 1, ok.text.slice(0, 160));
   } catch (e) { console.error('\n  FATAL:', e && e.stack || e); fail++; }

@@ -6585,6 +6585,42 @@ const _saveProviderBlobE = async (uid, key, value, entityId) => {
 //   resolveAccount,                     // async (tokenResp, req, accessToken) => account id (realmId/tenantId/…)
 //   sync,                               // async (conn, {req, call, access}) => display object; `call` adds Bearer + refresh
 // }
+// N43: OAuth `state` — a random, single-use nonce bound to the browser session that started the flow.
+// It used to be String(scopeId(req)) (static, guessable) and no callback checked it, so an attacker
+// could complete THEIR provider authorization and send the victim's browser to the callback
+// (GET + sameSite=lax cookie), linking the attacker's account into the victim's books. Every OAuth
+// connect-url issues through _oauthStateIssue and every callback consumes through _oauthStateConsume —
+// one shared mechanism, so a new connector cannot ship without it. The nonce also records the account
+// and entity the flow was started for; the callback links into THAT entity, not whatever is active now.
+const _OAUTH_STATE_TTL_MS = 15 * 60 * 1000;
+async function _oauthStateIssue(req, provider) {
+  const nonce = crypto.randomBytes(24).toString('hex');
+  const all = Object.assign({}, req.session.oauthStates || {});
+  all[provider] = { n: nonce, a: String(scopeId(req)), e: req.entityId != null ? req.entityId : null, x: Date.now() + _OAUTH_STATE_TTL_MS };
+  req.session.oauthStates = all;
+  await saveSession(req);
+  return nonce;
+}
+// Returns { entityId } when the callback belongs to a flow this session started, else null. Single use:
+// the pending entry is removed whatever the outcome. checkQuery=false is for a provider whose redirect
+// does not echo `state` (Finch Connect sessions) — the pending session entry is still required.
+async function _oauthStateConsume(req, provider, checkQuery = true) {
+  const all = Object.assign({}, req.session.oauthStates || {});
+  const st = all[provider];
+  if (!st) return null;
+  delete all[provider];
+  req.session.oauthStates = all;
+  await saveSession(req);
+  if (!(st.x > Date.now()) || st.a !== String(scopeId(req))) return null;
+  if (checkQuery) {
+    const got = Buffer.from(String(req.query.state || ''));
+    const want = Buffer.from(st.n);
+    if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return null;
+  }
+  return { entityId: st.e };
+}
+const _OAUTH_STATE_MSG = 'This link request was not started from this session or has expired. Start the connection again from FinFlow.';
+
 function registerOAuthConnector(spec) {
   const blobKey = spec.key + '_conn';
   const CODE = spec.key.toUpperCase().replace(/[^A-Z0-9]+/g, '_') + '_NOT_CONFIGURED';
@@ -6643,7 +6679,7 @@ function registerOAuthConnector(spec) {
     if (!authorizeBase) return res.status(400).json({ error: spec.paramError || 'A required parameter is missing or invalid.', code: 'BAD_PARAM' });
     const params = new URLSearchParams(Object.assign({
       client_id: process.env[spec.clientIdEnv], response_type: 'code',
-      redirect_uri: redirectUri(), scope: spec.scopes, state: String(scopeId(req)),
+      redirect_uri: redirectUri(), scope: spec.scopes, state: await _oauthStateIssue(req, spec.key),
     }, spec.extraAuthParams || {}));
     res.json({ connect_url: authorizeBase + '?' + params.toString() });
   }));
@@ -6655,6 +6691,8 @@ function registerOAuthConnector(spec) {
     if (!cfg()) return done(spec.label + ' linking is not set up.');
     const code = req.query.code || '';
     if (!code) return done('No authorization code returned.');
+    const flow = await _oauthStateConsume(req, spec.key);
+    if (!flow) return done('Could not link ' + spec.label + ': ' + _OAUTH_STATE_MSG);
     try {
       // Zoho: the token host is the data-center accounts-server returned on the callback. A spec that
       // derives the host from the request returns null when the value is not one of its known hosts —
@@ -6678,7 +6716,7 @@ function registerOAuthConnector(spec) {
         expires_at: expiryOf(t, null),
         connected_at: new Date().toISOString(),
         token_url: tokenUrl,
-      }, extra), req.entityId);
+      }, extra), flow.entityId != null ? flow.entityId : req.entityId);
       return done(spec.label + ' connected ✓ You can close this window.');
     } catch (e) { console.error('[' + spec.key + ' callback]', e.message); return done('Could not link ' + spec.label + ': ' + e.message); }
   }));
@@ -6759,6 +6797,7 @@ app.post('/api/finch/connect-url', requireAuth, requirePerm('payroll:write'), wr
       console.error('[finch connect-url]', resp.status, JSON.stringify(j).slice(0, 300));
       return res.status(502).json({ error: 'Could not start payroll connection: ' + (j.message || j.error || ('Finch HTTP ' + resp.status)), code: 'FINCH_SESSION_FAILED' });
     }
+    await _oauthStateIssue(req, 'finch');
     res.json({ connect_url: j.connect_url });
   } catch (e) {
     console.error('[finch connect-url]', e.message);
@@ -6772,6 +6811,10 @@ app.get('/api/finch/callback', requireAuth, requirePerm('payroll:write'), wrap(a
   if (!finchConfigured()) return done('Payroll linking is not set up.');
   const code = req.query.code || '';
   if (!code) return done('No authorization code returned.');
+  // Finch Connect sessions do not echo `state`; the pending entry from connect-url is still required,
+  // and the token's customer_id (set to the account id when the session was minted) must match.
+  const flow = await _oauthStateConsume(req, 'finch', false);
+  if (!flow) return done('Could not link payroll: ' + _OAUTH_STATE_MSG);
   try {
     const resp = await fetch(FINCH_API + '/auth/token', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -6779,10 +6822,11 @@ app.get('/api/finch/callback', requireAuth, requirePerm('payroll:write'), wrap(a
     });
     let j = {}; try { j = await resp.json(); } catch (_) {}
     if (!resp.ok || !j.access_token) throw new Error(j.message || ('Finch token HTTP ' + resp.status));
+    if (j.customer_id != null && String(j.customer_id) !== String(scopeId(req))) return done('Could not link payroll: ' + _OAUTH_STATE_MSG);
     let providerName = null;
     try { const intro = await finchCall('/introspect', j.access_token); providerName = (intro && (intro.payroll_provider_id || intro.provider_id)) || null; } catch (_) {}
     const uid = scopeId(req);
-    await _saveProviderBlobE(uid, 'finch_conn', { access_token: encTok(j.access_token), provider_name: providerName, linked_at: new Date().toISOString(), employee_count: null }, req.entityId);
+    await _saveProviderBlobE(uid, 'finch_conn', { access_token: encTok(j.access_token), provider_name: providerName, linked_at: new Date().toISOString(), employee_count: null }, flow.entityId != null ? flow.entityId : req.entityId);
     return done('Payroll connected ✓ You can close this window.');
   } catch (e) { console.error('[finch callback]', e.message, e.provider || ''); return done('Could not link payroll: ' + e.message); }
 }));
@@ -7118,7 +7162,7 @@ app.post('/api/stripe/connect-url', requireAuth, requirePerm('bank:manage'), wra
   if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe payments linking is not set up yet. Add STRIPE_SECRET_KEY and STRIPE_CONNECT_CLIENT_ID to enable it.', code: 'STRIPE_NOT_CONFIGURED' });
   const params = new URLSearchParams({
     response_type: 'code', client_id: process.env.STRIPE_CONNECT_CLIENT_ID, scope: 'read_write',
-    redirect_uri: _stripeRedirectUri(), state: String(scopeId(req)),
+    redirect_uri: _stripeRedirectUri(), state: await _oauthStateIssue(req, 'stripe'),
   });
   res.json({ connect_url: 'https://connect.stripe.com/oauth/authorize?' + params.toString() });
 }));
@@ -7128,6 +7172,8 @@ app.get('/api/stripe/callback', requireAuth, requirePerm('bank:manage'), wrap(as
   if (!stripeConnectConfigured()) return done('Stripe payments linking is not set up.');
   const code = req.query.code || '';
   if (!code) return done('No authorization code returned.');
+  const flow = await _oauthStateConsume(req, 'stripe');
+  if (!flow) return done('Could not link Stripe: ' + _OAUTH_STATE_MSG);
   try {
     const resp = await fetch('https://connect.stripe.com/oauth/token', {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -7136,7 +7182,7 @@ app.get('/api/stripe/callback', requireAuth, requirePerm('bank:manage'), wrap(as
     let j = {}; try { j = await resp.json(); } catch (_) {}
     if (!resp.ok || !j.stripe_user_id) throw new Error(j.error_description || j.error || ('Stripe OAuth HTTP ' + resp.status));
     const uid = scopeId(req);
-    await _saveProviderBlobE(uid, 'stripe_conn', { stripe_user_id: j.stripe_user_id, access_token: j.access_token ? encTok(j.access_token) : null, linked_at: new Date().toISOString(), books: { scope: 'business', entity_id: req.entityId || null } }, req.entityId);
+    await _saveProviderBlobE(uid, 'stripe_conn', { stripe_user_id: j.stripe_user_id, access_token: j.access_token ? encTok(j.access_token) : null, linked_at: new Date().toISOString(), books: { scope: 'business', entity_id: (flow.entityId != null ? flow.entityId : req.entityId) || null } }, flow.entityId != null ? flow.entityId : req.entityId);
     return done('Stripe connected ✓ You can close this window.');
   } catch (e) { console.error('[stripe connect callback]', e.message); return done('Could not link Stripe: ' + e.message); }
 }));

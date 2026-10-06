@@ -56,7 +56,7 @@ const SHOP = 'teststore.myshopify.com';
     A('  scope = read_orders', /scope=read_orders/.test(url));
     A('  redirect_uri → /api/shopify/callback', /redirect_uri=[^&]*%2Fapi%2Fshopify%2Fcallback/.test(url));
 
-    const cb = await http.get('/api/shopify/callback?entity_id=' + eidA + '&shop=' + SHOP + '&code=shop_code');
+    const cb = await http.get('/api/shopify/callback?entity_id=' + eidA + '&shop=' + SHOP + '&code=shop_code' + '&state=' + new URL(url).searchParams.get('state'));
     A('callback 200', cb.status === 200);
     A('  token exchange hit the shop token host', tokenUrlSeen === 'https://' + SHOP + '/admin/oauth/access_token');
     A('  token exchange sent JSON', /application\/json/.test(String(tokenCtypeSeen || '')));

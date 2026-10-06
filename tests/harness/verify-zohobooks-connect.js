@@ -59,7 +59,7 @@ const OWNER = { email: 'zoho-owner@finflow.test', password: 'harness-password-no
     A('  redirect_uri → /api/zohobooks/callback', /redirect_uri=[^&]*%2Fapi%2Fzohobooks%2Fcallback/.test(url));
 
     // callback carries the DC (accounts-server) → EU
-    const cb = await http.get('/api/zohobooks/callback?entity_id=' + eidA + '&code=zoho_code&accounts-server=' + encodeURIComponent('https://accounts.zoho.eu') + '&location=eu');
+    const cb = await http.get('/api/zohobooks/callback?entity_id=' + eidA + '&code=zoho_code&accounts-server=' + encodeURIComponent('https://accounts.zoho.eu') + '&location=eu' + '&state=' + new URL(url).searchParams.get('state'));
     A('callback 200', cb.status === 200, 'status ' + cb.status);
     A('  token exchange hit the EU DC token host', tokenUrlSeen === 'https://accounts.zoho.eu/oauth/v2/token', 'url=' + tokenUrlSeen);
     A('  creds sent in the BODY (no Basic auth header)', !tokenAuthSeen && /client_id=/.test(tokenBodySeen || ''), 'auth=' + tokenAuthSeen);

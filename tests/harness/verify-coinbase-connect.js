@@ -45,7 +45,7 @@ const OWNER = { email: 'cb-owner@finflow.test', password: 'harness-password-not-
     A('  authorize URL is Coinbase', url.startsWith('https://login.coinbase.com/oauth2/auth?'));
     A('  scope includes wallet:accounts:read', /wallet%3Aaccounts%3Aread|wallet:accounts:read/.test(url));
     A('  redirect_uri → /api/coinbase/callback', /redirect_uri=[^&]*%2Fapi%2Fcoinbase%2Fcallback/.test(url));
-    const cb = await http.get('/api/coinbase/callback?entity_id=' + eidA + '&code=cb_code');
+    const cb = await http.get('/api/coinbase/callback?entity_id=' + eidA + '&code=cb_code' + '&state=' + new URL(url).searchParams.get('state'));
     A('callback 200', cb.status === 200);
     A('  creds sent in body (no Basic auth)', !tokenAuthSeen && /client_id=/.test(tokenBodySeen || ''));
     const stA = (await http.get('/api/coinbase/status?entity_id=' + eidA)).json || {};

@@ -55,7 +55,7 @@ const WEB = 'https://www.sandbox.paypal.com';
     A('  scope includes openid', /scope=openid/.test(url));
     A('  redirect_uri → /api/paypal/callback', /redirect_uri=[^&]*%2Fapi%2Fpaypal%2Fcallback/.test(url));
 
-    const cb = await http.get('/api/paypal/callback?entity_id=' + eidA + '&code=pp_code');
+    const cb = await http.get('/api/paypal/callback?entity_id=' + eidA + '&code=pp_code' + '&state=' + new URL(url).searchParams.get('state'));
     A('callback 200', cb.status === 200, 'status ' + cb.status);
     A('  token exchange used HTTP Basic auth', /^Basic /.test(String(tokenAuthSeen || '')), 'auth=' + tokenAuthSeen);
 

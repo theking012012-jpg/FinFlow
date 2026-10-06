@@ -6872,13 +6872,37 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
   const uid = scopeId(req);
   const { items } = await _getPlaidItemsE(uid, req.entityId);
   if (!items.length) return res.status(400).json({ error: 'No linked bank. Link a bank first.' });
-  let added = 0;
+  let added = 0, modified = 0, removed = 0, flagged = 0;
+  // N44: Plaid's sync delivers added, MODIFIED and REMOVED transactions. Only `added` was processed, so a pending
+  // transaction stayed in the feed after Plaid replaced it with the posted one (a duplicate bank line) and
+  // corrections never arrived. A row already reconciled into the books is never silently changed or deleted —
+  // it is flagged (plaid_changed / plaid_removed) for the owner to review.
+  const _txRow = async (id) => { const { rows: [r] } = await pool.query(`SELECT * FROM personal_transactions WHERE user_id=$1 AND data->>'plaid_txn_id'=$2 LIMIT 1`, [uid, id]); return r ? rowToObj(r) : null; };
+  const _fields = t => ({
+    description: t.name || t.merchant_name || 'Bank transaction',
+    amount: Math.abs(Number(t.amount) || 0),
+    tx_type: (Number(t.amount) >= 0 ? 'debit' : 'credit'),
+    tx_date: t.date || null,
+    currency: t.iso_currency_code ? String(t.iso_currency_code).toUpperCase() : null,
+    pending: !!t.pending,
+  });
   for (const it of items) {
     try {
       const token = decTok(it.access_token);
       let cursor = it.cursor || null, hasMore = true;
       while (hasMore) {
         const sync = await plaidCall('/transactions/sync', cursor ? { access_token: token, cursor } : { access_token: token });
+        for (const t of (sync.modified || [])) {
+          const r = await _txRow(t.transaction_id); if (!r) continue;
+          if (r.reconcile_state) { await db.updateById('personal_transactions', r.id, { plaid_changed: _fields(t) }); flagged++; continue; }
+          const f = _fields(t); if (!f.tx_date) delete f.tx_date;
+          await db.updateById('personal_transactions', r.id, f); modified++;
+        }
+        for (const t of (sync.removed || [])) {
+          const r = await _txRow(t.transaction_id); if (!r) continue;
+          if (r.reconcile_state) { await db.updateById('personal_transactions', r.id, { plaid_removed: true }); flagged++; continue; }
+          await db.deleteById('personal_transactions', r.id); removed++;
+        }
         for (const t of (sync.added || [])) {
           // Idempotency on Plaid's transaction_id (stable), not a time window.
           const { rows: [dup] } = await pool.query(
@@ -6893,6 +6917,7 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
             tx_date: t.date || new Date().toISOString().slice(0, 10),
             category: (t.personal_finance_category && t.personal_finance_category.primary) || 'Other',
             source: 'banking', plaid_txn_id: t.transaction_id,
+            currency: t.iso_currency_code ? String(t.iso_currency_code).toUpperCase() : null, pending: !!t.pending,
           });
           added++;
         }
@@ -6902,7 +6927,7 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
     } catch (e) { console.error('[plaid sync]', e.message, e.plaid || ''); }
   }
   await _savePlaidItemsE(uid, items, req.entityId);
-  res.json({ ok: true, added });
+  res.json({ ok: true, added, modified, removed, flagged });
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════

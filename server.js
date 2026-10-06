@@ -10811,8 +10811,8 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // ── F34 B (surface 1) — CONVERTED monthly buckets for the overview chart ────────────────────
   // Mirrors the client buildMonthlyArrays basis EXACTLY (so native = identity byte-for-byte and the
   // period sum reconciles): revenue = recognized invoices@issue_date + receipts@date; expense =
-  // expenses@expense_date + issued bills@issue_date + orphan payments@date. NO payroll/COGS (the
-  // chart never included them). 12 fiscal months from fyStartIdx of the current fiscal year, all rows
+  // expenses@expense_date + issued bills@issue_date + orphan payments@date, less credit notes / vendor credits,
+  // plus payroll (N104). NO COGS (the chart never included it). 12 fiscal months from fyStartIdx of the current fiscal year, all rows
   // (not period-filtered — the chart shows the whole FY). Converted per-row at each row's own date via
   // pickRate; a row with no rate is EXCLUDED from its bucket (never native-summed) and flags
   // monthly.complete=false — honest, never a fabricated 0.
@@ -10843,6 +10843,13 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   expenses.forEach(e => addBucket(expByMonth, e.amount, _expDate(e), _fromOf(e)));
   (bills || []).filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase())).forEach(b => addBucket(expByMonth, b.amount, _billDate(b), _fromOf(b)));
   paymentsMade.filter(p => p.bill_id == null).forEach(p => addBucket(expByMonth, p.amount, _pmDate(p), _fromOf(p)));
+  // N104: the credit-note / vendor-credit contras and payroll, each on its own date and converted from its own
+  // entity's currency — exactly what the native overview chart (finflow-api-wiring-dashboard.js
+  // buildMonthlyArrays) and the P&L rows include. These buckets left them out, so choosing a display currency
+  // changed the SHAPE of the chart (revenue up by every credit note, expenses down by all payroll).
+  creditNotes.filter(cn => RECOGNIZED_CREDIT.has(String(cn.status || '').toLowerCase())).forEach(cn => addBucket(revByMonth, -num(cn.amount), _cnDate(cn), _fromOf(cn)));
+  vendorCredits.filter(v => RECOGNIZED_CREDIT.has(String(v.status || '').toLowerCase())).forEach(v => addBucket(expByMonth, -num(v.amount), _vcDate(v), _fromOf(v)));
+  runLines.filter(l => PAYROLL_RECOGNIZED.has(String(l.status || '').toLowerCase())).forEach(l => addBucket(expByMonth, num(l.gross) + num(l.bonus) + num(l.overtime), _payDate(l), _fromOf(l)));
   const monthly = { labels: _fyMonths.map(x => x.label), revByMonth: revByMonth.map(r2), expByMonth: expByMonth.map(r2), complete: monthlyComplete };
 
   // ── F34 B (surface 2) — CONVERTED expense breakdown by category ──────────────────────────────

@@ -3879,7 +3879,10 @@ app.post('/api/payment-reminders/send', requireAuth, wrap(async (req, res) => {
     await resendClient.emails.send({
       from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
       to,
-      reply_to: req.session?.email || undefined,
+      // N29: replies go to the person who sent the reminder. This read req.session.email, which the session
+      // never carries (establishSession stores userEmail), so reply_to was always empty and a customer's
+      // reply went to the no-reply sender.
+      reply_to: (req.session && req.session.userEmail) || undefined,
       subject,
       html: htmlBody,
       text: body,

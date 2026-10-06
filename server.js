@@ -6656,8 +6656,11 @@ function registerOAuthConnector(spec) {
     const code = req.query.code || '';
     if (!code) return done('No authorization code returned.');
     try {
-      // Zoho: the token host is the data-center accounts-server returned on the callback.
+      // Zoho: the token host is the data-center accounts-server returned on the callback. A spec that
+      // derives the host from the request returns null when the value is not one of its known hosts —
+      // refuse BEFORE tokenPost, which sends the client secret to that host (N55).
       const tokenUrl = spec.authTokenUrl ? spec.authTokenUrl(req) : spec.tokenUrl;
+      if (!tokenUrl) return done('Could not link ' + spec.label + ': ' + (spec.paramError || 'the authorization server is not recognised.'));
       const t = await tokenPost({ grant_type: 'authorization_code', code, redirect_uri: redirectUri() }, tokenUrl);
       // resolveAccount may return a bare account id, or {account, ...extra} where extra (e.g. api_base
       // for a data-center provider) is merged into the stored blob and read back by sync.
@@ -7744,6 +7747,16 @@ registerOAuthConnector({
 // THAT host, and the data API lives on the matching zohoapis.<dc> domain — both captured at link time
 // and stored (token_url + api_base) so refresh and sync stay on the right DC. Creds go in the FORM body
 // (not Basic); the API uses a `Zoho-oauthtoken` header (not Bearer). account = organization_id.
+// The accounts-server arrives on the callback query string, so it is attacker-controllable: only Zoho's
+// own data centers are accepted (the token exchange POSTs ZOHO_CLIENT_SECRET to that host — N55).
+// Returns the DC suffix ('com', 'eu', 'com.au', …) or null.
+const _ZOHO_DCS = ['com', 'eu', 'in', 'com.au', 'jp', 'com.cn', 'ca', 'sa', 'uk'];
+function _zohoDC(req) {
+  const raw = String((req.query && req.query['accounts-server']) || 'https://accounts.zoho.com').replace(/\/+$/, '');
+  const m = raw.match(/^https:\/\/accounts\.zoho\.([a-z.]+)$/i);
+  const dc = m && m[1].toLowerCase();
+  return dc && _ZOHO_DCS.includes(dc) ? dc : null;
+}
 registerOAuthConnector({
   key: 'zohobooks', label: 'Zoho Books', perm: 'books:write',
   clientIdEnv: 'ZOHO_CLIENT_ID', secretEnv: 'ZOHO_CLIENT_SECRET', redirectEnv: 'ZOHO_REDIRECT_URI',
@@ -7752,14 +7765,10 @@ registerOAuthConnector({
   scopes: 'ZohoBooks.fullaccess.READ',
   tokenAuth: 'body', tokenFormat: 'form',
   extraAuthParams: { access_type: 'offline', prompt: 'consent' },
-  authTokenUrl: (req) => {
-    const s = String((req.query && req.query['accounts-server']) || 'https://accounts.zoho.com').replace(/\/+$/, '');
-    return s + '/oauth/v2/token';
-  },
+  paramError: 'the Zoho accounts server is not a recognised Zoho data center.',
+  authTokenUrl: (req) => { const dc = _zohoDC(req); return dc ? ('https://accounts.zoho.' + dc + '/oauth/v2/token') : null; },
   resolveAccount: async (t, req, access) => {
-    const srv = String((req.query && req.query['accounts-server']) || 'https://accounts.zoho.com');
-    const m = srv.match(/accounts\.zoho\.([a-z.]+)$/);
-    const apiBase = 'https://www.zohoapis.' + (m ? m[1] : 'com');
+    const apiBase = 'https://www.zohoapis.' + (_zohoDC(req) || 'com');
     let orgId = null;
     try {
       const r = await fetch(apiBase + '/books/v3/organizations', { headers: { 'Authorization': 'Zoho-oauthtoken ' + access } });
@@ -7867,7 +7876,7 @@ registerOAuthConnector({
   tokenAuth: 'body', tokenFormat: 'json',
   paramError: 'A valid Shopify store domain (yourstore.myshopify.com) is required.',
   authorizeUrlFor: (req) => { const s = req.query && req.query.shop; return _shopifyShopOK(s) ? ('https://' + s + '/admin/oauth/authorize') : null; },
-  authTokenUrl: (req) => { const s = req.query && req.query.shop; return _shopifyShopOK(s) ? ('https://' + s + '/admin/oauth/access_token') : 'https://invalid.example/never'; },
+  authTokenUrl: (req) => { const s = req.query && req.query.shop; return _shopifyShopOK(s) ? ('https://' + s + '/admin/oauth/access_token') : null; },
   resolveAccount: (t, req) => { const s = req.query && req.query.shop; return _shopifyShopOK(s) ? { account: String(s), api_base: 'https://' + s } : null; },
   sync: async (conn, { access }) => {
     const base = conn.api_base || ('https://' + conn.account);

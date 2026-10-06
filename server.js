@@ -3815,21 +3815,24 @@ async function _reminderContext(req) {
   const [invoices, customers, payRows] = await Promise.all([
     db.allByUser('invoices', uid, scope),
     db.allByUser('customers', uid, scope),
-    pool.query(`SELECT invoice_id, data->>'payment_date' AS payment_date FROM invoice_payments WHERE user_id = $1`, [uid])
-      .then(r => r.rows).catch(() => []),
+    // N113: invoice_payments is a TYPED table — payment_date is a column (there is no `data`). The old
+    // data->>'payment_date' read errored and a .catch(() => []) turned that into "no history", so no
+    // customer ever looked late. A failed read now fails the request (F62) instead of predicting from nothing.
+    pool.query(`SELECT invoice_id, payment_date::text AS payment_date FROM invoice_payments WHERE user_id = $1`, [uid])
+      .then(r => r.rows),
   ]);
-  // Business name + currency from the active entity's profile; fall back gracefully.
+  // Business name + currency: the active business's own name (entities store `name`), else the account's
+  // business_name (PUT /api/settings). N113: these used to read entities.business_name and
+  // user_settings.company_name — keys nothing writes — so every draft was signed "Our team".
   let businessName = '', currency = '';
-  try {
-    if (req.entityId != null) {
-      const { rows } = await pool.query(`SELECT data->>'business_name' AS bn, data->>'currency' AS cur FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [req.entityId, uid]);
-      if (rows[0]) { businessName = rows[0].bn || ''; currency = (rows[0].cur || '').toUpperCase(); }
-    }
-    if (!businessName) {
-      const { rows } = await pool.query(`SELECT data->>'company_name' AS cn FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [uid]);
-      if (rows[0] && rows[0].cn) businessName = rows[0].cn;
-    }
-  } catch (_) {}
+  if (req.entityId != null) {
+    const { rows } = await pool.query(`SELECT data->>'name' AS bn, data->>'currency' AS cur FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [req.entityId, uid]);
+    if (rows[0]) { businessName = rows[0].bn || ''; currency = (rows[0].cur || '').toUpperCase(); }
+  }
+  if (!businessName) {
+    const { rows } = await pool.query(`SELECT data->>'business_name' AS cn FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [uid]);
+    if (rows[0] && rows[0].cn) businessName = rows[0].cn;
+  }
   const today = await entityTodayYmd(req.entityId);
   return { invoices, customers, payments: payRows, businessName, currency, today };
 }
@@ -6537,7 +6540,7 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
           AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)
         GROUP BY pr.id, pr.run_date, pr.entity_id`,
       [uid, eid]
-    ).catch(() => ({ rows: [] })),
+    ),   // N113 class: a failed payroll read used to be swallowed into "no payroll" — cash out silently understated
   ]);
   const invoicePayments = ipRes.rows.filter(matchEnt);
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];

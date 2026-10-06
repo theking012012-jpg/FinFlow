@@ -3834,8 +3834,22 @@ async function requireApiKey(req, res, next) {
 // key sees only that entity's rows (distinct from session scoping, where null means personal-only).
 const _apiScope = (req) => (req.apiEntityId == null) ? (() => true) : ((r) => r.entity_id === req.apiEntityId);
 const _apiLimit = (req) => { const n = parseInt(req.query.limit, 10); return Number.isInteger(n) && n > 0 ? Math.min(n, 200) : 50; };
-const _apiSince = (req) => { const s = String(req.query.since || '').trim(); return s || null; };
-const _afterSince = (row, since) => { if (!since) return true; const c = row.created_at ? String(row.created_at) : ''; return c >= since; };
+// ?since filters on created_at — a genuine INSTANT (not an accounting date), so it is compared as an
+// instant. It used to compare String(created_at) — a Date's "Sat Jul 25 2026 …" form — to the ISO
+// string the caller sent, which ordered every row after every date, so the filter returned everything
+// (N28). An unparseable value is a 400, never silently ignored.
+const _apiSince = (req) => {
+  const s = String(req.query.since || '').trim();
+  if (!s) return null;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : NaN;
+};
+const _afterSince = (row, since) => {
+  if (since == null) return true;
+  const c = row.created_at instanceof Date ? row.created_at.getTime() : Date.parse(row.created_at || '');
+  return Number.isFinite(c) && c >= since;
+};
+const _badSince = (res) => res.status(400).json({ error: 'since must be an ISO-8601 date or timestamp, e.g. 2026-07-01 or 2026-07-01T00:00:00Z.' });
 
 // ── API KEY MANAGEMENT (session-authed) ──
 app.post('/api/api-keys', requireAuth, apiLimiter, wrap(async (req, res) => {
@@ -3877,6 +3891,7 @@ app.get('/api/v1/me', requireApiKey, apiLimiter, wrap(async (req, res) => {
 }));
 app.get('/api/v1/invoices', requireApiKey, apiLimiter, wrap(async (req, res) => {
   const since = _apiSince(req), limit = _apiLimit(req);
+  if (Number.isNaN(since)) return _badSince(res);
   const rows = (await db.allByUser('invoices', req.apiUserId, _apiScope(req), (a, b) => b.id - a.id))
     .filter(r => _afterSince(r, since)).slice(0, limit)
     .map(i => ({ id: i.id, client: i.client, amount: i.amount, amount_paid: i.amount_paid ?? 0, status: i.status, issue_date: i.issue_date || null, due_date: i.due_date || null, num: i.num || null, class: i.class || null, location: i.location || null, entity_id: i.entity_id ?? null, created_at: i.created_at || null }));
@@ -3884,6 +3899,7 @@ app.get('/api/v1/invoices', requireApiKey, apiLimiter, wrap(async (req, res) => 
 }));
 app.get('/api/v1/expenses', requireApiKey, apiLimiter, wrap(async (req, res) => {
   const since = _apiSince(req), limit = _apiLimit(req);
+  if (Number.isNaN(since)) return _badSince(res);
   const rows = (await db.allByUser('expenses', req.apiUserId, _apiScope(req), (a, b) => b.id - a.id))
     .filter(r => _afterSince(r, since)).slice(0, limit)
     .map(e => ({ id: e.id, description: e.description, category: e.category || null, amount: e.amount, deductible: e.deductible || null, expense_date: e.expense_date || null, class: e.class || null, location: e.location || null, entity_id: e.entity_id ?? null, created_at: e.created_at || null }));

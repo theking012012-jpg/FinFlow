@@ -2029,6 +2029,7 @@ app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_eur] } = await pool.query(`SELECT * FROM expenses WHERE id = $1 LIMIT 1`, [row.id]);
   const updated = _eur ? rowToObj(_eur) : {};
   logAudit(req, 'UPDATE', 'expenses', row.id, row, updated);
+  try { await _resyncAfterEdit(scopeId(req), 'expenses', row.id); } catch (glErr) { console.error('[GL] expenses edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(updated);
 }));
 app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
@@ -4224,6 +4225,7 @@ app.put('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
     [JSON.stringify(Object.fromEntries(Object.entries(patch).filter(([,v]) => v !== undefined))), Number(req.params.id), scopeId(req)]
   );
   if (_srold) { const _o = rowToObj(_srold); await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
+  if (_srold) try { await _resyncAfterEdit(scopeId(req), 'sales_receipts', Number(req.params.id)); } catch (glErr) { console.error('[GL] sales_receipts edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
 app.delete('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
@@ -4407,6 +4409,7 @@ app.put('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
     const _o = rowToObj(_cnchk);
     await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'credit_notes', recordId: _cnchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
   }
+  try { await _resyncAfterEdit(scopeId(req), 'credit_notes', Number(req.params.id)); } catch (glErr) { console.error('[GL] credit_notes edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
 app.delete('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
@@ -4508,6 +4511,7 @@ app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
   // so amount/link changes redraw AP on both the previous and current bill.
   for (const b of new Set([_oldBillId, _newBillId])) { if (b != null) await recalcBillStatus(pool, b, scopeId(req)); }
   { const _o = rowToObj(_pmchk); await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'payments_made', recordId: _pmchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
+  try { await _resyncAfterEdit(scopeId(req), 'payments_made', Number(req.params.id)); } catch (glErr) { console.error('[GL] payments_made edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
 app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
@@ -4607,6 +4611,7 @@ app.put('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
     const _o = rowToObj(_vcchk);
     await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'vendor_credits', recordId: _vcchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
   }
+  try { await _resyncAfterEdit(scopeId(req), 'vendor_credits', Number(req.params.id)); } catch (glErr) { console.error('[GL] vendor_credits edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
 app.delete('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
@@ -8885,8 +8890,8 @@ async function reverseLedgerEntry(client, { userId, sourceType, sourceId }) {
 //   - recognised, live, amount/date changed -> true-up the live entry's lines in place.
 // The canonical key is preserved throughout, so backfill stays idempotent. Best-effort - a shadow
 // resync failure must never block the user's edit.
-async function resyncDocLedger(client, { userId, entityId, sourceType, sourceId, date, description, currency = 'USD', recognized, lines }) {
-  const key = sourceType + ':' + sourceId;
+async function resyncDocLedger(client, { userId, entityId, sourceType, sourceId, date, description, currency = 'USD', recognized, lines, idempotencyKey = null }) {
+  const key = idempotencyKey || (sourceType + ':' + sourceId);   // canonical key (payments made post as 'payment_made:<id>')
   const { rows: origs } = await client.query(
     `SELECT id, entity_id FROM ledger_entries
       WHERE user_id=$1 AND source_type=$2 AND source_id=$3 AND reversal_of IS NULL AND status='posted' ORDER BY id ASC LIMIT 1`,
@@ -8921,6 +8926,37 @@ async function resyncDocLedger(client, { userId, entityId, sourceType, sourceId,
     await client.query(`INSERT INTO ledger_lines (entry_id, user_id, entity_id, account_id, debit, credit, debit_base, credit_base) VALUES ($1,$2,$3,$4,$5,$6,$5,$6)`,
       [orig.id, userId, ent, idByCode[l.code], l.debit, l.credit]);
   }
+}
+
+// N12: ONE post-edit ledger resync for the JSONB money tables whose create route posts to the GL but
+// whose PUT did not (expenses, sales receipts, credit notes, payments made, vendor credits). Re-reads
+// the row AFTER the edit and re-derives its entry with the SAME legs + canonical keys as the create
+// route / backfill, so an edited amount, date, status (Void) or bill link can no longer leave the
+// ledger stale. Best-effort like every shadow write — a resync failure never blocks the user's edit.
+async function _resyncAfterEdit(userId, table, id) {
+  const { rows: [r] } = await pool.query(`SELECT * FROM ${table} WHERE id = $1 AND user_id = $2 LIMIT 1`, [id, userId]);
+  if (!r) return;
+  const row = rowToObj(r);
+  const amt = Math.round((parseFloat(row.amount) || 0) * 100) / 100;
+  const d10 = v => FinFlowDates._toYmd(v);
+  const live = st => ['open', 'applied'].includes(String(st || '').toLowerCase());
+  let spec;
+  if (table === 'expenses') spec = { sourceType: 'expense', key: 'expense:' + id, date: row.expense_date || d10(row.created_at), description: 'Expense - ' + String(row.description || '').slice(0, 80), recognized: true,
+    lines: [{ code: '6000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }] };
+  else if (table === 'sales_receipts') spec = { sourceType: 'sales_receipt', key: 'sales_receipt:' + id, date: row.date || d10(row.created_at), description: 'Sales receipt - ' + String(row.customer || '').slice(0, 80), recognized: amt !== 0,
+    lines: [{ code: '1000', debit: amt, credit: 0 }, { code: '4000', debit: 0, credit: amt }] };
+  else if (table === 'credit_notes') spec = { sourceType: 'credit_note', key: 'credit_note:' + id, date: row.date || d10(row.created_at), description: 'Credit note - ' + String(row.customer || '').slice(0, 80), recognized: live(row.status) && amt > 0,
+    lines: [{ code: '4000', debit: amt, credit: 0 }, { code: '1100', debit: 0, credit: amt }] };
+  else if (table === 'vendor_credits') spec = { sourceType: 'vendor_credit', key: 'vendor_credit:' + id, date: row.date || d10(row.created_at), description: 'Vendor credit - ' + String(row.vendor || '').slice(0, 80), recognized: live(row.status) && amt > 0,
+    lines: [{ code: '2000', debit: amt, credit: 0 }, { code: '6000', debit: 0, credit: amt }] };
+  else if (table === 'payments_made') {
+    const linked = row.bill_id != null && row.bill_id !== '';
+    spec = { sourceType: 'bill_payment', key: 'payment_made:' + id, date: row.date || d10(row.created_at), description: 'Payment made - ' + String(row.vendor || '').slice(0, 80), recognized: amt !== 0,
+      lines: linked ? [{ code: '2000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }]     // settles AP
+                    : [{ code: '6000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }] }; // direct expense
+  } else return;
+  await resyncDocLedger(pool, { userId, entityId: row.entity_id, sourceType: spec.sourceType, sourceId: Number(id), date: spec.date,
+    description: spec.description, recognized: spec.recognized, lines: spec.lines, idempotencyKey: spec.key });
 }
 
 // GL Phase 2 (dual-write shadow) - post the canonical GL entry for a source row created from a

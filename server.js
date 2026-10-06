@@ -1653,6 +1653,14 @@ async function logAudit(req, action, tableName, recordId, oldData, newData) {
 // Single implementation in period-lock.js, shared with the accountant portal (N77).
 const _periodLock = require('./period-lock');
 async function isLocked(userId, entityId, date) { return _periodLock.isLocked(pool, userId, entityId, date); }
+// N9b: the lock check for money writes whose date is NOT in the request body — it comes from the bank row
+// or the Stripe charge, so lockGuard cannot see it (bank book-expense / match-bill, Stripe import-charge /
+// import-refund / match-invoice). Same refusal as lockGuard. Returns true when it has answered.
+async function refuseIfLocked(res, userId, entityId, ymd) {
+  const d = FinFlowDates._toYmd(ymd);
+  if (d && await isLocked(userId, entityId, d)) { res.status(403).json({ error: 'Period is locked.', code: 'PERIOD_LOCKED', date: d }); return true; }
+  return false;
+}
 
 // N9 + N8 class: ONE period-lock guard for every money write. Each money table names the date(s) its
 // money is RECOGNISED on (the same date the ledger posts at); the guard refuses a create dated into a
@@ -7644,6 +7652,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
   const amount = stripeMinorToMajor(c.amount, c.currency);
   const customer = String(c.description || (c.billing_details && c.billing_details.name) || (c.billing_details && c.billing_details.email) || c.receipt_email || 'Stripe payment').slice(0, 200);
   const dateYmd = c.created ? new Date(c.created * 1000).toISOString().slice(0, 10) : await entityTodayYmd(req.entityId);
+  if (await refuseIfLocked(res, scopeId(req), _bookEid, dateYmd)) return;
   // STOPGAP guard (pre match-to-invoice): a charge whose amount equals an OPEN invoice's total OR its
   // remaining balance is LIKELY that invoice's payment — importing it as a fresh sales receipt would
   // DOUBLE-COUNT the revenue (the invoice already accrues it). So unless the owner explicitly confirms,
@@ -7746,6 +7755,7 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
   const _rfList = (c.refunds && c.refunds.data) || [];
   const _rfCreated = _rfList.length ? _rfList[_rfList.length - 1].created : null;
   const dateYmd = _rfCreated ? new Date(_rfCreated * 1000).toISOString().slice(0, 10) : await entityTodayYmd(_bookEid);
+  if (await refuseIfLocked(res, scopeId(req), _bookEid, dateYmd)) return;
   let row;
   try {
     ({ row } = await db.insert('sales_receipts', {
@@ -7786,6 +7796,10 @@ app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
   }
   const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id=$1 AND user_id=$2 LIMIT 1`, [invoiceId, scopeId(req)]);
   if (!ir) return res.status(404).json({ error: 'Invoice not found.' });
+  if (ir.entity_id != null && _bookEid != null && Number(ir.entity_id) !== Number(_bookEid)) {
+    return res.status(400).json({ error: 'That invoice belongs to a different business than this Stripe account.', code: 'INVOICE_ENTITY_MISMATCH' });
+  }
+  if (await refuseIfLocked(res, scopeId(req), ir.entity_id, new Date().toISOString().slice(0, 10))) return;
   let c;
   try {
     const resp = await fetch('https://api.stripe.com/v1/charges/' + encodeURIComponent(chargeId) + '?expand[]=balance_transaction', {
@@ -8792,12 +8806,14 @@ app.post('/api/bank-reconciliation/book-expense', requireAuth, wrap(async (req, 
   if (g.err) return res.status(g.err.status).json({ error: g.err.msg, code: g.err.code });
   if (g.done) return res.json({ ok: true, duplicate: true, reconcile_state: g.done.reconcile_state });
   const row = g.row;
+  const _bxDate = row.tx_date || row.date || await entityTodayYmd(row.entity_id);
+  if (await refuseIfLocked(res, scopeId(req), row.entity_id, _bxDate)) return;
   const { row: expense } = await db.insert('expenses', {
     user_id: scopeId(req), entity_id: row.entity_id,
     description: String(row.description || 'Bank transaction').slice(0, 300),
     category: String((req.body && req.body.category) || row.category || 'Other').slice(0, 60),
     amount: parseFloat(row.amount) || 0, deductible: 'no',
-    expense_date: row.tx_date || row.date || await entityTodayYmd(row.entity_id),
+    expense_date: _bxDate,
     idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),
   });
   await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id, table: 'expenses', recordId: expense.id, action: 'CREATE', newData: expense, req });
@@ -8830,12 +8846,14 @@ app.post('/api/bank-reconciliation/match-bill', requireAuth, wrap(async (req, re
   if (_chk.error) return res.status(_chk.status).json({ error: _chk.error, code: _chk.code });
   const { rows: [br] } = await pool.query(`SELECT * FROM bills WHERE id=$1 AND user_id=$2 LIMIT 1`, [billId, scopeId(req)]);
   const bill = rowToObj(br);
+  const _mbDate = row.tx_date || row.date || await entityTodayYmd(row.entity_id);
+  if (await refuseIfLocked(res, scopeId(req), row.entity_id, _mbDate)) return;
   // Linked payment settles AP (the bill already carries the expense) — booking a fresh expense too
   // would double-count, so this records a payments_made LINKED to the bill and adds NO new expense row.
   const { row: payment } = await db.insert('payments_made', {
     user_id: scopeId(req), entity_id: row.entity_id,
     vendor: String(bill.vendor || row.description || '').slice(0, 200),
-    amount: parseFloat(row.amount) || 0, date: row.tx_date || row.date || await entityTodayYmd(row.entity_id),
+    amount: parseFloat(row.amount) || 0, date: _mbDate,
     method: 'Bank', notes: 'Matched from bank feed', ref: '', bill_id: billId,
     idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),
   });

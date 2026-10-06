@@ -755,6 +755,9 @@ const bigJson = express.json({ limit: '10mb' });
 const smallJson = express.json({ limit: '500kb' });
 const LARGE_PAYLOAD_PATHS = ['/api/ai/scan', '/api/documents', '/api/ai/extract-document', '/api/accountants/extract-resume', '/api/accountants/register', '/api/accountants/my-accountant/attach', '/api/accountants/clients/attach'];
 app.use((req, res, next) => (LARGE_PAYLOAD_PATHS.includes(req.path) ? bigJson : smallJson)(req, res, next));
+// N14 class: one body-shape check every /api write passes through (text fields are text, money/quantity
+// fields are numbers) — see body-shape.js.
+app.use('/api', require('./body-shape.js').bodyShape);
 app.use(express.urlencoded({ extended: false, limit: '500kb' }));
 app.set('trust proxy', 1);
 app.use(session({

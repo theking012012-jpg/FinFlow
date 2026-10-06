@@ -63,10 +63,14 @@ const LOGIN = { email: 'f66@finflow.test', password: 'harness-password-not-a-sec
     const badEmail = await http.put(`/api/customers/${cid}`, { email: 'garbage@@' });
     A('PUT /api/customers malformed email → 400', badEmail.status === 400, `status ${badEmail.status}`);
 
+    // N14 (body-shape.js): an object in a text field is refused outright — it used to be stringified to the
+    // junk literal "[object Object]" and stored. Either way the raw object never reaches JSONB.
     const objField = await http.put(`/api/customers/${cid}`, { company: { evil: true } });
-    A('PUT /api/customers object company → stored as STRING (pre-fix: raw object in JSONB)',
-      objField.status === 200 && typeof objField.json.company === 'string',
-      `status ${objField.status}, company typeof ${typeof (objField.json||{}).company}`);
+    const _cAfter = await http.get('/api/customers');
+    const _cRow = (_cAfter.json || []).find(r => r.id === cid) || {};
+    A('PUT /api/customers object company → 400, company unchanged (pre-fix: raw object in JSONB)',
+      objField.status === 400 && _cRow.company === 'Analytical',
+      `status ${objField.status}, company ${JSON.stringify(_cRow.company)}`);
 
     const bigNotes = await http.put(`/api/customers/${cid}`, { notes: BIG });
     A('PUT /api/customers 400KB notes → truncated to 500 (pre-fix: 400KB stored whole)',
@@ -80,9 +84,10 @@ const LOGIN = { email: 'f66@finflow.test', password: 'harness-password-not-a-sec
 
     // ── POST /api/vendors ────────────────────────────────────────────────────
     const objVendor = await http.post('/api/vendors', { name: 'Acme', contact: { phone: 5 }, category: 'supplies' });
-    A('POST /api/vendors object contact → stored as STRING (pre-fix: raw object in JSONB)',
-      (objVendor.status === 200 || objVendor.status === 201) && typeof objVendor.json.contact === 'string',
-      `status ${objVendor.status}, contact typeof ${typeof (objVendor.json||{}).contact}`);
+    const _vAfter = await http.get('/api/vendors');
+    A('POST /api/vendors object contact → 400, no vendor created (N14; pre-fix: raw object in JSONB)',
+      objVendor.status === 400 && !(_vAfter.json || []).some(v => v.name === 'Acme'),
+      `status ${objVendor.status}`);
 
     const bigVendor = await http.post('/api/vendors', { name: BIG, contact: 'c', category: 'k' });
     A('POST /api/vendors 400KB name → truncated to 200 (pre-fix: 400KB stored whole)',

@@ -98,7 +98,8 @@ async function main() {
     const mp = await A_.post('/api/invoices/' + invId + '/payment-link', { provider: 'mercadopago' });
     A('Mercado Pago builder reached (502, live blocked — not "unsupported")', mp.status === 502 && mp.json.provider === 'mercadopago' && !/not supported/i.test(mp.text), `status ${mp.status}: ${mp.text.slice(0,90)}`);
     await A_.post('/api/dlocal/connect', { x_login: 'l', x_trans_key: 't', secret_key: 's' });
-    const dl = await A_.post('/api/invoices/' + invId + '/payment-link', { provider: 'dlocal', country: 'BR' });
+    // N51: dLocal needs a real payer email (no more customer@example.com) — this invoice's customer has none on file.
+    const dl = await A_.post('/api/invoices/' + invId + '/payment-link', { provider: 'dlocal', country: 'BR', email: 'payer@client.test' });
     A('dLocal builder reached (502, live blocked — not "unsupported")', dl.status === 502 && dl.json.provider === 'dlocal' && !/not supported/i.test(dl.text), `status ${dl.status}: ${dl.text.slice(0,90)}`);
 
     console.log('\n' + '-'.repeat(78));

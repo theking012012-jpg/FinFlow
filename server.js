@@ -8540,7 +8540,9 @@ async function createPaymentLink(provider, conn, o) {
   if (provider === 'mercadopago') {
     const r = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.access_token), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: [{ title: 'Invoice ' + o.reference, quantity: 1, unit_price: o.amount, currency_id: o.currency }], external_reference: o.reference, back_urls: { success: appUrl() + '/pay-received.html', pending: appUrl() + '/pay-received.html', failure: appUrl() + '/pay-received.html?status=cancelled' }, auto_return: 'approved' }),
+      // N51: notification_url — Mercado Pago tells FinFlow when the payment is approved (there was no callback at
+      // all, so an invoice paid through the link was never marked paid).
+      body: JSON.stringify({ items: [{ title: 'Invoice ' + o.reference, quantity: 1, unit_price: o.amount, currency_id: o.currency }], external_reference: o.reference, notification_url: appUrl() + '/api/mercadopago/webhook?inv=' + encodeURIComponent(o.invoiceId), back_urls: { success: appUrl() + '/pay-received.html', pending: appUrl() + '/pay-received.html', failure: appUrl() + '/pay-received.html?status=cancelled' }, auto_return: 'approved' }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.init_point) throw new Error(j.message || ('Mercado Pago HTTP ' + r.status));
@@ -8548,8 +8550,12 @@ async function createPaymentLink(provider, conn, o) {
   }
   if (provider === 'dlocal') {
     const xLogin = decTok(conn.x_login), xTransKey = decTok(conn.x_trans_key), secret = decTok(conn.secret_key);
-    const payload = JSON.stringify({ amount: o.amount, currency: o.currency, country: o.country || 'BR', payment_method_flow: 'REDIRECT',
-      payer: { name: o.client || 'Customer', email: o.email || 'customer@example.com' }, order_id: o.reference, success_url: appUrl() + '/pay-received.html', notification_url: appUrl() + '/' });
+    // N51: the payer is the invoice's real customer and the business's country — the defaults were a fake
+    // customer@example.com in Brazil — and notification_url points at the dLocal callback (it was the site root).
+    if (!o.email) throw Object.assign(new Error('dLocal needs the customer\'s email — add one on the customer record.'), { status: 400 });
+    if (!o.country) throw Object.assign(new Error('dLocal needs the business\'s country — set it on the business profile.'), { status: 400 });
+    const payload = JSON.stringify({ amount: o.amount, currency: o.currency, country: o.country, payment_method_flow: 'REDIRECT',
+      payer: { name: o.client || 'Customer', email: o.email }, order_id: o.reference, success_url: appUrl() + '/pay-received.html', notification_url: appUrl() + '/api/dlocal/webhook?inv=' + encodeURIComponent(o.invoiceId) });
     const xDate = new Date().toISOString();
     const signature = crypto.createHmac('sha256', secret).update(xLogin + xDate + payload).digest('hex');
     const r = await fetch('https://api.dlocal.com/payments', {
@@ -8590,13 +8596,72 @@ app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write
   // the browser sent) for TTD/JPY/... books. The client can no longer choose the currency.
   const { rows: [_entCur] } = await pool.query(`SELECT data->>'currency' AS cur FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [inv.entity_id, uid]);
   const currency = String((_entCur && _entCur.cur) || 'USD').toUpperCase();
+  let _email = (req.body && req.body.email) || null, _country = null;
   try {
-    const url = await createPaymentLink(provider, conn, { amount, currency, email: (req.body && req.body.email) || null, reference: 'INV-' + inv.id + '-' + Date.now(), client: inv.client, invoiceId: inv.id, country: (req.body && req.body.country) || conn.country || null });
+    if (!_email) { const cust = resolveCustomer(inv.client, await db.allByUser('customers', uid, r => r.entity_id == null || r.entity_id === inv.entity_id)); _email = cust && cust.email ? String(cust.email).trim() : null; }
+    const { rows: [_ec] } = await pool.query(`SELECT data->>'country' AS c FROM entities WHERE id = $1`, [inv.entity_id]);
+    _country = (_ec && _ec.c) || (req.body && req.body.country) || conn.country || null;   // the business's country first
+  } catch (_) {}
+  try {
+    const url = await createPaymentLink(provider, conn, { amount, currency, email: _email, reference: 'INV-' + inv.id + '-' + Date.now(), client: inv.client, invoiceId: inv.id, country: _country });
     if (!url) throw new Error('Provider returned no URL.');
     await db.updateById('invoices', inv.id, { payment_link: url, payment_provider: provider, payment_link_amount: amount });   // the exact total this link charges (WiPay hash input)
     res.status(201).json({ ok: true, provider, payment_link: url });
-  } catch (e) { console.error('[payment-link]', provider, e.message); res.status(502).json({ error: 'Could not create a payment link: ' + e.message, provider }); }
+  } catch (e) { console.error('[payment-link]', provider, e.message); res.status(e.status === 400 ? 400 : 502).json({ error: 'Could not create a payment link: ' + e.message, provider }); }
 }));
+
+// ── N51: MERCADO PAGO / dLOCAL PAYMENT CALLBACKS ─────────────────────────────────────────────────────
+// Public endpoints (the processor calls them). The callback only NAMES a payment; nothing in it is trusted.
+// The account is resolved from the invoice id in the notification URL, and the payment is RE-READ from the
+// processor's own API with that account's stored credentials — only a payment the processor itself reports
+// as paid, for THIS invoice's reference and in the business's currency, is recorded, through the same
+// single idempotent writer as Stripe and WiPay (idempotent on the processor's payment id).
+async function _payLinkInvoiceConn(invoiceId, key) {
+  const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
+  if (!ir) return null;
+  let { value } = await _providerBlobE(ir.user_id, key, ir.entity_id);
+  if (!value) ({ value } = await _providerBlobE(ir.user_id, key, null));
+  if (!value) return null;
+  const { rows: [ec] } = await pool.query(`SELECT data->>'currency' AS cur FROM entities WHERE id = $1`, [ir.entity_id]);
+  return { ir, conn: value, currency: String((ec && ec.cur) || 'USD').toUpperCase() };
+}
+app.post('/api/mercadopago/webhook', async (req, res) => {
+  try {
+    const invoiceId = parseInt(req.query.inv, 10);
+    const payId = String((req.body && req.body.data && req.body.data.id) || req.query.id || req.query['data.id'] || '');
+    const topic = String((req.body && (req.body.type || req.body.topic)) || req.query.topic || req.query.type || '');
+    if (!Number.isInteger(invoiceId) || !/^\d+$/.test(payId) || (topic && topic !== 'payment')) return res.status(200).json({ ok: true, ignored: true });
+    const x = await _payLinkInvoiceConn(invoiceId, 'mercadopago_conn');
+    if (!x) return res.status(200).json({ ok: true, ignored: true });
+    const r = await fetch('https://api.mercadopago.com/v1/payments/' + payId, { headers: { 'Authorization': 'Bearer ' + decTok(x.conn.access_token) } });
+    const p = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(502).json({ error: 'Could not verify the payment.' });   // let MP retry
+    const refOk = new RegExp('^INV-' + invoiceId + '-').test(String(p.external_reference || ''));
+    if (p.status !== 'approved' || !refOk || String(p.currency_id || '').toUpperCase() !== x.currency) return res.status(200).json({ ok: true, recorded: false });
+    const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: stripeMajorToMinor(Number(p.transaction_amount) || 0, x.currency), currency: x.currency, method: 'Mercado Pago', idemKey: 'mercadopago:' + payId });
+    res.status(200).json({ ok: true, ...rec });
+  } catch (e) { console.error('[mercadopago webhook]', e.message); res.status(500).json({ error: 'webhook error' }); }
+});
+app.post('/api/dlocal/webhook', async (req, res) => {
+  try {
+    const invoiceId = parseInt(req.query.inv, 10);
+    const payId = String((req.body && req.body.id) || '');
+    if (!Number.isInteger(invoiceId) || !/^[A-Za-z0-9_-]{1,80}$/.test(payId)) return res.status(200).json({ ok: true, ignored: true });
+    const x = await _payLinkInvoiceConn(invoiceId, 'dlocal_conn');
+    if (!x) return res.status(200).json({ ok: true, ignored: true });
+    const xLogin = decTok(x.conn.x_login), xTransKey = decTok(x.conn.x_trans_key), secret = decTok(x.conn.secret_key);
+    const xDate = new Date().toISOString();
+    const signature = crypto.createHmac('sha256', secret).update(xLogin + xDate).digest('hex');
+    const r = await fetch('https://api.dlocal.com/payments/' + encodeURIComponent(payId), {
+      headers: { 'X-Date': xDate, 'X-Login': xLogin, 'X-Trans-Key': xTransKey, 'Authorization': 'V2-HMAC-SHA256, Signature: ' + signature } });
+    const p = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(502).json({ error: 'Could not verify the payment.' });
+    const refOk = new RegExp('^INV-' + invoiceId + '-').test(String(p.order_id || ''));
+    if (String(p.status || '').toUpperCase() !== 'PAID' || !refOk || String(p.currency || '').toUpperCase() !== x.currency) return res.status(200).json({ ok: true, recorded: false });
+    const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: stripeMajorToMinor(Number(p.amount) || 0, x.currency), currency: x.currency, method: 'dLocal', idemKey: 'dlocal:' + payId });
+    res.status(200).json({ ok: true, ...rec });
+  } catch (e) { console.error('[dlocal webhook]', e.message); res.status(500).json({ error: 'webhook error' }); }
+});
 
 // ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 1 — FIELD-LEVEL AUDIT TRAIL

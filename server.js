@@ -543,7 +543,10 @@ app.get('/api/wipay/callback', async (req, res) => {
     if (!conn || !conn.account_number) return res.redirect(back);
     if (String(q.status) === 'success' && q.hash && q.transaction_id) {
       let key; try { key = decTok(conn.api_key); } catch (_) { return res.redirect(back); }
-      const original = (parseFloat(inv.amount) || 0).toFixed(2);   // the total WiPay hashed (2dp)
+      // The total WiPay hashed = the total THIS link charged (outstanding balance at link creation, N50);
+      // legacy links (created before payment_link_amount existed) charged the face amount.
+      const _linkTotal = inv.payment_link_amount != null ? parseFloat(inv.payment_link_amount) : (parseFloat(inv.amount) || 0);
+      const original = _linkTotal.toFixed(2);   // 2dp, as WiPay hashes it
       const expected = crypto.createHash('md5').update(String(q.transaction_id) + original + key).digest('hex');
       const given = String(q.hash);
       const ok = Buffer.byteLength(given) === Buffer.byteLength(expected) &&
@@ -551,7 +554,7 @@ app.get('/api/wipay/callback', async (req, res) => {
       if (ok) {
         const { rows: [_wpEnt] } = await pool.query(`SELECT data->>'currency' AS cur FROM entities WHERE id = $1 LIMIT 1`, [ir.entity_id]);
         const _wpCur = (_wpEnt && _wpEnt.cur) || 'TTD';   // the link charged in the issuing business's currency (N49)
-        const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: stripeMajorToMinor(parseFloat(inv.amount) || 0, _wpCur), currency: _wpCur, method: 'Card (WiPay)', idemKey: 'wipay:' + q.transaction_id })
+        const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: stripeMajorToMinor(_linkTotal, _wpCur), currency: _wpCur, method: 'Card (WiPay)', idemKey: 'wipay:' + q.transaction_id })
           .catch(e => { console.error('[WiPay] reconcile failed:', e.message); return { recorded: false, reason: 'error' }; });
         console.log('[WiPay] invoice ' + invoiceId + ' payment → ' + JSON.stringify(rec));
       } else {
@@ -7953,8 +7956,11 @@ async function createPaymentLink(provider, conn, o) {
 app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
   const inv = await ownedBy('invoices', req.params.id, scopeId(req));
   if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
-  const amount = parseFloat(inv.amount) || 0;
-  if (amount <= 0) return res.status(400).json({ error: 'Invoice amount must be greater than zero.' });
+  // N50: charge the OUTSTANDING balance, not the face amount. A partly-paid invoice used to produce a
+  // link for the full total; the webhook then capped the booking at the balance, so the customer was
+  // overcharged and the excess was silently unrecorded.
+  const amount = Math.round(((parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0)) * 100) / 100;
+  if (amount <= 0) return res.status(400).json({ error: 'This invoice has nothing outstanding.' });
   const uid = scopeId(req);
   const requested = req.body && req.body.provider;
   const PAY = ['stripe', 'wipay', 'mercadopago', 'dlocal'];
@@ -7977,7 +7983,7 @@ app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write
   try {
     const url = await createPaymentLink(provider, conn, { amount, currency, email: (req.body && req.body.email) || null, reference: 'INV-' + inv.id + '-' + Date.now(), client: inv.client, invoiceId: inv.id, country: (req.body && req.body.country) || conn.country || null });
     if (!url) throw new Error('Provider returned no URL.');
-    await db.updateById('invoices', inv.id, { payment_link: url, payment_provider: provider });
+    await db.updateById('invoices', inv.id, { payment_link: url, payment_provider: provider, payment_link_amount: amount });   // the exact total this link charges (WiPay hash input)
     res.status(201).json({ ok: true, provider, payment_link: url });
   } catch (e) { console.error('[payment-link]', provider, e.message); res.status(502).json({ error: 'Could not create a payment link: ' + e.message, provider }); }
 }));

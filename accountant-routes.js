@@ -762,6 +762,30 @@ If you cannot find a field, use null. Be concise.`;
 
 
   // ── 6. GET CLIENT BOOKS (with permission check) ───────────────────────────
+  // ── Shared client-books scope (N83) ─────────────────────────────────────────
+  // ONE resolution of what an accountant may read of a client — per-entity levels, the permitted entity
+  // set, the client's fiscal-year start — and ONE top-line canonical books read over that scope. /books
+  // and ai-insights both go through these, so no accountant reader can widen the grant (ai-insights used
+  // to read every entity's invoices/expenses and the payroll ROSTER directly).
+  const _FY_MONTHS_SCOPE = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  async function _clientScope(userId, accessRow) {
+    const ea = normalizeEntityAccess(accessRow.entity_access);   // null = legacy (all entities)
+    const { rows: entities } = await pool.query(`SELECT id, data->>'name' AS name, data->>'color' AS color, data->>'currency' AS currency FROM entities WHERE user_id = $1 ORDER BY id`, [userId]);
+    const { rows: [u] } = await pool.query(`SELECT data FROM users WHERE id = $1 LIMIT 1`, [userId]);
+    const entLevel = {};
+    for (const er of entities) entLevel[er.id] = entityLevel(ea, accessRow.access_level, er.id);
+    const permittedIds = entities.filter(er => _canRead(entLevel[er.id])).map(er => er.id);
+    const fyStartIdx = Math.max(0, _FY_MONTHS_SCOPE.indexOf(String(u?.data?.fiscal_year || 'January')));
+    return { ea, entities, entLevel, permittedIds, permitted: new Set(permittedIds), fyStartIdx, userData: u?.data || {} };
+  }
+  // Legacy: the requested scope unchanged. Scoped + specific entity: that entity. Scoped + all: the
+  // PERMITTED entities consolidated to base currency via computeBooks' own per-row FX.
+  async function _scopeBooks(userId, scope, entityId, period, summariesByEntity) {
+    if (scope.ea == null) return computeBooks(userId, entityId, period, null, scope.fyStartIdx);
+    if (entityId != null) return (summariesByEntity && summariesByEntity[entityId]) || computeBooks(userId, entityId, period, null, scope.fyStartIdx);
+    return computeBooks(userId, null, period, null, scope.fyStartIdx, null, scope.permittedIds);
+  }
+
   app.get('/api/accountants/clients/:userId/books', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
@@ -784,7 +808,8 @@ If you cannot find a field, use null. Be concise.`;
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access to this client.' });
     const _accountWide = access.rows[0].access_level;
-    const _ea = normalizeEntityAccess(access.rows[0].entity_access);   // null = legacy (all entities)
+    const _scope = await _clientScope(parseInt(userId), access.rows[0]);
+    const _ea = _scope.ea;   // null = legacy (all entities)
 
     // Fetch all client data
     const [invoices, expenses, entities, settings, payroll, journals, customers, bills] = await Promise.all([
@@ -815,8 +840,7 @@ If you cannot find a field, use null. Be concise.`;
     // client dashboard/reports pass ?fyStart=<0-11>; the accountant portal must use the SAME start —
     // the client's `fiscal_year` setting (a month name in users.data) — or a non-January fiscal year
     // makes the 'year' window diverge from the client's own dashboard. Default January when unset.
-    const _FY_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const fyStartIdx = Math.max(0, _FY_MONTHS.indexOf(String(settings.rows[0]?.data?.fiscal_year || 'January')));
+    const fyStartIdx = _scope.fyStartIdx;
 
     // Canonical, entity-scoped books (F9) — the SAME computeBooks the client dashboard uses, so the
     // accountant's totals reconcile. Revenue is ISSUE-BASED ACCRUAL (F32): every issued invoice
@@ -828,10 +852,9 @@ If you cannot find a field, use null. Be concise.`;
     // Effective read/write level per business entity. A 'none' entity is fully hidden: never listed,
     // never summed, its rows stripped from every array below. Legacy (_ea == null) ⇒ every entity at
     // the account-wide level, so nothing is filtered and behavior is byte-for-byte as before.
-    const _entLevel = {};                                   // entityId → 'none'|'view'|'filing'
-    for (const er of entities.rows) _entLevel[er.id] = entityLevel(_ea, _accountWide, er.id);
-    const _permittedIds = entities.rows.filter(er => _canRead(_entLevel[er.id])).map(er => er.id);
-    const _permitted    = new Set(_permittedIds);
+    const _entLevel = _scope.entLevel;                      // entityId → 'none'|'view'|'filing'
+    const _permittedIds = _scope.permittedIds;
+    const _permitted    = _scope.permitted;
     const _personalLvl  = personalLevel(_ea);
     // A specific ?entity_id= scope must itself be permitted, else the accountant could read a hidden
     // entity's canonical books directly by guessing its id.
@@ -875,17 +898,9 @@ If you cannot find a field, use null. Be concise.`;
     }
     // Top-line books (F9). Legacy: the requested scope unchanged. Scoped + specific entity: that
     // entity's own summary. Scoped + all: the PERMITTED entities consolidated to base currency.
-    let books;
-    if (_ea == null) {
-      books = await computeBooks(userId, entityId, period, null, fyStartIdx);
-    } else if (entityId != null) {
-      books = summariesByEntity[entityId] || await computeBooks(userId, entityId, period, null, fyStartIdx);
-    } else {
-      // Consolidate PERMITTED entities to base currency via computeBooks' own per-row FX (the same path
-      // the owner's Consolidated P&L uses) — NOT _aggregateBooks, which raw-summed native currencies
-      // (e.g. TTD + USD) and double-counted unassigned rows. Reconciles with the owner's all view.
-      books = await computeBooks(userId, null, period, null, fyStartIdx, null, _permittedIds);
-    }
+    // (Consolidation via computeBooks' per-row FX — NOT _aggregateBooks, which raw-summed native
+    // currencies and double-counted unassigned rows. Reconciles with the owner's all view.)
+    const books = await _scopeBooks(userId, _scope, entityId, period, summariesByEntity);
 
     // ── Personal finances — served ONLY when the owner granted personal access (never for legacy
     // links). Net worth mirrors the owner's own computation (personal_accounts assets − liabilities
@@ -1438,24 +1453,35 @@ If you cannot find a field, use null. Be concise.`;
     const { userId } = req.params;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const access = await pool.query(
-      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
+      `SELECT access_level, entity_access FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
 
-    const [invR, expR, payR] = await Promise.all([
-      pool.query(`SELECT data FROM invoices WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
-      pool.query(`SELECT data FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
-      pool.query(`SELECT data FROM payroll WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
-    ]);
-    const invs = invR.rows.map(r => r.data || {});
-    const exps = expR.rows.map(r => r.data || {});
-    const pays = payR.rows.map(r => r.data || {});
-    const paidRev = invs.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const outstanding = invs.filter(i => i.status !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const overdueCnt = invs.filter(i => i.status === 'overdue').length;
-    const totalExp = exps.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-    const payrollTotal = pays.reduce((s, p) => s + (parseFloat(p.gross) || 0), 0);
+    // N83: the SAME scope and canonical books as /books — permitted entities only; revenue is
+    // issue-based accrual (not paid-only); payroll is basis C (payroll_runs lines), never the roster
+    // template (Rule 12); amounts labelled in the scope's currency instead of a hard-coded '$'.
+    const scope = await _clientScope(parseInt(userId), access.rows[0]);
+    const entParam = (req.body && req.body.entity_id) ?? req.query.entity_id;
+    const entityId = entParam != null && /^[1-9][0-9]*$/.test(String(entParam)) ? parseInt(entParam) : null;
+    if (entityId != null && !scope.permitted.has(entityId)) return res.status(403).json({ error: 'No access to this entity.' });
+    if (scope.ea != null && !scope.permittedIds.length) return res.status(403).json({ error: 'No access to any business.' });
+    const books = await _scopeBooks(parseInt(userId), scope, entityId, 'year');
+    const inScope = (eid) => entityId != null ? (eid == null || eid === entityId) : (scope.ea == null || (eid != null && scope.permitted.has(eid)));
+    const { rows: invRows } = await pool.query(`SELECT entity_id, data->>'status' AS status FROM invoices WHERE user_id = $1`, [userId]);
+    const { rows: expCnt } = await pool.query(`SELECT entity_id FROM expenses WHERE user_id = $1`, [userId]);
+    const scopedInv = invRows.filter(r => inScope(r.entity_id));
+    const overdueCnt = scopedInv.filter(r => r.status === 'overdue').length;
+    const expCount = expCnt.filter(r => inScope(r.entity_id)).length;
+    const ent = entityId != null ? scope.entities.find(e => e.id === entityId) : null;
+    const cur = String((ent && ent.currency) || (books.fxCoverage && books.fxCoverage.display) || (scope.entities.length === 1 && scope.entities[0].currency) || 'USD').toUpperCase();
+    const money = (n) => (Number(n) || 0).toFixed(2) + ' ' + cur;
+    const facts = {
+      revenue: books.revenue, outstanding: books.outstanding, overdueCnt,
+      opex: books.opex, cogs: books.cogs, netProfit: books.netProfit,
+      payroll: (books.parts && books.parts.payroll) || 0,
+      invoiceCount: scopedInv.length, expenseCount: expCount,
+    };
 
     const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
     if (!apiKey) return res.status(503).json({ error: 'AI not configured (ANTHROPIC_API_KEY missing).' });
@@ -1469,12 +1495,13 @@ If you cannot find a field, use null. Be concise.`;
 
     const prompt = `You are a professional accountant reviewing a client's financial data. Give 5 concise insights (one per line, no numbering or bullet symbols) covering: outstanding invoice risk, expense patterns, tax filing readiness, cash flow health, and your top recommendation.
 
-Client data:
-- Paid revenue: $${paidRev.toFixed(2)}
-- Outstanding invoices: $${outstanding.toFixed(2)} (${overdueCnt} overdue)
-- Total expenses: $${totalExp.toFixed(2)}
-- Payroll: $${payrollTotal.toFixed(2)}
-- Invoice count: ${invs.length}, Expense count: ${exps.length}
+Client data (current fiscal year, accrual basis, ${cur}):
+- Revenue (invoices issued): ${money(facts.revenue)}
+- Outstanding receivables: ${money(facts.outstanding)} (${facts.overdueCnt} overdue invoices)
+- Operating expenses (incl. payroll): ${money(facts.opex)}; cost of goods sold: ${money(facts.cogs)}
+- Payroll (approved/paid runs): ${money(facts.payroll)}
+- Net profit: ${money(facts.netProfit)}
+- Invoice count: ${facts.invoiceCount}, Expense count: ${facts.expenseCount}
 
 Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
 
@@ -1494,7 +1521,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!aiRes.ok) return res.status(502).json({ error: 'AI service unavailable.' });
     aiCap.recordAccountant(pool, req.session.accountantId, 'shared', 1);   // F18 — count the successful call
     const aiData = await aiRes.json();
-    return res.json({ insights: aiData.content?.[0]?.text || '' });
+    return res.json({ insights: aiData.content?.[0]?.text || '', basis: { currency: cur, entity_id: entityId, ...facts } });
   }));
 
   // ── CHECKLIST ──────────────────────────────────────────────────────────────

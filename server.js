@@ -2543,7 +2543,10 @@ app.post('/api/personal-accounts', requireAuth, wrap(async (req, res) => {
   const kind = b.kind === 'liability' ? 'liability' : 'asset';
   const name = (b.name || '').trim();
   if (!name) return res.status(400).json({ error: 'name required.' });
-  const eid = req.entityId || null;
+  // N16b: a personal asset/liability is PERSONAL — entity-less, the same boundary personal transactions use. It
+  // used to be tagged with whichever business happened to be active, so it vanished from the personal page (and
+  // net worth) as soon as another business was selected. Existing tagged rows are left as they are (Rule 8).
+  const eid = null;
   const value = parseFloat(b.value) || 0;
   const _dup = await findRecentDuplicate('personal_accounts', req.session.userId, eid, { textMatch: { name, kind }, numMatch: { value } });
   if (_dup) return res.status(200).json(_dup);

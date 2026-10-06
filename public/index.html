@@ -9525,9 +9525,8 @@ document.addEventListener('click', e=>{
           <option>Software</option><option>Infrastructure</option><option>Rent</option><option>Payments</option><option>Shipping</option><option>Marketing</option><option>Other</option>
         </select>
       </div>
-      <div class="field-wrap"><label class="field-label" for="vendor-owing">Amount Owing ($)</label><input class="finput" id="vendor-owing" type="number" placeholder="0" value="0"></div>
     </div>
-    <div class="field-wrap"><label class="field-label" for="vendor-ytd">YTD Paid ($)</label><input class="finput" id="vendor-ytd" type="number" placeholder="0" value="0"></div>
+    <div style="font-size:11px;color:var(--t3);margin:-4px 0 10px">Amount owing and paid this year are worked out from this vendor's bills and payments.</div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="document.getElementById('vendor-modal').classList.add('hidden')">Cancel</button>
       <button class="btn btn-primary ff-save-btn" onclick="saveVendor()">Save vendor →</button>

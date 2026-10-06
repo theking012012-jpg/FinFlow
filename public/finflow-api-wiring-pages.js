@@ -666,7 +666,7 @@
     };
 
     window.openNewVendorModal = function () {
-      ['vendor-name','vendor-contact','vendor-owing','vendor-ytd'].forEach(id => { const el = document.getElementById(id); if (el) el.value = id.includes('owing') || id.includes('ytd') ? '0' : ''; });
+      ['vendor-name','vendor-contact'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const c = document.getElementById('vendor-category'); if (c) c.value = 'Software';
       openModal('vendor-modal');
     };
@@ -676,11 +676,10 @@
       if (!name) { notify('Vendor name required', true); return; }
       const contact  = document.getElementById('vendor-contact')?.value?.trim()  || '';
       const category = document.getElementById('vendor-category')?.value          || 'Other';
-      const owing    = parseFloat(document.getElementById('vendor-owing')?.value) || 0;
-      const ytd_paid = parseFloat(document.getElementById('vendor-ytd')?.value)   || 0;
       try {
         const _eidVNew = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
-        const saved = await api('POST', '/api/vendors', { name, contact, category, owing, ytd_paid, status: 'active', entity_id: _eidVNew });
+        // N24: owing / YTD paid come from the vendor's bills and payments (server-derived) — not typed in.
+        const saved = await api('POST', '/api/vendors', { name, contact, category, status: 'active', entity_id: _eidVNew });
         _vendorsData.unshift(saved.row || saved);
         window.vendors = _vendorsData;
         closeModal('vendor-modal');

@@ -3667,25 +3667,48 @@ app.delete('/api/quotes/:id', requireAuth, requireOwnedRow('quotes'), wrap(async
 
 // ── VENDORS ───────────────────────────────────────────────────────────────────
 app.get('/api/vendors', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('vendors', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.name.localeCompare(b.name)));
+  const uid = scopeId(req), eid = req.entityId || null;
+  const scoped = r => r.entity_id == null || (eid != null && r.entity_id === eid);
+  const vendors = await db.allByUser('vendors', uid, scoped, (a,b) => a.name.localeCompare(b.name));
+  // N24: a vendor's "owing" and "YTD paid" are DERIVED from the books — never typed in. They were free-entry
+  // money fields on the vendor record, a second AP writer that agreed with nothing (a bill could be paid
+  // and the vendor still "owe" the typed figure). owing = Σ remaining (amount − amount_paid) of this
+  // vendor's recognised bills issued on or before today (the canonicalAP basis, per vendor); ytd_paid = Σ
+  // payments made to the vendor dated in the current fiscal year up to today. Vendor = name, case- and
+  // space-insensitive (bills and payments carry the vendor's name).
+  const key = v => String(v || '').trim().toLowerCase();
+  const today = await entityTodayYmd(eid);
+  const fy = FinFlowDates.resolvePeriod({ period: 'year', fyStartMonth: await accountFyStartIdx(uid), today });
+  const owing = {}, paid = {};
+  for (const b of await db.allByUser('bills', uid, scoped)) {
+    if (!RECOGNIZED_BILL.has(String(b.status || '').toLowerCase())) continue;
+    const d = FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date);
+    if (d == null || d > today) continue;
+    owing[key(b.vendor)] = (owing[key(b.vendor)] || 0) + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0));
+  }
+  for (const p of await db.allByUser('payments_made', uid, scoped)) {
+    const d = FinFlowDates._toYmd(p.date || p.created_at);
+    if (d == null || d > today || d < fy.start || d >= fy.end) continue;
+    paid[key(p.vendor)] = (paid[key(p.vendor)] || 0) + (parseFloat(p.amount) || 0);
+  }
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  res.json(vendors.map(v => ({ ...v, owing: r2(owing[key(v.name)]), ytd_paid: r2(paid[key(v.name)]) })));
 }));
 app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.name) return res.status(400).json({ error: 'name required' });
   // F66: insert wrote name/contact/category RAW while the sibling PUT already capped all three.
   // Mirror those caps — coerce to String and bound length so an object/array/oversized value
-  // cannot enter JSONB. name is required; contact/category default to ''. owing/ytd_paid numeric.
+  // cannot enter JSONB. name is required; contact/category default to ''. (owing/ytd_paid: derived, N24.)
   const name     = String(b.name).trim().slice(0, 200);
   const contact  = String(b.contact  || '').trim().slice(0, 200);
   const category = String(b.category || '').slice(0, 100);
   const status   = String(b.status   || 'active').slice(0, 50);
-  const owing    = parseFloat(b.owing)    || 0;
-  const ytd_paid = parseFloat(b.ytd_paid) || 0;
   const entity = await activeEntity(req);
   const _venEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
   const _dup = await findRecentDuplicate('vendors', scopeId(req), _venEnt, { textMatch: { name } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('vendors', { user_id: scopeId(req), entity_id: _venEnt, name, contact, category, owing, ytd_paid, status });
+  const { row } = await db.insert('vendors', { user_id: scopeId(req), entity_id: _venEnt, name, contact, category, status });   // N24: owing / ytd_paid are derived on read
   await recordAudit(pool, { userId: req.session.userId, entityId: _venEnt, table: 'vendors', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
@@ -3701,8 +3724,6 @@ app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
   if (b.name     != null) patch.name     = String(b.name).trim().slice(0, 200);
   if (b.contact  != null) patch.contact  = String(b.contact).trim().slice(0, 200);
   if (b.category != null) patch.category = String(b.category).slice(0, 100);
-  if (b.owing    != null) patch.owing    = parseFloat(b.owing)    || 0;
-  if (b.ytd_paid != null) patch.ytd_paid = parseFloat(b.ytd_paid) || 0;
   if (b.status   != null) patch.status   = String(b.status).slice(0, 50);
   await db.updateById('vendors', Number(req.params.id), patch);
   await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 Phase B

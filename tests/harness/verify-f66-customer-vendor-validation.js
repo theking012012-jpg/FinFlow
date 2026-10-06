@@ -94,10 +94,12 @@ const LOGIN = { email: 'f66@finflow.test', password: 'harness-password-not-a-sec
       (bigVendor.status === 200 || bigVendor.status === 201) && typeof bigVendor.json.name === 'string' && bigVendor.json.name.length === 200,
       `len ${(bigVendor.json && bigVendor.json.name || '').length}`);
 
+    // N24: owing / ytd_paid are DERIVED from the vendor's bills and payments — a typed value is not stored.
     const validVendor = await http.post('/api/vendors', { name: 'Globex', contact: 'Hank', category: 'legal', owing: '250.50' });
-    A('POST /api/vendors valid → name/contact stored + owing numeric (control: valid input accepted)',
-      (validVendor.status === 200 || validVendor.status === 201) && validVendor.json.name === 'Globex' && validVendor.json.contact === 'Hank' && Number(validVendor.json.owing) === 250.5,
-      JSON.stringify({ status: validVendor.status, name: validVendor.json && validVendor.json.name, owing: validVendor.json && validVendor.json.owing }));
+    const _gx = ((await http.get('/api/vendors')).json || []).find(v => v.name === 'Globex') || {};
+    A('POST /api/vendors valid → name/contact stored; typed owing ignored, derived owing 0 (control: valid input accepted)',
+      (validVendor.status === 200 || validVendor.status === 201) && validVendor.json.name === 'Globex' && validVendor.json.contact === 'Hank' && Number(_gx.owing) === 0,
+      JSON.stringify({ status: validVendor.status, name: validVendor.json && validVendor.json.name, owing: _gx.owing }));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed\n`);
   } catch (e) {

@@ -1208,6 +1208,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="nav-item" onclick="showPage('review',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('review',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M2 3.5h12M2 8h12M2 12.5h8"></path><circle cx="12.5" cy="12" r="2.6"></circle><path d="M12.5 10.8v1.4l.9.5"></path></svg>Review<span class="nav-badge" id="badge-review" style="display:none">0</span></div>
     <div class="nav-item" onclick="showPage('reminders',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('reminders',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M8 1.5a4.5 4.5 0 0 0-4.5 4.5c0 3-1.5 4-1.5 4h12s-1.5-1-1.5-4A4.5 4.5 0 0 0 8 1.5z"></path><path d="M6.5 13.5a1.5 1.5 0 0 0 3 0"></path></svg>Reminders<span class="nav-badge" id="badge-reminders" style="display:none">0</span></div>
     <div class="nav-item" onclick="showPage('segments',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('segments',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><rect x="1.5" y="8" width="3" height="6.5" rx="0.6"></rect><rect x="6.5" y="4" width="3" height="10.5" rx="0.6"></rect><rect x="11.5" y="1.5" width="3" height="13" rx="0.6"></rect></svg>Classes</div>
+    <div class="nav-item" onclick="showPage('api',this)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showPage('api',this)}"><svg class="nav-icon" viewBox="0 0 16 16"><path d="M5 4L1.5 8 5 12"></path><path d="M11 4l3.5 4-3.5 4"></path><line x1="9" y1="2.5" x2="7" y2="13.5"></line></svg>API</div>
 
     <!-- MONEY IN group -->
     <div class="nav-group-header" id="grp-sales" onclick="toggleGroup('sales')" role="button" aria-expanded="false" aria-controls="nav-group-sales" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleGroup('sales')}">
@@ -1757,6 +1758,32 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           </div>
           <div style="font-size:12px;color:var(--t2);margin:-4px 0 12px">Tag invoices and expenses with a class or location (on the Add-expense / New-invoice forms), then see revenue, cost and net per segment. <span id="seg-basis"></span></div>
           <div id="seg-list" style="font-size:13px">Loading…</div>
+        </div>
+      </template>
+
+
+      <!-- DEVELOPER / API PAGE -->
+      <div class="page" id="page-api" data-lz="1"></div><template data-lz="page-api">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">API keys</h2>
+            <button class="btn btn-ghost btn-sm" onclick="ffLoadApiKeys&&ffLoadApiKeys()">Refresh</button>
+          </div>
+          <div style="font-size:12px;color:var(--t2);margin:-4px 0 12px">Create a key to read your FinFlow data from scripts, spreadsheets, BI tools or Zapier. A key is shown once — copy it then. Managing keys requires being signed in; a key can't create more keys.</div>
+          <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
+            <div class="field-wrap" style="flex:1 1 180px;margin:0"><label class="field-label" for="apikey-name">Key name</label><input class="finput" id="apikey-name" placeholder="e.g. Zapier, Sheets export" maxlength="80"></div>
+            <div class="field-wrap" style="flex:0 1 180px;margin:0"><label class="field-label" for="apikey-scope">Scope</label><select class="finput" id="apikey-scope"><option value="all">All entities</option></select></div>
+            <button class="btn btn-primary" style="height:38px" onclick="ffCreateApiKey(this)">Create key</button>
+          </div>
+          <div id="apikey-new" style="display:none;margin-bottom:14px;padding:11px;border:1px solid var(--amber,#c9a84c);border-radius:8px;background:rgba(201,168,76,.08)">
+            <div style="font-size:12px;font-weight:600;margin-bottom:5px">Your new key — copy it now, it won't be shown again:</div>
+            <div style="display:flex;gap:8px;align-items:center"><code id="apikey-new-val" style="flex:1;font-size:12px;word-break:break-all;background:rgba(120,120,120,.1);padding:7px 9px;border-radius:6px"></code><button class="btn btn-ghost btn-sm" onclick="ffCopyApiKey(this)">Copy</button></div>
+          </div>
+          <div id="apikey-list" style="font-size:13px">Loading…</div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2 class="card-title">API reference</h2></div>
+          <div id="api-ref" style="font-size:12.5px;color:var(--t2);line-height:1.6"></div>
         </div>
       </template>
 
@@ -4895,6 +4922,8 @@ select.ob-input{cursor:pointer}
 <script src="/_gen/app-23.js"></script>
 <datalist id="seg-classes-dl"></datalist><datalist id="seg-locations-dl"></datalist>
 <script src="/_gen/app-24.js"></script>
+
+<script src="/_gen/app-25.js"></script>
 
 
 

@@ -19,6 +19,7 @@ const { buildReviewItems } = require('./books-review');   // cleanup/anomaly que
 const { buildReminderCandidates, buildDraft, resolveCustomer } = require('./payment-reminders'); // AI reminder agent engine (pure)
 const { buildForecast, addDaysYmd: cfAddDays } = require('./cashflow-forecast'); // 13-week cash-flow forecast engine (pure)
 const { buildSegments } = require('./segments'); // Classes & Locations segment grouping (pure)
+const apiKeys = require('./api-keys'); // public API key helpers (pure: generate/hash/mask)
 // Segment tag (Classes & Locations): trim to 80 chars; empty/absent -> undefined so the row stays untagged.
 const _segTag = (v) => { const t = (v == null ? '' : String(v)).trim().slice(0, 80); return t || undefined; };
 const { appUrl, warnIfUnset } = require('./app-url');     // F29 — single source of truth for app links
@@ -3716,7 +3717,107 @@ app.get('/api/reports/segments', requireAuth, wrap(async (req, res) => {
   res.json({ ...result, currency: currency || null, basis: 'Tagged invoices (revenue) + expenses (cost) · active entity · native currency · all time', generated_at: new Date().toISOString() });
 }));
 
+// ── PUBLIC API (v1) — API keys + read-only resources (Zapier / BI / exports) ─
+// API KEYS are managed by the LOGGED-IN owner (requireAuth) — a leaked key can never mint more
+// keys. Only the SHA-256 hash is stored (api-keys.js); the plaintext is shown once at creation.
+// The /api/v1 surface authenticates by key (requireApiKey), is rate-limited, read-only in v1, and
+// is strictly scoped to the key's user (and its entity when the key is entity-scoped). Writes via
+// the API are deferred to v2 so create-validation is never duplicated (Rule 2).
+async function requireApiKey(req, res, next) {
+  try {
+    const presented = apiKeys.extractFromHeaders(req.headers);
+    if (!presented || !apiKeys.isWellFormed(presented)) return res.status(401).json({ error: 'Missing or malformed API key. Send "Authorization: Bearer ffk_live_…" or "X-API-Key".' });
+    const { rows } = await pool.query(`SELECT id, user_id, data FROM api_keys WHERE data->>'hash' = $1 LIMIT 1`, [apiKeys.hashKey(presented)]);
+    const row = rows[0];
+    if (!row) return res.status(401).json({ error: 'Invalid API key.' });
+    req.apiUserId = row.user_id;
+    const d = row.data || {};
+    req.apiEntityId = (d.entity_id != null && d.entity_id !== '') ? Number(d.entity_id) : null;   // null = all entities
+    req.apiKeyId = row.id;
+    const now = Date.now();                                 // throttled last-used stamp (best-effort)
+    if (!d.last_used_at || (now - Date.parse(d.last_used_at)) > 60000) {
+      pool.query(`UPDATE api_keys SET data = data || jsonb_build_object('last_used_at', $1::text), updated_at = NOW() WHERE id = $2`, [new Date().toISOString(), row.id]).catch(() => {});
+    }
+    return next();
+  } catch (e) { console.error('[api] key auth error:', e && e.message); return res.status(500).json({ error: 'Auth error.' }); }
+}
+// Scope filter for the API: an "all entities" key sees every row the user owns; an entity-scoped
+// key sees only that entity's rows (distinct from session scoping, where null means personal-only).
+const _apiScope = (req) => (req.apiEntityId == null) ? (() => true) : ((r) => r.entity_id === req.apiEntityId);
+const _apiLimit = (req) => { const n = parseInt(req.query.limit, 10); return Number.isInteger(n) && n > 0 ? Math.min(n, 200) : 50; };
+const _apiSince = (req) => { const s = String(req.query.since || '').trim(); return s || null; };
+const _afterSince = (row, since) => { if (!since) return true; const c = row.created_at ? String(row.created_at) : ''; return c >= since; };
+
+// ── API KEY MANAGEMENT (session-authed) ──
+app.post('/api/api-keys', requireAuth, apiLimiter, wrap(async (req, res) => {
+  const name = String(req.body?.name || '').trim().slice(0, 80) || 'API key';
+  let entityId = null;
+  if (req.body?.entity_id != null && req.body.entity_id !== '' && req.body.entity_id !== 'all') {
+    entityId = parseInt(req.body.entity_id, 10);
+    if (!Number.isInteger(entityId) || entityId <= 0) return res.status(400).json({ error: 'Invalid entity_id.' });
+    const owned = await pool.query('SELECT id FROM entities WHERE id=$1 AND user_id=$2', [entityId, scopeId(req)]);
+    if (!owned.rows[0]) return res.status(403).json({ error: 'Entity not found.' });
+  }
+  const key = apiKeys.generateKey();
+  const { row } = await db.insert('api_keys', {
+    user_id: scopeId(req), entity_id: null,
+    hash: apiKeys.hashKey(key), display: apiKeys.maskKey(key), name,
+    key_entity_id: entityId, created_at: new Date().toISOString(), last_used_at: null,
+  });
+  logAudit(req, 'CREATE', 'api_keys', row.id, null, { name, display: apiKeys.maskKey(key), key_entity_id: entityId });
+  // The plaintext key is returned ONCE here and never again.
+  res.status(201).json({ id: row.id, name, key, display: apiKeys.maskKey(key), entity_id: entityId, created_at: row.data?.created_at || new Date().toISOString() });
+}));
+app.get('/api/api-keys', requireAuth, wrap(async (req, res) => {
+  const rows = await db.allByUser('api_keys', scopeId(req), () => true, (a, b) => b.id - a.id);
+  res.json(rows.map(r => ({ id: r.id, name: r.name, display: r.display, entity_id: r.key_entity_id ?? null, created_at: r.created_at || null, last_used_at: r.last_used_at || null })));
+}));
+app.delete('/api/api-keys/:id', requireAuth, wrap(async (req, res) => {
+  const row = await ownedBy('api_keys', req.params.id, scopeId(req));
+  if (!row) return res.status(404).json({ error: 'Key not found.' });
+  await db.deleteById('api_keys', parseInt(req.params.id));
+  logAudit(req, 'DELETE', 'api_keys', row.id, { name: row.name, display: row.display }, null);
+  res.json({ ok: true });
+}));
+
+// ── /api/v1 READ-ONLY RESOURCES (API-key authed) ──
+app.get('/api/v1/me', requireApiKey, apiLimiter, wrap(async (req, res) => {
+  const { rows } = await pool.query(`SELECT data->>'email' AS email, data->>'name' AS name, data->>'plan' AS plan FROM users WHERE id = $1 LIMIT 1`, [req.apiUserId]).catch(() => ({ rows: [] }));
+  const u = rows[0] || {};
+  res.json({ user_id: req.apiUserId, email: u.email || null, name: u.name || null, plan: u.plan || null, scope: req.apiEntityId == null ? 'all' : req.apiEntityId, api_version: 'v1' });
+}));
+app.get('/api/v1/invoices', requireApiKey, apiLimiter, wrap(async (req, res) => {
+  const since = _apiSince(req), limit = _apiLimit(req);
+  const rows = (await db.allByUser('invoices', req.apiUserId, _apiScope(req), (a, b) => b.id - a.id))
+    .filter(r => _afterSince(r, since)).slice(0, limit)
+    .map(i => ({ id: i.id, client: i.client, amount: i.amount, amount_paid: i.amount_paid ?? 0, status: i.status, issue_date: i.issue_date || null, due_date: i.due_date || null, num: i.num || null, class: i.class || null, location: i.location || null, entity_id: i.entity_id ?? null, created_at: i.created_at || null }));
+  res.json({ object: 'list', count: rows.length, data: rows });
+}));
+app.get('/api/v1/expenses', requireApiKey, apiLimiter, wrap(async (req, res) => {
+  const since = _apiSince(req), limit = _apiLimit(req);
+  const rows = (await db.allByUser('expenses', req.apiUserId, _apiScope(req), (a, b) => b.id - a.id))
+    .filter(r => _afterSince(r, since)).slice(0, limit)
+    .map(e => ({ id: e.id, description: e.description, category: e.category || null, amount: e.amount, deductible: e.deductible || null, expense_date: e.expense_date || null, class: e.class || null, location: e.location || null, entity_id: e.entity_id ?? null, created_at: e.created_at || null }));
+  res.json({ object: 'list', count: rows.length, data: rows });
+}));
+app.get('/api/v1/customers', requireApiKey, apiLimiter, wrap(async (req, res) => {
+  const limit = _apiLimit(req);
+  const rows = (await db.allByUser('customers', req.apiUserId, _apiScope(req), (a, b) => b.id - a.id)).slice(0, limit)
+    .map(c => ({ id: c.id, fname: c.fname || null, lname: c.lname || null, company: c.company || null, email: c.email || null, phone: c.phone || null, status: c.status || null, entity_id: c.entity_id ?? null }));
+  res.json({ object: 'list', count: rows.length, data: rows });
+}));
+app.get('/api/v1/reports/summary', requireApiKey, apiLimiter, wrap(async (req, res) => {
+  try {
+    const books = await computeBooks(req.apiUserId, req.apiEntityId, 'year');
+    const expenses = Math.round((((books.cogs || 0) + (books.opex || 0)) + Number.EPSILON) * 100) / 100;
+    res.json({ object: 'summary', period: 'year', scope: req.apiEntityId == null ? 'all' : req.apiEntityId,
+      revenue: books.revenue ?? 0, cogs: books.cogs ?? 0, opex: books.opex ?? 0, expenses,
+      net_profit: books.netProfit ?? ((books.revenue || 0) - expenses), outstanding: books.outstanding ?? null });
+  } catch (e) { console.error('[api] summary failed:', e && e.message); res.status(500).json({ error: 'Could not compute summary.' }); }
+}));
+
 // ── BILLS ─────────────────────────────────────────────────────────────────────
+
 
 app.get('/api/bills', requireAuth, wrap(async (req, res) => respondList(req, res, 'bills')));
 app.post('/api/bills', requireAuth, wrap(async (req, res) => {

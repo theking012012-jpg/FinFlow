@@ -60,6 +60,7 @@ const TABLES = [
   'team_members', 'budget_targets',
   'journals', 'chart_of_accounts', 'lock_settings', 'audit_log',
   'documents', 'templates', 'autocat_rules', 'support_requests',
+  'api_keys',
 ];
 
 async function initDB() {
@@ -86,6 +87,9 @@ async function initDB() {
       // keyset `id < $cursor` pagination on listByUser a clean index range scan).
       await client.query(`CREATE INDEX IF NOT EXISTS idx_${table}_user_created ON ${table}(user_id, created_at DESC, id DESC)`);
     }
+
+    // Public API keys: O(1) lookup by SHA-256 hash during requireApiKey auth.
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys((data->>'hash'))`);
 
     // ── RBAC Phase 2, Step 2 — membership functional indexes ────────────────────
     // The per-request account resolver (server.js) matches team_members on

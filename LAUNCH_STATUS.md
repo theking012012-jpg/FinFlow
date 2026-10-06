@@ -156,6 +156,9 @@ Integrations live-verified: Stripe, Plaid, WiPay (2026-08-16); Resend email path
 ### Added 2026-10-05 (pm) — perf: boot-window request cache — deployed
 - **Boot cache** (`bootcache.js`, `GET /api/dashboard-bootstrap`): the dashboard refetched invoices (~5×), expenses (~4×) and bills (~2×) on boot; a client `fetch` wrapper now coalesces those onto ONE bootstrap call during a 15s window. The endpoint returns BYTE-IDENTICAL data — the shared respondList path (`db.allByUser` + `_entityScopeFilter` + id-desc) — so no money logic is duplicated (Rule 2). Strict fallback for any miss / non-GET / entity-mismatch / failure (correctness cannot regress) + a kill-switch (`localStorage ff_no_bootcache`). Pure match helper `verify-bootcache` 16/16. Live boot speedup + batch-vs-individual parity is the owner deploy check (needs live DB). **316 harnesses.** (commit `7951bc2`)
 
+### QA 2026-10-05 — accountant flows (the two manual-QA walkthroughs) are automation-covered
+- The accountant **engagement handshake** and **scoped-books + chat** flows (the only remaining manual-QA tracker items) are covered by automated harnesses — `verify-accountant-client-handshake`, `verify-accountant-access-grant`, `verify-accountant-portal-access`, `verify-accountant-entity-scope`, `verify-accountant-chat`, `verify-chat-attachments`, `verify-chat-ai-wiring`. Correctness is verified; a human UX click-through at launch is the only residual, and it is optional.
+
 ---
 
 ## 4. Verifying (how)

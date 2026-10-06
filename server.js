@@ -8831,7 +8831,36 @@ async function fifoItemSales(pool, inventoryId) {
 // computeBooks; this posts alongside so the ledger can be proven equal to it (computeBooks is the
 // oracle). Balanced-or-throw. Idempotent on idempotencyKey (+ 23505 race recovery). base==native for
 // now (per-entity parity); consolidation base conversion is Phase 3.
-async function postLedgerEntry(client, { userId, entityId, date, description, sourceType, sourceId = null, currency = 'USD', idempotencyKey = null, lines = [] }) {
+// N62: ledger writes are multi-statement (entry, then N lines; reversal; resync delete+reinsert). Run each
+// as ONE transaction so a failure part-way can never leave an unbalanced or empty entry whose idempotency
+// key then blocks every re-post. A pg Pool gets its own transaction; an already-checked-out client is
+// the caller's transaction (they own BEGIN/COMMIT), so it is used as-is.
+async function _ledgerTx(clientOrPool, fn) {
+  if (typeof clientOrPool.release === 'function') return fn(clientOrPool);
+  const cx = await clientOrPool.connect();
+  try {
+    await cx.query('BEGIN');
+    const out = await fn(cx);
+    await cx.query('COMMIT');
+    return out;
+  } catch (e) {
+    try { await cx.query('ROLLBACK'); } catch (_) {}
+    throw e;
+  } finally { cx.release(); }
+}
+async function postLedgerEntry(client, args) {
+  try {
+    return await _ledgerTx(client, (cx) => _postLedgerEntryBody(cx, args));
+  } catch (e) {
+    // A concurrent post of the same canonical entry won the race: return it (idempotent), never a 500.
+    if (e.code === '23505' && args && args.idempotencyKey) {
+      const { rows: ex } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [args.userId, args.idempotencyKey]);
+      if (ex[0]) return ex[0].id;
+    }
+    throw e;
+  }
+}
+async function _postLedgerEntryBody(client, { userId, entityId, date, description, sourceType, sourceId = null, currency = 'USD', idempotencyKey = null, lines = [] }) {
   let { rows: accts } = await client.query(`SELECT id, code FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2`, [userId, entityId]);
   if (!accts.length) { await ensureLedgerAccountsForEntity(client, userId, entityId, currency); ({ rows: accts } = await client.query(`SELECT id, code FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2`, [userId, entityId])); }
   const idByCode = Object.fromEntries(accts.map(a => [a.code, a.id]));
@@ -8847,20 +8876,12 @@ async function postLedgerEntry(client, { userId, entityId, date, description, so
     const { rows: ex } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [userId, idempotencyKey]);
     if (ex[0]) return ex[0].id;
   }
-  let entryId;
-  try {
-    const { rows: [entry] } = await client.query(
-      `INSERT INTO ledger_entries (user_id, entity_id, entry_date, description, source_type, source_id, currency, status, idempotency_key)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'posted',$8) RETURNING id`,
-      [userId, entityId, date, (description || '').slice(0, 500), sourceType, sourceId, currency, idempotencyKey]);
-    entryId = entry.id;
-  } catch (e) {
-    if (e.code === '23505' && idempotencyKey) {
-      const { rows: ex } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [userId, idempotencyKey]);
-      if (ex[0]) return ex[0].id;
-    }
-    throw e;
-  }
+  // (23505 recovery lives in postLedgerEntry, after the transaction has rolled back.)
+  const { rows: [entry] } = await client.query(
+    `INSERT INTO ledger_entries (user_id, entity_id, entry_date, description, source_type, source_id, currency, status, idempotency_key)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'posted',$8) RETURNING id`,
+    [userId, entityId, date, (description || '').slice(0, 500), sourceType, sourceId, currency, idempotencyKey]);
+  const entryId = entry.id;
   for (const l of norm) {
     await client.query(
       `INSERT INTO ledger_lines (entry_id, user_id, entity_id, account_id, debit, credit, debit_base, credit_base)
@@ -8875,7 +8896,8 @@ async function postLedgerEntry(client, { userId, entityId, date, description, so
 // exactly as computeBooks drops the voided/deleted doc. Both entries stay 'posted' and cancel; the
 // reversal links to the original via reversal_of. Idempotent on 'reverse:<type>:<id>'. Best-effort - a
 // shadow reversal failure must never block the user's delete/void.
-async function reverseLedgerEntry(client, { userId, sourceType, sourceId }) {
+async function reverseLedgerEntry(client, args) { return _ledgerTx(client, (cx) => _reverseLedgerEntryBody(cx, args)); }   // N62: one transaction
+async function _reverseLedgerEntryBody(client, { userId, sourceType, sourceId }) {
   const revKey = 'reverse:' + sourceType + ':' + sourceId;
   const { rows: already } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [userId, revKey]);
   if (already[0]) return already[0].id;                                   // already reversed - idempotent
@@ -8910,7 +8932,8 @@ async function reverseLedgerEntry(client, { userId, sourceType, sourceId }) {
 //   - recognised, live, amount/date changed -> true-up the live entry's lines in place.
 // The canonical key is preserved throughout, so backfill stays idempotent. Best-effort - a shadow
 // resync failure must never block the user's edit.
-async function resyncDocLedger(client, { userId, entityId, sourceType, sourceId, date, description, currency = 'USD', recognized, lines, idempotencyKey = null }) {
+async function resyncDocLedger(client, args) { return _ledgerTx(client, (cx) => _resyncDocLedgerBody(cx, args)); }   // N62: one transaction
+async function _resyncDocLedgerBody(client, { userId, entityId, sourceType, sourceId, date, description, currency = 'USD', recognized, lines, idempotencyKey = null }) {
   const key = idempotencyKey || (sourceType + ':' + sourceId);   // canonical key (payments made post as 'payment_made:<id>')
   const { rows: origs } = await client.query(
     `SELECT id, entity_id FROM ledger_entries

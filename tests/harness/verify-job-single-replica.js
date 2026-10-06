@@ -27,7 +27,18 @@ async function main() {
     const app = require('../../server.js');
     A('server exposes the replica-exclusive job wrappers', app._jobs && typeof app._jobs.reconcile === 'function', 'no app._jobs');
     if (app._jobs) {
-      const [a, b] = await Promise.all([app._jobs.reconcile(null), app._jobs.reconcile(null)]);
+      // The two ticks must OVERLAP for the test to mean anything: on an empty database the scan finishes in a few
+      // ms, so the second tick could find the lock already released and run AFTER the first — legitimately (that
+      // is not two replicas at once) — which made this assertion pass or fail on timing. Hold the scan's first
+      // query for 300 ms so the second tick always arrives while the first holds the lock.
+      const { pool: _p } = require('../../database.js');
+      const _realQ = _p.query.bind(_p);
+      _p.query = (text, ...rest) => /FROM entities e ORDER BY e\.user_id/.test(String(text && text.text || text))
+        ? new Promise(r => setTimeout(r, 300)).then(() => _realQ(text, ...rest)) : _realQ(text, ...rest);
+      const _first = app._jobs.reconcile(null);
+      await new Promise(r => setTimeout(r, 100));   // the first tick is inside the scan, holding the lock
+      const [a, b] = await Promise.all([_first, app._jobs.reconcile(null)]);
+      _p.query = _realQ;
       A('two concurrent reconcile ticks → exactly one ran (bug: both run)', [a, b].filter(x => x && x.ran).length === 1, JSON.stringify([a && a.ran, b && b.ran]));
       const c = await app._jobs.reconcile(null);
       A('control: the next tick runs (lock released)', c && c.ran === true, JSON.stringify(c && c.ran));

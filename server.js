@@ -10936,13 +10936,18 @@ app.post('/api/fx-transactions/:id/settle', requireAuth, wrap(async (req, res) =
     `SELECT * FROM fx_transactions WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), scopeId(req)]
   );
   if (!tx) return res.status(404).json({ error: 'Not found.' });
-  const settlementRate = parseFloat(rate_at_settlement);
+  const settlementRate = Number(rate_at_settlement);
+  if (!Number.isFinite(settlementRate) || settlementRate <= 0) return res.status(400).json({ error: 'rate_at_settlement must be a positive number.' });
   const realisedGL = Math.round((settlementRate - parseFloat(tx.rate_at_transaction)) * parseFloat(tx.foreign_amount) * 100) / 100;
+  // N66: a position settles ONCE. The guard is in the UPDATE itself (status not already 'settled'), so two
+  // concurrent or repeated settles cannot both win. A re-settle used to overwrite the realised gain/loss and
+  // settled_at while the ledger (idempotent on fx_settle:<id>) kept the FIRST figure — books ≠ ledger.
   const { rows: [updated] } = await pool.query(
     `UPDATE fx_transactions SET rate_at_settlement=$1, realised_gain_loss=$2, status='settled', settled_at=NOW()
-     WHERE id=$3 RETURNING *`,
+     WHERE id=$3 AND status IS DISTINCT FROM 'settled' RETURNING *`,
     [settlementRate, realisedGL, tx.id]
   );
+  if (!updated) return res.status(409).json({ error: 'This position is already settled.', code: 'ALREADY_SETTLED' });
   // GL Phase 2 (dual-write shadow): settling an FX position REALISES a gain/loss. 7000 (FX Gain/Loss)
   // is an expense-type account (a loss debits it, a gain credits it — a gain reads as negative
   // expense), Cash (1000) is the settlement contra. computeBooks does NOT fold FX into netProfit (the

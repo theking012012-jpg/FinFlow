@@ -19,6 +19,7 @@ const wrap = fn => async (req, res, next) => {
 };
 
 const { detectAuditAnomalies, notifyAnomalies } = require('./audit-anomalies');
+const { emailHtml } = require('./email-html'); // N85 — email bodies escape their interpolations
 
 function requireAdmin(req, res, next) {
   if (!req.session.isAdmin) return res.status(401).json({ error: 'Admin login required.' });
@@ -230,16 +231,16 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
           ? 'Update on your FinFlow application'
           : `Your FinFlow account has been ${newStatus}`;
         const body = action === 'approve'
-          ? `<p>Hi ${first_name},</p><p>Great news — your FinFlow accountant profile has been <strong>verified and is now live</strong> in our professional directory.</p><p>Log in to your dashboard to start inviting clients and earning referral commissions.</p><a href="${appUrl()}/accountant-login" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600">Go to dashboard →</a>`
+          ? emailHtml`<p>Hi ${first_name},</p><p>Great news — your FinFlow accountant profile has been <strong>verified and is now live</strong> in our professional directory.</p><p>Log in to your dashboard to start inviting clients and earning referral commissions.</p><a href="${appUrl()}/accountant-login" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600">Go to dashboard →</a>`
           : action === 'reject'
-          ? `<p>Hi ${first_name},</p><p>Thank you for applying to the FinFlow Professional Network. Unfortunately we were unable to verify your credentials at this time.</p>${notes ? `<p>Notes: ${notes}</p>` : ''}<p>You're welcome to reapply once you have updated credentials.</p>`
-          : `<p>Hi ${first_name},</p><p>Your FinFlow accountant account status has been updated to: <strong>${newStatus}</strong>.</p>${notes ? `<p>Reason: ${notes}</p>` : ''}`;
+          ? emailHtml`<p>Hi ${first_name},</p><p>Thank you for applying to the FinFlow Professional Network. Unfortunately we were unable to verify your credentials at this time.</p>${notes ? emailHtml`<p>Notes: ${notes}</p>` : ''}<p>You're welcome to reapply once you have updated credentials.</p>`
+          : emailHtml`<p>Hi ${first_name},</p><p>Your FinFlow accountant account status has been updated to: <strong>${newStatus}</strong>.</p>${notes ? emailHtml`<p>Reason: ${notes}</p>` : ''}`;
 
         await resendClient.emails.send({
           from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
           to: email,
           subject,
-          html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow</h2>${body}</div>`,
+          html: String(emailHtml`<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow</h2>${body}</div>`),
         }).catch(e => console.error('[Admin Email]', e.message));
       }
     }

@@ -103,6 +103,7 @@ async function _bookReferralMonth(conn, accountantId, userId) {
 }
 const aiCap = require('./ai-cap'); // F18 — central AI cost caps
 const { appUrl } = require('./app-url'); // F29 — single source of truth for app links
+const { emailHtml } = require('./email-html'); // N85 — every email body escapes its interpolations
 const totp = require('./totp'); // accountant MFA (TOTP, RFC 6238)
 
 // Step F — accountant credential-proof upload (base64-in-Postgres, accountant-scoped).
@@ -542,7 +543,7 @@ module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiL
             from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
             to: adminEmail,
             subject: `New accountant application from ${firstName} ${lastName} (${firm})`,
-            html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow Admin</h2><p>New accountant application received:</p><ul style="margin:12px 0;padding-left:20px;line-height:1.8"><li><strong>Name:</strong> ${firstName} ${lastName}</li><li><strong>Firm:</strong> ${firm}</li><li><strong>Email:</strong> ${email}</li><li><strong>Country:</strong> ${country}</li><li><strong>Specialisation:</strong> ${specialisation}</li><li><strong>Verification:</strong> ${verification.method}</li></ul><a href="${appUrl()}/admin" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:8px">Review in Admin Panel →</a></div>`,
+            html: String(emailHtml`<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow Admin</h2><p>New accountant application received:</p><ul style="margin:12px 0;padding-left:20px;line-height:1.8"><li><strong>Name:</strong> ${firstName} ${lastName}</li><li><strong>Firm:</strong> ${firm}</li><li><strong>Email:</strong> ${email}</li><li><strong>Country:</strong> ${country}</li><li><strong>Specialisation:</strong> ${specialisation}</li><li><strong>Verification:</strong> ${verification.method}</li></ul><a href="${appUrl()}/admin" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:8px">Review in Admin Panel →</a></div>`),
           }).catch(e => console.error('[Register] Admin notification failed:', e.message));
         } else {
           // TODO: set ADMIN_EMAIL env var to enable admin email notifications
@@ -1179,12 +1180,12 @@ If you cannot find a field, use null. Be concise.`;
         from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
         to: email,
         subject: `${accountant.first_name} ${accountant.last_name} invited you to FinFlow`,
-        html: `
+        html: String(emailHtml`
           <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px;">
             <h2 style="color:#c9a84c;font-size:24px;margin-bottom:8px;">You've been invited to FinFlow</h2>
             <p style="color:#9a9278;margin-bottom:20px;">
               ${accountant.first_name} ${accountant.last_name} from <strong style="color:#f0ead6">${accountant.firm}</strong>
-              has invited${name ? ` ${name}` : ' you'} to manage your finances on FinFlow.
+              has invited ${name || 'you'} to manage your finances on FinFlow.
             </p>
             <p style="color:#9a9278;margin-bottom:24px;">
               Start your free 30-day trial — no credit card required.
@@ -1198,7 +1199,7 @@ If you cannot find a field, use null. Be concise.`;
               FinFlow does not provide accounting services.
             </p>
           </div>
-        `,
+        `),
       });
     }
 
@@ -2316,10 +2317,10 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
         from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
         to: accEmail,
         subject: `New client request — ${clientName}`,
-        html: `<p>Hi ${accFirst},</p>
+        html: String(emailHtml`<p>Hi ${accFirst},</p>
                <p><strong>${clientName}</strong> (${clientEmail}) has requested to link with you on FinFlow.</p>
                <p>Log in to your accountant dashboard to review and approve or decline the request.</p>
-               <p><a href="${appUrl()}/accountant">Review request →</a></p>`,
+               <p><a href="${appUrl()}/accountant">Review request →</a></p>`),
       }).catch(() => {});
     }
 
@@ -2374,10 +2375,10 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
           from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
           to: clientEmail,
           subject: 'Your accountant request has been approved',
-          html: `<p>Hi ${uRes.rows[0]?.name || 'there'},</p>
+          html: String(emailHtml`<p>Hi ${uRes.rows[0]?.name || 'there'},</p>
                  <p><strong>${accName}</strong> from <strong>${firm}</strong> has approved your request on FinFlow.</p>
                  <p>They now have read access to your books and can help manage your accounts.</p>
-                 <p><a href="${appUrl()}">Log in to FinFlow →</a></p>`,
+                 <p><a href="${appUrl()}">Log in to FinFlow →</a></p>`),
         }).catch(() => {});
       }
 

@@ -1157,7 +1157,8 @@ const ENTITY_REQUIRED_TABLES = new Set([
 
 const db = {
 
-  async insert(table, row) {
+  // `client` (optional): run the INSERT on a given connection — e.g. inside a caller's transaction (N57b).
+  async insert(table, row, client = pool) {
     const { user_id = null, entity_id = null, ...rest } = row;
     if (entity_id == null && ENTITY_REQUIRED_TABLES.has(table)) {
       const e = new Error('No active business entity. Create or select a business entity first.');
@@ -1165,7 +1166,7 @@ const db = {
       throw e;
     }
     const data = objToData(rest);
-    const doInsert = () => pool.query(
+    const doInsert = () => client.query(
       `INSERT INTO ${table} (user_id, entity_id, data)
        VALUES ($1, $2, $3)
        RETURNING *`,

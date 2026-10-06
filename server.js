@@ -4784,26 +4784,36 @@ app.post('/api/payments-made', requireAuth, lockGuard(LOCK_SPECS.payments_made),
       const { rows: [_prev] } = await pool.query(`SELECT * FROM payments_made WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
       if (_prev) return res.status(200).json(rowToObj(_prev));
     }
-    const _chk = await checkBillPayment(scopeId(req), _billId, amount, req.entityId || null);
-    if (_chk.error) return res.status(_chk.status).json({ error: _chk.error, code: _chk.code });
   }
   // C1 Wave 1 durable backstop (mirrors invoices/expenses/bills): a same-token double-submit → the
   // 2nd INSERT throws 23505 → recover the ORIGINAL row and return 200. On that path the 2nd payment
   // never lands, so recalcBillStatus below runs only for a genuine first insert — no double-recalc.
-  let row;
+  let row, _refused = null;
+  const _pmDate = date || await entityTodayYmd(req.entityId);
+  const _pmInsert = (q) => db.insert('payments_made', {
+    user_id: scopeId(req),
+    entity_id: req.entityId || null,
+    vendor: (vendor || '').trim().slice(0, 200),
+    amount: parseFloat(amount) || 0,
+    date: _pmDate,
+    method: (method || '').slice(0, 50),
+    notes: (notes || '').slice(0, 500),
+    ref: (ref || '').slice(0, 100),
+    bill_id: _billId,
+    idempotency_key: idem,
+  }, q);
   try {
-    ({ row } = await db.insert('payments_made', {
-      user_id: scopeId(req),
-      entity_id: req.entityId || null,
-      vendor: (vendor || '').trim().slice(0, 200),
-      amount: parseFloat(amount) || 0,
-      date: date || await entityTodayYmd(req.entityId),
-      method: (method || '').slice(0, 50),
-      notes: (notes || '').slice(0, 500),
-      ref: (ref || '').slice(0, 100),
-      bill_id: _billId,
-      idempotency_key: idem,
-    }));
+    if (_billId != null) {
+      // N57b: a bill-linked payment's balance check + insert run under the bill's payment lock.
+      row = await withPaymentLock('bill', _billId, async (conn) => {
+        const _chk = await checkBillPayment(scopeId(req), _billId, amount, req.entityId || null, null, conn);
+        if (_chk.error) { _refused = _chk; return null; }
+        return (await _pmInsert(conn)).row;
+      });
+      if (_refused) return res.status(_refused.status).json({ error: _refused.error, code: _refused.code });
+    } else {
+      ({ row } = await _pmInsert(pool));
+    }
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(`SELECT * FROM payments_made WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
@@ -4853,11 +4863,18 @@ app.put('/api/payments-made/:id', requireAuth, requireOwnedRow('payments_made'),
   let _newBillId = _oldBillId;
   if (bill_id !== undefined) { _newBillId = (bill_id != null && bill_id !== '') ? Number(bill_id) : null; patch.bill_id = _newBillId; }
   if (_newBillId != null) {
+    // N57b: the edited payment's check against its (new) bill + the write run under that bill's payment lock.
     const _amt = patch.amount != null ? patch.amount : (parseFloat(_pmchk.data && _pmchk.data.amount) || 0);
-    const _chk = await checkBillPayment(scopeId(req), _newBillId, _amt, _pmchk.entity_id, _pmchk.id);
-    if (_chk.error) return res.status(_chk.status).json({ error: _chk.error, code: _chk.code });
+    const _refused = await withPaymentLock('bill', _newBillId, async (conn) => {
+      const _chk = await checkBillPayment(scopeId(req), _newBillId, _amt, _pmchk.entity_id, _pmchk.id, conn);
+      if (_chk.error) return _chk;
+      await conn.query(`UPDATE payments_made SET data = COALESCE(data,'{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2`, [JSON.stringify(patch), _pmchk.id]);
+      return null;
+    });
+    if (_refused) return res.status(_refused.status).json({ error: _refused.error, code: _refused.code });
+  } else {
+    await db.updateById('payments_made', _pmchk.id, patch);
   }
-  await db.updateById('payments_made', _pmchk.id, patch);
   // F38 Step 3: recalc every bill this payment touched — the old link and the new one (deduped),
   // so amount/link changes redraw AP on both the previous and current bill.
   for (const b of new Set([_oldBillId, _newBillId])) { if (b != null) await recalcBillStatus(pool, b, scopeId(req)); }
@@ -8747,16 +8764,21 @@ async function recordExternalInvoicePayment({ invoiceId, amountMinor, currency, 
   const uid = ir.user_id;                                   // the invoice's account = the money scope
   const amt = stripeMinorToMajor(amountMinor, currency);    // minor units → major, by currency exponent (N47)
   if (!(amt > 0)) return { recorded: false, reason: 'bad_amount' };
-  const remaining = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
-  const bookAmt = Math.min(amt, Math.max(remaining, 0));    // cap to balance — never negative AR
-  if (!(bookAmt > 0)) return { recorded: false, reason: 'already_paid' };
   try {
-    const { rows } = await pool.query(
-      `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [uid, ir.entity_id || null, invoiceId, bookAmt, new Date().toISOString().slice(0, 10),
-       method || 'Card', idemKey, 'Auto-recorded from ' + (method || 'processor') + ' payment', idemKey]
-    );
+    // N57b: cap to what is still owed, read under the invoice's payment lock (never negative AR).
+    let bookAmt = 0;
+    const rows = await withPaymentLock('invoice', invoiceId, async (conn) => {
+      const remaining = (parseFloat(inv.amount) || 0) - await invoicePaidSoFar(conn, invoiceId, uid);
+      bookAmt = Math.round(Math.min(amt, Math.max(remaining, 0)) * 100) / 100;
+      if (!(bookAmt > 0)) return null;
+      return (await conn.query(
+        `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [uid, ir.entity_id || null, invoiceId, bookAmt, new Date().toISOString().slice(0, 10),
+         method || 'Card', idemKey, 'Auto-recorded from ' + (method || 'processor') + ' payment', idemKey]
+      )).rows;
+    });
+    if (!rows) return { recorded: false, reason: 'already_paid' };
     await recalcInvoiceStatus(pool, invoiceId, uid);
     try { await auditLog(pool, { userId: uid, entityId: ir.entity_id, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE' }); } catch (_) {}
     // GL Phase 2 (shadow): settle the receivable live - Dr Cash / Cr AR, key 'invoice_payment:'+id
@@ -8778,17 +8800,20 @@ async function settleInvoiceRemaining(pool, { userId, invoiceId, date, method, n
   const { rows: [r] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 AND user_id = $2 LIMIT 1`, [invoiceId, userId]);
   const inv = r ? rowToObj(r) : null;
   if (!inv) return null;
-  const { rows: [p] } = await pool.query(`SELECT COALESCE(SUM(amount),0) AS paid FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2`, [invoiceId, userId]);
-  const remaining = Math.round(((parseFloat(inv.amount) || 0) - (parseFloat(p.paid) || 0)) * 100) / 100;
-  let pay = null;
-  if (remaining > 0.004) {
-    const { rows: ins } = await pool.query(
+  // N57b: read what is still owed and insert the settling payment under the invoice's payment lock.
+  const pay = await withPaymentLock('invoice', invoiceId, async (conn) => {
+    const paid = await invoicePaidSoFar(conn, invoiceId, userId);
+    const remaining = Math.round(((parseFloat(inv.amount) || 0) - paid) * 100) / 100;
+    if (!(remaining > 0.004)) return null;
+    const { rows: ins } = await conn.query(
       `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING RETURNING *`,
       // stateKeyed: the key includes what was already paid, so two concurrent "mark paid" requests on the
       // same invoice state produce the SAME key and the unique index admits only one settling payment.
-      [userId, inv.entity_id, invoiceId, remaining, date, method, null, notes, String(stateKeyed ? idemKey + ':' + Math.round((parseFloat(p.paid) || 0) * 100) : idemKey).slice(0, 64)]);
-    pay = ins[0] || null;
+      [userId, inv.entity_id, invoiceId, remaining, date, method, null, notes, String(stateKeyed ? idemKey + ':' + Math.round(paid * 100) : idemKey).slice(0, 64)]);
+    return ins[0] || null;
+  });
+  {
     if (pay) {
       try { await postSourceLedger(pool, { userId, sourceType: 'invoice_payment', row: { ...pay, client: inv.client } }); }
       catch (glErr) { console.error('[GL] settle cash leg failed (shadow, non-fatal):', glErr && glErr.message); }
@@ -8848,17 +8873,21 @@ async function settleBillRemaining(pool, { userId, billId, date, method, notes, 
   const { rows: [r] } = await pool.query(`SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]);
   const bill = r ? rowToObj(r) : null;
   if (!bill) return null;
-  const { rows: [p] } = await pool.query(`SELECT COALESCE(SUM((data->>'amount')::numeric),0) AS paid FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2`, [userId, String(billId)]);
-  const remaining = Math.round(((parseFloat(bill.amount) || 0) - (parseFloat(p.paid) || 0)) * 100) / 100;
-  let row = null;
-  if (remaining > 0.004) {
-    try {
-      ({ row } = await db.insert('payments_made', {
+  // N57b: read what is still owed and insert the settling payment under the bill's payment lock.
+  let row = null, remaining = 0;
+  try {
+    row = await withPaymentLock('bill', billId, async (conn) => {
+      const { rows: [p] } = await conn.query(`SELECT COALESCE(SUM((data->>'amount')::numeric),0) AS paid FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2`, [userId, String(billId)]);
+      remaining = Math.round(((parseFloat(bill.amount) || 0) - (parseFloat(p.paid) || 0)) * 100) / 100;
+      if (!(remaining > 0.004)) return null;
+      return (await db.insert('payments_made', {
         user_id: userId, entity_id: bill.entity_id, vendor: String(bill.vendor || '').slice(0, 200), amount: remaining, date,
         method: method || 'other', notes: notes || '', ref: '', bill_id: billId,
         idempotency_key: String(idemKey + ':' + Math.round((parseFloat(p.paid) || 0) * 100)).slice(0, 64),
-      }));
-    } catch (e) { if (e.code !== '23505') throw e; }
+      }, conn)).row;
+    });
+  } catch (e) { if (e.code !== '23505') throw e; }
+  {
     if (row) {
       try {
         await postLedgerEntry(pool, {
@@ -8873,17 +8902,44 @@ async function settleBillRemaining(pool, { userId, billId, date, method, notes, 
   return row;
 }
 
+
+// N57b / Rule 9: the ONE serialisation every writer of a payment against a single invoice or bill goes through.
+// The balance check and the INSERT run on one connection, inside a transaction that holds a per-document advisory
+// lock (pg_advisory_xact_lock) — so two concurrent payments can never both pass the check against the same balance
+// (a 600 and a 500 against a 1000 invoice used to both land: 1100 paid). Only check + insert are inside: the check
+// reads the balance from the PAYMENTS themselves (never the derived amount_paid), so status recalc, audit and GL can
+// run after, outside the lock. Every writer: POST /api/invoice-payments, processor payments, settle-remaining
+// (invoice + bill), POST/PUT /api/payments-made, bank match-bill.
+const _PAY_LOCK = { invoice: 57001, bill: 57002 };
+async function withPaymentLock(kind, docId, fn) {
+  const conn = await pool.connect();
+  try {
+    await conn.query('BEGIN');
+    await conn.query('SELECT pg_advisory_xact_lock($1, $2)', [_PAY_LOCK[kind], Number(docId) || 0]);
+    const out = await fn(conn);
+    await conn.query('COMMIT');
+    return out;
+  } catch (e) {
+    try { await conn.query('ROLLBACK'); } catch (_) {}
+    throw e;
+  } finally { conn.release(); }
+}
+async function invoicePaidSoFar(q, invoiceId, userId) {
+  const { rows: [p] } = await q.query(`SELECT COALESCE(SUM(amount),0) AS paid FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2`, [invoiceId, userId]);
+  return parseFloat(p.paid) || 0;
+}
+
 // N57 class: the ONE check every writer of a bill-LINKED payment passes (POST/PUT /api/payments-made, bank
 // match-bill): the bill is this account's, belongs to the same business as the payment (a legacy
 // entity-less bill or payment matches any), and the payment fits in what is still owed — Σ the bill's
 // OTHER linked payments, read from the payments themselves. Returns { status, error, code } on refusal.
-async function checkBillPayment(userId, billId, amount, paymentEntityId, excludePaymentId = null) {
-  const { rows: [br] } = await pool.query(`SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]);
+async function checkBillPayment(userId, billId, amount, paymentEntityId, excludePaymentId = null, q = pool) {
+  const { rows: [br] } = await q.query(`SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]);
   if (!br) return { status: 404, error: 'Bill not found.', code: 'BILL_NOT_FOUND' };
   if (br.entity_id != null && paymentEntityId != null && Number(br.entity_id) !== Number(paymentEntityId)) {
     return { status: 400, error: 'That bill belongs to a different business.', code: 'BILL_ENTITY_MISMATCH' };
   }
-  const { rows: [p] } = await pool.query(
+  const { rows: [p] } = await q.query(
     `SELECT COALESCE(SUM((data->>'amount')::numeric), 0) AS paid FROM payments_made
       WHERE user_id = $1 AND data->>'bill_id' = $2 AND ($3::int IS NULL OR id <> $3)`,
     [userId, String(billId), excludePaymentId]);
@@ -8960,7 +9016,8 @@ app.post('/api/invoice-payments', requireAuth, lockGuard(LOCK_SPECS.invoice_paym
   const inv = await ownedBy('invoices', invoice_id, scopeId(req));
   if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
   // Overpayment: no credit/refund model exists, so reject a payment beyond the remaining balance
-  // rather than book cash the system can't represent. (Epsilon guards float rounding.)
+  // rather than book cash the system can't represent. (Epsilon guards float rounding.) Fast pre-check here;
+  // the authoritative one runs inside the payment lock below (N57b).
   const remaining = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
   if (amt > remaining + 0.005) return res.status(400).json({ error: `Payment exceeds the remaining balance of ${remaining.toFixed(2)}.` });
   // B8/C1: dedupe guard (TYPED table). The overpayment check above only catches a duplicate that
@@ -8976,14 +9033,19 @@ app.post('/api/invoice-payments', requireAuth, lockGuard(LOCK_SPECS.invoice_paym
       { invoice_id: parseInt(invoice_id), amount: amt, payment_date: _pDate });
     if (_ipDup) return res.status(201).json(_ipDup);
   }
-  let rows;
+  let rows, _over = null;
   try {
-    ({ rows } = await pool.query(
-      `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [scopeId(req), inv.entity_id != null ? inv.entity_id : (req.entityId || null), parseInt(invoice_id), amt,
-       payment_date || new Date().toISOString().slice(0, 10), method || 'Bank Transfer', reference || null, notes || null, idem]
-    ));
+    // N57b: check + insert under the invoice's payment lock, the balance read from the payments themselves.
+    rows = await withPaymentLock('invoice', parseInt(invoice_id), async (conn) => {
+      const _left = Math.round(((parseFloat(inv.amount) || 0) - await invoicePaidSoFar(conn, parseInt(invoice_id), scopeId(req))) * 100) / 100;
+      if (amt > _left + 0.005) { _over = _left; return null; }
+      return (await conn.query(
+        `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [scopeId(req), inv.entity_id != null ? inv.entity_id : (req.entityId || null), parseInt(invoice_id), amt,
+         payment_date || new Date().toISOString().slice(0, 10), method || 'Bank Transfer', reference || null, notes || null, idem]
+      )).rows;
+    });
   } catch (e) {
     if (e.code === '23505' && idem) {
       // Duplicate submit lost the race at the DB → the payment already landed (and already recalc'd
@@ -8993,6 +9055,7 @@ app.post('/api/invoice-payments', requireAuth, lockGuard(LOCK_SPECS.invoice_paym
     }
     throw e;
   }
+  if (!rows) return res.status(400).json({ error: `Payment exceeds the remaining balance of ${Math.max(0, _over).toFixed(2)}.` });
   await recalcInvoiceStatus(pool, parseInt(invoice_id), scopeId(req));
   await auditLog(pool, { userId: scopeId(req), entityId: req.entityId, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE', req });
   // GL Phase 2 (dual-write shadow): a payment settles the receivable — Dr Cash / Cr AR at the payment
@@ -9140,21 +9203,28 @@ app.post('/api/bank-reconciliation/match-bill', requireAuth, wrap(async (req, re
   if (g.err) return res.status(g.err.status).json({ error: g.err.msg, code: g.err.code });
   if (g.done) return res.json({ ok: true, duplicate: true, reconcile_state: g.done.reconcile_state });
   const row = g.row;
-  const _chk = await checkBillPayment(scopeId(req), billId, row.amount, row.entity_id);
-  if (_chk.error) return res.status(_chk.status).json({ error: _chk.error, code: _chk.code });
+  const _chk0 = await checkBillPayment(scopeId(req), billId, row.amount, row.entity_id);   // fast pre-check (404 / entity)
+  if (_chk0.error) return res.status(_chk0.status).json({ error: _chk0.error, code: _chk0.code });
   const { rows: [br] } = await pool.query(`SELECT * FROM bills WHERE id=$1 AND user_id=$2 LIMIT 1`, [billId, scopeId(req)]);
   const bill = rowToObj(br);
   const _mbDate = row.tx_date || row.date || await entityTodayYmd(row.entity_id);
   if (await refuseIfLocked(res, scopeId(req), row.entity_id, _mbDate)) return;
   // Linked payment settles AP (the bill already carries the expense) — booking a fresh expense too
   // would double-count, so this records a payments_made LINKED to the bill and adds NO new expense row.
-  const { row: payment } = await db.insert('payments_made', {
-    user_id: scopeId(req), entity_id: row.entity_id,
-    vendor: String(bill.vendor || row.description || '').slice(0, 200),
-    amount: parseFloat(row.amount) || 0, date: _mbDate,
-    method: 'Bank', notes: 'Matched from bank feed', ref: '', bill_id: billId,
-    idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),
+  // N57b: the authoritative balance check + insert under the bill's payment lock.
+  let _mbRefused = null;
+  const payment = await withPaymentLock('bill', billId, async (conn) => {
+    const _chk = await checkBillPayment(scopeId(req), billId, row.amount, row.entity_id, null, conn);
+    if (_chk.error) { _mbRefused = _chk; return null; }
+    return (await db.insert('payments_made', {
+      user_id: scopeId(req), entity_id: row.entity_id,
+      vendor: String(bill.vendor || row.description || '').slice(0, 200),
+      amount: parseFloat(row.amount) || 0, date: _mbDate,
+      method: 'Bank', notes: 'Matched from bank feed', ref: '', bill_id: billId,
+      idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),
+    }, conn)).row;
   });
+  if (_mbRefused) return res.status(_mbRefused.status).json({ error: _mbRefused.error, code: _mbRefused.code });
   await recalcBillStatus(pool, billId, scopeId(req));
   await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id, table: 'payments_made', recordId: payment.id, action: 'CREATE', newData: payment, req });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'bill', reconcile_ref: payment.id, reconcile_bill_id: billId });

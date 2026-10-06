@@ -7901,7 +7901,7 @@ async function createPaymentLink(provider, conn, o) {
     body.set('mode', 'payment'); body.set('success_url', appUrl() + '/pay-received.html'); body.set('cancel_url', appUrl() + '/pay-received.html?status=cancelled');
     body.set('line_items[0][price_data][currency]', String(o.currency).toLowerCase());
     body.set('line_items[0][price_data][product_data][name]', 'Invoice ' + o.reference);
-    body.set('line_items[0][price_data][unit_amount]', String(Math.round(o.amount * 100)));
+    body.set('line_items[0][price_data][unit_amount]', String(stripeMajorToMinor(o.amount, o.currency)));   // currency exponent (JPY=0, KWD=3)
     body.set('line_items[0][quantity]', '1');
     // Carry the invoice reference so the webhook can reconcile the payment (F171).
     if (o.invoiceId != null) { body.set('client_reference_id', String(o.invoiceId)); body.set('metadata[invoice_id]', String(o.invoiceId)); body.set('metadata[kind]', 'invoice_payment'); }
@@ -7974,7 +7974,11 @@ app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write
     if (isConn) { provider = p; conn = value; break; }
   }
   if (!provider) return res.status(400).json({ error: 'No payment processor connected. Connect Stripe or WiPay first.', code: 'NO_PAYMENT_PROVIDER' });
-  const currency = String(inv.currency || (req.body && req.body.currency) || 'USD').toUpperCase();
+  // N49 (owner decision 2026-10-06): a payment link charges in the ISSUING BUSINESS's currency. Invoices
+  // carry no currency field, so the old `inv.currency || body.currency || 'USD'` charged USD (or whatever
+  // the browser sent) for TTD/JPY/... books. The client can no longer choose the currency.
+  const { rows: [_entCur] } = await pool.query(`SELECT data->>'currency' AS cur FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [inv.entity_id, uid]);
+  const currency = String((_entCur && _entCur.cur) || 'USD').toUpperCase();
   try {
     const url = await createPaymentLink(provider, conn, { amount, currency, email: (req.body && req.body.email) || null, reference: 'INV-' + inv.id + '-' + Date.now(), client: inv.client, invoiceId: inv.id, country: (req.body && req.body.country) || conn.country || null });
     if (!url) throw new Error('Provider returned no URL.');

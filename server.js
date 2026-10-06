@@ -194,6 +194,15 @@ app.use(cors({
 // Stripe webhook events and keep the accountant_clients relationship in sync. They
 // operate by userId (a webhook has no accountant session), affecting every accountant
 // linked to that client.
+// Stripe amounts are in the currency's MINOR unit, whose exponent varies: 0 for JPY/KRW/…, 3 for
+// BHD/KWD/…, 2 otherwise (Stripe's documented lists). Dividing by 100 everywhere was wrong for a
+// multi-currency product (N47). Single shared converter — every Stripe money path routes through it.
+const _STRIPE_ZERO_DEC = new Set(['BIF','CLP','DJF','GNF','JPY','KMF','KRW','MGA','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF']);
+const _STRIPE_THREE_DEC = new Set(['BHD','JOD','KWD','OMR','TND']);
+function stripeCurrencyExponent(cur) { const c = String(cur || 'usd').toUpperCase(); return _STRIPE_ZERO_DEC.has(c) ? 0 : _STRIPE_THREE_DEC.has(c) ? 3 : 2; }
+function stripeMinorToMajor(amount, cur) { const e = stripeCurrencyExponent(cur); return Math.round(Number(amount) || 0) / Math.pow(10, e); }
+function stripeMajorToMinor(amount, cur) { const e = stripeCurrencyExponent(cur); return Math.round((Number(amount) || 0) * Math.pow(10, e)); }
+
 async function setSubscriptionStatus(userId, status) {
   if (!userId) return;
   await pool.query(
@@ -459,32 +468,52 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     const chargeId = ch.id;
     const refundObj = (ch.refunds && ch.refunds.data && ch.refunds.data[0]) || {};
     const refundId = refundObj.id || ('chg-' + chargeId + '-' + (ch.amount_refunded || 0));
-    const refundMajor = Math.round((Number(ch.amount_refunded) || 0)) / 100;
+    // N3: amount_refunded is CUMULATIVE across every refund on the charge. Reverse only the DELTA not
+    // yet reversed for this charge (was: the cumulative total on every event, so a second partial
+    // refund double-reversed). Minor units convert by the charge's currency exponent (N47).
+    const cumulativeMajor = stripeMinorToMajor(ch.amount_refunded, ch.currency);
+    const tag = 'Auto-reversal of refunded Stripe charge ' + chargeId;
+    let ins = null, orig = null;
+    const cli = await pool.connect();
     try {
-      const { rows: [orig] } = await pool.query(
-        `SELECT * FROM invoice_payments WHERE idempotency_key = $1 LIMIT 1`, ['stripe-invpay:' + chargeId]);
-      if (orig && refundMajor > 0) {
-        const alreadyPaid = parseFloat(orig.amount) || 0;
-        const reverseAmt = -Math.min(refundMajor, alreadyPaid);   // never reverse more than was booked
-        const idem = ('stripe-refund:' + refundId).slice(0, 64);
-        const ins = await pool.query(
-          `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-           ON CONFLICT (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING *`,
-          [orig.user_id, orig.entity_id || null, orig.invoice_id, reverseAmt, new Date().toISOString().slice(0, 10),
-           'Refund (Stripe)', idem, 'Auto-reversal of refunded Stripe charge ' + chargeId, idem]);
-        if (ins.rowCount) {
-          await recalcInvoiceStatus(pool, orig.invoice_id, orig.user_id);
-          try { await postSourceLedger(pool, { userId: orig.user_id, sourceType: 'invoice_payment', row: ins.rows[0] }); } catch (glErr) { console.error('[GL] refund reversal posting failed (shadow, non-fatal):', glErr && glErr.message); }
-          try { await auditLog(pool, { userId: orig.user_id, entityId: orig.entity_id, table: 'invoice_payments', recordId: ins.rows[0].id, action: 'REFUND' }); } catch (_) {}
-          console.log('[Stripe] refund reversed invoice ' + orig.invoice_id + ' by ' + reverseAmt);
-        } else {
-          console.log('[Stripe] refund ' + refundId + ' already reversed (idempotent)');
+      await cli.query('BEGIN');
+      await cli.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['stripe-refund:' + chargeId]);   // serialize refunds per charge
+      ({ rows: [orig] } = await cli.query(
+        `SELECT * FROM invoice_payments WHERE idempotency_key = $1 LIMIT 1`, ['stripe-invpay:' + chargeId]));
+      if (orig && cumulativeMajor > 0) {
+        const target = Math.min(cumulativeMajor, parseFloat(orig.amount) || 0);   // never reverse more than was booked
+        const { rows: [r] } = await cli.query(
+          `SELECT COALESCE(SUM(amount),0)::float AS s FROM invoice_payments
+            WHERE user_id = $1 AND invoice_id = $2 AND method = 'Refund (Stripe)' AND notes = $3`,
+          [orig.user_id, orig.invoice_id, tag]);
+        const already = -(r.s || 0);
+        const delta = Math.round((target - already) * 100) / 100;
+        if (delta > 0.005) {
+          const idem = ('stripe-refund:' + refundId).slice(0, 64);
+          ins = await cli.query(
+            `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+             ON CONFLICT (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING *`,
+            [orig.user_id, orig.entity_id || null, orig.invoice_id, -delta, new Date().toISOString().slice(0, 10),
+             'Refund (Stripe)', idem, tag, idem]);
         }
-      } else if (!orig) {
-        console.warn('[Stripe] charge.refunded for ' + chargeId + ' — no auto-reversible invoice payment found; manual review');
       }
-    } catch (e) { console.error('[Stripe] refund reversal failed:', e.message); throw e; }
+      await cli.query('COMMIT');
+    } catch (e) {
+      try { await cli.query('ROLLBACK'); } catch (_) {}
+      console.error('[Stripe] refund reversal failed:', e.message);
+      throw e;
+    } finally { cli.release(); }
+    if (!orig) {
+      console.warn('[Stripe] charge.refunded for ' + chargeId + ' — no auto-reversible invoice payment found; manual review');
+    } else if (ins && ins.rowCount) {
+      await recalcInvoiceStatus(pool, orig.invoice_id, orig.user_id);
+      try { await postSourceLedger(pool, { userId: orig.user_id, sourceType: 'invoice_payment', row: ins.rows[0] }); } catch (glErr) { console.error('[GL] refund reversal posting failed (shadow, non-fatal):', glErr && glErr.message); }
+      try { await auditLog(pool, { userId: orig.user_id, entityId: orig.entity_id, table: 'invoice_payments', recordId: ins.rows[0].id, action: 'REFUND' }); } catch (_) {}
+      console.log('[Stripe] refund reversed invoice ' + orig.invoice_id + ' by ' + ins.rows[0].amount);
+    } else {
+      console.log('[Stripe] refund ' + refundId + ' — nothing new to reverse (idempotent)');
+    }
   }
 
   } catch (procErr) {

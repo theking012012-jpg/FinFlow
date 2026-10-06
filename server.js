@@ -6434,7 +6434,7 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   const intent = parseReportIntent(req.query);
   if (intent.error) return res.status(400).json({ error: intent.error });
   const { bookPeriod, monthIdxArg, fyStartIdx, display } = intent;
-  const _today = FinFlowDates.resolvedToday(new Date());
+  const _today = await entityTodayYmd(eid);   // N64
   const _fyWin = FinFlowDates.resolvePeriod({ period: 'year', fyStartMonth: fyStartIdx, today: _today });
   const _win = FinFlowDates.resolvePeriod({ period: bookPeriod, monthIdx: monthIdxArg, fyStartMonth: fyStartIdx, today: _today });
   const _abs = ymd => parseInt(ymd.slice(0, 4), 10) * 12 + (parseInt(ymd.slice(5, 7), 10) - 1);
@@ -9842,7 +9842,7 @@ async function postSourceLedger(client, { userId, sourceType, row }) {
 // balance ties to zero and assets == liabilities + equity + net profit by construction.
 async function glFinancials(userId, entityId, period = 'year', fyStartIdx = 0, monthIdx = null) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
-  const _today = FinFlowDates.resolvedToday(new Date());
+  const _today = await entityTodayYmd(entityId);   // N64: the same business-local today as computeBooks
   const periodKind = (period === 'month' || period === 'quarter') ? period : 'year';
   const _rp = FinFlowDates.resolvePeriod({ period: periodKind, monthIdx, fyStartMonth: fyStartIdx, today: _today });
   const winStart = _rp.start, winEnd = _rp.end;
@@ -10110,7 +10110,7 @@ async function glConsolidated(userId, opts = {}) {
   const period = opts.period || 'year';
   const fyStartIdx = Number.isInteger(opts.fyStartIdx) ? opts.fyStartIdx : 0;
   const monthIdx = opts.monthIdx != null ? opts.monthIdx : null;
-  const _today = FinFlowDates.resolvedToday(new Date());
+  const _today = await entityTodayYmd(opts.entityId != null ? opts.entityId : null);   // N64
   const periodKind = (period === 'month' || period === 'quarter') ? period : 'year';
   const _rp = FinFlowDates.resolvePeriod({ period: periodKind, monthIdx, fyStartMonth: fyStartIdx, today: _today });
   const winStart = _rp.start, winEnd = _rp.end;
@@ -10332,7 +10332,7 @@ async function canonicalAP(userId, entityId, { net = false } = {}) {
   const matchEnt = r => r.entity_id == null || (entityId != null && r.entity_id === entityId);
   const bills = await db.allByUser('bills', userId, matchEnt);
   const vendorCredits = await db.allByUser('vendor_credits', userId, matchEnt);
-  const _apToday = FinFlowDates.resolvedToday(new Date());
+  const _apToday = await entityTodayYmd(entityId);   // N64
   const _apGross = (bills || [])
     .filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()))
     .filter(b => { const _y = FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date); return _y != null && _y <= _apToday; })
@@ -10437,7 +10437,10 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // passes one), or default 'year'. The accountant portal / consolidated P&L call with a string
   // and resolve here identically. `monthIdx` selects WHICH month/quarter (client intent); null →
   // the current one, exactly as the old `now`-based path did.
-  const _today = FinFlowDates.resolvedToday(new Date());   // server clock → UTC calendar date (phase 1)
+  // N64 (Rule 10): "today" — the D2 bound and the current period — is the BUSINESS's calendar date (its
+  // timezone, entityTodayYmd), not the UTC date: a UTC+ business's same-day documents were treated as
+  // future for hours and its period flipped at UTC midnight. Consolidated (no entity) stays UTC.
+  const _today = await entityTodayYmd(entityId);
   let periodKind, winStart = null, winEnd = null, winElapsed;
   if (period && typeof period === 'object' && period.start && period.end) {
     periodKind = 'window';
@@ -11030,7 +11033,7 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
     let _mi = null;
     if (qPeriod !== 'year') { _mi = parseInt(qMonthIdx, 10); if (!Number.isInteger(_mi) || _mi < 0 || _mi > 11) return res.status(400).json({ error: 'Invalid monthIdx.' }); }
     const _fy = parseInt(qFy, 10), _fyIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
-    const _cogsToday = FinFlowDates.resolvedToday(new Date());
+    const _cogsToday = await entityTodayYmd(eid);   // N64
     const _rp = FinFlowDates.resolvePeriod({ period: qPeriod, monthIdx: _mi, fyStartMonth: _fyIdx, today: _cogsToday });
     inWin = v => { const y = FinFlowDates._toYmd(v); return y != null && y <= _cogsToday && y >= _rp.start && y < _rp.end; };
     _bkPeriod = qPeriod; _bkFy = _fyIdx; _bkMi = _mi;

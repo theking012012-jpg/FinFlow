@@ -12,6 +12,7 @@
  *   TEXT fields   — an object/array is refused (400); a number/boolean is converted to its string.
  *   NUMBER fields — must be a finite number or a numeric string ("12", "-3.5", ".5"); null / "" pass
  *                   through untouched (handlers already treat them as absent/zero). Anything else → 400.
+ *                   Not negative, except the signed `balance` (N105).
  *   DATE fields   — `date` / `*_date`: an ISO calendar date (YYYY-MM-DD[Thh:mm…]) that exists (N63) → else 400 INVALID_DATE.
  * Business rules (non-negative units, integer stock, required fields) stay in the handlers.
  */
@@ -27,6 +28,10 @@ const NUMBER_FIELDS = new Set([
   'revenue',
 ]);
 const NUMERIC_STRING = /^\s*[-+]?(\d+(\.\d*)?|\.\d+)\s*$/;
+// N105: money and quantity are never negative on a create/edit (a −500 invoice or a −3000 gross salary silently
+// inverts a figure; direction lives in the document type — credit note, vendor credit, refund, tx_type).
+// `balance` is the one signed field (an account balance can be negative).
+const SIGNED_FIELDS = new Set(['balance']);
 // N63: date fields (`date`, `*_date`) are ISO calendar dates — YYYY-MM-DD, optionally with an ISO time —
 // and a real day. '07/10/2026' (July or October?) or '2026-02-30' used to be stored as-is, and the ledger and
 // the books then read it two different ways.
@@ -60,6 +65,7 @@ function checkBody(body) {
       if (typeof v === 'number' ? !Number.isFinite(v) : !(typeof v === 'string' && NUMERIC_STRING.test(v))) {
         return k + ' must be a number.';
       }
+      if (!SIGNED_FIELDS.has(k) && Number(v) < 0) return k + ' must be 0 or more.';
     }
   }
   return null;

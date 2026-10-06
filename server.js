@@ -10328,33 +10328,15 @@ async function glProfitLoss(userId, entityId, opts = {}) {
 // /books summed `amount` of status==='unpaid' only, ignoring overdue/partial bills, amounts already
 // paid and vendor credits).
 async function canonicalAP(userId, entityId, { net = false } = {}) {
-  const r2 = n => Math.round((n || 0) * 100) / 100;
-  const matchEnt = r => r.entity_id == null || (entityId != null && r.entity_id === entityId);
-  const bills = await db.allByUser('bills', userId, matchEnt);
-  const vendorCredits = await db.allByUser('vendor_credits', userId, matchEnt);
-  const _apToday = await entityTodayYmd(entityId);   // N64
-  const _apGross = (bills || [])
-    .filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()))
-    .filter(b => { const _y = FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date); return _y != null && _y <= _apToday; })
-    .reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
-  // F58 CLOSE (AP side): an open|applied vendor credit is a payables contra — the business owes that
-  // much less. The GL nets it out of AP (Dr 2000); netting it here too aligns the oracle AP with the
-  // ledger so the balance sheet serves the GL (real cash) instead of the AR/AP-only fallback. Same
-  // basis as the vendor-credit opex-contra leg: status open|applied, at the credit's date, D2-bounded.
-  const _apCredits = (vendorCredits || [])
-    .filter(vc => ['open', 'applied'].includes(String(vc.status || '').toLowerCase()))
-    .filter(vc => { const _y = FinFlowDates._toYmd(vc.date || vc.created_at); return _y != null && _y <= _apToday; })
-    .reduce((s, vc) => s + (parseFloat(vc.amount) || 0), 0);
-  // net: the signed payables position (negative when vendor credits exceed open bills — the ledger's
-  // AP account carries exactly that). The displayed AP is floored at 0.
-  return net ? r2(_apGross - _apCredits) : r2(Math.max(0, _apGross - _apCredits));
+  // N99: computeBooks is the one AP implementation (single entity: native; consolidated: base currency).
+  const b = await computeBooks(userId, entityId, 'year');
+  return net ? b.accountsPayableNet : b.accountsPayable;
 }
 async function glBalanceSheet(userId, entityId) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const books = await computeBooks(userId, entityId, 'year');
   const ar = r2(books.outstanding);
-  const ap = await canonicalAP(userId, entityId);
-  const apNet = await canonicalAP(userId, entityId, { net: true });
+  const ap = r2(books.accountsPayable), apNet = r2(books.accountsPayableNet);   // N99: same computeBooks call as AR
   // Oracle = today's honest stub (cash not tracked, assets = AR only).
   const oracle = () => ({
     source: 'computeBooks',
@@ -10684,6 +10666,19 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     RECOGNIZED_CREDIT.has((v.status || '').toLowerCase()) && inPeriod(_vcDate(v))
   ), v => v.amount, _vcDate, 'vendor_credits');
   const opex = r2(expensesTotal + issuedBillsTotal + paymentsMadeTotal + payrollTotal - vendorCreditsTotal);
+  // N99: ACCOUNTS PAYABLE — the ONE implementation, on the same basis and FX path as AR: recognised bills issued
+  // on or before today, Σ max(0, amount − amount_paid), less open|applied vendor credits dated on or before
+  // today; each row converted from ITS entity's currency at its own date (consolidated → base). canonicalAP
+  // used to recompute this separately and, for the consolidated view (entityId null), kept only entity-less
+  // rows — every business's bills fell out — and the accountant all-view summed mixed currencies raw.
+  const _apGross = sumFX((bills || []).filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()) &&
+      (function(){ const _y = FinFlowDates._toYmd(_billDate(b)); return _y != null && _y <= _today; })()),
+    b => Math.max(0, num(b.amount) - num(b.amount_paid)), _billDate, 'ap');
+  const _apCredits = sumFX((vendorCredits || []).filter(v => RECOGNIZED_CREDIT.has((v.status || '').toLowerCase()) &&
+      (function(){ const _y = FinFlowDates._toYmd(_vcDate(v)); return _y != null && _y <= _today; })()),
+    v => num(v.amount), _vcDate, 'ap');
+  const accountsPayableNet = r2(_apGross - _apCredits);
+  const accountsPayable = r2(Math.max(0, accountsPayableNet));
 
   // ── COGS (FIFO, F6) — PERIOD-SCOPED (F25) ──
   // COGS is a P&L figure, so it must match revenue's period: Month/Quarter show only that
@@ -10903,7 +10898,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const transactions = [..._invTx, ..._expTx].sort(_txByDate).slice(0, 6).map(t => ({ name: t.name, cat: t.cat, type: t.type, amount: t.amount }));
 
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, arCreditContra: r2(_arCreditContra), arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, accountsPayable, accountsPayableNet, arCreditContra: r2(_arCreditContra), arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the
     // client worksheet (GET /api/tax-filing) and the accountant Tax Summary so taxable reconciles.

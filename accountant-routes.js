@@ -935,9 +935,12 @@ If you cannot find a field, use null. Be concise.`;
     // Accounts payable — the canonical figure (server.js canonicalAP, the balance sheet's own AP), per
     // permitted entity (N75). A single-entity view reads that entity; the all-entities view sums the
     // permitted entities' AP (native amounts, like the per-entity figures it is built from).
+    // N99: AP from the SAME canonical books as the figures above — per permitted entity (native) from its own
+    // summary, and the all-entities total from the consolidated books (base currency), never a raw sum of
+    // mixed-currency per-entity figures.
     const apByEntity = {};
-    for (const id of (entityId != null ? [entityId] : _permittedIds)) apByEntity[id] = await canonicalAP(userId, id);
-    const unpaidBills = Object.values(apByEntity).reduce((s, v) => s + v, 0);
+    for (const id of (entityId != null ? [entityId] : _permittedIds)) apByEntity[id] = summariesByEntity[id] ? summariesByEntity[id].accountsPayable : await canonicalAP(userId, id);
+    const unpaidBills = entityId != null ? (apByEntity[entityId] || 0) : (books.accountsPayable || 0);
 
     // ── FinFlux GL CERTIFICATION (Phase 5 moat) — for each PERMITTED entity, FinFlux's own ledger
     // says whether the books tie out: trial balance to zero, balance sheet balances, and the GL P&L

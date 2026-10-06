@@ -10038,10 +10038,10 @@ window.filterAccountants = function() {
     return `
     <div class="card" style="padding:1.25rem;cursor:pointer;transition:border-color .2s" onmouseenter="this.style.borderColor='var(--acc2)'" onmouseleave="this.style.borderColor='var(--bd)'">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <div style="width:40px;height:40px;border-radius:10px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex-shrink:0">${initials}</div>
+        <div style="width:40px;height:40px;border-radius:10px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex-shrink:0">${esc(initials)}</div>
         <div style="min-width:0">
-          <div style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.first_name} ${a.last_name}</div>
-          <div style="font-size:11px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.firm || ''}</div>
+          <div style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.first_name)} ${esc(a.last_name)}</div>
+          <div style="font-size:11px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.firm || '')}</div>
         </div>
         <span style="margin-left:auto;font-size:9px;background:var(--green-bg,#0d1f15);color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,0.3);border-radius:4px;padding:2px 6px;flex-shrink:0">✓ Verified</span>
       </div>
@@ -10049,7 +10049,7 @@ window.filterAccountants = function() {
         <span style="color:${starsColor};font-size:13px;letter-spacing:1px">${stars}</span>
         <span style="font-size:11px;color:var(--t3)">${rating > 0 ? rating.toFixed(1) + ' · ' + reviewCount + ' review' + (reviewCount !== 1 ? 's' : '') : 'No reviews yet'}</span>
       </div>
-      <div style="font-size:11px;color:var(--t3);margin-bottom:6px">📍 ${a.country || 'N/A'} &nbsp;·&nbsp; ${a.specialisation || 'General'}</div>
+      <div style="font-size:11px;color:var(--t3);margin-bottom:6px">📍 ${esc(a.country || 'N/A')} &nbsp;·&nbsp; ${esc(a.specialisation || 'General')}</div>
       <div style="font-size:11px;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px">
         ${a.stripe_onboarded ? '<span style="background:rgba(74,156,109,0.1);color:#4a9c6d;border:1px solid rgba(74,156,109,0.25);border-radius:4px;padding:2px 7px;font-size:10px">🛡 FinFlow Protected</span>' : ''}
         ${a.confirmed_credentials ? '<span style="background:rgba(74,156,109,0.12);color:#4a9c6d;border:1px solid rgba(74,156,109,0.35);border-radius:4px;padding:2px 7px;font-size:10px">✓ '+esc(a.confirmed_credentials)+' · verified by FinFlow</span>' : ''}
@@ -10062,9 +10062,9 @@ window.filterAccountants = function() {
       <div style="display:flex;gap:8px">
         ${linkedAccountant && linkedAccountant.id === a.id
           ? `<button class="btn btn-outline" style="flex:1;justify-content:center;font-size:12px;padding:7px;opacity:0.7;cursor:default" disabled>${linkedAccountant.status === 'pending' ? '⏳ Pending approval' : '✓ Linked'}</button>`
-          : `<button class="btn btn-primary" style="flex:1;justify-content:center;font-size:12px;padding:7px" onclick="requestAccountant(${a.id},'${a.first_name} ${a.last_name}')">Request access</button>`
+          : `<button class="btn btn-primary" style="flex:1;justify-content:center;font-size:12px;padding:7px" data-name="${esc((a.first_name||'') + ' ' + (a.last_name||''))}" onclick="requestAccountant(${Number(a.id)}, this.dataset.name)">Request access</button>`
         }
-        <button class="btn btn-ghost" style="font-size:12px;padding:7px;color:var(--t3)" onclick="event.stopPropagation();reportAccountant(${a.id},'${a.first_name} ${a.last_name}')" title="Report">⚑</button>
+        <button class="btn btn-ghost" style="font-size:12px;padding:7px;color:var(--t3)" data-name="${esc((a.first_name||'') + ' ' + (a.last_name||''))}" onclick="event.stopPropagation();reportAccountant(${Number(a.id)}, this.dataset.name)" title="Report">⚑</button>
       </div>
     </div>`;
   }).join('');
@@ -10100,10 +10100,10 @@ function renderLinkedAccountant() {
   if (a.status === 'pending') {
     content.innerHTML = `
       <div class="card" style="padding:1.25rem;display:flex;align-items:center;gap:14px;border-color:rgba(196,138,42,0.4)">
-        <div style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${initials}</div>
+        <div style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${esc(initials)}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:500;color:var(--t1)">${a.first_name} ${a.last_name}</div>
-          <div style="font-size:12px;color:var(--t3)">${a.firm || ''} &nbsp;·&nbsp; ${a.country || ''}</div>
+          <div style="font-size:14px;font-weight:500;color:var(--t1)">${esc(a.first_name)} ${esc(a.last_name)}</div>
+          <div style="font-size:12px;color:var(--t3)">${esc(a.firm || '')} &nbsp;·&nbsp; ${esc(a.country || '')}</div>
           <div style="font-size:12px;color:var(--t3);margin-top:2px">${a.requested_by === 'client'
             ? 'Your request is awaiting approval from this accountant.'
             : 'You joined through this accountant\'s referral link. They can see your books only if you approve.'}</div>
@@ -10118,11 +10118,11 @@ function renderLinkedAccountant() {
 
   content.innerHTML = `
     <div class="card" style="padding:1.25rem;display:flex;align-items:center;gap:14px">
-      <div style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${initials}</div>
+      <div style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${esc(initials)}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:500;color:var(--t1)">${a.first_name} ${a.last_name}</div>
-        <div style="font-size:12px;color:var(--t3)">${a.firm || ''} &nbsp;·&nbsp; ${a.country || ''}</div>
-        <div style="font-size:12px;color:var(--t3);margin-top:2px">${a.specialisation || ''} &nbsp;·&nbsp; ${a.experience || ''}</div>
+        <div style="font-size:14px;font-weight:500;color:var(--t1)">${esc(a.first_name)} ${esc(a.last_name)}</div>
+        <div style="font-size:12px;color:var(--t3)">${esc(a.firm || '')} &nbsp;·&nbsp; ${esc(a.country || '')}</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:2px">${esc(a.specialisation || '')} &nbsp;·&nbsp; ${esc(a.experience || '')}</div>
       </div>
       <span style="font-size:10px;background:var(--green-bg,#0d1f15);color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,0.3);border-radius:4px;padding:3px 8px;flex-shrink:0">✓ Linked</span>
     </div>`;
@@ -10266,7 +10266,7 @@ window.toggleTask = async function(id, currentlyDone, btn) {
 };
 
 // ── ENGAGEMENT PROPOSALS (client view) ──────────────────────────────────────
-const _fmtFee = (cents, cur) => { const n = (Number(cents)||0)/100; return (cur||'USD') + ' ' + n.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2}); };
+const _fmtFee = (cents, cur) => { const n = (Number(cents)||0)/100; return esc(cur||'USD') + ' ' + n.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2}); };
 window.loadMyProposals = async function() {
   const el = document.getElementById('acct-proposals'); if (!el) return;
   try {

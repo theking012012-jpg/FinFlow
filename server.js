@@ -10672,6 +10672,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // every other leg) but RESTRICTED to journals actually posted to the ledger — so this leg and
   // glFinancials read the SAME set and glReconcile ties by construction. income ⇒ revenue (credit−debit);
   // expense ⇒ opex (debit−credit); asset/liability/equity ⇒ no P&L effect.
+<<<<<<< ours
   let _postedJeIds = new Set();
   try {
     const { rows: _jer } = await pool.query(`SELECT DISTINCT source_id FROM ledger_entries WHERE user_id=$1 AND source_type='journal' AND status='posted'`, [userId]);
@@ -10695,6 +10696,32 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
       }
     }
   }
+=======
+  // Read the journal contribution FROM the GL (posted source_type='journal' lines), grouped by account
+  // type / entity / date, so it equals glFinancials' journal contribution EXACTLY — including REVERSALS
+  // (a flipped-to-draft or deleted journal posts a mirror entry that nets to zero in the GL, so it nets
+  // to zero here too) and excluding anything not posted to the GL (imported-but-unposted, drafts). Each
+  // (entity,date) group converts via sumFX at its own date, identical to glConsolidated's per-line base
+  // conversion. income ⇒ revenue (credit−debit); expense ⇒ opex (debit−credit).
+  const _jeIncomeRows = [], _jeExpenseRows = [];
+  try {
+    const { rows: _jgl } = await pool.query(
+      `SELECT la.type AS t, le.entity_id AS eid, le.entry_date::text AS d,
+              COALESCE(SUM(ll.debit),0)::float AS dr, COALESCE(SUM(ll.credit),0)::float AS cr
+         FROM ledger_lines ll
+         JOIN ledger_accounts la ON la.id = ll.account_id
+         JOIN ledger_entries le ON le.id = ll.entry_id AND le.status='posted'
+        WHERE ll.user_id=$1 AND le.source_type='journal' AND la.type IN ('income','expense')
+          AND ($2::int IS NULL OR le.entity_id IS NULL OR le.entity_id=$2)
+          AND le.entry_date >= $3::date AND le.entry_date < $4::date AND le.entry_date <= $5::date
+        GROUP BY la.type, le.entity_id, le.entry_date`,
+      [userId, entityId, winStart, winEnd, _today]);
+    for (const g of _jgl) {
+      const amt = g.t === 'income' ? (g.cr - g.dr) : (g.dr - g.cr);
+      (g.t === 'income' ? _jeIncomeRows : _jeExpenseRows).push({ entity_id: g.eid, _amt: amt, _d: g.d });
+    }
+  } catch (_) { /* no ledger / query failure → journals contribute 0; reconcile surfaces any divergence */ }
+>>>>>>> theirs
   const jeRevenue = sumFX(_jeIncomeRows,  r => r._amt, r => r._d, 'journal_income');
   const jeOpex    = sumFX(_jeExpenseRows, r => r._amt, r => r._d, 'journal_expense');
 

@@ -6787,14 +6787,30 @@ async function _getPlaidItemsE(uid, entityId, fallback = false) {
   try { items = row && row.value ? JSON.parse(row.value) : []; } catch (_) { items = []; }
   return { id: r ? r.id : null, items: Array.isArray(items) ? items : [] };
 }
-async function _savePlaidItemsE(uid, items, entityId) {
-  const data = JSON.stringify(items);
-  const { rows: [r] } = await pool.query(
-    `SELECT id FROM user_settings WHERE user_id=$1 AND data->>'key'='plaid_items' AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`,
-    [uid, entityId == null ? null : entityId]);
-  if (r) await db.updateById('user_settings', r.id, { value: data });
-  else await db.insert('user_settings', { user_id: uid, entity_id: entityId == null ? null : entityId, key: 'plaid_items', value: data });
+// N45: ATOMIC read-modify-write of a per-scope user_settings blob. The linked-bank lists were read at the start
+// of a request and written back whole at the end, so a sync (seconds of network calls) that finished after a
+// concurrent link or unlink wrote its stale list over it — the new bank vanished or the cursor rolled back.
+// `mutate(current)` receives the value as it is NOW (under a per-blob advisory lock + row lock, inside one
+// transaction) and returns the new value.
+async function _mutateSettingsBlob(uid, key, entityId, mutate) {
+  const eid = entityId == null ? null : entityId;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['settings:' + uid + ':' + key + ':' + (eid == null ? '' : eid)]);
+    const { rows: [r] } = await client.query(
+      `SELECT * FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1 FOR UPDATE`, [uid, key, eid]);
+    let cur = null; try { cur = r && r.data && r.data.value ? JSON.parse(r.data.value) : null; } catch (_) { cur = null; }
+    const next = await mutate(cur);
+    const data = JSON.stringify(next);
+    if (r) await client.query(`UPDATE user_settings SET data = data || jsonb_build_object('value', $2::text), updated_at = NOW() WHERE id = $1`, [r.id, data]);
+    else await client.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())`, [uid, eid, { key, value: data }]);
+    await client.query('COMMIT');
+    return next;
+  } catch (e) { try { await client.query('ROLLBACK'); } catch (_) {} throw e; }
+  finally { client.release(); }
 }
+const _mutatePlaidItemsE = (uid, entityId, fn) => _mutateSettingsBlob(uid, 'plaid_items', entityId, cur => fn(Array.isArray(cur) ? cur : []));
 const _publicItem = i => ({ item_id: i.item_id, institution_name: i.institution_name, linked_at: i.linked_at });
 
 // GET the real linked-bank state (tokens NEVER leave the server). `configured` lets the UI show
@@ -6840,10 +6856,8 @@ app.post('/api/plaid/exchange', requireAuth, requirePerm('bank:manage'), wrap(as
       }
     } catch (_) { /* institution name is best-effort; the link still succeeds */ }
     const uid = scopeId(req);
-    const { items } = await _getPlaidItemsE(uid, req.entityId);
-    const next = items.filter(it => it.item_id !== ex.item_id); // idempotent re-link
-    next.push({ item_id: ex.item_id, access_token: encTok(ex.access_token), institution_name: institution, linked_at: new Date().toISOString(), cursor: null });
-    await _savePlaidItemsE(uid, next, req.entityId);
+    const _newItem = { item_id: ex.item_id, access_token: encTok(ex.access_token), institution_name: institution, linked_at: new Date().toISOString(), cursor: null };
+    const next = await _mutatePlaidItemsE(uid, req.entityId, cur => cur.filter(it => it.item_id !== ex.item_id).concat([_newItem]));   // N45: idempotent re-link, atomic
     res.status(201).json({ ok: true, institution_name: institution, item_id: ex.item_id, items: next.map(_publicItem) });
   } catch (e) {
     console.error('[plaid exchange]', e.message, e.plaid || '');
@@ -6860,8 +6874,8 @@ app.post('/api/plaid/unlink', requireAuth, requirePerm('bank:manage'), wrap(asyn
   const target = items.find(it => it.item_id === itemId);
   if (!target) return res.status(404).json({ error: 'No such linked bank.' });
   if (plaidConfigured()) { try { await plaidCall('/item/remove', { access_token: decTok(target.access_token) }); } catch (_) {} }
-  await _savePlaidItemsE(uid, items.filter(it => it.item_id !== itemId), req.entityId);
-  res.json({ ok: true, items: items.filter(it => it.item_id !== itemId).map(_publicItem) });
+  const _left = await _mutatePlaidItemsE(uid, req.entityId, cur => cur.filter(it => it.item_id !== itemId));   // N45: atomic
+  res.json({ ok: true, items: _left.map(_publicItem) });
 }));
 
 // Pull transactions from every linked item into personal_transactions (source:'banking'), so the
@@ -6926,7 +6940,10 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
       it.cursor = cursor;
     } catch (e) { console.error('[plaid sync]', e.message, e.plaid || ''); }
   }
-  await _savePlaidItemsE(uid, items, req.entityId);
+  // N45: write back ONLY the cursors this sync advanced, onto the list as it is now — a bank linked or unlinked
+  // while the sync ran is kept / stays removed.
+  const _cursors = new Map(items.map(it => [it.item_id, it.cursor]));
+  await _mutatePlaidItemsE(uid, req.entityId, cur => cur.map(it => (_cursors.has(it.item_id) ? Object.assign({}, it, { cursor: _cursors.get(it.item_id) }) : it)));
   res.json({ ok: true, added, modified, removed, flagged });
 }));
 
@@ -8056,11 +8073,11 @@ app.post('/api/belvo/exchange', requireAuth, requirePerm('bank:manage'), wrap(as
     if (claimed.length) return res.status(409).json({ error: 'That bank link belongs to another account.', code: 'BELVO_LINK_CLAIMED' });
     const institution = (d && d.institution) || null;
     const entityId = flow.entityId != null ? flow.entityId : req.entityId;
-    const { value } = await _providerBlobE(uid, 'belvo_conn', entityId);
-    const links = (value && value.links) || [];
-    const next = links.filter(l => l.link !== link);
-    next.push({ link, institution, linked_at: new Date().toISOString() });
-    await _saveProviderBlobE(uid, 'belvo_conn', { links: next }, entityId);
+    const _nb = await _mutateSettingsBlob(uid, 'belvo_conn', entityId, cur => {   // N45: atomic append
+      const links = (cur && cur.links) || [];
+      return Object.assign({}, cur || {}, { links: links.filter(l => l.link !== link).concat([{ link, institution, linked_at: new Date().toISOString() }]) });
+    });
+    const next = _nb.links;
     res.status(201).json({ ok: true, institution, institutions: next.map(l => l.institution).filter(Boolean) });
   } catch (e) { console.error('[belvo exchange]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not link bank: ' + e.message }); }
 }));

@@ -614,7 +614,21 @@ window.switchEntity=async function(idx){
     window._loadVendorsFromDB,      window._loadTimesheetFromDB,
     window._loadProjectsFromDB,
   ].map(fn => { try { return typeof fn === 'function' ? Promise.resolve(fn()).catch(()=>{}) : null; } catch(e){ return null; } }));
+  // ENTITY-ISOLATION (overview chart): the monthly REV[]/EXP[] arrays the Revenue-vs-Expenses chart
+  // reads are built from window.receipts/creditNotes/bills/paymentsMade/payrollRuns — which only reload
+  // in the Promise.all ABOVE, AFTER loadEntityData already built the arrays once (with the PREVIOUS
+  // entity's collections) and painted the chart via buildCharts. Nothing repainted it afterwards
+  // (updateDashboard doesn't call updateCharts; _refreshDashboardUI only rebuilds a MISSING chart), so
+  // the overview chart kept the old entity's bars (e.g. a lingering August bar on an empty entity).
+  // Rebuild the arrays from the now-current collections, then repaint the existing chart.
+  try {
+    if (typeof window._buildMonthlyArrays === 'function' && typeof window._setMonthlyArrays === 'function') {
+      var _mbSw = window._buildMonthlyArrays(window._realInvoices || [], window._realExpenses || []);
+      if (_mbSw && _mbSw.revByMonth) window._setMonthlyArrays(_mbSw.revByMonth, _mbSw.expByMonth);
+    }
+  } catch(_mbSwErr){}
   if(typeof updateDashboard === 'function'){ try { updateDashboard(); } catch(e){} }
+  if(typeof updateCharts === 'function'){ try { updateCharts(); } catch(_ucSwErr){} }
 
   // F94: the Scheduled Documents tab is not wired into loadEntityData/updateDashboard, so a sidebar or
   // entity-card switch re-scoped the session + reloaded data but left the tab rendering the PREVIOUS

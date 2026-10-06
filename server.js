@@ -7832,12 +7832,17 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
   const _bt = _stripeBooksTarget(value, req);
   if (_bt.scope === 'personal') return res.status(400).json({ error: 'This Stripe account is set to Personal.', code: 'PERSONAL_NOT_SUPPORTED' });
   const _bookEid = _bt.entity_id;
-  const refundIdem = ('stripe-refund:' + chargeId).slice(0, 64);
-  // Idempotency: this refund already recorded?
-  {
-    const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), refundIdem]);
-    if (rows[0]) return res.json({ ok: true, duplicate: true, receipt: rowToObj(rows[0]) });
-  }
+  // N3b: refunds are booked by DELTA. Stripe reports the charge's CUMULATIVE amount_refunded; each request books
+  // what that exceeds the refunds already booked for this charge, keyed on the cumulative figure. One key per
+  // charge used to mean the FIRST refund was the only one ever recorded — a later partial refund on the same
+  // charge returned "duplicate" and revenue stayed overstated. The first refund keeps the original key.
+  const refundIdem0 = ('stripe-refund:' + chargeId).slice(0, 64);
+  const _bookedRefunds = async () => {
+    const { rows } = await pool.query(
+      `SELECT * FROM sales_receipts WHERE user_id=$1 AND (data->>'idempotency_key' = $2 OR data->>'idempotency_key' LIKE $2 || ':%') ORDER BY id ASC`,
+      [scopeId(req), refundIdem0]);
+    return rows.map(rowToObj);
+  };
   // The original income must already be booked, or there is nothing to reverse (never record a bare refund).
   const origIdem = ('stripe-charge:' + chargeId).slice(0, 64);
   const { rows: origRows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), origIdem]);
@@ -7852,7 +7857,11 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
   } catch (e) { console.error('[stripe refund]', e.message); return res.status(502).json({ error: 'Could not read the Stripe charge: ' + e.message }); }
   const refundedCents = Number(c.amount_refunded) || 0;
   if (refundedCents <= 0) return res.status(400).json({ error: 'This charge has no refund on Stripe yet.' });
-  const refundAmt = stripeMinorToMajor(refundedCents, c.currency);
+  const _booked = await _bookedRefunds();
+  const _bookedAmt = _booked.reduce((t, r) => t + (-(parseFloat(r.amount) || 0)), 0);
+  const refundAmt = Math.round((stripeMinorToMajor(refundedCents, c.currency) - _bookedAmt) * 100) / 100;
+  if (refundAmt <= 0.005) return res.json({ ok: true, duplicate: true, receipt: _booked[_booked.length - 1] || null });
+  const refundIdem = (_booked.length ? refundIdem0 + ':' + refundedCents : refundIdem0).slice(0, 64);
   const _orig = rowToObj(origRows[0]);
   const customer = String(_orig.customer || c.description || 'Stripe refund').slice(0, 200);
   const _rfList = (c.refunds && c.refunds.data) || [];

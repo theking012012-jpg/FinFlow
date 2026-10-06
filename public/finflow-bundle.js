@@ -4818,7 +4818,10 @@ function clearAIChat(){
       // and window.computeExpenseBreakdown for the manual-category split; every category + Payroll +
       // a "Bills & other" remainder reconcile to the canonical Total Operating Expenses. ────────────
       if (name === 'Profit & Loss Statement') {
-        const d = await api('POST', '/api/reports/profit-loss', {});
+        // N41: send the period INTENT the dashboard uses (period + monthIdx + fiscal-year start + entity),
+        // so the totals cover the same period as the Operating-Expenses breakdown below.
+        const _plq = (typeof window._cogsPeriodParams === 'function') ? '?' + window._cogsPeriodParams().toString() : '';
+        const d = await api('POST', '/api/reports/profit-loss' + _plq, {});
         const prows = Array.isArray(d.rows) ? d.rows : [];
         const rev = parseFloat(d.totalRevenue) || 0, cogs = parseFloat(d.cogs) || 0, gp = parseFloat(d.grossProfit) || 0;
         const pay = parseFloat(d.payroll) || 0, exp = parseFloat(d.totalExpenses) || 0, net = parseFloat(d.netProfit) || 0;

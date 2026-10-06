@@ -6121,31 +6121,17 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     // so no viewer's local midnight ever crosses the wire. The server resolves the calendar window
     // itself (computeBooks → finflow-dates). No params ⇒ 'year' (backward compatible: the accountant
     // portal / consolidated P&L call with no period). A financial endpoint validates strictly.
-    let bookPeriod = 'year';
-    let monthIdxArg = null;
-    const { period: qPeriod, monthIdx: qMonthIdx } = req.query;
-    if (qPeriod != null) {
-      if (qPeriod !== 'year' && qPeriod !== 'month' && qPeriod !== 'quarter') {
-        return res.status(400).json({ error: 'Invalid period.' });
-      }
-      bookPeriod = qPeriod;
-      if (qPeriod !== 'year') {
-        const _mi = parseInt(qMonthIdx, 10);
-        if (!Number.isInteger(_mi) || _mi < 0 || _mi > 11) return res.status(400).json({ error: 'Invalid monthIdx.' });
-        monthIdxArg = _mi;
-      }
-    }
+    const _intent = parseReportIntent(req.query);
+    if (_intent.error) return res.status(400).json({ error: _intent.error });
+    const { bookPeriod, monthIdxArg } = _intent;
     // Canonical figures from computeBooks (the single source shared with the dashboard,
     // /books and the report routes) so every surface reconciles. Revenue/expenses/net all
     // include receipts, payments, payroll accrual + FIFO COGS.
     // F34 Path B: optional ?display=CCY converts every leg to that currency at each leg's recognition
     // date (default omitted ⇒ entity-native ⇒ identity). fxCoverage travels with the response.
-    const _display = (req.query.display || '').toUpperCase();
-    const display = /^[A-Z]{3}$/.test(_display) ? _display : null;
     // F34 B: fiscal-year start month (0-11) for the converted overview-chart buckets. Client sends the
     // resolved #s-fy index; invalid/absent → January (0), matching the client default.
-    const _fy = parseInt(req.query.fyStart, 10);
-    const fyStartIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
+    const { display, fyStartIdx } = _intent;
     const [books, invoices, expenses] = await Promise.all([
       computeBooks(uid, eid, bookPeriod, display, fyStartIdx, monthIdxArg),
       db.allByUser('invoices', uid, matchEnt),
@@ -6256,80 +6242,66 @@ app.get('/api/reports/top-clients', requireAuth, wrap(async (req, res) => {
   }
 }));
 
-// POST /api/reports/profit-loss — monthly P&L breakdown (entity-scoped).
-// Monthly rows show DATED cash activity (paid invoices + receipts + payments received in;
-// expenses + payments made out). The TOTALS come from computeBooks so the bottom line is
-// canonical — it additionally includes payroll accrual (a monthly rate, surfaced as its own
-// line) and FIFO COGS (an aggregate). Sorted by YYYY-MM key, labelled at render (F15).
+// The report-period INTENT a request carries — ?period (year|quarter|month), ?monthIdx (fiscal month 0-11,
+// required unless year), ?fyStart (fiscal-year start month 0-11, default January), ?display (ISO currency).
+// The server resolves the calendar window from it (F87). ONE parser, so /api/reports and
+// /api/reports/profit-loss cannot read the same request as two different periods.
+function parseReportIntent(q) {
+  q = q || {};
+  let bookPeriod = 'year', monthIdxArg = null;
+  if (q.period != null) {
+    if (q.period !== 'year' && q.period !== 'month' && q.period !== 'quarter') return { error: 'Invalid period.' };
+    bookPeriod = q.period;
+    if (q.period !== 'year') {
+      const _mi = parseInt(q.monthIdx, 10);
+      if (!Number.isInteger(_mi) || _mi < 0 || _mi > 11) return { error: 'Invalid monthIdx.' };
+      monthIdxArg = _mi;
+    }
+  }
+  const _fy = parseInt(q.fyStart, 10);
+  const fyStartIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
+  const _display = String(q.display || '').toUpperCase();
+  const display = /^[A-Z]{3}$/.test(_display) ? _display : null;
+  return { bookPeriod, monthIdxArg, fyStartIdx, display };
+}
+
+// POST /api/reports/profit-loss — the P&L for ONE period (entity-scoped): the fiscal year, quarter or month
+// the request names (parseReportIntent; no params = the January fiscal year, as before).
+// N41: the totals AND the monthly rows come from the same engine (glProfitLoss → ledger when it reconciles,
+// else computeBooks), the rows one call per fiscal month inside the window. So Σrows == totals by
+// construction. The rows used to be a second, source-document implementation over ALL TIME (no period at all), and
+// the totals ignored the fiscal-year start and the selected period. Months that have not started yet
+// (after today) are not listed — they hold nothing (D2).
 app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   const uid = scopeId(req);
   const eid = req.entityId || null;
-  const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
-  const [invoices, expenses, paymentsMade, receipts, bills, creditNotes, vendorCredits] = await Promise.all([
-    db.allByUser('invoices', uid, matchEnt),
-    db.allByUser('expenses', uid, matchEnt),
-    db.allByUser('payments_made', uid, matchEnt),
-    db.allByUser('sales_receipts', uid, matchEnt),  // F26: entity-scoped (null-inclusive) like every sibling leg — was user-level, leaking other entities' cash sales into this entity's figures
-    db.allByUser('bills', uid, matchEnt),     // F38 Step 4: issued bills = accrued expense
-    // payments_received dropped: it settles AR, it is not revenue (F32).
-    db.allByUser('credit_notes', uid, matchEnt),    // F58: revenue contra
-    db.allByUser('vendor_credits', uid, matchEnt),  // F58: opex contra
-  ]);
+  const intent = parseReportIntent(req.query);
+  if (intent.error) return res.status(400).json({ error: intent.error });
+  const { bookPeriod, monthIdxArg, fyStartIdx, display } = intent;
+  const _today = FinFlowDates.resolvedToday(new Date());
+  const _fyWin = FinFlowDates.resolvePeriod({ period: 'year', fyStartMonth: fyStartIdx, today: _today });
+  const _win = FinFlowDates.resolvePeriod({ period: bookPeriod, monthIdx: monthIdxArg, fyStartMonth: fyStartIdx, today: _today });
+  const _abs = ymd => parseInt(ymd.slice(0, 4), 10) * 12 + (parseInt(ymd.slice(5, 7), 10) - 1);
+  const _ym = a => Math.floor(a / 12) + '-' + String((a % 12) + 1).padStart(2, '0');
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const keyOf = d => { const ymd = FinFlowDates._toYmd(d); return ymd == null ? 'Unknown' : ymd.slice(0, 7); }; // F87: calendar-date month key (string), no local-time getMonth
-  const labelOf = k => { if (k === 'Unknown') return 'Unknown'; const [y, m] = k.split('-'); return `${_MO[+m - 1]} '${y.slice(-2)}`; };
-  const monthMap = {};
-  const bump = (d, field, amt) => { const k = keyOf(d); (monthMap[k] || (monthMap[k] = { revenue: 0, expenses: 0 }))[field] += parseFloat(amt) || 0; };
-  // Issue-based accrual (F32): recognize every ISSUED invoice at its issue month (created_at),
-  // full amount, any recognized status — not just 'paid'. payments_received is not revenue.
-  const _REC = new Set(['pending', 'overdue', 'partial', 'paid']);
-  invoices.filter(i => _REC.has((i.status || '').toLowerCase())).forEach(i => bump(i.issue_date || i.created_at || i.date, 'revenue', i.amount));   // F36: issue_date, created_at fallback (transition — see computeBooks issueDate)
-  receipts.forEach(r => bump(r.date, 'revenue', r.amount));
-  expenses.forEach(e => bump(e.expense_date || e.date || e.created_at, 'expenses', e.amount));
-  // F38 Step 4: issued bills accrue as expense in their ISSUE month (mirror of the invoice
-  // revenue leg above) — RECOGNIZED_BILL allowlist, FULL amount, keyed on issue_date.
-  bills.filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase())).forEach(b => bump(b.issue_date || b.created_at || b.due_date, 'expenses', b.amount));
-  // Only ORPHAN payments (bill_id IS NULL) stay expense; a bill-linked payment is a settlement
-  // (Dr AP / Cr Cash), not a fresh expense — would double-count the issued-bill leg. Sole guard.
-  paymentsMade.filter(p => p.bill_id == null).forEach(p => bump(p.date || p.created_at, 'expenses', p.amount));
-  // F58: contra legs, bucketed on their OWN date so the monthly chart reconciles with the
-  // canonical totals from computeBooks. Negative bump = subtraction; Void contributes 0.
-  const _REC_CREDIT = new Set(['open', 'applied']);
-  creditNotes.filter(c => _REC_CREDIT.has((c.status || '').toLowerCase()))
-    .forEach(c => bump(c.date || c.created_at, 'revenue', -(parseFloat(c.amount) || 0)));
-  vendorCredits.filter(v => _REC_CREDIT.has((v.status || '').toLowerCase()))
-    .forEach(v => bump(v.date || v.created_at, 'expenses', -(parseFloat(v.amount) || 0)));
-  // F33-C: bucket PAYROLL into its month so Σ monthly expenses reconciles with the Expenses KPI
-  // (computeBooks.opex, which includes payroll). EXACT mirror of the computeBooks payroll leg:
-  // payroll_run_lines gross+bonus+overtime, runs IN ('approved','paid'). F85 (2026-08-07, accrual):
-  // dated on the run's `period` (the month it is FOR), not run_date — matching computeBooks so the
-  // chart and the KPI agree. COGS is deliberately NOT bucketed here — it is grossProfit, not opex.
-  try {
-    const { rows: _prl } = await pool.query(
-      `SELECT prl.gross, prl.bonus, prl.overtime, pr.run_date, pr.period, pr.status
-         FROM payroll_run_lines prl JOIN payroll_runs pr ON pr.id = prl.run_id
-        WHERE pr.user_id = $1 AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)`,
-      [uid, eid]
-    );
-    _prl.filter(l => ['approved', 'paid'].includes(String(l.status || '').toLowerCase()))
-        .forEach(l => bump(FinFlowDates.payrollPeriodYmd(l.period, l.run_date), 'expenses', (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0)));   // F-H1
-  } catch (_) { /* payroll optional — leave buckets unchanged on error */ }
-  // Sort by YYYY-MM key ('Unknown' sorts last); format the label at render (F15).
-  const rows = Object.keys(monthMap).sort().map(k => ({
-    month: labelOf(k), key: k, revenue: monthMap[k].revenue, expenses: monthMap[k].expenses,
-    netProfit: monthMap[k].revenue - monthMap[k].expenses,
-  }));
-  // Canonical totals — the reconciling bottom line (adds payroll accrual + COGS).
-  // F34 Path B: ?display=CCY converts the totals (default omitted ⇒ native ⇒ identity). The monthly
-  // `rows` above stay native this step — they get server-converted buckets in Step 3.
-  const _display = (req.query.display || '').toUpperCase();
-  const display = /^[A-Z]{3}$/.test(_display) ? _display : null;
-  // GL Phase 5b: the canonical totals now come from the LEDGER when it reconciles to computeBooks for
-  // this entity+period (else computeBooks unchanged) - same numbers, sourced from the double-entry books.
-  // The monthly `rows` chart stays source-doc-derived this slice. `source` travels for observability.
-  const pl = await glProfitLoss(uid, eid, { period: 'year', display });
+  const months = [];
+  for (let a = _abs(_win.start); a < _abs(_win.end); a++) {
+    if (_ym(a) + '-01' > _today) break;                       // not started yet — nothing can be recognised in it
+    months.push({ abs: a, fyIdx: a - _abs(_fyWin.start) });
+  }
+  const [pl, ...monthPl] = await Promise.all([
+    glProfitLoss(uid, eid, { period: bookPeriod, fyStartIdx, monthIdx: monthIdxArg, display }),
+    ...months.map(m => glProfitLoss(uid, eid, { period: 'month', fyStartIdx, monthIdx: m.fyIdx, display })),
+  ]);
+  const rows = months.map((m, i) => {
+    const p = monthPl[i];
+    const key = _ym(m.abs);
+    return { month: `${_MO[m.abs % 12]} '${key.slice(2, 4)}`, key,
+             revenue: p.totalRevenue, cogs: p.cogs, expenses: p.totalExpenses, netProfit: p.netProfit };
+  });
   res.json({
     rows,
+    period:        { kind: bookPeriod, start: _win.start, end: _win.end, fyStart: fyStartIdx },
     totalRevenue:  pl.totalRevenue,
     cogs:          pl.cogs,
     grossProfit:   pl.grossProfit,

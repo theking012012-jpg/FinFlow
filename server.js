@@ -5455,7 +5455,37 @@ function nextRunDate(currentDate, frequency) {
   return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
+// N37: fire ONE recurring row exactly once. The schedule step is CLAIMED and the document inserted in a
+// single transaction: next_run only advances if it still holds the value this run read, so a concurrent
+// run (second replica, overlapping interval, restart mid-loop) claims nothing and generates nothing, and a
+// crash between the two writes can no longer leave a document without its schedule advancing (or vice
+// versa). Returns the inserted document row, or null when another run already fired this step.
+async function _fireRecurringOnce(table, r, docTable, docData) {
+  const _nextRun = nextRunDate(r.next_run, r.frequency);
+  const patch = { next_run: _nextRun };
+  if (r.end_date && _nextRun > r.end_date) patch.status = 'completed';
+  if ((docTable === 'invoices' || docTable === 'bills') && r.entity_id == null) throw new Error('recurring ' + table + ' #' + r.id + ' has no entity');
+  const cx = await pool.connect();
+  try {
+    await cx.query('BEGIN');
+    const claim = await cx.query(
+      `UPDATE ${table} SET data = data || $3::jsonb, updated_at = NOW()
+        WHERE id = $1 AND data->>'next_run' = $2 AND data->>'status' = 'active' RETURNING id`,
+      [r.id, String(r.next_run), JSON.stringify(patch)]);
+    if (!claim.rowCount) { await cx.query('ROLLBACK'); return null; }
+    const { rows: [doc] } = await cx.query(
+      `INSERT INTO ${docTable} (user_id, entity_id, data) VALUES ($1, $2, $3) RETURNING *`,
+      [r.user_id, r.entity_id || null, docData]);
+    await cx.query('COMMIT');
+    return rowToObj(doc);
+  } catch (e) {
+    try { await cx.query('ROLLBACK'); } catch (_) {}
+    throw e;
+  } finally { cx.release(); }
+}
+
 async function runRecurringScheduler() {
+  const _fired = { inv: 0, bill: 0, pt: 0 };
   try {
     // F88 step 3: a recurring row fires on ITS ENTITY's calendar day, not one global UTC day — a US book
     // and a Trinidad book each get their own "today". resolvedToday(now, entityTz) does the resolution
@@ -5473,7 +5503,7 @@ async function runRecurringScheduler() {
 
     // Recurring invoices
     const { rows: _recInvRows } = await pool.query(
-      `SELECT * FROM recurring_invoices WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1`,
+      `SELECT * FROM recurring_invoices WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1 ORDER BY id`,
       [_utcTomorrow]
     );
     const recInvoices = _recInvRows
@@ -5485,30 +5515,29 @@ async function runRecurringScheduler() {
         await db.updateById('recurring_invoices', r.id, { status: 'completed' });
         continue;
       }
-      const { row: _invRow } = await db.insert('invoices', {
-        user_id: r.user_id, entity_id: r.entity_id || null,
-        // F88 step 6: stamp the due date on a business day for the entity's country (Modified Following);
-        // next_run (the schedule anchor) stays unadjusted so the cadence never drifts.
-        client: r.client, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
-        // N38 (Rule 10): the document is issued on its SCHEDULED calendar date (the entity-local day it fired
-        // for). Without issue_date, recognition fell back to the UTC created_at instant, which for an entity
-        // east of UTC is the PREVIOUS day — misfiling a 1st-of-month run into the prior month / fiscal year.
-        issue_date: String(r.next_run).slice(0, 10),
-        status: 'pending', notes: `Auto-generated from recurring schedule`,
-        recurring_invoice_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
-      });
-      // F-L1: audit scheduler-created invoices (were bypassing the audit trail; system actor, no req).
-      try { await recordAudit(pool, { userId: r.user_id, entityId: r.entity_id || null, table: 'invoices', recordId: _invRow && _invRow.id, action: 'CREATE', newData: _invRow }); } catch (_) {}
-      try { await postSourceLedger(pool, { userId: r.user_id, sourceType: 'invoice', row: _invRow }); } catch (glErr) { console.error('[GL] recurring invoice posting failed (shadow, non-fatal):', glErr && glErr.message); }
-      const _nextRun = nextRunDate(r.next_run, r.frequency);
-      const _patch = { next_run: _nextRun };
-      if (r.end_date && _nextRun > r.end_date) _patch.status = 'completed';
-      await db.updateById('recurring_invoices', r.id, _patch);
+      try {
+        const _invRow = await _fireRecurringOnce('recurring_invoices', r, 'invoices', {
+          // F88 step 6: stamp the due date on a business day for the entity's country (Modified Following);
+          // next_run (the schedule anchor) stays unadjusted so the cadence never drifts.
+          client: r.client, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
+          // N38 (Rule 10): the document is issued on its SCHEDULED calendar date (the entity-local day it fired
+          // for). Without issue_date, recognition fell back to the UTC created_at instant, which for an entity
+          // east of UTC is the PREVIOUS day — misfiling a 1st-of-month run into the prior month / fiscal year.
+          issue_date: String(r.next_run).slice(0, 10),
+          status: 'pending', notes: `Auto-generated from recurring schedule`,
+          recurring_invoice_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
+        });
+        if (!_invRow) continue;   // another run already fired this step (N37)
+        // F-L1: audit scheduler-created invoices (were bypassing the audit trail; system actor, no req).
+        try { await recordAudit(pool, { userId: r.user_id, entityId: r.entity_id || null, table: 'invoices', recordId: _invRow.id, action: 'CREATE', newData: _invRow }); } catch (_) {}
+        try { await postSourceLedger(pool, { userId: r.user_id, sourceType: 'invoice', row: _invRow }); } catch (glErr) { console.error('[GL] recurring invoice posting failed (shadow, non-fatal):', glErr && glErr.message); }
+        _fired.inv++;
+      } catch (rowErr) { console.error('[Scheduler] recurring invoice #' + r.id + ' failed (others continue):', rowErr && rowErr.message); }
     }
 
     // Recurring bills
     const { rows: _recBillRows } = await pool.query(
-      `SELECT * FROM recurring_bills WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1`,
+      `SELECT * FROM recurring_bills WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1 ORDER BY id`,
       [_utcTomorrow]
     );
     const recBills = _recBillRows
@@ -5520,27 +5549,26 @@ async function runRecurringScheduler() {
         await db.updateById('recurring_bills', r.id, { status: 'completed' });
         continue;
       }
-      const num = 'BILL-' + String(Date.now()).slice(-4);
-      const { row: _billRow } = await db.insert('bills', {
-        user_id: r.user_id, entity_id: r.entity_id || null,
-        // F88 step 6: business-day-shifted due date (Modified Following, entity's country); anchor unadjusted.
-        vendor: r.vendor, num, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
-        issue_date: String(r.next_run).slice(0, 10),   // N38: issued on its scheduled date (see invoices above)
-        status: 'unpaid', notes: `Auto-generated from recurring schedule`,
-        recurring_bill_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
-      });
-      // F-L1: audit scheduler-created bills (were bypassing the audit trail; system actor, no req).
-      try { await recordAudit(pool, { userId: r.user_id, entityId: r.entity_id || null, table: 'bills', recordId: _billRow && _billRow.id, action: 'CREATE', newData: _billRow }); } catch (_) {}
-      try { await postSourceLedger(pool, { userId: r.user_id, sourceType: 'bill', row: _billRow }); } catch (glErr) { console.error('[GL] recurring bill posting failed (shadow, non-fatal):', glErr && glErr.message); }
-      const _nextRun = nextRunDate(r.next_run, r.frequency);
-      const _patch = { next_run: _nextRun };
-      if (r.end_date && _nextRun > r.end_date) _patch.status = 'completed';
-      await db.updateById('recurring_bills', r.id, _patch);
+      try {
+        const num = 'BILL-' + String(Date.now()).slice(-4);
+        const _billRow = await _fireRecurringOnce('recurring_bills', r, 'bills', {
+          // F88 step 6: business-day-shifted due date (Modified Following, entity's country); anchor unadjusted.
+          vendor: r.vendor, num, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
+          issue_date: String(r.next_run).slice(0, 10),   // N38: issued on its scheduled date (see invoices above)
+          status: 'unpaid', notes: `Auto-generated from recurring schedule`,
+          recurring_bill_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
+        });
+        if (!_billRow) continue;   // another run already fired this step (N37)
+        // F-L1: audit scheduler-created bills (were bypassing the audit trail; system actor, no req).
+        try { await recordAudit(pool, { userId: r.user_id, entityId: r.entity_id || null, table: 'bills', recordId: _billRow.id, action: 'CREATE', newData: _billRow }); } catch (_) {}
+        try { await postSourceLedger(pool, { userId: r.user_id, sourceType: 'bill', row: _billRow }); } catch (glErr) { console.error('[GL] recurring bill posting failed (shadow, non-fatal):', glErr && glErr.message); }
+        _fired.bill++;
+      } catch (rowErr) { console.error('[Scheduler] recurring bill #' + r.id + ' failed (others continue):', rowErr && rowErr.message); }
     }
 
     // Recurring personal transactions (mirrors bills; materialises personal_transactions)
     const { rows: _recPtRows } = await pool.query(
-      `SELECT * FROM recurring_personal_transactions WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1`,
+      `SELECT * FROM recurring_personal_transactions WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1 ORDER BY id`,
       [_utcTomorrow]
     );
     const recPts = _recPtRows
@@ -5551,21 +5579,19 @@ async function runRecurringScheduler() {
         await db.updateById('recurring_personal_transactions', r.id, { status: 'completed' });
         continue;
       }
-      await db.insert('personal_transactions', {
-        user_id: r.user_id,
-        description: r.description, category: r.category || 'Other',
-        amount: r.amount, tx_type: r.tx_type || 'expense', tx_date: r.next_run,
-        currency: r.currency || 'USD',   // carry the profile's native currency onto the occurrence
-        recurring_profile_id: r.id,   // link back so the KPI math can exclude this occurrence
-      });
-      const _ptNext = nextRunDate(r.next_run, r.frequency);
-      const _ptPatch = { next_run: _ptNext };
-      if (r.end_date && _ptNext > r.end_date) _ptPatch.status = 'completed';
-      await db.updateById('recurring_personal_transactions', r.id, _ptPatch);
+      try {
+        const _pt = await _fireRecurringOnce('recurring_personal_transactions', r, 'personal_transactions', {
+          description: r.description, category: r.category || 'Other',
+          amount: r.amount, tx_type: r.tx_type || 'expense', tx_date: r.next_run,
+          currency: r.currency || 'USD',   // carry the profile's native currency onto the occurrence
+          recurring_profile_id: r.id,   // link back so the KPI math can exclude this occurrence
+        });
+        if (_pt) _fired.pt++;
+      } catch (rowErr) { console.error('[Scheduler] recurring personal txn #' + r.id + ' failed (others continue):', rowErr && rowErr.message); }
     }
 
-    if (recInvoices.length + recBills.length + recPts.length > 0) {
-      console.log(`[Scheduler] Created ${recInvoices.length} invoices, ${recBills.length} bills, ${recPts.length} personal txns`);
+    if (_fired.inv + _fired.bill + _fired.pt > 0) {
+      console.log(`[Scheduler] Created ${_fired.inv} invoices, ${_fired.bill} bills, ${_fired.pt} personal txns`);
     }
   } catch (e) {
     console.error('[Scheduler] Error:', e.message);

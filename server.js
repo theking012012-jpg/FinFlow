@@ -3919,6 +3919,15 @@ async function requireApiKey(req, res, next) {
     if (!row) return res.status(401).json({ error: 'Invalid API key.' });
     req.apiUserId = row.user_id;
     const d = row.data || {};
+    // N97: a key minted by a team member stops working when that member loses access (removed, revoked,
+    // or demoted below key-management rights). Keys from before created_by existed, or minted by the
+    // owner, are unaffected.
+    if (d.created_by != null && Number(d.created_by) !== Number(row.user_id)) {
+      const { rows: [mem] } = await pool.query(
+        `SELECT data->>'role' AS role FROM team_members WHERE user_id = $1 AND data->>'member_user_id' = $2::text AND data->>'status' = 'active' LIMIT 1`,
+        [row.user_id, String(d.created_by)]);
+      if (!mem || !require('./rbac').roleHasPerm(mem.role, 'settings:manage')) return res.status(401).json({ error: 'This API key was revoked: the team member who created it no longer has access.', code: 'API_KEY_REVOKED' });
+    }
     // The key's entity scope is stored as key_entity_id (POST /api/api-keys); it used to be read from
     // entity_id, which is never set, so every entity-scoped key read ALL entities (N27).
     const _ke = d.key_entity_id;
@@ -3975,6 +3984,7 @@ app.post('/api/api-keys', requireAuth, requirePerm('settings:manage'), apiLimite
     user_id: scopeId(req), entity_id: null,
     hash: apiKeys.hashKey(key), display: apiKeys.maskKey(key), name,
     key_entity_id: entityId, created_at: new Date().toISOString(), last_used_at: null,
+    created_by: req.session.userId,   // N97: a member-minted key lives only as long as that member's access
   });
   logAudit(req, 'CREATE', 'api_keys', row.id, null, { name, display: apiKeys.maskKey(key), key_entity_id: entityId });
   // The plaintext key is returned ONCE here and never again.

@@ -6,7 +6,7 @@ This is the single source of truth for "what's done vs what's left." It supersed
 scattered audit/handover/status/plan docs that used to live in the repo root (all consolidated here on
 2026-09-28). For *how the system works* see the kept reference docs listed at the bottom.
 
-> **Bottom line:** the CODE is launch-complete and harness-backed (315 harnesses). What remains before
+> **Bottom line:** the CODE is launch-complete and harness-backed (316 harnesses). What remains before
 > going public is **ops/config only the owner can do** — the sharp edges are the Resend sending domain
 > and the Stripe prices. Nothing code-side blocks launch.
 
@@ -88,7 +88,7 @@ scattered audit/handover/status/plan docs that used to live in the repo root (al
   just don't auto-stamp those rows. Cosmetic doc gap, not a coverage gap.
 
 - **QuickBooks-parity gaps — all CLOSED 2026-10-05** (shipped; see §3). classes/locations, public API + Zapier, Google Sheets sync, and the native-app (Capacitor) scaffold are done — FinFlow now matches or beats QuickBooks on AI *and* ecosystem. Only owner follow-ups remain: native-app STORE submission (Apple/Play accounts + signing) and the optional OAuth push-sync for Sheets (a Google Cloud app) — neither is code.
-- **Mobile performance** — desktop Lighthouse is in the 90s; mobile remains the weaker surface after the earlier parse-wall + chart/boot-path work. Further mobile tuning is optional, ongoing, non-blocking. (A boot-window GET cache was prototyped earlier but never shipped; revisit only if mobile perf needs it.)
+- **Mobile performance** — desktop Lighthouse is in the 90s; mobile remains the weaker surface. The boot-window request cache is now **shipped** (see §3) — it collapses the repeated boot fetches of invoices/expenses/bills onto one call. Further mobile tuning (Lighthouse, task #18) is optional, ongoing, non-blocking.
 
 ---
 
@@ -152,6 +152,9 @@ Integrations live-verified: Stripe, Plaid, WiPay (2026-08-16); Resend email path
 - **Google Sheets connector** (Developer page): ready-to-paste Google Apps Script (base URL auto-filled) that pulls read-only `/api/v1` into sheet tabs with a FinFlow sync menu, using an API key — zero FinFlow-side OAuth. Full OAuth push-sync deferred (needs a Google Cloud app). (commit `e13de51`)
 - **Native app scaffold** (`mobile/`): self-contained Capacitor project (own package.json, no server impact) — WebView shell pointed at production, config, offline fallback, full iOS/Android build+submit README. Store accounts, signing, and iOS native-plugin wiring remain (owner). (commit `1662e28`)
 - Net: all four QB-ahead non-AI gaps closed; with the AI layer (above) FinFlow is parity-or-ahead vs QuickBooks on AI and ecosystem. **315 harnesses.**
+
+### Added 2026-10-05 (pm) — perf: boot-window request cache — deployed
+- **Boot cache** (`bootcache.js`, `GET /api/dashboard-bootstrap`): the dashboard refetched invoices (~5×), expenses (~4×) and bills (~2×) on boot; a client `fetch` wrapper now coalesces those onto ONE bootstrap call during a 15s window. The endpoint returns BYTE-IDENTICAL data — the shared respondList path (`db.allByUser` + `_entityScopeFilter` + id-desc) — so no money logic is duplicated (Rule 2). Strict fallback for any miss / non-GET / entity-mismatch / failure (correctness cannot regress) + a kill-switch (`localStorage ff_no_bootcache`). Pure match helper `verify-bootcache` 16/16. Live boot speedup + batch-vs-individual parity is the owner deploy check (needs live DB). **316 harnesses.** (commit `7951bc2`)
 
 ---
 

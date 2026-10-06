@@ -1274,37 +1274,15 @@ If you cannot find a field, use null. Be concise.`;
   }));
 
 
-  // ── 11. RECORD SERVICE COMMISSION (non-Stripe / manual ledger path) ───────
-  // The live billing path is bill-client (Stripe). This route records the same
-  // money split for a manually-collected bill. F17: the rate is the LIVE tier rate
-  // (no hardcoded 4%), and the row records the full split via the shared helper.
-  app.post('/api/accountants/record-commission', requireAccountant, wrap(async (req, res) => {
-    const accountantId = req.session.accountantId;
-    const { userId, billedAmountCents, description } = req.body || {};
-    if (!accountantId || !billedAmountCents) return res.status(400).json({ error: 'Missing fields.' });
-
-    const countRes = await pool.query(
-      `SELECT COUNT(*) FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
-        WHERE ac.accountant_id = $1 AND ac.status = 'active' AND u.data->>'subscriptionStatus' = 'active'`,
-      [accountantId]
-    );
-    const activeCount = parseInt(countRes.rows[0].count) || 0;
-    const rate  = commissionRateFor(activeCount);
-    const split = splitBilling(billedAmountCents, rate, estimateStripeFeeCents(billedAmountCents));
-
-    await pool.query(`
-      INSERT INTO accountant_earnings
-        (accountant_id, client_id, type, amount_cents, billed_cents, commission_cents,
-         stripe_fee_cents, description, status, period_month)
-      VALUES ($1,$2,'service_commission',$3,$4,$5,$6,$7,'pending', date_trunc('month', NOW()))
-    `, [accountantId, userId || null, split.accountantNetCents, split.billedCents,
-        split.commissionCents, split.stripeFeeCents, description || 'Service commission']);
-
-    await _audit(pool, { userId: userId ? parseInt(userId) : null, table: 'accountant_earnings', action: 'COMMISSION_RECORD', newData: { type: 'service_commission', billed_cents: split.billedCents, commission_cents: split.commissionCents, net_cents: split.accountantNetCents, description: description || 'Service commission' }, req });  // F90 residual: accountant workflow audit
-
-    return res.json({ success: true, commissionRate: rate, ...split,
-      commissionFormatted: '$' + (split.commissionCents / 100).toFixed(2) });
-  }));
+  // ── 11. RECORD SERVICE COMMISSION — retired (N81) ───────────────────────────
+  // This accountant-session route inserted a 'pending' accountant_earnings row from any
+  // billedAmountCents, for any (or no) client, with no relationship check. 'pending' earnings are the
+  // admin payout queue, so an accountant could queue a payout to themselves for any amount. Its money
+  // direction was also wrong: on a bill the accountant collected themselves, FinFlow is OWED the
+  // commission — nothing is payable to the accountant. No UI called it. The live billing path is
+  // bill-client (Stripe), which records the split from the real PaymentIntent.
+  app.post('/api/accountants/record-commission', requireAccountant, (req, res) =>
+    res.status(410).json({ error: 'Manual commission recording is not available. Bill clients through FinFlow (Stripe) so the split is recorded from the real payment.', code: 'RECORD_COMMISSION_RETIRED' }));
 
 
   // ── 12. MONTHLY REFERRAL PAYOUT CRON ──────────────────────────────────────

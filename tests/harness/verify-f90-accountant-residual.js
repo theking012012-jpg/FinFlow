@@ -4,7 +4,7 @@
  * workflow handlers on a CLIENT's books/relationship now write the immutable trail, ATTRIBUTED to
  * the accountant (actor_type='accountant', actor_id=accountantId), user_id = the client.
  *
- * Covers: notes, flag, checklist, message (singular + plural), notify, record-commission,
+ * Covers: notes, flag, checklist, message (singular + plural), notify (record-commission retired — N81),
  * approve-request (access grant), decline-request. bill-client is Stripe-gated (503 without a
  * Stripe key in the harness) so its audit line can't execute here — noted, not silently skipped.
  *
@@ -59,7 +59,6 @@ const ACC = { email: 'f90r-acc@finflow.test', password: 'harness-password-not-a-
       ['message',      () => http.post(`/api/accountants/clients/${active}/message`,   { message: 'hi client' })],
       ['messages',     () => http.post(`/api/accountants/clients/${active}/messages`,  { content: 'follow-up' })],
       ['notify',       () => http.post(`/api/accountants/clients/${active}/notify`,    { message: 'your report is ready' })],
-      ['commission',   () => http.post('/api/accountants/record-commission',           { userId: active, billedAmountCents: 10000, description: 'Q2 services' })],
       ['approve-req',  () => http.post('/api/accountants/approve-request',             { userId: pendA })],
       ['decline-req',  () => http.post('/api/accountants/decline-request',             { userId: pendD })],
     ];
@@ -77,7 +76,6 @@ const ACC = { email: 'f90r-acc@finflow.test', password: 'harness-password-not-a-
       ['checklist → CHECKLIST_UPDATE','accountant_clients', 'CHECKLIST_UPDATE',  active],
       ['message → MESSAGE',          'accountant_messages', 'MESSAGE',           active],
       ['notify → NOTIFY_CLIENT',     'accountant_clients',  'NOTIFY_CLIENT',     active],
-      ['commission → COMMISSION_RECORD','accountant_earnings','COMMISSION_RECORD', active],
       ['approve → CLIENT_ACTIVATE',  'accountant_clients',  'CLIENT_ACTIVATE',   pendA],
       ['decline → CLIENT_DECLINE',   'accountant_clients',  'CLIENT_DECLINE',    pendD],
     ];

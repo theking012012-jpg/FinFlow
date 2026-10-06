@@ -772,6 +772,32 @@ app.use(session({
   },
 }));
 
+// ── SESSION VALIDITY — one check for EVERY request that carries a user session ─────────────────
+// N88 + N6/N6b: a session stops working the moment (a) an admin suspends / soft-deletes the account, or
+// (b) the password is reset or changed — users.data.session_epoch is incremented and every session
+// stamped with an older epoch (session.sessionEpoch, set by establishSession) is dropped. This runs
+// globally — not only inside requireAuth — because several routes authenticate with a raw
+// req.session.userId check (my-accountant/*, request-access, support), which used to skip the
+// suspended check entirely. A dropped session continues as anonymous; requireAuth reports why.
+const _isBlockedUser = (d) => !!d && (String(d.suspended) === 'true' || String(d.deleted) === 'true');
+app.use(async (req, res, next) => {
+  if (!req.session || !req.session.userId) return next();
+  try {
+    const { rows: [u] } = await pool.query(
+      `SELECT data->'suspended' AS suspended, data->'deleted' AS deleted, COALESCE((data->>'session_epoch')::int, 0) AS epoch FROM users WHERE id = $1`,
+      [req.session.userId]);
+    let why = null;
+    if (!u) why = 'gone';
+    else if (_isBlockedUser(u)) why = 'suspended';
+    else if ((Number(req.session.sessionEpoch) || 0) !== Number(u.epoch)) why = 'revoked';
+    if (why) {
+      req._authRevoked = why;
+      await new Promise((resolve) => req.session.regenerate(() => resolve()));
+    }
+  } catch (e) { return next(e); }
+  next();
+});
+
 // Cloudflare/Railway-aware client IP for IP-keyed limiters. Behind Cloudflare, CF-Connecting-IP is
 // the single authoritative client address (no fragile hop-counting); _clientIp handles the
 // Railway/Envoy chain and the pre-Cloudflare topology too. Degrade to a UNIQUE key — never a shared
@@ -918,18 +944,22 @@ app.use('/api', (req, res, next) => {
   return next();
 });
 
-// N88: an account an admin SUSPENDED or soft-DELETED must lose access immediately — including sessions
-// that were already open. Admin writes these flags in two shapes (suspend: the string 'true'/'false';
-// soft-delete: a JSON boolean via jsonb_set), so compare as strings. Single shared check (Rule 9).
-const _isBlockedUser = (d) => !!d && (String(d.suspended) === 'true' || String(d.deleted) === 'true');
+// N6/N6b: end every existing session of a user (atomic increment; establishSession stamps the new value).
+async function _bumpSessionEpoch(userId) {
+  await pool.query(`UPDATE users SET data = jsonb_set(data, '{session_epoch}', to_jsonb(COALESCE((data->>'session_epoch')::int, 0) + 1)) WHERE id = $1`, [userId]);
+}
+
+// N88: an account an admin SUSPENDED or soft-DELETED loses access immediately — including sessions
+// already open. The check itself runs for every request in the session-validity middleware above
+// (admin writes the flags in two shapes, compared as strings by _isBlockedUser); requireAuth only
+// reports why a session was dropped.
 async function requireAuth(req, res, next) {
-  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorised — please log in.' });
-  try {
-    const { rows: [u] } = await pool.query(`SELECT data->'suspended' AS suspended, data->'deleted' AS deleted FROM users WHERE id = $1`, [req.session.userId]);
-    if (!u || _isBlockedUser(u)) {
-      return req.session.destroy(() => res.status(401).json({ error: u ? 'This account is suspended. Please contact support.' : 'Session expired.', code: u ? 'ACCOUNT_SUSPENDED' : undefined }));
-    }
-  } catch (e) { return next(e); }
+  if (!req.session.userId) {
+    if (req._authRevoked === 'suspended') return res.status(401).json({ error: 'This account is suspended. Please contact support.', code: 'ACCOUNT_SUSPENDED' });
+    if (req._authRevoked === 'revoked') return res.status(401).json({ error: 'Your password was changed. Please log in again.', code: 'SESSION_REVOKED' });
+    if (req._authRevoked === 'gone') return res.status(401).json({ error: 'Session expired.' });
+    return res.status(401).json({ error: 'Unauthorised — please log in.' });
+  }
   next();
 }
 
@@ -1273,7 +1303,9 @@ app.post('/api/auth/reset-password', signupLimiter, async (req, res) => {
     }
 
     const hash = bcrypt.hashSync(password, 12);
+    // N6: a reset ends EVERY existing session (whoever held the old password is logged out).
     await db.updateById('users', record.user_id, { password: hash });
+    await _bumpSessionEpoch(record.user_id);
     await pool.query(`DELETE FROM password_resets WHERE data->>'token' = $1`, [tokenHash]);
 
     res.json({ ok: true });
@@ -2713,8 +2745,11 @@ app.put('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
   const user = _cpu ? rowToObj(_cpu) : null;
   if (!user || !bcrypt.compareSync(currentPassword, user.password)) return res.status(401).json({ error: 'Current password is incorrect.' });
   const hash = bcrypt.hashSync(newPassword, 12);
+  // N6b: a password change ends every OTHER session; this one is re-issued (fresh id, current epoch).
   await db.updateById('users', req.session.userId, { password: hash });
+  await _bumpSessionEpoch(req.session.userId);
   logAudit(req, 'CHANGE_PASSWORD', 'users', req.session.userId, null, null);
+  await establishSession(req, { userId: req.session.userId, userRole: req.session.userRole, userEmail: req.session.userEmail, entityId: req.session.entityId });
   res.json({ ok: true });
 }));
 

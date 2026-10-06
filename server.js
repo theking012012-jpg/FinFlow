@@ -6024,18 +6024,26 @@ function parseCSV(text, mapping) {
   const ai = mapping && mapping.amount != null ? +mapping.amount : find(['amount', 'value']);
   const debiti = find(['debit', 'withdrawal', 'money out']); const crediti = find(['credit', 'deposit', 'money in']);
   if (di < 0 || ci < 0 || (ai < 0 && debiti < 0 && crediti < 0)) throw new Error('Could not detect date/description/amount columns. Provide a mapping.');
+  // N40: the statement's conventions from whole columns (see csv-region.js).
+  const _body = lines.slice(1).map(l => _csvSplit(l));
+  const _det = (mapping && /^(dmy|mdy)$/.test(String(mapping.date_order || ''))) ? mapping.date_order : csvRegion.detectDateOrder(_body.map(r => r[di]));
+  if (_det === 'mixed') throw new Error('The statement mixes day-first and month-first dates. Re-export it with one date format, or choose the format.');
+  const order = _det || csvRegion.defaultOrderFor(mapping && mapping.country);
+  const _amtVals = []; for (const r of _body) for (const i of [ai, debiti, crediti]) if (i >= 0 && r[i]) _amtVals.push(r[i]);
+  const mark = mapping && (mapping.decimal === ',' || mapping.decimal === '.') ? mapping.decimal : csvRegion.detectDecimalMark(_amtVals);
+  let badDates = 0;
   const out = [];
   for (let r = 1; r < lines.length; r++) {
     const f = _csvSplit(lines[r]); if (!f.length || f.every(x => !x)) continue;
     let amt, type;
-    if (ai >= 0) { amt = parseFloat(String(f[ai]).replace(/[^0-9.\-]/g, '')); type = amt < 0 ? 'debit' : 'credit'; amt = Math.abs(amt); }
-    else { const d = parseFloat(String(f[debiti] || '').replace(/[^0-9.\-]/g, '')) || 0; const cr = parseFloat(String(f[crediti] || '').replace(/[^0-9.\-]/g, '')) || 0; if (d) { amt = Math.abs(d); type = 'debit'; } else { amt = Math.abs(cr); type = 'credit'; } }
+    if (ai >= 0) { amt = csvRegion.parseAmount(f[ai], mark); type = amt < 0 ? 'debit' : 'credit'; amt = Math.abs(amt); }
+    else { const d = csvRegion.parseAmount(f[debiti], mark) || 0; const cr = csvRegion.parseAmount(f[crediti], mark) || 0; if (d) { amt = Math.abs(d); type = 'debit'; } else { amt = Math.abs(cr); type = 'credit'; } }
     if (!Number.isFinite(amt) || amt === 0) continue;
-    const dateRaw = String(f[di] || '').trim();
-    const iso = /^\d{4}-\d{2}-\d{2}/.test(dateRaw) ? dateRaw.slice(0, 10)
-      : (() => { const d = new Date(dateRaw); return isNaN(d) ? new Date().toISOString().slice(0, 10) : d.toISOString().slice(0, 10); })();
+    const iso = csvRegion.parseDate(f[di], order);
+    if (!iso) { badDates++; continue; }   // N40: an unreadable date rejects the line (it used to become today)
     out.push({ tx_date: iso, amount: amt, tx_type: type, description: String(f[ci] || 'Bank transaction').slice(0, 200), fitid: null });
   }
+  out.badDates = badDates; out.dateOrder = order; out.dateOrderAssumed = !_det; out.decimalMark = mark;
   return out;
 }
 
@@ -6043,24 +6051,31 @@ function parseCSV(text, mapping) {
 // Import accounting DOCUMENTS straight from a CSV export (QuickBooks / Xero / a spreadsheet) with no
 // Codat key required. Header auto-detected (override with `mapping`). Idempotent by a content hash,
 // entity-scoped, owner/books:write gated. Pairs with reconcileAfterImport so the books self-verify.
-const _csvMoney = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return Number.isFinite(n) ? n : NaN; };
-const _csvYmd = v => { const t = String(v == null ? '' : v).trim(); if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10); const d = new Date(t); return isNaN(d) ? null : d.toISOString().slice(0, 10); };
-const _CSV_INV_STATUS = new Set(['pending', 'paid', 'partial', 'overdue', 'draft', 'sent', 'void']);
-const _CSV_BILL_STATUS = new Set(['unpaid', 'paid', 'partial', 'overdue', 'due_soon', 'void']);
-const _csvStatus = (v, def, set) => { const t = String(v || '').trim().toLowerCase(); return set.has(t) ? t : def; };
+// N40: dates and amounts are read with the FILE's conventions (csv-region.js — day/month order and decimal mark
+// detected per column), never new Date(text) / strip-to-digits. A builder gets them as g.__date / g.__amt.
+const csvRegion = require('./csv-region.js');
+// N40 (Rule 11): statuses map onto the REAL vocabularies. 'sent' / 'void' were stored as-is — outside the
+// invoice/bill CHECK constraints (the row failed) — and a void document must not be recognised at all.
+const _CSV_INV_ALIASES = { pending: 'pending', paid: 'paid', partial: 'partial', overdue: 'overdue', draft: 'draft',
+  sent: 'pending', open: 'pending', unpaid: 'pending', outstanding: 'pending', issued: 'pending', 'partially paid': 'partial' };
+const _CSV_BILL_ALIASES = { unpaid: 'unpaid', paid: 'paid', partial: 'partial', overdue: 'overdue', due_soon: 'due_soon',
+  open: 'unpaid', pending: 'unpaid', outstanding: 'unpaid', 'awaiting payment': 'unpaid', 'partially paid': 'partial' };
+const _CSV_VOID = new Set(['void', 'voided', 'cancelled', 'canceled', 'deleted']);
+// → the mapped status, def for blank/unknown, or null for a void document (the row is skipped).
+const _csvStatus = (v, def, aliases) => { const t = String(v || '').trim().toLowerCase(); if (_CSV_VOID.has(t)) return null; return aliases[t] || def; };
 const CSV_IMPORT_SPECS = {
   invoices: { table: 'invoices', money: true,
     cols: { client: ['client', 'customer', 'customer name', 'name', 'bill to', 'company'], amount: ['amount', 'total', 'amount due', 'invoice total', 'grand total'], status: ['status'], issue_date: ['issue date', 'date', 'invoice date', 'created'], due_date: ['due date', 'due'], number: ['invoice number', 'invoice no', 'number', 'ref', 'invoice #'] },
-    build: g => { const amount = _csvMoney(g.amount); const issue = _csvYmd(g.issue_date) || FinFlowDates.resolvedToday(new Date()); if (!(amount > 0)) return null; const dd = g.due_date ? _csvYmd(g.due_date) : null;
-      return { key: (g.number && String(g.number).trim()) || [g.client, amount, issue].join('|'), date: issue, data: Object.assign({ client: (g.client || 'Customer').slice(0, 120), amount, status: _csvStatus(g.status, 'pending', _CSV_INV_STATUS), issue_date: issue }, dd ? { due_date: dd } : {}, g.number ? { number: String(g.number).slice(0, 60) } : {}) }; } },
+    build: g => { const amount = g.__amt(g.amount); const issue = g.__date(g.issue_date) || g.__today; if (!(amount > 0)) return null; const dd = g.__date(g.due_date); const _st = _csvStatus(g.status, 'pending', _CSV_INV_ALIASES); if (_st == null) return null;
+      return { key: (g.number && String(g.number).trim()) || [g.client, amount, issue].join('|'), date: issue, data: Object.assign({ client: (g.client || 'Customer').slice(0, 120), amount, status: _st, issue_date: issue }, dd ? { due_date: dd } : {}, g.number ? { number: String(g.number).slice(0, 60) } : {}) }; } },
   expenses: { table: 'expenses', money: true,
     cols: { description: ['description', 'memo', 'details', 'name', 'payee', 'item'], amount: ['amount', 'total', 'value'], category: ['category', 'account', 'type'], expense_date: ['date', 'expense date', 'posted'] },
-    build: g => { const amount = _csvMoney(g.amount); const dt = _csvYmd(g.expense_date) || FinFlowDates.resolvedToday(new Date()); if (!(amount > 0)) return null;
+    build: g => { const amount = g.__amt(g.amount); const dt = g.__date(g.expense_date) || g.__today; if (!(amount > 0)) return null;
       return { key: [g.description, amount, dt].join('|'), date: dt, data: { description: (g.description || 'Expense').slice(0, 160), amount, category: (g.category || 'Uncategorized').slice(0, 60), expense_date: dt } }; } },
   bills: { table: 'bills', money: true,
     cols: { vendor: ['vendor', 'supplier', 'payee', 'name', 'company'], amount: ['amount', 'total', 'amount due', 'bill total'], status: ['status'], issue_date: ['issue date', 'date', 'bill date'], due_date: ['due date', 'due'], number: ['bill number', 'bill no', 'number', 'ref', 'bill #'] },
-    build: g => { const amount = _csvMoney(g.amount); const issue = _csvYmd(g.issue_date) || FinFlowDates.resolvedToday(new Date()); if (!(amount > 0)) return null; const dd = g.due_date ? _csvYmd(g.due_date) : null;
-      return { key: (g.number && String(g.number).trim()) || [g.vendor, amount, issue].join('|'), date: issue, data: Object.assign({ vendor: (g.vendor || 'Vendor').slice(0, 120), amount, amount_paid: 0, status: _csvStatus(g.status, 'unpaid', _CSV_BILL_STATUS), issue_date: issue }, dd ? { due_date: dd } : {}) }; } },
+    build: g => { const amount = g.__amt(g.amount); const issue = g.__date(g.issue_date) || g.__today; if (!(amount > 0)) return null; const dd = g.__date(g.due_date); const _st = _csvStatus(g.status, 'unpaid', _CSV_BILL_ALIASES); if (_st == null) return null;
+      return { key: (g.number && String(g.number).trim()) || [g.vendor, amount, issue].join('|'), date: issue, data: Object.assign({ vendor: (g.vendor || 'Vendor').slice(0, 120), amount, amount_paid: 0, status: _st, issue_date: issue }, dd ? { due_date: dd } : {}) }; } },
   customers: { table: 'customers', money: false,
     cols: { name: ['name', 'customer', 'customer name', 'company', 'client'], email: ['email', 'e-mail'], phone: ['phone', 'telephone', 'tel'] },
     build: g => { const name = (g.name || '').trim(); if (!name) return null; return { key: name.toLowerCase(), date: null, data: Object.assign({ name: name.slice(0, 120) }, g.email ? { email: String(g.email).slice(0, 160) } : {}, g.phone ? { phone: String(g.phone).slice(0, 40) } : {}) }; } },
@@ -6082,12 +6097,38 @@ async function _csvImport(uid, entityId, sessionUserId, type, content, mapping, 
     idx[field] = -1;
     for (const cand of spec.cols[field]) { const i = header.indexOf(cand); if (i >= 0) { idx[field] = i; break; } }
   }
+  // N40: the file's conventions, from whole columns (a mapping may state them: date_order 'dmy'|'mdy',
+  // decimal '.'|','). A column that never disambiguates day/month uses the business's country convention,
+  // reported back as ASSUMED. A column mixing both orders is refused — guessing would misfile half of it.
+  const _rows = lines.slice(1).map(l => _csvSplit(l));
+  const _col = field => idx[field] >= 0 ? _rows.map(r => r[idx[field]]).filter(v => v != null && String(v).trim() !== '') : [];
+  const _dateFields = Object.keys(spec.cols).filter(f => /date/.test(f));
+  let order = mapping && /^(dmy|mdy)$/.test(String(mapping.date_order || '')) ? mapping.date_order : null;
+  if (!order && _dateFields.length) {
+    const det = csvRegion.detectDateOrder(_dateFields.flatMap(_col));
+    if (det === 'mixed') { const e = new Error('The file mixes day-first and month-first dates. Re-export it with one date format, or choose the format.'); e.status = 400; throw e; }
+    order = det;
+    if (!order) {
+      let country = null;
+      try { country = (await pool.query(`SELECT data->>'country' AS c FROM entities WHERE id = $1`, [entityId])).rows[0]?.c || null; } catch (_) {}
+      order = csvRegion.defaultOrderFor(country); tally.dateOrderAssumed = true;
+    }
+  }
+  if (order) tally.dateOrder = order;
+  const mark = mapping && (mapping.decimal === ',' || mapping.decimal === '.') ? mapping.decimal : csvRegion.detectDecimalMark(_col('amount'));
+  if (spec.money) tally.decimalMark = mark;
+  const _today = await entityTodayYmd(entityId);
+  tally.badDates = 0;
   for (let r = 1; r < lines.length; r++) {
     const f = _csvSplit(lines[r]); if (!f.length || f.every(x => !x)) continue;
     tally.total++;
     const g = {};
     for (const field of Object.keys(spec.cols)) g[field] = idx[field] >= 0 ? f[idx[field]] : undefined;
-    let m; try { m = spec.build(g); } catch (e) { tally.failed++; continue; }
+    // A date that is PRESENT but unreadable rejects the row (it used to become today, silently).
+    g.__date = v => { if (v == null || String(v).trim() === '') return null; const d = csvRegion.parseDate(v, order || 'dmy'); if (!d) { const e = new Error('bad date'); e.badDate = true; throw e; } return d; };
+    g.__amt = v => csvRegion.parseAmount(v, mark);
+    g.__today = _today;
+    let m; try { m = spec.build(g); } catch (e) { if (e && e.badDate) tally.badDates++; tally.failed++; continue; }
     if (!m) { tally.skipped++; continue; }
     const importKey = 'csv:' + type + ':' + crypto.createHash('sha1').update(String(m.key)).digest('hex').slice(0, 24);
     const dup = await pool.query('SELECT 1 FROM ' + spec.table + ' WHERE user_id=$1 AND data->>\'import_key\'=$2 LIMIT 1', [uid, importKey]);
@@ -6124,7 +6165,11 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
   let txns;
   try {
     if (fmt === 'ofx' || fmt === 'qfx' || /<STMTTRN>/i.test(content)) txns = parseOFX(content);
-    else if (fmt === 'csv') txns = parseCSV(content, mapping);
+    else if (fmt === 'csv') {
+      let _country = null;   // N40: ambiguous day/month dates follow the business's country convention
+      try { if (req.entityId) _country = (await pool.query(`SELECT data->>'country' AS c FROM entities WHERE id = $1`, [req.entityId])).rows[0]?.c || null; } catch (_) {}
+      txns = parseCSV(content, Object.assign({}, mapping || {}, { country: (mapping && mapping.country) || _country }));
+    }
     else return res.status(400).json({ error: "format must be 'ofx', 'qfx', or 'csv'." });
   } catch (e) { return res.status(400).json({ error: e.message }); }
   if (!txns.length) return res.status(400).json({ error: 'No transactions found in the statement.' });
@@ -6145,7 +6190,8 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
     });
     imported++;
   }
-  res.status(201).json({ ok: true, imported, skipped, total: txns.length });
+  res.status(201).json({ ok: true, imported, skipped, total: txns.length,
+    ...(txns.dateOrder ? { dateOrder: txns.dateOrder, dateOrderAssumed: txns.dateOrderAssumed, decimalMark: txns.decimalMark, rejectedBadDate: txns.badDates } : {}) });
 }));
 
 // ── MRR / SAAS ────────────────────────────────────────────────────────────────

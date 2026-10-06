@@ -269,7 +269,7 @@ function _openSse(res) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter) {
+module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP) {
   // F90 Phase B: recordAudit is the single audited write path (threaded from server.js). Accountant
   // actions on a client's books log with actor_type='accountant' + actor_id=accountantId (derived
   // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
@@ -794,7 +794,7 @@ If you cannot find a field, use null. Be concise.`;
       pool.query(`SELECT data FROM users WHERE id = $1 LIMIT 1`, [userId]),
       pool.query(`SELECT entity_id, data FROM payroll WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT entity_id, data FROM journals WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
-      pool.query(`SELECT data FROM customers WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+      pool.query(`SELECT entity_id, data FROM customers WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT id, entity_id, data FROM bills WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
     ]);
 
@@ -916,10 +916,12 @@ If you cannot find a field, use null. Be concise.`;
       };
     }
 
-    // Accounts payable (unpaid bills), entity-scoped to match the selected view.
-    const unpaidBills = bills.rows
-      .filter(r => r.data?.status === 'unpaid' && entMatch(r.entity_id) && _permit(r.entity_id))
-      .reduce((s, r) => s + (parseFloat(r.data?.amount) || 0), 0);
+    // Accounts payable — the canonical figure (server.js canonicalAP, the balance sheet's own AP), per
+    // permitted entity (N75). A single-entity view reads that entity; the all-entities view sums the
+    // permitted entities' AP (native amounts, like the per-entity figures it is built from).
+    const apByEntity = {};
+    for (const id of (entityId != null ? [entityId] : _permittedIds)) apByEntity[id] = await canonicalAP(userId, id);
+    const unpaidBills = Object.values(apByEntity).reduce((s, v) => s + v, 0);
 
     // ── FinFlux GL CERTIFICATION (Phase 5 moat) — for each PERMITTED entity, FinFlux's own ledger
     // says whether the books tie out: trial balance to zero, balance sheet balances, and the GL P&L
@@ -978,10 +980,12 @@ If you cannot find a field, use null. Be concise.`;
       // only rows on entities where the accountant holds 'filing'.
       allPayroll:  payroll.rows.filter(r => _ea == null ? _accountWide !== 'view' : _entLevel[r.entity_id] === 'filing').map(r => r.data),
       allJournals: journals.rows.filter(r => _permit(r.entity_id)).map(r => r.data),
-      allCustomers: customers.rows.map(r => r.data),
+      // N74: customers belong to entities like every other record — only permitted entities' customers.
+      allCustomers: customers.rows.filter(r => _permit(r.entity_id)).map(r => r.data),
       balanceSheet: {
         accountsReceivable: books.outstanding.toFixed(2),
         accountsPayable:    unpaidBills.toFixed(2),
+        accountsPayableByEntity: apByEntity,
         totalPayroll:       (books.parts.payroll || 0).toFixed(2),
       },
       recentInvoices: invoices.rows.filter(r => _permit(r.entity_id)).map(r => r.data).slice(0, 10),

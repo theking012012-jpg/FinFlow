@@ -5241,7 +5241,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
 const registerAccountantRoutes = require('./accountant-routes');
 // computeBooks is a hoisted declaration (defined below) closing over db+pool — pass it so
 // the accountant /books view shares the one canonical, entity-scoped basis (F9).
-registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
+registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
 
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.
@@ -9709,14 +9709,17 @@ async function glProfitLoss(userId, entityId, opts = {}) {
 // strong completeness proxy (payroll cash-out is now posted too, so cash is trustworthy under this gate).
 // Otherwise we serve the exact honest stub as before (cash null, assets = AR only). Consolidated
 // (entityId null) always falls back (glFinancials is single-entity). `source` travels for observability.
-async function glBalanceSheet(userId, entityId) {
+// Canonical accounts payable for one entity (null-inclusive of legacy account-wide rows): recognised
+// bills issued on or before today, net of amount paid, less open/applied vendor credits, floored at 0.
+// The ONE AP figure — the balance sheet below and the accountant portal's /books both read it (N75:
+// /books summed `amount` of status==='unpaid' only, ignoring overdue/partial bills, amounts already
+// paid and vendor credits).
+async function canonicalAP(userId, entityId) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const matchEnt = r => r.entity_id == null || (entityId != null && r.entity_id === entityId);
-  const books = await computeBooks(userId, entityId, 'year');
   const bills = await db.allByUser('bills', userId, matchEnt);
   const vendorCredits = await db.allByUser('vendor_credits', userId, matchEnt);
   const _apToday = FinFlowDates.resolvedToday(new Date());
-  const ar = r2(books.outstanding);
   const _apGross = (bills || [])
     .filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()))
     .filter(b => { const _y = FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date); return _y != null && _y <= _apToday; })
@@ -9729,7 +9732,13 @@ async function glBalanceSheet(userId, entityId) {
     .filter(vc => ['open', 'applied'].includes(String(vc.status || '').toLowerCase()))
     .filter(vc => { const _y = FinFlowDates._toYmd(vc.date || vc.created_at); return _y != null && _y <= _apToday; })
     .reduce((s, vc) => s + (parseFloat(vc.amount) || 0), 0);
-  const ap = r2(Math.max(0, _apGross - _apCredits));
+  return r2(Math.max(0, _apGross - _apCredits));
+}
+async function glBalanceSheet(userId, entityId) {
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const books = await computeBooks(userId, entityId, 'year');
+  const ar = r2(books.outstanding);
+  const ap = await canonicalAP(userId, entityId);
   // Oracle = today's honest stub (cash not tracked, assets = AR only).
   const oracle = () => ({
     source: 'computeBooks',

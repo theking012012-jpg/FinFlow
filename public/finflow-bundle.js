@@ -3211,16 +3211,33 @@ function clearAIChat(){
       }, 0);
     };
 
+    // N24b: the payables card is the CANONICAL accounts payable — the balance sheet's figure (computeBooks:
+    // recognised bills issued on or before today, less open|applied vendor credits). It used to be recomputed
+    // here from the bills list (every non-paid bill, future-dated ones included, vendor credits ignored), so the
+    // Vendors page and the Balance Sheet / AP report showed two different payables totals.
+    let _vendorsApSeq = 0;
+    async function _refreshVendorsPayables() {
+      const seq = ++_vendorsApSeq;
+      try {
+        const _eid = (window.ENTITIES || []).find(e => e.active)?._dbId;
+        const bs = await api('POST', '/api/reports/balance-sheet' + (_eid ? '?entity_id=' + _eid : ''), {});
+        if (seq !== _vendorsApSeq) return;   // a newer refresh is in flight
+        const ap = bs && bs.accountsPayable != null ? parseFloat(bs.accountsPayable) : NaN;
+        setKpiCards('page-vendors', [null, Number.isFinite(ap) ? S(ap) : '—']);
+      } catch (e) {
+        if (seq === _vendorsApSeq) setKpiCards('page-vendors', [null, '—']);   // never a stale or recomputed figure
+        console.warn('[Vendors] payables', e.message);
+      }
+    }
+
     window.renderVendors = function () {
       if (!_vendorsFetched) { loadVendors(); return; }
       renderVendorRows(_vendorsData);
-      // KPI cards: count · total payables (unpaid bills) · overdue · paid (payments-made)
-      // F72: payables = Σ max(0, amount − amount_paid), NOT full face over unpaid — a partially-paid
-      // bill owes only its remaining balance (mirrors the server AP leg, server.js:3779-3790).
-      const _vPayables = _billsData.filter(b => b.status?.toLowerCase() !== 'paid').reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
+      // KPI cards: count · total payables (canonical AP, filled by _refreshVendorsPayables) · overdue · paid
       const _vPaid = _paymentsMadeData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _vOverdue = window._billsOverdueSum(_billsData);   // F-C1: was hardcoded null → static $0
-      setKpiCards('page-vendors', [_vendorsData.length, S(_vPayables), S(_vOverdue), S(_vPaid)]);
+      setKpiCards('page-vendors', [_vendorsData.length, null, S(_vOverdue), S(_vPaid)]);
+      _refreshVendorsPayables();
       window._refreshDashboardUI?.();
     };
 

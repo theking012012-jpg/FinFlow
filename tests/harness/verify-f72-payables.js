@@ -26,8 +26,13 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     boot = await bootSpaInJsdom({
       seedExtra: async (c, uid) => {
         await c.query(`DELETE FROM bills WHERE user_id=$1`, [uid]);
+        // N24b: the payables card is now the canonical AP (balance sheet): recognised bills ISSUED on or before
+        // today, less open vendor credits. So the seed is a real issued bill (it had no issue_date, which made its
+        // date the wall-clock created_at — after the pinned today — i.e. not yet recognised) and the base seed's
+        // vendor credit is removed, so the only thing measured is remaining-vs-face: 600, not 1000.
+        await c.query(`DELETE FROM vendor_credits WHERE user_id=$1`, [uid]);
         await c.query(`INSERT INTO bills (user_id, entity_id, data) VALUES ($1, NULL, $2)`,
-          [uid, { vendor: 'Acme', num: 'B-1', amount: 1000, amount_paid: 400, status: 'partial', due_date: '2026-07-20' }]);
+          [uid, { vendor: 'Acme', num: 'B-1', amount: 1000, amount_paid: 400, status: 'partial', issue_date: '2026-07-01', due_date: '2026-07-20' }]);
       },
     });
     const { window, settle } = boot;

@@ -66,6 +66,14 @@ const B_PROF = {
           [uid, JSON.stringify(Object.assign(
             { name: 'Beta Entity', currency: 'USD', is_active: 0, sort_order: 1 }, B_PROF))]
         );
+        // An invoice OF entity B to render after the switch. (The base seed's invoices belong to entity A;
+        // under per-entity scoping they are correctly NOT visible from B, so without this the switched
+        // letterhead had nothing to render — seed debt, not an app defect.)
+        await c.query(
+          `INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at)
+           SELECT $1, id, $2, NOW(), NOW() FROM entities WHERE user_id = $1 AND data->>'name' = 'Beta Entity'`,
+          [uid, JSON.stringify({ client: 'Beta Client', num: 'INV-B-1', amount: 250, status: 'pending', issue_date: '2026-07-10', due_date: '2026-08-10' })]
+        );
       },
     });
     const { window, http, settle } = boot;

@@ -3968,7 +3968,9 @@ async function savePersonalSalary(){
     let existingId=null;
     try{
       const chk=await fetch('/api/personal-salary',{credentials:'include'});
-      if(chk.ok){const chkRows=await chk.json();if(chkRows.length>0)existingId=chkRows[0].id;}
+      // N60: the owner's salary row is PER BUSINESS — update THIS entity's row only. It used to take
+      // chkRows[0] (any entity), so saving entity B's salary overwrote entity A's owner payroll row.
+      if(chk.ok){const chkRows=await chk.json();const _eid=entity?._dbId??null;const _mine=chkRows.find(r=>(r.entity_id??null)===_eid);if(_mine)existingId=_mine.id;}
     }catch(_){}
     let saved;
     if(existingId){

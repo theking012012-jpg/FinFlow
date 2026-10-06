@@ -227,11 +227,18 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   if (!stripe) return res.status(400).json({ error: 'Stripe not configured.' });
   const sig = req.headers['stripe-signature'];
   let event;
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-  } catch (err) {
-    console.error('[Stripe Webhook] Signature verification failed:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+  // N52: Stripe signs PLATFORM events (subscriptions) and CONNECT events (an invoice paid through a business's
+  // own Stripe — direct charges on the connected account) with DIFFERENT endpoint secrets. Verifying only
+  // STRIPE_WEBHOOK_SECRET rejected every Connect delivery (400), so pay-link payments never reconciled. Either
+  // configured secret is accepted; nothing unsigned or wrongly signed passes.
+  const _secrets = [process.env.STRIPE_WEBHOOK_SECRET, process.env.STRIPE_CONNECT_WEBHOOK_SECRET].filter(Boolean);
+  let _lastErr = null;
+  for (const _s of _secrets) {
+    try { event = stripe.webhooks.constructEvent(req.body, sig, _s); break; } catch (err) { _lastErr = err; }
+  }
+  if (!event) {
+    console.error('[Stripe Webhook] Signature verification failed:', _lastErr && _lastErr.message);
+    return res.status(400).send(`Webhook Error: ${(_lastErr && _lastErr.message) || 'no webhook secret configured'}`);
   }
 
   // F117: idempotent webhook. Stripe retries delivery, so a replay of the same event.id must not

@@ -1375,16 +1375,27 @@ app.use('/api', async (req, res, next) => {
   req.accountRole = req.session.userRole || 'owner';        // inert spine until Step 4 enforcement
   req.entityAccess = null;   // null = ALL entities (owner, or a member with no per-entity grant)
   try {
+    // N36: which account this session works in. A user can own books AND belong to other accounts;
+    // the resolver used to pick the first active membership for EVERY request, so accepting an invite
+    // elsewhere made the user's own books unreachable (no switcher). Now:
+    //   session.activeAccountId set → that account (own, or an ACTIVE membership — re-checked here);
+    //   not set → own account if the user has books of their own (any entity), else the first active
+    //   membership (a fresh invitee lands in the account they joined, as before).
     const { rows } = await pool.query(
       `SELECT user_id AS account_owner_id, data->>'role' AS role, data->'entity_access' AS entity_access
          FROM team_members
         WHERE data->>'member_user_id' = $1::text
           AND data->>'status'         = 'active'
-        ORDER BY id ASC
-        LIMIT 1`,
+        ORDER BY id ASC`,
       [String(uid)]
     );
-    const m = rows[0];
+    const chosen = req.session.activeAccountId;
+    let m = null;
+    if (chosen != null && Number(chosen) !== uid) m = rows.find(r => Number(r.account_owner_id) === Number(chosen)) || null;
+    else if (chosen == null && rows.length) {
+      const { rows: [ownBooks] } = await pool.query(`SELECT 1 FROM entities WHERE user_id = $1 LIMIT 1`, [uid]);
+      if (!ownBooks) m = rows[0];
+    }
     if (m && m.account_owner_id && m.account_owner_id !== uid) {
       req.accountId   = m.account_owner_id;                 // scope to the account they joined
       req.accountRole = m.role || 'viewer';                 // role within that account
@@ -4878,6 +4889,23 @@ app.get('/api/my-access', requireAuth, wrap(async (req, res) => {
     scopedIntoOther: currentAccountId !== uid,   // true ⇒ this session is operating in another account's books
     accounts,
   });
+}));
+
+// N36: switch the account this session works in — the user's own, or one they are an ACTIVE member of.
+app.post('/api/my-access/switch', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const target = parseInt((req.body || {}).accountOwnerId, 10);
+  if (!Number.isInteger(target) || target <= 0) return res.status(400).json({ error: 'accountOwnerId required.' });
+  if (target !== uid) {
+    const { rows: [m] } = await pool.query(
+      `SELECT 1 FROM team_members WHERE user_id = $1 AND data->>'member_user_id' = $2::text AND data->>'status' = 'active' LIMIT 1`,
+      [target, String(uid)]);
+    if (!m) return res.status(403).json({ error: 'You are not a member of that account.' });
+  }
+  req.session.activeAccountId = target;
+  req.session.entityId = null;   // the entity resolver picks the target account's default entity
+  await saveSession(req);
+  res.json({ ok: true, currentAccountId: target });
 }));
 
 app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {

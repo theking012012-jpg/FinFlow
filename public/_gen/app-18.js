@@ -597,14 +597,28 @@ window.loadMyAccess = async function() {
     if (list) {
       const rows = (d.accounts || []).map(a => {
         const label = a.isOwn ? 'Your own account' : (a.ownerName || a.ownerEmail || ('Account #' + a.accountOwnerId));
-        const cur = (a.accountOwnerId === d.currentAccountId) ? ' <span style="color:var(--acc,#c9a84c)">· currently viewing</span>' : '';
-        return `<div style="padding:8px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span>${E(label)}${cur}</span><span style="color:var(--t3);font-size:11px;text-transform:capitalize">${E(a.role)}</span></div>`;
+        const isCur = a.accountOwnerId === d.currentAccountId;
+        const cur = isCur ? ' <span style="color:var(--acc,#c9a84c)">· currently viewing</span>' : '';
+        // N36: switch accounts (own books ↔ accounts you were invited into).
+        const sw = isCur ? '' : `<button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:11px;padding:3px 8px" onclick="switchAccount(${Number(a.accountOwnerId)}, this)">Switch</button>`;
+        return `<div style="padding:8px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span>${E(label)}${cur}</span><span style="display:flex;align-items:center"><span style="color:var(--t3);font-size:11px;text-transform:capitalize">${E(a.role)}</span>${sw}</span></div>`;
       });
       list.innerHTML = rows.join('') || '<div style="color:var(--t3)">Just your own account.</div>';
     }
   } catch (e) { /* not logged in / no access — leave defaults */ }
 };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.loadMyAccess()); else window.loadMyAccess();
+// N36: move this session into another account the login can access, then reload so every page,
+// cache and entity list is rebuilt for that account.
+window.switchAccount = async function(accountOwnerId, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/my-access/switch', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountOwnerId }) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { if (typeof notify === 'function') notify(d.error || 'Could not switch account', true); if (btn) btn.disabled = false; return; }
+    window.location.reload();
+  } catch (e) { if (typeof notify === 'function') notify('Could not switch account', true); if (btn) btn.disabled = false; }
+};
 
 window.updateAccPermission = async function(type, val) {
   // The owner chooses their accountant's level: view = review the books (read-only),

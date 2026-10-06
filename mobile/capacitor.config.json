@@ -1,0 +1,27 @@
+{
+  "appId": "app.finflow",
+  "appName": "FinFlow",
+  "webDir": "www",
+  "server": {
+    "url": "https://finflow-production-dab2.up.railway.app/app",
+    "cleartext": false,
+    "allowNavigation": [
+      "finflow-production-dab2.up.railway.app",
+      "*.finflow.app"
+    ]
+  },
+  "ios": {
+    "contentInset": "always",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1200,
+      "backgroundColor": "#16120d",
+      "showSpinner": false
+    }
+  }
+}

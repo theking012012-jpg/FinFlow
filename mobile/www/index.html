@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>FinFlow</title>
+  <style>
+    html,body{margin:0;height:100%;background:#16120d;color:#f2e8d5;font-family:system-ui,-apple-system,sans-serif}
+    .wrap{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+    .dot{width:10px;height:10px;border-radius:50%;background:#c9a84c;animation:p 1s ease-in-out infinite}
+    @keyframes p{0%,100%{opacity:.3}50%{opacity:1}}
+  </style>
+</head>
+<body>
+  <!-- Fallback shell. With server.url set in capacitor.config.json the WebView loads the live app;
+       this screen only shows if the device is offline before that load completes. -->
+  <div class="wrap">
+    <div style="font-size:22px;font-weight:600;letter-spacing:.5px">FinFlow</div>
+    <div class="dot"></div>
+    <div style="font-size:12px;opacity:.6">Connecting…</div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "name": "finflow-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FinFlow native app shell (Capacitor) for the iOS App Store and Google Play. Separate from the server backend — nothing here affects the Railway build.",
+  "scripts": {
+    "sync": "cap sync",
+    "open:ios": "cap open ios",
+    "open:android": "cap open android",
+    "add:ios": "cap add ios",
+    "add:android": "cap add android"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/ios": "^6.1.2",
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/splash-screen": "^6.0.2",
+    "@capacitor/status-bar": "^6.0.1",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/camera": "^6.1.0",
+    "@capacitor/push-notifications": "^6.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}

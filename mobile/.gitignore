@@ -1,0 +1,10 @@
+node_modules/
+# Capacitor copies the web build here on sync; it's regenerated, not source.
+ios/App/App/public/
+android/app/src/main/assets/public/
+# Build outputs
+ios/App/build/
+android/app/build/
+android/.gradle/
+*.xcuserstate
+.DS_Store

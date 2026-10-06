@@ -194,14 +194,7 @@ app.use(cors({
 // Stripe webhook events and keep the accountant_clients relationship in sync. They
 // operate by userId (a webhook has no accountant session), affecting every accountant
 // linked to that client.
-// Stripe amounts are in the currency's MINOR unit, whose exponent varies: 0 for JPY/KRW/…, 3 for
-// BHD/KWD/…, 2 otherwise (Stripe's documented lists). Dividing by 100 everywhere was wrong for a
-// multi-currency product (N47). Single shared converter — every Stripe money path routes through it.
-const _STRIPE_ZERO_DEC = new Set(['BIF','CLP','DJF','GNF','JPY','KMF','KRW','MGA','PYG','RWF','UGX','VND','VUV','XAF','XOF','XPF']);
-const _STRIPE_THREE_DEC = new Set(['BHD','JOD','KWD','OMR','TND']);
-function stripeCurrencyExponent(cur) { const c = String(cur || 'usd').toUpperCase(); return _STRIPE_ZERO_DEC.has(c) ? 0 : _STRIPE_THREE_DEC.has(c) ? 3 : 2; }
-function stripeMinorToMajor(amount, cur) { const e = stripeCurrencyExponent(cur); return Math.round(Number(amount) || 0) / Math.pow(10, e); }
-function stripeMajorToMinor(amount, cur) { const e = stripeCurrencyExponent(cur); return Math.round((Number(amount) || 0) * Math.pow(10, e)); }
+const { minorToMajor: stripeMinorToMajor, majorToMinor: stripeMajorToMinor } = require('./stripe-units');   // N47 — currency-exponent-aware
 
 async function setSubscriptionStatus(userId, status) {
   if (!userId) return;
@@ -317,7 +310,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       const invId = parseInt(session.client_reference_id || session.metadata?.invoice_id, 10);
       if (invId) {
         const rec = await recordExternalInvoicePayment({
-          invoiceId: invId, amountMinor: session.amount_total, method: 'Card (Stripe)', idemKey: 'stripe:' + session.id,
+          invoiceId: invId, amountMinor: session.amount_total, currency: session.currency, method: 'Card (Stripe)', idemKey: 'stripe:' + session.id,
         });
         console.log('[Stripe] invoice ' + invId + ' payment → ' + JSON.stringify(rec));
       }
@@ -556,7 +549,9 @@ app.get('/api/wipay/callback', async (req, res) => {
       const ok = Buffer.byteLength(given) === Buffer.byteLength(expected) &&
         crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected));
       if (ok) {
-        const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: Math.round((parseFloat(inv.amount) || 0) * 100), method: 'Card (WiPay)', idemKey: 'wipay:' + q.transaction_id })
+        const { rows: [_wpEnt] } = await pool.query(`SELECT data->>'currency' AS cur FROM entities WHERE id = $1 LIMIT 1`, [ir.entity_id]);
+        const _wpCur = (_wpEnt && _wpEnt.cur) || 'TTD';   // the link charged in the issuing business's currency (N49)
+        const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: stripeMajorToMinor(parseFloat(inv.amount) || 0, _wpCur), currency: _wpCur, method: 'Card (WiPay)', idemKey: 'wipay:' + q.transaction_id })
           .catch(e => { console.error('[WiPay] reconcile failed:', e.message); return { recorded: false, reason: 'error' }; });
         console.log('[WiPay] invoice ' + invoiceId + ' payment → ' + JSON.stringify(rec));
       } else {
@@ -7173,7 +7168,7 @@ app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
     if (!resp.ok) throw new Error((j.error && j.error.message) || ('Stripe HTTP ' + resp.status));
     const charges = (j.data || []).map(c => ({
       id: c.id,
-      amount: (Number(c.amount) || 0) / 100,
+      amount: stripeMinorToMajor(c.amount, c.currency),
       currency: String(c.currency || 'usd').toUpperCase(),
       status: c.status || 'unknown',
       paid: !!c.paid,
@@ -7237,7 +7232,7 @@ app.get('/api/stripe/payouts', requireAuth, wrap(async (req, res) => {
     if (!resp.ok) throw new Error((j.error && j.error.message) || ('Stripe HTTP ' + resp.status));
     const payouts = (j.data || []).map(p => ({
       id: p.id,
-      amount: (Number(p.amount) || 0) / 100,              // net deposited to the bank
+      amount: stripeMinorToMajor(p.amount, p.currency),   // net deposited to the bank
       currency: String(p.currency || 'usd').toUpperCase(),
       status: p.status || '',                              // paid | in_transit | pending | failed | canceled
       arrival_date: p.arrival_date ? new Date(p.arrival_date * 1000).toISOString().slice(0, 10) : null,
@@ -7281,7 +7276,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
     if (!resp.ok) throw new Error((c && c.error && c.error.message) || ('Stripe HTTP ' + resp.status));
   } catch (e) { console.error('[stripe import]', e.message); return res.status(502).json({ error: 'Could not read the Stripe charge: ' + e.message }); }
   if (c.status !== 'succeeded' || c.refunded) return res.status(400).json({ error: 'Only a succeeded, non-refunded charge can be added to the books.' });
-  const amount = (Number(c.amount) || 0) / 100;
+  const amount = stripeMinorToMajor(c.amount, c.currency);
   const customer = String(c.description || (c.billing_details && c.billing_details.name) || (c.billing_details && c.billing_details.email) || c.receipt_email || 'Stripe payment').slice(0, 200);
   const dateYmd = c.created ? new Date(c.created * 1000).toISOString().slice(0, 10) : await entityTodayYmd(req.entityId);
   // STOPGAP guard (pre match-to-invoice): a charge whose amount equals an OPEN invoice's total OR its
@@ -7334,7 +7329,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
         ({ row: feeRow } = await db.insert('expenses', {
           user_id: scopeId(req), entity_id: _bookEid,
           description: 'Stripe processing fee \u00b7 ' + chargeId, category: 'Payment processing',
-          amount: feeCents / 100, deductible: 'yes', expense_date: dateYmd, idempotency_key: feeIdem,
+          amount: stripeMinorToMajor(feeCents, (c.balance_transaction && c.balance_transaction.currency) || c.currency), deductible: 'yes', expense_date: dateYmd, idempotency_key: feeIdem,
         }));
         await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
       }
@@ -7380,7 +7375,7 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
   } catch (e) { console.error('[stripe refund]', e.message); return res.status(502).json({ error: 'Could not read the Stripe charge: ' + e.message }); }
   const refundedCents = Number(c.amount_refunded) || 0;
   if (refundedCents <= 0) return res.status(400).json({ error: 'This charge has no refund on Stripe yet.' });
-  const refundAmt = refundedCents / 100;
+  const refundAmt = stripeMinorToMajor(refundedCents, c.currency);
   const _orig = rowToObj(origRows[0]);
   const customer = String(_orig.customer || c.description || 'Stripe refund').slice(0, 200);
   const _rfList = (c.refunds && c.refunds.data) || [];
@@ -7435,7 +7430,7 @@ app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
     if (!resp.ok) throw new Error((c && c.error && c.error.message) || ('Stripe HTTP ' + resp.status));
   } catch (e) { console.error('[stripe match]', e.message); return res.status(502).json({ error: 'Could not read the Stripe charge: ' + e.message }); }
   if (c.status !== 'succeeded' || c.refunded) return res.status(400).json({ error: 'Only a succeeded, non-refunded charge can be applied to an invoice.' });
-  const applied = await recordExternalInvoicePayment({ invoiceId, amountMinor: Number(c.amount) || 0, method: 'Card (Stripe)', idemKey: ('stripe-invpay:' + chargeId).slice(0, 64) });
+  const applied = await recordExternalInvoicePayment({ invoiceId, amountMinor: Number(c.amount) || 0, currency: c.currency, method: 'Card (Stripe)', idemKey: ('stripe-invpay:' + chargeId).slice(0, 64) });
   // Fee expense (idempotent on the charge), booked to the bound entity — fees apply to invoice payments too.
   let feeRow = null;
   const feeCents = c.balance_transaction && Number.isFinite(Number(c.balance_transaction.fee)) ? Number(c.balance_transaction.fee) : 0;
@@ -7449,7 +7444,7 @@ app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
         ({ row: feeRow } = await db.insert('expenses', {
           user_id: scopeId(req), entity_id: _bookEid,
           description: 'Stripe processing fee \u00b7 ' + chargeId, category: 'Payment processing',
-          amount: feeCents / 100, deductible: 'yes', expense_date: _dateYmd, idempotency_key: feeIdem,
+          amount: stripeMinorToMajor(feeCents, (c.balance_transaction && c.balance_transaction.currency) || c.currency), deductible: 'yes', expense_date: _dateYmd, idempotency_key: feeIdem,
         }));
         await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
       }
@@ -8035,12 +8030,12 @@ app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (
 // processor's event/session id via the idempotency_key unique index (Rule 9: dedupe at the write,
 // so a retried/duplicate webhook can't double-book). Never overbooks past the remaining balance
 // (no refund/credit model). Amount is in MINOR units (cents) as processors send it.
-async function recordExternalInvoicePayment({ invoiceId, amountMinor, method, idemKey }) {
+async function recordExternalInvoicePayment({ invoiceId, amountMinor, currency, method, idemKey }) {
   const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
   if (!ir) return { recorded: false, reason: 'invoice_not_found' };
   const inv = rowToObj(ir);
   const uid = ir.user_id;                                   // the invoice's account = the money scope
-  const amt = Math.round(Number(amountMinor) || 0) / 100;   // minor units → major
+  const amt = stripeMinorToMajor(amountMinor, currency);    // minor units → major, by currency exponent (N47)
   if (!(amt > 0)) return { recorded: false, reason: 'bad_amount' };
   const remaining = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
   const bookAmt = Math.min(amt, Math.max(remaining, 0));    // cap to balance — never negative AR

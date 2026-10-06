@@ -2436,7 +2436,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
       const { rows: accRows } = await pool.query('SELECT stripe_account_id FROM accountants WHERE id = $1', [req.session.accountantId]);
       const stripeAccountId = accRows[0]?.stripe_account_id;
       if (!stripeAccountId) return res.status(400).json({ error: 'Connect your Stripe account first' });
-      const amountCents = Math.round(parseFloat(amount) * 100);
+      const amountCents = require('./stripe-units').majorToMinor(parseFloat(amount), currency);   // currency exponent (N47)
 
       // F17: LIVE tier commission (was a flat hardcoded 4%). "Active client" =
       // consented AND paying (subscriptionStatus='active'); the accountant's first 3

@@ -1778,7 +1778,7 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required.' });
   if (_badStatus(INVOICE_STATUSES, status)) return res.status(400).json({ error: 'Invalid invoice status.' });
   const eid = entity_id || req.entityId || null;
-  if (await isLocked(req.session.userId, eid, due_date)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(scopeId(req), eid, due_date)) return res.status(403).json({ error: 'Period is locked.' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // Layer 3 (fast path): the 5s findRecentDuplicate pre-check is TOKEN-BLIND — it matches on
   // client+amount only, never the idempotency key. Run it ONLY for token-less requests (old
@@ -1900,7 +1900,7 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
 app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('invoices', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  if (await isLocked(req.session.userId, row.entity_id, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(scopeId(req), row.entity_id, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
   const { client, amount, due_date, status, notes, issue_date } = req.body || {};
   // F194: same invariant on edit — line_items present ⇒ amount = derived Σ qty×rate (Rule 2).
@@ -1923,7 +1923,7 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   if (patch.status === 'paid') {
     const { rows: _ipc } = await pool.query(
       `SELECT COUNT(*)::int AS n FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2`,
-      [row.id, req.session.userId]
+      [row.id, scopeId(req)]
     );
     if (_ipc[0].n === 0) {
       patch.amount_paid = (patch.amount != null ? patch.amount : (parseFloat(row.amount) || 0));
@@ -1950,7 +1950,7 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
 app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('invoices', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  if (await isLocked(req.session.userId, row.entity_id, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(scopeId(req), row.entity_id, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.deleteById('invoices', parseInt(req.params.id));
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'invoice', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] invoice reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   logAudit(req, 'DELETE', 'invoices', row.id, row, null);
@@ -1964,7 +1964,7 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
   const eid = entity_id || req.entityId || null;
   const edate = expense_date || await entityTodayYmd(eid);
-  if (await isLocked(req.session.userId, eid, edate)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(scopeId(req), eid, edate)) return res.status(403).json({ error: 'Period is locked.' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: the token-blind 5s findRecentDuplicate pre-check runs ONLY for token-less callers
   // (old clients / API). When a token IS present, the partial unique index (idx_expenses_idem_key)
@@ -2005,7 +2005,7 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
 app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('expenses', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  if (await isLocked(req.session.userId, row.entity_id, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(scopeId(req), row.entity_id, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
   const b = req.body || {};
   if (b.description != null) patch.description = b.description;
@@ -2024,7 +2024,7 @@ app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
 app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('expenses', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  if (await isLocked(req.session.userId, row.entity_id, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(scopeId(req), row.entity_id, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.deleteById('expenses', parseInt(req.params.id));
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'expense', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] expense reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   logAudit(req, 'DELETE', 'expenses', row.id, row, null);
@@ -2983,7 +2983,7 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
   const totalDebit  = lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0);
   const totalCredit = lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
   if (Math.abs(totalDebit - totalCredit) > 0.01) return res.status(400).json({ error: 'Journal does not balance — debits must equal credits.' });
-  if (await isLocked(req.session.userId, req.entityId, date)) return res.status(403).json({ error: 'Period is locked.' });
+  if (await isLocked(scopeId(req), req.entityId, date)) return res.status(403).json({ error: 'Period is locked.' });
   const num = 'JE-' + String(Date.now()).slice(-4);
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
@@ -4452,7 +4452,7 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-  if (_billId != null) await recalcBillStatus(pool, _billId, req.session.userId);
+  if (_billId != null) await recalcBillStatus(pool, _billId, scopeId(req));
   await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'payments_made', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a bill-LINKED payment SETTLES AP (Dr AP / Cr Cash); an ORPHAN
   // payment (no bill) is a direct disbursement EXPENSE (Dr Opex / Cr Cash) — mirrors computeBooks'
@@ -4496,7 +4496,7 @@ app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
   await db.updateById('payments_made', _pmchk.id, patch);
   // F38 Step 3: recalc every bill this payment touched — the old link and the new one (deduped),
   // so amount/link changes redraw AP on both the previous and current bill.
-  for (const b of new Set([_oldBillId, _newBillId])) { if (b != null) await recalcBillStatus(pool, b, req.session.userId); }
+  for (const b of new Set([_oldBillId, _newBillId])) { if (b != null) await recalcBillStatus(pool, b, scopeId(req)); }
   { const _o = rowToObj(_pmchk); await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'payments_made', recordId: _pmchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
   res.json({ ok: true });
 }));
@@ -4506,7 +4506,7 @@ app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
   const _billId = _pmrow && _pmrow.data && _pmrow.data.bill_id != null ? Number(_pmrow.data.bill_id) : null;
   await pool.query('DELETE FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'bill_payment', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] bill_payment reversal failed (shadow, non-fatal):', glErr && glErr.message); }
-  if (_billId != null) await recalcBillStatus(pool, _billId, req.session.userId);
+  if (_billId != null) await recalcBillStatus(pool, _billId, scopeId(req));
   if (_pmrow) await recordAudit(pool, { userId: req.session.userId, entityId: _pmrow.entity_id || null, table: 'payments_made', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_pmrow), req });  // F90 Phase B
   res.json({ ok: true });
 }));
@@ -5714,7 +5714,7 @@ app.post('/api/import/csv', requireAuth, requirePerm('books:write'), wrap(async 
   if (content.length > 5_000_000) return res.status(400).json({ error: 'File too large (max ~5MB).' });
   if (!req.entityId) return res.status(400).json({ error: 'Select a business entity to import into first.', code: 'NO_ACTIVE_ENTITY' });
   const uid = scopeId(req);
-  let tally; try { tally = await _csvImport(uid, req.entityId, req.session.userId, type, content, mapping, !!dryRun); }
+  let tally; try { tally = await _csvImport(uid, req.entityId, uid, type, content, mapping, !!dryRun); }
   catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
   if (!dryRun && tally.added > 0) { try { logAudit(req, 'CREATE', 'csv_import', null, null, { entity_id: req.entityId, type, added: tally.added }); } catch (_) {} }
   // Owner-only auto-reconcile for money docs (scoped members can import but not backfill the ledger).
@@ -6999,7 +6999,7 @@ app.post('/api/codat/import-preview', requireAuth, requirePerm('books:write'), w
   let company; try { company = await _codatCompany(uid, req.entityId); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
   const datasets = {};
   for (const type of CODAT_IMPORT_TYPES) {
-    datasets[type] = await _codatImportType(uid, req.entityId, req.session.userId, company.companyId, company.platform, type, { dryRun: true });
+    datasets[type] = await _codatImportType(uid, req.entityId, uid, company.companyId, company.platform, type, { dryRun: true });
   }
   res.json({ ok: true, company_id: company.companyId, platform: company.platform, entity_id: req.entityId, datasets });
 }));
@@ -7013,7 +7013,7 @@ app.post('/api/codat/import', requireAuth, requirePerm('books:write'), wrap(asyn
   let company; try { company = await _codatCompany(uid, req.entityId); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
   const results = {}; let totalAdded = 0;
   for (const type of CODAT_IMPORT_TYPES) {
-    const t = await _codatImportType(uid, req.entityId, req.session.userId, company.companyId, company.platform, type, { dryRun: false });
+    const t = await _codatImportType(uid, req.entityId, uid, company.companyId, company.platform, type, { dryRun: false });
     results[type] = t; totalAdded += t.added;
   }
   try { logAudit(req, 'CREATE', 'codat_import', null, null, { entity_id: req.entityId, platform: company.platform, total_added: totalAdded }); } catch (_) {}
@@ -8169,7 +8169,7 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'A valid positive amount is required.' });
   // F48 #2: the invoice MUST belong to the caller. Without this, a payment injected against a
   // foreign/nonexistent invoice_id is accepted (was 201) and corrupts that owner's AR.
-  const inv = await ownedBy('invoices', invoice_id, req.session.userId);
+  const inv = await ownedBy('invoices', invoice_id, scopeId(req));
   if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
   // Overpayment: no credit/refund model exists, so reject a payment beyond the remaining balance
   // rather than book cash the system can't represent. (Epsilon guards float rounding.)
@@ -8184,7 +8184,7 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   // unique index (idx_invoice_payments_idem_key) is the sole arbiter (closes the concurrent /
   // slow-resubmit race the 5s window and the overpayment check both miss for partial payments).
   if (!idem) {
-    const _ipDup = await findRecentDuplicateTyped('invoice_payments', req.session.userId, req.entityId || null,
+    const _ipDup = await findRecentDuplicateTyped('invoice_payments', scopeId(req), req.entityId || null,
       { invoice_id: parseInt(invoice_id), amount: amt, payment_date: _pDate });
     if (_ipDup) return res.status(201).json(_ipDup);
   }
@@ -8193,7 +8193,7 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
     ({ rows } = await pool.query(
       `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [req.session.userId, req.entityId || null, parseInt(invoice_id), amt,
+      [scopeId(req), inv.entity_id != null ? inv.entity_id : (req.entityId || null), parseInt(invoice_id), amt,
        payment_date || new Date().toISOString().slice(0, 10), method || 'Bank Transfer', reference || null, notes || null, idem]
     ));
   } catch (e) {
@@ -8205,14 +8205,14 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-  await recalcInvoiceStatus(pool, parseInt(invoice_id), req.session.userId);
+  await recalcInvoiceStatus(pool, parseInt(invoice_id), scopeId(req));
   await auditLog(pool, { userId: req.session.userId, entityId: req.entityId, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE', req });
   // GL Phase 2 (dual-write shadow): a payment settles the receivable — Dr Cash / Cr AR at the payment
   // date (revenue is untouched; it was recognized at issue). Posts to the INVOICE's entity so it nets
   // against that AR. Best-effort — never breaks recording a payment.
   try {
     await postLedgerEntry(pool, {
-      userId: req.session.userId, entityId: inv.entity_id,
+      userId: scopeId(req), entityId: inv.entity_id,
       date: _pDate,
       description: 'Invoice payment — ' + (inv.client || ('#' + invoice_id)),
       sourceType: 'invoice_payment', sourceId: rows[0].id, idempotencyKey: 'invoice_payment:' + rows[0].id,
@@ -8228,7 +8228,7 @@ app.delete('/api/invoice-payments/:id', requireAuth, wrap(async (req, res) => {
     [parseInt(req.params.id), scopeId(req)]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
-  await recalcInvoiceStatus(pool, rows[0].invoice_id, req.session.userId);
+  await recalcInvoiceStatus(pool, rows[0].invoice_id, scopeId(req));
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'invoice_payment', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] invoice_payment reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
@@ -8362,7 +8362,7 @@ app.post('/api/bank-reconciliation/match-bill', requireAuth, wrap(async (req, re
     method: 'Bank', notes: 'Matched from bank feed', ref: '', bill_id: billId,
     idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),
   });
-  await recalcBillStatus(pool, billId, req.session.userId);
+  await recalcBillStatus(pool, billId, scopeId(req));
   await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id, table: 'payments_made', recordId: payment.id, action: 'CREATE', newData: payment, req });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'bill', reconcile_ref: payment.id, reconcile_bill_id: billId });
   // GL Phase 2 (dual-write): a bank debit matched to a bill SETTLES AP, EXACTLY like a linked
@@ -10035,7 +10035,7 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
   if (!inventory_id || !type || !quantity) return res.status(400).json({ error: 'inventory_id, type, quantity required' });
   if (!['purchase', 'sale', 'adjustment'].includes(type)) return res.status(400).json({ error: 'type must be purchase, sale, or adjustment' });
 
-  const item = await ownedBy('inventory', inventory_id, req.session.userId);
+  const item = await ownedBy('inventory', inventory_id, scopeId(req));
   if (!item) return res.status(404).json({ error: 'Inventory item not found.' });
 
   const qty = parseFloat(quantity);
@@ -10049,7 +10049,7 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
   // READ-ONLY (COGS is recomputed from the rows), and a duplicate token 23505s at the INSERT and
   // returns before the units-decrement, so the FIFO ledger is never double-consumed.
   if (!idem) {
-    const _imDup = await findRecentDuplicateTyped('inventory_movements', req.session.userId, req.entityId || null,
+    const _imDup = await findRecentDuplicateTyped('inventory_movements', scopeId(req), req.entityId || null,
       { inventory_id: parseInt(inventory_id), type, quantity: qty }, 5, 'moved_at');
     // Return the ORIGINAL row in the SAME shape as the success path ({...movement, cogs}) so a
     // deduped re-submit is indistinguishable to the client. cogs null: the duplicate consumed no
@@ -10066,7 +10066,7 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
     ({ rows: [movement] } = await pool.query(
       `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [req.session.userId, req.entityId || null, parseInt(inventory_id), type, qty,
+      [scopeId(req), item.entity_id != null ? item.entity_id : (req.entityId || null), parseInt(inventory_id), type, qty,
        parseFloat(unit_cost) || 0, reference || null, notes || null, idem]
     ));
   } catch (e) {
@@ -10337,13 +10337,13 @@ app.post('/api/fx-rates', requireAuth, wrap(async (req, res) => {
     `SELECT * FROM fx_rates WHERE user_id=$1 AND entity_id IS NOT DISTINCT FROM $2
        AND from_currency=$3 AND to_currency=$4 AND rate=$5 AND rate_date=$6
        AND created_at > NOW() - INTERVAL '5 seconds' ORDER BY id DESC LIMIT 1`,
-    [req.session.userId, req.entityId || null, _from, _to, _rate, _date]
+    [scopeId(req), req.entityId || null, _from, _to, _rate, _date]
   );
   if (dup[0]) return res.status(201).json(dup[0]);
   const { rows: [row] } = await pool.query(
     `INSERT INTO fx_rates (user_id, entity_id, from_currency, to_currency, rate, rate_date)
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [req.session.userId, req.entityId || null, _from, _to, _rate, _date]
+    [scopeId(req), req.entityId || null, _from, _to, _rate, _date]
   );
   res.status(201).json(row);
 }));
@@ -10387,13 +10387,13 @@ app.post('/api/fx-transactions', requireAuth, wrap(async (req, res) => {
     `SELECT * FROM fx_transactions WHERE user_id=$1 AND entity_id IS NOT DISTINCT FROM $2
        AND foreign_currency=$3 AND foreign_amount=$4 AND rate_at_transaction=$5
        AND created_at > NOW() - INTERVAL '5 seconds' ORDER BY id DESC LIMIT 1`,
-    [req.session.userId, req.entityId || null, foreign_currency.toUpperCase(), fAmt, rate]
+    [scopeId(req), req.entityId || null, foreign_currency.toUpperCase(), fAmt, rate]
   );
   if (dupTx[0]) return res.status(201).json(dupTx[0]);
   const { rows: [row] } = await pool.query(
     `INSERT INTO fx_transactions (user_id, entity_id, reference_id, reference_type, foreign_currency, foreign_amount, base_amount, rate_at_transaction)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [req.session.userId, req.entityId || null, reference_id || null, reference_type || null,
+    [scopeId(req), req.entityId || null, reference_id || null, reference_type || null,
      foreign_currency.toUpperCase(), fAmt, baseAmount, rate]
   );
   res.status(201).json(row);

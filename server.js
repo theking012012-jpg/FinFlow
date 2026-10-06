@@ -842,6 +842,45 @@ const inviteLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 30, keyGenerato
 const acceptLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyGenerator: _ipKey });   // public/token surface — CF-aware IP key
 
 // F99/F100 — reads and writes each to their own per-user limiter.
+// ── F207 — CSP violation collector (report-only measurement) ──────────────────────────────────
+// The browser POSTs violations here (report-uri / Reporting API) unauthenticated, so this is public but
+// does nothing except aggregate in memory (capped) — no writes, no side effects. Signature =
+// directive|blocked|source so 5,000 identical inline-handler hits collapse to one row.
+// N71: registered BEFORE the F22 JSON-only gate — browsers send application/csp-report (report-uri) and
+// application/reports+json (Reporting API), which the gate 415'd, so no real report ever arrived. It has
+// its own rate limit. The aggregate comes from EVERY tenant's browsers, so reading it is platform-admin
+// only (it was readable by any tenant owner).
+const _cspReports = new Map();
+const _CSP_CAP = 800;
+const cspLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, keyGenerator: _ipKey });
+app.post('/api/csp-report', cspLimiter, express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '256kb' }), (req, res) => {
+  try {
+    const body = req.body || {};
+    const list = Array.isArray(body) ? body : [body];
+    for (const r of list) {
+      const cr = (r && (r['csp-report'] || r.body)) || r || {};
+      const directive = cr['violated-directive'] || cr.effectiveDirective || cr.violatedDirective || 'unknown';
+      const blocked = cr['blocked-uri'] || cr.blockedURL || cr.blockedUri || '';
+      const _ln = cr['line-number'] != null ? cr['line-number'] : cr.lineNumber;
+      const source = String(cr['source-file'] || cr.sourceFile || '') + (_ln != null ? ':' + _ln : '');
+      const sample = cr['script-sample'] || cr.sample || '';
+      const sig = directive + '|' + blocked + '|' + source;
+      const prev = _cspReports.get(sig);
+      if (prev) prev.count++;
+      else if (_cspReports.size < _CSP_CAP) _cspReports.set(sig, { directive, blocked, source, sample: String(sample).slice(0, 160), count: 1 });
+    }
+  } catch (_) { /* never let a malformed report error */ }
+  res.status(204).end();
+});
+// Platform admin only: the aggregated violations (what a strict CSP would block) + a by-directive summary.
+app.get('/api/admin/csp-report', (req, res) => {
+  if (!(req.session && req.session.isAdmin)) return res.status(401).json({ error: 'Admin authentication required.' });
+  const rows = [..._cspReports.values()].sort((a, b) => b.count - a.count);
+  const byDirective = {};
+  for (const r of rows) byDirective[r.directive] = (byDirective[r.directive] || 0) + r.count;
+  res.json({ enabled: /^(1|true|yes)$/i.test(process.env.CSP_REPORT_ONLY || ''), total: rows.reduce((s, r) => s + r.count, 0), unique: rows.length, byDirective, rows });
+});
+
 app.use('/api', (req, res, next) =>
   (req.method === 'GET' || req.method === 'HEAD') ? readLimiter(req, res, next) : writeLimiter(req, res, next));
 
@@ -10690,40 +10729,6 @@ app.get('/api/gl/verify', requireAuth, wrap(async (req, res) => {
 // ok | divergent (ledger populated but does NOT tie to computeBooks — an integrity problem) |
 // not_backfilled (books have activity but the ledger is empty — run POST /api/gl/backfill?reset=1).
 // This is the read the scheduled monitor uses; exposed so an owner can self-check any time.
-// ── F207 — CSP violation collector (report-only measurement) ──────────────────────────────────
-// The browser POSTs violations here (report-uri) unauthenticated, so this is public but does nothing
-// except aggregate in memory (capped) — no writes, no side effects. The owner reads the aggregate via
-// GET. Signature = directive|blocked|source so 5,000 identical inline-handler hits collapse to one row.
-const _cspReports = new Map();
-const _CSP_CAP = 800;
-app.post('/api/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '256kb' }), (req, res) => {
-  try {
-    const body = req.body || {};
-    const list = Array.isArray(body) ? body : [body];
-    for (const r of list) {
-      const cr = (r && (r['csp-report'] || r.body)) || r || {};
-      const directive = cr['violated-directive'] || cr.effectiveDirective || cr.violatedDirective || 'unknown';
-      const blocked = cr['blocked-uri'] || cr.blockedURL || cr.blockedUri || '';
-      const _ln = cr['line-number'] != null ? cr['line-number'] : cr.lineNumber;
-      const source = String(cr['source-file'] || cr.sourceFile || '') + (_ln != null ? ':' + _ln : '');
-      const sample = cr['script-sample'] || cr.sample || '';
-      const sig = directive + '|' + blocked + '|' + source;
-      const prev = _cspReports.get(sig);
-      if (prev) prev.count++;
-      else if (_cspReports.size < _CSP_CAP) _cspReports.set(sig, { directive, blocked, source, sample: String(sample).slice(0, 160), count: 1 });
-    }
-  } catch (_) { /* never let a malformed report error */ }
-  res.status(204).end();
-});
-// Owner-only: read the aggregated violations (what a strict CSP would block) + a by-directive summary.
-app.get('/api/csp-report', requireAuth, wrap(async (req, res) => {
-  if (Array.isArray(req.entityAccess)) return res.status(403).json({ error: 'Only the account owner can read CSP reports.', code: 'CSP_OWNER_ONLY' });
-  const rows = [..._cspReports.values()].sort((a, b) => b.count - a.count);
-  const byDirective = {};
-  for (const r of rows) byDirective[r.directive] = (byDirective[r.directive] || 0) + r.count;
-  res.json({ enabled: /^(1|true|yes)$/i.test(process.env.CSP_REPORT_ONLY || ''), total: rows.reduce((s, r) => s + r.count, 0), unique: rows.length, byDirective, rows });
-}));
-
 app.get('/api/gl/reconcile-check', requireAuth, wrap(async (req, res) => {
   if (Array.isArray(req.entityAccess)) return res.status(403).json({ error: 'Only the account owner can run the reconcile check.', code: 'GL_OWNER_ONLY' });
   const { rows: ents } = await pool.query(`SELECT id, data->>'name' AS name FROM entities WHERE user_id=$1 ORDER BY id`, [scopeId(req)]);

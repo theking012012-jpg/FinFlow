@@ -2410,7 +2410,15 @@ app.get('/api/payroll', requireAuth, wrap(async (req, res) => {
 app.post('/api/payroll', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.fname) return res.status(400).json({ error: 'fname required.' });
-  const _peid = b.entity_id || null;
+  // N13/N13c: a roster row belongs to a business. Take an explicit entity only if it is THIS account's;
+  // otherwise the active entity — a client that sent null (ENTITIES not loaded yet) used to create an
+  // entity-less row that then joined EVERY entity's payroll run (N13b).
+  let _peid = req.entityId != null ? req.entityId : null;
+  if (b.entity_id != null && b.entity_id !== '') {
+    const { rows: [_own] } = await pool.query(`SELECT id FROM entities WHERE id = $1 AND user_id = $2`, [Number(b.entity_id), scopeId(req)]);
+    if (!_own) return res.status(400).json({ error: 'Invalid entity for this account.' });
+    _peid = _own.id;
+  }
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + entity_id + fname + lname + gross).
   const _dup = await findRecentDuplicate('payroll', scopeId(req), _peid, { textMatch: { fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100) }, numMatch: { gross: parseFloat(b.gross)||0 } });
   if (_dup) return res.status(200).json(_dup);
@@ -9035,7 +9043,14 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), lockGua
   const uid = scopeId(req);
   const eid = req.entityId || null;
 
-  const employees = await db.allByUser('payroll', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+  // N13b: an entity-less (legacy) roster row joined EVERY entity's run, so that employee was paid and
+  // expensed once per business. It is included only when the account has a single entity (unambiguous);
+  // with several, it is left out and reported so the owner assigns it (no row is modified — Rule 8).
+  const { rows: [_ec] } = await pool.query(`SELECT COUNT(*)::int AS n FROM entities WHERE user_id = $1`, [uid]);
+  const _single = (_ec && _ec.n) <= 1;
+  const _allRoster = await db.allByUser('payroll', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+  const employees = _allRoster.filter(r => r.entity_id != null || _single);
+  const unassignedEmployees = _allRoster.length - employees.length;
   if (!employees.length) return res.status(400).json({ error: 'No employees found for this entity.' });
   // B8/C1: dedupe guard (TYPED table). A double-click ran payroll twice for the same period —
   // duplicate run + duplicate payroll_run_lines, doubling recorded gross/net. Keyed on `period`,
@@ -9114,7 +9129,7 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), lockGua
 
   const { rows: fullLines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id = $1`, [run.id]);
   await auditLog(pool, { userId: req.session.userId, entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', req });
-  res.status(201).json({ ...run, lines: fullLines });
+  res.status(201).json({ ...run, lines: fullLines, unassigned_employees: unassignedEmployees });
 }));
 
 app.get('/api/payroll-runs/:id', requireAuth, wrap(async (req, res) => {

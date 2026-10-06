@@ -1647,7 +1647,7 @@ async function findRecentDuplicateTyped(table, userId, entityId, cols = {}, wind
 // working; oldData/newData land in the record-snapshot columns.
 async function logAudit(req, action, tableName, recordId, oldData, newData) {
   return recordAudit(pool, {
-    userId:   req?.session?.userId || null,
+    userId:   (req && req.accountId) || req?.session?.userId || null,   // the ACCOUNT whose trail this is; actor is derived from req
     entityId: req?.entityId || null,
     table:    tableName,
     recordId: recordId || null,
@@ -1772,7 +1772,7 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
   if (_prof.error) return res.status(400).json({ error: _prof.error });
   Object.assign(_entExtra, _prof.patch);
   const { row } = await db.insert('entities', { user_id: scopeId(req), name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0, ..._entExtra });
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.id, table: 'entities', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 // F94 B3 — validate the per-entity opening cash balance for the runway. PURE + additive:
@@ -1811,14 +1811,14 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
     ..._prof.patch,
   });
   const { rows: [_er] } = await pool.query(`SELECT * FROM entities WHERE id = $1 LIMIT 1`, [row.id]);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'UPDATE', oldData: row, newData: _er ? rowToObj(_er) : null, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.id, table: 'entities', recordId: row.id, action: 'UPDATE', oldData: row, newData: _er ? rowToObj(_er) : null, req });  // F90 Phase B
   res.json(_er ? rowToObj(_er) : {});
 }));
 app.delete('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const _eold = await ownedBy('entities', req.params.id, scopeId(req));
   if (!_eold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('entities', parseInt(req.params.id));
-  await recordAudit(pool, { userId: req.session.userId, entityId: parseInt(req.params.id), table: 'entities', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _eold, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: parseInt(req.params.id), table: 'entities', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _eold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 app.post('/api/entities/:id/activate', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
@@ -2250,7 +2250,7 @@ app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('customers', scopeId(req), _custEnt, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('customers', { user_id: scopeId(req), entity_id: _custEnt, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
-  await recordAudit(pool, { userId: req.session.userId, entityId: _custEnt, table: 'customers', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _custEnt, table: 'customers', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
@@ -2277,14 +2277,14 @@ app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
   if (b.revenue != null) patch.revenue = parseFloat(b.revenue) || 0;
   await db.updateById('customers', row.id, patch);
   const { rows: [_cur] } = await pool.query(`SELECT * FROM customers WHERE id = $1 LIMIT 1`, [row.id]);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'customers', recordId: row.id, action: 'UPDATE', oldData: row, newData: _cur ? rowToObj(_cur) : null, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'customers', recordId: row.id, action: 'UPDATE', oldData: row, newData: _cur ? rowToObj(_cur) : null, req });  // F90 Phase B
   res.json(_cur ? rowToObj(_cur) : {});
 }));
 app.delete('/api/customers/:id', requireAuth, wrap(async (req, res) => {
   const _old = await ownedBy('customers', req.params.id, scopeId(req));
   if (!_old) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('customers', parseInt(req.params.id));
-  await recordAudit(pool, { userId: req.session.userId, entityId: _old.entity_id || null, table: 'customers', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _old, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _old.entity_id || null, table: 'customers', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _old, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2300,7 +2300,7 @@ app.post('/api/inventory', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('inventory', scopeId(req), _invEnt, { textMatch: { name: (b.name||'').trim().slice(0,200) }, numMatch: { cost: parseFloat(b.cost)||0 } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('inventory', { user_id: scopeId(req), entity_id: _invEnt, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: 0, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: 1 });
-  await recordAudit(pool, { userId: req.session.userId, entityId: _invEnt, table: 'inventory', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _invEnt, table: 'inventory', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // N69: opening units are an OPENING-STOCK purchase movement at the item's cost (a FIFO layer, valued on
   // the balance sheet against Owner's Equity). They used to be a bare units figure with no cost layer, so
   // the first sales of that stock had "no cost basis" and COGS was understated.
@@ -2324,7 +2324,7 @@ app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
   if (b.cost != null) patch.cost = parseFloat(b.cost);
   await db.updateById('inventory', row.id, patch);
   const { rows: [_inur] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'inventory', recordId: row.id, action: 'UPDATE', oldData: row, newData: _inur ? rowToObj(_inur) : null, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'inventory', recordId: row.id, action: 'UPDATE', oldData: row, newData: _inur ? rowToObj(_inur) : null, req });  // F90 Phase B
   res.json(_inur ? rowToObj(_inur) : {});
 }));
 app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
@@ -2356,7 +2356,7 @@ app.delete('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
   const _iold = await ownedBy('inventory', req.params.id, scopeId(req));
   if (!_iold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('inventory', parseInt(req.params.id));
-  await recordAudit(pool, { userId: req.session.userId, entityId: _iold.entity_id || null, table: 'inventory', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _iold, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _iold.entity_id || null, table: 'inventory', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _iold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2387,7 +2387,7 @@ app.post('/api/items', requireAuth, wrap(async (req, res) => {
     sku:       (b.sku   || '').slice(0, 50),
     cost:      b.cost   != null ? parseFloat(b.cost) || 0 : null,
   });
-  await recordAudit(pool, { userId: req.session.userId, entityId: _itemEnt, table: 'items', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _itemEnt, table: 'items', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/items/:id', requireAuth, wrap(async (req, res) => {
@@ -2405,14 +2405,14 @@ app.put('/api/items/:id', requireAuth, wrap(async (req, res) => {
   if (b.cost   != null) patch.cost   = parseFloat(b.cost) || 0;
   await db.updateById('items', row.id, patch);
   const { rows: [_itmr] } = await pool.query(`SELECT * FROM items WHERE id = $1 LIMIT 1`, [row.id]);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'items', recordId: row.id, action: 'UPDATE', oldData: row, newData: _itmr ? rowToObj(_itmr) : null, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'items', recordId: row.id, action: 'UPDATE', oldData: row, newData: _itmr ? rowToObj(_itmr) : null, req });  // F90 Phase B
   res.json(_itmr ? rowToObj(_itmr) : {});
 }));
 app.delete('/api/items/:id', requireAuth, wrap(async (req, res) => {
   const _itold = await ownedBy('items', req.params.id, scopeId(req));
   if (!_itold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('items', parseInt(req.params.id));
-  await recordAudit(pool, { userId: req.session.userId, entityId: _itold.entity_id || null, table: 'items', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _itold, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _itold.entity_id || null, table: 'items', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _itold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2664,11 +2664,11 @@ app.delete('/api/goals/:id', requireAuth, wrap(async (req, res) => {
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
 app.get('/api/projects', requireAuth, wrap(async (req, res) => {
   try {
-    const rows = await db.allByUser('projects', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id);
+    const rows = await db.allByUser('projects', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id);
     res.json(rows);
   } catch (e) {
     // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
-    console.error('[GET /api/projects] failed for user', req.session.userId, ':', e.code, e.message);
+    console.error('[GET /api/projects] failed for user', scopeId(req), ':', e.code, e.message);
     res.status(500).json({ error: 'Could not load projects. Please try again.' });
   }
 }));
@@ -2676,10 +2676,10 @@ app.post('/api/projects', requireAuth, wrap(async (req, res) => {
   const { name, client = '', budget = 0, status = 'In Progress' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required.' });
   const validStatuses = ['In Progress', 'Completed', 'On Hold'];
-  const _dup = await findRecentDuplicate('projects', req.session.userId, req.entityId || null, { textMatch: { name: name.trim().slice(0,200), client: client.trim().slice(0,200) } });
+  const _dup = await findRecentDuplicate('projects', scopeId(req), req.entityId || null, { textMatch: { name: name.trim().slice(0,200), client: client.trim().slice(0,200) } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('projects', {
-    user_id:  req.session.userId,
+    user_id:  scopeId(req),
     entity_id: req.entityId || null,
     name:     name.trim().slice(0, 200),
     client:   client.trim().slice(0, 200),
@@ -2692,7 +2692,7 @@ app.post('/api/projects', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/projects/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('projects', req.params.id, req.session.userId);
+  const row = await ownedBy('projects', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
   const b = req.body || {};
@@ -2708,12 +2708,22 @@ app.put('/api/projects/:id', requireAuth, wrap(async (req, res) => {
   res.json(_pjr ? rowToObj(_pjr) : {});
 }));
 app.delete('/api/projects/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('projects', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('projects', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('projects', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
 // ── HOLDINGS ──────────────────────────────────────────────────────────────────
+// A personal holding (entity_id NULL) belongs to the PERSON signed in; a business holding (tagged with an
+// entity) belongs to the ACCOUNT that owns that entity, so every team member works on the same business
+// portfolio. Business holdings used to be stored under whichever member added them — the owner never saw them.
+const _holdingOwner = (req, entityId) => entityId != null ? scopeId(req) : req.session.userId;
+async function _ownedHolding(req, id) {
+  const { rows: [r] } = await pool.query(
+    `SELECT * FROM holdings WHERE id = $1 AND ((entity_id IS NULL AND user_id = $2) OR (entity_id IS NOT NULL AND user_id = $3)) LIMIT 1`,
+    [parseInt(id), req.session.userId, scopeId(req)]);
+  return r ? rowToObj(r) : null;
+}
 app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
   try {
     // Scope the portfolio by context so the personal and business pages never read each
@@ -2724,8 +2734,9 @@ app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
     if (scope === 'personal')      filter = r => r.entity_id == null;
     else if (scope === 'business') filter = r => req.entityId != null && r.entity_id === req.entityId;
     else                           filter = r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId);
-    const rows = await db.allByUser('holdings', req.session.userId, filter, (a,b) => a.id - b.id);
-    res.json(rows);
+    const mine = await db.allByUser('holdings', req.session.userId, r => r.entity_id == null && filter(r));
+    const biz  = req.entityId != null ? await db.allByUser('holdings', scopeId(req), r => r.entity_id != null && filter(r)) : [];
+    res.json([...mine, ...biz].sort((a, b) => a.id - b.id));
   } catch (e) {
     // F62 (F31 class): the old "fail-soft: empty list keeps the frontend happy" comment described
     // the bug exactly — a DB error rendered Investments $0 and dropped the whole portfolio out of
@@ -2745,13 +2756,13 @@ app.post('/api/holdings', requireAuth, wrap(async (req, res) => {
   if (b.scope === 'personal')      eid = null;
   else if (b.scope === 'business') { if (req.entityId == null) return res.status(400).json({ error: 'No active business entity.' }); eid = req.entityId; }
   else                             eid = req.entityId || null;
-  const _dup = await findRecentDuplicate('holdings', req.session.userId, eid, { textMatch: { ticker: b.ticker.trim().toUpperCase().slice(0,20) }, numMatch: { shares: parseFloat(b.shares)||0 } });
+  const _dup = await findRecentDuplicate('holdings', _holdingOwner(req, eid), eid, { textMatch: { ticker: b.ticker.trim().toUpperCase().slice(0,20) }, numMatch: { shares: parseFloat(b.shares)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('holdings', { user_id: req.session.userId, entity_id: eid, ticker: b.ticker.trim().toUpperCase().slice(0,20), name: (b.name||b.ticker).trim().slice(0,200), asset_type: b.asset_type||'Stock', shares: parseFloat(b.shares)||0, cost_per: parseFloat(b.cost_per)||0, price: parseFloat(b.price)||parseFloat(b.cost_per)||0, dividend: parseFloat(b.dividend)||0, color: b.color||'#c9a84c' });
+  const { row } = await db.insert('holdings', { user_id: _holdingOwner(req, eid), entity_id: eid, ticker: b.ticker.trim().toUpperCase().slice(0,20), name: (b.name||b.ticker).trim().slice(0,200), asset_type: b.asset_type||'Stock', shares: parseFloat(b.shares)||0, cost_per: parseFloat(b.cost_per)||0, price: parseFloat(b.price)||parseFloat(b.cost_per)||0, dividend: parseFloat(b.dividend)||0, color: b.color||'#c9a84c' });
   res.status(201).json(row);
 }));
 app.put('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('holdings', req.params.id, req.session.userId);
+  const row = await _ownedHolding(req, req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
   const b = req.body || {};
@@ -2763,7 +2774,7 @@ app.put('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
   res.json(_hldr ? rowToObj(_hldr) : {});
 }));
 app.delete('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('holdings', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await _ownedHolding(req, req.params.id))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('holdings', parseInt(req.params.id));
   res.json({ ok: true });
 }));
@@ -2808,7 +2819,7 @@ app.put('/api/budget-targets', requireAuth, wrap(async (req, res) => {
   if (existing) {
     await db.updateById('budget_targets', existing.id, { targets });
   } else {
-    await db.insert('budget_targets', { user_id: uid, entity_id: eid, targets });
+    await db.insert('budget_targets', { user_id: scopeId(req), entity_id: eid, targets });
   }
   res.json({ ok: true });
 }));
@@ -2866,7 +2877,7 @@ app.put('/api/settings', requireAuth, requirePerm('settings:manage'), wrap(async
     `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [scopeId(req)]
   );
   if (_usRow) await db.updateById('user_settings', _usRow.id, patch);
-  else await db.insert('user_settings', { user_id: uid2, ...patch });
+  else await db.insert('user_settings', { user_id: scopeId(req), ...patch });
   if (b.name) await db.updateById('users', uid2, { name: b.name.trim().slice(0,100) });
   // F149-b (class-kill): renaming an ENTITY from a /api/settings write is now OPT-IN. Previously
   // ANY PUT with business_name renamed activeEntity() — so the create flow (which sent business_name
@@ -3288,7 +3299,7 @@ app.put('/api/journals/:id', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(a
   if (b.date        != null) patch.date        = b.date;
   await db.updateById('journals', row.id, patch);
   const { rows: [_jr] } = await pool.query(`SELECT * FROM journals WHERE id = $1 LIMIT 1`, [row.id]);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'journals', recordId: row.id, action: 'UPDATE', oldData: row, newData: _jr ? rowToObj(_jr) : { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'journals', recordId: row.id, action: 'UPDATE', oldData: row, newData: _jr ? rowToObj(_jr) : { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
   res.json(_jr ? rowToObj(_jr) : {});
 }));
 app.delete('/api/journals/:id', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(async (req, res) => {
@@ -3336,7 +3347,7 @@ app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'chart_of_accounts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'chart_of_accounts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
@@ -3350,14 +3361,14 @@ app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
   if (b.nature   != null) patch.nature   = b.nature;
   await db.updateById('chart_of_accounts', row.id, patch);
   const { rows: [_coar] } = await pool.query(`SELECT * FROM chart_of_accounts WHERE id = $1 LIMIT 1`, [row.id]);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'chart_of_accounts', recordId: row.id, action: 'UPDATE', oldData: row, newData: _coar ? rowToObj(_coar) : null, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'chart_of_accounts', recordId: row.id, action: 'UPDATE', oldData: row, newData: _coar ? rowToObj(_coar) : null, req });  // F90 Phase B
   res.json(_coar ? rowToObj(_coar) : {});
 }));
 app.delete('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
   const _coold = await ownedBy('chart_of_accounts', req.params.id, scopeId(req));
   if (!_coold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('chart_of_accounts', parseInt(req.params.id));
-  await recordAudit(pool, { userId: req.session.userId, entityId: _coold.entity_id || null, table: 'chart_of_accounts', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _coold, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _coold.entity_id || null, table: 'chart_of_accounts', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _coold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -3392,7 +3403,7 @@ app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (re
 // ── DOCUMENTS ─────────────────────────────────────────────────────────────────
 const MAX_DOC_SIZE = 5 * 1024 * 1024; // 5MB in bytes before base64 (~3.75MB actual)
 app.get('/api/documents', requireAuth, wrap(async (req, res) => {
-  const rows = await db.allByUser('documents', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id);
+  const rows = await db.allByUser('documents', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id);
   // Strip file_data from list responses to keep payload small
   res.json(rows.map(({ file_data, ...meta }) => meta));
 }));
@@ -3402,7 +3413,7 @@ app.post('/api/documents', requireAuth, wrap(async (req, res) => {
   const bytes = Math.ceil(file_data.length * 0.75); // approximate decoded size
   if (bytes > MAX_DOC_SIZE) return res.status(413).json({ error: 'File too large. Maximum size is 5 MB.' });
   const { row } = await db.insert('documents', {
-    user_id: req.session.userId,
+    user_id: scopeId(req),
     entity_id: req.entityId || null,
     name: name.slice(0,255), type, media_type,
     size: bytes, file_data, uploaded_at: new Date().toISOString(),
@@ -3412,7 +3423,7 @@ app.post('/api/documents', requireAuth, wrap(async (req, res) => {
   res.status(201).json(meta);
 }));
 app.get('/api/documents/:id/download', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('documents', req.params.id, req.session.userId);
+  const row = await ownedBy('documents', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   logAudit(req, 'EXPORT', 'documents', row.id, null, null);   // audit document download (mass-export/exfil signal)
   const buf = Buffer.from(row.file_data, 'base64');
@@ -3422,23 +3433,23 @@ app.get('/api/documents/:id/download', requireAuth, wrap(async (req, res) => {
   res.send(buf);
 }));
 app.delete('/api/documents/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('documents', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('documents', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('documents', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
 // ── TEMPLATES ─────────────────────────────────────────────────────────────────
 app.get('/api/templates', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('templates', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.id - b.id));
+  res.json(await db.allByUser('templates', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.id - b.id));
 }));
 app.post('/api/templates', requireAuth, wrap(async (req, res) => {
   const { name, type = 'invoice', preview = '', is_default = 0, accent_color = '#c9a84c' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required.' });
-  const { row } = await db.insert('templates', { user_id: req.session.userId, entity_id: req.entityId || null, name: name.slice(0,200), type, preview, is_default: is_default ? 1 : 0, accent_color });
+  const { row } = await db.insert('templates', { user_id: scopeId(req), entity_id: req.entityId || null, name: name.slice(0,200), type, preview, is_default: is_default ? 1 : 0, accent_color });
   res.status(201).json(row);
 }));
 app.put('/api/templates/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('templates', req.params.id, req.session.userId);
+  const row = await ownedBy('templates', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
@@ -3451,23 +3462,23 @@ app.put('/api/templates/:id', requireAuth, wrap(async (req, res) => {
   res.json(_tmpr ? rowToObj(_tmpr) : {});
 }));
 app.delete('/api/templates/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('templates', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('templates', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('templates', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
 // ── AUTO-CATEGORISE ───────────────────────────────────────────────────────────
 app.get('/api/autocat-rules', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('autocat_rules', req.session.userId, null, (a,b) => a.id - b.id));
+  res.json(await db.allByUser('autocat_rules', scopeId(req), null, (a,b) => a.id - b.id));
 }));
 app.post('/api/autocat-rules', requireAuth, wrap(async (req, res) => {
   const { keyword, match_type = 'description', category, enabled = 1 } = req.body || {};
   if (!keyword || !category) return res.status(400).json({ error: 'keyword and category required.' });
-  const { row } = await db.insert('autocat_rules', { user_id: req.session.userId, keyword: keyword.toLowerCase().slice(0,100), match_type, category, enabled: enabled ? 1 : 0 });
+  const { row } = await db.insert('autocat_rules', { user_id: scopeId(req), keyword: keyword.toLowerCase().slice(0,100), match_type, category, enabled: enabled ? 1 : 0 });
   res.status(201).json(row);
 }));
 app.put('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('autocat_rules', req.params.id, req.session.userId);
+  const row = await ownedBy('autocat_rules', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
@@ -3480,14 +3491,14 @@ app.put('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
   res.json(_acr ? rowToObj(_acr) : {});
 }));
 app.delete('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('autocat_rules', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('autocat_rules', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('autocat_rules', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
-  const uid = req.session.userId;
+  const uid = scopeId(req);
   const rules = await db.allByUser('autocat_rules', uid, r => r.enabled);
-  const expenses = await db.allByUser('expenses', uid, r => !r.category || r.category === 'Other');
+  const expenses = await db.allByUser('expenses', uid, r => (!r.category || r.category === 'Other') && _entityScopeFilter(req)(r));
   let updated = 0;
   for (const exp of expenses) {
     for (const rule of rules) {
@@ -3517,10 +3528,10 @@ const AI_CAT_BATCH     = 40;      // expenses per Claude call
 function _acNorm(s) { return String(s || '').toLowerCase().replace(/[0-9#*]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120); }
 
 app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => {
-  const uid = req.session.userId;
+  const uid = scopeId(req);
 
   // 1) UNCATEGORISED expenses only (mirrors /run's filter).
-  const expenses = await db.allByUser('expenses', uid, r => !r.category || r.category === 'Other');
+  const expenses = await db.allByUser('expenses', uid, r => (!r.category || r.category === 'Other') && _entityScopeFilter(req)(r));
   const counts = () => ({
     total: expenses.length,
     rule:  suggestions.filter(s => s.source === 'rule').length,
@@ -3742,7 +3753,7 @@ app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('vendors', scopeId(req), _venEnt, { textMatch: { name } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('vendors', { user_id: scopeId(req), entity_id: _venEnt, name, contact, category, status });   // N24: owing / ytd_paid are derived on read
-  await recordAudit(pool, { userId: req.session.userId, entityId: _venEnt, table: 'vendors', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _venEnt, table: 'vendors', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
@@ -3759,13 +3770,13 @@ app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
   if (b.category != null) patch.category = String(b.category).slice(0, 100);
   if (b.status   != null) patch.status   = String(b.status).slice(0, 50);
   await db.updateById('vendors', Number(req.params.id), patch);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 app.delete('/api/vendors/:id', requireAuth, requireOwnedRow('vendors'), wrap(async (req, res) => {
   const { rows: [_vold] } = await pool.query('SELECT * FROM vendors WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM vendors WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
-  if (_vold) await recordAudit(pool, { userId: req.session.userId, entityId: _vold.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vold), req });  // F90 Phase B
+  if (_vold) await recordAudit(pool, { userId: scopeId(req), entityId: _vold.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -4245,7 +4256,7 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: _billEnt, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _billEnt, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): an issued bill accrues expense — Dr Operating Expenses / Cr AP at
   // its issue date (mirror of the invoice revenue leg; RECOGNIZED_BILL allowlist). A bill payment
   // settles AP separately (payments_made). Best-effort.
@@ -4301,7 +4312,7 @@ app.put('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (
       method: 'other', notes: 'Auto-recorded: bill marked paid', idemKey: 'bill_mark_paid:' + Number(req.params.id),
     });
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
   // GL Phase 2 (shadow) - keep the ledger in lockstep with the edited bill: a status change into/out of
   // RECOGNIZED_BILL recognises/de-recognises it, and an amount/issue-date edit trues-up its lines.
   try {
@@ -4324,7 +4335,7 @@ app.delete('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(asyn
   if (!_bold) return res.status(404).json({ error: 'Not found.' });   // cross-tenant / nonexistent id → 404, not fake-success 200
   await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'bill', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] bill reversal failed (shadow, non-fatal):', glErr && glErr.message); }
-  if (_bold) await recordAudit(pool, { userId: req.session.userId, entityId: _bold.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_bold), req });  // F90 Phase B
+  if (_bold) await recordAudit(pool, { userId: scopeId(req), entityId: _bold.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_bold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -4519,7 +4530,7 @@ app.post('/api/sales-receipts', requireAuth, lockGuard(LOCK_SPECS.sales_receipts
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a walk-in cash sale is Dr Cash / Cr Revenue at its date (matches
   // computeBooks' salesReceipts revenue leg). Best-effort.
   try {
@@ -4546,7 +4557,7 @@ app.put('/api/sales-receipts/:id', requireAuth, requireOwnedRow('sales_receipts'
     `UPDATE sales_receipts SET data = data || $1::jsonb, updated_at = NOW() WHERE id = $2 AND user_id = $3`,
     [JSON.stringify(Object.fromEntries(Object.entries(patch).filter(([,v]) => v !== undefined))), Number(req.params.id), scopeId(req)]
   );
-  if (_srold) { const _o = rowToObj(_srold); await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
+  if (_srold) { const _o = rowToObj(_srold); await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
   if (_srold) try { await _resyncAfterEdit(scopeId(req), 'sales_receipts', Number(req.params.id)); } catch (glErr) { console.error('[GL] sales_receipts edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
@@ -4554,7 +4565,7 @@ app.delete('/api/sales-receipts/:id', requireAuth, requireOwnedRow('sales_receip
   const { rows: [_srold] } = await pool.query('SELECT * FROM sales_receipts WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM sales_receipts WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'sales_receipt', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] sales_receipt reversal failed (shadow, non-fatal):', glErr && glErr.message); }
-  if (_srold) await recordAudit(pool, { userId: req.session.userId, entityId: _srold.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_srold), req });  // F90 Phase B
+  if (_srold) await recordAudit(pool, { userId: scopeId(req), entityId: _srold.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_srold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -4619,7 +4630,7 @@ app.post('/api/payments-received', requireAuth, _prWritesGate, lockGuard(LOCK_SP
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'payments_received', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'payments_received', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/payments-received/:id', requireAuth, _prWritesGate, requireOwnedRow('payments_received'), lockGuard(LOCK_SPECS.payments_received), wrap(async (req, res) => {
@@ -4637,14 +4648,14 @@ app.put('/api/payments-received/:id', requireAuth, _prWritesGate, requireOwnedRo
   if (_prchk) {
     await db.updateById('payments_received', _prchk.id, patch);
     const _o = rowToObj(_prchk);
-    await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'payments_received', recordId: _prchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
+    await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'payments_received', recordId: _prchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
   }
   res.json({ ok: true });
 }));
 app.delete('/api/payments-received/:id', requireAuth, _prWritesGate, requireOwnedRow('payments_received'), lockGuard(LOCK_SPECS.payments_received), wrap(async (req, res) => {
   const { rows: [_prold] } = await pool.query('SELECT * FROM payments_received WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM payments_received WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
-  if (_prold) await recordAudit(pool, { userId: req.session.userId, entityId: _prold.entity_id || null, table: 'payments_received', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_prold), req });  // F90 Phase B
+  if (_prold) await recordAudit(pool, { userId: scopeId(req), entityId: _prold.entity_id || null, table: 'payments_received', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_prold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -4693,7 +4704,7 @@ app.post('/api/credit-notes', requireAuth, lockGuard(LOCK_SPECS.credit_notes), w
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'credit_notes', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'credit_notes', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a credit note is the REVENUE CONTRA (F58) — Dr Revenue (4000) /
   // Cr Accounts Receivable (1100) at its date, when status ∈ {Open,Applied} (Void contributes 0,
   // mirroring RECOGNIZED_CREDIT in computeBooks). This reduces BOTH revenue (matching computeBooks'
@@ -4729,7 +4740,7 @@ app.put('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes'), l
   if (_cnchk) {
     await db.updateById('credit_notes', _cnchk.id, patch);
     const _o = rowToObj(_cnchk);
-    await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'credit_notes', recordId: _cnchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
+    await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'credit_notes', recordId: _cnchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
   }
   try { await _resyncAfterEdit(scopeId(req), 'credit_notes', Number(req.params.id)); } catch (glErr) { console.error('[GL] credit_notes edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
@@ -4738,7 +4749,7 @@ app.delete('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes')
   const { rows: [_cnold] } = await pool.query('SELECT * FROM credit_notes WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM credit_notes WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'credit_note', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] credit_note reversal failed (shadow, non-fatal):', glErr && glErr.message); }
-  if (_cnold) await recordAudit(pool, { userId: req.session.userId, entityId: _cnold.entity_id || null, table: 'credit_notes', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_cnold), req });  // F90 Phase B
+  if (_cnold) await recordAudit(pool, { userId: scopeId(req), entityId: _cnold.entity_id || null, table: 'credit_notes', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_cnold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -4798,7 +4809,7 @@ app.post('/api/payments-made', requireAuth, lockGuard(LOCK_SPECS.payments_made),
     throw e;
   }
   if (_billId != null) await recalcBillStatus(pool, _billId, scopeId(req));
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'payments_made', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'payments_made', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a bill-LINKED payment SETTLES AP (Dr AP / Cr Cash); an ORPHAN
   // payment (no bill) is a direct disbursement EXPENSE (Dr Opex / Cr Cash) — mirrors computeBooks'
   // bill_id-IS-NULL split (linked settles, orphan expenses; no double count). Best-effort.
@@ -4847,7 +4858,7 @@ app.put('/api/payments-made/:id', requireAuth, requireOwnedRow('payments_made'),
   // F38 Step 3: recalc every bill this payment touched — the old link and the new one (deduped),
   // so amount/link changes redraw AP on both the previous and current bill.
   for (const b of new Set([_oldBillId, _newBillId])) { if (b != null) await recalcBillStatus(pool, b, scopeId(req)); }
-  { const _o = rowToObj(_pmchk); await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'payments_made', recordId: _pmchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
+  { const _o = rowToObj(_pmchk); await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'payments_made', recordId: _pmchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
   try { await _resyncAfterEdit(scopeId(req), 'payments_made', Number(req.params.id)); } catch (glErr) { console.error('[GL] payments_made edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
@@ -4858,7 +4869,7 @@ app.delete('/api/payments-made/:id', requireAuth, requireOwnedRow('payments_made
   await pool.query('DELETE FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'bill_payment', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] bill_payment reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   if (_billId != null) await recalcBillStatus(pool, _billId, scopeId(req));
-  if (_pmrow) await recordAudit(pool, { userId: req.session.userId, entityId: _pmrow.entity_id || null, table: 'payments_made', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_pmrow), req });  // F90 Phase B
+  if (_pmrow) await recordAudit(pool, { userId: scopeId(req), entityId: _pmrow.entity_id || null, table: 'payments_made', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_pmrow), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -4910,7 +4921,7 @@ app.post('/api/vendor-credits', requireAuth, lockGuard(LOCK_SPECS.vendor_credits
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'vendor_credits', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'vendor_credits', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a vendor credit is the OPEX CONTRA (F58) — the exact mirror of a
   // credit note on revenue — Dr Accounts Payable (2000) / Cr Operating Expenses (6000) at its date,
   // when status ∈ {Open,Applied} (Void contributes 0, mirroring RECOGNIZED_CREDIT). Reduces opex
@@ -4946,7 +4957,7 @@ app.put('/api/vendor-credits/:id', requireAuth, requireOwnedRow('vendor_credits'
   if (_vcchk) {
     await db.updateById('vendor_credits', _vcchk.id, patch);
     const _o = rowToObj(_vcchk);
-    await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'vendor_credits', recordId: _vcchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
+    await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'vendor_credits', recordId: _vcchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
   }
   try { await _resyncAfterEdit(scopeId(req), 'vendor_credits', Number(req.params.id)); } catch (glErr) { console.error('[GL] vendor_credits edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
@@ -4955,21 +4966,21 @@ app.delete('/api/vendor-credits/:id', requireAuth, requireOwnedRow('vendor_credi
   const { rows: [_vcold] } = await pool.query('SELECT * FROM vendor_credits WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM vendor_credits WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'vendor_credit', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] vendor_credit reversal failed (shadow, non-fatal):', glErr && glErr.message); }
-  if (_vcold) await recordAudit(pool, { userId: req.session.userId, entityId: _vcold.entity_id || null, table: 'vendor_credits', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vcold), req });  // F90 Phase B
+  if (_vcold) await recordAudit(pool, { userId: scopeId(req), entityId: _vcold.entity_id || null, table: 'vendor_credits', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vcold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
 // ── TIMESHEET ─────────────────────────────────────────────────────────────────
 app.get('/api/timesheet', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('timesheet', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
+  res.json(await db.allByUser('timesheet', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/timesheet', requireAuth, wrap(async (req, res) => {
   const { employee, project = '', date, hours, billable = 'Yes', rate = 0 } = req.body || {};
   if (!employee || hours == null) return res.status(400).json({ error: 'employee and hours required' });
-  const _dup = await findRecentDuplicate('timesheet', req.session.userId, req.entityId || null, { textMatch: { employee: employee.trim().slice(0,100), project: project.trim().slice(0,200) }, numMatch: { hours: parseFloat(hours)||0 } });
+  const _dup = await findRecentDuplicate('timesheet', scopeId(req), req.entityId || null, { textMatch: { employee: employee.trim().slice(0,100), project: project.trim().slice(0,200) }, numMatch: { hours: parseFloat(hours)||0 } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('timesheet', {
-    user_id:  req.session.userId,
+    user_id:  scopeId(req),
     entity_id: req.entityId || null,
     employee: employee.trim().slice(0, 100),
     project:  project.trim().slice(0, 200),
@@ -4981,7 +4992,7 @@ app.post('/api/timesheet', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('timesheet', req.params.id, req.session.userId);
+  const row = await ownedBy('timesheet', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
@@ -4996,14 +5007,16 @@ app.put('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
   res.json(_tsr ? rowToObj(_tsr) : {});
 }));
 app.delete('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('timesheet', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('timesheet', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('timesheet', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
 // ── TEAM ──────────────────────────────────────────────────────────────────────
 app.get('/api/team', requireAuth, wrap(async (req, res) => {
-  const uid  = req.session.userId;
+  // The roster of the ACCOUNT this session works in (invites are written under it — POST /api/team, /invite).
+  // It used to read the signed-in person's own invites, so an admin member never saw the invites they sent.
+  const uid  = scopeId(req);
   const { rows: [_tmu] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [uid]);
   const user = _tmu ? rowToObj(_tmu) : null;
   // F19: the roster is people with ACTUAL account access — the owner + real invited
@@ -5094,10 +5107,10 @@ app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, 
   if (!name || !email) return res.status(400).json({ error: 'name and email required.' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email.' });
   const validRoles = ['admin', 'accountant', 'viewer'];
-  const _dup = await findRecentDuplicate('team_members', req.session.userId, null, { textMatch: { email: email.toLowerCase().slice(0,200) } });
+  const _dup = await findRecentDuplicate('team_members', scopeId(req), null, { textMatch: { email: email.toLowerCase().slice(0,200) } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('team_members', {
-    user_id: req.session.userId,
+    user_id: scopeId(req),
     name:    name.trim().slice(0, 100),
     email:   email.toLowerCase().slice(0, 200),
     role:    validRoles.includes(role) ? role : 'viewer',
@@ -5105,7 +5118,7 @@ app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, 
   res.status(201).json(row);
 }));
 app.put('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
-  const row = await ownedBy('team_members', req.params.id, req.session.userId);
+  const row = await ownedBy('team_members', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const { role } = req.body || {};
   const validRoles = ['admin', 'accountant', 'viewer'];
@@ -5119,7 +5132,7 @@ app.put('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (re
   res.json(_tmr ? rowToObj(_tmr) : {});
 }));
 app.delete('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
-  if (!(await ownedBy('team_members', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('team_members', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('team_members', parseInt(req.params.id));
   res.json({ ok: true });
 }));
@@ -5547,7 +5560,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `INSERT INTO accountant_messages (accountant_id, user_id, sender, message)
      VALUES ($1, $2, 'client', $3) RETURNING id, created_at`,
-    [link.rows[0].accountant_id, userId, content]
+    [link.rows[0].accountant_id, scopeId(req), content]
   );
   res.json({ ok: true, id: rows[0].id });
 }));
@@ -6222,7 +6235,7 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
 
 // ── MRR / SAAS ────────────────────────────────────────────────────────────────
 app.get('/api/mrr', requireAuth, wrap(async (req, res) => {
-  const rows = await db.allByUser('user_settings', req.session.userId, r => r.key === 'mrr_data');
+  const rows = await db.allByUser('user_settings', scopeId(req), r => r.key === 'mrr_data');
   res.json(rows[0]?.value ? JSON.parse(rows[0].value) : { subscribers: [], plans: [] });
 }));
 app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
@@ -6232,7 +6245,7 @@ app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
   );
   const data = JSON.stringify(req.body || {});
   if (_mrre) await db.updateById('user_settings', _mrre.id, { value: data });
-  else await db.insert('user_settings', { user_id: req.session.userId, key: 'mrr_data', value: data });
+  else await db.insert('user_settings', { user_id: scopeId(req), key: 'mrr_data', value: data });
   res.json({ ok: true });
 }));
 
@@ -6252,7 +6265,7 @@ app.post('/api/permissions', requireAuth, requirePerm('permissions:manage'), wra
     [scopeId(req)]
   );
   if (_perme) await db.updateById('user_settings', _perme.id, { value: data });
-  else await db.insert('user_settings', { user_id: req.session.userId, key: 'permissions', value: data });
+  else await db.insert('user_settings', { user_id: scopeId(req), key: 'permissions', value: data });
   res.json({ ok: true });
 }));
 
@@ -6669,7 +6682,7 @@ app.put('/api/scenario', requireAuth, wrap(async (req, res) => {
       [scopeId(req)]
     );
     if (_scne) await db.updateById('user_settings', _scne.id, { value: data });
-    else await db.insert('user_settings', { user_id: req.session.userId, key: 'scenario', value: data });
+    else await db.insert('user_settings', { user_id: scopeId(req), key: 'scenario', value: data });
     res.json({ ok: true });
   } catch (e) {
     console.error('[PUT /api/scenario]', e.message);
@@ -7895,7 +7908,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
     if (e.code === '23505') { const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]); if (rows[0]) return res.json({ ok: true, duplicate: true, receipt: rowToObj(rows[0]) }); }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
+  await recordAudit(pool, { userId: scopeId(req), entityId: _bookEid, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
   // MONEY-OUT parity: Stripe's processing fee is real money out. Gross revenue stays on the receipt above;
   // the fee is booked as a SEPARATE expense (the QuickBooks/Xero treatment) so profit is net-correct and
   // cash reconciles to the payout. Idempotent on the charge ('stripe-fee:'+id) — never double-booked.
@@ -7913,7 +7926,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
           description: 'Stripe processing fee \u00b7 ' + chargeId, category: 'Payment processing',
           amount: stripeMinorToMajor(feeCents, (c.balance_transaction && c.balance_transaction.currency) || c.currency), deductible: 'yes', expense_date: dateYmd, idempotency_key: feeIdem,
         }));
-        await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
+        await recordAudit(pool, { userId: scopeId(req), entityId: _bookEid, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
       }
     } catch (e) { console.error('[stripe import fee]', e.message); }
   }
@@ -7984,7 +7997,7 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
     if (e.code === '23505') { const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), refundIdem]); if (rows[0]) return res.json({ ok: true, duplicate: true, receipt: rowToObj(rows[0]) }); }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
+  await recordAudit(pool, { userId: scopeId(req), entityId: _bookEid, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
   // GL Phase 2 (shadow): a refund is a contra sales receipt (negative amount) - nets revenue down.
   try { await postSourceLedger(pool, { userId: scopeId(req), sourceType: 'sales_receipt', row }); } catch (glErr) { console.error('[GL] stripe refund posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true, refunded: true, receipt: row });
@@ -8042,7 +8055,7 @@ app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
           description: 'Stripe processing fee \u00b7 ' + chargeId, category: 'Payment processing',
           amount: stripeMinorToMajor(feeCents, (c.balance_transaction && c.balance_transaction.currency) || c.currency), deductible: 'yes', expense_date: _dateYmd, idempotency_key: feeIdem,
         }));
-        await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
+        await recordAudit(pool, { userId: scopeId(req), entityId: _bookEid, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
       }
     } catch (e) { console.error('[stripe match fee]', e.message); }
   }
@@ -8978,7 +8991,7 @@ app.post('/api/invoice-payments', requireAuth, lockGuard(LOCK_SPECS.invoice_paym
     throw e;
   }
   await recalcInvoiceStatus(pool, parseInt(invoice_id), scopeId(req));
-  await auditLog(pool, { userId: req.session.userId, entityId: req.entityId, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE', req });
+  await auditLog(pool, { userId: scopeId(req), entityId: req.entityId, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE', req });
   // GL Phase 2 (dual-write shadow): a payment settles the receivable — Dr Cash / Cr AR at the payment
   // date (revenue is untouched; it was recognized at issue). Posts to the INVOICE's entity so it nets
   // against that AR. Best-effort — never breaks recording a payment.
@@ -9098,7 +9111,7 @@ app.post('/api/bank-reconciliation/book-expense', requireAuth, wrap(async (req, 
     expense_date: _bxDate,
     idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),
   });
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id, table: 'expenses', recordId: expense.id, action: 'CREATE', newData: expense, req });
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id, table: 'expenses', recordId: expense.id, action: 'CREATE', newData: expense, req });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'expense', reconcile_ref: expense.id });
   // GL Phase 2 (dual-write): a bank debit booked as an expense posts EXACTLY like POST /api/expenses —
   // Dr Operating Expenses / Cr Cash at the expense date, keyed 'expense:'+id (so it is identical to what
@@ -9140,7 +9153,7 @@ app.post('/api/bank-reconciliation/match-bill', requireAuth, wrap(async (req, re
     idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),
   });
   await recalcBillStatus(pool, billId, scopeId(req));
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id, table: 'payments_made', recordId: payment.id, action: 'CREATE', newData: payment, req });
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id, table: 'payments_made', recordId: payment.id, action: 'CREATE', newData: payment, req });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'bill', reconcile_ref: payment.id, reconcile_bill_id: billId });
   // GL Phase 2 (dual-write): a bank debit matched to a bill SETTLES AP, EXACTLY like a linked
   // POST /api/payments-made — Dr Accounts Payable / Cr Cash, to the bill's entity, keyed
@@ -9371,7 +9384,7 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), lockGua
   } finally { _prc.release(); }
 
   const { rows: fullLines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id = $1`, [run.id]);
-  await auditLog(pool, { userId: req.session.userId, entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', req });
+  await auditLog(pool, { userId: scopeId(req), entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', req });
   res.status(201).json({ ...run, lines: fullLines, unassigned_employees: unassignedEmployees });
 }));
 
@@ -9402,7 +9415,7 @@ app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write
       : 'A voided payroll run cannot be approved. Create a new run instead.' });
     return res.status(404).json({ error: 'Not found.' });
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'APPROVE', field: 'status', newValue: 'approved', req });  // F90 Phase B: payroll recognised at approve
+  await recordAudit(pool, { userId: scopeId(req), entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'APPROVE', field: 'status', newValue: 'approved', req });  // F90 Phase B: payroll recognised at approve
   // GL Phase 2 (dual-write shadow): payroll recognised at APPROVE (F80/F85) — Dr Payroll Expense
   // (6100) / Cr Payroll Liabilities (2200), summed from the run's LINES (basis C, Rule 12), dated at
   // the period the run is FOR (payrollPeriodYmd), to the run's entity. Mark-paid adds nothing further
@@ -9439,7 +9452,7 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
       : 'A voided payroll run cannot be marked paid.' });
     return res.status(404).json({ error: 'Not found.' });
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'MARK_PAID', field: 'status', newValue: 'paid', req });  // F90 Phase B: cash-out event
+  await recordAudit(pool, { userId: scopeId(req), entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'MARK_PAID', field: 'status', newValue: 'paid', req });  // F90 Phase B: cash-out event
   // GL Phase 5b (cash completeness): mark-paid is the CASH-OUT event - settle the payroll liability with
   // cash: Dr Payroll Liabilities (2200) / Cr Cash (1000), summed from the run's LINES (same basis as the
   // approve accrual), so 2200 nets to zero and GL cash reflects the payment (mirrors the cash-flow report's
@@ -9479,7 +9492,7 @@ app.put('/api/payroll-runs/:id/void', requireAuth, requirePerm('payroll:write'),
     `UPDATE payroll_runs SET status='voided' WHERE id=$1 AND user_id=$2 RETURNING *`, [id, scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_run', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_run reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_paid', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_paid reversal failed (shadow, non-fatal):', glErr && glErr.message); }
-  await auditLog(pool, { userId: req.session.userId, entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'VOID', req });
+  await auditLog(pool, { userId: scopeId(req), entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'VOID', req });
   res.json(rows[0]);
 }));
 
@@ -9494,7 +9507,7 @@ app.delete('/api/payroll-runs/:id', requireAuth, requirePerm('payroll:write'), l
   }
   await pool.query(`DELETE FROM payroll_run_lines WHERE run_id=$1`, [id]);
   await pool.query(`DELETE FROM payroll_runs WHERE id=$1 AND user_id=$2`, [id, scopeId(req)]);
-  await auditLog(pool, { userId: req.session.userId, entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'DELETE', req });
+  await auditLog(pool, { userId: scopeId(req), entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'DELETE', req });
   res.json({ ok: true, deleted: id });
 }));
 

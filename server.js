@@ -1078,6 +1078,30 @@ app.get('/healthz', async (req, res) => {
   }
 });
 
+// N91: ONE way a users row is created for an email. The email check and the INSERT run in one
+// transaction holding an advisory lock on the lower-cased email, so two concurrent sign-ups / invite
+// accepts for the same address cannot both pass the "does it exist?" check (the index on
+// lower(email) was not unique). Returns the new id, or null when the email is already taken.
+// `clientOrPool`: a pool (own transaction) or a client already inside the caller's transaction.
+async function createUserUnique(clientOrPool, email, data) {
+  const em = String(email || '').trim().toLowerCase();
+  const own = typeof clientOrPool.connect === 'function' && !clientOrPool.release;
+  const cx = own ? await clientOrPool.connect() : clientOrPool;
+  try {
+    if (own) await cx.query('BEGIN');
+    await cx.query(`SELECT pg_advisory_xact_lock(hashtext('user-email:' || $1))`, [em]);
+    const { rows: [dup] } = await cx.query(`SELECT id FROM users WHERE lower(data->>'email') = $1 LIMIT 1`, [em]);
+    if (dup) { if (own) await cx.query('ROLLBACK'); return null; }
+    const { rows: [u] } = await cx.query(`INSERT INTO users (user_id, entity_id, data) VALUES (NULL, NULL, $1) RETURNING id`, [Object.assign({}, data, { email: em })]);
+    if (own) await cx.query('COMMIT');
+    return u.id;
+  } catch (e) {
+    if (own) { try { await cx.query('ROLLBACK'); } catch (_) {} }
+    if (e && e.code === '23505') return null;   // the unique index (when present) is the backstop
+    throw e;
+  } finally { if (own) cx.release(); }
+}
+
 app.post('/api/auth/register', signupLimiter, async (req, res) => {
   try {
     const { email, password, name } = req.body || {};
@@ -1085,16 +1109,12 @@ app.post('/api/auth/register', signupLimiter, async (req, res) => {
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email address.' });
 
-    const { rows: [_existU] } = await pool.query(
-      `SELECT id FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [email]
-    );
-    if (_existU) return res.status(409).json({ error: 'An account with this email already exists.' });
-
     const hash = bcrypt.hashSync(password, 12);
-    const { lastInsertRowid: userId } = await db.insert('users', {
-      email: email.toLowerCase(), password: hash,
+    const userId = await createUserUnique(pool, email, {
+      password: hash,
       name: (name || '').trim().slice(0, 100), plan: 'trial', trial_ends: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner',
     });
+    if (userId == null) return res.status(409).json({ error: 'An account with this email already exists.' });
 
     // If user signed up via an accountant referral link (?ref=CODE), link them now
     const refCode = ((req.body?.referralCode || req.body?.ref || req.query?.ref || '')).slice(0, 50);
@@ -1150,7 +1170,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
     const { rows: [_lu] } = await pool.query(
-      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [email]
+      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) ORDER BY id LIMIT 1`, [email]
     );
     const user = _lu ? rowToObj(_lu) : null;
     if (user && _isBlockedUser(user)) {   // N88: suspended or soft-deleted (either stored shape)
@@ -1242,7 +1262,7 @@ app.post('/api/auth/forgot-password', signupLimiter, async (req, res) => {
     if (!email) return res.status(400).json({ error: 'Email required.' });
 
     const { rows: [_fpu] } = await pool.query(
-      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [email]
+      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) ORDER BY id LIMIT 1`, [email]
     );
     const user = _fpu ? rowToObj(_fpu) : null;
     if (!user) return res.json({ ok: true });
@@ -5055,9 +5075,11 @@ app.post('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
       return res.status(400).json({ error: 'This invitation is invalid or has expired.' });
     }
 
-    // Does a users row already exist for the invited email?
+    // Does a users row already exist for the invited email? (N91: under the same per-email advisory
+    // lock createUserUnique takes, so a concurrent sign-up cannot slip in between check and insert.)
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext('user-email:' || lower($1)))`, [inv.email]);
     const { rows: [existRow] } = await client.query(
-      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [inv.email]
+      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) ORDER BY id LIMIT 1`, [inv.email]
     );
 
     let memberUserId, memberName;
@@ -5084,12 +5106,12 @@ app.post('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
       }
       memberName = (name || '').trim().slice(0, 100) || inv.email;
       const hash = bcrypt.hashSync(password, 12);
-      const ins  = await client.query(
-        `INSERT INTO users (user_id, entity_id, data) VALUES (NULL, NULL, $1) RETURNING id`,
-        [{ email: inv.email, password: hash, name: memberName, plan: 'trial',
-           trial_ends: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner' }]
-      );
-      memberUserId = ins.rows[0].id;
+      memberUserId = await createUserUnique(client, inv.email, { password: hash, name: memberName, plan: 'trial',
+        trial_ends: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner' });
+      if (memberUserId == null) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'An account with this email already exists.' });
+      }
     }
 
     // An owner accepting their own account's invite would orphan the resolver's

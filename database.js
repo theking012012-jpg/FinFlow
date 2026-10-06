@@ -1048,12 +1048,24 @@ async function initDB() {
     `CREATE INDEX IF NOT EXISTS idx_fx_transactions_user   ON fx_transactions(user_id, entity_id)`,
     `CREATE INDEX IF NOT EXISTS idx_users_email ON users((data->>'email'))`,
     `CREATE INDEX IF NOT EXISTS idx_users_email_ci ON users(lower(data->>'email'))`,
+    // N91: one account per email (case-insensitive) — the database backstop behind createUserUnique.
+    // If duplicate emails already exist this CREATE fails and is reported below; existing rows are never
+    // modified here (Rule 8: cleanup is a separate, owner-approved step).
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_ci_uniq ON users(lower(data->>'email')) WHERE data->>'email' IS NOT NULL`,
     `CREATE INDEX IF NOT EXISTS idx_pwd_resets_token ON password_resets((data->>'token'))`,
     `CREATE INDEX IF NOT EXISTS idx_user_settings_user_key ON user_settings(user_id, (data->>'key'))`,
     `CREATE INDEX IF NOT EXISTS idx_lock_settings_user ON lock_settings(user_id)`,
   ]) {
     try { await pool.query(idxSQL); }
-    catch (e) { console.warn('[DB] Index skipped:', e.message.slice(0, 80)); }
+    catch (e) {
+      console.warn('[DB] Index skipped:', e.message.slice(0, 80));
+      if (/idx_users_email_ci_uniq/.test(idxSQL)) {
+        try {
+          const { rows } = await pool.query(`SELECT lower(data->>'email') AS email, COUNT(*)::int AS n FROM users WHERE data->>'email' IS NOT NULL GROUP BY 1 HAVING COUNT(*) > 1 ORDER BY 2 DESC LIMIT 20`);
+          console.error('[DB] N91: users share an email — unique index NOT enforced until resolved (owner decision):', JSON.stringify(rows));
+        } catch (_) {}
+      }
+    }
   }
 
   // platform_fees: internal 4% revenue ledger (moved out of the Stripe webhook hot path).

@@ -3039,26 +3039,33 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
   const { rows: [_dau] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [uid]);
   const user = _dau ? rowToObj(_dau) : null;
   if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Incorrect password.' });
-  // Delete from all tables by user_id
-  const allTables = [
-    'invoices','expenses','customers','inventory','payroll','personal_transactions',
-    'goals','holdings','user_settings','password_resets','quotes','bills','vendors',
-    'recurring_bills','recurring_invoices','sales_receipts','payments_received',
-    'credit_notes','payments_made','vendor_credits','items','timesheet','projects',
-    'team_members','budget_targets','entities','journals','chart_of_accounts',
-    'lock_settings','audit_log','documents','templates','autocat_rules',
-    'audit_trail','invoice_payments','bank_reconciliation','payroll_runs',
-    'payroll_run_lines','inventory_movements','fx_rates','fx_transactions',
-    'personal_accounts','snapshots',
-    // F198: the GL is user-scoped too — omitting it orphaned the entire double-entry ledger
-    // after erasure (books survived the account delete). ai_usage is per-user billing history.
-    'ledger_lines','ledger_entries','ledger_accounts','ai_usage',
-  ];
-  for (const t of allTables) {
-    await db.deleteByUser(t, uid).catch(() => {});
-  }
-  await pool.query('DELETE FROM ai_cache WHERE user_id=$1', [uid]).catch(() => {});
-  await db.deleteById('users', uid);
+  // N18: one transaction, nothing swallowed — either the whole account is erased or nothing is. The
+  // table list is DISCOVERED (every base table with a user_id column), so a new table can't be missed
+  // (the hand-kept list had drifted: api_keys, accountant links/messages/proposals/tasks, support
+  // requests, recurring personal transactions, flagged transactions, page views were all left behind).
+  // Kept on purpose: audit_trail (append-only legal record — its rows outlive the account) and the
+  // accountant profile, which is a separate identity (only its link to this user is cleared).
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM team_members WHERE data->>'member_user_id' = $1::text`, [String(uid)]);   // memberships in OTHER accounts
+    await client.query(`UPDATE accountants SET user_id = NULL WHERE user_id = $1`, [uid]);
+    const { rows: tables } = await client.query(
+      `SELECT c.table_name FROM information_schema.columns c
+         JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
+        WHERE c.table_schema = current_schema() AND c.column_name = 'user_id'
+          AND c.table_name NOT IN ('users', 'audit_trail', 'accountants')`);
+    for (const { table_name } of tables) {
+      await client.query(`DELETE FROM ${client.escapeIdentifier(table_name)} WHERE user_id = $1`, [uid]);
+    }
+    await client.query(`DELETE FROM users WHERE id = $1`, [uid]);
+    await client.query(`DELETE FROM session WHERE (sess::jsonb->>'userId') = $1::text`, [String(uid)]);   // every device
+    await client.query('COMMIT');
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('[account delete] failed, nothing deleted:', e.message);
+    return res.status(500).json({ error: 'Account deletion failed — nothing was deleted. Please try again or contact support.' });
+  } finally { client.release(); }
   req.session.destroy(() => {});
   res.json({ ok: true });
 }));

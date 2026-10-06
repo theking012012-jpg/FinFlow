@@ -913,7 +913,7 @@ async function initDB() {
           'recurring_bills','recurring_invoices','recurring_personal_transactions','quotes','projects','timesheet',
           'budget_targets','documents','templates','autocat_rules','invoice_payments',
           'bank_reconciliation','inventory_movements','fx_rates','fx_transactions','goals',
-          'personal_transactions','lock_settings','team_members','audit_trail',
+          'personal_transactions','lock_settings','team_members',
           'user_settings','personal_accounts','snapshots'
         ];
         uid_only text[] := ARRAY['entities','ai_cache','ai_usage','password_resets','accountants'];
@@ -948,6 +948,13 @@ async function initDB() {
         END LOOP;
       END $fk$;
     `);
+    // N18: the audit trail is append-only (audit_trail_no_mutate) and must OUTLIVE its subjects. A
+    // user_id / entity_id FK with ON DELETE CASCADE turned every account or entity delete into a DELETE
+    // on audit_trail, which the immutability trigger refuses — so deleting an account always failed
+    // (after the old non-transactional loop had already erased the books). Schema change only: the
+    // columns and every row stay as they are.
+    await client.query(`ALTER TABLE audit_trail DROP CONSTRAINT IF EXISTS fk_audit_trail_user`);
+    await client.query(`ALTER TABLE audit_trail DROP CONSTRAINT IF EXISTS fk_audit_trail_entity`);
 
     // ── F79: STATUS VALUE-DOMAIN CONSTRAINTS (money tables) ──────────────────────
     // The DB-level backstop to the app-layer validation in server.js. Case-insensitive (lower())

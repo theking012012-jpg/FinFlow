@@ -28,17 +28,26 @@ function requireAdmin(req, res, next) {
 module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
 
   // ── ADMIN LOGIN ───────────────────────────────────────────────────────────
+  // N89: failed admin logins are recorded HERE, by the server, from what it observed (reason + client
+  // IP). The security log used to be filled by an unauthenticated client-callable endpoint, so anyone
+  // could write arbitrary entries into it and a real attacker simply never called it.
+  const failedAdminLogin = (req, res, reason, body) => {
+    pool.query(`INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('failed_login','security',$1,NOW())`,
+      [String(reason + ' from ' + (req.ip || 'unknown')).slice(0, 500)])
+      .catch(e => console.error('[admin] failed-login log write failed:', e.message));
+    return res.status(401).json(body);
+  };
   app.post('/api/admin/login', adminLoginLimiter, wrap(async (req, res) => {
     const { password } = req.body || {};
     const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
     if (!ADMIN_PASSWORD) return res.status(503).json({ error: 'ADMIN_PASSWORD not configured.' });
-    if (!password) return res.status(401).json({ error: 'Invalid password.' });
+    if (!password) return failedAdminLogin(req, res, 'Missing password', { error: 'Invalid password.' });
     try {
       const a = Buffer.alloc(72); Buffer.from(password).copy(a);
       const b = Buffer.alloc(72); Buffer.from(ADMIN_PASSWORD).copy(b);
-      if (!crypto.timingSafeEqual(a, b)) return res.status(401).json({ error: 'Invalid password.' });
+      if (!crypto.timingSafeEqual(a, b)) return failedAdminLogin(req, res, 'Wrong password', { error: 'Invalid password.' });
     } catch(e) {
-      return res.status(401).json({ error: 'Invalid password.' });
+      return failedAdminLogin(req, res, 'Wrong password', { error: 'Invalid password.' });
     }
     // Admin MFA (opt-in): once ADMIN_TOTP_SECRET is set, a valid 6-digit TOTP is also required.
     // Backward-compatible — unset means password-only, so enabling it can't lock you out mid-flight.
@@ -48,7 +57,7 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       if (!token) return res.status(401).json({ error: 'MFA code required.', mfaRequired: true });
       let totp = null; try { totp = require('./totp'); } catch (_) {}
       if (!totp || !totp.verify(String(token), ADMIN_TOTP_SECRET.trim())) {
-        return res.status(401).json({ error: 'Invalid MFA code.', mfaRequired: true });
+        return failedAdminLogin(req, res, 'Correct password, invalid MFA code', { error: 'Invalid MFA code.', mfaRequired: true });
       }
     }
     req.session.isAdmin = true;
@@ -800,19 +809,6 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       ORDER BY created_at DESC LIMIT 100
     `).catch(() => ({ rows: [] }));
     return res.json(result.rows);
-  }));
-
-  // Called on failed login attempts. Rate-limited + ignores anonymous floods.
-  app.post('/api/admin/log-security', adminLoginLimiter, wrap(async (req, res) => {
-    const { notes } = req.body || {};
-    const ALLOWED_ACTIONS = ['failed_login', 'rate_limited', 'suspicious_activity'];
-    const rawAction = (req.body || {}).action;
-    const safeAction = ALLOWED_ACTIONS.includes(rawAction) ? rawAction : 'failed_login';
-    await pool.query(
-      `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ($1,'security',$2,NOW())`,
-      [safeAction, notes || '']
-    ).catch(() => {});
-    return res.json({ ok: true });
   }));
 
   // ── TRAFFIC / VISITOR ANALYTICS ───────────────────────────────────────────

@@ -70,6 +70,37 @@
 const crypto = require('crypto');
 const { db, pool: _dbPool, rowToObj: _rowToObj } = require('./database');
 const { tierForAccountant, commissionRateFor, splitBilling, estimateStripeFeeCents } = require('./tier-config'); // F17 — single tier source
+
+// ── REFERRAL COMMISSION — the ONE writer (N79 / N79b / N82) ─────────────────────────────────────
+// Books at most ONE referral month for a client link per calendar month, and only while the client is
+// PAYING (subscriptionStatus='active') and referral months remain. Runs inside the caller's
+// transaction and locks the link row first, so activation and the monthly run — or two overlapping
+// runs — cannot both book the same month. Before: activation booked "month 1" without checking the
+// subscription and without advancing referral_month (so the monthly run paid month 1 again), and the
+// monthly run had no transaction and an ON CONFLICT with no unique index behind it (a second run in
+// the same month paid everyone twice and advanced referral_month twice).
+// Returns true when a month was booked.
+async function _bookReferralMonth(conn, accountantId, userId) {
+  const { rows: [link] } = await conn.query(
+    `SELECT ac.referral_month, ac.referral_months_total, ac.status, u.data->>'subscriptionStatus' AS sub
+       FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
+      WHERE ac.accountant_id = $1 AND ac.user_id = $2
+      FOR UPDATE OF ac`, [accountantId, userId]);
+  if (!link || link.status !== 'active' || link.sub !== 'active') return false;
+  if (!(Number(link.referral_month) < Number(link.referral_months_total))) return false;
+  const { rows: [dup] } = await conn.query(
+    `SELECT 1 FROM accountant_earnings
+      WHERE accountant_id = $1 AND client_id = $2 AND type = 'referral'
+        AND period_month = date_trunc('month', NOW()) LIMIT 1`, [accountantId, userId]);
+  if (dup) return false;
+  const nextMonth = Number(link.referral_month) + 1;
+  await conn.query(
+    `INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, period_month)
+     VALUES ($1, $2, 'referral', 1000, $3, date_trunc('month', NOW()))`,
+    [accountantId, userId, `Referral commission — month ${nextMonth} of ${link.referral_months_total}`]);
+  await conn.query(`UPDATE accountant_clients SET referral_month = $1 WHERE accountant_id = $2 AND user_id = $3`, [nextMonth, accountantId, userId]);
+  return true;
+}
 const aiCap = require('./ai-cap'); // F18 — central AI cost caps
 const { appUrl } = require('./app-url'); // F29 — single source of truth for app links
 const totp = require('./totp'); // accountant MFA (TOTP, RFC 6238)
@@ -1174,18 +1205,19 @@ If you cannot find a field, use null. Be concise.`;
     );
     const months = tierForAccountant(parseInt(countRes.rows[0].count) || 0).referralMonths;
     const originSql = requireOrigin === 'client' ? `requested_by = 'client'` : `requested_by IS DISTINCT FROM 'client'`;
-    const upd = await conn.query(`
-      UPDATE accountant_clients
-      SET status = 'active', activated_at = NOW(), referral_months_total = $3
-      WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending' AND ${originSql}
-      RETURNING user_id
-    `, [userId, accountantId, months]);
-    if (!upd.rows[0]) return null;
-    await conn.query(`
-      INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, period_month)
-      VALUES ($1, $2, 'referral', 1000, 'Referral commission — month 1', date_trunc('month', NOW()))
-    `, [accountantId, userId]);
-    await _audit(conn, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_ACTIVATE', field: 'status', newValue: 'active', newData: { by: requireOrigin === 'client' ? 'accountant' : 'client' }, req });
+    await conn.query('BEGIN');
+    try {
+      const upd = await conn.query(`
+        UPDATE accountant_clients
+        SET status = 'active', activated_at = NOW(), referral_months_total = $3
+        WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending' AND ${originSql}
+        RETURNING user_id
+      `, [userId, accountantId, months]);
+      if (!upd.rows[0]) { await conn.query('ROLLBACK'); return null; }
+      await _bookReferralMonth(conn, accountantId, userId);   // N79: same rules as the monthly run
+      await conn.query('COMMIT');
+    } catch (e) { try { await conn.query('ROLLBACK'); } catch (_) {} throw e; }
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_ACTIVATE', field: 'status', newValue: 'active', newData: { by: requireOrigin === 'client' ? 'accountant' : 'client' }, req });
     return { months };
   }
   // Why an accountant-side approve failed: not found vs waiting on the client's consent.
@@ -1316,25 +1348,18 @@ If you cannot find a field, use null. Be concise.`;
       let payoutsCreated = 0;
       let payoutsSkipped = 0;
 
+      // Each link in its own transaction through the shared writer (row lock + one-per-month check), so a
+      // re-run or an overlapping run books nothing twice and one failing row does not stop the others.
       for (const row of rows.rows) {
-        const nextMonth = row.referral_month + 1;
-
-        await client.query(`
-          INSERT INTO accountant_earnings
-            (accountant_id, client_id, type, amount_cents, description, period_month)
-          VALUES ($1, $2, 'referral', 1000, $3, date_trunc('month', NOW()))
-          ON CONFLICT DO NOTHING
-        `, [
-          row.accountant_id,
-          row.user_id,
-          `Referral commission — month ${nextMonth} of ${row.referral_months_total}`,
-        ]);
-
-        await client.query(
-          `UPDATE accountant_clients SET referral_month = $1 WHERE accountant_id = $2 AND user_id = $3`,
-          [nextMonth, row.accountant_id, row.user_id]
-        );
-        payoutsCreated++;
+        try {
+          await client.query('BEGIN');
+          const booked = await _bookReferralMonth(client, row.accountant_id, row.user_id);
+          await client.query('COMMIT');
+          if (booked) payoutsCreated++;
+        } catch (e) {
+          try { await client.query('ROLLBACK'); } catch (_) {}
+          console.error('[referral payouts] link', row.accountant_id, row.user_id, 'failed:', e.message);
+        }
       }
 
       // Also count how many eligible relationships were skipped due to inactive subscription

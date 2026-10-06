@@ -3031,7 +3031,9 @@ app.post('/api/help/ask', requireAuth, apiLimiter, wrap(async (req, res) => {
     .map(m => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
   const multiTurn = history.length > 0;
 
-  const qKey = 'help:' + question.toLowerCase();
+  let contextText = 'No account figures available.';
+  try { contextText = 'Caller’s own figures (for grounding only):\n' + (await aiBooksContext(req)).text; } catch (_) {}
+  const qKey = 'help:' + question.toLowerCase() + '#' + require('crypto').createHash('sha256').update(contextText).digest('hex').slice(0, 16);   // N21b
   if (!multiTurn) {
     const cached = await pool.query(
       `SELECT answer, model FROM ai_cache WHERE user_id=$1 AND question=$2 AND created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at DESC LIMIT 1`,
@@ -3046,15 +3048,8 @@ app.post('/api/help/ask', requireAuth, apiLimiter, wrap(async (req, res) => {
     return res.json({ reply: null, unavailable: true, links, message: 'You’ve reached this month’s AI limit — here are the guides that match.', code: 'AI_CAP_REACHED' });
   }
 
-  // Light, tenant-scoped figure context so it can answer "why is X" without leaking anything.
+  // Light, tenant-scoped figure context (computed above, N21) so it can answer "why is X" without leaking anything.
   const uid = scopeId(req);
-  let contextText = 'No account figures available.';
-  try {
-    const [invoices, expenses] = await Promise.all([db.allByUser('invoices', uid), db.allByUser('expenses', uid)]);
-    const rev = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
-    const exp = expenses.reduce((s, e) => s + (e.amount || 0), 0);
-    contextText = `Caller’s own figures (for grounding only): paid revenue $${rev.toLocaleString()}, expenses $${exp.toLocaleString()}, open invoices ${invoices.filter(i => i.status !== 'paid').length}.`;
-  } catch (_) {}
 
   const model = process.env.AI_MODEL_SIMPLE || 'claude-haiku-4-5-20251001';
   const systemInstruction = 'You are "Ask FinFlow", the in-app help assistant for the FinFlow accounting product. Answer the user’s how-to and product questions using ONLY the KNOWLEDGE BASE below and the caller’s own figures when relevant. Be concise (2-5 sentences or short numbered steps), use the product’s own terms, and never invent features or menus not in the knowledge base. If the answer isn’t in the knowledge base, say so briefly and suggest contacting support. Do not answer questions unrelated to FinFlow.\n\nKNOWLEDGE BASE:\n' + HELP_KB;
@@ -5321,6 +5316,32 @@ app.post('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
 // Words that signal a complex query requiring Sonnet; everything else uses Haiku.
 const COMPLEX_QUERY_RE = /\b(analyze|recommend|explain|forecast|compare|predict|strategy|insight|report|why)\b|how should/i;
 
+// N21 / N21b: the figures BOTH AI assistants are grounded on — the canonical P&L (glProfitLoss: the ledger
+// when it reconciles, else computeBooks) for the business being viewed, this fiscal year, labelled with that
+// business's currency. Each assistant used to re-derive its own: revenue = PAID invoices (cash, not the
+// issue-based accrual every other surface uses), expenses = the expense table only (no bills, payroll,
+// COGS, credit notes), every business and currency summed raw under a '$'.
+async function aiBooksContext(req) {
+  const uid = scopeId(req), eid = req.entityId || null;
+  const fyStartIdx = await accountFyStartIdx(uid);
+  const pl = await glProfitLoss(uid, eid, { period: 'year', fyStartIdx });
+  const ent = await activeEntity(req);
+  const cur = String((eid != null && ent && ent.currency) || (pl.baseCurrency) || (ent && ent.currency) || 'USD').toUpperCase();
+  const inv = await db.allByUser('invoices', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+  const st = i => String(i.status || '').toLowerCase();
+  const money = n => cur + ' ' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return {
+    business: (ent && ent.name) || null,
+    text: `Business: ${(ent && ent.name) || 'This business'} (figures in ${cur}, this fiscal year)
+Revenue (issued invoices + sales receipts − credit notes): ${money(pl.totalRevenue)}
+Cost of goods sold: ${money(pl.cogs)}
+Operating expenses (incl. payroll ${money(pl.payroll)}): ${money(pl.totalExpenses)}
+Net profit: ${money(pl.netProfit)}
+Open invoices: ${inv.filter(i => ['pending', 'overdue', 'partial'].includes(st(i))).length}
+Overdue invoices: ${inv.filter(i => st(i) === 'overdue').length}`,
+  };
+}
+
 app.post('/api/ai', requireAuth, async (req, res) => {
   try {
     const { message, history = [] } = req.body;
@@ -5328,7 +5349,11 @@ app.post('/api/ai', requireAuth, async (req, res) => {
 
     const uid         = scopeId(req);   // (L4) read the ACCOUNT's books, not the actor's own —
                                         // consistent with the cache/cap/settings reads below.
-    const questionKey = message.trim().toLowerCase();
+    // N21b: the grounding figures are computed FIRST and fingerprinted into the cache key, so a cached answer
+    // is only reused for the same question about the same business with the same numbers (it used to be
+    // keyed on the question alone: another business's — or yesterday's — figures were served for 24 h).
+    const _ctx = await aiBooksContext(req);
+    const questionKey = message.trim().toLowerCase() + '#' + require('crypto').createHash('sha256').update(_ctx.text).digest('hex').slice(0, 16);
 
     // Check cache first — identical question for same user within 24 h
     const cached = await pool.query(
@@ -5349,17 +5374,7 @@ app.post('/api/ai', requireAuth, async (req, res) => {
       return res.status(402).json({ error: 'Monthly AI limit reached — upgrade for more.', code: 'AI_CAP_REACHED', used: gate.used, cap: gate.cap });
     }
 
-    // Gather financial context in parallel
-    const [invoices, expenses, customers, settings] = await Promise.all([
-      db.allByUser('invoices', uid),
-      db.allByUser('expenses', uid),
-      db.allByUser('customers', uid),
-      pool.query(`SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [scopeId(req)]).then(r => r.rows[0] ? rowToObj(r.rows[0]) : null),
-    ]);
-    const cfg = settings || {};
-
-    const totalRevenue  = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
-    const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0);
+    const customers = await db.allByUser('customers', uid, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId));
 
     const model = COMPLEX_QUERY_RE.test(message)
       ? (process.env.AI_MODEL_COMPLEX || 'claude-sonnet-4-20250514')
@@ -5370,13 +5385,8 @@ app.post('/api/ai', requireAuth, async (req, res) => {
 
     // Per-user context changes between users but not between rapid follow-up questions
     // from the same user — cache it as the first user content block.
-    const contextText = `Business: ${cfg.company_name || 'This business'}
-Revenue (paid invoices): $${totalRevenue.toLocaleString()}
-Total Expenses: $${totalExpenses.toLocaleString()}
-Net Profit: $${(totalRevenue - totalExpenses).toLocaleString()}
-Customers: ${customers.length}
-Open Invoices: ${invoices.filter(i => i.status !== 'paid').length}
-Overdue Invoices: ${invoices.filter(i => i.status === 'overdue').length}`;
+    const contextText = `${_ctx.text}
+Customers: ${customers.length}`;
 
     const messages = [
       ...history.slice(-10)

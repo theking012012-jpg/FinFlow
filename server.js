@@ -7392,8 +7392,11 @@ const _cdSplitName = (full) => {
 const _CD_ACCT_CAT = { Asset: 'Assets', Liability: 'Liabilities', Equity: 'Equity', Income: 'Revenue', Expense: 'Expenses' };
 // Codat invoice/bill status → FinFlow status enum. (amount_paid is derived from amountDue below,
 // NOT from the label, so AR/AP ties out regardless of how a status maps.)
-const _CD_INV_STATUS  = { Paid: 'paid', PartiallyPaid: 'partial', Submitted: 'pending', Draft: 'draft', Void: 'draft' };
-const _CD_BILL_STATUS = { Paid: 'paid', PartiallyPaid: 'partial', Open: 'unpaid', Draft: 'unpaid', Void: 'unpaid' };
+// N46: a VOID document is not imported at all (it must never be recognised); a DRAFT bill is not an issued bill
+// (bills have no draft state — mapping it to 'unpaid' recognised it as an expense). null = skip.
+const _CD_INV_STATUS  = { Paid: 'paid', PartiallyPaid: 'partial', Submitted: 'pending', Draft: 'draft', Void: null };
+const _CD_BILL_STATUS = { Paid: 'paid', PartiallyPaid: 'partial', Open: 'unpaid', Draft: null, Void: null };
+const _cdStatus = (map, v, def) => (Object.prototype.hasOwnProperty.call(map, v) ? map[v] : def);
 
 // Pure mappers: one Codat record → { table, key, date, data } where `data` holds the exact FinFlow
 // field keys the manual routes write. Return null to SKIP (e.g. an unbalanced journal FinFlow rejects).
@@ -7415,29 +7418,47 @@ function _codatMappers(companyId, platform) {
       name: _cdClip(s.supplierName || 'Supplier', 200), contact: _cdClip(s.contactName || '', 200),
       category: '', owing: 0, ytd_paid: 0, status: (s.status === 'Archived') ? 'inactive' : 'active' } }),
     invoices: (i) => { const total = _cdNum(i.totalAmount), due = _cdNum(i.amountDue);
+      const _st = _cdStatus(_CD_INV_STATUS, i.status, 'pending'); if (_st == null) return null;
       return { table: 'invoices', key: ck('invoice', i.id), date: _cdDate(i.issueDate) || _cdDate(i.dueDate), data: {
         client: _cdClip((i.customerRef && (i.customerRef.companyName || i.customerRef.id)) || 'Unknown', 200),
         amount: total, amount_paid: Math.max(0, +(total - due).toFixed(2)),
         due_date: _cdDate(i.dueDate), issue_date: _cdDate(i.issueDate),
-        status: _CD_INV_STATUS[i.status] || 'pending',
+        status: _st,
         notes: _cdClip(tag + (i.invoiceNumber ? (' · ' + i.invoiceNumber) : ''), 500) } }; },
     bills: (b) => { const total = _cdNum(b.totalAmount), due = _cdNum(b.amountDue);
+      const _st = _cdStatus(_CD_BILL_STATUS, b.status, 'unpaid'); if (_st == null) return null;
       return { table: 'bills', key: ck('bill', b.id), date: _cdDate(b.issueDate) || _cdDate(b.dueDate), data: {
         vendor: _cdClip((b.supplierRef && (b.supplierRef.supplierName || b.supplierRef.id)) || 'Unknown', 200),
         num: _cdClip(b.reference || ('BILL-' + String(b.id).slice(-4)), 60),
         amount: total, amount_paid: Math.max(0, +(total - due).toFixed(2)),
         due_date: _cdDate(b.dueDate), issue_date: _cdDate(b.issueDate),
-        status: _CD_BILL_STATUS[b.status] || 'unpaid', notes: _cdClip(tag, 500) } }; },
-    payments: (p) => ({ table: 'payments_received', key: ck('payment', p.id), date: null, data: {
-      customer: _cdClip((p.customerRef && (p.customerRef.companyName || p.customerRef.id)) || '', 200),
-      invoice_ref: _cdClip((p.lines && p.lines[0] && p.lines[0].links && p.lines[0].links[0] && p.lines[0].links[0].id) || '', 60),
-      amount: _cdNum(p.totalAmount), date: _cdDate(p.date), method: 'Imported' } }),
-    // billPayments → payments_made WITHOUT a bill_id, so recalcBillStatus is NOT re-triggered
-    // (the bill already carries its amount_paid from amountDue) — this is what prevents double-counting.
-    billPayments: (bp) => ({ table: 'payments_made', key: ck('billpayment', bp.id), date: null, data: {
-      vendor: _cdClip((bp.supplierRef && (bp.supplierRef.supplierName || bp.supplierRef.id)) || '', 200),
-      amount: _cdNum(bp.totalAmount), date: _cdDate(bp.date), method: 'Imported',
-      notes: 'Imported (Codat)', ref: _cdClip(bp.id, 60) } }),
+        status: _st, notes: _cdClip(tag, 500) } }; },
+    // N46: a customer payment becomes a real INVOICE PAYMENT on the imported invoice it settles (one per invoice
+    // link) — visible to cash flow and the ledger. It used to land in the RETIRED payments_received store, so the
+    // cash never appeared anywhere. The invoice keeps the amount_paid Codat reported (amountDue); the payment row
+    // is not re-applied to it (no double count).
+    payments: (p) => {
+      const out = [];
+      for (const [li, l] of (Array.isArray(p.lines) ? p.lines : []).entries()) {
+        for (const [ki, k] of (Array.isArray(l.links) ? l.links : []).entries()) {
+          if (!k || k.type !== 'Invoice' || !k.id) continue;
+          out.push({ table: 'invoice_payments', key: ck('payment', p.id + ':' + li + ':' + ki), date: _cdDate(p.date), link: { table: 'invoices', key: ck('invoice', k.id) }, data: {
+            amount: Math.abs(_cdNum(k.amount != null ? k.amount : l.amount)), payment_date: _cdDate(p.date), method: 'Imported', reference: _cdClip(p.id, 60) } });
+        }
+      }
+      return out.length ? out : null;
+    },
+    // N46: a bill payment is LINKED to the imported bill it pays (bill_id), so it settles AP. Unlinked it was an
+    // orphan payment = a direct expense, while the imported bill already accrued that expense — opex counted
+    // twice. recalcBillStatus is not re-run (the bill keeps Codat's amount_paid). A payment whose bill was not
+    // imported stays an orphan disbursement (its expense is not otherwise in the books).
+    billPayments: (bp) => {
+      const _bl = (Array.isArray(bp.lines) ? bp.lines : []).flatMap(l => (Array.isArray(l.links) ? l.links : [])).find(k => k && k.type === 'Bill' && k.id);
+      return { table: 'payments_made', key: ck('billpayment', bp.id), date: _cdDate(bp.date), link: _bl ? { table: 'bills', key: ck('bill', _bl.id), field: 'bill_id' } : null, data: {
+        vendor: _cdClip((bp.supplierRef && (bp.supplierRef.supplierName || bp.supplierRef.id)) || '', 200),
+        amount: _cdNum(bp.totalAmount), date: _cdDate(bp.date), method: 'Imported',
+        notes: 'Imported (Codat)', ref: _cdClip(bp.id, 60) } };
+    },
     journalEntries: (j) => {
       const lines = Array.isArray(j.journalLines) ? j.journalLines : [];
       let debit = 0, credit = 0; const norm = [];
@@ -7481,23 +7502,52 @@ async function _codatImportType(uid, entityId, sessionUserId, companyId, platfor
   try { records = await codatFetchAll(companyId, type); }
   catch (e) { tally.error = e.message; return tally; }
   tally.total = records.length;
+  // N46: money records in a currency other than the business's are NOT written as if native (they were — a
+  // EUR 1,000 invoice became 1,000 of the entity's currency). They are counted for the owner instead.
+  const _MONEY_TYPES = new Set(['invoices', 'bills', 'payments', 'billPayments', 'journalEntries']);
+  let entCur = null;
+  try { entCur = ((await pool.query(`SELECT data->>'currency' AS c FROM entities WHERE id = $1`, [entityId])).rows[0] || {}).c || null; } catch (_) {}
+  entCur = String(entCur || 'USD').toUpperCase();
+  tally.currencyMismatch = 0; tally.unlinked = 0;
   for (const rec of records) {
     if (rec && rec.currency) tally.currencies[rec.currency] = (tally.currencies[rec.currency] || 0) + 1;
-    let m;
-    try { m = map(rec); } catch (e) { tally.failed++; continue; }
-    if (!m) { tally.skipped++; continue; }
-    const dup = await pool.query(`SELECT 1 FROM ${m.table} WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, m.key]);
-    if (dup.rows.length) { tally.duplicate++; continue; }
-    if (m.date && await isLocked(sessionUserId, entityId, m.date)) { tally.locked++; continue; }
-    if (tally.sample.length < 3) tally.sample.push(m.data);
-    if (dryRun) { tally.added++; continue; }
-    try {
-      await db.insert(m.table, Object.assign({ user_id: uid, entity_id: entityId,
-        import_key: m.key, idempotency_key: m.key, source: 'codat', codat_id: rec.id }, m.data));
-      tally.added++;
-    } catch (e) {
-      if (e.code === '23505') { tally.duplicate++; }
-      else { tally.failed++; console.error(`[codat import ${type}]`, e.message); }
+    if (_MONEY_TYPES.has(type) && rec && rec.currency && String(rec.currency).toUpperCase() !== entCur) { tally.currencyMismatch++; tally.skipped++; continue; }
+    let mm;
+    try { mm = map(rec); } catch (e) { tally.failed++; continue; }
+    if (!mm) { tally.skipped++; continue; }
+    for (const m of (Array.isArray(mm) ? mm : [mm])) {
+      const typed = m.table === 'invoice_payments';
+      const dup = typed
+        ? await pool.query(`SELECT 1 FROM invoice_payments WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [uid, m.key])
+        : await pool.query(`SELECT 1 FROM ${m.table} WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, m.key]);
+      if (dup.rows.length) { tally.duplicate++; continue; }
+      if (m.date && await isLocked(sessionUserId, entityId, m.date)) { tally.locked++; continue; }
+      // Resolve the imported document this record settles (an invoice payment needs its invoice; a bill
+      // payment links to its bill when that bill was imported).
+      let linkId = null;
+      if (m.link) {
+        const { rows: [lr] } = await pool.query(`SELECT id FROM ${m.link.table} WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, m.link.key]);
+        linkId = lr ? lr.id : null;
+        if (!linkId && typed && !dryRun) { tally.unlinked++; tally.skipped++; continue; }   // a preview has not imported the invoices yet
+      }
+      if (tally.sample.length < 3) tally.sample.push(m.data);
+      if (dryRun) { tally.added++; continue; }
+      try {
+        if (typed) {
+          await pool.query(
+            `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [uid, entityId, linkId, m.data.amount, m.data.payment_date || await entityTodayYmd(entityId), m.data.method, m.data.reference, 'Imported (Codat)', m.key]);
+        } else {
+          const extra = (m.link && m.link.field && linkId) ? { [m.link.field]: linkId } : {};
+          await db.insert(m.table, Object.assign({ user_id: uid, entity_id: entityId,
+            import_key: m.key, idempotency_key: m.key, source: 'codat', codat_id: rec.id }, m.data, extra));
+        }
+        tally.added++;
+      } catch (e) {
+        if (e.code === '23505') { tally.duplicate++; }
+        else { tally.failed++; console.error(`[codat import ${type}]`, e.message); }
+      }
     }
   }
   return tally;

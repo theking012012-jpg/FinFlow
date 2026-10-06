@@ -1,6 +1,7 @@
 'use strict';
 /**
- * verify-f135-backfill-bills.js — PROVE (Rule 14) that the F135 boot-backfill (database.js) heals
+ * verify-f135-backfill-bills.js — (N90 update: the backfill is no longer run at boot; see the N90 assertions.)
+ * Originally: PROVE (Rule 14) that the F135 boot-backfill (database.js) heals
  * EXISTING bills marked 'paid' with amount_paid NULL/0 to amount_paid = amount, WITHOUT touching a
  * genuinely part-paid bill, a correctly-paid bill, or an unpaid bill. Owner-gated data change (Rule 8),
  * its own commit.
@@ -80,8 +81,11 @@ const { initSchema } = require('./boot.js');
 
     console.log(`  [after backfill] STUCK.amount_paid=${JSON.stringify(stuck.amount_paid_raw)}  CORRECT=${JSON.stringify(correct.amount_paid_raw)}  PARTIAL=(${JSON.stringify(partial.amount_paid_raw)},${partial.status})  UNPAID=${JSON.stringify(unpaid.amount_paid_raw)}`);
 
-    A('STUCK healed: amount_paid === 900 (paid bill no longer counts at full face in AP)',
-      num(stuck.amount_paid_raw) === 900, `amount_paid=${JSON.stringify(stuck.amount_paid_raw)}  (buggy: absent/0)`);
+    // N90 (Rule 8): the boot no longer changes money data — the F135 backfill is OUT of initDB. A boot leaves the
+    // STUCK row exactly as it was; scripts/report-paid-without-payment.js (read-only) lists it for an owner
+    // decision instead of a silent per-deploy stamp with no payment behind it.
+    A('N90: a boot leaves STUCK unchanged (no amount_paid stamped without a payment)',
+      stuck.amount_paid_raw == null, `amount_paid=${JSON.stringify(stuck.amount_paid_raw)}`);
     A('CORRECT untouched: amount_paid still 600 (idempotent — already equal to amount)',
       num(correct.amount_paid_raw) === 600, `amount_paid=${JSON.stringify(correct.amount_paid_raw)}`);
     A('PARTIAL preserved: amount_paid still 400, status partial (real part-payment NOT clobbered)',
@@ -89,11 +93,12 @@ const { initSchema } = require('./boot.js');
     A('UNPAID untouched: no amount_paid, status unpaid (backfill only touches paid-below-amount)',
       unpaid.amount_paid_raw == null && unpaid.status === 'unpaid', `UNPAID=${JSON.stringify({ amount_paid: unpaid.amount_paid_raw, status: unpaid.status })}`);
 
-    // Idempotency: a THIRD initDB must not change anything already healed.
-    await database.initDB();
-    const stuck2 = (await c.query(`SELECT data->>'amount_paid' AS ap FROM bills WHERE data->>'vendor'='STUCK'`)).rows[0];
-    A('idempotent: re-running the backfill leaves STUCK at 900 (WHERE clause makes it a no-op)',
-      num(stuck2.ap) === 900, `amount_paid=${JSON.stringify(stuck2.ap)}`);
+    // The read-only report names the STUCK row (and only it among these four).
+    const out = require('child_process').execFileSync(process.execPath, [require('path').join(__dirname, '..', '..', 'scripts', 'report-paid-without-payment.js')], { env: Object.assign({}, process.env, { DATABASE_URL: scratch.url }), encoding: 'utf8' });
+    // STUCK (no amount_paid) and CORRECT (amount_paid 600 but NO payment row behind it) are both 'paid' without
+    // covering payments; PARTIAL and UNPAID are not 'paid' and are not listed.
+    A('N90: report-paid-without-payment lists STUCK and CORRECT (paid, no payment rows), not PARTIAL/UNPAID',
+      /STUCK: amount 900/.test(out) && /CORRECT: amount 600/.test(out) && /Bills marked paid without covering payments: 2/.test(out) && !/PARTIAL|UNPAID/.test(out), out.slice(0, 400));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed\n`);
   } catch (e) {

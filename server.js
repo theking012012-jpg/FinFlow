@@ -2008,16 +2008,11 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   // retry never books a second payment. Best-effort: never breaks invoice creation.
   if (String(status).toLowerCase() === 'paid' && _amt > 0) {
     try {
-      const _pDate = issue_date || (FinFlowDates._toYmd(row.created_at) || new Date().toISOString().slice(0, 10));
-      const _pKey = ('invoice_create_paid:' + row.id).slice(0, 64);
-      const { rows: _pr } = await pool.query(
-        `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING RETURNING *`,
-        [scopeId(req), eid, row.id, _amt, _pDate, 'Paid on creation', null, 'Auto-recorded: invoice created as paid', _pKey]);
-      if (_pr[0]) {
-        try { await postSourceLedger(pool, { userId: scopeId(req), sourceType: 'invoice_payment', row: { ..._pr[0], client } }); }
-        catch (glErr) { console.error('[GL] paid-on-create cash leg failed (shadow, non-fatal):', glErr && glErr.message); }
-      }
+      await settleInvoiceRemaining(pool, {
+        userId: scopeId(req), invoiceId: row.id,
+        date: issue_date || (FinFlowDates._toYmd(row.created_at) || new Date().toISOString().slice(0, 10)),
+        method: 'Paid on creation', notes: 'Auto-recorded: invoice created as paid', idemKey: 'invoice_create_paid:' + row.id,
+      });
     } catch (payErr) { console.error('[invoices] paid-on-create settling payment failed (non-fatal):', payErr && payErr.message); }
   }
   res.status(201).json(row);
@@ -2045,16 +2040,18 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   // recalcInvoiceStatus) is never clobbered. Effective amount = the patched amount if it is being
   // changed in the same PUT, else the existing row amount. (This PUT has no client caller today, but
   // the code gap is the same F133 class, so it is closed here.)
-  if (patch.status === 'paid') {
-    const { rows: _ipc } = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2`,
-      [row.id, scopeId(req)]
-    );
-    if (_ipc[0].n === 0) {
-      patch.amount_paid = (patch.amount != null ? patch.amount : (parseFloat(row.amount) || 0));
-    }
-  }
+  // N11: a flip to 'paid' is settled by a real payment for the outstanding balance AFTER the edit (so an
+  // amount changed in the same PUT is the one settled) — see settleInvoiceRemaining.
+  const _flipPaid = patch.status === 'paid' && String(row.status || '').toLowerCase() !== 'paid';
+  if (patch.status === 'paid') delete patch.status;   // recalcInvoiceStatus derives it from the payments
   await db.updateById('invoices', row.id, patch);
+  if (_flipPaid || (req.body && String(req.body.status || '').toLowerCase() === 'paid')) {
+    await settleInvoiceRemaining(pool, {
+      userId: scopeId(req), invoiceId: row.id,
+      date: (req.body && /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.payment_date || ''))) ? req.body.payment_date : await entityTodayYmd(row.entity_id),
+      method: 'Marked paid', notes: 'Auto-recorded: invoice marked paid', idemKey: 'invoice_mark_paid:' + row.id, stateKeyed: true,
+    });
+  }
   const { rows: [_iur] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [row.id]);
   const updated = _iur ? rowToObj(_iur) : {};
   logAudit(req, 'UPDATE', 'invoices', row.id, row, updated);
@@ -8393,6 +8390,35 @@ async function recordExternalInvoicePayment({ invoiceId, amountMinor, currency, 
     if (e.code === '23505') return { recorded: false, reason: 'duplicate' };   // idempotent: already recorded
     throw e;
   }
+}
+
+// N11 + F133: the ONE way an invoice is marked fully paid without an itemised payment (created as paid,
+// or edited to 'paid'): record a REAL invoice_payment for whatever is still outstanding (amount − Σ
+// existing payments), post its GL cash leg (Dr Cash / Cr AR), then let recalcInvoiceStatus derive status
+// and amount_paid. A bare amount_paid stamp was invisible to the cash-flow report (reads
+// invoice_payments) and left AR open in the ledger. Idempotent on idemKey. Returns the payment row or null.
+async function settleInvoiceRemaining(pool, { userId, invoiceId, date, method, notes, idemKey, stateKeyed = false }) {
+  const { rows: [r] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 AND user_id = $2 LIMIT 1`, [invoiceId, userId]);
+  const inv = r ? rowToObj(r) : null;
+  if (!inv) return null;
+  const { rows: [p] } = await pool.query(`SELECT COALESCE(SUM(amount),0) AS paid FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2`, [invoiceId, userId]);
+  const remaining = Math.round(((parseFloat(inv.amount) || 0) - (parseFloat(p.paid) || 0)) * 100) / 100;
+  let pay = null;
+  if (remaining > 0.004) {
+    const { rows: ins } = await pool.query(
+      `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING RETURNING *`,
+      // stateKeyed: the key includes what was already paid, so two concurrent "mark paid" requests on the
+      // same invoice state produce the SAME key and the unique index admits only one settling payment.
+      [userId, inv.entity_id, invoiceId, remaining, date, method, null, notes, String(stateKeyed ? idemKey + ':' + Math.round((parseFloat(p.paid) || 0) * 100) : idemKey).slice(0, 64)]);
+    pay = ins[0] || null;
+    if (pay) {
+      try { await postSourceLedger(pool, { userId, sourceType: 'invoice_payment', row: { ...pay, client: inv.client } }); }
+      catch (glErr) { console.error('[GL] settle cash leg failed (shadow, non-fatal):', glErr && glErr.message); }
+    }
+  }
+  await recalcInvoiceStatus(pool, invoiceId, userId);
+  return pay;
 }
 
 async function recalcInvoiceStatus(pool, invoiceId, userId) {

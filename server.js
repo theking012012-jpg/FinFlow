@@ -7021,14 +7021,13 @@ const _providerBlobE = async (uid, key, entityId, fallback = false) => {
   let value = null; try { value = row && row.value ? JSON.parse(row.value) : null; } catch (_) {}
   return { id: r ? r.id : null, value };
 };
-const _saveProviderBlobE = async (uid, key, value, entityId) => {
-  const data = JSON.stringify(value);
-  const { rows: [r] } = await pool.query(
-    `SELECT id FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`,
-    [uid, key, entityId == null ? null : entityId]);
-  if (r) await db.updateById('user_settings', r.id, { value: data });
-  else await db.insert('user_settings', { user_id: uid, entity_id: entityId == null ? null : entityId, key, value: data });
-};
+// N45b: every provider-blob write is a row-locked read-modify-write (_mutateSettingsBlob). A plain value REPLACES the
+// blob (a fresh link); a function receives the blob AS STORED NOW and returns the next one, so a merge (token
+// refresh, sync stamp, company link, books binding) lands on the current blob — not on a copy read earlier in the
+// request, which used to overwrite anything written in between (e.g. a reconnect in another tab lost its token).
+const _saveProviderBlobE = (uid, key, valueOrFn, entityId) =>
+  _mutateSettingsBlob(uid, key, entityId == null ? null : entityId,
+    cur => (typeof valueOrFn === 'function' ? valueOrFn(cur && typeof cur === 'object' ? cur : {}) : valueOrFn));
 
 // ════════════════════════════════════════════════════════════════════════════════
 // SHARED OAUTH2 CONNECTOR DRIVER — registerOAuthConnector(spec)
@@ -7122,12 +7121,13 @@ function registerOAuthConnector(spec) {
     if (conn.refresh_token && conn.expires_at && Date.now() > (conn.expires_at - 60000)) {
       const t = await tokenPost({ grant_type: 'refresh_token', refresh_token: decTok(conn.refresh_token) }, conn.token_url);
       access = t.access_token;
-      conn = Object.assign({}, conn, {
+      const _tok = {
         access_token: encTok(t.access_token),
         refresh_token: t.refresh_token ? encTok(t.refresh_token) : conn.refresh_token,
         expires_at: expiryOf(t, conn.expires_at),
-      });
-      await _saveProviderBlobE(uid, blobKey, conn, entityId);
+      };
+      conn = Object.assign({}, conn, _tok);
+      await _saveProviderBlobE(uid, blobKey, cur => Object.assign({}, cur, _tok), entityId);   // N45b: merge onto the stored blob
     }
     return { access, conn };
   }
@@ -7306,7 +7306,7 @@ app.post('/api/finch/sync', requireAuth, requirePerm('payroll:write'), wrap(asyn
   try {
     const dir = await finchCall('/employer/directory', decTok(value.access_token));
     const count = Array.isArray(dir.individuals) ? dir.individuals.length : (dir.paging && dir.paging.count) || 0;
-    await _saveProviderBlobE(uid, 'finch_conn', Object.assign({}, value, { employee_count: count, last_synced: new Date().toISOString() }), req.entityId);
+    await _saveProviderBlobE(uid, 'finch_conn', cur => Object.assign({}, cur, { employee_count: count, last_synced: new Date().toISOString() }), req.entityId);   // N45b
     res.json({ ok: true, employees: count, note: 'Directory pulled for display. Importing payroll into the books is a separate, owner-approved step (Rule 12).' });
   } catch (e) { console.error('[finch sync]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not sync payroll: ' + e.message }); }
 }));
@@ -7369,7 +7369,7 @@ app.post('/api/codat/link-url', requireAuth, requirePerm('books:write'), wrap(as
       company = await codatCall(`/companies/${companyId}`);
     }
     const linkUrl = (company.redirect) || (company.links && company.links.self) || null;
-    await _saveProviderBlobE(uid, 'codat_conn', Object.assign({}, value || {}, { company_id: companyId, linked_at: new Date().toISOString() }), req.entityId);
+    await _saveProviderBlobE(uid, 'codat_conn', cur => Object.assign({}, cur, { company_id: companyId, linked_at: new Date().toISOString() }), req.entityId);   // N45b
     if (!linkUrl) return res.status(502).json({ error: 'Codat did not return a link URL.' });
     res.json({ link_url: linkUrl, company_id: companyId });
   } catch (e) { console.error('[codat link-url]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not start accounting linking: ' + e.message }); }
@@ -7761,7 +7761,7 @@ app.post('/api/stripe/binding', requireAuth, requirePerm('bank:manage'), wrap(as
     if (!owned.rows[0]) return res.status(403).json({ error: 'Business not found.' });
     entity_id = _e;
   }
-  await _saveProviderBlobE(uid, 'stripe_conn', Object.assign({}, value, { books: { scope, entity_id } }), req.entityId);
+  await _saveProviderBlobE(uid, 'stripe_conn', cur => Object.assign({}, cur, { books: { scope, entity_id } }), req.entityId);   // N45b
   res.json({ ok: true, books: { scope, entity_id } });
 }));
 

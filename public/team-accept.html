@@ -105,7 +105,7 @@
 
     const show = id => { document.getElementById(id).style.display = ''; };
     const hide = id => { document.getElementById(id).style.display = 'none'; };
-    const esc  = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    const esc  = s => String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
 
     if (!token) {
       hide('loading-panel'); show('invalid-panel');

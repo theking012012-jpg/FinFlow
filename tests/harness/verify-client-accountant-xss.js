@@ -15,6 +15,7 @@
  *   no <img>/<b> elements injected in directory or My Accountant (bug: present)
  *   the payload text is visible as text                         (proves it still renders)
  *   clicking "Request access" on B passes B's exact name        (bug: JS string broken by the quote)
+ *   a name with a double quote adds no attribute (data-pwn)     (bug: window.esc left quotes raw)
  *   node -r ./tests/harness/clock.js tests/harness/verify-client-accountant-xss.js
  */
 require('./clock.js');
@@ -23,6 +24,7 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
 
 const XSS_IMG = '<img src=x onerror="window.__xss=1">Ada';
 const BREAK = "Bob'); window.__xss2=1; ('";
+const DQ = 'Eve" data-pwn="1';   // double quote: breaks out of a quoted attribute if esc() leaves quotes raw
 
 let pass = 0, fail = 0;
 const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fail++, console.log('  FAIL  ' + name + (d ? '\n          ' + d : ''))); };
@@ -38,6 +40,8 @@ const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fa
         accB = (await c.query(`INSERT INTO accountants (email, password_hash, first_name, last_name, firm, country, specialisation, referral_code, status)
           VALUES ('xss-b@finflow.test', $1, $2, 'Builder', 'B Firm', 'US', 'Audit', 'XSSB1', 'verified') RETURNING id`, [h, BREAK])).rows[0].id;
         await c.query(`INSERT INTO accountant_clients (accountant_id, user_id, status, requested_by) VALUES ($1,$2,'active','client')`, [accA, uid]);
+        await c.query(`INSERT INTO accountants (email, password_hash, first_name, last_name, firm, country, specialisation, referral_code, status)
+          VALUES ('xss-c@finflow.test', $1, $2, 'Quote', 'C Firm', 'US', 'Audit', 'XSSC1', 'verified')`, [h, DQ]);
       },
     });
     const { window, settle } = boot;
@@ -66,6 +70,7 @@ const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fa
     await settle(5);
     A('clicking it passes B\'s exact name (bug: JS string broken by the quote)', calls.length === 1 && calls[0][0] === accB && calls[0][1] === BREAK + ' Builder', JSON.stringify(calls));
     A('the quote never executed code (window.__xss2 unset)', !window.__xss2);
+    A('a double quote in a name cannot add an attribute (esc() escapes quotes; bug: data-pwn present)', !doc.querySelector('[data-pwn]'), (doc.querySelector('[data-pwn]') || {}).outerHTML);
   } catch (e) {
     fail++; console.log('  FAIL  harness error: ' + (e && e.stack || e));
   } finally {

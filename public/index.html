@@ -72,13 +72,9 @@
 <script>
 'use strict';
 // ── XSS sanitizer ──────────────────────────────────────────────────
-window.esc = (function(){
-  const d = document.createElement('div');
-  return function(str){
-    d.textContent = String(str == null ? '' : str);
-    return d.innerHTML;
-  };
-})();
+// Escapes & < > " ' — safe in text AND in quoted attribute values (the textContent→innerHTML trick
+// left quotes raw, so esc() inside value="…" / onclick='…' was still injectable).
+window.esc = function(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); };
 
 // ── Input validators ───────────────────────────────────────────────
 window.validateEmail = function(e){

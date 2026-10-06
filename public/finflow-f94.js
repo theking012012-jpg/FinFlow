@@ -172,7 +172,7 @@
     if (freq === 'Weekly') dt.setDate(dt.getDate()+7); else if (freq === 'One-off') return d; else dt.setMonth(dt.getMonth()+1);
     return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
   }
-  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function $(id){ return document.getElementById(id); }
 
   // ── entity bar ──

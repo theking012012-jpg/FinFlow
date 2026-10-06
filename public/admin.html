@@ -746,7 +746,7 @@ td.amber{color:var(--amber)}
 
 <script>
 // ── SECURITY ──────────────────────────────────────────────────────────────────
-function esc(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let currentModal = null;

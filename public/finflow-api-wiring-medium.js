@@ -1291,7 +1291,7 @@
     // Budget targets modal — fully editable: user can add, remove, and set
     // monthly/annual targets per category. Saves to /api/budget-targets.
     const SUGGESTED_CATS = ['Salaries','Rent','Software','Marketing','Travel','Meals','Office','Utilities','Other'];
-    const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const esc = s => String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
 
     function _renderBudgetTargetRows(targets) {
       const rowsEl = document.getElementById('_budget-target-rows');

@@ -11110,11 +11110,16 @@ app.post('/api/fx-transactions', requireAuth, wrap(async (req, res) => {
     [scopeId(req), req.entityId || null, foreign_currency.toUpperCase(), fAmt, rate]
   );
   if (dupTx[0]) return res.status(201).json(dupTx[0]);
+  // N108: a position's base currency is its BUSINESS's currency (the column defaulted to 'USD' for everyone,
+  // so a TTD business's EUR position measured its unrealised P/L against EUR→USD while it was opened at
+  // EUR→TTD).
+  const _fxEnt = await activeEntity(req);
+  const baseCur = String((_fxEnt && _fxEnt.currency) || 'USD').toUpperCase();
   const { rows: [row] } = await pool.query(
-    `INSERT INTO fx_transactions (user_id, entity_id, reference_id, reference_type, foreign_currency, foreign_amount, base_amount, rate_at_transaction)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    `INSERT INTO fx_transactions (user_id, entity_id, reference_id, reference_type, foreign_currency, foreign_amount, base_amount, rate_at_transaction, base_currency)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
     [scopeId(req), req.entityId || null, reference_id || null, reference_type || null,
-     foreign_currency.toUpperCase(), fAmt, baseAmount, rate]
+     foreign_currency.toUpperCase(), fAmt, baseAmount, rate, baseCur]
   );
   res.status(201).json(row);
 }));

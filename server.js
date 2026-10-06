@@ -10330,7 +10330,9 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
           AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)`,
       [userId, entityId]
     );
-    runLines = rows;
+    // N65: the permitted-entity restriction applies to EVERY leg — the JSONB legs filter through ent();
+    // this typed query did not, so an accountant's restricted "all" view included hidden entities' payroll.
+    runLines = rows.filter(r => entityId != null || !_permSet || r.entity_id == null || _permSet.has(Number(r.entity_id)));
   } catch (_) { runLines = []; }
   // F85: accounting date = first of the run's `period` month ('YYYY-MM' → 'YYYY-MM-01'). A tz-free
   // calendar date, so it also removes the Rule 10 UTC month-boundary misfile. Used for BOTH period
@@ -10385,6 +10387,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
       [userId, entityId]
     );
     for (const it of items) {
+      if (entityId == null && _permSet && it.entity_id != null && !_permSet.has(Number(it.entity_id))) continue;   // N65: hidden entity's COGS
       // F24: each item's COGS converts from ITS entity's currency (inventory is per-entity). Falls back
       // to the viewed/base currency for account-level (null-entity) items.
       const _itemFrom = (it.entity_id != null && entCur[it.entity_id]) ? entCur[it.entity_id] : viewedCur;

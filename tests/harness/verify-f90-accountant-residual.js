@@ -33,8 +33,9 @@ const ACC = { email: 'f90r-acc@finflow.test', password: 'harness-password-not-a-
         `INSERT INTO users (user_id, entity_id, data, created_at, updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
         [{ email, name: email, plan: 'trial', role: 'owner', subscriptionStatus: 'active' }]
       )).rows[0].id;
-      await c.query(`INSERT INTO accountant_clients (accountant_id, user_id, status, access_level, referral_month, referral_months_total)
-                     VALUES ($1,$2,$3,'edit',0,6)`, [accId, uid, status]);
+      // requested_by='client': a client-initiated request the accountant may accept (N78).
+      await c.query(`INSERT INTO accountant_clients (accountant_id, user_id, status, access_level, referral_month, referral_months_total, requested_by)
+                     VALUES ($1,$2,$3,'edit',0,6,'client')`, [accId, uid, status]);
       return uid;
     };
 

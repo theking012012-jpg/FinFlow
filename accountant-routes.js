@@ -1157,38 +1157,45 @@ If you cannot find a field, use null. Be concise.`;
   // access is granted only after that relationship reaches status='active'.
 
 
-  // ── 9. ACTIVATE CLIENT (called when client completes payment/trial) ────────
-  // Call this from your Stripe webhook when a client's subscription activates.
-  app.post('/api/accountants/activate-client', requireAccountant, wrap(async (req, res) => {
-    const { userId } = req.body || {};
-    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
-    if (!userId) return res.status(400).json({ error: 'userId required.' });
-
-    const client = await pool.connect();
-    try {
-      const result = await client.query(`
-        UPDATE accountant_clients
-        SET status = 'active', activated_at = NOW()
-        WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending'
-        RETURNING accountant_id, referral_months_total
-      `, [userId, req.session.accountantId]);
-
-      if (!result.rows[0]) {
-        return res.status(404).json({ error: 'No pending client found for this accountant.' });
-      }
-
-      const { accountant_id, referral_months_total } = result.rows[0];
-      await client.query(`
-        INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, period_month)
-        VALUES ($1, $2, 'referral', 1000, 'Referral commission — month 1', date_trunc('month', NOW()))
-      `, [accountant_id, userId]);
-
-      await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_ACTIVATE', field: 'status', newValue: 'active', req });  // F90 Phase B (accountant)
-      return res.json({ success: true });
-    } finally {
-      client.release();
+  // ── 9. ACTIVATE A PENDING LINK — one shared path (N78) ────────────────────
+  // Access to a client's books is granted only with the CLIENT's consent:
+  //   • requested_by='client'  — the client asked (request-access); the accountant accepts it
+  //                               (approve-request, or the legacy activate-client alias).
+  //   • 'referral' / NULL      — the client only signed up through the accountant's link; the CLIENT
+  //                               must approve it (POST /api/accountants/my-accountant/approve).
+  // An accountant used to be able to flip ANY pending row — including referral rows the client never
+  // asked for — to 'active' (= books access) on their own. Every activation now goes through
+  // _activateLink, so the consent rule and the first-month referral entry live in one place.
+  async function _activateLink(conn, accountantId, userId, req, { requireOrigin }) {
+    const countRes = await conn.query(
+      `SELECT COUNT(*) FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
+        WHERE ac.accountant_id = $1 AND ac.status = 'active' AND u.data->>'subscriptionStatus' = 'active'`,
+      [accountantId]
+    );
+    const months = tierForAccountant(parseInt(countRes.rows[0].count) || 0).referralMonths;
+    const originSql = requireOrigin === 'client' ? `requested_by = 'client'` : `requested_by IS DISTINCT FROM 'client'`;
+    const upd = await conn.query(`
+      UPDATE accountant_clients
+      SET status = 'active', activated_at = NOW(), referral_months_total = $3
+      WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending' AND ${originSql}
+      RETURNING user_id
+    `, [userId, accountantId, months]);
+    if (!upd.rows[0]) return null;
+    await conn.query(`
+      INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, period_month)
+      VALUES ($1, $2, 'referral', 1000, 'Referral commission — month 1', date_trunc('month', NOW()))
+    `, [accountantId, userId]);
+    await _audit(conn, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_ACTIVATE', field: 'status', newValue: 'active', newData: { by: requireOrigin === 'client' ? 'accountant' : 'client' }, req });
+    return { months };
+  }
+  // Why an accountant-side approve failed: not found vs waiting on the client's consent.
+  async function _approveRefusal(accountantId, userId, res) {
+    const { rows: [r] } = await pool.query(`SELECT status, requested_by FROM accountant_clients WHERE user_id = $1 AND accountant_id = $2`, [userId, accountantId]);
+    if (r && r.status === 'pending' && r.requested_by !== 'client') {
+      return res.status(409).json({ error: 'This client joined through your referral link. They need to approve your access from their FinFlow account first.', code: 'AWAITING_CLIENT_CONSENT' });
     }
-  }));
+    return res.status(404).json({ error: 'Pending request not found.' });
+  }
 
   app.post('/api/accountants/reject-client', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.body || {};
@@ -1367,25 +1374,12 @@ If you cannot find a field, use null. Be concise.`;
   }));
 
 
-  // ── 12c. REACTIVATE CLIENT COMMISSION (call from Stripe when client resubscribes) ─
-  app.post('/api/accountants/reactivate-client', requireAccountant, wrap(async (req, res) => {
-    const { userId } = req.body || {};
-    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
-    if (!userId) return res.status(400).json({ error: 'userId required.' });
-
-    // Only reactivate if referral months still remain — no extension for cancelled period
-    await pool.query(`
-      UPDATE accountant_clients
-      SET status = 'active'
-      WHERE user_id = $1
-        AND status = 'suspended'
-        AND referral_month < referral_months_total
-        AND accountant_id = $2
-    `, [userId, req.session.accountantId]);
-
-    await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_REACTIVATE', field: 'status', newValue: 'active', req });  // F90 Phase B (accountant)
-    return res.json({ success: true });
-  }));
+  // ── 12c. REACTIVATION is the Stripe webhook's job only (reactivateClientForUser, server.js) ─
+  // N80: this accountant-session route let an accountant flip a link the webhook had SUSPENDED (the
+  // client's subscription ended) back to 'active' — regaining books access without the client. A link
+  // becomes active again only when the client's subscription resumes.
+  app.post('/api/accountants/reactivate-client', requireAccountant, (req, res) =>
+    res.status(403).json({ error: 'Access resumes automatically when the client\'s subscription resumes.', code: 'REACTIVATE_WEBHOOK_ONLY' }));
 
 
   // ── 13. ADMIN: LIST PENDING VERIFICATIONS ─────────────────────────────────
@@ -1831,7 +1825,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
     const result = await pool.query(`
       SELECT a.id, a.first_name, a.last_name, a.firm, a.country, a.specialisation, a.experience, a.bio,
-             ac.status, ac.access_level, ac.entity_access,
+             ac.status, ac.access_level, ac.entity_access, COALESCE(ac.requested_by, 'referral') AS requested_by,
              (SELECT COUNT(*)::int FROM accountant_messages m
                WHERE m.accountant_id = ac.accountant_id AND m.user_id = ac.user_id
                  AND m.sender = 'accountant'
@@ -1846,6 +1840,30 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     // so the client renders an empty state instead of treating it as an error.
     if (!result.rows[0]) return res.json({});
     return res.json(result.rows[0]);
+  }));
+
+  // ── CLIENT: APPROVE / DECLINE A REFERRAL LINK (N78) ──────────────────────
+  // A user who signed up through an accountant's referral link has a PENDING link they never asked
+  // for. Only the client can turn it on (books access) — or decline it.
+  app.post('/api/accountants/my-accountant/approve', apiLimiter, wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const accountantId = parseInt((req.body || {}).accountantId, 10);
+    if (!Number.isInteger(accountantId) || accountantId <= 0) return res.status(400).json({ error: 'accountantId required.' });
+    const conn = await pool.connect();
+    try {
+      const done = await _activateLink(conn, accountantId, req.session.userId, req, { requireOrigin: 'referral' });
+      if (!done) return res.status(404).json({ error: 'No pending referral link with this accountant.' });
+      return res.json({ success: true });
+    } finally { conn.release(); }
+  }));
+  app.post('/api/accountants/my-accountant/decline', apiLimiter, wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const accountantId = parseInt((req.body || {}).accountantId, 10);
+    if (!Number.isInteger(accountantId) || accountantId <= 0) return res.status(400).json({ error: 'accountantId required.' });
+    const r = await pool.query(`DELETE FROM accountant_clients WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending' AND requested_by IS DISTINCT FROM 'client'`, [req.session.userId, accountantId]);
+    if (!r.rowCount) return res.status(404).json({ error: 'No pending referral link with this accountant.' });
+    await _audit(pool, { userId: req.session.userId, table: 'accountant_clients', action: 'CLIENT_DECLINE', field: 'status', newValue: 'declined', newData: { by: 'client', accountant_id: accountantId }, req });
+    return res.json({ success: true });
   }));
 
   // ── CLIENT: CHOOSE THEIR ACCOUNTANT'S ACCESS LEVEL — review (view) vs run the books (filing) ──
@@ -2231,15 +2249,15 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (existing.rows[0]) {
       const s = existing.rows[0].status;
       if (s === 'active')   return res.status(409).json({ error: 'You are already linked to this accountant.' });
-      if (s === 'pending')  return res.status(409).json({ error: 'You already have a pending request with this accountant.' });
+      if (s === 'pending')  return res.status(409).json({ error: 'You already have a pending link with this accountant. If they referred you, approve it from My Accountant.' });
     }
 
     // Create a PENDING record — accountant must approve before getting books access
     // referral_months_total = 0 until approved (then set based on tier at activation time)
     await pool.query(`
-      INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total)
-      VALUES ($1, $2, 'pending', 0)
-      ON CONFLICT (accountant_id, user_id) DO UPDATE SET status = 'pending'
+      INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total, requested_by)
+      VALUES ($1, $2, 'pending', 0, 'client')
+      ON CONFLICT (accountant_id, user_id) DO UPDATE SET status = 'pending', requested_by = 'client'
     `, [accountantId, req.session.userId]);
 
     // Notify accountant by email
@@ -2276,7 +2294,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
         ac.invited_at   AS requested_at,
         u.data->>'email' AS client_email,
         u.data->>'name'  AS client_name,
-        u.data->>'plan'  AS client_plan
+        u.data->>'plan'  AS client_plan,
+        COALESCE(ac.requested_by, 'referral') AS requested_by
       FROM accountant_clients ac
       JOIN users u ON u.id = ac.user_id
       WHERE ac.accountant_id = $1 AND ac.status = 'pending'
@@ -2286,40 +2305,19 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   }));
 
   // POST — approve a pending client request
-  app.post('/api/accountants/approve-request', requireAccountant, wrap(async (req, res) => {
+  // activate-client is the legacy name the dashboard's client list still calls — same handler, same rule.
+  const _approveRequest = wrap(async (req, res) => {
     const { userId } = req.body || {};
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     if (!userId) return res.status(400).json({ error: 'userId required.' });
 
     const conn = await pool.connect();
     try {
-      // F17: referral months FROZEN here at approval, from the shared tier ladder.
-      // "Active client" = consented AND paying (subscriptionStatus='active'); trial
-      // clients do NOT count toward tier.
-      const countRes = await conn.query(
-        `SELECT COUNT(*) FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
-          WHERE ac.accountant_id = $1 AND ac.status = 'active' AND u.data->>'subscriptionStatus' = 'active'`,
-        [req.session.accountantId]
-      );
-      const count  = parseInt(countRes.rows[0].count) || 0;
-      const months = tierForAccountant(count).referralMonths;
-
-      // Activate the pending record
-      const upd = await conn.query(`
-        UPDATE accountant_clients
-        SET status = 'active', activated_at = NOW(), referral_months_total = $3
-        WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending'
-        RETURNING user_id
-      `, [userId, req.session.accountantId, months]);
-      if (!upd.rows[0]) return res.status(404).json({ error: 'Pending request not found.' });
-
-      // First month referral earning
-      await conn.query(`
-        INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, period_month)
-        VALUES ($1, $2, 'referral', 1000, 'Referral commission — month 1', date_trunc('month', NOW()))
-      `, [req.session.accountantId, userId]);
-
-      await _audit(conn, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_ACTIVATE', field: 'status', newValue: 'active', req });  // F90 residual: accountant workflow audit (approve access request)
+      // F17: referral months FROZEN at approval, from the shared tier ladder (inside _activateLink).
+      // N78: only a CLIENT-initiated request can be approved by the accountant.
+      const done = await _activateLink(conn, req.session.accountantId, userId, req, { requireOrigin: 'client' });
+      if (!done) return _approveRefusal(req.session.accountantId, userId, res);
+      const months = done.months;
 
       // Email the client
       const [uRes, aRes] = await Promise.all([
@@ -2345,7 +2343,9 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     } finally {
       conn.release();
     }
-  }));
+  });
+  app.post('/api/accountants/approve-request', requireAccountant, _approveRequest);
+  app.post('/api/accountants/activate-client', requireAccountant, _approveRequest);
 
   // POST — decline a pending client request
   app.post('/api/accountants/decline-request', requireAccountant, wrap(async (req, res) => {

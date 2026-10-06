@@ -10104,9 +10104,13 @@ function renderLinkedAccountant() {
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:500;color:var(--t1)">${a.first_name} ${a.last_name}</div>
           <div style="font-size:12px;color:var(--t3)">${a.firm || ''} &nbsp;·&nbsp; ${a.country || ''}</div>
-          <div style="font-size:12px;color:var(--t3);margin-top:2px">Your request is awaiting approval from this accountant.</div>
+          <div style="font-size:12px;color:var(--t3);margin-top:2px">${a.requested_by === 'client'
+            ? 'Your request is awaiting approval from this accountant.'
+            : 'You joined through this accountant\'s referral link. They can see your books only if you approve.'}</div>
         </div>
-        <span style="font-size:10px;background:rgba(196,138,42,0.12);color:var(--amber,#c8a44a);border:1px solid rgba(196,138,42,0.35);border-radius:4px;padding:3px 8px;flex-shrink:0">⏳ Pending</span>
+        ${a.requested_by === 'client'
+          ? '<span style="font-size:10px;background:rgba(196,138,42,0.12);color:var(--amber,#c8a44a);border:1px solid rgba(196,138,42,0.35);border-radius:4px;padding:3px 8px;flex-shrink:0">⏳ Pending</span>'
+          : `<div style="display:flex;gap:6px;flex-shrink:0"><button class="btn btn-gold btn-sm" onclick="respondReferralLink(${Number(a.id)}, true, this)">Approve access</button><button class="btn btn-sm" onclick="respondReferralLink(${Number(a.id)}, false, this)">Decline</button></div>`}
       </div>`;
     if (access) access.style.display = 'none';
     return;
@@ -10132,6 +10136,25 @@ function renderLinkedAccountant() {
   const onPage = document.getElementById('page-my-accountant')?.classList.contains('active');
   if (onPage && typeof window.loadAccountantMessages === 'function') window.loadAccountantMessages();
 }
+
+// N78: a referral link (the user signed up through an accountant's link) grants books access only when
+// the CLIENT approves it here; declining removes the pending link.
+window.respondReferralLink = async function (accountantId, approve, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/accountants/my-accountant/' + (approve ? 'approve' : 'decline'), {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountantId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) { if (typeof notify === 'function') notify(data.error || 'Could not update the accountant link', true); if (btn) btn.disabled = false; return; }
+    if (typeof notify === 'function') notify(approve ? 'Accountant access approved ✓' : 'Referral link declined');
+    linkedAccountant = null;
+    const content = document.getElementById('my-acc-content');
+    if (!approve && content) content.innerHTML = '';
+    await loadMyAccountant();
+  } catch (e) { if (typeof notify === 'function') notify('Could not update the accountant link', true); if (btn) btn.disabled = false; }
+};
 
 // ── ACCOUNTANT CHAT — real-time (SSE), read receipts, typing, poll fallback ──
 // Uses the hub-backed endpoints under /api/accountants/my-accountant/* (server-scoped to the
@@ -10397,7 +10420,7 @@ window.requestAccountant = async function(accountantId, name) {
     if (data.success) {
       if(typeof notify==='function') notify(`✓ Request sent to ${name}`);
       else alert('Request sent successfully!');
-      linkedAccountant = { id: accountantId, status: 'pending', first_name: name.split(' ')[0], last_name: name.split(' ').slice(1).join(' ') };
+      linkedAccountant = { id: accountantId, status: 'pending', requested_by: 'client', first_name: name.split(' ')[0], last_name: name.split(' ').slice(1).join(' ') };
       filterAccountants();
       showPage('my-accountant', null);
       setTimeout(loadMyAccountant, 300);

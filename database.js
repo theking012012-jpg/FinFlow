@@ -376,6 +376,12 @@ async function initDB() {
     // O(1) to update and to compare (F-chat).
     await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS accountant_last_read TIMESTAMPTZ`);
     await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS client_last_read      TIMESTAMPTZ`);
+    // N78: who started a PENDING link — 'client' (request-access: the client asked) or 'referral'
+    // (signed up through the accountant's ?ref link: the client never asked for books access). An
+    // accountant may only approve a client-initiated request; a referral link becomes active only when
+    // the CLIENT approves it. NULL = created before this column existed (origin unknown) — treated like
+    // a referral (client approval required), the conservative reading. No existing row is modified.
+    await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS requested_by VARCHAR(20)`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_earnings (

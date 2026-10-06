@@ -1079,8 +1079,8 @@ app.post('/api/auth/register', signupLimiter, async (req, res) => {
         const count = parseInt(countResult.rows[0].count) || 0;
         const months = tierForAccountant(count).referralMonths;
         await pool.query(`
-          INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total)
-          VALUES ($1, $2, 'pending', $3)
+          INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total, requested_by)
+          VALUES ($1, $2, 'pending', $3, 'referral')
           ON CONFLICT (accountant_id, user_id) DO NOTHING
         `, [accountantId, userId, months]);
         console.log(`[Referral] User ${userId} linked to accountant ${accountantId} (${months} months)`);

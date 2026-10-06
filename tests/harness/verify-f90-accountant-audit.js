@@ -36,8 +36,9 @@ const ACC = { email: 'f90acc@finflow.test', password: 'harness-password-not-a-se
       `INSERT INTO accountants (email, password_hash, first_name, last_name, referral_code, status)
        VALUES ($1,$2,'A','B','F90ACCREF','verified') RETURNING id`, [ACC.email, bcrypt.hashSync(ACC.password, 10)]
     )).rows[0].id;
-    await c.query(`INSERT INTO accountant_clients (accountant_id, user_id, status, access_level, referral_month, referral_months_total)
-                   VALUES ($1,$2,'pending','edit',0,6)`, [accId, uid]);
+    // requested_by='client': the client asked (request-access), so the accountant may accept it (N78).
+    await c.query(`INSERT INTO accountant_clients (accountant_id, user_id, status, access_level, referral_month, referral_months_total, requested_by)
+                   VALUES ($1,$2,'pending','edit',0,6,'client')`, [accId, uid]);
 
     const http = new HarnessHttp(server.baseUrl);
     A('accountant login 200', (await http.post('/api/accountants/login', ACC)).status === 200);
@@ -50,16 +51,19 @@ const ACC = { email: 'f90acc@finflow.test', password: 'harness-password-not-a-se
     A('lock 200', lk.status === 200, `status ${lk.status}`);
     const sp = await http.post('/api/accountants/suspend-client', { userId: uid });
     A('suspend-client 200', sp.status === 200, `status ${sp.status}`);
+    // N80: reactivation is the Stripe webhook's job only — the accountant route refuses and audits nothing.
     const re = await http.post('/api/accountants/reactivate-client', { userId: uid });
-    A('reactivate-client 200', re.status === 200, `status ${re.status}`);
+    A('reactivate-client (accountant) → 403 REACTIVATE_WEBHOOK_ONLY', re.status === 403, `status ${re.status}`);
 
     const rows = (await c.query(`SELECT table_name, action, actor_type, actor_id, user_id FROM audit_trail WHERE user_id=$1`, [uid])).rows;
     const find = (t, a) => rows.find(r => r.table_name === t && r.action === a);
-    for (const [t, a] of [['accountant_clients', 'CLIENT_ACTIVATE'], ['journals', 'CREATE'], ['lock_settings', 'LOCK'], ['accountant_clients', 'CLIENT_SUSPEND'], ['accountant_clients', 'CLIENT_REACTIVATE']]) {
+    for (const [t, a] of [['accountant_clients', 'CLIENT_ACTIVATE'], ['journals', 'CREATE'], ['lock_settings', 'LOCK'], ['accountant_clients', 'CLIENT_SUSPEND']]) {
       const r = find(t, a);
       A(`${t} ${a} audited, attributed to the accountant`, !!r && r.actor_type === 'accountant' && r.actor_id === accId && r.user_id === uid,
         r ? JSON.stringify({ at: r.actor_type, aid: r.actor_id, uid: r.user_id }) : `no ${t}/${a} row; trail=${JSON.stringify(rows.map(x => x.table_name + '/' + x.action))}`);
     }
+
+    A('no CLIENT_REACTIVATE row from the refused accountant call', !find('accountant_clients', 'CLIENT_REACTIVATE'));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed\n`);
   } catch (e) {

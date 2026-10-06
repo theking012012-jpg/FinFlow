@@ -8003,11 +8003,13 @@ app.post('/api/integration-requests', requireAuth, wrap(async (req, res) => {
   res.status(201).json({ ok: true, requested: true });
 }));
 app.get('/api/integration-requests', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
-  // Aggregate across ALL accounts — this is founder-facing demand, not one account's wishlist.
+  // THIS account's requests only (N53). The cross-account demand aggregate is founder-facing and lives
+  // behind platform-admin auth at /api/admin/integration-requests — it used to be served here to any
+  // tenant owner, disclosing what every other customer had asked for.
   const { rows } = await pool.query(
-    `SELECT data->>'value' AS name, COUNT(*)::int AS requests
-       FROM user_settings WHERE data->>'key'='integration_request'
-       GROUP BY 1 ORDER BY requests DESC, name ASC`);
+    `SELECT data->>'value' AS name, MIN(data->>'requested_at') AS requested_at
+       FROM user_settings WHERE data->>'key'='integration_request' AND user_id=$1
+       GROUP BY 1 ORDER BY name ASC`, [scopeId(req)]);
   res.json({ requests: rows });
 }));
 

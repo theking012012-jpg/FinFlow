@@ -803,6 +803,15 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   }));
 
   // ── SECURITY LOG ──────────────────────────────────────────────────────────
+  // ── INTEGRATION DEMAND — aggregate of every account's integration requests (founder-facing; N53). ──
+  app.get('/api/admin/integration-requests', requireAdmin, wrap(async (req, res) => {
+    const { rows } = await pool.query(
+      `SELECT data->>'value' AS name, COUNT(*)::int AS requests
+         FROM user_settings WHERE data->>'key'='integration_request'
+         GROUP BY 1 ORDER BY requests DESC, name ASC`);
+    res.json({ requests: rows });
+  }));
+
   app.get('/api/admin/security-log', requireAdmin, wrap(async (req, res) => {
     const result = await pool.query(`
       SELECT * FROM admin_log WHERE action = 'failed_login'

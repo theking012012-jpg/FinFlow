@@ -2,8 +2,8 @@
 'use strict';
 /**
  * verify-requests-paylinks.js —
- *  (1) Integration REQUESTS: the catalogue's unbuilt logos record real, deduped demand; owners/admins
- *      see the cross-account aggregate; viewers can't.
+ *  (1) Integration REQUESTS: the catalogue's unbuilt logos record real, deduped demand; a tenant sees
+ *      only its own account's requests; the cross-account aggregate is platform-admin only (N53).
  *  (2) Invoice PAYMENT LINKS: generate a hosted link via a connected processor — verifies every path
  *      reachable without live provider keys (404 / no-provider 400 / RBAC), and that provider SELECTION
  *      is reached once a processor is connected (the live provider HTTP call itself is UNEXECUTED —
@@ -14,6 +14,7 @@
  * Scratch Postgres only — enforced by guard.js, not by intention.
  */
 
+process.env.ADMIN_PASSWORD = 'harness-admin-password';
 const bcrypt = require('bcryptjs');
 require('./clock.js');
 const { startScratchPostgres } = require('./pgScratch.js');
@@ -62,14 +63,25 @@ async function main() {
     A('ownerA re-requests QuickBooks → 200 requested:false (deduped)', r2.status === 200 && r2.json.requested === false, JSON.stringify(r2.json));
     await A_.post('/api/integration-requests', { name: 'Xero' });
     await B_.post('/api/integration-requests', { name: 'QuickBooks' });   // a different account also wants it
+    // N53: a tenant sees ONLY its own account's requests; the cross-account aggregate is platform-admin
+    // only. (This section used to assert that owner A could see owner B's demand — that was the defect.)
     const agg = await A_.get('/api/integration-requests');
-    A('owner GET aggregate → 200', agg.status === 200 && Array.isArray(agg.json.requests));
-    const qb = (agg.json.requests || []).find(x => x.name === 'QuickBooks');
-    const xe = (agg.json.requests || []).find(x => x.name === 'Xero');
-    A('QuickBooks aggregated across 2 accounts → requests=2', qb && qb.requests === 2, JSON.stringify(qb));
-    A('Xero → requests=1', xe && xe.requests === 1, JSON.stringify(xe));
-    A('aggregate sorted by demand (QuickBooks first)', (agg.json.requests[0] || {}).name === 'QuickBooks', JSON.stringify(agg.json.requests));
-    A('viewer GET aggregate → 403 (audit:read owner/admin only)', (await V_.get('/api/integration-requests')).status === 403);
+    A('owner A GET → 200', agg.status === 200 && Array.isArray(agg.json.requests));
+    const names = (agg.json.requests || []).map(x => x.name).sort();
+    A('owner A sees exactly its own requests [QuickBooks, Xero]', JSON.stringify(names) === '["QuickBooks","Xero"]', JSON.stringify(agg.json.requests));
+    A('owner A sees no cross-account counts (bug: QuickBooks requests=2, includes owner B)', !(agg.json.requests || []).some(x => x.requests != null), JSON.stringify(agg.json.requests));
+    const aggB = await B_.get('/api/integration-requests');
+    A('owner B sees only [QuickBooks] (bug: also owner A\'s Xero)', JSON.stringify((aggB.json.requests || []).map(x => x.name)) === '["QuickBooks"]', JSON.stringify(aggB.json.requests));
+    A('viewer GET → 403 (audit:read owner/admin only)', (await V_.get('/api/integration-requests')).status === 403);
+    A('tenant owner cannot read the admin aggregate (401/403)', [401, 403].includes((await A_.get('/api/admin/integration-requests')).status));
+    const adm = new HarnessHttp(server.baseUrl, { xff: '10.55.0.9' });
+    A('platform admin login', (await adm.post('/api/admin/login', { password: process.env.ADMIN_PASSWORD })).status === 200);
+    const all = await adm.get('/api/admin/integration-requests');
+    const qb = (all.json && all.json.requests || []).find(x => x.name === 'QuickBooks');
+    const xe = (all.json && all.json.requests || []).find(x => x.name === 'Xero');
+    A('admin aggregate: QuickBooks across 2 accounts → requests=2', qb && qb.requests === 2, JSON.stringify(all.json));
+    A('admin aggregate: Xero → requests=1', xe && xe.requests === 1, JSON.stringify(xe));
+    A('admin aggregate sorted by demand (QuickBooks first)', ((all.json && all.json.requests || [])[0] || {}).name === 'QuickBooks');
 
     // ── invoice payment links ──
     console.log('\n-- invoice payment links --');

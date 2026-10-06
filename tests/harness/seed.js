@@ -79,7 +79,7 @@ async function seed(client, userId) {
   // ── Settings: fiscal year January, USD ─────────────────────────────────────
   // VERIFICATION Environment: "fiscal year starting January", "currency USD".
   await insertJson(client, 'user_settings', userId, entityId, '2026-01-01', {
-    fiscal_year_start: 0, currency: 'USD', date_format: 'YYYY-MM-DD',
+    fiscal_year: 'January', currency: 'USD', date_format: 'YYYY-MM-DD',   // N109: the real key PUT /api/settings writes (was fiscal_year_start, which the app never reads)
   });
 
   // ── Customers ──────────────────────────────────────────────────────────────

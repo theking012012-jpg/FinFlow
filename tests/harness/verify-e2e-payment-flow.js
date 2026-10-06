@@ -46,7 +46,7 @@ async function main() {
     const eid = (await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
       [uid, { name: 'E2E Co', currency: 'USD', is_active: 1 }])).rows[0].id;
     await c.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`,
-      [uid, eid, { fiscal_year_start: 0, currency: 'USD' }]);
+      [uid, eid, { fiscal_year: 'January', currency: 'USD' }]);
     const mkInvoice = async (amount) => (await c.query(`INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW()) RETURNING id`,
       [uid, eid, { client: 'Cust', amount, currency: 'USD', status: 'pending', amount_paid: 0, issue_date: '2026-07-10' }])).rows[0].id;
 

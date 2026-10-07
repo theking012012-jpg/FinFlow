@@ -341,7 +341,10 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   new `verify-verification-a7-gaps.js` runs them on the real seed (9/0); A8a via `tz-matrix.js` (4 viewers incl.
   UTC+5:30: identical); A8b via new `verify-a8b-fiscal-year-viewer.js` (discriminating Apr-vs-Jan FY seed, 5/0).
   Stamped. Two rows' Expected text is stale vs expected.js (A7.6 750 → 5,450; A7.18 8,200 → 9,100) — stamped PASS*
-  with an owner note, not rewritten (expected values are the owner's). Owner: no more full sweeps from the
+  with an owner note, not rewritten (expected values are the owner's). A7.1 / A7.20 / A7.21 stamped from step3-gate.
+- 2026-10-07 — **2.2 / 2.4 / 2.5 / 2.6** recorded as D11 (investments posting design, owner decides) / D12 (pagination
+  deferred: risk > gain) / D13 (mobile: nothing measured, nothing changed) / D14 (defense-in-depth: owner).
+  Phase 2 complete for the agent. Owner: no more full sweeps from the
   agent — the owner runs the sweep once at the end; the agent pushes main after it is green.
 
 ## Findings Ledger (numbered; newest last)
@@ -601,5 +604,25 @@ evidence in the agents' reports; money items then executed):
 - **D10 — Budget actuals period (L25).** Targets are stored annual, so actuals are the current FISCAL YEAR (the
   dashboard's Year window) per category, using the D3 category list — a target named "Payroll" or "Bills & vendors"
   tracks those legs. Monthly budget views are a feature, not this fix.
+- **D11 — Investments-on-ledger: DRAFT design, NOT built (2.2 — owner decides).** Today business holdings are
+  tracking-only (no GL effect; personal holdings, entity_id NULL, stay off the books regardless). If approved:
+  (a) new system account **1300 Investments (asset)** and **7100 Investment gain/loss** (income-type, outside opex and
+  outside netProfit like 7000 FX, so the P&L read-swap gate is untouched); (b) BUY (holding created or shares added)
+  ⇒ Dr 1300 / Cr 1000 Cash at cost (shares × cost_per) on the purchase date — this needs a purchase DATE, which
+  holdings do not store (created_at would be an instant ⇒ Rule 10 entity-zone resolution); (c) SELL / close position
+  (does not exist — audit F109) ⇒ Dr 1000 proceeds / Cr 1300 cost basis (FIFO, like inventory) / Cr|Dr 7100 realised
+  gain; (d) unrealised gain is NOT posted (no mark-to-market journal; shown as a memo on the balance sheet), which keeps
+  the GL independent of a live price feed; (e) DELETE of a holding = reversal of its BUY, never a silent drop; (f) the
+  backfill gets a step 13 with the same keys ('holding_buy:<id>'), and a reconcile harness (GL 1300 == Σ open cost
+  basis) is the gate. Open owner questions: post at all? cost basis method (FIFO vs average)? does a purchase move
+  Cash (it does in reality — today's books would then show a cash drop they never showed before)?
+- **D12 — 2.4 client keyset pagination: DEFERRED.** The client's money features read the full `_realInvoices` /
+  `_realExpenses` arrays (revenue, AR, every page total, the shared breakdown, exports). Paging those lists changes
+  what every client-side figure sees; the Phase-1 parity harnesses would have to prove every surface still ties.
+  Risk > gain before launch (the plan's own exit clause). Server side remains ready (`db.pageByUser`).
+- **D13 — 2.5 mobile performance: no change this run.** No Lighthouse/mobile measurement tooling here and the plan
+  forbids un-measured "wins"; the SLIM build (lazy screens, L21) is already the production path.
+- **D14 — 2.6 defense-in-depth: owner decision, recorded only** (CSP `unsafe-inline` drop / RLS / Sentry DSN /
+  express 5) — scope and risk in LAUNCH_STATUS §2 and HANDOVER; nothing implemented blind.
 - **D4 — Commit trailer.** The plan's template says `Claude Opus 4.8`; commits use the attribution of the
   model actually running this session (accuracy over copying a stale template).

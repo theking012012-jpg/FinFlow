@@ -252,6 +252,15 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   pl-statement-period-ui 4, expense-breakdown-all-surfaces 10, expense-breakdown-reconcile 8, step4 5.
   bundle:check in sync.
 
+- 2026-10-07 — **1.1 / L17 customer revenue derived.** Harness `verify-customer-derived-revenue.js` (two contacts
+  at one company, a full-name match, a draft, a future-dated and an unmatched invoice; then a form save): RED
+  8/8 on pre-fix (typed 999/555/0, card $1,554, input present, save NaN/not listed) → GREEN 8/8. `npm run build`
+  regenerated `public/_gen/index.html` (1-line diff: the removed input; the full build reproduces every other
+  tracked artefact byte-for-byte). Gates step1–4 green; regression green: bootcache, csv-customer-shape 6,
+  entity-leakage-sweep, f157-no-entity-400 15, f66-customer-vendor-validation 12, f150-entity-stamp-no-leak 9,
+  f150c-write-side-isolation 33, f90-phaseB3-business 17, team-member-writes 27, tenant-isolation 47,
+  min-serving 8, page-exports 14.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
@@ -323,9 +332,10 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   rows on screen; Expenses "Tax Deductible" = `(ded||deductible)?'Yes':'No'` → the string 'no' exported as
   Yes, 'half' as Yes; Invoices/Expenses dates exported as display labels without a year ("Aug 5"); the Vendors
   export carried a typed `balance`, not the computed owing (20861a9).
-- **L17** (open) Customers page "Revenue" column and "Total revenue" card (and its CSV) are a TYPED number on
-  the customer record (`c.revenue`) — Acme's contact shows 0.00 with 700 invoiced to "Acme". Same class as the
-  vendor typed-balance fix 20861a9; needs a customer↔invoice link (invoices carry `client` as free text).
+- **L17** (FIXED) Customers page "Revenue" column, "Lifetime Revenue" card (and its CSV) were a TYPED number on
+  the customer record — Acme's contact showed 0.00 with 700 invoiced to "Acme". Now derived on read (N24
+  pattern). Also: wiring `saveCustomer` pushed into `window.customers`, a binding `renderCustomers` never
+  reads (it reads app-main's top-level `let customers`), so a new customer wasn't listed until reload.
 
 ## Decisions (irreversible-safe choices the agent made)
 - **D1 — Working branch & pushing.** Commits go on `dash-je-fix` only. This run executes in an ephemeral
@@ -351,5 +361,10 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   runs belong to the period they are FOR (F85) and only approved + paid runs are payroll (decision 2); draft /
   voided runs are listed as "not in totals". W-2 uses the same recognised set; **paid-only W-2 wages is an owner
   tax-policy question (Owner Handoff)**. Deductible weighting = the server's (yes 100%, half 50%).
+- **D8 — Customer revenue attribution (L17).** Invoices carry the client as free text, so a customer's lifetime
+  revenue = Σ recognised invoices (issued ≤ today) whose `client` matches the customer's full name, else its
+  company; an invoice is attributed ONCE (shared company ⇒ lowest customer id). Stored typed values are left in
+  the database untouched (Rule 8) and no longer read or written. A real customer↔invoice foreign key is the
+  long-term model (Owner Handoff).
 - **D4 — Commit trailer.** The plan's template says `Claude Opus 4.8`; commits use the attribution of the
   model actually running this session (accuracy over copying a stale template).

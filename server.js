@@ -2237,7 +2237,35 @@ app.delete('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wra
 
 // ── CUSTOMERS ─────────────────────────────────────────────────────────────────
 app.get('/api/customers', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('customers', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.revenue - a.revenue));
+  // L17 (N24 class): a customer's lifetime revenue is DERIVED from the books on read — never typed. It was a
+  // free-entry money field on the customer record that agreed with nothing (and the Customers page summed it).
+  // revenue = Σ this customer's RECOGNISED invoices (pending/overdue/partial/paid — Rule 11) issued on or
+  // before today (D2), at full amount (issue-based accrual, F32). Attribution, each invoice ONCE: the invoice's
+  // free-text `client` matches a customer's full name ("First Last") first, else its company; when several
+  // customers share that company the lowest id takes it (so two contacts at one company never double-count).
+  // A stored `revenue` value on old rows is left untouched in the database (Rule 8) and simply not read.
+  const uid = scopeId(req), eid = req.entityId || null;
+  const scoped = r => r.entity_id == null || (eid != null && r.entity_id === eid);
+  const customers = await db.allByUser('customers', uid, scoped);
+  const key = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const byName = new Map(), byCompany = new Map();
+  for (const c of [...customers].sort((a, b) => a.id - b.id)) {
+    const n = key(`${c.fname || ''} ${c.lname || ''}`); if (n && !byName.has(n)) byName.set(n, c.id);
+    const co = key(c.company); if (co && !byCompany.has(co)) byCompany.set(co, c.id);
+  }
+  const today = await entityTodayYmd(eid);
+  const RECOGNISED = new Set(['pending', 'overdue', 'partial', 'paid']);
+  const rev = {};
+  for (const i of await db.allByUser('invoices', uid, scoped)) {
+    if (!RECOGNISED.has(String(i.status || '').toLowerCase())) continue;
+    const d = FinFlowDates._toYmd(i.issue_date || i.created_at);
+    if (d == null || d > today) continue;
+    const k = key(i.client), cid = byName.has(k) ? byName.get(k) : byCompany.get(k);
+    if (cid == null) continue;
+    rev[cid] = (rev[cid] || 0) + (parseFloat(i.amount) || 0);
+  }
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  res.json(customers.map(c => ({ ...c, revenue: r2(rev[c.id]) })).sort((a, b) => b.revenue - a.revenue));
 }));
 app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -2249,7 +2277,7 @@ app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const _custEnt = b.entity_id||req.entityId||null;  // F150: fall back to active entity (was body-only → NULL rows leaked into every entity)
   const _dup = await findRecentDuplicate('customers', scopeId(req), _custEnt, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('customers', { user_id: scopeId(req), entity_id: _custEnt, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
+  const { row } = await db.insert('customers', { user_id: scopeId(req), entity_id: _custEnt, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), status: b.status||'active', notes: (b.notes||'').slice(0,500) });
   await recordAudit(pool, { userId: scopeId(req), entityId: _custEnt, table: 'customers', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
@@ -2274,7 +2302,7 @@ app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
     if (_em && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(_em)) return res.status(400).json({ error: 'Invalid email address.' });
     patch.email = _em;
   }
-  if (b.revenue != null) patch.revenue = parseFloat(b.revenue) || 0;
+  // L17: revenue is derived on read (GET /api/customers) — a typed value is no longer written.
   await db.updateById('customers', row.id, patch);
   const { rows: [_cur] } = await pool.query(`SELECT * FROM customers WHERE id = $1 LIMIT 1`, [row.id]);
   await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'customers', recordId: row.id, action: 'UPDATE', oldData: row, newData: _cur ? rowToObj(_cur) : null, req });  // F90 Phase B

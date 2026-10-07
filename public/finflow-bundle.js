@@ -508,16 +508,12 @@
         notify('A valid email address is required', true); return;
       }
 
-      const revRaw = (typeof validateAmount === 'function')
-        ? validateAmount(document.getElementById('cust-revenue-val')?.value)
-        : parseFloat(document.getElementById('cust-revenue-val')?.value) || 0;
-
+      // L17: no typed revenue — GET /api/customers derives it from the customer's invoices.
       const data = {
         fname, lname, email,
         company:  (typeof sanitizeText === 'function') ? sanitizeText(document.getElementById('cust-company')?.value, 200)  : document.getElementById('cust-company')?.value?.trim(),
         industry: document.getElementById('cust-industry')?.value,
         phone:    (typeof sanitizePhone === 'function')  ? sanitizePhone(document.getElementById('cust-phone')?.value)       : document.getElementById('cust-phone')?.value?.trim(),
-        revenue:  revRaw !== null ? revRaw : 0,
         status:   document.getElementById('cust-status')?.value,
         notes:    (typeof sanitizeText === 'function') ? sanitizeText(document.getElementById('cust-notes')?.value, 1000) : document.getElementById('cust-notes')?.value?.trim(),
       };
@@ -541,6 +537,17 @@
           window.customers.push(data);
           notify('Customer added ✦');
         }
+        // L17: revenue is DERIVED on the server, so re-read the list after a save — into the list the page
+        // RENDERS (app-main's top-level `customers`, mapped exactly like the boot load), not just
+        // window.customers (a different binding renderCustomers never reads).
+        try {
+          const _fresh = await api('GET', '/api/customers');
+          if (Array.isArray(_fresh)) {
+            const _mapped = _fresh.map(c => ({ ...c, _dbId: c.id }));
+            if (typeof customers !== 'undefined') customers = _mapped;   // eslint-disable-line no-undef
+            window.customers = _mapped;
+          }
+        } catch (_) { /* keep the optimistic list; the next boot re-derives */ }
         closeModal('customer-modal');
         const search = document.getElementById('cust-search')?.value;
         if (typeof renderCustomers === 'function') renderCustomers(search);

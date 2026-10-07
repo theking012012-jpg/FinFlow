@@ -5051,7 +5051,7 @@ function openCustomerModal(id=null){
     document.getElementById('cust-edit-id').value=id;
     document.getElementById('cust-fname').value=c.fname;document.getElementById('cust-lname').value=c.lname;
     document.getElementById('cust-company').value=c.company;document.getElementById('cust-email').value=c.email;
-    document.getElementById('cust-phone').value=c.phone;document.getElementById('cust-revenue-val').value=c.revenue;
+    document.getElementById('cust-phone').value=c.phone;   // L17: revenue is derived, not edited
     document.getElementById('cust-status').value=c.status;document.getElementById('cust-notes').value=c.notes;
     const ind=document.getElementById('cust-industry');for(let o of ind.options){if(o.value===c.industry){o.selected=true;break;}}
     del.style.display='inline-flex';
@@ -5060,7 +5060,7 @@ function openCustomerModal(id=null){
     document.getElementById('cust-modal-sub').textContent='Fill in the customer details';
     document.getElementById('cust-edit-id').value='';
     ['cust-fname','cust-lname','cust-company','cust-email','cust-phone','cust-notes'].forEach(i=>document.getElementById(i).value='');
-    document.getElementById('cust-revenue-val').value='';document.getElementById('cust-status').value='active';
+    document.getElementById('cust-status').value='active';
     del.style.display='none';
   }
   openModal('customer-modal');
@@ -5071,13 +5071,11 @@ function saveCustomer(){
   const email=document.getElementById('cust-email').value.trim().toLowerCase().slice(0,254);
   if(!fname||!lname){notify('First name and last name are required',true);return;}
   if(!email||!validateEmail(email)){notify('A valid email address is required',true);return;}
-  const revRaw=validateAmount(document.getElementById('cust-revenue-val').value);
-  const data={
+  const data={   // L17: no typed revenue — the server derives it from the customer's invoices
     fname,lname,email,
     company:sanitizeText(document.getElementById('cust-company').value,200),
     industry:document.getElementById('cust-industry').value,
     phone:sanitizePhone(document.getElementById('cust-phone').value),
-    revenue:revRaw!==null?revRaw:0,
     status:document.getElementById('cust-status').value,
     notes:sanitizeText(document.getElementById('cust-notes').value,1000)
   };

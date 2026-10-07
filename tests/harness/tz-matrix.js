@@ -102,7 +102,8 @@ async function main() {
     process.stdout.write(`  running viewer ${z.key} (${z.tz}) … `);
     results[z.key] = await runProbe(z.tz);
     const r = results[z.key];
-    if (r.fatal) { console.log('FATAL'); console.log(r.fatal); return; }
+    // L32 (F83): `FATAL:` is the marker the clock.js exit latch keys on — a bare "FATAL" let a crashed probe exit 0.
+    if (r.fatal) { console.log('FATAL: probe for ' + z.tz + ' crashed'); console.log(r.fatal); process.exitCode = 1; return; }
     console.log(`done  (offset UTC${r.offsetMinutes > 0 ? '-' : '+'}${Math.abs(r.offsetMinutes) / 60})`);
     if (r.errors && r.errors.length) for (const e of r.errors) console.log(`      ! ${e}`);
   }
@@ -181,8 +182,10 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('\n[tz-matrix] FAILED\n');
+  // L32 (F83): print the FATAL: marker the clock.js exit latch keys on. Setting exitCode here is not enough —
+  // embedded-postgres's async-exit-hook calls process.exit(0) at shutdown, so a crashed matrix exited 0.
+  console.error('\n  FATAL: [tz-matrix] FAILED\n');
   console.error(err && err.message ? err.message : err);
   if (err && err.stack) console.error('\n--- stack ---\n' + err.stack);
-  process.exitCode = 0;
+  process.exitCode = 1;
 });

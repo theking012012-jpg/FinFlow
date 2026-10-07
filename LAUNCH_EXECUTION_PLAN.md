@@ -301,7 +301,7 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   scenario base; RED 5/6 → GREEN 6/0 ×3; scenario/boot/parity regression green), L25 (F45, budget actuals;
   RED 5/7 → GREEN 7/0; budget regression green), L26 (hook / ledger / count), L29 (native money exact; RED 9/10 →
   GREEN 10/0; 25 report/format harnesses green, f124 + f129 source-slice harnesses restated for the exact formatter), L30 (register today; RED 2/3 → GREEN 3/0; 8 auth
-  harnesses green), L31 (membership audit; RED 6/7 → GREEN 7/0; 22 team/rbac/audit harnesses green). Owner: no more full sweeps from the
+  harnesses green), L31 (membership audit; RED 6/7 → GREEN 7/0; 22 team/rbac/audit harnesses green), L32 (tz-matrix crash exit 0 → 1). Owner: no more full sweeps from the
   agent — the owner runs the sweep once at the end; the agent pushes main after it is green.
 
 ## Findings Ledger (numbered; newest last)
@@ -456,6 +456,12 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   change, revoke, invite/re-invite, accept) left an audit row, though each grants or removes access to an account's
   books. Now each records CREATE / UPDATE / DELETE / INVITE / ACCEPT on the owning account, actor attributed; the
   invite token hash (a bearer secret) is stripped from the trail.
+
+- **L32** (FIXED — audit F83 residue) A crashed tz-matrix probe printed a bare "FATAL" (no colon) and returned, so the
+  clock.js exit latch (keys on `FATAL:`) never fired and the run exited 0 — measured: crash ⇒ exit 0. Now prints
+  `FATAL:` ⇒ exit 1 (measured), clean run still 0. verify-c1-payroll-pilot / verify-f102-payroll-boot measured
+  exit 1 on a crash under the clock preload every runner uses (their own `exitCode = 0` is overridden by
+  embedded-postgres's async-exit-hook `process.exit(0)` either way; the latch is what works) — no change needed.
 
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's

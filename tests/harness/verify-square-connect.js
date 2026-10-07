@@ -57,7 +57,7 @@ const HOST = 'https://connect.squareupsandbox.com';
     A('  scope includes PAYMENTS_READ', /PAYMENTS_READ/.test(decodeURIComponent(url)));
     A('  redirect_uri → /api/square/callback', /redirect_uri=[^&]*%2Fapi%2Fsquare%2Fcallback/.test(url));
 
-    const cb = await http.get('/api/square/callback?entity_id=' + eidA + '&code=sq_code');
+    const cb = await http.get('/api/square/callback?entity_id=' + eidA + '&code=sq_code' + '&state=' + new URL(url).searchParams.get('state'));
     A('callback 200', cb.status === 200, 'status ' + cb.status);
     A('  token exchange sent a JSON body', /application\/json/.test(String(tokenCtypeSeen || '')), 'ctype=' + tokenCtypeSeen);
     A('  token exchange put creds in the body (no Basic auth)', !tokenAuthSeen && /"client_id"/.test(tokenBodySeen || ''), 'auth=' + tokenAuthSeen);

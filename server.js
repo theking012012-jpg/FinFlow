@@ -9,6 +9,7 @@ const rateLimit    = require('express-rate-limit');
 const path         = require('path');
 const crypto       = require('crypto');
 const { db, initDB, pool, rowToObj, ensureLedgerAccountsForEntity, runMigrations } = require('./database');
+const { establishSession } = require('./session-auth');
 const totp = require('./totp');
 const { startAnomalyMonitor } = require('./audit-anomalies');
 const FinFlowDates = require('./public/finflow-dates.js'); // F87 — canonical calendar-date/period resolver (Rule 10)
@@ -194,19 +195,21 @@ app.use(cors({
 // Stripe webhook events and keep the accountant_clients relationship in sync. They
 // operate by userId (a webhook has no accountant session), affecting every accountant
 // linked to that client.
+const { minorToMajor: stripeMinorToMajor, majorToMinor: stripeMajorToMinor } = require('./stripe-units');   // N47 — currency-exponent-aware
+
 async function setSubscriptionStatus(userId, status) {
   if (!userId) return;
   await pool.query(
     `UPDATE users SET data = data || jsonb_build_object('subscriptionStatus', $1::text) WHERE id = $2`,
     [String(status || ''), userId]
-  ).catch(e => console.error('[Stripe] setSubscriptionStatus failed:', e.message));
+  );
 }
 async function suspendClientForUser(userId) {
   if (!userId) return;
   await pool.query(
     `UPDATE accountant_clients SET status = 'suspended' WHERE user_id = $1 AND status = 'active'`,
     [userId]
-  ).catch(e => console.error('[Stripe] suspendClientForUser failed:', e.message));
+  );
 }
 async function reactivateClientForUser(userId) {
   if (!userId) return;
@@ -215,7 +218,7 @@ async function reactivateClientForUser(userId) {
     `UPDATE accountant_clients SET status = 'active'
       WHERE user_id = $1 AND status = 'suspended' AND referral_month < referral_months_total`,
     [userId]
-  ).catch(e => console.error('[Stripe] reactivateClientForUser failed:', e.message));
+  );
 }
 
 // ── STRIPE WEBHOOK ────────────────────────────────────────────────────────────
@@ -224,11 +227,18 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   if (!stripe) return res.status(400).json({ error: 'Stripe not configured.' });
   const sig = req.headers['stripe-signature'];
   let event;
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-  } catch (err) {
-    console.error('[Stripe Webhook] Signature verification failed:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+  // N52: Stripe signs PLATFORM events (subscriptions) and CONNECT events (an invoice paid through a business's
+  // own Stripe — direct charges on the connected account) with DIFFERENT endpoint secrets. Verifying only
+  // STRIPE_WEBHOOK_SECRET rejected every Connect delivery (400), so pay-link payments never reconciled. Either
+  // configured secret is accepted; nothing unsigned or wrongly signed passes.
+  const _secrets = [process.env.STRIPE_WEBHOOK_SECRET, process.env.STRIPE_CONNECT_WEBHOOK_SECRET].filter(Boolean);
+  let _lastErr = null;
+  for (const _s of _secrets) {
+    try { event = stripe.webhooks.constructEvent(req.body, sig, _s); break; } catch (err) { _lastErr = err; }
+  }
+  if (!event) {
+    console.error('[Stripe Webhook] Signature verification failed:', _lastErr && _lastErr.message);
+    return res.status(400).send(`Webhook Error: ${(_lastErr && _lastErr.message) || 'no webhook secret configured'}`);
   }
 
   // F117: idempotent webhook. Stripe retries delivery, so a replay of the same event.id must not
@@ -252,9 +262,20 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     console.error('[Stripe Webhook] idempotency claim failed (processing anyway):', e.message);
   }
 
+  // N2: if ANY required write below fails, release the claim and 500 so Stripe RETRIES the event.
+  // Previously the claim was committed first and failures were swallowed, so a retry was
+  // discarded as a duplicate and the event was lost for good. Emails stay best-effort.
+  try {
   const userId = event.data.object?.metadata?.userId;
 
-  if (event.type === 'checkout.session.completed') {
+  // N7: a Checkout Session can COMPLETE before it is paid (delayed methods: bank debits, vouchers) —
+  // payment_status 'unpaid'. Plan upgrades, platform-fee rows and invoice payments are booked only once
+  // it is 'paid' (or 'no_payment_required', e.g. a subscription that starts with a trial): on
+  // checkout.session.completed when already paid, else on checkout.session.async_payment_succeeded.
+  const _checkoutEvt = event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded';
+  if (_checkoutEvt && !['paid', 'no_payment_required'].includes(event.data.object && event.data.object.payment_status)) {
+    console.log(`[Stripe] ${event.type} ${event.data.object && event.data.object.id} not paid yet (payment_status=${event.data.object && event.data.object.payment_status}) — waiting for async_payment_succeeded`);
+  } else if (_checkoutEvt) {
     const session = event.data.object;
     const accountantId = session.metadata?.accountantId;
     const billedCents  = session.amount_total;
@@ -273,7 +294,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
         billedCents,
         feeCents,
         session.metadata?.description || 'Platform fee (4%)',
-      ]).catch(err => console.error('[Stripe] platform_fees insert failed:', err.message));
+      ]);
       console.log(`[Stripe] Platform fee logged: $${(feeCents/100).toFixed(2)} (4% of $${(billedCents/100).toFixed(2)}) — accountant ${accountantId}`);
     }
 
@@ -304,8 +325,8 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       const invId = parseInt(session.client_reference_id || session.metadata?.invoice_id, 10);
       if (invId) {
         const rec = await recordExternalInvoicePayment({
-          invoiceId: invId, amountMinor: session.amount_total, method: 'Card (Stripe)', idemKey: 'stripe:' + session.id,
-        }).catch(err => { console.error('[Stripe] invoice reconcile failed:', err.message); return { recorded: false, reason: 'error' }; });
+          invoiceId: invId, amountMinor: session.amount_total, currency: session.currency, method: 'Card (Stripe)', idemKey: 'stripe:' + session.id,
+        });
         console.log('[Stripe] invoice ' + invId + ' payment → ' + JSON.stringify(rec));
       }
     }
@@ -317,6 +338,9 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     const subUserId = parseInt(sub.metadata?.userId, 10);
     if (subUserId) {
       await setSubscriptionStatus(subUserId, sub.status);
+      // N101: remember WHICH subscription bills this user, so deleting the account can cancel it.
+      await pool.query(`UPDATE users SET data = data || jsonb_build_object('stripe_subscription_id', $2::text, 'stripe_customer_id', $3::text) WHERE id = $1`,
+        [subUserId, String(sub.id || ''), String((sub.customer && sub.customer.id) || sub.customer || '')]);
       if (sub.status === 'active') await reactivateClientForUser(subUserId);
       else if (['canceled', 'unpaid', 'past_due', 'incomplete_expired'].includes(sub.status)) await suspendClientForUser(subUserId);
     }
@@ -334,15 +358,22 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
         realFee = charge.balance_transaction?.fee ?? null;
       }
     } catch (e) { console.error('[Stripe] fee reconcile lookup failed:', e.message); }
+    // N98: a bill created through Checkout has no PaymentIntent id when it is booked; it is matched by the
+    // earning id + accountant id carried in the PaymentIntent metadata, and the PI id is recorded now.
+    const _md = pi.metadata || {};
+    const _eid = /^[1-9][0-9]*$/.test(String(_md.earning_id || '')) ? Number(_md.earning_id) : null;
+    const _aid = /^[1-9][0-9]*$/.test(String(_md.accountant_id || '')) ? Number(_md.accountant_id) : null;
     await pool.query(`
       UPDATE accountant_earnings
-         SET status           = 'paid',
-             stripe_fee_cents = COALESCE($2::int, stripe_fee_cents),
-             amount_cents     = GREATEST(0, COALESCE(billed_cents, amount_cents)
-                                            - COALESCE($2::int, stripe_fee_cents, 0)
-                                            - COALESCE(commission_cents, 0))
+         SET status            = 'paid',
+             payment_intent_id = $1,
+             stripe_fee_cents  = COALESCE($2::int, stripe_fee_cents),
+             amount_cents      = GREATEST(0, COALESCE(billed_cents, amount_cents)
+                                             - COALESCE($2::int, stripe_fee_cents, 0)
+                                             - COALESCE(commission_cents, 0))
        WHERE payment_intent_id = $1
-    `, [pi.id, realFee]).catch(e => console.error('[Stripe] earnings reconcile failed:', e.message));
+          OR (payment_intent_id IS NULL AND type = 'service_commission' AND id = $3::int AND accountant_id = $4::int)
+    `, [pi.id, realFee, _eid, _aid]);
   }
 
   if (event.type === 'customer.subscription.deleted') {
@@ -350,9 +381,12 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     const sub = event.data.object;
     const cancelUserId = parseInt(sub.metadata?.userId, 10);
     if (cancelUserId) {
+      // Owner decision 2026-10-06: a cancelled subscription is READ-ONLY (same as an expired trial).
+      // The upgrade path nulls trial_ends, and checkPlan only restricts `trial && trial_ends < now`, so
+      // without stamping trial_ends here a cancelled customer kept unlimited write access forever.
       await pool.query(
-        `UPDATE users SET data = data || jsonb_build_object('plan', 'trial'::text) WHERE id = $1`,
-        [cancelUserId]
+        `UPDATE users SET data = data || jsonb_build_object('plan', 'trial'::text, 'trial_ends', $2::text) WHERE id = $1`,
+        [cancelUserId, new Date().toISOString()]
       );
       // F11: mark not-paying and stop the referral payout immediately.
       await setSubscriptionStatus(cancelUserId, 'canceled');
@@ -391,7 +425,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
                 kyc_verified_at = CASE WHEN $1::text = 'verified' THEN NOW() ELSE kyc_verified_at END
           WHERE id = $3::int`,
         [_kyc, vs.id || null, accId]
-      ).catch(err => console.error('[Stripe Identity] kyc update failed:', err.message));
+      );
       console.log(`[Stripe Identity] accountant ${accId} kyc_status → ${_kyc} (${vs.id})`);
     }
   }
@@ -452,32 +486,59 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     const chargeId = ch.id;
     const refundObj = (ch.refunds && ch.refunds.data && ch.refunds.data[0]) || {};
     const refundId = refundObj.id || ('chg-' + chargeId + '-' + (ch.amount_refunded || 0));
-    const refundMajor = Math.round((Number(ch.amount_refunded) || 0)) / 100;
+    // N3: amount_refunded is CUMULATIVE across every refund on the charge. Reverse only the DELTA not
+    // yet reversed for this charge (was: the cumulative total on every event, so a second partial
+    // refund double-reversed). Minor units convert by the charge's currency exponent (N47).
+    const cumulativeMajor = stripeMinorToMajor(ch.amount_refunded, ch.currency);
+    const tag = 'Auto-reversal of refunded Stripe charge ' + chargeId;
+    let ins = null, orig = null;
+    const cli = await pool.connect();
     try {
-      const { rows: [orig] } = await pool.query(
-        `SELECT * FROM invoice_payments WHERE idempotency_key = $1 LIMIT 1`, ['stripe-invpay:' + chargeId]);
-      if (orig && refundMajor > 0) {
-        const alreadyPaid = parseFloat(orig.amount) || 0;
-        const reverseAmt = -Math.min(refundMajor, alreadyPaid);   // never reverse more than was booked
-        const idem = ('stripe-refund:' + refundId).slice(0, 64);
-        const ins = await pool.query(
-          `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-           ON CONFLICT (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING *`,
-          [orig.user_id, orig.entity_id || null, orig.invoice_id, reverseAmt, new Date().toISOString().slice(0, 10),
-           'Refund (Stripe)', idem, 'Auto-reversal of refunded Stripe charge ' + chargeId, idem]);
-        if (ins.rowCount) {
-          await recalcInvoiceStatus(pool, orig.invoice_id, orig.user_id);
-          try { await postSourceLedger(pool, { userId: orig.user_id, sourceType: 'invoice_payment', row: ins.rows[0] }); } catch (glErr) { console.error('[GL] refund reversal posting failed (shadow, non-fatal):', glErr && glErr.message); }
-          try { await auditLog(pool, { userId: orig.user_id, entityId: orig.entity_id, table: 'invoice_payments', recordId: ins.rows[0].id, action: 'REFUND' }); } catch (_) {}
-          console.log('[Stripe] refund reversed invoice ' + orig.invoice_id + ' by ' + reverseAmt);
-        } else {
-          console.log('[Stripe] refund ' + refundId + ' already reversed (idempotent)');
+      await cli.query('BEGIN');
+      await cli.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['stripe-refund:' + chargeId]);   // serialize refunds per charge
+      ({ rows: [orig] } = await cli.query(
+        `SELECT * FROM invoice_payments WHERE idempotency_key = $1 LIMIT 1`, ['stripe-invpay:' + chargeId]));
+      if (orig && cumulativeMajor > 0) {
+        const target = Math.min(cumulativeMajor, parseFloat(orig.amount) || 0);   // never reverse more than was booked
+        const { rows: [r] } = await cli.query(
+          `SELECT COALESCE(SUM(amount),0)::float AS s FROM invoice_payments
+            WHERE user_id = $1 AND invoice_id = $2 AND method = 'Refund (Stripe)' AND notes = $3`,
+          [orig.user_id, orig.invoice_id, tag]);
+        const already = -(r.s || 0);
+        const delta = Math.round((target - already) * 100) / 100;
+        if (delta > 0.005) {
+          const idem = ('stripe-refund:' + refundId).slice(0, 64);
+          ins = await cli.query(
+            `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+             ON CONFLICT (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING *`,
+            [orig.user_id, orig.entity_id || null, orig.invoice_id, -delta, new Date().toISOString().slice(0, 10),
+             'Refund (Stripe)', idem, tag, idem]);
         }
-      } else if (!orig) {
-        console.warn('[Stripe] charge.refunded for ' + chargeId + ' — no auto-reversible invoice payment found; manual review');
       }
-    } catch (e) { console.error('[Stripe] refund reversal failed:', e.message); }
+      await cli.query('COMMIT');
+    } catch (e) {
+      try { await cli.query('ROLLBACK'); } catch (_) {}
+      console.error('[Stripe] refund reversal failed:', e.message);
+      throw e;
+    } finally { cli.release(); }
+    if (!orig) {
+      console.warn('[Stripe] charge.refunded for ' + chargeId + ' — no auto-reversible invoice payment found; manual review');
+    } else if (ins && ins.rowCount) {
+      await recalcInvoiceStatus(pool, orig.invoice_id, orig.user_id);
+      try { await postSourceLedger(pool, { userId: orig.user_id, sourceType: 'invoice_payment', row: ins.rows[0] }); } catch (glErr) { console.error('[GL] refund reversal posting failed (shadow, non-fatal):', glErr && glErr.message); }
+      try { await auditLog(pool, { userId: orig.user_id, entityId: orig.entity_id, table: 'invoice_payments', recordId: ins.rows[0].id, action: 'REFUND' }); } catch (_) {}
+      console.log('[Stripe] refund reversed invoice ' + orig.invoice_id + ' by ' + ins.rows[0].amount);
+    } else {
+      console.log('[Stripe] refund ' + refundId + ' — nothing new to reverse (idempotent)');
+    }
+  }
+
+  } catch (procErr) {
+    console.error('[Stripe Webhook] processing failed — releasing claim so Stripe retries:', event.id, event.type, procErr && procErr.message);
+    captureErr(procErr, { stripeEvent: event.id, type: event.type });
+    try { await pool.query(`DELETE FROM stripe_webhook_events WHERE event_id = $1`, [event.id]); } catch (_) {}
+    return res.status(500).json({ error: 'processing failed; retry' });
   }
 
   res.json({ received: true });
@@ -507,13 +568,18 @@ app.get('/api/wipay/callback', async (req, res) => {
     if (!conn || !conn.account_number) return res.redirect(back);
     if (String(q.status) === 'success' && q.hash && q.transaction_id) {
       let key; try { key = decTok(conn.api_key); } catch (_) { return res.redirect(back); }
-      const original = (parseFloat(inv.amount) || 0).toFixed(2);   // the total WiPay hashed (2dp)
+      // The total WiPay hashed = the total THIS link charged (outstanding balance at link creation, N50);
+      // legacy links (created before payment_link_amount existed) charged the face amount.
+      const _linkTotal = inv.payment_link_amount != null ? parseFloat(inv.payment_link_amount) : (parseFloat(inv.amount) || 0);
+      const original = _linkTotal.toFixed(2);   // 2dp, as WiPay hashes it
       const expected = crypto.createHash('md5').update(String(q.transaction_id) + original + key).digest('hex');
       const given = String(q.hash);
       const ok = Buffer.byteLength(given) === Buffer.byteLength(expected) &&
         crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected));
       if (ok) {
-        const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: Math.round((parseFloat(inv.amount) || 0) * 100), method: 'Card (WiPay)', idemKey: 'wipay:' + q.transaction_id })
+        const { rows: [_wpEnt] } = await pool.query(`SELECT data->>'currency' AS cur FROM entities WHERE id = $1 LIMIT 1`, [ir.entity_id]);
+        const _wpCur = (_wpEnt && _wpEnt.cur) || 'TTD';   // the link charged in the issuing business's currency (N49)
+        const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: stripeMajorToMinor(_linkTotal, _wpCur), currency: _wpCur, method: 'Card (WiPay)', idemKey: 'wipay:' + q.transaction_id })
           .catch(e => { console.error('[WiPay] reconcile failed:', e.message); return { recorded: false, reason: 'error' }; });
         console.log('[WiPay] invoice ' + invoiceId + ' payment → ' + JSON.stringify(rec));
       } else {
@@ -694,8 +760,13 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // Conditional ensures the global parser doesn't 413 a large body before its route runs.
 const bigJson = express.json({ limit: '10mb' });
 const smallJson = express.json({ limit: '500kb' });
-const LARGE_PAYLOAD_PATHS = ['/api/ai/scan', '/api/documents', '/api/ai/extract-document', '/api/accountants/extract-resume', '/api/accountants/register', '/api/accountants/my-accountant/attach', '/api/accountants/clients/attach'];
+// N39: the CSV and bank-statement imports accept files up to ~5 MB (their own checks) — they were missing
+// here, so the 500 KB global cap rejected any real statement with a bare 413 before the route ran.
+const LARGE_PAYLOAD_PATHS = ['/api/ai/scan', '/api/documents', '/api/ai/extract-document', '/api/accountants/extract-resume', '/api/accountants/register', '/api/accountants/my-accountant/attach', '/api/accountants/clients/attach', '/api/import/csv', '/api/banking/import'];
 app.use((req, res, next) => (LARGE_PAYLOAD_PATHS.includes(req.path) ? bigJson : smallJson)(req, res, next));
+// N14 class: one body-shape check every /api write passes through (text fields are text, money/quantity
+// fields are numbers) — see body-shape.js.
+app.use('/api', require('./body-shape.js').bodyShape);
 app.use(express.urlencoded({ extended: false, limit: '500kb' }));
 app.set('trust proxy', 1);
 app.use(session({
@@ -722,6 +793,32 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000,
   },
 }));
+
+// ── SESSION VALIDITY — one check for EVERY request that carries a user session ─────────────────
+// N88 + N6/N6b: a session stops working the moment (a) an admin suspends / soft-deletes the account, or
+// (b) the password is reset or changed — users.data.session_epoch is incremented and every session
+// stamped with an older epoch (session.sessionEpoch, set by establishSession) is dropped. This runs
+// globally — not only inside requireAuth — because several routes authenticate with a raw
+// req.session.userId check (my-accountant/*, request-access, support), which used to skip the
+// suspended check entirely. A dropped session continues as anonymous; requireAuth reports why.
+const _isBlockedUser = (d) => !!d && (String(d.suspended) === 'true' || String(d.deleted) === 'true');
+app.use(async (req, res, next) => {
+  if (!req.session || !req.session.userId) return next();
+  try {
+    const { rows: [u] } = await pool.query(
+      `SELECT data->'suspended' AS suspended, data->'deleted' AS deleted, COALESCE((data->>'session_epoch')::int, 0) AS epoch FROM users WHERE id = $1`,
+      [req.session.userId]);
+    let why = null;
+    if (!u) why = 'gone';
+    else if (_isBlockedUser(u)) why = 'suspended';
+    else if ((Number(req.session.sessionEpoch) || 0) !== Number(u.epoch)) why = 'revoked';
+    if (why) {
+      req._authRevoked = why;
+      await new Promise((resolve) => req.session.regenerate(() => resolve()));
+    }
+  } catch (e) { return next(e); }
+  next();
+});
 
 // Cloudflare/Railway-aware client IP for IP-keyed limiters. Behind Cloudflare, CF-Connecting-IP is
 // the single authoritative client address (no fragile hop-counting); _clientIp handles the
@@ -800,6 +897,45 @@ const inviteLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 30, keyGenerato
 const acceptLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyGenerator: _ipKey });   // public/token surface — CF-aware IP key
 
 // F99/F100 — reads and writes each to their own per-user limiter.
+// ── F207 — CSP violation collector (report-only measurement) ──────────────────────────────────
+// The browser POSTs violations here (report-uri / Reporting API) unauthenticated, so this is public but
+// does nothing except aggregate in memory (capped) — no writes, no side effects. Signature =
+// directive|blocked|source so 5,000 identical inline-handler hits collapse to one row.
+// N71: registered BEFORE the F22 JSON-only gate — browsers send application/csp-report (report-uri) and
+// application/reports+json (Reporting API), which the gate 415'd, so no real report ever arrived. It has
+// its own rate limit. The aggregate comes from EVERY tenant's browsers, so reading it is platform-admin
+// only (it was readable by any tenant owner).
+const _cspReports = new Map();
+const _CSP_CAP = 800;
+const cspLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, keyGenerator: _ipKey });
+app.post('/api/csp-report', cspLimiter, express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '256kb' }), (req, res) => {
+  try {
+    const body = req.body || {};
+    const list = Array.isArray(body) ? body : [body];
+    for (const r of list) {
+      const cr = (r && (r['csp-report'] || r.body)) || r || {};
+      const directive = cr['violated-directive'] || cr.effectiveDirective || cr.violatedDirective || 'unknown';
+      const blocked = cr['blocked-uri'] || cr.blockedURL || cr.blockedUri || '';
+      const _ln = cr['line-number'] != null ? cr['line-number'] : cr.lineNumber;
+      const source = String(cr['source-file'] || cr.sourceFile || '') + (_ln != null ? ':' + _ln : '');
+      const sample = cr['script-sample'] || cr.sample || '';
+      const sig = directive + '|' + blocked + '|' + source;
+      const prev = _cspReports.get(sig);
+      if (prev) prev.count++;
+      else if (_cspReports.size < _CSP_CAP) _cspReports.set(sig, { directive, blocked, source, sample: String(sample).slice(0, 160), count: 1 });
+    }
+  } catch (_) { /* never let a malformed report error */ }
+  res.status(204).end();
+});
+// Platform admin only: the aggregated violations (what a strict CSP would block) + a by-directive summary.
+app.get('/api/admin/csp-report', (req, res) => {
+  if (!(req.session && req.session.isAdmin)) return res.status(401).json({ error: 'Admin authentication required.' });
+  const rows = [..._cspReports.values()].sort((a, b) => b.count - a.count);
+  const byDirective = {};
+  for (const r of rows) byDirective[r.directive] = (byDirective[r.directive] || 0) + r.count;
+  res.json({ enabled: /^(1|true|yes)$/i.test(process.env.CSP_REPORT_ONLY || ''), total: rows.reduce((s, r) => s + r.count, 0), unique: rows.length, byDirective, rows });
+});
+
 app.use('/api', (req, res, next) =>
   (req.method === 'GET' || req.method === 'HEAD') ? readLimiter(req, res, next) : writeLimiter(req, res, next));
 
@@ -830,8 +966,22 @@ app.use('/api', (req, res, next) => {
   return next();
 });
 
-function requireAuth(req, res, next) {
-  if (!req.session.userId) return res.status(401).json({ error: 'Unauthorised — please log in.' });
+// N6/N6b: end every existing session of a user (atomic increment; establishSession stamps the new value).
+async function _bumpSessionEpoch(userId) {
+  await pool.query(`UPDATE users SET data = jsonb_set(data, '{session_epoch}', to_jsonb(COALESCE((data->>'session_epoch')::int, 0) + 1)) WHERE id = $1`, [userId]);
+}
+
+// N88: an account an admin SUSPENDED or soft-DELETED loses access immediately — including sessions
+// already open. The check itself runs for every request in the session-validity middleware above
+// (admin writes the flags in two shapes, compared as strings by _isBlockedUser); requireAuth only
+// reports why a session was dropped.
+async function requireAuth(req, res, next) {
+  if (!req.session.userId) {
+    if (req._authRevoked === 'suspended') return res.status(401).json({ error: 'This account is suspended. Please contact support.', code: 'ACCOUNT_SUSPENDED' });
+    if (req._authRevoked === 'revoked') return res.status(401).json({ error: 'Your password was changed. Please log in again.', code: 'SESSION_REVOKED' });
+    if (req._authRevoked === 'gone') return res.status(401).json({ error: 'Session expired.' });
+    return res.status(401).json({ error: 'Unauthorised — please log in.' });
+  }
   next();
 }
 
@@ -852,7 +1002,7 @@ const _READONLY_POST_OK = p => p.startsWith('/reports/') || p === '/cogs/calcula
 // Checks trial expiry — attaches req.userPlan for downstream use
 async function checkPlan(req, res, next) {
   try {
-    const user = await pool.query(`SELECT data FROM users WHERE id = $1`, [req.session.userId]);
+    const user = await pool.query(`SELECT data FROM users WHERE id = $1`, [req.accountId != null ? req.accountId : req.session.userId]);
     if (!user.rows[0]) return res.status(401).json({ error: 'User not found.' });
     const u = user.rows[0].data;
     const plan = u.plan || 'trial';
@@ -863,7 +1013,7 @@ async function checkPlan(req, res, next) {
     // the app renders real data instead of the old escapable $0 "broken app". Only genuine MUTATIONS
     // (create/edit/delete) 402 TRIAL_EXPIRED, which the client turns into an upgrade prompt. Locking
     // someone out of viewing their own financial data to sell them a plan is a poor trade.
-    if (plan === 'trial' && trialEnds && trialEnds < new Date()) {
+    if (plan === 'trial' && trialEnds && trialEnds <= new Date()) {   // ended AT now counts as ended (cancel stamps now)
       const m = req.method;
       const isRead = m === 'GET' || m === 'HEAD' || m === 'OPTIONS' || (m === 'POST' && _READONLY_POST_OK(req.path));
       if (!isRead) {
@@ -943,6 +1093,30 @@ app.get('/healthz', async (req, res) => {
   }
 });
 
+// N91: ONE way a users row is created for an email. The email check and the INSERT run in one
+// transaction holding an advisory lock on the lower-cased email, so two concurrent sign-ups / invite
+// accepts for the same address cannot both pass the "does it exist?" check (the index on
+// lower(email) was not unique). Returns the new id, or null when the email is already taken.
+// `clientOrPool`: a pool (own transaction) or a client already inside the caller's transaction.
+async function createUserUnique(clientOrPool, email, data) {
+  const em = String(email || '').trim().toLowerCase();
+  const own = typeof clientOrPool.connect === 'function' && !clientOrPool.release;
+  const cx = own ? await clientOrPool.connect() : clientOrPool;
+  try {
+    if (own) await cx.query('BEGIN');
+    await cx.query(`SELECT pg_advisory_xact_lock(hashtext('user-email:' || $1))`, [em]);
+    const { rows: [dup] } = await cx.query(`SELECT id FROM users WHERE lower(data->>'email') = $1 LIMIT 1`, [em]);
+    if (dup) { if (own) await cx.query('ROLLBACK'); return null; }
+    const { rows: [u] } = await cx.query(`INSERT INTO users (user_id, entity_id, data) VALUES (NULL, NULL, $1) RETURNING id`, [Object.assign({}, data, { email: em })]);
+    if (own) await cx.query('COMMIT');
+    return u.id;
+  } catch (e) {
+    if (own) { try { await cx.query('ROLLBACK'); } catch (_) {} }
+    if (e && e.code === '23505') return null;   // the unique index (when present) is the backstop
+    throw e;
+  } finally { if (own) cx.release(); }
+}
+
 app.post('/api/auth/register', signupLimiter, async (req, res) => {
   try {
     const { email, password, name } = req.body || {};
@@ -950,16 +1124,12 @@ app.post('/api/auth/register', signupLimiter, async (req, res) => {
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email address.' });
 
-    const { rows: [_existU] } = await pool.query(
-      `SELECT id FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [email]
-    );
-    if (_existU) return res.status(409).json({ error: 'An account with this email already exists.' });
-
     const hash = bcrypt.hashSync(password, 12);
-    const { lastInsertRowid: userId } = await db.insert('users', {
-      email: email.toLowerCase(), password: hash,
+    const userId = await createUserUnique(pool, email, {
+      password: hash,
       name: (name || '').trim().slice(0, 100), plan: 'trial', trial_ends: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner',
     });
+    if (userId == null) return res.status(409).json({ error: 'An account with this email already exists.' });
 
     // If user signed up via an accountant referral link (?ref=CODE), link them now
     const refCode = ((req.body?.referralCode || req.body?.ref || req.query?.ref || '')).slice(0, 50);
@@ -988,8 +1158,8 @@ app.post('/api/auth/register', signupLimiter, async (req, res) => {
         const count = parseInt(countResult.rows[0].count) || 0;
         const months = tierForAccountant(count).referralMonths;
         await pool.query(`
-          INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total)
-          VALUES ($1, $2, 'pending', $3)
+          INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total, requested_by)
+          VALUES ($1, $2, 'pending', $3, 'referral')
           ON CONFLICT (accountant_id, user_id) DO NOTHING
         `, [accountantId, userId, months]);
         console.log(`[Referral] User ${userId} linked to accountant ${accountantId} (${months} months)`);
@@ -998,10 +1168,7 @@ app.post('/api/auth/register', signupLimiter, async (req, res) => {
 
     // (L1) Regenerate the session id at the privilege change so a pre-auth fixed cookie
     // cannot be promoted to an authenticated session.
-    await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
-    req.session.userId = userId;
-    req.session.userRole = 'owner';
-    req.session.userEmail = email.toLowerCase();
+    await establishSession(req, { userId, userRole: 'owner', userEmail: email.toLowerCase() });
     const { rows: [_ru] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [userId]);
     const user = _ru ? rowToObj(_ru) : null;
     console.log('[Register] New user created, id:', userId);
@@ -1018,10 +1185,10 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
     const { rows: [_lu] } = await pool.query(
-      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [email]
+      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) ORDER BY id LIMIT 1`, [email]
     );
     const user = _lu ? rowToObj(_lu) : null;
-    if (user && (user.data?.deleted === 'true' || user.deleted === 'true')) {
+    if (user && _isBlockedUser(user)) {   // N88: suspended or soft-deleted (either stored shape)
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
     if (!user || !bcrypt.compareSync(password, user.password)) { logAudit(req, 'LOGIN_FAILED', 'users', null, null, { email: String(email || '').slice(0, 120) }); return res.status(401).json({ error: 'Invalid email or password.' }); }
@@ -1036,10 +1203,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       if (!_mfaOk) return res.status(401).json({ error: 'Enter your authenticator code to finish signing in.', mfaRequired: true });
     }
     // (L1) Regenerate the session id on login (session-fixation hardening).
-    await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
-    req.session.userId = user.id;
-    req.session.userRole = user.role || 'owner';
-    req.session.userEmail = user.email;
+    await establishSession(req, { userId: user.id, userRole: user.role || 'owner', userEmail: user.email });
     logAudit(req, 'LOGIN', 'users', user.id, null, null);   // audit LOGIN (ip captured) — feeds login-multi-IP anomaly
     // Track last login time
     await pool.query(
@@ -1113,7 +1277,7 @@ app.post('/api/auth/forgot-password', signupLimiter, async (req, res) => {
     if (!email) return res.status(400).json({ error: 'Email required.' });
 
     const { rows: [_fpu] } = await pool.query(
-      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [email]
+      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) ORDER BY id LIMIT 1`, [email]
     );
     const user = _fpu ? rowToObj(_fpu) : null;
     if (!user) return res.json({ ok: true });
@@ -1181,7 +1345,9 @@ app.post('/api/auth/reset-password', signupLimiter, async (req, res) => {
     }
 
     const hash = bcrypt.hashSync(password, 12);
+    // N6: a reset ends EVERY existing session (whoever held the old password is logged out).
     await db.updateById('users', record.user_id, { password: hash });
+    await _bumpSessionEpoch(record.user_id);
     await pool.query(`DELETE FROM password_resets WHERE data->>'token' = $1`, [tokenHash]);
 
     res.json({ ok: true });
@@ -1208,14 +1374,6 @@ app.get('/api/me', requireAuth, wrap(async (req, res) => {
   res.json({ user: safeUser(user) });
 }));
 
-// Trial / plan enforcement — applies to all /api routes except auth and stripe webhook
-app.use('/api', (req, res, next) => {
-  const open = ['/auth/', '/stripe/', '/accountants', '/admin'];
-  if (open.some(p => req.path.startsWith(p))) return next();
-  if (!req.session?.userId) return next(); // requireAuth handles this
-  checkPlan(req, res, next);
-});
-
 // ── ACCOUNT RESOLVER (RBAC Phase 2, Step 1) ────────────────────────────────────
 // Sets req.accountId = the effective data-scope account for this request.
 //   Owner / brand-new signup / no active membership → own user_id (UNCHANGED).
@@ -1232,16 +1390,27 @@ app.use('/api', async (req, res, next) => {
   req.accountRole = req.session.userRole || 'owner';        // inert spine until Step 4 enforcement
   req.entityAccess = null;   // null = ALL entities (owner, or a member with no per-entity grant)
   try {
+    // N36: which account this session works in. A user can own books AND belong to other accounts;
+    // the resolver used to pick the first active membership for EVERY request, so accepting an invite
+    // elsewhere made the user's own books unreachable (no switcher). Now:
+    //   session.activeAccountId set → that account (own, or an ACTIVE membership — re-checked here);
+    //   not set → own account if the user has books of their own (any entity), else the first active
+    //   membership (a fresh invitee lands in the account they joined, as before).
     const { rows } = await pool.query(
       `SELECT user_id AS account_owner_id, data->>'role' AS role, data->'entity_access' AS entity_access
          FROM team_members
         WHERE data->>'member_user_id' = $1::text
           AND data->>'status'         = 'active'
-        ORDER BY id ASC
-        LIMIT 1`,
+        ORDER BY id ASC`,
       [String(uid)]
     );
-    const m = rows[0];
+    const chosen = req.session.activeAccountId;
+    let m = null;
+    if (chosen != null && Number(chosen) !== uid) m = rows.find(r => Number(r.account_owner_id) === Number(chosen)) || null;
+    else if (chosen == null && rows.length) {
+      const { rows: [ownBooks] } = await pool.query(`SELECT 1 FROM entities WHERE user_id = $1 LIMIT 1`, [uid]);
+      if (!ownBooks) m = rows[0];
+    }
     if (m && m.account_owner_id && m.account_owner_id !== uid) {
       req.accountId   = m.account_owner_id;                 // scope to the account they joined
       req.accountRole = m.role || 'viewer';                 // role within that account
@@ -1255,6 +1424,17 @@ app.use('/api', async (req, res, next) => {
     req.entityAccess = null;
   }
   next();
+});
+
+// Trial / plan enforcement — applies to all /api routes except auth and stripe webhook.
+// N5: registered AFTER the account resolver and checked against the ACCOUNT being acted on (scopeId),
+// not the acting user: a team member's own trial must not block work in a paying account, and a
+// member who happens to pay for their own account must not write into an expired one.
+app.use('/api', (req, res, next) => {
+  const open = ['/auth/', '/stripe/', '/accountants', '/admin'];
+  if (open.some(p => req.path.startsWith(p))) return next();
+  if (!req.session?.userId) return next(); // requireAuth handles this
+  checkPlan(req, res, next);
 });
 
 // ── ENTITY + RBAC MIDDLEWARE ──────────────────────────────────────────────────
@@ -1297,8 +1477,13 @@ app.use('/api', async (req, res, next) => {
     return next();
   }
   if (req.session.entityId) {
-    req.entityId = req.session.entityId;
-    return next();
+    // N10: the remembered entity must still belong to the account this request acts on (it can be
+    // stale after an account switch, an entity delete, or a value stored by an older build).
+    try {
+      const { rows: [own] } = await pool.query(`SELECT 1 FROM entities WHERE id = $1 AND user_id = $2`, [req.session.entityId, scopeId(req)]);
+      if (own) { req.entityId = req.session.entityId; return next(); }
+      req.session.entityId = null;   // fall through to the account's own default entity
+    } catch (e) { return next(e); }
   }
   if (req.session.userId) {
     try {
@@ -1377,9 +1562,14 @@ async function ownedBy(table, id, userId) {
   return rows[0] ? rowToObj(rows[0]) : null;
 }
 
-// Resolve the first active entity for the current user (used by several POST routes)
-async function activeEntity(userId) {
-  const rows = await db.allByUser('entities', userId, e => e.is_active);
+// The business a request acts on: req.entityId (resolved and ownership-checked by the entity middleware)
+// when set, else the ACCOUNT's active entity. N31 class: this used to take the ACTOR's id
+// (req.session.userId) and return that user's is_active entity — a team member owns no entities (→ null),
+// and a request scoped to business B still got the account's flagged business A.
+async function activeEntity(req) {
+  const uid = scopeId(req);
+  if (req.entityId != null) { const r = await ownedBy('entities', req.entityId, uid); if (r) return r; }
+  const rows = await db.allByUser('entities', uid, e => e.is_active);
   return rows[0] || null;
 }
 
@@ -1457,7 +1647,7 @@ async function findRecentDuplicateTyped(table, userId, entityId, cols = {}, wind
 // working; oldData/newData land in the record-snapshot columns.
 async function logAudit(req, action, tableName, recordId, oldData, newData) {
   return recordAudit(pool, {
-    userId:   req?.session?.userId || null,
+    userId:   (req && req.accountId) || req?.session?.userId || null,   // the ACCOUNT whose trail this is; actor is derived from req
     entityId: req?.entityId || null,
     table:    tableName,
     recordId: recordId || null,
@@ -1469,20 +1659,78 @@ async function logAudit(req, action, tableName, recordId, oldData, newData) {
 }
 
 // ── LOCK HELPER ───────────────────────────────────────────────────────────────
-async function isLocked(userId, entityId, date) {
-  if (!date) return false;
-  // Per-entity books lock (null-inclusive): a per-business lock (entity_id = this business) OR a legacy
-  // account-wide lock (entity_id NULL, from before locks were per-entity) can close the period. Personal
-  // writes never call isLocked, so a NULL row only ever acts as a legacy business-wide lock.
-  const { rows } = await pool.query(
-    `SELECT * FROM lock_settings WHERE user_id = $1 AND (entity_id IS NULL OR entity_id = $2) AND (data->>'enabled')::int = 1`,
-    [userId, entityId == null ? null : entityId]
-  );
-  for (const r of rows) {
-    const s = rowToObj(r);
-    if (s && s.lock_date && date <= s.lock_date) return true;
-  }
+// Single implementation in period-lock.js, shared with the accountant portal (N77).
+const _periodLock = require('./period-lock');
+async function isLocked(userId, entityId, date) { return _periodLock.isLocked(pool, userId, entityId, date); }
+// N9b: the lock check for money writes whose date is NOT in the request body — it comes from the bank row
+// or the Stripe charge, so lockGuard cannot see it (bank book-expense / match-bill, Stripe import-charge /
+// import-refund / match-invoice). Same refusal as lockGuard. Returns true when it has answered.
+async function refuseIfLocked(res, userId, entityId, ymd) {
+  const d = FinFlowDates._toYmd(ymd);
+  if (d && await isLocked(userId, entityId, d)) { res.status(403).json({ error: 'Period is locked.', code: 'PERIOD_LOCKED', date: d }); return true; }
   return false;
+}
+
+// N9 + N8 class: ONE period-lock guard for every money write. Each money table names the date(s) its
+// money is RECOGNISED on (the same date the ledger posts at); the guard refuses a create dated into a
+// closed period, and an edit/delete/action whose record is in one — checking BOTH the record's current
+// date and the date the edit would move it to (an edit could move a row INTO a closed period, and
+// invoices were checked on due_date while revenue is recognised on issue_date). Before this only
+// invoices, expenses and journal-create checked the lock; bills, payments, credit notes, vendor credits,
+// sales receipts, journal edits, payroll runs and inventory movements could all be written into a
+// closed period.
+// N30 class: a PUT/DELETE on /api/<resource>/:id for a row that does not exist (or is another
+// tenant's) answers 404 — never a fake-success 200 that tells the client its edit/delete happened.
+// One middleware, attached to every route the executed probe (verify-missing-id-404.js) found answering
+// 2xx for a nonexistent id.
+function requireOwnedRow(table) {
+  return wrap(async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Not found.' });
+    const { rows: [r] } = await pool.query(`SELECT 1 FROM ${table} WHERE id = $1 AND user_id = $2 LIMIT 1`, [id, scopeId(req)]);
+    if (!r) return res.status(404).json({ error: 'Not found.' });
+    next();
+  });
+}
+const _lkYmd = (v) => (v ? (FinFlowDates._toYmd(v) || null) : null);
+const _lkDate = (d) => [d.date || _lkYmd(d.created_at)];
+const LOCK_SPECS = {
+  invoices:            { table: 'invoices',            dates: d => [d.issue_date || _lkYmd(d.created_at)] },
+  expenses:            { table: 'expenses',            dates: d => [d.expense_date || _lkYmd(d.created_at)] },
+  bills:               { table: 'bills',               dates: d => [d.issue_date || _lkYmd(d.created_at)] },
+  sales_receipts:      { table: 'sales_receipts',      dates: _lkDate },
+  credit_notes:        { table: 'credit_notes',        dates: _lkDate },
+  vendor_credits:      { table: 'vendor_credits',      dates: _lkDate },
+  payments_received:   { table: 'payments_received',   dates: _lkDate },
+  payments_made:       { table: 'payments_made',       dates: _lkDate },
+  journals:            { table: 'journals',            dates: _lkDate },
+  invoice_payments:    { table: 'invoice_payments',    typed: true, dates: d => [_lkYmd(d.payment_date)],
+                         entityOf: async (req) => { const inv = req.body && req.body.invoice_id ? await ownedBy('invoices', req.body.invoice_id, scopeId(req)) : null; return inv ? inv.entity_id : null; } },
+  payroll_runs:        { table: 'payroll_runs',        typed: true, dates: d => [FinFlowDates.payrollPeriodYmd(d.period, d.run_date), _lkYmd(d.run_date)] },
+  inventory_movements: { table: 'inventory_movements', typed: true, dates: d => [_lkYmd(d.moved_at)] },
+};
+function lockGuard(spec) {
+  return wrap(async (req, res, next) => {
+    const uid = scopeId(req);
+    let entityId = req.entityId != null ? req.entityId : null;
+    const checks = [];
+    if (req.params.id != null) {
+      const { rows: [r] } = await pool.query(`SELECT * FROM ${spec.table} WHERE id = $1 AND user_id = $2 LIMIT 1`, [Number(req.params.id), uid]);
+      if (!r) return next();   // the route answers 404 itself
+      const row = spec.typed ? r : rowToObj(r);
+      if (row.entity_id != null) entityId = row.entity_id;
+      checks.push(...spec.dates(row));
+      if (req.method === 'PUT' || req.method === 'POST') checks.push(...spec.dates(Object.assign({}, row, req.body || {})));
+    } else {
+      if (spec.entityOf) { const e = await spec.entityOf(req); if (e != null) entityId = e; }
+      const ds = spec.dates(Object.assign({}, req.body || {}, { created_at: null })).filter(Boolean);
+      checks.push(...(ds.length ? ds : [await entityTodayYmd(entityId)]));   // no date → the route defaults to the entity's today
+    }
+    for (const d of checks) {
+      if (d && await isLocked(uid, entityId, String(d).slice(0, 10))) return res.status(403).json({ error: 'Period is locked.', code: 'PERIOD_LOCKED', date: String(d).slice(0, 10) });
+    }
+    next();
+  });
 }
 
 // ── ENTITIES ──────────────────────────────────────────────────────────────────
@@ -1524,7 +1772,7 @@ app.post('/api/entities', requireAuth, requirePerm('entities:manage'), wrap(asyn
   if (_prof.error) return res.status(400).json({ error: _prof.error });
   Object.assign(_entExtra, _prof.patch);
   const { row } = await db.insert('entities', { user_id: scopeId(req), name: name.trim().slice(0,100), currency, color, is_active: 0, sort_order: 0, ..._entExtra });
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.id, table: 'entities', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 // F94 B3 — validate the per-entity opening cash balance for the runway. PURE + additive:
@@ -1563,27 +1811,32 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
     ..._prof.patch,
   });
   const { rows: [_er] } = await pool.query(`SELECT * FROM entities WHERE id = $1 LIMIT 1`, [row.id]);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.id, table: 'entities', recordId: row.id, action: 'UPDATE', oldData: row, newData: _er ? rowToObj(_er) : null, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.id, table: 'entities', recordId: row.id, action: 'UPDATE', oldData: row, newData: _er ? rowToObj(_er) : null, req });  // F90 Phase B
   res.json(_er ? rowToObj(_er) : {});
 }));
 app.delete('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const _eold = await ownedBy('entities', req.params.id, scopeId(req));
   if (!_eold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('entities', parseInt(req.params.id));
-  await recordAudit(pool, { userId: req.session.userId, entityId: parseInt(req.params.id), table: 'entities', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _eold, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: parseInt(req.params.id), table: 'entities', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _eold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 app.post('/api/entities/:id/activate', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const uid = scopeId(req);
-  const eid = parseInt(req.params.id);
-  await pool.query(
-    `UPDATE entities SET data = data || '{"is_active":0}'::jsonb, updated_at = NOW() WHERE user_id = $1`,
-    [scopeId(req)]
-  );
-  await pool.query(
-    `UPDATE entities SET data = data || '{"is_active":1}'::jsonb, updated_at = NOW() WHERE id = $1 AND user_id = $2`,
-    [eid, scopeId(req)]
-  );
+  const eid = parseInt(req.params.id, 10);
+  // N10: the entity must belong to this account BEFORE anything changes. An id from another account
+  // used to deactivate every one of the caller's own entities (the activate UPDATE matched nothing) and
+  // still store the foreign id as the session's active entity.
+  if (!Number.isInteger(eid) || eid <= 0) return res.status(400).json({ error: 'Invalid entity id.' });
+  const { rows: [own] } = await pool.query(`SELECT id FROM entities WHERE id = $1 AND user_id = $2`, [eid, uid]);
+  if (!own) return res.status(404).json({ error: 'Entity not found.' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`UPDATE entities SET data = data || '{"is_active":0}'::jsonb, updated_at = NOW() WHERE user_id = $1 AND id <> $2`, [uid, eid]);
+    await client.query(`UPDATE entities SET data = data || '{"is_active":1}'::jsonb, updated_at = NOW() WHERE id = $1 AND user_id = $2`, [eid, uid]);
+    await client.query('COMMIT');
+  } catch (e) { try { await client.query('ROLLBACK'); } catch (_) {} throw e; } finally { client.release(); }
   req.session.entityId = eid;
   res.json({ ok: true });
 }));
@@ -1728,7 +1981,7 @@ function normalizeLineItems(raw) {
   return { present: true, line_items: items, amount };
 }
 
-app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
+app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(async (req, res) => {
   const { client, amount, due_date, status = 'pending', notes = '', entity_id, issue_date } = req.body || {};
   // F194: when line_items are supplied, the DERIVED Σ qty×rate is the canonical amount (Rule 2).
   const _li = normalizeLineItems(req.body?.line_items);
@@ -1737,7 +1990,6 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required.' });
   if (_badStatus(INVOICE_STATUSES, status)) return res.status(400).json({ error: 'Invalid invoice status.' });
   const eid = entity_id || req.entityId || null;
-  if (await isLocked(req.session.userId, eid, due_date)) return res.status(403).json({ error: 'Period is locked.' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // Layer 3 (fast path): the 5s findRecentDuplicate pre-check is TOKEN-BLIND — it matches on
   // client+amount only, never the idempotency key. Run it ONLY for token-less requests (old
@@ -1842,24 +2094,18 @@ app.post('/api/invoices', requireAuth, wrap(async (req, res) => {
   // retry never books a second payment. Best-effort: never breaks invoice creation.
   if (String(status).toLowerCase() === 'paid' && _amt > 0) {
     try {
-      const _pDate = issue_date || (FinFlowDates._toYmd(row.created_at) || new Date().toISOString().slice(0, 10));
-      const _pKey = ('invoice_create_paid:' + row.id).slice(0, 64);
-      const { rows: _pr } = await pool.query(
-        `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING RETURNING *`,
-        [scopeId(req), eid, row.id, _amt, _pDate, 'Paid on creation', null, 'Auto-recorded: invoice created as paid', _pKey]);
-      if (_pr[0]) {
-        try { await postSourceLedger(pool, { userId: scopeId(req), sourceType: 'invoice_payment', row: { ..._pr[0], client } }); }
-        catch (glErr) { console.error('[GL] paid-on-create cash leg failed (shadow, non-fatal):', glErr && glErr.message); }
-      }
+      await settleInvoiceRemaining(pool, {
+        userId: scopeId(req), invoiceId: row.id,
+        date: issue_date || (FinFlowDates._toYmd(row.created_at) || new Date().toISOString().slice(0, 10)),
+        method: 'Paid on creation', notes: 'Auto-recorded: invoice created as paid', idemKey: 'invoice_create_paid:' + row.id,
+      });
     } catch (payErr) { console.error('[invoices] paid-on-create settling payment failed (non-fatal):', payErr && payErr.message); }
   }
   res.status(201).json(row);
 }));
-app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
+app.put('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(async (req, res) => {
   const row = await ownedBy('invoices', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  if (await isLocked(req.session.userId, row.entity_id, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
   const { client, amount, due_date, status, notes, issue_date } = req.body || {};
   // F194: same invariant on edit — line_items present ⇒ amount = derived Σ qty×rate (Rule 2).
@@ -1879,16 +2125,18 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   // recalcInvoiceStatus) is never clobbered. Effective amount = the patched amount if it is being
   // changed in the same PUT, else the existing row amount. (This PUT has no client caller today, but
   // the code gap is the same F133 class, so it is closed here.)
-  if (patch.status === 'paid') {
-    const { rows: _ipc } = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2`,
-      [row.id, req.session.userId]
-    );
-    if (_ipc[0].n === 0) {
-      patch.amount_paid = (patch.amount != null ? patch.amount : (parseFloat(row.amount) || 0));
-    }
-  }
+  // N11: a flip to 'paid' is settled by a real payment for the outstanding balance AFTER the edit (so an
+  // amount changed in the same PUT is the one settled) — see settleInvoiceRemaining.
+  const _flipPaid = patch.status === 'paid' && String(row.status || '').toLowerCase() !== 'paid';
+  if (patch.status === 'paid') delete patch.status;   // recalcInvoiceStatus derives it from the payments
   await db.updateById('invoices', row.id, patch);
+  if (_flipPaid || (req.body && String(req.body.status || '').toLowerCase() === 'paid')) {
+    await settleInvoiceRemaining(pool, {
+      userId: scopeId(req), invoiceId: row.id,
+      date: (req.body && /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.payment_date || ''))) ? req.body.payment_date : await entityTodayYmd(row.entity_id),
+      method: 'Marked paid', notes: 'Auto-recorded: invoice marked paid', idemKey: 'invoice_mark_paid:' + row.id, stateKeyed: true,
+    });
+  }
   const { rows: [_iur] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [row.id]);
   const updated = _iur ? rowToObj(_iur) : {};
   logAudit(req, 'UPDATE', 'invoices', row.id, row, updated);
@@ -1906,10 +2154,9 @@ app.put('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
   } catch (glErr) { console.error('[GL] invoice resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(updated);
 }));
-app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(async (req, res) => {
   const row = await ownedBy('invoices', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  if (await isLocked(req.session.userId, row.entity_id, row.due_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.deleteById('invoices', parseInt(req.params.id));
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'invoice', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] invoice reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   logAudit(req, 'DELETE', 'invoices', row.id, row, null);
@@ -1918,12 +2165,11 @@ app.delete('/api/invoices/:id', requireAuth, wrap(async (req, res) => {
 
 // ── EXPENSES ──────────────────────────────────────────────────────────────────
 app.get('/api/expenses', requireAuth, wrap(async (req, res) => respondList(req, res, 'expenses')));
-app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
+app.post('/api/expenses', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(async (req, res) => {
   const { description, category = 'Other', amount, deductible = 'no', expense_date, entity_id } = req.body || {};
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
   const eid = entity_id || req.entityId || null;
   const edate = expense_date || await entityTodayYmd(eid);
-  if (await isLocked(req.session.userId, eid, edate)) return res.status(403).json({ error: 'Period is locked.' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: the token-blind 5s findRecentDuplicate pre-check runs ONLY for token-less callers
   // (old clients / API). When a token IS present, the partial unique index (idx_expenses_idem_key)
@@ -1961,10 +2207,9 @@ app.post('/api/expenses', requireAuth, wrap(async (req, res) => {
   } catch (glErr) { console.error('[GL] expense posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.status(201).json(row);
 }));
-app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
+app.put('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(async (req, res) => {
   const row = await ownedBy('expenses', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  if (await isLocked(req.session.userId, row.entity_id, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   const patch = {};
   const b = req.body || {};
   if (b.description != null) patch.description = b.description;
@@ -1978,12 +2223,12 @@ app.put('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
   const { rows: [_eur] } = await pool.query(`SELECT * FROM expenses WHERE id = $1 LIMIT 1`, [row.id]);
   const updated = _eur ? rowToObj(_eur) : {};
   logAudit(req, 'UPDATE', 'expenses', row.id, row, updated);
+  try { await _resyncAfterEdit(scopeId(req), 'expenses', row.id); } catch (glErr) { console.error('[GL] expenses edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(updated);
 }));
-app.delete('/api/expenses/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(async (req, res) => {
   const row = await ownedBy('expenses', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
-  if (await isLocked(req.session.userId, row.entity_id, row.expense_date)) return res.status(403).json({ error: 'Period is locked.' });
   await db.deleteById('expenses', parseInt(req.params.id));
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'expense', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] expense reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   logAudit(req, 'DELETE', 'expenses', row.id, row, null);
@@ -2005,7 +2250,7 @@ app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const _dup = await findRecentDuplicate('customers', scopeId(req), _custEnt, { textMatch: { fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), email: _cem } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('customers', { user_id: scopeId(req), entity_id: _custEnt, fname: (b.fname||'').trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), company: (b.company||'').trim().slice(0,200), industry: (b.industry||'').slice(0,100), email: _cem, phone: (b.phone||'').slice(0,30), revenue: parseFloat(b.revenue)||0, status: b.status||'active', notes: (b.notes||'').slice(0,500) });
-  await recordAudit(pool, { userId: req.session.userId, entityId: _custEnt, table: 'customers', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _custEnt, table: 'customers', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
@@ -2032,14 +2277,14 @@ app.put('/api/customers/:id', requireAuth, wrap(async (req, res) => {
   if (b.revenue != null) patch.revenue = parseFloat(b.revenue) || 0;
   await db.updateById('customers', row.id, patch);
   const { rows: [_cur] } = await pool.query(`SELECT * FROM customers WHERE id = $1 LIMIT 1`, [row.id]);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'customers', recordId: row.id, action: 'UPDATE', oldData: row, newData: _cur ? rowToObj(_cur) : null, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'customers', recordId: row.id, action: 'UPDATE', oldData: row, newData: _cur ? rowToObj(_cur) : null, req });  // F90 Phase B
   res.json(_cur ? rowToObj(_cur) : {});
 }));
 app.delete('/api/customers/:id', requireAuth, wrap(async (req, res) => {
   const _old = await ownedBy('customers', req.params.id, scopeId(req));
   if (!_old) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('customers', parseInt(req.params.id));
-  await recordAudit(pool, { userId: req.session.userId, entityId: _old.entity_id || null, table: 'customers', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _old, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _old.entity_id || null, table: 'customers', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _old, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2054,22 +2299,32 @@ app.post('/api/inventory', requireAuth, wrap(async (req, res) => {
   const _invEnt = b.entity_id || req.entityId || null;  // F150-class: was body-only → NULL rows leaked into every entity
   const _dup = await findRecentDuplicate('inventory', scopeId(req), _invEnt, { textMatch: { name: (b.name||'').trim().slice(0,200) }, numMatch: { cost: parseFloat(b.cost)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('inventory', { user_id: scopeId(req), entity_id: _invEnt, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: u, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: u < mx * 0.1 ? 1 : 0 });
-  await recordAudit(pool, { userId: req.session.userId, entityId: _invEnt, table: 'inventory', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
-  res.status(201).json(row);
+  const { row } = await db.insert('inventory', { user_id: scopeId(req), entity_id: _invEnt, sku: (b.sku||'#'+Date.now()).slice(0,20), name: (b.name||'').trim().slice(0,200), units: 0, max_units: mx, cost: parseFloat(b.cost)||0, low_stock: 1 });
+  await recordAudit(pool, { userId: scopeId(req), entityId: _invEnt, table: 'inventory', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  // N69: opening units are an OPENING-STOCK purchase movement at the item's cost (a FIFO layer, valued on
+  // the balance sheet against Owner's Equity). They used to be a bare units figure with no cost layer, so
+  // the first sales of that stock had "no cost basis" and COGS was understated.
+  if (u > 0) await recordStockMovement({ userId: scopeId(req), item: row, entityId: _invEnt, type: 'purchase', qty: u, unitCost: parseFloat(b.cost) || 0, reference: 'Opening stock', contraCode: '3100' });
+  const { rows: [_fresh] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
+  res.status(201).json(_fresh ? rowToObj(_fresh) : row);
 }));
 app.put('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('inventory', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
-  const newUnits = b.units != null ? Math.max(0, parseInt(b.units)||0) : row.units;
+  // N69: units on hand change only through stock movements (Stock In / Stock Out / Restock) — a direct
+  // overwrite had no FIFO layer, no COGS and no ledger entry behind it. An unchanged value is accepted.
+  if (b.units != null && Number(b.units) !== Number(row.units)) {
+    return res.status(400).json({ error: 'Change stock with Stock In, Stock Out or Restock so its cost is recorded.', code: 'STOCK_VIA_MOVEMENTS' });
+  }
+  const newUnits = row.units;
   const newMax   = b.max_units != null ? parseInt(b.max_units)||row.max_units : row.max_units;
   const patch = { units: newUnits, max_units: newMax, low_stock: newUnits < newMax * 0.1 ? 1 : 0 };
   if (b.name != null) patch.name = b.name;
   if (b.cost != null) patch.cost = parseFloat(b.cost);
   await db.updateById('inventory', row.id, patch);
   const { rows: [_inur] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'inventory', recordId: row.id, action: 'UPDATE', oldData: row, newData: _inur ? rowToObj(_inur) : null, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'inventory', recordId: row.id, action: 'UPDATE', oldData: row, newData: _inur ? rowToObj(_inur) : null, req });  // F90 Phase B
   res.json(_inur ? rowToObj(_inur) : {});
 }));
 app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
@@ -2088,9 +2343,12 @@ app.post('/api/inventory/:id/restock', requireAuth, wrap(async (req, res) => {
     const { rows: [_dupr] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
     return res.json(_dupr ? rowToObj(_dupr) : {});
   }
-  const newUnits = row.units + qty;
-  await db.updateById('inventory', row.id, { units: newUnits, low_stock: newUnits < row.max_units * 0.1 ? 1 : 0,
-    last_restock_qty: qty, last_restock_at: _now });
+  // N69: a restock is a PURCHASE movement (FIFO layer + Dr Inventory / Cr Cash), not a units bump.
+  const _rsCost = req.body && req.body.unit_cost != null && req.body.unit_cost !== '' ? Number(req.body.unit_cost) : (parseFloat(row.cost) || 0);
+  if (!Number.isFinite(_rsCost) || _rsCost < 0) return res.status(400).json({ error: 'unit_cost must be a number of 0 or more.' });
+  if (await refuseIfLocked(res, scopeId(req), row.entity_id, await entityTodayYmd(row.entity_id))) return;
+  await db.updateById('inventory', row.id, { last_restock_qty: qty, last_restock_at: _now });
+  await recordStockMovement({ userId: scopeId(req), item: row, entityId: req.entityId || null, type: 'purchase', qty, unitCost: _rsCost, reference: 'Restock' });
   const { rows: [_rstk] } = await pool.query(`SELECT * FROM inventory WHERE id = $1 LIMIT 1`, [row.id]);
   res.json(_rstk ? rowToObj(_rstk) : {});
 }));
@@ -2098,7 +2356,7 @@ app.delete('/api/inventory/:id', requireAuth, wrap(async (req, res) => {
   const _iold = await ownedBy('inventory', req.params.id, scopeId(req));
   if (!_iold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('inventory', parseInt(req.params.id));
-  await recordAudit(pool, { userId: req.session.userId, entityId: _iold.entity_id || null, table: 'inventory', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _iold, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _iold.entity_id || null, table: 'inventory', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _iold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2129,7 +2387,7 @@ app.post('/api/items', requireAuth, wrap(async (req, res) => {
     sku:       (b.sku   || '').slice(0, 50),
     cost:      b.cost   != null ? parseFloat(b.cost) || 0 : null,
   });
-  await recordAudit(pool, { userId: req.session.userId, entityId: _itemEnt, table: 'items', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _itemEnt, table: 'items', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/items/:id', requireAuth, wrap(async (req, res) => {
@@ -2147,14 +2405,14 @@ app.put('/api/items/:id', requireAuth, wrap(async (req, res) => {
   if (b.cost   != null) patch.cost   = parseFloat(b.cost) || 0;
   await db.updateById('items', row.id, patch);
   const { rows: [_itmr] } = await pool.query(`SELECT * FROM items WHERE id = $1 LIMIT 1`, [row.id]);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'items', recordId: row.id, action: 'UPDATE', oldData: row, newData: _itmr ? rowToObj(_itmr) : null, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'items', recordId: row.id, action: 'UPDATE', oldData: row, newData: _itmr ? rowToObj(_itmr) : null, req });  // F90 Phase B
   res.json(_itmr ? rowToObj(_itmr) : {});
 }));
 app.delete('/api/items/:id', requireAuth, wrap(async (req, res) => {
   const _itold = await ownedBy('items', req.params.id, scopeId(req));
   if (!_itold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('items', parseInt(req.params.id));
-  await recordAudit(pool, { userId: req.session.userId, entityId: _itold.entity_id || null, table: 'items', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _itold, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _itold.entity_id || null, table: 'items', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _itold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -2174,7 +2432,15 @@ app.get('/api/payroll', requireAuth, wrap(async (req, res) => {
 app.post('/api/payroll', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.fname) return res.status(400).json({ error: 'fname required.' });
-  const _peid = b.entity_id || null;
+  // N13/N13c: a roster row belongs to a business. Take an explicit entity only if it is THIS account's;
+  // otherwise the active entity — a client that sent null (ENTITIES not loaded yet) used to create an
+  // entity-less row that then joined EVERY entity's payroll run (N13b).
+  let _peid = req.entityId != null ? req.entityId : null;
+  if (b.entity_id != null && b.entity_id !== '') {
+    const { rows: [_own] } = await pool.query(`SELECT id FROM entities WHERE id = $1 AND user_id = $2`, [Number(b.entity_id), scopeId(req)]);
+    if (!_own) return res.status(400).json({ error: 'Invalid entity for this account.' });
+    _peid = _own.id;
+  }
   // Layer 3: dedupe near-simultaneous duplicate creates (user_id + entity_id + fname + lname + gross).
   const _dup = await findRecentDuplicate('payroll', scopeId(req), _peid, { textMatch: { fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100) }, numMatch: { gross: parseFloat(b.gross)||0 } });
   if (_dup) return res.status(200).json(_dup);
@@ -2277,7 +2543,10 @@ app.post('/api/personal-accounts', requireAuth, wrap(async (req, res) => {
   const kind = b.kind === 'liability' ? 'liability' : 'asset';
   const name = (b.name || '').trim();
   if (!name) return res.status(400).json({ error: 'name required.' });
-  const eid = req.entityId || null;
+  // N16b: a personal asset/liability is PERSONAL — entity-less, the same boundary personal transactions use. It
+  // used to be tagged with whichever business happened to be active, so it vanished from the personal page (and
+  // net worth) as soon as another business was selected. Existing tagged rows are left as they are (Rule 8).
+  const eid = null;
   const value = parseFloat(b.value) || 0;
   const _dup = await findRecentDuplicate('personal_accounts', req.session.userId, eid, { textMatch: { name, kind }, numMatch: { value } });
   if (_dup) return res.status(200).json(_dup);
@@ -2330,14 +2599,17 @@ app.post('/api/snapshots/capture', requireAuth, wrap(async (req, res) => {
   let value = 0;
   if (kind === 'networth') {
     // Net worth = manual assets + live investment portfolio − manual liabilities.
-    const accts  = await db.allByUser('personal_accounts', uid, r => (r.entity_id || null) === eid);
+    // N16: the SAME rows the page adds up — GET /api/personal-accounts (personal + this business's rows)
+    // and the personal portfolio GET /api/holdings?scope=personal. The snapshot used exact-entity accounts
+    // and personal+business holdings, so the stored series never matched the net worth on screen.
+    const accts  = await db.allByUser('personal_accounts', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
     const assets = accts.filter(a => a.kind === 'asset').reduce((s, a) => s + (parseFloat(a.value) || 0), 0);
     const liabs  = accts.filter(a => a.kind === 'liability').reduce((s, a) => s + (parseFloat(a.value) || 0), 0);
-    const holds  = await db.allByUser('holdings', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+    const holds  = await db.allByUser('holdings', uid, r => r.entity_id == null);
     const portfolio = holds.reduce((s, h) => s + ((parseFloat(h.shares) || 0) * (parseFloat(h.price) || 0)), 0);
     value = assets + portfolio - liabs;
   } else {
-    const holds = await db.allByUser('holdings', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+    const holds = await db.allByUser('holdings', uid, r => r.entity_id == null);   // N16: the personal portfolio the Investments page charts
     value = holds.reduce((s, h) => s + ((parseFloat(h.shares) || 0) * (parseFloat(h.price) || 0)), 0);
   }
 
@@ -2392,11 +2664,11 @@ app.delete('/api/goals/:id', requireAuth, wrap(async (req, res) => {
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
 app.get('/api/projects', requireAuth, wrap(async (req, res) => {
   try {
-    const rows = await db.allByUser('projects', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id);
+    const rows = await db.allByUser('projects', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id);
     res.json(rows);
   } catch (e) {
     // F62 (F31 class): surface the failure; never fabricate an empty result as if it were data.
-    console.error('[GET /api/projects] failed for user', req.session.userId, ':', e.code, e.message);
+    console.error('[GET /api/projects] failed for user', scopeId(req), ':', e.code, e.message);
     res.status(500).json({ error: 'Could not load projects. Please try again.' });
   }
 }));
@@ -2404,10 +2676,10 @@ app.post('/api/projects', requireAuth, wrap(async (req, res) => {
   const { name, client = '', budget = 0, status = 'In Progress' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required.' });
   const validStatuses = ['In Progress', 'Completed', 'On Hold'];
-  const _dup = await findRecentDuplicate('projects', req.session.userId, req.entityId || null, { textMatch: { name: name.trim().slice(0,200), client: client.trim().slice(0,200) } });
+  const _dup = await findRecentDuplicate('projects', scopeId(req), req.entityId || null, { textMatch: { name: name.trim().slice(0,200), client: client.trim().slice(0,200) } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('projects', {
-    user_id:  req.session.userId,
+    user_id:  scopeId(req),
     entity_id: req.entityId || null,
     name:     name.trim().slice(0, 200),
     client:   client.trim().slice(0, 200),
@@ -2420,7 +2692,7 @@ app.post('/api/projects', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/projects/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('projects', req.params.id, req.session.userId);
+  const row = await ownedBy('projects', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
   const b = req.body || {};
@@ -2436,12 +2708,22 @@ app.put('/api/projects/:id', requireAuth, wrap(async (req, res) => {
   res.json(_pjr ? rowToObj(_pjr) : {});
 }));
 app.delete('/api/projects/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('projects', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('projects', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('projects', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
 // ── HOLDINGS ──────────────────────────────────────────────────────────────────
+// A personal holding (entity_id NULL) belongs to the PERSON signed in; a business holding (tagged with an
+// entity) belongs to the ACCOUNT that owns that entity, so every team member works on the same business
+// portfolio. Business holdings used to be stored under whichever member added them — the owner never saw them.
+const _holdingOwner = (req, entityId) => entityId != null ? scopeId(req) : req.session.userId;
+async function _ownedHolding(req, id) {
+  const { rows: [r] } = await pool.query(
+    `SELECT * FROM holdings WHERE id = $1 AND ((entity_id IS NULL AND user_id = $2) OR (entity_id IS NOT NULL AND user_id = $3)) LIMIT 1`,
+    [parseInt(id), req.session.userId, scopeId(req)]);
+  return r ? rowToObj(r) : null;
+}
 app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
   try {
     // Scope the portfolio by context so the personal and business pages never read each
@@ -2452,8 +2734,9 @@ app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
     if (scope === 'personal')      filter = r => r.entity_id == null;
     else if (scope === 'business') filter = r => req.entityId != null && r.entity_id === req.entityId;
     else                           filter = r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId);
-    const rows = await db.allByUser('holdings', req.session.userId, filter, (a,b) => a.id - b.id);
-    res.json(rows);
+    const mine = await db.allByUser('holdings', req.session.userId, r => r.entity_id == null && filter(r));
+    const biz  = req.entityId != null ? await db.allByUser('holdings', scopeId(req), r => r.entity_id != null && filter(r)) : [];
+    res.json([...mine, ...biz].sort((a, b) => a.id - b.id));
   } catch (e) {
     // F62 (F31 class): the old "fail-soft: empty list keeps the frontend happy" comment described
     // the bug exactly — a DB error rendered Investments $0 and dropped the whole portfolio out of
@@ -2473,13 +2756,13 @@ app.post('/api/holdings', requireAuth, wrap(async (req, res) => {
   if (b.scope === 'personal')      eid = null;
   else if (b.scope === 'business') { if (req.entityId == null) return res.status(400).json({ error: 'No active business entity.' }); eid = req.entityId; }
   else                             eid = req.entityId || null;
-  const _dup = await findRecentDuplicate('holdings', req.session.userId, eid, { textMatch: { ticker: b.ticker.trim().toUpperCase().slice(0,20) }, numMatch: { shares: parseFloat(b.shares)||0 } });
+  const _dup = await findRecentDuplicate('holdings', _holdingOwner(req, eid), eid, { textMatch: { ticker: b.ticker.trim().toUpperCase().slice(0,20) }, numMatch: { shares: parseFloat(b.shares)||0 } });
   if (_dup) return res.status(200).json(_dup);
-  const { row } = await db.insert('holdings', { user_id: req.session.userId, entity_id: eid, ticker: b.ticker.trim().toUpperCase().slice(0,20), name: (b.name||b.ticker).trim().slice(0,200), asset_type: b.asset_type||'Stock', shares: parseFloat(b.shares)||0, cost_per: parseFloat(b.cost_per)||0, price: parseFloat(b.price)||parseFloat(b.cost_per)||0, dividend: parseFloat(b.dividend)||0, color: b.color||'#c9a84c' });
+  const { row } = await db.insert('holdings', { user_id: _holdingOwner(req, eid), entity_id: eid, ticker: b.ticker.trim().toUpperCase().slice(0,20), name: (b.name||b.ticker).trim().slice(0,200), asset_type: b.asset_type||'Stock', shares: parseFloat(b.shares)||0, cost_per: parseFloat(b.cost_per)||0, price: parseFloat(b.price)||parseFloat(b.cost_per)||0, dividend: parseFloat(b.dividend)||0, color: b.color||'#c9a84c' });
   res.status(201).json(row);
 }));
 app.put('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('holdings', req.params.id, req.session.userId);
+  const row = await _ownedHolding(req, req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
   const b = req.body || {};
@@ -2491,7 +2774,7 @@ app.put('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
   res.json(_hldr ? rowToObj(_hldr) : {});
 }));
 app.delete('/api/holdings/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('holdings', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await _ownedHolding(req, req.params.id))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('holdings', parseInt(req.params.id));
   res.json({ ok: true });
 }));
@@ -2536,7 +2819,7 @@ app.put('/api/budget-targets', requireAuth, wrap(async (req, res) => {
   if (existing) {
     await db.updateById('budget_targets', existing.id, { targets });
   } else {
-    await db.insert('budget_targets', { user_id: uid, entity_id: eid, targets });
+    await db.insert('budget_targets', { user_id: scopeId(req), entity_id: eid, targets });
   }
   res.json({ ok: true });
 }));
@@ -2594,7 +2877,7 @@ app.put('/api/settings', requireAuth, requirePerm('settings:manage'), wrap(async
     `SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [scopeId(req)]
   );
   if (_usRow) await db.updateById('user_settings', _usRow.id, patch);
-  else await db.insert('user_settings', { user_id: uid2, ...patch });
+  else await db.insert('user_settings', { user_id: scopeId(req), ...patch });
   if (b.name) await db.updateById('users', uid2, { name: b.name.trim().slice(0,100) });
   // F149-b (class-kill): renaming an ENTITY from a /api/settings write is now OPT-IN. Previously
   // ANY PUT with business_name renamed activeEntity() — so the create flow (which sent business_name
@@ -2603,7 +2886,7 @@ app.put('/api/settings', requireAuth, requirePerm('settings:manage'), wrap(async
   // rename_active_entity:true; nothing else does. business_name is still persisted as the account
   // profile string above either way — only the entity mutation is gated.
   if (b.business_name && b.rename_active_entity === true) {
-    const ent = await activeEntity(uid2);
+    const ent = await activeEntity(req);
     if (ent) await db.updateById('entities', ent.id, { name: b.business_name.slice(0,100) });
   }
   // Audit log: emit one entry per business-profile field that changed.
@@ -2632,8 +2915,11 @@ app.put('/api/auth/change-password', requireAuth, wrap(async (req, res) => {
   const user = _cpu ? rowToObj(_cpu) : null;
   if (!user || !bcrypt.compareSync(currentPassword, user.password)) return res.status(401).json({ error: 'Current password is incorrect.' });
   const hash = bcrypt.hashSync(newPassword, 12);
+  // N6b: a password change ends every OTHER session; this one is re-issued (fresh id, current epoch).
   await db.updateById('users', req.session.userId, { password: hash });
+  await _bumpSessionEpoch(req.session.userId);
   logAudit(req, 'CHANGE_PASSWORD', 'users', req.session.userId, null, null);
+  await establishSession(req, { userId: req.session.userId, userRole: req.session.userRole, userEmail: req.session.userEmail, entityId: req.session.entityId });
   res.json({ ok: true });
 }));
 
@@ -2789,7 +3075,9 @@ app.post('/api/help/ask', requireAuth, apiLimiter, wrap(async (req, res) => {
     .map(m => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
   const multiTurn = history.length > 0;
 
-  const qKey = 'help:' + question.toLowerCase();
+  let contextText = 'No account figures available.';
+  try { contextText = 'Caller’s own figures (for grounding only):\n' + (await aiBooksContext(req)).text; } catch (_) {}
+  const qKey = 'help:' + question.toLowerCase() + '#' + require('crypto').createHash('sha256').update(contextText).digest('hex').slice(0, 16);   // N21b
   if (!multiTurn) {
     const cached = await pool.query(
       `SELECT answer, model FROM ai_cache WHERE user_id=$1 AND question=$2 AND created_at > NOW() - INTERVAL '24 hours' ORDER BY created_at DESC LIMIT 1`,
@@ -2804,15 +3092,8 @@ app.post('/api/help/ask', requireAuth, apiLimiter, wrap(async (req, res) => {
     return res.json({ reply: null, unavailable: true, links, message: 'You’ve reached this month’s AI limit — here are the guides that match.', code: 'AI_CAP_REACHED' });
   }
 
-  // Light, tenant-scoped figure context so it can answer "why is X" without leaking anything.
+  // Light, tenant-scoped figure context (computed above, N21) so it can answer "why is X" without leaking anything.
   const uid = scopeId(req);
-  let contextText = 'No account figures available.';
-  try {
-    const [invoices, expenses] = await Promise.all([db.allByUser('invoices', uid), db.allByUser('expenses', uid)]);
-    const rev = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
-    const exp = expenses.reduce((s, e) => s + (e.amount || 0), 0);
-    contextText = `Caller’s own figures (for grounding only): paid revenue $${rev.toLocaleString()}, expenses $${exp.toLocaleString()}, open invoices ${invoices.filter(i => i.status !== 'paid').length}.`;
-  } catch (_) {}
 
   const model = process.env.AI_MODEL_SIMPLE || 'claude-haiku-4-5-20251001';
   const systemInstruction = 'You are "Ask FinFlow", the in-app help assistant for the FinFlow accounting product. Answer the user’s how-to and product questions using ONLY the KNOWLEDGE BASE below and the caller’s own figures when relevant. Be concise (2-5 sentences or short numbered steps), use the product’s own terms, and never invent features or menus not in the knowledge base. If the answer isn’t in the knowledge base, say so briefly and suggest contacting support. Do not answer questions unrelated to FinFlow.\n\nKNOWLEDGE BASE:\n' + HELP_KB;
@@ -2883,26 +3164,45 @@ app.delete('/api/auth/account', requireAuth, wrap(async (req, res) => {
   const { rows: [_dau] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [uid]);
   const user = _dau ? rowToObj(_dau) : null;
   if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Incorrect password.' });
-  // Delete from all tables by user_id
-  const allTables = [
-    'invoices','expenses','customers','inventory','payroll','personal_transactions',
-    'goals','holdings','user_settings','password_resets','quotes','bills','vendors',
-    'recurring_bills','recurring_invoices','sales_receipts','payments_received',
-    'credit_notes','payments_made','vendor_credits','items','timesheet','projects',
-    'team_members','budget_targets','entities','journals','chart_of_accounts',
-    'lock_settings','audit_log','documents','templates','autocat_rules',
-    'audit_trail','invoice_payments','bank_reconciliation','payroll_runs',
-    'payroll_run_lines','inventory_movements','fx_rates','fx_transactions',
-    'personal_accounts','snapshots',
-    // F198: the GL is user-scoped too — omitting it orphaned the entire double-entry ledger
-    // after erasure (books survived the account delete). ai_usage is per-user billing history.
-    'ledger_lines','ledger_entries','ledger_accounts','ai_usage',
-  ];
-  for (const t of allTables) {
-    await db.deleteByUser(t, uid).catch(() => {});
+  // N18: one transaction, nothing swallowed — either the whole account is erased or nothing is. The
+  // table list is DISCOVERED (every base table with a user_id column), so a new table can't be missed
+  // (the hand-kept list had drifted: api_keys, accountant links/messages/proposals/tasks, support
+  // requests, recurring personal transactions, flagged transactions, page views were all left behind).
+  // Kept on purpose: audit_trail (append-only legal record — its rows outlive the account) and the
+  // accountant profile, which is a separate identity (only its link to this user is cleared).
+  // N101: stop the billing first. A deleted account whose Stripe subscription kept running would keep
+  // being charged with no way to log in and cancel. If Stripe refuses, nothing is deleted.
+  if (user.stripe_subscription_id && !['canceled', 'incomplete_expired'].includes(String(user.subscriptionStatus || ''))) {
+    if (!stripe) return res.status(503).json({ error: 'Your subscription could not be cancelled right now — nothing was deleted. Please try again or contact support.' });
+    try { await stripe.subscriptions.cancel(user.stripe_subscription_id); }
+    catch (e) {
+      if (!(e && (e.code === 'resource_missing' || e.statusCode === 404))) {
+        console.error('[account delete] subscription cancel failed:', e && e.message);
+        return res.status(502).json({ error: 'Your subscription could not be cancelled — nothing was deleted. Please try again or contact support.' });
+      }
+    }
   }
-  await pool.query('DELETE FROM ai_cache WHERE user_id=$1', [uid]).catch(() => {});
-  await db.deleteById('users', uid);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM team_members WHERE data->>'member_user_id' = $1::text`, [String(uid)]);   // memberships in OTHER accounts
+    await client.query(`UPDATE accountants SET user_id = NULL WHERE user_id = $1`, [uid]);
+    const { rows: tables } = await client.query(
+      `SELECT c.table_name FROM information_schema.columns c
+         JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
+        WHERE c.table_schema = current_schema() AND c.column_name = 'user_id'
+          AND c.table_name NOT IN ('users', 'audit_trail', 'accountants')`);
+    for (const { table_name } of tables) {
+      await client.query(`DELETE FROM ${client.escapeIdentifier(table_name)} WHERE user_id = $1`, [uid]);
+    }
+    await client.query(`DELETE FROM users WHERE id = $1`, [uid]);
+    await client.query(`DELETE FROM session WHERE (sess::jsonb->>'userId') = $1::text`, [String(uid)]);   // every device
+    await client.query('COMMIT');
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('[account delete] failed, nothing deleted:', e.message);
+    return res.status(500).json({ error: 'Account deletion failed — nothing was deleted. Please try again or contact support.' });
+  } finally { client.release(); }
   req.session.destroy(() => {});
   res.json({ ok: true });
 }));
@@ -2921,11 +3221,24 @@ app.post('/api/lock-settings', requireAuth, requirePerm('settings:manage'), wrap
   const { enabled, lock_date, password } = req.body || {};
   const uid = scopeId(req);
   const patch = { enabled: enabled ? 1 : 0, lock_date: lock_date || null };
-  if (password) patch.password_hash = bcrypt.hashSync(password, 12);   // match the cost-12 used everywhere else
   const eid = req.entityId == null ? null : req.entityId;
   const { rows: [_lsUp] } = await pool.query(
     `SELECT * FROM lock_settings WHERE user_id = $1 AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`, [scopeId(req), eid]
   );
+  // N19: the lock password was stored and never checked — anyone with settings:manage could disable
+  // the lock or pull the date back. While a lock carries a password, LOOSENING it (disable, or an
+  // earlier / blank lock date) requires that password. Tightening it does not. A new password is set
+  // only when none exists yet, or alongside the correct current one.
+  const _cur = _lsUp ? rowToObj(_lsUp) : null;
+  const _curOn = !!(_cur && Number(_cur.enabled) === 1 && _cur.lock_date);
+  const _curDate = _curOn ? String(_cur.lock_date).slice(0, 10) : null;
+  const _newDate = patch.enabled && patch.lock_date ? String(patch.lock_date).slice(0, 10) : null;
+  const _loosens = _curOn && (!_newDate || _newDate < _curDate);
+  const _pwOk = !!(_cur && _cur.password_hash && password && bcrypt.compareSync(String(password), _cur.password_hash));
+  if (_cur && _cur.password_hash && _loosens && !_pwOk) {
+    return res.status(403).json({ error: password ? 'Incorrect lock password.' : 'This lock is password-protected. Enter the lock password to unlock or move the lock date earlier.', code: 'LOCK_PASSWORD_REQUIRED' });
+  }
+  if (password && (!(_cur && _cur.password_hash) || _pwOk)) patch.password_hash = bcrypt.hashSync(String(password), 12);   // cost 12, as everywhere else
   if (_lsUp) await db.updateById('lock_settings', _lsUp.id, patch);
   else await db.insert('lock_settings', { user_id: uid, entity_id: eid, ...patch });
   logAudit(req, enabled ? 'LOCK_ENABLED' : 'LOCK_DISABLED', 'lock_settings', null, null, patch);
@@ -2936,13 +3249,12 @@ app.post('/api/lock-settings', requireAuth, requirePerm('settings:manage'), wrap
 app.get('/api/journals', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('journals', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id));
 }));
-app.post('/api/journals', requireAuth, wrap(async (req, res) => {
+app.post('/api/journals', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(async (req, res) => {
   const { date, description, lines = [], status = 'Draft' } = req.body || {};
   if (!description || !lines.length) return res.status(400).json({ error: 'description and lines required.' });
   const totalDebit  = lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0);
   const totalCredit = lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
   if (Math.abs(totalDebit - totalCredit) > 0.01) return res.status(400).json({ error: 'Journal does not balance — debits must equal credits.' });
-  if (await isLocked(req.session.userId, req.entityId, date)) return res.status(403).json({ error: 'Period is locked.' });
   const num = 'JE-' + String(Date.now()).slice(-4);
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
@@ -2972,12 +3284,16 @@ app.post('/api/journals', requireAuth, wrap(async (req, res) => {
     throw e;
   }
   logAudit(req, 'CREATE', 'journals', row.id, null, row);
-  // NOTE: manual journals are intentionally NOT dual-written to the GL shadow here. computeBooks (the
-  // P&L source of truth) does not yet include manual entries, so posting them to the ledger made the
-  // reconcile scan diverge (shadow != books). Re-enable ONLY together with computeBooks JE support.
+  // N20: a POSTED manual journal dual-writes to the GL (Dr/Cr to J-namespaced accounts, typed by the
+  // line's code). computeBooks reads the journal P&L leg back from the GL, so the oracle and glFinancials
+  // stay equal and glReconcile ties. Best-effort — a shadow posting failure must NEVER break the write.
+  if (String(status).toLowerCase() === 'posted') {
+    try { await postJournalToLedger(pool, { userId: scopeId(req), entityId: req.entityId || null, journal: row }); }
+    catch (glErr) { console.error('[GL] journal posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  }
   res.status(201).json(row);
 }));
-app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
+app.put('/api/journals/:id', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(async (req, res) => {
   const row = await ownedBy('journals', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
@@ -2987,10 +3303,20 @@ app.put('/api/journals/:id', requireAuth, wrap(async (req, res) => {
   if (b.date        != null) patch.date        = b.date;
   await db.updateById('journals', row.id, patch);
   const { rows: [_jr] } = await pool.query(`SELECT * FROM journals WHERE id = $1 LIMIT 1`, [row.id]);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'journals', recordId: row.id, action: 'UPDATE', oldData: row, newData: _jr ? rowToObj(_jr) : { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'journals', recordId: row.id, action: 'UPDATE', oldData: row, newData: _jr ? rowToObj(_jr) : { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
+  // N20: keep the GL in step with a status flip. Draft→Posted posts the entry; Posted→Draft reverses it
+  // (mirror-image, idempotent on reverse:journal:<id>). Posted entries are otherwise immutable — editing a
+  // posted journal's amounts/date is void-and-re-enter, standard accounting practice. Best-effort.
+  const _wasPosted = String(row.status || '').toLowerCase() === 'posted';
+  const _newJournal = _jr ? rowToObj(_jr) : { ...row, ...patch };
+  const _nowPosted = String(_newJournal.status || '').toLowerCase() === 'posted';
+  try {
+    if (!_wasPosted && _nowPosted) await postJournalToLedger(pool, { userId: scopeId(req), entityId: row.entity_id || null, journal: _newJournal });
+    else if (_wasPosted && !_nowPosted) await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'journal', sourceId: row.id });
+  } catch (glErr) { console.error('[GL] journal PUT sync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(_jr ? rowToObj(_jr) : {});
 }));
-app.delete('/api/journals/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/journals/:id', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(async (req, res) => {
   const _jrow = await ownedBy('journals', req.params.id, scopeId(req));
   if (!_jrow) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('journals', parseInt(req.params.id));
@@ -3035,7 +3361,7 @@ app.post('/api/chart-of-accounts', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'chart_of_accounts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'chart_of_accounts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.status(201).json(row);
 }));
 app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
@@ -3049,14 +3375,14 @@ app.put('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
   if (b.nature   != null) patch.nature   = b.nature;
   await db.updateById('chart_of_accounts', row.id, patch);
   const { rows: [_coar] } = await pool.query(`SELECT * FROM chart_of_accounts WHERE id = $1 LIMIT 1`, [row.id]);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'chart_of_accounts', recordId: row.id, action: 'UPDATE', oldData: row, newData: _coar ? rowToObj(_coar) : null, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'chart_of_accounts', recordId: row.id, action: 'UPDATE', oldData: row, newData: _coar ? rowToObj(_coar) : null, req });  // F90 Phase B
   res.json(_coar ? rowToObj(_coar) : {});
 }));
 app.delete('/api/chart-of-accounts/:id', requireAuth, wrap(async (req, res) => {
   const _coold = await ownedBy('chart_of_accounts', req.params.id, scopeId(req));
   if (!_coold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('chart_of_accounts', parseInt(req.params.id));
-  await recordAudit(pool, { userId: req.session.userId, entityId: _coold.entity_id || null, table: 'chart_of_accounts', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _coold, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _coold.entity_id || null, table: 'chart_of_accounts', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _coold, req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -3091,7 +3417,7 @@ app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (re
 // ── DOCUMENTS ─────────────────────────────────────────────────────────────────
 const MAX_DOC_SIZE = 5 * 1024 * 1024; // 5MB in bytes before base64 (~3.75MB actual)
 app.get('/api/documents', requireAuth, wrap(async (req, res) => {
-  const rows = await db.allByUser('documents', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id);
+  const rows = await db.allByUser('documents', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => b.id - a.id);
   // Strip file_data from list responses to keep payload small
   res.json(rows.map(({ file_data, ...meta }) => meta));
 }));
@@ -3101,7 +3427,7 @@ app.post('/api/documents', requireAuth, wrap(async (req, res) => {
   const bytes = Math.ceil(file_data.length * 0.75); // approximate decoded size
   if (bytes > MAX_DOC_SIZE) return res.status(413).json({ error: 'File too large. Maximum size is 5 MB.' });
   const { row } = await db.insert('documents', {
-    user_id: req.session.userId,
+    user_id: scopeId(req),
     entity_id: req.entityId || null,
     name: name.slice(0,255), type, media_type,
     size: bytes, file_data, uploaded_at: new Date().toISOString(),
@@ -3111,7 +3437,7 @@ app.post('/api/documents', requireAuth, wrap(async (req, res) => {
   res.status(201).json(meta);
 }));
 app.get('/api/documents/:id/download', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('documents', req.params.id, req.session.userId);
+  const row = await ownedBy('documents', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   logAudit(req, 'EXPORT', 'documents', row.id, null, null);   // audit document download (mass-export/exfil signal)
   const buf = Buffer.from(row.file_data, 'base64');
@@ -3121,23 +3447,23 @@ app.get('/api/documents/:id/download', requireAuth, wrap(async (req, res) => {
   res.send(buf);
 }));
 app.delete('/api/documents/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('documents', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('documents', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('documents', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
 // ── TEMPLATES ─────────────────────────────────────────────────────────────────
 app.get('/api/templates', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('templates', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.id - b.id));
+  res.json(await db.allByUser('templates', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.id - b.id));
 }));
 app.post('/api/templates', requireAuth, wrap(async (req, res) => {
   const { name, type = 'invoice', preview = '', is_default = 0, accent_color = '#c9a84c' } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required.' });
-  const { row } = await db.insert('templates', { user_id: req.session.userId, entity_id: req.entityId || null, name: name.slice(0,200), type, preview, is_default: is_default ? 1 : 0, accent_color });
+  const { row } = await db.insert('templates', { user_id: scopeId(req), entity_id: req.entityId || null, name: name.slice(0,200), type, preview, is_default: is_default ? 1 : 0, accent_color });
   res.status(201).json(row);
 }));
 app.put('/api/templates/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('templates', req.params.id, req.session.userId);
+  const row = await ownedBy('templates', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
@@ -3150,23 +3476,23 @@ app.put('/api/templates/:id', requireAuth, wrap(async (req, res) => {
   res.json(_tmpr ? rowToObj(_tmpr) : {});
 }));
 app.delete('/api/templates/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('templates', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('templates', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('templates', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
 // ── AUTO-CATEGORISE ───────────────────────────────────────────────────────────
 app.get('/api/autocat-rules', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('autocat_rules', req.session.userId, null, (a,b) => a.id - b.id));
+  res.json(await db.allByUser('autocat_rules', scopeId(req), null, (a,b) => a.id - b.id));
 }));
 app.post('/api/autocat-rules', requireAuth, wrap(async (req, res) => {
   const { keyword, match_type = 'description', category, enabled = 1 } = req.body || {};
   if (!keyword || !category) return res.status(400).json({ error: 'keyword and category required.' });
-  const { row } = await db.insert('autocat_rules', { user_id: req.session.userId, keyword: keyword.toLowerCase().slice(0,100), match_type, category, enabled: enabled ? 1 : 0 });
+  const { row } = await db.insert('autocat_rules', { user_id: scopeId(req), keyword: keyword.toLowerCase().slice(0,100), match_type, category, enabled: enabled ? 1 : 0 });
   res.status(201).json(row);
 }));
 app.put('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('autocat_rules', req.params.id, req.session.userId);
+  const row = await ownedBy('autocat_rules', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
@@ -3179,14 +3505,14 @@ app.put('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
   res.json(_acr ? rowToObj(_acr) : {});
 }));
 app.delete('/api/autocat-rules/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('autocat_rules', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('autocat_rules', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('autocat_rules', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 app.post('/api/autocat-rules/run', requireAuth, wrap(async (req, res) => {
-  const uid = req.session.userId;
+  const uid = scopeId(req);
   const rules = await db.allByUser('autocat_rules', uid, r => r.enabled);
-  const expenses = await db.allByUser('expenses', uid, r => !r.category || r.category === 'Other');
+  const expenses = await db.allByUser('expenses', uid, r => (!r.category || r.category === 'Other') && _entityScopeFilter(req)(r));
   let updated = 0;
   for (const exp of expenses) {
     for (const rule of rules) {
@@ -3216,10 +3542,10 @@ const AI_CAT_BATCH     = 40;      // expenses per Claude call
 function _acNorm(s) { return String(s || '').toLowerCase().replace(/[0-9#*]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120); }
 
 app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => {
-  const uid = req.session.userId;
+  const uid = scopeId(req);
 
   // 1) UNCATEGORISED expenses only (mirrors /run's filter).
-  const expenses = await db.allByUser('expenses', uid, r => !r.category || r.category === 'Other');
+  const expenses = await db.allByUser('expenses', uid, r => (!r.category || r.category === 'Other') && _entityScopeFilter(req)(r));
   const counts = () => ({
     total: expenses.length,
     rule:  suggestions.filter(s => s.source === 'rule').length,
@@ -3364,7 +3690,7 @@ app.post('/api/quotes', requireAuth, wrap(async (req, res) => {
   if (_li.error) return res.status(400).json({ error: _li.error });
   const _effAmount = _li.present ? _li.amount : amount;
   if (!client || _effAmount == null) return res.status(400).json({ error: 'client and amount required' });
-  const entity = await activeEntity(req.session.userId);
+  const entity = await activeEntity(req);
   const num = 'QT-' + String(Date.now()).slice(-4);
   const _dup = await findRecentDuplicate('quotes', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client) }, numMatch: { amount: Number(_effAmount) } });
   if (_dup) return res.json(_dup);
@@ -3392,33 +3718,56 @@ app.put('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
   await db.updateById('quotes', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
-app.delete('/api/quotes/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/quotes/:id', requireAuth, requireOwnedRow('quotes'), wrap(async (req, res) => {
   await pool.query('DELETE FROM quotes WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
 
 // ── VENDORS ───────────────────────────────────────────────────────────────────
 app.get('/api/vendors', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('vendors', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a,b) => a.name.localeCompare(b.name)));
+  const uid = scopeId(req), eid = req.entityId || null;
+  const scoped = r => r.entity_id == null || (eid != null && r.entity_id === eid);
+  const vendors = await db.allByUser('vendors', uid, scoped, (a,b) => a.name.localeCompare(b.name));
+  // N24: a vendor's "owing" and "YTD paid" are DERIVED from the books — never typed in. They were free-entry
+  // money fields on the vendor record, a second AP writer that agreed with nothing (a bill could be paid
+  // and the vendor still "owe" the typed figure). owing = Σ remaining (amount − amount_paid) of this
+  // vendor's recognised bills issued on or before today (the canonicalAP basis, per vendor); ytd_paid = Σ
+  // payments made to the vendor dated in the current fiscal year up to today. Vendor = name, case- and
+  // space-insensitive (bills and payments carry the vendor's name).
+  const key = v => String(v || '').trim().toLowerCase();
+  const today = await entityTodayYmd(eid);
+  const fy = FinFlowDates.resolvePeriod({ period: 'year', fyStartMonth: await accountFyStartIdx(uid), today });
+  const owing = {}, paid = {};
+  for (const b of await db.allByUser('bills', uid, scoped)) {
+    if (!RECOGNIZED_BILL.has(String(b.status || '').toLowerCase())) continue;
+    const d = FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date);
+    if (d == null || d > today) continue;
+    owing[key(b.vendor)] = (owing[key(b.vendor)] || 0) + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0));
+  }
+  for (const p of await db.allByUser('payments_made', uid, scoped)) {
+    const d = FinFlowDates._toYmd(p.date || p.created_at);
+    if (d == null || d > today || d < fy.start || d >= fy.end) continue;
+    paid[key(p.vendor)] = (paid[key(p.vendor)] || 0) + (parseFloat(p.amount) || 0);
+  }
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  res.json(vendors.map(v => ({ ...v, owing: r2(owing[key(v.name)]), ytd_paid: r2(paid[key(v.name)]) })));
 }));
 app.post('/api/vendors', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   if (!b.name) return res.status(400).json({ error: 'name required' });
   // F66: insert wrote name/contact/category RAW while the sibling PUT already capped all three.
   // Mirror those caps — coerce to String and bound length so an object/array/oversized value
-  // cannot enter JSONB. name is required; contact/category default to ''. owing/ytd_paid numeric.
+  // cannot enter JSONB. name is required; contact/category default to ''. (owing/ytd_paid: derived, N24.)
   const name     = String(b.name).trim().slice(0, 200);
   const contact  = String(b.contact  || '').trim().slice(0, 200);
   const category = String(b.category || '').slice(0, 100);
   const status   = String(b.status   || 'active').slice(0, 50);
-  const owing    = parseFloat(b.owing)    || 0;
-  const ytd_paid = parseFloat(b.ytd_paid) || 0;
-  const entity = await activeEntity(req.session.userId);
+  const entity = await activeEntity(req);
   const _venEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
   const _dup = await findRecentDuplicate('vendors', scopeId(req), _venEnt, { textMatch: { name } });
   if (_dup) return res.json(_dup);
-  const { row } = await db.insert('vendors', { user_id: scopeId(req), entity_id: _venEnt, name, contact, category, owing, ytd_paid, status });
-  await recordAudit(pool, { userId: req.session.userId, entityId: _venEnt, table: 'vendors', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  const { row } = await db.insert('vendors', { user_id: scopeId(req), entity_id: _venEnt, name, contact, category, status });   // N24: owing / ytd_paid are derived on read
+  await recordAudit(pool, { userId: scopeId(req), entityId: _venEnt, table: 'vendors', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
 app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
@@ -3433,17 +3782,15 @@ app.put('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
   if (b.name     != null) patch.name     = String(b.name).trim().slice(0, 200);
   if (b.contact  != null) patch.contact  = String(b.contact).trim().slice(0, 200);
   if (b.category != null) patch.category = String(b.category).slice(0, 100);
-  if (b.owing    != null) patch.owing    = parseFloat(b.owing)    || 0;
-  if (b.ytd_paid != null) patch.ytd_paid = parseFloat(b.ytd_paid) || 0;
   if (b.status   != null) patch.status   = String(b.status).slice(0, 50);
   await db.updateById('vendors', Number(req.params.id), patch);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 Phase B
   res.json({ ok: true });
 }));
-app.delete('/api/vendors/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/vendors/:id', requireAuth, requireOwnedRow('vendors'), wrap(async (req, res) => {
   const { rows: [_vold] } = await pool.query('SELECT * FROM vendors WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM vendors WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
-  if (_vold) await recordAudit(pool, { userId: req.session.userId, entityId: _vold.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vold), req });  // F90 Phase B
+  if (_vold) await recordAudit(pool, { userId: scopeId(req), entityId: _vold.entity_id || null, table: 'vendors', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -3482,21 +3829,24 @@ async function _reminderContext(req) {
   const [invoices, customers, payRows] = await Promise.all([
     db.allByUser('invoices', uid, scope),
     db.allByUser('customers', uid, scope),
-    pool.query(`SELECT invoice_id, data->>'payment_date' AS payment_date FROM invoice_payments WHERE user_id = $1`, [uid])
-      .then(r => r.rows).catch(() => []),
+    // N113: invoice_payments is a TYPED table — payment_date is a column (there is no `data`). The old
+    // data->>'payment_date' read errored and a .catch(() => []) turned that into "no history", so no
+    // customer ever looked late. A failed read now fails the request (F62) instead of predicting from nothing.
+    pool.query(`SELECT invoice_id, payment_date::text AS payment_date FROM invoice_payments WHERE user_id = $1`, [uid])
+      .then(r => r.rows),
   ]);
-  // Business name + currency from the active entity's profile; fall back gracefully.
+  // Business name + currency: the active business's own name (entities store `name`), else the account's
+  // business_name (PUT /api/settings). N113: these used to read entities.business_name and
+  // user_settings.company_name — keys nothing writes — so every draft was signed "Our team".
   let businessName = '', currency = '';
-  try {
-    if (req.entityId != null) {
-      const { rows } = await pool.query(`SELECT data->>'business_name' AS bn, data->>'currency' AS cur FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [req.entityId, uid]);
-      if (rows[0]) { businessName = rows[0].bn || ''; currency = (rows[0].cur || '').toUpperCase(); }
-    }
-    if (!businessName) {
-      const { rows } = await pool.query(`SELECT data->>'company_name' AS cn FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [uid]);
-      if (rows[0] && rows[0].cn) businessName = rows[0].cn;
-    }
-  } catch (_) {}
+  if (req.entityId != null) {
+    const { rows } = await pool.query(`SELECT data->>'name' AS bn, data->>'currency' AS cur FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [req.entityId, uid]);
+    if (rows[0]) { businessName = rows[0].bn || ''; currency = (rows[0].cur || '').toUpperCase(); }
+  }
+  if (!businessName) {
+    const { rows } = await pool.query(`SELECT data->>'business_name' AS cn FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [uid]);
+    if (rows[0] && rows[0].cn) businessName = rows[0].cn;
+  }
   const today = await entityTodayYmd(req.entityId);
   return { invoices, customers, payments: payRows, businessName, currency, today };
 }
@@ -3582,7 +3932,10 @@ app.post('/api/payment-reminders/send', requireAuth, wrap(async (req, res) => {
     await resendClient.emails.send({
       from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
       to,
-      reply_to: req.session?.email || undefined,
+      // N29: replies go to the person who sent the reminder. This read req.session.email, which the session
+      // never carries (establishSession stores userEmail), so reply_to was always empty and a customer's
+      // reply went to the no-reply sender.
+      reply_to: (req.session && req.session.userEmail) || undefined,
       subject,
       html: htmlBody,
       text: body,
@@ -3732,7 +4085,19 @@ async function requireApiKey(req, res, next) {
     if (!row) return res.status(401).json({ error: 'Invalid API key.' });
     req.apiUserId = row.user_id;
     const d = row.data || {};
-    req.apiEntityId = (d.entity_id != null && d.entity_id !== '') ? Number(d.entity_id) : null;   // null = all entities
+    // N97: a key minted by a team member stops working when that member loses access (removed, revoked,
+    // or demoted below key-management rights). Keys from before created_by existed, or minted by the
+    // owner, are unaffected.
+    if (d.created_by != null && Number(d.created_by) !== Number(row.user_id)) {
+      const { rows: [mem] } = await pool.query(
+        `SELECT data->>'role' AS role FROM team_members WHERE user_id = $1 AND data->>'member_user_id' = $2::text AND data->>'status' = 'active' LIMIT 1`,
+        [row.user_id, String(d.created_by)]);
+      if (!mem || !require('./rbac').roleHasPerm(mem.role, 'settings:manage')) return res.status(401).json({ error: 'This API key was revoked: the team member who created it no longer has access.', code: 'API_KEY_REVOKED' });
+    }
+    // The key's entity scope is stored as key_entity_id (POST /api/api-keys); it used to be read from
+    // entity_id, which is never set, so every entity-scoped key read ALL entities (N27).
+    const _ke = d.key_entity_id;
+    req.apiEntityId = (_ke != null && _ke !== '') ? Number(_ke) : null;   // null = all entities
     req.apiKeyId = row.id;
     const now = Date.now();                                 // throttled last-used stamp (best-effort)
     if (!d.last_used_at || (now - Date.parse(d.last_used_at)) > 60000) {
@@ -3745,11 +4110,30 @@ async function requireApiKey(req, res, next) {
 // key sees only that entity's rows (distinct from session scoping, where null means personal-only).
 const _apiScope = (req) => (req.apiEntityId == null) ? (() => true) : ((r) => r.entity_id === req.apiEntityId);
 const _apiLimit = (req) => { const n = parseInt(req.query.limit, 10); return Number.isInteger(n) && n > 0 ? Math.min(n, 200) : 50; };
-const _apiSince = (req) => { const s = String(req.query.since || '').trim(); return s || null; };
-const _afterSince = (row, since) => { if (!since) return true; const c = row.created_at ? String(row.created_at) : ''; return c >= since; };
+// ?since filters on created_at — a genuine INSTANT (not an accounting date), so it is compared as an
+// instant. It used to compare String(created_at) — a Date's "Sat Jul 25 2026 …" form — to the ISO
+// string the caller sent, which ordered every row after every date, so the filter returned everything
+// (N28). An unparseable value is a 400, never silently ignored.
+const _apiSince = (req) => {
+  const s = String(req.query.since || '').trim();
+  if (!s) return null;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : NaN;
+};
+const _afterSince = (row, since) => {
+  if (since == null) return true;
+  const c = row.created_at instanceof Date ? row.created_at.getTime() : Date.parse(row.created_at || '');
+  return Number.isFinite(c) && c >= since;
+};
+const _badSince = (res) => res.status(400).json({ error: 'since must be an ISO-8601 date or timestamp, e.g. 2026-07-01 or 2026-07-01T00:00:00Z.' });
 
 // ── API KEY MANAGEMENT (session-authed) ──
-app.post('/api/api-keys', requireAuth, apiLimiter, wrap(async (req, res) => {
+// N26: an API key is a standing read credential over the account's books that bypasses session RBAC, so
+// minting, listing and revoking keys is an account-settings action (owner / admin — settings:manage),
+// and a member granted only some entities can only mint keys scoped to one of THOSE entities — never
+// an all-entities key. (Any non-viewer, incl. the external accountant and per-entity members, could
+// mint an all-entities key before.)
+app.post('/api/api-keys', requireAuth, requirePerm('settings:manage'), apiLimiter, wrap(async (req, res) => {
   const name = String(req.body?.name || '').trim().slice(0, 80) || 'API key';
   let entityId = null;
   if (req.body?.entity_id != null && req.body.entity_id !== '' && req.body.entity_id !== 'all') {
@@ -3758,21 +4142,25 @@ app.post('/api/api-keys', requireAuth, apiLimiter, wrap(async (req, res) => {
     const owned = await pool.query('SELECT id FROM entities WHERE id=$1 AND user_id=$2', [entityId, scopeId(req)]);
     if (!owned.rows[0]) return res.status(403).json({ error: 'Entity not found.' });
   }
+  if (Array.isArray(req.entityAccess) && (entityId == null || !req.entityAccess.includes(entityId))) {
+    return res.status(403).json({ error: 'You can only create API keys for a business you have access to.', code: 'API_KEY_ENTITY_SCOPE' });
+  }
   const key = apiKeys.generateKey();
   const { row } = await db.insert('api_keys', {
     user_id: scopeId(req), entity_id: null,
     hash: apiKeys.hashKey(key), display: apiKeys.maskKey(key), name,
     key_entity_id: entityId, created_at: new Date().toISOString(), last_used_at: null,
+    created_by: req.session.userId,   // N97: a member-minted key lives only as long as that member's access
   });
   logAudit(req, 'CREATE', 'api_keys', row.id, null, { name, display: apiKeys.maskKey(key), key_entity_id: entityId });
   // The plaintext key is returned ONCE here and never again.
   res.status(201).json({ id: row.id, name, key, display: apiKeys.maskKey(key), entity_id: entityId, created_at: row.data?.created_at || new Date().toISOString() });
 }));
-app.get('/api/api-keys', requireAuth, wrap(async (req, res) => {
+app.get('/api/api-keys', requireAuth, requirePerm('settings:manage'), wrap(async (req, res) => {
   const rows = await db.allByUser('api_keys', scopeId(req), () => true, (a, b) => b.id - a.id);
   res.json(rows.map(r => ({ id: r.id, name: r.name, display: r.display, entity_id: r.key_entity_id ?? null, created_at: r.created_at || null, last_used_at: r.last_used_at || null })));
 }));
-app.delete('/api/api-keys/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/api-keys/:id', requireAuth, requirePerm('settings:manage'), wrap(async (req, res) => {
   const row = await ownedBy('api_keys', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Key not found.' });
   await db.deleteById('api_keys', parseInt(req.params.id));
@@ -3788,6 +4176,7 @@ app.get('/api/v1/me', requireApiKey, apiLimiter, wrap(async (req, res) => {
 }));
 app.get('/api/v1/invoices', requireApiKey, apiLimiter, wrap(async (req, res) => {
   const since = _apiSince(req), limit = _apiLimit(req);
+  if (Number.isNaN(since)) return _badSince(res);
   const rows = (await db.allByUser('invoices', req.apiUserId, _apiScope(req), (a, b) => b.id - a.id))
     .filter(r => _afterSince(r, since)).slice(0, limit)
     .map(i => ({ id: i.id, client: i.client, amount: i.amount, amount_paid: i.amount_paid ?? 0, status: i.status, issue_date: i.issue_date || null, due_date: i.due_date || null, num: i.num || null, class: i.class || null, location: i.location || null, entity_id: i.entity_id ?? null, created_at: i.created_at || null }));
@@ -3795,6 +4184,7 @@ app.get('/api/v1/invoices', requireApiKey, apiLimiter, wrap(async (req, res) => 
 }));
 app.get('/api/v1/expenses', requireApiKey, apiLimiter, wrap(async (req, res) => {
   const since = _apiSince(req), limit = _apiLimit(req);
+  if (Number.isNaN(since)) return _badSince(res);
   const rows = (await db.allByUser('expenses', req.apiUserId, _apiScope(req), (a, b) => b.id - a.id))
     .filter(r => _afterSince(r, since)).slice(0, limit)
     .map(e => ({ id: e.id, description: e.description, category: e.category || null, amount: e.amount, deductible: e.deductible || null, expense_date: e.expense_date || null, class: e.class || null, location: e.location || null, entity_id: e.entity_id ?? null, created_at: e.created_at || null }));
@@ -3841,7 +4231,7 @@ app.get('/api/dashboard-bootstrap', requireAuth, wrap(async (req, res) => {
 
 
 app.get('/api/bills', requireAuth, wrap(async (req, res) => respondList(req, res, 'bills')));
-app.post('/api/bills', requireAuth, wrap(async (req, res) => {
+app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req, res) => {
   const { vendor, amount, due_date, status = 'unpaid', notes = '', issue_date } = req.body;
   // F194 Phase 2b: line_items present ⇒ the DERIVED Σ qty×rate is the canonical amount (Rule 2).
   // The derived amount flows to expense recognition unchanged — an ISSUED bill (RECOGNIZED_BILL)
@@ -3851,7 +4241,7 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   const _effAmount = _li.present ? _li.amount : amount;
   if (!vendor || _effAmount == null) return res.status(400).json({ error: 'vendor and amount required' });
   if (_badStatus(BILL_STATUSES, status)) return res.status(400).json({ error: 'Invalid bill status.' });
-  const entity = await activeEntity(req.session.userId);
+  const entity = await activeEntity(req);
   const _billEnt = req.entityId || entity?.id || null;  // F150-class: request-scoped entity, not is_active
   const num = 'BILL-' + String(Date.now()).slice(-4);
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
@@ -3883,7 +4273,7 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: _billEnt, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: _billEnt, table: 'bills', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): an issued bill accrues expense — Dr Operating Expenses / Cr AP at
   // its issue date (mirror of the invoice revenue leg; RECOGNIZED_BILL allowlist). A bill payment
   // settles AP separately (payments_made). Best-effort.
@@ -3900,7 +4290,7 @@ app.post('/api/bills', requireAuth, wrap(async (req, res) => {
   }
   res.json(row);
 }));
-app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
+app.put('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req, res) => {
   const { rows: [_blr] } = await pool.query(
     `SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`,
     [Number(req.params.id), scopeId(req)]
@@ -3927,21 +4317,24 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   // patched amount if it is being changed in this PUT, else the existing row amount. This also makes
   // markBillPaid's benign else-branch PUT {status:'paid'} (already fully covered by payments) a no-op
   // on amount_paid, since that bill DOES have linked payments.
-  if (patch.status != null && String(patch.status).toLowerCase() === 'paid') {
-    const { rows: _pmc } = await pool.query(
-      `SELECT COUNT(*)::int AS n FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2`,
-      [scopeId(req), String(Number(req.params.id))]
-    );
-    if (_pmc[0].n === 0) {
-      patch.amount_paid = (patch.amount != null ? patch.amount : (parseFloat(row.amount) || 0));
-    }
-  }
+  // N33: a flip to 'paid' is settled by a real bill-linked payment for the outstanding balance AFTER
+  // the edit (settleBillRemaining); status/amount_paid are then derived by recalcBillStatus.
+  const _flipPaid = patch.status != null && String(patch.status).toLowerCase() === 'paid';
+  if (_flipPaid) delete patch.status;
   await db.updateById('bills', Number(req.params.id), patch);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
+  if (_flipPaid) {
+    await settleBillRemaining(pool, {
+      userId: scopeId(req), billId: Number(req.params.id),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(b.payment_date || '')) ? b.payment_date : await entityTodayYmd(row.entity_id),
+      method: 'other', notes: 'Auto-recorded: bill marked paid', idemKey: 'bill_mark_paid:' + Number(req.params.id),
+    });
+  }
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'UPDATE', oldData: row, newData: { ...row, ...patch }, req });  // F90 residual: money-table UPDATE audit
   // GL Phase 2 (shadow) - keep the ledger in lockstep with the edited bill: a status change into/out of
   // RECOGNIZED_BILL recognises/de-recognises it, and an amount/issue-date edit trues-up its lines.
   try {
-    const _bStatus = String(patch.status != null ? patch.status : row.status || '').toLowerCase();
+    const { rows: [_bNow] } = await pool.query(`SELECT data->>'status' AS st FROM bills WHERE id = $1`, [Number(req.params.id)]);
+    const _bStatus = String((_bNow && _bNow.st) || row.status || '').toLowerCase();
     const _bAmt = parseFloat(patch.amount != null ? patch.amount : row.amount) || 0;
     const _bIssue = patch.issue_date != null ? patch.issue_date : row.issue_date;
     await resyncDocLedger(pool, {
@@ -3954,12 +4347,12 @@ app.put('/api/bills/:id', requireAuth, wrap(async (req, res) => {
   } catch (glErr) { console.error('[GL] bill resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
-app.delete('/api/bills/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req, res) => {
   const { rows: [_bold] } = await pool.query('SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   if (!_bold) return res.status(404).json({ error: 'Not found.' });   // cross-tenant / nonexistent id → 404, not fake-success 200
   await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'bill', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] bill reversal failed (shadow, non-fatal):', glErr && glErr.message); }
-  if (_bold) await recordAudit(pool, { userId: req.session.userId, entityId: _bold.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_bold), req });  // F90 Phase B
+  if (_bold) await recordAudit(pool, { userId: scopeId(req), entityId: _bold.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_bold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -3978,7 +4371,7 @@ app.get('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
 app.post('/api/recurring-bills', requireAuth, wrap(async (req, res) => {
   const { vendor, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!vendor || !amount) return res.status(400).json({ error: 'vendor and amount required' });
-  const entity = await activeEntity(req.session.userId);
+  const entity = await activeEntity(req);
   const _dup = await findRecentDuplicate('recurring_bills', scopeId(req), req.entityId || entity?.id || null, { textMatch: { vendor: String(vendor).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('recurring_bills', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, vendor: String(vendor).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
@@ -4000,7 +4393,7 @@ app.put('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
   await db.updateById('recurring_bills', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
-app.delete('/api/recurring-bills/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/recurring-bills/:id', requireAuth, requireOwnedRow('recurring_bills'), wrap(async (req, res) => {
   await pool.query('DELETE FROM recurring_bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
@@ -4046,7 +4439,7 @@ app.put('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req
   await db.updateById('recurring_personal_transactions', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
-app.delete('/api/recurring-personal-transactions/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/recurring-personal-transactions/:id', requireAuth, requireOwnedRow('recurring_personal_transactions'), wrap(async (req, res) => {
   await pool.query('DELETE FROM recurring_personal_transactions WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
@@ -4063,22 +4456,31 @@ app.get('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   // ?display= param the response is byte-identical to before (no conversion, no _fx field).
   const _disp = String(req.query.display || '').toUpperCase();
   if (/^[A-Z]{3}$/.test(_disp)) {
-    const _ent  = await activeEntity(req.session.userId);
-    const _from = String((_ent && _ent.currency) || 'USD').toUpperCase();
-    const _rate = await rateAsOf(pool, scopeId(req), _from, _disp, FinFlowDates.resolvedToday(new Date()));
-    const _ok   = _rate != null;   // rateAsOf → null when the pair has no rate (never fabricated)
-    _out = _out.map(r => ({
-      ...r,
-      amount: _ok ? (Number(r.amount) || 0) * _rate : r.amount,
-      _fx: { display: _disp, from: _from, rate: _ok ? _rate : null, ok: _ok },
-    }));
+    // N31: each schedule converts from ITS OWN entity's currency (an entity-less legacy row: the entity
+    // being viewed). It used to convert every row from the actor's flagged entity's currency.
+    const _entCur = {};
+    for (const e of await db.allByUser('entities', scopeId(req))) _entCur[e.id] = String(e.currency || 'USD').toUpperCase();
+    const _view = await activeEntity(req);
+    const _viewCur = String((_view && _view.currency) || 'USD').toUpperCase();
+    const _today = FinFlowDates.resolvedToday(new Date());
+    const _rates = {};
+    for (const r of _out) {
+      const f = (r.entity_id != null && _entCur[r.entity_id]) || _viewCur;
+      if (!(f in _rates)) _rates[f] = await rateAsOf(pool, scopeId(req), f, _disp, _today);
+    }
+    _out = _out.map(r => {
+      const _from = (r.entity_id != null && _entCur[r.entity_id]) || _viewCur;
+      const _rate = _rates[_from];
+      const _ok = _rate != null;   // rateAsOf → null when the pair has no rate (never fabricated)
+      return { ...r, amount: _ok ? (Number(r.amount) || 0) * _rate : r.amount, _fx: { display: _disp, from: _from, rate: _ok ? _rate : null, ok: _ok } };
+    });
   }
   res.json(_out);
 }));
 app.post('/api/recurring-invoices', requireAuth, wrap(async (req, res) => {
   const { client, amount, frequency = 'Monthly', next_run, status = 'active', end_date = null } = req.body;
   if (!client || !amount) return res.status(400).json({ error: 'client and amount required' });
-  const entity = await activeEntity(req.session.userId);
+  const entity = await activeEntity(req);
   const _dup = await findRecentDuplicate('recurring_invoices', scopeId(req), req.entityId || entity?.id || null, { textMatch: { client: String(client).trim().slice(0,200), frequency: String(frequency) }, numMatch: { amount: Number(amount) } });
   if (_dup) return res.json(_dup);
   const { row } = await db.insert('recurring_invoices', { user_id: scopeId(req), entity_id: req.entityId || entity?.id || null, client: String(client).trim().slice(0, 200), amount: Number(amount), frequency, next_run, status, end_date: end_date || null });  // F150-class: request-scoped entity
@@ -4101,7 +4503,7 @@ app.put('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
   await db.updateById('recurring_invoices', Number(req.params.id), patch);
   res.json({ ok: true });
 }));
-app.delete('/api/recurring-invoices/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/recurring-invoices/:id', requireAuth, requireOwnedRow('recurring_invoices'), wrap(async (req, res) => {
   await pool.query('DELETE FROM recurring_invoices WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   res.json({ ok: true });
 }));
@@ -4113,7 +4515,7 @@ app.get('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   // owner saw every entity's receipts on each entity's page.
   res.json(await db.allByUser('sales_receipts', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
-app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
+app.post('/api/sales-receipts', requireAuth, lockGuard(LOCK_SPECS.sales_receipts), wrap(async (req, res) => {
   const { customer, num, amount, date, method = 'Card' } = req.body || {};
   if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
@@ -4145,7 +4547,7 @@ app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a walk-in cash sale is Dr Cash / Cr Revenue at its date (matches
   // computeBooks' salesReceipts revenue leg). Best-effort.
   try {
@@ -4159,7 +4561,7 @@ app.post('/api/sales-receipts', requireAuth, wrap(async (req, res) => {
   } catch (glErr) { console.error('[GL] sales-receipt posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(row);
 }));
-app.put('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
+app.put('/api/sales-receipts/:id', requireAuth, requireOwnedRow('sales_receipts'), lockGuard(LOCK_SPECS.sales_receipts), wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
   if (b.customer != null) patch.customer = String(b.customer).trim().slice(0, 200);
@@ -4172,14 +4574,15 @@ app.put('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
     `UPDATE sales_receipts SET data = data || $1::jsonb, updated_at = NOW() WHERE id = $2 AND user_id = $3`,
     [JSON.stringify(Object.fromEntries(Object.entries(patch).filter(([,v]) => v !== undefined))), Number(req.params.id), scopeId(req)]
   );
-  if (_srold) { const _o = rowToObj(_srold); await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
+  if (_srold) { const _o = rowToObj(_srold); await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
+  if (_srold) try { await _resyncAfterEdit(scopeId(req), 'sales_receipts', Number(req.params.id)); } catch (glErr) { console.error('[GL] sales_receipts edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
-app.delete('/api/sales-receipts/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/sales-receipts/:id', requireAuth, requireOwnedRow('sales_receipts'), lockGuard(LOCK_SPECS.sales_receipts), wrap(async (req, res) => {
   const { rows: [_srold] } = await pool.query('SELECT * FROM sales_receipts WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM sales_receipts WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'sales_receipt', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] sales_receipt reversal failed (shadow, non-fatal):', glErr && glErr.message); }
-  if (_srold) await recordAudit(pool, { userId: req.session.userId, entityId: _srold.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_srold), req });  // F90 Phase B
+  if (_srold) await recordAudit(pool, { userId: scopeId(req), entityId: _srold.entity_id || null, table: 'sales_receipts', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_srold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -4204,8 +4607,10 @@ const _prGone = (res) => res.status(410).json({
   error: 'Recording a standalone "Payment Received" has been retired. Record the payment against its invoice instead — it settles the invoice and updates cash-in.',
   code: 'PAYMENTS_RECEIVED_RETIRED', deprecated: true,
 });
-app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
-  if (_prWritesRetired()) return _prGone(res);   // F86 gated deprecation — writes retired (410); GET stays
+// The F86 gate runs FIRST on every write route — before the ownership check and the period-lock guard —
+// so a retired write answers 410 whatever the id or date.
+const _prWritesGate = (req, res, next) => (_prWritesRetired() ? _prGone(res) : next());
+app.post('/api/payments-received', requireAuth, _prWritesGate, lockGuard(LOCK_SPECS.payments_received), wrap(async (req, res) => {
   const { customer, invoice_ref, amount, date, method = 'Bank Transfer' } = req.body || {};
   if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
@@ -4242,11 +4647,10 @@ app.post('/api/payments-received', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'payments_received', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'payments_received', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   res.json(row);
 }));
-app.put('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
-  if (_prWritesRetired()) return _prGone(res);   // F86 gated deprecation — writes retired (410); GET stays
+app.put('/api/payments-received/:id', requireAuth, _prWritesGate, requireOwnedRow('payments_received'), lockGuard(LOCK_SPECS.payments_received), wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
   if (b.customer     != null) patch.customer     = String(b.customer).trim().slice(0, 200);
@@ -4261,15 +4665,14 @@ app.put('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
   if (_prchk) {
     await db.updateById('payments_received', _prchk.id, patch);
     const _o = rowToObj(_prchk);
-    await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'payments_received', recordId: _prchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
+    await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'payments_received', recordId: _prchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
   }
   res.json({ ok: true });
 }));
-app.delete('/api/payments-received/:id', requireAuth, wrap(async (req, res) => {
-  if (_prWritesRetired()) return _prGone(res);   // F86 gated deprecation — writes retired (410); GET stays
+app.delete('/api/payments-received/:id', requireAuth, _prWritesGate, requireOwnedRow('payments_received'), lockGuard(LOCK_SPECS.payments_received), wrap(async (req, res) => {
   const { rows: [_prold] } = await pool.query('SELECT * FROM payments_received WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM payments_received WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
-  if (_prold) await recordAudit(pool, { userId: req.session.userId, entityId: _prold.entity_id || null, table: 'payments_received', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_prold), req });  // F90 Phase B
+  if (_prold) await recordAudit(pool, { userId: scopeId(req), entityId: _prold.entity_id || null, table: 'payments_received', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_prold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -4278,7 +4681,7 @@ app.get('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   // F148: entity-scope (null-inclusive) now that credit notes carry entity_id.
   res.json(await db.allByUser('credit_notes', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
-app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
+app.post('/api/credit-notes', requireAuth, lockGuard(LOCK_SPECS.credit_notes), wrap(async (req, res) => {
   const { customer, num, amount, date, status = 'Open', reason = '' } = req.body || {};
   if (!customer || amount == null) return res.status(400).json({ error: 'customer and amount required.' });
   const validStatuses = ['Open', 'Applied', 'Void'];
@@ -4318,7 +4721,7 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'credit_notes', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'credit_notes', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a credit note is the REVENUE CONTRA (F58) — Dr Revenue (4000) /
   // Cr Accounts Receivable (1100) at its date, when status ∈ {Open,Applied} (Void contributes 0,
   // mirroring RECOGNIZED_CREDIT in computeBooks). This reduces BOTH revenue (matching computeBooks'
@@ -4338,7 +4741,7 @@ app.post('/api/credit-notes', requireAuth, wrap(async (req, res) => {
   }
   res.json(row);
 }));
-app.put('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
+app.put('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes'), lockGuard(LOCK_SPECS.credit_notes), wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
   const validStatuses = ['Open', 'Applied', 'Void'];
@@ -4354,15 +4757,16 @@ app.put('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
   if (_cnchk) {
     await db.updateById('credit_notes', _cnchk.id, patch);
     const _o = rowToObj(_cnchk);
-    await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'credit_notes', recordId: _cnchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
+    await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'credit_notes', recordId: _cnchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
   }
+  try { await _resyncAfterEdit(scopeId(req), 'credit_notes', Number(req.params.id)); } catch (glErr) { console.error('[GL] credit_notes edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
-app.delete('/api/credit-notes/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/credit-notes/:id', requireAuth, requireOwnedRow('credit_notes'), lockGuard(LOCK_SPECS.credit_notes), wrap(async (req, res) => {
   const { rows: [_cnold] } = await pool.query('SELECT * FROM credit_notes WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM credit_notes WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'credit_note', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] credit_note reversal failed (shadow, non-fatal):', glErr && glErr.message); }
-  if (_cnold) await recordAudit(pool, { userId: req.session.userId, entityId: _cnold.entity_id || null, table: 'credit_notes', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_cnold), req });  // F90 Phase B
+  if (_cnold) await recordAudit(pool, { userId: scopeId(req), entityId: _cnold.entity_id || null, table: 'credit_notes', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_cnold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -4374,7 +4778,7 @@ app.get('/api/payments-made', requireAuth, wrap(async (req, res) => {
   // the payments_made money reads (P&L, cash-flow, computeBooks) were already entity-scoped.
   res.json(await db.allByUser('payments_made', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
-app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
+app.post('/api/payments-made', requireAuth, lockGuard(LOCK_SPECS.payments_made), wrap(async (req, res) => {
   const { vendor, amount, date, method, notes, ref, bill_id } = req.body || {};
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1: token-blind 5s pre-check runs ONLY for token-less callers; when a token IS present
@@ -4387,23 +4791,43 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   // F38 Step 3: bill_id links this payment to a bill (nullable). A LINKED payment settles AP
   // (Step 4 excludes it from expense); an UNLINKED (bill_id null) payment stays a direct expense.
   const _billId = (bill_id != null && bill_id !== '') ? Number(bill_id) : null;
+  if (_billId != null) {
+    // A replay of a payment that already landed returns it (before the balance check, which the first
+    // write has already consumed).
+    if (idem) {
+      const { rows: [_prev] } = await pool.query(`SELECT * FROM payments_made WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      if (_prev) return res.status(200).json(rowToObj(_prev));
+    }
+  }
   // C1 Wave 1 durable backstop (mirrors invoices/expenses/bills): a same-token double-submit → the
   // 2nd INSERT throws 23505 → recover the ORIGINAL row and return 200. On that path the 2nd payment
   // never lands, so recalcBillStatus below runs only for a genuine first insert — no double-recalc.
-  let row;
+  let row, _refused = null;
+  const _pmDate = date || await entityTodayYmd(req.entityId);
+  const _pmInsert = (q) => db.insert('payments_made', {
+    user_id: scopeId(req),
+    entity_id: req.entityId || null,
+    vendor: (vendor || '').trim().slice(0, 200),
+    amount: parseFloat(amount) || 0,
+    date: _pmDate,
+    method: (method || '').slice(0, 50),
+    notes: (notes || '').slice(0, 500),
+    ref: (ref || '').slice(0, 100),
+    bill_id: _billId,
+    idempotency_key: idem,
+  }, q);
   try {
-    ({ row } = await db.insert('payments_made', {
-      user_id: scopeId(req),
-      entity_id: req.entityId || null,
-      vendor: (vendor || '').trim().slice(0, 200),
-      amount: parseFloat(amount) || 0,
-      date: date || await entityTodayYmd(req.entityId),
-      method: (method || '').slice(0, 50),
-      notes: (notes || '').slice(0, 500),
-      ref: (ref || '').slice(0, 100),
-      bill_id: _billId,
-      idempotency_key: idem,
-    }));
+    if (_billId != null) {
+      // N57b: a bill-linked payment's balance check + insert run under the bill's payment lock.
+      row = await withPaymentLock('bill', _billId, async (conn) => {
+        const _chk = await checkBillPayment(scopeId(req), _billId, amount, req.entityId || null, null, conn);
+        if (_chk.error) { _refused = _chk; return null; }
+        return (await _pmInsert(conn)).row;
+      });
+      if (_refused) return res.status(_refused.status).json({ error: _refused.error, code: _refused.code });
+    } else {
+      ({ row } = await _pmInsert(pool));
+    }
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(`SELECT * FROM payments_made WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
@@ -4411,8 +4835,8 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-  if (_billId != null) await recalcBillStatus(pool, _billId, req.session.userId);
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'payments_made', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  if (_billId != null) await recalcBillStatus(pool, _billId, scopeId(req));
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'payments_made', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a bill-LINKED payment SETTLES AP (Dr AP / Cr Cash); an ORPHAN
   // payment (no bill) is a direct disbursement EXPENSE (Dr Opex / Cr Cash) — mirrors computeBooks'
   // bill_id-IS-NULL split (linked settles, orphan expenses; no double count). Best-effort.
@@ -4435,7 +4859,7 @@ app.post('/api/payments-made', requireAuth, wrap(async (req, res) => {
   } catch (glErr) { console.error('[GL] payment-made posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(row);
 }));
-app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
+app.put('/api/payments-made/:id', requireAuth, requireOwnedRow('payments_made'), lockGuard(LOCK_SPECS.payments_made), wrap(async (req, res) => {
   const { vendor, amount, date, method, notes, ref, bill_id } = req.body || {};
   const { rows: [_pmchk] } = await pool.query(
     `SELECT * FROM payments_made WHERE id = $1 AND user_id = $2 LIMIT 1`,
@@ -4452,21 +4876,34 @@ app.put('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
   if (ref != null) patch.ref = String(ref).slice(0, 100);
   let _newBillId = _oldBillId;
   if (bill_id !== undefined) { _newBillId = (bill_id != null && bill_id !== '') ? Number(bill_id) : null; patch.bill_id = _newBillId; }
-  await db.updateById('payments_made', _pmchk.id, patch);
+  if (_newBillId != null) {
+    // N57b: the edited payment's check against its (new) bill + the write run under that bill's payment lock.
+    const _amt = patch.amount != null ? patch.amount : (parseFloat(_pmchk.data && _pmchk.data.amount) || 0);
+    const _refused = await withPaymentLock('bill', _newBillId, async (conn) => {
+      const _chk = await checkBillPayment(scopeId(req), _newBillId, _amt, _pmchk.entity_id, _pmchk.id, conn);
+      if (_chk.error) return _chk;
+      await conn.query(`UPDATE payments_made SET data = COALESCE(data,'{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2`, [JSON.stringify(patch), _pmchk.id]);
+      return null;
+    });
+    if (_refused) return res.status(_refused.status).json({ error: _refused.error, code: _refused.code });
+  } else {
+    await db.updateById('payments_made', _pmchk.id, patch);
+  }
   // F38 Step 3: recalc every bill this payment touched — the old link and the new one (deduped),
   // so amount/link changes redraw AP on both the previous and current bill.
-  for (const b of new Set([_oldBillId, _newBillId])) { if (b != null) await recalcBillStatus(pool, b, req.session.userId); }
-  { const _o = rowToObj(_pmchk); await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'payments_made', recordId: _pmchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
+  for (const b of new Set([_oldBillId, _newBillId])) { if (b != null) await recalcBillStatus(pool, b, scopeId(req)); }
+  { const _o = rowToObj(_pmchk); await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'payments_made', recordId: _pmchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req }); }  // F90 residual: money-table UPDATE audit
+  try { await _resyncAfterEdit(scopeId(req), 'payments_made', Number(req.params.id)); } catch (glErr) { console.error('[GL] payments_made edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
-app.delete('/api/payments-made/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/payments-made/:id', requireAuth, requireOwnedRow('payments_made'), lockGuard(LOCK_SPECS.payments_made), wrap(async (req, res) => {
   // F38 Step 3: capture the linked bill BEFORE deleting so its AP is redrawn afterward.
   const { rows: [_pmrow] } = await pool.query('SELECT * FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   const _billId = _pmrow && _pmrow.data && _pmrow.data.bill_id != null ? Number(_pmrow.data.bill_id) : null;
   await pool.query('DELETE FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'bill_payment', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] bill_payment reversal failed (shadow, non-fatal):', glErr && glErr.message); }
-  if (_billId != null) await recalcBillStatus(pool, _billId, req.session.userId);
-  if (_pmrow) await recordAudit(pool, { userId: req.session.userId, entityId: _pmrow.entity_id || null, table: 'payments_made', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_pmrow), req });  // F90 Phase B
+  if (_billId != null) await recalcBillStatus(pool, _billId, scopeId(req));
+  if (_pmrow) await recordAudit(pool, { userId: scopeId(req), entityId: _pmrow.entity_id || null, table: 'payments_made', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_pmrow), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
@@ -4481,7 +4918,7 @@ app.get('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
     res.status(500).json({ error: 'Could not load vendor credits. Please try again.' });
   }
 }));
-app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
+app.post('/api/vendor-credits', requireAuth, lockGuard(LOCK_SPECS.vendor_credits), wrap(async (req, res) => {
   const { vendor, num, amount, date, status = 'Open', reason = '' } = req.body || {};
   if (!vendor || amount == null) return res.status(400).json({ error: 'vendor and amount required.' });
   const validStatuses = ['Open', 'Applied', 'Void'];
@@ -4518,7 +4955,7 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: req.entityId || null, table: 'vendor_credits', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
+  await recordAudit(pool, { userId: scopeId(req), entityId: req.entityId || null, table: 'vendor_credits', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B
   // GL Phase 2 (dual-write shadow): a vendor credit is the OPEX CONTRA (F58) — the exact mirror of a
   // credit note on revenue — Dr Accounts Payable (2000) / Cr Operating Expenses (6000) at its date,
   // when status ∈ {Open,Applied} (Void contributes 0, mirroring RECOGNIZED_CREDIT). Reduces opex
@@ -4538,7 +4975,7 @@ app.post('/api/vendor-credits', requireAuth, wrap(async (req, res) => {
   }
   res.json(row);
 }));
-app.put('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
+app.put('/api/vendor-credits/:id', requireAuth, requireOwnedRow('vendor_credits'), lockGuard(LOCK_SPECS.vendor_credits), wrap(async (req, res) => {
   const b = req.body || {};
   const patch = {};
   const validStatuses = ['Open', 'Applied', 'Void'];
@@ -4554,29 +4991,30 @@ app.put('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
   if (_vcchk) {
     await db.updateById('vendor_credits', _vcchk.id, patch);
     const _o = rowToObj(_vcchk);
-    await recordAudit(pool, { userId: req.session.userId, entityId: _o.entity_id || null, table: 'vendor_credits', recordId: _vcchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
+    await recordAudit(pool, { userId: scopeId(req), entityId: _o.entity_id || null, table: 'vendor_credits', recordId: _vcchk.id, action: 'UPDATE', oldData: _o, newData: { ..._o, ...patch }, req });  // F90 residual: money-table UPDATE audit
   }
+  try { await _resyncAfterEdit(scopeId(req), 'vendor_credits', Number(req.params.id)); } catch (glErr) { console.error('[GL] vendor_credits edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
-app.delete('/api/vendor-credits/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/vendor-credits/:id', requireAuth, requireOwnedRow('vendor_credits'), lockGuard(LOCK_SPECS.vendor_credits), wrap(async (req, res) => {
   const { rows: [_vcold] } = await pool.query('SELECT * FROM vendor_credits WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   await pool.query('DELETE FROM vendor_credits WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'vendor_credit', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] vendor_credit reversal failed (shadow, non-fatal):', glErr && glErr.message); }
-  if (_vcold) await recordAudit(pool, { userId: req.session.userId, entityId: _vcold.entity_id || null, table: 'vendor_credits', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vcold), req });  // F90 Phase B
+  if (_vcold) await recordAudit(pool, { userId: scopeId(req), entityId: _vcold.entity_id || null, table: 'vendor_credits', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_vcold), req });  // F90 Phase B
   res.json({ ok: true });
 }));
 
 // ── TIMESHEET ─────────────────────────────────────────────────────────────────
 app.get('/api/timesheet', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('timesheet', req.session.userId, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
+  res.json(await db.allByUser('timesheet', scopeId(req), r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId), (a, b) => b.id - a.id));
 }));
 app.post('/api/timesheet', requireAuth, wrap(async (req, res) => {
   const { employee, project = '', date, hours, billable = 'Yes', rate = 0 } = req.body || {};
   if (!employee || hours == null) return res.status(400).json({ error: 'employee and hours required' });
-  const _dup = await findRecentDuplicate('timesheet', req.session.userId, req.entityId || null, { textMatch: { employee: employee.trim().slice(0,100), project: project.trim().slice(0,200) }, numMatch: { hours: parseFloat(hours)||0 } });
+  const _dup = await findRecentDuplicate('timesheet', scopeId(req), req.entityId || null, { textMatch: { employee: employee.trim().slice(0,100), project: project.trim().slice(0,200) }, numMatch: { hours: parseFloat(hours)||0 } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('timesheet', {
-    user_id:  req.session.userId,
+    user_id:  scopeId(req),
     entity_id: req.entityId || null,
     employee: employee.trim().slice(0, 100),
     project:  project.trim().slice(0, 200),
@@ -4588,7 +5026,7 @@ app.post('/api/timesheet', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.put('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
-  const row = await ownedBy('timesheet', req.params.id, req.session.userId);
+  const row = await ownedBy('timesheet', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const b = req.body || {};
   const patch = {};
@@ -4603,14 +5041,16 @@ app.put('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
   res.json(_tsr ? rowToObj(_tsr) : {});
 }));
 app.delete('/api/timesheet/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('timesheet', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('timesheet', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('timesheet', parseInt(req.params.id));
   res.json({ ok: true });
 }));
 
 // ── TEAM ──────────────────────────────────────────────────────────────────────
 app.get('/api/team', requireAuth, wrap(async (req, res) => {
-  const uid  = req.session.userId;
+  // The roster of the ACCOUNT this session works in (invites are written under it — POST /api/team, /invite).
+  // It used to read the signed-in person's own invites, so an admin member never saw the invites they sent.
+  const uid  = scopeId(req);
   const { rows: [_tmu] } = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [uid]);
   const user = _tmu ? rowToObj(_tmu) : null;
   // F19: the roster is people with ACTUAL account access — the owner + real invited
@@ -4673,6 +5113,23 @@ app.get('/api/my-access', requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// N36: switch the account this session works in — the user's own, or one they are an ACTIVE member of.
+app.post('/api/my-access/switch', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const target = parseInt((req.body || {}).accountOwnerId, 10);
+  if (!Number.isInteger(target) || target <= 0) return res.status(400).json({ error: 'accountOwnerId required.' });
+  if (target !== uid) {
+    const { rows: [m] } = await pool.query(
+      `SELECT 1 FROM team_members WHERE user_id = $1 AND data->>'member_user_id' = $2::text AND data->>'status' = 'active' LIMIT 1`,
+      [target, String(uid)]);
+    if (!m) return res.status(403).json({ error: 'You are not a member of that account.' });
+  }
+  req.session.activeAccountId = target;
+  req.session.entityId = null;   // the entity resolver picks the target account's default entity
+  await saveSession(req);
+  res.json({ ok: true, currentAccountId: target });
+}));
+
 app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
   // F54: no invite/token/email handshake — a bare team_members insert. No caller (client,
   // server-to-server, or test harness — checked) uses this route; the real invite path is
@@ -4684,10 +5141,10 @@ app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, 
   if (!name || !email) return res.status(400).json({ error: 'name and email required.' });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Invalid email.' });
   const validRoles = ['admin', 'accountant', 'viewer'];
-  const _dup = await findRecentDuplicate('team_members', req.session.userId, null, { textMatch: { email: email.toLowerCase().slice(0,200) } });
+  const _dup = await findRecentDuplicate('team_members', scopeId(req), null, { textMatch: { email: email.toLowerCase().slice(0,200) } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('team_members', {
-    user_id: req.session.userId,
+    user_id: scopeId(req),
     name:    name.trim().slice(0, 100),
     email:   email.toLowerCase().slice(0, 200),
     role:    validRoles.includes(role) ? role : 'viewer',
@@ -4695,7 +5152,7 @@ app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, 
   res.status(201).json(row);
 }));
 app.put('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
-  const row = await ownedBy('team_members', req.params.id, req.session.userId);
+  const row = await ownedBy('team_members', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const { role } = req.body || {};
   const validRoles = ['admin', 'accountant', 'viewer'];
@@ -4709,7 +5166,7 @@ app.put('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (re
   res.json(_tmr ? rowToObj(_tmr) : {});
 }));
 app.delete('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
-  if (!(await ownedBy('team_members', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!(await ownedBy('team_members', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('team_members', parseInt(req.params.id));
   res.json({ ok: true });
 }));
@@ -4875,9 +5332,11 @@ app.post('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
       return res.status(400).json({ error: 'This invitation is invalid or has expired.' });
     }
 
-    // Does a users row already exist for the invited email?
+    // Does a users row already exist for the invited email? (N91: under the same per-email advisory
+    // lock createUserUnique takes, so a concurrent sign-up cannot slip in between check and insert.)
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext('user-email:' || lower($1)))`, [inv.email]);
     const { rows: [existRow] } = await client.query(
-      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) LIMIT 1`, [inv.email]
+      `SELECT * FROM users WHERE lower(data->>'email') = lower($1) ORDER BY id LIMIT 1`, [inv.email]
     );
 
     let memberUserId, memberName;
@@ -4904,12 +5363,12 @@ app.post('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
       }
       memberName = (name || '').trim().slice(0, 100) || inv.email;
       const hash = bcrypt.hashSync(password, 12);
-      const ins  = await client.query(
-        `INSERT INTO users (user_id, entity_id, data) VALUES (NULL, NULL, $1) RETURNING id`,
-        [{ email: inv.email, password: hash, name: memberName, plan: 'trial',
-           trial_ends: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner' }]
-      );
-      memberUserId = ins.rows[0].id;
+      memberUserId = await createUserUnique(client, inv.email, { password: hash, name: memberName, plan: 'trial',
+        trial_ends: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), role: 'owner' });
+      if (memberUserId == null) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'An account with this email already exists.' });
+      }
     }
 
     // An owner accepting their own account's invite would orphan the resolver's
@@ -4944,10 +5403,9 @@ app.post('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
     await client.query('COMMIT');
 
     // Log them into the account they just joined.
-    req.session.userId    = memberUserId;
-    req.session.userRole  = 'owner';   // own-identity session role; account role comes from resolver
-    req.session.userEmail = inv.email;
-    await saveSession(req);   // F134: durable session row before the response (else immediate GETs 401)
+    // own-identity session role; account role comes from resolver. establishSession regenerates the id
+    // and persists before the response (N73, F134).
+    await establishSession(req, { userId: memberUserId, userRole: 'owner', userEmail: inv.email });
     return res.json({ ok: true, role: inv.role });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch (_) {}
@@ -4962,6 +5420,32 @@ app.post('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
 // Words that signal a complex query requiring Sonnet; everything else uses Haiku.
 const COMPLEX_QUERY_RE = /\b(analyze|recommend|explain|forecast|compare|predict|strategy|insight|report|why)\b|how should/i;
 
+// N21 / N21b: the figures BOTH AI assistants are grounded on — the canonical P&L (glProfitLoss: the ledger
+// when it reconciles, else computeBooks) for the business being viewed, this fiscal year, labelled with that
+// business's currency. Each assistant used to re-derive its own: revenue = PAID invoices (cash, not the
+// issue-based accrual every other surface uses), expenses = the expense table only (no bills, payroll,
+// COGS, credit notes), every business and currency summed raw under a '$'.
+async function aiBooksContext(req) {
+  const uid = scopeId(req), eid = req.entityId || null;
+  const fyStartIdx = await accountFyStartIdx(uid);
+  const pl = await glProfitLoss(uid, eid, { period: 'year', fyStartIdx });
+  const ent = await activeEntity(req);
+  const cur = String((eid != null && ent && ent.currency) || (pl.baseCurrency) || (ent && ent.currency) || 'USD').toUpperCase();
+  const inv = await db.allByUser('invoices', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+  const st = i => String(i.status || '').toLowerCase();
+  const money = n => cur + ' ' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return {
+    business: (ent && ent.name) || null,
+    text: `Business: ${(ent && ent.name) || 'This business'} (figures in ${cur}, this fiscal year)
+Revenue (issued invoices + sales receipts − credit notes): ${money(pl.totalRevenue)}
+Cost of goods sold: ${money(pl.cogs)}
+Operating expenses (incl. payroll ${money(pl.payroll)}): ${money(pl.totalExpenses)}
+Net profit: ${money(pl.netProfit)}
+Open invoices: ${inv.filter(i => ['pending', 'overdue', 'partial'].includes(st(i))).length}
+Overdue invoices: ${inv.filter(i => st(i) === 'overdue').length}`,
+  };
+}
+
 app.post('/api/ai', requireAuth, async (req, res) => {
   try {
     const { message, history = [] } = req.body;
@@ -4969,7 +5453,11 @@ app.post('/api/ai', requireAuth, async (req, res) => {
 
     const uid         = scopeId(req);   // (L4) read the ACCOUNT's books, not the actor's own —
                                         // consistent with the cache/cap/settings reads below.
-    const questionKey = message.trim().toLowerCase();
+    // N21b: the grounding figures are computed FIRST and fingerprinted into the cache key, so a cached answer
+    // is only reused for the same question about the same business with the same numbers (it used to be
+    // keyed on the question alone: another business's — or yesterday's — figures were served for 24 h).
+    const _ctx = await aiBooksContext(req);
+    const questionKey = message.trim().toLowerCase() + '#' + require('crypto').createHash('sha256').update(_ctx.text).digest('hex').slice(0, 16);
 
     // Check cache first — identical question for same user within 24 h
     const cached = await pool.query(
@@ -4990,17 +5478,7 @@ app.post('/api/ai', requireAuth, async (req, res) => {
       return res.status(402).json({ error: 'Monthly AI limit reached — upgrade for more.', code: 'AI_CAP_REACHED', used: gate.used, cap: gate.cap });
     }
 
-    // Gather financial context in parallel
-    const [invoices, expenses, customers, settings] = await Promise.all([
-      db.allByUser('invoices', uid),
-      db.allByUser('expenses', uid),
-      db.allByUser('customers', uid),
-      pool.query(`SELECT * FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL LIMIT 1`, [scopeId(req)]).then(r => r.rows[0] ? rowToObj(r.rows[0]) : null),
-    ]);
-    const cfg = settings || {};
-
-    const totalRevenue  = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (i.amount || 0), 0);
-    const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0);
+    const customers = await db.allByUser('customers', uid, r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId));
 
     const model = COMPLEX_QUERY_RE.test(message)
       ? (process.env.AI_MODEL_COMPLEX || 'claude-sonnet-4-20250514')
@@ -5011,13 +5489,8 @@ app.post('/api/ai', requireAuth, async (req, res) => {
 
     // Per-user context changes between users but not between rapid follow-up questions
     // from the same user — cache it as the first user content block.
-    const contextText = `Business: ${cfg.company_name || 'This business'}
-Revenue (paid invoices): $${totalRevenue.toLocaleString()}
-Total Expenses: $${totalExpenses.toLocaleString()}
-Net Profit: $${(totalRevenue - totalExpenses).toLocaleString()}
-Customers: ${customers.length}
-Open Invoices: ${invoices.filter(i => i.status !== 'paid').length}
-Overdue Invoices: ${invoices.filter(i => i.status === 'overdue').length}`;
+    const contextText = `${_ctx.text}
+Customers: ${customers.length}`;
 
     const messages = [
       ...history.slice(-10)
@@ -5121,7 +5594,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
   const { rows } = await pool.query(
     `INSERT INTO accountant_messages (accountant_id, user_id, sender, message)
      VALUES ($1, $2, 'client', $3) RETURNING id, created_at`,
-    [link.rows[0].accountant_id, userId, content]
+    [link.rows[0].accountant_id, scopeId(req), content]
   );
   res.json({ ok: true, id: rows[0].id });
 }));
@@ -5130,7 +5603,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
 const registerAccountantRoutes = require('./accountant-routes');
 // computeBooks is a hoisted declaration (defined below) closing over db+pool — pass it so
 // the accountant /books view shares the one canonical, entity-scoped basis (F9).
-registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
+registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
 
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.
@@ -5399,7 +5872,37 @@ function nextRunDate(currentDate, frequency) {
   return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
+// N37: fire ONE recurring row exactly once. The schedule step is CLAIMED and the document inserted in a
+// single transaction: next_run only advances if it still holds the value this run read, so a concurrent
+// run (second replica, overlapping interval, restart mid-loop) claims nothing and generates nothing, and a
+// crash between the two writes can no longer leave a document without its schedule advancing (or vice
+// versa). Returns the inserted document row, or null when another run already fired this step.
+async function _fireRecurringOnce(table, r, docTable, docData) {
+  const _nextRun = nextRunDate(r.next_run, r.frequency);
+  const patch = { next_run: _nextRun };
+  if (r.end_date && _nextRun > r.end_date) patch.status = 'completed';
+  if ((docTable === 'invoices' || docTable === 'bills') && r.entity_id == null) throw new Error('recurring ' + table + ' #' + r.id + ' has no entity');
+  const cx = await pool.connect();
+  try {
+    await cx.query('BEGIN');
+    const claim = await cx.query(
+      `UPDATE ${table} SET data = data || $3::jsonb, updated_at = NOW()
+        WHERE id = $1 AND data->>'next_run' = $2 AND data->>'status' = 'active' RETURNING id`,
+      [r.id, String(r.next_run), JSON.stringify(patch)]);
+    if (!claim.rowCount) { await cx.query('ROLLBACK'); return null; }
+    const { rows: [doc] } = await cx.query(
+      `INSERT INTO ${docTable} (user_id, entity_id, data) VALUES ($1, $2, $3) RETURNING *`,
+      [r.user_id, r.entity_id || null, docData]);
+    await cx.query('COMMIT');
+    return rowToObj(doc);
+  } catch (e) {
+    try { await cx.query('ROLLBACK'); } catch (_) {}
+    throw e;
+  } finally { cx.release(); }
+}
+
 async function runRecurringScheduler() {
+  const _fired = { inv: 0, bill: 0, pt: 0 };
   try {
     // F88 step 3: a recurring row fires on ITS ENTITY's calendar day, not one global UTC day — a US book
     // and a Trinidad book each get their own "today". resolvedToday(now, entityTz) does the resolution
@@ -5417,7 +5920,7 @@ async function runRecurringScheduler() {
 
     // Recurring invoices
     const { rows: _recInvRows } = await pool.query(
-      `SELECT * FROM recurring_invoices WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1`,
+      `SELECT * FROM recurring_invoices WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1 ORDER BY id`,
       [_utcTomorrow]
     );
     const recInvoices = _recInvRows
@@ -5429,26 +5932,29 @@ async function runRecurringScheduler() {
         await db.updateById('recurring_invoices', r.id, { status: 'completed' });
         continue;
       }
-      const { row: _invRow } = await db.insert('invoices', {
-        user_id: r.user_id, entity_id: r.entity_id || null,
-        // F88 step 6: stamp the due date on a business day for the entity's country (Modified Following);
-        // next_run (the schedule anchor) stays unadjusted so the cadence never drifts.
-        client: r.client, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
-        status: 'pending', notes: `Auto-generated from recurring schedule`,
-        recurring_invoice_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
-      });
-      // F-L1: audit scheduler-created invoices (were bypassing the audit trail; system actor, no req).
-      try { await recordAudit(pool, { userId: r.user_id, entityId: r.entity_id || null, table: 'invoices', recordId: _invRow && _invRow.id, action: 'CREATE', newData: _invRow }); } catch (_) {}
-      try { await postSourceLedger(pool, { userId: r.user_id, sourceType: 'invoice', row: _invRow }); } catch (glErr) { console.error('[GL] recurring invoice posting failed (shadow, non-fatal):', glErr && glErr.message); }
-      const _nextRun = nextRunDate(r.next_run, r.frequency);
-      const _patch = { next_run: _nextRun };
-      if (r.end_date && _nextRun > r.end_date) _patch.status = 'completed';
-      await db.updateById('recurring_invoices', r.id, _patch);
+      try {
+        const _invRow = await _fireRecurringOnce('recurring_invoices', r, 'invoices', {
+          // F88 step 6: stamp the due date on a business day for the entity's country (Modified Following);
+          // next_run (the schedule anchor) stays unadjusted so the cadence never drifts.
+          client: r.client, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
+          // N38 (Rule 10): the document is issued on its SCHEDULED calendar date (the entity-local day it fired
+          // for). Without issue_date, recognition fell back to the UTC created_at instant, which for an entity
+          // east of UTC is the PREVIOUS day — misfiling a 1st-of-month run into the prior month / fiscal year.
+          issue_date: String(r.next_run).slice(0, 10),
+          status: 'pending', notes: `Auto-generated from recurring schedule`,
+          recurring_invoice_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
+        });
+        if (!_invRow) continue;   // another run already fired this step (N37)
+        // F-L1: audit scheduler-created invoices (were bypassing the audit trail; system actor, no req).
+        try { await recordAudit(pool, { userId: r.user_id, entityId: r.entity_id || null, table: 'invoices', recordId: _invRow.id, action: 'CREATE', newData: _invRow }); } catch (_) {}
+        try { await postSourceLedger(pool, { userId: r.user_id, sourceType: 'invoice', row: _invRow }); } catch (glErr) { console.error('[GL] recurring invoice posting failed (shadow, non-fatal):', glErr && glErr.message); }
+        _fired.inv++;
+      } catch (rowErr) { console.error('[Scheduler] recurring invoice #' + r.id + ' failed (others continue):', rowErr && rowErr.message); }
     }
 
     // Recurring bills
     const { rows: _recBillRows } = await pool.query(
-      `SELECT * FROM recurring_bills WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1`,
+      `SELECT * FROM recurring_bills WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1 ORDER BY id`,
       [_utcTomorrow]
     );
     const recBills = _recBillRows
@@ -5460,26 +5966,26 @@ async function runRecurringScheduler() {
         await db.updateById('recurring_bills', r.id, { status: 'completed' });
         continue;
       }
-      const num = 'BILL-' + String(Date.now()).slice(-4);
-      const { row: _billRow } = await db.insert('bills', {
-        user_id: r.user_id, entity_id: r.entity_id || null,
-        // F88 step 6: business-day-shifted due date (Modified Following, entity's country); anchor unadjusted.
-        vendor: r.vendor, num, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
-        status: 'unpaid', notes: `Auto-generated from recurring schedule`,
-        recurring_bill_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
-      });
-      // F-L1: audit scheduler-created bills (were bypassing the audit trail; system actor, no req).
-      try { await recordAudit(pool, { userId: r.user_id, entityId: r.entity_id || null, table: 'bills', recordId: _billRow && _billRow.id, action: 'CREATE', newData: _billRow }); } catch (_) {}
-      try { await postSourceLedger(pool, { userId: r.user_id, sourceType: 'bill', row: _billRow }); } catch (glErr) { console.error('[GL] recurring bill posting failed (shadow, non-fatal):', glErr && glErr.message); }
-      const _nextRun = nextRunDate(r.next_run, r.frequency);
-      const _patch = { next_run: _nextRun };
-      if (r.end_date && _nextRun > r.end_date) _patch.status = 'completed';
-      await db.updateById('recurring_bills', r.id, _patch);
+      try {
+        const num = 'BILL-' + String(Date.now()).slice(-4);
+        const _billRow = await _fireRecurringOnce('recurring_bills', r, 'bills', {
+          // F88 step 6: business-day-shifted due date (Modified Following, entity's country); anchor unadjusted.
+          vendor: r.vendor, num, amount: r.amount, due_date: businessDayShift(r.next_run, _entCountry.get(r.entity_id)),
+          issue_date: String(r.next_run).slice(0, 10),   // N38: issued on its scheduled date (see invoices above)
+          status: 'unpaid', notes: `Auto-generated from recurring schedule`,
+          recurring_bill_id: r.id,   // F94: durable lineage link (mirrors personal's recurring_profile_id) — never fuzzy-match
+        });
+        if (!_billRow) continue;   // another run already fired this step (N37)
+        // F-L1: audit scheduler-created bills (were bypassing the audit trail; system actor, no req).
+        try { await recordAudit(pool, { userId: r.user_id, entityId: r.entity_id || null, table: 'bills', recordId: _billRow.id, action: 'CREATE', newData: _billRow }); } catch (_) {}
+        try { await postSourceLedger(pool, { userId: r.user_id, sourceType: 'bill', row: _billRow }); } catch (glErr) { console.error('[GL] recurring bill posting failed (shadow, non-fatal):', glErr && glErr.message); }
+        _fired.bill++;
+      } catch (rowErr) { console.error('[Scheduler] recurring bill #' + r.id + ' failed (others continue):', rowErr && rowErr.message); }
     }
 
     // Recurring personal transactions (mirrors bills; materialises personal_transactions)
     const { rows: _recPtRows } = await pool.query(
-      `SELECT * FROM recurring_personal_transactions WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1`,
+      `SELECT * FROM recurring_personal_transactions WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1 ORDER BY id`,
       [_utcTomorrow]
     );
     const recPts = _recPtRows
@@ -5490,21 +5996,19 @@ async function runRecurringScheduler() {
         await db.updateById('recurring_personal_transactions', r.id, { status: 'completed' });
         continue;
       }
-      await db.insert('personal_transactions', {
-        user_id: r.user_id,
-        description: r.description, category: r.category || 'Other',
-        amount: r.amount, tx_type: r.tx_type || 'expense', tx_date: r.next_run,
-        currency: r.currency || 'USD',   // carry the profile's native currency onto the occurrence
-        recurring_profile_id: r.id,   // link back so the KPI math can exclude this occurrence
-      });
-      const _ptNext = nextRunDate(r.next_run, r.frequency);
-      const _ptPatch = { next_run: _ptNext };
-      if (r.end_date && _ptNext > r.end_date) _ptPatch.status = 'completed';
-      await db.updateById('recurring_personal_transactions', r.id, _ptPatch);
+      try {
+        const _pt = await _fireRecurringOnce('recurring_personal_transactions', r, 'personal_transactions', {
+          description: r.description, category: r.category || 'Other',
+          amount: r.amount, tx_type: r.tx_type || 'expense', tx_date: r.next_run,
+          currency: r.currency || 'USD',   // carry the profile's native currency onto the occurrence
+          recurring_profile_id: r.id,   // link back so the KPI math can exclude this occurrence
+        });
+        if (_pt) _fired.pt++;
+      } catch (rowErr) { console.error('[Scheduler] recurring personal txn #' + r.id + ' failed (others continue):', rowErr && rowErr.message); }
     }
 
-    if (recInvoices.length + recBills.length + recPts.length > 0) {
-      console.log(`[Scheduler] Created ${recInvoices.length} invoices, ${recBills.length} bills, ${recPts.length} personal txns`);
+    if (_fired.inv + _fired.bill + _fired.pt > 0) {
+      console.log(`[Scheduler] Created ${_fired.inv} invoices, ${_fired.bill} bills, ${_fired.pt} personal txns`);
     }
   } catch (e) {
     console.error('[Scheduler] Error:', e.message);
@@ -5590,18 +6094,26 @@ function parseCSV(text, mapping) {
   const ai = mapping && mapping.amount != null ? +mapping.amount : find(['amount', 'value']);
   const debiti = find(['debit', 'withdrawal', 'money out']); const crediti = find(['credit', 'deposit', 'money in']);
   if (di < 0 || ci < 0 || (ai < 0 && debiti < 0 && crediti < 0)) throw new Error('Could not detect date/description/amount columns. Provide a mapping.');
+  // N40: the statement's conventions from whole columns (see csv-region.js).
+  const _body = lines.slice(1).map(l => _csvSplit(l));
+  const _det = (mapping && /^(dmy|mdy)$/.test(String(mapping.date_order || ''))) ? mapping.date_order : csvRegion.detectDateOrder(_body.map(r => r[di]));
+  if (_det === 'mixed') throw new Error('The statement mixes day-first and month-first dates. Re-export it with one date format, or choose the format.');
+  const order = _det || csvRegion.defaultOrderFor(mapping && mapping.country);
+  const _amtVals = []; for (const r of _body) for (const i of [ai, debiti, crediti]) if (i >= 0 && r[i]) _amtVals.push(r[i]);
+  const mark = mapping && (mapping.decimal === ',' || mapping.decimal === '.') ? mapping.decimal : csvRegion.detectDecimalMark(_amtVals);
+  let badDates = 0;
   const out = [];
   for (let r = 1; r < lines.length; r++) {
     const f = _csvSplit(lines[r]); if (!f.length || f.every(x => !x)) continue;
     let amt, type;
-    if (ai >= 0) { amt = parseFloat(String(f[ai]).replace(/[^0-9.\-]/g, '')); type = amt < 0 ? 'debit' : 'credit'; amt = Math.abs(amt); }
-    else { const d = parseFloat(String(f[debiti] || '').replace(/[^0-9.\-]/g, '')) || 0; const cr = parseFloat(String(f[crediti] || '').replace(/[^0-9.\-]/g, '')) || 0; if (d) { amt = Math.abs(d); type = 'debit'; } else { amt = Math.abs(cr); type = 'credit'; } }
+    if (ai >= 0) { amt = csvRegion.parseAmount(f[ai], mark); type = amt < 0 ? 'debit' : 'credit'; amt = Math.abs(amt); }
+    else { const d = csvRegion.parseAmount(f[debiti], mark) || 0; const cr = csvRegion.parseAmount(f[crediti], mark) || 0; if (d) { amt = Math.abs(d); type = 'debit'; } else { amt = Math.abs(cr); type = 'credit'; } }
     if (!Number.isFinite(amt) || amt === 0) continue;
-    const dateRaw = String(f[di] || '').trim();
-    const iso = /^\d{4}-\d{2}-\d{2}/.test(dateRaw) ? dateRaw.slice(0, 10)
-      : (() => { const d = new Date(dateRaw); return isNaN(d) ? new Date().toISOString().slice(0, 10) : d.toISOString().slice(0, 10); })();
+    const iso = csvRegion.parseDate(f[di], order);
+    if (!iso) { badDates++; continue; }   // N40: an unreadable date rejects the line (it used to become today)
     out.push({ tx_date: iso, amount: amt, tx_type: type, description: String(f[ci] || 'Bank transaction').slice(0, 200), fitid: null });
   }
+  out.badDates = badDates; out.dateOrder = order; out.dateOrderAssumed = !_det; out.decimalMark = mark;
   return out;
 }
 
@@ -5609,27 +6121,37 @@ function parseCSV(text, mapping) {
 // Import accounting DOCUMENTS straight from a CSV export (QuickBooks / Xero / a spreadsheet) with no
 // Codat key required. Header auto-detected (override with `mapping`). Idempotent by a content hash,
 // entity-scoped, owner/books:write gated. Pairs with reconcileAfterImport so the books self-verify.
-const _csvMoney = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return Number.isFinite(n) ? n : NaN; };
-const _csvYmd = v => { const t = String(v == null ? '' : v).trim(); if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10); const d = new Date(t); return isNaN(d) ? null : d.toISOString().slice(0, 10); };
-const _CSV_INV_STATUS = new Set(['pending', 'paid', 'partial', 'overdue', 'draft', 'sent', 'void']);
-const _CSV_BILL_STATUS = new Set(['unpaid', 'paid', 'partial', 'overdue', 'due_soon', 'void']);
-const _csvStatus = (v, def, set) => { const t = String(v || '').trim().toLowerCase(); return set.has(t) ? t : def; };
+// N40: dates and amounts are read with the FILE's conventions (csv-region.js — day/month order and decimal mark
+// detected per column), never new Date(text) / strip-to-digits. A builder gets them as g.__date / g.__amt.
+const csvRegion = require('./csv-region.js');
+// N40 (Rule 11): statuses map onto the REAL vocabularies. 'sent' / 'void' were stored as-is — outside the
+// invoice/bill CHECK constraints (the row failed) — and a void document must not be recognised at all.
+const _CSV_INV_ALIASES = { pending: 'pending', paid: 'paid', partial: 'partial', overdue: 'overdue', draft: 'draft',
+  sent: 'pending', open: 'pending', unpaid: 'pending', outstanding: 'pending', issued: 'pending', 'partially paid': 'partial' };
+const _CSV_BILL_ALIASES = { unpaid: 'unpaid', paid: 'paid', partial: 'partial', overdue: 'overdue', due_soon: 'due_soon',
+  open: 'unpaid', pending: 'unpaid', outstanding: 'unpaid', 'awaiting payment': 'unpaid', 'partially paid': 'partial' };
+const _CSV_VOID = new Set(['void', 'voided', 'cancelled', 'canceled', 'deleted']);
+// → the mapped status, def for blank/unknown, or null for a void document (the row is skipped).
+const _csvStatus = (v, def, aliases) => { const t = String(v || '').trim().toLowerCase(); if (_CSV_VOID.has(t)) return null; return aliases[t] || def; };
 const CSV_IMPORT_SPECS = {
   invoices: { table: 'invoices', money: true,
     cols: { client: ['client', 'customer', 'customer name', 'name', 'bill to', 'company'], amount: ['amount', 'total', 'amount due', 'invoice total', 'grand total'], status: ['status'], issue_date: ['issue date', 'date', 'invoice date', 'created'], due_date: ['due date', 'due'], number: ['invoice number', 'invoice no', 'number', 'ref', 'invoice #'] },
-    build: g => { const amount = _csvMoney(g.amount); const issue = _csvYmd(g.issue_date) || FinFlowDates.resolvedToday(new Date()); if (!(amount > 0)) return null; const dd = g.due_date ? _csvYmd(g.due_date) : null;
-      return { key: (g.number && String(g.number).trim()) || [g.client, amount, issue].join('|'), date: issue, data: Object.assign({ client: (g.client || 'Customer').slice(0, 120), amount, status: _csvStatus(g.status, 'pending', _CSV_INV_STATUS), issue_date: issue }, dd ? { due_date: dd } : {}, g.number ? { number: String(g.number).slice(0, 60) } : {}) }; } },
+    build: g => { const amount = g.__amt(g.amount); const issue = g.__date(g.issue_date) || g.__today; if (!(amount > 0)) return null; const dd = g.__date(g.due_date); const _st = _csvStatus(g.status, 'pending', _CSV_INV_ALIASES); if (_st == null) return null;
+      return { key: (g.number && String(g.number).trim()) || [g.client, amount, issue].join('|'), date: issue, data: Object.assign({ client: (g.client || 'Customer').slice(0, 120), amount, status: _st, issue_date: issue }, dd ? { due_date: dd } : {}, g.number ? { number: String(g.number).slice(0, 60) } : {}) }; } },
   expenses: { table: 'expenses', money: true,
     cols: { description: ['description', 'memo', 'details', 'name', 'payee', 'item'], amount: ['amount', 'total', 'value'], category: ['category', 'account', 'type'], expense_date: ['date', 'expense date', 'posted'] },
-    build: g => { const amount = _csvMoney(g.amount); const dt = _csvYmd(g.expense_date) || FinFlowDates.resolvedToday(new Date()); if (!(amount > 0)) return null;
+    build: g => { const amount = g.__amt(g.amount); const dt = g.__date(g.expense_date) || g.__today; if (!(amount > 0)) return null;
       return { key: [g.description, amount, dt].join('|'), date: dt, data: { description: (g.description || 'Expense').slice(0, 160), amount, category: (g.category || 'Uncategorized').slice(0, 60), expense_date: dt } }; } },
   bills: { table: 'bills', money: true,
     cols: { vendor: ['vendor', 'supplier', 'payee', 'name', 'company'], amount: ['amount', 'total', 'amount due', 'bill total'], status: ['status'], issue_date: ['issue date', 'date', 'bill date'], due_date: ['due date', 'due'], number: ['bill number', 'bill no', 'number', 'ref', 'bill #'] },
-    build: g => { const amount = _csvMoney(g.amount); const issue = _csvYmd(g.issue_date) || FinFlowDates.resolvedToday(new Date()); if (!(amount > 0)) return null; const dd = g.due_date ? _csvYmd(g.due_date) : null;
-      return { key: (g.number && String(g.number).trim()) || [g.vendor, amount, issue].join('|'), date: issue, data: Object.assign({ vendor: (g.vendor || 'Vendor').slice(0, 120), amount, amount_paid: 0, status: _csvStatus(g.status, 'unpaid', _CSV_BILL_STATUS), issue_date: issue }, dd ? { due_date: dd } : {}) }; } },
+    build: g => { const amount = g.__amt(g.amount); const issue = g.__date(g.issue_date) || g.__today; if (!(amount > 0)) return null; const dd = g.__date(g.due_date); const _st = _csvStatus(g.status, 'unpaid', _CSV_BILL_ALIASES); if (_st == null) return null;
+      return { key: (g.number && String(g.number).trim()) || [g.vendor, amount, issue].join('|'), date: issue, data: Object.assign({ vendor: (g.vendor || 'Vendor').slice(0, 120), amount, amount_paid: 0, status: _st, issue_date: issue }, dd ? { due_date: dd } : {}) }; } },
   customers: { table: 'customers', money: false,
     cols: { name: ['name', 'customer', 'customer name', 'company', 'client'], email: ['email', 'e-mail'], phone: ['phone', 'telephone', 'tel'] },
-    build: g => { const name = (g.name || '').trim(); if (!name) return null; return { key: name.toLowerCase(), date: null, data: Object.assign({ name: name.slice(0, 120) }, g.email ? { email: String(g.email).slice(0, 160) } : {}, g.phone ? { phone: String(g.phone).slice(0, 40) } : {}) }; } },
+    // N112: a customer record has fname / lname / company / status / revenue (what the customer list, invoices
+    // and reminders read). The import wrote only `name`, so an imported customer listed with a blank name, no
+    // status and a NaN revenue. Same shape as the Codat importer: company = the name, fname/lname split from it.
+    build: g => { const name = (g.name || '').trim(); if (!name) return null; const n = _cdSplitName(name); return { key: name.toLowerCase(), date: null, data: Object.assign({ company: name.slice(0, 200), fname: n.fname, lname: n.lname, status: 'active', revenue: 0, industry: '', notes: 'Imported (CSV)' }, g.email ? { email: String(g.email).slice(0, 160) } : {}, g.phone ? { phone: String(g.phone).slice(0, 40) } : {}) }; } },
   vendors: { table: 'vendors', money: false,
     cols: { name: ['name', 'vendor', 'supplier', 'company'], email: ['email', 'e-mail'], phone: ['phone', 'telephone', 'tel'] },
     build: g => { const name = (g.name || '').trim(); if (!name) return null; return { key: name.toLowerCase(), date: null, data: Object.assign({ name: name.slice(0, 120) }, g.email ? { email: String(g.email).slice(0, 160) } : {}, g.phone ? { phone: String(g.phone).slice(0, 40) } : {}) }; } },
@@ -5648,12 +6170,38 @@ async function _csvImport(uid, entityId, sessionUserId, type, content, mapping, 
     idx[field] = -1;
     for (const cand of spec.cols[field]) { const i = header.indexOf(cand); if (i >= 0) { idx[field] = i; break; } }
   }
+  // N40: the file's conventions, from whole columns (a mapping may state them: date_order 'dmy'|'mdy',
+  // decimal '.'|','). A column that never disambiguates day/month uses the business's country convention,
+  // reported back as ASSUMED. A column mixing both orders is refused — guessing would misfile half of it.
+  const _rows = lines.slice(1).map(l => _csvSplit(l));
+  const _col = field => idx[field] >= 0 ? _rows.map(r => r[idx[field]]).filter(v => v != null && String(v).trim() !== '') : [];
+  const _dateFields = Object.keys(spec.cols).filter(f => /date/.test(f));
+  let order = mapping && /^(dmy|mdy)$/.test(String(mapping.date_order || '')) ? mapping.date_order : null;
+  if (!order && _dateFields.length) {
+    const det = csvRegion.detectDateOrder(_dateFields.flatMap(_col));
+    if (det === 'mixed') { const e = new Error('The file mixes day-first and month-first dates. Re-export it with one date format, or choose the format.'); e.status = 400; throw e; }
+    order = det;
+    if (!order) {
+      let country = null;
+      try { country = (await pool.query(`SELECT data->>'country' AS c FROM entities WHERE id = $1`, [entityId])).rows[0]?.c || null; } catch (_) {}
+      order = csvRegion.defaultOrderFor(country); tally.dateOrderAssumed = true;
+    }
+  }
+  if (order) tally.dateOrder = order;
+  const mark = mapping && (mapping.decimal === ',' || mapping.decimal === '.') ? mapping.decimal : csvRegion.detectDecimalMark(_col('amount'));
+  if (spec.money) tally.decimalMark = mark;
+  const _today = await entityTodayYmd(entityId);
+  tally.badDates = 0;
   for (let r = 1; r < lines.length; r++) {
     const f = _csvSplit(lines[r]); if (!f.length || f.every(x => !x)) continue;
     tally.total++;
     const g = {};
     for (const field of Object.keys(spec.cols)) g[field] = idx[field] >= 0 ? f[idx[field]] : undefined;
-    let m; try { m = spec.build(g); } catch (e) { tally.failed++; continue; }
+    // A date that is PRESENT but unreadable rejects the row (it used to become today, silently).
+    g.__date = v => { if (v == null || String(v).trim() === '') return null; const d = csvRegion.parseDate(v, order || 'dmy'); if (!d) { const e = new Error('bad date'); e.badDate = true; throw e; } return d; };
+    g.__amt = v => csvRegion.parseAmount(v, mark);
+    g.__today = _today;
+    let m; try { m = spec.build(g); } catch (e) { if (e && e.badDate) tally.badDates++; tally.failed++; continue; }
     if (!m) { tally.skipped++; continue; }
     const importKey = 'csv:' + type + ':' + crypto.createHash('sha1').update(String(m.key)).digest('hex').slice(0, 24);
     const dup = await pool.query('SELECT 1 FROM ' + spec.table + ' WHERE user_id=$1 AND data->>\'import_key\'=$2 LIMIT 1', [uid, importKey]);
@@ -5673,7 +6221,7 @@ app.post('/api/import/csv', requireAuth, requirePerm('books:write'), wrap(async 
   if (content.length > 5_000_000) return res.status(400).json({ error: 'File too large (max ~5MB).' });
   if (!req.entityId) return res.status(400).json({ error: 'Select a business entity to import into first.', code: 'NO_ACTIVE_ENTITY' });
   const uid = scopeId(req);
-  let tally; try { tally = await _csvImport(uid, req.entityId, req.session.userId, type, content, mapping, !!dryRun); }
+  let tally; try { tally = await _csvImport(uid, req.entityId, uid, type, content, mapping, !!dryRun); }
   catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
   if (!dryRun && tally.added > 0) { try { logAudit(req, 'CREATE', 'csv_import', null, null, { entity_id: req.entityId, type, added: tally.added }); } catch (_) {} }
   // Owner-only auto-reconcile for money docs (scoped members can import but not backfill the ledger).
@@ -5690,7 +6238,11 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
   let txns;
   try {
     if (fmt === 'ofx' || fmt === 'qfx' || /<STMTTRN>/i.test(content)) txns = parseOFX(content);
-    else if (fmt === 'csv') txns = parseCSV(content, mapping);
+    else if (fmt === 'csv') {
+      let _country = null;   // N40: ambiguous day/month dates follow the business's country convention
+      try { if (req.entityId) _country = (await pool.query(`SELECT data->>'country' AS c FROM entities WHERE id = $1`, [req.entityId])).rows[0]?.c || null; } catch (_) {}
+      txns = parseCSV(content, Object.assign({}, mapping || {}, { country: (mapping && mapping.country) || _country }));
+    }
     else return res.status(400).json({ error: "format must be 'ofx', 'qfx', or 'csv'." });
   } catch (e) { return res.status(400).json({ error: e.message }); }
   if (!txns.length) return res.status(400).json({ error: 'No transactions found in the statement.' });
@@ -5711,12 +6263,13 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
     });
     imported++;
   }
-  res.status(201).json({ ok: true, imported, skipped, total: txns.length });
+  res.status(201).json({ ok: true, imported, skipped, total: txns.length,
+    ...(txns.dateOrder ? { dateOrder: txns.dateOrder, dateOrderAssumed: txns.dateOrderAssumed, decimalMark: txns.decimalMark, rejectedBadDate: txns.badDates } : {}) });
 }));
 
 // ── MRR / SAAS ────────────────────────────────────────────────────────────────
 app.get('/api/mrr', requireAuth, wrap(async (req, res) => {
-  const rows = await db.allByUser('user_settings', req.session.userId, r => r.key === 'mrr_data');
+  const rows = await db.allByUser('user_settings', scopeId(req), r => r.key === 'mrr_data');
   res.json(rows[0]?.value ? JSON.parse(rows[0].value) : { subscribers: [], plans: [] });
 }));
 app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
@@ -5726,7 +6279,7 @@ app.put('/api/mrr', requireAuth, wrap(async (req, res) => {
   );
   const data = JSON.stringify(req.body || {});
   if (_mrre) await db.updateById('user_settings', _mrre.id, { value: data });
-  else await db.insert('user_settings', { user_id: req.session.userId, key: 'mrr_data', value: data });
+  else await db.insert('user_settings', { user_id: scopeId(req), key: 'mrr_data', value: data });
   res.json({ ok: true });
 }));
 
@@ -5746,7 +6299,7 @@ app.post('/api/permissions', requireAuth, requirePerm('permissions:manage'), wra
     [scopeId(req)]
   );
   if (_perme) await db.updateById('user_settings', _perme.id, { value: data });
-  else await db.insert('user_settings', { user_id: req.session.userId, key: 'permissions', value: data });
+  else await db.insert('user_settings', { user_id: scopeId(req), key: 'permissions', value: data });
   res.json({ ok: true });
 }));
 
@@ -5771,31 +6324,17 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     // so no viewer's local midnight ever crosses the wire. The server resolves the calendar window
     // itself (computeBooks → finflow-dates). No params ⇒ 'year' (backward compatible: the accountant
     // portal / consolidated P&L call with no period). A financial endpoint validates strictly.
-    let bookPeriod = 'year';
-    let monthIdxArg = null;
-    const { period: qPeriod, monthIdx: qMonthIdx } = req.query;
-    if (qPeriod != null) {
-      if (qPeriod !== 'year' && qPeriod !== 'month' && qPeriod !== 'quarter') {
-        return res.status(400).json({ error: 'Invalid period.' });
-      }
-      bookPeriod = qPeriod;
-      if (qPeriod !== 'year') {
-        const _mi = parseInt(qMonthIdx, 10);
-        if (!Number.isInteger(_mi) || _mi < 0 || _mi > 11) return res.status(400).json({ error: 'Invalid monthIdx.' });
-        monthIdxArg = _mi;
-      }
-    }
+    const _intent = parseReportIntent(req.query);
+    if (_intent.error) return res.status(400).json({ error: _intent.error });
+    const { bookPeriod, monthIdxArg } = _intent;
     // Canonical figures from computeBooks (the single source shared with the dashboard,
     // /books and the report routes) so every surface reconciles. Revenue/expenses/net all
     // include receipts, payments, payroll accrual + FIFO COGS.
     // F34 Path B: optional ?display=CCY converts every leg to that currency at each leg's recognition
     // date (default omitted ⇒ entity-native ⇒ identity). fxCoverage travels with the response.
-    const _display = (req.query.display || '').toUpperCase();
-    const display = /^[A-Z]{3}$/.test(_display) ? _display : null;
     // F34 B: fiscal-year start month (0-11) for the converted overview-chart buckets. Client sends the
     // resolved #s-fy index; invalid/absent → January (0), matching the client default.
-    const _fy = parseInt(req.query.fyStart, 10);
-    const fyStartIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
+    const { display, fyStartIdx } = _intent;
     const [books, invoices, expenses] = await Promise.all([
       computeBooks(uid, eid, bookPeriod, display, fyStartIdx, monthIdxArg),
       db.allByUser('invoices', uid, matchEnt),
@@ -5906,80 +6445,66 @@ app.get('/api/reports/top-clients', requireAuth, wrap(async (req, res) => {
   }
 }));
 
-// POST /api/reports/profit-loss — monthly P&L breakdown (entity-scoped).
-// Monthly rows show DATED cash activity (paid invoices + receipts + payments received in;
-// expenses + payments made out). The TOTALS come from computeBooks so the bottom line is
-// canonical — it additionally includes payroll accrual (a monthly rate, surfaced as its own
-// line) and FIFO COGS (an aggregate). Sorted by YYYY-MM key, labelled at render (F15).
+// The report-period INTENT a request carries — ?period (year|quarter|month), ?monthIdx (fiscal month 0-11,
+// required unless year), ?fyStart (fiscal-year start month 0-11, default January), ?display (ISO currency).
+// The server resolves the calendar window from it (F87). ONE parser, so /api/reports and
+// /api/reports/profit-loss cannot read the same request as two different periods.
+function parseReportIntent(q) {
+  q = q || {};
+  let bookPeriod = 'year', monthIdxArg = null;
+  if (q.period != null) {
+    if (q.period !== 'year' && q.period !== 'month' && q.period !== 'quarter') return { error: 'Invalid period.' };
+    bookPeriod = q.period;
+    if (q.period !== 'year') {
+      const _mi = parseInt(q.monthIdx, 10);
+      if (!Number.isInteger(_mi) || _mi < 0 || _mi > 11) return { error: 'Invalid monthIdx.' };
+      monthIdxArg = _mi;
+    }
+  }
+  const _fy = parseInt(q.fyStart, 10);
+  const fyStartIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
+  const _display = String(q.display || '').toUpperCase();
+  const display = /^[A-Z]{3}$/.test(_display) ? _display : null;
+  return { bookPeriod, monthIdxArg, fyStartIdx, display };
+}
+
+// POST /api/reports/profit-loss — the P&L for ONE period (entity-scoped): the fiscal year, quarter or month
+// the request names (parseReportIntent; no params = the January fiscal year, as before).
+// N41: the totals AND the monthly rows come from the same engine (glProfitLoss → ledger when it reconciles,
+// else computeBooks), the rows one call per fiscal month inside the window. So Σrows == totals by
+// construction. The rows used to be a second, source-document implementation over ALL TIME (no period at all), and
+// the totals ignored the fiscal-year start and the selected period. Months that have not started yet
+// (after today) are not listed — they hold nothing (D2).
 app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   const uid = scopeId(req);
   const eid = req.entityId || null;
-  const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
-  const [invoices, expenses, paymentsMade, receipts, bills, creditNotes, vendorCredits] = await Promise.all([
-    db.allByUser('invoices', uid, matchEnt),
-    db.allByUser('expenses', uid, matchEnt),
-    db.allByUser('payments_made', uid, matchEnt),
-    db.allByUser('sales_receipts', uid, matchEnt),  // F26: entity-scoped (null-inclusive) like every sibling leg — was user-level, leaking other entities' cash sales into this entity's figures
-    db.allByUser('bills', uid, matchEnt),     // F38 Step 4: issued bills = accrued expense
-    // payments_received dropped: it settles AR, it is not revenue (F32).
-    db.allByUser('credit_notes', uid, matchEnt),    // F58: revenue contra
-    db.allByUser('vendor_credits', uid, matchEnt),  // F58: opex contra
-  ]);
+  const intent = parseReportIntent(req.query);
+  if (intent.error) return res.status(400).json({ error: intent.error });
+  const { bookPeriod, monthIdxArg, fyStartIdx, display } = intent;
+  const _today = await entityTodayYmd(eid);   // N64
+  const _fyWin = FinFlowDates.resolvePeriod({ period: 'year', fyStartMonth: fyStartIdx, today: _today });
+  const _win = FinFlowDates.resolvePeriod({ period: bookPeriod, monthIdx: monthIdxArg, fyStartMonth: fyStartIdx, today: _today });
+  const _abs = ymd => parseInt(ymd.slice(0, 4), 10) * 12 + (parseInt(ymd.slice(5, 7), 10) - 1);
+  const _ym = a => Math.floor(a / 12) + '-' + String((a % 12) + 1).padStart(2, '0');
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const keyOf = d => { const ymd = FinFlowDates._toYmd(d); return ymd == null ? 'Unknown' : ymd.slice(0, 7); }; // F87: calendar-date month key (string), no local-time getMonth
-  const labelOf = k => { if (k === 'Unknown') return 'Unknown'; const [y, m] = k.split('-'); return `${_MO[+m - 1]} '${y.slice(-2)}`; };
-  const monthMap = {};
-  const bump = (d, field, amt) => { const k = keyOf(d); (monthMap[k] || (monthMap[k] = { revenue: 0, expenses: 0 }))[field] += parseFloat(amt) || 0; };
-  // Issue-based accrual (F32): recognize every ISSUED invoice at its issue month (created_at),
-  // full amount, any recognized status — not just 'paid'. payments_received is not revenue.
-  const _REC = new Set(['pending', 'overdue', 'partial', 'paid']);
-  invoices.filter(i => _REC.has((i.status || '').toLowerCase())).forEach(i => bump(i.issue_date || i.created_at || i.date, 'revenue', i.amount));   // F36: issue_date, created_at fallback (transition — see computeBooks issueDate)
-  receipts.forEach(r => bump(r.date, 'revenue', r.amount));
-  expenses.forEach(e => bump(e.expense_date || e.date || e.created_at, 'expenses', e.amount));
-  // F38 Step 4: issued bills accrue as expense in their ISSUE month (mirror of the invoice
-  // revenue leg above) — RECOGNIZED_BILL allowlist, FULL amount, keyed on issue_date.
-  bills.filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase())).forEach(b => bump(b.issue_date || b.created_at || b.due_date, 'expenses', b.amount));
-  // Only ORPHAN payments (bill_id IS NULL) stay expense; a bill-linked payment is a settlement
-  // (Dr AP / Cr Cash), not a fresh expense — would double-count the issued-bill leg. Sole guard.
-  paymentsMade.filter(p => p.bill_id == null).forEach(p => bump(p.date || p.created_at, 'expenses', p.amount));
-  // F58: contra legs, bucketed on their OWN date so the monthly chart reconciles with the
-  // canonical totals from computeBooks. Negative bump = subtraction; Void contributes 0.
-  const _REC_CREDIT = new Set(['open', 'applied']);
-  creditNotes.filter(c => _REC_CREDIT.has((c.status || '').toLowerCase()))
-    .forEach(c => bump(c.date || c.created_at, 'revenue', -(parseFloat(c.amount) || 0)));
-  vendorCredits.filter(v => _REC_CREDIT.has((v.status || '').toLowerCase()))
-    .forEach(v => bump(v.date || v.created_at, 'expenses', -(parseFloat(v.amount) || 0)));
-  // F33-C: bucket PAYROLL into its month so Σ monthly expenses reconciles with the Expenses KPI
-  // (computeBooks.opex, which includes payroll). EXACT mirror of the computeBooks payroll leg:
-  // payroll_run_lines gross+bonus+overtime, runs IN ('approved','paid'). F85 (2026-08-07, accrual):
-  // dated on the run's `period` (the month it is FOR), not run_date — matching computeBooks so the
-  // chart and the KPI agree. COGS is deliberately NOT bucketed here — it is grossProfit, not opex.
-  try {
-    const { rows: _prl } = await pool.query(
-      `SELECT prl.gross, prl.bonus, prl.overtime, pr.run_date, pr.period, pr.status
-         FROM payroll_run_lines prl JOIN payroll_runs pr ON pr.id = prl.run_id
-        WHERE pr.user_id = $1 AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)`,
-      [uid, eid]
-    );
-    _prl.filter(l => ['approved', 'paid'].includes(String(l.status || '').toLowerCase()))
-        .forEach(l => bump(FinFlowDates.payrollPeriodYmd(l.period, l.run_date), 'expenses', (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0)));   // F-H1
-  } catch (_) { /* payroll optional — leave buckets unchanged on error */ }
-  // Sort by YYYY-MM key ('Unknown' sorts last); format the label at render (F15).
-  const rows = Object.keys(monthMap).sort().map(k => ({
-    month: labelOf(k), key: k, revenue: monthMap[k].revenue, expenses: monthMap[k].expenses,
-    netProfit: monthMap[k].revenue - monthMap[k].expenses,
-  }));
-  // Canonical totals — the reconciling bottom line (adds payroll accrual + COGS).
-  // F34 Path B: ?display=CCY converts the totals (default omitted ⇒ native ⇒ identity). The monthly
-  // `rows` above stay native this step — they get server-converted buckets in Step 3.
-  const _display = (req.query.display || '').toUpperCase();
-  const display = /^[A-Z]{3}$/.test(_display) ? _display : null;
-  // GL Phase 5b: the canonical totals now come from the LEDGER when it reconciles to computeBooks for
-  // this entity+period (else computeBooks unchanged) - same numbers, sourced from the double-entry books.
-  // The monthly `rows` chart stays source-doc-derived this slice. `source` travels for observability.
-  const pl = await glProfitLoss(uid, eid, { period: 'year', display });
+  const months = [];
+  for (let a = _abs(_win.start); a < _abs(_win.end); a++) {
+    if (_ym(a) + '-01' > _today) break;                       // not started yet — nothing can be recognised in it
+    months.push({ abs: a, fyIdx: a - _abs(_fyWin.start) });
+  }
+  const [pl, ...monthPl] = await Promise.all([
+    glProfitLoss(uid, eid, { period: bookPeriod, fyStartIdx, monthIdx: monthIdxArg, display }),
+    ...months.map(m => glProfitLoss(uid, eid, { period: 'month', fyStartIdx, monthIdx: m.fyIdx, display })),
+  ]);
+  const rows = months.map((m, i) => {
+    const p = monthPl[i];
+    const key = _ym(m.abs);
+    return { month: `${_MO[m.abs % 12]} '${key.slice(2, 4)}`, key,
+             revenue: p.totalRevenue, cogs: p.cogs, expenses: p.totalExpenses, netProfit: p.netProfit };
+  });
   res.json({
     rows,
+    period:        { kind: bookPeriod, start: _win.start, end: _win.end, fyStart: fyStartIdx },
     totalRevenue:  pl.totalRevenue,
     cogs:          pl.cogs,
     grossProfit:   pl.grossProfit,
@@ -6046,7 +6571,7 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
           AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)
         GROUP BY pr.id, pr.run_date, pr.entity_id`,
       [uid, eid]
-    ).catch(() => ({ rows: [] })),
+    ),   // N113 class: a failed payroll read used to be swallowed into "no payroll" — cash out silently understated
   ]);
   const invoicePayments = ipRes.rows.filter(matchEnt);
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -6191,7 +6716,7 @@ app.put('/api/scenario', requireAuth, wrap(async (req, res) => {
       [scopeId(req)]
     );
     if (_scne) await db.updateById('user_settings', _scne.id, { value: data });
-    else await db.insert('user_settings', { user_id: req.session.userId, key: 'scenario', value: data });
+    else await db.insert('user_settings', { user_id: scopeId(req), key: 'scenario', value: data });
     res.json({ ok: true });
   } catch (e) {
     console.error('[PUT /api/scenario]', e.message);
@@ -6322,14 +6847,30 @@ async function _getPlaidItemsE(uid, entityId, fallback = false) {
   try { items = row && row.value ? JSON.parse(row.value) : []; } catch (_) { items = []; }
   return { id: r ? r.id : null, items: Array.isArray(items) ? items : [] };
 }
-async function _savePlaidItemsE(uid, items, entityId) {
-  const data = JSON.stringify(items);
-  const { rows: [r] } = await pool.query(
-    `SELECT id FROM user_settings WHERE user_id=$1 AND data->>'key'='plaid_items' AND entity_id IS NOT DISTINCT FROM $2 LIMIT 1`,
-    [uid, entityId == null ? null : entityId]);
-  if (r) await db.updateById('user_settings', r.id, { value: data });
-  else await db.insert('user_settings', { user_id: uid, entity_id: entityId == null ? null : entityId, key: 'plaid_items', value: data });
+// N45: ATOMIC read-modify-write of a per-scope user_settings blob. The linked-bank lists were read at the start
+// of a request and written back whole at the end, so a sync (seconds of network calls) that finished after a
+// concurrent link or unlink wrote its stale list over it — the new bank vanished or the cursor rolled back.
+// `mutate(current)` receives the value as it is NOW (under a per-blob advisory lock + row lock, inside one
+// transaction) and returns the new value.
+async function _mutateSettingsBlob(uid, key, entityId, mutate) {
+  const eid = entityId == null ? null : entityId;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['settings:' + uid + ':' + key + ':' + (eid == null ? '' : eid)]);
+    const { rows: [r] } = await client.query(
+      `SELECT * FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1 FOR UPDATE`, [uid, key, eid]);
+    let cur = null; try { cur = r && r.data && r.data.value ? JSON.parse(r.data.value) : null; } catch (_) { cur = null; }
+    const next = await mutate(cur);
+    const data = JSON.stringify(next);
+    if (r) await client.query(`UPDATE user_settings SET data = data || jsonb_build_object('value', $2::text), updated_at = NOW() WHERE id = $1`, [r.id, data]);
+    else await client.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW())`, [uid, eid, { key, value: data }]);
+    await client.query('COMMIT');
+    return next;
+  } catch (e) { try { await client.query('ROLLBACK'); } catch (_) {} throw e; }
+  finally { client.release(); }
 }
+const _mutatePlaidItemsE = (uid, entityId, fn) => _mutateSettingsBlob(uid, 'plaid_items', entityId, cur => fn(Array.isArray(cur) ? cur : []));
 const _publicItem = i => ({ item_id: i.item_id, institution_name: i.institution_name, linked_at: i.linked_at });
 
 // GET the real linked-bank state (tokens NEVER leave the server). `configured` lets the UI show
@@ -6375,10 +6916,8 @@ app.post('/api/plaid/exchange', requireAuth, requirePerm('bank:manage'), wrap(as
       }
     } catch (_) { /* institution name is best-effort; the link still succeeds */ }
     const uid = scopeId(req);
-    const { items } = await _getPlaidItemsE(uid, req.entityId);
-    const next = items.filter(it => it.item_id !== ex.item_id); // idempotent re-link
-    next.push({ item_id: ex.item_id, access_token: encTok(ex.access_token), institution_name: institution, linked_at: new Date().toISOString(), cursor: null });
-    await _savePlaidItemsE(uid, next, req.entityId);
+    const _newItem = { item_id: ex.item_id, access_token: encTok(ex.access_token), institution_name: institution, linked_at: new Date().toISOString(), cursor: null };
+    const next = await _mutatePlaidItemsE(uid, req.entityId, cur => cur.filter(it => it.item_id !== ex.item_id).concat([_newItem]));   // N45: idempotent re-link, atomic
     res.status(201).json({ ok: true, institution_name: institution, item_id: ex.item_id, items: next.map(_publicItem) });
   } catch (e) {
     console.error('[plaid exchange]', e.message, e.plaid || '');
@@ -6395,8 +6934,8 @@ app.post('/api/plaid/unlink', requireAuth, requirePerm('bank:manage'), wrap(asyn
   const target = items.find(it => it.item_id === itemId);
   if (!target) return res.status(404).json({ error: 'No such linked bank.' });
   if (plaidConfigured()) { try { await plaidCall('/item/remove', { access_token: decTok(target.access_token) }); } catch (_) {} }
-  await _savePlaidItemsE(uid, items.filter(it => it.item_id !== itemId), req.entityId);
-  res.json({ ok: true, items: items.filter(it => it.item_id !== itemId).map(_publicItem) });
+  const _left = await _mutatePlaidItemsE(uid, req.entityId, cur => cur.filter(it => it.item_id !== itemId));   // N45: atomic
+  res.json({ ok: true, items: _left.map(_publicItem) });
 }));
 
 // Pull transactions from every linked item into personal_transactions (source:'banking'), so the
@@ -6407,13 +6946,37 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
   const uid = scopeId(req);
   const { items } = await _getPlaidItemsE(uid, req.entityId);
   if (!items.length) return res.status(400).json({ error: 'No linked bank. Link a bank first.' });
-  let added = 0;
+  let added = 0, modified = 0, removed = 0, flagged = 0;
+  // N44: Plaid's sync delivers added, MODIFIED and REMOVED transactions. Only `added` was processed, so a pending
+  // transaction stayed in the feed after Plaid replaced it with the posted one (a duplicate bank line) and
+  // corrections never arrived. A row already reconciled into the books is never silently changed or deleted —
+  // it is flagged (plaid_changed / plaid_removed) for the owner to review.
+  const _txRow = async (id) => { const { rows: [r] } = await pool.query(`SELECT * FROM personal_transactions WHERE user_id=$1 AND data->>'plaid_txn_id'=$2 LIMIT 1`, [uid, id]); return r ? rowToObj(r) : null; };
+  const _fields = t => ({
+    description: t.name || t.merchant_name || 'Bank transaction',
+    amount: Math.abs(Number(t.amount) || 0),
+    tx_type: (Number(t.amount) >= 0 ? 'debit' : 'credit'),
+    tx_date: t.date || null,
+    currency: t.iso_currency_code ? String(t.iso_currency_code).toUpperCase() : null,
+    pending: !!t.pending,
+  });
   for (const it of items) {
     try {
       const token = decTok(it.access_token);
       let cursor = it.cursor || null, hasMore = true;
       while (hasMore) {
         const sync = await plaidCall('/transactions/sync', cursor ? { access_token: token, cursor } : { access_token: token });
+        for (const t of (sync.modified || [])) {
+          const r = await _txRow(t.transaction_id); if (!r) continue;
+          if (r.reconcile_state) { await db.updateById('personal_transactions', r.id, { plaid_changed: _fields(t) }); flagged++; continue; }
+          const f = _fields(t); if (!f.tx_date) delete f.tx_date;
+          await db.updateById('personal_transactions', r.id, f); modified++;
+        }
+        for (const t of (sync.removed || [])) {
+          const r = await _txRow(t.transaction_id); if (!r) continue;
+          if (r.reconcile_state) { await db.updateById('personal_transactions', r.id, { plaid_removed: true }); flagged++; continue; }
+          await db.deleteById('personal_transactions', r.id); removed++;
+        }
         for (const t of (sync.added || [])) {
           // Idempotency on Plaid's transaction_id (stable), not a time window.
           const { rows: [dup] } = await pool.query(
@@ -6428,6 +6991,7 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
             tx_date: t.date || new Date().toISOString().slice(0, 10),
             category: (t.personal_finance_category && t.personal_finance_category.primary) || 'Other',
             source: 'banking', plaid_txn_id: t.transaction_id,
+            currency: t.iso_currency_code ? String(t.iso_currency_code).toUpperCase() : null, pending: !!t.pending,
           });
           added++;
         }
@@ -6436,8 +7000,11 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
       it.cursor = cursor;
     } catch (e) { console.error('[plaid sync]', e.message, e.plaid || ''); }
   }
-  await _savePlaidItemsE(uid, items, req.entityId);
-  res.json({ ok: true, added });
+  // N45: write back ONLY the cursors this sync advanced, onto the list as it is now — a bank linked or unlinked
+  // while the sync ran is kept / stays removed.
+  const _cursors = new Map(items.map(it => [it.item_id, it.cursor]));
+  await _mutatePlaidItemsE(uid, req.entityId, cur => cur.map(it => (_cursors.has(it.item_id) ? Object.assign({}, it, { cursor: _cursors.get(it.item_id) }) : it)));
+  res.json({ ok: true, added, modified, removed, flagged });
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -6468,14 +7035,13 @@ const _providerBlobE = async (uid, key, entityId, fallback = false) => {
   let value = null; try { value = row && row.value ? JSON.parse(row.value) : null; } catch (_) {}
   return { id: r ? r.id : null, value };
 };
-const _saveProviderBlobE = async (uid, key, value, entityId) => {
-  const data = JSON.stringify(value);
-  const { rows: [r] } = await pool.query(
-    `SELECT id FROM user_settings WHERE user_id=$1 AND data->>'key'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`,
-    [uid, key, entityId == null ? null : entityId]);
-  if (r) await db.updateById('user_settings', r.id, { value: data });
-  else await db.insert('user_settings', { user_id: uid, entity_id: entityId == null ? null : entityId, key, value: data });
-};
+// N45b: every provider-blob write is a row-locked read-modify-write (_mutateSettingsBlob). A plain value REPLACES the
+// blob (a fresh link); a function receives the blob AS STORED NOW and returns the next one, so a merge (token
+// refresh, sync stamp, company link, books binding) lands on the current blob — not on a copy read earlier in the
+// request, which used to overwrite anything written in between (e.g. a reconnect in another tab lost its token).
+const _saveProviderBlobE = (uid, key, valueOrFn, entityId) =>
+  _mutateSettingsBlob(uid, key, entityId == null ? null : entityId,
+    cur => (typeof valueOrFn === 'function' ? valueOrFn(cur && typeof cur === 'object' ? cur : {}) : valueOrFn));
 
 // ════════════════════════════════════════════════════════════════════════════════
 // SHARED OAUTH2 CONNECTOR DRIVER — registerOAuthConnector(spec)
@@ -6498,6 +7064,42 @@ const _saveProviderBlobE = async (uid, key, value, entityId) => {
 //   resolveAccount,                     // async (tokenResp, req, accessToken) => account id (realmId/tenantId/…)
 //   sync,                               // async (conn, {req, call, access}) => display object; `call` adds Bearer + refresh
 // }
+// N43: OAuth `state` — a random, single-use nonce bound to the browser session that started the flow.
+// It used to be String(scopeId(req)) (static, guessable) and no callback checked it, so an attacker
+// could complete THEIR provider authorization and send the victim's browser to the callback
+// (GET + sameSite=lax cookie), linking the attacker's account into the victim's books. Every OAuth
+// connect-url issues through _oauthStateIssue and every callback consumes through _oauthStateConsume —
+// one shared mechanism, so a new connector cannot ship without it. The nonce also records the account
+// and entity the flow was started for; the callback links into THAT entity, not whatever is active now.
+const _OAUTH_STATE_TTL_MS = 15 * 60 * 1000;
+async function _oauthStateIssue(req, provider) {
+  const nonce = crypto.randomBytes(24).toString('hex');
+  const all = Object.assign({}, req.session.oauthStates || {});
+  all[provider] = { n: nonce, a: String(scopeId(req)), e: req.entityId != null ? req.entityId : null, x: Date.now() + _OAUTH_STATE_TTL_MS };
+  req.session.oauthStates = all;
+  await saveSession(req);
+  return nonce;
+}
+// Returns { entityId } when the callback belongs to a flow this session started, else null. Single use:
+// the pending entry is removed whatever the outcome. checkQuery=false is for a provider whose redirect
+// does not echo `state` (Finch Connect sessions) — the pending session entry is still required.
+async function _oauthStateConsume(req, provider, checkQuery = true) {
+  const all = Object.assign({}, req.session.oauthStates || {});
+  const st = all[provider];
+  if (!st) return null;
+  delete all[provider];
+  req.session.oauthStates = all;
+  await saveSession(req);
+  if (!(st.x > Date.now()) || st.a !== String(scopeId(req))) return null;
+  if (checkQuery) {
+    const got = Buffer.from(String(req.query.state || ''));
+    const want = Buffer.from(st.n);
+    if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return null;
+  }
+  return { entityId: st.e, issuedAt: st.x - _OAUTH_STATE_TTL_MS };
+}
+const _OAUTH_STATE_MSG = 'This link request was not started from this session or has expired. Start the connection again from FinFlow.';
+
 function registerOAuthConnector(spec) {
   const blobKey = spec.key + '_conn';
   const CODE = spec.key.toUpperCase().replace(/[^A-Z0-9]+/g, '_') + '_NOT_CONFIGURED';
@@ -6533,12 +7135,13 @@ function registerOAuthConnector(spec) {
     if (conn.refresh_token && conn.expires_at && Date.now() > (conn.expires_at - 60000)) {
       const t = await tokenPost({ grant_type: 'refresh_token', refresh_token: decTok(conn.refresh_token) }, conn.token_url);
       access = t.access_token;
-      conn = Object.assign({}, conn, {
+      const _tok = {
         access_token: encTok(t.access_token),
         refresh_token: t.refresh_token ? encTok(t.refresh_token) : conn.refresh_token,
         expires_at: expiryOf(t, conn.expires_at),
-      });
-      await _saveProviderBlobE(uid, blobKey, conn, entityId);
+      };
+      conn = Object.assign({}, conn, _tok);
+      await _saveProviderBlobE(uid, blobKey, cur => Object.assign({}, cur, _tok), entityId);   // N45b: merge onto the stored blob
     }
     return { access, conn };
   }
@@ -6556,7 +7159,7 @@ function registerOAuthConnector(spec) {
     if (!authorizeBase) return res.status(400).json({ error: spec.paramError || 'A required parameter is missing or invalid.', code: 'BAD_PARAM' });
     const params = new URLSearchParams(Object.assign({
       client_id: process.env[spec.clientIdEnv], response_type: 'code',
-      redirect_uri: redirectUri(), scope: spec.scopes, state: String(scopeId(req)),
+      redirect_uri: redirectUri(), scope: spec.scopes, state: await _oauthStateIssue(req, spec.key),
     }, spec.extraAuthParams || {}));
     res.json({ connect_url: authorizeBase + '?' + params.toString() });
   }));
@@ -6568,9 +7171,14 @@ function registerOAuthConnector(spec) {
     if (!cfg()) return done(spec.label + ' linking is not set up.');
     const code = req.query.code || '';
     if (!code) return done('No authorization code returned.');
+    const flow = await _oauthStateConsume(req, spec.key);
+    if (!flow) return done('Could not link ' + spec.label + ': ' + _OAUTH_STATE_MSG);
     try {
-      // Zoho: the token host is the data-center accounts-server returned on the callback.
+      // Zoho: the token host is the data-center accounts-server returned on the callback. A spec that
+      // derives the host from the request returns null when the value is not one of its known hosts —
+      // refuse BEFORE tokenPost, which sends the client secret to that host (N55).
       const tokenUrl = spec.authTokenUrl ? spec.authTokenUrl(req) : spec.tokenUrl;
+      if (!tokenUrl) return done('Could not link ' + spec.label + ': ' + (spec.paramError || 'the authorization server is not recognised.'));
       const t = await tokenPost({ grant_type: 'authorization_code', code, redirect_uri: redirectUri() }, tokenUrl);
       // resolveAccount may return a bare account id, or {account, ...extra} where extra (e.g. api_base
       // for a data-center provider) is merged into the stored blob and read back by sync.
@@ -6588,7 +7196,7 @@ function registerOAuthConnector(spec) {
         expires_at: expiryOf(t, null),
         connected_at: new Date().toISOString(),
         token_url: tokenUrl,
-      }, extra), req.entityId);
+      }, extra), flow.entityId != null ? flow.entityId : req.entityId);
       return done(spec.label + ' connected ✓ You can close this window.');
     } catch (e) { console.error('[' + spec.key + ' callback]', e.message); return done('Could not link ' + spec.label + ': ' + e.message); }
   }));
@@ -6669,6 +7277,7 @@ app.post('/api/finch/connect-url', requireAuth, requirePerm('payroll:write'), wr
       console.error('[finch connect-url]', resp.status, JSON.stringify(j).slice(0, 300));
       return res.status(502).json({ error: 'Could not start payroll connection: ' + (j.message || j.error || ('Finch HTTP ' + resp.status)), code: 'FINCH_SESSION_FAILED' });
     }
+    await _oauthStateIssue(req, 'finch');
     res.json({ connect_url: j.connect_url });
   } catch (e) {
     console.error('[finch connect-url]', e.message);
@@ -6682,6 +7291,10 @@ app.get('/api/finch/callback', requireAuth, requirePerm('payroll:write'), wrap(a
   if (!finchConfigured()) return done('Payroll linking is not set up.');
   const code = req.query.code || '';
   if (!code) return done('No authorization code returned.');
+  // Finch Connect sessions do not echo `state`; the pending entry from connect-url is still required,
+  // and the token's customer_id (set to the account id when the session was minted) must match.
+  const flow = await _oauthStateConsume(req, 'finch', false);
+  if (!flow) return done('Could not link payroll: ' + _OAUTH_STATE_MSG);
   try {
     const resp = await fetch(FINCH_API + '/auth/token', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -6689,10 +7302,11 @@ app.get('/api/finch/callback', requireAuth, requirePerm('payroll:write'), wrap(a
     });
     let j = {}; try { j = await resp.json(); } catch (_) {}
     if (!resp.ok || !j.access_token) throw new Error(j.message || ('Finch token HTTP ' + resp.status));
+    if (j.customer_id != null && String(j.customer_id) !== String(scopeId(req))) return done('Could not link payroll: ' + _OAUTH_STATE_MSG);
     let providerName = null;
     try { const intro = await finchCall('/introspect', j.access_token); providerName = (intro && (intro.payroll_provider_id || intro.provider_id)) || null; } catch (_) {}
     const uid = scopeId(req);
-    await _saveProviderBlobE(uid, 'finch_conn', { access_token: encTok(j.access_token), provider_name: providerName, linked_at: new Date().toISOString(), employee_count: null }, req.entityId);
+    await _saveProviderBlobE(uid, 'finch_conn', { access_token: encTok(j.access_token), provider_name: providerName, linked_at: new Date().toISOString(), employee_count: null }, flow.entityId != null ? flow.entityId : req.entityId);
     return done('Payroll connected ✓ You can close this window.');
   } catch (e) { console.error('[finch callback]', e.message, e.provider || ''); return done('Could not link payroll: ' + e.message); }
 }));
@@ -6706,7 +7320,7 @@ app.post('/api/finch/sync', requireAuth, requirePerm('payroll:write'), wrap(asyn
   try {
     const dir = await finchCall('/employer/directory', decTok(value.access_token));
     const count = Array.isArray(dir.individuals) ? dir.individuals.length : (dir.paging && dir.paging.count) || 0;
-    await _saveProviderBlobE(uid, 'finch_conn', Object.assign({}, value, { employee_count: count, last_synced: new Date().toISOString() }), req.entityId);
+    await _saveProviderBlobE(uid, 'finch_conn', cur => Object.assign({}, cur, { employee_count: count, last_synced: new Date().toISOString() }), req.entityId);   // N45b
     res.json({ ok: true, employees: count, note: 'Directory pulled for display. Importing payroll into the books is a separate, owner-approved step (Rule 12).' });
   } catch (e) { console.error('[finch sync]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not sync payroll: ' + e.message }); }
 }));
@@ -6769,7 +7383,7 @@ app.post('/api/codat/link-url', requireAuth, requirePerm('books:write'), wrap(as
       company = await codatCall(`/companies/${companyId}`);
     }
     const linkUrl = (company.redirect) || (company.links && company.links.self) || null;
-    await _saveProviderBlobE(uid, 'codat_conn', Object.assign({}, value || {}, { company_id: companyId, linked_at: new Date().toISOString() }), req.entityId);
+    await _saveProviderBlobE(uid, 'codat_conn', cur => Object.assign({}, cur, { company_id: companyId, linked_at: new Date().toISOString() }), req.entityId);   // N45b
     if (!linkUrl) return res.status(502).json({ error: 'Codat did not return a link URL.' });
     res.json({ link_url: linkUrl, company_id: companyId });
   } catch (e) { console.error('[codat link-url]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not start accounting linking: ' + e.message }); }
@@ -6838,8 +7452,11 @@ const _cdSplitName = (full) => {
 const _CD_ACCT_CAT = { Asset: 'Assets', Liability: 'Liabilities', Equity: 'Equity', Income: 'Revenue', Expense: 'Expenses' };
 // Codat invoice/bill status → FinFlow status enum. (amount_paid is derived from amountDue below,
 // NOT from the label, so AR/AP ties out regardless of how a status maps.)
-const _CD_INV_STATUS  = { Paid: 'paid', PartiallyPaid: 'partial', Submitted: 'pending', Draft: 'draft', Void: 'draft' };
-const _CD_BILL_STATUS = { Paid: 'paid', PartiallyPaid: 'partial', Open: 'unpaid', Draft: 'unpaid', Void: 'unpaid' };
+// N46: a VOID document is not imported at all (it must never be recognised); a DRAFT bill is not an issued bill
+// (bills have no draft state — mapping it to 'unpaid' recognised it as an expense). null = skip.
+const _CD_INV_STATUS  = { Paid: 'paid', PartiallyPaid: 'partial', Submitted: 'pending', Draft: 'draft', Void: null };
+const _CD_BILL_STATUS = { Paid: 'paid', PartiallyPaid: 'partial', Open: 'unpaid', Draft: null, Void: null };
+const _cdStatus = (map, v, def) => (Object.prototype.hasOwnProperty.call(map, v) ? map[v] : def);
 
 // Pure mappers: one Codat record → { table, key, date, data } where `data` holds the exact FinFlow
 // field keys the manual routes write. Return null to SKIP (e.g. an unbalanced journal FinFlow rejects).
@@ -6861,29 +7478,47 @@ function _codatMappers(companyId, platform) {
       name: _cdClip(s.supplierName || 'Supplier', 200), contact: _cdClip(s.contactName || '', 200),
       category: '', owing: 0, ytd_paid: 0, status: (s.status === 'Archived') ? 'inactive' : 'active' } }),
     invoices: (i) => { const total = _cdNum(i.totalAmount), due = _cdNum(i.amountDue);
+      const _st = _cdStatus(_CD_INV_STATUS, i.status, 'pending'); if (_st == null) return null;
       return { table: 'invoices', key: ck('invoice', i.id), date: _cdDate(i.issueDate) || _cdDate(i.dueDate), data: {
         client: _cdClip((i.customerRef && (i.customerRef.companyName || i.customerRef.id)) || 'Unknown', 200),
         amount: total, amount_paid: Math.max(0, +(total - due).toFixed(2)),
         due_date: _cdDate(i.dueDate), issue_date: _cdDate(i.issueDate),
-        status: _CD_INV_STATUS[i.status] || 'pending',
+        status: _st,
         notes: _cdClip(tag + (i.invoiceNumber ? (' · ' + i.invoiceNumber) : ''), 500) } }; },
     bills: (b) => { const total = _cdNum(b.totalAmount), due = _cdNum(b.amountDue);
+      const _st = _cdStatus(_CD_BILL_STATUS, b.status, 'unpaid'); if (_st == null) return null;
       return { table: 'bills', key: ck('bill', b.id), date: _cdDate(b.issueDate) || _cdDate(b.dueDate), data: {
         vendor: _cdClip((b.supplierRef && (b.supplierRef.supplierName || b.supplierRef.id)) || 'Unknown', 200),
         num: _cdClip(b.reference || ('BILL-' + String(b.id).slice(-4)), 60),
         amount: total, amount_paid: Math.max(0, +(total - due).toFixed(2)),
         due_date: _cdDate(b.dueDate), issue_date: _cdDate(b.issueDate),
-        status: _CD_BILL_STATUS[b.status] || 'unpaid', notes: _cdClip(tag, 500) } }; },
-    payments: (p) => ({ table: 'payments_received', key: ck('payment', p.id), date: null, data: {
-      customer: _cdClip((p.customerRef && (p.customerRef.companyName || p.customerRef.id)) || '', 200),
-      invoice_ref: _cdClip((p.lines && p.lines[0] && p.lines[0].links && p.lines[0].links[0] && p.lines[0].links[0].id) || '', 60),
-      amount: _cdNum(p.totalAmount), date: _cdDate(p.date), method: 'Imported' } }),
-    // billPayments → payments_made WITHOUT a bill_id, so recalcBillStatus is NOT re-triggered
-    // (the bill already carries its amount_paid from amountDue) — this is what prevents double-counting.
-    billPayments: (bp) => ({ table: 'payments_made', key: ck('billpayment', bp.id), date: null, data: {
-      vendor: _cdClip((bp.supplierRef && (bp.supplierRef.supplierName || bp.supplierRef.id)) || '', 200),
-      amount: _cdNum(bp.totalAmount), date: _cdDate(bp.date), method: 'Imported',
-      notes: 'Imported (Codat)', ref: _cdClip(bp.id, 60) } }),
+        status: _st, notes: _cdClip(tag, 500) } }; },
+    // N46: a customer payment becomes a real INVOICE PAYMENT on the imported invoice it settles (one per invoice
+    // link) — visible to cash flow and the ledger. It used to land in the RETIRED payments_received store, so the
+    // cash never appeared anywhere. The invoice keeps the amount_paid Codat reported (amountDue); the payment row
+    // is not re-applied to it (no double count).
+    payments: (p) => {
+      const out = [];
+      for (const [li, l] of (Array.isArray(p.lines) ? p.lines : []).entries()) {
+        for (const [ki, k] of (Array.isArray(l.links) ? l.links : []).entries()) {
+          if (!k || k.type !== 'Invoice' || !k.id) continue;
+          out.push({ table: 'invoice_payments', key: ck('payment', p.id + ':' + li + ':' + ki), date: _cdDate(p.date), link: { table: 'invoices', key: ck('invoice', k.id) }, data: {
+            amount: Math.abs(_cdNum(k.amount != null ? k.amount : l.amount)), payment_date: _cdDate(p.date), method: 'Imported', reference: _cdClip(p.id, 60) } });
+        }
+      }
+      return out.length ? out : null;
+    },
+    // N46: a bill payment is LINKED to the imported bill it pays (bill_id), so it settles AP. Unlinked it was an
+    // orphan payment = a direct expense, while the imported bill already accrued that expense — opex counted
+    // twice. recalcBillStatus is not re-run (the bill keeps Codat's amount_paid). A payment whose bill was not
+    // imported stays an orphan disbursement (its expense is not otherwise in the books).
+    billPayments: (bp) => {
+      const _bl = (Array.isArray(bp.lines) ? bp.lines : []).flatMap(l => (Array.isArray(l.links) ? l.links : [])).find(k => k && k.type === 'Bill' && k.id);
+      return { table: 'payments_made', key: ck('billpayment', bp.id), date: _cdDate(bp.date), link: _bl ? { table: 'bills', key: ck('bill', _bl.id), field: 'bill_id' } : null, data: {
+        vendor: _cdClip((bp.supplierRef && (bp.supplierRef.supplierName || bp.supplierRef.id)) || '', 200),
+        amount: _cdNum(bp.totalAmount), date: _cdDate(bp.date), method: 'Imported',
+        notes: 'Imported (Codat)', ref: _cdClip(bp.id, 60) } };
+    },
     journalEntries: (j) => {
       const lines = Array.isArray(j.journalLines) ? j.journalLines : [];
       let debit = 0, credit = 0; const norm = [];
@@ -6927,23 +7562,52 @@ async function _codatImportType(uid, entityId, sessionUserId, companyId, platfor
   try { records = await codatFetchAll(companyId, type); }
   catch (e) { tally.error = e.message; return tally; }
   tally.total = records.length;
+  // N46: money records in a currency other than the business's are NOT written as if native (they were — a
+  // EUR 1,000 invoice became 1,000 of the entity's currency). They are counted for the owner instead.
+  const _MONEY_TYPES = new Set(['invoices', 'bills', 'payments', 'billPayments', 'journalEntries']);
+  let entCur = null;
+  try { entCur = ((await pool.query(`SELECT data->>'currency' AS c FROM entities WHERE id = $1`, [entityId])).rows[0] || {}).c || null; } catch (_) {}
+  entCur = String(entCur || 'USD').toUpperCase();
+  tally.currencyMismatch = 0; tally.unlinked = 0;
   for (const rec of records) {
     if (rec && rec.currency) tally.currencies[rec.currency] = (tally.currencies[rec.currency] || 0) + 1;
-    let m;
-    try { m = map(rec); } catch (e) { tally.failed++; continue; }
-    if (!m) { tally.skipped++; continue; }
-    const dup = await pool.query(`SELECT 1 FROM ${m.table} WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, m.key]);
-    if (dup.rows.length) { tally.duplicate++; continue; }
-    if (m.date && await isLocked(sessionUserId, entityId, m.date)) { tally.locked++; continue; }
-    if (tally.sample.length < 3) tally.sample.push(m.data);
-    if (dryRun) { tally.added++; continue; }
-    try {
-      await db.insert(m.table, Object.assign({ user_id: uid, entity_id: entityId,
-        import_key: m.key, idempotency_key: m.key, source: 'codat', codat_id: rec.id }, m.data));
-      tally.added++;
-    } catch (e) {
-      if (e.code === '23505') { tally.duplicate++; }
-      else { tally.failed++; console.error(`[codat import ${type}]`, e.message); }
+    if (_MONEY_TYPES.has(type) && rec && rec.currency && String(rec.currency).toUpperCase() !== entCur) { tally.currencyMismatch++; tally.skipped++; continue; }
+    let mm;
+    try { mm = map(rec); } catch (e) { tally.failed++; continue; }
+    if (!mm) { tally.skipped++; continue; }
+    for (const m of (Array.isArray(mm) ? mm : [mm])) {
+      const typed = m.table === 'invoice_payments';
+      const dup = typed
+        ? await pool.query(`SELECT 1 FROM invoice_payments WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [uid, m.key])
+        : await pool.query(`SELECT 1 FROM ${m.table} WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, m.key]);
+      if (dup.rows.length) { tally.duplicate++; continue; }
+      if (m.date && await isLocked(sessionUserId, entityId, m.date)) { tally.locked++; continue; }
+      // Resolve the imported document this record settles (an invoice payment needs its invoice; a bill
+      // payment links to its bill when that bill was imported).
+      let linkId = null;
+      if (m.link) {
+        const { rows: [lr] } = await pool.query(`SELECT id FROM ${m.link.table} WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, m.link.key]);
+        linkId = lr ? lr.id : null;
+        if (!linkId && typed && !dryRun) { tally.unlinked++; tally.skipped++; continue; }   // a preview has not imported the invoices yet
+      }
+      if (tally.sample.length < 3) tally.sample.push(m.data);
+      if (dryRun) { tally.added++; continue; }
+      try {
+        if (typed) {
+          await pool.query(
+            `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [uid, entityId, linkId, m.data.amount, m.data.payment_date || await entityTodayYmd(entityId), m.data.method, m.data.reference, 'Imported (Codat)', m.key]);
+        } else {
+          const extra = (m.link && m.link.field && linkId) ? { [m.link.field]: linkId } : {};
+          await db.insert(m.table, Object.assign({ user_id: uid, entity_id: entityId,
+            import_key: m.key, idempotency_key: m.key, source: 'codat', codat_id: rec.id }, m.data, extra));
+        }
+        tally.added++;
+      } catch (e) {
+        if (e.code === '23505') { tally.duplicate++; }
+        else { tally.failed++; console.error(`[codat import ${type}]`, e.message); }
+      }
     }
   }
   return tally;
@@ -6958,7 +7622,7 @@ app.post('/api/codat/import-preview', requireAuth, requirePerm('books:write'), w
   let company; try { company = await _codatCompany(uid, req.entityId); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
   const datasets = {};
   for (const type of CODAT_IMPORT_TYPES) {
-    datasets[type] = await _codatImportType(uid, req.entityId, req.session.userId, company.companyId, company.platform, type, { dryRun: true });
+    datasets[type] = await _codatImportType(uid, req.entityId, uid, company.companyId, company.platform, type, { dryRun: true });
   }
   res.json({ ok: true, company_id: company.companyId, platform: company.platform, entity_id: req.entityId, datasets });
 }));
@@ -6972,7 +7636,7 @@ app.post('/api/codat/import', requireAuth, requirePerm('books:write'), wrap(asyn
   let company; try { company = await _codatCompany(uid, req.entityId); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
   const results = {}; let totalAdded = 0;
   for (const type of CODAT_IMPORT_TYPES) {
-    const t = await _codatImportType(uid, req.entityId, req.session.userId, company.companyId, company.platform, type, { dryRun: false });
+    const t = await _codatImportType(uid, req.entityId, uid, company.companyId, company.platform, type, { dryRun: false });
     results[type] = t; totalAdded += t.added;
   }
   try { logAudit(req, 'CREATE', 'codat_import', null, null, { entity_id: req.entityId, platform: company.platform, total_added: totalAdded }); } catch (_) {}
@@ -7028,7 +7692,7 @@ app.post('/api/stripe/connect-url', requireAuth, requirePerm('bank:manage'), wra
   if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe payments linking is not set up yet. Add STRIPE_SECRET_KEY and STRIPE_CONNECT_CLIENT_ID to enable it.', code: 'STRIPE_NOT_CONFIGURED' });
   const params = new URLSearchParams({
     response_type: 'code', client_id: process.env.STRIPE_CONNECT_CLIENT_ID, scope: 'read_write',
-    redirect_uri: _stripeRedirectUri(), state: String(scopeId(req)),
+    redirect_uri: _stripeRedirectUri(), state: await _oauthStateIssue(req, 'stripe'),
   });
   res.json({ connect_url: 'https://connect.stripe.com/oauth/authorize?' + params.toString() });
 }));
@@ -7038,6 +7702,8 @@ app.get('/api/stripe/callback', requireAuth, requirePerm('bank:manage'), wrap(as
   if (!stripeConnectConfigured()) return done('Stripe payments linking is not set up.');
   const code = req.query.code || '';
   if (!code) return done('No authorization code returned.');
+  const flow = await _oauthStateConsume(req, 'stripe');
+  if (!flow) return done('Could not link Stripe: ' + _OAUTH_STATE_MSG);
   try {
     const resp = await fetch('https://connect.stripe.com/oauth/token', {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -7046,7 +7712,7 @@ app.get('/api/stripe/callback', requireAuth, requirePerm('bank:manage'), wrap(as
     let j = {}; try { j = await resp.json(); } catch (_) {}
     if (!resp.ok || !j.stripe_user_id) throw new Error(j.error_description || j.error || ('Stripe OAuth HTTP ' + resp.status));
     const uid = scopeId(req);
-    await _saveProviderBlobE(uid, 'stripe_conn', { stripe_user_id: j.stripe_user_id, access_token: j.access_token ? encTok(j.access_token) : null, linked_at: new Date().toISOString(), books: { scope: 'business', entity_id: req.entityId || null } }, req.entityId);
+    await _saveProviderBlobE(uid, 'stripe_conn', { stripe_user_id: j.stripe_user_id, access_token: j.access_token ? encTok(j.access_token) : null, linked_at: new Date().toISOString(), books: { scope: 'business', entity_id: (flow.entityId != null ? flow.entityId : req.entityId) || null } }, flow.entityId != null ? flow.entityId : req.entityId);
     return done('Stripe connected ✓ You can close this window.');
   } catch (e) { console.error('[stripe connect callback]', e.message); return done('Could not link Stripe: ' + e.message); }
 }));
@@ -7109,7 +7775,7 @@ app.post('/api/stripe/binding', requireAuth, requirePerm('bank:manage'), wrap(as
     if (!owned.rows[0]) return res.status(403).json({ error: 'Business not found.' });
     entity_id = _e;
   }
-  await _saveProviderBlobE(uid, 'stripe_conn', Object.assign({}, value, { books: { scope, entity_id } }), req.entityId);
+  await _saveProviderBlobE(uid, 'stripe_conn', cur => Object.assign({}, cur, { books: { scope, entity_id } }), req.entityId);   // N45b
   res.json({ ok: true, books: { scope, entity_id } });
 }));
 
@@ -7130,7 +7796,7 @@ app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
     if (!resp.ok) throw new Error((j.error && j.error.message) || ('Stripe HTTP ' + resp.status));
     const charges = (j.data || []).map(c => ({
       id: c.id,
-      amount: (Number(c.amount) || 0) / 100,
+      amount: stripeMinorToMajor(c.amount, c.currency),
       currency: String(c.currency || 'usd').toUpperCase(),
       status: c.status || 'unknown',
       paid: !!c.paid,
@@ -7194,7 +7860,7 @@ app.get('/api/stripe/payouts', requireAuth, wrap(async (req, res) => {
     if (!resp.ok) throw new Error((j.error && j.error.message) || ('Stripe HTTP ' + resp.status));
     const payouts = (j.data || []).map(p => ({
       id: p.id,
-      amount: (Number(p.amount) || 0) / 100,              // net deposited to the bank
+      amount: stripeMinorToMajor(p.amount, p.currency),   // net deposited to the bank
       currency: String(p.currency || 'usd').toUpperCase(),
       status: p.status || '',                              // paid | in_transit | pending | failed | canceled
       arrival_date: p.arrival_date ? new Date(p.arrival_date * 1000).toISOString().slice(0, 10) : null,
@@ -7238,9 +7904,10 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
     if (!resp.ok) throw new Error((c && c.error && c.error.message) || ('Stripe HTTP ' + resp.status));
   } catch (e) { console.error('[stripe import]', e.message); return res.status(502).json({ error: 'Could not read the Stripe charge: ' + e.message }); }
   if (c.status !== 'succeeded' || c.refunded) return res.status(400).json({ error: 'Only a succeeded, non-refunded charge can be added to the books.' });
-  const amount = (Number(c.amount) || 0) / 100;
+  const amount = stripeMinorToMajor(c.amount, c.currency);
   const customer = String(c.description || (c.billing_details && c.billing_details.name) || (c.billing_details && c.billing_details.email) || c.receipt_email || 'Stripe payment').slice(0, 200);
   const dateYmd = c.created ? new Date(c.created * 1000).toISOString().slice(0, 10) : await entityTodayYmd(req.entityId);
+  if (await refuseIfLocked(res, scopeId(req), _bookEid, dateYmd)) return;
   // STOPGAP guard (pre match-to-invoice): a charge whose amount equals an OPEN invoice's total OR its
   // remaining balance is LIKELY that invoice's payment — importing it as a fresh sales receipt would
   // DOUBLE-COUNT the revenue (the invoice already accrues it). So unless the owner explicitly confirms,
@@ -7275,7 +7942,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
     if (e.code === '23505') { const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]); if (rows[0]) return res.json({ ok: true, duplicate: true, receipt: rowToObj(rows[0]) }); }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
+  await recordAudit(pool, { userId: scopeId(req), entityId: _bookEid, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
   // MONEY-OUT parity: Stripe's processing fee is real money out. Gross revenue stays on the receipt above;
   // the fee is booked as a SEPARATE expense (the QuickBooks/Xero treatment) so profit is net-correct and
   // cash reconciles to the payout. Idempotent on the charge ('stripe-fee:'+id) — never double-booked.
@@ -7291,9 +7958,9 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
         ({ row: feeRow } = await db.insert('expenses', {
           user_id: scopeId(req), entity_id: _bookEid,
           description: 'Stripe processing fee \u00b7 ' + chargeId, category: 'Payment processing',
-          amount: feeCents / 100, deductible: 'yes', expense_date: dateYmd, idempotency_key: feeIdem,
+          amount: stripeMinorToMajor(feeCents, (c.balance_transaction && c.balance_transaction.currency) || c.currency), deductible: 'yes', expense_date: dateYmd, idempotency_key: feeIdem,
         }));
-        await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
+        await recordAudit(pool, { userId: scopeId(req), entityId: _bookEid, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
       }
     } catch (e) { console.error('[stripe import fee]', e.message); }
   }
@@ -7317,12 +7984,17 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
   const _bt = _stripeBooksTarget(value, req);
   if (_bt.scope === 'personal') return res.status(400).json({ error: 'This Stripe account is set to Personal.', code: 'PERSONAL_NOT_SUPPORTED' });
   const _bookEid = _bt.entity_id;
-  const refundIdem = ('stripe-refund:' + chargeId).slice(0, 64);
-  // Idempotency: this refund already recorded?
-  {
-    const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), refundIdem]);
-    if (rows[0]) return res.json({ ok: true, duplicate: true, receipt: rowToObj(rows[0]) });
-  }
+  // N3b: refunds are booked by DELTA. Stripe reports the charge's CUMULATIVE amount_refunded; each request books
+  // what that exceeds the refunds already booked for this charge, keyed on the cumulative figure. One key per
+  // charge used to mean the FIRST refund was the only one ever recorded — a later partial refund on the same
+  // charge returned "duplicate" and revenue stayed overstated. The first refund keeps the original key.
+  const refundIdem0 = ('stripe-refund:' + chargeId).slice(0, 64);
+  const _bookedRefunds = async () => {
+    const { rows } = await pool.query(
+      `SELECT * FROM sales_receipts WHERE user_id=$1 AND (data->>'idempotency_key' = $2 OR data->>'idempotency_key' LIKE $2 || ':%') ORDER BY id ASC`,
+      [scopeId(req), refundIdem0]);
+    return rows.map(rowToObj);
+  };
   // The original income must already be booked, or there is nothing to reverse (never record a bare refund).
   const origIdem = ('stripe-charge:' + chargeId).slice(0, 64);
   const { rows: origRows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), origIdem]);
@@ -7337,12 +8009,17 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
   } catch (e) { console.error('[stripe refund]', e.message); return res.status(502).json({ error: 'Could not read the Stripe charge: ' + e.message }); }
   const refundedCents = Number(c.amount_refunded) || 0;
   if (refundedCents <= 0) return res.status(400).json({ error: 'This charge has no refund on Stripe yet.' });
-  const refundAmt = refundedCents / 100;
+  const _booked = await _bookedRefunds();
+  const _bookedAmt = _booked.reduce((t, r) => t + (-(parseFloat(r.amount) || 0)), 0);
+  const refundAmt = Math.round((stripeMinorToMajor(refundedCents, c.currency) - _bookedAmt) * 100) / 100;
+  if (refundAmt <= 0.005) return res.json({ ok: true, duplicate: true, receipt: _booked[_booked.length - 1] || null });
+  const refundIdem = (_booked.length ? refundIdem0 + ':' + refundedCents : refundIdem0).slice(0, 64);
   const _orig = rowToObj(origRows[0]);
   const customer = String(_orig.customer || c.description || 'Stripe refund').slice(0, 200);
   const _rfList = (c.refunds && c.refunds.data) || [];
   const _rfCreated = _rfList.length ? _rfList[_rfList.length - 1].created : null;
   const dateYmd = _rfCreated ? new Date(_rfCreated * 1000).toISOString().slice(0, 10) : await entityTodayYmd(_bookEid);
+  if (await refuseIfLocked(res, scopeId(req), _bookEid, dateYmd)) return;
   let row;
   try {
     ({ row } = await db.insert('sales_receipts', {
@@ -7354,7 +8031,7 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
     if (e.code === '23505') { const { rows } = await pool.query(`SELECT * FROM sales_receipts WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), refundIdem]); if (rows[0]) return res.json({ ok: true, duplicate: true, receipt: rowToObj(rows[0]) }); }
     throw e;
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
+  await recordAudit(pool, { userId: scopeId(req), entityId: _bookEid, table: 'sales_receipts', recordId: row.id, action: 'CREATE', newData: row, req });
   // GL Phase 2 (shadow): a refund is a contra sales receipt (negative amount) - nets revenue down.
   try { await postSourceLedger(pool, { userId: scopeId(req), sourceType: 'sales_receipt', row }); } catch (glErr) { console.error('[GL] stripe refund posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true, refunded: true, receipt: row });
@@ -7383,6 +8060,10 @@ app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
   }
   const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id=$1 AND user_id=$2 LIMIT 1`, [invoiceId, scopeId(req)]);
   if (!ir) return res.status(404).json({ error: 'Invoice not found.' });
+  if (ir.entity_id != null && _bookEid != null && Number(ir.entity_id) !== Number(_bookEid)) {
+    return res.status(400).json({ error: 'That invoice belongs to a different business than this Stripe account.', code: 'INVOICE_ENTITY_MISMATCH' });
+  }
+  if (await refuseIfLocked(res, scopeId(req), ir.entity_id, new Date().toISOString().slice(0, 10))) return;
   let c;
   try {
     const resp = await fetch('https://api.stripe.com/v1/charges/' + encodeURIComponent(chargeId) + '?expand[]=balance_transaction', {
@@ -7392,7 +8073,7 @@ app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
     if (!resp.ok) throw new Error((c && c.error && c.error.message) || ('Stripe HTTP ' + resp.status));
   } catch (e) { console.error('[stripe match]', e.message); return res.status(502).json({ error: 'Could not read the Stripe charge: ' + e.message }); }
   if (c.status !== 'succeeded' || c.refunded) return res.status(400).json({ error: 'Only a succeeded, non-refunded charge can be applied to an invoice.' });
-  const applied = await recordExternalInvoicePayment({ invoiceId, amountMinor: Number(c.amount) || 0, method: 'Card (Stripe)', idemKey: ('stripe-invpay:' + chargeId).slice(0, 64) });
+  const applied = await recordExternalInvoicePayment({ invoiceId, amountMinor: Number(c.amount) || 0, currency: c.currency, method: 'Card (Stripe)', idemKey: ('stripe-invpay:' + chargeId).slice(0, 64) });
   // Fee expense (idempotent on the charge), booked to the bound entity — fees apply to invoice payments too.
   let feeRow = null;
   const feeCents = c.balance_transaction && Number.isFinite(Number(c.balance_transaction.fee)) ? Number(c.balance_transaction.fee) : 0;
@@ -7406,9 +8087,9 @@ app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
         ({ row: feeRow } = await db.insert('expenses', {
           user_id: scopeId(req), entity_id: _bookEid,
           description: 'Stripe processing fee \u00b7 ' + chargeId, category: 'Payment processing',
-          amount: feeCents / 100, deductible: 'yes', expense_date: _dateYmd, idempotency_key: feeIdem,
+          amount: stripeMinorToMajor(feeCents, (c.balance_transaction && c.balance_transaction.currency) || c.currency), deductible: 'yes', expense_date: _dateYmd, idempotency_key: feeIdem,
         }));
-        await recordAudit(pool, { userId: req.session.userId, entityId: _bookEid, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
+        await recordAudit(pool, { userId: scopeId(req), entityId: _bookEid, table: 'expenses', recordId: feeRow.id, action: 'CREATE', newData: feeRow, req });
       }
     } catch (e) { console.error('[stripe match fee]', e.message); }
   }
@@ -7472,23 +8153,41 @@ app.post('/api/belvo/widget-token', requireAuth, requirePerm('bank:manage'), wra
   if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO_SECRET_ID and BELVO_SECRET_PASSWORD to enable it.', code: 'BELVO_NOT_CONFIGURED' });
   try {
     const j = await belvoCall('/api/token/', { method: 'POST', body: { id: process.env.BELVO_SECRET_ID, password: process.env.BELVO_SECRET_PASSWORD, scopes: 'read_institutions,write_links' } });
+    await _oauthStateIssue(req, 'belvo');   // N56: /exchange only accepts a link created in THIS widget session
     res.json({ access: j.access });
   } catch (e) { console.error('[belvo token]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not start LatAm bank linking: ' + e.message }); }
 }));
 
 app.post('/api/belvo/exchange', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
   if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
-  const link = (req.body && req.body.link) || '';
+  const link = String((req.body && req.body.link) || '');
   if (!link) return res.status(400).json({ error: 'link is required.' });
+  // N56: the platform Belvo credentials can read EVERY link on the account, so a client-supplied link id
+  // is not proof of ownership — knowing another tenant's link UUID used to be enough to sync their bank.
+  // A link is accepted only if (1) this session opened the widget (pending entry from /widget-token,
+  // single use), (2) Belvo says the link was created AFTER that widget session started, and (3) no other
+  // FinFlow account has already claimed it.
+  const flow = await _oauthStateConsume(req, 'belvo', false);
+  if (!flow) return res.status(409).json({ error: 'Open the bank-linking widget again — this link was not created in the current session.', code: 'BELVO_NO_SESSION' });
+  const sessionStart = flow.issuedAt - 60 * 1000;   // small clock-skew allowance
   try {
-    let institution = null;
-    try { const d = await belvoCall('/api/links/' + encodeURIComponent(link) + '/'); institution = d.institution || null; } catch (_) {}
+    let d;
+    try { d = await belvoCall('/api/links/' + encodeURIComponent(link) + '/'); }
+    catch (e) { return res.status(400).json({ error: 'That bank link was not found.', code: 'BELVO_LINK_UNKNOWN' }); }
+    const created = Date.parse(d && d.created_at);
+    if (!(created >= sessionStart)) return res.status(409).json({ error: 'That bank link was not created in the current linking session.', code: 'BELVO_LINK_NOT_FRESH' });
     const uid = scopeId(req);
-    const { value } = await _providerBlobE(uid, 'belvo_conn', req.entityId);
-    const links = (value && value.links) || [];
-    const next = links.filter(l => l.link !== link);
-    next.push({ link, institution, linked_at: new Date().toISOString() });
-    await _saveProviderBlobE(uid, 'belvo_conn', { links: next }, req.entityId);
+    const { rows: claimed } = await pool.query(
+      `SELECT 1 FROM user_settings WHERE data->>'key' = 'belvo_conn' AND user_id <> $1 AND position($2 in COALESCE(data->>'value', '')) > 0 LIMIT 1`,
+      [uid, JSON.stringify(link)]);
+    if (claimed.length) return res.status(409).json({ error: 'That bank link belongs to another account.', code: 'BELVO_LINK_CLAIMED' });
+    const institution = (d && d.institution) || null;
+    const entityId = flow.entityId != null ? flow.entityId : req.entityId;
+    const _nb = await _mutateSettingsBlob(uid, 'belvo_conn', entityId, cur => {   // N45: atomic append
+      const links = (cur && cur.links) || [];
+      return Object.assign({}, cur || {}, { links: links.filter(l => l.link !== link).concat([{ link, institution, linked_at: new Date().toISOString() }]) });
+    });
+    const next = _nb.links;
     res.status(201).json({ ok: true, institution, institutions: next.map(l => l.institution).filter(Boolean) });
   } catch (e) { console.error('[belvo exchange]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not link bank: ' + e.message }); }
 }));
@@ -7657,6 +8356,16 @@ registerOAuthConnector({
 // THAT host, and the data API lives on the matching zohoapis.<dc> domain — both captured at link time
 // and stored (token_url + api_base) so refresh and sync stay on the right DC. Creds go in the FORM body
 // (not Basic); the API uses a `Zoho-oauthtoken` header (not Bearer). account = organization_id.
+// The accounts-server arrives on the callback query string, so it is attacker-controllable: only Zoho's
+// own data centers are accepted (the token exchange POSTs ZOHO_CLIENT_SECRET to that host — N55).
+// Returns the DC suffix ('com', 'eu', 'com.au', …) or null.
+const _ZOHO_DCS = ['com', 'eu', 'in', 'com.au', 'jp', 'com.cn', 'ca', 'sa', 'uk'];
+function _zohoDC(req) {
+  const raw = String((req.query && req.query['accounts-server']) || 'https://accounts.zoho.com').replace(/\/+$/, '');
+  const m = raw.match(/^https:\/\/accounts\.zoho\.([a-z.]+)$/i);
+  const dc = m && m[1].toLowerCase();
+  return dc && _ZOHO_DCS.includes(dc) ? dc : null;
+}
 registerOAuthConnector({
   key: 'zohobooks', label: 'Zoho Books', perm: 'books:write',
   clientIdEnv: 'ZOHO_CLIENT_ID', secretEnv: 'ZOHO_CLIENT_SECRET', redirectEnv: 'ZOHO_REDIRECT_URI',
@@ -7665,14 +8374,10 @@ registerOAuthConnector({
   scopes: 'ZohoBooks.fullaccess.READ',
   tokenAuth: 'body', tokenFormat: 'form',
   extraAuthParams: { access_type: 'offline', prompt: 'consent' },
-  authTokenUrl: (req) => {
-    const s = String((req.query && req.query['accounts-server']) || 'https://accounts.zoho.com').replace(/\/+$/, '');
-    return s + '/oauth/v2/token';
-  },
+  paramError: 'the Zoho accounts server is not a recognised Zoho data center.',
+  authTokenUrl: (req) => { const dc = _zohoDC(req); return dc ? ('https://accounts.zoho.' + dc + '/oauth/v2/token') : null; },
   resolveAccount: async (t, req, access) => {
-    const srv = String((req.query && req.query['accounts-server']) || 'https://accounts.zoho.com');
-    const m = srv.match(/accounts\.zoho\.([a-z.]+)$/);
-    const apiBase = 'https://www.zohoapis.' + (m ? m[1] : 'com');
+    const apiBase = 'https://www.zohoapis.' + (_zohoDC(req) || 'com');
     let orgId = null;
     try {
       const r = await fetch(apiBase + '/books/v3/organizations', { headers: { 'Authorization': 'Zoho-oauthtoken ' + access } });
@@ -7780,7 +8485,7 @@ registerOAuthConnector({
   tokenAuth: 'body', tokenFormat: 'json',
   paramError: 'A valid Shopify store domain (yourstore.myshopify.com) is required.',
   authorizeUrlFor: (req) => { const s = req.query && req.query.shop; return _shopifyShopOK(s) ? ('https://' + s + '/admin/oauth/authorize') : null; },
-  authTokenUrl: (req) => { const s = req.query && req.query.shop; return _shopifyShopOK(s) ? ('https://' + s + '/admin/oauth/access_token') : 'https://invalid.example/never'; },
+  authTokenUrl: (req) => { const s = req.query && req.query.shop; return _shopifyShopOK(s) ? ('https://' + s + '/admin/oauth/access_token') : null; },
   resolveAccount: (t, req) => { const s = req.query && req.query.shop; return _shopifyShopOK(s) ? { account: String(s), api_base: 'https://' + s } : null; },
   sync: async (conn, { access }) => {
     const base = conn.api_base || ('https://' + conn.account);
@@ -7794,7 +8499,9 @@ registerOAuthConnector({
 // (WP admin → WooCommerce → Advanced → REST API). Per-entity like every connector. Keys encTok'd at
 // rest; store_url kept plaintext (it's the API base, not a secret). Sync = order count via the WC REST
 // API (Basic ck:cs). DISPLAY-ONLY (Rules 2 & 12).
-const _wooUrlOK = (s) => /^https?:\/\/[^\s"'<>]+$/i.test(String(s || ''));
+// The store URL is user-supplied and fetched server-side: it goes through safe-egress (N54) — https only,
+// public addresses only, pinned connect, no redirects — both when it is saved and on every sync.
+const _safeEgress = require('./safe-egress');
 app.get('/api/woocommerce/status', requireAuth, wrap(async (req, res) => {
   const { value } = await _providerBlobE(scopeId(req), 'woocommerce_conn', req.entityId);
   res.json({ connected: !!(value && value.connected), store: value ? value.store_url || null : null, provider: 'WooCommerce' });
@@ -7803,7 +8510,9 @@ app.post('/api/woocommerce/connect', requireAuth, requirePerm('bank:manage'), wr
   const b = req.body || {};
   const store = String(b.store_url || '').trim().replace(/\/+$/, '');
   const ck = String(b.consumer_key || '').trim(), cs = String(b.consumer_secret || '').trim();
-  if (!_wooUrlOK(store) || !ck || !cs) return res.status(400).json({ error: 'WooCommerce requires a store URL (https://…), consumer_key and consumer_secret.' });
+  if (!store || !ck || !cs) return res.status(400).json({ error: 'WooCommerce requires a store URL (https://…), consumer_key and consumer_secret.' });
+  try { await _safeEgress.checkUrl(store); }
+  catch (e) { return res.status(400).json({ error: 'WooCommerce store URL rejected: ' + e.message + '.', code: 'BAD_STORE_URL' }); }
   await _saveProviderBlobE(scopeId(req), 'woocommerce_conn', { connected: true, provider: 'WooCommerce', store_url: store, consumer_key: encTok(ck), consumer_secret: encTok(cs), linked_at: new Date().toISOString() }, req.entityId);
   res.status(201).json({ ok: true, store });
 }));
@@ -7818,7 +8527,7 @@ app.post('/api/woocommerce/sync', requireAuth, requirePerm('bank:manage'), wrap(
   if (!value || !value.connected) return res.status(400).json({ error: 'No WooCommerce store connected. Connect one first.' });
   try {
     const auth = 'Basic ' + Buffer.from(decTok(value.consumer_key) + ':' + decTok(value.consumer_secret)).toString('base64');
-    const r = await fetch(value.store_url + '/wp-json/wc/v3/orders?per_page=1', { headers: { 'Authorization': auth } });
+    const r = await _safeEgress.safeGet(value.store_url + '/wp-json/wc/v3/orders?per_page=1', { headers: { 'Authorization': auth } });
     if (!r.ok) throw new Error('WooCommerce HTTP ' + r.status);
     const total = parseInt((r.headers && r.headers.get && r.headers.get('X-WP-Total')) || '0', 10) || 0;
     res.json({ ok: true, orders: total, note: 'Orders read for display. Importing into the books is a separate, owner-approved step (Rules 2 & 12).' });
@@ -7839,11 +8548,13 @@ app.post('/api/integration-requests', requireAuth, wrap(async (req, res) => {
   res.status(201).json({ ok: true, requested: true });
 }));
 app.get('/api/integration-requests', requireAuth, requirePerm('audit:read'), wrap(async (req, res) => {
-  // Aggregate across ALL accounts — this is founder-facing demand, not one account's wishlist.
+  // THIS account's requests only (N53). The cross-account demand aggregate is founder-facing and lives
+  // behind platform-admin auth at /api/admin/integration-requests — it used to be served here to any
+  // tenant owner, disclosing what every other customer had asked for.
   const { rows } = await pool.query(
-    `SELECT data->>'value' AS name, COUNT(*)::int AS requests
-       FROM user_settings WHERE data->>'key'='integration_request'
-       GROUP BY 1 ORDER BY requests DESC, name ASC`);
+    `SELECT data->>'value' AS name, MIN(data->>'requested_at') AS requested_at
+       FROM user_settings WHERE data->>'key'='integration_request' AND user_id=$1
+       GROUP BY 1 ORDER BY name ASC`, [scopeId(req)]);
   res.json({ requests: rows });
 }));
 
@@ -7858,7 +8569,7 @@ async function createPaymentLink(provider, conn, o) {
     body.set('mode', 'payment'); body.set('success_url', appUrl() + '/pay-received.html'); body.set('cancel_url', appUrl() + '/pay-received.html?status=cancelled');
     body.set('line_items[0][price_data][currency]', String(o.currency).toLowerCase());
     body.set('line_items[0][price_data][product_data][name]', 'Invoice ' + o.reference);
-    body.set('line_items[0][price_data][unit_amount]', String(Math.round(o.amount * 100)));
+    body.set('line_items[0][price_data][unit_amount]', String(stripeMajorToMinor(o.amount, o.currency)));   // currency exponent (JPY=0, KWD=3)
     body.set('line_items[0][quantity]', '1');
     // Carry the invoice reference so the webhook can reconcile the payment (F171).
     if (o.invoiceId != null) { body.set('client_reference_id', String(o.invoiceId)); body.set('metadata[invoice_id]', String(o.invoiceId)); body.set('metadata[kind]', 'invoice_payment'); }
@@ -7889,7 +8600,9 @@ async function createPaymentLink(provider, conn, o) {
   if (provider === 'mercadopago') {
     const r = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST', headers: { 'Authorization': 'Bearer ' + decTok(conn.access_token), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: [{ title: 'Invoice ' + o.reference, quantity: 1, unit_price: o.amount, currency_id: o.currency }], external_reference: o.reference, back_urls: { success: appUrl() + '/pay-received.html', pending: appUrl() + '/pay-received.html', failure: appUrl() + '/pay-received.html?status=cancelled' }, auto_return: 'approved' }),
+      // N51: notification_url — Mercado Pago tells FinFlow when the payment is approved (there was no callback at
+      // all, so an invoice paid through the link was never marked paid).
+      body: JSON.stringify({ items: [{ title: 'Invoice ' + o.reference, quantity: 1, unit_price: o.amount, currency_id: o.currency }], external_reference: o.reference, notification_url: appUrl() + '/api/mercadopago/webhook?inv=' + encodeURIComponent(o.invoiceId), back_urls: { success: appUrl() + '/pay-received.html', pending: appUrl() + '/pay-received.html', failure: appUrl() + '/pay-received.html?status=cancelled' }, auto_return: 'approved' }),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.init_point) throw new Error(j.message || ('Mercado Pago HTTP ' + r.status));
@@ -7897,8 +8610,12 @@ async function createPaymentLink(provider, conn, o) {
   }
   if (provider === 'dlocal') {
     const xLogin = decTok(conn.x_login), xTransKey = decTok(conn.x_trans_key), secret = decTok(conn.secret_key);
-    const payload = JSON.stringify({ amount: o.amount, currency: o.currency, country: o.country || 'BR', payment_method_flow: 'REDIRECT',
-      payer: { name: o.client || 'Customer', email: o.email || 'customer@example.com' }, order_id: o.reference, success_url: appUrl() + '/pay-received.html', notification_url: appUrl() + '/' });
+    // N51: the payer is the invoice's real customer and the business's country — the defaults were a fake
+    // customer@example.com in Brazil — and notification_url points at the dLocal callback (it was the site root).
+    if (!o.email) throw Object.assign(new Error('dLocal needs the customer\'s email — add one on the customer record.'), { status: 400 });
+    if (!o.country) throw Object.assign(new Error('dLocal needs the business\'s country — set it on the business profile.'), { status: 400 });
+    const payload = JSON.stringify({ amount: o.amount, currency: o.currency, country: o.country, payment_method_flow: 'REDIRECT',
+      payer: { name: o.client || 'Customer', email: o.email }, order_id: o.reference, success_url: appUrl() + '/pay-received.html', notification_url: appUrl() + '/api/dlocal/webhook?inv=' + encodeURIComponent(o.invoiceId) });
     const xDate = new Date().toISOString();
     const signature = crypto.createHmac('sha256', secret).update(xLogin + xDate + payload).digest('hex');
     const r = await fetch('https://api.dlocal.com/payments', {
@@ -7915,8 +8632,11 @@ async function createPaymentLink(provider, conn, o) {
 app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
   const inv = await ownedBy('invoices', req.params.id, scopeId(req));
   if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
-  const amount = parseFloat(inv.amount) || 0;
-  if (amount <= 0) return res.status(400).json({ error: 'Invoice amount must be greater than zero.' });
+  // N50: charge the OUTSTANDING balance, not the face amount. A partly-paid invoice used to produce a
+  // link for the full total; the webhook then capped the booking at the balance, so the customer was
+  // overcharged and the excess was silently unrecorded.
+  const amount = Math.round(((parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0)) * 100) / 100;
+  if (amount <= 0) return res.status(400).json({ error: 'This invoice has nothing outstanding.' });
   const uid = scopeId(req);
   const requested = req.body && req.body.provider;
   const PAY = ['stripe', 'wipay', 'mercadopago', 'dlocal'];
@@ -7931,14 +8651,77 @@ app.post('/api/invoices/:id/payment-link', requireAuth, requirePerm('books:write
     if (isConn) { provider = p; conn = value; break; }
   }
   if (!provider) return res.status(400).json({ error: 'No payment processor connected. Connect Stripe or WiPay first.', code: 'NO_PAYMENT_PROVIDER' });
-  const currency = String(inv.currency || (req.body && req.body.currency) || 'USD').toUpperCase();
+  // N49 (owner decision 2026-10-06): a payment link charges in the ISSUING BUSINESS's currency. Invoices
+  // carry no currency field, so the old `inv.currency || body.currency || 'USD'` charged USD (or whatever
+  // the browser sent) for TTD/JPY/... books. The client can no longer choose the currency.
+  const { rows: [_entCur] } = await pool.query(`SELECT data->>'currency' AS cur FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [inv.entity_id, uid]);
+  const currency = String((_entCur && _entCur.cur) || 'USD').toUpperCase();
+  let _email = (req.body && req.body.email) || null, _country = null;
   try {
-    const url = await createPaymentLink(provider, conn, { amount, currency, email: (req.body && req.body.email) || null, reference: 'INV-' + inv.id + '-' + Date.now(), client: inv.client, invoiceId: inv.id, country: (req.body && req.body.country) || conn.country || null });
+    if (!_email) { const cust = resolveCustomer(inv.client, await db.allByUser('customers', uid, r => r.entity_id == null || r.entity_id === inv.entity_id)); _email = cust && cust.email ? String(cust.email).trim() : null; }
+    const { rows: [_ec] } = await pool.query(`SELECT data->>'country' AS c FROM entities WHERE id = $1`, [inv.entity_id]);
+    _country = (_ec && _ec.c) || (req.body && req.body.country) || conn.country || null;   // the business's country first
+  } catch (_) {}
+  try {
+    const url = await createPaymentLink(provider, conn, { amount, currency, email: _email, reference: 'INV-' + inv.id + '-' + Date.now(), client: inv.client, invoiceId: inv.id, country: _country });
     if (!url) throw new Error('Provider returned no URL.');
-    await db.updateById('invoices', inv.id, { payment_link: url, payment_provider: provider });
+    await db.updateById('invoices', inv.id, { payment_link: url, payment_provider: provider, payment_link_amount: amount });   // the exact total this link charges (WiPay hash input)
     res.status(201).json({ ok: true, provider, payment_link: url });
-  } catch (e) { console.error('[payment-link]', provider, e.message); res.status(502).json({ error: 'Could not create a payment link: ' + e.message, provider }); }
+  } catch (e) { console.error('[payment-link]', provider, e.message); res.status(e.status === 400 ? 400 : 502).json({ error: 'Could not create a payment link: ' + e.message, provider }); }
 }));
+
+// ── N51: MERCADO PAGO / dLOCAL PAYMENT CALLBACKS ─────────────────────────────────────────────────────
+// Public endpoints (the processor calls them). The callback only NAMES a payment; nothing in it is trusted.
+// The account is resolved from the invoice id in the notification URL, and the payment is RE-READ from the
+// processor's own API with that account's stored credentials — only a payment the processor itself reports
+// as paid, for THIS invoice's reference and in the business's currency, is recorded, through the same
+// single idempotent writer as Stripe and WiPay (idempotent on the processor's payment id).
+async function _payLinkInvoiceConn(invoiceId, key) {
+  const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
+  if (!ir) return null;
+  let { value } = await _providerBlobE(ir.user_id, key, ir.entity_id);
+  if (!value) ({ value } = await _providerBlobE(ir.user_id, key, null));
+  if (!value) return null;
+  const { rows: [ec] } = await pool.query(`SELECT data->>'currency' AS cur FROM entities WHERE id = $1`, [ir.entity_id]);
+  return { ir, conn: value, currency: String((ec && ec.cur) || 'USD').toUpperCase() };
+}
+app.post('/api/mercadopago/webhook', async (req, res) => {
+  try {
+    const invoiceId = parseInt(req.query.inv, 10);
+    const payId = String((req.body && req.body.data && req.body.data.id) || req.query.id || req.query['data.id'] || '');
+    const topic = String((req.body && (req.body.type || req.body.topic)) || req.query.topic || req.query.type || '');
+    if (!Number.isInteger(invoiceId) || !/^\d+$/.test(payId) || (topic && topic !== 'payment')) return res.status(200).json({ ok: true, ignored: true });
+    const x = await _payLinkInvoiceConn(invoiceId, 'mercadopago_conn');
+    if (!x) return res.status(200).json({ ok: true, ignored: true });
+    const r = await fetch('https://api.mercadopago.com/v1/payments/' + payId, { headers: { 'Authorization': 'Bearer ' + decTok(x.conn.access_token) } });
+    const p = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(502).json({ error: 'Could not verify the payment.' });   // let MP retry
+    const refOk = new RegExp('^INV-' + invoiceId + '-').test(String(p.external_reference || ''));
+    if (p.status !== 'approved' || !refOk || String(p.currency_id || '').toUpperCase() !== x.currency) return res.status(200).json({ ok: true, recorded: false });
+    const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: stripeMajorToMinor(Number(p.transaction_amount) || 0, x.currency), currency: x.currency, method: 'Mercado Pago', idemKey: 'mercadopago:' + payId });
+    res.status(200).json({ ok: true, ...rec });
+  } catch (e) { console.error('[mercadopago webhook]', e.message); res.status(500).json({ error: 'webhook error' }); }
+});
+app.post('/api/dlocal/webhook', async (req, res) => {
+  try {
+    const invoiceId = parseInt(req.query.inv, 10);
+    const payId = String((req.body && req.body.id) || '');
+    if (!Number.isInteger(invoiceId) || !/^[A-Za-z0-9_-]{1,80}$/.test(payId)) return res.status(200).json({ ok: true, ignored: true });
+    const x = await _payLinkInvoiceConn(invoiceId, 'dlocal_conn');
+    if (!x) return res.status(200).json({ ok: true, ignored: true });
+    const xLogin = decTok(x.conn.x_login), xTransKey = decTok(x.conn.x_trans_key), secret = decTok(x.conn.secret_key);
+    const xDate = new Date().toISOString();
+    const signature = crypto.createHmac('sha256', secret).update(xLogin + xDate).digest('hex');
+    const r = await fetch('https://api.dlocal.com/payments/' + encodeURIComponent(payId), {
+      headers: { 'X-Date': xDate, 'X-Login': xLogin, 'X-Trans-Key': xTransKey, 'Authorization': 'V2-HMAC-SHA256, Signature: ' + signature } });
+    const p = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(502).json({ error: 'Could not verify the payment.' });
+    const refOk = new RegExp('^INV-' + invoiceId + '-').test(String(p.order_id || ''));
+    if (String(p.status || '').toUpperCase() !== 'PAID' || !refOk || String(p.currency || '').toUpperCase() !== x.currency) return res.status(200).json({ ok: true, recorded: false });
+    const rec = await recordExternalInvoicePayment({ invoiceId, amountMinor: stripeMajorToMinor(Number(p.amount) || 0, x.currency), currency: x.currency, method: 'dLocal', idemKey: 'dlocal:' + payId });
+    res.status(200).json({ ok: true, ...rec });
+  } catch (e) { console.error('[dlocal webhook]', e.message); res.status(500).json({ error: 'webhook error' }); }
+});
 
 // ════════════════════════════════════════════════════════════════════════════════
 // FEATURE 1 — FIELD-LEVEL AUDIT TRAIL
@@ -7988,23 +8771,28 @@ app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (
 // processor's event/session id via the idempotency_key unique index (Rule 9: dedupe at the write,
 // so a retried/duplicate webhook can't double-book). Never overbooks past the remaining balance
 // (no refund/credit model). Amount is in MINOR units (cents) as processors send it.
-async function recordExternalInvoicePayment({ invoiceId, amountMinor, method, idemKey }) {
+async function recordExternalInvoicePayment({ invoiceId, amountMinor, currency, method, idemKey }) {
   const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
   if (!ir) return { recorded: false, reason: 'invoice_not_found' };
   const inv = rowToObj(ir);
   const uid = ir.user_id;                                   // the invoice's account = the money scope
-  const amt = Math.round(Number(amountMinor) || 0) / 100;   // minor units → major
+  const amt = stripeMinorToMajor(amountMinor, currency);    // minor units → major, by currency exponent (N47)
   if (!(amt > 0)) return { recorded: false, reason: 'bad_amount' };
-  const remaining = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
-  const bookAmt = Math.min(amt, Math.max(remaining, 0));    // cap to balance — never negative AR
-  if (!(bookAmt > 0)) return { recorded: false, reason: 'already_paid' };
   try {
-    const { rows } = await pool.query(
-      `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [uid, ir.entity_id || null, invoiceId, bookAmt, new Date().toISOString().slice(0, 10),
-       method || 'Card', idemKey, 'Auto-recorded from ' + (method || 'processor') + ' payment', idemKey]
-    );
+    // N57b: cap to what is still owed, read under the invoice's payment lock (never negative AR).
+    let bookAmt = 0;
+    const rows = await withPaymentLock('invoice', invoiceId, async (conn) => {
+      const remaining = (parseFloat(inv.amount) || 0) - await invoicePaidSoFar(conn, invoiceId, uid);
+      bookAmt = Math.round(Math.min(amt, Math.max(remaining, 0)) * 100) / 100;
+      if (!(bookAmt > 0)) return null;
+      return (await conn.query(
+        `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [uid, ir.entity_id || null, invoiceId, bookAmt, new Date().toISOString().slice(0, 10),
+         method || 'Card', idemKey, 'Auto-recorded from ' + (method || 'processor') + ' payment', idemKey]
+      )).rows;
+    });
+    if (!rows) return { recorded: false, reason: 'already_paid' };
     await recalcInvoiceStatus(pool, invoiceId, uid);
     try { await auditLog(pool, { userId: uid, entityId: ir.entity_id, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE' }); } catch (_) {}
     // GL Phase 2 (shadow): settle the receivable live - Dr Cash / Cr AR, key 'invoice_payment:'+id
@@ -8015,6 +8803,38 @@ async function recordExternalInvoicePayment({ invoiceId, amountMinor, method, id
     if (e.code === '23505') return { recorded: false, reason: 'duplicate' };   // idempotent: already recorded
     throw e;
   }
+}
+
+// N11 + F133: the ONE way an invoice is marked fully paid without an itemised payment (created as paid,
+// or edited to 'paid'): record a REAL invoice_payment for whatever is still outstanding (amount − Σ
+// existing payments), post its GL cash leg (Dr Cash / Cr AR), then let recalcInvoiceStatus derive status
+// and amount_paid. A bare amount_paid stamp was invisible to the cash-flow report (reads
+// invoice_payments) and left AR open in the ledger. Idempotent on idemKey. Returns the payment row or null.
+async function settleInvoiceRemaining(pool, { userId, invoiceId, date, method, notes, idemKey, stateKeyed = false }) {
+  const { rows: [r] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 AND user_id = $2 LIMIT 1`, [invoiceId, userId]);
+  const inv = r ? rowToObj(r) : null;
+  if (!inv) return null;
+  // N57b: read what is still owed and insert the settling payment under the invoice's payment lock.
+  const pay = await withPaymentLock('invoice', invoiceId, async (conn) => {
+    const paid = await invoicePaidSoFar(conn, invoiceId, userId);
+    const remaining = Math.round(((parseFloat(inv.amount) || 0) - paid) * 100) / 100;
+    if (!(remaining > 0.004)) return null;
+    const { rows: ins } = await conn.query(
+      `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING RETURNING *`,
+      // stateKeyed: the key includes what was already paid, so two concurrent "mark paid" requests on the
+      // same invoice state produce the SAME key and the unique index admits only one settling payment.
+      [userId, inv.entity_id, invoiceId, remaining, date, method, null, notes, String(stateKeyed ? idemKey + ':' + Math.round(paid * 100) : idemKey).slice(0, 64)]);
+    return ins[0] || null;
+  });
+  {
+    if (pay) {
+      try { await postSourceLedger(pool, { userId, sourceType: 'invoice_payment', row: { ...pay, client: inv.client } }); }
+      catch (glErr) { console.error('[GL] settle cash leg failed (shadow, non-fatal):', glErr && glErr.message); }
+    }
+  }
+  await recalcInvoiceStatus(pool, invoiceId, userId);
+  return pay;
 }
 
 async function recalcInvoiceStatus(pool, invoiceId, userId) {
@@ -8058,6 +8878,92 @@ async function recalcInvoiceStatus(pool, invoiceId, userId) {
 // stranding the bill at 'partial'. (AP is arithmetic-driven so the money was already correct, but
 // a 'partial' bill with amount_paid 0 is an incoherent status the UI keys on — fixed here too.)
 // RECOGNIZED_BILL (below) is the allowlist Step 4's expense leg and the balance-sheet AP key on.
+// N33 (payables mirror of N11): the ONE way a bill is marked fully paid without an itemised payment —
+// record a bill-LINKED payments_made for the outstanding balance (amount − Σ linked payments), post its GL
+// settlement (Dr AP / Cr Cash), and let recalcBillStatus derive status and amount_paid. A bare
+// amount_paid stamp never reached the cash-flow report (reads payments_made) and left AP open in the
+// ledger. The idempotency key includes what was already paid, so concurrent requests book one payment.
+async function settleBillRemaining(pool, { userId, billId, date, method, notes, idemKey }) {
+  const { rows: [r] } = await pool.query(`SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]);
+  const bill = r ? rowToObj(r) : null;
+  if (!bill) return null;
+  // N57b: read what is still owed and insert the settling payment under the bill's payment lock.
+  let row = null, remaining = 0;
+  try {
+    row = await withPaymentLock('bill', billId, async (conn) => {
+      const { rows: [p] } = await conn.query(`SELECT COALESCE(SUM((data->>'amount')::numeric),0) AS paid FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2`, [userId, String(billId)]);
+      remaining = Math.round(((parseFloat(bill.amount) || 0) - (parseFloat(p.paid) || 0)) * 100) / 100;
+      if (!(remaining > 0.004)) return null;
+      return (await db.insert('payments_made', {
+        user_id: userId, entity_id: bill.entity_id, vendor: String(bill.vendor || '').slice(0, 200), amount: remaining, date,
+        method: method || 'other', notes: notes || '', ref: '', bill_id: billId,
+        idempotency_key: String(idemKey + ':' + Math.round((parseFloat(p.paid) || 0) * 100)).slice(0, 64),
+      }, conn)).row;
+    });
+  } catch (e) { if (e.code !== '23505') throw e; }
+  {
+    if (row) {
+      try {
+        await postLedgerEntry(pool, {
+          userId, entityId: bill.entity_id, date: row.date, description: 'Payment made — ' + (row.vendor || ''),
+          sourceType: 'bill_payment', sourceId: row.id, idempotencyKey: 'payment_made:' + row.id,
+          lines: [{ code: '2000', debit: remaining, credit: 0 }, { code: '1000', debit: 0, credit: remaining }],
+        });
+      } catch (glErr) { console.error('[GL] bill settle posting failed (shadow, non-fatal):', glErr && glErr.message); }
+    }
+  }
+  await recalcBillStatus(pool, billId, userId);
+  return row;
+}
+
+
+// N57b / Rule 9: the ONE serialisation every writer of a payment against a single invoice or bill goes through.
+// The balance check and the INSERT run on one connection, inside a transaction that holds a per-document advisory
+// lock (pg_advisory_xact_lock) — so two concurrent payments can never both pass the check against the same balance
+// (a 600 and a 500 against a 1000 invoice used to both land: 1100 paid). Only check + insert are inside: the check
+// reads the balance from the PAYMENTS themselves (never the derived amount_paid), so status recalc, audit and GL can
+// run after, outside the lock. Every writer: POST /api/invoice-payments, processor payments, settle-remaining
+// (invoice + bill), POST/PUT /api/payments-made, bank match-bill.
+const _PAY_LOCK = { invoice: 57001, bill: 57002 };
+async function withPaymentLock(kind, docId, fn) {
+  const conn = await pool.connect();
+  try {
+    await conn.query('BEGIN');
+    await conn.query('SELECT pg_advisory_xact_lock($1, $2)', [_PAY_LOCK[kind], Number(docId) || 0]);
+    const out = await fn(conn);
+    await conn.query('COMMIT');
+    return out;
+  } catch (e) {
+    try { await conn.query('ROLLBACK'); } catch (_) {}
+    throw e;
+  } finally { conn.release(); }
+}
+async function invoicePaidSoFar(q, invoiceId, userId) {
+  const { rows: [p] } = await q.query(`SELECT COALESCE(SUM(amount),0) AS paid FROM invoice_payments WHERE invoice_id = $1 AND user_id = $2`, [invoiceId, userId]);
+  return parseFloat(p.paid) || 0;
+}
+
+// N57 class: the ONE check every writer of a bill-LINKED payment passes (POST/PUT /api/payments-made, bank
+// match-bill): the bill is this account's, belongs to the same business as the payment (a legacy
+// entity-less bill or payment matches any), and the payment fits in what is still owed — Σ the bill's
+// OTHER linked payments, read from the payments themselves. Returns { status, error, code } on refusal.
+async function checkBillPayment(userId, billId, amount, paymentEntityId, excludePaymentId = null, q = pool) {
+  const { rows: [br] } = await q.query(`SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]);
+  if (!br) return { status: 404, error: 'Bill not found.', code: 'BILL_NOT_FOUND' };
+  if (br.entity_id != null && paymentEntityId != null && Number(br.entity_id) !== Number(paymentEntityId)) {
+    return { status: 400, error: 'That bill belongs to a different business.', code: 'BILL_ENTITY_MISMATCH' };
+  }
+  const { rows: [p] } = await q.query(
+    `SELECT COALESCE(SUM((data->>'amount')::numeric), 0) AS paid FROM payments_made
+      WHERE user_id = $1 AND data->>'bill_id' = $2 AND ($3::int IS NULL OR id <> $3)`,
+    [userId, String(billId), excludePaymentId]);
+  const remaining = Math.round(((parseFloat(rowToObj(br).amount) || 0) - (parseFloat(p.paid) || 0)) * 100) / 100;
+  if ((parseFloat(amount) || 0) > remaining + 0.005) {
+    return { status: 400, error: `Payment exceeds the bill's remaining balance of ${Math.max(0, remaining).toFixed(2)}.`, code: 'EXCEEDS_BILL_BALANCE', remaining };
+  }
+  return {};
+}
+
 async function recalcBillStatus(pool, billId, userId) {
   const { rows: [_blR] } = await pool.query(
     `SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]
@@ -8113,7 +9019,7 @@ app.get('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
+app.post('/api/invoice-payments', requireAuth, lockGuard(LOCK_SPECS.invoice_payments), wrap(async (req, res) => {
   const { invoice_id, amount, payment_date, method, reference, notes } = req.body || {};
   if (!invoice_id) return res.status(400).json({ error: 'invoice_id and amount required' });
   // F48 #3: validate amount server-side — `!amount` let -500 / NaN through, inflating AR.
@@ -8121,10 +9027,11 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'A valid positive amount is required.' });
   // F48 #2: the invoice MUST belong to the caller. Without this, a payment injected against a
   // foreign/nonexistent invoice_id is accepted (was 201) and corrupts that owner's AR.
-  const inv = await ownedBy('invoices', invoice_id, req.session.userId);
+  const inv = await ownedBy('invoices', invoice_id, scopeId(req));
   if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
   // Overpayment: no credit/refund model exists, so reject a payment beyond the remaining balance
-  // rather than book cash the system can't represent. (Epsilon guards float rounding.)
+  // rather than book cash the system can't represent. (Epsilon guards float rounding.) Fast pre-check here;
+  // the authoritative one runs inside the payment lock below (N57b).
   const remaining = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
   if (amt > remaining + 0.005) return res.status(400).json({ error: `Payment exceeds the remaining balance of ${remaining.toFixed(2)}.` });
   // B8/C1: dedupe guard (TYPED table). The overpayment check above only catches a duplicate that
@@ -8136,18 +9043,23 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   // unique index (idx_invoice_payments_idem_key) is the sole arbiter (closes the concurrent /
   // slow-resubmit race the 5s window and the overpayment check both miss for partial payments).
   if (!idem) {
-    const _ipDup = await findRecentDuplicateTyped('invoice_payments', req.session.userId, req.entityId || null,
+    const _ipDup = await findRecentDuplicateTyped('invoice_payments', scopeId(req), req.entityId || null,
       { invoice_id: parseInt(invoice_id), amount: amt, payment_date: _pDate });
     if (_ipDup) return res.status(201).json(_ipDup);
   }
-  let rows;
+  let rows, _over = null;
   try {
-    ({ rows } = await pool.query(
-      `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [req.session.userId, req.entityId || null, parseInt(invoice_id), amt,
-       payment_date || new Date().toISOString().slice(0, 10), method || 'Bank Transfer', reference || null, notes || null, idem]
-    ));
+    // N57b: check + insert under the invoice's payment lock, the balance read from the payments themselves.
+    rows = await withPaymentLock('invoice', parseInt(invoice_id), async (conn) => {
+      const _left = Math.round(((parseFloat(inv.amount) || 0) - await invoicePaidSoFar(conn, parseInt(invoice_id), scopeId(req))) * 100) / 100;
+      if (amt > _left + 0.005) { _over = _left; return null; }
+      return (await conn.query(
+        `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [scopeId(req), inv.entity_id != null ? inv.entity_id : (req.entityId || null), parseInt(invoice_id), amt,
+         payment_date || new Date().toISOString().slice(0, 10), method || 'Bank Transfer', reference || null, notes || null, idem]
+      )).rows;
+    });
   } catch (e) {
     if (e.code === '23505' && idem) {
       // Duplicate submit lost the race at the DB → the payment already landed (and already recalc'd
@@ -8157,14 +9069,15 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-  await recalcInvoiceStatus(pool, parseInt(invoice_id), req.session.userId);
-  await auditLog(pool, { userId: req.session.userId, entityId: req.entityId, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE', req });
+  if (!rows) return res.status(400).json({ error: `Payment exceeds the remaining balance of ${Math.max(0, _over).toFixed(2)}.` });
+  await recalcInvoiceStatus(pool, parseInt(invoice_id), scopeId(req));
+  await auditLog(pool, { userId: scopeId(req), entityId: req.entityId, table: 'invoice_payments', recordId: rows[0].id, action: 'CREATE', req });
   // GL Phase 2 (dual-write shadow): a payment settles the receivable — Dr Cash / Cr AR at the payment
   // date (revenue is untouched; it was recognized at issue). Posts to the INVOICE's entity so it nets
   // against that AR. Best-effort — never breaks recording a payment.
   try {
     await postLedgerEntry(pool, {
-      userId: req.session.userId, entityId: inv.entity_id,
+      userId: scopeId(req), entityId: inv.entity_id,
       date: _pDate,
       description: 'Invoice payment — ' + (inv.client || ('#' + invoice_id)),
       sourceType: 'invoice_payment', sourceId: rows[0].id, idempotencyKey: 'invoice_payment:' + rows[0].id,
@@ -8174,13 +9087,13 @@ app.post('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
-app.delete('/api/invoice-payments/:id', requireAuth, wrap(async (req, res) => {
+app.delete('/api/invoice-payments/:id', requireAuth, lockGuard(LOCK_SPECS.invoice_payments), wrap(async (req, res) => {
   const { rows } = await pool.query(
     `DELETE FROM invoice_payments WHERE id=$1 AND user_id=$2 RETURNING *`,
     [parseInt(req.params.id), scopeId(req)]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
-  await recalcInvoiceStatus(pool, rows[0].invoice_id, req.session.userId);
+  await recalcInvoiceStatus(pool, rows[0].invoice_id, scopeId(req));
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'invoice_payment', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] invoice_payment reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json({ ok: true });
 }));
@@ -8268,15 +9181,17 @@ app.post('/api/bank-reconciliation/book-expense', requireAuth, wrap(async (req, 
   if (g.err) return res.status(g.err.status).json({ error: g.err.msg, code: g.err.code });
   if (g.done) return res.json({ ok: true, duplicate: true, reconcile_state: g.done.reconcile_state });
   const row = g.row;
+  const _bxDate = row.tx_date || row.date || await entityTodayYmd(row.entity_id);
+  if (await refuseIfLocked(res, scopeId(req), row.entity_id, _bxDate)) return;
   const { row: expense } = await db.insert('expenses', {
     user_id: scopeId(req), entity_id: row.entity_id,
     description: String(row.description || 'Bank transaction').slice(0, 300),
     category: String((req.body && req.body.category) || row.category || 'Other').slice(0, 60),
     amount: parseFloat(row.amount) || 0, deductible: 'no',
-    expense_date: row.tx_date || row.date || await entityTodayYmd(row.entity_id),
+    expense_date: _bxDate,
     idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),
   });
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id, table: 'expenses', recordId: expense.id, action: 'CREATE', newData: expense, req });
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id, table: 'expenses', recordId: expense.id, action: 'CREATE', newData: expense, req });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'expense', reconcile_ref: expense.id });
   // GL Phase 2 (dual-write): a bank debit booked as an expense posts EXACTLY like POST /api/expenses —
   // Dr Operating Expenses / Cr Cash at the expense date, keyed 'expense:'+id (so it is identical to what
@@ -8302,20 +9217,30 @@ app.post('/api/bank-reconciliation/match-bill', requireAuth, wrap(async (req, re
   if (g.err) return res.status(g.err.status).json({ error: g.err.msg, code: g.err.code });
   if (g.done) return res.json({ ok: true, duplicate: true, reconcile_state: g.done.reconcile_state });
   const row = g.row;
+  const _chk0 = await checkBillPayment(scopeId(req), billId, row.amount, row.entity_id);   // fast pre-check (404 / entity)
+  if (_chk0.error) return res.status(_chk0.status).json({ error: _chk0.error, code: _chk0.code });
   const { rows: [br] } = await pool.query(`SELECT * FROM bills WHERE id=$1 AND user_id=$2 LIMIT 1`, [billId, scopeId(req)]);
-  if (!br) return res.status(404).json({ error: 'Bill not found.' });
   const bill = rowToObj(br);
+  const _mbDate = row.tx_date || row.date || await entityTodayYmd(row.entity_id);
+  if (await refuseIfLocked(res, scopeId(req), row.entity_id, _mbDate)) return;
   // Linked payment settles AP (the bill already carries the expense) — booking a fresh expense too
   // would double-count, so this records a payments_made LINKED to the bill and adds NO new expense row.
-  const { row: payment } = await db.insert('payments_made', {
-    user_id: scopeId(req), entity_id: row.entity_id,
-    vendor: String(bill.vendor || row.description || '').slice(0, 200),
-    amount: parseFloat(row.amount) || 0, date: row.tx_date || row.date || await entityTodayYmd(row.entity_id),
-    method: 'Bank', notes: 'Matched from bank feed', ref: '', bill_id: billId,
-    idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),
+  // N57b: the authoritative balance check + insert under the bill's payment lock.
+  let _mbRefused = null;
+  const payment = await withPaymentLock('bill', billId, async (conn) => {
+    const _chk = await checkBillPayment(scopeId(req), billId, row.amount, row.entity_id, null, conn);
+    if (_chk.error) { _mbRefused = _chk; return null; }
+    return (await db.insert('payments_made', {
+      user_id: scopeId(req), entity_id: row.entity_id,
+      vendor: String(bill.vendor || row.description || '').slice(0, 200),
+      amount: parseFloat(row.amount) || 0, date: _mbDate,
+      method: 'Bank', notes: 'Matched from bank feed', ref: '', bill_id: billId,
+      idempotency_key: ('bank-txn:' + bankingId).slice(0, 64),
+    }, conn)).row;
   });
-  await recalcBillStatus(pool, billId, req.session.userId);
-  await recordAudit(pool, { userId: req.session.userId, entityId: row.entity_id, table: 'payments_made', recordId: payment.id, action: 'CREATE', newData: payment, req });
+  if (_mbRefused) return res.status(_mbRefused.status).json({ error: _mbRefused.error, code: _mbRefused.code });
+  await recalcBillStatus(pool, billId, scopeId(req));
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id, table: 'payments_made', recordId: payment.id, action: 'CREATE', newData: payment, req });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'bill', reconcile_ref: payment.id, reconcile_bill_id: billId });
   // GL Phase 2 (dual-write): a bank debit matched to a bill SETTLES AP, EXACTLY like a linked
   // POST /api/payments-made — Dr Accounts Payable / Cr Cash, to the bill's entity, keyed
@@ -8455,13 +9380,20 @@ app.get('/api/payroll-runs', requireAuth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), lockGuard(LOCK_SPECS.payroll_runs), wrap(async (req, res) => {
   const { period, bonus_overrides = {}, overtime_overrides = {}, notes = '' } = req.body || {};
   if (!period) return res.status(400).json({ error: 'period required' });
   const uid = scopeId(req);
   const eid = req.entityId || null;
 
-  const employees = await db.allByUser('payroll', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+  // N13b: an entity-less (legacy) roster row joined EVERY entity's run, so that employee was paid and
+  // expensed once per business. It is included only when the account has a single entity (unambiguous);
+  // with several, it is left out and reported so the owner assigns it (no row is modified — Rule 8).
+  const { rows: [_ec] } = await pool.query(`SELECT COUNT(*)::int AS n FROM entities WHERE user_id = $1`, [uid]);
+  const _single = (_ec && _ec.n) <= 1;
+  const _allRoster = await db.allByUser('payroll', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+  const employees = _allRoster.filter(r => r.entity_id != null || _single);
+  const unassignedEmployees = _allRoster.length - employees.length;
   if (!employees.length) return res.status(400).json({ error: 'No employees found for this entity.' });
   // B8/C1: dedupe guard (TYPED table). A double-click ran payroll twice for the same period —
   // duplicate run + duplicate payroll_run_lines, doubling recorded gross/net. Keyed on `period`,
@@ -8500,15 +9432,29 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(as
   // a token-based table would instead select by the idempotency token. NOTE: inert until the UNIQUE
   // index exists (no index ⇒ no 23505 ⇒ byte-identical to prior behaviour), so it is safe to ship
   // ahead of the migration.
+  // N59: the run header and its lines commit TOGETHER (one transaction). Previously the header was
+  // inserted, then each line separately; a failure part-way left a run whose total_gross disagreed with
+  // Σ lines (Rule 12 — basis C reads the LINES), with no way to tell it was incomplete.
   let run;
+  const _prc = await pool.connect();
   try {
-    const { rows } = await pool.query(
+    await _prc.query('BEGIN');
+    const { rows } = await _prc.query(
       `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net, notes, idempotency_key)
        VALUES ($1,$2,$3,NOW(),$4,$5,$6,$7,$8,$9) RETURNING *`,
       [uid, eid, period, 'draft', totalGross, totalDeductions, totalNet, notes, idem]
     );
     run = rows[0];
+    for (const l of lines) {
+      await _prc.query(
+        `INSERT INTO payroll_run_lines (run_id, payroll_id, employee_name, gross, bonus, overtime, deductions, net_pay)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [run.id, l.payroll_id, l.employee_name, l.gross, l.bonus, l.overtime, JSON.stringify(l.deductions), l.netPay]
+      );
+    }
+    await _prc.query('COMMIT');
   } catch (e) {
+    try { await _prc.query('ROLLBACK'); } catch (_) {}
     if (e.code === '23505') {
       // Recover the ORIGINAL run: by token when the token index caught the dup, else by natural key
       // (user_id, entity_id, period) for the prod-only period index. Return it + its lines, 200 —
@@ -8522,19 +9468,11 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), wrap(as
       }
     }
     throw e;
-  }
-
-  for (const l of lines) {
-    await pool.query(
-      `INSERT INTO payroll_run_lines (run_id, payroll_id, employee_name, gross, bonus, overtime, deductions, net_pay)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [run.id, l.payroll_id, l.employee_name, l.gross, l.bonus, l.overtime, JSON.stringify(l.deductions), l.netPay]
-    );
-  }
+  } finally { _prc.release(); }
 
   const { rows: fullLines } = await pool.query(`SELECT * FROM payroll_run_lines WHERE run_id = $1`, [run.id]);
-  await auditLog(pool, { userId: req.session.userId, entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', req });
-  res.status(201).json({ ...run, lines: fullLines });
+  await auditLog(pool, { userId: scopeId(req), entityId: eid, table: 'payroll_runs', recordId: run.id, action: 'CREATE', req });
+  res.status(201).json({ ...run, lines: fullLines, unassigned_employees: unassignedEmployees });
 }));
 
 app.get('/api/payroll-runs/:id', requireAuth, wrap(async (req, res) => {
@@ -8546,20 +9484,25 @@ app.get('/api/payroll-runs/:id', requireAuth, wrap(async (req, res) => {
   res.json({ ...run, lines });
 }));
 
-app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write'), lockGuard(LOCK_SPECS.payroll_runs), wrap(async (req, res) => {
   // State guard: a paid run has already been recognised AND settled — re-approving it would revert
   // status paid → approved (a backwards state transition). Exclude paid rows from the update and
   // report the conflict instead of silently reverting.
   const { rows } = await pool.query(
-    `UPDATE payroll_runs SET status='approved' WHERE id=$1 AND user_id=$2 AND lower(status) <> 'paid' RETURNING *`,
+    // N58: only a draft (or an already-approved run, idempotent) can be approved. A paid run must not
+    // revert, and a VOIDED run must not be resurrected — its ledger entry was reversed under the
+    // canonical key, so re-approving would put it back in the books with no matching ledger entry.
+    `UPDATE payroll_runs SET status='approved' WHERE id=$1 AND user_id=$2 AND lower(status) IN ('draft','approved') RETURNING *`,
     [parseInt(req.params.id), scopeId(req)]
   );
   if (!rows[0]) {
-    const _exists = await ownedBy('payroll_runs', req.params.id, scopeId(req));
-    if (_exists) return res.status(409).json({ error: 'This payroll run is already paid and cannot be reverted to approved.' });
+    const { rows: [_ex] } = await pool.query(`SELECT status FROM payroll_runs WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), scopeId(req)]);
+    if (_ex) return res.status(409).json({ error: String(_ex.status).toLowerCase() === 'paid'
+      ? 'This payroll run is already paid and cannot be reverted to approved.'
+      : 'A voided payroll run cannot be approved. Create a new run instead.' });
     return res.status(404).json({ error: 'Not found.' });
   }
-  await recordAudit(pool, { userId: req.session.userId, entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'APPROVE', field: 'status', newValue: 'approved', req });  // F90 Phase B: payroll recognised at approve
+  await recordAudit(pool, { userId: scopeId(req), entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'APPROVE', field: 'status', newValue: 'approved', req });  // F90 Phase B: payroll recognised at approve
   // GL Phase 2 (dual-write shadow): payroll recognised at APPROVE (F80/F85) — Dr Payroll Expense
   // (6100) / Cr Payroll Liabilities (2200), summed from the run's LINES (basis C, Rule 12), dated at
   // the period the run is FOR (payrollPeriodYmd), to the run's entity. Mark-paid adds nothing further
@@ -8581,13 +9524,22 @@ app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write
   res.json(rows[0]);
 }));
 
-app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:write'), lockGuard(LOCK_SPECS.payroll_runs), wrap(async (req, res) => {
   const { rows } = await pool.query(
-    `UPDATE payroll_runs SET status='paid' WHERE id=$1 AND user_id=$2 RETURNING *`,
+    // N58: only an APPROVED run (or an already-paid one, idempotent) can be marked paid. A draft has no
+    // payroll-expense accrual yet (marking it paid posted the cash-out against nothing), and a voided
+    // run must stay out of the books.
+    `UPDATE payroll_runs SET status='paid' WHERE id=$1 AND user_id=$2 AND lower(status) IN ('approved','paid') RETURNING *`,
     [parseInt(req.params.id), scopeId(req)]
   );
-  if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
-  await recordAudit(pool, { userId: req.session.userId, entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'MARK_PAID', field: 'status', newValue: 'paid', req });  // F90 Phase B: cash-out event
+  if (!rows[0]) {
+    const { rows: [_ex] } = await pool.query(`SELECT status FROM payroll_runs WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), scopeId(req)]);
+    if (_ex) return res.status(409).json({ error: String(_ex.status).toLowerCase() === 'draft'
+      ? 'Approve this payroll run before marking it paid.'
+      : 'A voided payroll run cannot be marked paid.' });
+    return res.status(404).json({ error: 'Not found.' });
+  }
+  await recordAudit(pool, { userId: scopeId(req), entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'MARK_PAID', field: 'status', newValue: 'paid', req });  // F90 Phase B: cash-out event
   // GL Phase 5b (cash completeness): mark-paid is the CASH-OUT event - settle the payroll liability with
   // cash: Dr Payroll Liabilities (2200) / Cr Cash (1000), summed from the run's LINES (same basis as the
   // approve accrual), so 2200 nets to zero and GL cash reflects the payment (mirrors the cash-flow report's
@@ -8616,7 +9568,7 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
 //     {approved,paid} recognition set — no other change needed anywhere), so a figure that was on
 //     the books is never silently erased (F87/F94). Audit-logged. Idempotent on already-voided.
 //   - DELETE (below) — for a DRAFT run only, which was never recognised.
-app.put('/api/payroll-runs/:id/void', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+app.put('/api/payroll-runs/:id/void', requireAuth, requirePerm('payroll:write'), lockGuard(LOCK_SPECS.payroll_runs), wrap(async (req, res) => {
   const id = parseInt(req.params.id);
   const { rows: [run] } = await pool.query(`SELECT * FROM payroll_runs WHERE id=$1 AND user_id=$2`, [id, scopeId(req)]);
   if (!run) return res.status(404).json({ error: 'Not found.' });
@@ -8627,13 +9579,13 @@ app.put('/api/payroll-runs/:id/void', requireAuth, requirePerm('payroll:write'),
     `UPDATE payroll_runs SET status='voided' WHERE id=$1 AND user_id=$2 RETURNING *`, [id, scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_run', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_run reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_paid', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_paid reversal failed (shadow, non-fatal):', glErr && glErr.message); }
-  await auditLog(pool, { userId: req.session.userId, entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'VOID', req });
+  await auditLog(pool, { userId: scopeId(req), entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'VOID', req });
   res.json(rows[0]);
 }));
 
 // F106 (HYBRID): hard-DELETE a run — permitted ONLY for a `draft`, which was never recognised, so
 // removing it restates nothing. An approved/paid run must be VOIDED (never deleted). Lines first (FK).
-app.delete('/api/payroll-runs/:id', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
+app.delete('/api/payroll-runs/:id', requireAuth, requirePerm('payroll:write'), lockGuard(LOCK_SPECS.payroll_runs), wrap(async (req, res) => {
   const id = parseInt(req.params.id);
   const { rows: [run] } = await pool.query(`SELECT * FROM payroll_runs WHERE id=$1 AND user_id=$2`, [id, scopeId(req)]);
   if (!run) return res.status(404).json({ error: 'Not found.' });
@@ -8642,7 +9594,7 @@ app.delete('/api/payroll-runs/:id', requireAuth, requirePerm('payroll:write'), w
   }
   await pool.query(`DELETE FROM payroll_run_lines WHERE run_id=$1`, [id]);
   await pool.query(`DELETE FROM payroll_runs WHERE id=$1 AND user_id=$2`, [id, scopeId(req)]);
-  await auditLog(pool, { userId: req.session.userId, entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'DELETE', req });
+  await auditLog(pool, { userId: scopeId(req), entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'DELETE', req });
   res.json({ ok: true, deleted: id });
 }));
 
@@ -8748,14 +9700,52 @@ async function fifoItemSales(pool, inventoryId) {
 // computeBooks; this posts alongside so the ledger can be proven equal to it (computeBooks is the
 // oracle). Balanced-or-throw. Idempotent on idempotencyKey (+ 23505 race recovery). base==native for
 // now (per-entity parity); consolidation base conversion is Phase 3.
-async function postLedgerEntry(client, { userId, entityId, date, description, sourceType, sourceId = null, currency = 'USD', idempotencyKey = null, lines = [] }) {
+// N62: ledger writes are multi-statement (entry, then N lines; reversal; resync delete+reinsert). Run each
+// as ONE transaction so a failure part-way can never leave an unbalanced or empty entry whose idempotency
+// key then blocks every re-post. A pg Pool gets its own transaction; an already-checked-out client is
+// the caller's transaction (they own BEGIN/COMMIT), so it is used as-is.
+async function _ledgerTx(clientOrPool, fn) {
+  if (typeof clientOrPool.release === 'function') return fn(clientOrPool);
+  const cx = await clientOrPool.connect();
+  try {
+    await cx.query('BEGIN');
+    const out = await fn(cx);
+    await cx.query('COMMIT');
+    return out;
+  } catch (e) {
+    try { await cx.query('ROLLBACK'); } catch (_) {}
+    throw e;
+  } finally { cx.release(); }
+}
+async function postLedgerEntry(client, args) {
+  try {
+    return await _ledgerTx(client, (cx) => _postLedgerEntryBody(cx, args));
+  } catch (e) {
+    // A concurrent post of the same canonical entry won the race: return it (idempotent), never a 500.
+    if (e.code === '23505' && args && args.idempotencyKey) {
+      const { rows: ex } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [args.userId, args.idempotencyKey]);
+      if (ex[0]) return ex[0].id;
+    }
+    throw e;
+  }
+}
+async function _postLedgerEntryBody(client, { userId, entityId, date, description, sourceType, sourceId = null, currency = null, idempotencyKey = null, lines = [] }) {
+  // N61: an entry is in its ENTITY's currency unless the caller says otherwise. The default used to be
+  // 'USD' for every entity, so a TTD / JPY / EUR business's whole ledger was labelled USD.
+  if (!currency) {
+    const { rows: [_ec] } = entityId != null ? await client.query(`SELECT data->>'currency' AS c FROM entities WHERE id = $1`, [entityId]) : { rows: [] };
+    currency = String((_ec && _ec.c) || 'USD').toUpperCase();
+  }
   let { rows: accts } = await client.query(`SELECT id, code FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2`, [userId, entityId]);
   if (!accts.length) { await ensureLedgerAccountsForEntity(client, userId, entityId, currency); ({ rows: accts } = await client.query(`SELECT id, code FROM ledger_accounts WHERE user_id=$1 AND entity_id=$2`, [userId, entityId])); }
   const idByCode = Object.fromEntries(accts.map(a => [a.code, a.id]));
   // entry_date is a DATE column — a malformed non-null string ('' or a non-ISO value) breaks the INSERT.
   // Coerce to a clean YYYY-MM-DD, else null (nullable column, safe). Belt-and-suspenders for prod data.
-  { const _ds = date == null ? null : String(date).slice(0, 10);
-    date = (_ds && /^\d{4}-\d{2}-\d{2}$/.test(_ds)) ? _ds : null; }
+  // N63: the SAME date reader computeBooks uses, so the ledger and the books agree on legacy values; an
+  // entry with no resolvable date is refused (a NULL entry_date sat outside every period window and the
+  // balance sheet, so the trial balance could never tie) — the caller logs it and reconcile surfaces it.
+  date = FinFlowDates._toYmd(date);
+  if (!date) throw new Error('ledger entry has no valid date (' + sourceType + (sourceId != null ? ' #' + sourceId : '') + ')');
   const norm = lines.map(l => ({ code: l.code, debit: +(+l.debit || 0).toFixed(2), credit: +(+l.credit || 0).toFixed(2) }));
   const totD = norm.reduce((sm, l) => sm + l.debit, 0), totC = norm.reduce((sm, l) => sm + l.credit, 0);
   if (Math.abs(totD - totC) > 0.01) throw new Error('ledger entry does not balance: debit=' + totD + ' credit=' + totC + ' (' + sourceType + ')');
@@ -8764,20 +9754,12 @@ async function postLedgerEntry(client, { userId, entityId, date, description, so
     const { rows: ex } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [userId, idempotencyKey]);
     if (ex[0]) return ex[0].id;
   }
-  let entryId;
-  try {
-    const { rows: [entry] } = await client.query(
-      `INSERT INTO ledger_entries (user_id, entity_id, entry_date, description, source_type, source_id, currency, status, idempotency_key)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'posted',$8) RETURNING id`,
-      [userId, entityId, date, (description || '').slice(0, 500), sourceType, sourceId, currency, idempotencyKey]);
-    entryId = entry.id;
-  } catch (e) {
-    if (e.code === '23505' && idempotencyKey) {
-      const { rows: ex } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [userId, idempotencyKey]);
-      if (ex[0]) return ex[0].id;
-    }
-    throw e;
-  }
+  // (23505 recovery lives in postLedgerEntry, after the transaction has rolled back.)
+  const { rows: [entry] } = await client.query(
+    `INSERT INTO ledger_entries (user_id, entity_id, entry_date, description, source_type, source_id, currency, status, idempotency_key)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'posted',$8) RETURNING id`,
+    [userId, entityId, date, (description || '').slice(0, 500), sourceType, sourceId, currency, idempotencyKey]);
+  const entryId = entry.id;
   for (const l of norm) {
     await client.query(
       `INSERT INTO ledger_lines (entry_id, user_id, entity_id, account_id, debit, credit, debit_base, credit_base)
@@ -8792,7 +9774,8 @@ async function postLedgerEntry(client, { userId, entityId, date, description, so
 // exactly as computeBooks drops the voided/deleted doc. Both entries stay 'posted' and cancel; the
 // reversal links to the original via reversal_of. Idempotent on 'reverse:<type>:<id>'. Best-effort - a
 // shadow reversal failure must never block the user's delete/void.
-async function reverseLedgerEntry(client, { userId, sourceType, sourceId }) {
+async function reverseLedgerEntry(client, args) { return _ledgerTx(client, (cx) => _reverseLedgerEntryBody(cx, args)); }   // N62: one transaction
+async function _reverseLedgerEntryBody(client, { userId, sourceType, sourceId }) {
   const revKey = 'reverse:' + sourceType + ':' + sourceId;
   const { rows: already } = await client.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [userId, revKey]);
   if (already[0]) return already[0].id;                                   // already reversed - idempotent
@@ -8827,8 +9810,9 @@ async function reverseLedgerEntry(client, { userId, sourceType, sourceId }) {
 //   - recognised, live, amount/date changed -> true-up the live entry's lines in place.
 // The canonical key is preserved throughout, so backfill stays idempotent. Best-effort - a shadow
 // resync failure must never block the user's edit.
-async function resyncDocLedger(client, { userId, entityId, sourceType, sourceId, date, description, currency = 'USD', recognized, lines }) {
-  const key = sourceType + ':' + sourceId;
+async function resyncDocLedger(client, args) { return _ledgerTx(client, (cx) => _resyncDocLedgerBody(cx, args)); }   // N62: one transaction
+async function _resyncDocLedgerBody(client, { userId, entityId, sourceType, sourceId, date, description, currency = 'USD', recognized, lines, idempotencyKey = null }) {
+  const key = idempotencyKey || (sourceType + ':' + sourceId);   // canonical key (payments made post as 'payment_made:<id>')
   const { rows: origs } = await client.query(
     `SELECT id, entity_id FROM ledger_entries
       WHERE user_id=$1 AND source_type=$2 AND source_id=$3 AND reversal_of IS NULL AND status='posted' ORDER BY id ASC LIMIT 1`,
@@ -8863,6 +9847,37 @@ async function resyncDocLedger(client, { userId, entityId, sourceType, sourceId,
     await client.query(`INSERT INTO ledger_lines (entry_id, user_id, entity_id, account_id, debit, credit, debit_base, credit_base) VALUES ($1,$2,$3,$4,$5,$6,$5,$6)`,
       [orig.id, userId, ent, idByCode[l.code], l.debit, l.credit]);
   }
+}
+
+// N12: ONE post-edit ledger resync for the JSONB money tables whose create route posts to the GL but
+// whose PUT did not (expenses, sales receipts, credit notes, payments made, vendor credits). Re-reads
+// the row AFTER the edit and re-derives its entry with the SAME legs + canonical keys as the create
+// route / backfill, so an edited amount, date, status (Void) or bill link can no longer leave the
+// ledger stale. Best-effort like every shadow write — a resync failure never blocks the user's edit.
+async function _resyncAfterEdit(userId, table, id) {
+  const { rows: [r] } = await pool.query(`SELECT * FROM ${table} WHERE id = $1 AND user_id = $2 LIMIT 1`, [id, userId]);
+  if (!r) return;
+  const row = rowToObj(r);
+  const amt = Math.round((parseFloat(row.amount) || 0) * 100) / 100;
+  const d10 = v => FinFlowDates._toYmd(v);
+  const live = st => ['open', 'applied'].includes(String(st || '').toLowerCase());
+  let spec;
+  if (table === 'expenses') spec = { sourceType: 'expense', key: 'expense:' + id, date: row.expense_date || d10(row.created_at), description: 'Expense - ' + String(row.description || '').slice(0, 80), recognized: true,
+    lines: [{ code: '6000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }] };
+  else if (table === 'sales_receipts') spec = { sourceType: 'sales_receipt', key: 'sales_receipt:' + id, date: row.date || d10(row.created_at), description: 'Sales receipt - ' + String(row.customer || '').slice(0, 80), recognized: amt !== 0,
+    lines: [{ code: '1000', debit: amt, credit: 0 }, { code: '4000', debit: 0, credit: amt }] };
+  else if (table === 'credit_notes') spec = { sourceType: 'credit_note', key: 'credit_note:' + id, date: row.date || d10(row.created_at), description: 'Credit note - ' + String(row.customer || '').slice(0, 80), recognized: live(row.status) && amt > 0,
+    lines: [{ code: '4000', debit: amt, credit: 0 }, { code: '1100', debit: 0, credit: amt }] };
+  else if (table === 'vendor_credits') spec = { sourceType: 'vendor_credit', key: 'vendor_credit:' + id, date: row.date || d10(row.created_at), description: 'Vendor credit - ' + String(row.vendor || '').slice(0, 80), recognized: live(row.status) && amt > 0,
+    lines: [{ code: '2000', debit: amt, credit: 0 }, { code: '6000', debit: 0, credit: amt }] };
+  else if (table === 'payments_made') {
+    const linked = row.bill_id != null && row.bill_id !== '';
+    spec = { sourceType: 'bill_payment', key: 'payment_made:' + id, date: row.date || d10(row.created_at), description: 'Payment made - ' + String(row.vendor || '').slice(0, 80), recognized: amt !== 0,
+      lines: linked ? [{ code: '2000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }]     // settles AP
+                    : [{ code: '6000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }] }; // direct expense
+  } else return;
+  await resyncDocLedger(pool, { userId, entityId: row.entity_id, sourceType: spec.sourceType, sourceId: Number(id), date: spec.date,
+    description: spec.description, recognized: spec.recognized, lines: spec.lines, idempotencyKey: spec.key });
 }
 
 // GL Phase 2 (dual-write shadow) - post the canonical GL entry for a source row created from a
@@ -8927,7 +9942,7 @@ async function postSourceLedger(client, { userId, sourceType, row }) {
 // balance ties to zero and assets == liabilities + equity + net profit by construction.
 async function glFinancials(userId, entityId, period = 'year', fyStartIdx = 0, monthIdx = null) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
-  const _today = FinFlowDates.resolvedToday(new Date());
+  const _today = await entityTodayYmd(entityId);   // N64: the same business-local today as computeBooks
   const periodKind = (period === 'month' || period === 'quarter') ? period : 'year';
   const _rp = FinFlowDates.resolvePeriod({ period: periodKind, monthIdx, fyStartMonth: fyStartIdx, today: _today });
   const winStart = _rp.start, winEnd = _rp.end;
@@ -9195,7 +10210,7 @@ async function glConsolidated(userId, opts = {}) {
   const period = opts.period || 'year';
   const fyStartIdx = Number.isInteger(opts.fyStartIdx) ? opts.fyStartIdx : 0;
   const monthIdx = opts.monthIdx != null ? opts.monthIdx : null;
-  const _today = FinFlowDates.resolvedToday(new Date());
+  const _today = await entityTodayYmd(opts.entityId != null ? opts.entityId : null);   // N64
   const periodKind = (period === 'month' || period === 'quarter') ? period : 'year';
   const _rp = FinFlowDates.resolvePeriod({ period: periodKind, monthIdx, fyStartMonth: fyStartIdx, today: _today });
   const winStart = _rp.start, winEnd = _rp.end;
@@ -9407,27 +10422,21 @@ async function glProfitLoss(userId, entityId, opts = {}) {
 // strong completeness proxy (payroll cash-out is now posted too, so cash is trustworthy under this gate).
 // Otherwise we serve the exact honest stub as before (cash null, assets = AR only). Consolidated
 // (entityId null) always falls back (glFinancials is single-entity). `source` travels for observability.
+// Canonical accounts payable for one entity (null-inclusive of legacy account-wide rows): recognised
+// bills issued on or before today, net of amount paid, less open/applied vendor credits, floored at 0.
+// The ONE AP figure — the balance sheet below and the accountant portal's /books both read it (N75:
+// /books summed `amount` of status==='unpaid' only, ignoring overdue/partial bills, amounts already
+// paid and vendor credits).
+async function canonicalAP(userId, entityId, { net = false } = {}) {
+  // N99: computeBooks is the one AP implementation (single entity: native; consolidated: base currency).
+  const b = await computeBooks(userId, entityId, 'year');
+  return net ? b.accountsPayableNet : b.accountsPayable;
+}
 async function glBalanceSheet(userId, entityId) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
-  const matchEnt = r => r.entity_id == null || (entityId != null && r.entity_id === entityId);
   const books = await computeBooks(userId, entityId, 'year');
-  const bills = await db.allByUser('bills', userId, matchEnt);
-  const vendorCredits = await db.allByUser('vendor_credits', userId, matchEnt);
-  const _apToday = FinFlowDates.resolvedToday(new Date());
   const ar = r2(books.outstanding);
-  const _apGross = (bills || [])
-    .filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()))
-    .filter(b => { const _y = FinFlowDates._toYmd(b.issue_date || b.created_at || b.due_date); return _y != null && _y <= _apToday; })
-    .reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
-  // F58 CLOSE (AP side): an open|applied vendor credit is a payables contra — the business owes that
-  // much less. The GL nets it out of AP (Dr 2000); netting it here too aligns the oracle AP with the
-  // ledger so the balance sheet serves the GL (real cash) instead of the AR/AP-only fallback. Same
-  // basis as the vendor-credit opex-contra leg: status open|applied, at the credit's date, D2-bounded.
-  const _apCredits = (vendorCredits || [])
-    .filter(vc => ['open', 'applied'].includes(String(vc.status || '').toLowerCase()))
-    .filter(vc => { const _y = FinFlowDates._toYmd(vc.date || vc.created_at); return _y != null && _y <= _apToday; })
-    .reduce((s, vc) => s + (parseFloat(vc.amount) || 0), 0);
-  const ap = r2(Math.max(0, _apGross - _apCredits));
+  const ap = r2(books.accountsPayable), apNet = r2(books.accountsPayableNet);   // N99: same computeBooks call as AR
   // Oracle = today's honest stub (cash not tracked, assets = AR only).
   const oracle = () => ({
     source: 'computeBooks',
@@ -9453,7 +10462,10 @@ async function glBalanceSheet(userId, entityId) {
   // is trustworthy under it (payroll cash-out posts). Single-entity keeps the exact AP check.
   const reconciled = f.trialBalance.balanced && coverageOk &&
     eq(f.incomeStatement.income, books.revenue) && eq(glExpNonFx, books.cogs + books.opex) &&
-    eq(glAR, ar) && (consolidated ? true : eq(glAP, ap));
+    // N96: compare the ledger's AP with the SIGNED canonical position. With vendor credits above open
+    // bills the ledger's AP is negative while the displayed AP floors at 0, so the old comparison
+    // always failed and the balance sheet fell back to "cash not tracked".
+    eq(glAR, ar) && (consolidated ? true : eq(glAP, apNet));
   if (!reconciled) {
     console.warn('[GL 5b] balance-sheet divergence (serving oracle) uid=' + userId + ' eid=' + entityId +
       ' glAR=' + glAR + ' AR=' + ar + ' glAP=' + glAP + ' AP=' + ap + ' tb=' + f.trialBalance.balanced + ' cov=' + coverageOk);
@@ -9472,6 +10484,64 @@ async function glBalanceSheet(userId, entityId) {
     if (f.asc830) { res.cta = f.asc830.cta; res.asc830 = f.asc830; }   // ASC 830 supplementary (GAAP CTA)
   }
   return res;
+}
+
+// The account's fiscal-year start month (0-11) — the ONE server-side reader of the setting the owner saves
+// on the Settings page (PUT /api/settings → user_settings, the key-less row, data.fiscal_year = a month
+// name). N109: the accountant portal read users.data.fiscal_year, which nothing writes, so it always
+// windowed on January while the owner's own dashboard used their fiscal year.
+const _FY_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+async function accountFyStartIdx(userId) {
+  try {
+    const { rows: [r] } = await pool.query(`SELECT data->>'fiscal_year' AS fy FROM user_settings WHERE user_id = $1 AND data->>'key' IS NULL ORDER BY id LIMIT 1`, [userId]);
+    return Math.max(0, _FY_MONTH_NAMES.indexOf(String((r && r.fy) || 'January')));
+  } catch (_) { return 0; }
+}
+
+// ── N20 — MANUAL JOURNAL → GL BRIDGE ────────────────────────────────────────────────────────────
+// A journal line's `code` comes from the picker's chart, whose codes collide with the GL's system
+// chart (JE 5000=Salaries vs GL 5000=COGS, etc.), so we NEVER post by raw code. We classify the line
+// by its code's leading digit (standard COA numbering: 1 asset, 2 liability, 3 equity, 4 income,
+// 5-9 expense) and post to a `J`-namespaced ledger account of that type (J5000, J1010 …) — no collision
+// with system accounts, faithful per-account detail. computeBooks reads the journal P&L leg back FROM
+// the GL (source_type='journal'), so the oracle and glFinancials see the SAME lines and glReconcile ties
+// by construction. An untypeable code aborts posting (the entry is NOT booked, and — being absent from
+// the GL — contributes 0 to computeBooks too, so the two never diverge).
+function _journalLineType(code) {
+  const d = String(code == null ? '' : code).trim()[0];
+  return d === '1' ? 'asset' : d === '2' ? 'liability' : d === '3' ? 'equity'
+       : d === '4' ? 'income' : (d >= '5' && d <= '9') ? 'expense' : null;
+}
+const _jeNormalFor = type => (type === 'asset' || type === 'expense') ? 'debit' : 'credit';
+async function postJournalToLedger(client, { userId, entityId, journal }) {
+  let lines = [];
+  try { lines = Array.isArray(journal.lines) ? journal.lines : JSON.parse(journal.lines || '[]'); } catch (_) { lines = []; }
+  const norm = [];
+  for (const l of lines) {
+    const code = (l.code != null ? l.code : l.account);
+    const type = _journalLineType(code);
+    const dr = parseFloat(l.debit  != null ? l.debit  : (parseFloat(l.amount) > 0 ?  parseFloat(l.amount) : 0)) || 0;
+    const cr = parseFloat(l.credit != null ? l.credit : (parseFloat(l.amount) < 0 ? -parseFloat(l.amount) : 0)) || 0;
+    if (!type) return { posted: false, reason: 'untypeable account code ' + code };
+    if (dr === 0 && cr === 0) continue;
+    norm.push({ code: 'J' + String(code).trim(), name: String(l.name || ('Journal ' + code)).slice(0, 120), type, debit: dr, credit: cr });
+  }
+  if (norm.length < 2) return { posted: false, reason: 'fewer than 2 nonzero lines' };
+  let cur = 'USD';
+  try { const { rows: [e] } = entityId != null ? await client.query(`SELECT data->>'currency' AS c FROM entities WHERE id=$1`, [entityId]) : { rows: [] }; cur = String((e && e.c) || 'USD').toUpperCase(); } catch (_) {}
+  for (const l of norm) {
+    await client.query(
+      `INSERT INTO ledger_accounts (user_id, entity_id, code, name, type, normal, currency, is_system)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,false) ON CONFLICT (user_id, entity_id, code) DO NOTHING`,
+      [userId, entityId, l.code, l.name, l.type, _jeNormalFor(l.type), cur]);
+  }
+  await postLedgerEntry(client, {
+    userId, entityId, date: (journal.date || null),
+    description: 'Journal — ' + String(journal.description || journal.ref || '').slice(0, 80),
+    sourceType: 'journal', sourceId: journal.id, idempotencyKey: 'journal:' + journal.id,
+    lines: norm.map(l => ({ code: l.code, debit: l.debit, credit: l.credit })),
+  });
+  return { posted: true };
 }
 
 async function computeBooks(userId, entityId = null, period = 'year', display = null, fyStartIdx = 0, monthIdx = null, permittedEntityIds = null) {
@@ -9495,7 +10565,10 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // passes one), or default 'year'. The accountant portal / consolidated P&L call with a string
   // and resolve here identically. `monthIdx` selects WHICH month/quarter (client intent); null →
   // the current one, exactly as the old `now`-based path did.
-  const _today = FinFlowDates.resolvedToday(new Date());   // server clock → UTC calendar date (phase 1)
+  // N64 (Rule 10): "today" — the D2 bound and the current period — is the BUSINESS's calendar date (its
+  // timezone, entityTodayYmd), not the UTC date: a UTC+ business's same-day documents were treated as
+  // future for hours and its period flipped at UTC midnight. Consolidated (no entity) stays UTC.
+  const _today = await entityTodayYmd(entityId);
   let periodKind, winStart = null, winEnd = null, winElapsed;
   if (period && typeof period === 'object' && period.start && period.end) {
     periodKind = 'window';
@@ -9593,6 +10666,39 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // now/inMonth/inQuarter/_d local-time helpers are gone — every leg files by CALENDAR date, so
   // server and client agree at every period and no figure depends on the viewer's timezone.
 
+  // ── N20 — MANUAL JOURNAL P&L LEG ─────────────────────────────────────────────────────────────
+  // Posted manual journals that are IN THE GL (source_type='journal') flow into the P&L by account type.
+  // Read from the journals table (so each line converts per-row at its own date via sumFX, exactly like
+  // every other leg) but RESTRICTED to journals actually posted to the ledger — so this leg and
+  // glFinancials read the SAME set and glReconcile ties by construction. income ⇒ revenue (credit−debit);
+  // expense ⇒ opex (debit−credit); asset/liability/equity ⇒ no P&L effect.
+  // Read the journal contribution FROM the GL (posted source_type='journal' lines), grouped by account
+  // type / entity / date, so it equals glFinancials' journal contribution EXACTLY — including REVERSALS
+  // (a flipped-to-draft or deleted journal posts a mirror entry that nets to zero in the GL, so it nets
+  // to zero here too) and excluding anything not posted to the GL (imported-but-unposted, drafts). Each
+  // (entity,date) group converts via sumFX at its own date, identical to glConsolidated's per-line base
+  // conversion. income ⇒ revenue (credit−debit); expense ⇒ opex (debit−credit).
+  const _jeIncomeRows = [], _jeExpenseRows = [];
+  try {
+    const { rows: _jgl } = await pool.query(
+      `SELECT la.type AS t, le.entity_id AS eid, le.entry_date::text AS d,
+              COALESCE(SUM(ll.debit),0)::float AS dr, COALESCE(SUM(ll.credit),0)::float AS cr
+         FROM ledger_lines ll
+         JOIN ledger_accounts la ON la.id = ll.account_id
+         JOIN ledger_entries le ON le.id = ll.entry_id AND le.status='posted'
+        WHERE ll.user_id=$1 AND le.source_type='journal' AND la.type IN ('income','expense')
+          AND ($2::int IS NULL OR le.entity_id IS NULL OR le.entity_id=$2)
+          AND le.entry_date >= $3::date AND le.entry_date < $4::date AND le.entry_date <= $5::date
+        GROUP BY la.type, le.entity_id, le.entry_date`,
+      [userId, entityId, winStart, winEnd, _today]);
+    for (const g of _jgl) {
+      const amt = g.t === 'income' ? (g.cr - g.dr) : (g.dr - g.cr);
+      (g.t === 'income' ? _jeIncomeRows : _jeExpenseRows).push({ entity_id: g.eid, _amt: amt, _d: g.d });
+    }
+  } catch (_) { /* no ledger / query failure → journals contribute 0; reconcile surfaces any divergence */ }
+  const jeRevenue = sumFX(_jeIncomeRows,  r => r._amt, r => r._d, 'journal_income');
+  const jeOpex    = sumFX(_jeExpenseRows, r => r._amt, r => r._d, 'journal_expense');
+
   // ── Revenue — ISSUE-BASED ACCRUAL (F32). Recognize every ISSUED invoice at its FULL
   // amount, in the period of its ISSUE date (created_at — NOT due_date), plus cash sales
   // receipts. Settlements (invoice_payments / legacy payments_received) draw down AR and
@@ -9635,7 +10741,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const creditNotesTotal = sumFX(creditNotes.filter(c =>
     RECOGNIZED_CREDIT.has((c.status || '').toLowerCase()) && inPeriod(_cnDate(c))
   ), c => c.amount, _cnDate, 'credit_notes');
-  const revenue = r2(issuedInvoices + salesReceipts - creditNotesTotal);
+  const revenue = r2(issuedInvoices + salesReceipts - creditNotesTotal + jeRevenue);   // N20: + posted-journal income leg
 
   // ── OpEx (mirrors frontend computeExpenseBreakdown / E1) — uses the SAME inPeriod as revenue ──
   const _expDate = e => e.expense_date || e.date || e.created_at;
@@ -9704,7 +10810,9 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
           AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)`,
       [userId, entityId]
     );
-    runLines = rows;
+    // N65: the permitted-entity restriction applies to EVERY leg — the JSONB legs filter through ent();
+    // this typed query did not, so an accountant's restricted "all" view included hidden entities' payroll.
+    runLines = rows.filter(r => entityId != null || !_permSet || r.entity_id == null || _permSet.has(Number(r.entity_id)));
   } catch (_) { runLines = []; }
   // F85: accounting date = first of the run's `period` month ('YYYY-MM' → 'YYYY-MM-01'). A tz-free
   // calendar date, so it also removes the Rule 10 UTC month-boundary misfile. Used for BOTH period
@@ -9736,7 +10844,20 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const vendorCreditsTotal = sumFX(vendorCredits.filter(v =>
     RECOGNIZED_CREDIT.has((v.status || '').toLowerCase()) && inPeriod(_vcDate(v))
   ), v => v.amount, _vcDate, 'vendor_credits');
-  const opex = r2(expensesTotal + issuedBillsTotal + paymentsMadeTotal + payrollTotal - vendorCreditsTotal);
+  const opex = r2(expensesTotal + issuedBillsTotal + paymentsMadeTotal + payrollTotal - vendorCreditsTotal + jeOpex);   // N20: + posted-journal expense leg
+  // N99: ACCOUNTS PAYABLE — the ONE implementation, on the same basis and FX path as AR: recognised bills issued
+  // on or before today, Σ max(0, amount − amount_paid), less open|applied vendor credits dated on or before
+  // today; each row converted from ITS entity's currency at its own date (consolidated → base). canonicalAP
+  // used to recompute this separately and, for the consolidated view (entityId null), kept only entity-less
+  // rows — every business's bills fell out — and the accountant all-view summed mixed currencies raw.
+  const _apGross = sumFX((bills || []).filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()) &&
+      (function(){ const _y = FinFlowDates._toYmd(_billDate(b)); return _y != null && _y <= _today; })()),
+    b => Math.max(0, num(b.amount) - num(b.amount_paid)), _billDate, 'ap');
+  const _apCredits = sumFX((vendorCredits || []).filter(v => RECOGNIZED_CREDIT.has((v.status || '').toLowerCase()) &&
+      (function(){ const _y = FinFlowDates._toYmd(_vcDate(v)); return _y != null && _y <= _today; })()),
+    v => num(v.amount), _vcDate, 'ap');
+  const accountsPayableNet = r2(_apGross - _apCredits);
+  const accountsPayable = r2(Math.max(0, accountsPayableNet));
 
   // ── COGS (FIFO, F6) — PERIOD-SCOPED (F25) ──
   // COGS is a P&L figure, so it must match revenue's period: Month/Quarter show only that
@@ -9759,6 +10880,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
       [userId, entityId]
     );
     for (const it of items) {
+      if (entityId == null && _permSet && it.entity_id != null && !_permSet.has(Number(it.entity_id))) continue;   // N65: hidden entity's COGS
       // F24: each item's COGS converts from ITS entity's currency (inventory is per-entity). Falls back
       // to the viewed/base currency for account-level (null-entity) items.
       const _itemFrom = (it.entity_id != null && entCur[it.entity_id]) ? entCur[it.entity_id] : viewedCur;
@@ -9868,8 +10990,8 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // ── F34 B (surface 1) — CONVERTED monthly buckets for the overview chart ────────────────────
   // Mirrors the client buildMonthlyArrays basis EXACTLY (so native = identity byte-for-byte and the
   // period sum reconciles): revenue = recognized invoices@issue_date + receipts@date; expense =
-  // expenses@expense_date + issued bills@issue_date + orphan payments@date. NO payroll/COGS (the
-  // chart never included them). 12 fiscal months from fyStartIdx of the current fiscal year, all rows
+  // expenses@expense_date + issued bills@issue_date + orphan payments@date, less credit notes / vendor credits,
+  // plus payroll (N104). NO COGS (the chart never included it). 12 fiscal months from fyStartIdx of the current fiscal year, all rows
   // (not period-filtered — the chart shows the whole FY). Converted per-row at each row's own date via
   // pickRate; a row with no rate is EXCLUDED from its bucket (never native-summed) and flags
   // monthly.complete=false — honest, never a fabricated 0.
@@ -9900,6 +11022,13 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   expenses.forEach(e => addBucket(expByMonth, e.amount, _expDate(e), _fromOf(e)));
   (bills || []).filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase())).forEach(b => addBucket(expByMonth, b.amount, _billDate(b), _fromOf(b)));
   paymentsMade.filter(p => p.bill_id == null).forEach(p => addBucket(expByMonth, p.amount, _pmDate(p), _fromOf(p)));
+  // N104: the credit-note / vendor-credit contras and payroll, each on its own date and converted from its own
+  // entity's currency — exactly what the native overview chart (finflow-api-wiring-dashboard.js
+  // buildMonthlyArrays) and the P&L rows include. These buckets left them out, so choosing a display currency
+  // changed the SHAPE of the chart (revenue up by every credit note, expenses down by all payroll).
+  creditNotes.filter(cn => RECOGNIZED_CREDIT.has(String(cn.status || '').toLowerCase())).forEach(cn => addBucket(revByMonth, -num(cn.amount), _cnDate(cn), _fromOf(cn)));
+  vendorCredits.filter(v => RECOGNIZED_CREDIT.has(String(v.status || '').toLowerCase())).forEach(v => addBucket(expByMonth, -num(v.amount), _vcDate(v), _fromOf(v)));
+  runLines.filter(l => PAYROLL_RECOGNIZED.has(String(l.status || '').toLowerCase())).forEach(l => addBucket(expByMonth, num(l.gross) + num(l.bonus) + num(l.overtime), _payDate(l), _fromOf(l)));
   const monthly = { labels: _fyMonths.map(x => x.label), revByMonth: revByMonth.map(r2), expByMonth: expByMonth.map(r2), complete: monthlyComplete };
 
   // ── F34 B (surface 2) — CONVERTED expense breakdown by category ──────────────────────────────
@@ -9955,7 +11084,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const transactions = [..._invTx, ..._expTx].sort(_txByDate).slice(0, 6).map(t => ({ name: t.name, cat: t.cat, type: t.type, amount: t.amount }));
 
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, arCreditContra: r2(_arCreditContra), arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, accountsPayable, accountsPayableNet, arCreditContra: r2(_arCreditContra), arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the
     // client worksheet (GET /api/tax-filing) and the accountant Tax Summary so taxable reconciles.
@@ -9982,12 +11111,52 @@ app.get('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
+// N69: the ONE writer of stock. Every change to an item's units goes through an inventory movement, so the
+// FIFO layers (purchases), COGS (sales), the units on hand and the ledger always move together. Restock,
+// opening stock and the movements route all call this; units are never set directly (PUT refuses).
+// GL: a sale relieves inventory at FIFO cost (Dr 5000 / Cr 1200); a purchase capitalises it (Dr 1200 / Cr
+// cash 1000, or Owner's Equity 3100 for OPENING stock the business already held). Posted to the MOVEMENT's
+// entity (it used to post to the viewed entity while the row took the item's).
+async function recordStockMovement({ userId, item, entityId = null, type, qty, unitCost = 0, reference = null, notes = null, idem = null, contraCode = '1000' }) {
+  let cogs = null;
+  if (type === 'sale') cogs = await calculateFIFOCOGS(pool, parseInt(item.id), qty);
+  const _mvEnt = item.entity_id != null ? item.entity_id : entityId;
+  const { rows: [movement] } = await pool.query(
+    `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [userId, _mvEnt, parseInt(item.id), type, qty, unitCost || 0, reference || null, notes || null, idem]);
+  const { rows: [_cur] } = await pool.query(`SELECT data->>'units' AS u, data->>'max_units' AS m FROM inventory WHERE id = $1`, [item.id]);
+  const _units = parseFloat(_cur && _cur.u) || 0, _max = parseFloat(_cur && _cur.m) || 200;
+  const newUnits = type === 'purchase' ? _units + qty : Math.max(0, _units - qty);
+  await db.updateById('inventory', parseInt(item.id), { units: newUnits, low_stock: newUnits < _max * 0.1 ? 1 : 0 });
+  try {
+    const _mDate = FinFlowDates._toYmd(movement.moved_at);
+    if (type === 'sale' && cogs != null && +cogs > 0) {
+      await postLedgerEntry(pool, {
+        userId, entityId: _mvEnt, date: _mDate,
+        description: 'COGS — sale of ' + String(item.name || '').slice(0, 80),
+        sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
+        lines: [{ code: '5000', debit: +cogs, credit: 0 }, { code: '1200', debit: 0, credit: +cogs }],
+      });
+    } else if (type === 'purchase') {
+      const _cap = Math.round(qty * (parseFloat(unitCost) || 0) * 100) / 100;
+      if (_cap > 0) await postLedgerEntry(pool, {
+        userId, entityId: _mvEnt, date: _mDate,
+        description: (contraCode === '3100' ? 'Opening stock — ' : 'Inventory purchase — ') + String(item.name || '').slice(0, 80),
+        sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
+        lines: [{ code: '1200', debit: _cap, credit: 0 }, { code: contraCode, debit: 0, credit: _cap }],
+      });
+    }
+  } catch (glErr) { console.error('[GL] inventory movement posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  return { movement, cogs, units: newUnits };
+}
+
+app.post('/api/inventory-movements', requireAuth, lockGuard(LOCK_SPECS.inventory_movements), wrap(async (req, res) => {
   const { inventory_id, type, quantity, unit_cost, reference, notes } = req.body || {};
   if (!inventory_id || !type || !quantity) return res.status(400).json({ error: 'inventory_id, type, quantity required' });
   if (!['purchase', 'sale', 'adjustment'].includes(type)) return res.status(400).json({ error: 'type must be purchase, sale, or adjustment' });
 
-  const item = await ownedBy('inventory', inventory_id, req.session.userId);
+  const item = await ownedBy('inventory', inventory_id, scopeId(req));
   if (!item) return res.status(404).json({ error: 'Inventory item not found.' });
 
   const qty = parseFloat(quantity);
@@ -10001,26 +11170,16 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
   // READ-ONLY (COGS is recomputed from the rows), and a duplicate token 23505s at the INSERT and
   // returns before the units-decrement, so the FIFO ledger is never double-consumed.
   if (!idem) {
-    const _imDup = await findRecentDuplicateTyped('inventory_movements', req.session.userId, req.entityId || null,
+    const _imDup = await findRecentDuplicateTyped('inventory_movements', scopeId(req), req.entityId || null,
       { inventory_id: parseInt(inventory_id), type, quantity: qty }, 5, 'moved_at');
     // Return the ORIGINAL row in the SAME shape as the success path ({...movement, cogs}) so a
     // deduped re-submit is indistinguishable to the client. cogs null: the duplicate consumed no
     // FIFO layers, and re-reporting the original's COGS would double-count it in a summing caller.
     if (_imDup) return res.status(201).json({ ..._imDup, cogs: null });
   }
-  let cogs = null;
-  if (type === 'sale') {
-    cogs = await calculateFIFOCOGS(pool, parseInt(inventory_id), qty);
-  }
-
-  let movement;
+  let out;
   try {
-    ({ rows: [movement] } = await pool.query(
-      `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [req.session.userId, req.entityId || null, parseInt(inventory_id), type, qty,
-       parseFloat(unit_cost) || 0, reference || null, notes || null, idem]
-    ));
+    out = await recordStockMovement({ userId: scopeId(req), item, entityId: req.entityId || null, type, qty, unitCost: parseFloat(unit_cost) || 0, reference, notes, idem });
   } catch (e) {
     if (e.code === '23505' && idem) {
       // Duplicate submit lost the race at the DB → the movement already landed and the units were
@@ -10031,39 +11190,7 @@ app.post('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
     }
     throw e;
   }
-
-  const newUnits = type === 'purchase' ? item.units + qty : Math.max(0, item.units - qty);
-  const newMax = item.max_units || 200;
-  await db.updateById('inventory', parseInt(inventory_id), {
-    units: newUnits, low_stock: newUnits < newMax * 0.1 ? 1 : 0
-  });
-
-  // GL Phase 2 (dual-write shadow): a stock movement posts at its moved_at date. A SALE relieves
-  // inventory at FIFO cost — Dr COGS (5000) / Cr Inventory (1200) = cogs (the exact leg
-  // computeBooks recognises). A PURCHASE capitalises stock — Dr Inventory (1200) / Cr Cash (1000)
-  // = qty*unit_cost. Entry date via _toYmd(moved_at), the SAME reducer computeBooks uses to place the
-  // sale in its period. (adjustment: no cash/COGS effect modelled here.) Best-effort.
-  try {
-    const _mDate = FinFlowDates._toYmd(movement.moved_at);
-    const _ent = req.entityId || null;
-    if (type === 'sale' && cogs != null && +cogs > 0) {
-      await postLedgerEntry(pool, {
-        userId: scopeId(req), entityId: _ent, date: _mDate,
-        description: 'COGS — sale of ' + String(item.name || '').slice(0, 80),
-        sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
-        lines: [{ code: '5000', debit: +cogs, credit: 0 }, { code: '1200', debit: 0, credit: +cogs }],
-      });
-    } else if (type === 'purchase') {
-      const _cap = Math.round(qty * (parseFloat(unit_cost) || 0) * 100) / 100;
-      if (_cap > 0) await postLedgerEntry(pool, {
-        userId: scopeId(req), entityId: _ent, date: _mDate,
-        description: 'Inventory purchase — ' + String(item.name || '').slice(0, 80),
-        sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
-        lines: [{ code: '1200', debit: _cap, credit: 0 }, { code: '1000', debit: 0, credit: _cap }],
-      });
-    }
-  } catch (glErr) { console.error('[GL] inventory movement posting failed (shadow, non-fatal):', glErr && glErr.message); }
-
+  const { movement, cogs } = out;
   res.status(201).json({ ...movement, cogs });
 }));
 
@@ -10075,6 +11202,9 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   // No params ⇒ all-time (backward compatible: the COGS page and any un-migrated caller are
   // unchanged). A window ⇒ per-item COGS counts only sales whose movement date ∈ [start,end).
   let inWin = () => true;
+  // N68: the same window, handed to computeBooks for the page's Revenue / Gross Profit. All-time = an
+  // unbounded window (computeBooks still applies D2: nothing dated after today).
+  let _bkPeriod = { start: '1900-01-01', end: '9999-12-31', elapsedMonths: 12 }, _bkFy = 0, _bkMi = null;
   // F87 CONTRACT: the client sends INTENT (period + monthIdx + fyStart); the server resolves the
   // calendar window (finflow-dates) + D2. No params ⇒ all-time (the COGS page's default). Mirrors
   // computeBooks so the period-scoped COGS reconciles with the dashboard net.
@@ -10084,9 +11214,10 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
     let _mi = null;
     if (qPeriod !== 'year') { _mi = parseInt(qMonthIdx, 10); if (!Number.isInteger(_mi) || _mi < 0 || _mi > 11) return res.status(400).json({ error: 'Invalid monthIdx.' }); }
     const _fy = parseInt(qFy, 10), _fyIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
-    const _cogsToday = FinFlowDates.resolvedToday(new Date());
+    const _cogsToday = await entityTodayYmd(eid);   // N64
     const _rp = FinFlowDates.resolvePeriod({ period: qPeriod, monthIdx: _mi, fyStartMonth: _fyIdx, today: _cogsToday });
     inWin = v => { const y = FinFlowDates._toYmd(v); return y != null && y <= _cogsToday && y >= _rp.start && y < _rp.end; };
+    _bkPeriod = qPeriod; _bkFy = _fyIdx; _bkMi = _mi;
   }
   // Entity-scoped so the total matches computeBooks / the dashboard (the frontend stashes
   // it as window._cogsTotal for the canonical net). $2 NULL → all entities.
@@ -10124,8 +11255,11 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   }
   totalCOGS = Math.round(totalCOGS * 100) / 100;
 
-  const invoices = await db.allByUser('invoices', uid);
-  const revenue = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+  // N68: Revenue is the canonical figure (computeBooks — issue-based accrual, F32) for the SAME entity and
+  // period as the COGS above. It was Σ PAID invoices of EVERY entity over ALL time (cash basis), so the
+  // page's Gross Profit mixed two bases and two scopes.
+  const _books = await computeBooks(uid, eid, _bkPeriod, null, _bkFy, _bkMi);
+  const revenue = Math.round((Number(_books.revenue) || 0) * 100) / 100;
   res.json({
     totalCOGS, grossProfit: Math.round((revenue - totalCOGS) * 100) / 100, revenue,
     breakdown, uncoveredItems, cogsMethod: 'fifo',
@@ -10173,14 +11307,15 @@ function _pickDirectRate(rows, from, to, date) {
   const pair = [];
   for (const r of rows || []) {
     if (r.from_currency !== from || r.to_currency !== to) continue;
-    const rd = new Date(r.rate_date), rate = parseFloat(r.rate);
-    if (!isNaN(rd) && isFinite(rate)) pair.push({ rd, rate });
+    // N107 (Rule 10): rate dates and the recognition date compare as 'YYYY-MM-DD' strings, never as Dates.
+    const rd = FinFlowDates._toYmd(r.rate_date), rate = parseFloat(r.rate);
+    if (rd != null && isFinite(rate)) pair.push({ rd, rate });
   }
   if (pair.length === 0) return null;           // pair has ZERO rates → null (never fabricate)
-  const d = date ? new Date(date) : null;
+  const d = date ? FinFlowDates._toYmd(date) : null;
   // Preferred: the most-recent rate effective ON/BEFORE the recognition date (carry-forward — keeps
   // historical accuracy when several rates exist, standard accounting).
-  if (d && !isNaN(d)) {
+  if (d) {
     let best = null, bestDate = null;
     for (const r of pair) {
       if (r.rd > d) continue;
@@ -10235,23 +11370,36 @@ async function refreshLiveFxRates() {
     const rates = data.rates;
     const today = new Date().toISOString().slice(0, 10);
     const { rows: us } = await pool.query(`SELECT DISTINCT user_id FROM entities WHERE user_id IS NOT NULL`);
+    // N67: ONE set-based statement per user (was 2–3 queries per currency per user — ~480 per user per refresh).
+    // Same rules: only app-supported codes; manual-wins (a pair with a hand-entered rate is never touched);
+    // today's live row is updated, else inserted. A rate outside the column's range is dropped up front (it
+    // used to be skipped by a per-currency try/catch).
+    const curs = [], vals = [];
+    for (const cur of Object.keys(rates)) {
+      if (cur === 'USD') continue;
+      if (typeof CURRENCY_CODES !== 'undefined' && CURRENCY_CODES.size && !CURRENCY_CODES.has(cur)) continue;
+      const rate = Number(rates[cur]);
+      if (!isFinite(rate) || rate <= 0 || rate >= 1e6) continue;   // fx_rates.rate is NUMERIC(12,6)
+      curs.push(cur); vals.push(rate);
+    }
     let wrote = 0;
     for (const u of us) {
-      const uid = u.user_id;
-      for (const cur of Object.keys(rates)) {
-        if (cur === 'USD') continue;
-        if (typeof CURRENCY_CODES !== 'undefined' && CURRENCY_CODES.size && !CURRENCY_CODES.has(cur)) continue; // only app-supported codes
-        const rate = rates[cur];
-        if (rate == null || !isFinite(rate)) continue;
-        // manual-wins: never overwrite a hand-entered rate for this pair
-        const { rows: man } = await pool.query(`SELECT 1 FROM fx_rates WHERE user_id=$1 AND from_currency='USD' AND to_currency=$2 AND source='manual' LIMIT 1`, [uid, cur]);
-        if (man[0]) continue;
-        try {
-          const { rowCount } = await pool.query(`UPDATE fx_rates SET rate=$1 WHERE user_id=$2 AND from_currency='USD' AND to_currency=$3 AND rate_date=$4 AND source='live'`, [rate, uid, cur, today]);
-          if (!rowCount) await pool.query(`INSERT INTO fx_rates (user_id, entity_id, from_currency, to_currency, rate, rate_date, source) VALUES ($1,NULL,'USD',$2,$3,$4,'live')`, [uid, cur, rate, today]);
-          wrote++;
-        } catch (perCurErr) { /* skip one bad/out-of-range currency; never abort the whole refresh */ }
-      }
+      try {
+        const { rows: [r] } = await pool.query(
+          `WITH v(cur, rate) AS (SELECT * FROM unnest($2::text[], $3::numeric[])),
+                manual AS (SELECT DISTINCT to_currency FROM fx_rates WHERE user_id = $1 AND from_currency = 'USD' AND source = 'manual'),
+                upd AS (UPDATE fx_rates f SET rate = v.rate FROM v
+                         WHERE f.user_id = $1 AND f.from_currency = 'USD' AND f.to_currency = v.cur AND f.rate_date = $4 AND f.source = 'live'
+                           AND v.cur NOT IN (SELECT to_currency FROM manual)
+                     RETURNING f.to_currency),
+                ins AS (INSERT INTO fx_rates (user_id, entity_id, from_currency, to_currency, rate, rate_date, source)
+                        SELECT $1, NULL, 'USD', v.cur, v.rate, $4, 'live' FROM v
+                         WHERE v.cur NOT IN (SELECT to_currency FROM upd) AND v.cur NOT IN (SELECT to_currency FROM manual)
+                     RETURNING 1)
+           SELECT (SELECT COUNT(*) FROM upd) + (SELECT COUNT(*) FROM ins) AS n`,
+          [u.user_id, curs, vals, today]);
+        wrote += Number(r && r.n) || 0;
+      } catch (perUserErr) { console.error('[fx-live] user ' + u.user_id + ':', perUserErr.message); }
     }
     console.log('[fx-live] refreshed ' + wrote + ' USD-base rate(s) for ' + us.length + ' user(s) @ ' + today);
   } catch (e) { console.error('[fx-live] refresh error:', e && e.message); }
@@ -10289,13 +11437,13 @@ app.post('/api/fx-rates', requireAuth, wrap(async (req, res) => {
     `SELECT * FROM fx_rates WHERE user_id=$1 AND entity_id IS NOT DISTINCT FROM $2
        AND from_currency=$3 AND to_currency=$4 AND rate=$5 AND rate_date=$6
        AND created_at > NOW() - INTERVAL '5 seconds' ORDER BY id DESC LIMIT 1`,
-    [req.session.userId, req.entityId || null, _from, _to, _rate, _date]
+    [scopeId(req), req.entityId || null, _from, _to, _rate, _date]
   );
   if (dup[0]) return res.status(201).json(dup[0]);
   const { rows: [row] } = await pool.query(
     `INSERT INTO fx_rates (user_id, entity_id, from_currency, to_currency, rate, rate_date)
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [req.session.userId, req.entityId || null, _from, _to, _rate, _date]
+    [scopeId(req), req.entityId || null, _from, _to, _rate, _date]
   );
   res.status(201).json(row);
 }));
@@ -10339,14 +11487,19 @@ app.post('/api/fx-transactions', requireAuth, wrap(async (req, res) => {
     `SELECT * FROM fx_transactions WHERE user_id=$1 AND entity_id IS NOT DISTINCT FROM $2
        AND foreign_currency=$3 AND foreign_amount=$4 AND rate_at_transaction=$5
        AND created_at > NOW() - INTERVAL '5 seconds' ORDER BY id DESC LIMIT 1`,
-    [req.session.userId, req.entityId || null, foreign_currency.toUpperCase(), fAmt, rate]
+    [scopeId(req), req.entityId || null, foreign_currency.toUpperCase(), fAmt, rate]
   );
   if (dupTx[0]) return res.status(201).json(dupTx[0]);
+  // N108: a position's base currency is its BUSINESS's currency (the column defaulted to 'USD' for everyone,
+  // so a TTD business's EUR position measured its unrealised P/L against EUR→USD while it was opened at
+  // EUR→TTD).
+  const _fxEnt = await activeEntity(req);
+  const baseCur = String((_fxEnt && _fxEnt.currency) || 'USD').toUpperCase();
   const { rows: [row] } = await pool.query(
-    `INSERT INTO fx_transactions (user_id, entity_id, reference_id, reference_type, foreign_currency, foreign_amount, base_amount, rate_at_transaction)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-    [req.session.userId, req.entityId || null, reference_id || null, reference_type || null,
-     foreign_currency.toUpperCase(), fAmt, baseAmount, rate]
+    `INSERT INTO fx_transactions (user_id, entity_id, reference_id, reference_type, foreign_currency, foreign_amount, base_amount, rate_at_transaction, base_currency)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [scopeId(req), req.entityId || null, reference_id || null, reference_type || null,
+     foreign_currency.toUpperCase(), fAmt, baseAmount, rate, baseCur]
   );
   res.status(201).json(row);
 }));
@@ -10358,13 +11511,18 @@ app.post('/api/fx-transactions/:id/settle', requireAuth, wrap(async (req, res) =
     `SELECT * FROM fx_transactions WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), scopeId(req)]
   );
   if (!tx) return res.status(404).json({ error: 'Not found.' });
-  const settlementRate = parseFloat(rate_at_settlement);
+  const settlementRate = Number(rate_at_settlement);
+  if (!Number.isFinite(settlementRate) || settlementRate <= 0) return res.status(400).json({ error: 'rate_at_settlement must be a positive number.' });
   const realisedGL = Math.round((settlementRate - parseFloat(tx.rate_at_transaction)) * parseFloat(tx.foreign_amount) * 100) / 100;
+  // N66: a position settles ONCE. The guard is in the UPDATE itself (status not already 'settled'), so two
+  // concurrent or repeated settles cannot both win. A re-settle used to overwrite the realised gain/loss and
+  // settled_at while the ledger (idempotent on fx_settle:<id>) kept the FIRST figure — books ≠ ledger.
   const { rows: [updated] } = await pool.query(
     `UPDATE fx_transactions SET rate_at_settlement=$1, realised_gain_loss=$2, status='settled', settled_at=NOW()
-     WHERE id=$3 RETURNING *`,
+     WHERE id=$3 AND status IS DISTINCT FROM 'settled' RETURNING *`,
     [settlementRate, realisedGL, tx.id]
   );
+  if (!updated) return res.status(409).json({ error: 'This position is already settled.', code: 'ALREADY_SETTLED' });
   // GL Phase 2 (dual-write shadow): settling an FX position REALISES a gain/loss. 7000 (FX Gain/Loss)
   // is an expense-type account (a loss debits it, a gain credits it — a gain reads as negative
   // expense), Cash (1000) is the settlement contra. computeBooks does NOT fold FX into netProfit (the
@@ -10449,40 +11607,6 @@ app.get('/api/gl/verify', requireAuth, wrap(async (req, res) => {
 // ok | divergent (ledger populated but does NOT tie to computeBooks — an integrity problem) |
 // not_backfilled (books have activity but the ledger is empty — run POST /api/gl/backfill?reset=1).
 // This is the read the scheduled monitor uses; exposed so an owner can self-check any time.
-// ── F207 — CSP violation collector (report-only measurement) ──────────────────────────────────
-// The browser POSTs violations here (report-uri) unauthenticated, so this is public but does nothing
-// except aggregate in memory (capped) — no writes, no side effects. The owner reads the aggregate via
-// GET. Signature = directive|blocked|source so 5,000 identical inline-handler hits collapse to one row.
-const _cspReports = new Map();
-const _CSP_CAP = 800;
-app.post('/api/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '256kb' }), (req, res) => {
-  try {
-    const body = req.body || {};
-    const list = Array.isArray(body) ? body : [body];
-    for (const r of list) {
-      const cr = (r && (r['csp-report'] || r.body)) || r || {};
-      const directive = cr['violated-directive'] || cr.effectiveDirective || cr.violatedDirective || 'unknown';
-      const blocked = cr['blocked-uri'] || cr.blockedURL || cr.blockedUri || '';
-      const _ln = cr['line-number'] != null ? cr['line-number'] : cr.lineNumber;
-      const source = String(cr['source-file'] || cr.sourceFile || '') + (_ln != null ? ':' + _ln : '');
-      const sample = cr['script-sample'] || cr.sample || '';
-      const sig = directive + '|' + blocked + '|' + source;
-      const prev = _cspReports.get(sig);
-      if (prev) prev.count++;
-      else if (_cspReports.size < _CSP_CAP) _cspReports.set(sig, { directive, blocked, source, sample: String(sample).slice(0, 160), count: 1 });
-    }
-  } catch (_) { /* never let a malformed report error */ }
-  res.status(204).end();
-});
-// Owner-only: read the aggregated violations (what a strict CSP would block) + a by-directive summary.
-app.get('/api/csp-report', requireAuth, wrap(async (req, res) => {
-  if (Array.isArray(req.entityAccess)) return res.status(403).json({ error: 'Only the account owner can read CSP reports.', code: 'CSP_OWNER_ONLY' });
-  const rows = [..._cspReports.values()].sort((a, b) => b.count - a.count);
-  const byDirective = {};
-  for (const r of rows) byDirective[r.directive] = (byDirective[r.directive] || 0) + r.count;
-  res.json({ enabled: /^(1|true|yes)$/i.test(process.env.CSP_REPORT_ONLY || ''), total: rows.reduce((s, r) => s + r.count, 0), unique: rows.length, byDirective, rows });
-}));
-
 app.get('/api/gl/reconcile-check', requireAuth, wrap(async (req, res) => {
   if (Array.isArray(req.entityAccess)) return res.status(403).json({ error: 'Only the account owner can run the reconcile check.', code: 'GL_OWNER_ONLY' });
   const { rows: ents } = await pool.query(`SELECT id, data->>'name' AS name FROM entities WHERE user_id=$1 ORDER BY id`, [scopeId(req)]);
@@ -10837,10 +11961,18 @@ async function _runReconcileScan(resend) {
     }
   } catch (e) { console.error('[GL reconcile] scan failed:', e && e.message); captureErr(e); }
 }
+// N72: every scheduled job runs in ONE replica at a time (job-lock.js — a Postgres advisory lock per job); the
+// other replicas skip that tick. They used to run every job in every replica.
+const { runExclusive } = require('./job-lock');
+const _jobs = {
+  recurring: () => runExclusive(pool, 'recurring-scheduler', () => runRecurringScheduler()),
+  fxLive:    () => runExclusive(pool, 'fx-live-refresh', () => refreshLiveFxRates()),
+  reconcile: (resend) => runExclusive(pool, 'gl-reconcile-scan', () => _runReconcileScan(resend)),
+};
 function startReconcileMonitor(resend) {
   const hours = Number(process.env.GL_RECONCILE_INTERVAL_HOURS || 6);
-  setTimeout(() => _runReconcileScan(resend), 60 * 1000);                 // first pass a minute after boot
-  setInterval(() => _runReconcileScan(resend), Math.max(1, hours) * 60 * 60 * 1000);
+  setTimeout(() => _jobs.reconcile(resend).catch(e => captureErr(e)), 60 * 1000);                 // first pass a minute after boot
+  setInterval(() => _jobs.reconcile(resend).catch(e => captureErr(e)), Math.max(1, hours) * 60 * 60 * 1000);
 }
 
 if (require.main === module) {
@@ -10863,14 +11995,15 @@ if (require.main === module) {
       console.log(`  ✦ FinFlow backend running → http://localhost:${PORT}`);
       console.log(`  ✦ Point Lighthouse at:    http://localhost:${PORT}`);
     });
-    // Run scheduler on boot, then every hour
-    runRecurringScheduler();
-    setInterval(runRecurringScheduler, 60 * 60 * 1000);
+    // Run scheduler on boot, then every hour — in one replica at a time (N72).
+    const _logJob = (n) => (e) => { console.error('[' + n + ']', e && e.message); captureErr(e); };
+    _jobs.recurring().catch(_logJob('recurring'));
+    setInterval(() => _jobs.recurring().catch(_logJob('recurring')), 60 * 60 * 1000);
     // FX-live: pull USD-base rates on boot + daily so conversion never depends on hand-entered rates.
-    refreshLiveFxRates();
-    setInterval(refreshLiveFxRates, 24 * 60 * 60 * 1000);
+    _jobs.fxLive().catch(_logJob('fx-live'));
+    setInterval(() => _jobs.fxLive().catch(_logJob('fx-live')), 24 * 60 * 60 * 1000);
     // Security: periodic audit-anomaly scan → email alert (no-op unless SECURITY_ALERT_EMAIL is set)
-    startAnomalyMonitor(pool, resendClient);
+    startAnomalyMonitor(pool, resendClient, { runExclusive: (fn) => runExclusive(pool, 'audit-anomaly-scan', fn) });
     // GL integrity: periodic reconcile scan → Sentry + email alert on any ledger that stops tying to
     // the canonical books (closes the class of silent divergence that hid the empty prod ledger).
     startReconcileMonitor(resendClient);
@@ -10887,6 +12020,7 @@ module.exports.computeBooks = computeBooks;
 module.exports.glFinancials = glFinancials;   // GL Phase 3 — ledger-derived financial statements (test surface)
 module.exports.backfillLedgerForUser = backfillLedgerForUser;   // GL Phase 4 — historical backfill (test surface)
 module.exports.glReconcile = glReconcile;
+module.exports._jobs = _jobs;   // N72 test surface: the replica-exclusive job wrappers
 module.exports.glReconcileScan = glReconcileScan;   // GL safety-net — scan all entities for divergence (test surface)
 module.exports.runMigrations = runMigrations;   // versioned migration runner (test surface)
 module.exports.glProfitLoss = glProfitLoss;   // GL Phase 5b - reconcile-gated P&L read (test surface)
@@ -10905,6 +12039,7 @@ module.exports.annotateResolvedPostDate = annotateResolvedPostDate;   // F94 B2 
 module.exports.normalizeOpeningCash = normalizeOpeningCash;   // F94 B3 — opening-cash validator (test surface)
 // Test hooks: Plaid access-token encryption at rest (assert round-trip + tamper detection).
 module.exports._encTok = encTok;
+module.exports._stripe = () => stripe;   // test surface: the live Stripe client instance (null when unconfigured)
 module.exports._decTok = decTok;
 module.exports.plaidConfigured = plaidConfigured;
 module.exports.finchConfigured = finchConfigured;

@@ -72,13 +72,9 @@
 <script>
 'use strict';
 // ── XSS sanitizer ──────────────────────────────────────────────────
-window.esc = (function(){
-  const d = document.createElement('div');
-  return function(str){
-    d.textContent = String(str == null ? '' : str);
-    return d.innerHTML;
-  };
-})();
+// Escapes & < > " ' — safe in text AND in quoted attribute values (the textContent→innerHTML trick
+// left quotes raw, so esc() inside value="…" / onclick='…' was still injectable).
+window.esc = function(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); };
 
 // ── Input validators ───────────────────────────────────────────────
 window.validateEmail = function(e){
@@ -4290,7 +4286,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Edit inventory item</div><div class="modal-sub">Update product details and stock levels</div></div><button class="modal-close" onclick="closeModal('edit-inv-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"/><line x1="13" y1="1" x2="1" y2="13"/></svg></button></div>
     <div class="field-wrap"><label class="field-label" for="edit-inv-name">Product name *</label><input class="finput" id="edit-inv-name" placeholder="e.g. USB-C Hub"></div>
-    <div class="field-group"><div class="field-wrap"><label class="field-label" for="edit-inv-units">Units in stock</label><input class="finput" id="edit-inv-units" type="number" min="0" placeholder="0"></div><div class="field-wrap"><label class="field-label" for="edit-inv-cost">Unit cost ($)</label><input class="finput" id="edit-inv-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
+    <div class="field-group"><div class="field-wrap"><label class="field-label" for="edit-inv-units">Units in stock</label><input class="finput" id="edit-inv-units" type="number" min="0" placeholder="0" readonly title="Use Stock In, Stock Out or Restock to change stock"></div><div class="field-wrap"><label class="field-label" for="edit-inv-cost">Unit cost ($)</label><input class="finput" id="edit-inv-cost" type="number" min="0" step="0.01" placeholder="0.00"></div></div>
     <div class="field-wrap"><label class="field-label" for="edit-inv-max">Reorder level (max units)</label><input class="finput" id="edit-inv-max" type="number" min="1" placeholder="200"></div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('edit-inv-modal')">Cancel</button><button class="btn btn-primary" onclick="saveEditInv()">Save changes</button></div>
   </div>
@@ -6836,14 +6832,18 @@ async function submitPayrollRun(){
 
 async function approvePayrollRun(id){
   try{
-    await fetch('/api/payroll-runs/'+id+'/approve',{method:'PUT',credentials:'include'});
+    const res=await fetch('/api/payroll-runs/'+id+'/approve',{method:'PUT',credentials:'include'});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok){notify('⚠ '+(d.error||'Could not approve'),true);loadPayrollRuns();return;}   // N58: surface the server's refusal, never a fake ✓
     notify('✓ Payroll approved');
     loadPayrollRuns();
   }catch(e){notify('Could not approve',true);}
 }
 async function markPayrollPaid(id){
   try{
-    await fetch('/api/payroll-runs/'+id+'/mark-paid',{method:'PUT',credentials:'include'});
+    const res=await fetch('/api/payroll-runs/'+id+'/mark-paid',{method:'PUT',credentials:'include'});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok){notify('⚠ '+(d.error||'Could not update'),true);loadPayrollRuns();return;}   // N58: e.g. "Approve this payroll run before marking it paid."
     notify('✓ Payroll marked paid');
     loadPayrollRuns();
   }catch(e){notify('Could not update',true);}
@@ -6876,7 +6876,7 @@ async function voidPayrollRun(id){
 let _stockInIdx=null,_stockOutIdx=null;
 function openStockInModal(idx){
   _stockInIdx=idx;
-  const item=(inventory||[])[idx];
+  const item=(window.inventory||[])[idx];
   const sub=document.getElementById('si-sub');
   if(sub&&item)sub.textContent='Stock in for '+esc(item.name||'');
   const idxEl=document.getElementById('si-item-idx');
@@ -6887,7 +6887,7 @@ function openStockInModal(idx){
 }
 function openStockOutModal(idx){
   _stockOutIdx=idx;
-  const item=(inventory||[])[idx];
+  const item=(window.inventory||[])[idx];
   const sub=document.getElementById('so-sub');
   if(sub&&item)sub.textContent='Stock out for '+esc(item.name||'');
   const idxEl=document.getElementById('so-item-idx');
@@ -6906,8 +6906,11 @@ async function submitStockIn(){
   if(isNaN(idx)||idx<0){notify('Invalid item',true);return;}
   if(!qty||qty<=0){notify('Enter a valid quantity',true);return;}
   if(!cost||cost<0){notify('Enter a valid unit cost',true);return;}
-  const item=(inventory||[])[idx];
+  const item=(window.inventory||[])[idx];
   if(!item){notify('Item not found',true);return;}
+  // N110: the item's DATABASE id. This sent item.dbId||idx — items carry _dbId, so the array INDEX went
+  // out as inventory_id and the movement landed on whichever item had that id (or 400 for index 0).
+  if(!item._dbId){notify('Save this item before recording stock against it',true);return;}
   if(window._savingStockIn) return;   // C1 Wave 1b: in-flight re-entry lock
   if(!window._stockInIdemKey) window._stockInIdemKey=(window.crypto?.randomUUID?window.crypto.randomUUID():'sin-'+Date.now()+'-'+Math.random().toString(36).slice(2));
   window._savingStockIn=true;
@@ -6917,7 +6920,7 @@ async function submitStockIn(){
     const res=await fetch('/api/inventory-movements',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item.dbId||idx,type:'purchase',quantity:qty,unit_cost:cost,notes,idempotency_key:window._stockInIdemKey}),
+      body:JSON.stringify({inventory_id:item._dbId,type:'purchase',quantity:qty,unit_cost:cost,notes,idempotency_key:window._stockInIdemKey}),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
@@ -6938,8 +6941,9 @@ async function submitStockOut(){
   const ref=document.getElementById('so-ref')?.value||'';
   if(isNaN(idx)||idx<0){notify('Invalid item',true);return;}
   if(!qty||qty<=0){notify('Enter a valid quantity',true);return;}
-  const item=(inventory||[])[idx];
+  const item=(window.inventory||[])[idx];
   if(!item){notify('Item not found',true);return;}
+  if(!item._dbId){notify('Save this item before recording stock against it',true);return;}   // N110
   if(qty>item.units){notify('Quantity exceeds stock on hand',true);return;}
   if(window._savingStockOut) return;   // C1 Wave 1b: in-flight re-entry lock — a double-clicked sale can't double-consume FIFO
   if(!window._stockOutIdemKey) window._stockOutIdemKey=(window.crypto?.randomUUID?window.crypto.randomUUID():'sout-'+Date.now()+'-'+Math.random().toString(36).slice(2));
@@ -6950,7 +6954,7 @@ async function submitStockOut(){
     const cogsRes=await fetch('/api/cogs/calculate',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item.dbId||idx,quantity_sold:qty}),
+      body:JSON.stringify({inventory_id:item._dbId,quantity:qty}),   // N111: the server reads `quantity` (was quantity_sold → 400 → preview 0)
     });
     const cogsData=await cogsRes.json();
     const cogs=cogsData.cogs||0;
@@ -6962,7 +6966,7 @@ async function submitStockOut(){
     const res=await fetch('/api/inventory-movements',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item.dbId||idx,type:'sale',quantity:qty,unit_cost:cogs/qty,reference:ref,idempotency_key:window._stockOutIdemKey}),
+      body:JSON.stringify({inventory_id:item._dbId,type:'sale',quantity:qty,unit_cost:cogs/qty,reference:ref,idempotency_key:window._stockOutIdemKey}),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
@@ -9525,9 +9529,8 @@ document.addEventListener('click', e=>{
           <option>Software</option><option>Infrastructure</option><option>Rent</option><option>Payments</option><option>Shipping</option><option>Marketing</option><option>Other</option>
         </select>
       </div>
-      <div class="field-wrap"><label class="field-label" for="vendor-owing">Amount Owing ($)</label><input class="finput" id="vendor-owing" type="number" placeholder="0" value="0"></div>
     </div>
-    <div class="field-wrap"><label class="field-label" for="vendor-ytd">YTD Paid ($)</label><input class="finput" id="vendor-ytd" type="number" placeholder="0" value="0"></div>
+    <div style="font-size:11px;color:var(--t3);margin:-4px 0 10px">Amount owing and paid this year are worked out from this vendor's bills and payments.</div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="document.getElementById('vendor-modal').classList.add('hidden')">Cancel</button>
       <button class="btn btn-primary ff-save-btn" onclick="saveVendor()">Save vendor →</button>
@@ -10034,10 +10037,10 @@ window.filterAccountants = function() {
     return `
     <div class="card" style="padding:1.25rem;cursor:pointer;transition:border-color .2s" onmouseenter="this.style.borderColor='var(--acc2)'" onmouseleave="this.style.borderColor='var(--bd)'">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <div style="width:40px;height:40px;border-radius:10px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex-shrink:0">${initials}</div>
+        <div style="width:40px;height:40px;border-radius:10px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex-shrink:0">${esc(initials)}</div>
         <div style="min-width:0">
-          <div style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.first_name} ${a.last_name}</div>
-          <div style="font-size:11px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.firm || ''}</div>
+          <div style="font-size:13px;font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.first_name)} ${esc(a.last_name)}</div>
+          <div style="font-size:11px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.firm || '')}</div>
         </div>
         <span style="margin-left:auto;font-size:9px;background:var(--green-bg,#0d1f15);color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,0.3);border-radius:4px;padding:2px 6px;flex-shrink:0">✓ Verified</span>
       </div>
@@ -10045,7 +10048,7 @@ window.filterAccountants = function() {
         <span style="color:${starsColor};font-size:13px;letter-spacing:1px">${stars}</span>
         <span style="font-size:11px;color:var(--t3)">${rating > 0 ? rating.toFixed(1) + ' · ' + reviewCount + ' review' + (reviewCount !== 1 ? 's' : '') : 'No reviews yet'}</span>
       </div>
-      <div style="font-size:11px;color:var(--t3);margin-bottom:6px">📍 ${a.country || 'N/A'} &nbsp;·&nbsp; ${a.specialisation || 'General'}</div>
+      <div style="font-size:11px;color:var(--t3);margin-bottom:6px">📍 ${esc(a.country || 'N/A')} &nbsp;·&nbsp; ${esc(a.specialisation || 'General')}</div>
       <div style="font-size:11px;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px">
         ${a.stripe_onboarded ? '<span style="background:rgba(74,156,109,0.1);color:#4a9c6d;border:1px solid rgba(74,156,109,0.25);border-radius:4px;padding:2px 7px;font-size:10px">🛡 FinFlow Protected</span>' : ''}
         ${a.confirmed_credentials ? '<span style="background:rgba(74,156,109,0.12);color:#4a9c6d;border:1px solid rgba(74,156,109,0.35);border-radius:4px;padding:2px 7px;font-size:10px">✓ '+esc(a.confirmed_credentials)+' · verified by FinFlow</span>' : ''}
@@ -10058,9 +10061,9 @@ window.filterAccountants = function() {
       <div style="display:flex;gap:8px">
         ${linkedAccountant && linkedAccountant.id === a.id
           ? `<button class="btn btn-outline" style="flex:1;justify-content:center;font-size:12px;padding:7px;opacity:0.7;cursor:default" disabled>${linkedAccountant.status === 'pending' ? '⏳ Pending approval' : '✓ Linked'}</button>`
-          : `<button class="btn btn-primary" style="flex:1;justify-content:center;font-size:12px;padding:7px" onclick="requestAccountant(${a.id},'${a.first_name} ${a.last_name}')">Request access</button>`
+          : `<button class="btn btn-primary" style="flex:1;justify-content:center;font-size:12px;padding:7px" data-name="${esc((a.first_name||'') + ' ' + (a.last_name||''))}" onclick="requestAccountant(${Number(a.id)}, this.dataset.name)">Request access</button>`
         }
-        <button class="btn btn-ghost" style="font-size:12px;padding:7px;color:var(--t3)" onclick="event.stopPropagation();reportAccountant(${a.id},'${a.first_name} ${a.last_name}')" title="Report">⚑</button>
+        <button class="btn btn-ghost" style="font-size:12px;padding:7px;color:var(--t3)" data-name="${esc((a.first_name||'') + ' ' + (a.last_name||''))}" onclick="event.stopPropagation();reportAccountant(${Number(a.id)}, this.dataset.name)" title="Report">⚑</button>
       </div>
     </div>`;
   }).join('');
@@ -10096,13 +10099,17 @@ function renderLinkedAccountant() {
   if (a.status === 'pending') {
     content.innerHTML = `
       <div class="card" style="padding:1.25rem;display:flex;align-items:center;gap:14px;border-color:rgba(196,138,42,0.4)">
-        <div style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${initials}</div>
+        <div style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${esc(initials)}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:500;color:var(--t1)">${a.first_name} ${a.last_name}</div>
-          <div style="font-size:12px;color:var(--t3)">${a.firm || ''} &nbsp;·&nbsp; ${a.country || ''}</div>
-          <div style="font-size:12px;color:var(--t3);margin-top:2px">Your request is awaiting approval from this accountant.</div>
+          <div style="font-size:14px;font-weight:500;color:var(--t1)">${esc(a.first_name)} ${esc(a.last_name)}</div>
+          <div style="font-size:12px;color:var(--t3)">${esc(a.firm || '')} &nbsp;·&nbsp; ${esc(a.country || '')}</div>
+          <div style="font-size:12px;color:var(--t3);margin-top:2px">${a.requested_by === 'client'
+            ? 'Your request is awaiting approval from this accountant.'
+            : 'You joined through this accountant\'s referral link. They can see your books only if you approve.'}</div>
         </div>
-        <span style="font-size:10px;background:rgba(196,138,42,0.12);color:var(--amber,#c8a44a);border:1px solid rgba(196,138,42,0.35);border-radius:4px;padding:3px 8px;flex-shrink:0">⏳ Pending</span>
+        ${a.requested_by === 'client'
+          ? '<span style="font-size:10px;background:rgba(196,138,42,0.12);color:var(--amber,#c8a44a);border:1px solid rgba(196,138,42,0.35);border-radius:4px;padding:3px 8px;flex-shrink:0">⏳ Pending</span>'
+          : `<div style="display:flex;gap:6px;flex-shrink:0"><button class="btn btn-gold btn-sm" onclick="respondReferralLink(${Number(a.id)}, true, this)">Approve access</button><button class="btn btn-sm" onclick="respondReferralLink(${Number(a.id)}, false, this)">Decline</button></div>`}
       </div>`;
     if (access) access.style.display = 'none';
     return;
@@ -10110,11 +10117,11 @@ function renderLinkedAccountant() {
 
   content.innerHTML = `
     <div class="card" style="padding:1.25rem;display:flex;align-items:center;gap:14px">
-      <div style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${initials}</div>
+      <div style="width:48px;height:48px;border-radius:12px;background:${col}22;color:${col};border:1px solid ${col}44;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">${esc(initials)}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:500;color:var(--t1)">${a.first_name} ${a.last_name}</div>
-        <div style="font-size:12px;color:var(--t3)">${a.firm || ''} &nbsp;·&nbsp; ${a.country || ''}</div>
-        <div style="font-size:12px;color:var(--t3);margin-top:2px">${a.specialisation || ''} &nbsp;·&nbsp; ${a.experience || ''}</div>
+        <div style="font-size:14px;font-weight:500;color:var(--t1)">${esc(a.first_name)} ${esc(a.last_name)}</div>
+        <div style="font-size:12px;color:var(--t3)">${esc(a.firm || '')} &nbsp;·&nbsp; ${esc(a.country || '')}</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:2px">${esc(a.specialisation || '')} &nbsp;·&nbsp; ${esc(a.experience || '')}</div>
       </div>
       <span style="font-size:10px;background:var(--green-bg,#0d1f15);color:var(--green,#4a9c6d);border:1px solid rgba(74,156,109,0.3);border-radius:4px;padding:3px 8px;flex-shrink:0">✓ Linked</span>
     </div>`;
@@ -10128,6 +10135,25 @@ function renderLinkedAccountant() {
   const onPage = document.getElementById('page-my-accountant')?.classList.contains('active');
   if (onPage && typeof window.loadAccountantMessages === 'function') window.loadAccountantMessages();
 }
+
+// N78: a referral link (the user signed up through an accountant's link) grants books access only when
+// the CLIENT approves it here; declining removes the pending link.
+window.respondReferralLink = async function (accountantId, approve, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/accountants/my-accountant/' + (approve ? 'approve' : 'decline'), {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountantId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) { if (typeof notify === 'function') notify(data.error || 'Could not update the accountant link', true); if (btn) btn.disabled = false; return; }
+    if (typeof notify === 'function') notify(approve ? 'Accountant access approved ✓' : 'Referral link declined');
+    linkedAccountant = null;
+    const content = document.getElementById('my-acc-content');
+    if (!approve && content) content.innerHTML = '';
+    await loadMyAccountant();
+  } catch (e) { if (typeof notify === 'function') notify('Could not update the accountant link', true); if (btn) btn.disabled = false; }
+};
 
 // ── ACCOUNTANT CHAT — real-time (SSE), read receipts, typing, poll fallback ──
 // Uses the hub-backed endpoints under /api/accountants/my-accountant/* (server-scoped to the
@@ -10239,7 +10265,7 @@ window.toggleTask = async function(id, currentlyDone, btn) {
 };
 
 // ── ENGAGEMENT PROPOSALS (client view) ──────────────────────────────────────
-const _fmtFee = (cents, cur) => { const n = (Number(cents)||0)/100; return (cur||'USD') + ' ' + n.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2}); };
+const _fmtFee = (cents, cur) => { const n = (Number(cents)||0)/100; return esc(cur||'USD') + ' ' + n.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2}); };
 window.loadMyProposals = async function() {
   const el = document.getElementById('acct-proposals'); if (!el) return;
   try {
@@ -10393,7 +10419,7 @@ window.requestAccountant = async function(accountantId, name) {
     if (data.success) {
       if(typeof notify==='function') notify(`✓ Request sent to ${name}`);
       else alert('Request sent successfully!');
-      linkedAccountant = { id: accountantId, status: 'pending', first_name: name.split(' ')[0], last_name: name.split(' ').slice(1).join(' ') };
+      linkedAccountant = { id: accountantId, status: 'pending', requested_by: 'client', first_name: name.split(' ')[0], last_name: name.split(' ').slice(1).join(' ') };
       filterAccountants();
       showPage('my-accountant', null);
       setTimeout(loadMyAccountant, 300);
@@ -10428,14 +10454,28 @@ window.loadMyAccess = async function() {
     if (list) {
       const rows = (d.accounts || []).map(a => {
         const label = a.isOwn ? 'Your own account' : (a.ownerName || a.ownerEmail || ('Account #' + a.accountOwnerId));
-        const cur = (a.accountOwnerId === d.currentAccountId) ? ' <span style="color:var(--acc,#c9a84c)">· currently viewing</span>' : '';
-        return `<div style="padding:8px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span>${E(label)}${cur}</span><span style="color:var(--t3);font-size:11px;text-transform:capitalize">${E(a.role)}</span></div>`;
+        const isCur = a.accountOwnerId === d.currentAccountId;
+        const cur = isCur ? ' <span style="color:var(--acc,#c9a84c)">· currently viewing</span>' : '';
+        // N36: switch accounts (own books ↔ accounts you were invited into).
+        const sw = isCur ? '' : `<button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:11px;padding:3px 8px" onclick="switchAccount(${Number(a.accountOwnerId)}, this)">Switch</button>`;
+        return `<div style="padding:8px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span>${E(label)}${cur}</span><span style="display:flex;align-items:center"><span style="color:var(--t3);font-size:11px;text-transform:capitalize">${E(a.role)}</span>${sw}</span></div>`;
       });
       list.innerHTML = rows.join('') || '<div style="color:var(--t3)">Just your own account.</div>';
     }
   } catch (e) { /* not logged in / no access — leave defaults */ }
 };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.loadMyAccess()); else window.loadMyAccess();
+// N36: move this session into another account the login can access, then reload so every page,
+// cache and entity list is rebuilt for that account.
+window.switchAccount = async function(accountOwnerId, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/my-access/switch', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountOwnerId }) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { if (typeof notify === 'function') notify(d.error || 'Could not switch account', true); if (btn) btn.disabled = false; return; }
+    window.location.reload();
+  } catch (e) { if (typeof notify === 'function') notify('Could not switch account', true); if (btn) btn.disabled = false; }
+};
 
 window.updateAccPermission = async function(type, val) {
   // The owner chooses their accountant's level: view = review the books (read-only),

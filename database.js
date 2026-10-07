@@ -13,7 +13,13 @@
  *   DATABASE_URL  — postgres connection string
  */
 
-const { Pool } = require('pg');
+const { Pool, types: _pgTypes } = require('pg');
+// N107 (Rule 10): a Postgres DATE (payment_date, run_date, rate_date, entry_date, due_date, …) is a calendar
+// date. node-pg's default parses it into a JS Date at the SERVER's local midnight; FinFlowDates._toYmd then
+// formats that in UTC, so on a server east of UTC every DATE read one day early (a 1 July payment showed in
+// June's cash flow and reached the client as "2026-06-30T15:00:00.000Z"). Keep it the 'YYYY-MM-DD' string it
+// is. OID 1082 = DATE. Process-wide: every pool/client from this pg module reads DATE the same way.
+_pgTypes.setTypeParser(1082, v => v);
 const fs = require('fs');
 const path = require('path');
 
@@ -107,46 +113,12 @@ async function initDB() {
     await client.query(`ALTER TABLE holdings ADD COLUMN IF NOT EXISTS entity_id INTEGER`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_holdings_entity_id ON holdings(entity_id)`);
 
-    // F48 follow-up — AR is now arithmetic: Σ max(0, amount − amount_paid) over ALL recognized
-    // invoices (the status!=='paid' filter was dropped, mirroring AP). Before this, invoices could be
-    // marked 'paid' with amount_paid 0/NULL (bare status flip), so those rows must be backfilled to
-    // amount_paid = amount or they'd resurrect as AR the instant the filter drops. Atomic-with-deploy
-    // for ALL users (no standalone script → no AR-flip-before-script sequencing hazard).
-    //
-    // NOTE: invoices is a generic JSONB table — amount/amount_paid/status live in `data`, NOT typed
-    // columns, so this is a jsonb_set (a typed-column ALTER/UPDATE would throw "column does not
-    // exist" and abort initDB). NULL-safe: guards jsonb_typeof(data->'amount')='number' and copies
-    // the amount JSON number straight into amount_paid, so a paid row with a NULL/absent amount_paid
-    // (invisible to a naive amount_paid < amount) is still backfilled. Idempotent: the WHERE clause
-    // makes a re-run over already-backfilled rows a no-op.
-    await client.query(`
-      UPDATE invoices
-         SET data = jsonb_set(data, '{amount_paid}', data->'amount')
-       WHERE lower(data->>'status') = 'paid'
-         AND jsonb_typeof(data->'amount') = 'number'
-         AND COALESCE((data->>'amount_paid')::numeric, 0) < (data->>'amount')::numeric
-    `);
-
-    // F135 — the symmetric AP backfill for BILLS. F135 fixed the create/edit path going forward
-    // (server.js POST/PUT /api/bills: status='paid' ⇒ amount_paid = amount); this heals the EXISTING
-    // rows that were marked 'paid' with amount_paid NULL/0, which the AP leg counts at FULL FACE
-    // (AP = Σ max(0, amount − amount_paid), server.js:3589) — so a paid bill still shows as owed.
-    // Unlike invoices there was NO bills backfill before, so these rows never self-healed. Owner-gated
-    // (separate commit, explicit approval). SAME shape as the invoices backfill above: bills is a
-    // generic JSONB table (amount/amount_paid/status in `data`), so this is a NULL-safe jsonb_set,
-    // guarded on jsonb_typeof(data->'amount')='number'. It ONLY touches 'paid' bills whose amount_paid
-    // is below amount — a genuinely part-paid bill is status 'partial' (recalcBillStatus), so it is NOT
-    // matched and its amount_paid is preserved. Idempotent: the WHERE clause makes a re-run a no-op.
-    // Read-only pre-check the owner can run first: SELECT id, data->>'vendor', data->>'amount',
-    //   data->>'amount_paid' FROM bills WHERE lower(data->>'status')='paid'
-    //   AND COALESCE((data->>'amount_paid')::numeric,0) < (data->>'amount')::numeric;
-    await client.query(`
-      UPDATE bills
-         SET data = jsonb_set(data, '{amount_paid}', data->'amount')
-       WHERE lower(data->>'status') = 'paid'
-         AND jsonb_typeof(data->'amount') = 'number'
-         AND COALESCE((data->>'amount_paid')::numeric, 0) < (data->>'amount')::numeric
-    `);
+    // N90 (Rule 8): the F48 / F135 'paid ⇒ amount_paid = amount' backfills for invoices and bills USED to run
+    // here on EVERY boot — a money-data change inside the boot path, re-applied without approval each deploy,
+    // and (since N11) the wrong shape: it stamped amount_paid with no invoice_payment / payment row behind it,
+    // so the cash never reached cash-flow or the ledger. Removed. scripts/report-paid-without-payment.js is
+    // the READ-ONLY instrument that lists any such rows for an owner decision; a correction, if approved, is a
+    // separate owner-gated step (settle through the real payment writers).
 
     // F117 / C1 — durable idempotency backstop for POST /api/invoices. invoices is a generic
     // JSONB table with NO natural key (two identical $2000 invoices are legitimate re-invoicing),
@@ -376,6 +348,12 @@ async function initDB() {
     // O(1) to update and to compare (F-chat).
     await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS accountant_last_read TIMESTAMPTZ`);
     await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS client_last_read      TIMESTAMPTZ`);
+    // N78: who started a PENDING link — 'client' (request-access: the client asked) or 'referral'
+    // (signed up through the accountant's ?ref link: the client never asked for books access). An
+    // accountant may only approve a client-initiated request; a referral link becomes active only when
+    // the CLIENT approves it. NULL = created before this column existed (origin unknown) — treated like
+    // a referral (client approval required), the conservative reading. No existing row is modified.
+    await client.query(`ALTER TABLE accountant_clients ADD COLUMN IF NOT EXISTS requested_by VARCHAR(20)`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS accountant_earnings (
@@ -907,7 +885,7 @@ async function initDB() {
           'recurring_bills','recurring_invoices','recurring_personal_transactions','quotes','projects','timesheet',
           'budget_targets','documents','templates','autocat_rules','invoice_payments',
           'bank_reconciliation','inventory_movements','fx_rates','fx_transactions','goals',
-          'personal_transactions','lock_settings','team_members','audit_trail',
+          'personal_transactions','lock_settings','team_members',
           'user_settings','personal_accounts','snapshots'
         ];
         uid_only text[] := ARRAY['entities','ai_cache','ai_usage','password_resets','accountants'];
@@ -942,6 +920,13 @@ async function initDB() {
         END LOOP;
       END $fk$;
     `);
+    // N18: the audit trail is append-only (audit_trail_no_mutate) and must OUTLIVE its subjects. A
+    // user_id / entity_id FK with ON DELETE CASCADE turned every account or entity delete into a DELETE
+    // on audit_trail, which the immutability trigger refuses — so deleting an account always failed
+    // (after the old non-transactional loop had already erased the books). Schema change only: the
+    // columns and every row stay as they are.
+    await client.query(`ALTER TABLE audit_trail DROP CONSTRAINT IF EXISTS fk_audit_trail_user`);
+    await client.query(`ALTER TABLE audit_trail DROP CONSTRAINT IF EXISTS fk_audit_trail_entity`);
 
     // ── F79: STATUS VALUE-DOMAIN CONSTRAINTS (money tables) ──────────────────────
     // The DB-level backstop to the app-layer validation in server.js. Case-insensitive (lower())
@@ -1042,12 +1027,24 @@ async function initDB() {
     `CREATE INDEX IF NOT EXISTS idx_fx_transactions_user   ON fx_transactions(user_id, entity_id)`,
     `CREATE INDEX IF NOT EXISTS idx_users_email ON users((data->>'email'))`,
     `CREATE INDEX IF NOT EXISTS idx_users_email_ci ON users(lower(data->>'email'))`,
+    // N91: one account per email (case-insensitive) — the database backstop behind createUserUnique.
+    // If duplicate emails already exist this CREATE fails and is reported below; existing rows are never
+    // modified here (Rule 8: cleanup is a separate, owner-approved step).
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_ci_uniq ON users(lower(data->>'email')) WHERE data->>'email' IS NOT NULL`,
     `CREATE INDEX IF NOT EXISTS idx_pwd_resets_token ON password_resets((data->>'token'))`,
     `CREATE INDEX IF NOT EXISTS idx_user_settings_user_key ON user_settings(user_id, (data->>'key'))`,
     `CREATE INDEX IF NOT EXISTS idx_lock_settings_user ON lock_settings(user_id)`,
   ]) {
     try { await pool.query(idxSQL); }
-    catch (e) { console.warn('[DB] Index skipped:', e.message.slice(0, 80)); }
+    catch (e) {
+      console.warn('[DB] Index skipped:', e.message.slice(0, 80));
+      if (/idx_users_email_ci_uniq/.test(idxSQL)) {
+        try {
+          const { rows } = await pool.query(`SELECT lower(data->>'email') AS email, COUNT(*)::int AS n FROM users WHERE data->>'email' IS NOT NULL GROUP BY 1 HAVING COUNT(*) > 1 ORDER BY 2 DESC LIMIT 20`);
+          console.error('[DB] N91: users share an email — unique index NOT enforced until resolved (owner decision):', JSON.stringify(rows));
+        } catch (_) {}
+      }
+    }
   }
 
   // platform_fees: internal 4% revenue ledger (moved out of the Stripe webhook hot path).
@@ -1160,7 +1157,8 @@ const ENTITY_REQUIRED_TABLES = new Set([
 
 const db = {
 
-  async insert(table, row) {
+  // `client` (optional): run the INSERT on a given connection — e.g. inside a caller's transaction (N57b).
+  async insert(table, row, client = pool) {
     const { user_id = null, entity_id = null, ...rest } = row;
     if (entity_id == null && ENTITY_REQUIRED_TABLES.has(table)) {
       const e = new Error('No active business entity. Create or select a business entity first.');
@@ -1168,7 +1166,7 @@ const db = {
       throw e;
     }
     const data = objToData(rest);
-    const doInsert = () => pool.query(
+    const doInsert = () => client.query(
       `INSERT INTO ${table} (user_id, entity_id, data)
        VALUES ($1, $2, $3)
        RETURNING *`,
@@ -1250,14 +1248,13 @@ const db = {
 
   // updateById() — fastest single-row update
   async updateById(table, id, patch) {
-    const res = await pool.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
-    if (!res.rows[0]) return;
-    const row = rowToObj(res.rows[0]);
-    const { user_id, entity_id, ...rest } = row;
-    const newData = { ...objToData(rest), ...objToData(patch) };
+    // N92: merge IN THE DATABASE, atomically (data || patch). This read the whole row, merged in JS and wrote the
+    // whole document back, so two concurrent updates to DIFFERENT fields of the same row (e.g. recalcInvoiceStatus
+    // writing status/amount_paid while a PUT writes notes) lost one of them — last writer wins on every field.
+    // Keys whose value is undefined are not part of the patch (as before, they never reached JSON).
     await pool.query(
-      `UPDATE ${table} SET data=$1, updated_at=NOW() WHERE id=$2`,
-      [newData, id]
+      `UPDATE ${table} SET data = COALESCE(data, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2`,
+      [JSON.stringify(objToData(patch)), id]
     );
   },
 

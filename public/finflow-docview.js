@@ -18,7 +18,7 @@
 
   var SYM = { USD:'$', CAD:'C$', EUR:'€', GBP:'£', TTD:'TT$', AUD:'A$', NGN:'₦', ZAR:'R', BRL:'R$', MXN:'MX$', INR:'₹', JPY:'¥' };
   function sym(cur){ return SYM[cur] || (cur ? cur + ' ' : '$'); }
-  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function money(n, cur){ var v = (parseFloat(n) || 0); return sym(cur) + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function $(id){ return document.getElementById(id); }
   function val(id){ var el = $(id); return el && el.value != null ? String(el.value).trim() : ''; }

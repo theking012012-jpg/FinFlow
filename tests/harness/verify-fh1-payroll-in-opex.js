@@ -82,7 +82,9 @@ const OWNER = { email: 'fh1-owner@finflow.test', password: 'harness-password-not
 
     const srv = fs.readFileSync(path.join(process.cwd(), 'server.js'), 'utf8');
     AS('server _payDate uses FinFlowDates.payrollPeriodYmd', /_payDate = l => FinFlowDates\.payrollPeriodYmd/.test(srv));
-    AS('server monthly chart uses payrollPeriodYmd', /bump\(FinFlowDates\.payrollPeriodYmd\(l\.period/.test(srv));
+    // N41: the monthly rows are now the canonical engine per month (no second implementation to grep), so the
+    // check is EXECUTED: Σ monthly expenses == the dashboard's expenses (7100, payroll included).
+    A('P&L monthly rows Σ expenses == /api/reports expenses (7100) — payroll in the rows', Math.round(plRows.reduce((t, r) => t + (Number(r.expenses) || 0), 0) * 100) / 100 === Number(rep.expenses), 'Σ=' + plRows.reduce((t, r) => t + (Number(r.expenses) || 0), 0));
     const am = fs.readFileSync(path.join(process.cwd(), 'public', 'app-main.js'), 'utf8');
     AS('client computeExpenseBreakdown uses payrollPeriodYmd', /payrollPeriodYmd\(r\.period, r\.run_date\)/.test(am));
     AS('no stale period.slice(0,7) payroll parse remains (server)', !/period\)\.slice\(0, 7\) \+ '-01'/.test(srv));

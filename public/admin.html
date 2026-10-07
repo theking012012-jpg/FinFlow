@@ -746,7 +746,7 @@ td.amber{color:var(--amber)}
 
 <script>
 // ── SECURITY ──────────────────────────────────────────────────────────────────
-function esc(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let currentModal = null;
@@ -776,7 +776,6 @@ async function adminLogin() {
     if (data.error) {
       if (data.mfaRequired) { const o=document.getElementById('admin-otp'); o.style.display=''; o.focus(); }
       err.textContent = data.error;
-      fetch('/api/admin/log-security', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'failed_login', notes:'Failed attempt' }) }).catch(()=>{});
       return;
     }
     document.getElementById('login-screen').style.display = 'none';
@@ -1263,6 +1262,7 @@ function renderUsers(data, search='') {
           <option value="trial" ${(u.plan||'trial')==='trial'?'selected':''}>Trial</option>
           <option value="pro" ${u.plan==='pro'?'selected':''}>Pro</option>
           <option value="business" ${u.plan==='business'?'selected':''}>Business</option>
+          <option value="scale" ${u.plan==='scale'?'selected':''}>Scale</option>
         </select>
         <button class="action-btn" onclick="event.stopPropagation();setPlan(${u.id})">Save</button>
       </td>

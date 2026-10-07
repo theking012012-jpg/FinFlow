@@ -9,7 +9,7 @@
  *   node -r ./tests/harness/clock.js tests/harness/verify-timesheet-entity-scope.js
  */
 require('./clock.js');
-const fs=require('fs'); const path=require('path');
+ 
 const bcrypt=require('bcryptjs');
 const { startScratchPostgres }=require('./pgScratch.js');
 const { bootServer }=require('./boot.js');
@@ -40,10 +40,9 @@ const OWNER={ email:'ts-owner@finflow.test', password:'harness-password-not-a-se
     const row=(await c.query(`SELECT entity_id FROM timesheet WHERE data->>'employee'=$1`,['NEW-under-A'])).rows[0];
     A('new entry tags to the active entity (A)', row && row.entity_id===eidA, JSON.stringify(row));
 
-    // STRUCTURAL: switchEntity must refetch timesheet on switch (cache would otherwise stay stale)
-    const ix=fs.readFileSync(path.join(__dirname,'..','..','public','index.html'),'utf8');
-    const seBody=ix.slice(ix.indexOf('window.switchEntity=async function'), ix.indexOf('window.switchEntity=async function')+6000);
-    A('[STRUCTURAL] switchEntity reload set refetches timesheet (_loadTimesheetFromDB)', /_loadTimesheetFromDB/.test(seBody), 'not found in switchEntity body');
+    // The switch-reload half is EXECUTED in verify-timesheet-switch-reload.js (real switchEntity in jsdom).
+    // The old [STRUCTURAL] check here read a fixed 6000-char slice of switchEntity's source and went red
+    // when the function grew, although the reload was intact (Rule 5: assert executed values).
 
     console.log(`\n  ${fail===0?'ALL GREEN':fail+' FAILED'} — ${pass} passed, ${fail} failed  (timesheet entity-scoped)\n`);
   }catch(e){ console.error('\n  FATAL:',e&&e.stack||e); fail++; }

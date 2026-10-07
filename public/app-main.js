@@ -3968,7 +3968,9 @@ async function savePersonalSalary(){
     let existingId=null;
     try{
       const chk=await fetch('/api/personal-salary',{credentials:'include'});
-      if(chk.ok){const chkRows=await chk.json();if(chkRows.length>0)existingId=chkRows[0].id;}
+      // N60: the owner's salary row is PER BUSINESS — update THIS entity's row only. It used to take
+      // chkRows[0] (any entity), so saving entity B's salary overwrote entity A's owner payroll row.
+      if(chk.ok){const chkRows=await chk.json();const _eid=entity?._dbId??null;const _mine=chkRows.find(r=>(r.entity_id??null)===_eid);if(_mine)existingId=_mine.id;}
     }catch(_){}
     let saved;
     if(existingId){
@@ -5940,11 +5942,14 @@ async function saveLockSettings(){
   const pw=document.getElementById('lock-password').value;
   const enabled=document.getElementById('lock-enabled').checked;
   try {
-    await fetch('/api/lock-settings',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({enabled,lock_date:d,password:pw||undefined})});
+    const res=await fetch('/api/lock-settings',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({enabled,lock_date:d,password:pw||undefined})});
+    // N19: show the server's refusal (e.g. a password-protected lock) instead of a false "saved".
+    if(!res.ok){ const e=await res.json().catch(()=>({})); notify(e.error||'Failed to save lock settings', true); renderLockHistory(); return; }
     if(enabled&&d) document.getElementById('lock-date-display').textContent=new Date(d+' 00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+    const pwEl=document.getElementById('lock-password'); if(pwEl) pwEl.value='';
     notify('Lock settings saved ✦');
     renderLockHistory();
-  } catch(e){ notify('Failed to save lock settings'); }
+  } catch(e){ notify('Failed to save lock settings', true); }
 }
 
 // ════════════════════════════════════════════

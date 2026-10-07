@@ -46,6 +46,14 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     // ── 1 · the scoped-session banner is shown and names the account being operated in ──
     const banner = w.document.getElementById('scoped-banner');
     A('#scoped-banner exists in the DOM', !!banner);
+    // N36: this login has books of its own, so by default it works in its OWN account (banner hidden);
+    // it reaches Owner B's account by switching. (Before N36 every request was forced into B.)
+    A('default: a login with its own books works in its own account (banner hidden)', banner && banner.style.display !== 'block',
+      `display=${banner && banner.style.display}`);
+    const _acc0 = await (await w.fetch('/api/my-access', { credentials: 'include' })).json();
+    const _b = (_acc0.accounts || []).find(a => !a.isOwn);
+    await w.fetch('/api/my-access/switch', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountOwnerId: _b && _b.accountOwnerId }) });
+    await w.loadMyAccess(); await h.settle(10, 30);
     A('#scoped-banner is SHOWN (member is scoped into another account)', banner && banner.style.display === 'block',
       `display=${banner && banner.style.display}`);
     const bn = h.text('scoped-banner-name');

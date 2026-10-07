@@ -15,8 +15,8 @@
  * ASSERTED:
  *   · B: /api/my-access lists BOTH accounts (own B + A), reports scopedIntoOther=true and
  *        currentAccountId=A — i.e. B's session is operating inside A's books, and now says so.
- *   · The CONTRAST (fail-then-pass shape): GET /api/team for B (owner axis) does NOT reveal account
- *        A — the exact invisibility F107 names — while /api/my-access (member axis) does.
+ *   · GET /api/team for B lists the roster of the account B works in (A's owner) — N15 made the roster
+ *        account-scoped (it used to read B's own invites, hiding A: the F107 invisibility).
  *   · C (control): no memberships → scopedIntoOther=false, currentAccountId=C, own account only.
  *
  * Scratch Postgres only — enforced by guard.js, not by intention.
@@ -76,13 +76,16 @@ async function main() {
     const aRow = (acc.json.accounts || []).find(x => x.accountOwnerId === A_id);
     A('A appears as a non-own account with its owner email', !!aRow && aRow.isOwn === false && aRow.ownerEmail === 'owner-a@finflow.test', true, `row ${JSON.stringify(aRow)}`);
 
-    // ── the CONTRAST: /api/team (owner axis) HIDES the inbound membership ──
-    console.log('\n-- 2 - the gap F107 names: /api/team does NOT reveal account A --');
+    // ── /api/team is the roster of the account the session WORKS IN (N15) ──
+    // Before N15 this was a CONTRAST: /api/team read the signed-in person's own invites (the owner axis), so
+    // B — whose session works inside A's books — never saw A's roster (the F107 invisibility). N15 made the
+    // roster account-scoped like every other account read: B now sees A's owner and itself as a member.
+    console.log('\n-- 2 - /api/team for B lists the account B works in (A) --');
     const team = await http.get('/api/team');
-    const teamHasA = (team.json || []).some(m => (m.email || '').toLowerCase() === 'owner-a@finflow.test');
-    A('GET /api/team for B does NOT list account A (owner axis blind to inbound membership)', teamHasA, false,
+    const teamHasA = (team.json || []).some(m => (m.email || '').toLowerCase() === 'owner-a@finflow.test' && m.role === 'owner');
+    A('GET /api/team for B lists account A\'s owner (N15: roster of the account in use; was hidden — F107)', teamHasA, true,
       `team ${JSON.stringify((team.json || []).map(m => m.email))}`);
-    A('…but /api/my-access DOES — the endpoint fills exactly that gap', !!aRow, true);
+    A('…and /api/my-access lists A among B\'s accounts', !!aRow, true);
 
     // ── C: control — no memberships ──
     console.log('\n-- 3 - C (no memberships) --');

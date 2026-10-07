@@ -46,7 +46,7 @@ async function main() {
     const eid = (await c.query(`INSERT INTO entities (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
       [uid, { name: 'E2E Co', currency: 'USD', is_active: 1 }])).rows[0].id;
     await c.query(`INSERT INTO user_settings (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`,
-      [uid, eid, { fiscal_year_start: 0, currency: 'USD' }]);
+      [uid, eid, { fiscal_year: 'January', currency: 'USD' }]);
     const mkInvoice = async (amount) => (await c.query(`INSERT INTO invoices (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW()) RETURNING id`,
       [uid, eid, { client: 'Cust', amount, currency: 'USD', status: 'pending', amount_paid: 0, issue_date: '2026-07-10' }])).rows[0].id;
 
@@ -72,7 +72,7 @@ async function main() {
     A('generate Stripe pay-link → provider dispatch reached (502, live call blocked)', link.status === 502 && link.json.provider === 'stripe', `status ${link.status}`);
 
     // customer pays → SIGNED Stripe webhook → reconcile
-    const evt = { id: 'evt_e2e_A', type: 'checkout.session.completed', data: { object: { id: 'cs_e2e_A', mode: 'payment', amount_total: 50000, currency: 'usd', client_reference_id: String(invA), metadata: { kind: 'invoice_payment', invoice_id: String(invA) } } } };
+    const evt = { id: 'evt_e2e_A', type: 'checkout.session.completed', data: { object: { payment_status: 'paid', id: 'cs_e2e_A', mode: 'payment', amount_total: 50000, currency: 'usd', client_reference_id: String(invA), metadata: { kind: 'invoice_payment', invoice_id: String(invA) } } } };
     const payload = JSON.stringify(evt);
     const sig = stripe.webhooks.generateTestHeaderString({ payload, secret: process.env.STRIPE_WEBHOOK_SECRET });
     const wh = await fetch(server.baseUrl + '/api/stripe/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': sig }, body: payload });

@@ -1142,9 +1142,10 @@
       const qty = Math.min(qtyRaw, 100000);
       try {
         if (item._dbId) {
-          const newUnits = item.units + qty;
-          await api('PUT', `/api/inventory/${item._dbId}`, { units: newUnits });
-          item.units = newUnits;
+          // N69: a restock is a purchase at the item's unit cost — the server records the movement (FIFO
+          // layer + ledger) and returns the new units. It used to PUT units += qty with no cost behind it.
+          const saved = await api('POST', `/api/inventory/${item._dbId}/restock`, { qty, unit_cost: item.cost });
+          item.units = parseFloat(saved && saved.units) || (item.units + qty);
         } else {
           item.units += qty;
         }
@@ -1210,6 +1211,7 @@
           <div class="stock-bar"><div class="stock-fill" style="width:${pct}%;background:${col}"></div></div>
           <span style="color:${item.low ? 'var(--red)' : 'var(--t1)'}">${S(val)}</span>
           <span class="table-actions">
+            ${item._dbId ? `<button class="btn btn-ghost btn-sm" onclick="openStockInModal(${idx})" title="Record a purchase (adds a FIFO cost layer)">+ In</button><button class="btn btn-ghost btn-sm" onclick="openStockOutModal(${idx})" title="Record a sale (FIFO cost of goods sold)">− Out</button>` : ''}
             <button class="btn btn-ghost btn-sm" onclick="restockItem(${idx})">Restock</button>
             ${item._dbId ? `<button class="btn btn-ghost btn-sm" onclick="openEditInvModal(${item._dbId})">Edit</button>` : ''}
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7"
@@ -1472,11 +1474,11 @@
       if (!item) { closeModal('edit-inv-modal'); return; }
       const name = document.getElementById('edit-inv-name')?.value?.trim();
       if (!name) { notify('Name is required', true); return; }
-      const units = Math.max(0, parseInt(document.getElementById('edit-inv-units')?.value) || 0);
+      const units = item.units;   // N69: read-only here — Stock In / Stock Out / Restock change it
       const cost  = parseFloat(document.getElementById('edit-inv-cost')?.value)  || 0;
       const max   = Math.max(1, parseInt(document.getElementById('edit-inv-max')?.value)   || 200);
       try {
-        await api('PUT', `/api/inventory/${item._dbId}`, { name, units, cost, max_units: max });
+        await api('PUT', `/api/inventory/${item._dbId}`, { name, cost, max_units: max });   // N69: units change only via stock movements
         item.name  = name;
         item.units = units;
         item.cost  = cost;
@@ -1882,7 +1884,7 @@
     // Budget targets modal — fully editable: user can add, remove, and set
     // monthly/annual targets per category. Saves to /api/budget-targets.
     const SUGGESTED_CATS = ['Salaries','Rent','Software','Marketing','Travel','Meals','Office','Utilities','Other'];
-    const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const esc = s => String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
 
     function _renderBudgetTargetRows(targets) {
       const rowsEl = document.getElementById('_budget-target-rows');
@@ -3209,16 +3211,33 @@ function clearAIChat(){
       }, 0);
     };
 
+    // N24b: the payables card is the CANONICAL accounts payable — the balance sheet's figure (computeBooks:
+    // recognised bills issued on or before today, less open|applied vendor credits). It used to be recomputed
+    // here from the bills list (every non-paid bill, future-dated ones included, vendor credits ignored), so the
+    // Vendors page and the Balance Sheet / AP report showed two different payables totals.
+    let _vendorsApSeq = 0;
+    async function _refreshVendorsPayables() {
+      const seq = ++_vendorsApSeq;
+      try {
+        const _eid = (window.ENTITIES || []).find(e => e.active)?._dbId;
+        const bs = await api('POST', '/api/reports/balance-sheet' + (_eid ? '?entity_id=' + _eid : ''), {});
+        if (seq !== _vendorsApSeq) return;   // a newer refresh is in flight
+        const ap = bs && bs.accountsPayable != null ? parseFloat(bs.accountsPayable) : NaN;
+        setKpiCards('page-vendors', [null, Number.isFinite(ap) ? S(ap) : '—']);
+      } catch (e) {
+        if (seq === _vendorsApSeq) setKpiCards('page-vendors', [null, '—']);   // never a stale or recomputed figure
+        console.warn('[Vendors] payables', e.message);
+      }
+    }
+
     window.renderVendors = function () {
       if (!_vendorsFetched) { loadVendors(); return; }
       renderVendorRows(_vendorsData);
-      // KPI cards: count · total payables (unpaid bills) · overdue · paid (payments-made)
-      // F72: payables = Σ max(0, amount − amount_paid), NOT full face over unpaid — a partially-paid
-      // bill owes only its remaining balance (mirrors the server AP leg, server.js:3779-3790).
-      const _vPayables = _billsData.filter(b => b.status?.toLowerCase() !== 'paid').reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
+      // KPI cards: count · total payables (canonical AP, filled by _refreshVendorsPayables) · overdue · paid
       const _vPaid = _paymentsMadeData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _vOverdue = window._billsOverdueSum(_billsData);   // F-C1: was hardcoded null → static $0
-      setKpiCards('page-vendors', [_vendorsData.length, S(_vPayables), S(_vOverdue), S(_vPaid)]);
+      setKpiCards('page-vendors', [_vendorsData.length, null, S(_vOverdue), S(_vPaid)]);
+      _refreshVendorsPayables();
       window._refreshDashboardUI?.();
     };
 
@@ -3230,7 +3249,7 @@ function clearAIChat(){
     };
 
     window.openNewVendorModal = function () {
-      ['vendor-name','vendor-contact','vendor-owing','vendor-ytd'].forEach(id => { const el = document.getElementById(id); if (el) el.value = id.includes('owing') || id.includes('ytd') ? '0' : ''; });
+      ['vendor-name','vendor-contact'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const c = document.getElementById('vendor-category'); if (c) c.value = 'Software';
       openModal('vendor-modal');
     };
@@ -3240,11 +3259,10 @@ function clearAIChat(){
       if (!name) { notify('Vendor name required', true); return; }
       const contact  = document.getElementById('vendor-contact')?.value?.trim()  || '';
       const category = document.getElementById('vendor-category')?.value          || 'Other';
-      const owing    = parseFloat(document.getElementById('vendor-owing')?.value) || 0;
-      const ytd_paid = parseFloat(document.getElementById('vendor-ytd')?.value)   || 0;
       try {
         const _eidVNew = (window.ENTITIES||[]).find(e=>e.active)?._dbId || null;
-        const saved = await api('POST', '/api/vendors', { name, contact, category, owing, ytd_paid, status: 'active', entity_id: _eidVNew });
+        // N24: owing / YTD paid come from the vendor's bills and payments (server-derived) — not typed in.
+        const saved = await api('POST', '/api/vendors', { name, contact, category, status: 'active', entity_id: _eidVNew });
         _vendorsData.unshift(saved.row || saved);
         window.vendors = _vendorsData;
         closeModal('vendor-modal');
@@ -4818,7 +4836,10 @@ function clearAIChat(){
       // and window.computeExpenseBreakdown for the manual-category split; every category + Payroll +
       // a "Bills & other" remainder reconcile to the canonical Total Operating Expenses. ────────────
       if (name === 'Profit & Loss Statement') {
-        const d = await api('POST', '/api/reports/profit-loss', {});
+        // N41: send the period INTENT the dashboard uses (period + monthIdx + fiscal-year start + entity),
+        // so the totals cover the same period as the Operating-Expenses breakdown below.
+        const _plq = (typeof window._cogsPeriodParams === 'function') ? '?' + window._cogsPeriodParams().toString() : '';
+        const d = await api('POST', '/api/reports/profit-loss' + _plq, {});
         const prows = Array.isArray(d.rows) ? d.rows : [];
         const rev = parseFloat(d.totalRevenue) || 0, cogs = parseFloat(d.cogs) || 0, gp = parseFloat(d.grossProfit) || 0;
         const pay = parseFloat(d.payroll) || 0, exp = parseFloat(d.totalExpenses) || 0, net = parseFloat(d.netProfit) || 0;

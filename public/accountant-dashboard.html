@@ -940,8 +940,10 @@ async function loadPendingRequests() {
             <div style="font-size:13px;color:var(--text);font-weight:500;">${esc(name)}</div>
             <div style="font-size:12px;color:var(--text3);margin-top:2px;">${esc(r.client_email)} · <span class="badge badge-gold">${esc(plan)}</span> · Requested ${esc(date)}</div>
           </div>
-          <div style="display:flex;gap:8px;">
-            <button class="btn btn-gold btn-sm" onclick="approveRequest(${r.user_id}, this)">Approve</button>
+          <div style="display:flex;gap:8px;align-items:center;">
+            ${r.requested_by === 'client'
+              ? `<button class="btn btn-gold btn-sm" onclick="approveRequest(${r.user_id}, this)">Approve</button>`
+              : `<span style="font-size:11px;color:var(--text3);">Referral — awaiting client approval</span>`}
             <button class="btn btn-danger btn-sm" onclick="declineRequest(${r.user_id}, this)">Decline</button>
           </div>
         </div>`;
@@ -1449,7 +1451,7 @@ async function submitBill() {
     const data = await res.json();
     if (data.error) { toast(data.error, 'error'); return; }
     document.getElementById('bill-modal').classList.remove('open');
-    toast('Payment link created — client will receive an email ✓', 'success');
+    toast(data.emailed ? 'Payment link created — the client has been emailed ✓' : 'Payment link created — send it to your client ✓', 'success');
     // Open the Stripe checkout in a new tab
     if (data.url) window.open(data.url, '_blank');
   } catch(e) {

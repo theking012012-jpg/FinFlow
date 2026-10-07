@@ -64,10 +64,10 @@ const OWNER = { email: 'xero-owner@finflow.test', password: 'harness-password-no
     A('  scope includes offline_access', /offline_access/.test(decodeURIComponent(url)));
     A('  scope includes accounting.transactions.read', /accounting.transactions.read/.test(decodeURIComponent(url)));
     A('  redirect_uri points at /api/xero/callback', /redirect_uri=[^&]*%2Fapi%2Fxero%2Fcallback/.test(url));
-    A('  state = the account id', url.includes('state=' + uid));
+    A('  state = a random single-use nonce, not the guessable account id (N43)', (() => { const st = new URL(url).searchParams.get('state'); return !!st && st !== String(uid) && st.length >= 32; })());
 
     // ── callback → tenantId resolved from GET /connections ──
-    const cb = await http.get('/api/xero/callback?entity_id=' + eidA + '&code=auth_code_xyz');
+    const cb = await http.get('/api/xero/callback?entity_id=' + eidA + '&code=auth_code_xyz' + '&state=' + new URL(url).searchParams.get('state'));
     A('callback 200', cb.status === 200, 'status ' + cb.status);
     A('  token exchange used HTTP Basic auth', /^Basic /.test(String(tokenAuthSeen || '')), 'auth=' + tokenAuthSeen);
 

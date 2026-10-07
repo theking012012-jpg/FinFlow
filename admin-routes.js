@@ -19,6 +19,7 @@ const wrap = fn => async (req, res, next) => {
 };
 
 const { detectAuditAnomalies, notifyAnomalies } = require('./audit-anomalies');
+const { emailHtml } = require('./email-html'); // N85 — email bodies escape their interpolations
 
 function requireAdmin(req, res, next) {
   if (!req.session.isAdmin) return res.status(401).json({ error: 'Admin login required.' });
@@ -28,17 +29,26 @@ function requireAdmin(req, res, next) {
 module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
 
   // ── ADMIN LOGIN ───────────────────────────────────────────────────────────
+  // N89: failed admin logins are recorded HERE, by the server, from what it observed (reason + client
+  // IP). The security log used to be filled by an unauthenticated client-callable endpoint, so anyone
+  // could write arbitrary entries into it and a real attacker simply never called it.
+  const failedAdminLogin = (req, res, reason, body) => {
+    pool.query(`INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ('failed_login','security',$1,NOW())`,
+      [String(reason + ' from ' + (req.ip || 'unknown')).slice(0, 500)])
+      .catch(e => console.error('[admin] failed-login log write failed:', e.message));
+    return res.status(401).json(body);
+  };
   app.post('/api/admin/login', adminLoginLimiter, wrap(async (req, res) => {
     const { password } = req.body || {};
     const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
     if (!ADMIN_PASSWORD) return res.status(503).json({ error: 'ADMIN_PASSWORD not configured.' });
-    if (!password) return res.status(401).json({ error: 'Invalid password.' });
+    if (!password) return failedAdminLogin(req, res, 'Missing password', { error: 'Invalid password.' });
     try {
       const a = Buffer.alloc(72); Buffer.from(password).copy(a);
       const b = Buffer.alloc(72); Buffer.from(ADMIN_PASSWORD).copy(b);
-      if (!crypto.timingSafeEqual(a, b)) return res.status(401).json({ error: 'Invalid password.' });
+      if (!crypto.timingSafeEqual(a, b)) return failedAdminLogin(req, res, 'Wrong password', { error: 'Invalid password.' });
     } catch(e) {
-      return res.status(401).json({ error: 'Invalid password.' });
+      return failedAdminLogin(req, res, 'Wrong password', { error: 'Invalid password.' });
     }
     // Admin MFA (opt-in): once ADMIN_TOTP_SECRET is set, a valid 6-digit TOTP is also required.
     // Backward-compatible — unset means password-only, so enabling it can't lock you out mid-flight.
@@ -48,13 +58,10 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
       if (!token) return res.status(401).json({ error: 'MFA code required.', mfaRequired: true });
       let totp = null; try { totp = require('./totp'); } catch (_) {}
       if (!totp || !totp.verify(String(token), ADMIN_TOTP_SECRET.trim())) {
-        return res.status(401).json({ error: 'Invalid MFA code.', mfaRequired: true });
+        return failedAdminLogin(req, res, 'Correct password, invalid MFA code', { error: 'Invalid MFA code.', mfaRequired: true });
       }
     }
-    req.session.isAdmin = true;
-    await new Promise((resolve, reject) => {
-      req.session.save(err => err ? reject(err) : resolve());
-    });
+    await require('./session-auth').establishSession(req, { isAdmin: true });   // N73: fresh session id
     return res.json({ success: true });
   }));
 
@@ -224,16 +231,16 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
           ? 'Update on your FinFlow application'
           : `Your FinFlow account has been ${newStatus}`;
         const body = action === 'approve'
-          ? `<p>Hi ${first_name},</p><p>Great news — your FinFlow accountant profile has been <strong>verified and is now live</strong> in our professional directory.</p><p>Log in to your dashboard to start inviting clients and earning referral commissions.</p><a href="${appUrl()}/accountant-login" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600">Go to dashboard →</a>`
+          ? emailHtml`<p>Hi ${first_name},</p><p>Great news — your FinFlow accountant profile has been <strong>verified and is now live</strong> in our professional directory.</p><p>Log in to your dashboard to start inviting clients and earning referral commissions.</p><a href="${appUrl()}/accountant-login" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600">Go to dashboard →</a>`
           : action === 'reject'
-          ? `<p>Hi ${first_name},</p><p>Thank you for applying to the FinFlow Professional Network. Unfortunately we were unable to verify your credentials at this time.</p>${notes ? `<p>Notes: ${notes}</p>` : ''}<p>You're welcome to reapply once you have updated credentials.</p>`
-          : `<p>Hi ${first_name},</p><p>Your FinFlow accountant account status has been updated to: <strong>${newStatus}</strong>.</p>${notes ? `<p>Reason: ${notes}</p>` : ''}`;
+          ? emailHtml`<p>Hi ${first_name},</p><p>Thank you for applying to the FinFlow Professional Network. Unfortunately we were unable to verify your credentials at this time.</p>${notes ? emailHtml`<p>Notes: ${notes}</p>` : ''}<p>You're welcome to reapply once you have updated credentials.</p>`
+          : emailHtml`<p>Hi ${first_name},</p><p>Your FinFlow accountant account status has been updated to: <strong>${newStatus}</strong>.</p>${notes ? emailHtml`<p>Reason: ${notes}</p>` : ''}`;
 
         await resendClient.emails.send({
           from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
           to: email,
           subject,
-          html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow</h2>${body}</div>`,
+          html: String(emailHtml`<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow</h2>${body}</div>`),
         }).catch(e => console.error('[Admin Email]', e.message));
       }
     }
@@ -391,11 +398,19 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   // Override user plan
   app.post('/api/admin/users/:id/plan', requireAdmin, wrap(async (req, res) => {
     const { plan } = req.body || {};
-    if (!['trial', 'pro', 'business'].includes(plan)) return res.status(400).json({ error: 'Invalid plan.' });
-    await pool.query(
-      `UPDATE users SET data = data || $1 WHERE id = $2`,
-      [JSON.stringify({ plan }), (parseInt(req.params.id, 10) || 0)]
-    );
+    // N87: 'scale' is a real plan (checkout, entity limits, AI caps all know it) but was missing here and
+    // in the admin dropdown — a Scale customer's row showed "Trial" pre-selected, so one Save downgraded
+    // them. Setting 'trial' stamps trial_ends when there is none: checkPlan only restricts a trial WITH an
+    // end date, so a null end meant unlimited write access (the N4 class). An existing end is kept.
+    if (!['trial', 'pro', 'business', 'scale'].includes(plan)) return res.status(400).json({ error: 'Invalid plan.' });
+    const uidT = (parseInt(req.params.id, 10) || 0);
+    if (plan === 'trial') {
+      await pool.query(
+        `UPDATE users SET data = data || jsonb_build_object('plan', 'trial'::text, 'trial_ends', COALESCE(NULLIF(data->>'trial_ends', ''), $2::text)) WHERE id = $1`,
+        [uidT, new Date().toISOString()]);
+    } else {
+      await pool.query(`UPDATE users SET data = data || $1 WHERE id = $2`, [JSON.stringify({ plan }), uidT]);
+    }
     await pool.query(
       `INSERT INTO admin_log (action, target_type, target_id, notes, created_at) VALUES ($1, 'user', $2, $3, NOW())`,
       ['user_plan_override', (parseInt(req.params.id, 10) || 0), `Set plan to ${plan}`]
@@ -794,25 +809,21 @@ module.exports = function registerAdminRoutes(app, pool, stripe, resendClient) {
   }));
 
   // ── SECURITY LOG ──────────────────────────────────────────────────────────
+  // ── INTEGRATION DEMAND — aggregate of every account's integration requests (founder-facing; N53). ──
+  app.get('/api/admin/integration-requests', requireAdmin, wrap(async (req, res) => {
+    const { rows } = await pool.query(
+      `SELECT data->>'value' AS name, COUNT(*)::int AS requests
+         FROM user_settings WHERE data->>'key'='integration_request'
+         GROUP BY 1 ORDER BY requests DESC, name ASC`);
+    res.json({ requests: rows });
+  }));
+
   app.get('/api/admin/security-log', requireAdmin, wrap(async (req, res) => {
     const result = await pool.query(`
       SELECT * FROM admin_log WHERE action = 'failed_login'
       ORDER BY created_at DESC LIMIT 100
     `).catch(() => ({ rows: [] }));
     return res.json(result.rows);
-  }));
-
-  // Called on failed login attempts. Rate-limited + ignores anonymous floods.
-  app.post('/api/admin/log-security', adminLoginLimiter, wrap(async (req, res) => {
-    const { notes } = req.body || {};
-    const ALLOWED_ACTIONS = ['failed_login', 'rate_limited', 'suspicious_activity'];
-    const rawAction = (req.body || {}).action;
-    const safeAction = ALLOWED_ACTIONS.includes(rawAction) ? rawAction : 'failed_login';
-    await pool.query(
-      `INSERT INTO admin_log (action, target_type, notes, created_at) VALUES ($1,'security',$2,NOW())`,
-      [safeAction, notes || '']
-    ).catch(() => {});
-    return res.json({ ok: true });
   }));
 
   // ── TRAFFIC / VISITOR ANALYTICS ───────────────────────────────────────────

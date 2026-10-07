@@ -43,7 +43,7 @@ async function main() {
     const payCount = async (id) => Number((await c.query(`SELECT COUNT(*) n FROM invoice_payments WHERE invoice_id=$1`, [id])).rows[0].n);
 
     const sessionEvent = (sessionId, invoiceId, amountMinor) => ({
-      id: 'evt_' + sessionId, type: 'checkout.session.completed', data: { object: {
+      id: 'evt_' + sessionId, type: 'checkout.session.completed', data: { object: { payment_status: 'paid',
         id: sessionId, object: 'checkout.session', mode: 'payment', amount_total: amountMinor, currency: 'usd',
         client_reference_id: String(invoiceId), metadata: { kind: 'invoice_payment', invoice_id: String(invoiceId) },
       } },

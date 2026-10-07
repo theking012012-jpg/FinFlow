@@ -2,7 +2,7 @@
 /**
  * verify-woocommerce-connect.js — WooCommerce per-store REST keys (not OAuth), per-entity. Owner enters
  * store URL + consumer key/secret; keys are encTok'd at rest, store_url kept plaintext (it's the API
- * base). Sync = order count via the WC REST API (Basic ck:cs). HTTP boundary mocked via global.fetch.
+ * base). Sync = order count via the WC REST API (Basic ck:cs). DNS + socket I/O mocked behind safe-egress.
  *   node -r ./tests/harness/clock.js tests/harness/verify-woocommerce-connect.js
  */
 require('./clock.js');
@@ -22,13 +22,17 @@ const STORE = 'https://shop.example.com';
     scratch = await startScratchPostgres({ keep: false }); const c = scratch.client;
     server = await bootServer(scratch.url);
     const app = require('../../server.js');
-    global.fetch = async (url, opts) => {
-      const u = String(url);
-      if (u.startsWith(STORE + '/wp-json/wc/v3/orders')) {
-        wcAuthSeen = opts && opts.headers && opts.headers['Authorization'];
+    // Store requests go through safe-egress (N54). Boundaries mocked: DNS (offline — shop.example.com
+    // resolves to a public address) and the socket I/O AFTER the egress check (the check itself runs).
+    const dns = require('dns');
+    const realLookup = dns.promises.lookup;
+    dns.promises.lookup = async (h, o) => (h === 'shop.example.com' ? [{ address: '93.184.215.14', family: 4 }] : realLookup(h, o));
+    require('../../safe-egress')._io.transport = async ({ url, address, headers }) => {
+      if ((url.origin + url.pathname) === STORE + '/wp-json/wc/v3/orders' && address === '93.184.215.14') {
+        wcAuthSeen = headers && headers['Authorization'];
         return { ok: true, status: 200, headers: { get: (k) => (String(k).toLowerCase() === 'x-wp-total' ? '42' : null) }, json: async () => ([{}]) };
       }
-      return realFetch(url, opts);
+      throw new Error('unexpected store request ' + url.href);
     };
     const uid = (await c.query(`INSERT INTO users (user_id,entity_id,data,created_at,updated_at) VALUES (NULL,NULL,$1,NOW(),NOW()) RETURNING id`,
       [{ email: OWNER.email, name: 'S', plan: 'business', role: 'owner', password: bcrypt.hashSync(OWNER.password, 10) }])).rows[0].id;

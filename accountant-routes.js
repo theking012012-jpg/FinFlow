@@ -70,8 +70,40 @@
 const crypto = require('crypto');
 const { db, pool: _dbPool, rowToObj: _rowToObj } = require('./database');
 const { tierForAccountant, commissionRateFor, splitBilling, estimateStripeFeeCents } = require('./tier-config'); // F17 — single tier source
+
+// ── REFERRAL COMMISSION — the ONE writer (N79 / N79b / N82) ─────────────────────────────────────
+// Books at most ONE referral month for a client link per calendar month, and only while the client is
+// PAYING (subscriptionStatus='active') and referral months remain. Runs inside the caller's
+// transaction and locks the link row first, so activation and the monthly run — or two overlapping
+// runs — cannot both book the same month. Before: activation booked "month 1" without checking the
+// subscription and without advancing referral_month (so the monthly run paid month 1 again), and the
+// monthly run had no transaction and an ON CONFLICT with no unique index behind it (a second run in
+// the same month paid everyone twice and advanced referral_month twice).
+// Returns true when a month was booked.
+async function _bookReferralMonth(conn, accountantId, userId) {
+  const { rows: [link] } = await conn.query(
+    `SELECT ac.referral_month, ac.referral_months_total, ac.status, u.data->>'subscriptionStatus' AS sub
+       FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
+      WHERE ac.accountant_id = $1 AND ac.user_id = $2
+      FOR UPDATE OF ac`, [accountantId, userId]);
+  if (!link || link.status !== 'active' || link.sub !== 'active') return false;
+  if (!(Number(link.referral_month) < Number(link.referral_months_total))) return false;
+  const { rows: [dup] } = await conn.query(
+    `SELECT 1 FROM accountant_earnings
+      WHERE accountant_id = $1 AND client_id = $2 AND type = 'referral'
+        AND period_month = date_trunc('month', NOW()) LIMIT 1`, [accountantId, userId]);
+  if (dup) return false;
+  const nextMonth = Number(link.referral_month) + 1;
+  await conn.query(
+    `INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, period_month)
+     VALUES ($1, $2, 'referral', 1000, $3, date_trunc('month', NOW()))`,
+    [accountantId, userId, `Referral commission — month ${nextMonth} of ${link.referral_months_total}`]);
+  await conn.query(`UPDATE accountant_clients SET referral_month = $1 WHERE accountant_id = $2 AND user_id = $3`, [nextMonth, accountantId, userId]);
+  return true;
+}
 const aiCap = require('./ai-cap'); // F18 — central AI cost caps
 const { appUrl } = require('./app-url'); // F29 — single source of truth for app links
+const { emailHtml } = require('./email-html'); // N85 — every email body escapes its interpolations
 const totp = require('./totp'); // accountant MFA (TOTP, RFC 6238)
 
 // Step F — accountant credential-proof upload (base64-in-Postgres, accountant-scoped).
@@ -238,7 +270,7 @@ function _openSse(res) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter) {
+module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx) {
   // F90 Phase B: recordAudit is the single audited write path (threaded from server.js). Accountant
   // actions on a client's books log with actor_type='accountant' + actor_id=accountantId (derived
   // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
@@ -511,7 +543,7 @@ module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiL
             from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
             to: adminEmail,
             subject: `New accountant application from ${firstName} ${lastName} (${firm})`,
-            html: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow Admin</h2><p>New accountant application received:</p><ul style="margin:12px 0;padding-left:20px;line-height:1.8"><li><strong>Name:</strong> ${firstName} ${lastName}</li><li><strong>Firm:</strong> ${firm}</li><li><strong>Email:</strong> ${email}</li><li><strong>Country:</strong> ${country}</li><li><strong>Specialisation:</strong> ${specialisation}</li><li><strong>Verification:</strong> ${verification.method}</li></ul><a href="${appUrl()}/admin" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:8px">Review in Admin Panel →</a></div>`,
+            html: String(emailHtml`<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px"><h2 style="color:#c9a84c;margin-bottom:16px">FinFlow Admin</h2><p>New accountant application received:</p><ul style="margin:12px 0;padding-left:20px;line-height:1.8"><li><strong>Name:</strong> ${firstName} ${lastName}</li><li><strong>Firm:</strong> ${firm}</li><li><strong>Email:</strong> ${email}</li><li><strong>Country:</strong> ${country}</li><li><strong>Specialisation:</strong> ${specialisation}</li><li><strong>Verification:</strong> ${verification.method}</li></ul><a href="${appUrl()}/admin" style="display:inline-block;background:#c9a84c;color:#0e0e0c;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:8px">Review in Admin Panel →</a></div>`),
           }).catch(e => console.error('[Register] Admin notification failed:', e.message));
         } else {
           // TODO: set ADMIN_EMAIL env var to enable admin email notifications
@@ -678,11 +710,9 @@ If you cannot find a field, use null. Be concise.`;
       if (!ok) return res.status(401).json({ error: token ? 'Invalid authenticator code.' : 'Authenticator code required.', mfaRequired: true });
     }
 
-    req.session.accountantId = acc.id;
+    // N73: fresh session id, accountant identity ONLY (any user id held by this browser is dropped).
+    await require('./session-auth').establishSession(req, { accountantId: acc.id });
     try { recordAudit(pool, { userId: null, table: 'accountants', recordId: acc.id, action: 'LOGIN', req }); } catch (_) {}   // audit accountant LOGIN (ip)
-    await new Promise((resolve, reject) => {
-      req.session.save(err => err ? reject(err) : resolve());
-    });
     return res.json({
       id: acc.id,
       firstName: acc.first_name,
@@ -733,6 +763,30 @@ If you cannot find a field, use null. Be concise.`;
 
 
   // ── 6. GET CLIENT BOOKS (with permission check) ───────────────────────────
+  // ── Shared client-books scope (N83) ─────────────────────────────────────────
+  // ONE resolution of what an accountant may read of a client — per-entity levels, the permitted entity
+  // set, the client's fiscal-year start — and ONE top-line canonical books read over that scope. /books
+  // and ai-insights both go through these, so no accountant reader can widen the grant (ai-insights used
+  // to read every entity's invoices/expenses and the payroll ROSTER directly).
+  async function _clientScope(userId, accessRow) {
+    const ea = normalizeEntityAccess(accessRow.entity_access);   // null = legacy (all entities)
+    const { rows: entities } = await pool.query(`SELECT id, data->>'name' AS name, data->>'color' AS color, data->>'currency' AS currency FROM entities WHERE user_id = $1 ORDER BY id`, [userId]);
+    const { rows: [u] } = await pool.query(`SELECT data FROM users WHERE id = $1 LIMIT 1`, [userId]);
+    const entLevel = {};
+    for (const er of entities) entLevel[er.id] = entityLevel(ea, accessRow.access_level, er.id);
+    const permittedIds = entities.filter(er => _canRead(entLevel[er.id])).map(er => er.id);
+    // N109: the client's fiscal-year setting from where the owner saves it (server.js accountFyStartIdx).
+    const fyStartIdx = await accountFyStartIdx(userId);
+    return { ea, entities, entLevel, permittedIds, permitted: new Set(permittedIds), fyStartIdx, userData: u?.data || {} };
+  }
+  // Legacy: the requested scope unchanged. Scoped + specific entity: that entity. Scoped + all: the
+  // PERMITTED entities consolidated to base currency via computeBooks' own per-row FX.
+  async function _scopeBooks(userId, scope, entityId, period, summariesByEntity) {
+    if (scope.ea == null) return computeBooks(userId, entityId, period, null, scope.fyStartIdx);
+    if (entityId != null) return (summariesByEntity && summariesByEntity[entityId]) || computeBooks(userId, entityId, period, null, scope.fyStartIdx);
+    return computeBooks(userId, null, period, null, scope.fyStartIdx, null, scope.permittedIds);
+  }
+
   app.get('/api/accountants/clients/:userId/books', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.params;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
@@ -755,7 +809,8 @@ If you cannot find a field, use null. Be concise.`;
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access to this client.' });
     const _accountWide = access.rows[0].access_level;
-    const _ea = normalizeEntityAccess(access.rows[0].entity_access);   // null = legacy (all entities)
+    const _scope = await _clientScope(parseInt(userId), access.rows[0]);
+    const _ea = _scope.ea;   // null = legacy (all entities)
 
     // Fetch all client data
     const [invoices, expenses, entities, settings, payroll, journals, customers, bills] = await Promise.all([
@@ -765,7 +820,7 @@ If you cannot find a field, use null. Be concise.`;
       pool.query(`SELECT data FROM users WHERE id = $1 LIMIT 1`, [userId]),
       pool.query(`SELECT entity_id, data FROM payroll WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT entity_id, data FROM journals WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
-      pool.query(`SELECT data FROM customers WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
+      pool.query(`SELECT entity_id, data FROM customers WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
       pool.query(`SELECT id, entity_id, data FROM bills WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
     ]);
 
@@ -784,10 +839,9 @@ If you cannot find a field, use null. Be concise.`;
     const entMatch = eid => eid == null || eid === entityId || entityId == null;
     // F140: window computeBooks on the CLIENT's fiscal-year start, not the January default. The
     // client dashboard/reports pass ?fyStart=<0-11>; the accountant portal must use the SAME start —
-    // the client's `fiscal_year` setting (a month name in users.data) — or a non-January fiscal year
+    // the client's `fiscal_year` setting (user_settings, via accountFyStartIdx) — or a non-January fiscal year
     // makes the 'year' window diverge from the client's own dashboard. Default January when unset.
-    const _FY_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const fyStartIdx = Math.max(0, _FY_MONTHS.indexOf(String(settings.rows[0]?.data?.fiscal_year || 'January')));
+    const fyStartIdx = _scope.fyStartIdx;
 
     // Canonical, entity-scoped books (F9) — the SAME computeBooks the client dashboard uses, so the
     // accountant's totals reconcile. Revenue is ISSUE-BASED ACCRUAL (F32): every issued invoice
@@ -799,10 +853,9 @@ If you cannot find a field, use null. Be concise.`;
     // Effective read/write level per business entity. A 'none' entity is fully hidden: never listed,
     // never summed, its rows stripped from every array below. Legacy (_ea == null) ⇒ every entity at
     // the account-wide level, so nothing is filtered and behavior is byte-for-byte as before.
-    const _entLevel = {};                                   // entityId → 'none'|'view'|'filing'
-    for (const er of entities.rows) _entLevel[er.id] = entityLevel(_ea, _accountWide, er.id);
-    const _permittedIds = entities.rows.filter(er => _canRead(_entLevel[er.id])).map(er => er.id);
-    const _permitted    = new Set(_permittedIds);
+    const _entLevel = _scope.entLevel;                      // entityId → 'none'|'view'|'filing'
+    const _permittedIds = _scope.permittedIds;
+    const _permitted    = _scope.permitted;
     const _personalLvl  = personalLevel(_ea);
     // A specific ?entity_id= scope must itself be permitted, else the accountant could read a hidden
     // entity's canonical books directly by guessing its id.
@@ -846,17 +899,9 @@ If you cannot find a field, use null. Be concise.`;
     }
     // Top-line books (F9). Legacy: the requested scope unchanged. Scoped + specific entity: that
     // entity's own summary. Scoped + all: the PERMITTED entities consolidated to base currency.
-    let books;
-    if (_ea == null) {
-      books = await computeBooks(userId, entityId, period, null, fyStartIdx);
-    } else if (entityId != null) {
-      books = summariesByEntity[entityId] || await computeBooks(userId, entityId, period, null, fyStartIdx);
-    } else {
-      // Consolidate PERMITTED entities to base currency via computeBooks' own per-row FX (the same path
-      // the owner's Consolidated P&L uses) — NOT _aggregateBooks, which raw-summed native currencies
-      // (e.g. TTD + USD) and double-counted unassigned rows. Reconciles with the owner's all view.
-      books = await computeBooks(userId, null, period, null, fyStartIdx, null, _permittedIds);
-    }
+    // (Consolidation via computeBooks' per-row FX — NOT _aggregateBooks, which raw-summed native
+    // currencies and double-counted unassigned rows. Reconciles with the owner's all view.)
+    const books = await _scopeBooks(userId, _scope, entityId, period, summariesByEntity);
 
     // ── Personal finances — served ONLY when the owner granted personal access (never for legacy
     // links). Net worth mirrors the owner's own computation (personal_accounts assets − liabilities
@@ -866,7 +911,7 @@ If you cannot find a field, use null. Be concise.`;
       const [ptx, pacc, phold] = await Promise.all([
         pool.query(`SELECT id, data FROM personal_transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 200`, [userId]),
         pool.query(`SELECT id, data FROM personal_accounts     WHERE user_id = $1 ORDER BY id`, [userId]),
-        pool.query(`SELECT data     FROM holdings              WHERE user_id = $1`, [userId]),
+        pool.query(`SELECT data     FROM holdings              WHERE user_id = $1 AND entity_id IS NULL`, [userId]),   // N16: the PERSONAL portfolio, as the owner's net worth counts it (business holdings are business assets)
       ]);
       const _n = v => parseFloat(v) || 0;
       const _assets = pacc.rows.filter(r => r.data?.kind === 'asset')    .reduce((a,r)=>a+_n(r.data?.value),0);
@@ -887,10 +932,15 @@ If you cannot find a field, use null. Be concise.`;
       };
     }
 
-    // Accounts payable (unpaid bills), entity-scoped to match the selected view.
-    const unpaidBills = bills.rows
-      .filter(r => r.data?.status === 'unpaid' && entMatch(r.entity_id) && _permit(r.entity_id))
-      .reduce((s, r) => s + (parseFloat(r.data?.amount) || 0), 0);
+    // Accounts payable — the canonical figure (server.js canonicalAP, the balance sheet's own AP), per
+    // permitted entity (N75). A single-entity view reads that entity; the all-entities view sums the
+    // permitted entities' AP (native amounts, like the per-entity figures it is built from).
+    // N99: AP from the SAME canonical books as the figures above — per permitted entity (native) from its own
+    // summary, and the all-entities total from the consolidated books (base currency), never a raw sum of
+    // mixed-currency per-entity figures.
+    const apByEntity = {};
+    for (const id of (entityId != null ? [entityId] : _permittedIds)) apByEntity[id] = summariesByEntity[id] ? summariesByEntity[id].accountsPayable : await canonicalAP(userId, id);
+    const unpaidBills = entityId != null ? (apByEntity[entityId] || 0) : (books.accountsPayable || 0);
 
     // ── FinFlux GL CERTIFICATION (Phase 5 moat) — for each PERMITTED entity, FinFlux's own ledger
     // says whether the books tie out: trial balance to zero, balance sheet balances, and the GL P&L
@@ -949,10 +999,12 @@ If you cannot find a field, use null. Be concise.`;
       // only rows on entities where the accountant holds 'filing'.
       allPayroll:  payroll.rows.filter(r => _ea == null ? _accountWide !== 'view' : _entLevel[r.entity_id] === 'filing').map(r => r.data),
       allJournals: journals.rows.filter(r => _permit(r.entity_id)).map(r => r.data),
-      allCustomers: customers.rows.map(r => r.data),
+      // N74: customers belong to entities like every other record — only permitted entities' customers.
+      allCustomers: customers.rows.filter(r => _permit(r.entity_id)).map(r => r.data),
       balanceSheet: {
         accountsReceivable: books.outstanding.toFixed(2),
         accountsPayable:    unpaidBills.toFixed(2),
+        accountsPayableByEntity: apByEntity,
         totalPayroll:       (books.parts.payroll || 0).toFixed(2),
       },
       recentInvoices: invoices.rows.filter(r => _permit(r.entity_id)).map(r => r.data).slice(0, 10),
@@ -994,12 +1046,21 @@ If you cannot find a field, use null. Be concise.`;
     if (!_canWrite(entityLevel(_ea, access.rows[0].access_level, _clientEntityId))) {
       return res.status(403).json({ error: 'View-only access.' });
     }
+    // N76: the same rules as the main app's journal (server.js POST /api/journals) — at least one line,
+    // debits = credits, and never into a closed period. The accountant path enforced none of them.
+    const _lines = Array.isArray(lines) ? lines : [];
+    if (!_lines.length) return res.status(400).json({ error: 'A journal needs at least one line.' });
+    const _dr = _lines.reduce((s, l) => s + (parseFloat(l && l.debit) || 0), 0);
+    const _cr = _lines.reduce((s, l) => s + (parseFloat(l && l.credit) || 0), 0);
+    if (Math.abs(_dr - _cr) > 0.01) return res.status(400).json({ error: 'Journal does not balance — debits must equal credits.' });
+    const _jDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : new Date().toISOString().slice(0, 10);
+    if (await require('./period-lock').isLocked(pool, parseInt(userId), _clientEntityId, _jDate)) return res.status(403).json({ error: 'Period is locked.' });
     const { row } = await db.insert('journals', {
       user_id: parseInt(userId),
       entity_id: _clientEntityId,
       description: (description || '').slice(0, 500),
-      date: date || new Date().toISOString().slice(0, 10),
-      lines: JSON.stringify(lines || []),
+      date: _jDate,
+      lines: JSON.stringify(_lines),
       posted_by: `accountant:${req.session.accountantId}`,
     });
     await _audit(pool, { userId: parseInt(userId), table: 'journals', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B (accountant on client books)
@@ -1016,24 +1077,25 @@ If you cannot find a field, use null. Be concise.`;
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
-    // Period locks are account-wide (lock_settings keyed by period, not entity): require 'filing'
-    // capability on at least one entity (legacy ⇒ account-wide filing).
-    const _eaLock = normalizeEntityAccess(access.rows[0].entity_access);
-    const _hasFiling = _eaLock == null
-      ? access.rows[0].access_level !== 'view'   // legacy: any non-view level (filing/edit/null) can lock
-      : Object.values(_eaLock.entities).some(l => l === 'filing');
-    if (!_hasFiling) return res.status(403).json({ error: 'View-only access.' });
-    const { rows: [_lsAcc] } = await pool.query(
-      `SELECT * FROM lock_settings WHERE user_id = $1 AND data->>'period' = $2 LIMIT 1`,
-      [parseInt(userId), period]
-    );
-    if (_lsAcc) {
-      await db.updateById('lock_settings', _lsAcc.id, { locked: locked ? 1 : 0, locked_by: `accountant:${req.session.accountantId}` });
-    } else {
-      await db.insert('lock_settings', { user_id: parseInt(userId), period, locked: locked ? 1 : 0, locked_by: `accountant:${req.session.accountantId}` });
-    }
-    await _audit(pool, { userId: parseInt(userId), table: 'lock_settings', recordId: _lsAcc ? _lsAcc.id : null, action: locked ? 'LOCK' : 'UNLOCK', field: 'period', newValue: period, req });  // F90 Phase B (accountant)
-    res.json({ ok: true });
+    // N77: write the lock the app actually READS — per-entity { enabled, lock_date } through
+    // period-lock.js (the same module isLocked uses). It wrote { period, locked } rows nothing read,
+    // so an accountant's period lock had no effect on any write. Target entity resolved like the
+    // journal route (explicit body entity of THIS client, else the client's active entity), and the
+    // accountant needs 'filing' on THAT entity.
+    const _ea = normalizeEntityAccess(access.rows[0].entity_access);
+    const _bodyEid = (req.body && /^[1-9][0-9]*$/.test(String(req.body.entity_id))) ? parseInt(req.body.entity_id) : null;
+    const { rows: [_ent] } = _bodyEid != null
+      ? await pool.query(`SELECT id FROM entities WHERE id = $1 AND user_id = $2 LIMIT 1`, [_bodyEid, parseInt(userId)])
+      : await pool.query(`SELECT id FROM entities WHERE user_id = $1 ORDER BY (CASE WHEN (data->>'is_active')::int = 1 THEN 0 ELSE 1 END), id ASC LIMIT 1`, [parseInt(userId)]);
+    if (!_ent) return res.status(400).json({ error: _bodyEid != null ? 'Invalid entity for this client.' : 'Client has no entity to lock.' });
+    if (!_canWrite(entityLevel(_ea, access.rows[0].access_level, _ent.id))) return res.status(403).json({ error: 'View-only access.' });
+    const _pl = require('./period-lock');
+    if (!_pl.periodBounds(period)) return res.status(400).json({ error: 'period must be YYYY-MM.' });
+    let lockDate;
+    try { lockDate = await _pl.setPeriodLock(pool, db, parseInt(userId), _ent.id, period, !!locked, { locked_by: `accountant:${req.session.accountantId}` }); }
+    catch (e) { if (e.status) return res.status(e.status).json({ error: e.message, code: e.code }); throw e; }
+    await _audit(pool, { userId: parseInt(userId), entityId: _ent.id, table: 'lock_settings', action: locked ? 'LOCK' : 'UNLOCK', field: 'period', newValue: period, newData: { lock_date: lockDate }, req });  // F90 Phase B (accountant)
+    res.json({ ok: true, entity_id: _ent.id, lock_date: lockDate });
   }));
 
 
@@ -1123,12 +1185,12 @@ If you cannot find a field, use null. Be concise.`;
         from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
         to: email,
         subject: `${accountant.first_name} ${accountant.last_name} invited you to FinFlow`,
-        html: `
+        html: String(emailHtml`
           <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0e0e0c;color:#f0ead6;border-radius:12px;">
             <h2 style="color:#c9a84c;font-size:24px;margin-bottom:8px;">You've been invited to FinFlow</h2>
             <p style="color:#9a9278;margin-bottom:20px;">
               ${accountant.first_name} ${accountant.last_name} from <strong style="color:#f0ead6">${accountant.firm}</strong>
-              has invited${name ? ` ${name}` : ' you'} to manage your finances on FinFlow.
+              has invited ${name || 'you'} to manage your finances on FinFlow.
             </p>
             <p style="color:#9a9278;margin-bottom:24px;">
               Start your free 30-day trial — no credit card required.
@@ -1142,7 +1204,7 @@ If you cannot find a field, use null. Be concise.`;
               FinFlow does not provide accounting services.
             </p>
           </div>
-        `,
+        `),
       });
     }
 
@@ -1159,38 +1221,46 @@ If you cannot find a field, use null. Be concise.`;
   // access is granted only after that relationship reaches status='active'.
 
 
-  // ── 9. ACTIVATE CLIENT (called when client completes payment/trial) ────────
-  // Call this from your Stripe webhook when a client's subscription activates.
-  app.post('/api/accountants/activate-client', requireAccountant, wrap(async (req, res) => {
-    const { userId } = req.body || {};
-    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
-    if (!userId) return res.status(400).json({ error: 'userId required.' });
-
-    const client = await pool.connect();
+  // ── 9. ACTIVATE A PENDING LINK — one shared path (N78) ────────────────────
+  // Access to a client's books is granted only with the CLIENT's consent:
+  //   • requested_by='client'  — the client asked (request-access); the accountant accepts it
+  //                               (approve-request, or the legacy activate-client alias).
+  //   • 'referral' / NULL      — the client only signed up through the accountant's link; the CLIENT
+  //                               must approve it (POST /api/accountants/my-accountant/approve).
+  // An accountant used to be able to flip ANY pending row — including referral rows the client never
+  // asked for — to 'active' (= books access) on their own. Every activation now goes through
+  // _activateLink, so the consent rule and the first-month referral entry live in one place.
+  async function _activateLink(conn, accountantId, userId, req, { requireOrigin }) {
+    const countRes = await conn.query(
+      `SELECT COUNT(*) FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
+        WHERE ac.accountant_id = $1 AND ac.status = 'active' AND u.data->>'subscriptionStatus' = 'active'`,
+      [accountantId]
+    );
+    const months = tierForAccountant(parseInt(countRes.rows[0].count) || 0).referralMonths;
+    const originSql = requireOrigin === 'client' ? `requested_by = 'client'` : `requested_by IS DISTINCT FROM 'client'`;
+    await conn.query('BEGIN');
     try {
-      const result = await client.query(`
+      const upd = await conn.query(`
         UPDATE accountant_clients
-        SET status = 'active', activated_at = NOW()
-        WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending'
-        RETURNING accountant_id, referral_months_total
-      `, [userId, req.session.accountantId]);
-
-      if (!result.rows[0]) {
-        return res.status(404).json({ error: 'No pending client found for this accountant.' });
-      }
-
-      const { accountant_id, referral_months_total } = result.rows[0];
-      await client.query(`
-        INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, period_month)
-        VALUES ($1, $2, 'referral', 1000, 'Referral commission — month 1', date_trunc('month', NOW()))
-      `, [accountant_id, userId]);
-
-      await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_ACTIVATE', field: 'status', newValue: 'active', req });  // F90 Phase B (accountant)
-      return res.json({ success: true });
-    } finally {
-      client.release();
+        SET status = 'active', activated_at = NOW(), referral_months_total = $3
+        WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending' AND ${originSql}
+        RETURNING user_id
+      `, [userId, accountantId, months]);
+      if (!upd.rows[0]) { await conn.query('ROLLBACK'); return null; }
+      await _bookReferralMonth(conn, accountantId, userId);   // N79: same rules as the monthly run
+      await conn.query('COMMIT');
+    } catch (e) { try { await conn.query('ROLLBACK'); } catch (_) {} throw e; }
+    await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_ACTIVATE', field: 'status', newValue: 'active', newData: { by: requireOrigin === 'client' ? 'accountant' : 'client' }, req });
+    return { months };
+  }
+  // Why an accountant-side approve failed: not found vs waiting on the client's consent.
+  async function _approveRefusal(accountantId, userId, res) {
+    const { rows: [r] } = await pool.query(`SELECT status, requested_by FROM accountant_clients WHERE user_id = $1 AND accountant_id = $2`, [userId, accountantId]);
+    if (r && r.status === 'pending' && r.requested_by !== 'client') {
+      return res.status(409).json({ error: 'This client joined through your referral link. They need to approve your access from their FinFlow account first.', code: 'AWAITING_CLIENT_CONSENT' });
     }
-  }));
+    return res.status(404).json({ error: 'Pending request not found.' });
+  }
 
   app.post('/api/accountants/reject-client', requireAccountant, wrap(async (req, res) => {
     const { userId } = req.body || {};
@@ -1237,37 +1307,15 @@ If you cannot find a field, use null. Be concise.`;
   }));
 
 
-  // ── 11. RECORD SERVICE COMMISSION (non-Stripe / manual ledger path) ───────
-  // The live billing path is bill-client (Stripe). This route records the same
-  // money split for a manually-collected bill. F17: the rate is the LIVE tier rate
-  // (no hardcoded 4%), and the row records the full split via the shared helper.
-  app.post('/api/accountants/record-commission', requireAccountant, wrap(async (req, res) => {
-    const accountantId = req.session.accountantId;
-    const { userId, billedAmountCents, description } = req.body || {};
-    if (!accountantId || !billedAmountCents) return res.status(400).json({ error: 'Missing fields.' });
-
-    const countRes = await pool.query(
-      `SELECT COUNT(*) FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
-        WHERE ac.accountant_id = $1 AND ac.status = 'active' AND u.data->>'subscriptionStatus' = 'active'`,
-      [accountantId]
-    );
-    const activeCount = parseInt(countRes.rows[0].count) || 0;
-    const rate  = commissionRateFor(activeCount);
-    const split = splitBilling(billedAmountCents, rate, estimateStripeFeeCents(billedAmountCents));
-
-    await pool.query(`
-      INSERT INTO accountant_earnings
-        (accountant_id, client_id, type, amount_cents, billed_cents, commission_cents,
-         stripe_fee_cents, description, status, period_month)
-      VALUES ($1,$2,'service_commission',$3,$4,$5,$6,$7,'pending', date_trunc('month', NOW()))
-    `, [accountantId, userId || null, split.accountantNetCents, split.billedCents,
-        split.commissionCents, split.stripeFeeCents, description || 'Service commission']);
-
-    await _audit(pool, { userId: userId ? parseInt(userId) : null, table: 'accountant_earnings', action: 'COMMISSION_RECORD', newData: { type: 'service_commission', billed_cents: split.billedCents, commission_cents: split.commissionCents, net_cents: split.accountantNetCents, description: description || 'Service commission' }, req });  // F90 residual: accountant workflow audit
-
-    return res.json({ success: true, commissionRate: rate, ...split,
-      commissionFormatted: '$' + (split.commissionCents / 100).toFixed(2) });
-  }));
+  // ── 11. RECORD SERVICE COMMISSION — retired (N81) ───────────────────────────
+  // This accountant-session route inserted a 'pending' accountant_earnings row from any
+  // billedAmountCents, for any (or no) client, with no relationship check. 'pending' earnings are the
+  // admin payout queue, so an accountant could queue a payout to themselves for any amount. Its money
+  // direction was also wrong: on a bill the accountant collected themselves, FinFlow is OWED the
+  // commission — nothing is payable to the accountant. No UI called it. The live billing path is
+  // bill-client (Stripe), which records the split from the real PaymentIntent.
+  app.post('/api/accountants/record-commission', requireAccountant, (req, res) =>
+    res.status(410).json({ error: 'Manual commission recording is not available. Bill clients through FinFlow (Stripe) so the split is recorded from the real payment.', code: 'RECORD_COMMISSION_RETIRED' }));
 
 
   // ── 12. MONTHLY REFERRAL PAYOUT CRON ──────────────────────────────────────
@@ -1311,25 +1359,18 @@ If you cannot find a field, use null. Be concise.`;
       let payoutsCreated = 0;
       let payoutsSkipped = 0;
 
+      // Each link in its own transaction through the shared writer (row lock + one-per-month check), so a
+      // re-run or an overlapping run books nothing twice and one failing row does not stop the others.
       for (const row of rows.rows) {
-        const nextMonth = row.referral_month + 1;
-
-        await client.query(`
-          INSERT INTO accountant_earnings
-            (accountant_id, client_id, type, amount_cents, description, period_month)
-          VALUES ($1, $2, 'referral', 1000, $3, date_trunc('month', NOW()))
-          ON CONFLICT DO NOTHING
-        `, [
-          row.accountant_id,
-          row.user_id,
-          `Referral commission — month ${nextMonth} of ${row.referral_months_total}`,
-        ]);
-
-        await client.query(
-          `UPDATE accountant_clients SET referral_month = $1 WHERE accountant_id = $2 AND user_id = $3`,
-          [nextMonth, row.accountant_id, row.user_id]
-        );
-        payoutsCreated++;
+        try {
+          await client.query('BEGIN');
+          const booked = await _bookReferralMonth(client, row.accountant_id, row.user_id);
+          await client.query('COMMIT');
+          if (booked) payoutsCreated++;
+        } catch (e) {
+          try { await client.query('ROLLBACK'); } catch (_) {}
+          console.error('[referral payouts] link', row.accountant_id, row.user_id, 'failed:', e.message);
+        }
       }
 
       // Also count how many eligible relationships were skipped due to inactive subscription
@@ -1369,25 +1410,12 @@ If you cannot find a field, use null. Be concise.`;
   }));
 
 
-  // ── 12c. REACTIVATE CLIENT COMMISSION (call from Stripe when client resubscribes) ─
-  app.post('/api/accountants/reactivate-client', requireAccountant, wrap(async (req, res) => {
-    const { userId } = req.body || {};
-    if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
-    if (!userId) return res.status(400).json({ error: 'userId required.' });
-
-    // Only reactivate if referral months still remain — no extension for cancelled period
-    await pool.query(`
-      UPDATE accountant_clients
-      SET status = 'active'
-      WHERE user_id = $1
-        AND status = 'suspended'
-        AND referral_month < referral_months_total
-        AND accountant_id = $2
-    `, [userId, req.session.accountantId]);
-
-    await _audit(pool, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_REACTIVATE', field: 'status', newValue: 'active', req });  // F90 Phase B (accountant)
-    return res.json({ success: true });
-  }));
+  // ── 12c. REACTIVATION is the Stripe webhook's job only (reactivateClientForUser, server.js) ─
+  // N80: this accountant-session route let an accountant flip a link the webhook had SUSPENDED (the
+  // client's subscription ended) back to 'active' — regaining books access without the client. A link
+  // becomes active again only when the client's subscription resumes.
+  app.post('/api/accountants/reactivate-client', requireAccountant, (req, res) =>
+    res.status(403).json({ error: 'Access resumes automatically when the client\'s subscription resumes.', code: 'REACTIVATE_WEBHOOK_ONLY' }));
 
 
   // ── 13. ADMIN: LIST PENDING VERIFICATIONS ─────────────────────────────────
@@ -1431,24 +1459,35 @@ If you cannot find a field, use null. Be concise.`;
     const { userId } = req.params;
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     const access = await pool.query(
-      `SELECT 1 FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
+      `SELECT access_level, entity_access FROM accountant_clients WHERE accountant_id = $1 AND user_id = $2 AND status = 'active' LIMIT 1`,
       [req.session.accountantId, userId]
     );
     if (!access.rows[0]) return res.status(403).json({ error: 'No access.' });
 
-    const [invR, expR, payR] = await Promise.all([
-      pool.query(`SELECT data FROM invoices WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
-      pool.query(`SELECT data FROM expenses WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`, [userId]),
-      pool.query(`SELECT data FROM payroll WHERE user_id = $1 ORDER BY created_at DESC`, [userId]),
-    ]);
-    const invs = invR.rows.map(r => r.data || {});
-    const exps = expR.rows.map(r => r.data || {});
-    const pays = payR.rows.map(r => r.data || {});
-    const paidRev = invs.filter(i => i.status === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const outstanding = invs.filter(i => i.status !== 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-    const overdueCnt = invs.filter(i => i.status === 'overdue').length;
-    const totalExp = exps.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-    const payrollTotal = pays.reduce((s, p) => s + (parseFloat(p.gross) || 0), 0);
+    // N83: the SAME scope and canonical books as /books — permitted entities only; revenue is
+    // issue-based accrual (not paid-only); payroll is basis C (payroll_runs lines), never the roster
+    // template (Rule 12); amounts labelled in the scope's currency instead of a hard-coded '$'.
+    const scope = await _clientScope(parseInt(userId), access.rows[0]);
+    const entParam = (req.body && req.body.entity_id) ?? req.query.entity_id;
+    const entityId = entParam != null && /^[1-9][0-9]*$/.test(String(entParam)) ? parseInt(entParam) : null;
+    if (entityId != null && !scope.permitted.has(entityId)) return res.status(403).json({ error: 'No access to this entity.' });
+    if (scope.ea != null && !scope.permittedIds.length) return res.status(403).json({ error: 'No access to any business.' });
+    const books = await _scopeBooks(parseInt(userId), scope, entityId, 'year');
+    const inScope = (eid) => entityId != null ? (eid == null || eid === entityId) : (scope.ea == null || (eid != null && scope.permitted.has(eid)));
+    const { rows: invRows } = await pool.query(`SELECT entity_id, data->>'status' AS status FROM invoices WHERE user_id = $1`, [userId]);
+    const { rows: expCnt } = await pool.query(`SELECT entity_id FROM expenses WHERE user_id = $1`, [userId]);
+    const scopedInv = invRows.filter(r => inScope(r.entity_id));
+    const overdueCnt = scopedInv.filter(r => r.status === 'overdue').length;
+    const expCount = expCnt.filter(r => inScope(r.entity_id)).length;
+    const ent = entityId != null ? scope.entities.find(e => e.id === entityId) : null;
+    const cur = String((ent && ent.currency) || (books.fxCoverage && books.fxCoverage.display) || (scope.entities.length === 1 && scope.entities[0].currency) || 'USD').toUpperCase();
+    const money = (n) => (Number(n) || 0).toFixed(2) + ' ' + cur;
+    const facts = {
+      revenue: books.revenue, outstanding: books.outstanding, overdueCnt,
+      opex: books.opex, cogs: books.cogs, netProfit: books.netProfit,
+      payroll: (books.parts && books.parts.payroll) || 0,
+      invoiceCount: scopedInv.length, expenseCount: expCount,
+    };
 
     const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
     if (!apiKey) return res.status(503).json({ error: 'AI not configured (ANTHROPIC_API_KEY missing).' });
@@ -1462,12 +1501,13 @@ If you cannot find a field, use null. Be concise.`;
 
     const prompt = `You are a professional accountant reviewing a client's financial data. Give 5 concise insights (one per line, no numbering or bullet symbols) covering: outstanding invoice risk, expense patterns, tax filing readiness, cash flow health, and your top recommendation.
 
-Client data:
-- Paid revenue: $${paidRev.toFixed(2)}
-- Outstanding invoices: $${outstanding.toFixed(2)} (${overdueCnt} overdue)
-- Total expenses: $${totalExp.toFixed(2)}
-- Payroll: $${payrollTotal.toFixed(2)}
-- Invoice count: ${invs.length}, Expense count: ${exps.length}
+Client data (current fiscal year, accrual basis, ${cur}):
+- Revenue (invoices issued): ${money(facts.revenue)}
+- Outstanding receivables: ${money(facts.outstanding)} (${facts.overdueCnt} overdue invoices)
+- Operating expenses (incl. payroll): ${money(facts.opex)}; cost of goods sold: ${money(facts.cogs)}
+- Payroll (approved/paid runs): ${money(facts.payroll)}
+- Net profit: ${money(facts.netProfit)}
+- Invoice count: ${facts.invoiceCount}, Expense count: ${facts.expenseCount}
 
 Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
 
@@ -1487,7 +1527,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!aiRes.ok) return res.status(502).json({ error: 'AI service unavailable.' });
     aiCap.recordAccountant(pool, req.session.accountantId, 'shared', 1);   // F18 — count the successful call
     const aiData = await aiRes.json();
-    return res.json({ insights: aiData.content?.[0]?.text || '' });
+    return res.json({ insights: aiData.content?.[0]?.text || '', basis: { currency: cur, entity_id: entityId, ...facts } });
   }));
 
   // ── CHECKLIST ──────────────────────────────────────────────────────────────
@@ -1833,7 +1873,7 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
     const result = await pool.query(`
       SELECT a.id, a.first_name, a.last_name, a.firm, a.country, a.specialisation, a.experience, a.bio,
-             ac.status, ac.access_level, ac.entity_access,
+             ac.status, ac.access_level, ac.entity_access, COALESCE(ac.requested_by, 'referral') AS requested_by,
              (SELECT COUNT(*)::int FROM accountant_messages m
                WHERE m.accountant_id = ac.accountant_id AND m.user_id = ac.user_id
                  AND m.sender = 'accountant'
@@ -1848,6 +1888,30 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     // so the client renders an empty state instead of treating it as an error.
     if (!result.rows[0]) return res.json({});
     return res.json(result.rows[0]);
+  }));
+
+  // ── CLIENT: APPROVE / DECLINE A REFERRAL LINK (N78) ──────────────────────
+  // A user who signed up through an accountant's referral link has a PENDING link they never asked
+  // for. Only the client can turn it on (books access) — or decline it.
+  app.post('/api/accountants/my-accountant/approve', apiLimiter, wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const accountantId = parseInt((req.body || {}).accountantId, 10);
+    if (!Number.isInteger(accountantId) || accountantId <= 0) return res.status(400).json({ error: 'accountantId required.' });
+    const conn = await pool.connect();
+    try {
+      const done = await _activateLink(conn, accountantId, req.session.userId, req, { requireOrigin: 'referral' });
+      if (!done) return res.status(404).json({ error: 'No pending referral link with this accountant.' });
+      return res.json({ success: true });
+    } finally { conn.release(); }
+  }));
+  app.post('/api/accountants/my-accountant/decline', apiLimiter, wrap(async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Login required.' });
+    const accountantId = parseInt((req.body || {}).accountantId, 10);
+    if (!Number.isInteger(accountantId) || accountantId <= 0) return res.status(400).json({ error: 'accountantId required.' });
+    const r = await pool.query(`DELETE FROM accountant_clients WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending' AND requested_by IS DISTINCT FROM 'client'`, [req.session.userId, accountantId]);
+    if (!r.rowCount) return res.status(404).json({ error: 'No pending referral link with this accountant.' });
+    await _audit(pool, { userId: req.session.userId, table: 'accountant_clients', action: 'CLIENT_DECLINE', field: 'status', newValue: 'declined', newData: { by: 'client', accountant_id: accountantId }, req });
+    return res.json({ success: true });
   }));
 
   // ── CLIENT: CHOOSE THEIR ACCOUNTANT'S ACCESS LEVEL — review (view) vs run the books (filing) ──
@@ -2233,15 +2297,15 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     if (existing.rows[0]) {
       const s = existing.rows[0].status;
       if (s === 'active')   return res.status(409).json({ error: 'You are already linked to this accountant.' });
-      if (s === 'pending')  return res.status(409).json({ error: 'You already have a pending request with this accountant.' });
+      if (s === 'pending')  return res.status(409).json({ error: 'You already have a pending link with this accountant. If they referred you, approve it from My Accountant.' });
     }
 
     // Create a PENDING record — accountant must approve before getting books access
     // referral_months_total = 0 until approved (then set based on tier at activation time)
     await pool.query(`
-      INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total)
-      VALUES ($1, $2, 'pending', 0)
-      ON CONFLICT (accountant_id, user_id) DO UPDATE SET status = 'pending'
+      INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total, requested_by)
+      VALUES ($1, $2, 'pending', 0, 'client')
+      ON CONFLICT (accountant_id, user_id) DO UPDATE SET status = 'pending', requested_by = 'client'
     `, [accountantId, req.session.userId]);
 
     // Notify accountant by email
@@ -2258,10 +2322,10 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
         from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
         to: accEmail,
         subject: `New client request — ${clientName}`,
-        html: `<p>Hi ${accFirst},</p>
+        html: String(emailHtml`<p>Hi ${accFirst},</p>
                <p><strong>${clientName}</strong> (${clientEmail}) has requested to link with you on FinFlow.</p>
                <p>Log in to your accountant dashboard to review and approve or decline the request.</p>
-               <p><a href="${appUrl()}/accountant">Review request →</a></p>`,
+               <p><a href="${appUrl()}/accountant">Review request →</a></p>`),
       }).catch(() => {});
     }
 
@@ -2278,7 +2342,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
         ac.invited_at   AS requested_at,
         u.data->>'email' AS client_email,
         u.data->>'name'  AS client_name,
-        u.data->>'plan'  AS client_plan
+        u.data->>'plan'  AS client_plan,
+        COALESCE(ac.requested_by, 'referral') AS requested_by
       FROM accountant_clients ac
       JOIN users u ON u.id = ac.user_id
       WHERE ac.accountant_id = $1 AND ac.status = 'pending'
@@ -2288,40 +2353,19 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   }));
 
   // POST — approve a pending client request
-  app.post('/api/accountants/approve-request', requireAccountant, wrap(async (req, res) => {
+  // activate-client is the legacy name the dashboard's client list still calls — same handler, same rule.
+  const _approveRequest = wrap(async (req, res) => {
     const { userId } = req.body || {};
     if (!/^[1-9][0-9]*$/.test(String(userId))) return res.status(400).json({ error: 'Invalid userId.' });
     if (!userId) return res.status(400).json({ error: 'userId required.' });
 
     const conn = await pool.connect();
     try {
-      // F17: referral months FROZEN here at approval, from the shared tier ladder.
-      // "Active client" = consented AND paying (subscriptionStatus='active'); trial
-      // clients do NOT count toward tier.
-      const countRes = await conn.query(
-        `SELECT COUNT(*) FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
-          WHERE ac.accountant_id = $1 AND ac.status = 'active' AND u.data->>'subscriptionStatus' = 'active'`,
-        [req.session.accountantId]
-      );
-      const count  = parseInt(countRes.rows[0].count) || 0;
-      const months = tierForAccountant(count).referralMonths;
-
-      // Activate the pending record
-      const upd = await conn.query(`
-        UPDATE accountant_clients
-        SET status = 'active', activated_at = NOW(), referral_months_total = $3
-        WHERE user_id = $1 AND accountant_id = $2 AND status = 'pending'
-        RETURNING user_id
-      `, [userId, req.session.accountantId, months]);
-      if (!upd.rows[0]) return res.status(404).json({ error: 'Pending request not found.' });
-
-      // First month referral earning
-      await conn.query(`
-        INSERT INTO accountant_earnings (accountant_id, client_id, type, amount_cents, description, period_month)
-        VALUES ($1, $2, 'referral', 1000, 'Referral commission — month 1', date_trunc('month', NOW()))
-      `, [req.session.accountantId, userId]);
-
-      await _audit(conn, { userId: parseInt(userId), table: 'accountant_clients', action: 'CLIENT_ACTIVATE', field: 'status', newValue: 'active', req });  // F90 residual: accountant workflow audit (approve access request)
+      // F17: referral months FROZEN at approval, from the shared tier ladder (inside _activateLink).
+      // N78: only a CLIENT-initiated request can be approved by the accountant.
+      const done = await _activateLink(conn, req.session.accountantId, userId, req, { requireOrigin: 'client' });
+      if (!done) return _approveRefusal(req.session.accountantId, userId, res);
+      const months = done.months;
 
       // Email the client
       const [uRes, aRes] = await Promise.all([
@@ -2336,10 +2380,10 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
           from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
           to: clientEmail,
           subject: 'Your accountant request has been approved',
-          html: `<p>Hi ${uRes.rows[0]?.name || 'there'},</p>
+          html: String(emailHtml`<p>Hi ${uRes.rows[0]?.name || 'there'},</p>
                  <p><strong>${accName}</strong> from <strong>${firm}</strong> has approved your request on FinFlow.</p>
                  <p>They now have read access to your books and can help manage your accounts.</p>
-                 <p><a href="${appUrl()}">Log in to FinFlow →</a></p>`,
+                 <p><a href="${appUrl()}">Log in to FinFlow →</a></p>`),
         }).catch(() => {});
       }
 
@@ -2347,7 +2391,9 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     } finally {
       conn.release();
     }
-  }));
+  });
+  app.post('/api/accountants/approve-request', requireAccountant, _approveRequest);
+  app.post('/api/accountants/activate-client', requireAccountant, _approveRequest);
 
   // POST — decline a pending client request
   app.post('/api/accountants/decline-request', requireAccountant, wrap(async (req, res) => {
@@ -2421,75 +2467,107 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
   });
 
   // ── BILL CLIENT ───────────────────────────────────────────────────────────
+  // N86 / N98: the dashboard sends { clientUserId, description, amountCents } and expects a hosted
+  // payment link (`url`) that the client is emailed. The route used to require { clientId, amount }
+  // (so every dashboard bill was a 400), returned a PaymentIntent client secret to the ACCOUNTANT, sent
+  // no email, booked the earning as 'pending' (the admin payout queue) before anyone paid, and echoed
+  // raw Stripe errors. Now: a Stripe Checkout Session on the accountant's connected account (destination
+  // charge, FinFlow's tier commission as the application fee), emailed to the linked client; the earning
+  // is 'awaiting_payment' until payment_intent.succeeded marks it 'paid' (server.js webhook, matched by
+  // the earning id carried in the PaymentIntent metadata).
+  const _billEsc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   app.post('/api/accountants/bill-client', requireAccountant, async (req, res) => {
+    let earningId = null;
     try {
       if (!stripe) return res.status(503).json({ error: 'Stripe not configured.' });
-      const { clientId, amount, description, currency = 'usd' } = req.body;
-      if (!clientId || !amount) return res.status(400).json({ error: 'clientId and amount required' });
+      const b = req.body || {};
+      const clientId = parseInt(b.clientUserId != null ? b.clientUserId : b.clientId, 10);
+      const description = String(b.description || '').trim().slice(0, 200) || 'Accounting services';
+      const currency = String(b.currency || 'usd').toLowerCase();
+      if (!Number.isInteger(clientId) || clientId <= 0) return res.status(400).json({ error: 'Choose a client to bill.' });
+      if (!/^[a-z]{3}$/.test(currency)) return res.status(400).json({ error: 'Invalid currency.' });
+      const units = require('./stripe-units');
+      // amountCents = minor units (the dashboard); amount = major units (API callers). Currency exponent (N47).
+      const amountMinor = b.amountCents != null ? Number(b.amountCents) : units.majorToMinor(parseFloat(b.amount), currency);
+      if (!Number.isInteger(amountMinor) || amountMinor <= 0) return res.status(400).json({ error: 'Enter a valid amount.' });
+
       const { rows: clientRows } = await pool.query(
-        `SELECT u.id, u.data FROM users u
+        `SELECT u.id, u.data->>'email' AS email, u.data->>'name' AS name FROM users u
          JOIN accountant_clients ac ON ac.user_id = u.id AND ac.accountant_id = $2 AND ac.status = 'active'
          WHERE u.id = $1`,
         [clientId, req.session.accountantId]
       );
       if (!clientRows.length) return res.status(403).json({ error: 'Client not found or not linked to you' });
-      const { rows: accRows } = await pool.query('SELECT stripe_account_id FROM accountants WHERE id = $1', [req.session.accountantId]);
-      const stripeAccountId = accRows[0]?.stripe_account_id;
-      if (!stripeAccountId) return res.status(400).json({ error: 'Connect your Stripe account first' });
-      const amountCents = Math.round(parseFloat(amount) * 100);
+      const cl = clientRows[0];
+      const { rows: accRows } = await pool.query('SELECT stripe_account_id, first_name, last_name, firm FROM accountants WHERE id = $1', [req.session.accountantId]);
+      const acc = accRows[0] || {};
+      if (!acc.stripe_account_id) return res.status(400).json({ error: 'Connect your Stripe account first' });
 
-      // F17: LIVE tier commission (was a flat hardcoded 4%). "Active client" =
-      // consented AND paying (subscriptionStatus='active'); the accountant's first 3
-      // such clients are commission-free (onboarding hook, applied by commissionRateFor).
+      // F17: LIVE tier commission. "Active client" = consented AND paying (subscriptionStatus='active').
       const countRes = await pool.query(
         `SELECT COUNT(*) FROM accountant_clients ac JOIN users u ON u.id = ac.user_id
           WHERE ac.accountant_id = $1 AND ac.status = 'active' AND u.data->>'subscriptionStatus' = 'active'`,
         [req.session.accountantId]
       );
-      const activeCount = parseInt(countRes.rows[0].count) || 0;
-      const rate   = commissionRateFor(activeCount);
-      const feeEst = estimateStripeFeeCents(amountCents);
-      const split  = splitBilling(amountCents, rate, feeEst);
+      const rate  = commissionRateFor(parseInt(countRes.rows[0].count) || 0);
+      const split = splitBilling(amountMinor, rate, estimateStripeFeeCents(amountMinor));
 
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: amountCents,
-        currency,
-        application_fee_amount: split.commissionCents,   // FinFlow's tier commission
-        on_behalf_of: stripeAccountId,                    // accountant is settlement merchant → bears the Stripe fee
-        transfer_data: { destination: stripeAccountId },
-        metadata: {
-          accountant_id: req.session.accountantId,
-          client_id: clientId,
-          description: description || 'Accounting services'
-        }
+      // The earning exists from the start, NOT payable: 'awaiting_payment' (never the 'pending' payout queue).
+      const { rows: [er] } = await pool.query(
+        `INSERT INTO accountant_earnings
+           (accountant_id, client_id, type, amount_cents, billed_cents, commission_cents, stripe_fee_cents, description, status, created_at)
+         VALUES ($1,$2,'service_commission',$3,$4,$5,$6,$7,'awaiting_payment',NOW()) RETURNING id`,
+        [req.session.accountantId, clientId, split.accountantNetCents, split.billedCents, split.commissionCents, split.stripeFeeCents, description]);
+      earningId = er.id;
+
+      const meta = { kind: 'accountant_bill', accountant_id: String(req.session.accountantId), client_id: String(clientId), earning_id: String(earningId) };
+      const session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        customer_email: cl.email || undefined,
+        line_items: [{ price_data: { currency, unit_amount: amountMinor, product_data: { name: description } }, quantity: 1 }],
+        payment_intent_data: {
+          application_fee_amount: split.commissionCents,     // FinFlow's tier commission
+          on_behalf_of: acc.stripe_account_id,                // accountant is the settlement merchant
+          transfer_data: { destination: acc.stripe_account_id },
+          metadata: meta,
+        },
+        metadata: meta,
+        success_url: appUrl() + '/pay-received.html',
+        cancel_url: appUrl() + '/pay-received.html?status=cancelled',
       });
 
-      // Ledger records the FULL split: amount_cents = accountant NET (billed − Stripe
-      // fee − commission), with the fee an ESTIMATE. The payment_intent.succeeded
-      // webhook reconciles to the real balance-transaction fee and flips status→'paid'.
-      await pool.query(
-        `INSERT INTO accountant_earnings
-           (accountant_id, client_id, type, amount_cents, billed_cents, commission_cents,
-            stripe_fee_cents, payment_intent_id, description, status, created_at)
-         VALUES ($1,$2,'service_commission',$3,$4,$5,$6,$7,$8,'pending',NOW())
-         ON CONFLICT DO NOTHING`,
-        [req.session.accountantId, clientId, split.accountantNetCents, split.billedCents,
-         split.commissionCents, split.stripeFeeCents, paymentIntent.id, description || 'Accounting services']
-      );
+      let emailed = false;
+      if (cl.email && resendClient) {
+        const who = (`${acc.first_name || ''} ${acc.last_name || ''}`.trim()) || 'Your accountant';
+        try {
+          await resendClient.emails.send({
+            from: process.env.EMAIL_FROM || 'FinFlow <noreply@finflow.app>',
+            to: cl.email,
+            subject: `Payment request from ${who}${acc.firm ? ' (' + acc.firm + ')' : ''}`,
+            html: `<p>Hi ${_billEsc(cl.name || 'there')},</p>
+                   <p><strong>${_billEsc(who)}</strong>${acc.firm ? ' from <strong>' + _billEsc(acc.firm) + '</strong>' : ''} has sent you a payment request on FinFlow.</p>
+                   <p><strong>${_billEsc(description)}</strong> — ${_billEsc(units.minorToMajor(amountMinor, currency).toFixed(units.currencyExponent(currency)))} ${_billEsc(currency.toUpperCase())}</p>
+                   <p><a href="${_billEsc(session.url)}">Pay securely with Stripe →</a></p>`,
+          });
+          emailed = true;
+        } catch (e) { console.error('[bill-client] client email failed:', e.message); }
+      }
 
-      await _audit(pool, { userId: parseInt(clientId), table: 'accountant_earnings', action: 'BILL_CLIENT', newData: { billed_cents: split.billedCents, commission_cents: split.commissionCents, net_cents: split.accountantNetCents, payment_intent_id: paymentIntent.id, description: description || 'Accounting services' }, req });  // F90 residual: accountant workflow audit
+      await _audit(pool, { userId: clientId, table: 'accountant_earnings', recordId: earningId, action: 'BILL_CLIENT', newData: { billed_cents: split.billedCents, commission_cents: split.commissionCents, net_cents: split.accountantNetCents, checkout_session_id: session.id, description }, req });  // F90 residual: accountant workflow audit
 
       res.json({
-        clientSecret: paymentIntent.client_secret,
-        paymentIntentId: paymentIntent.id,
-        amount: amountCents,
+        url: session.url,
+        emailed,
+        amount: amountMinor,
         commissionRate: rate,
         commissionCents: split.commissionCents,
         estStripeFeeCents: split.stripeFeeCents,
         accountantNetCents: split.accountantNetCents
       });
     } catch (e) {
-      res.status(500).json({ error: e.message });
+      console.error('[bill-client] failed:', e && e.message);
+      if (earningId != null) { try { await pool.query(`DELETE FROM accountant_earnings WHERE id = $1 AND status = 'awaiting_payment'`, [earningId]); } catch (_) {} }
+      res.status(502).json({ error: 'Could not create the payment link. Please try again.' });
     }
   });
 

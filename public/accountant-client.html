@@ -1801,7 +1801,7 @@ function clearMsgNavBadge() { setMsgNavBadge(0); }
 
 // ── UTILS ──────────────────────────────────────────────────────────────────
 function set(id, val) { const el=document.getElementById(id); if(el) el.textContent=val; }
-function esc(s) { return String(s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function esc(s) { return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 
 function showToast(msg, type='') {
   const t = document.createElement('div');

@@ -59,11 +59,11 @@ const OWNER = { email: 'qbo-owner@finflow.test', password: 'harness-password-not
     A('  authorize URL is Intuit\'s', url.startsWith('https://appcenter.intuit.com/connect/oauth2?'));
     A('  scope = com.intuit.quickbooks.accounting', /scope=com.intuit.quickbooks.accounting/.test(url));
     A('  redirect_uri points at /api/quickbooks/callback', /redirect_uri=[^&]*%2Fapi%2Fquickbooks%2Fcallback/.test(url));
-    A('  state = the account id', url.includes('state=' + uid));
+    A('  state = a random single-use nonce, not the guessable account id (N43)', (() => { const st = new URL(url).searchParams.get('state'); return !!st && st !== String(uid) && st.length >= 32; })());
     A('  response_type=code', /response_type=code/.test(url));
 
     // ── callback (realmId on the query) → stores per-entity ──
-    const cb = await http.get('/api/quickbooks/callback?entity_id=' + eidA + '&code=auth_code_xyz&realmId=REALM123');
+    const cb = await http.get('/api/quickbooks/callback?entity_id=' + eidA + '&code=auth_code_xyz&realmId=REALM123' + '&state=' + new URL(url).searchParams.get('state'));
     A('callback 200 (returns close-popup HTML)', cb.status === 200, 'status ' + cb.status);
     A('  token exchange used HTTP Basic auth', /^Basic /.test(String(tokenAuthSeen || '')), 'auth=' + tokenAuthSeen);
     A('  token exchange sent grant_type=authorization_code', /grant_type=authorization_code/.test(tokenBodySeen || ''));

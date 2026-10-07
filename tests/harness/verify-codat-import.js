@@ -138,7 +138,11 @@ async function main() {
     A('customers: 2 rows', (await cnt('customers')) === 2);
     A('vendors: 2 rows', (await cnt('vendors')) === 2);
     A('chart_of_accounts: 3 rows', (await cnt('chart_of_accounts')) === 3);
-    A('payments_received: 2 rows', (await cnt('payments_received')) === 2);
+    // N46: customer payments are real invoice payments on the imported invoices (the retired payments_received
+    // store is no longer written).
+    A('payments_received: 0 rows (retired store not written)', (await cnt('payments_received')) === 0);
+    const _ip = (await c.query(`SELECT ip.amount::float a, i.data->>'notes' n FROM invoice_payments ip JOIN invoices i ON i.id = ip.invoice_id ORDER BY ip.id`)).rows;
+    A('invoice_payments: 2 rows, linked to the imported invoices (1000 → INV-1, 500 → INV-3)', _ip.length === 2 && _ip[0].a === 1000 && /INV-1/.test(_ip[0].n) && _ip[1].a === 500 && /INV-3/.test(_ip[1].n), JSON.stringify(_ip));
     A('payments_made: 1 row', (await cnt('payments_made')) === 1);
     A('journals: 1 row (balanced only)', (await cnt('journals')) === 1);
 

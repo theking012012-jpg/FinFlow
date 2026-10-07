@@ -63,7 +63,10 @@ async function main() {
     A('WiPay: api_key stored ENCRYPTED (ciphertext, not plaintext)', enc(wv.api_key, WIPAY_KEY), 'stored=' + wv.api_key);
     A('WiPay: plaintext api_key NOT present anywhere in the stored row', !!wraw && !wraw.includes(WIPAY_KEY));
 
-    // ── WooCommerce ──
+    // ── WooCommerce ── (the store URL is resolved by safe-egress on connect — N54; offline, so DNS is
+    // mocked: shop.example.com → a public address)
+    const _dns = require('dns'), _realLookup = _dns.promises.lookup;
+    _dns.promises.lookup = async (h, o) => (h === 'shop.example.com' ? [{ address: '93.184.215.14', family: 4 }] : _realLookup(h, o));
     const CK = 'ck_PLAINTEXT_consumer_key_XYZ', CS = 'cs_PLAINTEXT_consumer_secret_XYZ';
     const or = await http.post('/api/woocommerce/connect', { store_url: 'https://shop.example.com', consumer_key: CK, consumer_secret: CS });
     A('WooCommerce connect → 201', or.status === 201, JSON.stringify(or.json));

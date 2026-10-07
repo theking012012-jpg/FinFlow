@@ -419,7 +419,7 @@ Client-displayed figure **==** server figure, six figures × three periods.
 ## A7 · Page-level figures — 23
 | # | Page | Figure | Expected | Result |
 |---|---|---|---|---|
-| A7.1 | Invoices | total outstanding | 8,500 | |
+| A7.1 | Invoices | total outstanding | 8,500 || PASS (seed 9f6476f1) — `step3-gate.js` A7.1 (server AR, D2 non-future) = 8,500 · 56/0 |
 | A7.2 | Invoices | count excludes draft | 4 of 5 | |
 | A7.3 | Invoices | subtitle wording | "1 overdue" (never "All invoices paid") | |
 | A7.4 | Payments Received | total received | 1,500 | PASS (2026-08-23) — **F86 ruled: `invoice_payments` (Store B) is canonical Payments Received.** `step3-gate.js` A7.4 (via `GET /api/bank-reconciliation`.unmatchedPayments) **and** A7.4b (`GET /api/invoice-payments`, no-arg, exactly 2 rows resolving to INV-1/INV-2) both total **1,500**; full gate **56/0**. `payments_received` (Store A) is empty on the seed and orphaned in prod — see `f86-payments-source-instrument.js` (Store B $1,500 vs Store A $0 across DB **and** every live endpoint; a source swap would read $0 — Rule-4 discriminating). |
@@ -432,8 +432,8 @@ Client-displayed figure **==** server figure, six figures × three periods.
 | A7.15–17 | Cash Flow | net — Jun/Jul/FY | −250 / −1,850 / −1,700 | PASS (seed 9f6476f1) |
 | A7.18 | Cash Flow | FY cash out != FY opex | 3,200 != 8,200 || PASS* (seed 9f6476f1) — `verify-verification-a7-gaps.js`: Cash Flow FY cash out 3,200 != FY opex 9,100 (expected.js PL.fy.opex). *"8,200" above predates a seed revision — OWNER: restate |
 | A7.19 | Banking | in/out/net for **selected period** (no MTD card) | ⬜ **RE-SCOPED — see below. The old "matches A7.9–17" expectation is RETIRED, not failed.** | N/A pending a Banking-page spec |
-| A7.20 | Bills / AP | outstanding | 1,100 | |
-| A7.21 | Payroll | Monthly Payroll card | 5,000 (roster = template, informational only) | |
+| A7.20 | Bills / AP | outstanding | 1,100 || PASS (seed 9f6476f1) — `step3-gate.js` A7.20 = 1,100 · 56/0 |
+| A7.21 | Payroll | Monthly Payroll card | 5,000 (roster = template, informational only) || PASS (seed 9f6476f1) — `step3-gate.js` A7.21 roster card 5,000, contributes 0 to expense · 56/0 |
 | A7.22 | Payroll | run history dates | formatted, correct **local** day | |
 | A7.23 | Tax | YTD paid | **absent, or the literal text "Not tracked". ANY number = FAIL** (see below) | |
 

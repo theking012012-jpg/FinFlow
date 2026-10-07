@@ -8,7 +8,7 @@
  *   dated 2025-11-20 (amount 10). Hand-computed FY2026 values (today pinned 2026-07-25):
  *     P&L           revenue 745 · expenses 614 · net 131
  *     Balance Sheet AR 635 · AP 22 · equity 131 (2025 rows: the 2025 run + expense hit equity → see below)
- *     Cash Flow     in 80 · out 280 (FY2026 window)
+ *     Cash Flow     in 110 · out 292 (FY2026 window; journal cash legs incl. — L6)
  *     AR 635 · AP 22 · Sales by Customer 745
  *     Payroll Summary  total gross 550 = approved 300 + paid 250 (draft 199 + prior-FY 888 excluded)
  *                      BUG (all runs, all time): 199 + 250 + 300 + 888 = 1637
@@ -16,7 +16,7 @@
  *     Tax-Deductible   FY2026: Office 8 × 'half' = 4                   BUG ('yes' only, all time): 10
  *     Expense Report  FY2026 recorded expense rows: Office 8 (the 2025 Software 10 excluded)
  *     Income Tax Estimate taxable = revenue 745 − deductible 4 = 741 (control — already canonical)
- *     Cash Flow BUG (all time): out 280 + 888 (2025 paid run) + 10 (2025 expense) = 1178
+ *     Cash Flow BUG (all time): out 292 + 888 (2025 paid run) + 10 (2025 expense) = 1190
  *
  *   node -r ./tests/harness/clock.js tests/harness/verify-reports-parity.js
  */
@@ -63,7 +63,7 @@ async function seed({ http, client }) {
     const pl = await gen('Profit & Loss Statement');
     A('P&L: revenue 745 · expenses 614 · net 131', near(after(pl, 'Total Revenue'), 745) && near(after(pl, 'Total Operating Expenses'), 614) && near(after(pl, 'Net Profit'), 131), pl.slice(0, 300));
     const cf = await gen('Cash Flow Statement');
-    A('Cash Flow: in 80 · out 280', near(after(cf, 'Total Inflow'), 80) && near(after(cf, 'Total Outflow'), 280), cf.slice(0, 200));
+    A('Cash Flow: in 110 · out 292', near(after(cf, 'Total Inflow'), 110) && near(after(cf, 'Total Outflow'), 292), cf.slice(0, 200));
     const ar = await gen('Accounts Receivable');
     A('AR report: 635', near(after(ar, 'Total Receivable'), 635), ar.slice(0, 160));
     const ap = await gen('Accounts Payable');

@@ -15,7 +15,7 @@
  *           Cash Flow page Cash In / Out / Net · Reports page Revenue / Net Result
  *
  * Expected values are derived from the seed by hand (see fullLegScenario.js), never from the code:
- *   year  : revenue 745 · opex 614 · net 131 · AR 635 · AP 22 · cash in 80 / out 280
+ *   year  : revenue 745 · opex 614 · net 131 · AR 635 · AP 22 · cash in 110 / out 292 (cash −182)
  *   June  : revenue 745 · opex 314 (= 614 − May's approved run 300) · net 431
  *   Quarter: TODAY's fiscal quarter (Q3, Jul–Sep — no rows) ⇒ 0 · 0 · 0, also after browsing to June (L9)
  *   monthly (Jan FY): revenue Jun 745 · expense May 300, Jun 314, all other months 0
@@ -65,7 +65,8 @@ const money = s => { const m = String(s == null ? '' : s).replace(/[,\s]/g, '').
     const bs = await postJ('/api/reports/balance-sheet');
     A('balance sheet (GL) AR == 635, AP == 22, equity == 131', bs.source === 'gl' && near(bs.accountsReceivable, 635) && near(bs.accountsPayable, 22) && near(bs.equity, 131), JSON.stringify(bs));
     const cf = await postJ('/api/reports/cash-flow?period=year&fyStart=0');
-    A('cash-flow report in 80 / out 280', near(cf.totalInflow, EXPECTED.cashIn) && near(cf.totalOutflow, EXPECTED.cashOut), 'in=' + cf.totalInflow + ' out=' + cf.totalOutflow);
+    A('cash-flow report in 110 / out 292', near(cf.totalInflow, EXPECTED.cashIn) && near(cf.totalOutflow, EXPECTED.cashOut), 'in=' + cf.totalInflow + ' out=' + cf.totalOutflow);
+    A('balance-sheet Cash −182 == cash-flow net (L6)', near(bs.cash, EXPECTED.cash) && near(cf.totalInflow - cf.totalOutflow, EXPECTED.cash), 'bs cash=' + bs.cash + ' cf net=' + (cf.totalInflow - cf.totalOutflow));
 
     // ── client, year ──
     await settle(60, 100);
@@ -86,7 +87,7 @@ const money = s => { const m = String(s == null ? '' : s).replace(/[,\s]/g, '').
     window.showPage('vendors'); await settle(20, 100);
     A('Vendors Payables == 22', near(card('vendors', 'Payables'), 22), 'shown=' + card('vendors', 'Payables'));
     window.showPage('cashflow'); await settle(25, 100);
-    A('Cash Flow page In 80 / Out 280 / Net −200', near(money(text('cf-in')), 80) && near(money(text('cf-out')), 280) && near(money(text('cf-net')), -200),
+    A('Cash Flow page In 110 / Out 292 / Net −182', near(money(text('cf-in')), 110) && near(money(text('cf-out')), 292) && near(money(text('cf-net')), -182),
       'in=' + text('cf-in') + ' out=' + text('cf-out') + ' net=' + text('cf-net'));
     window.showPage('reports'); await settle(25, 100);
     A('Reports page Revenue 745 / Net Result 131', near(card('reports', 'Revenue'), 745) && near(card('reports', 'Net Result'), 131), 'rev=' + card('reports', 'Revenue') + ' net=' + card('reports', 'Net Result'));

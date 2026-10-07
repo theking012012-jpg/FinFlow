@@ -15,13 +15,14 @@
  *   Net      = 745 − 614                                                                  = 131
  *   AR       = invoice 700 − payment 60 − credit note 5                                    = 635
  *   AP       = bill 40 − linked payment 15 − vendor credit 3                               = 22
- *   Cash in  = invoice payment 60 + sales receipt 20                                       = 80
- *   Cash out = expense 8 + payments made 15 + 7 + paid payroll 250                         = 280
+ *   Cash in  = invoice payment 60 + sales receipt 20 + income JE's Dr Checking 30          = 110
+ *   Cash out = expense 8 + payments made 15 + 7 + paid payroll 250 + rent JE's Cr Checking 12 = 292
+ *   Cash     = 110 − 292 = −182 (no opening balance)   [L6: journal cash legs are cash]
  *   Expense categories: Payroll 550 · Bills & vendors 44 (40 + 7 − 3) · Journal entries 12 · Office 8
  *   Tax-deductible: the Office expense is 'half' ⇒ 4 (a yes-only reader shows 0)
  */
 const EXPECTED = Object.freeze({
-  revenue: 745, opex: 614, net: 131, ar: 635, ap: 22, cashIn: 80, cashOut: 280,
+  revenue: 745, opex: 614, net: 131, ar: 635, ap: 22, cashIn: 110, cashOut: 292, cash: -182,
   categories: { 'Payroll': 550, 'Bills & vendors': 44, 'Journal entries': 12, 'Office': 8 },
   deductible: 4,
 });

@@ -215,6 +215,15 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   → GREEN 14/14. `verify-export-csv.js` (quoting) now injects the store the export reads (`_realInvoices`)
   + asserts the new header and ISO dates → 8/8. Regression green: pdf-export 10, step4-client-gate 5.
 
+- 2026-10-07 — **1.1 / L6 cash leg + L15.** Harness `verify-journal-cash.js` (full-leg seed; posted, then the
+  income JE flipped to Draft): RED 8/11 on pre-fix (BS cash −200, cash-flow 80/280, forecast none, BS lines
+  435 ≠ 453) → GREEN 11/11 (cash −182 → −212 after the reversal, on BS, cash-flow, forecast). Full-leg
+  hand cash updated (in 110 / out 292 / −182) in fullLegScenario, full-leg-parity (28/28), reports-parity
+  (10/10). Gates step1–4 green; regression green: f123-balance-sheet-cash 13, f57-cash-card 14,
+  cashflow-forecast, f137-balance-sheet-report 6, f137-cashflow-ar-ap-reports 12, f40-cashflow-route-gone 3,
+  and all 33 verify-gl-* (incl. bs-readswap 15, readswap-consistency 18, statements 21, reversal 16,
+  status-reversal 25, post-journal 18 / -fx 12, consolidation 13, payroll-cashout 16).
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
@@ -232,12 +241,16 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   Paid / Vendors Paid, Sales Receipts count, Quotes count, Manual Journals Debits/Credits, Projects ·
   Billable Hours, Timesheet · Hours Logged (+ its breakdown). Controls already right: Credit Notes /
   Vendor Credits "This Month", Banking Inflow/Outflow (MTD).
-- **L6** (open, design) Manual-journal balance-sheet legs post to `J`-namespaced shadow accounts (J1010,
-  J1100, J2000 …), so a JE "Dr Checking 30 / Cr Revenue 30" moves revenue but never the balance sheet's
-  Cash line (`bal['1000']`), AR (1100) or AP (2000), and the cash-flow report ignores JE cash legs. All
-  cash surfaces agree with each other (BS cash == cash-flow net == −200 on the full-leg seed) while all
-  omitting the JE's +30/−12 (Rule 6: agreement ≠ correctness). Fix needs a JE-template→system-account
-  map + computeBooks AR/AP to carry JE legs so the reconcile gate still ties → accounting design, see §Decisions.
+- **L6** (cash leg FIXED, see Progress Log) Manual-journal balance-sheet legs post to `J`-namespaced shadow
+  accounts (J1010, J1100, J2000 …). A JE "Dr Checking 30 / Cr Revenue 30" moved revenue but no cash figure:
+  balance-sheet Cash read only `bal['1000']`, the 13-week forecast reads that, and the cash-flow report is
+  built from tables. All cash surfaces agreed (BS cash == cash-flow net == −200) while all omitting the JE's
+  +30/−12 (Rule 6). FIXED for cash: J1000/J1010/J1020 are cash on every cash reader.
+- **L6b** (open, design) The same J-shadowing for AR (J1100), AP (J2000), Inventory (J1200), Tax Payable
+  (template 2200 "Tax Payable" ≠ system 2200 "Payroll Liabilities"): a JE to AR/AP moves no AR/AP figure.
+  Fixing it needs computeBooks AR/AP to carry the JE legs, or the balance-sheet reconcile gate
+  (glAR == books AR, glAP == books AP) breaks and the BS falls back to the oracle. Accounting design → Owner
+  Handoff (journal account map).
 - **L7** (open) Paid payroll cash-out is dated by `run_date` (= the run's CREATION instant) in both the
   GL `payroll_paid` entry and the cash-flow report — not the date it was marked paid. A June run marked
   paid in October shows its cash out in the creation month. No `paid_at` column exists. (F85 family.)
@@ -270,8 +283,8 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
 - **L14** (open, cosmetic) P&L report groups expenses as Payroll / "Bills & other" / categories — the
   journal leg is folded into "Bills & other", not the shared "Bills & vendors" / "Journal entries" list (D3).
   Sums correctly (614); label-only divergence.
-- **L15** (open) Balance Sheet report: Total Assets 453 but its lines are Cash −200 + AR 635 = 435 — the 18 of
-  journal cash (J1010, see L6) is in the total with no line. Resolves with L6.
+- **L15** (FIXED with L6) Balance Sheet report: Total Assets 453 but its lines were Cash −200 + AR 635 = 435 —
+  the 18 of journal cash (J1010) was in the total with no line. Now Cash −182 + AR 635 = 453.
 - **L16** (FIXED) Page exports: Vendors / Bills / Quotes / Items exports read globals nothing assigns
   (`allVendors`, `allBills`, `_quotes`/`allQuotes`, `userItems`/`allItems`) → always "No data to export." with
   rows on screen; Expenses "Tax Deductible" = `(ded||deductible)?'Yes':'No'` → the string 'no' exported as

@@ -6556,7 +6556,7 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   // the P&L recognises at `approved` (decision 2), cash moves only when the run is actually paid.
   // Using IN ('approved','paid') here would book cash for a run that has not been paid.
   // Entity scoping and the JOIN mirror computeBooks' payroll query exactly.
-  const [ipRes, expenses, paymentsMade, receipts, paidRunRes] = await Promise.all([
+  const [ipRes, expenses, paymentsMade, receipts, paidRunRes, jeCashRes] = await Promise.all([
     pool.query(`SELECT * FROM invoice_payments WHERE user_id = $1`, [uid]),
     db.allByUser('expenses', uid, matchEnt),
     db.allByUser('payments_made', uid, matchEnt),
@@ -6572,6 +6572,20 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
         GROUP BY pr.id, pr.run_date, pr.entity_id`,
       [uid, eid]
     ),   // N113 class: a failed payroll read used to be swallowed into "no payroll" — cash out silently understated
+    // L6: posted manual journals' CASH legs (JOURNAL_CASH_LEDGER_CODES), read from the LEDGER so a reversal
+    // (Posted→Draft, delete, re-date) nets out exactly as it does on the balance sheet. Netted per journal
+    // per month: a fully reversed journal contributes nothing; a net debit is cash in, a net credit cash out.
+    pool.query(
+      `SELECT le.source_id, to_char(le.entry_date, 'YYYY-MM') || '-01' AS d,
+              COALESCE(SUM(ll.debit - ll.credit), 0)::float AS net
+         FROM ledger_lines ll
+         JOIN ledger_accounts la ON la.id = ll.account_id
+         JOIN ledger_entries le ON le.id = ll.entry_id AND le.status = 'posted'
+        WHERE ll.user_id = $1 AND le.source_type = 'journal' AND la.code = ANY($3)
+          AND ($2::int IS NULL OR le.entity_id IS NULL OR le.entity_id = $2)
+        GROUP BY le.source_id, to_char(le.entry_date, 'YYYY-MM')`,
+      [uid, eid, JOURNAL_CASH_LEDGER_CODES]
+    ),
   ]);
   const invoicePayments = ipRes.rows.filter(matchEnt);
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -6594,6 +6608,7 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   // mark-paid, at which point this line keys on it and the approximation disappears.
   // NOT silently averaged or guessed — dated on the only real date available, and labelled.
   (paidRunRes.rows || []).forEach(r => add(r.run_date, 'outflow', r.run_total));
+  (jeCashRes.rows || []).forEach(r => { if (r.net > 0.005) add(r.d, 'inflow', r.net); else if (r.net < -0.005) add(r.d, 'outflow', -r.net); });   // L6
   const rows = Object.keys(monthMap).sort().map(k => ({
     month: labelOf(k), key: k, inflow: monthMap[k].inflow, outflow: monthMap[k].outflow,
     net: monthMap[k].inflow - monthMap[k].outflow,
@@ -10473,7 +10488,7 @@ async function glBalanceSheet(userId, entityId) {
   }
   const res = {
     source: 'gl',
-    cash: r2(bal['1000'] || 0), cashTracked: true,
+    cash: r2((bal['1000'] || 0) + JOURNAL_CASH_LEDGER_CODES.reduce((s, c) => s + (bal[c] || 0), 0)), cashTracked: true,   // L6
     accountsReceivable: r2(bal['1100'] || 0), inventory: r2(bal['1200'] || 0),
     totalAssets: r2(f.balanceSheet.assets), totalAssetsExcludesCash: false,
     accountsPayable: r2(bal['2000'] || 0), taxPayable: r2(bal['2100'] || 0), payrollLiabilities: r2(bal['2200'] || 0),
@@ -10513,6 +10528,11 @@ function _journalLineType(code) {
        : d === '4' ? 'income' : (d >= '5' && d <= '9') ? 'expense' : null;
 }
 const _jeNormalFor = type => (type === 'asset' || type === 'expense') ? 'debit' : 'credit';
+// L6 (cash leg): the journal picker's CASH accounts (1000 Cash · 1010 Checking · 1020 Savings) post to these
+// J-namespaced ledger accounts. They are cash: every cash reader (balance-sheet Cash, the 13-week forecast's
+// starting cash via glBalanceSheet, the cash-flow report) counts them beside the system Cash account 1000 —
+// otherwise a journal that moves cash moved no cash figure.
+const JOURNAL_CASH_LEDGER_CODES = ['J1000', 'J1010', 'J1020'];
 async function postJournalToLedger(client, { userId, entityId, journal }) {
   let lines = [];
   try { lines = Array.isArray(journal.lines) ? journal.lines : JSON.parse(journal.lines || '[]'); } catch (_) { lines = []; }

@@ -201,6 +201,15 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   6), client-accountant-xss 9, expense-breakdown-all-surfaces 10, full-leg-parity 27, quarter-intent 8,
   this-month-cards 13.
 
+- 2026-10-07 — **1.1 / L12–L13 generated reports.** Probe generated all 12 Reports-page reports on the full-leg
+  books. Harness `verify-reports-parity.js` (full-leg + a prior-FY paid run 888 and a prior-FY 'yes' expense
+  10): RED 4/10 on pre-fix (Cash Flow out 1178, Payroll 1637, W-2 1637, Deductible 10) → GREEN 10/10.
+  `verify-f137-tax-reports.js` W-2 expectation corrected from "Σ every run" (12,500, draft included) to the
+  owner's FY payroll (expected.js COMPONENTS.fy.payroll 6,200) + its own 3,000 run = 9,200 → 20/20.
+  Gates step1–4 green; regression green: f137-balance-sheet-report 6, f137-cashflow-ar-ap-reports 12,
+  f137-sales-payroll-reports 9, f137g-pl-statement 17, pl-statement-period-ui 4, f57-cash-card 14,
+  full-leg-parity 27. bundle:check in sync.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
@@ -245,6 +254,19 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   `getMonth()` and CALENDAR quarters (`Math.floor(now.getMonth()/3)`), while the server summary it sits next
   to uses the client's fiscal year and calendar-date strings — Rule 10 class (F87) + a fiscal/calendar
   quarter mismatch on the portal's row lists for month/quarter periods.
+- **L12** (FIXED) Generated reports ignored the active period / recognition set: **Payroll Summary** and
+  **1099/W-2** summed EVERY run ever, drafts included (full-leg + prior-FY run: 1637 vs recognised FY 550;
+  on the VERIFICATION seed 12,500 vs owner FY payroll 6,200 + 3,000); **Cash Flow Statement** listed every
+  month ever (out 1178 vs FY 280) while the Cash Flow page sums the period. Controls already right: P&L,
+  Sales by Customer, Expense Report, AR, AP, Income Tax Estimate.
+- **L13** (FIXED) **Tax-Deductible Expenses** report: 'yes' rows only, all time (10, a prior-year row) vs the
+  server / Income Tax Estimate rule yes 100% + half 50% over the fiscal year (4). Same class as L10's portal
+  Deductible card.
+- **L14** (open, cosmetic) P&L report groups expenses as Payroll / "Bills & other" / categories — the
+  journal leg is folded into "Bills & other", not the shared "Bills & vendors" / "Journal entries" list (D3).
+  Sums correctly (614); label-only divergence.
+- **L15** (open) Balance Sheet report: Total Assets 453 but its lines are Cash −200 + AR 635 = 435 — the 18 of
+  journal cash (J1010, see L6) is in the total with no line. Resolves with L6.
 
 ## Decisions (irreversible-safe choices the agent made)
 - **D1 — Working branch & pushing.** Commits go on `dash-je-fix` only. This run executes in an ephemeral
@@ -265,5 +287,10 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
 - **D6 — Quarter = today's quarter (L9).** The Quarter view has no navigator (the month navigator is hidden
   for it) and its prior-period baseline is already `curFyIdx − 3`, so "Quarter" means today's fiscal quarter
   on every surface; `_periodIntentIdx(period)` is the single source for native windows and server intents.
+- **D7 — Reports follow the active period (L12/L13).** Every generated report covers the dashboard's active
+  period (year ⇒ fiscal year), the convention P&L / Sales by Customer / Expense Report already used. Payroll
+  runs belong to the period they are FOR (F85) and only approved + paid runs are payroll (decision 2); draft /
+  voided runs are listed as "not in totals". W-2 uses the same recognised set; **paid-only W-2 wages is an owner
+  tax-policy question (Owner Handoff)**. Deductible weighting = the server's (yes 100%, half 50%).
 - **D4 — Commit trailer.** The plan's template says `Claude Opus 4.8`; commits use the attribution of the
   model actually running this session (accuracy over copying a stale template).

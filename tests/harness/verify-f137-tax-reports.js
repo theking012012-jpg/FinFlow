@@ -56,7 +56,12 @@ process.on('uncaughtException', (e) => {
     const srvDed = exps.filter(isDed).reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
     const tf = (await http.get('/api/tax-filing')).json || {};
     const runs = (await http.get('/api/payroll-runs')).json || [];
-    const srvWages = runs.reduce((s, r) => s + (Array.isArray(r.lines) ? r.lines : []).filter(Boolean).reduce((a, l) => a + (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0), 0), 0);
+    // L12: W-2 wages = the payroll the P&L recognises in the fiscal year (approved + paid runs; a draft is
+    // not payroll). Owner-supplied FY payroll from expected.js (R0 900 + R1 4,200 + R3 1,100 = 6,200; draft
+    // R2 3,300 excluded) + this probe's approved July run (3,000) = 9,200. The old expectation summed every
+    // run of any status (12,500 — the draft included), which was the defect.
+    const srvWages = require('./expected.js').COMPONENTS.fy.payroll + 3000;
+    void runs;
     console.log(`  [server] deductible=${srvDed} taxable=${tf.taxableIncome} estTax=${tf.estimatedTax} wages=${srvWages}`);
 
     // F137-j Tax-Deductible Expenses

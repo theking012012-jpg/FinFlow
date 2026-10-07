@@ -662,6 +662,16 @@
       const hdr = l => `<div style="font-size:11px;color:var(--acc, #c8a44a);font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:9px 0 4px;border-bottom:1px solid var(--acc-bg, rgba(200,164,74,.18));margin-bottom:2px">${l}</div>`;
       const row = (label, val, opts = {}) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--bd)${opts.bold ? ';font-weight:600' : ''}"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono)${opts.color ? `;color:${opts.color}` : ''}">${val}</span></div>`;
       const _rptBody = html => { document.getElementById('rpt-body').innerHTML = html; };
+      // L12/L13: every report covers the dashboard's ACTIVE period (year ⇒ fiscal year) — the convention
+      // P&L / Sales by Customer / Expense Report already followed. Payroll runs belong to the period they
+      // are FOR (F85: payrollPeriodYmd), and only approved + paid runs are payroll expense (decision 2).
+      const _rptPeriod = (typeof currentPeriod !== 'undefined' && currentPeriod) ? currentPeriod : 'year';
+      const _RPT_PAYROLL_RECOGNISED = ['approved', 'paid'];
+      const _rptRunsInPeriod = runs => {
+        const w = (typeof window._periodWindow === 'function') ? window._periodWindow(_rptPeriod) : null;
+        const FD = window.FinFlowDates;
+        return (runs || []).filter(r => !w || !FD || w.inWin(FD.payrollPeriodYmd(r.period, r.run_date)));
+      };
       // ── F137 rich shared helpers (used across the report renderers). ────────────────────────────
       const _gold = 'var(--acc, #c8a44a)';
       const tile = (label, val, sub, cls) => `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:9px 10px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)">${e(label)}</div><div style="font-size:17px;font-weight:600;margin-top:4px;color:${cls || 'var(--t1)'};font-family:var(--font-mono)">${val}</div>${sub ? `<div style="font-size:10px;color:var(--t3);margin-top:2px">${e(sub)}</div>` : ''}</div>`;
@@ -750,7 +760,10 @@
       // so the two cannot drift (F57/D3). Pure delegation — no recompute. ──────────────────────────
       if (name === 'Cash Flow Statement') {
         if (typeof window._loadCashMonthly === 'function') await window._loadCashMonthly();
-        const rows = window._cashMonthly || [];
+        // L12: the ACTIVE period's months only (year ⇒ the fiscal year) — the same _periodWindow the
+        // Cash Flow page's cashForPeriod cards use. It listed every month ever, so it disagreed with them.
+        const _cfW = (typeof window._periodWindow === 'function') ? window._periodWindow(_rptPeriod) : null;
+        const rows = (window._cashMonthly || []).filter(r => !_cfW || _cfW.inWin(r.key + '-01'));
         const tin = rows.reduce((s, r) => s + (parseFloat(r.inflow) || 0), 0);
         const tout = rows.reduce((s, r) => s + (parseFloat(r.outflow) || 0), 0);
         const net = tin - tout;
@@ -915,20 +928,24 @@
       // Rule 12 — NOT the stored total_gross header (which can diverge; that divergence is F-space, not
       // reconciled silently here). Net is Σ line net_pay. ────────────────────────────────────────────
       if (name === 'Payroll Summary') {
-        const runs = (await api('GET', '/api/payroll-runs')) || [];
+        // L12: runs IN the active period (by the period each run is FOR — F85), and totals over the runs
+        // the P&L recognises (approved + paid, decision 2). A draft or voided run is listed but is not
+        // payroll expense, so it is not in the totals. It summed every run ever, drafts included.
+        const runs = _rptRunsInPeriod((await api('GET', '/api/payroll-runs')) || []);
         const lineGross = l => (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0);
         const runData = runs.map(r => {
           const lines = Array.isArray(r.lines) ? r.lines.filter(Boolean) : [];
           return { period: r.period || '', status: (r.status || '').toLowerCase(),
             g: lines.reduce((s, l) => s + lineGross(l), 0), n: lines.reduce((s, l) => s + (parseFloat(l.net_pay) || 0), 0) };
         });
-        const tGross = runData.reduce((s, x) => s + x.g, 0);
-        const tNet = runData.reduce((s, x) => s + x.n, 0);
+        const _recog = runData.filter(x => _RPT_PAYROLL_RECOGNISED.includes(x.status));
+        const tGross = _recog.reduce((s, x) => s + x.g, 0);
+        const tNet = _recog.reduce((s, x) => s + x.n, 0);
         const gDen = Math.max(1, ...runData.map(x => x.g));
-        const runRows = runData.map(x => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(x.period)} <span style="color:var(--t3);font-size:11px">${e(x.status)}</span></span><span style="font-family:var(--font-mono)">net ${m(x.n)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(x.g / gDen * 100))}%"></i></div><div style="font-size:10px;color:var(--t3);margin-top:2px">gross ${m(x.g)}</div></div>`).join('');
+        const runRows = runData.map(x => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(x.period)} <span style="color:var(--t3);font-size:11px">${e(x.status)}${_RPT_PAYROLL_RECOGNISED.includes(x.status) ? '' : ' · not in totals'}</span></span><span style="font-family:var(--font-mono)">net ${m(x.n)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${_gold};opacity:.75;width:${Math.max(2, Math.round(x.g / gDen * 100))}%"></i></div><div style="font-size:10px;color:var(--t3);margin-top:2px">gross ${m(x.g)}</div></div>`).join('');
         _rptBody(
           tiles([
-            tile('Total Gross', m(tGross), 'Σ line items (basis C)', 'var(--red)'),
+            tile('Total Gross', m(tGross), 'approved + paid runs (Σ line items)', 'var(--red)'),
             tile('Total Net', m(tNet), 'take-home', 'var(--green)'),
             tile('Runs', String(runData.length), 'payroll runs'),
             tile('Deductions', m(Math.round((tGross - tNet) * 100) / 100), 'gross − net'),
@@ -1036,13 +1053,18 @@
       // data: expenses carry a `deductible` flag (server.js:1036); same basis as /api/tax-filing.
       // Σ(category rows) == Total Deductible by construction. ──────────────────────────────────────
       if (name === 'Tax-Deductible Expenses') {
-        const exps = (await api('GET', '/api/expenses')) || [];
-        const isDed = x => { const d = x.deductible; return d === true || /^(yes|true|1|y)$/i.test(String(d || '')); };
+        // L13: the active period's expenses (year ⇒ fiscal year), weighted by the SERVER's deductible rule
+        // (computeBooks tax.deductible / the Income Tax Estimate: yes = 100%, half = 50%). It summed only
+        // 'yes' rows, all time — so it disagreed with the Income Tax Estimate on the same page.
+        const _tdW = (typeof window._periodWindow === 'function') ? window._periodWindow(_rptPeriod) : null;
+        const exps = ((await api('GET', '/api/expenses')) || []).filter(x => !_tdW || _tdW.inWin(x.expense_date || x.date || x.created_at));
+        const dedShare = x => { const d = String(x.deductible == null ? '' : x.deductible).toLowerCase();
+          return (x.deductible === true || /^(yes|true|1|y|100)$/.test(d)) ? 1 : (d === 'half' || d === '50') ? 0.5 : 0; };
         const byCat = {}; let ded = 0, nonDed = 0, dedCount = 0;
         exps.forEach(x => {
-          const amt = parseFloat(x.amount) || 0;
-          if (isDed(x)) { const c = x.category || 'Other'; byCat[c] = (byCat[c] || 0) + amt; ded += amt; dedCount++; }
-          else nonDed += amt;
+          const amt = parseFloat(x.amount) || 0, sh = dedShare(x);
+          if (sh > 0) { const c = x.category || 'Other'; byCat[c] = (byCat[c] || 0) + amt * sh; ded += amt * sh; dedCount++; }
+          nonDed += amt * (1 - sh);
         });
         const entries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
         const rows = entries.map(([c, a]) => shareRow(c, a, ded || 1, 'var(--green)')).join('');
@@ -1158,7 +1180,10 @@
       // ── F137-m: 1099 / W-2 Summary — per-employee wages from real payroll runs (W-2-style; gross =
       // Σ line items, basis C). Contractor/1099 payments are NOT tracked, stated plainly. ───────────
       if (name === '1099 / W-2 Summary') {
-        const runs = (await api('GET', '/api/payroll-runs')) || [];
+        // L12: wages from the runs the P&L recognises (approved + paid — a draft or voided run is not
+        // payroll), in the active period (year ⇒ fiscal year). It summed every run ever, drafts included.
+        // (Whether W-2 should count only runs marked PAID is an owner tax-policy question — Owner Handoff.)
+        const runs = _rptRunsInPeriod((await api('GET', '/api/payroll-runs')) || []).filter(r => _RPT_PAYROLL_RECOGNISED.includes(String(r.status || '').toLowerCase()));
         const lg = l => (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0);
         const byEmp = {}; let tG = 0, tN = 0;
         runs.forEach(r => (Array.isArray(r.lines) ? r.lines : []).filter(Boolean).forEach(l => {
@@ -1172,7 +1197,7 @@
         _rptBody(
           tiles([
             tile('Employees', String(emps.length), 'on payroll (W-2)'),
-            tile('Total Wages', m(tG), 'gross, Σ line items', 'var(--red)'),
+            tile('Total Wages', m(tG), 'approved + paid runs, gross Σ line items', 'var(--red)'),
             tile('Total Withheld', m(Math.round((tG - tN) * 100) / 100), 'deductions'),
             tile('Total Net', m(tN), 'take-home', 'var(--green)'),
           ])

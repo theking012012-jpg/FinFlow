@@ -336,7 +336,12 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   owner-gated. New harness `verify-gl-backfill-full-leg.js` (full-leg dataset, live ledger wiped and rebuilt) found
   L33 (backfill skipped journals; GL and books agreed on the wrong 715/113) and L34 (gate excluded journal expense
   accounts ⇒ GL never served journal users). Both fixed: 28/28 lines identical, idempotent, TB/BS balanced, GL serves
-  745/614/131. Regression: 51 GL/reports/parity/gate harnesses green. The prod backfill RUN stays owner-gated (Rule 8). Owner: no more full sweeps from the
+  745/614/131. Regression: 51 GL/reports/parity/gate harnesses green. The prod backfill RUN stays owner-gated (Rule 8).
+- 2026-10-07 — **2.3 VERIFICATION empty cells.** A7.5–8 / A7.18 were NOT gate-executed (the plan assumed they were);
+  new `verify-verification-a7-gaps.js` runs them on the real seed (9/0); A8a via `tz-matrix.js` (4 viewers incl.
+  UTC+5:30: identical); A8b via new `verify-a8b-fiscal-year-viewer.js` (discriminating Apr-vs-Jan FY seed, 5/0).
+  Stamped. Two rows' Expected text is stale vs expected.js (A7.6 750 → 5,450; A7.18 8,200 → 9,100) — stamped PASS*
+  with an owner note, not rewritten (expected values are the owner's). Owner: no more full sweeps from the
   agent — the owner runs the sweep once at the end; the agent pushes main after it is green.
 
 ## Findings Ledger (numbered; newest last)

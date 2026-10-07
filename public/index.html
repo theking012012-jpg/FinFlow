@@ -6123,14 +6123,14 @@ function renderBudget(){
     const over=r.actual>r.budget;
     const variance=r.budget-r.actual;
     const varColor=over?'var(--red)':'var(--green)';
-    const varStr=(over?'-':'+')+window._fmtMoney(Math.abs(variance),window._nativeSymbol());   // F129: entity symbol, matches this row's actual/budget
+    const varStr=(over?'-':'+')+window._fmtMoneyNative(Math.abs(variance));   // L29: exact (was K/M/B)   // F129: entity symbol, matches this row's actual/budget
     return `<div class="budget-row" style="margin-top:8px">
       <span class="budget-label">${r.cat}</span>
       <div class="budget-track">
         <div class="budget-actual" style="width:${pct}%;background:${over?'var(--red)':r.color}"></div>
         <div class="budget-marker" style="left:100%"></div>
       </div>
-      <span class="budget-vals" style="font-family:var(--font-mono);font-size:11px">${window._fmtMoney(r.actual,window._nativeSymbol())} / ${window._fmtMoney(r.budget,window._nativeSymbol())}</span>
+      <span class="budget-vals" style="font-family:var(--font-mono);font-size:11px">${window._fmtMoneyNative(r.actual)} / ${window._fmtMoneyNative(r.budget)}</span>
       <span class="budget-variance" style="color:${varColor}">${varStr}</span>
     </div>`;
   }).join('');
@@ -6278,7 +6278,7 @@ function renderMRRChart(){
               // F124: native symbol — the series is window._mrrChartData, which is never FX-converted
               // (F126) and, per F127, has no writer anywhere so it is always a flat zero line.
               // Matches the MRR/ARR cards above.
-              y:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10},callback:v=>window._fmtMoneyNative(v)}}}}
+              y:{grid:{color:'rgba(201,168,76,0.06)'},ticks:{color:'#5a4e3a',font:{size:10},callback:v=>window._fmtMoneyNativeAbbr(v)}}}}
   });
 }
 // ── 6. PLAID BANKING ────────────────────────────────────────────────────────
@@ -8777,7 +8777,7 @@ function renderScenarioChart(projRev, projExp){
       scales:{x:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9}}},
               // F124: native symbol — cashData projects from BASE.cash, never FX-converted. Matches
               // the sc-* cards this chart sits under.
-              y:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9},callback:v=>window._fmtMoneyNative(v)}}}}
+              y:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9},callback:v=>window._fmtMoneyNativeAbbr(v)}}}}
   });
 }
 

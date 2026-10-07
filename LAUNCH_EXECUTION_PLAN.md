@@ -299,7 +299,8 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   the 2026-08-09 reconciliation left open against current code (4 read-only agents, file:line evidence) ⇒ §1.2 map.
   Fixed so far: L23 (N102, entity record dates; RED 17/19 → GREEN 19/0; 111 route harnesses green), L24 (F44,
   scenario base; RED 5/6 → GREEN 6/0 ×3; scenario/boot/parity regression green), L25 (F45, budget actuals;
-  RED 5/7 → GREEN 7/0; budget regression green). Owner: no more full sweeps from the
+  RED 5/7 → GREEN 7/0; budget regression green), L26 (hook / ledger / count), L29 (native money exact; RED 9/10 →
+  GREEN 10/0; 25 report/format harnesses green, f124 + f129 source-slice harnesses restated for the exact formatter). Owner: no more full sweeps from the
   agent — the owner runs the sweep once at the end; the agent pushes main after it is green.
 
 ## Findings Ledger (numbered; newest last)
@@ -432,6 +433,19 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   `bundle.js --from-index` guard nor the `verification-sync` block ever ran here; now 100755 (on Windows git runs
   hooks regardless of mode). (b) `AUDIT_MASTER.md` — the ledger CLAUDE.md requires to be tracked — was missing;
   restored verbatim from the newest copy with a provenance banner. (c) VERIFICATION Part B "~22" → 23 (rows counted).
+
+- **L27** (open — audit F75) 27 app-main functions are shadowed by wiring `window.NAME =` (20 replacements, 7 wrappers;
+  4 shadowed twice: renderExpenses, saveExpense, saveHolding, showPage) and NO guard stops a new one landing.
+- **L28** (owner decision — audit F51 residue) The Income Tax Estimate worksheet pre-fills an editable "Income tax 25%"
+  line when no rate/lines are saved (a documented placeholder, labelled "rough estimate"); /api/tax-filing also
+  returns `estimatedTax` at 25% (unconsumed). D1 says FinFlow holds no tax knowledge — choose: keep 25%, use the
+  country-suggested rate the app already computes (/api/tax/suggested-rate), or a blank 0% line. Owner Handoff.
+- **L29** (FIXED — audit F64 / F129 residue) `_fmtMoneyNative` (entity money, unconverted) delegated to the K/M/B
+  abbreviator, so every amount ≥ 1,000 on ALL 12 generated reports, the Reports page tiles, the Scenario planner and
+  the budget rows read "TT$12.3K" — F64 (launch blocker B2) had only been fixed for window.S. The shared full-leg seed
+  keeps amounts < 1,000 "so abbreviation can't show", which is why nothing caught it. Now exact (honours Show cents);
+  chart axes use `_fmtMoneyNativeAbbr`. Same class: bank-reconciliation difference used a literal '$' AND dropped the
+  minus sign on a negative difference; timesheet rate used a literal '$'.
 
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's

@@ -106,6 +106,7 @@ function loadApp(mutate) {
     app('function _fmtMoneyAbbr(n){'),
     app('function _nativeSymbol(){'),
     app('function _fmtMoneyNative(n){'),
+    app('function _fmtMoneyNativeAbbr(n){'),   // L29: compact axes
     app('function _activeEntityCurrency(){'),
     app('function chartDefaults(){'),
     app('function _cashSeries(profit){'),
@@ -119,7 +120,7 @@ function loadApp(mutate) {
     'MONTHS', 'REV', 'EXP', 'PROFIT', 'ENTITIES', 'S', 'currentPeriod', 'currentMonthIdx',
     'var activeCurrency = "TTD";\n' + body +
     '\n; return { buildCharts, buildCashChart, updateCharts, _applyConvertedChart,' +
-    '            _fmtMoney, _fmtMoneyAbbr, _fmtMoneyNative, _nativeSymbol, _cashSeries,' +
+    '            _fmtMoney, _fmtMoneyAbbr, _fmtMoneyNative, _fmtMoneyNativeAbbr, _nativeSymbol, _cashSeries,' +
     '            setCurrency: c => { activeCurrency = c; } };'
   )(
     { }, makeDom(store), CURRENCIES, n => (parseFloat(n) || 0), makeChart(captured), {}, true,
@@ -136,7 +137,9 @@ console.log('\n-- 1 - the renderers: native symbol tracks the ENTITY, not active
   api.setCurrency('EUR');                                    // display currency armed
   A('native symbol is UNCHANGED by a display currency', api._nativeSymbol(), 'TT$',
     'if this returned "€" the helper would be mislabelling unconverted money');
-  A('_fmtMoneyNative uses it',   api._fmtMoneyNative(1234), 'TT$1.2K', 'hardcoded "$" gives "$1.2K"');
+  // L29: _fmtMoneyNative is EXACT (itemized surfaces); the compact axis form is _fmtMoneyNativeAbbr. Both native.
+  A('_fmtMoneyNative uses it (exact)',   api._fmtMoneyNative(1234), 'TT$1,234', 'hardcoded "$" gives "$1,234"; pre-L29 abbreviated "TT$1.2K"');
+  A('_fmtMoneyNativeAbbr uses it (compact)', api._fmtMoneyNativeAbbr(1234), 'TT$1.2K');
   A('_fmtMoneyAbbr still follows activeCurrency (converted surfaces)', api._fmtMoneyAbbr(1234), '€1.2K');
   A('the two genuinely DIFFER (the choice is discriminating)',
     symbolOf(api._fmtMoneyNative(1234)) !== symbolOf(api._fmtMoneyAbbr(1234)), true);
@@ -155,6 +158,7 @@ function loadIdx(mutate) {
   const win = {
     _fmtMoney: appApi._fmtMoney,
     _fmtMoneyNative: appApi._fmtMoneyNative,
+    _fmtMoneyNativeAbbr: appApi._fmtMoneyNativeAbbr,
     _nativeSymbol: appApi._nativeSymbol,
     BASE: { rev: 120000, exp: 90000, cash: 50000, burn: 3000 },
     _mrrChartData: [1000, 2000, 3000, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -198,7 +202,8 @@ console.log('\n-- 2b - Scenario planner: every card AND the axis agree, on ONE s
 
 console.log('\n-- 2c - FAILURE PATH, EXECUTED: the pre-fix sources rebuilt and run --');
 {
-  const PRE = { 'window._fmtMoneyNative(v)': "window._fmtMoney(v, '$')",
+  const PRE = { 'window._fmtMoneyNativeAbbr(v)': "window._fmtMoney(v, '$')",
+                'window._fmtMoneyNative(v)': "window._fmtMoney(v, '$')",
                 'window._fmtMoneyNative(salary)': "window._fmtMoney(salary,'$')",
                 'window._fmtMoneyNative(invest)': "window._fmtMoney(invest,'$')" };
   let reverted = 0;
@@ -209,7 +214,7 @@ console.log('\n-- 2c - FAILURE PATH, EXECUTED: the pre-fix sources rebuilt and r
     }
     return out;
   });
-  A('pre-fix forms were restored (control is real)', reverted >= 3, true, `reverted ${reverted}`);
+  A('pre-fix forms were restored (control is real)', reverted >= 4, true, `reverted ${reverted}`);
   api.updateScenario();
   A('PRE-FIX scenario cards show a hardcoded $ on a TTD entity', symbolOf(store['sc-rev'].textContent), '$');
   A('PRE-FIX axis shows a hardcoded $',  symbolOf(tickOf(captured[0])(1234)), '$');

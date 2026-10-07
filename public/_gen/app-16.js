@@ -133,7 +133,7 @@ function renderScenarioChart(projRev, projExp){
       scales:{x:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9}}},
               // F124: native symbol — cashData projects from BASE.cash, never FX-converted. Matches
               // the sc-* cards this chart sits under.
-              y:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9},callback:v=>window._fmtMoneyNative(v)}}}}
+              y:{grid:{color:'rgba(200,164,74,.05)'},ticks:{color:'#5a4e3a',font:{size:9},callback:v=>window._fmtMoneyNativeAbbr(v)}}}}
   });
 }
 

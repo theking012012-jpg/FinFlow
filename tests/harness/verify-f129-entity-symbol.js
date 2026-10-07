@@ -40,6 +40,7 @@ try {
   ];
   win._nativeSymbol = () => '€'; // €
   win._fmtMoney = (n, sym) => sym + Math.round(n).toLocaleString('en-US');
+  win._fmtMoneyNative = n => win._nativeSymbol() + Math.round(n).toLocaleString('en-US');   // L29: rows render exact native
   new win.Function('window', 'document', src + '\n; window.__renderBudget = renderBudget;')(win, win.document);
   win.__renderBudget();
   const out = win.document.getElementById('budget-rows').innerHTML;

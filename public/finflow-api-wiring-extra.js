@@ -130,7 +130,7 @@
         <span style="color:var(--t2)">${e(t.date || '—')}</span>
         <span style="font-family:var(--font-mono)">${(t.hours || 0)}h</span>
         <span><span class="badge ${_isBillable(t) ? 'b-green' : 'b-amber'}">${_isBillable(t) ? 'Yes' : 'No'}</span></span>
-        <span style="font-family:var(--font-mono);color:var(--t2)">${t.rate ? '$' + t.rate + '/h' : '—'}</span>
+        <span style="font-family:var(--font-mono);color:var(--t2)">${t.rate ? (typeof window._nativeSymbol === 'function' ? window._nativeSymbol() : '$') + t.rate + '/h' : '—'}</span>
         <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:0 4px" onclick="deleteTimesheetEntry(${t.id})">✕</button>
       </div>`).join('');
   }

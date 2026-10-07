@@ -659,9 +659,22 @@ window._fmtMoneyExact = _fmtMoneyExact;
 function _nativeSymbol(){
   return CURRENCIES[_activeEntityCurrency()]?.symbol || '$';
 }
-function _fmtMoneyNative(n){ return _fmtMoney(n, _nativeSymbol()); }
+// L29 (F64 residue): EXACT like _fmtMoneyExact — honours "Show cents" — but in the entity's own symbol and
+// never converted. It used to delegate to the K/M/B abbreviator, so every report line, budget row and scenario
+// figure ≥ 1,000 read "TT$12.3K". Compact axes/tiles use _fmtMoneyNativeAbbr explicitly.
+function _fmtMoneyNative(n){
+  const v = parseFloat(n) || 0;
+  const cents = document.getElementById('s-cents')?.checked;
+  const abs = Math.abs(v);
+  const body = cents
+    ? abs.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})
+    : Math.round(abs).toLocaleString('en-US');
+  return (v < 0 && body !== '0' ? '-' : '') + _nativeSymbol() + body;
+}
+function _fmtMoneyNativeAbbr(n){ return _fmtMoney(n, _nativeSymbol()); }
 window._nativeSymbol   = _nativeSymbol;     // for sites that render exact, not abbreviated
 window._fmtMoneyNative = _fmtMoneyNative;
+window._fmtMoneyNativeAbbr = _fmtMoneyNativeAbbr;
 
 // F94: a future-dated document is SCHEDULED — excluded from every figure by D2, and badged in its
 // list so it isn't mistaken for lost data. Tz-free calendar compare (Rule 10), on the SAME date the
@@ -1135,7 +1148,8 @@ function updateReconSummary(){
   const diff = stmtBal - adjustedBook;
   const diffEl = document.getElementById('recon-diff');
   const statusEl = document.getElementById('recon-status');
-  diffEl.textContent = (diff === 0 ? '$0.00' : (diff > 0 ? '+' : '') + '$' + Math.abs(diff).toFixed(2));
+  // L29: the entity's symbol (was a literal '$'), and a NEGATIVE difference keeps its minus sign (it printed unsigned).
+  diffEl.textContent = (diff === 0 ? _nativeSymbol() + '0.00' : (diff > 0 ? '+' : '-') + _nativeSymbol() + Math.abs(diff).toFixed(2));
   diffEl.style.color = diff === 0 ? 'var(--green)' : 'var(--amber)';
   if(diff === 0 && stmtBal > 0){
     statusEl.innerHTML = '<span class="badge b-green">✓ Balanced</span>';

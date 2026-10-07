@@ -288,6 +288,13 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   Regression green: min-serving 8, boot-modes 3, help-center-ui 34, f145-render-smoke 9, dashboard-render 9,
   boot-failures-gate, step4 5.
 
+- 2026-10-07 — **1.3 / L22 non-SPA pages.** Chromium probe of landing, accountant-dashboard, accountant-client (+ admin):
+  the portal's Tabler icon stylesheet was REFUSED by CSP. Class enumerated (every page × every stylesheet / script /
+  font × the CSP the server sends + SRI well-formedness): 3 instances. Harness `verify-csp-allows-page-resources.js`
+  (real server, every public/*.html): RED 3 on pre-fix → GREEN 36/0. Chromium after fix: portal 0 console output,
+  icon glyph resolves (13 px wide); admin `Chart` defined (pre-fix: refused). Regression green: security-headers 13,
+  csp-report 14, slim-boot-renders 9, accountant-portal-parity 12, step1-gate.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (FIXED, as part of L21) renderInvestments null-textContent boot error — Phase 1.3.
@@ -380,6 +387,15 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   Audit", up to 447 KB) and of index.html. Not served (express static ignores dotfiles). They should be
   untracked + `.gitignore`d — AFTER the newest audit copy is recovered (Phase 1.2 uses it). Same root cause as
   the "move the repo out of OneDrive" handoff item.
+- **L22** (FIXED) Page resources the browser refuses — measured in real Chromium. (a) accountant-client.html
+  loaded Tabler icons from cdn.jsdelivr.net, but `style-src` allows only Google Fonts ⇒ blocked ⇒ all 36 `ti` icons
+  in the accountant portal rendered blank. (b) That link AND admin.html's Chart.js `<script>` carried a TRUNCATED
+  sha384 SRI (63 chars). Chromium measured (`/srv/ff/probe/sri-probe.js`, control vs truncated): "Failed to find
+  a valid digest" ⇒ resource refused ⇒ the admin overview/traffic charts never rendered. Fix: Tabler 3.29.0
+  CSS + woff2 vendored at public/vendor/tabler-icons (MIT; npm `@tabler/icons-webfont`), admin uses the already
+  vendored /vendor/chart.umd.js (4.4.1, as index.html), CSP `style-src` / `font-src` gain `'self'` (enforced and
+  report-only policies; same-origin only, no new third party). The Admin page's single 401 in the console is its
+  unauthenticated session probe — expected, not a defect.
 
 ## Decisions (irreversible-safe choices the agent made)
 - **D1 — Working branch & pushing.** Commits go on `dash-je-fix` only. This run executes in an ephemeral
@@ -410,5 +426,9 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   company; an invoice is attributed ONCE (shared company ⇒ lowest customer id). Stored typed values are left in
   the database untouched (Rule 8) and no longer read or written. A real customer↔invoice foreign key is the
   long-term model (Owner Handoff).
+- **D9 — Third-party page assets are vendored (L22).** Rather than widen the CSP to the jsDelivr CDN for styles and
+  fonts, the asset is served same-origin (the precedent set by jsPDF / Chart.js in /vendor), and the CSP gains only
+  `'self'` for `style-src` / `font-src`. No SRI on same-origin files (it guards third-party hosts, and a truncated
+  digest is what broke these two pages).
 - **D4 — Commit trailer.** The plan's template says `Claude Opus 4.8`; commits use the attribution of the
   model actually running this session (accuracy over copying a stale template).

@@ -118,8 +118,8 @@ app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; " +
     "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com https://cdn.belvo.io; " +   // Plaid Link + Belvo widget SDKs
-    "style-src 'unsafe-inline' https://fonts.googleapis.com; " +
-    "font-src https://fonts.gstatic.com; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +   // L22: 'self' for vendored stylesheets (/vendor/tabler-icons)
+    "font-src 'self' https://fonts.gstatic.com; " +
     "img-src 'self' data: blob:; " +
     "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com https://*.plaid.com https://*.belvo.io https://*.belvo.com; " +   // F49: dropped dead ws:/wss:. *.plaid.com/*.belvo.*: bank-link widgets
     "frame-src https://cdn.plaid.com https://*.plaid.com https://*.belvo.io; " +   // Plaid + Belvo render their flows in an iframe
@@ -139,7 +139,7 @@ app.use((req, res, next) => {
       "default-src 'self'; " +
       "script-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com https://cdn.belvo.io; " +
       "style-src 'self' https://fonts.googleapis.com; " +
-      "font-src https://fonts.gstatic.com; img-src 'self' data: blob:; " +
+      "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; " +
       "connect-src 'self' https://api.anthropic.com https://query1.finance.yahoo.com https://cdnjs.cloudflare.com https://*.plaid.com https://*.belvo.io https://*.belvo.com; " +
       "frame-src https://cdn.plaid.com https://*.plaid.com https://*.belvo.io; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; " +
       "report-to csp-endpoint; report-uri /api/csp-report;"

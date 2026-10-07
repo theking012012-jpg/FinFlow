@@ -6562,14 +6562,14 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
     db.allByUser('payments_made', uid, matchEnt),
     db.allByUser('sales_receipts', uid, matchEnt),  // F26: entity-scoped (null-inclusive) like every sibling leg — was user-level, leaking other entities' cash sales into this entity's figures
     pool.query(
-      `SELECT pr.id AS run_id, pr.run_date, pr.entity_id,
+      `SELECT pr.id AS run_id, pr.run_date, pr.paid_date, pr.entity_id,
               COALESCE(SUM(COALESCE(prl.gross,0) + COALESCE(prl.bonus,0) + COALESCE(prl.overtime,0)), 0) AS run_total
          FROM payroll_runs pr
          LEFT JOIN payroll_run_lines prl ON prl.run_id = pr.id
         WHERE pr.user_id = $1
           AND LOWER(COALESCE(pr.status,'')) = 'paid'
           AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)
-        GROUP BY pr.id, pr.run_date, pr.entity_id`,
+        GROUP BY pr.id, pr.run_date, pr.paid_date, pr.entity_id`,
       [uid, eid]
     ),   // N113 class: a failed payroll read used to be swallowed into "no payroll" — cash out silently understated
     // L6: posted manual journals' CASH legs (JOURNAL_CASH_LEDGER_CODES), read from the LEDGER so a reversal
@@ -6607,7 +6607,9 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   // being inferred from a different timestamp. The real fix is a `paid_date` column written by
   // mark-paid, at which point this line keys on it and the approximation disappears.
   // NOT silently averaged or guessed — dated on the only real date available, and labelled.
-  (paidRunRes.rows || []).forEach(r => add(r.run_date, 'outflow', r.run_total));
+  // L7: keyed on paid_date (stamped by mark-paid) — the approximation above is gone for every run paid since;
+  // runs paid before the column existed have no paid_date and keep run_date (no row is rewritten, Rule 8).
+  (paidRunRes.rows || []).forEach(r => add(r.paid_date || r.run_date, 'outflow', r.run_total));
   (jeCashRes.rows || []).forEach(r => { if (r.net > 0.005) add(r.d, 'inflow', r.net); else if (r.net < -0.005) add(r.d, 'outflow', -r.net); });   // L6
   const rows = Object.keys(monthMap).sort().map(k => ({
     month: labelOf(k), key: k, inflow: monthMap[k].inflow, outflow: monthMap[k].outflow,
@@ -9540,12 +9542,16 @@ app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write
 }));
 
 app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:write'), lockGuard(LOCK_SPECS.payroll_runs), wrap(async (req, res) => {
+  // L7: the cash leaves NOW — stamp the business's calendar date (its timezone, Rule 10: a genuine timestamp
+  // resolves against the entity) as paid_date, once (COALESCE keeps the first on a repeat mark-paid).
+  const { rows: [_pre] } = await pool.query(`SELECT entity_id FROM payroll_runs WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), scopeId(req)]);
+  const _paidYmd = await entityTodayYmd(_pre ? _pre.entity_id : null);
   const { rows } = await pool.query(
     // N58: only an APPROVED run (or an already-paid one, idempotent) can be marked paid. A draft has no
     // payroll-expense accrual yet (marking it paid posted the cash-out against nothing), and a voided
     // run must stay out of the books.
-    `UPDATE payroll_runs SET status='paid' WHERE id=$1 AND user_id=$2 AND lower(status) IN ('approved','paid') RETURNING *`,
-    [parseInt(req.params.id), scopeId(req)]
+    `UPDATE payroll_runs SET status='paid', paid_date = COALESCE(paid_date, $3::date) WHERE id=$1 AND user_id=$2 AND lower(status) IN ('approved','paid') RETURNING *`,
+    [parseInt(req.params.id), scopeId(req), _paidYmd]
   );
   if (!rows[0]) {
     const { rows: [_ex] } = await pool.query(`SELECT status FROM payroll_runs WHERE id=$1 AND user_id=$2`, [parseInt(req.params.id), scopeId(req)]);
@@ -9567,7 +9573,7 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
     if (_amt > 0) {
       await postLedgerEntry(pool, {
         userId: scopeId(req), entityId: _run.entity_id || null,
-        date: FinFlowDates._toYmd(_run.run_date) || FinFlowDates.payrollPeriodYmd(_run.period, _run.run_date),
+        date: FinFlowDates._toYmd(_run.paid_date) || FinFlowDates._toYmd(_run.run_date) || FinFlowDates.payrollPeriodYmd(_run.period, _run.run_date),   // L7
         description: 'Payroll paid - ' + String(_run.period || '').slice(0, 80),
         sourceType: 'payroll_paid', sourceId: _run.id, idempotencyKey: 'payroll_paid:' + _run.id,
         lines: [{ code: '2200', debit: _amt, credit: 0 }, { code: '1000', debit: 0, credit: _amt }],
@@ -10118,7 +10124,7 @@ async function backfillLedgerForUser(userId, opts = {}) {
     for (const r of rows) { if (onlyEntity != null && r.entity_id !== onlyEntity) continue; const amt = Math.round((r.amt || 0) * 100) / 100; if (!(amt > 0)) continue;
       await post({ entityId: r.entity_id, date: FinFlowDates.payrollPeriodYmd(r.period, r.run_date), description: 'Payroll — ' + String(r.period || '').slice(0, 80), sourceType: 'payroll_run', sourceId: r.id, idempotencyKey: 'payroll_run:' + r.id, lines: [{ code: '6100', debit: amt, credit: 0 }, { code: '2200', debit: 0, credit: amt }] });
       // GL Phase 5b: a PAID run also had its cash-out — Dr Payroll Liabilities / Cr Cash, keyed 'payroll_paid:<id>'.
-      if (r.status === 'paid') await post({ entityId: r.entity_id, date: FinFlowDates._toYmd(r.run_date) || FinFlowDates.payrollPeriodYmd(r.period, r.run_date), description: 'Payroll paid - ' + String(r.period || '').slice(0, 80), sourceType: 'payroll_paid', sourceId: r.id, idempotencyKey: 'payroll_paid:' + r.id, lines: [{ code: '2200', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }] }); } }
+      if (r.status === 'paid') await post({ entityId: r.entity_id, date: FinFlowDates._toYmd(r.paid_date) || FinFlowDates._toYmd(r.run_date) || FinFlowDates.payrollPeriodYmd(r.period, r.run_date),   /* L7 */ description: 'Payroll paid - ' + String(r.period || '').slice(0, 80), sourceType: 'payroll_paid', sourceId: r.id, idempotencyKey: 'payroll_paid:' + r.id, lines: [{ code: '2200', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }] }); } }
   // 8) inventory — purchase capitalises (Dr Inventory / Cr Cash); sale relieves at FIFO cost (Dr COGS / Cr Inventory)
   { const { rows: items } = await pool.query(`SELECT DISTINCT inventory_id, entity_id FROM inventory_movements WHERE user_id=$1`, [userId]);
     for (const it of items) {

@@ -203,18 +203,21 @@ async function main() {
     const deltas = outflowDeltas(afterApprove, afterPaid);
     A('exactly ONE month changed', Object.keys(deltas).length, 1,
       `remove the F122 payroll leg (server.js:3542-3552,3574) and this reads 0`);
-    A('…and it changed by exactly Σ lines', deltas[runKey], EXPECTED_SUM_LINES,
+    // L7: the cash lands in the month the run was marked PAID (paid_date, stamped by mark-paid).
+    const paidKey = (FinFlowDates._toYmd(paid.json?.paid_date) || '').slice(0, 7) || null;
+    A('…and it changed by exactly Σ lines', deltas[paidKey], EXPECTED_SUM_LINES,
       `deltas seen: ${JSON.stringify(deltas)}`);
     A('totalOutflow rose by exactly Σ lines',
       Math.round((afterPaid.totalOutflow - afterApprove.totalOutflow) * 100) / 100, EXPECTED_SUM_LINES);
     A('cash IN untouched by a payroll transition', inflowDeltas(afterApprove, afterPaid), {});
 
-    // The month the cash lands in is `run_date`, not the run's own `period`. Asserted rather than
-    // assumed, because it is the F122 KNOWN APPROXIMATION (no paid_date column exists — F85 class):
-    // a run created in one month and paid in the next books its cash in the CREATION month. If a
-    // `paid_date` is ever added, this assertion is the one that must be revisited.
-    console.log('\n-- 5 - the cash lands on run_date (F122 known approximation, F85 class) --');
-    A('changed month key == run_date month', Object.keys(deltas)[0], runKey);
+    // The month the cash lands in. It WAS `run_date` (the F122 known approximation: no paid_date existed, so
+    // a run created in one month and paid in the next booked its cash in the CREATION month). L7 added
+    // paid_date, stamped by mark-paid with the business's calendar date — this is that revisit: the cash now
+    // lands in the PAID month. (run_date here is the DB's real NOW(); paid_date is the pinned business today.)
+    console.log('\n-- 5 - the cash lands on paid_date (L7; was run_date, F122 approximation) --');
+    A('mark-paid stamped a paid_date', !!paidKey, true, `paid_date=${JSON.stringify(paid.json?.paid_date)} run_date month=${runKey}`);
+    A('changed month key == paid_date month', Object.keys(deltas)[0], paidKey);
 
     console.log('\n' + '-'.repeat(78));
     console.log(fail === 0 ? '  ALL GREEN - ' + pass + ' passed, 0 failed'

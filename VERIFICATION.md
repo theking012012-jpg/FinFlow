@@ -669,6 +669,9 @@ visited, so the Expenses KPI depended on where you clicked first.
 > bonus 777, roster 2,000 + overtime 111), never read back from the endpoint under test (Rule 6).
 > Failure paths executed (Rule 14): deleting the F122 payroll leg turns B4.4 red (4 failed); giving the
 > cash leg the P&L filter turns the `approved` step red (6 failed). See **F122** in `AUDIT_MASTER.md`.
+> **L7 (2026-10-07):** mark-paid now stamps `paid_date` (the business's calendar date), and the one month
+> that changes is the PAID month — the F122 `run_date` approximation is retired for every run paid since;
+> rows paid before the column existed keep `run_date` (no row rewritten). Probe section 5 asserts it (20/20).
 
 ## B5 · Cross-cutting — 3
 | # | Check | Expected | Result |

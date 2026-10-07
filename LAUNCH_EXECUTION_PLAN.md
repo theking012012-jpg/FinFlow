@@ -234,6 +234,15 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   finflow-dates.test 16, lock-entity-scope 7, c1-client-lock 6, lock-external-dates 16, lock-password 12 /
   -ui 4, period-lock-guard 24, personal-account-scope 4.
 
+- 2026-10-07 — **1.1 / L7 payroll paid date.** Harness `verify-payroll-paid-date.js`: RED 5/9 on pre-fix (no
+  paid_date; GL and cash-flow on the creation month May) → GREEN 11/11 (incl. idempotent re-mark and the
+  legacy run_date fallback through the GL backfill). `b4-4-payroll-cash-transition.js` section 5 revisited as its
+  own comment asked ("if a paid_date is ever added …"): cash lands in the paid_date month → 20/20.
+  VERIFICATION.md B4.4 note updated (verification-sync OK). Gates step1–4 green; regression green:
+  gl-backfill 24 / -amountpaid 7 / -createdat-date 6, gl-post-payroll 17, gl-payroll-cashout 16,
+  payroll-approve-guard 5, payroll-run-atomic 7, payroll-state-guards 9, boot-modes 3, migrate-entrypoint 3,
+  f57-cash-card 14, journal-cash 11, full-leg-parity 28, b4-2-3-payroll-pl-transition 16.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
@@ -261,10 +270,10 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   Fixing it needs computeBooks AR/AP to carry the JE legs, or the balance-sheet reconcile gate
   (glAR == books AR, glAP == books AP) breaks and the BS falls back to the oracle. Accounting design → Owner
   Handoff (journal account map).
-- **L7** (open) Paid payroll cash-out is dated by `run_date` (= the run's CREATION instant) in both the
-  GL `payroll_paid` entry and the cash-flow report — not the date it was marked paid. A June run marked
-  paid in October shows its cash out in the creation month. No `paid_at` column exists. (F85 family.)
-
+- **L7** (FIXED) Paid payroll cash-out was dated by `run_date` (the run's CREATION instant) in both the GL
+  `payroll_paid` entry and the cash-flow report (F122's known approximation — no paid date existed). A June
+  run marked paid in October showed its cash leaving in June. Now `payroll_runs.paid_date` (stamped once by
+  mark-paid, the business's calendar date) dates both; legacy paid rows keep `run_date` (no data change).
 - **L8** (FIXED) Bills · "Due This Week" compared dates as INSTANTS (`new Date(b.due_date)` vs a local-midnight
   `Date`) and summed face amounts — a bill due today dropped out (both NY and Tokyo: 7 vs 6). Now calendar
   strings over [today, today+7] and the unpaid BALANCE (as the Overdue card, F-C1).

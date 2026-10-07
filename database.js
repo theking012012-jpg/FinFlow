@@ -670,6 +670,9 @@ async function initDB() {
     // 2026-07-25, NOT in initDB) coexists and is the deferred post-launch item. Do NOT add the
     // natural-key `period` index here (owner ruling 2026-08-07 — boot-safety over max correctness).
     await client.query(`ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
+    // L7 (F122 follow-up): the calendar date a run was marked PAID — when its cash left. NULL for rows paid
+    // before this column existed; readers fall back to run_date for those (no existing row is rewritten).
+    await client.query(`ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS paid_date DATE`);
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_payroll_runs_idem_key
         ON payroll_runs (user_id, idempotency_key)

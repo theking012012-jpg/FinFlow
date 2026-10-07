@@ -951,21 +951,19 @@ function getFiltered() {
     invs = invs.filter(i => String(i.entity_id) === String(_activeEntity));
     exps = exps.filter(e => String(e.entity_id) === String(_activeEntity));
   }
-  const now = new Date();
+  // L11 (Rule 10): list exactly the rows the server summary covers — the calendar window it resolved (the
+  // client's FISCAL year / quarter / month, D2 = not after today), compared as 'YYYY-MM-DD' STRINGS. The old
+  // filter used viewer-local Date months, CALENDAR quarters, 'year' = every record, and filtered invoices by
+  // DUE date while revenue is recognised by ISSUE date.
+  const W = _data.window;
   const filterDate = d => {
-    // 'year' = all records (matches the client dashboard + server computeBooks, F25), same as 'all'.
-    if (!d || _period === 'all' || _period === 'year') return true;
-    const pd = new Date(d); if(isNaN(pd)) return true;
-    if (_period === 'quarter') {
-      const q = Math.floor(now.getMonth()/3)*3;
-      return pd.getFullYear()===now.getFullYear() && pd.getMonth()>=q && pd.getMonth()<q+3;
-    }
-    if (_period === 'month') return pd.getMonth()===now.getMonth() && pd.getFullYear()===now.getFullYear();
-    return true;
+    if (!W || !W.start || !W.end) return true;            // legacy server: no window ⇒ unfiltered
+    const y = _ymdOf(d); if (!y) return false;
+    return y >= W.start && y < W.end && (!W.today || y <= W.today);
   };
   return {
-    invoices: invs.filter(i=>filterDate(i.due_date)),
-    expenses: exps.filter(e=>filterDate(e.expense_date)),
+    invoices: invs.filter(i=>filterDate(i.issue_date || i.created_at)),
+    expenses: exps.filter(e=>filterDate(e.expense_date || e.created_at)),
   };
 }
 
@@ -973,10 +971,14 @@ function getFiltered() {
 function fmt(n) {
   return '$' + (parseFloat(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+// Rule 10: a 'YYYY-MM-DD' (or ISO timestamp) reduces to its calendar date by STRING, and displays from its own
+// parts — new Date('2026-08-30').toLocaleDateString() is "Aug 29" for every viewer west of UTC.
+function _ymdOf(d) { const m = String(d == null ? '' : d).match(/^(\d{4}-\d{2}-\d{2})/); return m ? m[1] : null; }
 function fmtDate(d) {
   if (!d) return '—';
-  const pd = new Date(d); if(isNaN(pd)) return d;
-  return pd.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const y = _ymdOf(d); if (!y) return d;
+  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return MN[+y.slice(5,7)-1] + ' ' + (+y.slice(8,10)) + ', ' + y.slice(0,4);
 }
 
 // ── RENDER ALL ─────────────────────────────────────────────────────────────

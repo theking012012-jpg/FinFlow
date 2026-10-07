@@ -973,6 +973,7 @@ If you cannot find a field, use null. Be concise.`;
       taxLines,
       entityId, // echoes the scope applied (null = all entities)
       period,   // echoes the period applied (month|quarter|year)
+      window: books.window || null,   // L11: the calendar window the summary covers — the portal lists rows over exactly it
       summary: {
         // Canonical values (F9). Legacy keys kept as aliases so nothing breaks.
         revenue:       books.revenue.toFixed(2),

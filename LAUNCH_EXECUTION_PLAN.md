@@ -224,6 +224,16 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   and all 33 verify-gl-* (incl. bs-readswap 15, readswap-consistency 18, statements 21, reversal 16,
   status-reversal 25, post-journal 18 / -fx 12, consolidation 13, payroll-cashout 16).
 
+- 2026-10-07 — **1.1 / L8 + L11 Rule-10 class.** Harness `verify-calendar-dates-tz.js` re-runs itself under
+  HARNESS_TZ America/New_York and Asia/Tokyo (sign boundary — the corollary). RED on pre-fix: NY 5 FAIL / Tokyo
+  3 FAIL (asymmetric exactly as Rule 10 predicts: lock date + personal window fail west only; Due This Week 7
+  and the portal list fail both) → GREEN 12/12. computeBooks now returns its resolved `window`; the portal
+  books response passes it on. Gates step1–4 green; regression green: accountant-portal-parity 12,
+  accountant-client-ui 6, accountant-entity-scope 36, accountant-fiscal-year 6, accountant-books-ap 8,
+  fc1-overdue-date 12, f72-payables 2, this-month-cards 13, tz-matrix, tz-probe, date-label-tz 12,
+  finflow-dates.test 16, lock-entity-scope 7, c1-client-lock 6, lock-external-dates 16, lock-password 12 /
+  -ui 4, period-lock-guard 24, personal-account-scope 4.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
@@ -255,9 +265,9 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   GL `payroll_paid` entry and the cash-flow report — not the date it was marked paid. A June run marked
   paid in October shows its cash out in the creation month. No `paid_at` column exists. (F85 family.)
 
-- **L8** (open) Bills · "Due This Week" compares dates as INSTANTS (`new Date(b.due_date)` vs a local-midnight
-  `Date`) — Rule 10 class (F87); viewer-timezone dependent at the week edges. Same file has
-  `_billsOverdueSum` (F-C1, string-based) as the pattern to follow.
+- **L8** (FIXED) Bills · "Due This Week" compared dates as INSTANTS (`new Date(b.due_date)` vs a local-midnight
+  `Date`) and summed face amounts — a bill due today dropped out (both NY and Tokyo: 7 vs 6). Now calendar
+  strings over [today, today+7] and the unpaid BALANCE (as the Overdue card, F-C1).
 - **L9** (FIXED, see Progress Log) Quarter view mixed two quarters: native KPIs resolve "quarter" to TODAY's
   fiscal quarter, but `_cogsPeriodParams` (COGS subtracted from Net profit) and `_applyConvertedKPIs`
   (display-currency KPIs) sent `monthIdx=currentMonthIdx` — the month last browsed in Month view. Browse to
@@ -268,10 +278,15 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   only (8 vs opex 614), Deductible yes-only (0 vs 4), and the **CSV export's P&L SUMMARY** = paid invoices /
   expense rows (''/8/−8 vs 835/614/221) — its quote helper also wrote 0 as an empty cell. The overdue banner
   and the dashboard "overdue" status line used the same status literal.
-- **L11** (open) Accountant portal `getFiltered()` period filter: `new Date(d)` instants + viewer-local
-  `getMonth()` and CALENDAR quarters (`Math.floor(now.getMonth()/3)`), while the server summary it sits next
-  to uses the client's fiscal year and calendar-date strings — Rule 10 class (F87) + a fiscal/calendar
-  quarter mismatch on the portal's row lists for month/quarter periods.
+- **L11** (FIXED) Accountant portal `getFiltered()`: `new Date(d)` + viewer-local `getMonth()`, CALENDAR
+  quarters, 'year' = every record, and invoices filtered by DUE date (server recognises by ISSUE date); portal
+  `fmtDate()` showed date-only values a day early west of UTC. Same class found in the main app: personal
+  finance window (local-midnight bounds — a row dated the 1st dropped out west of UTC) and the period-lock
+  display in `toggleLocking` ("March 30" for a March 31 lock west of UTC).
+- **L18** (open, non-money) Remaining Rule-10 members: task due dates (index.html `fmtDue` + `new Date(due) <
+  new Date()` overdue flag), accountant-portal task "due" labels, accountant-dashboard deadline overdue/
+  upcoming split (`new Date(d.date) < today`), and the MRR chart's month buckets (local `new Date(y, m, 1)`
+  windows vs `created_at`/`end_date`).
 - **L12** (FIXED) Generated reports ignored the active period / recognition set: **Payroll Summary** and
   **1099/W-2** summed EVERY run ever, drafts included (full-leg + prior-FY run: 1637 vs recognised FY 550;
   on the VERIFICATION seed 12,500 vs owner FY payroll 6,200 + 3,000); **Cash Flow Statement** listed every

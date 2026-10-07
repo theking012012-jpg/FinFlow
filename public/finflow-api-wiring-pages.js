@@ -774,12 +774,15 @@
       // the same rows the Vendors and Payments Made "Paid" cards draw from. It was Σ amount of FULLY-paid
       // bills, all-time — a partly-paid bill counted 0, and nothing was month-scoped.
       const _blPaid = _paymentsMadeData.filter(r => r.bill_id != null && inThisMonth(r.date)).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-      const _blToday = new Date(); _blToday.setHours(0, 0, 0, 0);
-      const _weekAhead = new Date(); _weekAhead.setDate(_weekAhead.getDate() + 7);
+      // L8 (Rule 10): due dates are CALENDAR dates — compare 'YYYY-MM-DD' strings over [today, today+7], never
+      // Date instants (new Date('2026-07-25') is UTC midnight, which lands on the previous local day west of
+      // UTC and dropped a bill due today). Balance, not the face amount, is what is still due.
+      const _blToday = window.FinFlowDates.resolvedToday(new Date());
+      const _blWeek = (() => { const p = _blToday.split('-').map(Number); const t = Date.UTC(p[0], p[1] - 1, p[2] + 7); return new Date(t).toISOString().slice(0, 10); })();
       const _blDueWeek = _billsData.filter(b => {
         if (b.status?.toLowerCase() === 'paid' || !b.due_date) return false;
-        const d = new Date(b.due_date); return !isNaN(d) && d >= _blToday && d <= _weekAhead;
-      }).reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+        const d = window.FinFlowDates._toYmd(b.due_date); return d != null && d >= _blToday && d <= _blWeek;
+      }).reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
       setKpiCards('page-bills', [_billsData.length, S(_blDueWeek), S(_blOverdue), S(_blPaid)]);
       window._refreshDashboardUI?.();
     };

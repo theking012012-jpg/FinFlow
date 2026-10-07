@@ -4257,16 +4257,15 @@ function _persMonthlyEquiv(amount,frequency){
   return a;
 }
 
+// Rule 10 (F87 class): the personal window is CALENDAR-date strings ('YYYY-MM-DD', inclusive of today) —
+// it used local-midnight Date bounds against new Date(t.date) (UTC midnight), so west of UTC a row dated the
+// 1st fell before the month start and dropped out of its own month.
 function _persPeriodRange(){
-  const now=new Date();
-  const y=now.getFullYear(),m=now.getMonth();
-  if(window._persPeriod==='month'){
-    return{from:new Date(y,m,1),to:now};
-  }else if(window._persPeriod==='quarter'){
-    const qStart=new Date(y,Math.floor(m/3)*3,1);
-    return{from:qStart,to:now};
-  }
-  return{from:new Date(y,0,1),to:now};
+  const today=window.FinFlowDates.resolvedToday(new Date());
+  const y=today.slice(0,4), m=parseInt(today.slice(5,7),10);
+  if(window._persPeriod==='month') return{from:y+'-'+String(m).padStart(2,'0')+'-01',to:today};
+  if(window._persPeriod==='quarter') return{from:y+'-'+String(Math.floor((m-1)/3)*3+1).padStart(2,'0')+'-01',to:today};
+  return{from:y+'-01-01',to:today};
 }
 
 function setPersPeriod(period){
@@ -4296,7 +4295,7 @@ function _applyPersFilter(){
   // All actual transactions in the window — drives the transaction LIST, running
   // balance and _persSideIncome (meaning unchanged: real income seen in-window).
   persTransactions=window._allPersTxs.filter(t=>{
-    const d=new Date(t.date);return d>=from&&d<=to;
+    const d=window.FinFlowDates._toYmd(t.date);return d!=null&&d>=from&&d<=to;   // Rule 10: string compare
   });
   // Per-row FX normalization: each personal amount is stored in its OWN currency;
   // every aggregate below sums in USD via _fxu so mixed-currency rows are additive.
@@ -6012,7 +6011,7 @@ async function renderLockHistory(){
       document.getElementById('lock-config').style.display='block';
       document.getElementById('lock-status-display').style.display='block';
       document.getElementById('lock-date').value=s.lock_date;
-      document.getElementById('lock-date-display').textContent=new Date(s.lock_date+' 00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+      document.getElementById('lock-date-display').textContent=_fmtYmdLong(s.lock_date);   // Rule 10
     }
     // Show audit log entries related to lock
     const auditRes=await fetch('/api/audit-log?type=lock_settings&limit=10',{credentials:'include'});
@@ -6025,13 +6024,22 @@ async function renderLockHistory(){
       </div>`).join(''):'<div style="padding:1rem;color:var(--t3);font-size:13px">No lock history yet</div>';
   } catch(e){l.innerHTML='';}
 }
+// Rule 10: a lock date is a CALENDAR date — format the 'YYYY-MM-DD' string's own parts, never via a Date
+// instant (new Date('2026-03-31') is UTC midnight ⇒ "March 30" for every viewer west of UTC).
+function _fmtYmdLong(ymd){
+  const y=(window.FinFlowDates && window.FinFlowDates._toYmd(ymd)) || '';
+  const m=y.match(/^(\d{4})-(\d{2})-(\d{2})$/); if(!m) return ymd || '';
+  const MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return MN[+m[2]-1]+' '+(+m[3])+', '+m[1];
+}
+window._fmtYmdLong=_fmtYmdLong;
 function toggleLocking(){
   const enabled=document.getElementById('lock-enabled').checked;
   document.getElementById('lock-config').style.display=enabled?'block':'none';
   document.getElementById('lock-status-display').style.display=enabled?'block':'none';
   if(enabled){
     const d=document.getElementById('lock-date').value||'2026-03-31';
-    document.getElementById('lock-date-display').textContent=new Date(d).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+    document.getElementById('lock-date-display').textContent=_fmtYmdLong(d);   // Rule 10
   }
 }
 async function saveLockSettings(){
@@ -6042,7 +6050,7 @@ async function saveLockSettings(){
     const res=await fetch('/api/lock-settings',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({enabled,lock_date:d,password:pw||undefined})});
     // N19: show the server's refusal (e.g. a password-protected lock) instead of a false "saved".
     if(!res.ok){ const e=await res.json().catch(()=>({})); notify(e.error||'Failed to save lock settings', true); renderLockHistory(); return; }
-    if(enabled&&d) document.getElementById('lock-date-display').textContent=new Date(d+' 00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+    if(enabled&&d) document.getElementById('lock-date-display').textContent=_fmtYmdLong(d);   // Rule 10
     const pwEl=document.getElementById('lock-password'); if(pwEl) pwEl.value='';
     notify('Lock settings saved ✦');
     renderLockHistory();

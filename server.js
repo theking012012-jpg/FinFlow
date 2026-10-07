@@ -11117,6 +11117,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
 
   return {
     revenue, cogs, grossProfit, opex, netProfit, outstanding, accountsPayable, accountsPayableNet, arCreditContra: r2(_arCreditContra), arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
+    window: { start: winStart, end: winEnd, today: _today },   // L11: the resolved calendar window, so a caller can list exactly the rows these figures cover
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the
     // client worksheet (GET /api/tax-filing) and the accountant Tax Summary so taxable reconciles.

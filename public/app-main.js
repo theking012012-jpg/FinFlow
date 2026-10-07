@@ -1383,8 +1383,10 @@ async function renderJournalsLive(){
     // Update KPI cards with real data
     const S = n=>_nativeSymbol()+n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});   // F129: entity symbol, not literal $ (journal amounts are entity-currency)
     const setEl = (id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
-    const totalDebits  = journals.reduce((s,j)=>s+(parseFloat(j.debit)||0),0);
-    const totalCredits = journals.reduce((s,j)=>s+(parseFloat(j.credit)||0),0);
+    // L5: the Debits/Credits cards are labelled "This month" — this calendar month's entries only.
+    const _jMonth = journals.filter(j=> typeof window._inThisMonth==='function' ? window._inThisMonth(j.date) : true);
+    const totalDebits  = _jMonth.reduce((s,j)=>s+(parseFloat(j.debit)||0),0);
+    const totalCredits = _jMonth.reduce((s,j)=>s+(parseFloat(j.credit)||0),0);
     const draftCount   = journals.filter(j=>j.status!=='Posted').length;
     setEl('jnl-count',   journals.length);
     setEl('jnl-debits',  S(totalDebits));

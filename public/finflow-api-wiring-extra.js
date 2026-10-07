@@ -136,11 +136,15 @@
   }
 
   function updateTimesheetMetrics() {
-    const total    = _tsData.reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
-    const billable = _tsData.filter(_isBillable).reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
+    // L5: "Hours Logged" is labelled "This month", and Billable / Non-Billable / rate / Avg per Day are
+    // its breakdown — all four read this calendar month's entries (they summed all time).
+    const _inM     = typeof window._inThisMonth === 'function' ? window._inThisMonth : () => true;
+    const _tsM     = _tsData.filter(t => _inM(t.date));
+    const total    = _tsM.reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
+    const billable = _tsM.filter(_isBillable).reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
     const nb       = total - billable;
     const rate     = total > 0 ? Math.round(billable / total * 100) : 0;
-    const days     = new Set(_tsData.map(t => t.date)).size;
+    const days     = new Set(_tsM.map(t => t.date)).size;
     const avg      = days > 0 ? total / days : 0;
 
     // Format hours: integers as "5h", decimals as "5.5h", zero as "0h"
@@ -482,7 +486,8 @@
     _pjKpi('proj-active', _projects.filter(p => p.status === 'In Progress').length);
     const _tsAll = window.timesheetData || window.timesheet || [];
     const _billFn = window._isBillable || (t => t.billable === true || t.billable === 1 || String(t.billable || '').toLowerCase() === 'yes');
-    const _billHrs = _tsAll.filter(_billFn).reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);
+    const _inM = typeof window._inThisMonth === 'function' ? window._inThisMonth : () => true;
+    const _billHrs = _tsAll.filter(t => _billFn(t) && _inM(t.date)).reduce((s, t) => s + (parseFloat(t.hours) || 0), 0);   // L5: "This month"
     _pjKpi('proj-hours', _billHrs.toFixed(1) + ' hrs');
     _pjKpi('proj-revenue', money(_projects.reduce((s, p) => s + (parseFloat(p.billed) || 0), 0)));
     _pjKpi('proj-unbilled', money(_projects.reduce((s, p) => s + Math.max(0, (parseFloat(p.budget) || 0) - (parseFloat(p.billed) || 0)), 0)));

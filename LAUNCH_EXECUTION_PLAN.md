@@ -174,6 +174,15 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   journal-dashboard-parity 10, gl-post-journal 18, gl-post-journal-fx 12, dashboard-render 9, b5-currency 5,
   entity-switch-money-clear 8. bundle:check in sync.
 
+- 2026-10-07 — **1.0 baseline** on `29ad941`: full sweep **419/419 GREEN** (real Postgres 17, pinned clock,
+  3 shards). Frozen failure list: empty.
+- 2026-10-07 — **1.1 / L5 "This month" cards.** Harness `verify-this-month-cards.js` (full-leg June seed +
+  July rows, today pinned 2026-07-25): RED 11/13 on pre-fix (shown 69/27/0/27/2/2/2/46/46/5.0/6 = all-time)
+  → GREEN 13/13 (controls CN/VC "This Month" green both sides). Gates step1–4 green; regression green:
+  f129-entity-symbol 7, f129 4, f136-paymentsmade 8, f144-receipts 8, f72-payables 2, fc1-overdue-date 12,
+  vendors-payables-ui 2, c1-journals 12, timesheet-entity-scope 6, timesheet-switch-reload 3,
+  expense-breakdown-all-surfaces 10. bundle:check in sync.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
@@ -183,12 +192,14 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   page bars Σ=565 (only orphan payments as "Bill payments" — issued bill 40, vendor credit −3, JE 12 missing)
   and a different category list from the dashboard. AI-insights "Expenses this month" line used the
   Expenses-page list. Same class as the 470dce2 reference fix (N20 leg dropped downstream).
-- **L4** (open) Payroll page empty-state "📅 No payroll runs recorded … your reports currently show $0 of
-  payroll" renders while 3 runs exist and reports show payroll 550 (full-leg seed, jsdom probe).
-- **L5** (open, suspect) "This month" cards: Vendors "Paid $22 This month", Payments Made "Paid $22 This
-  month", Payments Received "Received $60 This month" — all from June-dated rows with today pinned
-  2026-07-25 — while the Bills page "Paid $0 This month" filters by month. Either all-time mislabelled as
-  this month, or the period selector applied under a "This month" label. Needs code read + harness.
+- **L4** (WITHDRAWN) Payroll empty-state "No payroll runs recorded" — the jsdom probe read `textContent`,
+  which includes hidden nodes. Executed check: `#payroll-empty-state` is `display:none` with 3 runs loaded;
+  the visible page lists all 3 runs. Not a defect.
+- **L5** (FIXED, see Progress Log) Cards labelled "This month" summed ALL TIME: Payments Received ·
+  Received, Vendors · Paid, Bills · Paid (also a different definition: Σ fully-paid bills), Payments Made ·
+  Paid / Vendors Paid, Sales Receipts count, Quotes count, Manual Journals Debits/Credits, Projects ·
+  Billable Hours, Timesheet · Hours Logged (+ its breakdown). Controls already right: Credit Notes /
+  Vendor Credits "This Month", Banking Inflow/Outflow (MTD).
 - **L6** (open, design) Manual-journal balance-sheet legs post to `J`-namespaced shadow accounts (J1010,
   J1100, J2000 …), so a JE "Dr Checking 30 / Cr Revenue 30" moves revenue but never the balance sheet's
   Cash line (`bal['1000']`), AR (1100) or AP (2000), and the cash-flow report ignores JE cash legs. All
@@ -198,6 +209,10 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
 - **L7** (open) Paid payroll cash-out is dated by `run_date` (= the run's CREATION instant) in both the
   GL `payroll_paid` entry and the cash-flow report — not the date it was marked paid. A June run marked
   paid in October shows its cash out in the creation month. No `paid_at` column exists. (F85 family.)
+
+- **L8** (open) Bills · "Due This Week" compares dates as INSTANTS (`new Date(b.due_date)` vs a local-midnight
+  `Date`) — Rule 10 class (F87); viewer-timezone dependent at the week edges. Same file has
+  `_billsOverdueSum` (F-C1, string-based) as the pattern to follow.
 
 ## Decisions (irreversible-safe choices the agent made)
 - **D1 — Working branch & pushing.** Commits go on `dash-je-fix` only. This run executes in an ephemeral
@@ -210,5 +225,10 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   "Bills & vendors" (issued bills + orphan payments − vendor credits) + "Journal entries". The Expenses
   page label "Bill payments" is retired in favour of the dashboard's "Bills & vendors" (it showed a
   different, partial leg). Four bars: ≤4 categories show by name; more ⇒ top 3 + "Other".
+- **D5 — "This month" cards (L5).** A card whose sub-label says "This month" shows this calendar month
+  (the existing `inThisMonth` string-date test, now `window._inThisMonth`), never all-time. Bills "Paid ·
+  This month" = cash paid against bills this month (bill-linked payments made) — the same rows the Vendors
+  and Payments Made "Paid" cards use. Cards with no period label (Largest/Avg payment, Cash/Card sales)
+  stay all-time. Quotes have no business date, so their month is `created_at`.
 - **D4 — Commit trailer.** The plan's template says `Claude Opus 4.8`; commits use the attribution of the
   model actually running this session (accuracy over copying a stale template).

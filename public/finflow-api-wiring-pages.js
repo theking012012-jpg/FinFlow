@@ -64,6 +64,9 @@
     if (_dy == null) return false;
     return _dy.slice(0, 7) === window.FinFlowDates.resolvedToday(new Date()).slice(0, 7);
   }
+  // L5: the ONE "is this row in this calendar month" test for every card labelled "This month"
+  // (here, app-main journals, wiring-extra projects/timesheet) — several such cards summed ALL TIME.
+  window._inThisMonth = inThisMonth;
 
   (function _run() { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', _run); return; }
 
@@ -104,7 +107,7 @@
       const pending  = _quotesData.filter(q => q.status?.toLowerCase() === 'pending').length;
       const openVal  = _quotesData.filter(q => q.status?.toLowerCase() === 'pending').reduce((s, q) => s + (q.amount || 0), 0);
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-      set('qt-total', _quotesData.length);
+      set('qt-total', _quotesData.filter(q => inThisMonth(q.date || q.created_at)).length);   // L5: "This month" (quotes carry no business date → created_at)
       set('qt-accepted', accepted);
       set('qt-pending', pending);
       set('qt-value', S(openVal));
@@ -190,7 +193,7 @@
       const _rcCash = _receiptsData.filter(r => /cash/i.test(r.method || '')).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _rcCard = _receiptsData.filter(r => /card|stripe/i.test(r.method || '')).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _rcRefund = _receiptsData.filter(r => (parseFloat(r.amount) || 0) < 0).reduce((s, r) => s + Math.abs(parseFloat(r.amount) || 0), 0);
-      setKpiCards('page-sales-receipts', [_receiptsData.length, S(_rcCash), S(_rcCard), S(_rcRefund)]);
+      setKpiCards('page-sales-receipts', [_receiptsData.filter(r => inThisMonth(r.date)).length, S(_rcCash), S(_rcCard), S(_rcRefund)]);   // L5: count is "This month"
       window._refreshDashboardUI?.();
     };
 
@@ -306,7 +309,8 @@
       // Outstanding/overdue are derived from window._realInvoices (set by the
       // dashboard wiring). Avg-days-to-pay isn't derivable from the current
       // payment shape (no paid_at vs due_date), so it stays as the "—" placeholder.
-      const _prTotal = _paymentsRecvData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+      // L5: the card is labelled "This month" — sum this calendar month's payments, not all time.
+      const _prTotal = _paymentsRecvData.filter(r => inThisMonth(r.payment_date)).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _prInvs = window._realInvoices || [];
       // F56: same canonical AR definition as the dashboard card, the Invoices page and the
       // server — otherwise this page showed a different Outstanding than the dashboard did.
@@ -668,7 +672,7 @@
       if (!_vendorsFetched) { loadVendors(); return; }
       renderVendorRows(_vendorsData);
       // KPI cards: count · total payables (canonical AP, filled by _refreshVendorsPayables) · overdue · paid
-      const _vPaid = _paymentsMadeData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+      const _vPaid = _paymentsMadeData.filter(r => inThisMonth(r.date)).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);   // L5: "This month"
       const _vOverdue = window._billsOverdueSum(_billsData);   // F-C1: was hardcoded null → static $0
       setKpiCards('page-vendors', [_vendorsData.length, null, S(_vOverdue), S(_vPaid)]);
       _refreshVendorsPayables();
@@ -766,7 +770,10 @@
       if (badge) { badge.textContent = overdue; badge.style.display = overdue > 0 ? '' : 'none'; }
       // KPI cards: count · due-this-week sum · overdue sum · paid sum
       const _blOverdue = window._billsOverdueSum(_billsData);   // F-C1: date-based (due_date past + unpaid), not status-literal
-      const _blPaid = _billsData.filter(b => b.status?.toLowerCase() === 'paid').reduce((s, b) => s + (parseFloat(b.amount) || 0), 0);
+      // L5: "Paid · This month" = cash paid AGAINST bills this calendar month (bill-linked payments made),
+      // the same rows the Vendors and Payments Made "Paid" cards draw from. It was Σ amount of FULLY-paid
+      // bills, all-time — a partly-paid bill counted 0, and nothing was month-scoped.
+      const _blPaid = _paymentsMadeData.filter(r => r.bill_id != null && inThisMonth(r.date)).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
       const _blToday = new Date(); _blToday.setHours(0, 0, 0, 0);
       const _weekAhead = new Date(); _weekAhead.setDate(_weekAhead.getDate() + 7);
       const _blDueWeek = _billsData.filter(b => {
@@ -949,11 +956,13 @@
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No payments made yet</div>';
       // KPI cards: total paid · unique vendor count · largest single · avg
-      const _pmTotal = _paymentsMadeData.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-      const _pmVendors = new Set(_paymentsMadeData.map(r => r.vendor)).size;
+      // L5: "Paid" and "Vendors Paid" are labelled "This month"; Largest/Avg carry no period (all payments).
+      const _pmMonth = _paymentsMadeData.filter(r => inThisMonth(r.date));
+      const _pmTotal = _pmMonth.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+      const _pmVendors = new Set(_pmMonth.map(r => r.vendor)).size;
       const _pmAmts = _paymentsMadeData.map(r => parseFloat(r.amount) || 0);
       const _pmLargest = _pmAmts.length ? Math.max(..._pmAmts) : 0;
-      const _pmAvg = _pmAmts.length ? _pmTotal / _pmAmts.length : 0;
+      const _pmAvg = _pmAmts.length ? _pmAmts.reduce((s, a) => s + a, 0) / _pmAmts.length : 0;
       setKpiCards('page-payments-made', [S(_pmTotal), _pmVendors, S(_pmLargest), S(_pmAvg)]);
       window._refreshDashboardUI?.();
     };

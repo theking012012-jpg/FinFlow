@@ -495,6 +495,13 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   exit 1 on a crash under the clock preload every runner uses (their own `exitCode = 0` is overridden by
   embedded-postgres's async-exit-hook `process.exit(0)` either way; the latch is what works) — no change needed.
 
+- **L33** (FIXED — Phase 2.1) The GL backfill (owner's one repair tool for history) had NO manual-journal step, and
+  computeBooks reads the journal P&L FROM the GL (N20) — so a posted journal that never reached the ledger (pre-N20,
+  or a failed best-effort post) counted on no surface, and backfilling could not restore it. Measured on the full-leg
+  dataset: after backfill GL AND computeBooks both said revenue 715 / net 113 (hand-computed 745 / 131) — they
+  agreed, so /api/reports served source:'gl' with the wrong figures (Rule 6). Backfill step 12 now replays posted
+  journals through the live `postJournalToLedger` (same key ⇒ identical entries).
+
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's
 finding IDs, so it is the newest. The N-series (N1–N114) lived only in a lost scratchpad file

@@ -10215,6 +10215,22 @@ async function backfillLedgerForUser(userId, opts = {}) {
     for (const t of rows) { if (onlyEntity != null && t.entity_id !== onlyEntity) continue; const gl = Math.round((parseFloat(t.realised_gain_loss) || 0) * 100) / 100; if (gl === 0) continue;
       const lines = gl > 0 ? [{ code: '1000', debit: gl, credit: 0 }, { code: '7000', debit: 0, credit: gl }] : [{ code: '7000', debit: -gl, credit: 0 }, { code: '1000', debit: 0, credit: -gl }];
       await post({ entityId: t.entity_id, date: await entityYmdOf(t.entity_id, t.settled || new Date()), description: 'FX settlement — ' + String(t.foreign_currency || '').slice(0, 12), sourceType: 'fx_settle', sourceId: t.id, idempotencyKey: 'fx_settle:' + t.id, lines }); } }
+  // 12) manual journals — status 'posted' → their own lines on J-namespaced accounts at the journal date, through
+  // the SAME postJournalToLedger the live route uses (same 'journal:<id>' key ⇒ identical entry, idempotent).
+  // Phase 2.1: this step was missing, and computeBooks reads the journal P&L FROM the GL (N20) — so a posted
+  // journal that never reached the ledger (pre-N20, or a failed best-effort post) counted on NO surface, and
+  // the backfill, the owner's one repair tool, could not restore it. Unpostable lines are reported, not guessed.
+  { const { rows } = await pool.query(`SELECT * FROM journals WHERE user_id=$1 ORDER BY id`, [userId]);
+    for (const raw of rows) {
+      const j = rowToObj(raw);
+      if (!keep(j) || String(j.status || '').toLowerCase() !== 'posted') continue;
+      const { rows: pre } = await pool.query(`SELECT id FROM ledger_entries WHERE user_id=$1 AND idempotency_key=$2 LIMIT 1`, [userId, 'journal:' + j.id]);
+      if (pre[0]) { note('journal', true); continue; }
+      if (dry) { note('journal', false); continue; }
+      const r = await postJournalToLedger(pool, { userId, entityId: j.entity_id != null ? j.entity_id : null, journal: j });
+      if (r && r.posted) note('journal', false);
+      else (report.skipped = report.skipped || []).push({ type: 'journal', id: j.id, reason: (r && r.reason) || 'not posted' });
+    } }
   return report;
 }
 

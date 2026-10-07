@@ -166,9 +166,49 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   (monthly assertions added) + FX 12/0 + money gates 1–4 green. Server GL reconcile confirmed live
   (`/api/gl/reconcile-check` all entities booksBalanced, `glRevenue==oracleRevenue==50390`). HELD for owner push.
 
+- 2026-10-07 — **1.1 / L3 expense breakdown reconciles on every surface.** New shared seed
+  `fullLegScenario.js` (every leg via real endpoints, hand-computed expected values) + `jsdomBoot`
+  `{baseSeed:false, apiSeed}` options. Harness `verify-expense-breakdown-all-surfaces.js`: RED 6/10 on
+  pre-fix (server Σ602, dashboard Σ602, Expenses page Σ565 vs 614) → GREEN 10/10. Gates step1–4 green;
+  regression green: expense-breakdown-reconcile 8, fa1-dashboard-expense-label 6, gl-dashboard-readswap 11,
+  journal-dashboard-parity 10, gl-post-journal 18, gl-post-journal-fx 12, dashboard-render 9, b5-currency 5,
+  entity-switch-money-clear 8. bundle:check in sync.
+
 ## Findings Ledger (numbered; newest last)
-- (open) renderInvestments null-textContent boot error — Phase 1.3.
-- (open) `APP_URL`/dab1 dead-domain audit — Phase 1.4.
+Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
+- **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
+- **L2** (open) `APP_URL`/dab1 dead-domain audit — Phase 1.4.
+- **L3** (FIXED, see Progress Log) Expense breakdown ≠ opex total on 3 surfaces. Full-leg seed (opex 614):
+  server `expenseBreakdown` Σ=602 and dashboard bars Σ=602 (posted expense JE 12 in no category); Expenses
+  page bars Σ=565 (only orphan payments as "Bill payments" — issued bill 40, vendor credit −3, JE 12 missing)
+  and a different category list from the dashboard. AI-insights "Expenses this month" line used the
+  Expenses-page list. Same class as the 470dce2 reference fix (N20 leg dropped downstream).
+- **L4** (open) Payroll page empty-state "📅 No payroll runs recorded … your reports currently show $0 of
+  payroll" renders while 3 runs exist and reports show payroll 550 (full-leg seed, jsdom probe).
+- **L5** (open, suspect) "This month" cards: Vendors "Paid $22 This month", Payments Made "Paid $22 This
+  month", Payments Received "Received $60 This month" — all from June-dated rows with today pinned
+  2026-07-25 — while the Bills page "Paid $0 This month" filters by month. Either all-time mislabelled as
+  this month, or the period selector applied under a "This month" label. Needs code read + harness.
+- **L6** (open, design) Manual-journal balance-sheet legs post to `J`-namespaced shadow accounts (J1010,
+  J1100, J2000 …), so a JE "Dr Checking 30 / Cr Revenue 30" moves revenue but never the balance sheet's
+  Cash line (`bal['1000']`), AR (1100) or AP (2000), and the cash-flow report ignores JE cash legs. All
+  cash surfaces agree with each other (BS cash == cash-flow net == −200 on the full-leg seed) while all
+  omitting the JE's +30/−12 (Rule 6: agreement ≠ correctness). Fix needs a JE-template→system-account
+  map + computeBooks AR/AP to carry JE legs so the reconcile gate still ties → accounting design, see §Decisions.
+- **L7** (open) Paid payroll cash-out is dated by `run_date` (= the run's CREATION instant) in both the
+  GL `payroll_paid` entry and the cash-flow report — not the date it was marked paid. A June run marked
+  paid in October shows its cash out in the creation month. No `paid_at` column exists. (F85 family.)
 
 ## Decisions (irreversible-safe choices the agent made)
-- (none yet)
+- **D1 — Working branch & pushing.** Commits go on `dash-je-fix` only. This run executes in an ephemeral
+  cloud container: an unpushed commit is lost when the container is reclaimed, and the owner cannot fetch
+  from it. So the agent pushes `dash-je-fix` (fast-forward only) to origin at phase boundaries. It never
+  pushes or merges `main`; Railway deploys only from `main`, so a branch push deploys nothing.
+- **D2 — Baseline run.** Harnesses run as the non-root `postgres` user on a clean `git archive` copy of
+  the commit under test (so harness side-effects like `public/.min` can't dirty the repo).
+- **D3 — Expense category list (L3).** One decomposition everywhere: direct categories + "Payroll" +
+  "Bills & vendors" (issued bills + orphan payments − vendor credits) + "Journal entries". The Expenses
+  page label "Bill payments" is retired in favour of the dashboard's "Bills & vendors" (it showed a
+  different, partial leg). Four bars: ≤4 categories show by name; more ⇒ top 3 + "Other".
+- **D4 — Commit trailer.** The plan's template says `Claude Opus 4.8`; commits use the attribution of the
+  model actually running this session (accuracy over copying a stale template).

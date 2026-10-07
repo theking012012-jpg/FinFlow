@@ -11067,9 +11067,15 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   if (payrollTotal) _catTotals['Payroll'] = (_catTotals['Payroll'] || 0) + payrollTotal;   // period + FX already
   const _apNet = r2(issuedBillsTotal + paymentsMadeTotal - vendorCreditsTotal);
   if (_apNet) _catTotals['Bills & vendors'] = (_catTotals['Bills & vendors'] || 0) + _apNet;
+  // Phase 1.1: posted manual journals' expense leg is part of opex (N20), so it is a category too —
+  // without it Σ(rows) fell short of opex by every posted expense JE. Mirrored by the client
+  // _expenseCategoryRows (app-main.js); same label on every surface.
+  if (jeOpex) _catTotals['Journal entries'] = (_catTotals['Journal entries'] || 0) + jeOpex;
   const _bdSorted = Object.entries(_catTotals).filter(([, v]) => Math.abs(v) > 0.005).sort((a, b) => b[1] - a[1]);
-  const _bdRows = _bdSorted.slice(0, 3).map(([category, amount]) => ({ category, amount: r2(amount) }));
-  const _bdRest = _bdSorted.slice(3).reduce((s, [, v]) => s + v, 0);
+  // Four bars: ≤4 categories show by name; more ⇒ top 3 + an "Other" rollup (Σ rows == opex either way).
+  const _bdKeep = _bdSorted.length <= 4 ? 4 : 3;
+  const _bdRows = _bdSorted.slice(0, _bdKeep).map(([category, amount]) => ({ category, amount: r2(amount) }));
+  const _bdRest = _bdSorted.slice(_bdKeep).reduce((s, [, v]) => s + v, 0);
   if (Math.abs(_bdRest) > 0.005) _bdRows.push({ category: 'Other', amount: r2(_bdRest) });
   const expenseBreakdown = { rows: _bdRows, total: r2(opex), complete: breakdownComplete };
 

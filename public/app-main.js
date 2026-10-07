@@ -2083,6 +2083,32 @@ function computeExpenseBreakdown(period, monthIdx){
 }
 window.computeExpenseBreakdown = computeExpenseBreakdown;
 
+// Phase 1.1 — the ONE category decomposition of the opex total, shared by every client surface that
+// breaks expenses down (dashboard bars, Expenses page bars, AI insights). Mirrors the server
+// computeBooks.expenseBreakdown exactly: direct-expense categories + Payroll + "Bills & vendors"
+// (issued bills + orphan payments − vendor credits) + "Journal entries" (posted expense JEs), so
+// Σ(rows) == bd.total by construction. Before this, each surface built
+// its own list and each dropped a different leg (the Expenses page showed only orphan payments as
+// "Bill payments"; every surface dropped posted journals), so no breakdown summed to its headline.
+// ≤4 categories show by name, more ⇒ top 3 + "Other".
+function _expenseCategoryRows(bd){
+  if(!bd) return [];
+  const cats = {};
+  Object.entries(bd.byCategory || {}).forEach(([c, v]) => { if(v) cats[c] = (cats[c] || 0) + v; });
+  if(bd.payroll) cats['Payroll'] = (cats['Payroll'] || 0) + bd.payroll;
+  const apNet = (bd.issuedBills || 0) + (bd.paymentsMade || 0) - (bd.vendorCredits || 0);
+  if(apNet) cats['Bills & vendors'] = (cats['Bills & vendors'] || 0) + apNet;
+  if(bd.journalExpense) cats['Journal entries'] = (cats['Journal entries'] || 0) + bd.journalExpense;
+  const sorted = Object.entries(cats).filter(([, v]) => Math.abs(v) > 0.005).sort((a, b) => b[1] - a[1]);
+  // Four bars: ≤4 categories show by name; more ⇒ top 3 + an "Other" rollup (same rule as the server).
+  const keep = sorted.length <= 4 ? 4 : 3;
+  const rows = sorted.slice(0, keep);
+  const rest = sorted.slice(keep).reduce((s, [, v]) => s + v, 0);
+  if(Math.abs(rest) > 0.005) rows.push(['Other', rest]);
+  return rows;
+}
+window._expenseCategoryRows = _expenseCategoryRows;
+
 // ════════════════════════════════════════════
 // CANONICAL REVENUE  (single source of truth)
 // ════════════════════════════════════════════
@@ -2790,10 +2816,8 @@ function updateExpenses(d=getPeriodData()){
   // Largest cost + breakdown bars — operating categories PLUS Payroll and Bill
   // payments as their own lines, so the bars reconcile with the headline total
   // (no mystery gap between "Expenses $X" and the category breakdown).
-  const sorted = Object.entries(b.byCategory)
-    .concat(b.payroll>0?[['Payroll',b.payroll]]:[])
-    .concat(b.paymentsMade>0?[['Bill payments',b.paymentsMade]]:[])
-    .sort((a,b2)=>b2[1]-a[1]);
+  // Phase 1.1: the shared decomposition (Σ rows == b.total) — same categories as the dashboard bars.
+  const sorted = _expenseCategoryRows(b);
   const _exTopEl=document.getElementById('ex-top'); if(_exTopEl) _exTopEl.textContent = sorted[0]?.[0] || '—';
   const _exTopPctEl=document.getElementById('ex-top-pct');
   if(_exTopPctEl) _exTopPctEl.textContent = (sorted[0] && b.total>0) ? _fmtMoneyAbbr(sorted[0][1])+' · '+Math.round(sorted[0][1]/b.total*100)+'%' : '';
@@ -4915,7 +4939,7 @@ function updateAI(d=getPeriodData()){
     `Cash trend: ${_profit >= 0 ? 'Net positive' : 'Net negative'} at ${S(_profit)} this quarter.`,
   ]:[
     `${MONTH_FULL[currentMonthIdx]} revenue: ${S(_rev)} — ${margin}% profit margin.`,
-    (()=>{ const _cats=_bd?Object.entries(_bd.byCategory).concat(_bd.payroll>0?[['Payroll',_bd.payroll]]:[]).concat(_bd.paymentsMade>0?[['Bill payments',_bd.paymentsMade]]:[]).filter(c=>c[1]>0).sort((a,b)=>b[1]-a[1]):[]; const _top=_cats[0]; return `Expenses this month: ${S(_exp)}.${(_top&&_exp>0)?` Largest cost: ${_top[0]} at ${S(_top[1])} (${Math.round(_top[1]/_exp*100)}%).`:''}`; })(),
+    (()=>{ const _cats=_bd?_expenseCategoryRows(_bd).filter(c=>c[1]>0):[]; const _top=_cats[0]; return `Expenses this month: ${S(_exp)}.${(_top&&_exp>0)?` Largest cost: ${_top[0]} at ${S(_top[1])} (${Math.round(_top[1]/_exp*100)}%).`:''}`; })(),
     `Net profit: ${S(_profit)} — ${currentMonthIdx>0?`${pct(d.profit,PROFIT[currentMonthIdx-1])>0?'up':'down'} ${Math.abs(pct(d.profit,PROFIT[currentMonthIdx-1]))}% vs last month (operating)`:'first month on record'}.`,
     _topClients.length ? `Top client this month: ${_topClients[0].label} at ${S(_topClients[0].total)} (${_rev>0?Math.round(_topClients[0].total/_rev*100):0}% of revenue).` : `Add invoices to track client revenue.`,
     (()=>{ const _pay=(window.ownerPayroll?[window.ownerPayroll]:[]).concat(window.payrollEmployees||[]); const _wh=_pay.reduce((s,p)=>s+dedTotal(p.gross, p.deductions),0); return _wh>0?`Payroll deductions this month: ${S(Math.round(_wh))}, from the deduction rows you entered.`:`Add payroll with deduction rows to see totals.`; })(),

@@ -5605,22 +5605,22 @@ function clearAIChat(){
     // above them, not just direct expenses. Fall back to direct-expense binning only if the engine
     // is unavailable (keeps the pre-M1 behaviour rather than blanking the widget).
     const _bd = (typeof computeExpenseBreakdown === 'function') ? computeExpenseBreakdown(_p, _mi) : null;
-    const cats = {};
-    if (_bd) {
-      Object.entries(_bd.byCategory || {}).forEach(([c, v]) => { if (v) cats[c] = (cats[c] || 0) + v; });
-      if (_bd.payroll) cats['Payroll'] = (cats['Payroll'] || 0) + _bd.payroll;
-      const _apNet = (_bd.issuedBills || 0) + (_bd.paymentsMade || 0) - (_bd.vendorCredits || 0);
-      if (_apNet) cats['Bills & vendors'] = (cats['Bills & vendors'] || 0) + _apNet;
+    // Phase 1.1: the categories come from the ONE shared decomposition (app-main _expenseCategoryRows:
+    // direct categories + Payroll + Bills & vendors + Journal entries; ≤4 by name, else top 3 + "Other"), the same list the
+    // Expenses page and the server breakdown use, so Σ(four bars) == the opex KPI on every surface.
+    let sorted;
+    if (_bd && typeof window._expenseCategoryRows === 'function') {
+      sorted = window._expenseCategoryRows(_bd);
     } else {
+      const cats = {};
       const _w = (typeof window._periodWindow === 'function') ? window._periodWindow(_p) : null;
       const _rows = _w ? (expenses || []).filter(e => _w.inWin(e.expense_date || e.date || e.created_at)) : (expenses || []);
       _rows.forEach(e => { const cat = e.category || 'Other'; cats[cat] = (cats[cat] || 0) + (parseFloat(e.amount) || 0); });
+      const _sorted0 = Object.entries(cats).filter(([, v]) => Math.abs(v) > 0.005).sort((a, b) => b[1] - a[1]);
+      const _rest = _sorted0.slice(3).reduce((s, [, v]) => s + v, 0);
+      sorted = _sorted0.slice(0, 3);
+      if (Math.abs(_rest) > 0.005) sorted.push(['Other', _rest]);
     }
-    // top 3 categories + an "Other" rollup so Σ(four bars) == the opex total (KPI reconciliation)
-    const _sorted0 = Object.entries(cats).filter(([, v]) => Math.abs(v) > 0.005).sort((a, b) => b[1] - a[1]);
-    const _rest = _sorted0.slice(3).reduce((s, [, v]) => s + v, 0);
-    const sorted = _sorted0.slice(0, 3);
-    if (Math.abs(_rest) > 0.005) sorted.push(['Other', _rest]);
     const total = (_bd ? (_bd.total || 0) : 0) || sorted.reduce((s, [, v]) => s + v, 0) || 1;
 
     // Update the 4 expense bar rows (sal, rent, sw, mkt) with top 4 categories

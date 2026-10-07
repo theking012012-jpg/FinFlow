@@ -67,9 +67,13 @@ function pathOf(url) {
  * @param {object} opts
  * @param {Object<string, number|'network'>} opts.failMap  pathname → status code, or 'network'
  * @param {function(client, userId):Promise} [opts.seedExtra]  extra rows beyond the base seed
+ * @param {boolean} [opts.baseSeed=true]  false ⇒ start from an EMPTY account (no seed() rows, no entity)
+ * @param {function({http, client, userId}):Promise} [opts.apiSeed]  runs AFTER login, BEFORE the SPA
+ *        loads: write the books through the REAL endpoints (so every write also posts to the GL),
+ *        instead of direct SQL that the ledger never sees.
  */
 async function bootSpaInJsdom(opts = {}) {
-  const { failMap = {}, seedExtra = null } = opts;
+  const { failMap = {}, seedExtra = null, baseSeed = true, apiSeed = null } = opts;
   const { JSDOM, VirtualConsole, CookieJar } = require('jsdom');
 
   const scratch = await startScratchPostgres({ keep: false });
@@ -82,7 +86,7 @@ async function bootSpaInJsdom(opts = {}) {
     [{ email: LOGIN.email, name: 'Seed Owner', plan: 'trial', role: 'owner',
        password: bcrypt.hashSync(LOGIN.password, 10) }]
   )).rows[0].id;
-  await seed(c, userId);
+  if (baseSeed) await seed(c, userId);
   if (seedExtra) {
     // F150 SEED-DEBT (test-only, not a product change). Several SPA probes seed legacy
     // account-wide rows (entity_id = NULL) to exercise the null-inclusive CLIENT read path.
@@ -118,6 +122,7 @@ async function bootSpaInJsdom(opts = {}) {
     await server.close(); await appPool.end().catch(() => {}); await scratch.stop();
     throw new Error(`login failed HTTP ${login.status}: ${login.text.slice(0, 200)}`);
   }
+  if (apiSeed) await apiSeed({ http, client: c, userId });
   const cookiePair = [...http.cookies.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
 
   const htmlRes = await http.get('/app');

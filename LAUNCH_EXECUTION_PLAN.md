@@ -278,9 +278,25 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   .env.example) → GREEN 4/4. /sitemap.xml now generated from appUrl(); static file removed. Regression green:
   accountant-billing 14, email-resend 10, email-escaping 23, security-headers 13.
 
+- 2026-10-07 — **1.3 / L21 (+L1) console cleanliness.** Instrument (`/srv/ff/probe/console-probe.js`, not shipped):
+  real headless Chromium (Playwright) vs the real server on a scratch DB with the VERIFICATION seed; boot + every
+  page (54); console errors/warnings + uncaught page errors + a CDP pause-on-exception tracer for CAUGHT throws;
+  positive control proves each failure kind is captured. Full build: 0/0/0. SLIM build pre-fix: boot 3 err + 4 warn
+  (6 throw sites). Fix in scripts/lazy-pages.js (hydrate-on-access). Portable harness `verify-slim-boot-renders.js`
+  (jsdom, SLIM document): RED 7/9 on pre-fix → GREEN 9/9. Chromium after fix: SLIM 0 console output on 54 pages,
+  0 null-family throw sites; full build 0 / 0. `npm run build` regenerated public/_gen/index.html (hook only).
+  Regression green: min-serving 8, boot-modes 3, help-center-ui 34, f145-render-smoke 9, dashboard-render 9,
+  boot-failures-gate, step4 5.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
-- **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
+- **L1** (FIXED, as part of L21) renderInvestments null-textContent boot error — Phase 1.3.
+- **L21** (FIXED) The production SLIM build (`SLIM_APP=1`, public/_gen) lazy-wraps 47 screens in `<template>`s
+  hydrated only on showPage, but boot code renders into them (`getElementById(id).textContent = …`) ⇒ six throw
+  sites — renderPersonal, renderCustomers, renderInvestments, updateCashflow, updateAI, updateBrandName — and the
+  throws ABORTED their callers: **`[FinFlow] refreshFinancials failed`**, `syncAllPayrollsToPersonal failed`,
+  `[boot] a deferred render hook threw`. Real Chromium, SLIM: boot 3 errors + 4 warnings, Payroll 3 warnings.
+  The full (non-SLIM) build was already clean (0 on boot + 54 pages).
 - **L2** (FIXED) Dead-domain audit. Shipped code named the dead `dab1` origin in `public/sitemap.xml` (every
   `<loc>` → search engines handed dead URLs) and `.env.example` (`ALLOWED_ORIGIN`, `APP_URL` example values).
   `app-url.js` LIVE_FALLBACK was already dab2. Password-reset / Stripe return / email links all build from

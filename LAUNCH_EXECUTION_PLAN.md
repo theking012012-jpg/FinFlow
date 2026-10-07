@@ -427,6 +427,12 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   spend counted, and payroll / bills / journal expense never counted (a Payroll target read 0). Now actuals =
   this fiscal year's categories from the shared breakdown (D3 list), case-insensitive. Decision **D10**.
 
+- **L26** (FIXED — audit H1 / F81 / F105 residue) (a) `.githooks/pre-commit` was tracked mode 100644 — on Linux/macOS
+  git SKIPS a non-executable hook ("hint: … ignored because it's not set as executable"), so neither the H1
+  `bundle.js --from-index` guard nor the `verification-sync` block ever ran here; now 100755 (on Windows git runs
+  hooks regardless of mode). (b) `AUDIT_MASTER.md` — the ledger CLAUDE.md requires to be tracked — was missing;
+  restored verbatim from the newest copy with a provenance banner. (c) VERIFICATION Part B "~22" → 23 (rows counted).
+
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's
 finding IDs, so it is the newest. The N-series (N1–N114) lived only in a lost scratchpad file

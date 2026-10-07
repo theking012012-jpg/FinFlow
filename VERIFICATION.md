@@ -19,7 +19,7 @@ not from what someone notices, and it does not grow while work is in progress.
   INDEPENDENCE** added at 6 and widened to 18 (timezone 6 + fiscal-year 6 + display-currency 6);
   then **A9 future-dated exclusion** added at 4 under decision **D2**. "Done = every check green"
   needs an unambiguous denominator, so this is recounted whenever a subsection changes.)*
-- **Part B — Actions:** ~22 checks. Every mutating action, including double-submit and
+- **Part B — Actions:** **23** checks (B1 8 + B2 5 + B3 3 + B4 4 + B5 3 = 23). Every mutating action, including double-submit and
   navigation-order behaviour.
 
 **Done = every check green.** Anything not on this list is *unverified*, not assumed correct.

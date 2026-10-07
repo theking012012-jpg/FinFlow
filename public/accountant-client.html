@@ -1506,7 +1506,9 @@ async function loadTasks() {
     if (!r.ok) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">Could not load requests.</div>'; return; }
     const tasks = (await r.json()).tasks || [];
     if (!tasks.length) { el.innerHTML = '<div class="empty" style="margin:auto;padding:20px">No requests yet — add your first above.</div>'; return; }
-    const due = d => d ? `<span style="font-size:11px;color:var(--text3);margin-left:8px">due ${new Date(d).toLocaleDateString(undefined,{day:'numeric',month:'short'})}</span>` : '';
+    // L18 (Rule 10): show the calendar date's own parts — new Date(d) showed the previous day west of UTC.
+    const due = d => { const y = _ymdOf(d); if (!y) return ''; const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return `<span style="font-size:11px;color:var(--text3);margin-left:8px">due ${+y.slice(8,10)} ${MN[+y.slice(5,7)-1]}</span>`; };
     el.innerHTML = tasks.map(t => {
       const done = t.status === 'done';
       const tag = done ? '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(74,156,109,.15);color:#4a9c6d">Done</span>'

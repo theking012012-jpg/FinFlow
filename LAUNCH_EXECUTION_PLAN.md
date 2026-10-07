@@ -261,6 +261,18 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   f150c-write-side-isolation 33, f90-phaseB3-business 17, team-member-writes 27, tenant-isolation 47,
   min-serving 8, page-exports 14.
 
+- 2026-10-07 — **1.1 / L18 Rule-10 remainder.** Harness `verify-calendar-dates-tz-l18.js` (HARNESS_TZ NY + Tokyo):
+  RED 8/14 on pre-fix (MRR Jun 100 west of UTC; task "24 Jul" + red; portal "24 Jul"; deadline "Jul 24") → GREEN
+  14/14. `npm run build` regenerated `public/_gen/app-08.js`, `app-18.js` (the edited inline index.html code).
+  Regression green: f127-mrr-chart 7, ff1-mrr-by-customer 7, f126-mrr-fx-convert 10, accountant-dashboard-qa 8,
+  accountant-rollup 13, accountant-pending-ui 3, accountant-tasks, proposals-ui 23, help-center 23,
+  support-request 15, escaping-sweep 3, team-member-writes 27, calendar-dates-tz 12, min-serving 8, step4 5.
+- 2026-10-07 — **1.1 coverage close.** Every money figure has now been driven through every surface on the
+  full-leg books (+ variants): headline KPIs, breakdown bars, overview chart, month/quarter/year, consolidated
+  two-currency, display currency, page cards, generated reports, page exports, accountant portal (+ CSV), cash /
+  balance sheet / forecast, payroll, COGS, customers, vendors, investments ($60 dashboard == page == 5×12).
+  Open from 1.1: **L6b** (journal AR/AP/inventory/tax legs — owner design).
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
@@ -310,7 +322,7 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   `fmtDate()` showed date-only values a day early west of UTC. Same class found in the main app: personal
   finance window (local-midnight bounds — a row dated the 1st dropped out west of UTC) and the period-lock
   display in `toggleLocking` ("March 30" for a March 31 lock west of UTC).
-- **L18** (open, non-money) Remaining Rule-10 members: task due dates (index.html `fmtDue` + `new Date(due) <
+- **L18** (FIXED) Remaining Rule-10 members: task due dates (index.html `fmtDue` + `new Date(due) <
   new Date()` overdue flag), accountant-portal task "due" labels, accountant-dashboard deadline overdue/
   upcoming split (`new Date(d.date) < today`), and the MRR chart's month buckets (local `new Date(y, m, 1)`
   windows vs `created_at`/`end_date`).

@@ -422,20 +422,25 @@ async function loadMRRData(){
     const _monthlyVal = r => { const a=parseFloat(r.amount)||0; const f=String(r.frequency||'').toLowerCase();
       return f==='quarterly' ? a/3 : f==='annually' ? a/12 : a; };
     const _active = rows.filter(r=>r.status==='active');
-    const _now = new Date();
+    // L18 (Rule 10): months are CALENDAR months ('YYYY-MM' strings from the resolved today), and a sub's start /
+    // end reduce to calendar dates — the old viewer-local Date windows filed a sub created 1 Jul 02:00 UTC into
+    // JUNE for every viewer west of UTC.
+    const _FD = window.FinFlowDates, _MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const _todayY = _FD.resolvedToday(new Date());
+    const _abs0 = parseInt(_todayY.slice(0,4),10)*12 + (parseInt(_todayY.slice(5,7),10)-1);
+    const _key = a => Math.floor(a/12) + '-' + String((a%12)+1).padStart(2,'0');
     const _series=[], _mlabels=[];
     for(let i=11;i>=0;i--){
-      const mStart = new Date(_now.getFullYear(), _now.getMonth()-i, 1);
-      const mEnd   = new Date(_now.getFullYear(), _now.getMonth()-i+1, 1);
+      const a = _abs0 - i, mStart = _key(a) + '-01', mEnd = _key(a+1) + '-01';
       const total = _active.reduce((s,r)=>{
-        const started = r.created_at ? new Date(r.created_at) : mStart;   // no start ⇒ treat as always-on
-        if(started >= mEnd) return s;                                     // not started yet in this month
-        const ended = r.end_date ? new Date(r.end_date) : null;
+        const started = r.created_at ? _FD._toYmd(r.created_at) : null;   // no start ⇒ treat as always-on
+        if(started && started >= mEnd) return s;                          // not started yet in this month
+        const ended = r.end_date ? _FD._toYmd(r.end_date) : null;
         if(ended && ended < mStart) return s;                             // ended before this month
         return s + _monthlyVal(r);
       },0);
       _series.push(Math.round(total*100)/100);
-      _mlabels.push(mStart.toLocaleDateString('en-US',{month:'short'}));
+      _mlabels.push(_MN[a%12]);
     }
     window._mrrChartData = _series;
     window._mrrChartLabels = _mlabels;

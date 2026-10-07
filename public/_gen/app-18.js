@@ -377,10 +377,16 @@ window.loadMyTasks = async function() {
     const tasks = (await r.json()).tasks || [];
     if (!tasks.length) { el.style.display='none'; el.innerHTML=''; return; }
     const openN = tasks.filter(t => t.status !== 'done').length;
-    const fmtDue = d => { if (!d) return ''; return new Date(d).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}); };
+    // L18 (Rule 10): a due date is a CALENDAR date — show its own parts, and it is overdue only AFTER its day
+    // (string compare against the resolved today). new Date(d) made a task due today "overdue" and showed the
+    // previous day for every viewer west of UTC.
+    const _MNd = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const _today = window.FinFlowDates.resolvedToday(new Date());
+    const fmtDue = d => { const y = window.FinFlowDates._toYmd(d); if (!y) return ''; return (+y.slice(8,10)) + ' ' + _MNd[+y.slice(5,7)-1] + ' ' + y.slice(0,4); };
     const row = t => {
       const done = t.status === 'done';
-      const due = t.due_date ? `<span style="font-size:11px;color:${(!done && new Date(t.due_date) < new Date()) ? 'var(--red)' : 'var(--t3)'};margin-left:8px">due ${fmtDue(t.due_date)}</span>` : '';
+      const _dy = window.FinFlowDates._toYmd(t.due_date);
+      const due = t.due_date ? `<span style="font-size:11px;color:${(!done && _dy && _dy < _today) ? 'var(--red)' : 'var(--t3)'};margin-left:8px">due ${fmtDue(t.due_date)}</span>` : '';
       const check = done
         ? '<svg viewBox="0 0 16 16" style="width:18px;height:18px;flex-shrink:0"><circle cx="8" cy="8" r="8" fill="var(--acc)"/><path d="M4.5 8.2l2.2 2.2 4.8-4.8" fill="none" stroke="#16120d" stroke-width="1.6"/></svg>'
         : '<svg viewBox="0 0 16 16" style="width:18px;height:18px;flex-shrink:0"><circle cx="8" cy="8" r="7.2" fill="none" stroke="var(--bd2)" stroke-width="1.4"/></svg>';

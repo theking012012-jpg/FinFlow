@@ -5167,6 +5167,10 @@ app.post('/api/my-access/switch', requireAuth, wrap(async (req, res) => {
   res.json({ ok: true, currentAccountId: target });
 }));
 
+// L31 (F107/F90): a membership GRANTS ACCESS to an account's books, so every membership write is audit-logged
+// on the OWNING account. The invite token hash is a bearer secret and never enters the trail.
+const _tmAuditView = (row) => { if (!row) return null; const o = Object.assign({}, row.data && typeof row.data === 'object' ? rowToObj(row) : row); delete o.invite_token_hash; return o; };   // raw pg row or an already-flattened one (ownedBy)
+async function _tmRow(id) { const { rows: [r] } = await pool.query(`SELECT * FROM team_members WHERE id = $1 LIMIT 1`, [id]); return r || null; }
 app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
   // F54: no invite/token/email handshake — a bare team_members insert. No caller (client,
   // server-to-server, or test harness — checked) uses this route; the real invite path is
@@ -5186,6 +5190,7 @@ app.post('/api/team', requireAuth, requirePerm('team:manage'), wrap(async (req, 
     email:   email.toLowerCase().slice(0, 200),
     role:    validRoles.includes(role) ? role : 'viewer',
   });
+  await recordAudit(pool, { userId: scopeId(req), table: 'team_members', recordId: row.id, action: 'CREATE', newData: _tmAuditView(row), req });
   res.status(201).json(row);
 }));
 app.put('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
@@ -5200,11 +5205,14 @@ app.put('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (re
     await db.updateById('team_members', row.id, { entity_access: req.body.entity_ids.map(Number).filter(n => _own.includes(n)) });
   }
   const { rows: [_tmr] } = await pool.query(`SELECT * FROM team_members WHERE id = $1 LIMIT 1`, [row.id]);
+  await recordAudit(pool, { userId: scopeId(req), table: 'team_members', recordId: row.id, action: 'UPDATE', oldData: _tmAuditView(row), newData: _tmAuditView(_tmr), req });
   res.json(_tmr ? rowToObj(_tmr) : {});
 }));
 app.delete('/api/team/:id', requireAuth, requirePerm('team:manage'), wrap(async (req, res) => {
-  if (!(await ownedBy('team_members', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
+  const _tmOld = await ownedBy('team_members', req.params.id, scopeId(req));
+  if (!_tmOld) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('team_members', parseInt(req.params.id));
+  await recordAudit(pool, { userId: scopeId(req), table: 'team_members', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _tmAuditView(_tmOld), req });
   res.json({ ok: true });
 }));
 
@@ -5282,8 +5290,9 @@ app.post('/api/team/invite', inviteLimiter, requireAuth, requirePerm('team:manag
     if (inviteEntityAccess !== null) {
       await pool.query(`UPDATE team_members SET data = data || jsonb_build_object('entity_access', $2::jsonb) WHERE id = $1`, [pending.id, JSON.stringify(inviteEntityAccess)]);
     }
+    await recordAudit(pool, { userId: ownerId, table: 'team_members', recordId: pending.id, action: 'INVITE', newData: _tmAuditView(await _tmRow(pending.id)), req });
   } else {
-    await db.insert('team_members', {
+    const { row: _invRow } = await db.insert('team_members', {
       user_id: ownerId,
       email:   emailLc,
       name:    dispName,
@@ -5294,6 +5303,7 @@ app.post('/api/team/invite', inviteLimiter, requireAuth, requirePerm('team:manag
       invited_by:        String(req.session.userId),
       ...(inviteEntityAccess !== null ? { entity_access: inviteEntityAccess } : {}),
     });
+    await recordAudit(pool, { userId: ownerId, table: 'team_members', recordId: _invRow.id, action: 'INVITE', newData: _tmAuditView(_invRow), req });
   }
 
   // Email the accept link — same helper/pattern as password reset. When Resend is
@@ -5443,6 +5453,8 @@ app.post('/api/team/accept', acceptLimiter, wrap(async (req, res) => {
     // own-identity session role; account role comes from resolver. establishSession regenerates the id
     // and persists before the response (N73, F134).
     await establishSession(req, { userId: memberUserId, userRole: 'owner', userEmail: inv.email });
+    // L31: on the OWNER's account; actor = the member (the session is now theirs).
+    await recordAudit(pool, { userId: inv.owner_id, table: 'team_members', recordId: inv.id, action: 'ACCEPT', newData: _tmAuditView(await _tmRow(inv.id)), req });
     return res.json({ ok: true, role: inv.role });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch (_) {}

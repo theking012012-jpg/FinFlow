@@ -57,6 +57,8 @@ async function postFullLegScenario({ http, client }) {
   await PUT('/api/payroll-runs/' + runA.id + '/approve');
   await PUT('/api/payroll-runs/' + runB.id + '/approve');
   await PUT('/api/payroll-runs/' + runB.id + '/mark-paid');
+  // L7: mark-paid stamps paid_date = today (2026-07-25, pinned); this scenario's June run was paid in June.
+  if (client) await client.query(`UPDATE payroll_runs SET paid_date='2026-06-28' WHERE id=$1`, [runB.id]);
   await P('/api/payroll-runs', { period: '2026-04', bonus_overrides: { [emp.id]: 88 } });                 // 199, draft
   return { entityId: ent.id, invoiceId: inv.id, billId: bill.id };
 }

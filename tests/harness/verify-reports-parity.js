@@ -38,6 +38,8 @@ async function seed({ http, client }) {
   await client.query(`UPDATE payroll_runs SET run_date='2025-12-28' WHERE id=$1`, [prior.id]);
   J(await http.put('/api/payroll-runs/' + prior.id + '/approve', {}));
   J(await http.put('/api/payroll-runs/' + prior.id + '/mark-paid', {}));
+  // L7: mark-paid stamps paid_date = today (2026-07-25, pinned); this run was PAID in the prior year — date it so.
+  await client.query(`UPDATE payroll_runs SET paid_date='2025-12-28' WHERE id=$1`, [prior.id]);
   J(await http.post('/api/expenses', { description: 'Prior-year software', category: 'Software', amount: 10, expense_date: '2025-11-20', deductible: 'yes' }));
   return ids;
 }

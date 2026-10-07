@@ -397,6 +397,68 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   report-only policies; same-origin only, no new third party). The Admin page's single 401 in the console is its
   unauthenticated session probe — expected, not a defect.
 
+- **L23** (FIXED — N102 of the prior audit) Server-filled business dates were the UTC day, not the entity's. F88 had
+  routed expenses / journals / receipts / payments-received / credit notes / payments made / vendor credits
+  through `entityTodayYmd`, but these still stamped UTC: Stripe webhook refund row (server.js ~515), invoices and
+  bills sent without an issue date (stored NULL ⇒ dated by `created_at`'s UTC day in the books, GL and lock),
+  invoice created as paid (its settling payment), timesheet, POST /api/invoice-payments (whose lockGuard ALREADY
+  checked the entity's today — lock and row could be different days), processor payments
+  (`recordExternalInvoicePayment`: Stripe "Pay now", WiPay, Mercado Pago, dLocal), Stripe import charge / refund /
+  fee (`created` instants read as UTC), Stripe match-invoice (payment booked on the MATCH day, its fee on the
+  charge day), POST /api/fx-rates, FX settlement GL entry (route + backfill; `settled_at` = DB clock), accountant
+  journal, client FX-rate form. Fix: one helper `entityYmdOf(entityId, instant)` (entityTodayYmd delegates to it).
+  New rows only; existing rows untouched (Rule 8 — NULL-issue-date legacy invoices/bills still date by created_at).
+  Excluded, with reason: personal-finance rows (per-user, no entity: personal tx, snapshots, owner-salary personal
+  tx), bank-feed fallbacks used only when Plaid/Belvo/OFX omit a date, rate-lookup dates, the global live-FX feed,
+  API fetch windows, export filenames, payroll `run_date` (F85: payroll recognises on `period` / `paid_date`).
+
+### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
+Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's
+finding IDs, so it is the newest. The N-series (N1–N114) lived only in a lost scratchpad file
+(`AUDIT_FINDINGS_2026-10-06.md`); 88 N-numbers appear in commits (each landed with a fail-then-pass harness and was
+re-verified by execution in this session's PR #1 review). **13 N-numbers have no surviving definition anywhere**
+(N1, N23, N25, N34, N35, N42, N70, N84, N93, N94, N95, N103, N106 — not in commits, code, the uploaded transcripts,
+or the recovered ledger) — they cannot be re-audited without inventing them (Rule 7); see Owner Handoff. N17/N22 are
+owner decisions whose written proposals were lost; N102 = L23.
+
+Master-audit rows the 2026-08-09 reconciliation left OPEN, re-checked against current code (read-only, file:line
+evidence in the agents' reports; money items then executed):
+| Row | Now | Evidence / disposition |
+|---|---|---|
+| F64 money abbreviated | FIXED, 1 leftover | `window.S = _fmtMoneyExact` (app-main 686); budget rows still abbreviate (index.html 6126/6133) ⇒ **L29** |
+| F57 Cash Flow basis | FIXED | updateCashflow reads `_cashMonthly` from /api/reports/cash-flow (app-main 2660) |
+| F58 credit notes / vendor credits contra | FIXED | server 10801/10906, client computeRevenue/computeExpenseBreakdown |
+| F71 payroll effective dating | FIXED | basis C — run lines by `period` only (server 10866, app-main 2053) |
+| F142 payments-made entity scope | FIXED | server 4802 |
+| F44 Scenario base pre-F32 | **STILL PRESENT ⇒ L24** | wiring-medium 1092: paid-only revenue, all-time raw expenses |
+| F45 Budget actuals lifetime | **STILL PRESENT ⇒ L25** | wiring-medium 1246: Σ all expense rows, no window |
+| F126 Scenario never FX-converted | PARTIAL (by design) | MRR/ARR converted; scenario stays native (labelled native, index.html 8728) |
+| F129 literal '$' | PARTIAL ⇒ **L29** | updateReconSummary (app-main 1138), timesheet rate (wiring-extra 133) |
+| F92 side-effect money writes | PARTIAL (= F90 structural) | recalc writers audit-log; no single audited write path — deferred |
+| F32-residual | FIXED in code | cash-flow inflow = invoice_payments + receipts; legacy row = data (owner) |
+| F51 placeholder surfaces | PARTIAL | in-app fixed; landing.html:368 still claims "750+ App integrations" (~17 real) ⇒ Owner Handoff (marketing copy); tax estimate falls back to a flat 25% when no rate saved (server 6730) ⇒ **L28** |
+| F65 fake-success controls | FIXED | all 9 sites removed or made honest |
+| F94 scheduled state | FIXED | `_isScheduled` badges + Scheduled Documents tab |
+| F52 form a11y | PARTIAL | 5 unlabeled inputs + 54 id-without-label ⇒ Phase 2.5 / post-launch |
+| F63 / F68 | FIXED | `_ffDashWrapped`; sw.js + maskable icon |
+| F109 close-position | STILL PRESENT (feature) | owner-gated feature, not a defect |
+| F116 server today on login | FIXED; register gap ⇒ **L30** | doRegister (app-main 806) never sets `_serverToday`; /register returns no `today` |
+| F54 / F111 team scope + visibility | FIXED | scopeId everywhere; /api/my-access + scoped banner |
+| F107 | PARTIAL ⇒ **L31** | membership create/accept/change/remove not audit-logged (server 5160–5520) |
+| F108 jurisdiction | PARTIAL (design) | country required + validated; no region / uniqueness key — owner |
+| F149 per-entity profile | PARTIAL (design) | rename bug fixed; fiscal_year + industry still per account — Rule 10 "under investigation" class, owner |
+| F30 permissions matrix | STILL PRESENT (orphaned) | /api/permissions stored, never enforced, no UI caller; UI says "coming soon" — harmless, log only |
+| F19 DB TLS | PARTIAL (env) | verified only if DATABASE_CA_CERT set ⇒ Owner Handoff |
+| F26-b NULL-entity receipts | STILL PRESENT (data) | owner-gated backfill (Rule 8) ⇒ Owner Handoff |
+| F75 dead-code shadowing | STILL PRESENT (27 = 20 replace + 7 wrap), no guard ⇒ **L27** | structural allowlist guard so a NEW shadow cannot land silently |
+| F77 stub golden master | PARTIAL | step2-gate rejects 'final' on real PG (23514); the stub file still exits 0 — label/retire |
+| F110 clock↔seed pin | FIXED (guard) | clock.js 94–107 |
+| F81 VERIFICATION counts | PARTIAL | Part B says ~22, sections sum to 23 ⇒ fixed with L26 doc pass |
+| F83 harness exit codes | PARTIAL ⇒ **L32** | unconditional `exitCode = 0`: verify-c1-payroll-pilot:145, verify-f102-payroll-boot:161, tz-matrix catch:187 |
+| F105 process | STILL PRESENT (process) | no anchor-collision check; ledger was untracked — L26 restores it |
+| H1 pre-commit from index | FIXED in code, **NOT IN EFFECT ⇒ L26** | `.githooks/pre-commit` is mode 100644 ⇒ git skips it; bundle/verification-sync guards never ran |
+
+
 ## Decisions (irreversible-safe choices the agent made)
 - **D1 — Working branch & pushing.** Commits go on `dash-je-fix` only. This run executes in an ephemeral
   cloud container: an unpushed commit is lost when the container is reclaimed, and the owner cannot fetch

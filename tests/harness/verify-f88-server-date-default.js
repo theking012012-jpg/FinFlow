@@ -75,7 +75,8 @@ const OWNER = { email: 'f88c3-owner@finflow.test', password: 'harness-password-n
     // STRUCTURAL — the helper exists and every entity-scoped date default routes through it.
     const srv = fs.readFileSync(path.join(process.cwd(), 'server.js'), 'utf8');
     AS('entityTodayYmd helper defined', /async function entityTodayYmd\(entityId\)/.test(srv));
-    AS('helper falls back to UTC for null entity', /if \(entityId == null\) return FinFlowDates\.resolvedToday\(new Date\(\)\)/.test(srv));
+    // N102: entityTodayYmd delegates to entityYmdOf(entityId, new Date()); the null-entity UTC fallback lives there.
+    AS('helper falls back to UTC for null entity', /return entityYmdOf\(entityId, new Date\(\)\)/.test(srv) && /if \(entityId == null\) return FinFlowDates\.resolvedToday\(instant\)/.test(srv));
     const defaults = (srv.match(/date[^\n]*\|\| new Date\(\)\.toISOString\(\)\.slice\(0, ?10\)/g) || [])
       .filter(l => /^\s*(date|tx_date|expense_date|edate|const edate)/.test(l) === false); // none of the recognition-surface defaults should remain raw
     AS('no entity-scoped transaction default still stamps raw UTC (expenses/journals/AR/AP/bank routed)',

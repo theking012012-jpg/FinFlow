@@ -270,7 +270,7 @@ function _openSse(res) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx) {
+module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd) {
   // F90 Phase B: recordAudit is the single audited write path (threaded from server.js). Accountant
   // actions on a client's books log with actor_type='accountant' + actor_id=accountantId (derived
   // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
@@ -1058,7 +1058,9 @@ If you cannot find a field, use null. Be concise.`;
     const _dr = _lines.reduce((s, l) => s + (parseFloat(l && l.debit) || 0), 0);
     const _cr = _lines.reduce((s, l) => s + (parseFloat(l && l.credit) || 0), 0);
     if (Math.abs(_dr - _cr) > 0.01) return res.status(400).json({ error: 'Journal does not balance — debits must equal credits.' });
-    const _jDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : new Date().toISOString().slice(0, 10);
+    // N102: no date ⇒ the client ENTITY's today (as the main app's POST /api/journals), never the UTC day.
+    const _jDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date)
+      : (entityTodayYmd ? await entityTodayYmd(_clientEntityId) : new Date().toISOString().slice(0, 10));
     if (await require('./period-lock').isLocked(pool, parseInt(userId), _clientEntityId, _jDate)) return res.status(403).json({ error: 'Period is locked.' });
     const { row } = await db.insert('journals', {
       user_id: parseInt(userId),

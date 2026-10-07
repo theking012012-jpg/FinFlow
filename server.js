@@ -512,7 +512,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
             `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
              ON CONFLICT (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING *`,
-            [orig.user_id, orig.entity_id || null, orig.invoice_id, -delta, new Date().toISOString().slice(0, 10),
+            [orig.user_id, orig.entity_id || null, orig.invoice_id, -delta, await entityTodayYmd(orig.entity_id),
              'Refund (Stripe)', idem, tag, idem]);
         }
       }
@@ -1905,13 +1905,18 @@ const _inferTimezone = c => (c && _COUNTRY_TZ[String(c).trim().toUpperCase()]) |
 // to phase 1 (the UTC-parity regression guard, verify-f88-utc-parity). Rule 6 / F34: this only chooses the
 // default DATE; it never infers a date from created_at.
 async function entityTodayYmd(entityId) {
-  if (entityId == null) return FinFlowDates.resolvedToday(new Date());
+  return entityYmdOf(entityId, new Date());
+}
+// N102: the ENTITY's calendar date of a genuine INSTANT (a Stripe charge/refund `created`, a webhook's
+// arrival). Same zone resolution as entityTodayYmd; `new Date(x).toISOString().slice(0,10)` is the UTC day.
+async function entityYmdOf(entityId, instant) {
+  if (entityId == null) return FinFlowDates.resolvedToday(instant);
   let tz = null;
   try {
     const { rows } = await pool.query(`SELECT data->>'timezone' AS tz FROM entities WHERE id = $1 LIMIT 1`, [entityId]);
     if (rows[0] && rows[0].tz) tz = rows[0].tz;
   } catch (_) { tz = null; }
-  return FinFlowDates.resolvedToday(new Date(), tz);
+  return FinFlowDates.resolvedToday(instant, tz);
 }
 
 // F196 Tier 2: PER-ENTITY BUSINESS PROFILE (letterhead). A document is issued BY an entity, but the
@@ -2056,9 +2061,12 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
   }
   const _amt = parseFloat(_effAmount) || 0;
   const _amountPaid = String(status).toLowerCase() === 'paid' ? _amt : 0;
+  // N102: an invoice sent without an issue date is issued on the ENTITY's today — stored, so the books, GL and
+  // period lock all read one explicit date instead of deriving the UTC day from created_at.
+  const _issueYmd = issue_date || await entityTodayYmd(eid);
   let row;
   try {
-    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: issue_date || null, amount_paid: _amountPaid, ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
+    ({ row } = await db.insert('invoices', { user_id: scopeId(req), entity_id: eid, client: client.trim().slice(0,200), amount: _amt, due_date: due_date||null, status, notes: notes.slice(0,500), issue_date: _issueYmd, amount_paid: _amountPaid, ...(_segTag(req.body.class)?{class:_segTag(req.body.class)}:{}), ...(_segTag(req.body.location)?{location:_segTag(req.body.location)}:{}), idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(
@@ -2077,7 +2085,7 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
     try {
       await postLedgerEntry(pool, {
         userId: scopeId(req), entityId: eid,
-        date: issue_date || FinFlowDates._toYmd(row.created_at),
+        date: _issueYmd,
         description: 'Invoice — ' + client.trim().slice(0, 80),
         sourceType: 'invoice', sourceId: row.id, idempotencyKey: 'invoice:' + row.id,
         lines: [{ code: '1100', debit: _amt, credit: 0 }, { code: '4000', debit: 0, credit: _amt }],
@@ -2096,7 +2104,7 @@ app.post('/api/invoices', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(asyn
     try {
       await settleInvoiceRemaining(pool, {
         userId: scopeId(req), invoiceId: row.id,
-        date: issue_date || (FinFlowDates._toYmd(row.created_at) || new Date().toISOString().slice(0, 10)),
+        date: _issueYmd,
         method: 'Paid on creation', notes: 'Auto-recorded: invoice created as paid', idemKey: 'invoice_create_paid:' + row.id,
       });
     } catch (payErr) { console.error('[invoices] paid-on-create settling payment failed (non-fatal):', payErr && payErr.message); }
@@ -4288,12 +4296,13 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
   // owns amount_paid once a real payments_made row exists. There is NO bills boot-backfill to heal it.
   const _amt = Number(_effAmount);
   const _amountPaid = String(status).toLowerCase() === 'paid' ? _amt : 0;
+  const _issueYmd = issue_date || await entityTodayYmd(_billEnt);   // N102: the entity's today, stored (as invoices)
   // C1 Wave 1 durable backstop (mirrors invoices/expenses): a same-token double-submit → the 2nd
   // INSERT throws 23505 → recover the ORIGINAL row and return 200 (never a 500, never a duplicate).
   // Inert until idx_bills_idem_key exists. F135 amount_paid-on-paid above is unchanged.
   let row;
   try {
-    ({ row } = await db.insert('bills', { user_id: scopeId(req), entity_id: _billEnt, vendor, num, amount: _amt, due_date, status, notes, issue_date: issue_date || null, amount_paid: _amountPaid, idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
+    ({ row } = await db.insert('bills', { user_id: scopeId(req), entity_id: _billEnt, vendor, num, amount: _amt, due_date, status, notes, issue_date: _issueYmd, amount_paid: _amountPaid, idempotency_key: idem, ...(_li.present ? { line_items: _li.line_items } : {}) }));
   } catch (e) {
     if (e.code === '23505' && idem) {
       const { rows } = await pool.query(`SELECT * FROM bills WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
@@ -4309,7 +4318,7 @@ app.post('/api/bills', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req
     try {
       await postLedgerEntry(pool, {
         userId: scopeId(req), entityId: _billEnt,
-        date: issue_date || FinFlowDates._toYmd(row.created_at),
+        date: _issueYmd,
         description: 'Bill — ' + String(vendor).slice(0, 80),
         sourceType: 'bill', sourceId: row.id, idempotencyKey: 'bill:' + row.id,
         lines: [{ code: '6000', debit: _amt, credit: 0 }, { code: '2000', debit: 0, credit: _amt }],
@@ -5046,7 +5055,7 @@ app.post('/api/timesheet', requireAuth, wrap(async (req, res) => {
     entity_id: req.entityId || null,
     employee: employee.trim().slice(0, 100),
     project:  project.trim().slice(0, 200),
-    date:     date || new Date().toISOString().slice(0, 10),
+    date:     date || await entityTodayYmd(req.entityId || null),
     hours:    parseFloat(hours) || 0,
     billable: billable === 'Yes' ? 'Yes' : 'No',
     rate:     parseFloat(rate) || 0,
@@ -5631,7 +5640,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
 const registerAccountantRoutes = require('./accountant-routes');
 // computeBooks is a hoisted declaration (defined below) closing over db+pool — pass it so
 // the accountant /books view shares the one canonical, entity-scoped basis (F9).
-registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
+registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
 
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.
@@ -7959,7 +7968,7 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
   if (c.status !== 'succeeded' || c.refunded) return res.status(400).json({ error: 'Only a succeeded, non-refunded charge can be added to the books.' });
   const amount = stripeMinorToMajor(c.amount, c.currency);
   const customer = String(c.description || (c.billing_details && c.billing_details.name) || (c.billing_details && c.billing_details.email) || c.receipt_email || 'Stripe payment').slice(0, 200);
-  const dateYmd = c.created ? new Date(c.created * 1000).toISOString().slice(0, 10) : await entityTodayYmd(req.entityId);
+  const dateYmd = c.created ? await entityYmdOf(_bookEid, new Date(c.created * 1000)) : await entityTodayYmd(_bookEid);
   if (await refuseIfLocked(res, scopeId(req), _bookEid, dateYmd)) return;
   // STOPGAP guard (pre match-to-invoice): a charge whose amount equals an OPEN invoice's total OR its
   // remaining balance is LIKELY that invoice's payment — importing it as a fresh sales receipt would
@@ -8071,7 +8080,7 @@ app.post('/api/stripe/import-refund', requireAuth, wrap(async (req, res) => {
   const customer = String(_orig.customer || c.description || 'Stripe refund').slice(0, 200);
   const _rfList = (c.refunds && c.refunds.data) || [];
   const _rfCreated = _rfList.length ? _rfList[_rfList.length - 1].created : null;
-  const dateYmd = _rfCreated ? new Date(_rfCreated * 1000).toISOString().slice(0, 10) : await entityTodayYmd(_bookEid);
+  const dateYmd = _rfCreated ? await entityYmdOf(_bookEid, new Date(_rfCreated * 1000)) : await entityTodayYmd(_bookEid);
   if (await refuseIfLocked(res, scopeId(req), _bookEid, dateYmd)) return;
   let row;
   try {
@@ -8116,7 +8125,6 @@ app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
   if (ir.entity_id != null && _bookEid != null && Number(ir.entity_id) !== Number(_bookEid)) {
     return res.status(400).json({ error: 'That invoice belongs to a different business than this Stripe account.', code: 'INVOICE_ENTITY_MISMATCH' });
   }
-  if (await refuseIfLocked(res, scopeId(req), ir.entity_id, new Date().toISOString().slice(0, 10))) return;
   let c;
   try {
     const resp = await fetch('https://api.stripe.com/v1/charges/' + encodeURIComponent(chargeId) + '?expand[]=balance_transaction', {
@@ -8126,7 +8134,11 @@ app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
     if (!resp.ok) throw new Error((c && c.error && c.error.message) || ('Stripe HTTP ' + resp.status));
   } catch (e) { console.error('[stripe match]', e.message); return res.status(502).json({ error: 'Could not read the Stripe charge: ' + e.message }); }
   if (c.status !== 'succeeded' || c.refunded) return res.status(400).json({ error: 'Only a succeeded, non-refunded charge can be applied to an invoice.' });
-  const applied = await recordExternalInvoicePayment({ invoiceId, amountMinor: Number(c.amount) || 0, currency: c.currency, method: 'Card (Stripe)', idemKey: ('stripe-invpay:' + chargeId).slice(0, 64) });
+  // N102: the payment (and its fee) are booked on the CHARGE's day in the entity's zone — not on the day it was
+  // matched, and not on the UTC day. The period lock checks that same date.
+  const _chargeYmd = c.created ? await entityYmdOf(_bookEid != null ? _bookEid : ir.entity_id, new Date(c.created * 1000)) : await entityTodayYmd(_bookEid != null ? _bookEid : ir.entity_id);
+  if (await refuseIfLocked(res, scopeId(req), ir.entity_id, _chargeYmd)) return;
+  const applied = await recordExternalInvoicePayment({ invoiceId, amountMinor: Number(c.amount) || 0, currency: c.currency, method: 'Card (Stripe)', idemKey: ('stripe-invpay:' + chargeId).slice(0, 64), date: _chargeYmd });
   // Fee expense (idempotent on the charge), booked to the bound entity — fees apply to invoice payments too.
   let feeRow = null;
   const feeCents = c.balance_transaction && Number.isFinite(Number(c.balance_transaction.fee)) ? Number(c.balance_transaction.fee) : 0;
@@ -8136,7 +8148,7 @@ app.post('/api/stripe/match-invoice', requireAuth, wrap(async (req, res) => {
       const _ex = await pool.query(`SELECT * FROM expenses WHERE user_id=$1 AND data->>'idempotency_key'=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), feeIdem]);
       if (_ex.rows[0]) { feeRow = rowToObj(_ex.rows[0]); }
       else {
-        const _dateYmd = c.created ? new Date(c.created * 1000).toISOString().slice(0, 10) : await entityTodayYmd(_bookEid);
+        const _dateYmd = _chargeYmd;
         ({ row: feeRow } = await db.insert('expenses', {
           user_id: scopeId(req), entity_id: _bookEid,
           description: 'Stripe processing fee \u00b7 ' + chargeId, category: 'Payment processing',
@@ -8824,13 +8836,15 @@ app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (
 // processor's event/session id via the idempotency_key unique index (Rule 9: dedupe at the write,
 // so a retried/duplicate webhook can't double-book). Never overbooks past the remaining balance
 // (no refund/credit model). Amount is in MINOR units (cents) as processors send it.
-async function recordExternalInvoicePayment({ invoiceId, amountMinor, currency, method, idemKey }) {
+async function recordExternalInvoicePayment({ invoiceId, amountMinor, currency, method, idemKey, date }) {
   const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
   if (!ir) return { recorded: false, reason: 'invoice_not_found' };
   const inv = rowToObj(ir);
   const uid = ir.user_id;                                   // the invoice's account = the money scope
   const amt = stripeMinorToMajor(amountMinor, currency);    // minor units → major, by currency exponent (N47)
   if (!(amt > 0)) return { recorded: false, reason: 'bad_amount' };
+  // N102: the caller's date (a matched charge's own day) or, for a webhook arriving as it is paid, the ENTITY's today.
+  const _payYmd = date || await entityTodayYmd(ir.entity_id);
   try {
     // N57b: cap to what is still owed, read under the invoice's payment lock (never negative AR).
     let bookAmt = 0;
@@ -8841,7 +8855,7 @@ async function recordExternalInvoicePayment({ invoiceId, amountMinor, currency, 
       return (await conn.query(
         `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-        [uid, ir.entity_id || null, invoiceId, bookAmt, new Date().toISOString().slice(0, 10),
+        [uid, ir.entity_id || null, invoiceId, bookAmt, _payYmd,
          method || 'Card', idemKey, 'Auto-recorded from ' + (method || 'processor') + ' payment', idemKey]
       )).rows;
     });
@@ -9090,7 +9104,7 @@ app.post('/api/invoice-payments', requireAuth, lockGuard(LOCK_SPECS.invoice_paym
   // B8/C1: dedupe guard (TYPED table). The overpayment check above only catches a duplicate that
   // would push past the balance — two rapid PARTIAL payments both fit inside it and both booked,
   // silently settling the invoice twice. Guard on invoice+amount+date.
-  const _pDate = payment_date || new Date().toISOString().slice(0, 10);
+  const _pDate = payment_date || await entityTodayYmd(inv.entity_id != null ? inv.entity_id : (req.entityId || null));   // N102 (the lock guard already checks this day)
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
   // C1 Wave 1b: token-blind pre-check runs ONLY for token-less callers; with a token the partial
   // unique index (idx_invoice_payments_idem_key) is the sole arbiter (closes the concurrent /
@@ -9110,7 +9124,7 @@ app.post('/api/invoice-payments', requireAuth, lockGuard(LOCK_SPECS.invoice_paym
         `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
         [scopeId(req), inv.entity_id != null ? inv.entity_id : (req.entityId || null), parseInt(invoice_id), amt,
-         payment_date || new Date().toISOString().slice(0, 10), method || 'Bank Transfer', reference || null, notes || null, idem]
+         _pDate, method || 'Bank Transfer', reference || null, notes || null, idem]
       )).rows;
     });
   } catch (e) {
@@ -10185,10 +10199,10 @@ async function backfillLedgerForUser(userId, opts = {}) {
     await post({ entityId: vc.entity_id, date: vc.date || slice10(vc.created_at), description: 'Vendor credit — ' + String(vc.vendor || '').slice(0, 80), sourceType: 'vendor_credit', sourceId: vc.id, idempotencyKey: 'vendor_credit:' + vc.id, lines: [{ code: '2000', debit: amt, credit: 0 }, { code: '6000', debit: 0, credit: amt }] });
   }
   // 11) fx settlements — Dr/Cr Cash ↔ FX Gain/Loss = realised gain/loss at settled_at
-  { const { rows } = await pool.query(`SELECT id, entity_id, realised_gain_loss, settled_at::text AS settled FROM fx_transactions WHERE user_id=$1 AND status='settled'`, [userId]);
+  { const { rows } = await pool.query(`SELECT id, entity_id, realised_gain_loss, settled_at AS settled FROM fx_transactions WHERE user_id=$1 AND status='settled'`, [userId]);
     for (const t of rows) { if (onlyEntity != null && t.entity_id !== onlyEntity) continue; const gl = Math.round((parseFloat(t.realised_gain_loss) || 0) * 100) / 100; if (gl === 0) continue;
       const lines = gl > 0 ? [{ code: '1000', debit: gl, credit: 0 }, { code: '7000', debit: 0, credit: gl }] : [{ code: '7000', debit: -gl, credit: 0 }, { code: '1000', debit: 0, credit: -gl }];
-      await post({ entityId: t.entity_id, date: FinFlowDates._toYmd(t.settled) || FinFlowDates.resolvedToday(new Date()), description: 'FX settlement — ' + String(t.foreign_currency || '').slice(0, 12), sourceType: 'fx_settle', sourceId: t.id, idempotencyKey: 'fx_settle:' + t.id, lines }); } }
+      await post({ entityId: t.entity_id, date: await entityYmdOf(t.entity_id, t.settled || new Date()), description: 'FX settlement — ' + String(t.foreign_currency || '').slice(0, 12), sourceType: 'fx_settle', sourceId: t.id, idempotencyKey: 'fx_settle:' + t.id, lines }); } }
   return report;
 }
 
@@ -11503,7 +11517,7 @@ app.post('/api/fx-rates', requireAuth, wrap(async (req, res) => {
   if (!from_currency || !to_currency || !rate) return res.status(400).json({ error: 'from_currency, to_currency, rate required' });
   if (!CURRENCY_CODES.has(String(from_currency).toUpperCase()) || !CURRENCY_CODES.has(String(to_currency).toUpperCase())) return res.status(400).json({ error: 'Invalid currency code.' });
   const _from = from_currency.toUpperCase(), _to = to_currency.toUpperCase();
-  const _rate = parseFloat(rate), _date = rate_date || new Date().toISOString().slice(0, 10);
+  const _rate = parseFloat(rate), _date = rate_date || await entityTodayYmd(req.entityId || null);   // N102
   // Recent-duplicate guard (mirrors findRecentDuplicate's 5s spirit, on fx_rates' TYPED columns —
   // findRecentDuplicate only matches the JSONB data model). A rapid re-submit of the same
   // from/to/rate/date is returned idempotently instead of inserting a dupe; with the client's
@@ -11593,9 +11607,9 @@ app.post('/api/fx-transactions/:id/settle', requireAuth, wrap(async (req, res) =
   // concurrent or repeated settles cannot both win. A re-settle used to overwrite the realised gain/loss and
   // settled_at while the ledger (idempotent on fx_settle:<id>) kept the FIRST figure — books ≠ ledger.
   const { rows: [updated] } = await pool.query(
-    `UPDATE fx_transactions SET rate_at_settlement=$1, realised_gain_loss=$2, status='settled', settled_at=NOW()
+    `UPDATE fx_transactions SET rate_at_settlement=$1, realised_gain_loss=$2, status='settled', settled_at=$4
      WHERE id=$3 AND status IS DISTINCT FROM 'settled' RETURNING *`,
-    [settlementRate, realisedGL, tx.id]
+    [settlementRate, realisedGL, tx.id, new Date()]
   );
   if (!updated) return res.status(409).json({ error: 'This position is already settled.', code: 'ALREADY_SETTLED' });
   // GL Phase 2 (dual-write shadow): settling an FX position REALISES a gain/loss. 7000 (FX Gain/Loss)
@@ -11611,7 +11625,7 @@ app.post('/api/fx-transactions/:id/settle', requireAuth, wrap(async (req, res) =
         : [{ code: '7000', debit: -_gl, credit: 0 }, { code: '1000', debit: 0, credit: -_gl }]; // loss
       await postLedgerEntry(pool, {
         userId: scopeId(req), entityId: tx.entity_id || null,
-        date: FinFlowDates._toYmd(updated.settled_at) || FinFlowDates.resolvedToday(new Date()),
+        date: await entityYmdOf(tx.entity_id || null, updated.settled_at || new Date()),   // N102: the settlement instant, in the entity's zone
         description: 'FX settlement — ' + String(tx.foreign_currency || '').slice(0, 12),
         sourceType: 'fx_settle', sourceId: tx.id, idempotencyKey: 'fx_settle:' + tx.id,
         lines: _lines,

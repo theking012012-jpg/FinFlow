@@ -735,7 +735,7 @@ async function addFXRate(btn){
   const from=(document.getElementById('fxr-from')?.value||'').trim().toUpperCase();
   const to=(document.getElementById('fxr-to')?.value||'').trim().toUpperCase();
   const rate=parseFloat(document.getElementById('fxr-rate')?.value||0);
-  const date=document.getElementById('fxr-date')?.value||new Date().toISOString().slice(0,10);
+  const date=document.getElementById('fxr-date')?.value||undefined;   // N102: blank ⇒ the server stamps the ENTITY's today (never the UTC day)
   if(!from||!to){notify('Enter both currencies',true);return;}
   if(!rate||rate<=0){notify('Enter a valid rate',true);return;}
   // C1/F117 client layer: route through the shared double-submit guard (disable + re-entry block +

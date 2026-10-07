@@ -192,6 +192,15 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   f126-mrr-fx-convert 10, f85-client-period-basis 3, journal-dashboard-parity 10, verification-cells 26,
   a8c-fx-reconcile 13, cogs-page-revenue 7, fk1-inventory-cogs 6.
 
+- 2026-10-07 — **1.1 / L10 accountant portal parity.** Consolidated two-currency check first (no change
+  needed): USD full-leg + TTD business @0.15 → server consolidated 796 / 621.5 / 174.5, Entities page
+  $796 / $622 / $175, both entities GL-reconciled. Portal: harness `verify-accountant-portal-parity.js`
+  (owner writes full-leg + a past-due invoice; verified accountant, active filing link; jsdom portal + CSV
+  blob capture) RED 8/11 on pre-fix (790 / 0 / 0 / 8 / 0 / ''/8/−8) → GREEN 12/12. Gates step1–4 green;
+  regression green: all 23 verify-accountant-* (incl. books-ap 8, entity-scope 36, fiscal-year 6, client-ui
+  6), client-accountant-xss 9, expense-breakdown-all-surfaces 10, full-leg-parity 27, quarter-intent 8,
+  this-month-cards 13.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
@@ -226,6 +235,16 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   fiscal quarter, but `_cogsPeriodParams` (COGS subtracted from Net profit) and `_applyConvertedKPIs`
   (display-currency KPIs) sent `monthIdx=currentMonthIdx` — the month last browsed in Month view. Browse to
   June → Quarter: native net −$20 (Q2 COGS against Q3 zero revenue/opex); EUR revenue €1.5K (Q2×2) beside $0.
+- **L10** (FIXED, see Progress Log) Accountant portal re-derived money from raw rows on 4 surfaces (headline
+  cards were already canonical): Invoices Outstanding Σ full amounts of non-paid (790 vs AR 725), Collected
+  Σ fully-paid (0 vs Σ amount_paid 60), Overdue by status literal (0 vs canonical 85), Expenses Total = rows
+  only (8 vs opex 614), Deductible yes-only (0 vs 4), and the **CSV export's P&L SUMMARY** = paid invoices /
+  expense rows (''/8/−8 vs 835/614/221) — its quote helper also wrote 0 as an empty cell. The overdue banner
+  and the dashboard "overdue" status line used the same status literal.
+- **L11** (open) Accountant portal `getFiltered()` period filter: `new Date(d)` instants + viewer-local
+  `getMonth()` and CALENDAR quarters (`Math.floor(now.getMonth()/3)`), while the server summary it sits next
+  to uses the client's fiscal year and calendar-date strings — Rule 10 class (F87) + a fiscal/calendar
+  quarter mismatch on the portal's row lists for month/quarter periods.
 
 ## Decisions (irreversible-safe choices the agent made)
 - **D1 — Working branch & pushing.** Commits go on `dash-je-fix` only. This run executes in an ephemeral

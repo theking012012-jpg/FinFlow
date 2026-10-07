@@ -998,7 +998,7 @@ function renderAll() {
 function renderDashboard(invoices, expenses) {
   const paid     = invoices.filter(i=>i.status==='paid');
   const pending  = invoices.filter(i=>i.status==='pending');
-  const overdue  = invoices.filter(i=>i.status==='overdue');
+  const overdue  = _portalOverdueInvoices(invoices);   // L10: past due by DATE with a balance, not status==='overdue'
   // Headline KPIs come from the canonical server summary (computeBooks), scoped to the active
   // entity + period — so they reconcile with the client dashboard. Revenue = paid invoices +
   // receipts + payments received; Expenses = canonical OpEx (incl payroll); Profit = Net (incl COGS).
@@ -1015,14 +1015,14 @@ function renderDashboard(invoices, expenses) {
   set('d-margin', revenue ? ((profit/revenue*100).toFixed(1)+'% margin') : '0% margin');
   set('s-paid', paid.length+' · '+fmt(paid.reduce((s,i)=>s+(parseFloat(i.amount)||0),0)));
   set('s-pending', pending.length+' · '+fmt(pending.reduce((s,i)=>s+(parseFloat(i.amount)||0),0)));
-  set('s-overdue', overdue.length+' · '+fmt(overdue.reduce((s,i)=>s+(parseFloat(i.amount)||0),0)));
+  set('s-overdue', overdue.length+' · '+fmt(_portalOverdueTotal()));   // L10: canonical overdue AR
   set('inv-count', invoices.length);
   set('exp-count', expenses.length);
 
   const banner = document.getElementById('overdue-banner');
   if (overdue.length) {
     banner.style.display='flex';
-    set('overdue-text', `${overdue.length} overdue invoice${overdue.length>1?'s':''} totalling ${fmt(overdue.reduce((s,i)=>s+(parseFloat(i.amount)||0),0))} — follow up required`);
+    set('overdue-text', `${overdue.length} overdue invoice${overdue.length>1?'s':''} totalling ${fmt(_portalOverdueTotal())} — follow up required`);
   } else { banner.style.display='none'; }
 
   // Recent invoices (5)
@@ -1066,15 +1066,31 @@ function renderDashboard(invoices, expenses) {
     <div style="font-size:11px;color:var(--text3);margin-top:8px">Profit margin · ${revenue?(profit/revenue*100).toFixed(1):0}%</div>`;
 }
 
+// ── L10: the portal's AR figures are the OWNER's canonical ones ───────────────────────────────
+// Outstanding / Overdue come from the server summary (computeBooks: Σ unpaid balance of recognised
+// invoices, net of credit notes; overdue = past due by DATE) for the scope the page loaded; Collected
+// is Σ amount_paid (the owner's Invoices page definition). The portal used to sum full invoice amounts
+// by status literal, so a part-paid or credited invoice, or a past-due one still marked 'pending',
+// showed different money here than on the client's own dashboard.
+const _AR_RECOGNISED = ['pending','overdue','partial','paid'];
+const _invBalance = i => Math.max(0, (parseFloat(i.amount)||0) - (parseFloat(i.amount_paid)||0));
+const _todayYmd = () => new Date().toISOString().slice(0,10);
+function _portalOverdueInvoices(invoices){
+  const today=_todayYmd();
+  return (invoices||[]).filter(i=>_AR_RECOGNISED.includes(String(i.status||'').toLowerCase()) && _invBalance(i)>0.005
+    && i.due_date && String(i.due_date).slice(0,10) < today);
+}
+function _portalOverdueTotal(){ const v=_data && _data.summary && _data.summary.overdue; return v==null ? 0 : (parseFloat(v)||0); }
+
 // ── INVOICES PAGE ──────────────────────────────────────────────────────────
 function renderInvoicesPage(invoices) {
-  const paid = invoices.filter(i=>i.status==='paid');
-  const outstanding = invoices.filter(i=>i.status!=='paid');
-  const overdue = invoices.filter(i=>i.status==='overdue');
+  const S = (_data && _data.summary) || {};
+  const outstanding = invoices.filter(i=>_AR_RECOGNISED.includes(String(i.status||'').toLowerCase()) && _invBalance(i)>0.005);
+  const overdue = _portalOverdueInvoices(invoices);
   const totalBilled = invoices.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-  const totalPaid = paid.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-  const totalOut = outstanding.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-  const totalOv = overdue.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const totalPaid = invoices.reduce((s,i)=>s+(parseFloat(i.amount_paid)||0),0);   // L10: Σ amount_paid (owner's "Collected")
+  const totalOut = parseFloat(S.outstanding)||0;                                   // L10: canonical AR
+  const totalOv = _portalOverdueTotal();                                           // L10: canonical overdue
   set('inv-total', fmt(totalBilled));
   set('inv-collected', fmt(totalPaid));
   set('inv-outstanding', fmt(totalOut));
@@ -1094,15 +1110,20 @@ function renderInvoicesPage(invoices) {
 
 // ── EXPENSES PAGE ──────────────────────────────────────────────────────────
 function renderExpensesPage(expenses) {
-  const total = expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
-  const ded = expenses.filter(e=>e.deductible==='yes').reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  // L10: Total = the canonical operating expenses (computeBooks opex: expense rows + issued bills +
+  // orphan payments + payroll runs − vendor credits + posted journal expenses), and Deductible = the
+  // canonical figure (yes 100% + half 50%) — the owner's Expenses page shows the same two numbers.
+  // The rows below remain the expense RECORDS; they were summed alone and called the total.
+  const S = (_data && _data.summary) || {};
+  const total = parseFloat(S.opex)||0;
+  const ded = parseFloat(S.deductible)||0;
   const cats = {};
   expenses.forEach(e=>{const c=e.category||'Other';cats[c]=(cats[c]||0)+(parseFloat(e.amount)||0);});
   const top = Object.entries(cats).sort((a,b)=>b[1]-a[1])[0];
   set('exp-total', fmt(total));
   set('exp-ded', fmt(ded));
   set('exp-top-cat', top?top[0]:'—');
-  set('exp-subtitle', expenses.length+' expenses · '+fmt(total)+' total');
+  set('exp-subtitle', expenses.length+' expense record'+(expenses.length===1?'':'s')+' · total operating expenses '+fmt(total));
   document.getElementById('all-expenses').innerHTML = expenses.map(e=>`
     <tr>
       <td class="primary">${esc(e.description||'—')}</td>
@@ -1419,7 +1440,7 @@ async function submitFlag() {
 function exportCSV() {
   if (!_data) return;
   const { invoices, expenses } = getFiltered();
-  const q = v => '"' + String(v || '').replace(/"/g, '""') + '"';
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';   // L10: 0 is a value, not an empty cell
   const lines = [];
   lines.push('INVOICES');
   lines.push([q('Client'), q('Amount'), q('Status'), q('Due Date')].join(','));
@@ -1440,13 +1461,16 @@ function exportCSV() {
     lines.push([q((p.fname||'')+' '+(p.lname||'')), q(p.role||''), q(g), q(ded), q(Math.round((g - ded) * 100) / 100)].join(','));
   });
   lines.push('');
-  const rev = invoices.filter(i=>i.status==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-  const exp = expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  // L10: the P&L summary is the canonical one (server computeBooks for the loaded scope + period) — the
+  // same figures as the portal's headline cards and the client's own P&L. It used to be revenue = PAID
+  // invoices and expenses = expense rows only (cash-ish, missing every other leg).
+  const _S = _data.summary || {};
   lines.push('P&L SUMMARY');
   lines.push([q('Metric'), q('Amount')].join(','));
-  lines.push([q('Revenue'), q(rev)].join(','));
-  lines.push([q('Expenses'), q(exp)].join(','));
-  lines.push([q('Net Profit'), q(rev - exp)].join(','));
+  lines.push([q('Revenue'), q(parseFloat(_S.revenue)||0)].join(','));
+  lines.push([q('Cost of Goods Sold'), q(parseFloat(_S.cogs)||0)].join(','));
+  lines.push([q('Expenses'), q(parseFloat(_S.opex)||0)].join(','));
+  lines.push([q('Net Profit'), q(parseFloat(_S.netProfit)||0)].join(','));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([lines.join('\n')], {type:'text/csv'}));
   a.download = _clientName.replace(/\s+/g, '_') + '_books.csv';

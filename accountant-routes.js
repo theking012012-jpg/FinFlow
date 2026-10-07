@@ -981,6 +981,10 @@ If you cannot find a field, use null. Be concise.`;
         opex:          books.opex.toFixed(2),
         netProfit:     books.netProfit.toFixed(2),
         outstanding:   books.outstanding.toFixed(2),
+        // L10: canonical overdue AR (past due by DATE, net of credits — computeBooks.arSummary), so the
+        // portal's Invoices page and overdue banner stop summing invoices whose status literal says
+        // 'overdue' (0 for a past-due invoice still marked 'pending').
+        overdue:       (books.arSummary && books.arSummary.overdueTotal != null) ? Number(books.arSummary.overdueTotal).toFixed(2) : null,
         // F139 — tax-deductible expense for the Tax Summary, from the SAME computeBooks call as
         // revenue above, so the accountant's taxable (revenue − deductible) reconciles with the
         // client's own Income-Tax worksheet BY CONSTRUCTION, not by two agreeing re-implementations.

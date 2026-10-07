@@ -18,10 +18,12 @@
  *   Cash in  = invoice payment 60 + sales receipt 20                                       = 80
  *   Cash out = expense 8 + payments made 15 + 7 + paid payroll 250                         = 280
  *   Expense categories: Payroll 550 · Bills & vendors 44 (40 + 7 − 3) · Journal entries 12 · Office 8
+ *   Tax-deductible: the Office expense is 'half' ⇒ 4 (a yes-only reader shows 0)
  */
 const EXPECTED = Object.freeze({
   revenue: 745, opex: 614, net: 131, ar: 635, ap: 22, cashIn: 80, cashOut: 280,
   categories: { 'Payroll': 550, 'Bills & vendors': 44, 'Journal entries': 12, 'Office': 8 },
+  deductible: 4,
 });
 
 async function postFullLegScenario({ http, client }) {
@@ -36,7 +38,7 @@ async function postFullLegScenario({ http, client }) {
   await P('/api/invoice-payments', { invoice_id: inv.id, amount: 60, payment_date: '2026-06-20', method: 'bank' });
   await P('/api/sales-receipts', { customer: 'Walk-in', num: 'SR-1', amount: 20, date: '2026-06-07', method: 'Cash' });
   await P('/api/credit-notes', { customer: 'Acme', num: 'CN-1', amount: 5, date: '2026-06-08' });
-  await P('/api/expenses', { description: 'Office supplies', category: 'Office', amount: 8, expense_date: '2026-06-09' });
+  await P('/api/expenses', { description: 'Office supplies', category: 'Office', amount: 8, expense_date: '2026-06-09', deductible: 'half' });
   const bill = await P('/api/bills', { vendor: 'Supplier', amount: 40, status: 'unpaid', issue_date: '2026-06-10', due_date: '2026-08-10' });
   await P('/api/payments-made', { vendor: 'Supplier', amount: 15, date: '2026-06-15', method: 'bank', bill_id: bill.id });
   await P('/api/payments-made', { vendor: 'Other', amount: 7, date: '2026-06-16', method: 'bank' });

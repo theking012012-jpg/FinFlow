@@ -10672,31 +10672,6 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // every other leg) but RESTRICTED to journals actually posted to the ledger — so this leg and
   // glFinancials read the SAME set and glReconcile ties by construction. income ⇒ revenue (credit−debit);
   // expense ⇒ opex (debit−credit); asset/liability/equity ⇒ no P&L effect.
-<<<<<<< ours
-  let _postedJeIds = new Set();
-  try {
-    const { rows: _jer } = await pool.query(`SELECT DISTINCT source_id FROM ledger_entries WHERE user_id=$1 AND source_type='journal' AND status='posted'`, [userId]);
-    _postedJeIds = new Set(_jer.map(r => Number(r.source_id)));
-  } catch (_) { _postedJeIds = new Set(); }
-  const _jeIncomeRows = [], _jeExpenseRows = [];
-  if (_postedJeIds.size) {
-    const _journals = await db.allByUser('journals', userId, ent);
-    for (const j of _journals) {
-      if (!_postedJeIds.has(Number(j.id))) continue;
-      const _jd = j.date || j.created_at;
-      if (!inPeriod(_jd)) continue;
-      let _jl = [];
-      try { _jl = Array.isArray(j.lines) ? j.lines : JSON.parse(j.lines || '[]'); } catch (_) { _jl = []; }
-      for (const l of _jl) {
-        const t = _journalLineType(l.code != null ? l.code : l.account);
-        if (t !== 'income' && t !== 'expense') continue;
-        const dr = num(l.debit  != null ? l.debit  : (num(l.amount) > 0 ?  num(l.amount) : 0));
-        const cr = num(l.credit != null ? l.credit : (num(l.amount) < 0 ? -num(l.amount) : 0));
-        (t === 'income' ? _jeIncomeRows : _jeExpenseRows).push({ entity_id: j.entity_id, _amt: (t === 'income' ? cr - dr : dr - cr), _d: _jd });
-      }
-    }
-  }
-=======
   // Read the journal contribution FROM the GL (posted source_type='journal' lines), grouped by account
   // type / entity / date, so it equals glFinancials' journal contribution EXACTLY — including REVERSALS
   // (a flipped-to-draft or deleted journal posts a mirror entry that nets to zero in the GL, so it nets
@@ -10721,7 +10696,6 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
       (g.t === 'income' ? _jeIncomeRows : _jeExpenseRows).push({ entity_id: g.eid, _amt: amt, _d: g.d });
     }
   } catch (_) { /* no ledger / query failure → journals contribute 0; reconcile surfaces any divergence */ }
->>>>>>> theirs
   const jeRevenue = sumFX(_jeIncomeRows,  r => r._amt, r => r._d, 'journal_income');
   const jeOpex    = sumFX(_jeExpenseRows, r => r._amt, r => r._d, 'journal_expense');
 

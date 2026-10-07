@@ -295,6 +295,12 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   icon glyph resolves (13 px wide); admin `Chart` defined (pre-fix: refused). Regression green: security-headers 13,
   csp-report 14, slim-boot-renders 9, accountant-portal-parity 12, step1-gate.
 
+- 2026-10-07 — **1.2 re-audit.** Recovered the Master Audit (newest of 23 `.fuse_hidden` copies), triaged every row
+  the 2026-08-09 reconciliation left open against current code (4 read-only agents, file:line evidence) ⇒ §1.2 map.
+  Fixed so far: L23 (N102, entity record dates; RED 17/19 → GREEN 19/0; 111 route harnesses green), L24 (F44,
+  scenario base; RED 5/6 → GREEN 6/0 ×3; scenario/boot/parity regression green). Owner: no more full sweeps from the
+  agent — the owner runs the sweep once at the end; the agent pushes main after it is green.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (FIXED, as part of L21) renderInvestments null-textContent boot error — Phase 1.3.
@@ -411,6 +417,10 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   Excluded, with reason: personal-finance rows (per-user, no entity: personal tx, snapshots, owner-salary personal
   tx), bank-feed fallbacks used only when Plaid/Belvo/OFX omit a date, rate-lookup dates, the global live-FX feed,
   API fetch windows, export filenames, payroll `run_date` (F85: payroll recognises on `period` / `paid_date`).
+
+- **L24** (FIXED — audit F44) Scenario planner baseline used paid-only invoices and all-time raw expense rows, no COGS
+  (seed: baseline 0 / 58 vs the dashboard's Year 745 / 614 + COGS 40). Now `_syncScenarioBase` = computeRevenue('year'),
+  computeExpenseBreakdown('year').total + FY COGS (/api/cogs period=year); repaints when the COGS fetch lands.
 
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's

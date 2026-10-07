@@ -1089,13 +1089,32 @@
     window._loadItemsFromDB     = loadItemsFromDB;
 
     // ── Scenario BASE sync: populate from real invoice/expense data ───
+    // L24 (audit F44): the baseline IS the dashboard's Year — computeRevenue('year') and
+    // computeExpenseBreakdown('year').total (issued invoices, receipts, JEs, credit notes; expenses, bills,
+    // payments made, payroll runs, vendor credits) plus the fiscal-year COGS, so baseline net profit equals
+    // the dashboard's Year net. It used to be paid-only invoices and all-time raw expense rows, no COGS.
+    // COGS comes from /api/cogs (period=year); until it lands the last fetched figure for this entity is used,
+    // then the scenario repaints once with the fetched value.
     window._syncScenarioBase = function () {
-      const invs = window._realInvoices || [];
-      const exps = window._realExpenses || [];
-      const annualRev = invs.filter(i => i.status?.toLowerCase() === 'paid').reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
-      const annualExp = exps.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-      const monthlyExp = annualExp / 12;
-      window.BASE = { rev: annualRev, exp: annualExp, cash: 0, burn: monthlyExp };
+      const rev = typeof window.computeRevenue === 'function' ? (window.computeRevenue('year') || 0) : 0;
+      const bd = typeof window.computeExpenseBreakdown === 'function' ? window.computeExpenseBreakdown('year') : null;
+      const opex = bd ? (bd.total || 0) : 0;
+      const eid = ((window.ENTITIES || []).find(e => e.active) || {})._dbId;
+      const cached = window._scenarioCogs && window._scenarioCogs.eid === eid ? window._scenarioCogs.v : 0;
+      const exp = opex + cached;
+      window.BASE = { rev, exp, cash: 0, burn: exp / 12 };
+      if (typeof window._cogsPeriodParams !== 'function') return;
+      const qs = window._cogsPeriodParams();
+      qs.set('period', 'year'); qs.delete('monthIdx');
+      // Resolves once the fetched COGS is in BASE and the scenario has repainted (awaitable by callers/tests).
+      window._scenarioBaseReady = apiGetStatus('/api/cogs?' + qs.toString()).then(c => {
+        const v = parseFloat(c && c.totalCOGS) || 0;
+        window._scenarioCogs = { eid, v };
+        if (Math.abs(v - cached) < 0.005) return;
+        window.BASE = { rev, exp: opex + v, cash: 0, burn: (opex + v) / 12 };
+        if (typeof window.updateScenario === 'function') window.updateScenario();
+      }).catch(() => {});
+      return window._scenarioBaseReady;
     };
 
     // ── Entity KPI cards: update after renderEntities() ───────────────

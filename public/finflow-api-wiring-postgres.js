@@ -87,6 +87,10 @@
       if (typeof window.renderJournals === 'function') window.renderJournals();
       if (typeof window.renderCOA      === 'function') window.renderCOA();
       if (typeof window.closeModal     === 'function') window.closeModal('journal-entry-modal');
+      // N20: a posted/reversed journal changes the P&L, so repaint the dashboard KPIs + chart (which
+      // now include the journal leg) immediately — previously only the Journals list refreshed, so the
+      // dashboard stayed stale until a reload. refreshFinancials('journals') refetches window._journals.
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('all');
       tip('Journal entry ' + status.toLowerCase());
     } catch (e) {
       // Keep _jeIdemKey so a manual retry of this SAME submit is idempotent (same token → 23505 → original row).
@@ -139,11 +143,18 @@
 
       const fetchInv = ['all','invoices','revenue'].includes(hint);
       const fetchExp = ['all','expenses','costs'].includes(hint);
+      // N20: posted manual journals contribute to BOTH revenue and opex, so refresh them whenever
+      // either leg is refreshed (or explicitly via the 'journals' hint). Keeps window._journals —
+      // the source for computeRevenue/computeExpenseBreakdown/buildMonthlyArrays — current after a
+      // journal is posted, edited or reversed, so the dashboard repaints in sync with the P&L/GL.
+      const fetchJrnl = ['all','invoices','revenue','expenses','costs','journals'].includes(hint);
       const fetches = [
         fetchInv ? api('GET', '/api/invoices' + eq) : Promise.resolve(null),
         fetchExp ? api('GET', '/api/expenses' + eq) : Promise.resolve(null),
+        fetchJrnl ? api('GET', '/api/journals' + eq).catch(() => null) : Promise.resolve(null),
       ];
-      const [invoices, expenses] = await Promise.all(fetches);
+      const [invoices, expenses, journals] = await Promise.all(fetches);
+      if (fetchJrnl && journals) window._journals = journals;
 
       // ── Refresh canonical arrays only when re-fetched ──────────────
       if (fetchInv && invoices) {

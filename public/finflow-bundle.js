@@ -5451,6 +5451,29 @@ function clearAIChat(){
       if (idx < 0) return;
       (r.lines || []).forEach(l => { expByMonth[idx] += (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0); });
     });
+    // N20: posted manual journals' P&L legs, bucketed by ENTRY MONTH — the client mirror of the
+    // server monthly je buckets (computeBooks) and of computeRevenue/computeExpenseBreakdown's
+    // journal leg (Rule 6), so the overview chart shows a journal in its month like the P&L chart.
+    // income line = credit − debit (4xxx) → revByMonth; expense line = debit − credit (5xxx-9xxx)
+    // → expByMonth. An untypeable code aborts the server GL posting ⇒ contributes 0 (skip).
+    const _jt = window._jLineType || (c => { const d = String(c == null ? '' : c).trim()[0]; return d === '1' ? 'asset' : d === '2' ? 'liability' : d === '3' ? 'equity' : d === '4' ? 'income' : (d >= '5' && d <= '9') ? 'expense' : null; });
+    (window._journals || []).forEach(j => {
+      if (String(j.status || '').toLowerCase() !== 'posted') return;
+      const idx = _idxOf(j.date || j.created_at);
+      if (idx < 0) return;
+      let lines = [];
+      try { lines = Array.isArray(j.lines) ? j.lines : JSON.parse(j.lines || '[]'); } catch(_) { return; }
+      let inc = 0, exp = 0, bad = false;
+      for (const l of lines) {
+        const t = _jt(l.code != null ? l.code : l.account);
+        if (!t) { bad = true; break; }
+        const dr = parseFloat(l.debit) || 0, cr = parseFloat(l.credit) || 0;
+        if (t === 'income') inc += (cr - dr);
+        else if (t === 'expense') exp += (dr - cr);
+      }
+      if (bad) return;
+      revByMonth[idx] += inc; expByMonth[idx] += exp;
+    });
 
     return { months: months.map(m => m.label), revByMonth, expByMonth };
   }
@@ -5728,9 +5751,10 @@ function clearAIChat(){
       const activeEntity = (window.ENTITIES || []).find(e => e.active);
       const eid = activeEntity?._dbId;
       const eq = eid ? '?entity_id=' + eid : '';
-      const [invoices, expenses] = await Promise.all([
+      const [invoices, expenses, journals] = await Promise.all([
         apiGetStatus('/api/invoices' + eq),
         apiGetStatus('/api/expenses' + eq),
+        apiGetStatus('/api/journals' + eq).catch(() => []),   // N20: journals feed the P&L mirror (KPIs + chart)
       ]);
 
       // F151 stale-response guard: if a switch happened while these fetches were in flight, a newer
@@ -5740,6 +5764,7 @@ function clearAIChat(){
       // Store globally so period switching can re-use
       window._realInvoices = invoices || [];
       window._realExpenses = expenses || [];
+      window._journals     = journals  || [];   // N20: posted manual journals for computeRevenue/computeExpenseBreakdown/buildMonthlyArrays
 
       // Stash the PERIOD-scoped FIFO COGS total for the canonical Net (Revenue − COGS − OpEx)
       // that app-main updateDashboard / AI / health score subtract. Non-inventory → 0.
@@ -5995,6 +6020,10 @@ function clearAIChat(){
       if (typeof window.renderJournals === 'function') window.renderJournals();
       if (typeof window.renderCOA      === 'function') window.renderCOA();
       if (typeof window.closeModal     === 'function') window.closeModal('journal-entry-modal');
+      // N20: a posted/reversed journal changes the P&L, so repaint the dashboard KPIs + chart (which
+      // now include the journal leg) immediately — previously only the Journals list refreshed, so the
+      // dashboard stayed stale until a reload. refreshFinancials('journals') refetches window._journals.
+      if (typeof window.refreshFinancials === 'function') window.refreshFinancials('all');
       tip('Journal entry ' + status.toLowerCase());
     } catch (e) {
       // Keep _jeIdemKey so a manual retry of this SAME submit is idempotent (same token → 23505 → original row).
@@ -6047,11 +6076,18 @@ function clearAIChat(){
 
       const fetchInv = ['all','invoices','revenue'].includes(hint);
       const fetchExp = ['all','expenses','costs'].includes(hint);
+      // N20: posted manual journals contribute to BOTH revenue and opex, so refresh them whenever
+      // either leg is refreshed (or explicitly via the 'journals' hint). Keeps window._journals —
+      // the source for computeRevenue/computeExpenseBreakdown/buildMonthlyArrays — current after a
+      // journal is posted, edited or reversed, so the dashboard repaints in sync with the P&L/GL.
+      const fetchJrnl = ['all','invoices','revenue','expenses','costs','journals'].includes(hint);
       const fetches = [
         fetchInv ? api('GET', '/api/invoices' + eq) : Promise.resolve(null),
         fetchExp ? api('GET', '/api/expenses' + eq) : Promise.resolve(null),
+        fetchJrnl ? api('GET', '/api/journals' + eq).catch(() => null) : Promise.resolve(null),
       ];
-      const [invoices, expenses] = await Promise.all(fetches);
+      const [invoices, expenses, journals] = await Promise.all(fetches);
+      if (fetchJrnl && journals) window._journals = journals;
 
       // ── Refresh canonical arrays only when re-fetched ──────────────
       if (fetchInv && invoices) {

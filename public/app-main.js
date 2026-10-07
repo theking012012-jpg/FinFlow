@@ -2070,9 +2070,12 @@ function computeExpenseBreakdown(period, monthIdx){
   const vendorCredits = (window.vendorCredits || [])
     .filter(v=>RECOGNIZED_CREDIT.includes((v.status||'').toLowerCase()) && inPeriod(v.date||v.created_at))
     .reduce((s,v)=>s+(parseFloat(v.amount)||0),0);
+  // N20: posted manual journals' EXPENSE leg (5xxx-9xxx accounts) adds to opex — the client mirror
+  // of the server's jeOpex (computeBooks reads it from the GL). Same window as every other leg.
+  const journalExpense = (typeof _journalPnL==='function') ? _journalPnL(w).expense : 0;
   return {
-    total: realExpenses + issuedBills + paymentsMade + payroll - vendorCredits,
-    realExpenses, issuedBills, paymentsMade, payroll, vendorCredits,
+    total: realExpenses + issuedBills + paymentsMade + payroll - vendorCredits + journalExpense,
+    realExpenses, issuedBills, paymentsMade, payroll, vendorCredits, journalExpense,
     payrollRunCount, rosterMonthlyCost,
     business: realExpenses,   // data model has no personal/business split — all recorded rows are business
     deductible, byCategory, months, period,
@@ -2227,6 +2230,47 @@ function arOutstanding(invoices){
 }
 window._arOutstanding = arOutstanding;
 
+// N20 (dashboard parity): the CLIENT mirror of the server's manual-journal P&L leg. The server
+// (computeBooks) reads posted journals back FROM the GL (source_type='journal') and folds the
+// income leg into revenue and the expense leg into opex. These helpers reproduce that leg on the
+// client from window._journals so the dashboard KPIs + chart agree with the P&L/Reports/GL (Rule 6).
+// Classification is the EXACT mirror of the server's _journalLineType (server.js): leading digit of
+// the account code → type (1 asset · 2 liability · 3 equity · 4 income · 5-9 expense). A journal's
+// GL posting is ABORTED server-side if any line is untypeable, so such a journal contributes 0 to
+// the GL (and thus to computeBooks) — mirrored here by skipping it. Draft journals are not in the
+// GL, so only status 'Posted' counts; a reversed (Posted→Draft) journal drops out by the same gate.
+function _jLineType(code){
+  const d = String(code == null ? '' : code).trim()[0];
+  return d === '1' ? 'asset' : d === '2' ? 'liability' : d === '3' ? 'equity'
+       : d === '4' ? 'income' : (d >= '5' && d <= '9') ? 'expense' : null;
+}
+window._jLineType = _jLineType;
+// Sum the posted-journal income/expense legs over the window `w` (a _periodWindow result).
+// income line = credit − debit (4xxx); expense line = debit − credit (5xxx-9xxx). Returns native
+// amounts, matching the other client legs (display-currency views use the server-converted KPIs).
+function _journalPnL(w){
+  let income = 0, expense = 0;
+  const js = window._journals || [];
+  for(const j of js){
+    if(String(j.status || '').toLowerCase() !== 'posted') continue;
+    if(!w.inWin(j.date || j.created_at)) continue;
+    let lines = [];
+    try { lines = Array.isArray(j.lines) ? j.lines : JSON.parse(j.lines || '[]'); } catch(_){ lines = []; }
+    let inc = 0, exp = 0, bad = false;
+    for(const l of lines){
+      const t = _jLineType(l.code != null ? l.code : l.account);
+      if(!t){ bad = true; break; }                 // untypeable ⇒ server never booked it ⇒ 0
+      const dr = parseFloat(l.debit) || 0, cr = parseFloat(l.credit) || 0;
+      if(t === 'income')  inc += (cr - dr);
+      else if(t === 'expense') exp += (dr - cr);
+    }
+    if(bad) continue;
+    income += inc; expense += exp;
+  }
+  return { income, expense };
+}
+window._journalPnL = _journalPnL;
+
 function computeRevenue(period, monthIdx){
   period = period || (typeof currentPeriod !== 'undefined' ? currentPeriod : (window.currentPeriod || 'year'));
   // Issue-based accrual (F32) over the SELECTED period window (F33/F25): recognize every
@@ -2253,6 +2297,10 @@ function computeRevenue(period, monthIdx){
   (window.creditNotes || []).forEach(cn => {
     if(RECOGNIZED_CREDIT.includes((cn.status||'').toLowerCase()) && w.inWin(cn.date || cn.created_at)) rev -= parseFloat(cn.amount)||0;
   });
+  // N20: posted manual journals' INCOME leg (4xxx accounts) flows into revenue — the client mirror
+  // of the server's jeRevenue (computeBooks reads it from the GL). Same window. Rule 6: must equal
+  // the server, so the dashboard Revenue KPI matches the P&L/Reports/GL once a journal is posted.
+  rev += _journalPnL(w).income;
   return rev;
 }
 window.computeRevenue = computeRevenue;

@@ -59,6 +59,18 @@ async function main() {
     A('reconcile: GL income==books revenue & GL expense==books cogs+opex', rec.reconciledToReports, JSON.stringify(rec.detail));
     A('reconcile: booksBalanced TRUE', rec.booksBalanced === true, JSON.stringify(rec.detail));
 
+    // N20 monthly fix: the monthly series (revByMonth/expByMonth) must INCLUDE the posted journals
+    // and tie to the top-line — before the fix the monthly buckets dropped journals, so the dashboard
+    // chart showed no bar for a journal's month. Discriminating: FAILS on the pre-fix monthly builder.
+    const _m = bk.monthly || {};
+    const _revSum = (_m.revByMonth || []).reduce((s, x) => s + (+x || 0), 0);
+    const _expSum = (_m.expByMonth || []).reduce((s, x) => s + (+x || 0), 0);
+    A('monthly revByMonth ties to revenue (journal income bucketed)', near(_revSum, bk.revenue), 'Σrev=' + _revSum + ' revenue=' + bk.revenue);
+    A('monthly expByMonth ties to opex (journal expense bucketed)', near(_expSum, bk.opex), 'Σexp=' + _expSum + ' opex=' + bk.opex);
+    const _jun = (_m.labels || []).findIndex(l => l === 'Jun');
+    A('June revByMonth bucket holds the +200 income JE', _jun >= 0 && near(_m.revByMonth[_jun], 200), 'Jun=' + (_jun >= 0 ? _m.revByMonth[_jun] : 'n/a'));
+    A('June expByMonth bucket holds the +100 expense JE', _jun >= 0 && near(_m.expByMonth[_jun], 100), 'Jun=' + (_jun >= 0 ? _m.expByMonth[_jun] : 'n/a'));
+
     console.log('\n' + '-'.repeat(78));
     console.log(fail ? ('  ' + fail + ' FAILED — ' + pass + ' passed, ' + fail + ' failed') : ('  ALL GREEN — ' + pass + ' passed, 0 failed  (N20 journals → GL + P&L)'));
     console.log('-'.repeat(78) + '\n');

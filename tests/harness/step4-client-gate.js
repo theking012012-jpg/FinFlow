@@ -64,6 +64,7 @@ function loadClientEngine() {
   const appMain = fs.readFileSync(ROOT + '/public/app-main.js', 'utf8');
   const dash = fs.readFileSync(ROOT + '/public/finflow-api-wiring-dashboard.js', 'utf8');
   const appParts = ['function _fyContext()', 'function _periodWindow(period, monthIdx)',
+    'function _jLineType(code)', 'function _journalPnL(w)',   // N20: computeRevenue/ExpenseBreakdown now depend on these
     'function computeRevenue(period, monthIdx)', 'function computeExpenseBreakdown(period, monthIdx)',
     'function arOutstanding(invoices)'].map(h => extractFn(appMain, h)).join('\n');
   const dashParts = ['function parseDate(s)', 'function money(n)',

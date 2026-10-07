@@ -11029,6 +11029,12 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   creditNotes.filter(cn => RECOGNIZED_CREDIT.has(String(cn.status || '').toLowerCase())).forEach(cn => addBucket(revByMonth, -num(cn.amount), _cnDate(cn), _fromOf(cn)));
   vendorCredits.filter(v => RECOGNIZED_CREDIT.has(String(v.status || '').toLowerCase())).forEach(v => addBucket(expByMonth, -num(v.amount), _vcDate(v), _fromOf(v)));
   runLines.filter(l => PAYROLL_RECOGNIZED.has(String(l.status || '').toLowerCase())).forEach(l => addBucket(expByMonth, num(l.gross) + num(l.bonus) + num(l.overtime), _payDate(l), _fromOf(l)));
+  // N20: posted manual journals' P&L legs, bucketed by entry month. Reuses the SAME GL-sourced rows
+  // (_jeIncomeRows/_jeExpenseRows, read back from source_type='journal' above) that fold into the
+  // top-line jeRevenue/jeOpex — so revByMonth/expByMonth sum to the top-line revenue/opex by
+  // construction, closing the gap where the monthly series dropped journals (dashboard chart Oct bug).
+  _jeIncomeRows.forEach(r => addBucket(revByMonth, r._amt, r._d, _fromOf(r)));
+  _jeExpenseRows.forEach(r => addBucket(expByMonth, r._amt, r._d, _fromOf(r)));
   const monthly = { labels: _fyMonths.map(x => x.label), revByMonth: revByMonth.map(r2), expByMonth: expByMonth.map(r2), complete: monthlyComplete };
 
   // ── F34 B (surface 2) — CONVERTED expense breakdown by category ──────────────────────────────

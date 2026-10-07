@@ -1173,7 +1173,7 @@ app.post('/api/auth/register', signupLimiter, async (req, res) => {
     const user = _ru ? rowToObj(_ru) : null;
     console.log('[Register] New user created, id:', userId);
     await saveSession(req);   // F134: durable session row before the response (else immediate GETs 401)
-    res.status(201).json({ user: safeUser(user) });
+    res.status(201).json({ user: safeUser(user), today: FinFlowDates.resolvedToday(new Date()) });   // L30: as login (F116)
   } catch (err) {
     console.error('[Register] Unexpected error:', err);
     res.status(500).json({ error: 'Registration failed. Please try again.' });

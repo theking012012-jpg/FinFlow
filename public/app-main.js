@@ -833,6 +833,7 @@ async function doRegister(){
     const res = await fetch('/api/auth/register',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password:pw,referralCode:ref||undefined})});
     const data = await res.json();
     if(!res.ok){ if(errEl) errEl.textContent=data.error||'Registration failed.'; return; }
+    if(data.today) window._serverToday = data.today; // L30 (F116): a new account's first session needs it too (date defaults, F115)
     const plan = new URLSearchParams(window.location.search).get('plan');
     if(plan && (plan==='pro'||plan==='business')){
       try{

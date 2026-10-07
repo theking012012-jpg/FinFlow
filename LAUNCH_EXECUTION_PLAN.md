@@ -300,7 +300,8 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   Fixed so far: L23 (N102, entity record dates; RED 17/19 → GREEN 19/0; 111 route harnesses green), L24 (F44,
   scenario base; RED 5/6 → GREEN 6/0 ×3; scenario/boot/parity regression green), L25 (F45, budget actuals;
   RED 5/7 → GREEN 7/0; budget regression green), L26 (hook / ledger / count), L29 (native money exact; RED 9/10 →
-  GREEN 10/0; 25 report/format harnesses green, f124 + f129 source-slice harnesses restated for the exact formatter). Owner: no more full sweeps from the
+  GREEN 10/0; 25 report/format harnesses green, f124 + f129 source-slice harnesses restated for the exact formatter), L30 (register today; RED 2/3 → GREEN 3/0; 8 auth
+  harnesses green). Owner: no more full sweeps from the
   agent — the owner runs the sweep once at the end; the agent pushes main after it is green.
 
 ## Findings Ledger (numbered; newest last)
@@ -446,6 +447,10 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   keeps amounts < 1,000 "so abbreviation can't show", which is why nothing caught it. Now exact (honours Show cents);
   chart axes use `_fmtMoneyNativeAbbr`. Same class: bank-reconciliation difference used a literal '$' AND dropped the
   minus sign on a negative difference; timesheet rate used a literal '$'.
+
+- **L30** (FIXED — audit F116 residue) Registration never primed `window._serverToday` (register returned no `today`;
+  doRegister didn't set it) ⇒ a new account's first session had Record Payment's Save disabled ("Still loading
+  today's date") until reload. Register now returns `today` like login; doRegister sets it.
 
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's

@@ -1848,22 +1848,16 @@
         // Accept both shapes: flat {Rent:5000} or wrapped {targets:{Rent:5000}}
         const targets = (res.targets && typeof res.targets === 'object') ? res.targets : res;
 
-        // Fetch expenses directly — window._realExpenses may be stale or empty on first load
-        let expenses = window._realExpenses || [];
-        if (!expenses.length) {
-          try {
-            const active = (window.ENTITIES || []).find(e => e.active);
-            const eq = active?._dbId ? '?entity_id=' + active._dbId : '';
-            expenses = await api('GET', '/api/expenses' + eq);
-          } catch (_) { expenses = []; }
-        }
-        if (!Array.isArray(expenses)) expenses = [];
-
-        // Aggregate actual spend per category — case-insensitive match
+        // L25 (audit F45): targets are stored ANNUAL (the modal converts monthly × 12), so actuals are THIS FISCAL
+        // YEAR's spend per category — the shared breakdown every expense surface uses (D3: direct categories +
+        // Payroll + Bills & vendors + Journal entries), matched case-insensitively. It used to be Σ raw expense
+        // rows of all time: last year's spend counted against this year, and a Payroll target always read 0.
         const catActuals = {};
-        expenses.forEach(e => {
-          const cat = (e.category || 'Other').toLowerCase();
-          catActuals[cat] = (catActuals[cat] || 0) + (parseFloat(e.amount) || 0);
+        const _bd = typeof window.computeExpenseBreakdown === 'function' ? window.computeExpenseBreakdown('year') : null;
+        const _rows = typeof window._expenseCategoryRows === 'function' ? window._expenseCategoryRows(_bd, { all: true }) : [];
+        _rows.forEach(([cat, v]) => {
+          const k = String(cat || 'Other').toLowerCase();
+          catActuals[k] = (catActuals[k] || 0) + (parseFloat(v) || 0);
         });
 
         const COLORS = ['#c9a84c','#5aaa9e','#9e8fbf','#7db87d','#d4964a','#c46a5a'];

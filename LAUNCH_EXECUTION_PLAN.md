@@ -298,7 +298,8 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
 - 2026-10-07 — **1.2 re-audit.** Recovered the Master Audit (newest of 23 `.fuse_hidden` copies), triaged every row
   the 2026-08-09 reconciliation left open against current code (4 read-only agents, file:line evidence) ⇒ §1.2 map.
   Fixed so far: L23 (N102, entity record dates; RED 17/19 → GREEN 19/0; 111 route harnesses green), L24 (F44,
-  scenario base; RED 5/6 → GREEN 6/0 ×3; scenario/boot/parity regression green). Owner: no more full sweeps from the
+  scenario base; RED 5/6 → GREEN 6/0 ×3; scenario/boot/parity regression green), L25 (F45, budget actuals;
+  RED 5/7 → GREEN 7/0; budget regression green). Owner: no more full sweeps from the
   agent — the owner runs the sweep once at the end; the agent pushes main after it is green.
 
 ## Findings Ledger (numbered; newest last)
@@ -422,6 +423,10 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   (seed: baseline 0 / 58 vs the dashboard's Year 745 / 614 + COGS 40). Now `_syncScenarioBase` = computeRevenue('year'),
   computeExpenseBreakdown('year').total + FY COGS (/api/cogs period=year); repaints when the COGS fetch lands.
 
+- **L25** (FIXED — audit F45) Budget actuals were Σ raw expense rows of ALL TIME against ANNUAL targets: prior-year
+  spend counted, and payroll / bills / journal expense never counted (a Payroll target read 0). Now actuals =
+  this fiscal year's categories from the shared breakdown (D3 list), case-insensitive. Decision **D10**.
+
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's
 finding IDs, so it is the newest. The N-series (N1–N114) lived only in a lost scratchpad file
@@ -502,5 +507,8 @@ evidence in the agents' reports; money items then executed):
   fonts, the asset is served same-origin (the precedent set by jsPDF / Chart.js in /vendor), and the CSP gains only
   `'self'` for `style-src` / `font-src`. No SRI on same-origin files (it guards third-party hosts, and a truncated
   digest is what broke these two pages).
+- **D10 — Budget actuals period (L25).** Targets are stored annual, so actuals are the current FISCAL YEAR (the
+  dashboard's Year window) per category, using the D3 category list — a target named "Payroll" or "Bills & vendors"
+  tracks those legs. Monthly budget views are a feature, not this fix.
 - **D4 — Commit trailer.** The plan's template says `Claude Opus 4.8`; commits use the attribution of the
   model actually running this session (accuracy over copying a stale template).

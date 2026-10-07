@@ -149,6 +149,35 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
 - **Infra:** Cloudflare (proxied DNS, TLS Full strict, WAF), tested backups + restore drill, least-privilege DB role (`SKIP_INIT_DDL=1` + `scripts/migrate.js`), secrets rotation cadence, uptime monitor on `/healthz`.
 - **Housekeeping:** move the repo **out of OneDrive** (the `.git/index.lock` fight); prod test-data cleanup (QA Tester / Claude TestCPA links + ZZ-QA rows — this is a Rule 8 data change: enumerate, hold for owner).
 
+**Added by this run (2026-10-07) — owner decisions / config, each with its finding:**
+- **Deploy gate (this run's change to the contract):** the owner runs the full sweep once on the final
+  `dash-je-fix` commit; when green the agent (or the owner) fast-forwards main: `git fetch origin && git checkout main
+  && git merge --ff-only origin/dash-je-fix && git push origin main` (Railway deploys from main).
+- **`APP_URL` must be the live https origin** (L2) — the sitemap, email links and OAuth returns are built from it;
+  unset ⇒ the dab2 fallback.
+- **Pick ONE public domain** (L19): landing.html canonical/og = finflow.io, email plans = finflow.app, app on Railway.
+  Then set APP_URL and fix the 4 landing.html meta tags.
+- **`DATABASE_CA_CERT`** (audit F19): DB TLS is verified only when it is set; otherwise `rejectUnauthorized:false`.
+- **Tax worksheet default** (L28): keep the flat 25% placeholder line, switch to the country-suggested rate the app
+  already computes, or start blank (D1: FinFlow holds no tax knowledge).
+- **W-2 wages basis** (D7): approved + paid runs today; paid-only is a tax-policy call.
+- **Journal → AR/AP/inventory/tax account map** (L6b): manual journals' non-cash, non-P&L legs don't move AR/AP yet.
+- **Customer ↔ invoice foreign key** (D8/L17): revenue attribution is by name match until invoices carry a customer id.
+- **Landing page "750+ App integrations"** (audit F51): ~17 have a real connect flow; the claim is marketing copy.
+- **Investments close-position / realised gain** (audit F109) and **entity jurisdiction / region** (F108): features.
+- **Per-account settings applied to per-entity books** (audit F149; CLAUDE.md Rule 10 "under investigation"): fiscal
+  year start and industry are still account-wide.
+- **N17 / N22** (prior audit): owner-decision proposals were lost with the scratchpad — re-raise if still wanted.
+- **13 N-numbers with no surviving definition** (N1, N23, N25, N34, N35, N42, N70, N84, N93, N94, N95, N103, N106): if
+  you have the original `AUDIT_FINDINGS_2026-10-06.md` anywhere, they can be re-audited; otherwise they are lost.
+- **Data (Rule 8 — enumerate, then decide):** legacy NULL-entity `sales_receipts` (F26-b) show in every entity;
+  legacy invoices/bills with NULL issue_date still date by created_at (UTC) (L23 fixes new rows only); the Store-A
+  $1,000 legacy row (F32-residual).
+- **Housekeeping:** untrack the 94 `.fuse_hidden*` files (L20) — AUDIT_MASTER.md is now restored (L26), so nothing
+  is lost: `git rm -r --cached '*.fuse_hidden*'` (they are already in .gitignore).
+- **Live check after deploy:** load each page signed in and read the console (1.3 was verified locally in Chromium on
+  the full + SLIM builds; the deployed app runs `main`).
+
 ---
 
 ## Phase 4 — Done-gate (the agent's final verification before handing back)

@@ -10485,7 +10485,10 @@ async function glProfitLoss(userId, entityId, opts = {}) {
   const glRevenue = r2(f.incomeStatement.income);
   const glCogs = r2(acct('5000'));
   const glPayroll = r2(acct('6100'));
-  const glOpex = r2(acct('6000') + acct('6100'));
+  // L34: opex = EVERY expense account except COGS (5000) and FX (7000) — incl. manual-journal expense accounts
+  // (J5100 …, N20), which computeBooks counts. 6000 + 6100 alone made any entity with an expense journal "diverge",
+  // so the GL never served it. Same composition as the balance-sheet gate's glExpNonFx.
+  const glOpex = r2(f.accounts.filter(a => a.type === 'expense' && a.code !== '5000' && a.code !== '7000').reduce((s, a) => s + a.net_period, 0));
   const glGross = r2(glRevenue - glCogs);
   const glNet = r2(glRevenue - glCogs - glOpex);
   const eq = (a, b) => Math.abs(r2(a) - r2(b)) < 0.01;

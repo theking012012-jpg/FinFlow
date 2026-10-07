@@ -330,7 +330,13 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   scenario base; RED 5/6 → GREEN 6/0 ×3; scenario/boot/parity regression green), L25 (F45, budget actuals;
   RED 5/7 → GREEN 7/0; budget regression green), L26 (hook / ledger / count), L29 (native money exact; RED 9/10 →
   GREEN 10/0; 25 report/format harnesses green, f124 + f129 source-slice harnesses restated for the exact formatter), L30 (register today; RED 2/3 → GREEN 3/0; 8 auth
-  harnesses green), L31 (membership audit; RED 6/7 → GREEN 7/0; 22 team/rbac/audit harnesses green), L32 (tz-matrix crash exit 0 → 1), L27 (shadowing guard). Owner: no more full sweeps from the
+  harnesses green), L31 (membership audit; RED 6/7 → GREEN 7/0; 22 team/rbac/audit harnesses green), L32 (tz-matrix crash exit 0 → 1), L27 (shadowing guard).
+- 2026-10-07 — **2.1 GL single source of truth.** The flip already exists in a safer form than a flag: every report
+  read-swaps to the GL only when GL == computeBooks for that entity/period (5b), else serves computeBooks; backfill is
+  owner-gated. New harness `verify-gl-backfill-full-leg.js` (full-leg dataset, live ledger wiped and rebuilt) found
+  L33 (backfill skipped journals; GL and books agreed on the wrong 715/113) and L34 (gate excluded journal expense
+  accounts ⇒ GL never served journal users). Both fixed: 28/28 lines identical, idempotent, TB/BS balanced, GL serves
+  745/614/131. Regression: 51 GL/reports/parity/gate harnesses green. The prod backfill RUN stays owner-gated (Rule 8). Owner: no more full sweeps from the
   agent — the owner runs the sweep once at the end; the agent pushes main after it is green.
 
 ## Findings Ledger (numbered; newest last)
@@ -501,6 +507,11 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   dataset: after backfill GL AND computeBooks both said revenue 715 / net 113 (hand-computed 745 / 131) — they
   agreed, so /api/reports served source:'gl' with the wrong figures (Rule 6). Backfill step 12 now replays posted
   journals through the live `postJournalToLedger` (same key ⇒ identical entries).
+
+- **L34** (FIXED — Phase 2.1) The GL 5b P&L read-swap gate computed opex as accounts 6000 + 6100 only; manual-journal
+  expense accounts (J5100 …) are expenses computeBooks counts, so ANY entity with a posted expense journal "diverged"
+  (gl opex 602 vs 614 on the full-leg set) and the GL never served — the structural cure stayed off exactly for
+  journal users. Gate opex = all expense accounts except 5000 COGS and 7000 FX (the balance-sheet gate's rule).
 
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's

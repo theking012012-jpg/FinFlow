@@ -76,6 +76,11 @@ const snapRows = async (c, uid) => (await c.query(
     const rep = (await http.get('/api/reports?period=year&fyStart=0')).json || {};
     A(`/api/reports after backfill: revenue ${EXPECTED.revenue} / net ${EXPECTED.net} (bug: 715 / 113, served as 'gl' because both sides lost the journals)`,
       near(rep.revenue, EXPECTED.revenue) && near(rep.netProfit, EXPECTED.net), JSON.stringify({ source: rep.source, revenue: rep.revenue, netProfit: rep.netProfit }));
+    // L34: the GL 5b P&L gate computed opex as 6000 + 6100 only, so a journal expense account (J5100 …) made every
+    // journal-using entity "diverge" and the GL never served (bug: source 'computeBooks', gl opex 602 vs 614).
+    A(`L34: /api/reports read-swaps to the reconciled GL (source 'gl') with ${EXPECTED.revenue} / ${EXPECTED.opex} / ${EXPECTED.net}`,
+      rep.source === 'gl' && near(rep.revenue, EXPECTED.revenue) && near(rep.expenses != null ? rep.expenses : rep.totalExpenses, EXPECTED.opex) && near(rep.netProfit, EXPECTED.net),
+      JSON.stringify({ source: rep.source, revenue: rep.revenue, expenses: rep.expenses, totalExpenses: rep.totalExpenses, netProfit: rep.netProfit }));
   } catch (e) { fail++; console.log('  FATAL: ' + (e && e.stack || e)); }
   finally { if (server && server.close) await server.close(); await scratch.stop(); }
   console.log('\n' + '-'.repeat(78));

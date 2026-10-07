@@ -992,15 +992,23 @@ window.exportAllCSV = function(format){
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g,'""') + '"';
   const toCSV = r => r.map(q).join(',');
 
+  // L16: exports read the SERVER rows the pages render (ISO calendar dates, with the year — the old
+  // display labels "Aug 5" lost it) and the globals the page loaders actually assign. Several read names
+  // nothing ever set (allVendors, allBills, _quotes/allQuotes, userItems/allItems) and so always said
+  // "No data to export." with rows on screen.
+  const _ymd = v => (window.FinFlowDates && window.FinFlowDates._toYmd(v)) || (v || '');
   if (activePage.includes('invoice')) {
-    const inv = window.userInvoices || [];
-    rows = [['Client','Amount','Status','Due Date','Notes'],
-      ...inv.map(i => [i.client||'', Number(i.amount||0).toFixed(2), i.status||'', i.due||i.due_date||'', i.notes||''])];
+    const inv = window._realInvoices || window.userInvoices || [];
+    rows = [['Client','Amount','Paid','Status','Issue Date','Due Date','Notes'],
+      ...inv.map(i => [i.client||'', Number(i.amount||0).toFixed(2), Number(i.amount_paid||0).toFixed(2), i.status||'', _ymd(i.issue_date||i.created_at), _ymd(i.due_date||i.due), i.notes||''])];
     filename = 'invoices.csv';
   } else if (activePage.includes('expense')) {
-    const exp = window.bizExpenses || bizExpenses || [];
+    const exp = window._realExpenses || window.bizExpenses || bizExpenses || [];
+    // L16: 'no' is a truthy STRING — `(ded||deductible) ? 'Yes' : 'No'` exported every expense as deductible.
+    const _dedLabel = e => { const d = String((e.deductible != null ? e.deductible : e.ded) || '').toLowerCase();
+      return (d === 'yes' || d === 'true' || d === '100') ? 'Yes' : (d === 'half' || d === '50') ? 'Half (50%)' : 'No'; };
     rows = [['Description','Category','Amount','Date','Tax Deductible'],
-      ...exp.map(e => [e.desc||e.description||'', e.cat||e.category||'', Number(e.amount||0).toFixed(2), e.date||e.expense_date||'', (e.ded||e.deductible)?'Yes':'No'])];
+      ...exp.map(e => [e.description||e.desc||'', e.category||e.cat||'', Number(e.amount||0).toFixed(2), _ymd(e.expense_date||e.date), _dedLabel(e)])];
     filename = 'expenses.csv';
   } else if (activePage.includes('payroll')) {
     const emps = [...(window.ownerPayroll ? [{...window.ownerPayroll, isOwner:true}] : []), ...(window.payrollEmployees||[])];
@@ -1018,24 +1026,26 @@ window.exportAllCSV = function(format){
       ...inv.map(i => [i.name||'', i.sku||'', i.units||0, i.max||i.max_units||0, Number(i.cost||0).toFixed(2), i.low?'Low Stock':'OK'])];
     filename = 'inventory.csv';
   } else if (activePage.includes('item')) {
-    const items = window.userItems || window.allItems || [];
+    const items = window.items || window.itemsData || [];
     rows = [['Name','Type','Price','Status'],
       ...items.map(i => [i.name||'', i.type||'', Number(i.price||i.rate||0).toFixed(2), i.status||''])];
     filename = 'items.csv';
   } else if (activePage.includes('vendor')) {
-    const vendors = window.allVendors || [];
-    rows = [['Vendor','Contact','Email','Phone','Balance'],
-      ...vendors.map(v => [v.name||'', v.contact||'', v.email||'', v.phone||'', Number(v.balance||0).toFixed(2)])];
+    // L16: owing / YTD paid are the computed vendor figures the Vendors page shows (20861a9), not a typed balance.
+    const vendors = window.vendors || [];
+    rows = [['Vendor','Category','Contact','Owing','YTD Paid'],
+      ...vendors.map(v => [v.name||'', v.category||'', v.contact||'', Number(v.owing||0).toFixed(2), Number(v.ytd_paid||0).toFixed(2)])];
     filename = 'vendors.csv';
   } else if (activePage.includes('quote')) {
-    const quotes = window._quotes || window.allQuotes || [];
+    const quotes = window.quotes || [];
     rows = [['Client','Amount','Status','Valid Until','Notes'],
-      ...quotes.map(q => [q.client||'', Number(q.amount||0).toFixed(2), q.status||'', q.valid_until||'', q.notes||''])];
+      ...quotes.map(q => [q.client||'', Number(q.amount||0).toFixed(2), q.status||'', _ymd(q.expiry_date||q.valid_until), q.notes||''])];
     filename = 'quotes.csv';
   } else if (activePage.includes('bill')) {
-    const bills = window.allBills || [];
-    rows = [['Vendor','Amount','Status','Due Date'],
-      ...bills.map(b => [b.vendor||b.vendor_name||'', Number(b.amount||0).toFixed(2), b.status||'', b.due_date||''])];
+    const bills = window.bills || [];
+    rows = [['Vendor','Bill #','Amount','Paid','Balance','Status','Issue Date','Due Date'],
+      ...bills.map(b => { const a = Number(b.amount||0), pd = Number(b.amount_paid||0);
+        return [b.vendor||b.vendor_name||'', b.num||'', a.toFixed(2), pd.toFixed(2), Math.max(0, a - pd).toFixed(2), b.status||'', _ymd(b.issue_date||b.created_at), _ymd(b.due_date)]; })];
     filename = 'bills.csv';
   } else {
     // Generic — scrape the visible table

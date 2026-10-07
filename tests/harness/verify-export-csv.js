@@ -34,12 +34,14 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
     w.URL.revokeObjectURL = () => {};
 
     // Navigate to the Invoices page FIRST (exportAllCSV branches on the active page and the page
-    // load repopulates window.userInvoices), THEN set deterministic data so the export is exact.
+    // load repopulates the invoice store), THEN set deterministic data so the export is exact.
+    // L16: the export reads the SERVER rows the page renders (window._realInvoices, ISO dates) — the
+    // quoting checks below are unchanged; the injected store and the header follow the export.
     if (typeof w.showPage === 'function') w.showPage('invoices', w.document.getElementById('nav-invoices') || null);
     await h.settle(10, 100);
-    w.userInvoices = [
-      { client: 'Acme, Inc.', amount: 1234.5, status: 'pending', due_date: '2026-07-01', notes: 'first' },
-      { client: 'Beta "Quoted" Co', amount: 900, status: 'paid', due_date: '2026-06-10', notes: 'x' },
+    w._realInvoices = [
+      { client: 'Acme, Inc.', amount: 1234.5, amount_paid: 0, status: 'pending', issue_date: '2026-06-01', due_date: '2026-07-01', notes: 'first' },
+      { client: 'Beta "Quoted" Co', amount: 900, amount_paid: 900, status: 'paid', issue_date: '2026-05-10', due_date: '2026-06-10', notes: 'x' },
     ];
 
     w.exportAllCSV();
@@ -47,7 +49,8 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
 
     A('a CSV blob was produced', typeof captured === 'string' && captured.length > 0, `captured=${JSON.stringify((captured || '').slice(0, 60))}`);
     const csv = captured || '';
-    A('CSV has the invoice header row', /"Client","Amount","Status","Due Date","Notes"/.test(csv), `head=${csv.split('\r\n')[0]}`);
+    A('CSV has the invoice header row', /"Client","Amount","Paid","Status","Issue Date","Due Date","Notes"/.test(csv), `head=${csv.split('\r\n')[0]}`);
+    A('due dates export as ISO calendar dates (with the year)', /"2026-07-01"/.test(csv) && /"2026-06-10"/.test(csv), `csv=${csv.slice(0, 200)}`);
     A('CSV includes the seeded rows (amounts formatted 2dp)', /"1234\.50"/.test(csv) && /"900\.00"/.test(csv), `csv=${csv.slice(0,160)}`);
     A('a field containing a COMMA is quoted (not split into columns)', /"Acme, Inc\."/.test(csv), 'comma field must stay one column');
     A('a field containing a QUOTE is escaped ("" )', /"Beta ""Quoted"" Co"/.test(csv), `csv=${csv}`);

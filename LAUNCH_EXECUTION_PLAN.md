@@ -210,6 +210,11 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   f137-sales-payroll-reports 9, f137g-pl-statement 17, pl-statement-period-ui 4, f57-cash-card 14,
   full-leg-parity 27. bundle:check in sync.
 
+- 2026-10-07 — **1.1 / L16 page exports.** Executed Export on 9 pages with real rows. Harness
+  `verify-page-exports.js` RED 12/14 on pre-fix (4 exports "No data", deductible Yes/Yes, dates without year)
+  → GREEN 14/14. `verify-export-csv.js` (quoting) now injects the store the export reads (`_realInvoices`)
+  + asserts the new header and ISO dates → 8/8. Regression green: pdf-export 10, step4-client-gate 5.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
@@ -267,6 +272,14 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   Sums correctly (614); label-only divergence.
 - **L15** (open) Balance Sheet report: Total Assets 453 but its lines are Cash −200 + AR 635 = 435 — the 18 of
   journal cash (J1010, see L6) is in the total with no line. Resolves with L6.
+- **L16** (FIXED) Page exports: Vendors / Bills / Quotes / Items exports read globals nothing assigns
+  (`allVendors`, `allBills`, `_quotes`/`allQuotes`, `userItems`/`allItems`) → always "No data to export." with
+  rows on screen; Expenses "Tax Deductible" = `(ded||deductible)?'Yes':'No'` → the string 'no' exported as
+  Yes, 'half' as Yes; Invoices/Expenses dates exported as display labels without a year ("Aug 5"); the Vendors
+  export carried a typed `balance`, not the computed owing (20861a9).
+- **L17** (open) Customers page "Revenue" column and "Total revenue" card (and its CSV) are a TYPED number on
+  the customer record (`c.revenue`) — Acme's contact shows 0.00 with 700 invoiced to "Acme". Same class as the
+  vendor typed-balance fix 20861a9; needs a customer↔invoice link (invoices carry `client` as free text).
 
 ## Decisions (irreversible-safe choices the agent made)
 - **D1 — Working branch & pushing.** Commits go on `dash-je-fix` only. This run executes in an ephemeral

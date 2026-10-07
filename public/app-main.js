@@ -2147,6 +2147,20 @@ function _fyContext(){
 }
 window._fyContext = _fyContext;
 
+// L9: the ONE answer to "which month index does this period mean" — month ⇒ the month browsed in the
+// Month view (currentMonthIdx), quarter ⇒ TODAY's fiscal quarter, year ⇒ none. The native engine
+// (_periodWindow) and every request that sends a period intent to the server (_cogsPeriodParams,
+// _applyConvertedKPIs) use it, so a Quarter view never mixes two quarters. Before, the requests sent
+// currentMonthIdx for quarter too: browse to June, switch to Quarter, and COGS / the display-currency
+// KPIs came back for Q2 while revenue and expenses were Q3.
+function _periodIntentIdx(period){
+  const { curFyIdx } = _fyContext();
+  if(period==='month') return (typeof currentMonthIdx!=='undefined') ? currentMonthIdx : curFyIdx;
+  if(period==='quarter') return curFyIdx;
+  return null;
+}
+window._periodIntentIdx = _periodIntentIdx;
+
 function _periodWindow(period, monthIdx){
   // F87: boundaries come from the canonical resolver as 'YYYY-MM-DD' STRINGS, inWin is a STRING
   // compare + D2 (never recognise a row dated after today) — identical to the server. No
@@ -2158,8 +2172,7 @@ function _periodWindow(period, monthIdx){
   const _absOf=ymd=>parseInt(ymd.slice(0,4),10)*12+(parseInt(ymd.slice(5,7),10)-1);
   const _lastLbl=end=>{const a=_absOf(end)-1;return _MN[a%12]+' '+Math.floor(a/12);};   // last INCLUDED month (end is exclusive)
   const kind=(period==='month'||period==='quarter')?period:'year';
-  const idx=(kind==='month')?((monthIdx==null)?(typeof currentMonthIdx!=='undefined'?currentMonthIdx:curFyIdx):monthIdx)
-          :(kind==='quarter')?((monthIdx==null)?curFyIdx:monthIdx):null;
+  const idx=(kind==='year') ? null : ((monthIdx==null) ? _periodIntentIdx(kind) : monthIdx);   // L9
   const rp=window.FinFlowDates.resolvePeriod({ period:kind, monthIdx:idx, fyStartMonth:fyStartIdx, today });
   const start=rp.start, end=rp.end;                                                    // half-open [start,end) strings
   const inWin=d=>{const y=window.FinFlowDates._toYmd(d);return y!=null&&y<=today&&y>=start&&y<end;};
@@ -5209,7 +5222,7 @@ function _cogsPeriodParams(){
   // no local-midnight window crosses the wire. Mirrors the /api/reports contract.
   const period=(typeof currentPeriod!=='undefined')?currentPeriod:'year';
   qs.set('period', period);
-  if(period!=='year' && typeof currentMonthIdx!=='undefined') qs.set('monthIdx', String(currentMonthIdx));
+  const _mi=_periodIntentIdx(period); if(_mi!=null) qs.set('monthIdx', String(_mi));   // L9: same quarter as the native KPIs
   const _fyNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
   qs.set('fyStart', String(Math.max(0,_fyNames.indexOf((document.getElementById('s-fy')||{}).value||'January'))));
   return qs;
@@ -5252,7 +5265,7 @@ async function _applyConvertedKPIs(ccy){
     const qs=new URLSearchParams({display:ccy});
     // F87: send INTENT; the server resolves the window (no local-midnight window on the wire).
     qs.set('period', period);
-    if(period!=='year' && typeof currentMonthIdx!=='undefined') qs.set('monthIdx', String(currentMonthIdx));
+    const _mi=_periodIntentIdx(period); if(_mi!=null) qs.set('monthIdx', String(_mi));   // L9: same quarter as the native KPIs
     // F34 B: fiscal-year start month (matches the client overview-chart indexing) so the server's
     // converted monthly buckets align with the chart's fiscal months.
     const _fyNames=['January','February','March','April','May','June','July','August','September','October','November','December'];

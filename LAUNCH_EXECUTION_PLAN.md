@@ -183,6 +183,15 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   vendors-payables-ui 2, c1-journals 12, timesheet-entity-scope 6, timesheet-switch-reload 3,
   expense-breakdown-all-surfaces 10. bundle:check in sync.
 
+- 2026-10-07 — **1.1 / L9 one quarter per Quarter view** + the 1.1 parity instrument. Harnesses
+  `verify-quarter-intent.js` RED 3/8 on pre-fix (native net −$20; EUR rev €1.5K / net €222) → GREEN 8/8;
+  `verify-full-leg-parity.js` (every headline surface vs hand values, year/month/quarter: server reports,
+  P&L + rows, GL reconcile + P&L, balance sheet, cash-flow; dashboard KPIs, chart REV/EXP vs server monthly,
+  Invoices/Payments Received/Vendors/Cash Flow/Reports cards) GREEN 27/27 (RED on pre-fix at the quarter
+  check). Gates step1–4 green; regression green: b5-currency 5, dashboard-render 9, f102-payroll-boot 10,
+  f126-mrr-fx-convert 10, f85-client-period-basis 3, journal-dashboard-parity 10, verification-cells 26,
+  a8c-fx-reconcile 13, cogs-page-revenue 7, fk1-inventory-cogs 6.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
@@ -213,6 +222,10 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
 - **L8** (open) Bills · "Due This Week" compares dates as INSTANTS (`new Date(b.due_date)` vs a local-midnight
   `Date`) — Rule 10 class (F87); viewer-timezone dependent at the week edges. Same file has
   `_billsOverdueSum` (F-C1, string-based) as the pattern to follow.
+- **L9** (FIXED, see Progress Log) Quarter view mixed two quarters: native KPIs resolve "quarter" to TODAY's
+  fiscal quarter, but `_cogsPeriodParams` (COGS subtracted from Net profit) and `_applyConvertedKPIs`
+  (display-currency KPIs) sent `monthIdx=currentMonthIdx` — the month last browsed in Month view. Browse to
+  June → Quarter: native net −$20 (Q2 COGS against Q3 zero revenue/opex); EUR revenue €1.5K (Q2×2) beside $0.
 
 ## Decisions (irreversible-safe choices the agent made)
 - **D1 — Working branch & pushing.** Commits go on `dash-je-fix` only. This run executes in an ephemeral
@@ -230,5 +243,8 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   This month" = cash paid against bills this month (bill-linked payments made) — the same rows the Vendors
   and Payments Made "Paid" cards use. Cards with no period label (Largest/Avg payment, Cash/Card sales)
   stay all-time. Quotes have no business date, so their month is `created_at`.
+- **D6 — Quarter = today's quarter (L9).** The Quarter view has no navigator (the month navigator is hidden
+  for it) and its prior-period baseline is already `curFyIdx − 3`, so "Quarter" means today's fiscal quarter
+  on every surface; `_periodIntentIdx(period)` is the single source for native windows and server intents.
 - **D4 — Commit trailer.** The plan's template says `Claude Opus 4.8`; commits use the attribution of the
   model actually running this session (accuracy over copying a stale template).

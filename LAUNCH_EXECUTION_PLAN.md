@@ -273,10 +273,18 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   balance sheet / forecast, payroll, COGS, customers, vendors, investments ($60 dashboard == page == 5×12).
   Open from 1.1: **L6b** (journal AR/AP/inventory/tax legs — owner design).
 
+- 2026-10-07 — **1.4 / L2 dead domain.** Harness `verify-app-domain.js` (boots the server with and without APP_URL,
+  reads /sitemap.xml; + a labelled STRUCTURAL no-dab1 check): RED 3/4 on pre-fix (dab1 locs both ways;
+  .env.example) → GREEN 4/4. /sitemap.xml now generated from appUrl(); static file removed. Regression green:
+  accountant-billing 14, email-resend 10, email-escaping 23, security-headers 13.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
-- **L2** (open) `APP_URL`/dab1 dead-domain audit — Phase 1.4.
+- **L2** (FIXED) Dead-domain audit. Shipped code named the dead `dab1` origin in `public/sitemap.xml` (every
+  `<loc>` → search engines handed dead URLs) and `.env.example` (`ALLOWED_ORIGIN`, `APP_URL` example values).
+  `app-url.js` LIVE_FALLBACK was already dab2. Password-reset / Stripe return / email links all build from
+  `APP_URL` (or the request host) — correct once the env is set (Owner Handoff).
 - **L3** (FIXED, see Progress Log) Expense breakdown ≠ opex total on 3 surfaces. Full-leg seed (opex 614):
   server `expenseBreakdown` Σ=602 and dashboard bars Σ=602 (posted expense JE 12 in no category); Expenses
   page bars Σ=565 (only orphan payments as "Bill payments" — issued bill 40, vendor credit −3, JE 12 missing)
@@ -348,6 +356,14 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   the customer record — Acme's contact showed 0.00 with 700 invoiced to "Acme". Now derived on read (N24
   pattern). Also: wiring `saveCustomer` pushed into `window.customers`, a binding `renderCustomers` never
   reads (it reads app-main's top-level `let customers`), so a new customer wasn't listed until reload.
+- **L19** (open, owner) Canonical domain is undecided in code: `landing.html` canonical + og:url + og/twitter
+  image = `https://finflow.io/`, email is planned on `finflow.app` (Resend), the app runs on Railway dab2. Pick
+  ONE public domain; then set APP_URL and fix the 4 landing.html tags (Owner Handoff).
+- **L20** (open, owner/housekeeping) **94 `.fuse_hidden*` files are tracked in git** (root + `public/`), ~MBs of
+  FUSE/OneDrive temp leftovers (first added in e644813): copies of the old **AUDIT_MASTER.md** ("FinFlow — Master
+  Audit", up to 447 KB) and of index.html. Not served (express static ignores dotfiles). They should be
+  untracked + `.gitignore`d — AFTER the newest audit copy is recovered (Phase 1.2 uses it). Same root cause as
+  the "move the repo out of OneDrive" handoff item.
 
 ## Decisions (irreversible-safe choices the agent made)
 - **D1 — Working branch & pushing.** Commits go on `dash-je-fix` only. This run executes in an ephemeral

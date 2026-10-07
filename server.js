@@ -5754,7 +5754,15 @@ app.get('/admin', (req, res) => {
   });
 });
 app.get('/sitemap.xml', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'sitemap.xml'));
+  // L2 (F29 single source): the sitemap's origin is appUrl() — APP_URL, else the live fallback — never a
+  // hard-coded host. The static public/sitemap.xml named a DEAD Railway origin, and a domain swap needed a
+  // file edit as well as the env var.
+  const base = appUrl();
+  res.type('application/xml').send('<?xml version="1.0" encoding="UTF-8"?>\n'
+    + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    + '  <url>\n    <loc>' + base + '/</loc>\n    <changefreq>weekly</changefreq>\n    <priority>1.0</priority>\n  </url>\n'
+    + '  <url>\n    <loc>' + base + '/app</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.8</priority>\n  </url>\n'
+    + '</urlset>\n');
 });
 // Favicon — return 204 if no file is bundled so it doesn't 500 via the
 // static handler. Place this before the wildcard so HEAD requests succeed.

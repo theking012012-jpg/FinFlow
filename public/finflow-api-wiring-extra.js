@@ -1011,12 +1011,14 @@
         // byCategory is MANUAL expense rows only; bd.total is the FULL opex (bills + payments +
         // payroll too), so the remainder must be exp − payroll − Σ(manual categories), NOT
         // exp − payroll − bd.total (which double-subtracts and drove a bogus negative "Bills & other").
-        const bd = (typeof window.computeExpenseBreakdown === 'function') ? window.computeExpenseBreakdown(period) : { byCategory: {} };
-        const catList = Object.entries(bd.byCategory || {}).map(([c, a]) => [c, parseFloat(a) || 0]);
-        const manualCatsSum = catList.reduce((s, kv) => s + kv[1], 0);
-        const billsOther = Math.round((exp - pay - manualCatsSum) * 100) / 100;
-        catList.push(['Payroll', pay]);
-        if (Math.abs(billsOther) >= 0.01) catList.push(['Bills & other', billsOther]);
+        // L14: the ONE category list (D3 — direct categories + Payroll + Bills & vendors + Journal entries),
+        // every category listed. It used to fold every non-direct leg into one "Bills & other" remainder, so
+        // the statement's lines disagreed with the dashboard / Expenses page. If the client decomposition and
+        // the server total ever differ, the gap stays VISIBLE as "Unreconciled difference" (never hidden).
+        const bd = (typeof window.computeExpenseBreakdown === 'function') ? window.computeExpenseBreakdown(period) : null;
+        const catList = (bd && typeof window._expenseCategoryRows === 'function') ? window._expenseCategoryRows(bd, { all: true }).map(([c, a]) => [c, a]) : [['Payroll', pay]];
+        const _gap = Math.round((exp - catList.reduce((s, kv) => s + kv[1], 0)) * 100) / 100;
+        if (Math.abs(_gap) >= 0.01) catList.push(['Unreconciled difference', _gap]);
         catList.sort((a, b) => b[1] - a[1]);
         const catBar = ([label, amt]) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono);color:var(--red)">${m(amt)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${gold};opacity:.75;width:${exp > 0 ? Math.max(2, Math.round((amt / exp) * 100)) : 0}%"></i></div></div>`;
         const pill = t => `<span style="font-size:10px;font-weight:600;color:${gold};background:rgba(200,164,74,.14);border-radius:5px;padding:2px 7px;margin-left:6px">${e(t)}</span>`;

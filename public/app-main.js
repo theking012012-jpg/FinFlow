@@ -2103,8 +2103,9 @@ window.computeExpenseBreakdown = computeExpenseBreakdown;
 // its own list and each dropped a different leg (the Expenses page showed only orphan payments as
 // "Bill payments"; every surface dropped posted journals), so no breakdown summed to its headline.
 // ≤4 categories show by name, more ⇒ top 3 + "Other".
-function _expenseCategoryRows(bd){
+function _expenseCategoryRows(bd, opts){
   if(!bd) return [];
+  const all = !!(opts && opts.all);   // L14: a statement lists every category; the 4 bars roll the tail into "Other"
   const cats = {};
   Object.entries(bd.byCategory || {}).forEach(([c, v]) => { if(v) cats[c] = (cats[c] || 0) + v; });
   if(bd.payroll) cats['Payroll'] = (cats['Payroll'] || 0) + bd.payroll;
@@ -2113,6 +2114,7 @@ function _expenseCategoryRows(bd){
   if(bd.journalExpense) cats['Journal entries'] = (cats['Journal entries'] || 0) + bd.journalExpense;
   const sorted = Object.entries(cats).filter(([, v]) => Math.abs(v) > 0.005).sort((a, b) => b[1] - a[1]);
   // Four bars: ≤4 categories show by name; more ⇒ top 3 + an "Other" rollup (same rule as the server).
+  if(all) return sorted;
   const keep = sorted.length <= 4 ? 4 : 3;
   const rows = sorted.slice(0, keep);
   const rest = sorted.slice(keep).reduce((s, [, v]) => s + v, 0);

@@ -243,6 +243,15 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   payroll-approve-guard 5, payroll-run-atomic 7, payroll-state-guards 9, boot-modes 3, migrate-entrypoint 3,
   f57-cash-card 14, journal-cash 11, full-leg-parity 28, b4-2-3-payroll-pl-transition 16.
 
+- 2026-10-07 — **seed fix after L7** (`5600e41`, test-only): reports-parity's prior-year paid run and the
+  full-leg June run are dated on their real paid dates (mark-paid now stamps today). Missed in L7's regression
+  set — caught here; all 8 scenario users re-run green.
+- 2026-10-07 — **1.1 / L14 P&L statement lines.** `verify-reports-parity.js` + an L14 assertion: RED on pre-fix
+  ("Bills & other $56") → GREEN 11/11. `verify-f137g-pl-statement.js`'s remainder-formula assertion restated
+  for the shared list (lines present, Σ == canonical total, no unreconciled gap) → 19/19. Regression green:
+  pl-statement-period-ui 4, expense-breakdown-all-surfaces 10, expense-breakdown-reconcile 8, step4 5.
+  bundle:check in sync.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (open) renderInvestments null-textContent boot error — Phase 1.3.
@@ -304,9 +313,9 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
 - **L13** (FIXED) **Tax-Deductible Expenses** report: 'yes' rows only, all time (10, a prior-year row) vs the
   server / Income Tax Estimate rule yes 100% + half 50% over the fiscal year (4). Same class as L10's portal
   Deductible card.
-- **L14** (open, cosmetic) P&L report groups expenses as Payroll / "Bills & other" / categories — the
-  journal leg is folded into "Bills & other", not the shared "Bills & vendors" / "Journal entries" list (D3).
-  Sums correctly (614); label-only divergence.
+- **L14** (FIXED) P&L report grouped expenses as Payroll / "Bills & other" (a remainder: exp − payroll −
+  manual categories) / categories — the journal leg and bills folded into one line, not the shared list (D3).
+  Now the shared list, every category; any client/server gap shows as "Unreconciled difference".
 - **L15** (FIXED with L6) Balance Sheet report: Total Assets 453 but its lines were Cash −200 + AR 635 = 435 —
   the 18 of journal cash (J1010) was in the total with no line. Now Cash −182 + AR 635 = 453.
 - **L16** (FIXED) Page exports: Vendors / Bills / Quotes / Items exports read globals nothing assigns

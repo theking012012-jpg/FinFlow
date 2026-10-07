@@ -6,7 +6,8 @@
  * Seed: fullLegScenario (FY2026, June) + PRIOR-fiscal-year rows that every FY2026 figure must exclude:
  *   a PAID payroll run for period 2025-12 (gross 111 + bonus 777 = 888) and a 100%-deductible expense
  *   dated 2025-11-20 (amount 10). Hand-computed FY2026 values (today pinned 2026-07-25):
- *     P&L           revenue 745 · expenses 614 · net 131
+ *     P&L           revenue 745 · expenses 614 · net 131; expense lines Payroll 550 · Bills & vendors 44 ·
+ *                   Journal entries 12 · Office 8 (L14 — bug: "Bills & other" 56)
  *     Balance Sheet AR 635 · AP 22 · equity 131 (2025 rows: the 2025 run + expense hit equity → see below)
  *     Cash Flow     in 110 · out 292 (FY2026 window; journal cash legs incl. — L6)
  *     AR 635 · AP 22 · Sales by Customer 745
@@ -64,6 +65,9 @@ async function seed({ http, client }) {
 
     const pl = await gen('Profit & Loss Statement');
     A('P&L: revenue 745 · expenses 614 · net 131', near(after(pl, 'Total Revenue'), 745) && near(after(pl, 'Total Operating Expenses'), 614) && near(after(pl, 'Net Profit'), 131), pl.slice(0, 300));
+    // L14: the P&L's operating-expense lines use the ONE category list (D3), not a "Bills & other" remainder.
+    A('P&L lines: "Bills & vendors" 44 + "Journal entries" 12 (bug: one "Bills & other" 56)',
+      near(after(pl, 'Bills & vendors'), 44) && near(after(pl, 'Journal entries'), 12) && !/Bills & other/.test(pl), pl.slice(pl.indexOf('Operating Expenses'), pl.indexOf('Operating Expenses') + 260));
     const cf = await gen('Cash Flow Statement');
     A('Cash Flow: in 110 · out 292', near(after(cf, 'Total Inflow'), 110) && near(after(cf, 'Total Outflow'), 292), cf.slice(0, 200));
     const ar = await gen('Accounts Receivable');

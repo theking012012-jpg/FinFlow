@@ -525,7 +525,7 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   (gl opex 602 vs 614 on the full-leg set) and the GL never served — the structural cure stayed off exactly for
   journal users. Gate opex = all expense accounts except 5000 COGS and 7000 FX (the balance-sheet gate's rule).
 
-- **L35** (FIXED, owner-verification pending — FIX_PLAN_AR_OVERDUE.md) AR "Overdue" was not netted of open credit
+- **L35** (FIXED — harness + gates owner-executed; full sweep pending — FIX_PLAN_AR_OVERDUE.md) AR "Overdue" was not netted of open credit
   notes on the client, so it could exceed Outstanding — live dab2 2026-10-07: Overdue $14,300 > Outstanding $13,550
   (server overdue $13,050). Class enumerated (Rule 13, both directions): server `/api/reports.overdue` and
   `computeBooks.arSummary.overdueTotal` already net + clamp (correct). **Root 1** client `arOutstanding()` returned
@@ -534,8 +534,12 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   fixed `3b08167` (canonical `ar_outstanding`, D15). **Root 3** accountant portal (status literal, gross, no netting)
   — already fixed by L10 `1e72aa2` (portal reads `arSummary.overdueTotal`); live dab2 ran `470dce2`, pre-L10.
   Harness `verify-ar-overdue-netting.js` (`930b714`): seed partial + literal-overdue + not-due invoices + open CN ⇒
-  hand-computed outstanding 3,100 / overdue 2,300; buggy 3,500 (R1, R2) and 1 · 1,500 (R3 pre-L10). Per the plan
-  the harness runs ONLY in the owner's PowerShell — UNEXECUTED here (Rule 14); results to be pasted back.
+  hand-computed outstanding 3,100 / overdue 2,300; buggy 3,500 (R1, R2) and 1 · 1,500 (R3 pre-L10).
+  **EXECUTED by the owner (PowerShell, 2026-10-08):** `930b714` 6 FAIL (R1 ×4 incl. "overdue ≤ outstanding", R2 ×2)
+  → `a5307a4` 2 FAIL (R2) → `b413e3d` ALL GREEN 12/0; against `470dce2` (live at audit time) 9 FAIL incl. all
+  three R3 assertions. Gates green: step1 26/0, step2 63/0, step3 56/0, step4 5/0, full-leg-parity 28/0,
+  accountant-portal-parity 12/0, payment-reminders 25/0, reminders-context 10/0, ar-by-customer 15/0.
+  Full sweep ×3: NOT yet run (run 1 was stopped by the owner before any harness reported).
 - **L36** (open — same class, frozen out of this round) The client's AR "today" is the UTC day
   (`arOutstanding`: `resolvedToday(new Date())` with no zone; accountant portal `_portalOverdueInvoices`:
   `new Date().toISOString()`), while the server's overdue/D2 boundary is the ENTITY's day. For an entity far from

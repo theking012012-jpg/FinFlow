@@ -4767,15 +4767,21 @@ function clearAIChat(){
           Object.keys(byCust).forEach(k => { if (Math.abs(byCust[k]) < 0.005) delete byCust[k]; });
           entries = Object.entries(byCust).sort((a, b) => b[1] - a[1]);
         }
-        const rows = entries.map(([c, amt]) => shareRow(c, amt, ar.total || 1, 'var(--red)')).join('');
+        // L39: the total IS the balance-sheet AR line — a control account (customer subledger + posted journal AR legs,
+        // D16). The journal leg has no customer, so it is its own explicit row: Σ rows == total == balance sheet.
+        let _arBs = null; try { _arBs = await api('POST', '/api/reports/balance-sheet', {}); } catch (_) { _arBs = null; }
+        const _arJe = (_arBs && _arBs.journalAdjustments) ? (parseFloat(_arBs.journalAdjustments.ar) || 0) : 0;
+        if (Math.abs(_arJe) >= 0.005) entries.push(['Manual journal entries (no customer)', _arJe]);
+        const _arTotal = (_arBs && _arBs.accountsReceivable != null) ? (parseFloat(_arBs.accountsReceivable) || 0) : ar.total;
+        const rows = entries.map(([c, amt]) => shareRow(c, amt, _arTotal || 1, 'var(--red)')).join('');
         _rptBody(
           tiles([
-            tile('Total Receivable', m(ar.total), (ar.count || 0) + ' open', 'var(--green)'),
+            tile('Total Receivable', m(_arTotal), (ar.count || 0) + ' open', 'var(--green)'),
             tile('Overdue', m(ar.overdueTotal || 0), (ar.overdueCount || 0) + ' invoices', (ar.overdueTotal || 0) > 0 ? 'var(--red)' : 'var(--t2)'),
           ])
           + hdr('Outstanding by customer')
           + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding receivables.</div>')
-          + row('Total Receivable', m(ar.total), { bold: true, color: 'var(--green)' }));
+          + row('Total Receivable', m(_arTotal), { bold: true, color: 'var(--green)' }));
         return;
       }
 
@@ -4810,12 +4816,17 @@ function clearAIChat(){
         });
         Object.keys(byVendor).forEach(k => { if (Math.abs(byVendor[k]) < 0.005) delete byVendor[k]; });
         const apTotal = parseFloat(bs.accountsPayable) || 0;
-        const entries = Object.entries(byVendor).sort((a, b) => b[1] - a[1]);
+        const vendorEntries = Object.entries(byVendor).sort((a, b) => b[1] - a[1]);
+        const entries = vendorEntries.slice();
+        // L39: balance-sheet AP is a control account (bills subledger + posted journal AP legs, D16); the journal leg has
+        // no vendor, so it is its own explicit row — Σ rows == Total Payable again (it broke when L6b moved the total).
+        const _apJe = (bs && bs.journalAdjustments) ? (parseFloat(bs.journalAdjustments.ap) || 0) : 0;
+        if (Math.abs(_apJe) >= 0.005) entries.push(['Manual journal entries (no vendor)', _apJe]);
         const rows = entries.map(([v, amt]) => shareRow(v, amt, apTotal || 1, 'var(--red)')).join('');
         _rptBody(
           tiles([
-            tile('Total Payable', m(apTotal), entries.length + ' vendor' + (entries.length === 1 ? '' : 's'), 'var(--red)'),
-            tile('Largest', entries.length ? m(entries[0][1]) : m(0), entries.length ? String(entries[0][0]) : '—'),
+            tile('Total Payable', m(apTotal), vendorEntries.length + ' vendor' + (vendorEntries.length === 1 ? '' : 's'), 'var(--red)'),
+            tile('Largest', vendorEntries.length ? m(vendorEntries[0][1]) : m(0), vendorEntries.length ? String(vendorEntries[0][0]) : '—'),
           ])
           + hdr('Outstanding by vendor')
           + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding payables.</div>')

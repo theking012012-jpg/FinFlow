@@ -10578,6 +10578,9 @@ async function glBalanceSheet(userId, entityId, opts = {}) {
     totalAssets: ar, totalAssetsExcludesCash: true,
     accountsPayable: ap, taxPayable: 0, payrollLiabilities: 0, totalLiabilities: ap,
     equity: r2(ar - ap),
+    // L39: control = subledger + posted journal legs — the reconciliation the AR / AP reports show row by row.
+    subledger: { ar: r2(books.outstanding), ap: r2(books.accountsPayable) },
+    journalAdjustments: { ar: r2(jb.ar), ap: r2(jb.ap) },
   });
   // Single entity -> glFinancials(native). Consolidated (all entities) -> glConsolidated (per-leg base
   // conversion, matches computeBooks). Both reconcile-gated; consolidated also requires full FX coverage.
@@ -10619,6 +10622,11 @@ async function glBalanceSheet(userId, entityId, opts = {}) {
     accountsPayable: named.ap, taxPayable: named.taxPayable, payrollLiabilities: named.payrollLiabilities,   // L6b AP incl. J2000 · L6c tax incl. J2200
     totalLiabilities: r2(f.balanceSheet.liabilities), equity: r2(f.balanceSheet.equity),
     lines: { assets: lines.assets, liabilities: lines.liabilities, equity: lines.equity },
+    // L39: control = subledger + posted journal legs (the gate above proved glAR = outstanding + jb.ar, and — single
+    // entity — glAP = accountsPayableNet + jb.ap; the consolidated gate does not check AP). AP's subledger is the
+    // SIGNED net here — the per-vendor rows (bills less vendor credits) sum to it — matching the ledger AP shown.
+    subledger: { ar: r2(books.outstanding), ap: r2(books.accountsPayableNet) },
+    journalAdjustments: { ar: r2(jb.ar), ap: r2(jb.ap) },
   };
   if (consolidated) {
     res.baseCurrency = f.base; res.consolidated = true; res.fxCoverage = f.fxCoverage;

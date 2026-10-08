@@ -582,7 +582,7 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   permittedEntityIds)` — a single entity ⇒ its day; a consolidated scope whose entities share one timezone ⇒ that
   zone's day; MIXED zones ⇒ UTC (KNOWN LIMITATION — a consolidated view across zones has no single calendar day;
   owner decision if it matters). Routed through computeBooks, glConsolidated, /api/reports, /api/reports/profit-loss.
-  Expected GREEN 9/0 at `49a0d3c` — UNEXECUTED (owner to run). **Main (`4db4fcc`) carries `00c0996` but NOT
+  Expected ALL GREEN 10/0 at `49a0d3c` — UNEXECUTED (owner to run). **Main (`4db4fcc`) carries `00c0996` but NOT
   `49a0d3c`, so the portal fix is ineffective in the All-entities view until the next push.**
   Harness breakage from L36 (test-only): source-slicing probes that extract `_fyContext` / `_periodWindow` /
   `arOutstanding` threw `ReferenceError: _entityToday` — owner-observed on step4-client-gate (fixed `165e924`);

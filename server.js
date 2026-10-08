@@ -10354,7 +10354,7 @@ async function glConsolidated(userId, opts = {}) {
   let where = `ll.user_id=$1 AND le.entry_date <= $2::date`;
   if (entityId != null) { params.push(entityId); where += ` AND le.entity_id=$3`; }
   const { rows } = await pool.query(
-    `SELECT le.entity_id AS eid, la.code, la.type, la.normal, le.entry_date::text AS d,
+    `SELECT le.entity_id AS eid, la.code, la.name, la.type, la.normal, le.entry_date::text AS d,
             ll.debit::float AS debit, ll.credit::float AS credit
        FROM ledger_lines ll
        JOIN ledger_accounts la ON la.id = ll.account_id
@@ -10387,14 +10387,14 @@ async function glConsolidated(userId, opts = {}) {
     // converted per-line rollup (PRIMARY)
     if (rate == null) { if (lineAmt !== 0) { fxCoverage.complete = false; fxCoverage.totalRows++; fxCoverage.unconvertible.push({ code: r.code, date: r.d, from, to: displayCur }); } continue; }
     if (displayCur && from !== displayCur && lineAmt !== 0) { fxCoverage.totalRows++; fxCoverage.convertedRows++; }
-    const a = acc[r.code] || (acc[r.code] = { code: r.code, type: r.type, normal: r.normal, dAll:0, cAll:0, dP:0, cP:0 });
+    const a = acc[r.code] || (acc[r.code] = { code: r.code, name: r.name, type: r.type, normal: r.normal, dAll:0, cAll:0, dP:0, cP:0 });   // L6c: name labels the line
     const cd = r.debit * rate, cc = r.credit * rate;
     a.dAll += cd; a.cAll += cc;
     if (r.d >= winStart && r.d < winEnd) { a.dP += cd; a.cP += cc; }
   }
   const accounts = Object.values(acc).map(a => {
     const netAll = r2(a.dAll - a.cAll), netP = r2(a.dP - a.cP);
-    return { code: a.code, type: a.type, normal: a.normal, net_all: netAll, net_period: netP, balance: r2(a.normal === 'debit' ? netAll : -netAll) };
+    return { code: a.code, name: a.name, type: a.type, normal: a.normal, net_all: netAll, net_period: netP, balance: r2(a.normal === 'debit' ? netAll : -netAll) };
   });
   const tb = accounts.map(a => ({ code: a.code, debit: a.net_all > 0 ? a.net_all : 0, credit: a.net_all < 0 ? r2(-a.net_all) : 0 }));
   const tbDebit = r2(tb.reduce((s, l) => s + l.debit, 0)), tbCredit = r2(tb.reduce((s, l) => s + l.credit, 0));
@@ -10599,13 +10599,19 @@ async function glBalanceSheet(userId, entityId) {
       ' glAR=' + glAR + ' AR=' + ar + ' glAP=' + glAP + ' AP=' + ap + ' tb=' + f.trialBalance.balanced + ' cov=' + coverageOk);
     return oracle();
   }
+  // L6c: the statement's LINES are a partition of the SAME accounts the totals are summed from, so Σ lines = totals
+  // by construction — no account can sit inside a total with no line (J1500 Equipment, J2100 Credit Card, J2200 Tax
+  // Payable, J3000 Owner's Equity and any typed code did, before). The legacy scalar fields read the same partition.
+  const lines = balanceSheetLines(f.accounts);
+  const named = lines.named;
   const res = {
     source: 'gl',
-    cash: r2((bal['1000'] || 0) + JOURNAL_CASH_LEDGER_CODES.reduce((s, c) => s + (bal[c] || 0), 0)), cashTracked: true,   // L6
-    accountsReceivable: glAR, inventory: r2((bal['1200'] || 0) + (bal['J1200'] || 0)),   // L6b
+    cash: named.cash, cashTracked: true,   // L6: system 1000 + journal cash accounts
+    accountsReceivable: named.ar, inventory: named.inventory,   // L6b: system + J1100 / J1200
     totalAssets: r2(f.balanceSheet.assets), totalAssetsExcludesCash: false,
-    accountsPayable: glAP, taxPayable: r2(bal['2100'] || 0), payrollLiabilities: r2(bal['2200'] || 0),   // L6b: AP incl. J2000
+    accountsPayable: named.ap, taxPayable: named.taxPayable, payrollLiabilities: named.payrollLiabilities,   // L6b AP incl. J2000 · L6c tax incl. J2200
     totalLiabilities: r2(f.balanceSheet.liabilities), equity: r2(f.balanceSheet.equity),
+    lines: { assets: lines.assets, liabilities: lines.liabilities, equity: lines.equity },
   };
   if (consolidated) {
     res.baseCurrency = f.base; res.consolidated = true; res.fxCoverage = f.fxCoverage;
@@ -10649,9 +10655,50 @@ const JOURNAL_CASH_LEDGER_CODES = ['J1000', 'J1010', 'J1020'];
 // L6b: the journal picker's BALANCE-SHEET control accounts whose meaning is unambiguous (same code AND same meaning
 // in the JE template and the system chart) — owner-ratified map. A posted journal's leg on these lands on the
 // balance-sheet line, read from the GL on BOTH sides of the reconcile gate (computeBooks.journalBalances and the
-// glBalanceSheet reader). Template 2100 "Credit Card" / 2200 "Tax Payable" collide with system 2100 Tax Payable /
-// 2200 Payroll Liabilities — OWNER DECISION pending; until then they stay in total liabilities only.
+// glBalanceSheet reader). Template 2100 "Credit Card" / 2200 "Tax Payable" collide BY CODE with system 2100 Tax
+// Payable / 2200 Payroll Liabilities; the J-namespace keeps them apart and BS_NAMED_LINE (L6c) places them by meaning.
 const JOURNAL_BS_LEDGER_CODES = { J1100: 'ar', J2000: 'ap', J1200: 'inventory' };
+// L6c: the balance sheet's NAMED lines — system posting anchors plus the journal accounts that mean the same thing.
+// Owner direction (2026-10-08): the JE template's 2200 "Tax Payable" posts to J2200 → the Tax Payable line (system
+// 2100 is the ledger's Tax Payable). Every account NOT named here — the template's 2100 "Credit Card", 1500
+// "Equipment", equity, any typed code — is its own line under its ledger name (balanceSheetLines).
+const BS_LINE_SECTION = { cash: 'asset', ar: 'asset', inventory: 'asset', ap: 'liability', taxPayable: 'liability', payrollLiabilities: 'liability' };
+const BS_LINE_LABEL = { cash: 'Cash & Equivalents', ar: 'Accounts Receivable', inventory: 'Inventory', ap: 'Accounts Payable', taxPayable: 'Tax Payable', payrollLiabilities: 'Payroll Liabilities' };
+const BS_NAMED_LINE = Object.assign(
+  { '1000': 'cash', '1100': 'ar', '1200': 'inventory', '2000': 'ap', '2100': 'taxPayable', '2200': 'payrollLiabilities', J2200: 'taxPayable' },
+  Object.fromEntries(JOURNAL_CASH_LEDGER_CODES.map(c => [c, 'cash'])),
+  JOURNAL_BS_LEDGER_CODES);
+// Partition every balance-sheet account (as glFinancials / glConsolidated return them: code, name, type, net_all
+// debit-positive) into statement lines. Assets present debit-positive, liabilities and equity credit-positive.
+// Income and expense accounts are not closed, so equity carries them as one "Accumulated net income" line — the same
+// earningsAll the totals' equity includes. Cash, AR and AP always show; any other line only when it is non-zero.
+function balanceSheetLines(accounts) {
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const named = { cash: 0, ar: 0, inventory: 0, ap: 0, taxPayable: 0, payrollLiabilities: 0 };
+  const other = { asset: [], liability: [], equity: [] };
+  let earnings = 0;
+  for (const a of accounts || []) {
+    const net = Number(a.net_all) || 0;
+    if (a.type === 'income' || a.type === 'expense') { earnings -= net; continue; }   // income credit-, expense debit-natural
+    if (!other[a.type]) continue;
+    const amt = a.type === 'asset' ? net : -net;
+    const k = BS_NAMED_LINE[a.code];
+    if (k && BS_LINE_SECTION[k] === a.type) { named[k] += amt; continue; }
+    const code = String(a.code || '').replace(/^J/, '');
+    other[a.type].push({ key: 'acct:' + a.code, code, label: String(a.name || '').trim() || ('Account ' + code), amount: amt });
+  }
+  for (const k of Object.keys(named)) named[k] = r2(named[k]);
+  const nz = l => Math.abs(l.amount) >= 0.005;
+  const byCode = (x, y) => String(x.code).localeCompare(String(y.code));
+  const namedLine = k => ({ key: k, label: BS_LINE_LABEL[k], amount: named[k] });
+  const others = t => other[t].map(l => ({ ...l, amount: r2(l.amount) })).filter(nz).sort(byCode);
+  return {
+    named,
+    assets: [namedLine('cash'), namedLine('ar'), namedLine('inventory')].filter(l => l.key !== 'inventory' || nz(l)).concat(others('asset')),
+    liabilities: [namedLine('ap'), namedLine('taxPayable'), namedLine('payrollLiabilities')].filter(l => l.key === 'ap' || nz(l)).concat(others('liability')),
+    equity: others('equity').concat([{ key: 'earnings', label: 'Accumulated net income', amount: r2(earnings) }]),
+  };
+}
 async function postJournalToLedger(client, { userId, entityId, journal }) {
   let lines = [];
   try { lines = Array.isArray(journal.lines) ? journal.lines : JSON.parse(journal.lines || '[]'); } catch (_) { lines = []; }

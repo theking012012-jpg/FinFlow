@@ -161,14 +161,13 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
 - **Tax worksheet default** (L28): keep the flat 25% placeholder line, switch to the country-suggested rate the app
   already computes, or start blank (D1: FinFlow holds no tax knowledge).
 - **W-2 wages basis** (D7): approved + paid runs today; paid-only is a tax-policy call.
-- **Journal account map (L6b) — ratified 3, ONE decision for you.** Journal lines post to `J<code>`; these reach the
-  balance-sheet line (shipped `b4c4617`): **1100 → Accounts Receivable · 2000 → Accounts Payable · 1200 → Inventory**.
-  Held for you — the JE template collides with the system chart:
-  · template **2200 "Tax Payable"** (system 2200 = Payroll Liabilities) — **recommendation: map J2200 → the Tax
-    Payable line** (match on MEANING; the user picked "Tax Payable").
-  · template **2100 "Credit Card"** (system 2100 = Tax Payable) — **recommendation: map J2100 → a new "Credit card /
-    other current liabilities" line** (neither AP nor tax), and longer-term renumber the template (Credit Card → 2300,
-    Tax Payable → 2100) so picker and ledger agree. Until you decide, both stay in total liabilities only.
+- **Journal account map (L6b / L6c) — RESOLVED 2026-10-08** (owner: "do it right"). Journal lines post to `J<code>`.
+  Named balance-sheet lines: **1100 → Accounts Receivable · 2000 → Accounts Payable · 1200 → Inventory** (`b4c4617`) ·
+  **1000 / 1010 / 1020 → Cash** (L6) · **template 2200 "Tax Payable" → the Tax Payable line** (`98340b3`). Every other
+  account — **template 2100 "Credit Card"**, 1500 "Equipment", equity accounts, any typed code — is **its own line under
+  its ledger name** (`98340b3`, `BS_NAMED_LINE` + `balanceSheetLines`), so the statement always foots. Still optional
+  for you (cosmetic, not money): renumber the JE template (Credit Card → 2300, Tax Payable → 2100) so picker codes and
+  system codes agree — the J-namespace already keeps them apart, so nothing depends on it.
 - **Customer ↔ invoice foreign key** (D8/L17): revenue attribution is by name match until invoices carry a customer id.
 - **Landing page "750+ App integrations"** (audit F51): ~17 have a real connect flow; the claim is marketing copy.
 - **Investments close-position / realised gain** (audit F109) and **entity jurisdiction / region** (F108): features.
@@ -377,6 +376,13 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   at harness level); step4-client-gate 5/0, f57-cash-card 14/0, verify-journal-dashboard-parity 10/0 (the
   `165e924` / `2bf9b2f` helper extractions now executed). Remaining for the done-gate: per-run totals of the 3× full
   sweep. Open owner decisions: journal 2100 / 2200 mapping (L6b), L37 golden master (retire vs make importable).
+
+- 2026-10-08 — Owner: "do it right and verify it before you push; all harness sweeps are mine in PowerShell".
+  L6c (class of the 2100/2200 question): harness `6484526` → server `98340b3` → report `d59582a`. Enumerating its
+  surfaces found L38 (portal's own balance sheet: harness `c2e2b57` → server `a9097b8` → page `5891494`) and L39 (AR /
+  AP reports stopped reconciling after L6b: harness `018e374` → fix `ba08a03`). L37 retired (`760b3e9`, F77 closed).
+  L40 logged (API-only). Verified here: syntax checks, the pure balanceSheetLines probe on hand-computed accounts, the
+  pre-commit hook (bundle from index, verification-sync). Every harness is UNEXECUTED here — owner runs them.
 
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
@@ -599,13 +605,48 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   `arOutstanding` threw `ReferenceError: _entityToday` — owner-observed on step4-client-gate (fixed `165e924`);
   enumerated the class: f57-cash-card, verify-journal-dashboard-parity, verify-verification-cells (fixed `2bf9b2f`).
   The fourth slicer, tests/golden-master-payroll-basisC.js, is L37.
-- **L37** (OPEN — suspect, by READING only, not executed; test-only) `tests/golden-master-payroll-basisC.js`
+- **L37** (CLOSED — retired `760b3e9`; F77 closed with the real-Postgres coverage map) `tests/golden-master-payroll-basisC.js`
   `loadClientEngine()` slices `_fyContext` / `arOutstanding` but its `win` stub has NO `FinFlowDates`; those functions
   have called `window.FinFlowDates.resolvedToday` since F87, so the client leg should throw a TypeError — i.e. it has
   been dead since F87, independent of L36. It lives in tests/ (not tests/harness/) so the sweep never runs it,
   which is why nobody saw it. Rule 5 corollary: retire it (its basis-C coverage is in the harness suite) or make the
-  client engine importable. Not fixed here — owner to decide; confirm by running
-  `node tests/golden-master-payroll-basisC.js` in PowerShell.
+  client engine importable. RESOLVED: retired, not repaired — it was the stub / `status:'final'` file F77 describes
+  (exits 0 regardless), and F77's remaining action was "label/retire". Coverage on real Postgres: step2-gate (rejects
+  'final', DB CHECK 23514), b4-2-3 + verify-f102-payroll-boot (draft = 0, boot load), verify-verification-cells
+  A1/A2/A6 (basis C, roster 5,000 ≠ runs 4,200, client == server), verify-verification-a7-gaps A7.7/A7.8 (F25),
+  verify-ar-overdue-netting / verify-accountant-books-ap / verify-consolidated-ap (AR / AP).
+- **L6c** (FIXED — owner verification pending; class of L6b) The balance sheet's TOTALS summed every ledger account but
+  its LINES named only cash / AR / inventory / AP / system tax / system payroll, so a posted journal to the JE picker's
+  1500 Equipment, 2100 Credit Card, 2200 Tax Payable, 3000 Owner's Equity or any typed code sat inside a total with no
+  line — the statement did not foot (the 2100/2200 question was one instance). Fix: `balanceSheetLines` partitions the
+  SAME accounts the totals are summed from (Σ lines = totals by construction); J2200 → Tax Payable; every other account
+  its own line by ledger name; equity = posted equity accounts + "Accumulated net income"; `bs.lines` in the response;
+  consolidated accounts carry names (`98340b3`). The report renders every line + an Equity section; ASC 830 CTA moved
+  after the Equity total (supplementary, not inside it) (`d59582a`). Harness `verify-gl-bs-lines-foot.js` (`6484526`;
+  hand-computed 7,330 = 1,430 + 5,900; RED expected ×32 pre-fix: 14 entity + 14 consolidated + 4 rendered).
+  Executed here: the pure `balanceSheetLines` on the hand-computed accounts only (scratch probe) — 7,330 / 1,430 / 5,900.
+  Surfaces enumerated (Rule 2/13): /api/reports/balance-sheet (fixed), Balance Sheet report (fixed), accountant portal
+  (L38), 13-week forecast starting cash (reads `cash` — unchanged), AP report / Vendors card (L39), /api/gl/balance-sheet
+  (L40).
+- **L38** (FIXED — owner verification pending) The accountant portal built its OWN balance sheet (failure #2): assets =
+  AR only, liabilities = AP + "Payroll Obligations" = the PERIOD PAYROLL EXPENSE (`books.parts.payroll` — wages already
+  paid are not owed), equity = the difference. Fix: /books returns `glBalanceSheet` itself, scoped to the grant —
+  single permitted entity; whole account for a legacy link (= the owner's All view); ONLY the permitted entities for a
+  fine-grained grant (`glBalanceSheet(…, {permittedEntityIds})` scopes both gate sides: computeBooks and glConsolidated,
+  which now filters ledger rows to permitted + unassigned) (`a9097b8`); the portal page renders the server's lines and
+  totals, no computation (`5891494`). Harness `verify-portal-balance-sheet.js` (`c2e2b57`; A = 4,000 / 400 / 3,600,
+  A+B = 4,777 / 400 / 4,377, the scoped accountant never sees B's 777; RED expected ×17). UNEXECUTED here.
+- **L39** (FIXED — owner verification pending; regression class of L6b) L6b made balance-sheet AR / AP control accounts,
+  but the AR / AP reports' rows are customers / vendors only: the AP report's vendor rows (400) stopped footing to its
+  total (460, the balance sheet), and the AR report's total (customer subledger 1,000) stopped equalling the balance
+  sheet (1,130) — the F137-c/d promises. verify-f137-cashflow-ar-ap-reports stayed green: no journals in its seed.
+  Fix (`ba08a03`): glBalanceSheet states `subledger` + `journalAdjustments` (= its AR / AP); each report adds one
+  "Manual journal entries (no customer / vendor)" row and totals to the balance-sheet line; AP tiles count vendors only.
+  Harness `verify-aging-reports-reconcile.js` (`018e374`; RED expected ×6). UNEXECUTED here.
+- **L40** (OPEN — by READING only; API-only, no UI caller found) `GET /api/gl/balance-sheet` (server.js ~11870) lists raw
+  accounts per type with `totals: f.balanceSheet`; its equity group omits the un-closed earnings that `totals.equity`
+  includes, so Σ equity accounts ≠ totals.equity for any API consumer whenever income / expense exist. Fix candidate:
+  return `balanceSheetLines` (same partition as L6c). Not folded into L6c — it is an API contract change; owner call.
 
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's
@@ -717,7 +758,10 @@ evidence in the agents' reports; money items then executed):
 - **D16 — Balance sheet = control accounts; Outstanding = subledger (L6b).** A manual journal to AR / AP is a
   control-account adjustment with no customer / invoice behind it, so it moves the balance-sheet AR / AP / Inventory
   lines (and the gate on both sides) but NOT the invoice-subledger figures — dashboard "Outstanding", overdue (L35
-  clamp), the AP card, the client `arOutstanding` mirror. The difference between BS AR and Outstanding is exactly the
-  posted journal AR leg.
+  clamp), the client `arOutstanding` mirror. The difference between BS AR and Outstanding is exactly the posted journal
+  AR leg. CORRECTION (2026-10-08, L39): "the AP card" was wrong — the Vendors page payables card reads the balance
+  sheet's AP (N24b), i.e. the CONTROL figure, as does the AP report total. That is kept deliberately (one payables total
+  across Vendors card, AP report and balance sheet); the AR / AP reports now show the journal leg as an explicit row so
+  they foot (L39).
 - **D4 — Commit trailer.** The plan's template says `Claude Opus 4.8`; commits use the attribution of the
   model actually running this session (accuracy over copying a stale template).

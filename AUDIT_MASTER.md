@@ -1858,7 +1858,7 @@ F32 (18 July, owner decision) moved recognition to **ACCRUAL, ISSUE-BASED** — 
 covered on real Postgres through real endpoints: `status:'final'` rejected (step2-gate — harness vocabulary gate + DB
 CHECK 23514); draft contributes 0 (b4-2-3 B4.1, verify-f102-payroll-boot F80); boot-load timing (verify-f102-payroll-boot
 F102); basis-C payroll / opex / revenue per period with roster 5,000 ≠ run lines 4,200, client == server
-(verify-verification-cells A1 / A2 / A6 on the shared seed, expected.js); F25 period COGS (verify-verification-a7 A7.7 /
+(verify-verification-cells A1 / A2 / A6 on the shared seed, expected.js); F25 period COGS (verify-verification-a7-gaps A7.7 /
 A7.8); AR / AP (verify-ar-overdue-netting, verify-accountant-books-ap, verify-consolidated-ap). It had also stopped
 running at all (no `FinFlowDates` in its window stub since F87). **Historical note (kept):** its green results were
 never evidence of correctness.

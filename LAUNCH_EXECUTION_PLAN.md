@@ -347,6 +347,10 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   Phase 2 complete for the agent. Owner: no more full sweeps from the
   agent — the owner runs the sweep once at the end; the agent pushes main after it is green.
 
+- 2026-10-08 — **L35 AR overdue netting** (FIX_PLAN_AR_OVERDUE.md). Commits on dash-je-fix: `930b714` harness
+  (expected RED R1×3, R2×2), `a5307a4` Root 1, `3b08167` Root 2; Root 3 already fixed by L10. All UNEXECUTED in the
+  container per the plan; owner runs the harness per commit + money gates + 3× sweep in PowerShell. Logged L36.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (FIXED, as part of L21) renderInvestments null-textContent boot error — Phase 1.3.
@@ -521,6 +525,24 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   (gl opex 602 vs 614 on the full-leg set) and the GL never served — the structural cure stayed off exactly for
   journal users. Gate opex = all expense accounts except 5000 COGS and 7000 FX (the balance-sheet gate's rule).
 
+- **L35** (FIXED, owner-verification pending — FIX_PLAN_AR_OVERDUE.md) AR "Overdue" was not netted of open credit
+  notes on the client, so it could exceed Outstanding — live dab2 2026-10-07: Overdue $14,300 > Outstanding $13,550
+  (server overdue $13,050). Class enumerated (Rule 13, both directions): server `/api/reports.overdue` and
+  `computeBooks.arSummary.overdueTotal` already net + clamp (correct). **Root 1** client `arOutstanding()` returned
+  overdue gross/unclamped ⇒ dashboard sub-line, Invoices "Overdue" tile, Payments Received, AR-report fallback —
+  fixed `a5307a4` (one edit, all consumers). **Root 2** reminders `rem-out` = Σ listed candidates' gross balances —
+  fixed `3b08167` (canonical `ar_outstanding`, D15). **Root 3** accountant portal (status literal, gross, no netting)
+  — already fixed by L10 `1e72aa2` (portal reads `arSummary.overdueTotal`); live dab2 ran `470dce2`, pre-L10.
+  Harness `verify-ar-overdue-netting.js` (`930b714`): seed partial + literal-overdue + not-due invoices + open CN ⇒
+  hand-computed outstanding 3,100 / overdue 2,300; buggy 3,500 (R1, R2) and 1 · 1,500 (R3 pre-L10). Per the plan
+  the harness runs ONLY in the owner's PowerShell — UNEXECUTED here (Rule 14); results to be pasted back.
+- **L36** (open — same class, frozen out of this round) The client's AR "today" is the UTC day
+  (`arOutstanding`: `resolvedToday(new Date())` with no zone; accountant portal `_portalOverdueInvoices`:
+  `new Date().toISOString()`), while the server's overdue/D2 boundary is the ENTITY's day. For an entity far from
+  UTC, near midnight an invoice due "today" can be overdue on the server and not on the client (or vice versa), so
+  overdue COUNT/amount can differ by that invoice for a few hours. Fix: pass the entity tz (client has
+  `_activeEntityTz()`) / the server's `window.today` (`books.window.today`). Not fixed here (scope freeze).
+
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's
 finding IDs, so it is the newest. The N-series (N1–N114) lived only in a lost scratchpad file
@@ -624,5 +646,9 @@ evidence in the agents' reports; money items then executed):
   forbids un-measured "wins"; the SLIM build (lazy screens, L21) is already the production path.
 - **D14 — 2.6 defense-in-depth: owner decision, recorded only** (CSP `unsafe-inline` drop / RLS / Sentry DSN /
   express 5) — scope and risk in LAUNCH_STATUS §2 and HANDOVER; nothing implemented blind.
+- **D15 — Reminders "Outstanding" card (L35 Root 2).** The owner's expected value is the netted AR ($13,550), which is
+  not a sum of the listed reminder candidates. The card therefore shows the canonical `computeBooks.outstanding`
+  (`summary.ar_outstanding`) and is relabelled "All open invoices, net of credits"; the list sum stays in the API
+  as `summary.total_outstanding`.
 - **D4 — Commit trailer.** The plan's template says `Claude Opus 4.8`; commits use the attribution of the
   model actually running this session (accuracy over copying a stale template).

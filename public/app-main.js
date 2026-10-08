@@ -2284,7 +2284,7 @@ function arOutstanding(invoices){
   // F58 CLOSE: open|applied credit notes are a receivable contra — the customer owes that much less.
   // Net them out of the AR TOTAL so the dashboard Outstanding, the AR report total and the server
   // balance sheet (computeBooks.outstanding) all agree on the SAME net receivable. Same basis as the
-  // server: status open|applied, D2-bounded (date <= today). Floored at 0. Overdue is invoice-only.
+  // server: status open|applied, D2-bounded (date <= today). Floored at 0.
   let _cnTotal=0;
   (window.creditNotes||[]).forEach(cn=>{
     const cst=(cn.status||'').toLowerCase();
@@ -2294,6 +2294,10 @@ function arOutstanding(invoices){
     _cnTotal+=parseFloat(cn.amount)||0;
   });
   total=Math.max(0,total-_cnTotal);
+  // L35: overdue nets the SAME contra and is clamped to [0, total] — mirror of computeBooks.arSummary.overdueTotal
+  // and /api/reports `overdue` (server.js). Un-netted it read ABOVE outstanding whenever a credit note was open
+  // (live: Overdue $14,300 > Outstanding $13,550) — impossible, overdue is a subset of outstanding.
+  overdueTotal=Math.max(0,Math.min(total,overdueTotal-_cnTotal));
   return { total, count, overdueTotal, overdueCount };
 }
 window._arOutstanding = arOutstanding;

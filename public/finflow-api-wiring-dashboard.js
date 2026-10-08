@@ -187,9 +187,8 @@
     if (chgEl) {
       if (_ar.overdueCount > 0) {
         chgEl.textContent = `${_ar.overdueCount} overdue${_fxOwned ? '' : ' · ' + money(_ar.overdueTotal)}`;
-        // Overdue is GROSS (per-invoice), while Outstanding above is NET of credit notes — so overdue can
-        // read higher than outstanding. Tooltip explains it so the two figures don't look contradictory.
-        chgEl.title = 'Overdue is the gross total of past-due invoices. The Outstanding figure above is net of credit notes, so overdue can appear larger.';
+        // L35: overdue is NET of open credit notes and never exceeds Outstanding (arOutstanding mirrors the server).
+        chgEl.title = 'Past-due balances, net of open credit notes.';
         chgEl.className = 'mc-change dn';
       } else if (_ar.count > 0) {
         chgEl.textContent = `${_ar.count} unpaid invoice${_ar.count === 1 ? '' : 's'}`;

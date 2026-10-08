@@ -1854,7 +1854,14 @@ F32 (18 July, owner decision) moved recognition to **ACCRUAL, ISSUE-BASED** — 
 ---
 
 ### F77 🟠 HIGH — The payroll basis-C golden master is stub-based and violates `CLAUDE.md` Rule 3 — **NEW (2026-07-23; self-reported test debt)**
-**Status:** OPEN. **Its green result is NOT evidence of correctness** and must not be cited as such until rebuilt.
+**Status:** CLOSED 2026-10-08 — **retired** (LAUNCH_EXECUTION_PLAN L37): the stub file is deleted. Its subjects are
+covered on real Postgres through real endpoints: `status:'final'` rejected (step2-gate — harness vocabulary gate + DB
+CHECK 23514); draft contributes 0 (b4-2-3 B4.1, verify-f102-payroll-boot F80); boot-load timing (verify-f102-payroll-boot
+F102); basis-C payroll / opex / revenue per period with roster 5,000 ≠ run lines 4,200, client == server
+(verify-verification-cells A1 / A2 / A6 on the shared seed, expected.js); F25 period COGS (verify-verification-a7 A7.7 /
+A7.8); AR / AP (verify-ar-overdue-netting, verify-accountant-books-ap, verify-consolidated-ap). It had also stopped
+running at all (no `FinFlowDates` in its window stub since F87). **Historical note (kept):** its green results were
+never evidence of correctness.
 
 **What's wrong.** `tests/golden-master-payroll-basisC.js` asserts against a **hand-written pool stub**, not a real Postgres instance with the real schema. `CLAUDE.md` Rule 3 forbids exactly this for money paths: *"A stub is a second implementation of your database written by the person trying to prove their code correct. It will agree with them."*
 

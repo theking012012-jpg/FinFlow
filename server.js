@@ -1907,6 +1907,22 @@ const _inferTimezone = c => (c && _COUNTRY_TZ[String(c).trim().toUpperCase()]) |
 async function entityTodayYmd(entityId) {
   return entityYmdOf(entityId, new Date());
 }
+// L36b: the "today" of a view that may be CONSOLIDATED (entityId null = all entities). A single entity → its own day
+// (entityTodayYmd). All entities → each entity's books have their own day; when every entity in scope shares ONE
+// timezone (one business, or several in one zone — the common case) that zone's day IS the books' day. Mixed zones
+// have no single business day → UTC (known limitation: per-row entity day is the complete model). Before this, every
+// consolidated view (accountant portal "All entities", consolidated GL) ran on the UTC day even for a lone Tokyo
+// business, so its overdue count / D2 / window disagreed with the same business's own view near midnight.
+async function scopeTodayYmd(userId, entityId, permittedEntityIds) {
+  if (entityId != null) return entityTodayYmd(entityId);
+  try {
+    const { rows } = await pool.query(`SELECT id, data->>'timezone' AS tz FROM entities WHERE user_id = $1`, [userId]);
+    const scoped = Array.isArray(permittedEntityIds) ? rows.filter(r => permittedEntityIds.map(Number).includes(Number(r.id))) : rows;
+    const zones = new Set(scoped.map(r => r.tz || ''));
+    if (scoped.length && zones.size === 1 && [...zones][0]) return FinFlowDates.resolvedToday(new Date(), [...zones][0]);
+  } catch (_) { /* fall through to UTC */ }
+  return FinFlowDates.resolvedToday(new Date());
+}
 // N102: the ENTITY's calendar date of a genuine INSTANT (a Stripe charge/refund `created`, a webhook's
 // arrival). Same zone resolution as entityTodayYmd; `new Date(x).toISOString().slice(0,10)` is the UTC day.
 async function entityYmdOf(entityId, instant) {
@@ -6411,7 +6427,7 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     // F-C1: overdue = unpaid-ish invoices whose due date has passed (entity-local today), balance-based.
     // The old literal status==='overdue' never fired — nothing transitions pending→overdue when the
     // due date passes — so past-due pending/partial invoices read as $0 everywhere.
-    const _ovToday = await entityTodayYmd(eid);
+    const _ovToday = await scopeTodayYmd(uid, eid);   // L36b
     const _OV_UNPAID = new Set(['pending', 'overdue', 'partial', 'unpaid', 'sent', 'due_soon']);
     const _overdueGross = (invoices || []).reduce((s, i) => {
       const st = (i.status || '').toLowerCase();
@@ -6543,7 +6559,7 @@ app.post('/api/reports/profit-loss', requireAuth, wrap(async (req, res) => {
   const intent = parseReportIntent(req.query);
   if (intent.error) return res.status(400).json({ error: intent.error });
   const { bookPeriod, monthIdxArg, fyStartIdx, display } = intent;
-  const _today = await entityTodayYmd(eid);   // N64
+  const _today = await scopeTodayYmd(scopeId(req), eid);   // N64 / L36b
   const _fyWin = FinFlowDates.resolvePeriod({ period: 'year', fyStartMonth: fyStartIdx, today: _today });
   const _win = FinFlowDates.resolvePeriod({ period: bookPeriod, monthIdx: monthIdxArg, fyStartMonth: fyStartIdx, today: _today });
   const _abs = ymd => parseInt(ymd.slice(0, 4), 10) * 12 + (parseInt(ymd.slice(5, 7), 10) - 1);
@@ -10314,7 +10330,7 @@ async function glConsolidated(userId, opts = {}) {
   const period = opts.period || 'year';
   const fyStartIdx = Number.isInteger(opts.fyStartIdx) ? opts.fyStartIdx : 0;
   const monthIdx = opts.monthIdx != null ? opts.monthIdx : null;
-  const _today = await entityTodayYmd(opts.entityId != null ? opts.entityId : null);   // N64
+  const _today = await scopeTodayYmd(userId, opts.entityId != null ? opts.entityId : null, opts.permittedEntityIds || null);   // N64 / L36b
   const periodKind = (period === 'month' || period === 'quarter') ? period : 'year';
   const _rp = FinFlowDates.resolvePeriod({ period: periodKind, monthIdx, fyStartMonth: fyStartIdx, today: _today });
   const winStart = _rp.start, winEnd = _rp.end;
@@ -10691,7 +10707,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // N64 (Rule 10): "today" — the D2 bound and the current period — is the BUSINESS's calendar date (its
   // timezone, entityTodayYmd), not the UTC date: a UTC+ business's same-day documents were treated as
   // future for hours and its period flipped at UTC midnight. Consolidated (no entity) stays UTC.
-  const _today = await entityTodayYmd(entityId);
+  const _today = await scopeTodayYmd(userId, entityId, permittedEntityIds);   // L36b: consolidated → the scope's shared zone
   let periodKind, winStart = null, winEnd = null, winElapsed;
   if (period && typeof period === 'object' && period.start && period.end) {
     periodKind = 'window';

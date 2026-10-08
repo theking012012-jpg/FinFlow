@@ -182,6 +182,7 @@
     .bs-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(42,40,32,.5);font-size:13px;}
     .bs-row:last-child{border:none;font-weight:500;color:var(--text);padding-top:10px;}
     .bs-label{color:var(--text2);}
+    .bs-lines .bs-row:last-child{border-bottom:1px solid rgba(42,40,32,.5);font-weight:400;color:inherit;padding-top:6px;}
 
     /* JOURNAL */
     .journal-form{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:16px;display:none;}
@@ -543,23 +544,25 @@
       <div class="page-hdr">
         <div><div class="page-title">Balance Sheet</div></div>
       </div>
+      <!-- L38: the client's own balance sheet (server glBalanceSheet, scoped to this grant) — every line, footing. -->
       <div class="bs-grid">
         <div class="bs-section">
           <div class="bs-section-title">Assets</div>
-          <div class="bs-row"><span class="bs-label">Accounts Receivable</span><span id="bs-ar" class="green" style="color:var(--green)">—</span></div>
-          <div class="bs-row"><span>Total Assets</span><span id="bs-assets" style="color:var(--green)">—</span></div>
+          <div class="bs-lines" id="bs-assets-lines"></div>
+          <div class="bs-row"><span id="bs-assets-label">Total Assets</span><span id="bs-assets" style="color:var(--green)">—</span></div>
         </div>
         <div class="bs-section">
           <div class="bs-section-title">Liabilities</div>
-          <div class="bs-row"><span class="bs-label">Accounts Payable</span><span id="bs-ap" style="color:var(--red)">—</span></div>
-          <div class="bs-row"><span class="bs-label">Payroll Obligations</span><span id="bs-payroll" style="color:var(--red)">—</span></div>
+          <div class="bs-lines" id="bs-liab-lines"></div>
           <div class="bs-row"><span>Total Liabilities</span><span id="bs-liabilities" style="color:var(--red)">—</span></div>
         </div>
       </div>
-      <div class="card" style="display:flex;justify-content:space-between;align-items:center">
-        <span style="color:var(--text2);font-size:14px">Net Equity</span>
-        <span class="mc-value gold" id="bs-equity">—</span>
+      <div class="bs-section" style="margin-bottom:16px">
+        <div class="bs-section-title">Equity</div>
+        <div class="bs-lines" id="bs-equity-lines"></div>
+        <div class="bs-row"><span>Total Equity</span><span class="gold" id="bs-equity">—</span></div>
       </div>
+      <div id="bs-note" style="font-size:11px;color:var(--text3);line-height:1.5"></div>
     </div>
 
     <!-- ── JOURNALS ────────────────────────────── -->
@@ -1168,21 +1171,30 @@ function renderPnL(invoices, expenses) {
 }
 
 // ── BALANCE SHEET ──────────────────────────────────────────────────────────
+// L38: renders the server's statement (glBalanceSheet — the SAME one the client sees, scoped to this grant); nothing
+// is computed here. It used to build its own: assets = AR only, liabilities = AP + the period payroll EXPENSE
+// ("Payroll Obligations" — wages already paid), equity = the difference.
 function renderBalanceSheet() {
   if (!_data?.balanceSheet) return;
   const bs = _data.balanceSheet;
-  const ar = parseFloat(bs.accountsReceivable)||0;
-  const ap = parseFloat(bs.accountsPayable)||0;
-  const pr = parseFloat(bs.totalPayroll)||0;
-  const assets = ar;
-  const liabs = ap+pr;
-  const equity = assets-liabs;
-  set('bs-ar', fmt(ar));
-  set('bs-assets', fmt(assets));
-  set('bs-ap', fmt(ap));
-  set('bs-payroll', fmt(pr));
-  set('bs-liabilities', fmt(liabs));
-  set('bs-equity', fmt(equity));
+  const L = (bs.lines && Array.isArray(bs.lines.assets)) ? bs.lines : null;
+  // Ledger not reconciled ⇒ the server's honest stub (cash not tracked): AR | AP | the difference — as the client sees.
+  const lines = L || {
+    assets: [{ label: 'Accounts Receivable', amount: bs.accountsReceivable }],
+    liabilities: [{ label: 'Accounts Payable', amount: bs.accountsPayable }],
+    equity: [{ label: 'Receivables less payables', amount: bs.equity }],
+  };
+  const rows = (arr, color) => (arr || []).map(l => `<div class="bs-row"><span class="bs-label">${esc(l.label)}</span><span style="color:${color}">${fmt(l.amount)}</span></div>`).join('');
+  const put = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  put('bs-assets-lines', (bs.cashTracked === false ? '<div class="bs-row"><span class="bs-label">Cash &amp; Equivalents</span><span style="color:var(--text3)">Not tracked</span></div>' : '') + rows(lines.assets, 'var(--green)'));
+  put('bs-liab-lines', rows(lines.liabilities, 'var(--red)'));
+  put('bs-equity-lines', rows(lines.equity, 'var(--text2)'));
+  set('bs-assets-label', bs.totalAssetsExcludesCash ? 'Total Assets (excl. untracked cash)' : 'Total Assets');
+  set('bs-assets', fmt(bs.totalAssets));
+  set('bs-liabilities', fmt(bs.totalLiabilities));
+  set('bs-equity', fmt(bs.equity));
+  const cta = typeof bs.cta === 'number' ? bs.cta : 0;
+  set('bs-note', Math.abs(cta) >= 0.01 ? 'Cumulative Translation Adjustment (ASC 830, supplementary — not in Total Equity): ' + fmt(cta) : '');
 }
 
 // ── CASH FLOW ──────────────────────────────────────────────────────────────

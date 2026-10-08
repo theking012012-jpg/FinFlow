@@ -362,6 +362,11 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   `00c0996`. L6b: harness `bba8895` → fix `b4c4617` (AR/AP/Inventory; tax/credit-card map held for the owner, D16).
   All UNEXECUTED in the container per the plan; owner runs harnesses per commit + gates + 3× sweep in PowerShell.
 
+- 2026-10-08 — Owner results: L6b GREEN 11/0; L36 still 1 FAIL (portal) at `00c0996`; step4-client-gate crashed.
+  Owner pushed main → `4db4fcc`. Follow-ups on dash-je-fix: `49a0d3c` L36b (consolidated-scope today),
+  `165e924` step4 gate extracts the L36 helpers, `2bf9b2f` same for f57 / journal-dashboard-parity /
+  verification-cells. Logged L37 (golden master stale since F87). Full sweep ×3 deferred by the owner to the end.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (FIXED, as part of L21) renderInvestments null-textContent boot error — Phase 1.3.
@@ -393,7 +398,7 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   balance-sheet Cash read only `bal['1000']`, the 13-week forecast reads that, and the cash-flow report is
   built from tables. All cash surfaces agreed (BS cash == cash-flow net == −200) while all omitting the JE's
   +30/−12 (Rule 6). FIXED for cash: J1000/J1010/J1020 are cash on every cash reader.
-- **L6b** (FIXED for AR / AP / Inventory — owner verification pending; Tax / Credit-card mapping = owner decision —
+- **L6b** (FIXED for AR / AP / Inventory — harness owner-executed GREEN; full sweep pending; Tax / Credit-card mapping = owner decision —
   FIX_PLAN_OPEN_DIVERGENCES.md) A posted journal's balance-sheet leg landed on a J-account (J1100 / J2000 / J1200)
   that no balance-sheet LINE read, and computeBooks AR / AP were invoices / bills only, so a JE "Dr AR 130" moved no
   AR figure, the gate passed vacuously, and the GL totals ≠ the sum of the lines. Fix `b4c4617`:
@@ -401,6 +406,9 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   glBalanceSheet lines + gate two-sided (GL path and oracle); accountant-portal BS likewise. D16: the
   invoice / bill SUBLEDGERS (`outstanding`, AP card, overdue) are unchanged — the balance sheet shows control
   accounts. Harness `verify-gl-journal-bs-legs.js` (`bba8895`, RED expected ×5 pre-fix). UNEXECUTED here (plan rule).
+  OWNER-EXECUTED (PowerShell, 2026-10-08): `bba8895` 6 FAILED (one more than predicted — the template-2100/2200
+  assertion also failed pre-fix because it checks AR 1,130 / AP 460, which the bug did not produce) → `b4c4617`
+  ALL GREEN 11/0. Money gates green. Full sweep ×3: deferred by the owner to the end.
 - **L7** (FIXED) Paid payroll cash-out was dated by `run_date` (the run's CREATION instant) in both the GL
   `payroll_paid` entry and the cash-flow report (F122's known approximation — no paid date existed). A June
   run marked paid in October showed its cash leaving in June. Now `payroll_runs.paid_date` (stamped once by
@@ -566,6 +574,27 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   MRR months (`37ec40b`); portal overdue list uses the server's `window.today` (`00c0996`). Exempt: personal-finance
   range (no entity), the user's own task list. Harness `verify-ar-today-entity-tz.js` (`39c464d`, Tokyo at the
   pinned instant: RED expected ×7 pre-fix). UNEXECUTED here (plan rule).
+  OWNER-EXECUTED (PowerShell, 2026-10-08): `39c464d` 7 FAILED → `37ec40b` 1 FAILED → `00c0996` STILL 1 FAILED
+  (portal pill). **L36b — the root the portal fix missed:** the portal opens on the "All entities" view, so
+  `computeBooks(entityId=null)` resolved today via `entityTodayYmd(null)` = the UTC day; `window.today` and the
+  server overdue summary were therefore UTC for every consolidated view (accountant portal, `/api/reports` and
+  `/api/reports/profit-loss` with no entity, `glConsolidated`). Fix `49a0d3c`: `scopeTodayYmd(userId, entityId,
+  permittedEntityIds)` — a single entity ⇒ its day; a consolidated scope whose entities share one timezone ⇒ that
+  zone's day; MIXED zones ⇒ UTC (KNOWN LIMITATION — a consolidated view across zones has no single calendar day;
+  owner decision if it matters). Routed through computeBooks, glConsolidated, /api/reports, /api/reports/profit-loss.
+  Expected GREEN 9/0 at `49a0d3c` — UNEXECUTED (owner to run). **Main (`4db4fcc`) carries `00c0996` but NOT
+  `49a0d3c`, so the portal fix is ineffective in the All-entities view until the next push.**
+  Harness breakage from L36 (test-only): source-slicing probes that extract `_fyContext` / `_periodWindow` /
+  `arOutstanding` threw `ReferenceError: _entityToday` — owner-observed on step4-client-gate (fixed `165e924`);
+  enumerated the class: f57-cash-card, verify-journal-dashboard-parity, verify-verification-cells (fixed `2bf9b2f`).
+  The fourth slicer, tests/golden-master-payroll-basisC.js, is L37.
+- **L37** (OPEN — suspect, by READING only, not executed; test-only) `tests/golden-master-payroll-basisC.js`
+  `loadClientEngine()` slices `_fyContext` / `arOutstanding` but its `win` stub has NO `FinFlowDates`; those functions
+  have called `window.FinFlowDates.resolvedToday` since F87, so the client leg should throw a TypeError — i.e. it has
+  been dead since F87, independent of L36. It lives in tests/ (not tests/harness/) so the sweep never runs it,
+  which is why nobody saw it. Rule 5 corollary: retire it (its basis-C coverage is in the harness suite) or make the
+  client engine importable. Not fixed here — owner to decide; confirm by running
+  `node tests/golden-master-payroll-basisC.js` in PowerShell.
 
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's

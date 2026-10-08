@@ -366,6 +366,13 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   Owner pushed main → `4db4fcc`. Follow-ups on dash-je-fix: `49a0d3c` L36b (consolidated-scope today),
   `165e924` step4 gate extracts the L36 helpers, `2bf9b2f` same for f57 / journal-dashboard-parity /
   verification-cells. Logged L37 (golden master stale since F87). Full sweep ×3 deferred by the owner to the end.
+- 2026-10-08 — Owner ran the sweep in PowerShell and pushed main → `ad11188` (= dash-je-fix). The pasted output is
+  the TAIL of a run only: every harness visible is ALL GREEN, incl. verify-verification-cells 26/0 (so the `2bf9b2f`
+  helper extraction is now owner-EXECUTED, not just reasoned) and the A7-gaps cells 9/0. NOT visible in the paste:
+  the L36 harness at `49a0d3c`+, step4-client-gate, f57-cash-card, verify-journal-dashboard-parity, and how many of
+  the 3 runs completed — those stay UNCONFIRMED until the owner reports the per-run totals.
+  The `[GL 5b] balance-sheet divergence (serving oracle) glAR=0 …` lines in that output are pre-existing and expected:
+  the shared seed inserts rows directly (no GL posting), so the gate correctly refuses the empty GL and serves the oracle.
 
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.

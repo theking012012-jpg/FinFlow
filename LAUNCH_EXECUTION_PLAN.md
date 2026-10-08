@@ -161,7 +161,14 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
 - **Tax worksheet default** (L28): keep the flat 25% placeholder line, switch to the country-suggested rate the app
   already computes, or start blank (D1: FinFlow holds no tax knowledge).
 - **W-2 wages basis** (D7): approved + paid runs today; paid-only is a tax-policy call.
-- **Journal → AR/AP/inventory/tax account map** (L6b): manual journals' non-cash, non-P&L legs don't move AR/AP yet.
+- **Journal account map (L6b) — ratified 3, ONE decision for you.** Journal lines post to `J<code>`; these reach the
+  balance-sheet line (shipped `b4c4617`): **1100 → Accounts Receivable · 2000 → Accounts Payable · 1200 → Inventory**.
+  Held for you — the JE template collides with the system chart:
+  · template **2200 "Tax Payable"** (system 2200 = Payroll Liabilities) — **recommendation: map J2200 → the Tax
+    Payable line** (match on MEANING; the user picked "Tax Payable").
+  · template **2100 "Credit Card"** (system 2100 = Tax Payable) — **recommendation: map J2100 → a new "Credit card /
+    other current liabilities" line** (neither AP nor tax), and longer-term renumber the template (Credit Card → 2300,
+    Tax Payable → 2100) so picker and ledger agree. Until you decide, both stay in total liabilities only.
 - **Customer ↔ invoice foreign key** (D8/L17): revenue attribution is by name match until invoices carry a customer id.
 - **Landing page "750+ App integrations"** (audit F51): ~17 have a real connect flow; the claim is marketing copy.
 - **Investments close-position / realised gain** (audit F109) and **entity jurisdiction / region** (F108): features.
@@ -351,6 +358,10 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   (expected RED R1×3, R2×2), `a5307a4` Root 1, `3b08167` Root 2; Root 3 already fixed by L10. All UNEXECUTED in the
   container per the plan; owner runs the harness per commit + money gates + 3× sweep in PowerShell. Logged L36.
 
+- 2026-10-08 — **L36 + L6b** (FIX_PLAN_OPEN_DIVERGENCES.md). L36: harness `39c464d` → client `37ec40b` → portal
+  `00c0996`. L6b: harness `bba8895` → fix `b4c4617` (AR/AP/Inventory; tax/credit-card map held for the owner, D16).
+  All UNEXECUTED in the container per the plan; owner runs harnesses per commit + gates + 3× sweep in PowerShell.
+
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
 - **L1** (FIXED, as part of L21) renderInvestments null-textContent boot error — Phase 1.3.
@@ -382,11 +393,14 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   balance-sheet Cash read only `bal['1000']`, the 13-week forecast reads that, and the cash-flow report is
   built from tables. All cash surfaces agreed (BS cash == cash-flow net == −200) while all omitting the JE's
   +30/−12 (Rule 6). FIXED for cash: J1000/J1010/J1020 are cash on every cash reader.
-- **L6b** (open, design) The same J-shadowing for AR (J1100), AP (J2000), Inventory (J1200), Tax Payable
-  (template 2200 "Tax Payable" ≠ system 2200 "Payroll Liabilities"): a JE to AR/AP moves no AR/AP figure.
-  Fixing it needs computeBooks AR/AP to carry the JE legs, or the balance-sheet reconcile gate
-  (glAR == books AR, glAP == books AP) breaks and the BS falls back to the oracle. Accounting design → Owner
-  Handoff (journal account map).
+- **L6b** (FIXED for AR / AP / Inventory — owner verification pending; Tax / Credit-card mapping = owner decision —
+  FIX_PLAN_OPEN_DIVERGENCES.md) A posted journal's balance-sheet leg landed on a J-account (J1100 / J2000 / J1200)
+  that no balance-sheet LINE read, and computeBooks AR / AP were invoices / bills only, so a JE "Dr AR 130" moved no
+  AR figure, the gate passed vacuously, and the GL totals ≠ the sum of the lines. Fix `b4c4617`:
+  `JOURNAL_BS_LEDGER_CODES {J1100 ar, J2000 ap, J1200 inventory}`; `computeBooks.journalBalances` read from the GL;
+  glBalanceSheet lines + gate two-sided (GL path and oracle); accountant-portal BS likewise. D16: the
+  invoice / bill SUBLEDGERS (`outstanding`, AP card, overdue) are unchanged — the balance sheet shows control
+  accounts. Harness `verify-gl-journal-bs-legs.js` (`bba8895`, RED expected ×5 pre-fix). UNEXECUTED here (plan rule).
 - **L7** (FIXED) Paid payroll cash-out was dated by `run_date` (the run's CREATION instant) in both the GL
   `payroll_paid` entry and the cash-flow report (F122's known approximation — no paid date existed). A June
   run marked paid in October showed its cash leaving in June. Now `payroll_runs.paid_date` (stamped once by
@@ -540,12 +554,18 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   three R3 assertions. Gates green: step1 26/0, step2 63/0, step3 56/0, step4 5/0, full-leg-parity 28/0,
   accountant-portal-parity 12/0, payment-reminders 25/0, reminders-context 10/0, ar-by-customer 15/0.
   Full sweep ×3: NOT yet run (run 1 was stopped by the owner before any harness reported).
-- **L36** (open — same class, frozen out of this round) The client's AR "today" is the UTC day
+- **L36** (FIXED — owner verification pending; FIX_PLAN_OPEN_DIVERGENCES.md) The client's AR "today" is the UTC day
   (`arOutstanding`: `resolvedToday(new Date())` with no zone; accountant portal `_portalOverdueInvoices`:
   `new Date().toISOString()`), while the server's overdue/D2 boundary is the ENTITY's day. For an entity far from
   UTC, near midnight an invoice due "today" can be overdue on the server and not on the client (or vice versa), so
   overdue COUNT/amount can differ by that invoice for a few hours. Fix: pass the entity tz (client has
-  `_activeEntityTz()`) / the server's `window.today` (`books.window.today`). Not fixed here (scope freeze).
+  `_activeEntityTz()`) / the server's `window.today` (`books.window.today`). Class enumerated: 19 client sites, 15 gate
+  an accounting boundary. Fix: `_entityToday()` (app-main, beside `_activeEntityTz`, the `_isScheduled` pattern)
+  routed through all 15 — AR/overdue/D2, fiscal context, period windows, banking month, dashboard FY window ×2, AR/AP
+  report fallbacks, documents month, inThisMonth, bills past-due + this-week, recurring-bills YTD, Invoices D2,
+  MRR months (`37ec40b`); portal overdue list uses the server's `window.today` (`00c0996`). Exempt: personal-finance
+  range (no entity), the user's own task list. Harness `verify-ar-today-entity-tz.js` (`39c464d`, Tokyo at the
+  pinned instant: RED expected ×7 pre-fix). UNEXECUTED here (plan rule).
 
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's
@@ -654,5 +674,10 @@ evidence in the agents' reports; money items then executed):
   not a sum of the listed reminder candidates. The card therefore shows the canonical `computeBooks.outstanding`
   (`summary.ar_outstanding`) and is relabelled "All open invoices, net of credits"; the list sum stays in the API
   as `summary.total_outstanding`.
+- **D16 — Balance sheet = control accounts; Outstanding = subledger (L6b).** A manual journal to AR / AP is a
+  control-account adjustment with no customer / invoice behind it, so it moves the balance-sheet AR / AP / Inventory
+  lines (and the gate on both sides) but NOT the invoice-subledger figures — dashboard "Outstanding", overdue (L35
+  clamp), the AP card, the client `arOutstanding` mirror. The difference between BS AR and Outstanding is exactly the
+  posted journal AR leg.
 - **D4 — Commit trailer.** The plan's template says `Claude Opus 4.8`; commits use the attribution of the
   model actually running this session (accuracy over copying a stale template).

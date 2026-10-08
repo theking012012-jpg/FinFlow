@@ -373,6 +373,10 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   the 3 runs completed — those stay UNCONFIRMED until the owner reports the per-run totals.
   The `[GL 5b] balance-sheet divergence (serving oracle) glAR=0 …` lines in that output are pre-existing and expected:
   the shared seed inserts rows directly (no GL posting), so the gate correctly refuses the empty GL and serves the oracle.
+- 2026-10-08 — Owner-executed at `ad11188` (PowerShell): verify-ar-today-entity-tz ALL GREEN 10/0 (L36 + L36b closed
+  at harness level); step4-client-gate 5/0, f57-cash-card 14/0, verify-journal-dashboard-parity 10/0 (the
+  `165e924` / `2bf9b2f` helper extractions now executed). Remaining for the done-gate: per-run totals of the 3× full
+  sweep. Open owner decisions: journal 2100 / 2200 mapping (L6b), L37 golden master (retire vs make importable).
 
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
@@ -569,7 +573,7 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   three R3 assertions. Gates green: step1 26/0, step2 63/0, step3 56/0, step4 5/0, full-leg-parity 28/0,
   accountant-portal-parity 12/0, payment-reminders 25/0, reminders-context 10/0, ar-by-customer 15/0.
   Full sweep ×3: NOT yet run (run 1 was stopped by the owner before any harness reported).
-- **L36** (FIXED — owner verification pending; FIX_PLAN_OPEN_DIVERGENCES.md) The client's AR "today" is the UTC day
+- **L36** (FIXED — harness owner-executed ALL GREEN 10/0 at `ad11188`; full-sweep ×3 totals pending; FIX_PLAN_OPEN_DIVERGENCES.md) The client's AR "today" is the UTC day
   (`arOutstanding`: `resolvedToday(new Date())` with no zone; accountant portal `_portalOverdueInvoices`:
   `new Date().toISOString()`), while the server's overdue/D2 boundary is the ENTITY's day. For an entity far from
   UTC, near midnight an invoice due "today" can be overdue on the server and not on the client (or vice versa), so
@@ -589,7 +593,7 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   permittedEntityIds)` — a single entity ⇒ its day; a consolidated scope whose entities share one timezone ⇒ that
   zone's day; MIXED zones ⇒ UTC (KNOWN LIMITATION — a consolidated view across zones has no single calendar day;
   owner decision if it matters). Routed through computeBooks, glConsolidated, /api/reports, /api/reports/profit-loss.
-  Expected ALL GREEN 10/0 at `49a0d3c` — UNEXECUTED (owner to run). **Main (`4db4fcc`) carries `00c0996` but NOT
+  OWNER-EXECUTED at `ad11188`: ALL GREEN 10/0 (portal pill "1 · $700" — the L36b root confirmed). **Main (`4db4fcc`) carries `00c0996` but NOT
   `49a0d3c`, so the portal fix is ineffective in the All-entities view until the next push.**
   Harness breakage from L36 (test-only): source-slicing probes that extract `_fyContext` / `_periodWindow` /
   `arOutstanding` threw `ReferenceError: _entityToday` — owner-observed on step4-client-gate (fixed `165e924`);

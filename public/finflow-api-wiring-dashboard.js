@@ -55,7 +55,7 @@
     const _fym = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     const _fyName = (typeof document !== 'undefined' && (document.getElementById('s-fy')||{}).value) || 'January';
     const _fyStartIdx = Math.max(0, _fym.indexOf(_fyName));
-    const _fyWin = FD.resolvePeriod({ period: 'year', fyStartMonth: _fyStartIdx, today: FD.resolvedToday(new Date()) });
+    const _fyWin = FD.resolvePeriod({ period: 'year', fyStartMonth: _fyStartIdx, today: (window._entityToday ? window._entityToday() : FD.resolvedToday(new Date())) });
     const _baseAbs = parseInt(_fyWin.start.slice(0,4),10)*12 + (parseInt(_fyWin.start.slice(5,7),10)-1);
     const months = [];
     for (let i = 0; i < 12; i++) { const _a = _baseAbs + i; months.push({ ym: Math.floor(_a/12)+'-'+String((_a%12)+1).padStart(2,'0'), label: _MN[_a%12] }); }
@@ -508,7 +508,7 @@
       const _fym = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       const _fyName = (typeof document !== 'undefined' && (document.getElementById('s-fy') || {}).value) || 'January';
       const _fyStartIdx = Math.max(0, _fym.indexOf(_fyName));
-      const _fyWin = FD.resolvePeriod({ period: 'year', fyStartMonth: _fyStartIdx, today: FD.resolvedToday(new Date()) });
+      const _fyWin = FD.resolvePeriod({ period: 'year', fyStartMonth: _fyStartIdx, today: (window._entityToday ? window._entityToday() : FD.resolvedToday(new Date())) });
       const _baseAbs = parseInt(_fyWin.start.slice(0,4),10)*12 + (parseInt(_fyWin.start.slice(5,7),10)-1);
       const _ms = [];
       for (let _i = 0; _i < 12; _i++) { const _a = _baseAbs + _i; _ms.push(Math.floor(_a/12)+'-'+String((_a%12)+1).padStart(2,'0')); }

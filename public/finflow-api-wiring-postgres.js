@@ -315,7 +315,7 @@
     // NON-future set as Outstanding. Summing every invoice let a future-dated (scheduled) invoice inflate
     // Billed and drag the collection % down, and broke reconciliation (Billed − Collected ≠ Outstanding).
     // A future-dated doc is scheduled, not yet on the books (server.js:6312) — excluded until its date.
-    const _recToday = (window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : new Date().toISOString().slice(0,10));
+    const _recToday = (window.FinFlowDates ? (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())) : new Date().toISOString().slice(0,10));
     const _REC = ['pending', 'overdue', 'partial', 'paid'];
     const _recognized = invs.filter(i => {
       if (!_REC.includes((i.status || '').toLowerCase())) return false;

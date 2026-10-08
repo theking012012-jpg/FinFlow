@@ -809,7 +809,7 @@
           window.creditNotes = _arCNs;
           ar = (typeof window._arOutstanding === 'function') ? window._arOutstanding(invs) : { total: 0 };
           const REC = ['pending', 'overdue', 'partial', 'paid'];
-          const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : null;
+          const today = window.FinFlowDates ? (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())) : null;
           const byCust = {};
           invs.forEach(i => {
             const st = (i.status || '').toLowerCase(); if (!REC.includes(st)) return;
@@ -850,7 +850,7 @@
         const bills = (await api('GET', '/api/bills')) || [];
         const _apVCs = (await api('GET', '/api/vendor-credits')) || [];   // F58: net vendor credits per vendor
         const REC = ['unpaid', 'due_soon', 'overdue', 'partial', 'paid'];
-        const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : null;
+        const today = window.FinFlowDates ? (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())) : null;
         const byVendor = {};
         bills.forEach(b => {
           const st = (b.status || '').toLowerCase(); if (!REC.includes(st)) return;

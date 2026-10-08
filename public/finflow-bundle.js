@@ -1794,7 +1794,7 @@
         // F87-class: "this month" by canonical UTC calendar month, not viewer-local
         // getMonth/getFullYear. uploaded_at is a genuine timestamp → phase-1 resolves it in UTC
         // (entity-timezone resolution for genuine timestamps is the unbuilt phase-2 hook).
-        const _docToday = window.FinFlowDates.resolvedToday(new Date());
+        const _docToday = (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date()));
         const thisMonth = cache.filter(d => {
           if (!d.uploaded_at) return false;
           const _u = window.FinFlowDates._toYmd(d.uploaded_at);
@@ -2648,7 +2648,7 @@ function clearAIChat(){
     // in different months for viewers in different zones. Compare 'YYYY-MM' string prefixes (UTC).
     const _dy = window.FinFlowDates._toYmd(d);
     if (_dy == null) return false;
-    return _dy.slice(0, 7) === window.FinFlowDates.resolvedToday(new Date()).slice(0, 7);
+    return _dy.slice(0, 7) === (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())).slice(0, 7);
   }
   // L5: the ONE "is this row in this calendar month" test for every card labelled "This month"
   // (here, app-main journals, wiring-extra projects/timesheet) — several such cards summed ALL TIME.
@@ -3224,7 +3224,7 @@ function clearAIChat(){
     // F-C1: bills/vendors overdue = Σ balance of UNPAID bills past their due date (entity-local today).
     // Replaces the old status==='overdue' literal (never set) and the hardcoded null on vendors.
     window._billsOverdueSum = function (bills) {
-      const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : new Date().toISOString().slice(0, 10);
+      const today = window.FinFlowDates ? (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())) : new Date().toISOString().slice(0, 10);
       const UNPAID = ['unpaid', 'due_soon', 'overdue', 'partial', 'pending'];
       return (bills || []).reduce((s, b) => {
         const st = (b.status || '').toLowerCase();
@@ -3363,7 +3363,7 @@ function clearAIChat(){
       // L8 (Rule 10): due dates are CALENDAR dates — compare 'YYYY-MM-DD' strings over [today, today+7], never
       // Date instants (new Date('2026-07-25') is UTC midnight, which lands on the previous local day west of
       // UTC and dropped a bill due today). Balance, not the face amount, is what is still due.
-      const _blToday = window.FinFlowDates.resolvedToday(new Date());
+      const _blToday = (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date()));
       const _blWeek = (() => { const p = _blToday.split('-').map(Number); const t = Date.UTC(p[0], p[1] - 1, p[2] + 7); return new Date(t).toISOString().slice(0, 10); })();
       const _blDueWeek = _billsData.filter(b => {
         if (b.status?.toLowerCase() === 'paid' || !b.due_date) return false;
@@ -3697,7 +3697,7 @@ function clearAIChat(){
       // F87-class: months-elapsed from the canonical UTC calendar month, not viewer-local
       // getMonth() (which flips at the month boundary per viewer). YTD basis unchanged
       // (calendar-year, Jan=1 … current month).
-      const _rbElapsed = parseInt(window.FinFlowDates.resolvedToday(new Date()).slice(5, 7), 10);
+      const _rbElapsed = parseInt((window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())).slice(5, 7), 10);
       const _rbYtd = _rbMonthly * _rbElapsed;
       setKpiCards('page-recurring-bills', [_rbActive.length, S(_rbMonthly), _rbNext, S(_rbYtd)]);
       window._refreshDashboardUI?.();
@@ -4736,7 +4736,7 @@ function clearAIChat(){
           window.creditNotes = _arCNs;
           ar = (typeof window._arOutstanding === 'function') ? window._arOutstanding(invs) : { total: 0 };
           const REC = ['pending', 'overdue', 'partial', 'paid'];
-          const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : null;
+          const today = window.FinFlowDates ? (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())) : null;
           const byCust = {};
           invs.forEach(i => {
             const st = (i.status || '').toLowerCase(); if (!REC.includes(st)) return;
@@ -4777,7 +4777,7 @@ function clearAIChat(){
         const bills = (await api('GET', '/api/bills')) || [];
         const _apVCs = (await api('GET', '/api/vendor-credits')) || [];   // F58: net vendor credits per vendor
         const REC = ['unpaid', 'due_soon', 'overdue', 'partial', 'paid'];
-        const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : null;
+        const today = window.FinFlowDates ? (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())) : null;
         const byVendor = {};
         bills.forEach(b => {
           const st = (b.status || '').toLowerCase(); if (!REC.includes(st)) return;
@@ -5477,7 +5477,7 @@ function clearAIChat(){
     const _fym = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     const _fyName = (typeof document !== 'undefined' && (document.getElementById('s-fy')||{}).value) || 'January';
     const _fyStartIdx = Math.max(0, _fym.indexOf(_fyName));
-    const _fyWin = FD.resolvePeriod({ period: 'year', fyStartMonth: _fyStartIdx, today: FD.resolvedToday(new Date()) });
+    const _fyWin = FD.resolvePeriod({ period: 'year', fyStartMonth: _fyStartIdx, today: (window._entityToday ? window._entityToday() : FD.resolvedToday(new Date())) });
     const _baseAbs = parseInt(_fyWin.start.slice(0,4),10)*12 + (parseInt(_fyWin.start.slice(5,7),10)-1);
     const months = [];
     for (let i = 0; i < 12; i++) { const _a = _baseAbs + i; months.push({ ym: Math.floor(_a/12)+'-'+String((_a%12)+1).padStart(2,'0'), label: _MN[_a%12] }); }
@@ -5930,7 +5930,7 @@ function clearAIChat(){
       const _fym = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       const _fyName = (typeof document !== 'undefined' && (document.getElementById('s-fy') || {}).value) || 'January';
       const _fyStartIdx = Math.max(0, _fym.indexOf(_fyName));
-      const _fyWin = FD.resolvePeriod({ period: 'year', fyStartMonth: _fyStartIdx, today: FD.resolvedToday(new Date()) });
+      const _fyWin = FD.resolvePeriod({ period: 'year', fyStartMonth: _fyStartIdx, today: (window._entityToday ? window._entityToday() : FD.resolvedToday(new Date())) });
       const _baseAbs = parseInt(_fyWin.start.slice(0,4),10)*12 + (parseInt(_fyWin.start.slice(5,7),10)-1);
       const _ms = [];
       for (let _i = 0; _i < 12; _i++) { const _a = _baseAbs + _i; _ms.push(Math.floor(_a/12)+'-'+String((_a%12)+1).padStart(2,'0')); }
@@ -6311,7 +6311,7 @@ function clearAIChat(){
     // NON-future set as Outstanding. Summing every invoice let a future-dated (scheduled) invoice inflate
     // Billed and drag the collection % down, and broke reconciliation (Billed − Collected ≠ Outstanding).
     // A future-dated doc is scheduled, not yet on the books (server.js:6312) — excluded until its date.
-    const _recToday = (window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : new Date().toISOString().slice(0,10));
+    const _recToday = (window.FinFlowDates ? (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())) : new Date().toISOString().slice(0,10));
     const _REC = ['pending', 'overdue', 'partial', 'paid'];
     const _recognized = invs.filter(i => {
       if (!_REC.includes((i.status || '').toLowerCase())) return false;

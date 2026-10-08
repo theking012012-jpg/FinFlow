@@ -62,7 +62,7 @@
     // in different months for viewers in different zones. Compare 'YYYY-MM' string prefixes (UTC).
     const _dy = window.FinFlowDates._toYmd(d);
     if (_dy == null) return false;
-    return _dy.slice(0, 7) === window.FinFlowDates.resolvedToday(new Date()).slice(0, 7);
+    return _dy.slice(0, 7) === (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())).slice(0, 7);
   }
   // L5: the ONE "is this row in this calendar month" test for every card labelled "This month"
   // (here, app-main journals, wiring-extra projects/timesheet) — several such cards summed ALL TIME.
@@ -638,7 +638,7 @@
     // F-C1: bills/vendors overdue = Σ balance of UNPAID bills past their due date (entity-local today).
     // Replaces the old status==='overdue' literal (never set) and the hardcoded null on vendors.
     window._billsOverdueSum = function (bills) {
-      const today = window.FinFlowDates ? window.FinFlowDates.resolvedToday(new Date()) : new Date().toISOString().slice(0, 10);
+      const today = window.FinFlowDates ? (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())) : new Date().toISOString().slice(0, 10);
       const UNPAID = ['unpaid', 'due_soon', 'overdue', 'partial', 'pending'];
       return (bills || []).reduce((s, b) => {
         const st = (b.status || '').toLowerCase();
@@ -777,7 +777,7 @@
       // L8 (Rule 10): due dates are CALENDAR dates — compare 'YYYY-MM-DD' strings over [today, today+7], never
       // Date instants (new Date('2026-07-25') is UTC midnight, which lands on the previous local day west of
       // UTC and dropped a bill due today). Balance, not the face amount, is what is still due.
-      const _blToday = window.FinFlowDates.resolvedToday(new Date());
+      const _blToday = (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date()));
       const _blWeek = (() => { const p = _blToday.split('-').map(Number); const t = Date.UTC(p[0], p[1] - 1, p[2] + 7); return new Date(t).toISOString().slice(0, 10); })();
       const _blDueWeek = _billsData.filter(b => {
         if (b.status?.toLowerCase() === 'paid' || !b.due_date) return false;
@@ -1111,7 +1111,7 @@
       // F87-class: months-elapsed from the canonical UTC calendar month, not viewer-local
       // getMonth() (which flips at the month boundary per viewer). YTD basis unchanged
       // (calendar-year, Jan=1 … current month).
-      const _rbElapsed = parseInt(window.FinFlowDates.resolvedToday(new Date()).slice(5, 7), 10);
+      const _rbElapsed = parseInt((window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())).slice(5, 7), 10);
       const _rbYtd = _rbMonthly * _rbElapsed;
       setKpiCards('page-recurring-bills', [_rbActive.length, S(_rbMonthly), _rbNext, S(_rbYtd)]);
       window._refreshDashboardUI?.();

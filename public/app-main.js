@@ -687,6 +687,12 @@ function _activeEntityTz(){
   try { const a=(typeof ENTITIES!=='undefined'?ENTITIES:(window.ENTITIES||[])).find(e=>e.active); return (a&&a.timezone)||null; } catch(e){ return null; }
 }
 window._activeEntityTz = _activeEntityTz;
+// L36 (Rule 10): the ENTITY's calendar "today" — every client ACCOUNTING boundary (AR, overdue, D2 issued/scheduled,
+// fiscal context, period windows, bills due, banking month) uses it, mirroring the server's entityTodayYmd. A bare
+// resolvedToday(new Date()) is the UTC day: for a business far from UTC it moved invoices across the overdue / issued
+// line near midnight, so client and server disagreed. No active entity or no zone ⇒ UTC, byte-identical to before.
+function _entityToday(){ return window.FinFlowDates.resolvedToday(new Date(), _activeEntityTz()); }
+window._entityToday = _entityToday;
 window._isScheduled = function(dateStr){
   try { const y = window.FinFlowDates._toYmd(dateStr); return y != null && y > window.FinFlowDates.resolvedToday(new Date(), _activeEntityTz()); }
   catch(_){ return false; }
@@ -2166,7 +2172,7 @@ function _fyContext(){
   const fyStartIdx=Math.max(0,mNames.indexOf(fyName));
   // F87: derive the fiscal-year context from the CALENDAR date (UTC via resolvedToday), NOT from
   // local getMonth/getFullYear — so "which fiscal month is it" never depends on the viewer's TZ.
-  const today=window.FinFlowDates.resolvedToday(new Date());   // 'YYYY-MM-DD' (phase 1 = UTC)
+  const today=_entityToday();   // 'YYYY-MM-DD' — the ENTITY's day (L36), as the server's entityTodayYmd
   const ty=parseInt(today.slice(0,4),10), tm0=parseInt(today.slice(5,7),10)-1;
   const fyStartYear=(tm0>=fyStartIdx)?ty:ty-1;
   const monthsInFY=Math.min(12,Math.max(1,(ty-fyStartYear)*12+(tm0-fyStartIdx)+1));
@@ -2193,7 +2199,7 @@ function _periodWindow(period, monthIdx){
   // compare + D2 (never recognise a row dated after today) — identical to the server. No
   // new Date(y,m,1) local midnight anywhere; `start`/`end` are strings now (callers send intent).
   const { fyStartIdx, curFyIdx } = _fyContext();
-  const today=window.FinFlowDates.resolvedToday(new Date());
+  const today=_entityToday();
   const _MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const _lbl=ymd=>_MN[parseInt(ymd.slice(5,7),10)-1]+' '+ymd.slice(0,4);              // 'YYYY-MM-DD' → 'Mon YYYY'
   const _absOf=ymd=>parseInt(ymd.slice(0,4),10)*12+(parseInt(ymd.slice(5,7),10)-1);
@@ -2267,7 +2273,7 @@ window._loadCashMonthly = _loadCashMonthly;
 function arOutstanding(invoices){
   const RECOGNIZED = ['pending','overdue','partial','paid'];
   // D2 — a future-dated invoice is SCHEDULED, not yet receivable (mirrors the server AR leg).
-  const _arToday = window.FinFlowDates.resolvedToday(new Date());
+  const _arToday = _entityToday();
   let total=0, count=0, overdueTotal=0, overdueCount=0;
   (invoices||[]).forEach(i=>{
     const st=(i.status||'').toLowerCase();
@@ -5825,7 +5831,7 @@ function renderBanking(){
   // F87: the MTD month key comes from the CALENDAR date (UTC via resolvedToday), not local
   // getMonth — so Inflow/Outflow (MTD) don't shift by the viewer's timezone. Row side is a
   // string prefix match on the row's own 'YYYY-MM-DD'.
-  const _ym = window.FinFlowDates.resolvedToday(new Date()).slice(0,7);
+  const _ym = _entityToday().slice(0,7);
   const _bkMtd = (bankTxns||[]).filter(t => (t._iso||'').startsWith(_ym));
   const _bkIn  = _bkMtd.filter(t => t.type==='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkOut = _bkMtd.filter(t => t.type!=='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);

@@ -6211,7 +6211,7 @@ async function loadMRRData(){
     // end reduce to calendar dates — the old viewer-local Date windows filed a sub created 1 Jul 02:00 UTC into
     // JUNE for every viewer west of UTC.
     const _FD = window.FinFlowDates, _MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const _todayY = _FD.resolvedToday(new Date());
+    const _todayY = (window._entityToday ? window._entityToday() : _FD.resolvedToday(new Date()));
     const _abs0 = parseInt(_todayY.slice(0,4),10)*12 + (parseInt(_todayY.slice(5,7),10)-1);
     const _key = a => Math.floor(a/12) + '-' + String((a%12)+1).padStart(2,'0');
     const _series=[], _mlabels=[];

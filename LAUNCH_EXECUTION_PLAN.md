@@ -383,6 +383,13 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   AP reports stopped reconciling after L6b: harness `018e374` → fix `ba08a03`). L37 retired (`760b3e9`, F77 closed).
   L40 logged (API-only). Verified here: syntax checks, the pure balanceSheetLines probe on hand-computed accounts, the
   pre-commit hook (bundle from index, verification-sync). Every harness is UNEXECUTED here — owner runs them.
+- 2026-10-08 — Owner-executed RED phase (PowerShell), each count exactly as predicted, each failure showing the
+  hand-computed BUG value: verify-gl-bs-lines-foot at `6484526` 32 FAILED / 4 passed (taxPayable 0; no lines; rendered
+  asset rows 6,130 vs Total Assets 7,330, liability rows 400 vs 1,430; controls 7,330 / 1,430 / 5,900 and source=gl
+  PASS in both views) · verify-portal-balance-sheet at `c2e2b57` 17 FAILED / 4 passed (portal AR 1,000 · AP 400 ·
+  totalPayroll 2,000; rendered 1,000 / 2,400 / −1,400 with a "Payroll Obligations" row; owner controls 4,000 / 400 /
+  3,600 and 4,777 / 400 / 4,377 PASS) · verify-aging-reports-reconcile at `018e374` 6 FAILED / 5 passed (AR report
+  total 1,000 vs balance sheet 1,130; AP rows 400 vs Total Payable 460). GREEN phase at HEAD: pending.
 
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.

@@ -270,7 +270,7 @@ function _openSse(res) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd) {
+module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet) {
   // F90 Phase B: recordAudit is the single audited write path (threaded from server.js). Accountant
   // actions on a client's books log with actor_type='accountant' + actor_id=accountantId (derived
   // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
@@ -940,7 +940,11 @@ If you cannot find a field, use null. Be concise.`;
     // mixed-currency per-entity figures.
     const apByEntity = {};
     for (const id of (entityId != null ? [entityId] : _permittedIds)) apByEntity[id] = summariesByEntity[id] ? summariesByEntity[id].accountsPayable : await canonicalAP(userId, id);
-    const unpaidBills = entityId != null ? (apByEntity[entityId] || 0) : (books.accountsPayable || 0);
+    // L38: the portal's balance sheet IS the owner's (server.js glBalanceSheet — one writer), scoped to the grant: a
+    // single permitted entity; the whole account for a legacy link; ONLY the permitted entities for a fine-grained one.
+    // It replaced a second statement built here (assets = AR only; liabilities = AP + the period payroll EXPENSE as
+    // "Payroll Obligations" — wages already paid are not owed; equity = the difference).
+    const balanceSheet = await glBalanceSheet(parseInt(userId), entityId, _ea == null || entityId != null ? {} : { permittedEntityIds: _permittedIds });
 
     // ── FinFlux GL CERTIFICATION (Phase 5 moat) — for each PERMITTED entity, FinFlux's own ledger
     // says whether the books tie out: trial balance to zero, balance sheet balances, and the GL P&L
@@ -1006,14 +1010,7 @@ If you cannot find a field, use null. Be concise.`;
       allJournals: journals.rows.filter(r => _permit(r.entity_id)).map(r => r.data),
       // N74: customers belong to entities like every other record — only permitted entities' customers.
       allCustomers: customers.rows.filter(r => _permit(r.entity_id)).map(r => r.data),
-      balanceSheet: {
-        // L6b: control accounts — subledger + posted journals' AR / AP legs (computeBooks.journalBalances), as the
-        // owner's balance sheet (glBalanceSheet). Same computeBooks call, same entity scope.
-        accountsReceivable: (books.outstanding + ((books.journalBalances && books.journalBalances.ar) || 0)).toFixed(2),
-        accountsPayable:    (unpaidBills + ((books.journalBalances && books.journalBalances.ap) || 0)).toFixed(2),
-        accountsPayableByEntity: apByEntity,
-        totalPayroll:       (books.parts.payroll || 0).toFixed(2),
-      },
+      balanceSheet: Object.assign({}, balanceSheet, { accountsPayableByEntity: apByEntity }),
       recentInvoices: invoices.rows.filter(r => _permit(r.entity_id)).map(r => r.data).slice(0, 10),
       recentExpenses: expenses.rows.filter(r => _permit(r.entity_id)).map(r => r.data).slice(0, 10),
     });

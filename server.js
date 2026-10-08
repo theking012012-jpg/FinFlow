@@ -5673,7 +5673,7 @@ app.post('/api/accountant-messages', requireAuth, wrap(async (req, res) => {
 const registerAccountantRoutes = require('./accountant-routes');
 // computeBooks is a hoisted declaration (defined below) closing over db+pool — pass it so
 // the accountant /books view shares the one canonical, entity-scoped basis (F9).
-registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
+registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet);  // F90 Phase B: pass the single audited write path; glReconcile → GL books-certification (Phase 5 moat)
 
 // ── RECEIPT SCANNER ───────────────────────────────────────────────────────────
 // Accepts a base64-encoded image or PDF and returns structured expense data.
@@ -10353,6 +10353,9 @@ async function glConsolidated(userId, opts = {}) {
   const params = [userId, _today];
   let where = `ll.user_id=$1 AND le.entry_date <= $2::date`;
   if (entityId != null) { params.push(entityId); where += ` AND le.entity_id=$3`; }
+  // L38: a permitted-entity scope (accountant fine-grained grant) — those entities plus unassigned rows, exactly the
+  // set computeBooks(permittedEntityIds) consolidates. Absent ⇒ every entity, as before.
+  else if (Array.isArray(opts.permittedEntityIds)) { params.push(opts.permittedEntityIds.map(Number)); where += ` AND (le.entity_id IS NULL OR le.entity_id = ANY($${params.length}::int[]))`; }
   const { rows } = await pool.query(
     `SELECT le.entity_id AS eid, la.code, la.name, la.type, la.normal, le.entry_date::text AS d,
             ll.debit::float AS debit, ll.credit::float AS credit
@@ -10555,9 +10558,13 @@ async function canonicalAP(userId, entityId, { net = false } = {}) {
   const b = await computeBooks(userId, entityId, 'year');
   return net ? b.accountsPayableNet : b.accountsPayable;
 }
-async function glBalanceSheet(userId, entityId) {
+async function glBalanceSheet(userId, entityId, opts = {}) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
-  const books = await computeBooks(userId, entityId, 'year');
+  // L38: an accountant's fine-grained grant consolidates ONLY its permitted entities (plus unassigned rows) — both
+  // sides of the gate (computeBooks' permittedEntityIds and glConsolidated's filter) see the same scope, so a hidden
+  // entity's balances never enter a total. null ⇒ every entity (the owner, or a legacy whole-account link).
+  const permitted = (entityId == null && Array.isArray(opts.permittedEntityIds)) ? opts.permittedEntityIds.map(Number) : null;
+  const books = await computeBooks(userId, entityId, 'year', null, 0, null, permitted);
   // L6b: the balance sheet shows CONTROL accounts — the invoice / bill subledger plus posted journals' AR / AP legs
   // (computeBooks.journalBalances, read from the GL). `outstanding` itself stays the invoice subledger (D16).
   const jb = books.journalBalances || { ar: 0, ap: 0, inventory: 0 };
@@ -10576,7 +10583,7 @@ async function glBalanceSheet(userId, entityId) {
   // conversion, matches computeBooks). Both reconcile-gated; consolidated also requires full FX coverage.
   const consolidated = entityId == null;
   let f;
-  try { f = consolidated ? await glConsolidated(userId, { entityId: null }) : await glFinancials(userId, entityId, 'year'); }
+  try { f = consolidated ? await glConsolidated(userId, { entityId: null, permittedEntityIds: permitted }) : await glFinancials(userId, entityId, 'year'); }
   catch (e) { console.error('[GL 5b] balance-sheet read failed, serving oracle:', e && e.message); return oracle(); }
   const bal = {}; for (const a of f.accounts) bal[a.code] = a.balance;   // balance is natural-direction (assets/exp debit-positive; rest credit-positive)
   // L6b: the ledger's AR / AP include the journal legs (J1100 / J2000); compared with computeBooks' subledger +

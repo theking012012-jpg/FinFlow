@@ -1007,8 +1007,10 @@ If you cannot find a field, use null. Be concise.`;
       // N74: customers belong to entities like every other record — only permitted entities' customers.
       allCustomers: customers.rows.filter(r => _permit(r.entity_id)).map(r => r.data),
       balanceSheet: {
-        accountsReceivable: books.outstanding.toFixed(2),
-        accountsPayable:    unpaidBills.toFixed(2),
+        // L6b: control accounts — subledger + posted journals' AR / AP legs (computeBooks.journalBalances), as the
+        // owner's balance sheet (glBalanceSheet). Same computeBooks call, same entity scope.
+        accountsReceivable: (books.outstanding + ((books.journalBalances && books.journalBalances.ar) || 0)).toFixed(2),
+        accountsPayable:    (unpaidBills + ((books.journalBalances && books.journalBalances.ap) || 0)).toFixed(2),
         accountsPayableByEntity: apByEntity,
         totalPayroll:       (books.parts.payroll || 0).toFixed(2),
       },

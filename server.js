@@ -10542,8 +10542,11 @@ async function canonicalAP(userId, entityId, { net = false } = {}) {
 async function glBalanceSheet(userId, entityId) {
   const r2 = n => Math.round((n || 0) * 100) / 100;
   const books = await computeBooks(userId, entityId, 'year');
-  const ar = r2(books.outstanding);
-  const ap = r2(books.accountsPayable), apNet = r2(books.accountsPayableNet);   // N99: same computeBooks call as AR
+  // L6b: the balance sheet shows CONTROL accounts — the invoice / bill subledger plus posted journals' AR / AP legs
+  // (computeBooks.journalBalances, read from the GL). `outstanding` itself stays the invoice subledger (D16).
+  const jb = books.journalBalances || { ar: 0, ap: 0, inventory: 0 };
+  const ar = r2(books.outstanding + jb.ar);
+  const ap = r2(books.accountsPayable + jb.ap), apNet = r2(books.accountsPayableNet + jb.ap);   // N99: same computeBooks call as AR
   // Oracle = today's honest stub (cash not tracked, assets = AR only).
   const oracle = () => ({
     source: 'computeBooks',
@@ -10560,7 +10563,9 @@ async function glBalanceSheet(userId, entityId) {
   try { f = consolidated ? await glConsolidated(userId, { entityId: null }) : await glFinancials(userId, entityId, 'year'); }
   catch (e) { console.error('[GL 5b] balance-sheet read failed, serving oracle:', e && e.message); return oracle(); }
   const bal = {}; for (const a of f.accounts) bal[a.code] = a.balance;   // balance is natural-direction (assets/exp debit-positive; rest credit-positive)
-  const glAR = r2(bal['1100'] || 0), glAP = r2(bal['2000'] || 0);
+  // L6b: the ledger's AR / AP include the journal legs (J1100 / J2000); compared with computeBooks' subledger +
+  // journalBalances, so the gate fails if exactly ONE side carries a leg (it passed vacuously when both dropped it).
+  const glAR = r2((bal['1100'] || 0) + (bal['J1100'] || 0)), glAP = r2((bal['2000'] || 0) + (bal['J2000'] || 0));
   const glExpNonFx = r2(f.accounts.filter(a => a.type === 'expense' && a.code !== '7000').reduce((s, a) => s + a.net_period, 0));
   const eq = (a, b) => Math.abs(r2(a) - r2(b)) < 0.01;
   const coverageOk = !f.fxCoverage || f.fxCoverage.complete !== false;
@@ -10581,9 +10586,9 @@ async function glBalanceSheet(userId, entityId) {
   const res = {
     source: 'gl',
     cash: r2((bal['1000'] || 0) + JOURNAL_CASH_LEDGER_CODES.reduce((s, c) => s + (bal[c] || 0), 0)), cashTracked: true,   // L6
-    accountsReceivable: r2(bal['1100'] || 0), inventory: r2(bal['1200'] || 0),
+    accountsReceivable: glAR, inventory: r2((bal['1200'] || 0) + (bal['J1200'] || 0)),   // L6b
     totalAssets: r2(f.balanceSheet.assets), totalAssetsExcludesCash: false,
-    accountsPayable: r2(bal['2000'] || 0), taxPayable: r2(bal['2100'] || 0), payrollLiabilities: r2(bal['2200'] || 0),
+    accountsPayable: glAP, taxPayable: r2(bal['2100'] || 0), payrollLiabilities: r2(bal['2200'] || 0),   // L6b: AP incl. J2000
     totalLiabilities: r2(f.balanceSheet.liabilities), equity: r2(f.balanceSheet.equity),
   };
   if (consolidated) {
@@ -10625,6 +10630,12 @@ const _jeNormalFor = type => (type === 'asset' || type === 'expense') ? 'debit' 
 // starting cash via glBalanceSheet, the cash-flow report) counts them beside the system Cash account 1000 —
 // otherwise a journal that moves cash moved no cash figure.
 const JOURNAL_CASH_LEDGER_CODES = ['J1000', 'J1010', 'J1020'];
+// L6b: the journal picker's BALANCE-SHEET control accounts whose meaning is unambiguous (same code AND same meaning
+// in the JE template and the system chart) — owner-ratified map. A posted journal's leg on these lands on the
+// balance-sheet line, read from the GL on BOTH sides of the reconcile gate (computeBooks.journalBalances and the
+// glBalanceSheet reader). Template 2100 "Credit Card" / 2200 "Tax Payable" collide with system 2100 Tax Payable /
+// 2200 Payroll Liabilities — OWNER DECISION pending; until then they stay in total liabilities only.
+const JOURNAL_BS_LEDGER_CODES = { J1100: 'ar', J2000: 'ap', J1200: 'inventory' };
 async function postJournalToLedger(client, { userId, entityId, journal }) {
   let lines = [];
   try { lines = Array.isArray(journal.lines) ? journal.lines : JSON.parse(journal.lines || '[]'); } catch (_) { lines = []; }
@@ -10808,6 +10819,33 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
       (g.t === 'income' ? _jeIncomeRows : _jeExpenseRows).push({ entity_id: g.eid, _amt: amt, _d: g.d });
     }
   } catch (_) { /* no ledger / query failure → journals contribute 0; reconcile surfaces any divergence */ }
+  // L6b: posted journals' BALANCE-SHEET legs (AR / AP / Inventory — JOURNAL_BS_LEDGER_CODES), as of today, read FROM
+  // the GL exactly like the P&L leg above, so reversals net to zero and glBalanceSheet's reader sees the same rows.
+  // These are CONTROL-ACCOUNT adjustments: `outstanding` / `accountsPayable` stay the invoice / bill subledgers
+  // (dashboard Outstanding, overdue, AP card — D16); the balance sheet adds journalBalances on top.
+  const _jbsRows = { ar: [], ap: [], inventory: [] };
+  try {
+    const { rows: _jbs } = await pool.query(
+      `SELECT la.code AS code, le.entity_id AS eid, le.entry_date::text AS d,
+              COALESCE(SUM(ll.debit),0)::float AS dr, COALESCE(SUM(ll.credit),0)::float AS cr
+         FROM ledger_lines ll
+         JOIN ledger_accounts la ON la.id = ll.account_id
+         JOIN ledger_entries le ON le.id = ll.entry_id AND le.status='posted'
+        WHERE ll.user_id=$1 AND le.source_type='journal' AND la.code = ANY($3)
+          AND ($2::int IS NULL OR le.entity_id IS NULL OR le.entity_id=$2)
+          AND le.entry_date <= $4::date
+        GROUP BY la.code, le.entity_id, le.entry_date`,
+      [userId, entityId, Object.keys(JOURNAL_BS_LEDGER_CODES), _today]);
+    for (const g of _jbs) {
+      const leg = JOURNAL_BS_LEDGER_CODES[g.code];
+      _jbsRows[leg].push({ entity_id: g.eid, _amt: leg === 'ap' ? (g.cr - g.dr) : (g.dr - g.cr), _d: g.d });   // natural direction
+    }
+  } catch (_) { /* no ledger / query failure → the legs contribute 0; the reconcile gate surfaces any divergence */ }
+  const journalBalances = {
+    ar:        r2(sumFX(_jbsRows.ar,        r => r._amt, r => r._d, 'journal_ar')),
+    ap:        r2(sumFX(_jbsRows.ap,        r => r._amt, r => r._d, 'journal_ap')),
+    inventory: r2(sumFX(_jbsRows.inventory, r => r._amt, r => r._d, 'journal_inventory')),
+  };
   const jeRevenue = sumFX(_jeIncomeRows,  r => r._amt, r => r._d, 'journal_income');
   const jeOpex    = sumFX(_jeExpenseRows, r => r._amt, r => r._d, 'journal_expense');
 
@@ -11208,7 +11246,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const transactions = [..._invTx, ..._expTx].sort(_txByDate).slice(0, 6).map(t => ({ name: t.name, cat: t.cat, type: t.type, amount: t.amount }));
 
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, accountsPayable, accountsPayableNet, arCreditContra: r2(_arCreditContra), arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, accountsPayable, accountsPayableNet, arCreditContra: r2(_arCreditContra), journalBalances, arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
     window: { start: winStart, end: winEnd, today: _today },   // L11: the resolved calendar window, so a caller can list exactly the rows these figures cover
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the

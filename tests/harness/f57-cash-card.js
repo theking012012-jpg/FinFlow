@@ -67,7 +67,9 @@ function loadClientCash() {
     }
     throw new Error(`[f57] unbalanced braces for ${openLine}`);
   };
-  const parts = [span('function _fyContext()'), span('function _periodWindow(period, monthIdx)'),
+  // L36: _fyContext / _periodWindow / arOutstanding resolve "today" through _entityToday() → _activeEntityTz();
+  // extract the real helpers too (else ReferenceError: _entityToday is not defined — same break as step4-client-gate).
+  const parts = [span('function _activeEntityTz()'), span('function _entityToday()'), span('function _fyContext()'), span('function _periodWindow(period, monthIdx)'),
                  span('function cashForPeriod(rows, period, monthIdx)')].join('\n');
   const win = { FinFlowDates: require(path.join(ROOT, 'public/finflow-dates.js')) };
   const document = { getElementById: () => null };   // no #s-fy ⇒ January fiscal year, as seeded

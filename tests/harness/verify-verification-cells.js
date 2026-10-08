@@ -44,7 +44,9 @@ class FixedDate extends Date { constructor(...a) { if (!a.length) super(PINNED);
 function loadEngine() {
   const appMain = fs.readFileSync(ROOT + '/public/app-main.js', 'utf8');
   const dash = fs.readFileSync(ROOT + '/public/finflow-api-wiring-dashboard.js', 'utf8');
-  const appParts = ['function _fyContext()', 'function _periodWindow(period, monthIdx)',
+  // L36: _fyContext / _periodWindow / arOutstanding resolve "today" through _entityToday() → _activeEntityTz();
+  // extract the real helpers too (else ReferenceError: _entityToday is not defined — same break as step4-client-gate).
+  const appParts = ['function _activeEntityTz()', 'function _entityToday()', 'function _fyContext()', 'function _periodWindow(period, monthIdx)',
     'function _jLineType(code)', 'function _journalPnL(w)',   // N20: computeRevenue/ExpenseBreakdown now depend on these
     'function computeRevenue(period, monthIdx)', 'function computeExpenseBreakdown(period, monthIdx)',
     'function arOutstanding(invoices)'].map(h => extractFn(appMain, h)).join('\n');

@@ -54,7 +54,11 @@ function loadEngine(journals) {
   // Pre-fix sources lack _jLineType/_journalPnL — tolerate their absence so the probe still RUNS
   // (and then fails the value assertions) rather than throwing an extraction error.
   const optional = h => { try { return extractFn(appMain, h); } catch (_) { return ''; } };
+  // L36: _fyContext / _periodWindow / arOutstanding resolve "today" through _entityToday() → _activeEntityTz();
+  // extract the real helpers too (else ReferenceError: _entityToday is not defined — same break as step4-client-gate).
   const appParts = [
+    extractFn(appMain, 'function _activeEntityTz()'),
+    extractFn(appMain, 'function _entityToday()'),
     extractFn(appMain, 'function _fyContext()'),
     extractFn(appMain, 'function _periodWindow(period, monthIdx)'),
     optional('function _jLineType(code)'),

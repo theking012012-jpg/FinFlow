@@ -1076,7 +1076,10 @@ function renderDashboard(invoices, expenses) {
 // showed different money here than on the client's own dashboard.
 const _AR_RECOGNISED = ['pending','overdue','partial','paid'];
 const _invBalance = i => Math.max(0, (parseFloat(i.amount)||0) - (parseFloat(i.amount_paid)||0));
-const _todayYmd = () => new Date().toISOString().slice(0,10);
+// L36: the client ENTITY's day, from the server (computeBooks window.today = entityTodayYmd) — the same "today" its
+// overdue AMOUNT (summary.overdue) is computed on. The UTC day here could drop or add an invoice near midnight for a
+// business far from UTC, so the overdue COUNT disagreed with the amount beside it. UTC only if the payload lacks it.
+const _todayYmd = () => (_data && _data.window && _data.window.today) || new Date().toISOString().slice(0,10);
 function _portalOverdueInvoices(invoices){
   const today=_todayYmd();
   return (invoices||[]).filter(i=>_AR_RECOGNISED.includes(String(i.status||'').toLowerCase()) && _invBalance(i)>0.005

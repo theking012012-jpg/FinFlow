@@ -20,7 +20,7 @@
     setText('rem-overdue', s.overdue||0);
     setText('rem-soon', s.due_soon||0);
     setText('rem-risk', s.predicted_late||0);
-    setText('rem-out', money(s.total_outstanding||0, cur));
+    setText('rem-out', money(s.ar_outstanding!=null ? s.ar_outstanding : (s.total_outstanding||0), cur));   // L35: canonical netted AR
     var b=document.getElementById('badge-reminders'); if(b){ if((s.overdue||0)>0){ b.textContent=s.overdue; b.style.display=''; } else { b.style.display='none'; } }
     byId={}; items.forEach(function(it){ byId[it.invoice_id]=it; });
     if(!items.length){ box.innerHTML='<div style="padding:28px 8px;text-align:center;color:var(--t2)">No invoices need chasing right now — everything is paid or not yet due.</div>'; return; }

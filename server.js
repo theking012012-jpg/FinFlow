@@ -3890,6 +3890,11 @@ async function _reminderContext(req) {
 app.get('/api/payment-reminders', requireAuth, wrap(async (req, res) => {
   const ctx = await _reminderContext(req);
   const { items, summary } = buildReminderCandidates(ctx);
+  // L35 Root 2: the page's "Outstanding" card shows the CANONICAL receivable — computeBooks.outstanding, net of
+  // open|applied credit notes, the figure every other surface shows — not Σ of the listed candidates' gross
+  // balances (summary.total_outstanding, kept as the list sum). Live it read $14,300 vs $13,550.
+  const _books = await computeBooks(scopeId(req), req.entityId || null, 'year');
+  summary.ar_outstanding = Math.round((Number(_books.outstanding) || 0) * 100) / 100;
   res.json({ items, summary, business_name: ctx.businessName, currency: ctx.currency || null, generated_at: new Date().toISOString() });
 }));
 

@@ -4649,10 +4649,15 @@ function clearAIChat(){
         const _taLabel = bs.totalAssetsExcludesCash ? 'Total Assets (excl. untracked cash)' : 'Total Assets';
         // GL consolidation: ASC 830 Cumulative Translation Adjustment (consolidated multi-currency only).
         const _cta = (typeof bs.cta === 'number') ? bs.cta : 0;
+        // L6c: a ledger-sourced statement carries EVERY line (bs.lines — a partition of the accounts its totals are
+        // summed from), so it renders those and foots by construction: Equipment, Credit Card, Owner's Equity, any
+        // typed account. The AR-only stub (no bs.lines) renders exactly as before.
+        const _L = (bs.lines && Array.isArray(bs.lines.assets)) ? bs.lines : null;
+        const _lineRows = (arr, color) => (arr || []).map(l => row(l.label, m(l.amount), { color })).join('');
         _rptBody(
           tiles([
             tile('Total Assets', m(ta), bs.totalAssetsExcludesCash ? 'excl. untracked cash' : 'incl. cash', 'var(--green)'),
-            tile('Total Liabilities', m(tl), 'accounts payable', 'var(--red)'),
+            tile('Total Liabilities', m(tl), _L ? 'all liabilities' : 'accounts payable', 'var(--red)'),
             tile('Equity', m(eq), 'assets − liabilities', eq >= 0 ? 'var(--green)' : 'var(--red)'),
             tile('Receivable', m(bs.accountsReceivable), 'outstanding AR'),
           ])
@@ -4660,17 +4665,22 @@ function clearAIChat(){
           + shareRow('Assets', ta, denomBS, 'var(--green)')
           + shareRow('Liabilities', tl, denomBS, 'var(--red)')
           + hdr('Assets')
-          + row('Cash & Equivalents', cashCell)
-          + row('Accounts Receivable', m(bs.accountsReceivable), { color: 'var(--green)' })
-          + (_inv > 0 ? row('Inventory', m(_inv), { color: 'var(--green)' }) : '')
+          + (_L ? _lineRows(_L.assets, 'var(--green)')
+               : row('Cash & Equivalents', cashCell)
+                 + row('Accounts Receivable', m(bs.accountsReceivable), { color: 'var(--green)' })
+                 + (_inv > 0 ? row('Inventory', m(_inv), { color: 'var(--green)' }) : ''))
           + row(_taLabel, m(ta), { bold: true })
           + hdr('Liabilities')
-          + row('Accounts Payable', m(bs.accountsPayable), { color: 'var(--red)' })
-          + (_taxP > 0 ? row('Tax Payable', m(_taxP), { color: 'var(--red)' }) : '')
-          + (_payL > 0 ? row('Payroll Liabilities', m(_payL), { color: 'var(--red)' }) : '')
+          + (_L ? _lineRows(_L.liabilities, 'var(--red)')
+               : row('Accounts Payable', m(bs.accountsPayable), { color: 'var(--red)' })
+                 + (_taxP > 0 ? row('Tax Payable', m(_taxP), { color: 'var(--red)' }) : '')
+                 + (_payL > 0 ? row('Payroll Liabilities', m(_payL), { color: 'var(--red)' }) : ''))
           + row('Total Liabilities', m(tl), { color: 'var(--red)', bold: true })
-          + (Math.abs(_cta) >= 0.01 ? row('Cumulative Translation Adjustment (ASC 830)', m(_cta), { color: 'var(--t2)' }) : '')
+          + (_L ? hdr('Equity') + _lineRows(_L.equity, 'var(--t2)') : '')
           + `<div style="margin-top:10px;padding-top:8px;border-top:2px solid var(--bd);display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Equity</span><span style="font-family:var(--font-mono);color:${eq >= 0 ? 'var(--green)' : 'var(--red)'}">${m(eq)}</span></div>`
+          // ASC 830 CTA is SUPPLEMENTARY (the closing-rate translation view); it is not part of the Equity total above,
+          // so it renders after that total — between the equity lines and their total it would break the footing.
+          + (Math.abs(_cta) >= 0.01 ? row('Cumulative Translation Adjustment (ASC 830, supplementary)', m(_cta), { color: 'var(--t2)' }) : '')
           // F207: business investment holdings are tracked in the Investments module but are NOT posted to
           // the double-entry ledger, so they are intentionally excluded here (this statement ties to the GL).
           // Surface that explicitly so the two screens never *silently* disagree.

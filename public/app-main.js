@@ -6111,8 +6111,9 @@ const reportsData=[
   {name:'Expense Report',desc:'Spending by category and vendor',icon:'🧾'},
   {name:'Payroll Summary',desc:'Staff costs and deductions',icon:'👔'},
 ];
+// L56: no 'VAT Return' entry — FinFlow has no sales-tax/VAT/GST engine by design (tax = estimates only).
+// generateReport keeps its not-tracked handler for any old deep link.
 const taxReportsData=[
-  {name:'VAT Return',desc:'Tax collected and paid',icon:'🏛️'},
   {name:'Income Tax Estimate',desc:'Estimated quarterly taxes',icon:'📋'},
   {name:'1099 / W-2 Summary',desc:'Contractor and employee forms',icon:'📄'},
   {name:'Tax-Deductible Expenses',desc:'All deductible business costs',icon:'✅'},

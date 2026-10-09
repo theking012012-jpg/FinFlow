@@ -429,6 +429,12 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   `de9fbe5`, L51 `0561da5`, L52 `da48e31`, L53 `478d2b1`, L56 `627a000`. Found while fixing and fixed: L57 `6bef345` (the payroll
   sync overwrote the L45 owner cards with the roster — L45 was incomplete as first shipped), L58 `5b967ba`. Logged open: L59–L63.
   NOT fixed (owner decisions / data): L42, L54, L55, L59, L62. ALL UNEXECUTED in the container — RED/GREEN runs are the owner's.
+- 2026-10-09 — RED owner-executed (PowerShell, each harness at its own RED commit): cashflow-reconciles-bs-cash 6F/2P ·
+  tax-estimate-cents 3F/1P · ap-overdue-netting 4F/2P · payroll-cards-from-runs 4F/1P · banking-balance 2F/1P · forecast-credits-payroll
+  6F/1P · cashflow-avg-elapsed 2F/1P · expenses-card-denominators 2F/2P · expense-report-categories 3F/2P · ap-report-vendor-credits
+  2F/2P · invoice-cards-foot 3F/1P · compact-money-rounding 4F/5P · reports-no-vat-entry 1F/1P · owner-net-single-writer 3F/4P ·
+  no-fabricated-salary-rows 2F/2P. Every count equals that harness's bug-assertion count with premises/CONTROLs passing
+  (matched by count from the summary lines, not per-line output). GREEN at `03fb63f` + 3× sweep pending.
 
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.

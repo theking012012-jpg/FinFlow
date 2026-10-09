@@ -5827,7 +5827,11 @@ async function saveBankTxn(desc, amount, type, cat){
 function renderBanking(){
   // KPI cards: Total Balance · Inflow (MTD) · Outflow (MTD) · Uncategorized
   const _bkSet = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-  const _bkTotal = (bankAccounts||[]).reduce((s,a)=>s+(parseFloat(a.balance)||0),0);
+  // L46 (F123 principle): an unknown balance is untracked, never $0. Only FINITE balances are summed; with none known the
+  // card reads "—" / not tracked. (bankAccounts carries no balances today — the feed is transactions only — so this card read
+  // a fabricated $0.00 for every user while the books held real cash.)
+  const _bkKnown = (bankAccounts||[]).filter(a => a && a.balance != null && a.balance !== '' && isFinite(parseFloat(a.balance)));
+  const _bkTotal = _bkKnown.reduce((s,a)=>s+parseFloat(a.balance),0);
   // F87: the MTD month key comes from the CALENDAR date (UTC via resolvedToday), not local
   // getMonth — so Inflow/Outflow (MTD) don't shift by the viewer's timezone. Row side is a
   // string prefix match on the row's own 'YYYY-MM-DD'.
@@ -5836,7 +5840,9 @@ function renderBanking(){
   const _bkIn  = _bkMtd.filter(t => t.type==='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkOut = _bkMtd.filter(t => t.type!=='credit').reduce((s,t)=>s+Math.abs(parseFloat(t.amount)||0),0);
   const _bkUncat = (bankTxns||[]).filter(t => !t.cat || /uncategor/i.test(t.cat)).length;
-  _bkSet('bank-total-bal', S(_bkTotal));
+  _bkSet('bank-total-bal', _bkKnown.length ? S(_bkTotal) : '—');
+  _bkSet('bank-total-sub', !_bkKnown.length ? 'Not tracked — no account balances'
+    : (_bkKnown.length === (bankAccounts||[]).length ? 'Across all accounts' : ('Across ' + _bkKnown.length + ' of ' + bankAccounts.length + ' accounts')));
   _bkSet('bank-inflow',    S(_bkIn));
   _bkSet('bank-outflow',   S(_bkOut));
   _bkSet('bank-uncat',     _bkUncat);
@@ -5848,7 +5854,7 @@ function renderBanking(){
         <div style="width:36px;height:36px;border-radius:var(--radius);background:var(--acc-bg);border:1px solid var(--acc2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--acc)">🏦</div>
         <div><div style="font-size:13px;font-weight:500;color:var(--t1)">${esc(a.name)}</div><div style="font-size:11px;color:var(--t3)">${a.bank} · ****${a.last4}</div></div>
       </div>
-      <div style="text-align:right"><div style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">$${a.balance.toLocaleString()}</div><div style="font-size:10px;color:var(--t3)">${a.type} · ${a.updated}</div></div>
+      <div style="text-align:right"><div style="font-size:14px;font-weight:600;font-family:var(--font-mono);color:var(--t1)">${(a.balance != null && isFinite(parseFloat(a.balance))) ? S(parseFloat(a.balance)) : '—'}</div><div style="font-size:10px;color:var(--t3)">${a.type} · ${a.updated}</div></div>
     </div>`).join('');
   const tl=document.getElementById('bank-txns-list');
   if(tl)tl.innerHTML=bankTxns.map(t=>`

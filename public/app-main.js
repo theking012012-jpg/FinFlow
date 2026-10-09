@@ -610,10 +610,14 @@ function _fmtMoney(value, symbol){
   if(!isFinite(n)) n = 0;
   const sign = n < 0 ? '-' : '';
   const a = Math.abs(n);
+  // L53: tenths are rounded on an EXACT scale — a/(unit/10) keeps an integer amount's .5 ties exact in binary (11350/100 =
+  // 113.5), where (a/1e3).toFixed(1) saw 11.3499… and rounded $11,350 DOWN to "$11.3K" beside "$50.4K". Half away from zero
+  // (a is the magnitude), and a value that rounds to 1,000 of a unit rolls over to the next ($999,950 was "$1000.0K").
+  const _t = unit => Math.round(a / (unit / 10)) / 10;
   let body;
-  if(a >= 1e9)      body = (a/1e9).toFixed(1) + 'B';
-  else if(a >= 1e6) body = (a/1e6).toFixed(1) + 'M';
-  else if(a >= 1e3) body = (a/1e3).toFixed(1) + 'K';
+  if(a >= 1e9)      body = _t(1e9).toFixed(1) + 'B';
+  else if(a >= 1e6) body = _t(1e6) >= 1000 ? _t(1e9).toFixed(1) + 'B' : _t(1e6).toFixed(1) + 'M';
+  else if(a >= 1e3) body = _t(1e3) >= 1000 ? _t(1e6).toFixed(1) + 'M' : _t(1e3).toFixed(1) + 'K';
   else              body = Math.round(a).toLocaleString('en-US');
   return sign + sym + body;
 }

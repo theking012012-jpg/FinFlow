@@ -180,6 +180,9 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
    AND COALESCE((b.data->>'amount_paid')::numeric,0) - COALESCE(pm.paid,0) > 0.005;` — expected FedEx BILL-3900, 1,000.
 - **Live data decisions (L54 / L55)**: revert the leftover test journal JE-7874; decide which ZZ QA / test records to remove.
 - **Tax deduction policy (L42)**: which expense kinds the income-tax ESTIMATE deducts by default (wages, vendor bills, COGS).
+- **Owner salary → Personal Finance (L59)**: personal income from the owner salary is the ROSTER net today (a planned salary);
+  should it instead be the net actually paid in each recognised payroll run?
+- **1099 / W-2 Summary (L62)**: US-only forms listed for every country — label it 'US' or show it only to US entities?
 - **Customer ↔ invoice foreign key** (D8/L17): revenue attribution is by name match until invoices carry a customer id.
 - **Landing page "750+ App integrations"** (audit F51): ~17 have a real connect flow; the claim is marketing copy.
 - **Investments close-position / realised gain** (audit F109) and **entity jurisdiction / region** (F108): features.
@@ -421,6 +424,11 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
 - 2026-10-09 — Owner pushed main → `e713ad1` (fast-forward from `ad11188`; Railway auto-deploys): L6c, L38, L39, L40, L37
   retirement. Deployed on targeted RED → GREEN + regression + money-gate runs; the 3× full sweep was NOT run before this
   deploy — it remains the open done-gate item for this round.
+- 2026-10-09 — L41–L56 fixes on `dash-je-fix`, each RED harness committed before its fix: L41 `4d10c74`, L43 `8d3291c`, L44
+  `6a5ceb3`, L45 `87b7e14` (+ `dbad9c0` _gen, copy `3d16fab`), L46 `94677c8`, L47 `6914e18`, L48 `eff180c`, L49 `a7e0f09`, L50
+  `de9fbe5`, L51 `0561da5`, L52 `da48e31`, L53 `478d2b1`, L56 `627a000`. Found while fixing and fixed: L57 `6bef345` (the payroll
+  sync overwrote the L45 owner cards with the roster — L45 was incomplete as first shipped), L58 `5b967ba`. Logged open: L59–L63.
+  NOT fixed (owner decisions / data): L42, L54, L55, L59, L62. ALL UNEXECUTED in the container — RED/GREEN runs are the owner's.
 
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
@@ -699,7 +707,7 @@ READING the cited code (no execution, nothing changed). NOT covered this round: 
 sign-in), the VAT Return / 1099-W-2 / Tax-Deductible reports, and the full multi-area code audit (stopped by the owner).
 Live deploy check (curl, read-only): the served minified bundle contains every L6c / L39 client string; the portal is login-gated.
 
-- **L41** (OPEN — 🔴 CRITICAL; cause confirmed by reading, split inferred from live figures) **Cash Flow does not reconcile to the
+- **L41** (FIXED `1151d42` RED / `4d10c74` — option (a), UNEXECUTED in the container — owner runs the harness in PowerShell; 🔴 CRITICAL; cause confirmed by reading, split inferred from live figures) **Cash Flow does not reconcile to the
   balance-sheet cash.** Live: balance-sheet Cash $25,740 (books start in 2026, opening 0) but the Cash Flow statement / page says
   in $11,840 · out $10,100 · net **$1,740** — a **$24,000** gap. Cause: invoices and bills settled before the F133/F135 payment-row
   fixes carry `amount_paid` with NO `invoice_payments` / `payments_made` row. The GL backfill books that cash
@@ -712,51 +720,81 @@ Live deploy check (curl, read-only): the served minified bundle contains every L
   forecast "Cash now" (both ledger). Also: paidgap cash is dated at the ISSUE date (no real payment date exists). Fix options
   (owner): (a) cash-flow reads the ledger's cash accounts (one writer — the L6 pattern); (b) create the missing payment rows (DATA,
   Rule 8, separate approval). Confirm the split with the read-only SQL in Owner Handoff ("L41 instrument").
-- **L42** (OPEN — HIGH; confirmed by reading) **Income-tax estimate deducts only flagged manual expenses — never payroll, vendor
+  FIX: when glBalanceSheet is served from the reconciled ledger, `/api/reports/cash-flow` sums the ledger cash accounts
+  (BS_NAMED_LINE 'cash'), netted per source document per month, up to the entity's today ⇒ net = balance-sheet cash by
+  construction; `source:'ledger'|'documents'`. Option (b) (missing payment rows) remains a DATA decision. Harness
+  `verify-cashflow-reconciles-bs-cash.js`. The documents fallback has its own gap — logged as L63.
+- **L42** (OPEN — HIGH; OWNER DECISION pending, not implemented; confirmed by reading) **Income-tax estimate deducts only flagged manual expenses — never payroll, vendor
   bills or COGS.** `GET /api/tax-filing`: `taxableIncome = Math.max(0, revenue - deductible)` with `deductible = books.tax.deductible`
   (server.js ~6760-6775), and `books.tax.deductible` = Σ manual `expenses` rows flagged yes/half only (server.js:10986-10994). Live:
   taxable $47,540 = 50,390 − 2,850 (Rent) — payroll $7,000 and bills $1,500 are not deducted; at the 25% line the estimate is
   **$11,885 vs $9,760** on taxable profit 39,040 (+$2,125, +21.8%). The in-app help says the rate applies "against taxable profit".
   Same single source feeds the accountant Tax Summary (F139), so both overstate identically (Rule 6: agreement ≠ correct). Owner
   decision: which expense kinds are deductible by default (wages, bills, COGS) — estimate-only, no filing engine (product facts).
-- **L43** (OPEN — LOW; confirmed by reading) Tax figures rounded to whole units before display: `estimatedTax = Math.round(...)`,
+- **L43** (FIXED `edff9be` RED / `8d3291c`, UNEXECUTED in the container — owner runs the harness in PowerShell; LOW; confirmed by reading) Tax figures rounded to whole units before display: `estimatedTax = Math.round(...)`,
   `quarterly = Math.round(estimatedTax / 4)`. Live (cents on): "Per quarter $2,971.00" (true 2,971.25); 4 × 2,971 = 11,884 ≠ $11,885.
-- **L44** (OPEN — MEDIUM; confirmed by reading + live) **AP "Overdue" is gross of open vendor credits** — the AP mirror of L35.
+  FIX: server estimatedTax / quarterly and the worksheet 'Per Quarter' round to 0.01. Harness `verify-tax-estimate-cents.js`.
+- **L44** (FIXED `9a87b33` RED / `6a5ceb3`, UNEXECUTED in the container — owner runs the harness in PowerShell; MEDIUM; confirmed by reading + live) **AP "Overdue" is gross of open vendor credits** — the AP mirror of L35.
   `window._billsOverdueSum` (finflow-api-wiring-pages.js:640-650) = Σ (amount − amount_paid) of past-due unpaid bills; no vendor-
   credit contra, no clamp to payables. Live: Bills page and Vendors page Overdue **$500** > Payables **$250** (two past-due $250
   bills, one open $250 vendor credit). No canonical server AP-overdue figure exists (AR has `arSummary.overdueTotal`).
-- **L45** (OPEN — MEDIUM; confirmed by reading + live) **Payroll page headline figures are roster sums** (Rule 12: the roster is a
+  FIX: `computeBooks.apSummary` {total, overdueTotal = clamp(past-due − open vendor credits, 0, AP), overdueCount}, on
+  glBalanceSheet (both paths); Bills + Vendors cards read it; `_billsOverdueSum` removed. Harness `verify-ap-overdue-netting.js`.
+- **L45** (FIXED `9fe4f6b` RED / `87b7e14` + `dbad9c0` _gen; completed by L57; copy `3d16fab`; UNEXECUTED in the container — owner runs the harness in PowerShell; MEDIUM; confirmed by reading + live) **Payroll page headline figures are roster sums** (Rule 12: the roster is a
   template and must produce no figure). `window.renderPayroll` (finflow-api-wiring-medium.js:660-675, runtime winner over
   app-main.js:3032): "Monthly payroll" = Σ roster `gross` (live **$7,250**: 5,000 + 2,000 + 250) and "Your net pay" = roster owner
   net ($5,000), beside recognised payroll **$7,000** (the one July run) on the P&L / Payroll Summary. Suspect, not yet traced: the
   owner-salary modal says the owner's net pay "flows into Personal Finance as your monthly income" (index.html:4180) — a roster
   figure entering personal income.
-- **L46** (OPEN — MEDIUM; mechanism confirmed by reading, live cause suspect) **Banking "Total Balance" shows $0.00 for unknown
+  FIX: headline / deductions / owner net / Run History from the latest approved|paid run's LINES. INCOMPLETE as shipped —
+  a second live writer (the payroll sync) still overwrote the owner cards with the roster ⇒ L57. The L45 harness seeded no owner,
+  so it could not see that (Rule 4 gap in my own harness). SUSPECT TRACED (by reading): the flow is real — saving the owner
+  salary creates one recurring monthly income profile per entity ('Owner salary — <Entity>', medium.js:806-831) — but in the
+  entity's OWN currency, not 'combined … in USD'; copy corrected (`3d16fab`). Whether that personal income should follow the
+  roster template or the actual run is a product question ⇒ L59.
+- **L46** (FIXED `cbf1758` RED / `94677c8`, UNEXECUTED in the container — owner runs the harness in PowerShell; MEDIUM; mechanism confirmed by reading) **Banking "Total Balance" shows $0.00 for unknown
   balances.** `renderBanking` (app-main.js:5826-5839; no wiring override): Σ `parseFloat(a.balance) || 0` over `bankAccounts` — a
   missing / unlinked balance renders as $0.00 (live: $0.00 while transactions are listed). Same principle as F123 (never show
   untracked cash as $0). Two unlabelled "cash" figures across pages: bank $0.00 vs ledger $25,740.
-- **L47** (OPEN — MEDIUM; confirmed by reading + live) **13-week forecast ignores open credit notes and vendor credits.** Inflows =
-  Σ (amount − amount_paid) of unpaid invoices by due date; outflows likewise for bills (server.js ~4050-4060; the code labels
-  "does NOT fold in … credit notes"). Live week 1: in **$14,300** (gross overdue) vs collectible 13,050 (net of $1,250 open
-  credit notes); out $644 includes $500 of bills where AP is $250. Also "Lowest point $39,396 (Week 1)" while cash now is $25,740 —
-  the opening balance is excluded from "lowest", so the label overstates the floor (LOW part).
-- **L48** (OPEN — LOW; confirmed by reading + live) Cash Flow "Avg monthly" divides the fiscal-year net by 12 regardless of
+  Live cause confirmed by reading: `bankAccounts` is a constant empty array nothing populates. FIX: only finite balances are
+  summed; none ⇒ '—' / 'Not tracked — no account balances'. Harness `verify-banking-balance-not-fabricated.js`.
+- **L47** (FIXED `88050be` RED / `6914e18`, UNEXECUTED in the container — owner runs the harness in PowerShell; MEDIUM; confirmed by reading + live) **13-week forecast ignores open credit notes and vendor credits.** Inflows =
+  Σ (amount − amount_paid) of unpaid invoices by due date; outflows likewise for bills (server.js ~4050-4060). [CORRECTED: an
+  earlier version quoted the code as labelling this "does NOT fold in … credit notes" — that comment is the SEGMENT report's
+  scope note, server.js:4161, not the forecast. The defect stands on the code itself.] Live week 1: in **$14,300** (gross overdue) vs collectible 13,050 (net of $1,250 open
+  credit notes); out $644 includes $500 of bills where AP is $250. [WITHDRAWN: the "Lowest point $39,396 (Week 1)" part. It is
+  the lowest projected END-OF-WEEK balance (cashflow-forecast.js:67-76: startingCash + cumulative net per week), labelled with
+  its week; 25,740 + 14,300 − 644 = 39,396. Cash now is shown separately. A definitional choice, honestly labelled — not a defect.]
+  FIX: open credit notes / vendor credits applied (own customer/vendor first, earliest due); approved unpaid payroll runs are an
+  outflow due now; future payroll = 90-day paid-run run-rate (never the roster). Harness `verify-forecast-credits-payroll.js`.
+- **L48** (FIXED `f10e658` RED / `eff180c`, UNEXECUTED in the container — owner runs the harness in PowerShell; LOW; confirmed by reading + live) Cash Flow "Avg monthly" divides the fiscal-year net by 12 regardless of
   elapsed months (`getPeriodData` year ⇒ `months: 12`, app-main.js ~2017; `cf-avg` = net / months, app-main.js:2703). Live $145 =
   1,740 / 12; on 8 Oct only 10 months have elapsed (and the 2 future months are always 0).
-- **L49** (OPEN — LOW; confirmed by reading + live) Expenses page cards use two denominators: "Business … 25% of total" (÷ total
+  FIX: ÷ the period's elapsed months (`_periodWindow(...).elapsedMonths`), label 'Avg monthly net · N months'. Harness
+  `verify-cashflow-avg-elapsed.js`.
+- **L49** (FIXED `3372a0e` RED / `a7e0f09`, UNEXECUTED in the container — owner runs the harness in PowerShell; LOW; confirmed by reading + live) Expenses page cards use two denominators: "Business … 25% of total" (÷ total
   incl. payroll + bills) vs "100% of expenses deductible" (÷ recorded expenses only) — app-main.js:2861 / 2865 (`updateExpenses`,
   not shadowed). Live: "100% deductible" while $2,850 of $11,350 expense is deductible. Ties to L42.
-- **L50** (OPEN — LOW; confirmed by reading) Expense Report breakdown is "recorded expenses only" (finflow-api-wiring-extra.js:1324):
+  FIX: both ÷ total expenses ('N% of total expenses'); card renamed 'Recorded expenses'. Harness `verify-expenses-card-denominators.js`.
+- **L50** (FIXED `f8cddf8` RED / `de9fbe5`, UNEXECUTED in the container — owner runs the harness in PowerShell; LOW; confirmed by reading) Expense Report breakdown is "recorded expenses only" (finflow-api-wiring-extra.js:1324):
   live Rent $2,850 under totals of $11,350, while the P&L lists Payroll / Rent / Bills (L14). Rule 2: two report surfaces, two
   category definitions.
-- **L51** (OPEN — LOW; confirmed by reading + live) AP report tile "Total Payable … (2 vendors)" counts the "Unattributed credits"
+  FIX: the report lists `window._expenseCategoryRows(breakdown,{all:true})` (the P&L's list); heading 'Expense Breakdown'.
+  Harness `verify-expense-report-categories.js`.
+- **L51** (FIXED `40a0a9e` RED / `0561da5`, UNEXECUTED in the container — owner runs the harness in PowerShell; LOW; confirmed by reading + live) AP report tile "Total Payable … (2 vendors)" counts the "Unattributed credits"
   bucket as a vendor (`vendorEntries` = `Object.entries(byVendor)` includes it — finflow-api-wiring-extra.js AP block; the bucket
   pre-dates L39, the count was not fixed there). Live: one vendor with a balance. Related inconsistency: AR shows unmatched credit
   notes as NEGATIVE customers (pinky −$1,000, ZZ QA cncustom −$250), AP shows them as one "Unattributed credits" row.
-- **L52** (OPEN — LOW; live) Invoices page cards do not foot: Billed $44,350 − Collected $29,550 = $14,800 ≠ Outstanding $13,550 —
+  FIX (mirror AR): a vendor credit is listed under its vendor (negative if no open bill); 'Unattributed' only when no vendor;
+  count / 'Largest' over vendors owed. Harness `verify-ap-report-vendor-credits.js`.
+- **L52** (FIXED `37ea978` RED / `da48e31`, UNEXECUTED in the container — owner runs the harness in PowerShell; LOW; live) Invoices page cards do not foot: Billed $44,350 − Collected $29,550 = $14,800 ≠ Outstanding $13,550 —
   the $1,250 of open credit notes reduces Outstanding but appears on no card.
-- **L53** (OPEN — LOW; confirmed by reading + live) Compact money format uses `(a/1e3).toFixed(1)` (`_fmtMoney`, app-main.js:607+):
+  FIX: Outstanding sub-line '· net of $X credits'; Billed labelled 'All time · issued to date' (it is not period-scoped).
+  Harness `verify-invoice-cards-foot.js`.
+- **L53** (FIXED `f3f8323` RED / `478d2b1`, UNEXECUTED in the container — owner runs the harness in PowerShell; LOW; confirmed by reading + live) Compact money format uses `(a/1e3).toFixed(1)` (`_fmtMoney`, app-main.js:607+):
   binary-float ties round down — live Expenses $11,350 → "$11.3K" (11.35 → "11.3") while Revenue $50,390 → "$50.4K".
+  Also found while fixing: $999,950 → "$1000.0K" (no rollover). FIX: tenths on an exact scale, half away from zero, rollover
+  at 1,000. Harness `verify-compact-money-rounding.js`.
 - **L54** (OPEN — DATA, owner-gated, Rule 8; HIGH impact) **A test journal is posted on the live books.** JE-7874, 2026-10-06,
   "N20 live verify — Claude test (reverting after)", Posted, Dr 1010 Checking $5,000 / Cr 4000 Service Revenue $5,000 — left by an
   earlier Claude verification session and never reverted. It is ALL of October / Q4 revenue ($5,000), lifts FY revenue to $50,390
@@ -767,9 +805,45 @@ Live deploy check (curl, read-only): the served minified bundle contains every L
   "ZZ QA billvend" BILL-2646 $250; credit note "ZZ QA cncustom" $250; expense "ZZ QA bexpdesc" $250; employee "ZZ QA empfname" ($250
   roster); vendor "ZZ QA vendorna / vendorco"; invoice "Wipay test" $150; entity 4 "ZZ QA Entity" (CAD). Also flagged by Cowork as
   possibly test: invoices "perfume", "vape" ×2, "jergens" — owner to confirm. Cleanup is its own approval.
-- **L56** (OPEN — LOW, product facts) Reports lists **"VAT Return — Tax collected and paid"** (app-main.js:6099) although FinFlow has
+- **L56** (FIXED `a2160ef` RED / `627a000`, UNEXECUTED in the container — owner runs the harness in PowerShell; LOW, product facts) Reports lists **"VAT Return — Tax collected and paid"** (app-main.js:6099) although FinFlow has
   no VAT/GST engine by design (CLAUDE.md product facts); the report itself honestly renders "not tracked"
   (finflow-api-wiring-extra.js:1191). The menu entry advertises a capability the product deliberately does not have.
+  FIX: entry removed from `taxReportsData` (app-main — rendered via the extra.js WRAPPER's `_origRenderReports`, Rule 1); the
+  not-tracked handler stays (verify-f137-tax-reports uses it). Class enumerated: the other VAT strings are a 'Tax ID / VAT' field
+  label, an accountant-bio placeholder and the accountant dashboard's filing-deadline type (filed outside FinFlow) — none claim
+  a FinFlow VAT capability. Harness `verify-reports-no-vat-entry.js`.
+
+#### Found while fixing L41–L56 (2026-10-09) — L57+
+- **L57** (FIXED `2b38f18` RED / `6bef345`, UNEXECUTED in the container — owner runs the harness in PowerShell; MEDIUM — completes L45; Rule 2 multi-writer) The Payroll page owner cards
+  (#pr-owner-net / #pr-owner-label / #link-net-display) had TWO live writers: `window.renderPayroll` (medium.js, L45 — the
+  owner's run line) and `syncAllPayrollsToPersonal` (app-main.js, no override, 10 call sites: entity load, owner save, employee
+  add/remove …) — the latter wrote the ROSTER net, so the L45 fix reverted after any of those actions. Writer set: those two +
+  the shadowed app-main renderPayroll :3046 (dead). The sync no longer writes them. Harness `verify-owner-net-single-writer.js`
+  (owner run-line net 4,000 vs roster net 5,250 after a raise; bug shows 5,250 after the sync).
+- **L58** (FIXED `891048c` RED / `5b967ba`, UNEXECUTED in the container — owner runs the harness in PowerShell; LOW; confirmed by reading) `syncAllPayrollsToPersonal` unshifted one
+  'Salary — <Entity> (April)' income row per owner entity into persTransactions — roster net, date hard-coded 'Apr 30', never
+  stored. Income totals were safe (`_applyPersFilter` rebuilds from `_allPersTxs` before summing) but the Income/Expense filter
+  (`setPersTxFilter` → `_renderPersTxList`) listed the fabricated row until the next rebuild, beside the real 'Owner salary —'
+  occurrence. The paired filter also hid any STORED income row whose description began 'Salary —'. Both removed. Harness
+  `verify-no-fabricated-salary-rows.js`.
+- **L59** (OPEN — OWNER DECISION; confirmed by reading) Personal Finance income from the owner salary follows the ROSTER
+  template, not what was paid: saving the owner salary writes a recurring monthly income profile at roster net (medium.js:806-831),
+  and the Personal Finance banner/breakdown ('Income from payroll · $X/mo net', app-main `syncAllPayrollsToPersonal`) shows the
+  roster net. On the business side Rule 12 makes the run lines the only figure. Question: should the owner's personal income be
+  the net actually paid in each recognised run (one occurrence per paid run), or stay a planned salary? Not changed.
+- **L60** (OPEN — LOW; Rule 10; suspect by reading, not executed) The owner-salary occurrence (medium.js:800-805) is dated
+  `new Date().toISOString().slice(0,10)` — the UTC day, not the entity's today — and next_run from the viewer's local month. Near
+  a month boundary west of UTC the occurrence can land in the next month (and vice versa east). Should use the entity's today.
+- **L61** (OPEN — LOW; tooling; confirmed by reading) The pre-commit hook checks bundle and VERIFICATION sync only, not
+  `public/_gen` freshness. An index.html change committed without `npm run gen` ships stale (it happened on L45 — caught by hand,
+  `dbad9c0`). Add a gen-freshness check alongside F13.
+- **L62** (OPEN — LOW, product facts; confirmed by reading) Reports lists '1099 / W-2 Summary — Contractor and employee forms'
+  (app-main.js taxReportsData): US-specific forms presented to every country's entities. Name the region (US) or show it only to
+  US entities — owner decision on which.
+- **L63** (OPEN — MEDIUM; confirmed by reading, live reachability not confirmed) `/api/reports/cash-flow` DOCUMENTS fallback
+  (served when the ledger is not reconciled, or with no active entity): with eid = null `matchEnt` keeps only UNASSIGNED
+  invoice/expense rows, while the payroll and journal legs take EVERY entity (`$2 IS NULL OR …`) — mixed scope in one figure;
+  and no upper date bound (future-dated rows count, D2). The L41 ledger path is bounded and entity-scoped.
 
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's

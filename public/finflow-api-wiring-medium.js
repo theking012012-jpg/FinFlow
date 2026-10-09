@@ -665,21 +665,30 @@
       const sm      = typeof S   === 'function' ? S   : (n => '$' + (parseFloat(n)||0).toLocaleString());
       const set     = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
 
-      const totalGross = allEmps.reduce((a, e) => a + (parseFloat(e.gross)   || 0), 0);
-      const totalDed   = allEmps.reduce((a, e) => a + (window.dedTotal ? window.dedTotal(e.gross, e.deductions) : 0), 0);
-      set('pr-total',    sm(totalGross));
-      set('pr-headcount', allEmps.length + ' employee' + (allEmps.length !== 1 ? 's' : ''));
-      set('pr-tax',      sm(totalDed));
+      // L45 (Rule 12): the headline figures are the latest RECOGNISED run's LINES (basis C) — never the roster, which is a
+      // template and must produce no figure. Live the headline was Σ roster gross ($7,250) beside a $7,000 recognised run.
+      const _n = v => parseFloat(v) || 0;
+      const _lineGross = l => _n(l.gross) + _n(l.bonus) + _n(l.overtime);
+      const _runs = (window.payrollRuns || []).filter(r => ['approved', 'paid'].includes(String(r.status || '').toLowerCase()));
+      const _rk = r => (window.FinFlowDates && window.FinFlowDates.payrollPeriodYmd(r.period, r.run_date)) || '';
+      const last = _runs.slice().sort((a, b) => (_rk(a) < _rk(b) ? 1 : _rk(a) > _rk(b) ? -1 : (b.id || 0) - (a.id || 0)))[0] || null;
+      const lastLines = last ? (last.lines || []).filter(Boolean) : [];
+      const lastGross = lastLines.reduce((a, l) => a + _lineGross(l), 0);
+      const lastNet   = lastLines.reduce((a, l) => a + _n(l.net_pay), 0);
+      const ownerLine = (last && op) ? lastLines.find(l => l.payroll_id != null && String(l.payroll_id) === String(op._dbId != null ? op._dbId : op.id)) : null;
+      set('pr-total',     last ? sm(lastGross) : '—');
+      set('pr-headcount', last ? (String(last.period || '') + ' · ' + String(last.status || '').toLowerCase() + ' · ' + lastLines.length + ' employee' + (lastLines.length !== 1 ? 's' : '')) : 'No approved payroll run yet');
+      set('pr-tax',       last ? sm(Math.max(0, lastGross - lastNet)) : '—');
 
       if (op) {
-        set('pr-owner-net',   sm(op.net));
-        set('pr-owner-label', 'Your net salary');
+        set('pr-owner-net',   ownerLine ? sm(_n(ownerLine.net_pay)) : '—');
+        set('pr-owner-label', ownerLine ? 'Your net pay · last run' : 'Not in the last run');
         const ownerCta    = document.getElementById('owner-cta');
         if (ownerCta)    ownerCta.style.display    = 'none';
         const payrollLink = document.getElementById('payroll-link-card');
         if (payrollLink) payrollLink.style.display  = 'flex';
         const linkNet     = document.getElementById('link-net-display');
-        if (linkNet)     linkNet.textContent = sm(op.net) + '/mo';
+        if (linkNet)     linkNet.textContent = ownerLine ? sm(_n(ownerLine.net_pay)) + ' · last run' : '—';   // L45: not the roster
       } else {
         set('pr-owner-net',   '—');
         set('pr-owner-label', 'Not on payroll');

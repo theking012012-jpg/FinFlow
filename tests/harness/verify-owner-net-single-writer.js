@@ -70,7 +70,11 @@ const num = t => parseFloat(String(t || '').replace(/[^\d.\-]/g, ''));
     console.log('  [after sync]          pr-owner-net=' + t('pr-owner-net') + ' | link-net-display=' + t('link-net-display'));
     A('after the sync "Your net pay" is still $4,000 (bug: $5,250 roster)', near(num(t('pr-owner-net')), 4000), 'pr-owner-net=' + t('pr-owner-net'));
     A('after the sync the link card is still $4,000 (bug: $5,250/mo roster)', near(num(t('link-net-display')), 4000), 'link-net-display=' + t('link-net-display'));
-    A('the roster net 5,250 appears nowhere on the Payroll page', !/5,250/.test((d.getElementById('page-payroll') || {}).textContent || ''), 'roster net visible on the page');
+    // Scope: the page's FIGURE cards (.mc-val). The roster LIST legitimately prints each person's configured salary
+    // (Olive's $5,250 net) — that is the template itself, not a figure computed from it. (The first owner-run of this
+    // harness asserted over the whole page and failed on exactly that list row — a harness defect, corrected here.)
+    const cards = [...d.querySelectorAll('#page-payroll .mc-val')].map(el => el.textContent.trim());
+    A('no Payroll figure card shows the roster net 5,250 (bug: "Your net pay" after the sync)', cards.length > 0 && !cards.some(t => /5,250/.test(t)), JSON.stringify(cards));
   } catch (e) {
     fail++; console.log('  FATAL: ' + (e && e.stack || e));
     if (e instanceof AggregateError && e.errors) console.log('  aggregate: ' + e.errors.map(x => x.message).join(' | '));

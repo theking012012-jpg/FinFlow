@@ -2700,8 +2700,12 @@ function updateCashflow(d=getPeriodData()){
   // cf-avg and cf-runway derive from the NET, so they move to cash with it — leaving them on
   // d.profit would reintroduce the accrual/cash mix inside a single card.
   const _cashNet = _cash ? _cash.net : null;
-  document.getElementById('cf-avg').textContent = (_cashNet!=null && d.months>0) ? S(Math.round(_cashNet/d.months)) : '…';
-  document.getElementById('cf-avg-lbl').textContent=d.months===1?'Net this month':'Avg monthly net';
+  // L48: average over the months of the period that have STARTED (resolvePeriod.elapsedMonths, entity today) — the year view
+  // used to divide by 12 regardless of the date (live 8 Oct: $1,740/12 = $145 with 10 months started; future months are 0).
+  const _cfW = (typeof _periodWindow==='function') ? _periodWindow(currentPeriod, currentMonthIdx) : null;
+  const _cfMonths = (_cfW && _cfW.elapsedMonths > 0) ? _cfW.elapsedMonths : d.months;
+  document.getElementById('cf-avg').textContent = (_cashNet!=null && _cfMonths>0) ? S(Math.round(_cashNet/_cfMonths*100)/100) : '…';
+  document.getElementById('cf-avg-lbl').textContent = _cfMonths===1 ? 'Net this month' : ('Avg monthly net · ' + _cfMonths + ' months');
   // Fixed vs variable from REAL categorised expense rows (no fabricated ratio).
   // Fixed = recurring-overhead categories; variable = everything else. Honest
   // empty state when there are no expense rows.

@@ -364,6 +364,10 @@ function _renderPayrollEmptyState(rows){
 }
 window._renderPayrollEmptyState=_renderPayrollEmptyState;
 
+// L45 (Rule 12): a run's figures are Σ its LINES — basis C never reads the header total_gross / total_net, which are stored
+// independently and can disagree (a divergence is a finding, not something to display).
+function _runLinesGross(r){ return (r.lines||[]).filter(Boolean).reduce((s,l)=>s+(parseFloat(l.gross)||0)+(parseFloat(l.bonus)||0)+(parseFloat(l.overtime)||0),0); }
+function _runLinesNet(r){ return (r.lines||[]).filter(Boolean).reduce((s,l)=>s+(parseFloat(l.net_pay)||0),0); }
 async function loadPayrollRuns(){
   const el=document.getElementById('payroll-runs-list');
   // Basis C: run lines are now the SOLE source of payroll expense, so this data has to reach the
@@ -375,6 +379,7 @@ async function loadPayrollRuns(){
     if(res.ok) rows=await res.json()||[];
     window.payrollRuns=rows;                       // read by computeExpenseBreakdown (basis C)
     _renderPayrollEmptyState(rows);
+    if(typeof window.renderPayroll==='function') window.renderPayroll();   // L45: headline cards read the runs just loaded
     if(typeof window.refreshFinancials==='function') window.refreshFinancials('none');
   }catch(e){ /* leave window.payrollRuns as-is; the empty state below reports honestly */ }
   if(!el)return;
@@ -385,7 +390,7 @@ async function loadPayrollRuns(){
       <div class="tx-row" style="align-items:flex-start">
         <div style="flex:1">
           <div class="tx-name">${esc(r.period)}</div>
-          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.run_date,{year:true}):(r.run_date||''))||'—')} · Gross: ${S(parseFloat(r.total_gross||0))} · Net: ${S(parseFloat(r.total_net||0))}</div>
+          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.run_date,{year:true}):(r.run_date||''))||'—')} · Gross: ${S(_runLinesGross(r))} · Net: ${S(_runLinesNet(r))}</div>
         </div>
         <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
           <span class="badge ${statusBadge[r.status]||'b-amber'}" style="font-size:9px">${esc(r.status)}</span>

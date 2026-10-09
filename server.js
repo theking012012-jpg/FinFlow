@@ -6623,6 +6623,47 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   const uid = scopeId(req);
   const eid = req.entityId || null;
   const matchEnt = r => r.entity_id == null || (eid != null && r.entity_id === eid);
+  // L41: when the balance sheet itself is served from the reconciled ledger (glBalanceSheet's gate — the same signal that
+  // decides whether balance-sheet Cash is shown), cash flow IS the movement of the ledger's cash accounts: the same accounts
+  // as the balance-sheet Cash line (BS_NAMED_LINE 'cash'), netted per source document per month (a reversal is dated on its
+  // original, so a voided payment nets to zero), up to the entity's today (D2). Σ net = balance-sheet cash by construction,
+  // and every cash leg the ledger carries is included — the document legs below missed legacy settlements booked from
+  // amount_paid (invoice_paidgap / bill_paidgap), inventory purchases and FX settlements (live: net $1,740 vs cash $25,740).
+  if (eid != null) {
+    let _bs = null;
+    try { _bs = await glBalanceSheet(uid, eid); } catch (e) { console.error('[cash-flow] balance-sheet gate failed, serving documents:', e && e.message); }
+    if (_bs && _bs.source === 'gl') {
+      const _today = await entityTodayYmd(eid);
+      const _cashCodes = Object.keys(BS_NAMED_LINE).filter(k => BS_NAMED_LINE[k] === 'cash');
+      const { rows: _lc } = await pool.query(
+        `SELECT le.source_type, le.source_id, to_char(le.entry_date, 'YYYY-MM') AS ym,
+                COALESCE(SUM(ll.debit - ll.credit), 0)::float AS net
+           FROM ledger_lines ll
+           JOIN ledger_accounts la ON la.id = ll.account_id
+           JOIN ledger_entries le ON le.id = ll.entry_id AND le.status = 'posted'
+          WHERE la.user_id = $1 AND la.entity_id = $2 AND la.code = ANY($3) AND le.entry_date <= $4::date
+          GROUP BY le.source_type, le.source_id, to_char(le.entry_date, 'YYYY-MM')`,
+        [uid, eid, _cashCodes, _today]);
+      const _MOL = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const _mm = {};
+      for (const g of _lc) {
+        const net = Math.round((Number(g.net) || 0) * 100) / 100;
+        if (Math.abs(net) < 0.005) continue;
+        const b = _mm[g.ym] || (_mm[g.ym] = { inflow: 0, outflow: 0 });
+        if (net > 0) b.inflow += net; else b.outflow += -net;
+      }
+      const _rows = Object.keys(_mm).sort().map(k => ({
+        month: `${_MOL[+k.slice(5, 7) - 1]} '${k.slice(2, 4)}`, key: k,
+        inflow: Math.round(_mm[k].inflow * 100) / 100, outflow: Math.round(_mm[k].outflow * 100) / 100,
+        net: Math.round((_mm[k].inflow - _mm[k].outflow) * 100) / 100,
+      }));
+      return res.json({
+        rows: _rows, source: 'ledger',
+        totalInflow:  Math.round(_rows.reduce((s, r) => s + r.inflow, 0) * 100) / 100,
+        totalOutflow: Math.round(_rows.reduce((s, r) => s + r.outflow, 0) * 100) / 100,
+      });
+    }
+  }
   // invoice_payments is a TYPED table (no `data` JSONB column) — db.allByUser()/rowToObj() would
   // silently drop amount/payment_date (rowToObj only ever spreads pgRow.data), so it's read via
   // raw SQL exactly like every other invoice_payments route, then entity-filtered in JS the same
@@ -6694,7 +6735,7 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
     net: monthMap[k].inflow - monthMap[k].outflow,
   }));
   res.json({
-    rows,
+    rows, source: 'documents',   // L41: ledger not reconciled (or consolidated) — the source-document legs, as before
     totalInflow:  Math.round(rows.reduce((s, r) => s + r.inflow, 0) * 100) / 100,
     totalOutflow: Math.round(rows.reduce((s, r) => s + r.outflow, 0) * 100) / 100,
   });

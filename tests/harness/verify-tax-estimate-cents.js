@@ -43,6 +43,11 @@ const num = t => parseFloat(String(t || '').replace(/[^\d.\-]/g, ''));
     A('server estimatedTax 2,500.75 (bug: 2,501)', near(tf.estimatedTax, 2500.75), 'estimatedTax=' + tf.estimatedTax);
     A('server quarterly 625.19 (bug: 625)', near(tf.quarterly, 625.19), 'quarterly=' + tf.quarterly);
     for (let i = 0; i < 250 && typeof w.generateReport !== 'function'; i++) await new Promise(r => setTimeout(r, 100));
+    // The worksheet renders through _fmtMoneyNative, which honours Settings → "Show cents" (whole units when off). Live had
+    // cents ON ("$2,971.00"); match it, else a correct 625.19 legitimately displays as "$625" (the first owner-run of this
+    // harness failed on exactly that). Pre-fix with cents on: Math.round(2500.75 / 4) = 625 → "$625.00" — still RED.
+    const _cents = w.document.getElementById('s-cents');
+    A('premise: the Show-cents toggle exists and is on (as on live)', !!_cents && ((_cents.checked = true), _cents.checked === true));
     await w.generateReport('Income Tax Estimate'); await settle(25, 60);
     const q = num((w.document.getElementById('tl-quarter') || {}).textContent);
     console.log('  [worksheet] per quarter=' + (w.document.getElementById('tl-quarter') || {}).textContent);

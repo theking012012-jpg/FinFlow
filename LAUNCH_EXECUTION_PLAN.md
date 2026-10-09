@@ -400,6 +400,9 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   views; no net-income row; controls green) → at `a9d9d6d` verify-gl-bs-api-equity 12/0, verify-gl-statements 21/0,
   verify-gl-bs-lines-foot 36/0. No open ledger items from this round. Remaining for the done-gate: the 3× full sweep,
   then the owner's push to main. Optional (cosmetic): JE-template renumber.
+- 2026-10-09 — Owner pushed main → `e713ad1` (fast-forward from `ad11188`; Railway auto-deploys): L6c, L38, L39, L40, L37
+  retirement. Deployed on targeted RED → GREEN + regression + money-gate runs; the 3× full sweep was NOT run before this
+  deploy — it remains the open done-gate item for this round.
 
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.

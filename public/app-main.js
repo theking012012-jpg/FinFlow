@@ -3389,23 +3389,10 @@ function syncAllPayrollsToPersonal(){
   const entries = Object.entries(ownerPayrollByEntity);
   const totalUSD = calcTotalOwnerNetUSD();   // banner/breakdown display only (not an income term)
 
-  // Replace salary transactions with one per entity
-  persTransactions = persTransactions.filter(t=>!(t.cat==='Income' && t.desc.startsWith('Salary —')));
-  entries.forEach(([idx, ep])=>{
-    const _ents = (typeof ENTITIES!=='undefined'?ENTITIES:null)||window.ENTITIES||[];
-    const entity = _ents[parseInt(idx)];
-    const entCurKey = ep.currency || entity?.currency || 'USD';
-    const cur = ((typeof CURRENCIES!=='undefined'?CURRENCIES:null)||window.CURRENCIES||{})[entCurKey] || {symbol:'$'};
-    const _txCur = ep.currency || entity?.currency || 'USD';
-    const netUSD = Math.round(_safeFX(ep.net, _txCur, 'USD'));
-    persTransactions.unshift({
-      desc:`Salary — ${esc(entity?.name||'Entity')} (April)`,
-      cat:'Income',
-      amount: netUSD,
-      type:'income',
-      date:'Apr 30'
-    });
-  });
+  // L58: this used to unshift one 'Salary — <Entity> (April)' row per entity into persTransactions (roster net, date
+  // hard-coded 'Apr 30', never stored) — a leftover of the pre-profile model that the Income filter listed until the next
+  // period rebuild. The owner salary reaches Personal Finance only as its stored recurring profile + monthly occurrence
+  // ('Owner salary — <Entity>', finflow-api-wiring-medium.js); persTransactions holds stored transactions only.
 
   // Update payroll page banner — show entity name + owner name for clarity
   const _bannerEnts = (typeof ENTITIES!=='undefined'?ENTITIES:null)||window.ENTITIES||[];

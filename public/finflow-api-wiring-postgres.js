@@ -336,12 +336,16 @@
     set('inv-out',        money(outstanding));
     set('inv-over',       money(overdue));
     const lblEl = document.getElementById('inv-billed-lbl');
-    if (lblEl) { lblEl.textContent = period.label || 'All time'; lblEl.className = 'mc-change neutral'; }
+    // L52: Billed / Collected are ALL recognised invoices issued to date (the same set as Outstanding, so the cards reconcile),
+    // not the active period — labelling them with the period ("Full Year · …") misdescribed them.
+    if (lblEl) { lblEl.textContent = 'All time · issued to date'; lblEl.className = 'mc-change neutral'; }
     const titleEl = document.getElementById('inv-table-title');
     if (titleEl) titleEl.textContent = 'Invoices — ' + (period.label || 'All time');
 
     // Update "N invoices" count subtitles (id="inv-out-cnt" / "inv-over-cnt")
-    set('inv-out-cnt',  outCount     + ' invoice' + (outCount     !== 1 ? 's' : ''));
+    // L52: Outstanding is net of open credit notes (F58 / L35); say so, so Billed − Collected − credits = Outstanding on screen.
+    const _cr = parseFloat(_arP.credits) || 0;
+    set('inv-out-cnt',  outCount     + ' invoice' + (outCount     !== 1 ? 's' : '') + (_cr > 0.005 ? ' · net of ' + money(_cr) + ' credits' : ''));
     set('inv-over-cnt', overdueCount + ' invoice' + (overdueCount !== 1 ? 's' : ''));
 
     // Navigation badge

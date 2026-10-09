@@ -2304,7 +2304,7 @@ function arOutstanding(invoices){
   // and /api/reports `overdue` (server.js). Un-netted it read ABOVE outstanding whenever a credit note was open
   // (live: Overdue $14,300 > Outstanding $13,550) — impossible, overdue is a subset of outstanding.
   overdueTotal=Math.max(0,Math.min(total,overdueTotal-_cnTotal));
-  return { total, count, overdueTotal, overdueCount };
+  return { total, count, overdueTotal, overdueCount, credits: _cnTotal };   // L52: the contra it netted, for the Invoices cards
 }
 window._arOutstanding = arOutstanding;
 

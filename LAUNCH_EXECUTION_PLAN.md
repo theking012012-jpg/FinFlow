@@ -396,6 +396,10 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   verify-consolidated-ap 6/0, verify-vendors-payables-ui 2/0, verify-f72-payables 2/0, verify-accountant-entity-scope
   36/0, verify-accountant-permitted-legs 8/0, step1 26/0, step2 63/0, step3 56/0, step4-client 5/0. Remaining for the
   done-gate: the 3× full sweep. Open owner items: L40 (API-only footing), optional JE-template renumber (cosmetic).
+- 2026-10-09 — L40: owner-executed at `0954a8c` 6 FAILED / 6 passed (equity rows 5,000 vs totals.equity 5,600 in both
+  views; no net-income row; controls green) → at `a9d9d6d` verify-gl-bs-api-equity 12/0, verify-gl-statements 21/0,
+  verify-gl-bs-lines-foot 36/0. No open ledger items from this round. Remaining for the done-gate: the 3× full sweep,
+  then the owner's push to main. Optional (cosmetic): JE-template renumber.
 
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
@@ -656,7 +660,7 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   Fix (`ba08a03`): glBalanceSheet states `subledger` + `journalAdjustments` (= its AR / AP); each report adds one
   "Manual journal entries (no customer / vendor)" row and totals to the balance-sheet line; AP tiles count vendors only.
   Harness `verify-aging-reports-reconcile.js` (`018e374`; RED expected ×6). UNEXECUTED here.
-- **L40** (FIXED — owner verification pending; harness `0954a8c` RED expected ×6 → fix `630bdf3`; API-only, no UI caller found) `GET /api/gl/balance-sheet` (server.js ~11870) lists raw
+- **L40** (FIXED — owner-executed RED 6 → GREEN 12/0; full sweep pending; harness `0954a8c` RED expected ×6 → fix `630bdf3`; API-only, no UI caller found) `GET /api/gl/balance-sheet` (server.js ~11870) lists raw
   accounts per type with `totals: f.balanceSheet`; its equity group omits the un-closed earnings that `totals.equity`
   includes, so Σ equity accounts ≠ totals.equity for any API consumer whenever income / expense exist. Fix candidate:
   return `balanceSheetLines` (same partition as L6c). Not folded into L6c — it is an API contract change; owner call.

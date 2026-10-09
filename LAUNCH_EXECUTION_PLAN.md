@@ -168,6 +168,18 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   its ledger name** (`98340b3`, `BS_NAMED_LINE` + `balanceSheetLines`), so the statement always foots. Still optional
   for you (cosmetic, not money): renumber the JE template (Credit Card → 2300, Tax Payable → 2100) so picker codes and
   system codes agree — the J-namespace already keeps them apart, so nothing depends on it.
+- **L41 instrument — read-only SQL** (Supabase SQL editor; SELECT only; replace 1 with the owner user id). Settled amounts with no
+  payment row (the cash the Cash Flow report cannot see):
+  `SELECT i.id, i.data->>'client' AS client, (i.data->>'amount_paid')::numeric AS amount_paid, COALESCE(p.paid,0) AS payment_rows,
+   (i.data->>'amount_paid')::numeric - COALESCE(p.paid,0) AS gap FROM invoices i LEFT JOIN (SELECT invoice_id, SUM(amount) AS paid
+   FROM invoice_payments GROUP BY invoice_id) p ON p.invoice_id = i.id WHERE i.user_id = 1 AND COALESCE((i.data->>'amount_paid')::numeric,0)
+   - COALESCE(p.paid,0) > 0.005 ORDER BY i.id;` — expected Σ gap ≈ 25,000.
+  `SELECT b.id, b.data->>'vendor' AS vendor, (b.data->>'amount_paid')::numeric AS amount_paid, COALESCE(pm.paid,0) AS payment_rows
+   FROM bills b LEFT JOIN (SELECT (data->>'bill_id')::int AS bill_id, SUM((data->>'amount')::numeric) AS paid FROM payments_made
+   WHERE data->>'bill_id' ~ '^[0-9]+$' GROUP BY 1) pm ON pm.bill_id = b.id WHERE b.user_id = 1
+   AND COALESCE((b.data->>'amount_paid')::numeric,0) - COALESCE(pm.paid,0) > 0.005;` — expected FedEx BILL-3900, 1,000.
+- **Live data decisions (L54 / L55)**: revert the leftover test journal JE-7874; decide which ZZ QA / test records to remove.
+- **Tax deduction policy (L42)**: which expense kinds the income-tax ESTIMATE deducts by default (wages, vendor bills, COGS).
 - **Customer ↔ invoice foreign key** (D8/L17): revenue attribution is by name match until invoices carry a customer id.
 - **Landing page "750+ App integrations"** (audit F51): ~17 have a real connect flow; the claim is marketing copy.
 - **Investments close-position / realised gain** (audit F109) and **entity jurisdiction / region** (F108): features.
@@ -400,6 +412,12 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   views; no net-income row; controls green) → at `a9d9d6d` verify-gl-bs-api-equity 12/0, verify-gl-statements 21/0,
   verify-gl-bs-lines-foot 36/0. No open ledger items from this round. Remaining for the done-gate: the 3× full sweep,
   then the owner's push to main. Optional (cosmetic): JE-template renumber.
+- 2026-10-09 — Live read-only audit (owner app via Cowork; figures re-derived and every anomaly traced to code here, nothing
+  changed): logged L41–L56 — 1 CRITICAL (L41 cash flow ≠ balance-sheet cash, $24,000), 1 HIGH (L42 tax deducts only flagged
+  expenses), 2 owner-gated data items (L54 leftover test journal JE-7874 $5,000; L55 QA records), the rest MEDIUM / LOW.
+  Verified consistent on live: P&L foots (50,390 − 11,350 = 39,040); Balance Sheet balances (25,740 + 13,550 = 250 + 39,040);
+  AR overdue ≤ outstanding everywhere (13,050 ≤ 13,550 — L35 live); AR / AP reports foot and equal the balance sheet; Sales by
+  Customer = revenue; reminders days-overdue correct. Not covered: accountant portal, three reports, full code audit.
 - 2026-10-09 — Owner pushed main → `e713ad1` (fast-forward from `ad11188`; Railway auto-deploys): L6c, L38, L39, L40, L37
   retirement. Deployed on targeted RED → GREEN + regression + money-gate runs; the 3× full sweep was NOT run before this
   deploy — it remains the open done-gate item for this round.
@@ -673,6 +691,85 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   docs. /api/gl/statements returns raw glFinancials (accounts + totals, no grouped rows) — no footing claim, untouched.
   Harness `verify-gl-bs-api-equity.js`: 6,000 = 400 + 5,600 (Owner's Equity 5,000 + net income 600), checked at
   period=year AND period=month (July P&L 0 — a period-based fix would show 0). Executed here: the pure probe only.
+
+#### Live read-only audit 2026-10-09 (L41–L55) — live = `e713ad1`, owner app walked by Cowork, every anomaly traced to code here
+Evidence base: Cowork's figures-as-displayed report (2026-10-08 ~23:00 ET, Saige Holdings LLC · USD · America/New_York, FY Jan,
+the only entity with data); every figure below was re-derived here by hand from that report, and every cause was confirmed by
+READING the cited code (no execution, nothing changed). NOT covered this round: the accountant portal (needs an accountant
+sign-in), the VAT Return / 1099-W-2 / Tax-Deductible reports, and the full multi-area code audit (stopped by the owner).
+Live deploy check (curl, read-only): the served minified bundle contains every L6c / L39 client string; the portal is login-gated.
+
+- **L41** (OPEN — 🔴 CRITICAL; cause confirmed by reading, split inferred from live figures) **Cash Flow does not reconcile to the
+  balance-sheet cash.** Live: balance-sheet Cash $25,740 (books start in 2026, opening 0) but the Cash Flow statement / page says
+  in $11,840 · out $10,100 · net **$1,740** — a **$24,000** gap. Cause: invoices and bills settled before the F133/F135 payment-row
+  fixes carry `amount_paid` with NO `invoice_payments` / `payments_made` row. The GL backfill books that cash
+  (`invoice_paidgap` Dr 1000 / Cr 1100, server.js:10162-10169; `bill_paidgap` Dr 2000 / Cr 1000, server.js:10195-10198), but
+  `POST /api/reports/cash-flow` (server.js:6622-6698) reads cash-in ONLY from `invoice_payments` + `sales_receipts` + journal cash
+  legs and cash-out ONLY from `expenses` + `payments_made` + paid payroll. Reconciliation from the live figures: collected
+  invoices $29,550 (Collected card) of which $4,550 have payment rows ⇒ **$25,000 cash-in missing**; FedEx BILL-3900 $1,000 paid
+  with no payment row ⇒ **$1,000 cash-out missing**; 1,740 + 25,000 − 1,000 = 25,740 ✓. Surfaces (one source, `_cashMonthly`):
+  Cash Flow page In/Out/Net/Avg, Cash Flow Statement report, dashboard cash card; disagree with Balance Sheet Cash and the 13-week
+  forecast "Cash now" (both ledger). Also: paidgap cash is dated at the ISSUE date (no real payment date exists). Fix options
+  (owner): (a) cash-flow reads the ledger's cash accounts (one writer — the L6 pattern); (b) create the missing payment rows (DATA,
+  Rule 8, separate approval). Confirm the split with the read-only SQL in Owner Handoff ("L41 instrument").
+- **L42** (OPEN — HIGH; confirmed by reading) **Income-tax estimate deducts only flagged manual expenses — never payroll, vendor
+  bills or COGS.** `GET /api/tax-filing`: `taxableIncome = Math.max(0, revenue - deductible)` with `deductible = books.tax.deductible`
+  (server.js ~6760-6775), and `books.tax.deductible` = Σ manual `expenses` rows flagged yes/half only (server.js:10986-10994). Live:
+  taxable $47,540 = 50,390 − 2,850 (Rent) — payroll $7,000 and bills $1,500 are not deducted; at the 25% line the estimate is
+  **$11,885 vs $9,760** on taxable profit 39,040 (+$2,125, +21.8%). The in-app help says the rate applies "against taxable profit".
+  Same single source feeds the accountant Tax Summary (F139), so both overstate identically (Rule 6: agreement ≠ correct). Owner
+  decision: which expense kinds are deductible by default (wages, bills, COGS) — estimate-only, no filing engine (product facts).
+- **L43** (OPEN — LOW; confirmed by reading) Tax figures rounded to whole units before display: `estimatedTax = Math.round(...)`,
+  `quarterly = Math.round(estimatedTax / 4)`. Live (cents on): "Per quarter $2,971.00" (true 2,971.25); 4 × 2,971 = 11,884 ≠ $11,885.
+- **L44** (OPEN — MEDIUM; confirmed by reading + live) **AP "Overdue" is gross of open vendor credits** — the AP mirror of L35.
+  `window._billsOverdueSum` (finflow-api-wiring-pages.js:640-650) = Σ (amount − amount_paid) of past-due unpaid bills; no vendor-
+  credit contra, no clamp to payables. Live: Bills page and Vendors page Overdue **$500** > Payables **$250** (two past-due $250
+  bills, one open $250 vendor credit). No canonical server AP-overdue figure exists (AR has `arSummary.overdueTotal`).
+- **L45** (OPEN — MEDIUM; confirmed by reading + live) **Payroll page headline figures are roster sums** (Rule 12: the roster is a
+  template and must produce no figure). `window.renderPayroll` (finflow-api-wiring-medium.js:660-675, runtime winner over
+  app-main.js:3032): "Monthly payroll" = Σ roster `gross` (live **$7,250**: 5,000 + 2,000 + 250) and "Your net pay" = roster owner
+  net ($5,000), beside recognised payroll **$7,000** (the one July run) on the P&L / Payroll Summary. Suspect, not yet traced: the
+  owner-salary modal says the owner's net pay "flows into Personal Finance as your monthly income" (index.html:4180) — a roster
+  figure entering personal income.
+- **L46** (OPEN — MEDIUM; mechanism confirmed by reading, live cause suspect) **Banking "Total Balance" shows $0.00 for unknown
+  balances.** `renderBanking` (app-main.js:5826-5839; no wiring override): Σ `parseFloat(a.balance) || 0` over `bankAccounts` — a
+  missing / unlinked balance renders as $0.00 (live: $0.00 while transactions are listed). Same principle as F123 (never show
+  untracked cash as $0). Two unlabelled "cash" figures across pages: bank $0.00 vs ledger $25,740.
+- **L47** (OPEN — MEDIUM; confirmed by reading + live) **13-week forecast ignores open credit notes and vendor credits.** Inflows =
+  Σ (amount − amount_paid) of unpaid invoices by due date; outflows likewise for bills (server.js ~4050-4060; the code labels
+  "does NOT fold in … credit notes"). Live week 1: in **$14,300** (gross overdue) vs collectible 13,050 (net of $1,250 open
+  credit notes); out $644 includes $500 of bills where AP is $250. Also "Lowest point $39,396 (Week 1)" while cash now is $25,740 —
+  the opening balance is excluded from "lowest", so the label overstates the floor (LOW part).
+- **L48** (OPEN — LOW; confirmed by reading + live) Cash Flow "Avg monthly" divides the fiscal-year net by 12 regardless of
+  elapsed months (`getPeriodData` year ⇒ `months: 12`, app-main.js ~2017; `cf-avg` = net / months, app-main.js:2703). Live $145 =
+  1,740 / 12; on 8 Oct only 10 months have elapsed (and the 2 future months are always 0).
+- **L49** (OPEN — LOW; confirmed by reading + live) Expenses page cards use two denominators: "Business … 25% of total" (÷ total
+  incl. payroll + bills) vs "100% of expenses deductible" (÷ recorded expenses only) — app-main.js:2861 / 2865 (`updateExpenses`,
+  not shadowed). Live: "100% deductible" while $2,850 of $11,350 expense is deductible. Ties to L42.
+- **L50** (OPEN — LOW; confirmed by reading) Expense Report breakdown is "recorded expenses only" (finflow-api-wiring-extra.js:1324):
+  live Rent $2,850 under totals of $11,350, while the P&L lists Payroll / Rent / Bills (L14). Rule 2: two report surfaces, two
+  category definitions.
+- **L51** (OPEN — LOW; confirmed by reading + live) AP report tile "Total Payable … (2 vendors)" counts the "Unattributed credits"
+  bucket as a vendor (`vendorEntries` = `Object.entries(byVendor)` includes it — finflow-api-wiring-extra.js AP block; the bucket
+  pre-dates L39, the count was not fixed there). Live: one vendor with a balance. Related inconsistency: AR shows unmatched credit
+  notes as NEGATIVE customers (pinky −$1,000, ZZ QA cncustom −$250), AP shows them as one "Unattributed credits" row.
+- **L52** (OPEN — LOW; live) Invoices page cards do not foot: Billed $44,350 − Collected $29,550 = $14,800 ≠ Outstanding $13,550 —
+  the $1,250 of open credit notes reduces Outstanding but appears on no card.
+- **L53** (OPEN — LOW; confirmed by reading + live) Compact money format uses `(a/1e3).toFixed(1)` (`_fmtMoney`, app-main.js:607+):
+  binary-float ties round down — live Expenses $11,350 → "$11.3K" (11.35 → "11.3") while Revenue $50,390 → "$50.4K".
+- **L54** (OPEN — DATA, owner-gated, Rule 8; HIGH impact) **A test journal is posted on the live books.** JE-7874, 2026-10-06,
+  "N20 live verify — Claude test (reverting after)", Posted, Dr 1010 Checking $5,000 / Cr 4000 Service Revenue $5,000 — left by an
+  earlier Claude verification session and never reverted. It is ALL of October / Q4 revenue ($5,000), lifts FY revenue to $50,390
+  (45,390 without it), net profit, cash ($25,740 includes it) and the estimated tax. Reverting it (Posted → Draft, or delete) is
+  the owner's call; nothing was changed here.
+- **L55** (OPEN — DATA, owner-gated, Rule 8) **Test / QA records counted in live totals.** Saige Holdings: invoices "ZZ QA TEST —
+  delete me" $500 and "ZZ QA Recurring" $300 (+ its recurring template); bills "ZZ QA rbvendor" BILL-7938 / BILL-8634 $250 each and
+  "ZZ QA billvend" BILL-2646 $250; credit note "ZZ QA cncustom" $250; expense "ZZ QA bexpdesc" $250; employee "ZZ QA empfname" ($250
+  roster); vendor "ZZ QA vendorna / vendorco"; invoice "Wipay test" $150; entity 4 "ZZ QA Entity" (CAD). Also flagged by Cowork as
+  possibly test: invoices "perfume", "vape" ×2, "jergens" — owner to confirm. Cleanup is its own approval.
+- **L56** (OPEN — LOW, product facts) Reports lists **"VAT Return — Tax collected and paid"** (app-main.js:6099) although FinFlow has
+  no VAT/GST engine by design (CLAUDE.md product facts); the report itself honestly renders "not tracked"
+  (finflow-api-wiring-extra.js:1191). The menu entry advertises a capability the product deliberately does not have.
 
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's

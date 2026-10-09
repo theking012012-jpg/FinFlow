@@ -656,10 +656,16 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   Fix (`ba08a03`): glBalanceSheet states `subledger` + `journalAdjustments` (= its AR / AP); each report adds one
   "Manual journal entries (no customer / vendor)" row and totals to the balance-sheet line; AP tiles count vendors only.
   Harness `verify-aging-reports-reconcile.js` (`018e374`; RED expected ×6). UNEXECUTED here.
-- **L40** (OPEN — by READING only; API-only, no UI caller found) `GET /api/gl/balance-sheet` (server.js ~11870) lists raw
+- **L40** (FIXED — owner verification pending; harness `0954a8c` RED expected ×6 → fix `630bdf3`; API-only, no UI caller found) `GET /api/gl/balance-sheet` (server.js ~11870) lists raw
   accounts per type with `totals: f.balanceSheet`; its equity group omits the un-closed earnings that `totals.equity`
   includes, so Σ equity accounts ≠ totals.equity for any API consumer whenever income / expense exist. Fix candidate:
   return `balanceSheetLines` (same partition as L6c). Not folded into L6c — it is an API contract change; owner call.
+  Owner: "lets go" (2026-10-09). Fix: the equity group ends with ONE synthetic row { code: null, name: "Accumulated net
+  income", balance, synthetic: true } from balanceSheetLines (one writer with /api/reports/balance-sheet), all-time;
+  account rows and totals unchanged. Consumers enumerated: verify-gl-statements (totals only — unaffected); no UI, no
+  docs. /api/gl/statements returns raw glFinancials (accounts + totals, no grouped rows) — no footing claim, untouched.
+  Harness `verify-gl-bs-api-equity.js`: 6,000 = 400 + 5,600 (Owner's Equity 5,000 + net income 600), checked at
+  period=year AND period=month (July P&L 0 — a period-based fix would show 0). Executed here: the pure probe only.
 
 ### 1.2 re-audit map (prior audit = the recovered Master Audit, `.fuse_hidden0000000d00000007`, 3,289 lines)
 Source recovery: 23 `.fuse_hidden*` copies are tracked; the largest is a strict superset of every other copy's

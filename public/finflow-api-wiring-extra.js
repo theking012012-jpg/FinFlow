@@ -1152,7 +1152,7 @@
         window.onTaxEdit = () => {
           window._readTaxInputs();
           window._taxLines.forEach((l, i) => { const a = document.getElementById('tl-amt-' + i); if (a) a.textContent = m(r2(lineAmt(l))); });
-          const total = totalTax(), q = Math.round(total / 4);
+          const total = totalTax(), q = r2(total / 4);   // L43: cents, not whole units
           ['tl-total', 'tl-total2'].forEach(id => { const x = document.getElementById(id); if (x) x.textContent = m(total); });
           ['tl-quarter', 'tl-fq'].forEach(id => { const x = document.getElementById(id); if (x) x.textContent = m(q); });
           persistTax();
@@ -1172,7 +1172,7 @@
               <input id="tl-note-${i}" value="${e(l.note)}" oninput="onTaxEdit()" placeholder="note (optional)" style="flex:1;min-width:0;background:none;border:none;color:var(--t3);font-size:11px;padding:0">
               <span style="font-family:var(--font-mono);color:var(--red);font-size:12px">= <span id="tl-amt-${i}">${m(r2(lineAmt(l)))}</span></span>
             </div></div>`).join('');
-          const total = totalTax(), q = Math.round(total / 4);
+          const total = totalTax(), q = r2(total / 4);   // L43: cents, not whole units
           _rptBody(
             `<div style="background:rgba(200,164,74,.12);border:1px solid var(--acc-bg, rgba(200,164,74,.3));border-radius:8px;padding:9px 11px;margin-bottom:12px;font-size:11px;color:var(--t2)">Add a line per tax you owe — each a % of taxable income, % of revenue, or a fixed amount. <strong>Rough estimate — not tax advice.</strong> Cross-border obligations (foreign tax credits, worldwide income, capital gains) aren't computed here — enter them as fixed amounts and consult a professional. Your lines also feed your accountant's Tax Summary.</div>`
             + tiles([

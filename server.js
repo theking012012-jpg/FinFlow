@@ -6863,8 +6863,9 @@ app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
     );
     const _rp = _trs && _trs.tax_rate != null && _trs.tax_rate !== '' ? parseFloat(_trs.tax_rate) : NaN;
     const rate = Number.isFinite(_rp) && _rp >= 0 && _rp <= 100 ? _rp / 100 : 0.25;
-    const estimatedTax = Math.round(taxableIncome * rate);
-    const quarterly = Math.round(estimatedTax / 4);
+    // L43: keep cents — whole-unit rounding showed 'Per quarter $2,971.00' for $11,885 (exact 2,971.25).
+    const estimatedTax = Math.round(taxableIncome * rate * 100) / 100;
+    const quarterly = Math.round(estimatedTax / 4 * 100) / 100;
 
     res.json({
       revenue, deductible, taxableIncome,

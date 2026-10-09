@@ -1292,11 +1292,13 @@
       const outstanding = (typeof window._arOutstanding === 'function')
         ? window._arOutstanding(invoices).total
         : invoices.filter(i => i.status?.toLowerCase() !== 'paid').reduce((s, i) => s + (i.amount || 0), 0);
-      // Category rows come from the same breakdown, so they are period-scoped and consistent with
-      // the total above them. NOTE they cover the manual-expense rows only — byCategory is built
-      // from those (app-main.js) — so they do not sum to expTotal, which also carries bills,
-      // payments made and payroll. Labelled in the heading rather than left to be discovered.
-      const catRows = Object.entries(breakdown.byCategory || {}).sort((a, b) => b[1] - a[1])
+      // L50 (Rule 2): the ONE category list every other surface uses (_expenseCategoryRows: direct categories + Payroll +
+      // Bills & vendors + Journal entries — L14, the P&L statement's list), so the rows sum to the Expenses total above them.
+      // It listed byCategory — manual expense rows only — under a total that also carries payroll and bills (live: Rent
+      // $2,850 under $11,350).
+      const _cats = (typeof window._expenseCategoryRows === 'function') ? window._expenseCategoryRows(breakdown, { all: true })
+        : Object.entries(breakdown.byCategory || {}).sort((a, b) => b[1] - a[1]);
+      const catRows = _cats
         .map(([cat, amt]) => `<tr><td style="padding:3px 0;color:var(--t2)">${e(cat)}</td><td style="text-align:right;font-family:var(--font-mono);color:var(--t1)">${money(amt)}</td></tr>`).join('');
 
       document.getElementById('rpt-body').innerHTML = `
@@ -1321,7 +1323,7 @@
             <div style="font-size:10px;color:var(--t3)">all time</div>
           </div>
         </div>
-        ${catRows ? `<div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Expense Breakdown — recorded expenses only</div>
+        ${catRows ? `<div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Expense Breakdown</div>
         <table style="width:100%;border-collapse:collapse">${catRows}</table>` : ''}`;
     } catch (err) {
       document.getElementById('rpt-body').textContent = 'Could not load data: ' + err.message;

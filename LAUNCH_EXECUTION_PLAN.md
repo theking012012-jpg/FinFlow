@@ -435,6 +435,14 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   2F/2P · invoice-cards-foot 3F/1P · compact-money-rounding 4F/5P · reports-no-vat-entry 1F/1P · owner-net-single-writer 3F/4P ·
   no-fabricated-salary-rows 2F/2P. Every count equals that harness's bug-assertion count with premises/CONTROLs passing
   (matched by count from the summary lines, not per-line output). GREEN at `03fb63f` + 3× sweep pending.
+- 2026-10-09 — GREEN owner-executed at `03fb63f`: 26 of 30 green; 4 red, ALL harness defects (no app-code defect):
+  verify-fc1-overdue-date 11/1 — STRUCTURAL regex stale since `49a0d3c` (L36b moved the call to scopeTodayYmd; pre-existing on
+  main, missed because no full sweep ran before the `e713ad1` deploy); and three of MY OWN new harnesses — owner-net (asserted
+  '5,250 nowhere on the page' but the roster LIST prints configured salaries), ap-report (textContent glued '$250'+'1 vendor' into
+  '$2501 vendor'), tax-cents (Show cents off, so a correct 625.19 displays '$625'). Fixed `a825067` `f45b3d4` `bb5ff1c` `8e3aaf0`.
+  Owner-executed at `8e3aaf0`, per-assertion output: new harnesses on OLD code still RED on their bug assertions only —
+  owner-net 3F/4P, ap-report 2F/2P, tax-cents 3F/2P (premises/CONTROLs pass); GREEN — owner-net 7/0, ap-report 4/0, tax-cents
+  5/0, fc1 12/0, f120 15/0, f124 23/0, f72 2/0. L41–L58 now owner-verified RED→GREEN. Full sweep deferred to the end (owner).
 
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.

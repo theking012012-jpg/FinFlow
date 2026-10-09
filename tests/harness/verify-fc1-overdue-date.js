@@ -68,7 +68,7 @@ const OWNER = { email: 'fc1-owner@finflow.test', password: 'harness-password-not
 
     // STRUCTURAL — every overdue computation is date-based, not a literal status match.
     const srv = fs.readFileSync(path.join(process.cwd(), 'server.js'), 'utf8');
-    AS('server reports.overdue is date-based (entityTodayYmd + due_date) AND nets credit notes',
+    AS('server reports.overdue is date-based (scopeTodayYmd — the entity day — + due_date) AND nets credit notes',
       // 49a0d3c (L36b) moved this call site to scopeTodayYmd(uid, eid) — the scope's shared entity day, entityTodayYmd for a
       // single entity — and left this pattern pointing at the old call. Re-pointed; the executed checks above are unchanged.
       /scopeTodayYmd\(uid, eid\)[\s\S]{0,700}_overdueGross[\s\S]{0,500}due_date/.test(srv) && /overdue = Math\.min\(outstanding[\s\S]{0,140}arCreditContra/.test(srv));

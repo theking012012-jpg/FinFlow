@@ -3452,17 +3452,10 @@ function syncAllPayrollsToPersonal(){
     }
   }
 
-  // Update payroll page link metrics
-  const prNet = document.getElementById('pr-owner-net');
-  const prLabel = document.getElementById('pr-owner-label');
-  const linkNet = document.getElementById('link-net-display');
-  const _dispCurPayroll = ((typeof CURRENCIES!=='undefined'?CURRENCIES:null)||window.CURRENCIES||{})[persCurrency] || {symbol:'$', rate:1};
-  const totalDisp = Math.round(totalUSD * _dispCurPayroll.rate);
-  if(prNet) prNet.textContent = _dispCurPayroll.symbol + totalDisp.toLocaleString();
-  if(prLabel) prLabel.textContent = entries.length > 1
-    ? `${entries.length} entities combined`
-    : entries.length === 1 ? (entries[0][1]?.entityName||'Entity') : 'Not on payroll';
-  if(linkNet) linkNet.textContent = _dispCurPayroll.symbol + totalDisp.toLocaleString() + '/mo';
+  // L57 (completes L45; Rule 2): the Payroll page owner cards (#pr-owner-net / #pr-owner-label / #link-net-display) have ONE
+  // writer — window.renderPayroll (finflow-api-wiring-medium.js), from the owner's line of the latest recognised run. This
+  // sync used to rewrite them with the ROSTER net (Rule 12: the roster is a template and produces no figure), so after any
+  // of its 10 call sites the card reverted to the template. It no longer touches the Payroll page.
 
   baseNetWorth = 0; // computed from real transactions in loadPersonalFinance()
   renderPersonal();

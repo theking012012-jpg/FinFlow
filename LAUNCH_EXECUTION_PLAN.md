@@ -389,7 +389,13 @@ these are the real launch gates (source: `LAUNCH_STATUS.md §1`).
   PASS in both views) · verify-portal-balance-sheet at `c2e2b57` 17 FAILED / 4 passed (portal AR 1,000 · AP 400 ·
   totalPayroll 2,000; rendered 1,000 / 2,400 / −1,400 with a "Payroll Obligations" row; owner controls 4,000 / 400 /
   3,600 and 4,777 / 400 / 4,377 PASS) · verify-aging-reports-reconcile at `018e374` 6 FAILED / 5 passed (AR report
-  total 1,000 vs balance sheet 1,130; AP rows 400 vs Total Payable 460). GREEN phase at HEAD: pending.
+  total 1,000 vs balance sheet 1,130; AP rows 400 vs Total Payable 460). 
+- 2026-10-09 — Owner-executed GREEN phase at `6e76878` (PowerShell): verify-gl-bs-lines-foot 36/0 ·
+  verify-portal-balance-sheet 21/0 · verify-aging-reports-reconcile 11/0; regressions all green — verify-gl-journal-bs-legs
+  11/0, verify-f137-balance-sheet-report 6/0, verify-f137-cashflow-ar-ap-reports 12/0, verify-accountant-books-ap 8/0,
+  verify-consolidated-ap 6/0, verify-vendors-payables-ui 2/0, verify-f72-payables 2/0, verify-accountant-entity-scope
+  36/0, verify-accountant-permitted-legs 8/0, step1 26/0, step2 63/0, step3 56/0, step4-client 5/0. Remaining for the
+  done-gate: the 3× full sweep. Open owner items: L40 (API-only footing), optional JE-template renumber (cosmetic).
 
 ## Findings Ledger (numbered; newest last)
 Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` series.
@@ -622,7 +628,7 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   'final', DB CHECK 23514), b4-2-3 + verify-f102-payroll-boot (draft = 0, boot load), verify-verification-cells
   A1/A2/A6 (basis C, roster 5,000 ≠ runs 4,200, client == server), verify-verification-a7-gaps A7.7/A7.8 (F25),
   verify-ar-overdue-netting / verify-accountant-books-ap / verify-consolidated-ap (AR / AP).
-- **L6c** (FIXED — owner verification pending; class of L6b) The balance sheet's TOTALS summed every ledger account but
+- **L6c** (FIXED — owner-executed RED 32 → GREEN 36/0; full sweep pending; class of L6b) The balance sheet's TOTALS summed every ledger account but
   its LINES named only cash / AR / inventory / AP / system tax / system payroll, so a posted journal to the JE picker's
   1500 Equipment, 2100 Credit Card, 2200 Tax Payable, 3000 Owner's Equity or any typed code sat inside a total with no
   line — the statement did not foot (the 2100/2200 question was one instance). Fix: `balanceSheetLines` partitions the
@@ -635,7 +641,7 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   Surfaces enumerated (Rule 2/13): /api/reports/balance-sheet (fixed), Balance Sheet report (fixed), accountant portal
   (L38), 13-week forecast starting cash (reads `cash` — unchanged), AP report / Vendors card (L39), /api/gl/balance-sheet
   (L40).
-- **L38** (FIXED — owner verification pending) The accountant portal built its OWN balance sheet (failure #2): assets =
+- **L38** (FIXED — owner-executed RED 17 → GREEN 21/0; full sweep pending) The accountant portal built its OWN balance sheet (failure #2): assets =
   AR only, liabilities = AP + "Payroll Obligations" = the PERIOD PAYROLL EXPENSE (`books.parts.payroll` — wages already
   paid are not owed), equity = the difference. Fix: /books returns `glBalanceSheet` itself, scoped to the grant —
   single permitted entity; whole account for a legacy link (= the owner's All view); ONLY the permitted entities for a
@@ -643,7 +649,7 @@ Numbered `L<n>` (launch run) so they never collide with the lost audit's `N<n>` 
   which now filters ledger rows to permitted + unassigned) (`a9097b8`); the portal page renders the server's lines and
   totals, no computation (`5891494`). Harness `verify-portal-balance-sheet.js` (`c2e2b57`; A = 4,000 / 400 / 3,600,
   A+B = 4,777 / 400 / 4,377, the scoped accountant never sees B's 777; RED expected ×17). UNEXECUTED here.
-- **L39** (FIXED — owner verification pending; regression class of L6b) L6b made balance-sheet AR / AP control accounts,
+- **L39** (FIXED — owner-executed RED 6 → GREEN 11/0; full sweep pending; regression class of L6b) L6b made balance-sheet AR / AP control accounts,
   but the AR / AP reports' rows are customers / vendors only: the AP report's vendor rows (400) stopped footing to its
   total (460, the balance sheet), and the AR report's total (customer subledger 1,000) stopped equalling the balance
   sheet (1,130) — the F137-c/d promises. verify-f137-cashflow-ar-ap-reports stayed green: no journals in its seed.

@@ -877,20 +877,22 @@
           const v = b.vendor || '—'; byVendor[v] = (byVendor[v] || 0) + due;
         });
         // F58 CLOSE (AP side): net open|applied vendor credits into each vendor's balance (payables
-        // contra), D2-bounded, so Σ rows == the canonical net AP total. An unmatched vendor's credit
-        // reduces an explicit 'Unattributed credits' bucket — the breakdown never drifts from the total.
+        // contra), D2-bounded, so Σ rows == the canonical net AP total. L51: a credit is listed under ITS vendor — negative
+        // when that vendor has no open bill, exactly as the AR report lists an unmatched credit note under its customer;
+        // 'Unattributed credits' is only for a credit that names no vendor.
         _apVCs.forEach(vc => {
           const st = (vc.status || '').toLowerCase(); if (st !== 'open' && st !== 'applied') return;
           const dy = window.FinFlowDates ? window.FinFlowDates._toYmd(vc.date || vc.created_at) : null;
           if (today != null && (dy == null || dy > today)) return;
           const amt = parseFloat(vc.amount) || 0; if (amt <= 0) return;
-          const v = vc.vendor || '—';
-          if (byVendor[v] != null) byVendor[v] -= amt; else byVendor['Unattributed credits'] = (byVendor['Unattributed credits'] || 0) - amt;
+          const v = String(vc.vendor || '').trim() || 'Unattributed credits';
+          byVendor[v] = (byVendor[v] || 0) - amt;
         });
         Object.keys(byVendor).forEach(k => { if (Math.abs(byVendor[k]) < 0.005) delete byVendor[k]; });
         const apTotal = parseFloat(bs.accountsPayable) || 0;
         const vendorEntries = Object.entries(byVendor).sort((a, b) => b[1] - a[1]);
         const entries = vendorEntries.slice();
+        const _owed = vendorEntries.filter(([v, amt]) => amt > 0.005 && v !== 'Unattributed credits');   // L51: vendors you owe
         // L39: balance-sheet AP is a control account (bills subledger + posted journal AP legs, D16); the journal leg has
         // no vendor, so it is its own explicit row — Σ rows == Total Payable again (it broke when L6b moved the total).
         const _apJe = (bs && bs.journalAdjustments) ? (parseFloat(bs.journalAdjustments.ap) || 0) : 0;
@@ -898,8 +900,8 @@
         const rows = entries.map(([v, amt]) => shareRow(v, amt, apTotal || 1, 'var(--red)')).join('');
         _rptBody(
           tiles([
-            tile('Total Payable', m(apTotal), vendorEntries.length + ' vendor' + (vendorEntries.length === 1 ? '' : 's'), 'var(--red)'),
-            tile('Largest', vendorEntries.length ? m(vendorEntries[0][1]) : m(0), vendorEntries.length ? String(vendorEntries[0][0]) : '—'),
+            tile('Total Payable', m(apTotal), _owed.length + ' vendor' + (_owed.length === 1 ? '' : 's'), 'var(--red)'),
+            tile('Largest', _owed.length ? m(_owed[0][1]) : m(0), _owed.length ? String(_owed[0][0]) : '—'),
           ])
           + hdr('Outstanding by vendor')
           + (rows || '<div style="padding:8px 0;color:var(--t3);font-size:12px">No outstanding payables.</div>')

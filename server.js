@@ -11881,7 +11881,13 @@ app.get('/api/gl/balance-sheet', requireAuth, wrap(async (req, res) => {
   const { period, fyStart, monthIdx } = _glPeriodArgs(req);
   const f = await glFinancials(scopeId(req), req.entityId, period, fyStart, monthIdx);
   const grp = t => f.accounts.filter(a => a.type === t).map(a => ({ code: a.code, name: a.name, balance: a.balance }));
-  res.json({ entityId: f.entityId, window: f.window, assets: grp('asset'), liabilities: grp('liability'), equity: grp('equity'), totals: f.balanceSheet });
+  // L40: totals.equity includes accumulated (un-closed) net income, which no equity ACCOUNT carries — so the equity
+  // group gets one synthetic row for it (code null, synthetic: true) and Σ equity rows = totals.equity. The amount is
+  // the same partition /api/reports/balance-sheet shows (balanceSheetLines — one writer), all-time like the balance
+  // sheet, never the requested period's P&L. Account rows are unchanged.
+  const _earn = balanceSheetLines(f.accounts).equity.find(l => l.key === 'earnings');
+  const equity = grp('equity').concat([{ code: null, name: _earn.label, balance: _earn.amount, synthetic: true }]);
+  res.json({ entityId: f.entityId, window: f.window, assets: grp('asset'), liabilities: grp('liability'), equity, totals: f.balanceSheet });
 }));
 app.get('/api/gl/accounts', requireAuth, wrap(async (req, res) => {
   if (req.entityId == null) return res.status(400).json({ error: 'GL statements are per-entity; select an entity.', code: 'GL_ENTITY_REQUIRED' });

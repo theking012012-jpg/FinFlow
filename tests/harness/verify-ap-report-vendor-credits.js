@@ -57,7 +57,10 @@ function renderedRows(doc) {
     A('CONTROL: Total Payable 250 (500 − 250)', near(v('Total Payable'), 250), JSON.stringify(rows));
     A('Xeno row 500', near(v('Xeno'), 500), JSON.stringify(rows));
     A('the vendor credit is listed under its vendor: Yarrow −250 (bug: "Unattributed credits")', near(v('Yarrow'), -250) && !rows.some(r => /Unattributed/.test(r.label)), JSON.stringify(rows));
-    A('tile counts vendors owed: "1 vendor" (bug: "2 vendors")', /\b1 vendor\b/.test(txt) && !/\b2 vendors\b/.test(txt), txt.slice(0, 160));
+    // Read the tile's own sub-line element. textContent of the whole body glues the value to the sub-line ("$2501 vendor"),
+    // so a word-boundary regex over it can never match — the first owner-run of this harness failed on exactly that.
+    const subs = [...w.document.querySelectorAll('#rpt-body div')].filter(el => !el.children.length && /^\d+ vendors?$/.test(el.textContent.trim())).map(el => el.textContent.trim());
+    A('tile counts vendors owed: "1 vendor" (bug: "2 vendors")', subs.length === 1 && subs[0] === '1 vendor', JSON.stringify(subs) + ' | ' + txt.slice(0, 160));
   } catch (e) {
     fail++; console.log('  FATAL: ' + (e && e.stack || e));
     if (e instanceof AggregateError && e.errors) console.log('  aggregate: ' + e.errors.map(x => x.message).join(' | '));

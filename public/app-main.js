@@ -2866,7 +2866,9 @@ function updateExpenses(d=getPeriodData()){
   // Tax deductible = real sum of deductible rows (yes 100% + half 50%)
   _set('ex-ded', S(b.deductible));
   const _dedEl=document.getElementById('ex-ded-save');
-  if(_dedEl){ _dedEl.textContent = b.business>0 ? Math.round(b.deductible/b.business*100)+'% of expenses deductible' : ''; _dedEl.className='mc-change up'; }
+  // L49: the SAME denominator as the recorded-expenses card (total expenses incl. payroll + bills). It divided by recorded
+  // rows only, so a page showing $2,850 deductible of $11,350 total read "100% of expenses deductible".
+  if(_dedEl){ _dedEl.textContent = b.total>0 ? Math.round(b.deductible/b.total*100)+'% of total expenses' : ''; _dedEl.className='mc-change up'; }
   const ec=chg(b.total, d?d.prevExp:null, true);
   set('ex-total-chg',ec.txt,ec.cls);
   // Largest cost + breakdown bars — operating categories PLUS Payroll and Bill

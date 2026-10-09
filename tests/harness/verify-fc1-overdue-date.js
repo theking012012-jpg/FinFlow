@@ -73,13 +73,16 @@ const OWNER = { email: 'fc1-owner@finflow.test', password: 'harness-password-not
     const am = fs.readFileSync(path.join(process.cwd(), 'public', 'app-main.js'), 'utf8');
     AS('app-main arOutstanding overdue is due_date-based',
       /function arOutstanding[\s\S]{0,1400}i\.due_date[\s\S]{0,200}overdueTotal/.test(am));
+    // L44: bills / vendors overdue moved to the server (computeBooks.apSummary, net of vendor credits); the client gross
+    // helper _billsOverdueSum was removed. Same properties, re-pointed (still STRUCTURAL — the executed check is
+    // verify-ap-overdue-netting.js): date-based on the server, and both pages' cards read it (no longer null / client-summed).
+    AS('server apSummary overdue is due_date-based (bills past due on the entity day)',
+      /FinFlowDates\._toYmd\(b\.due_date\)[\s\S]{0,200}_apOverdueGross/.test(srv));
     const wp = fs.readFileSync(path.join(process.cwd(), 'public', 'finflow-api-wiring-pages.js'), 'utf8');
-    AS('wiring-pages bills/vendors overdue via _billsOverdueSum (due_date-based)',
-      /_billsOverdueSum[\s\S]{0,400}due_date/.test(wp));
-    AS('wiring-pages vendors overdue is computed (no longer null)',
-      /setKpiCards\('page-vendors',\s*\[[^\]]*_vOverdue/.test(wp));
+    AS('wiring-pages bills AND vendors overdue cards read the server apSummary',
+      (wp.match(/apSummary\.overdueTotal/g) || []).length >= 2 && /setKpiCards\('page-bills',\s*\[null, null,/.test(wp));
     const bundle = fs.readFileSync(path.join(process.cwd(), 'public', 'finflow-bundle.js'), 'utf8');
-    AS('bundle rebuilt with date-based overdue helper', /_billsOverdueSum[\s\S]{0,400}due_date/.test(bundle));
+    AS('bundle rebuilt with the server-read overdue cards', /apSummary\.overdueTotal/.test(bundle));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (F-C1 date-based overdue)`);
     console.log('');

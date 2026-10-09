@@ -86,10 +86,11 @@ async function openPage(origin, httpClient, urlPath) {
     const over = (w.document.getElementById('inv-over') || {}).textContent || '';
     A('Invoices page: Billed $1,150 (D2 on the entity day; bug: $700)', amounts(billed).some(v => near(v, 1150)), 'inv-billed=' + billed);
     A('Invoices page: Overdue $700 (bug: $0)', amounts(over).some(v => near(v, 700)), 'inv-over=' + over);
-    const bo = typeof w._billsOverdueSum === 'function' ? w._billsOverdueSum(w._billsData || w.bills || []) : NaN;
-    const billsRows = (await http.get('/api/bills')).json || [];
-    const bo2 = typeof w._billsOverdueSum === 'function' ? w._billsOverdueSum(billsRows) : NaN;
-    A('Bills: past-due sum 230 on the entity day (bug: 0)', near(bo2, 230), '_billsOverdueSum=' + bo2 + ' (window rows: ' + bo + ')');
+    // L44: bills "Overdue" is now the server's canonical AP overdue (computeBooks.apSummary, entity-day `today`) — the
+    // client helper _billsOverdueSum it used to call was removed. Same property: past due on the ENTITY's day.
+    const _bsT = (await http.post('/api/reports/balance-sheet', {})).json || {};
+    const bo2 = _bsT.apSummary ? Number(_bsT.apSummary.overdueTotal) : NaN;
+    A('Bills: past-due sum 230 on the entity day (bug: 0)', near(bo2, 230), 'apSummary.overdueTotal=' + bo2);
 
     // accountant portal — overdue list/count on the entity day
     const acc = new HarnessHttp(origin, { xff: '203.0.113.136' });

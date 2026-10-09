@@ -635,19 +635,6 @@
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No vendors yet</div>';
     }
 
-    // F-C1: bills/vendors overdue = Σ balance of UNPAID bills past their due date (entity-local today).
-    // Replaces the old status==='overdue' literal (never set) and the hardcoded null on vendors.
-    window._billsOverdueSum = function (bills) {
-      const today = window.FinFlowDates ? (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())) : new Date().toISOString().slice(0, 10);
-      const UNPAID = ['unpaid', 'due_soon', 'overdue', 'partial', 'pending'];
-      return (bills || []).reduce((s, b) => {
-        const st = (b.status || '').toLowerCase();
-        if (!UNPAID.includes(st)) return s;
-        const d = b.due_date ? String(b.due_date).slice(0, 10) : null;
-        if (!d || d >= today) return s;   // no due date, or not yet past due
-        return s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0));
-      }, 0);
-    };
 
     // N24b: the payables card is the CANONICAL accounts payable — the balance sheet's figure (computeBooks:
     // recognised bills issued on or before today, less open|applied vendor credits). It used to be recomputed
@@ -661,9 +648,12 @@
         const bs = await api('POST', '/api/reports/balance-sheet' + (_eid ? '?entity_id=' + _eid : ''), {});
         if (seq !== _vendorsApSeq) return;   // a newer refresh is in flight
         const ap = bs && bs.accountsPayable != null ? parseFloat(bs.accountsPayable) : NaN;
-        setKpiCards('page-vendors', [null, Number.isFinite(ap) ? S(ap) : '—']);
+        // L44: Overdue is the server's canonical AP overdue (computeBooks.apSummary — past-due balance net of open vendor
+        // credits, clamped to payables), from the same response as Payables, so the two cards cannot contradict.
+        const ov = bs && bs.apSummary && bs.apSummary.overdueTotal != null ? parseFloat(bs.apSummary.overdueTotal) : NaN;
+        setKpiCards('page-vendors', [null, Number.isFinite(ap) ? S(ap) : '—', Number.isFinite(ov) ? S(ov) : '—']);
       } catch (e) {
-        if (seq === _vendorsApSeq) setKpiCards('page-vendors', [null, '—']);   // never a stale or recomputed figure
+        if (seq === _vendorsApSeq) setKpiCards('page-vendors', [null, '—', '—']);   // never a stale or recomputed figure
         console.warn('[Vendors] payables', e.message);
       }
     }
@@ -673,8 +663,8 @@
       renderVendorRows(_vendorsData);
       // KPI cards: count · total payables (canonical AP, filled by _refreshVendorsPayables) · overdue · paid
       const _vPaid = _paymentsMadeData.filter(r => inThisMonth(r.date)).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);   // L5: "This month"
-      const _vOverdue = window._billsOverdueSum(_billsData);   // F-C1: was hardcoded null → static $0
-      setKpiCards('page-vendors', [_vendorsData.length, null, S(_vOverdue), S(_vPaid)]);
+      // L44: Payables and Overdue are both filled from the server by _refreshVendorsPayables (was a gross client sum).
+      setKpiCards('page-vendors', [_vendorsData.length, null, null, S(_vPaid)]);
       _refreshVendorsPayables();
       window._refreshDashboardUI?.();
     };
@@ -769,7 +759,6 @@
       const badge = document.getElementById('badge-bills');
       if (badge) { badge.textContent = overdue; badge.style.display = overdue > 0 ? '' : 'none'; }
       // KPI cards: count · due-this-week sum · overdue sum · paid sum
-      const _blOverdue = window._billsOverdueSum(_billsData);   // F-C1: date-based (due_date past + unpaid), not status-literal
       // L5: "Paid · This month" = cash paid AGAINST bills this calendar month (bill-linked payments made),
       // the same rows the Vendors and Payments Made "Paid" cards draw from. It was Σ amount of FULLY-paid
       // bills, all-time — a partly-paid bill counted 0, and nothing was month-scoped.
@@ -783,9 +772,28 @@
         if (b.status?.toLowerCase() === 'paid' || !b.due_date) return false;
         const d = window.FinFlowDates._toYmd(b.due_date); return d != null && d >= _blToday && d <= _blWeek;
       }).reduce((s, b) => s + Math.max(0, (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0)), 0);
-      setKpiCards('page-bills', [_billsData.length, S(_blDueWeek), S(_blOverdue), S(_blPaid)]);
+      setKpiCards('page-bills', [_billsData.length, S(_blDueWeek), null, S(_blPaid)]);
+      _refreshBillsOverdue();   // L44: Overdue from the server (net of vendor credits), filled asynchronously
       window._refreshDashboardUI?.();
     };
+
+    // L44: the Bills page "Overdue" card is the server's canonical AP overdue (computeBooks.apSummary — past-due balance of
+    // recognised bills less open|applied vendor credits, clamped to payables), the same figure the Vendors page shows. It was
+    // Σ past-due balances, gross of vendor credits (live: $500 against payables of $250).
+    let _billsOvSeq = 0;
+    async function _refreshBillsOverdue() {
+      const seq = ++_billsOvSeq;
+      try {
+        const _eid = (window.ENTITIES || []).find(e => e.active)?._dbId;
+        const bs = await api('POST', '/api/reports/balance-sheet' + (_eid ? '?entity_id=' + _eid : ''), {});
+        if (seq !== _billsOvSeq) return;
+        const ov = bs && bs.apSummary && bs.apSummary.overdueTotal != null ? parseFloat(bs.apSummary.overdueTotal) : NaN;
+        setKpiCards('page-bills', [null, null, Number.isFinite(ov) ? S(ov) : '—']);
+      } catch (e) {
+        if (seq === _billsOvSeq) setKpiCards('page-bills', [null, null, '—']);
+        console.warn('[Bills] overdue', e.message);
+      }
+    }
 
     window.openNewBillModal = function () {
       ['bill-vendor','bill-amount','bill-notes','bill-end-date'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });

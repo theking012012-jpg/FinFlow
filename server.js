@@ -10622,6 +10622,7 @@ async function glBalanceSheet(userId, entityId, opts = {}) {
     // L39: control = subledger + posted journal legs — the reconciliation the AR / AP reports show row by row.
     subledger: { ar: r2(books.outstanding), ap: r2(books.accountsPayable) },
     journalAdjustments: { ar: r2(jb.ar), ap: r2(jb.ap) },
+    apSummary: books.apSummary,   // L44: canonical AP overdue (subledger), for the Bills / Vendors cards
   });
   // Single entity -> glFinancials(native). Consolidated (all entities) -> glConsolidated (per-leg base
   // conversion, matches computeBooks). Both reconcile-gated; consolidated also requires full FX coverage.
@@ -10668,6 +10669,7 @@ async function glBalanceSheet(userId, entityId, opts = {}) {
     // SIGNED net here — the per-vendor rows (bills less vendor credits) sum to it — matching the ledger AP shown.
     subledger: { ar: r2(books.outstanding), ap: r2(books.accountsPayableNet) },
     journalAdjustments: { ar: r2(jb.ar), ap: r2(jb.ap) },
+    apSummary: books.apSummary,   // L44: canonical AP overdue (subledger), for the Bills / Vendors cards
   };
   if (consolidated) {
     res.baseCurrency = f.base; res.consolidated = true; res.fxCoverage = f.fxCoverage;
@@ -11235,6 +11237,23 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // H1: overdue nets credit notes on the SAME basis as `outstanding` (gross AR − credit contra),
   // clamped to [0, outstanding] — a past-due figure can never exceed the total it is a subset of.
   const arSummary = { total: outstanding, openCount: _arOpenCount, overdueTotal: r2(Math.max(0, Math.min(outstanding, _arOverdueTotal - _arCreditContra))), overdueCount: _arOverdueCount };
+  // L44: AP OVERDUE — the mirror of arSummary.overdueTotal (L35): the past-due balance of the SAME recognised, issued-by-today
+  // bills accountsPayable sums (literal 'overdue' status or due date before the entity's today), less the SAME open|applied
+  // vendor-credit contra (_apCredits), clamped to [0, accountsPayable]; rows converted with _fxConvRow exactly like AR (no
+  // second FX-coverage count). Computed once here: the Bills and Vendors pages read it — vendor credits load on the client
+  // only when their page is opened, so a client-side netting depended on navigation order. Was gross on both pages (live:
+  // Overdue $500 > Payables $250).
+  let _apOverdueGross = 0, _apOverdueCount = 0;
+  (bills || [])
+    .filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase()) &&
+      (function () { const _y = FinFlowDates._toYmd(_billDate(b)); return _y != null && _y <= _today; })())
+    .forEach(b => {
+      const bal = Math.max(0, num(b.amount) - num(b.amount_paid));
+      if (!bal) return;
+      const _d = FinFlowDates._toYmd(b.due_date);
+      if (String(b.status || '').toLowerCase() === 'overdue' || (_d != null && _d < _today)) { _apOverdueGross += _fxConvRow(bal, b.entity_id, _billDate(b)); _apOverdueCount++; }
+    });
+  const apSummary = { total: accountsPayable, overdueTotal: r2(Math.max(0, Math.min(accountsPayable, _apOverdueGross - _apCredits))), overdueCount: _apOverdueCount };
 
   // F205 — top clients by recognized revenue (mirrors the client _topClients: recognized statuses,
   // summed by client at FULL amount, no period/D2 filter — it is an all-time revenue ranking, not a
@@ -11365,7 +11384,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const transactions = [..._invTx, ..._expTx].sort(_txByDate).slice(0, 6).map(t => ({ name: t.name, cat: t.cat, type: t.type, amount: t.amount }));
 
   return {
-    revenue, cogs, grossProfit, opex, netProfit, outstanding, accountsPayable, accountsPayableNet, arCreditContra: r2(_arCreditContra), journalBalances, arByCustomer, arSummary, topClients, period, monthly, expenseBreakdown, transactions,
+    revenue, cogs, grossProfit, opex, netProfit, outstanding, accountsPayable, accountsPayableNet, arCreditContra: r2(_arCreditContra), journalBalances, arByCustomer, arSummary, apSummary, topClients, period, monthly, expenseBreakdown, transactions,
     window: { start: winStart, end: winEnd, today: _today },   // L11: the resolved calendar window, so a caller can list exactly the rows these figures cover
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the

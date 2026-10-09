@@ -4034,31 +4034,83 @@ app.get('/api/cashflow-forecast', requireAuth, wrap(async (req, res) => {
     if (bs.cashTracked) { startingCash = bs.cash; cashTracked = true; }
   } catch (e) { console.error('[forecast] balance sheet read failed:', e && e.message); }
 
-  const [invoices, bills, recInv, recBill, expenses] = await Promise.all([
+  const [invoices, bills, recInv, recBill, expenses, creditNotes, vendorCredits] = await Promise.all([
     db.allByUser('invoices', uid, scope),
     db.allByUser('bills', uid, scope),
     db.allByUser('recurring_invoices', uid, scope),
     db.allByUser('recurring_bills', uid, scope),
     db.allByUser('expenses', uid, scope),
+    db.allByUser('credit_notes', uid, scope),     // L47: AR contra
+    db.allByUser('vendor_credits', uid, scope),   // L47: AP contra
   ]);
 
   const UNPAID_INV = new Set(['pending', 'overdue', 'partial']);
   const inflows = [], outflows = [];
 
+  // L47: open credit notes / vendor credits reduce what will actually be collected / paid — the SAME contra AR Outstanding and
+  // Accounts Payable net (open|applied, dated on or before today). Each credit is applied to its own customer's / vendor's
+  // open documents first (earliest due first), any remainder to the earliest-due documents overall, so Σ forecast AR = AR
+  // Outstanding and Σ forecast AP = Accounts Payable (for documents with a due date). Live: week 1 counted $14,300 of gross
+  // overdue AR while Outstanding net of $1,250 credit notes was $13,550.
+  const _CR_OK = new Set(['open', 'applied']);
+  const _pk = v => String(v == null ? '' : v).trim().toLowerCase();
+  const _applyCredits = (docs, credits) => {
+    const byDue = docs.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    let leftover = 0;
+    for (const cr of credits.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))) {
+      let rem = cr.amount;
+      for (const d of byDue) { if (rem <= 0) break; if (d.party !== cr.party) continue; const t = Math.min(rem, d.amount); d.amount -= t; rem -= t; }
+      leftover += rem;
+    }
+    for (const d of byDue) { if (leftover <= 0) break; const t = Math.min(leftover, d.amount); d.amount -= t; leftover -= t; }
+    return docs.filter(d => d.amount > 0.005).map(d => Object.assign(d.ev, { amount: Math.round(d.amount * 100) / 100 }));
+  };
+  const _credits = (rows, partyOf) => rows
+    .filter(r => _CR_OK.has(String(r.status || '').toLowerCase()))
+    .map(r => ({ party: _pk(partyOf(r)), amount: parseFloat(r.amount) || 0, date: FinFlowDates._toYmd(r.date || r.created_at) }))
+    .filter(r => r.amount > 0 && r.date != null && r.date <= today);
   // Open AR → inflow at due date.
+  const _arDocs = [];
   for (const inv of invoices) {
     if (!UNPAID_INV.has(String(inv.status || '').toLowerCase())) continue;
     const outstanding = (parseFloat(inv.amount) || 0) - (parseFloat(inv.amount_paid) || 0);
     if (outstanding <= 0.005 || !inv.due_date) continue;
-    inflows.push({ date: String(inv.due_date).slice(0, 10), amount: outstanding, kind: 'ar', label: (inv.client || 'Invoice') + ' (' + (inv.num || ('#' + inv.id)) + ')' });
+    const date = String(inv.due_date).slice(0, 10);
+    _arDocs.push({ party: _pk(inv.client), date, amount: outstanding, ev: { date, amount: outstanding, kind: 'ar', label: (inv.client || 'Invoice') + ' (' + (inv.num || ('#' + inv.id)) + ')' } });
   }
+  inflows.push(..._applyCredits(_arDocs, _credits(creditNotes, r => r.customer || r.client)));
   // Open AP → outflow at due date.
+  const _apDocs = [];
   for (const b of bills) {
     if (!RECOGNIZED_BILL.has(String(b.status || '').toLowerCase())) continue;
     const outstanding = (parseFloat(b.amount) || 0) - (parseFloat(b.amount_paid) || 0);
     if (outstanding <= 0.005 || !b.due_date) continue;
-    outflows.push({ date: String(b.due_date).slice(0, 10), amount: outstanding, kind: 'ap', label: (b.vendor || 'Bill') + ' (' + (b.num || ('#' + b.id)) + ')' });
+    const date = String(b.due_date).slice(0, 10);
+    _apDocs.push({ party: _pk(b.vendor), date, amount: outstanding, ev: { date, amount: outstanding, kind: 'ap', label: (b.vendor || 'Bill') + ' (' + (b.num || ('#' + b.id)) + ')' } });
   }
+  outflows.push(..._applyCredits(_apDocs, _credits(vendorCredits, r => r.vendor)));
+  // L47: PAYROLL — the largest outflow was missing (the run-rate below covers directly-logged expenses only; live: $144/week
+  // while payroll was $7,000 a month). An APPROVED, unpaid run is owed now (Σ its lines — the amount the GL pays out); future
+  // payroll is the run-rate of runs PAID in the last 90 days, the same method as the expense run-rate. Never the roster (Rule 12).
+  try {
+    const { rows: _runs } = await pool.query(
+      `SELECT pr.id, LOWER(COALESCE(pr.status,'')) AS st, pr.period,
+              COALESCE(pr.paid_date::date, pr.run_date::date)::text AS paid_on,
+              COALESCE(SUM(COALESCE(prl.gross,0) + COALESCE(prl.bonus,0) + COALESCE(prl.overtime,0)), 0)::float AS total
+         FROM payroll_runs pr
+         LEFT JOIN payroll_run_lines prl ON prl.run_id = pr.id
+        WHERE pr.user_id = $1 AND LOWER(COALESCE(pr.status,'')) IN ('approved','paid')
+          AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)
+        GROUP BY pr.id, pr.status, pr.period, pr.paid_date, pr.run_date`, [uid, eid]);
+    const _since = cfAddDays(today, -90);
+    let _paid90 = 0;
+    for (const r of _runs) {
+      if (r.st === 'approved' && r.total > 0.005) outflows.push({ date: today, amount: Math.round(r.total * 100) / 100, kind: 'payroll', label: 'Payroll run ' + (r.period || ('#' + r.id)) + ' (approved, unpaid)' });
+      if (r.st === 'paid' && r.paid_on && r.paid_on >= _since && r.paid_on <= today) _paid90 += r.total;
+    }
+    const _weeklyPayroll = _paid90 > 0 ? (_paid90 / 90) * 7 : 0;
+    if (_weeklyPayroll > 0) for (let i = 0; i < WEEKS; i++) outflows.push({ date: cfAddDays(today, i * 7), amount: _weeklyPayroll, kind: 'payroll_estimate', label: 'Estimated payroll' });
+  } catch (e) { console.error('[forecast] payroll read failed:', e && e.message); }
   // Expand a recurring row's occurrences within the horizon using the app's own nextRunDate().
   const expand = (row, kind, bucket) => {
     if (String(row.status || '').toLowerCase() !== 'active') return;

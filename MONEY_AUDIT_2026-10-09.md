@@ -62,40 +62,40 @@ Severity:
 | M1 | S1 | Deleting a **paid invoice** drops its revenue and AR but keeps its cash | EXECUTED |
 | M2 | S1 | Deleting a **paid bill** drops its expense from the P&L though the cash left | EXECUTED |
 | M3 | S1 | Accountant-portal journals say "posted" but never reach the books | EXECUTED |
-| M4 | S1 | Receipt scanner "+ Add to expenses" saves nothing (fake success) | CODE-READ |
+| M4 | S1 | Receipt scanner "+ Add to expenses" saves nothing (fake success) | EXECUTED |
 | M5 | S1 | CSV-imported **Paid / Partial** invoices and bills count as fully outstanding (AR / AP) | EXECUTED |
 | M6 | S1 | Income-tax estimate deducts only flagged expense rows, not payroll, COGS or bills | EXECUTED |
 | M7 | S1 | 13-week cash forecast contains **no payroll** | EXECUTED |
 | M8 | S1 | Inventory write-off ("adjustment") is never expensed; ledger keeps phantom stock | EXECUTED |
 | M9 | S2 | Payments Received page shows **every entity's** payments (mixed currencies) | EXECUTED (API) |
 | M10 | S2 | Overview chart and monthly arrays drop payroll for every UI-created run | EXECUTED (parse) |
-| M11 | S2 | "Growth" compares against the last fiscal month, which is in the future: AI says −100%, Health Score Growth = 0 | CODE-READ |
-| M12 | S2 | Personal Finance scales recurring items to the whole period (Year view = ×12 in October) | CODE-READ |
-| M13 | S2 | Personal asset/liability values have no currency and are shown as USD × rate | CODE-READ |
-| M14 | S2 | Owner salary in Personal Finance comes from the roster template, not payroll runs (Rule 12) | CODE-READ |
+| M11 | S2 | "Growth" compares against the last fiscal month, which is in the future: AI says −100%, Health Score Growth = 0 | EXECUTED |
+| M12 | S2 | Personal Finance scales recurring items to the whole period (Year view = ×12 in October) | EXECUTED |
+| M13 | S2 | Personal asset/liability values have no currency and are shown as USD × rate | EXECUTED |
+| M14 | S2 | Owner salary in Personal Finance comes from the roster template, not payroll runs (Rule 12) | EXECUTED |
 | M15 | S2 | Four "deductible" vocabularies (was L42): the same expense counts on one surface and not another | EXECUTED (server) |
 | M16 | S2 | Cash-flow report omits inventory purchases that balance-sheet cash includes | EXECUTED |
 | M17 | S2 | Deleting an expense booked from a bank line strands the bank line forever | EXECUTED |
 | M18 | S2 | Stripe: a charge that paid an invoice via Pay-now can be "added to books" again (double revenue); Pay-now refunds never reverse | CODE-READ |
 | M19 | S3 | Codat-imported journals are typed by the first character of an opaque account id | CODE-READ |
-| M20 | S2 | Client AI insights' payroll figures come from salary-category expense rows and the roster (Rule 12) | CODE-READ |
+| M20 | S2 | Client AI insights' payroll figures come from salary-category expense rows and the roster (Rule 12) | EXECUTED |
 | M21 | S3 | Re-dating a posted journal changes the list, not the books | EXECUTED |
 | M22 | S3 | GL backfill `reset` re-dates paid-payroll cash-out to `run_date` (L7 regression path) | EXECUTED |
 | M23 | S3 | Entities-page "Consolidated" plain-sums per-entity figures, so legacy NULL-entity rows count once per entity | EXECUTED |
 | M24 | S3 | Two server "overdue" definitions disagree on the same invoice | EXECUTED |
-| M25 | S3 | Status-literal `'overdue'` remains in 3 places (AI grounding, portal AI, Bills badge) | CODE-READ |
+| M25 | S3 | Status-literal `'overdue'` remains in 3 places (AI grounding, portal AI, Bills badge) | EXECUTED |
 | M26 | S3 | Portal Personal tab: all-time raw sum, includes **business** bank-feed rows, mixed currencies, capped at 200 rows | CODE-READ |
-| M27 | S3 | Invoices page: two writers of "% collected"; "Billed" is all-time under a period label | CODE-READ |
-| M28 | S3 | AI quarter insight hard-codes Q4; "top client this month" is an all-time figure; cash-card source % uses mismatched bases | CODE-READ |
-| M29 | S3 | Dashboard profit "vs last period" compares net-with-COGS to prior-without-COGS | CODE-READ |
-| M30 | S3 | Health Score receivables = status-'paid' face amounts ÷ all invoices (drafts, partials) | CODE-READ |
-| M31 | S3 | Recurring Bills "YTD" is a fabricated monthly × month-number; Recurring Invoices "YTD" is all-time | CODE-READ |
+| M27 | S3 | Invoices page: two writers of "% collected"; "Billed" is all-time under a period label | EXECUTED |
+| M28 | S3 | AI quarter insight hard-codes Q4; "top client this month" is an all-time figure; cash-card source % uses mismatched bases | EXECUTED |
+| M29 | S3 | Dashboard profit "vs last period" compares net-with-COGS to prior-without-COGS | EXECUTED |
+| M30 | S3 | Health Score receivables = status-'paid' face amounts ÷ all invoices (drafts, partials) | EXECUTED |
+| M31 | S3 | Recurring Bills "YTD" is a fabricated monthly × month-number; Recurring Invoices "YTD" is all-time | EXECUTED |
 | M32 | S3 | COGS is dated by the UTC instant of the click, not the business's date (Rule 10) | CODE-READ |
 | M33 | S3 | Bank CSV import collapses two genuine identical same-day transactions into one | EXECUTED |
 | M34 | S3 | Inventory purchases credit Cash directly with no link to a bill: recording the supplier bill too double-counts | CODE-READ |
-| M35 | S3 | Fake in-memory "Salary — X (April)" rows dated "Apr 30" are injected into the personal list | CODE-READ |
+| M35 | S3 | Fake in-memory "Salary — X (April)" rows dated "Apr 30" are injected into the personal list | EXECUTED |
 | M36 | S3 | Business Investments card shows USD-priced holdings under a non-USD entity's symbol, unconverted | CODE-READ |
-| M37 | S3 | River (Sankey) diagram is a third profit number: no COGS, payroll missing | CODE-READ |
+| M37 | S3 | River (Sankey) diagram is a third profit number: no COGS, payroll missing | EXECUTED |
 | M38 | S4 | Monthly buckets include future-dated rows while the KPIs exclude them (server and client) | CODE-READ |
 | M39 | S4 | `buildMonthlyArrays` buckets expenses by `expense_date` only (KPIs fall back to `date`/`created_at`) | CODE-READ (latent) |
 | M40 | S4 | Backfill has no date fallback for expenses, payments or receipts: a legacy dateless row aborts a `reset` part-way | CODE-READ (latent) |
@@ -103,7 +103,7 @@ Severity:
 | M42 | S4 | Run Payroll modal asks for a run date that the server ignores | CODE-READ |
 | M43 | S4 | Forecast AR/AP are not net of credit notes / vendor credits; opex run-rate skips orphan payments | CODE-READ |
 | M44 | S4 | API v1 summary uses a January fiscal year; entity keys hide NULL-entity rows the summary counts | CODE-READ |
-| M45 | S4 | P&L report "Expenses" tile says "incl. payroll + COGS"; the value excludes COGS | CODE-READ |
+| M45 | S4 | P&L report "Expenses" tile says "incl. payroll + COGS"; the value excludes COGS | EXECUTED |
 | M46 | S4 | Cash card "avg monthly net" divides by nominal months (12/3), not elapsed | CODE-READ |
 | M47 | S4 | Tax-Deductible report has no D2 bound (future-dated expenses count) | CODE-READ |
 
@@ -418,3 +418,49 @@ without conversion (finflow-api-wiring-dashboard.js:208).
   beyond the deductible label, holdings gain/loss math.
 - **Production data not read.** Data-dependent items are M5, M23 and M40. Their size in the owner's
   books needs a read-only instrument run by the owner (Rule 7). This audit did not touch production.
+
+---
+
+## 5. Execution results, 2026-10-10 (CODE-READ → EXECUTED)
+
+The 14 browser-only items were executed with `tools/money-audit-2026-10-09/client-items.js`. It boots the
+real app in jsdom against a scratch Postgres seeded through the real routes, with the clock pinned to
+25 Jul 2026 and the fiscal year starting January. It reads rendered screen text only. M4 was executed
+separately by `tests/harness/verify-m4-scanner-save.js`.
+
+Every item below measured **exactly the predicted bug value**. None was cleared.
+
+| # | Measured on screen | Correct value |
+|---|---|---|
+| M11 | AI: "Full year revenue: $1,820 — -100% growth vs Jan 2026"; Health "Growth" 0/100 | no −100%; growth from elapsed months |
+| M12 | Personal "Yearly income" $12.0K (one 1,000 occurrence this year) | $1.0K |
+| M13 | Asset entered as 1,000, personal currency TTD → shown TT$6.8K | TT$1.0K |
+| M14 | Owner salary 4,000/month saved, no payroll run → Yearly income $60.0K | $1.0K (no run, no salary) |
+| M20 | AI "Payroll-to-revenue: 0%" with a 2,000 approved run on 1,820 revenue | 110% |
+| M25 | Bills nav badge 0, while the Overdue card shows $400 | 1 |
+| M27 | "% collected" is 29% after the Invoices writer, 30% after the dashboard writer | one value |
+| M28 | Quarter view in Q3: "Oct 2026–Dec 2026 revenue" | Jul 2026–Sep 2026 |
+| M29 | July profit "↓ 897% vs prior period" | ↓ 954% (June net 280 incl. COGS) |
+| M30 | Health "Receivables" 3/100 | 29/100 (550 collected / 1,900 billed) |
+| M31 | Recurring Bills "YTD" $700, no bill generated yet | $0 |
+| M35 | List shows "Salary — Business A (April) · Apr 30 +$4,000" beside the real owner-salary row | no fabricated row |
+| M37 | River: "$920 net profit · 51% margin" while dashboard Net is −$1.1K | −$1,110 (same as dashboard) |
+| M45 | P&L tile "Expenses $2,900 — incl. payroll + COGS" (COGS is 30) | $2,930, or the label fixed |
+
+M37's 920 also confirms M10 on the rendered screen: the "July 2026" payroll run (2,000) is missing from
+the monthly arrays.
+
+**Read-only production instrument (built and executed on scratch):**
+`tools/money-audit-2026-10-09/prod-readonly-counts.js`. It is SELECT-only with bound parameters, uses its
+own pg client (never requires `database.js`), and prints full error detail per check. It counts M5a/M5b,
+M1, M2, M17, M21, M22, M23, M40, M50 and M9. On a scratch database seeded with one instance of each, every
+check found exactly the planted case. M22 and M40 had nothing planted and returned none. Owner runs it:
+
+    DATABASE_URL=<production url> node tools/money-audit-2026-10-09/prod-readonly-counts.js
+    DATABASE_URL=<production url> USER_ID=<your user id> node tools/money-audit-2026-10-09/prod-readonly-counts.js
+
+**Still CODE-READ (not yet executed):**
+- M18 (Stripe) and M19 (Codat), which need provider sandboxes.
+- The lower-severity items M26, M32, M34, M36 and M38–M47.
+
+Every S1 and S2 item except M18 is now EXECUTED.

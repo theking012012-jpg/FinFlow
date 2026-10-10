@@ -474,7 +474,7 @@ the data-dependent findings have actually touched so far.
 |---|---|---|
 | M1 / M2 orphan payments | none | No live damage yet. The defects are still open in the code. |
 | M5b bills paid but still owed | none | No live damage yet |
-| M5a invoices paid/partial with money still owing | 4 rows, all **partial**: user 1 entity 11 (350); user 6 entity 8 (2 rows, 5,200); user 6 entity 10 (2,500). **No 'paid' rows** | No 'paid-but-owing' rows, so the M5 shape has not reached production. The partial rows are being re-checked with the sharper verdict column (added after this run). |
+| M5a invoices paid/partial with money still owing | 4 rows, all **partial**: user 1 entity 11 (350); user 6 entity 8 (2 rows, 5,200); user 6 entity 10 (2,500). **No 'paid' rows** | No 'paid-but-owing' rows, so the M5 shape has not reached production. Re-run with the verdict column (2026-10-10): invoices #53, #40, #49 are **partial, backed by payments** (genuine). **Invoice #42 (user 6, entity 8): partial, amount 2,500, amount_paid 0, no payment rows**, so the full 2,500 is counted as owed. Either nothing was paid (the amount is right, the label is wrong) or it was imported as partial and the paid part is missing (the M5 shape). Owner to check; any correction is a separate, owner-approved data step (Rule 8). |
 | M17 stranded bank lines | none | No live damage yet |
 | M21 journal date ≠ ledger date | none | No live damage yet |
 | M22 payroll cash-out ≠ paid date | none | No live damage yet |

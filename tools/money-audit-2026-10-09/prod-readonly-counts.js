@@ -21,6 +21,11 @@ const USER = `($1::int IS NULL OR %t.user_id = $1::int)`;
 const u = (alias) => USER.replace('%t', alias);
 
 const CHECKS = [
+  { id: 'WHO', title: "Who is who: each login account (user_id) and the businesses (entity_id) it owns — the numbers used in every check below",
+    sql: `SELECT u.id AS user_id, u.data->>'email' AS email, e.id AS entity_id, e.data->>'name' AS business, e.data->>'currency' AS currency
+            FROM users u LEFT JOIN entities e ON e.user_id = u.id
+           WHERE ${u('u').replace('u.user_id', 'u.id')}
+           ORDER BY 1,3 LIMIT 500` },
   { id: 'M5a', title: "Invoices marked paid/partial with money still owing. verdict: 'paid but owing' = defect (counted unpaid); 'partial, no payment rows' = suspect (imported?); 'partial, backed by payments' = a genuine part-payment",
     sql: `SELECT i.user_id, i.entity_id, i.id AS invoice_id, lower(i.data->>'status') AS status,
                  ${N("i.data->>'amount'")} AS amount, COALESCE(${N("i.data->>'amount_paid'")},0) AS amount_paid,

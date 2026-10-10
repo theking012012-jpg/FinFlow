@@ -21,13 +21,17 @@ const USER = `($1::int IS NULL OR %t.user_id = $1::int)`;
 const u = (alias) => USER.replace('%t', alias);
 
 const CHECKS = [
-  { id: 'M5a', title: "Invoices marked paid/partial whose amount_paid is below the amount (counted as unpaid in Outstanding/AR)",
-    sql: `SELECT i.user_id, i.entity_id, lower(i.data->>'status') AS status, count(*)::int AS rows,
-                 round(sum(${N("i.data->>'amount'")} - COALESCE(${N("i.data->>'amount_paid'")},0)),2) AS shortfall
+  { id: 'M5a', title: "Invoices marked paid/partial with money still owing. verdict: 'paid but owing' = defect (counted unpaid); 'partial, no payment rows' = suspect (imported?); 'partial, backed by payments' = a genuine part-payment",
+    sql: `SELECT i.user_id, i.entity_id, i.id AS invoice_id, lower(i.data->>'status') AS status,
+                 ${N("i.data->>'amount'")} AS amount, COALESCE(${N("i.data->>'amount_paid'")},0) AS amount_paid,
+                 COALESCE((SELECT round(sum(ip.amount),2) FROM invoice_payments ip WHERE ip.invoice_id = i.id),0) AS payments,
+                 CASE WHEN lower(i.data->>'status') = 'paid' THEN 'paid but owing'
+                      WHEN NOT EXISTS (SELECT 1 FROM invoice_payments ip WHERE ip.invoice_id = i.id) THEN 'partial, no payment rows'
+                      ELSE 'partial, backed by payments' END AS verdict
             FROM invoices i
            WHERE ${u('i')} AND lower(i.data->>'status') IN ('paid','partial')
              AND COALESCE(${N("i.data->>'amount_paid'")},0) < ${N("i.data->>'amount'")} - 0.005
-           GROUP BY 1,2,3 ORDER BY 1,2,3` },
+           ORDER BY 1,2,3` },
   { id: 'M5b', title: "Bills marked paid/partial whose amount_paid is below the amount (counted as owed in AP)",
     sql: `SELECT b.user_id, b.entity_id, lower(b.data->>'status') AS status, count(*)::int AS rows,
                  round(sum(${N("b.data->>'amount'")} - COALESCE(${N("b.data->>'amount_paid'")},0)),2) AS shortfall

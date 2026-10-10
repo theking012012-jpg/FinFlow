@@ -464,3 +464,22 @@ check found exactly the planted case. M22 and M40 had nothing planted and return
 - The lower-severity items M26, M32, M34, M36 and M38–M47.
 
 Every S1 and S2 item except M18 is now EXECUTED.
+
+### Production counts (owner-run, 2026-10-10 03:47 UTC, all accounts)
+
+These were run by the owner with `prod-readonly-counts.js` against the live database. They measure what
+the data-dependent findings have actually touched so far.
+
+| Check | Live result | Reading |
+|---|---|---|
+| M1 / M2 orphan payments | none | No live damage yet. The defects are still open in the code. |
+| M5b bills paid but still owed | none | No live damage yet |
+| M5a invoices paid/partial with money still owing | 4 rows, all **partial**: user 1 entity 11 (350); user 6 entity 8 (2 rows, 5,200); user 6 entity 10 (2,500). **No 'paid' rows** | No 'paid-but-owing' rows, so the M5 shape has not reached production. The partial rows are being re-checked with the sharper verdict column (added after this run). |
+| M17 stranded bank lines | none | No live damage yet |
+| M21 journal date ≠ ledger date | none | No live damage yet |
+| M22 payroll cash-out ≠ paid date | none | No live damage yet |
+| M23 money rows with no business | 1 sales receipt, 150, user 2 | Counted under each of user 2's businesses (F26-b, owner-gated cleanup) |
+| M40 dateless rows | user 1: 7 invoices + 2 bills with no issue_date | Dated by created_at (the L23 legacy fallback). Backfill falls back to created_at for these, so no rebuild abort. 0 dateless expenses/payments/receipts. |
+| M50 ledger of deleted businesses | none | The Cowork test "Business A" had not yet been deleted at run time |
+| M9 payments across businesses | users 1 (2 businesses, 7 payments), 5 (2, 10), 6 (3, 5) | These accounts' Payments Received page mixes businesses today |
+

@@ -7741,7 +7741,7 @@ const _cdStatus = (map, v, def) => (Object.prototype.hasOwnProperty.call(map, v)
 
 // Pure mappers: one Codat record → { table, key, date, data } where `data` holds the exact FinFlow
 // field keys the manual routes write. Return null to SKIP (e.g. an unbalanced journal FinFlow rejects).
-function _codatMappers(companyId, platform) {
+function _codatMappers(companyId, platform, ctx = {}) {
   const ck  = (type, id) => `codat:${companyId}:${type}:${id}`;
   const tag = platform ? ('Imported from ' + platform) : 'Imported (Codat)';
   return {
@@ -7800,11 +7800,26 @@ function _codatMappers(companyId, platform) {
         amount: _cdNum(bp.totalAmount), date: _cdDate(bp.date), method: 'Imported',
         notes: 'Imported (Codat)', ref: _cdClip(bp.id, 60) } };
     },
+    // M19 (money audit 2026-10-09): a journal line is booked by its account CODE, whose first digit types it
+    // (1 asset · 2 liability · 3 equity · 4 income · 5–9 expense). The importer stored Codat's opaque accountRef.id
+    // as that code, so an id starting '4' booked as income, '7' as expense, and a letter was never posted at all
+    // (a "Posted" journal that reached no figure). Each line now resolves through the IMPORTED chart of accounts
+    // (ctx.accounts: codat id → { code, category, name }) to a code typed by the account's own Codat type. A line
+    // whose account cannot be resolved makes the whole journal unimportable (reported, never guessed).
     journalEntries: (j) => {
       const lines = Array.isArray(j.journalLines) ? j.journalLines : [];
       let debit = 0, credit = 0; const norm = [];
-      for (const l of lines) { const amt = _cdNum(l.netAmount); if (amt >= 0) debit += amt; else credit += -amt;
-        norm.push({ account: _cdClip((l.accountRef && l.accountRef.id) || '', 60), description: _cdClip(l.description || '', 200), amount: amt }); }
+      const _TYPE_DIGIT = { Assets: '1', Liabilities: '2', Equity: '3', Revenue: '4', Expenses: '6' };
+      for (const l of lines) {
+        const amt = _cdNum(l.netAmount); if (amt >= 0) debit += amt; else credit += -amt;
+        const acct = ctx.accounts && l.accountRef && ctx.accounts.get(String(l.accountRef.id));
+        const digit = acct && _TYPE_DIGIT[acct.category];
+        if (!digit) { const e = new Error('unmapped account'); e.unmappedAccount = true; throw e; }
+        const nominal = String(acct.code || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 12);
+        const code = (nominal && nominal[0] === digit) ? nominal : (digit + (nominal || '000'));
+        norm.push({ code, name: _cdClip(acct.name || code, 120), description: _cdClip(l.description || '', 200),
+          debit: amt >= 0 ? amt : 0, credit: amt < 0 ? -amt : 0 });
+      }
       debit = +debit.toFixed(2); credit = +credit.toFixed(2);
       if (Math.abs(debit - credit) > 0.01) return null; // FinFlow rejects unbalanced journals — skip, don't force
       return { table: 'journals', key: ck('journal', j.id), date: _cdDate(j.postedOn || j.createdOn), data: {
@@ -7837,8 +7852,19 @@ async function _codatCompany(uid, entityId) {
 // are skipped (never silently written into a closed period). Returns a per-type tally.
 async function _codatImportType(uid, entityId, sessionUserId, companyId, platform, type, opts) {
   const dryRun = !!(opts && opts.dryRun);
-  const map = _codatMappers(companyId, platform)[type];
+  let tally0Err = null;
+  // M19: journals resolve their lines through the SAME company's chart of accounts, read from Codat (the source the
+  // accounts import maps from) — so a preview, which writes nothing, resolves them exactly as the import does.
+  const _ctx = {};
+  if (type === 'journalEntries') {
+    try {
+      const accts = await codatFetchAll(companyId, 'accounts');
+      _ctx.accounts = new Map(accts.map(a => [String(a.id), { code: a.nominalCode || '', category: _CD_ACCT_CAT[a.type] || null, name: a.name || a.fullyQualifiedName || '' }]));
+    } catch (e) { tally0Err = e.message; }
+  }
+  const map = _codatMappers(companyId, platform, _ctx)[type];
   const tally = { total: 0, added: 0, duplicate: 0, locked: 0, skipped: 0, failed: 0, currencies: {}, sample: [] };
+  if (tally0Err) { tally.error = 'Could not read the chart of accounts for journals: ' + tally0Err; return tally; }
   let records;
   try { records = await codatFetchAll(companyId, type); }
   catch (e) { tally.error = e.message; return tally; }
@@ -7854,7 +7880,7 @@ async function _codatImportType(uid, entityId, sessionUserId, companyId, platfor
     if (rec && rec.currency) tally.currencies[rec.currency] = (tally.currencies[rec.currency] || 0) + 1;
     if (_MONEY_TYPES.has(type) && rec && rec.currency && String(rec.currency).toUpperCase() !== entCur) { tally.currencyMismatch++; tally.skipped++; continue; }
     let mm;
-    try { mm = map(rec); } catch (e) { tally.failed++; continue; }
+    try { mm = map(rec); } catch (e) { if (e && e.unmappedAccount) { tally.unmappedAccount = (tally.unmappedAccount || 0) + 1; tally.skipped++; continue; } tally.failed++; continue; }
     if (!mm) { tally.skipped++; continue; }
     for (const m of (Array.isArray(mm) ? mm : [mm])) {
       const typed = m.table === 'invoice_payments';

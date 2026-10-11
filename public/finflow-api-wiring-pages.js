@@ -649,6 +649,19 @@
       }, 0);
     };
 
+    // C16: a bill's DISPLAY status — "overdue" when it still has a balance past its due date (the same date rule as
+    // _billsOverdueSum and the Overdue card). Nothing stores 'overdue', so the row badge showed "unpaid" while the
+    // card counted the bill as overdue.
+    window._billDisplayStatus = function (b) {
+      const st = String((b && b.status) || '').toLowerCase();
+      if (st === 'paid') return 'paid';
+      const today = window.FinFlowDates ? (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())) : new Date().toISOString().slice(0, 10);
+      const d = b && b.due_date ? String(b.due_date).slice(0, 10) : null;
+      const bal = (parseFloat(b && b.amount) || 0) - (parseFloat(b && b.amount_paid) || 0);
+      if (d && d < today && bal > 0.005) return 'overdue';
+      return st || 'unpaid';
+    };
+
     // N24b: the payables card is the CANONICAL accounts payable — the balance sheet's figure (computeBooks:
     // recognised bills issued on or before today, less open|applied vendor credits). It used to be recomputed
     // here from the bills list (every non-paid bill, future-dated ones included, vendor credits ignored), so the
@@ -754,8 +767,8 @@
             <span style="font-weight:500">${esc(b.vendor)}</span>
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(b.amount)}</span>
-            <span style="color:${b.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.due_date,{year:true}):(b.due_date||''))||'—')}</span>
-            <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}${window.FinFlowDates.isInventoryBill(b) ? '<span class="badge b-blue" title="Stock bought on credit — the cost is inventory, reaching the P&amp;L as COGS when sold">Stock</span> ' : ''}<span class="badge ${cls[b.status?.toLowerCase()] || 'b-amber'}">${esc(b.status)}</span></span>
+            <span style="color:${window._billDisplayStatus(b) === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.due_date,{year:true}):(b.due_date||''))||'—')}</span>
+            <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}${window.FinFlowDates.isInventoryBill(b) ? '<span class="badge b-blue" title="Stock bought on credit — the cost is inventory, reaching the P&amp;L as COGS when sold">Stock</span> ' : ''}<span class="badge ${cls[window._billDisplayStatus(b)] || 'b-amber'}">${esc(window._billDisplayStatus(b))}</span></span>
             <div style="display:flex;gap:4px">
               <button class="btn btn-ghost btn-sm" onclick="viewBill(${b.id})">View</button>
               ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}

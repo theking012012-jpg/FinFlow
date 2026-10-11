@@ -9839,7 +9839,7 @@ async function _purchaseLayers(pool, inventoryId) {
 async function calculateFIFOCOGS(pool, inventoryId, quantitySold) {
   const purchases = await _purchaseLayers(pool, inventoryId);
   const { rows: [{ sold }] } = await pool.query(
-    `SELECT COALESCE(SUM(quantity),0) AS sold FROM inventory_movements WHERE inventory_id=$1 AND type='sale'`,
+    `SELECT COALESCE(SUM(quantity),0) AS sold FROM inventory_movements WHERE inventory_id=$1 AND type IN ('sale','adjustment')`,   // M8: write-offs consume layers too
     [inventoryId]
   );
   return fifoConsume(purchases, parseFloat(sold), quantitySold).cogs;
@@ -9852,7 +9852,7 @@ async function calculateFIFOCOGS(pool, inventoryId, quantitySold) {
 async function fifoItemTotal(pool, inventoryId) {
   const purchases = await _purchaseLayers(pool, inventoryId);
   const { rows: [{ sold }] } = await pool.query(
-    `SELECT COALESCE(SUM(quantity),0) AS sold FROM inventory_movements WHERE inventory_id=$1 AND type='sale'`,
+    `SELECT COALESCE(SUM(quantity),0) AS sold FROM inventory_movements WHERE inventory_id=$1 AND type IN ('sale','adjustment')`,   // M8: write-offs consume layers too
     [inventoryId]
   );
   const unitsSold = parseFloat(sold) || 0;
@@ -9864,17 +9864,21 @@ async function fifoItemTotal(pool, inventoryId) {
 // own historical rate. Walks sales in date order, costing each against the FIFO layers consumed by
 // all prior sales. Σ of the per-sale cogs equals fifoItemTotal's aggregate (FIFO is associative over
 // consecutive slices), so the native (unconverted) total reconciles by construction.
+// M8 (money audit 2026-10-09): a stock WRITE-OFF ('adjustment') removes units at their FIFO cost exactly like a
+// sale — it consumes the oldest layers, and its cost is expensed in COGS (inventory shrinkage). It used to
+// decrement units only: no cost, no GL entry, and the FIFO walk ignored it, so the write-off was never expensed,
+// the ledger kept the stock, and the NEXT sale was costed from layers already gone.
 async function fifoItemSales(pool, inventoryId) {
   const purchases = await _purchaseLayers(pool, inventoryId);
   const { rows: sales } = await pool.query(
-    `SELECT quantity, moved_at FROM inventory_movements WHERE inventory_id=$1 AND type='sale' ORDER BY moved_at ASC, id ASC`,
+    `SELECT quantity, moved_at, type FROM inventory_movements WHERE inventory_id=$1 AND type IN ('sale','adjustment') ORDER BY moved_at ASC, id ASC`,
     [inventoryId]
   );
   const out = []; let consumed = 0;
   for (const s of sales) {
     const q = parseFloat(s.quantity) || 0;
     const { cogs, uncovered } = fifoConsume(purchases, consumed, q);
-    out.push({ date: s.moved_at, cogs, uncovered, quantity: q });   // quantity added for F25 period-scoped units_sold; existing callers read only date/cogs/uncovered
+    out.push({ date: s.moved_at, cogs, uncovered, quantity: q, type: s.type });   // quantity added for F25 period-scoped units_sold; type (M8): 'sale' | 'adjustment' (write-off)
     consumed += q;
   }
   return out;
@@ -10316,9 +10320,9 @@ async function backfillLedgerForUser(userId, opts = {}) {
       for (const p of purch) { const cap = Math.round((parseFloat(p.quantity) || 0) * (parseFloat(p.unit_cost) || 0) * 100) / 100; if (!(cap > 0)) continue;
         await post({ entityId: it.entity_id, date: FinFlowDates._toYmd(p.moved), description: 'Inventory purchase', sourceType: 'inventory_movement', sourceId: p.id, idempotencyKey: 'inventory_movement:' + p.id, lines: [{ code: '1200', debit: cap, credit: 0 }, { code: '1000', debit: 0, credit: cap }] }); }
       const sales = await fifoItemSales(pool, it.inventory_id);
-      const { rows: saleRows } = await pool.query(`SELECT id, moved_at::text AS moved FROM inventory_movements WHERE inventory_id=$1 AND type='sale' ORDER BY moved_at ASC, id ASC`, [it.inventory_id]);
+      const { rows: saleRows } = await pool.query(`SELECT id, moved_at::text AS moved, type FROM inventory_movements WHERE inventory_id=$1 AND type IN ('sale','adjustment') ORDER BY moved_at ASC, id ASC`, [it.inventory_id]);   // M8: same rows + order as fifoItemSales
       for (let i = 0; i < saleRows.length && i < sales.length; i++) { const s = sales[i], m = saleRows[i]; const cogs = Math.round((s.cogs || 0) * 100) / 100; if (!(cogs > 0)) continue;
-        await post({ entityId: it.entity_id, date: FinFlowDates._toYmd(m.moved), description: 'COGS — sale', sourceType: 'inventory_movement', sourceId: m.id, idempotencyKey: 'inventory_movement:' + m.id, lines: [{ code: '5000', debit: cogs, credit: 0 }, { code: '1200', debit: 0, credit: cogs }] }); } } }
+        await post({ entityId: it.entity_id, date: FinFlowDates._toYmd(m.moved), description: m.type === 'adjustment' ? 'Inventory write-off' : 'COGS — sale', sourceType: 'inventory_movement', sourceId: m.id, idempotencyKey: 'inventory_movement:' + m.id, lines: [{ code: '5000', debit: cogs, credit: 0 }, { code: '1200', debit: 0, credit: cogs }] }); } } }
   // 9) credit notes — Open|Applied → Dr Revenue / Cr AR (contra) at date
   for (const cn of await db.allByUser('credit_notes', userId, keep)) {
     if (!['open', 'applied'].includes(String(cn.status || '').toLowerCase())) continue;
@@ -11202,7 +11206,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   try {
     const { rows: items } = await pool.query(
       `SELECT im.inventory_id, MIN(im.entity_id) AS entity_id FROM inventory_movements im
-       WHERE im.user_id = $1 AND im.type = 'sale'
+       WHERE im.user_id = $1 AND im.type IN ('sale','adjustment')
          AND ($2::int IS NULL OR im.entity_id IS NULL OR im.entity_id = $2)
        GROUP BY im.inventory_id`,
       [userId, entityId]
@@ -11469,7 +11473,7 @@ app.get('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
 // entity (it used to post to the viewed entity while the row took the item's).
 async function recordStockMovement({ userId, item, entityId = null, type, qty, unitCost = 0, reference = null, notes = null, idem = null, contraCode = '1000' }) {
   let cogs = null;
-  if (type === 'sale') cogs = await calculateFIFOCOGS(pool, parseInt(item.id), qty);
+  if (type === 'sale' || type === 'adjustment') cogs = await calculateFIFOCOGS(pool, parseInt(item.id), qty);   // M8: a write-off is costed too
   const _mvEnt = item.entity_id != null ? item.entity_id : entityId;
   const { rows: [movement] } = await pool.query(
     `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key)
@@ -11481,10 +11485,10 @@ async function recordStockMovement({ userId, item, entityId = null, type, qty, u
   await db.updateById('inventory', parseInt(item.id), { units: newUnits, low_stock: newUnits < _max * 0.1 ? 1 : 0 });
   try {
     const _mDate = FinFlowDates._toYmd(movement.moved_at);
-    if (type === 'sale' && cogs != null && +cogs > 0) {
+    if ((type === 'sale' || type === 'adjustment') && cogs != null && +cogs > 0) {
       await postLedgerEntry(pool, {
         userId, entityId: _mvEnt, date: _mDate,
-        description: 'COGS — sale of ' + String(item.name || '').slice(0, 80),
+        description: (type === 'adjustment' ? 'Inventory write-off — ' : 'COGS — sale of ') + String(item.name || '').slice(0, 80),
         sourceType: 'inventory_movement', sourceId: movement.id, idempotencyKey: 'inventory_movement:' + movement.id,
         lines: [{ code: '5000', debit: +cogs, credit: 0 }, { code: '1200', debit: 0, credit: +cogs }],
       });
@@ -11510,6 +11514,7 @@ app.post('/api/inventory-movements', requireAuth, lockGuard(LOCK_SPECS.inventory
   if (!item) return res.status(404).json({ error: 'Inventory item not found.' });
 
   const qty = parseFloat(quantity);
+  if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'quantity must be a positive number.' });   // a negative 'sale' / write-off would ADD stock
   // B8/C1: dedupe guard (TYPED table; timestamp column is `moved_at`, NOT created_at). This is the
   // highest-consequence duplicate in the app: a double-clicked 'sale' movement books the units out
   // twice AND consumes FIFO layers twice, permanently corrupting COGS and therefore gross profit.
@@ -11575,7 +11580,7 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
     `SELECT DISTINCT im.inventory_id, i.data->>'name' AS name, i.data->>'sku' AS sku
      FROM inventory_movements im
      JOIN inventory i ON i.id = im.inventory_id
-     WHERE im.user_id = $1 AND im.type = 'sale'
+     WHERE im.user_id = $1 AND im.type IN ('sale','adjustment')
        AND ($2::int IS NULL OR im.entity_id IS NULL OR im.entity_id = $2)`,
     [scopeId(req), eid]
   );
@@ -11587,18 +11592,21 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
     // order, then we sum only the sales in the window. All-time (no window) reproduces
     // fifoItemTotal exactly, so the COGS page is byte-for-byte unchanged.
     const sales = await fifoItemSales(pool, it.inventory_id);
-    let itemCogs = 0, itemUnits = 0, itemUncovered = 0;
+    let itemCogs = 0, itemUnits = 0, itemUncovered = 0, itemWrittenOff = 0, itemWriteOffCost = 0;
     for (const s of sales) {
       if (!inWin(s.date)) continue;
-      itemCogs += s.cogs; itemUnits += (parseFloat(s.quantity) || 0);
+      itemCogs += s.cogs;
+      if (s.type === 'adjustment') { itemWrittenOff += (parseFloat(s.quantity) || 0); itemWriteOffCost += s.cogs; }   // M8
+      else itemUnits += (parseFloat(s.quantity) || 0);
       if (s.uncovered > 0) itemUncovered += s.uncovered;
     }
-    if (itemUnits <= 0 && itemCogs === 0) continue;
+    if (itemUnits <= 0 && itemWrittenOff <= 0 && itemCogs === 0) continue;
     totalCOGS += itemCogs;
     if (itemUncovered > 0) uncoveredItems++;
     breakdown.push({
       inventory_id: it.inventory_id, name: it.name, sku: it.sku,
       units_sold: Math.round(itemUnits * 10000) / 10000, cogs: Math.round(itemCogs * 100) / 100,
+      units_written_off: Math.round(itemWrittenOff * 10000) / 10000, write_off_cost: Math.round(itemWriteOffCost * 100) / 100,
       uncovered_units: itemUncovered,
       no_cost_basis: itemUncovered > 0,
     });

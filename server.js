@@ -6536,22 +6536,12 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
     const _pl = await glProfitLoss(uid, eid, { period: bookPeriod, fyStartIdx, monthIdx: monthIdxArg, display, books });
     const revenue = _pl.totalRevenue;
     const outstanding = books.outstanding;
-    // F-C1: overdue = unpaid-ish invoices whose due date has passed (entity-local today), balance-based.
-    // The old literal status==='overdue' never fired — nothing transitions pending→overdue when the
-    // due date passes — so past-due pending/partial invoices read as $0 everywhere.
-    const _ovToday = await scopeTodayYmd(uid, eid);   // L36b
-    const _OV_UNPAID = new Set(['pending', 'overdue', 'partial', 'unpaid', 'sent', 'due_soon']);
-    const _overdueGross = (invoices || []).reduce((s, i) => {
-      const st = (i.status || '').toLowerCase();
-      if (!_OV_UNPAID.has(st)) return s;                    // paid / draft / void excluded
-      const d = i.due_date ? String(i.due_date).slice(0, 10) : null;
-      if (!d || d >= _ovToday) return s;                    // no due date, or not yet past due
-      return s + Math.max(0, (parseFloat(i.amount) || 0) - (parseFloat(i.amount_paid) || 0));
-    }, 0);
-    // H1: `outstanding` nets credit notes (gross AR − credit contra) but overdue summed gross, so
-    // overdue could render ABOVE outstanding whenever an open credit note existed — an impossible
-    // state (overdue is a subset of outstanding). Net the same contra and clamp to [0, outstanding].
-    const overdue = Math.min(outstanding, Math.max(0, Math.round((_overdueGross - (books.arCreditContra || 0)) * 100) / 100));
+    // M24 (money audit 2026-10-09): ONE overdue definition — computeBooks.arSummary (arithmetic balance of every
+    // recognised invoice issued on or before today and past its due date, net of open credit notes, clamped to
+    // [0, outstanding]). This route kept its own status-filtered copy, which dropped any past-due invoice whose
+    // status read 'paid' with a balance still owing, so the dashboard said 0 overdue while the AR report, the
+    // accountant portal and the reminders said 500 — the same invoice, two answers.
+    const overdue = (books.arSummary && books.arSummary.overdueTotal != null) ? Number(books.arSummary.overdueTotal) : 0;
     const totalExp = _pl.totalExpenses;
     const netProfit = _pl.netProfit;
     const margin = revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0;

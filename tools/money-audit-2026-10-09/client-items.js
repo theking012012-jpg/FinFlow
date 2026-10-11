@@ -52,13 +52,18 @@ async function seed({ http, client: c, userId }) {
   await J('POST', '/api/inventory-movements', { inventory_id: item.id, type: 'sale', quantity: 4, idempotency_key: 'mv2' });
   await J('POST', '/api/inventory-movements', { inventory_id: item.id, type: 'sale', quantity: 2, idempotency_key: 'mv3' });
   // scratch-only: Postgres NOW() is the real clock (October); re-date the three movements to June/July.
-  await c.query(`UPDATE inventory_movements SET moved_at = CASE idempotency_key WHEN 'mv1' THEN '2026-06-01T12:00:00Z'::timestamptz WHEN 'mv2' THEN '2026-06-15T12:00:00Z'::timestamptz ELSE '2026-07-10T12:00:00Z'::timestamptz END, movement_date = CASE idempotency_key WHEN 'mv1' THEN DATE '2026-06-01' WHEN 'mv2' THEN DATE '2026-06-15' ELSE DATE '2026-07-10' END WHERE user_id = $1`, [userId]);
+  await c.query(`UPDATE inventory_movements SET moved_at = CASE idempotency_key WHEN 'mv1' THEN '2026-06-01T12:00:00Z'::timestamptz WHEN 'mv2' THEN '2026-06-15T12:00:00Z'::timestamptz ELSE '2026-07-10T12:00:00Z'::timestamptz END WHERE user_id = $1`, [userId]);
+  // M32 column: present on the fixed schema only (the unfixed one dates a movement by moved_at alone).
+  const { rows: [{ hasMd }] } = await c.query(`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='inventory_movements' AND column_name='movement_date') AS "hasMd"`);
+  if (hasMd) await c.query(`UPDATE inventory_movements SET movement_date = CASE idempotency_key WHEN 'mv1' THEN DATE '2026-06-01' WHEN 'mv2' THEN DATE '2026-06-15' ELSE DATE '2026-07-10' END WHERE user_id = $1`, [userId]);
   await J('POST', '/api/recurring-bills', { vendor: 'Net Host', amount: 100, frequency: 'Monthly', next_run: '2026-08-01', status: 'active' });
   // personal: a monthly side-gig income profile with ONE occurrence this year, plus one grocery expense
   const prof = await J('POST', '/api/recurring-personal-transactions', { description: 'Side gig', amount: 1000, currency: 'USD', category: 'Salary', tx_type: 'income', frequency: 'Monthly', status: 'active', next_run: '2026-08-01' });
   await J('POST', '/api/personal-transactions', { description: 'Side gig', amount: 1000, currency: 'USD', category: 'Salary', tx_type: 'income', tx_date: '2026-07-15', recurring_profile_id: prof.id });
   await J('POST', '/api/personal-transactions', { description: 'Groceries', amount: 200, currency: 'USD', category: 'Groceries', tx_type: 'expense', tx_date: '2026-07-20' });
-  await J('POST', '/api/personal-accounts', { name: 'Car', kind: 'asset', type: 'other', value: 1000 });
+  // M13: the Car is ENTERED IN TTD (1,000 TTD = 147.06 USD at 6.80). The unfixed server ignores the currency, so the
+  // bug reads it as USD 1,000 (TT$6.8K); a row with no currency at all is legacy USD by definition (Rule 8).
+  await J('POST', '/api/personal-accounts', { name: 'Car', kind: 'asset', type: 'other', value: 1000, currency: 'TTD', value_usd: 147.06 });
 }
 
 (async () => {
@@ -77,8 +82,8 @@ async function seed({ http, client: c, userId }) {
     await settle(10, 50);
     const aiYear = all('ai-insights-list') || '';
     const growthTxt = (aiYear.match(/Full year revenue:[^.]*\.[^.]*\./) || [''])[0];
-    R('M11 growth (AI Year insight + Health "Growth" sub-score)', { aiSaysMinus100: /−?-?100% growth/.test(aiYear), healthGrowth: text('hs-gr-v') },
-      { aiSaysMinus100: false, healthGrowth: 'not 0/100' }, { aiSaysMinus100: true, healthGrowth: '0/100' },
+    R('M11 growth (AI Year insight + Health "Growth" sub-score)', { aiSaysMinus100: /−?-?100% growth/.test(aiYear), healthGrowthIsZero: text('hs-gr-v') === '0/100', healthGrowth: text('hs-gr-v') },
+      { aiSaysMinus100: false, healthGrowthIsZero: false, healthGrowth: text('hs-gr-v') }, { aiSaysMinus100: true, healthGrowthIsZero: true, healthGrowth: '0/100' },
       'REV[11] (December) is in the future on 25 Jul. AI line: ' + JSON.stringify(growthTxt));
     const p2r = (aiYear.match(/Payroll-to-revenue: (-?\d+)%/) || [])[1];
     R('M20 AI "Payroll-to-revenue" (payroll run 2,000 / revenue 1,820)', { payrollToRevenuePct: p2r == null ? null : Number(p2r) },
@@ -90,8 +95,9 @@ async function seed({ http, client: c, userId }) {
     // width a real screen would (560px) so the SHIPPED buildRiver runs; nothing else about it is changed.
     ev(`(function(){ const wr=document.getElementById('river-wrap'); if(!wr) return; Object.defineProperty(wr,'offsetWidth',{configurable:true,get:()=>560}); Object.defineProperty(wr,'clientWidth',{configurable:true,get:()=>560}); Object.defineProperty(wr,'offsetParent',{configurable:true,get:()=>document.body}); buildRiver(getPeriodData()); })()`); await settle(10, 60);
     const riverSub = all('river-sub') || '';
-    R('M37 River diagram net profit vs dashboard Net (Year)', { riverSays: riverSub, dashboardNet: text('d-profit') },
-      { riverSays: '-$1,110 net profit', dashboardNet: text('d-profit') }, { riverSays: '$920 net profit', dashboardNet: text('d-profit') },
+    const riverNet = (riverSub.match(/^\s*(-?\$[0-9,]+) net profit/) || [])[1] || riverSub.slice(0, 60);
+    R('M37 River diagram net profit vs dashboard Net (Year)', { riverNet, dashboardNet: text('d-profit') },
+      { riverNet: '-$1,110', dashboardNet: text('d-profit') }, { riverNet: '$920', dashboardNet: text('d-profit') },
       'river = REV−EXP arrays: no COGS (30) and the "July 2026" payroll dropped (M10) ⇒ 1,820 − 900 = 920');
 
     // ── Invoices page: the two "% collected" writers ────────────────────────────────────────────
@@ -137,9 +143,10 @@ async function seed({ http, client: c, userId }) {
     ev(`setPeriod(document.getElementById('pY'),'year')`); await settle(20, 60);
     if (typeof w.generateReport === 'function') { await w.generateReport('Profit & Loss Statement'); await settle(20, 60); }
     const rpt = all('rpt-body') || '';
-    const tile = (rpt.match(/Expenses\s*(\$[0-9,.\-−]+)\s*incl\. payroll \+ COGS/) || []);
-    R('M45 P&L report "Expenses" tile (opex 2,900; COGS 30)', { tileValue: tile[1] || null, saysInclCogs: /incl\. payroll \+ COGS/.test(rpt) },
-      { tileValue: '$2,930', saysInclCogs: true }, { tileValue: '$2,900', saysInclCogs: true }, 'label says COGS is included; value excludes it');
+    // M45: value and caption must agree. The fix keeps the value (operating expenses, 2,900) and corrects the caption.
+    const tile = (rpt.match(/Expenses\s*(\$[0-9,.\-−]+)\s*(operating, incl\. payroll|incl\. payroll \+ COGS)/) || []);
+    R('M45 P&L report "Expenses" tile (opex 2,900; COGS 30)', { tileValue: tile[1] || null, caption: tile[2] || null },
+      { tileValue: '$2,900', caption: 'operating, incl. payroll' }, { tileValue: '$2,900', caption: 'incl. payroll + COGS' }, 'label says COGS is included; value excludes it');
 
     // ── Personal finance ────────────────────────────────────────────────────────────────────────
     if (typeof w.showPage === 'function') { try { w.showPage('personal'); } catch (_) {} }

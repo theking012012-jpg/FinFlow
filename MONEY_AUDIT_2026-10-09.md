@@ -550,11 +550,33 @@ M6 taxable **900** (correct 160) · M8 year COGS **80** (correct 160) · M16 cas
 M32 sale dated **2026-10-10** (the server's real clock; correct 2026-07-20).
 
 **Full sweep on the fixed tree: 494 / 494 GREEN, 0 RED** (`tests/harness/run-verification-sweep.js`,
-sequential). Baseline before the fix pass: 451 / 452 (only `verify-fc1-overdue-date.js` red, a structural
+sequential), before patch 27b. Re-run in full after 27b: see 6.1c. Baseline before the fix pass: 451 / 452 (only `verify-fc1-overdue-date.js` red, a structural
 regex — see 6.4). The 42 extra harnesses are this pass's.
 
 **Production instrument:** `prod-readonly-counts.js` gains read-only checks [M14] and [M13] (6.5). Executed on
 scratch with one planted case each plus a control each. Each found exactly the planted row and not the control.
+
+### 6.1b Independent validation (A1–A21 whole-app sweep and the browser items tool), and a regression it caught
+
+- `sweep-businessA.js` (server, A1–A21 seeded through the real routes, October clock) on the fixed tree:
+  Year revenue **2,140**, expenses **5,060**, net **−2,960**, outstanding **2,047**, overdue 1,697. That is
+  the expected sheet.
+- `client-items.js` (browser, the 14 client items): unfixed tree **14 / 14 DEFECT CONFIRMED** at the predicted
+  bug value; fixed tree **14 / 14 CORRECT**. The tool was tightened to compare what each item means. Its old
+  exact-string expectations could not match a correct screen:
+  - M11 "not 0/100" is now a boolean.
+  - M37 compares the net figure without the margin suffix.
+  - M45 accepts the corrected caption.
+  - M13's Car is entered in TTD. A row with no currency is legacy USD by definition.
+
+  Its stock-movement seed now works on both schemas.
+- `sweep-client.js` (browser dashboard, A1–A21) **caught a real regression in the dashboard fix**. The
+  `/api/reports` overlay wrote Outstanding with the abbreviating formatter, so it showed **$2.0K**. The card had
+  always shown the exact AR balance, **$2,047**. Fixed in patch `27b` (`S()`, exact) and re-verified: 4 / 4,
+  `$2,047`. Running it also exposed a **tool fidelity bug**: jsdomBoot re-pins the server process to 25 Jul while
+  the tool forces the browser to 9 Oct, so server and browser disagreed on "today". The old client recomputed on
+  the browser's clock and matched by accident. The tool now pins both to 9 Oct; the unfixed tree still passes
+  it, 4 / 4.
 
 ### 6.2 Held for an owner decision (design; not built)
 

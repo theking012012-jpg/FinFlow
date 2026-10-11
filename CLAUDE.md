@@ -33,6 +33,16 @@ These are factual, not stylistic. Getting one wrong wastes the owner's time corr
   the flagship, primary, home, or default market. When something is genuinely region-specific
   (e.g. bank-linking coverage differs by country), name the specific region — never collapse the
   whole product down to one.
+- **Personal and business are WALLED. This is absolute.**
+  - **Business → Personal:** exactly ONE thing crosses — the owner's salary, as personal income, when a payroll run
+    is marked PAID (one row per owner line; removed if the run is voided). Nothing else: no payroll roster figures,
+    no bank-feed lines, no business holdings / accounts / snapshots, no business figure in any personal total, card,
+    caption, list or history.
+  - **Personal → Business:** NOTHING, ever. No personal transaction, account, holding, goal or snapshot may be
+    written to, matched into, or shown on any business surface.
+  - Personal data is personal by WHAT IT IS, never by which business happens to be active: a personal route must not
+    take its scope from `req.entityId` (the request middleware always resolves a business when one exists).
+  - Any new feature that reads or writes both sides needs the owner's explicit approval first.
 - **Tax = ESTIMATES ONLY. FinFlow is not a tax-filing / compliance product.** It computes an income-tax
   *estimate* (saved rate × taxable profit, plus custom tax lines) and a tax summary — it does NOT file
   returns and has NO sales-tax / VAT / GST engine. Do not propose or build a VAT/GST/filing engine; it

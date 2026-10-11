@@ -399,6 +399,11 @@ function renderConsolPL(){
   }).join('');
 }
 
+// C13: an entity's country (stored as a code, e.g. "TT") shown by name on its card.
+function _ffCountryName(code){
+  try{ return new Intl.DisplayNames(['en'],{type:'region'}).of(String(code).toUpperCase()) || code; }catch(e){ return code; }
+}
+window._ffCountryName=_ffCountryName;
 window.renderEntities=function(){
   // Update entity count KPI card
   const cntEl=document.getElementById('ent-count');
@@ -425,7 +430,7 @@ window.renderEntities=function(){
       <div class="entity-logo" style="background:${e.color}">${e.name.slice(0,2).toUpperCase()}</div>
       <div style="flex:1;min-width:0">
         <div class="entity-name">${e.name}</div>
-        <div class="entity-meta">${e.currency} · <span class="entity-tag">${e.tag}</span></div>
+        <div class="entity-meta">${e.currency}${e.country?' · '+_ffCountryName(e.country):''} · <span class="entity-tag">${e.tag}</span></div>
       </div>
       <div class="entity-stat">
         <div class="entity-stat-val">${revConverted}</div>

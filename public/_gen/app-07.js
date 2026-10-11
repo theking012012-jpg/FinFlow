@@ -282,8 +282,11 @@ async function _completeOnboarding(d){
   try{ sessionStorage.setItem('ff_onboarded','1'); }catch(e){}
   const o=document.getElementById('ob-overlay');
   if(o){ o.style.opacity='0'; o.style.transition='opacity .25s ease'; setTimeout(()=>o.remove(),260); }
-  if(typeof doLogin==='function'){ doLogin(); }
-  else{ const ls=document.getElementById('login-screen'); if(ls)ls.style.display='none'; }
+  // C13: load the business just created. This used to call doLogin(), which needs the sign-in form's
+  // email + password — empty here, so it returned at once and never reloaded. The boot load had already
+  // latched "0 businesses", so Entities showed 0 until a page reload. force=true bypasses that memo.
+  const ls=document.getElementById('login-screen'); if(ls)ls.style.display='none';
+  if(typeof window.loadEntitiesFromDB==='function'){ try{ await window.loadEntitiesFromDB(true); }catch(e){} }
   notify('Welcome to FinFlow! Your workspace is ready \u2726');
 }
 

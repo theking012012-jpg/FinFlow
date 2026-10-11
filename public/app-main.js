@@ -427,7 +427,7 @@ function renderBusinessSwitcher(){
   const nameEl = document.getElementById('sb-brand-name');
   const badgeEl = document.getElementById('biz-currency-badge');
   if(nameEl) nameEl.textContent = active.name;
-  if(badgeEl) badgeEl.textContent = active.currency + ' · Pro';
+  if(badgeEl) badgeEl.textContent = active.currency + ' · ' + (typeof _planLabel==='function' ? _planLabel() : 'Pro');   // C27: the real plan (was hard-coded "Pro", so the badge flipped Pro ↔ Business)
 }
 
 function buildBizMenu(){
@@ -438,7 +438,7 @@ function buildBizMenu(){
       onmouseenter="this.style.background='var(--bg2)'" onmouseleave="this.style.background='${b.id===activeBizId?'var(--bg2)':''}'"
     >
       <div style="width:28px;height:28px;border-radius:8px;background:${b.color};opacity:.15;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;position:relative">
-        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:7">${b.icon}</div>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:7">${esc(b.icon || String(b.name||'?').trim().charAt(0).toUpperCase() || '?')}</div>
       </div>
       <div style="flex:1;min-width:0">
         <div style="font-size:12.5px;font-weight:${b.id===activeBizId?600:400};color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.name)}</div>

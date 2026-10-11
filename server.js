@@ -2268,10 +2268,22 @@ app.put('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(a
   try { await _resyncAfterEdit(scopeId(req), 'expenses', row.id); } catch (glErr) { console.error('[GL] expenses edit resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(updated);
 }));
+// M17 (money audit 2026-10-09): a bank line actioned from the feed (book-expense → 'expense', match-bill → 'bill')
+// carries reconcile_state + reconcile_ref. Deleting the expense / payment it created left the line marked done,
+// so it never re-surfaced in the to-do list: the money had left the bank and was in no expense and no list.
+// Every delete of a record a bank line points at releases that line back to "unmatched".
+async function releaseBankLines(userId, state, refId) {
+  await pool.query(
+    `UPDATE personal_transactions SET data = data - 'reconcile_state' - 'reconcile_ref' - 'reconcile_bill_id', updated_at = NOW()
+      WHERE user_id = $1 AND data->>'reconcile_state' = $2 AND data->>'reconcile_ref' = $3::text`,
+    [userId, state, String(refId)]);
+}
+
 app.delete('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(async (req, res) => {
   const row = await ownedBy('expenses', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('expenses', parseInt(req.params.id));
+  await releaseBankLines(scopeId(req), 'expense', req.params.id);   // M17
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'expense', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] expense reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   logAudit(req, 'DELETE', 'expenses', row.id, row, null);
   res.json({ ok: true });
@@ -5022,6 +5034,7 @@ app.delete('/api/payments-made/:id', requireAuth, requireOwnedRow('payments_made
   const { rows: [_pmrow] } = await pool.query('SELECT * FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   const _billId = _pmrow && _pmrow.data && _pmrow.data.bill_id != null ? Number(_pmrow.data.bill_id) : null;
   await pool.query('DELETE FROM payments_made WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
+  await releaseBankLines(scopeId(req), 'bill', req.params.id);   // M17
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'bill_payment', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] bill_payment reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   if (_billId != null) await recalcBillStatus(pool, _billId, scopeId(req));
   if (_pmrow) await recordAudit(pool, { userId: scopeId(req), entityId: _pmrow.entity_id || null, table: 'payments_made', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_pmrow), req });  // F90 Phase B

@@ -723,6 +723,10 @@ async function initDB() {
     // M32 (Rule 10): the movement's BUSINESS day, separate from moved_at (the genuine instant it was recorded).
     // Schema only — nullable, no backfill (Rule 8): rows written before it read their UTC day of moved_at.
     await client.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS movement_date DATE`);
+    // M34 / M54 (fix pass round 2): the account a PURCHASE was paid from — 1000 cash, 2000 AP (bought on credit, linked
+    // bill), 3100 equity (opening stock). A ledger rebuild posts each purchase to the same contra the live path did.
+    // NULL = recorded before this existed: opening stock (reference 'Opening stock') reads 3100, everything else 1000.
+    await client.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS contra_code TEXT`);
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_movements_idem_key
         ON inventory_movements (user_id, idempotency_key)

@@ -10616,9 +10616,12 @@ async function backfillLedgerForUser(userId, opts = {}) {
   { const { rows: items } = await pool.query(`SELECT DISTINCT inventory_id, entity_id FROM inventory_movements WHERE user_id=$1`, [userId]);
     for (const it of items) {
       if (onlyEntity != null && it.entity_id !== onlyEntity) continue;
-      const { rows: purch } = await pool.query(`SELECT id, quantity, unit_cost, ${_MV_DAY_SQL}::text AS moved FROM inventory_movements WHERE user_id=$1 AND inventory_id=$2 AND type='purchase' ORDER BY ${_MV_DAY_SQL} ASC, moved_at ASC, id ASC`, [userId, it.inventory_id]);   // M32: business day
+      // M34/M54: each purchase is rebuilt against the contra it was recorded with (1000 cash · 2000 AP for a credit
+      // purchase · 3100 equity for opening stock). Rows from before contra_code: opening stock → 3100, else 1000. The
+      // rebuild used to post EVERY purchase Cr Cash, so opening stock became cash spent after a reset.
+      const { rows: purch } = await pool.query(`SELECT id, quantity, unit_cost, ${_MV_DAY_SQL}::text AS moved, COALESCE(contra_code, CASE WHEN reference = 'Opening stock' THEN '3100' ELSE '1000' END) AS contra FROM inventory_movements WHERE user_id=$1 AND inventory_id=$2 AND type='purchase' ORDER BY ${_MV_DAY_SQL} ASC, moved_at ASC, id ASC`, [userId, it.inventory_id]);   // M32: business day
       for (const p of purch) { const cap = Math.round((parseFloat(p.quantity) || 0) * (parseFloat(p.unit_cost) || 0) * 100) / 100; if (!(cap > 0)) continue;
-        await post({ entityId: it.entity_id, date: FinFlowDates._toYmd(p.moved), description: 'Inventory purchase', sourceType: 'inventory_movement', sourceId: p.id, idempotencyKey: 'inventory_movement:' + p.id, lines: [{ code: '1200', debit: cap, credit: 0 }, { code: '1000', debit: 0, credit: cap }] }); }
+        await post({ entityId: it.entity_id, date: FinFlowDates._toYmd(p.moved), description: p.contra === '3100' ? 'Opening stock' : 'Inventory purchase', sourceType: 'inventory_movement', sourceId: p.id, idempotencyKey: 'inventory_movement:' + p.id, lines: [{ code: '1200', debit: cap, credit: 0 }, { code: p.contra, debit: 0, credit: cap }] }); }
       const sales = await fifoItemSales(pool, it.inventory_id);
       const { rows: saleRows } = await pool.query(`SELECT id, ${_MV_DAY_SQL}::text AS moved, type FROM inventory_movements WHERE inventory_id=$1 AND type IN ('sale','adjustment') ORDER BY ${_MV_DAY_SQL} ASC, moved_at ASC, id ASC`, [it.inventory_id]);   // M8/M32: same rows + order as fifoItemSales
       for (let i = 0; i < saleRows.length && i < sales.length; i++) { const s = sales[i], m = saleRows[i]; const cogs = Math.round((s.cogs || 0) * 100) / 100; if (!(cogs > 0)) continue;
@@ -11787,9 +11790,9 @@ async function recordStockMovement({ userId, item, entityId = null, type, qty, u
   // caller's date, else the entity's today); moved_at stays the genuine instant it was recorded.
   const _mvDay = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : await entityTodayYmd(_mvEnt);
   const { rows: [movement] } = await pool.query(
-    `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key, movement_date)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::date) RETURNING *`,
-    [userId, _mvEnt, parseInt(item.id), type, qty, unitCost || 0, reference || null, notes || null, idem, _mvDay]);
+    `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key, movement_date, contra_code)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::date,$11) RETURNING *`,
+    [userId, _mvEnt, parseInt(item.id), type, qty, unitCost || 0, reference || null, notes || null, idem, _mvDay, type === 'purchase' ? contraCode : null]);   // M34/M54
   const { rows: [_cur] } = await pool.query(`SELECT data->>'units' AS u, data->>'max_units' AS m FROM inventory WHERE id = $1`, [item.id]);
   const _units = parseFloat(_cur && _cur.u) || 0, _max = parseFloat(_cur && _cur.m) || 200;
   const newUnits = type === 'purchase' ? _units + qty : Math.max(0, _units - qty);

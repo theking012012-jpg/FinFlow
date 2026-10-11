@@ -2872,12 +2872,10 @@ app.get('/api/holdings', requireAuth, wrap(async (req, res) => {
   try {
     // Scope the portfolio by context so the personal and business pages never read each
     // other's rows. Personal holdings = entity_id NULL; business holdings = the active entity.
-    // No scope → legacy behavior (personal + active-entity) so any un-migrated caller is unaffected.
+    // M58 (personal/business wall): business holdings ONLY with scope=business; anything else is PERSONAL. The old
+    // no-scope default merged personal with the active business's holdings.
     const scope = req.query.scope;
-    let filter;
-    if (scope === 'personal')      filter = r => r.entity_id == null;
-    else if (scope === 'business') filter = r => req.entityId != null && r.entity_id === req.entityId;
-    else                           filter = r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId);
+    const filter = scope === 'business' ? (r => req.entityId != null && r.entity_id === req.entityId) : (r => r.entity_id == null);
     const mine = await db.allByUser('holdings', req.session.userId, r => r.entity_id == null && filter(r));
     const biz  = req.entityId != null ? await db.allByUser('holdings', scopeId(req), r => r.entity_id != null && filter(r)) : [];
     res.json([...mine, ...biz].sort((a, b) => a.id - b.id));
@@ -2895,11 +2893,11 @@ app.post('/api/holdings', requireAuth, wrap(async (req, res) => {
   if (!TICKER_RE.test(String(b.ticker).trim().toUpperCase().slice(0, 20))) return res.status(400).json({ error: 'Invalid ticker.' });
   // Row scope: personal → entity_id NULL (forced, even when a business entity is active in
   // session — otherwise a personal add would silently inherit it); business → the active entity
-  // (rejected if none is active); legacy (no scope) → prior behavior.
+  // (rejected if none is active). M58 (personal/business wall): no scope ⇒ PERSONAL — a holding never inherits the
+  // business that happens to be active (the old default filed a personal holding under it).
   let eid;
-  if (b.scope === 'personal')      eid = null;
-  else if (b.scope === 'business') { if (req.entityId == null) return res.status(400).json({ error: 'No active business entity.' }); eid = req.entityId; }
-  else                             eid = req.entityId || null;
+  if (b.scope === 'business') { if (req.entityId == null) return res.status(400).json({ error: 'No active business entity.' }); eid = req.entityId; }
+  else                        eid = null;
   const _dup = await findRecentDuplicate('holdings', _holdingOwner(req, eid), eid, { textMatch: { ticker: b.ticker.trim().toUpperCase().slice(0,20) }, numMatch: { shares: parseFloat(b.shares)||0 } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('holdings', { user_id: _holdingOwner(req, eid), entity_id: eid, ticker: b.ticker.trim().toUpperCase().slice(0,20), name: (b.name||b.ticker).trim().slice(0,200), asset_type: b.asset_type||'Stock', shares: parseFloat(b.shares)||0, cost_per: parseFloat(b.cost_per)||0, price: parseFloat(b.price)||parseFloat(b.cost_per)||0, dividend: parseFloat(b.dividend)||0, color: b.color||'#c9a84c' });

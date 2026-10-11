@@ -673,6 +673,11 @@ async function initDB() {
     // L7 (F122 follow-up): the calendar date a run was marked PAID — when its cash left. NULL for rows paid
     // before this column existed; readers fall back to run_date for those (no existing row is rewritten).
     await client.query(`ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS paid_date DATE`);
+    // M41 (fix pass round 2): withholdings are a liability until remitted. paid_basis is stamped 'net' when a run is
+    // marked paid from now on (cash out = Σ net pay; withholdings stay in 2200 until remitted). NULL = paid before this
+    // existed: those runs keep their gross cash-out on every path (no row is rewritten, Rule 8).
+    await client.query(`ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS paid_basis TEXT`);
+    await client.query(`ALTER TABLE payroll_runs ADD COLUMN IF NOT EXISTS withholdings_remitted_date DATE`);
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_payroll_runs_idem_key
         ON payroll_runs (user_id, idempotency_key)

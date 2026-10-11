@@ -386,11 +386,13 @@ async function loadPayrollRuns(){
         <div style="flex:1">
           <div class="tx-name">${esc(r.period)}</div>
           <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(r.run_date,{year:true}):(r.run_date||''))||'—')} · Gross: ${S(parseFloat(r.total_gross||0))} · Net: ${S(parseFloat(r.total_net||0))}</div>
+          ${_runWithholdingsLine(r)}
         </div>
         <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
           <span class="badge ${statusBadge[r.status]||'b-amber'}" style="font-size:9px">${esc(r.status)}</span>
           ${r.status==='draft'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="approvePayrollRun(${r.id})">Approve</button>`:''}
           ${r.status==='approved'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="markPayrollPaid(${r.id})">Mark Paid</button>`:''}
+          ${(r.status==='paid'&&r.paid_basis==='net'&&!r.withholdings_remitted_date&&_runWithholdings(r)>0)?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="openRemitWithholdings(${r.id})">Remit</button>`:''}
           ${r.status==='draft'?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px;color:var(--red)" onclick="deletePayrollRun(${r.id})">Delete</button>`:''}
           ${(r.status==='approved'||r.status==='paid')?`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px;color:var(--red)" onclick="voidPayrollRun(${r.id})">Void</button>`:''}
         </div>
@@ -477,6 +479,49 @@ async function approvePayrollRun(id){
     notify('✓ Payroll approved');
     loadPayrollRuns();
   }catch(e){notify('Could not approve',true);}
+}
+// M41 (fix pass round 2): withholdings (tax, pension …) are held back from net pay and owed to the authority until
+// remitted. A run paid on the 'net' basis shows what is owed and a Remit action; the amount comes from the run's
+// LINES (basis C): Σ (gross + bonus + overtime) − Σ net pay. Runs paid before this existed took them out with wages.
+function _runWithholdings(r){
+  const ls=(r&&Array.isArray(r.lines)?r.lines:[]).filter(Boolean);
+  const g=ls.reduce((a,l)=>a+(parseFloat(l.gross)||0)+(parseFloat(l.bonus)||0)+(parseFloat(l.overtime)||0),0);
+  const n=ls.reduce((a,l)=>a+(l.net_pay!=null?(parseFloat(l.net_pay)||0):((parseFloat(l.gross)||0)+(parseFloat(l.bonus)||0)+(parseFloat(l.overtime)||0))),0);
+  return Math.max(0,Math.round((g-n)*100)/100);
+}
+function _runWithholdingsLine(r){
+  if(!r||r.status!=='paid'||r.paid_basis!=='net') return '';
+  const w=_runWithholdings(r); if(!(w>0)) return '';
+  const fmt=d=>esc(window.FinFlowDates?window.FinFlowDates.fmtLabel(String(d).slice(0,10),{year:true}):String(d).slice(0,10));
+  return r.withholdings_remitted_date
+    ? `<div class="tx-cat" style="color:var(--green)">Withholdings ${S(w)} remitted ${fmt(r.withholdings_remitted_date)}</div>`
+    : `<div class="tx-cat" style="color:var(--amber)">Withholdings owed: ${S(w)} — remit to the tax authority / fund, then record it here</div>`;
+}
+function openRemitWithholdings(id){
+  const r=(window.payrollRuns||[]).find(x=>x.id===id); if(!r) return;
+  document.getElementById('rw-run-id').value=id;
+  document.getElementById('rw-sub').textContent=(r.period||'')+' — '+S(_runWithholdings(r))+' withheld';
+  const dEl=document.getElementById('rw-date');
+  if(window._serverToday){ dEl.value=window._serverToday; dEl.disabled=false; } else { dEl.value=''; dEl.disabled=true; }   // F115: server today only
+  openModal('remit-withholdings-modal');
+}
+async function saveRemitWithholdings(){
+  if(window._savingRemit) return;   // in-flight lock; the server stamps the remittance once (idempotent)
+  const id=document.getElementById('rw-run-id').value, date=document.getElementById('rw-date').value;
+  if(!id) return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date||'')){ notify('Enter the date the withholdings were paid',true); return; }
+  window._savingRemit=true;
+  const btn=document.querySelector('#remit-withholdings-modal .btn-primary'); if(btn) btn.disabled=true;
+  try{
+    const res=await fetch('/api/payroll-runs/'+encodeURIComponent(id)+'/remit',{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({date})});
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok){ notify('⚠ '+(d.error||'Could not record the remittance'),true); return; }
+    closeModal('remit-withholdings-modal');
+    notify('✓ Withholdings remitted');
+    loadPayrollRuns();
+    if(typeof window.refreshFinancials==='function') window.refreshFinancials('expenses');
+  }catch(e){ notify('Could not record the remittance',true); }
+  finally{ window._savingRemit=false; if(btn) btn.disabled=false; }
 }
 async function markPayrollPaid(id){
   try{

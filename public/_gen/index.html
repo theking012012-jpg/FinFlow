@@ -4821,6 +4821,14 @@ select.ob-input{cursor:pointer}
 </div>
 
 <!-- ══ PAYMENT MADE MODAL ════════════════════════════════════════════ -->
+<div class="modal-overlay hidden" id="remit-withholdings-modal">
+  <div class="modal">
+    <div class="modal-header"><div><div class="modal-title">Remit withholdings</div><div class="modal-sub" id="rw-sub">Record paying the withheld tax / pension</div></div><button class="modal-close" onclick="closeModal('remit-withholdings-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"></line><line x1="13" y1="1" x2="1" y2="13"></line></svg></button></div>
+    <input type="hidden" id="rw-run-id">
+    <div class="field-wrap"><label class="field-label" for="rw-date">Date paid *</label><input class="finput" id="rw-date" type="date"></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('remit-withholdings-modal')">Cancel</button><button class="btn btn-primary" onclick="saveRemitWithholdings()">Record remittance</button></div>
+  </div>
+</div>
 <div class="modal-overlay hidden" id="modal-payment-made">
   <div class="modal">
     <div class="modal-header">

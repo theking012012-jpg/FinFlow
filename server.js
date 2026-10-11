@@ -4216,8 +4216,9 @@ app.get('/api/cashflow-forecast', requireAuth, wrap(async (req, res) => {
   //     PROJECT future cash, never as a booked expense (Rule 12 stands for every P&L figure).
   try {
     const _runRows = (await pool.query(
-      `SELECT r.id, r.period, r.run_date, r.status, r.entity_id,
-              COALESCE(SUM(COALESCE(l.gross,0) + COALESCE(l.bonus,0) + COALESCE(l.overtime,0)),0) AS amt
+      `SELECT r.id, r.period, r.run_date, r.status, r.entity_id, r.paid_basis, r.paid_date::text AS paid_date, r.withholdings_remitted_date,
+              COALESCE(SUM(COALESCE(l.gross,0) + COALESCE(l.bonus,0) + COALESCE(l.overtime,0)),0) AS amt,
+              COALESCE(SUM(COALESCE(l.net_pay, COALESCE(l.gross,0) + COALESCE(l.bonus,0) + COALESCE(l.overtime,0))),0) AS net
          FROM payroll_runs r LEFT JOIN payroll_run_lines l ON l.run_id = r.id
         WHERE r.user_id = $1 GROUP BY r.id`, [uid])).rows.filter(r => scope(r));
     const _monthEnd = ym => { const [y, m] = ym.split('-').map(Number); const d = new Date(Date.UTC(y, m, 0)); return d.toISOString().slice(0, 10); };
@@ -4231,6 +4232,18 @@ app.get('/api/cashflow-forecast', requireAuth, wrap(async (req, res) => {
       if ((st === 'approved' || st === 'draft') && amt > 0) {
         const due = _monthEnd(ym);
         outflows.push({ date: due < today ? today : due, amount: amt, kind: 'payroll', label: 'Payroll — ' + (r.period || ym) + (st === 'draft' ? ' (draft run)' : ' (approved, not yet paid)') });
+      }
+      // M41: a run paid on the 'net' basis still owes its withholdings until they are remitted — cash still to go out.
+      // The authority's due date varies by country, so it is estimated at the end of the month after the pay date
+      // (today if that has passed) and labelled as an estimate.
+      if (st === 'paid' && r.paid_basis === 'net' && !r.withholdings_remitted_date) {
+        const wh = Math.max(0, Math.round((amt - (parseFloat(r.net) || 0)) * 100) / 100);
+        const pm = String(r.paid_date || '').slice(0, 7);
+        if (wh > 0 && /^\d{4}-\d{2}$/.test(pm)) {
+          const [py, pmo] = pm.split('-').map(Number);
+          const due = _monthEnd(pmo === 12 ? (py + 1) + '-01' : py + '-' + String(pmo + 1).padStart(2, '0'));
+          outflows.push({ date: due < today ? today : due, amount: wh, kind: 'payroll_withholdings', label: 'Payroll withholdings to remit — ' + (r.period || pm) + ' (estimated due date)' });
+        }
       }
     }
     const { rows: [_ec] } = await pool.query(`SELECT COUNT(*)::int AS n FROM entities WHERE user_id = $1`, [uid]);
@@ -6854,14 +6867,15 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
     db.allByUser('payments_made', uid, matchEnt),
     db.allByUser('sales_receipts', uid, matchEnt),  // F26: entity-scoped (null-inclusive) like every sibling leg — was user-level, leaking other entities' cash sales into this entity's figures
     pool.query(
-      `SELECT pr.id AS run_id, pr.run_date, pr.paid_date, pr.entity_id,
-              COALESCE(SUM(COALESCE(prl.gross,0) + COALESCE(prl.bonus,0) + COALESCE(prl.overtime,0)), 0) AS run_total
+      `SELECT pr.id AS run_id, pr.run_date, pr.paid_date, pr.entity_id, pr.paid_basis, pr.withholdings_remitted_date,
+              COALESCE(SUM(COALESCE(prl.gross,0) + COALESCE(prl.bonus,0) + COALESCE(prl.overtime,0)), 0) AS run_total,
+              COALESCE(SUM(COALESCE(prl.net_pay, COALESCE(prl.gross,0) + COALESCE(prl.bonus,0) + COALESCE(prl.overtime,0))), 0) AS run_net
          FROM payroll_runs pr
          LEFT JOIN payroll_run_lines prl ON prl.run_id = pr.id
         WHERE pr.user_id = $1
           AND LOWER(COALESCE(pr.status,'')) = 'paid'
           AND ($2::int IS NULL OR pr.entity_id IS NULL OR pr.entity_id = $2)
-        GROUP BY pr.id, pr.run_date, pr.paid_date, pr.entity_id`,
+        GROUP BY pr.id, pr.run_date, pr.paid_date, pr.entity_id, pr.paid_basis, pr.withholdings_remitted_date`,
       [uid, eid]
     ),   // N113 class: a failed payroll read used to be swallowed into "no payroll" — cash out silently understated
     // L6: posted manual journals' CASH legs (JOURNAL_CASH_LEDGER_CODES), read from the LEDGER so a reversal
@@ -6917,7 +6931,15 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   // NOT silently averaged or guessed — dated on the only real date available, and labelled.
   // L7: keyed on paid_date (stamped by mark-paid) — the approximation above is gone for every run paid since;
   // runs paid before the column existed have no paid_date and keep run_date (no row is rewritten, Rule 8).
-  (paidRunRes.rows || []).forEach(r => add(r.paid_date || r.run_date, 'outflow', r.run_total));
+  // M41: a run paid on the 'net' basis moves NET pay on its paid date and its withholdings on the date they were
+  // remitted (until then they are owed, not spent); a run paid before the basis existed moved GROSS on its paid date.
+  (paidRunRes.rows || []).forEach(r => {
+    const gross = Math.round((parseFloat(r.run_total) || 0) * 100) / 100, net = Math.round((parseFloat(r.run_net) || 0) * 100) / 100;
+    if (r.paid_basis !== 'net') { add(r.paid_date || r.run_date, 'outflow', gross); return; }
+    add(r.paid_date || r.run_date, 'outflow', net);
+    const wh = Math.max(0, Math.round((gross - net) * 100) / 100);
+    if (r.withholdings_remitted_date && wh > 0) add(r.withholdings_remitted_date, 'outflow', wh);
+  });
   (jeCashRes.rows || []).forEach(r => { if (r.net > 0.005) add(r.d, 'inflow', r.net); else if (r.net < -0.005) add(r.d, 'outflow', -r.net); });   // L6
   (glCashRes.rows || []).forEach(r => { if (r.net > 0.005) add(r.d, 'inflow', r.net); else if (r.net < -0.005) add(r.d, 'outflow', -r.net); });   // M16
   const rows = Object.keys(monthMap).sort().map(k => ({
@@ -9933,6 +9955,21 @@ async function syncOwnerSalaryFromRun(userId, run, mode) {
   }
 }
 
+// M41 (fix pass round 2): a run's cash legs, from its LINES (basis C). gross = Σ (gross + bonus + overtime); net = Σ net
+// pay (a line without net_pay counts at its gross); withholdings = gross − net. A run paid on the 'net' basis takes NET
+// out of cash on the paid date and carries the withholdings in Payroll liabilities (2200) until they are remitted;
+// a run paid before the basis existed (paid_basis NULL) took GROSS out on the paid date, as it always has.
+async function payrollRunCashLegs(q, runId) {
+  const { rows: [t] } = await q.query(
+    `SELECT COALESCE(SUM(COALESCE(gross,0)+COALESCE(bonus,0)+COALESCE(overtime,0)),0)::float AS gross,
+            COALESCE(SUM(COALESCE(net_pay, COALESCE(gross,0)+COALESCE(bonus,0)+COALESCE(overtime,0))),0)::float AS net
+       FROM payroll_run_lines WHERE run_id = $1`, [runId]);
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const gross = r2(t && t.gross), net = r2(t && t.net);
+  return { gross, net, withholdings: Math.max(0, r2(gross - net)) };
+}
+const payrollPaidCash = (run, legs) => (run && run.paid_basis === 'net') ? legs.net : legs.gross;
+
 app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:write'), lockGuard(LOCK_SPECS.payroll_runs), wrap(async (req, res) => {
   // L7: the cash leaves NOW — stamp the business's calendar date (its timezone, Rule 10: a genuine timestamp
   // resolves against the entity) as paid_date, once (COALESCE keeps the first on a repeat mark-paid).
@@ -9942,7 +9979,11 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
     // N58: only an APPROVED run (or an already-paid one, idempotent) can be marked paid. A draft has no
     // payroll-expense accrual yet (marking it paid posted the cash-out against nothing), and a voided
     // run must stay out of the books.
-    `UPDATE payroll_runs SET status='paid', paid_date = COALESCE(paid_date, $3::date) WHERE id=$1 AND user_id=$2 AND lower(status) IN ('approved','paid') RETURNING *`,
+    // M41: the basis is stamped on the approved → paid transition only — a repeat mark-paid of a run paid before the
+    // basis existed keeps its NULL (gross) basis, so its history never moves.
+    `UPDATE payroll_runs SET status='paid', paid_date = COALESCE(paid_date, $3::date),
+            paid_basis = CASE WHEN lower(status) = 'paid' THEN paid_basis ELSE 'net' END
+      WHERE id=$1 AND user_id=$2 AND lower(status) IN ('approved','paid') RETURNING *`,
     [parseInt(req.params.id), scopeId(req), _paidYmd]
   );
   if (!rows[0]) {
@@ -9955,14 +9996,13 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
   await recordAudit(pool, { userId: scopeId(req), entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'MARK_PAID', field: 'status', newValue: 'paid', req });  // F90 Phase B: cash-out event
   try { await syncOwnerSalaryFromRun(scopeId(req), rows[0], 'paid'); } catch (e) { console.error('[payroll] owner salary → personal failed:', e && e.message); }   // M14
   // GL Phase 5b (cash completeness): mark-paid is the CASH-OUT event - settle the payroll liability with
-  // cash: Dr Payroll Liabilities (2200) / Cr Cash (1000), summed from the run's LINES (same basis as the
-  // approve accrual), so 2200 nets to zero and GL cash reflects the payment (mirrors the cash-flow report's
-  // F122 paid-payroll outflow). Keyed 'payroll_paid:<id>' (idempotent), dated at the pay date (run_date,
-  // else the period). Best-effort - never blocks marking a run paid.
+  // cash: Dr Payroll Liabilities (2200) / Cr Cash (1000), from the run's LINES. M41: on the 'net' basis the cash out
+  // is Σ NET pay — the withholdings stay in 2200 (owed to the authority) until PUT /remit pays them; a run paid
+  // before the basis existed paid GROSS here (unchanged). Mirrors the cash-flow report's paid-payroll outflow.
+  // Keyed 'payroll_paid:<id>' (idempotent), dated at the pay date. Best-effort - never blocks marking a run paid.
   try {
     const _run = rows[0];
-    const { rows: _pl } = await pool.query(`SELECT gross, bonus, overtime FROM payroll_run_lines WHERE run_id=$1`, [_run.id]);
-    const _amt = Math.round(_pl.reduce((s, l) => s + (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0), 0) * 100) / 100;
+    const _amt = payrollPaidCash(_run, await payrollRunCashLegs(pool, _run.id));   // M41: NET on the 'net' basis
     if (_amt > 0) {
       await postLedgerEntry(pool, {
         userId: scopeId(req), entityId: _run.entity_id || null,
@@ -9974,6 +10014,41 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
     }
   } catch (glErr) { console.error('[GL] payroll cash-out posting failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(rows[0]);
+}));
+
+// M41 (fix pass round 2): REMIT a paid run's withholdings — the cash leaves to the tax authority / pension fund on the
+// date the owner enters (default the business's today): Dr Payroll liabilities (2200) / Cr Cash (1000) for the run's
+// withholdings, keyed 'payroll_remit:<id>' (idempotent: the date is stamped once). Only a run paid on the 'net' basis
+// carries withholdings to remit; a run paid before that basis existed already took them out with the wages.
+app.put('/api/payroll-runs/:id/remit', requireAuth, requirePerm('payroll:write'), lockGuard(LOCK_SPECS.payroll_runs), wrap(async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { rows: [run] } = await pool.query(`SELECT * FROM payroll_runs WHERE id=$1 AND user_id=$2`, [id, scopeId(req)]);
+  if (!run) return res.status(404).json({ error: 'Not found.' });
+  if (String(run.status || '').toLowerCase() !== 'paid') return res.status(409).json({ error: 'Mark this payroll run paid before remitting its withholdings.' });
+  if (run.paid_basis !== 'net') return res.status(409).json({ error: 'This run was paid before withholdings were tracked separately — they were counted as paid with the wages.' });
+  if (run.withholdings_remitted_date) return res.json(run);   // idempotent: already remitted
+  const legs = await payrollRunCashLegs(pool, id);
+  if (!(legs.withholdings > 0)) return res.status(409).json({ error: 'This run has no withholdings to remit.' });
+  const raw = req.body && req.body.date;
+  const date = raw != null && raw !== '' ? String(raw).slice(0, 10) : await entityTodayYmd(run.entity_id);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Enter a valid date.' });
+  const paidYmd = FinFlowDates._toYmd(run.paid_date);
+  if (paidYmd && date < paidYmd) return res.status(400).json({ error: 'Withholdings cannot be remitted before the run was paid (' + paidYmd + ').' });
+  if (await isLocked(scopeId(req), run.entity_id || null, date)) return res.status(403).json({ error: 'Period is locked.', code: 'PERIOD_LOCKED', date });
+  const { rows: [upd] } = await pool.query(
+    `UPDATE payroll_runs SET withholdings_remitted_date = COALESCE(withholdings_remitted_date, $3::date) WHERE id=$1 AND user_id=$2 AND lower(status)='paid' RETURNING *`,
+    [id, scopeId(req), date]);
+  if (!upd) return res.status(409).json({ error: 'This payroll run changed — reload and try again.' });
+  await recordAudit(pool, { userId: scopeId(req), entityId: upd.entity_id || null, table: 'payroll_runs', recordId: id, action: 'REMIT_WITHHOLDINGS', field: 'withholdings_remitted_date', newValue: String(FinFlowDates._toYmd(upd.withholdings_remitted_date)), req });
+  try {
+    await postLedgerEntry(pool, {
+      userId: scopeId(req), entityId: upd.entity_id || null, date: FinFlowDates._toYmd(upd.withholdings_remitted_date),
+      description: 'Payroll withholdings remitted - ' + String(upd.period || '').slice(0, 80),
+      sourceType: 'payroll_remit', sourceId: id, idempotencyKey: 'payroll_remit:' + id,
+      lines: [{ code: '2200', debit: legs.withholdings, credit: 0 }, { code: '1000', debit: 0, credit: legs.withholdings }],
+    });
+  } catch (glErr) { console.error('[GL] payroll remittance posting failed (shadow, non-fatal):', glErr && glErr.message); }
+  res.json(upd);
 }));
 
 // F106 (owner decision 2026-08-07, HYBRID): remove a payroll run.
@@ -9993,6 +10068,7 @@ app.put('/api/payroll-runs/:id/void', requireAuth, requirePerm('payroll:write'),
     `UPDATE payroll_runs SET status='voided' WHERE id=$1 AND user_id=$2 RETURNING *`, [id, scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_run', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_run reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_paid', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_paid reversal failed (shadow, non-fatal):', glErr && glErr.message); }
+  try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_remit', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_remit reversal failed (shadow, non-fatal):', glErr && glErr.message); }   // M41
   try { await syncOwnerSalaryFromRun(scopeId(req), run, 'void'); } catch (e) { console.error('[payroll] owner salary void → personal failed:', e && e.message); }   // M14
   await auditLog(pool, { userId: scopeId(req), entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'VOID', req });
   res.json(rows[0]);
@@ -10526,11 +10602,16 @@ async function backfillLedgerForUser(userId, opts = {}) {
   // 7) payroll — approved|paid → Dr Payroll Expense / Cr Payroll Liabilities = Σ(gross+bonus+overtime) at period
   // M22 (money audit 2026-10-09): paid_date is SELECTED — the cash-out line below reads r.paid_date, which this query
   // never returned, so a rebuild (reset) re-dated every paid run's cash-out to run_date (the L7 regression path).
-  { const { rows } = await pool.query(`SELECT pr.id, pr.entity_id, pr.period, pr.run_date::text AS run_date, pr.paid_date::text AS paid_date, lower(pr.status) AS status, COALESCE(SUM(COALESCE(prl.gross,0)+COALESCE(prl.bonus,0)+COALESCE(prl.overtime,0)),0)::float AS amt FROM payroll_runs pr LEFT JOIN payroll_run_lines prl ON prl.run_id=pr.id WHERE pr.user_id=$1 AND lower(pr.status) IN ('approved','paid') GROUP BY pr.id`, [userId]);
+  { const { rows } = await pool.query(`SELECT pr.id, pr.entity_id, pr.period, pr.run_date::text AS run_date, pr.paid_date::text AS paid_date, pr.paid_basis, pr.withholdings_remitted_date::text AS remitted_date, lower(pr.status) AS status, COALESCE(SUM(COALESCE(prl.gross,0)+COALESCE(prl.bonus,0)+COALESCE(prl.overtime,0)),0)::float AS amt, COALESCE(SUM(COALESCE(prl.net_pay, COALESCE(prl.gross,0)+COALESCE(prl.bonus,0)+COALESCE(prl.overtime,0))),0)::float AS net FROM payroll_runs pr LEFT JOIN payroll_run_lines prl ON prl.run_id=pr.id WHERE pr.user_id=$1 AND lower(pr.status) IN ('approved','paid') GROUP BY pr.id`, [userId]);
     for (const r of rows) { if (onlyEntity != null && r.entity_id !== onlyEntity) continue; const amt = Math.round((r.amt || 0) * 100) / 100; if (!(amt > 0)) continue;
       await post({ entityId: r.entity_id, date: FinFlowDates.payrollPeriodYmd(r.period, r.run_date), description: 'Payroll — ' + String(r.period || '').slice(0, 80), sourceType: 'payroll_run', sourceId: r.id, idempotencyKey: 'payroll_run:' + r.id, lines: [{ code: '6100', debit: amt, credit: 0 }, { code: '2200', debit: 0, credit: amt }] });
       // GL Phase 5b: a PAID run also had its cash-out — Dr Payroll Liabilities / Cr Cash, keyed 'payroll_paid:<id>'.
-      if (r.status === 'paid') await post({ entityId: r.entity_id, date: FinFlowDates._toYmd(r.paid_date) || FinFlowDates._toYmd(r.run_date) || FinFlowDates.payrollPeriodYmd(r.period, r.run_date),   /* L7 */ description: 'Payroll paid - ' + String(r.period || '').slice(0, 80), sourceType: 'payroll_paid', sourceId: r.id, idempotencyKey: 'payroll_paid:' + r.id, lines: [{ code: '2200', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }] }); } }
+      // M41: on the 'net' basis the cash-out is Σ net pay and the withholdings leave on their remittance date (if
+      // remitted); a run paid before the basis existed (paid_basis NULL) keeps its gross cash-out — history never moves.
+      const _net = Math.round((r.net || 0) * 100) / 100, _wh = Math.max(0, Math.round((amt - _net) * 100) / 100);
+      const _paidAmt = r.paid_basis === 'net' ? _net : amt;
+      if (r.status === 'paid' && _paidAmt > 0) await post({ entityId: r.entity_id, date: FinFlowDates._toYmd(r.paid_date) || FinFlowDates._toYmd(r.run_date) || FinFlowDates.payrollPeriodYmd(r.period, r.run_date),   /* L7 */ description: 'Payroll paid - ' + String(r.period || '').slice(0, 80), sourceType: 'payroll_paid', sourceId: r.id, idempotencyKey: 'payroll_paid:' + r.id, lines: [{ code: '2200', debit: _paidAmt, credit: 0 }, { code: '1000', debit: 0, credit: _paidAmt }] });
+      if (r.status === 'paid' && r.paid_basis === 'net' && r.remitted_date && _wh > 0) await post({ entityId: r.entity_id, date: FinFlowDates._toYmd(r.remitted_date), description: 'Payroll withholdings remitted - ' + String(r.period || '').slice(0, 80), sourceType: 'payroll_remit', sourceId: r.id, idempotencyKey: 'payroll_remit:' + r.id, lines: [{ code: '2200', debit: _wh, credit: 0 }, { code: '1000', debit: 0, credit: _wh }] }); } }
   // 8) inventory — purchase capitalises (Dr Inventory / Cr Cash); sale relieves at FIFO cost (Dr COGS / Cr Inventory)
   { const { rows: items } = await pool.query(`SELECT DISTINCT inventory_id, entity_id FROM inventory_movements WHERE user_id=$1`, [userId]);
     for (const it of items) {

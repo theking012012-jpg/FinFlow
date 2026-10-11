@@ -5448,6 +5448,13 @@ async function _applyServerBooks(){
     _set('d-profit', cur.netProfit||0);
     // Outstanding stays EXACT, as the native card shows it (money(), not abbreviated) — it is the AR balance.
     { const _el=document.getElementById('d-outstanding'); if(_el) _el.textContent=S(cur.outstanding||0); }
+    // M36: business holdings are USD-priced — convert with the server's USD→entity rate; no rate ⇒ "—" + hint.
+    { const _el=document.getElementById('d-invest'); if(_el){
+      const _hold=window.bizHoldings||[];
+      const _usd=_hold.reduce((s,h)=> s + (parseFloat(h.shares)||0)*(parseFloat(h.price)||parseFloat(h._lastPrice)||parseFloat(h.costPer)||parseFloat(h.cost)||0), 0);
+      if(cur.investRate!=null){ _el.textContent=_fmtMoneyAbbr(_usd*cur.investRate); _el.title=''; }
+      else if(_usd>0){ _el.textContent='—'; _el.title='No FX rate for USD→'+(cur.investCurrency||_activeEntityCurrency())+'. Add one under FX / Currency to value investments in this business\'s currency.'; }
+    } }
     window._serverBooks = { period, monthIdx: mi, revenue: cur.revenue||0, cogs: cur.totalCOGS!=null?cur.totalCOGS:(cur.cogs||0), expenses: cur.expenses||0, netProfit: cur.netProfit||0, outstanding: cur.outstanding||0, overdue: cur.overdue||0 };
     // M29: the delta compares like with like — both periods from the server, both net of COGS.
     if(prior){

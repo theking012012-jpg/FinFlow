@@ -207,7 +207,10 @@
     const holdings = window.bizHoldings || [];
     const portfolio = holdings.reduce((s, h) => s + (parseFloat(h.shares) || 0) * (parseFloat(h.price) || parseFloat(h._lastPrice) || parseFloat(h.costPer) || parseFloat(h.cost) || 0), 0);
     const basis     = holdings.reduce((s, h) => s + (parseFloat(h.shares) || 0) * (parseFloat(h.costPer) || parseFloat(h.cost)  || 0), 0);
-    if (!_fxOwned) set('d-invest', money(portfolio));   // F59: overlay owns this under a display currency
+    // M36: holdings are USD-priced; a non-USD business shows them only once the server-books overlay has converted
+    // them (app-main _applyServerBooks) — never the USD amount under this business's symbol.
+    const _entCur = ((window.ENTITIES || []).find(e => e.active) || {}).currency || 'USD';
+    if (!_fxOwned) set('d-invest', String(_entCur).toUpperCase() === 'USD' ? money(portfolio) : (portfolio > 0 ? '…' : money(0)));   // F59: overlay owns this under a display currency
     const invChgEl = document.getElementById('d-invest-chg');
     if (invChgEl) {
       if (basis > 0 && !_fxOwned) {

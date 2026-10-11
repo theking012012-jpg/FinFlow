@@ -6650,7 +6650,11 @@ app.get('/api/reports', requireAuth, wrap(async (req, res) => {
       // F34 B surface 4: Investments are the personal holdings path (USD-priced) — NOT in computeBooks.
       // Convert them EXPLICITLY via rateAsOf(USD→display, today) [nearest-rate A]. null (no display, or
       // no USD→display rate) ⇒ the client shows "—", never a relabel.
-      investRate: display ? await rateAsOf(pool, scopeId(req), 'USD', display, new Date().toISOString().slice(0, 10)) : null,
+      // M36 (money audit 2026-10-09): the rate is ALWAYS given — USD → the currency these figures are in (the display
+      // currency, else the viewed entity's own; identity 1 for a USD entity). The native card used to paint the USD
+      // holdings value under a TTD (etc.) entity's symbol with no conversion.
+      investRate: await rateAsOf(pool, scopeId(req), 'USD', display || (books.fxCoverage && books.fxCoverage.display) || await (async () => { try { const { rows: [e] } = eid != null ? await pool.query(`SELECT data->>'currency' AS c FROM entities WHERE id=$1`, [eid]) : { rows: [] }; return String((e && e.c) || 'USD').toUpperCase(); } catch (_) { return 'USD'; } })(), new Date().toISOString().slice(0, 10)),
+      investCurrency: display || (books.fxCoverage && books.fxCoverage.display) || null,
       fxCoverage: books.fxCoverage,   // F34: null-flag coverage — complete=false ⇒ figures are a partial (converted) P&L
       monthly: books.monthly,         // F34 B: converted overview-chart buckets (client basis; native = identity)
       expenseBreakdown: books.expenseBreakdown,  // F34 B: converted expense-by-category (client updateExpenseBars basis)

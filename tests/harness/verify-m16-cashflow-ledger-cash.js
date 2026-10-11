@@ -18,7 +18,7 @@ run('M16 — Cash Flow report includes inventory purchases', async ({ newOwner, 
   const item = await J('POST', '/api/inventory', { sku: 'S', name: 'Stock', units: 0, max_units: 100, cost: 7 });
   await J('POST', '/api/inventory-movements', { inventory_id: item.id, type: 'purchase', quantity: 10, unit_cost: 7, idempotency_key: 'm16-buy' });
   // Postgres NOW() is the real clock; date the purchase in June and rebuild the ledger from the documents.
-  await c.query(`UPDATE inventory_movements SET moved_at = '2026-06-08T12:00:00Z' WHERE user_id = $1`, [uid]);
+  await c.query(`UPDATE inventory_movements SET moved_at = '2026-06-08T12:00:00Z', movement_date = '2026-06-08' WHERE user_id = $1`, [uid]);
   await J('POST', '/api/gl/backfill?reset=1', {});
   const cf = await J('POST', '/api/reports/cash-flow', {});
   eq('cash in / out', [cf.totalInflow, cf.totalOutflow], [500, 100], [500, 30]);

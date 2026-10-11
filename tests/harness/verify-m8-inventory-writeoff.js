@@ -27,7 +27,7 @@ run('M8 — inventory write-offs are expensed at FIFO cost', async ({ newOwner, 
   // Postgres NOW() is the real clock; the JS clock is pinned to 2026-07-25. Date the movements in June, then
   // rebuild the ledger from the documents (also exercises the backfill path for write-offs).
   for (const [id, d] of [[p1.id, '2026-06-01'], [p2.id, '2026-06-02'], [wo.id, '2026-06-10'], [sale.id, '2026-06-20']])
-    await c.query(`UPDATE inventory_movements SET moved_at = $2::date + time '12:00' WHERE id = $1`, [id, d]);
+    await c.query(`UPDATE inventory_movements SET moved_at = $2::date + time '12:00', movement_date = $2::date WHERE id = $1`, [id, d]);
   await J('POST', '/api/gl/backfill?reset=1', {});
   const rep = await J('GET', '/api/reports');
   eq('P&L COGS for the year (write-off 40 + sale 120)', rep.cogs, 160, 80);

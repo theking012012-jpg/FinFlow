@@ -521,6 +521,7 @@ function openStockInModal(idx){
   const idxEl=document.getElementById('si-item-idx');
   if(idxEl)idxEl.value=idx;
   ['si-qty','si-cost','si-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  { const _d=document.getElementById('si-date'); if(_d) _d.value=(window.todayLocal?window.todayLocal():new Date().toISOString().slice(0,10)); }   // M32: the business day, editable
   window._stockInIdemKey=null;   // C1 Wave 1b: fresh submit-intent → never reuses the last token
   openModal('stock-in-modal');
 }
@@ -532,6 +533,7 @@ function openStockOutModal(idx){
   const idxEl=document.getElementById('so-item-idx');
   if(idxEl)idxEl.value=idx;
   ['so-qty','so-ref'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  { const _d=document.getElementById('so-date'); if(_d) _d.value=(window.todayLocal?window.todayLocal():new Date().toISOString().slice(0,10)); }   // M32: the business day, editable
   const prev=document.getElementById('so-cogs-preview');
   if(prev)prev.style.display='none';
   window._stockOutIdemKey=null;   // C1 Wave 1b: fresh submit-intent → never reuses the last token
@@ -559,7 +561,7 @@ async function submitStockIn(){
     const res=await fetch('/api/inventory-movements',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item._dbId,type:'purchase',quantity:qty,unit_cost:cost,notes,idempotency_key:window._stockInIdemKey}),
+      body:JSON.stringify({inventory_id:item._dbId,type:'purchase',quantity:qty,unit_cost:cost,notes,date:(document.getElementById('si-date')?.value||undefined),idempotency_key:window._stockInIdemKey}),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
@@ -605,7 +607,7 @@ async function submitStockOut(){
     const res=await fetch('/api/inventory-movements',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item._dbId,type:'sale',quantity:qty,unit_cost:cogs/qty,reference:ref,idempotency_key:window._stockOutIdemKey}),
+      body:JSON.stringify({inventory_id:item._dbId,type:'sale',quantity:qty,unit_cost:cogs/qty,reference:ref,date:(document.getElementById('so-date')?.value||undefined),idempotency_key:window._stockOutIdemKey}),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}

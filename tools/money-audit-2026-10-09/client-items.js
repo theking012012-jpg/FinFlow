@@ -52,7 +52,7 @@ async function seed({ http, client: c, userId }) {
   await J('POST', '/api/inventory-movements', { inventory_id: item.id, type: 'sale', quantity: 4, idempotency_key: 'mv2' });
   await J('POST', '/api/inventory-movements', { inventory_id: item.id, type: 'sale', quantity: 2, idempotency_key: 'mv3' });
   // scratch-only: Postgres NOW() is the real clock (October); re-date the three movements to June/July.
-  await c.query(`UPDATE inventory_movements SET moved_at = CASE idempotency_key WHEN 'mv1' THEN '2026-06-01T12:00:00Z'::timestamptz WHEN 'mv2' THEN '2026-06-15T12:00:00Z'::timestamptz ELSE '2026-07-10T12:00:00Z'::timestamptz END WHERE user_id = $1`, [userId]);
+  await c.query(`UPDATE inventory_movements SET moved_at = CASE idempotency_key WHEN 'mv1' THEN '2026-06-01T12:00:00Z'::timestamptz WHEN 'mv2' THEN '2026-06-15T12:00:00Z'::timestamptz ELSE '2026-07-10T12:00:00Z'::timestamptz END, movement_date = CASE idempotency_key WHEN 'mv1' THEN DATE '2026-06-01' WHEN 'mv2' THEN DATE '2026-06-15' ELSE DATE '2026-07-10' END WHERE user_id = $1`, [userId]);
   await J('POST', '/api/recurring-bills', { vendor: 'Net Host', amount: 100, frequency: 'Monthly', next_run: '2026-08-01', status: 'active' });
   // personal: a monthly side-gig income profile with ONE occurrence this year, plus one grocery expense
   const prof = await J('POST', '/api/recurring-personal-transactions', { description: 'Side gig', amount: 1000, currency: 'USD', category: 'Salary', tx_type: 'income', frequency: 'Monthly', status: 'active', next_run: '2026-08-01' });

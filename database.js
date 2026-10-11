@@ -715,6 +715,9 @@ async function initDB() {
     // read-only, so the token 23505 preventing the duplicate ROW is the whole fix; the recovery
     // returns before the units-decrement too. Nullable add + partial index over all-NULL rows = instant.
     await client.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
+    // M32 (Rule 10): the movement's BUSINESS day, separate from moved_at (the genuine instant it was recorded).
+    // Schema only — nullable, no backfill (Rule 8): rows written before it read their UTC day of moved_at.
+    await client.query(`ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS movement_date DATE`);
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_movements_idem_key
         ON inventory_movements (user_id, idempotency_key)

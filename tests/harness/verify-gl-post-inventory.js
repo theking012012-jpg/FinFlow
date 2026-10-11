@@ -63,9 +63,9 @@ async function main() {
     // future-dated and drops it. Backdate to fixed in-period, DISTINCT purchase dates (so FIFO layer
     // order is deterministic: 10@5 before 6@8) and an in-period sale date. The GL entries stay as
     // posted; ledger COGS is all-time, so this only fixes what computeBooks recognises for the window.
-    await c.query(`UPDATE inventory_movements SET moved_at='2026-06-01' WHERE inventory_id=$1 AND type='purchase' AND unit_cost=5`, [item.id]);
-    await c.query(`UPDATE inventory_movements SET moved_at='2026-06-02' WHERE inventory_id=$1 AND type='purchase' AND unit_cost=8`, [item.id]);
-    await c.query(`UPDATE inventory_movements SET moved_at='2026-06-15' WHERE inventory_id=$1 AND type='sale'`, [item.id]);
+    await c.query(`UPDATE inventory_movements SET moved_at='2026-06-01', movement_date='2026-06-01' WHERE inventory_id=$1 AND type='purchase' AND unit_cost=5`, [item.id]);
+    await c.query(`UPDATE inventory_movements SET moved_at='2026-06-02', movement_date='2026-06-02' WHERE inventory_id=$1 AND type='purchase' AND unit_cost=8`, [item.id]);
+    await c.query(`UPDATE inventory_movements SET moved_at='2026-06-15', movement_date='2026-06-15' WHERE inventory_id=$1 AND type='sale'`, [item.id]);
 
     const bal = async code => (await c.query(`SELECT COALESCE(SUM(ll.debit-ll.credit),0)::float AS net FROM ledger_lines ll JOIN ledger_accounts la ON la.id=ll.account_id WHERE ll.user_id=$1 AND ll.entity_id=$2 AND la.code=$3`, [uid, eid, code])).rows[0].net;
     const books = await computeBooks(uid, eid, 'year');

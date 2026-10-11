@@ -53,9 +53,9 @@ async function main() {
     const mv = (type, quantity, unit_cost) => http.post('/api/inventory-movements', { inventory_id: item.id, type, quantity, unit_cost, entity_id: eid });
     await mv('purchase', 10, 5); await mv('purchase', 6, 8); const saleRes = JSON.parse((await mv('sale', 12, 0)).text);
     A('seed inventory sale (FIFO COGS 66)', near(saleRes.cogs, 66), 'cogs=' + saleRes.cogs);
-    await c.query(`UPDATE inventory_movements SET moved_at='2026-06-01' WHERE inventory_id=$1 AND type='purchase' AND unit_cost=5`, [item.id]);
-    await c.query(`UPDATE inventory_movements SET moved_at='2026-06-02' WHERE inventory_id=$1 AND type='purchase' AND unit_cost=8`, [item.id]);
-    await c.query(`UPDATE inventory_movements SET moved_at='2026-06-15' WHERE inventory_id=$1 AND type='sale'`, [item.id]);
+    await c.query(`UPDATE inventory_movements SET moved_at='2026-06-01', movement_date='2026-06-01' WHERE inventory_id=$1 AND type='purchase' AND unit_cost=5`, [item.id]);
+    await c.query(`UPDATE inventory_movements SET moved_at='2026-06-02', movement_date='2026-06-02' WHERE inventory_id=$1 AND type='purchase' AND unit_cost=8`, [item.id]);
+    await c.query(`UPDATE inventory_movements SET moved_at='2026-06-15', movement_date='2026-06-15' WHERE inventory_id=$1 AND type='sale'`, [item.id]);
     await c.query(`UPDATE ledger_entries SET entry_date='2026-06-15' WHERE user_id=$1 AND source_type='inventory_movement'`, [uid]);
     // ── Pure balance-sheet movement: pay part of the invoice (Dr Cash / Cr AR) — must NOT change P&L ──
     A('seed invoice payment 400', ok(await http.post('/api/invoice-payments', { invoice_id: inv.id, amount: 400, payment_date: '2026-06-20' })));

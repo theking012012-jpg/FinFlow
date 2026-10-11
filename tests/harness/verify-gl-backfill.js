@@ -75,7 +75,10 @@ async function main() {
     // Reconciliation report + trial balance.
     const rec = bf.reconciliation.find(r => r.entityId === eid);
     A('reconciliation: GL revenue == oracle (1400)', rec && near(rec.glRevenue, rec.oracleRevenue) && near(rec.glRevenue, 1400), JSON.stringify(rec));
-    A('reconciliation: GL expenses(ex-FX) == oracle cogs+opex (1800)', rec && near(rec.glExpensesExFx, rec.oracleCogsOpex) && near(rec.glExpensesExFx, 1800), JSON.stringify(rec));
+    // opex 1800 (expense 200 + bill 300 + payroll 1350 − vendor credit 50) + COGS 20 (the sale, dated the business's
+    // today 2026-07-25). M32: the old 1800 held only because the sale was stamped with the server's REAL clock
+    // (a future day under the pinned clock), so its COGS fell outside the year.
+    A('reconciliation: GL expenses(ex-FX) == oracle cogs+opex (1820)', rec && near(rec.glExpensesExFx, rec.oracleCogsOpex) && near(rec.glExpensesExFx, 1820), JSON.stringify(rec));
     A('reconciliation: entity reconciled + trial-balanced + BS-balanced', rec && rec.reconciled && rec.trialBalanced && rec.balanceSheetBalanced, JSON.stringify(rec));
     const tb = (await c.query(`SELECT COALESCE(SUM(debit),0)::float AS d, COALESCE(SUM(credit),0)::float AS cr FROM ledger_lines WHERE user_id=$1`, [uid])).rows[0];
     A('trial balance ties to zero after backfill', near(tb.d - tb.cr, 0), 'diff=' + (tb.d - tb.cr));

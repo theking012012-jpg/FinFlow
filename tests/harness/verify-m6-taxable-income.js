@@ -28,7 +28,7 @@ run('M6 — taxable income deducts every ordinary cost', async ({ newOwner, c, e
   await J('POST', '/api/inventory-movements', { inventory_id: item.id, type: 'purchase', quantity: 10, unit_cost: 10 });
   await J('POST', '/api/inventory-movements', { inventory_id: item.id, type: 'sale', quantity: 4 });
   // Postgres NOW() is the real clock; the JS clock is pinned to 2026-07-25. Date the stock movements in June.
-  await c.query(`UPDATE inventory_movements SET moved_at = '2026-06-10T12:00:00Z' WHERE user_id = $1`, [uid]);
+  await c.query(`UPDATE inventory_movements SET moved_at = '2026-06-10T12:00:00Z', movement_date = '2026-06-10' WHERE user_id = $1`, [uid]);
 
   const rep = await J('GET', '/api/reports');
   eq('net profit (control)', rep.netProfit, 100);

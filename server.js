@@ -1707,7 +1707,7 @@ const LOCK_SPECS = {
   invoice_payments:    { table: 'invoice_payments',    typed: true, dates: d => [_lkYmd(d.payment_date)],
                          entityOf: async (req) => { const inv = req.body && req.body.invoice_id ? await ownedBy('invoices', req.body.invoice_id, scopeId(req)) : null; return inv ? inv.entity_id : null; } },
   payroll_runs:        { table: 'payroll_runs',        typed: true, dates: d => [FinFlowDates.payrollPeriodYmd(d.period, d.run_date), _lkYmd(d.run_date)] },
-  inventory_movements: { table: 'inventory_movements', typed: true, dates: d => [_lkYmd(d.moved_at)] },
+  inventory_movements: { table: 'inventory_movements', typed: true, dates: d => [_lkYmd(d.movement_date) || _lkYmd(d.moved_at), _lkYmd(d.date)] },   // M32: a movement's business day
 };
 function lockGuard(spec) {
   return wrap(async (req, res, next) => {
@@ -9912,9 +9912,12 @@ function fifoConsume(purchases, skipUnits, sellUnits) {
   return { cogs: Math.round(cogs * 100) / 100, uncovered: Math.round(Math.max(0, toSell) * 100) / 100 };
 }
 
+// M32 (Rule 10): a movement's BUSINESS day — movement_date, else (rows from before the column) the UTC day of
+// moved_at. Every FIFO walk orders by it (then the recording instant, then id), and every COGS figure is dated by it.
+const _MV_DAY_SQL = `COALESCE(movement_date, (moved_at AT TIME ZONE 'UTC')::date)`;
 async function _purchaseLayers(pool, inventoryId) {
   const { rows } = await pool.query(
-    `SELECT quantity, unit_cost FROM inventory_movements WHERE inventory_id=$1 AND type='purchase' ORDER BY moved_at ASC`,
+    `SELECT quantity, unit_cost FROM inventory_movements WHERE inventory_id=$1 AND type='purchase' ORDER BY ${_MV_DAY_SQL} ASC, moved_at ASC, id ASC`,
     [inventoryId]
   );
   return rows;
@@ -9956,14 +9959,14 @@ async function fifoItemTotal(pool, inventoryId) {
 async function fifoItemSales(pool, inventoryId) {
   const purchases = await _purchaseLayers(pool, inventoryId);
   const { rows: sales } = await pool.query(
-    `SELECT quantity, moved_at, type FROM inventory_movements WHERE inventory_id=$1 AND type IN ('sale','adjustment') ORDER BY moved_at ASC, id ASC`,
+    `SELECT quantity, ${_MV_DAY_SQL}::text AS mv_day, type FROM inventory_movements WHERE inventory_id=$1 AND type IN ('sale','adjustment') ORDER BY ${_MV_DAY_SQL} ASC, moved_at ASC, id ASC`,
     [inventoryId]
   );
   const out = []; let consumed = 0;
   for (const s of sales) {
     const q = parseFloat(s.quantity) || 0;
     const { cogs, uncovered } = fifoConsume(purchases, consumed, q);
-    out.push({ date: s.moved_at, cogs, uncovered, quantity: q, type: s.type });   // quantity added for F25 period-scoped units_sold; type (M8): 'sale' | 'adjustment' (write-off)
+    out.push({ date: s.mv_day, cogs, uncovered, quantity: q, type: s.type });   // quantity added for F25 period-scoped units_sold; type (M8): 'sale' | 'adjustment' (write-off)
     consumed += q;
   }
   return out;
@@ -10406,11 +10409,11 @@ async function backfillLedgerForUser(userId, opts = {}) {
   { const { rows: items } = await pool.query(`SELECT DISTINCT inventory_id, entity_id FROM inventory_movements WHERE user_id=$1`, [userId]);
     for (const it of items) {
       if (onlyEntity != null && it.entity_id !== onlyEntity) continue;
-      const { rows: purch } = await pool.query(`SELECT id, quantity, unit_cost, moved_at::text AS moved FROM inventory_movements WHERE user_id=$1 AND inventory_id=$2 AND type='purchase' ORDER BY moved_at ASC, id ASC`, [userId, it.inventory_id]);
+      const { rows: purch } = await pool.query(`SELECT id, quantity, unit_cost, ${_MV_DAY_SQL}::text AS moved FROM inventory_movements WHERE user_id=$1 AND inventory_id=$2 AND type='purchase' ORDER BY ${_MV_DAY_SQL} ASC, moved_at ASC, id ASC`, [userId, it.inventory_id]);   // M32: business day
       for (const p of purch) { const cap = Math.round((parseFloat(p.quantity) || 0) * (parseFloat(p.unit_cost) || 0) * 100) / 100; if (!(cap > 0)) continue;
         await post({ entityId: it.entity_id, date: FinFlowDates._toYmd(p.moved), description: 'Inventory purchase', sourceType: 'inventory_movement', sourceId: p.id, idempotencyKey: 'inventory_movement:' + p.id, lines: [{ code: '1200', debit: cap, credit: 0 }, { code: '1000', debit: 0, credit: cap }] }); }
       const sales = await fifoItemSales(pool, it.inventory_id);
-      const { rows: saleRows } = await pool.query(`SELECT id, moved_at::text AS moved, type FROM inventory_movements WHERE inventory_id=$1 AND type IN ('sale','adjustment') ORDER BY moved_at ASC, id ASC`, [it.inventory_id]);   // M8: same rows + order as fifoItemSales
+      const { rows: saleRows } = await pool.query(`SELECT id, ${_MV_DAY_SQL}::text AS moved, type FROM inventory_movements WHERE inventory_id=$1 AND type IN ('sale','adjustment') ORDER BY ${_MV_DAY_SQL} ASC, moved_at ASC, id ASC`, [it.inventory_id]);   // M8/M32: same rows + order as fifoItemSales
       for (let i = 0; i < saleRows.length && i < sales.length; i++) { const s = sales[i], m = saleRows[i]; const cogs = Math.round((s.cogs || 0) * 100) / 100; if (!(cogs > 0)) continue;
         await post({ entityId: it.entity_id, date: FinFlowDates._toYmd(m.moved), description: m.type === 'adjustment' ? 'Inventory write-off' : 'COGS — sale', sourceType: 'inventory_movement', sourceId: m.id, idempotencyKey: 'inventory_movement:' + m.id, lines: [{ code: '5000', debit: cogs, credit: 0 }, { code: '1200', debit: 0, credit: cogs }] }); } } }
   // 9) credit notes — Open|Applied → Dr Revenue / Cr AR (contra) at date
@@ -11563,20 +11566,25 @@ app.get('/api/inventory-movements', requireAuth, wrap(async (req, res) => {
 // GL: a sale relieves inventory at FIFO cost (Dr 5000 / Cr 1200); a purchase capitalises it (Dr 1200 / Cr
 // cash 1000, or Owner's Equity 3100 for OPENING stock the business already held). Posted to the MOVEMENT's
 // entity (it used to post to the viewed entity while the row took the item's).
-async function recordStockMovement({ userId, item, entityId = null, type, qty, unitCost = 0, reference = null, notes = null, idem = null, contraCode = '1000' }) {
+async function recordStockMovement({ userId, item, entityId = null, type, qty, unitCost = 0, reference = null, notes = null, idem = null, contraCode = '1000', date = null }) {
   let cogs = null;
   if (type === 'sale' || type === 'adjustment') cogs = await calculateFIFOCOGS(pool, parseInt(item.id), qty);   // M8: a write-off is costed too
   const _mvEnt = item.entity_id != null ? item.entity_id : entityId;
+  // M32 (money audit 2026-10-09; Rule 10): a movement belongs to the BUSINESS's calendar day. Its COGS used to be
+  // dated by the UTC day of moved_at (= NOW()), so a sale entered at 21:00 on the 31st in a UTC−4 business landed
+  // in the next month while the invoice's revenue stayed in this one. movement_date is that business day (the
+  // caller's date, else the entity's today); moved_at stays the genuine instant it was recorded.
+  const _mvDay = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : await entityTodayYmd(_mvEnt);
   const { rows: [movement] } = await pool.query(
-    `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-    [userId, _mvEnt, parseInt(item.id), type, qty, unitCost || 0, reference || null, notes || null, idem]);
+    `INSERT INTO inventory_movements (user_id, entity_id, inventory_id, type, quantity, unit_cost, reference, notes, idempotency_key, movement_date)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::date) RETURNING *`,
+    [userId, _mvEnt, parseInt(item.id), type, qty, unitCost || 0, reference || null, notes || null, idem, _mvDay]);
   const { rows: [_cur] } = await pool.query(`SELECT data->>'units' AS u, data->>'max_units' AS m FROM inventory WHERE id = $1`, [item.id]);
   const _units = parseFloat(_cur && _cur.u) || 0, _max = parseFloat(_cur && _cur.m) || 200;
   const newUnits = type === 'purchase' ? _units + qty : Math.max(0, _units - qty);
   await db.updateById('inventory', parseInt(item.id), { units: newUnits, low_stock: newUnits < _max * 0.1 ? 1 : 0 });
   try {
-    const _mDate = FinFlowDates._toYmd(movement.moved_at);
+    const _mDate = FinFlowDates._toYmd(movement.movement_date) || FinFlowDates._toYmd(movement.moved_at);   // M32
     if ((type === 'sale' || type === 'adjustment') && cogs != null && +cogs > 0) {
       await postLedgerEntry(pool, {
         userId, entityId: _mvEnt, date: _mDate,
@@ -11626,7 +11634,7 @@ app.post('/api/inventory-movements', requireAuth, lockGuard(LOCK_SPECS.inventory
   }
   let out;
   try {
-    out = await recordStockMovement({ userId: scopeId(req), item, entityId: req.entityId || null, type, qty, unitCost: parseFloat(unit_cost) || 0, reference, notes, idem });
+    out = await recordStockMovement({ userId: scopeId(req), item, entityId: req.entityId || null, type, qty, unitCost: parseFloat(unit_cost) || 0, reference, notes, idem, date: (req.body && req.body.date) || null });
   } catch (e) {
     if (e.code === '23505' && idem) {
       // Duplicate submit lost the race at the DB → the movement already landed and the units were

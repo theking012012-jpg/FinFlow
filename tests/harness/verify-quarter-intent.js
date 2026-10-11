@@ -31,7 +31,7 @@ async function seed({ http, client, userId }) {
   const item = J(await http.post('/api/inventory', { name: 'Widget', units: 5, cost: 10 }));
   J(await http.post('/api/inventory-movements', { inventory_id: item.id, type: 'sale', quantity: 2 }));
   // movements are stamped with the DB's real NOW(); file the opening stock + the sale in June 2026
-  await client.query(`UPDATE inventory_movements SET moved_at = CASE WHEN type='purchase' THEN '2026-06-01T12:00:00Z'::timestamptz ELSE '2026-06-12T12:00:00Z'::timestamptz END WHERE user_id = $1`, [userId]);
+  await client.query(`UPDATE inventory_movements SET moved_at = CASE WHEN type='purchase' THEN '2026-06-01T12:00:00Z'::timestamptz ELSE '2026-06-12T12:00:00Z'::timestamptz END, movement_date = CASE WHEN type='purchase' THEN DATE '2026-06-01' ELSE DATE '2026-06-12' END WHERE user_id = $1`, [userId]);
   await client.query(`INSERT INTO fx_rates (user_id, entity_id, from_currency, to_currency, rate, rate_date, source) VALUES ($1, $2, 'USD', 'EUR', 2, '2025-01-01', 'harness')`, [userId, ids.entityId]);
   return ids;
 }

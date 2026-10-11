@@ -6442,10 +6442,22 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
 
   const uid = scopeId(req);
   let imported = 0, skipped = 0;
+  // M33 (money audit 2026-10-09): two GENUINE identical same-day transactions (two 4.50 coffees) have the same
+  // date|amount|description, so the content hash collapsed them into one and the second was dropped as a
+  // "duplicate". The key now carries the row's OCCURRENCE number among identical rows in this file: the 2nd
+  // coffee is '#2'. Re-importing the same (or an overlapping) statement reproduces the same keys, so true
+  // re-imports still dedupe. The 1st occurrence keeps the original key form, so rows imported before this
+  // change still match.
+  const _seenInFile = new Map();
   for (const t of txns) {
-    // Idempotent dedupe: OFX → FITID (exact); CSV → content hash of date+amount+desc.
-    const key = t.fitid ? 'ofx:' + t.fitid
-      : 'csv:' + crypto.createHash('sha1').update(t.tx_date + '|' + t.amount + '|' + t.description).digest('hex');
+    // Idempotent dedupe: OFX → FITID (exact); CSV → content hash of date+amount+desc (+ occurrence, M33).
+    let key;
+    if (t.fitid) key = 'ofx:' + t.fitid;
+    else {
+      const base = t.tx_date + '|' + t.amount + '|' + t.description;
+      const n = (_seenInFile.get(base) || 0) + 1; _seenInFile.set(base, n);
+      key = 'csv:' + crypto.createHash('sha1').update(n === 1 ? base : base + '|#' + n).digest('hex');
+    }
     const { rows: [dup] } = await pool.query(
       `SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, key]);
     if (dup) { skipped++; continue; }

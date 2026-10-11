@@ -786,3 +786,27 @@ The same dry run executed the whole Cowork plan (two businesses, payroll paid / 
 import and reconcile, personal feed, accountant portal) against hand-computed values: every figure matched. The one
 apparent mismatch, overdue 1,200 vs a narrow hand value of 1,500, is by design. Unapplied credit notes net against
 the past-due total, as in an aged-receivables report.
+
+### M62 fixed (2026-10-11, owner: "continue M62")
+
+| # | Fix | Harness | GREEN | RED (before) |
+|---|---|---|---|---|
+| M62 | The "Your bank" card holds the bank's **currency**, which defaults to the bank country's currency through one shared table (`FinFlowDates.currencyForCountry`, covering all 53 countries the app offers). An explicit choice is kept when the country changes. Every bank line that lands in Personal is stamped with a currency: the bank's own when the provider sends one (Plaid `iso_currency_code`, Belvo `currency`), else the card's. With neither a currency nor a country, a personal statement import or manual line is **refused** (`NO_BANK_CURRENCY`), never guessed as USD. Business bank lines are unchanged. | `verify-m62-personal-bank-currency` (server, Plaid and Belvo mocked at HTTP only) · `verify-m62-personal-bank-currency-ui` (jsdom) | 18 · 5 | 9 of 18 · 1 of 5, then FATAL (no currency control) |
+
+Existing harnesses changed by the new rule (each change is the rule, not a loosened test):
+- `verify-m60-personal-bank-feed`: its person sets the bank country to GB, so the imported lines became GBP and the
+  portal (correctly, M26) gave no single total for mixed currencies: `{GBP: 300, USD: 2080}`, measured. The person
+  now holds a **USD** account at the UK bank, so all figures stay in USD; the GB day-first date check is unchanged. 40/40.
+- `verify-m56-bank-feed-is-business`: an account with no business sets its bank country before adding a bank line,
+  plus a new check that a line with no currency is refused. 11/11.
+- `verify-m61-bankrec-actions-scope`: the seed sets the bank country before creating its personal line. Still 15 of
+  19 RED on the pre-M61 code, 19/19 GREEN.
+
+Re-run GREEN: bank import (server and client), M33, CSV region, F54 team scope, Plaid (sync changes, linking, entity
+scope), Belvo (sync, link binding), connections (isolation, entity scope), banking region routing, M57, bank
+money-out, M26 portal personal, M12/M13/M35 personal figures, M51, M55, tenant isolation 47/47, entity leakage
+"ALL SCOPED", no new shadowing, slim boot, boot-failures gate 19/19.
+
+Behaviour change to note: an account with **no business** must set its bank country (or currency) before its first
+bank line, and is told so in plain words. Rows imported before M62 keep no currency and are read as USD, as before
+(Rule 8: not rewritten).

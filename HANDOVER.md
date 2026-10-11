@@ -71,7 +71,7 @@ error · C25 phone-width squeezing (Invoices header, Personal title) · C26 "Sta
 badge flips Pro/Business (**fixed** `037cb8a`) · C28 two contradicting commission tables · C29 audit "Payroll" filter empty · C30 native
 browser pop-ups (accountant sign-up step 2, Shopify connect).
 
-**Group 3 status:** C22 and C27 **fixed** `037cb8a`. The rest are open.
+**Group 3 status:** C24 **fixed** `cbaf83f` (setting names; the "Available" label for unconfigured providers is still open — needs a per-provider configured flag). C22 and C27 **fixed** `037cb8a`. The rest are open.
 
 Script errors to correct in `COWORK_TEST_SCRIPT.md` before the next run: 2.6b (1,920 + 1,050 = 2,970, not 3,970); 2.1 I3
 assumes a Draft status the UI doesn't offer; 4.6a assumes an all-businesses view the app doesn't have.

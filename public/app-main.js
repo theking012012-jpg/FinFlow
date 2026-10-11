@@ -4976,6 +4976,15 @@ function _fyGrowth(){
   const ratio=(REV[last]-REV[0])/REV[0];
   return { from:0, to:last, ratio, pct:Math.round(ratio*100) };
 }
+// M20 (money audit 2026-10-09; Rule 12): every AI payroll figure comes from PAYROLL RUNS — the cost from the
+// canonical expense breakdown's run leg (_bd.payroll: approved|paid runs in the period), the withholdings from the
+// same runs' lines (gross + bonus + overtime − net pay). They used d.sal (expense rows CATEGORISED as salary — 0
+// under basis C) and the ROSTER's deduction template (a figure for months no run exists).
+function _periodPayrollWithheld(){
+  const _w=_periodWindow(currentPeriod, currentPeriod==='year'?null:currentMonthIdx);
+  return (window.payrollRuns||[]).filter(r=>['approved','paid'].includes(String(r.status||'').toLowerCase()) && _w.inWin(window.FinFlowDates.payrollPeriodYmd(r.period, r.run_date)))
+    .reduce((s,r)=>s+(r.lines||[]).filter(Boolean).reduce((a,l)=>a+((parseFloat(l.gross)||0)+(parseFloat(l.bonus)||0)+(parseFloat(l.overtime)||0)-(parseFloat(l.net_pay)||0)),0),0);
+}
 function updateAI(d=getPeriodData()){
   document.getElementById('ai-period-label').textContent=d.label;
   // Revenue, expenses, profit & margin ALL use the canonical helpers
@@ -4991,20 +5000,20 @@ function updateAI(d=getPeriodData()){
     (()=>{ const _gr=_fyGrowth(); return _gr!==null?`Full year revenue: ${S(_rev)} — ${_gr.pct>=0?"+":""}${_gr.pct}% growth, ${MONTH_FULL[_gr.to]} vs ${MONTH_FULL[_gr.from]}.`:`Full year revenue: ${S(_rev)} — not enough complete months yet to measure growth.`; })(),
     (()=>{ let _mi=0,_xi=0; for(let i=0;i<12;i++){ if(REV[i]>REV[_xi])_xi=i; if(REV[i]<REV[_mi])_mi=i; } return REV.some(v=>v>0)?`Best month: ${MONTH_FULL[_xi]} at ${S(REV[_xi])}. Weakest: ${MONTH_FULL[_mi]} at ${S(REV[_mi])}.`:`Add paid invoices to see your best and weakest months.`; })(),
     `Net profit margin: ${margin}%. Annual profit: ${S(_profit)}. Business is ${_profit<0?'running at a loss':margin>=20?'highly profitable':margin>=10?'profitable':'breaking even'}.`,
-    _rev > 0 ? `Payroll-to-revenue: ${Math.round(d.sal/_rev*100)}%.` : `Add paid invoices to calculate your payroll-to-revenue ratio.`,
+    _rev > 0 ? `Payroll-to-revenue: ${Math.round(((_bd&&_bd.payroll)||0)/_rev*100)}%.` : `Add paid invoices to calculate your payroll-to-revenue ratio.`,
     (()=>{ const _low=(inventory||[]).filter(i=>i.low); return _low.length?`${_low.length} item${_low.length>1?'s':''} low on stock: ${_low.slice(0,3).map(i=>i.name).join(', ')}${_low.length>3?'…':''}.`:`No low-stock items.`; })(),
   ]:currentPeriod==='quarter'?[
     `${MONTH_FULL[9]}–${MONTH_FULL[11]} revenue: ${S(_rev)}. Net profit: ${S(_profit)} (${margin}% margin).`,
     (()=>{ const _em=_bd?Math.max(_bd.months,1):3; const _cur=Math.round(_profit/_em), _prev=Math.round(sum(PROFIT,6,9)/3); return `Monthly average profit this quarter: ${S(_cur)} — ${_cur>=_prev?'up from':'down from'} ${S(_prev)} in the prior quarter (operating).`; })(),
     _topClients.length ? `Top client this quarter: ${_topClients[0].label} at ${S(_topClients[0].total)} (${_rev>0?Math.round(_topClients[0].total/_rev*100):0}% of revenue).` : `Add invoices to see client revenue breakdown.`,
-    `Payroll cost this quarter: ${S(d.sal)}${_rev>0?` — ${Math.round(d.sal/_rev*100)}% of revenue`:''}.`,
+    `Payroll cost this quarter: ${S((_bd&&_bd.payroll)||0)}${_rev>0?` — ${Math.round(((_bd&&_bd.payroll)||0)/_rev*100)}% of revenue`:''}.`,
     `Cash trend: ${_profit >= 0 ? 'Net positive' : 'Net negative'} at ${S(_profit)} this quarter.`,
   ]:[
     `${MONTH_FULL[currentMonthIdx]} revenue: ${S(_rev)} — ${margin}% profit margin.`,
     (()=>{ const _cats=_bd?_expenseCategoryRows(_bd).filter(c=>c[1]>0):[]; const _top=_cats[0]; return `Expenses this month: ${S(_exp)}.${(_top&&_exp>0)?` Largest cost: ${_top[0]} at ${S(_top[1])} (${Math.round(_top[1]/_exp*100)}%).`:''}`; })(),
     `Net profit: ${S(_profit)} — ${currentMonthIdx>0?`${pct(d.profit,PROFIT[currentMonthIdx-1])>0?'up':'down'} ${Math.abs(pct(d.profit,PROFIT[currentMonthIdx-1]))}% vs last month (operating)`:'first month on record'}.`,
     _topClients.length ? `Top client this month: ${_topClients[0].label} at ${S(_topClients[0].total)} (${_rev>0?Math.round(_topClients[0].total/_rev*100):0}% of revenue).` : `Add invoices to track client revenue.`,
-    (()=>{ const _pay=(window.ownerPayroll?[window.ownerPayroll]:[]).concat(window.payrollEmployees||[]); const _wh=_pay.reduce((s,p)=>s+dedTotal(p.gross, p.deductions),0); return _wh>0?`Payroll deductions this month: ${S(Math.round(_wh))}, from the deduction rows you entered.`:`Add payroll with deduction rows to see totals.`; })(),
+    (()=>{ const _wh=_periodPayrollWithheld(); return _wh>0?`Payroll deductions this month: ${S(Math.round(_wh))}, from this month's approved payroll runs.`:`No payroll run with deductions this month yet.`; })(),
     (()=>{ const _low=(inventory||[]).filter(i=>i.low); return _low.length?`Inventory alert: ${_low.length} item${_low.length>1?'s':''} low on stock — ${_low.slice(0,3).map(i=>i.name).join(', ')}${_low.length>3?'…':''}.`:`No low-stock items — inventory healthy.`; })(),
   ];
   document.getElementById('ai-insights-list').innerHTML=insights.map(t=>`<div class="ai-insight">${esc(t)}</div>`).join('');

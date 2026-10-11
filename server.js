@@ -6800,7 +6800,7 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   const monthMap = {};
   const add = (date, field, amount) => { const k = keyOf(date); (monthMap[k] || (monthMap[k] = { inflow: 0, outflow: 0 }))[field] += parseFloat(amount) || 0; };
   invoicePayments.forEach(p => add(p.payment_date, 'inflow', p.amount));
-  receipts.forEach(r => add(r.date, 'inflow', r.amount));
+  receipts.forEach(r => add(r.date || r.created_at, 'inflow', r.amount));   // M40: same fallback as payments made
   expenses.forEach(e => add(e.expense_date || e.date || e.created_at, 'outflow', e.amount));
   paymentsMade.forEach(p => add(p.date || p.created_at, 'outflow', p.amount));
   // F122: paid payroll → cash out, dated on run_date.
@@ -10306,7 +10306,10 @@ async function backfillLedgerForUser(userId, opts = {}) {
   // 3) expenses → Dr Opex / Cr Cash at expense_date
   for (const e of await db.allByUser('expenses', userId, keep)) {
     const amt = parseFloat(e.amount) || 0;
-    await post({ entityId: e.entity_id, date: e.expense_date, description: 'Expense — ' + String(e.description || '').slice(0, 80), sourceType: 'expense', sourceId: e.id, idempotencyKey: 'expense:' + e.id, lines: [{ code: '6000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }] });
+    // M40 (money audit 2026-10-09): every leg falls back to the record's own creation day when its business date is
+    // missing — the same order computeBooks reads (_expDate / _pmDate). postLedgerEntry throws on a dateless row,
+    // and a reset has already cleared the ledger by then, so one legacy row used to abort the rebuild part-way.
+    await post({ entityId: e.entity_id, date: e.expense_date || e.date || slice10(e.created_at), description: 'Expense — ' + String(e.description || '').slice(0, 80), sourceType: 'expense', sourceId: e.id, idempotencyKey: 'expense:' + e.id, lines: [{ code: '6000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }] });
   }
   // 4) bills — RECOGNIZED_BILL → Dr Opex / Cr AP at issue_date
   for (const b of await db.allByUser('bills', userId, keep)) {
@@ -10322,7 +10325,7 @@ async function backfillLedgerForUser(userId, opts = {}) {
     if (billId != null) { const { rows: br } = await pool.query(`SELECT entity_id FROM bills WHERE id=$1 AND user_id=$2 LIMIT 1`, [billId, userId]); if (br[0] && br[0].entity_id != null) ent = br[0].entity_id; lines = [{ code: '2000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }]; }
     else lines = [{ code: '6000', debit: amt, credit: 0 }, { code: '1000', debit: 0, credit: amt }];
     if (onlyEntity != null && ent !== onlyEntity) continue;
-    await post({ entityId: ent, date: pm.date, description: 'Payment made — ' + String(pm.vendor || ''), sourceType: 'bill_payment', sourceId: pm.id, idempotencyKey: 'payment_made:' + pm.id, lines });
+    await post({ entityId: ent, date: pm.date || slice10(pm.created_at), description: 'Payment made — ' + String(pm.vendor || ''), sourceType: 'bill_payment', sourceId: pm.id, idempotencyKey: 'payment_made:' + pm.id, lines });
   }
   // 5b) SETTLE bill amount_paid NOT backed by a payments_made row (historical bills marked paid,
   //     pre-F135). AP must drop to match computeBooks. Dr AP / Cr Cash for the uncovered remainder.
@@ -10336,7 +10339,7 @@ async function backfillLedgerForUser(userId, opts = {}) {
   // 6) sales receipts → Dr Cash / Cr Revenue at date
   for (const s of await db.allByUser('sales_receipts', userId, keep)) {
     const amt = parseFloat(s.amount) || 0;
-    await post({ entityId: s.entity_id, date: s.date, description: 'Sales receipt — ' + String(s.customer || ''), sourceType: 'sales_receipt', sourceId: s.id, idempotencyKey: 'sales_receipt:' + s.id, lines: [{ code: '1000', debit: amt, credit: 0 }, { code: '4000', debit: 0, credit: amt }] });
+    await post({ entityId: s.entity_id, date: s.date || slice10(s.created_at), description: 'Sales receipt — ' + String(s.customer || ''), sourceType: 'sales_receipt', sourceId: s.id, idempotencyKey: 'sales_receipt:' + s.id, lines: [{ code: '1000', debit: amt, credit: 0 }, { code: '4000', debit: 0, credit: amt }] });
   }
   // 7) payroll — approved|paid → Dr Payroll Expense / Cr Payroll Liabilities = Σ(gross+bonus+overtime) at period
   // M22 (money audit 2026-10-09): paid_date is SELECTED — the cash-out line below reads r.paid_date, which this query
@@ -11092,12 +11095,12 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // F34: recognition dates per leg = the same fields the period filters key on (conversion date ≡
   // recognition date). invoices: issue_date||created_at||date; receipts: date.
   const _invDate  = i => i.issue_date || i.created_at || i.date;
-  const _rcptDate = x => x.date;
+  const _rcptDate = x => x.date || x.created_at;   // M40: same fallback as _expDate / _pmDate (and the GL backfill)
   // Revenue recognition (F32, issue-based accrual) — ONE period filter for every period, incl.
   // all-time 'year'. inPeriod carries the D2 upper bound, so a future-dated issued invoice is
   // scheduled, not recognised.
   const issuedInvoices = sumFX(issuedInv.filter(i => inPeriod(i.issue_date || i.created_at || i.date)), i => i.amount, _invDate, 'invoices');
-  const salesReceipts  = sumFX(receipts.filter(x => inPeriod(x.date)), x => x.amount, _rcptDate, 'sales_receipts');
+  const salesReceipts  = sumFX(receipts.filter(x => inPeriod(_rcptDate(x))), x => x.amount, _rcptDate, 'sales_receipts');
   // F58 — CREDIT NOTES are a revenue CONTRA leg. A credit note reduces what was invoiced, so
   // recognising the invoice at full amount and ignoring the credit OVERSTATES revenue by the
   // credit's full value. Status vocabulary is its OWN (server.js:2307 validStatuses) —

@@ -3392,8 +3392,10 @@ app.put('/api/journals/:id', requireAuth, lockGuard(LOCK_SPECS.journals), wrap(a
   const _wasPosted = String(row.status || '').toLowerCase() === 'posted';
   const _newJournal = _jr ? rowToObj(_jr) : { ...row, ...patch };
   const _nowPosted = String(_newJournal.status || '').toLowerCase() === 'posted';
+  // M21: a posted journal whose DATE changes is re-synced to the new date (the ledger is what computeBooks reads).
+  const _dateChanged = String(row.date || '').slice(0, 10) !== String(_newJournal.date || '').slice(0, 10);
   try {
-    if (!_wasPosted && _nowPosted) await postJournalToLedger(pool, { userId: scopeId(req), entityId: row.entity_id || null, journal: _newJournal });
+    if (_nowPosted && (!_wasPosted || _dateChanged)) await postJournalToLedger(pool, { userId: scopeId(req), entityId: row.entity_id || null, journal: _newJournal });
     else if (_wasPosted && !_nowPosted) await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'journal', sourceId: row.id });
   } catch (glErr) { console.error('[GL] journal PUT sync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(_jr ? rowToObj(_jr) : {});
@@ -10870,10 +10872,15 @@ async function postJournalToLedger(client, { userId, entityId, journal }) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,false) ON CONFLICT (user_id, entity_id, code) DO NOTHING`,
       [userId, entityId, l.code, l.name, l.type, _jeNormalFor(l.type), cur]);
   }
-  await postLedgerEntry(client, {
+  // M21 (money audit 2026-10-09): RESYNC, not post-once. A posted journal whose date is edited (or that is
+  // flipped Posted → Draft → Posted) must land in the ledger at its CURRENT date and lines. postLedgerEntry is
+  // idempotent on 'journal:<id>', so a re-date left the entry at the old date (list said July, books said June)
+  // and a re-post after a reversal stayed reversed. resyncDocLedger creates the entry if absent, revives a
+  // reversed one, and rewrites date + lines in one transaction.
+  await resyncDocLedger(client, {
     userId, entityId, date: (journal.date || null),
     description: 'Journal — ' + String(journal.description || journal.ref || '').slice(0, 80),
-    sourceType: 'journal', sourceId: journal.id, idempotencyKey: 'journal:' + journal.id,
+    sourceType: 'journal', sourceId: journal.id, idempotencyKey: 'journal:' + journal.id, currency: cur, recognized: true,
     lines: norm.map(l => ({ code: l.code, debit: l.debit, credit: l.credit })),
   });
   return { posted: true };

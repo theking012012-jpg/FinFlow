@@ -43,7 +43,7 @@ Status (C = Cowork item; each fix is one commit with its harness, RED on the old
 | C4 | 3.4 | Income-tax rate (20 %) not saved; estimate and accountant Tax Summary blank | **Partly fixed** `7fbd4e8`: the rate is now saved with taxable ≤ 0 (the proven cause). The report reopening at 0 % with taxable > 0 did NOT reproduce — re-test in the next Cowork run |
 | C5 | 4.6 | FX page "No rates yet"; consolidated P&L shows the TTD business as $0 and total "—" | open |
 | C6 | 6.4, 6.5a | New accountant link sees every business by default; accountant's personal view has no income/spending totals, PAYPAL REFUND missing | open |
-| C7 | (confusing list) | Inventory value card $75 vs Balance Sheet $90 (card = units × item cost field; BS = FIFO layers) | open |
+| C7 | (confusing list) | Inventory value card $75 vs Balance Sheet $90 (card = units × item cost field; BS = FIFO layers) | | **Fixed** `0982e0b` |
 | C8 | 3.2a | Bank Rec "3 unmatched" after all four lines handled; debits shown as +$ with no date | open |
 
 ### Group 2 — workflows

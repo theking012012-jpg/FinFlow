@@ -6193,8 +6193,13 @@ async function runRecurringScheduler() {
     }
 
     // Recurring personal transactions (mirrors bills; materialises personal_transactions)
+    // M14: an OWNER-SALARY profile (referenced by a payroll record's salary_profile_id) no longer materialises — the
+    // owner's salary reaches Personal from paid payroll RUNS (syncOwnerSalaryFromRun). The profile rows themselves
+    // are left untouched (Rule 8); they simply stop generating roster-based income.
     const { rows: _recPtRows } = await pool.query(
-      `SELECT * FROM recurring_personal_transactions WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1 ORDER BY id`,
+      `SELECT * FROM recurring_personal_transactions rpt WHERE (data->>'status') = 'active' AND (data->>'next_run') <= $1
+          AND NOT EXISTS (SELECT 1 FROM payroll p WHERE p.user_id = rpt.user_id AND p.data->>'salary_profile_id' = rpt.id::text)
+        ORDER BY id`,
       [_utcTomorrow]
     );
     const recPts = _recPtRows
@@ -9859,6 +9864,37 @@ app.put('/api/payroll-runs/:id/approve', requireAuth, requirePerm('payroll:write
   res.json(rows[0]);
 }));
 
+// M14 (money audit 2026-10-09; Rule 12): the OWNER's salary reaches Personal Finance from PAYROLL RUNS — when a run
+// that pays the owner is marked paid, the owner's line becomes ONE personal income row (net pay, the business's
+// currency, dated on the paid date), keyed to the run line so a repeat mark-paid books nothing new. Voiding the
+// run removes it. It used to come from the ROSTER template: saving the owner's salary created a monthly recurring
+// personal-income profile the scheduler materialised whether or not a run was approved, paid or voided.
+async function syncOwnerSalaryFromRun(userId, run, mode) {
+  if (!run) return;
+  if (mode === 'void') {
+    await pool.query(`DELETE FROM personal_transactions WHERE user_id = $1 AND entity_id IS NULL AND data->>'source' = 'payroll' AND data->>'payroll_run_id' = $2::text`, [userId, String(run.id)]);
+    return;
+  }
+  const { rows: lines } = await pool.query(
+    `SELECT l.id, l.net_pay, l.employee_name FROM payroll_run_lines l JOIN payroll p ON p.id = l.payroll_id AND p.user_id = $2
+      WHERE l.run_id = $1 AND COALESCE(p.data->>'is_owner','false') IN ('true','1')`, [run.id, userId]);
+  if (!lines.length) return;
+  const { rows: [ent] } = run.entity_id != null ? await pool.query(`SELECT data->>'name' AS name, data->>'currency' AS cur FROM entities WHERE id = $1`, [run.entity_id]) : { rows: [] };
+  const paid = FinFlowDates._toYmd(run.paid_date) || await entityTodayYmd(run.entity_id);
+  for (const l of lines) {
+    const amt = Math.round((parseFloat(l.net_pay) || 0) * 100) / 100;
+    if (!(amt > 0)) continue;
+    const key = ('owner-salary:' + run.id + ':' + l.id).slice(0, 64);
+    const { rows: [dup] } = await pool.query(`SELECT 1 FROM personal_transactions WHERE user_id = $1 AND data->>'idempotency_key' = $2 LIMIT 1`, [userId, key]);
+    if (dup) continue;
+    await db.insert('personal_transactions', {
+      user_id: userId, description: 'Owner salary — ' + String((ent && ent.name) || 'Business').slice(0, 120) + ' (' + String(run.period || '').slice(0, 40) + ')',
+      category: 'Salary', amount: amt, tx_type: 'income', tx_date: paid, currency: String((ent && ent.cur) || 'USD').toUpperCase(),
+      source: 'payroll', payroll_run_id: run.id, idempotency_key: key,
+    });
+  }
+}
+
 app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:write'), lockGuard(LOCK_SPECS.payroll_runs), wrap(async (req, res) => {
   // L7: the cash leaves NOW — stamp the business's calendar date (its timezone, Rule 10: a genuine timestamp
   // resolves against the entity) as paid_date, once (COALESCE keeps the first on a repeat mark-paid).
@@ -9879,6 +9915,7 @@ app.put('/api/payroll-runs/:id/mark-paid', requireAuth, requirePerm('payroll:wri
     return res.status(404).json({ error: 'Not found.' });
   }
   await recordAudit(pool, { userId: scopeId(req), entityId: rows[0].entity_id || null, table: 'payroll_runs', recordId: rows[0].id, action: 'MARK_PAID', field: 'status', newValue: 'paid', req });  // F90 Phase B: cash-out event
+  try { await syncOwnerSalaryFromRun(scopeId(req), rows[0], 'paid'); } catch (e) { console.error('[payroll] owner salary → personal failed:', e && e.message); }   // M14
   // GL Phase 5b (cash completeness): mark-paid is the CASH-OUT event - settle the payroll liability with
   // cash: Dr Payroll Liabilities (2200) / Cr Cash (1000), summed from the run's LINES (same basis as the
   // approve accrual), so 2200 nets to zero and GL cash reflects the payment (mirrors the cash-flow report's
@@ -9918,6 +9955,7 @@ app.put('/api/payroll-runs/:id/void', requireAuth, requirePerm('payroll:write'),
     `UPDATE payroll_runs SET status='voided' WHERE id=$1 AND user_id=$2 RETURNING *`, [id, scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_run', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_run reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'payroll_paid', sourceId: id }); } catch (glErr) { console.error('[GL] payroll_paid reversal failed (shadow, non-fatal):', glErr && glErr.message); }
+  try { await syncOwnerSalaryFromRun(scopeId(req), run, 'void'); } catch (e) { console.error('[payroll] owner salary void → personal failed:', e && e.message); }   // M14
   await auditLog(pool, { userId: scopeId(req), entityId: run.entity_id || null, table: 'payroll_runs', recordId: id, action: 'VOID', req });
   res.json(rows[0]);
 }));

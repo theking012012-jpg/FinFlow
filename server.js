@@ -9649,14 +9649,25 @@ app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) =>
 // entity-required, so only a business banking row (entity set) can book to business books; a personal
 // bank row (no entity) already lives in the personal ledger and is refused here. Each action stamps the
 // banking row's reconcile_state, which is BOTH the idempotency guard and what the feed reads.
-async function _bankDebitForAction(req, bankingId) {
+// M61 (personal/business wall): ONE rule for every bank-reconcile action (book-expense, match-bill, ignore, unmatch;
+// match / match-batch apply the same rule in SQL, M57) — the bank line must belong to the business IN VIEW. A personal
+// line is refused as personal; another business's line does not exist here (404). Checked before anything else, so
+// an already-actioned line of another scope is not even reported.
+async function _bankLineInView(req, bankingId) {
   const { rows: [r] } = await pool.query(`SELECT * FROM personal_transactions WHERE id=$1 AND user_id=$2 LIMIT 1`, [bankingId, scopeId(req)]);
   if (!r) return { err: { status: 404, msg: 'Bank transaction not found.' } };
   const row = rowToObj(r);
   if (row.source !== 'banking') return { err: { status: 400, msg: 'Not a bank-feed transaction.' } };
+  if (row.entity_id == null) return { err: { status: 400, msg: 'This is a personal bank transaction — it stays in your personal ledger, not a business\'s books.', code: 'PERSONAL_TXN' } };
+  if (req.entityId == null || Number(row.entity_id) !== Number(req.entityId)) return { err: { status: 404, msg: 'Bank transaction not found.' } };
+  return { row };
+}
+async function _bankDebitForAction(req, bankingId) {
+  const g = await _bankLineInView(req, bankingId);   // M61
+  if (g.err) return g;
+  const row = g.row;
   if ((row.tx_type || 'debit') !== 'debit') return { err: { status: 400, msg: 'Only a debit (money out) can be booked as an expense or matched to a bill.' } };
   if (row.reconcile_state) return { done: row };   // already actioned → idempotent
-  if (row.entity_id == null) return { err: { status: 400, msg: 'This is a personal bank transaction — it stays in your personal ledger, not a business\'s books.', code: 'PERSONAL_TXN' } };
   return { row };
 }
 
@@ -9748,10 +9759,9 @@ app.post('/api/bank-reconciliation/match-bill', requireAuth, wrap(async (req, re
 app.post('/api/bank-reconciliation/ignore', requireAuth, wrap(async (req, res) => {
   const bankingId = parseInt(req.body && req.body.banking_id, 10);
   if (!Number.isInteger(bankingId) || bankingId <= 0) return res.status(400).json({ error: 'A valid banking_id is required.' });
-  const { rows: [r] } = await pool.query(`SELECT * FROM personal_transactions WHERE id=$1 AND user_id=$2 LIMIT 1`, [bankingId, scopeId(req)]);
-  if (!r) return res.status(404).json({ error: 'Bank transaction not found.' });
-  const row = rowToObj(r);
-  if (row.source !== 'banking') return res.status(400).json({ error: 'Not a bank-feed transaction.' });
+  const g = await _bankLineInView(req, bankingId);   // M61: never a personal line, never another business's
+  if (g.err) return res.status(g.err.status).json({ error: g.err.msg, code: g.err.code });
+  const row = g.row;
   if (row.reconcile_state) return res.json({ ok: true, duplicate: true, reconcile_state: row.reconcile_state });
   await db.updateById('personal_transactions', bankingId, { reconcile_state: 'ignored' });
   res.json({ ok: true, ignored: true });
@@ -9821,9 +9831,11 @@ app.post('/api/bank-reconciliation/match-batch', requireAuth, wrap(async (req, r
 }));
 
 app.delete('/api/bank-reconciliation/:id', requireAuth, wrap(async (req, res) => {
+  // M61: only a match whose bank line belongs to the business in view.
   const { rows } = await pool.query(
-    `DELETE FROM bank_reconciliation WHERE id=$1 AND user_id=$2 RETURNING *`,
-    [parseInt(req.params.id), scopeId(req)]
+    `DELETE FROM bank_reconciliation br USING personal_transactions pt
+      WHERE br.id=$1 AND br.user_id=$2 AND pt.id = br.banking_id AND pt.entity_id IS NOT NULL AND pt.entity_id = $3 RETURNING br.*`,
+    [parseInt(req.params.id), scopeId(req), req.entityId == null ? -1 : req.entityId]
   );
   if (!rows[0]) return res.status(404).json({ error: 'Not found.' });
   res.json({ ok: true });

@@ -5978,6 +5978,8 @@ app.get('/reset-password.html', (req, res) => {
 app.get('/team-accept.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'team-accept.html'));
 });
+// C23: the accountant sign-up lives at /join; the obvious addresses for it went to the home page.
+app.get(['/accountant-register', '/accountant-signup', '/accountant/register'], (req, res) => res.redirect(301, '/join'));
 app.get('/join', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'accountant-register.html'));
 });

@@ -4066,12 +4066,15 @@ app.get('/api/cashflow-forecast', requireAuth, wrap(async (req, res) => {
     if (bs.cashTracked) { startingCash = bs.cash; cashTracked = true; }
   } catch (e) { console.error('[forecast] balance sheet read failed:', e && e.message); }
 
-  const [invoices, bills, recInv, recBill, expenses] = await Promise.all([
+  const [invoices, bills, recInv, recBill, expenses, creditNotes, vendorCredits, paymentsMade] = await Promise.all([
     db.allByUser('invoices', uid, scope),
     db.allByUser('bills', uid, scope),
     db.allByUser('recurring_invoices', uid, scope),
     db.allByUser('recurring_bills', uid, scope),
     db.allByUser('expenses', uid, scope),
+    db.allByUser('credit_notes', uid, scope),
+    db.allByUser('vendor_credits', uid, scope),
+    db.allByUser('payments_made', uid, scope),
   ]);
 
   const UNPAID_INV = new Set(['pending', 'overdue', 'partial']);
@@ -4091,6 +4094,23 @@ app.get('/api/cashflow-forecast', requireAuth, wrap(async (req, res) => {
     if (outstanding <= 0.005 || !b.due_date) continue;
     outflows.push({ date: String(b.due_date).slice(0, 10), amount: outstanding, kind: 'ap', label: (b.vendor || 'Bill') + ' (' + (b.num || ('#' + b.id)) + ')' });
   }
+  // M43 (money audit 2026-10-09): open AR / AP are NET of credits, exactly as the balance sheet nets them
+  // (computeBooks: open|applied credit notes reduce AR, open|applied vendor credits reduce AP, dated on or before
+  // today). A customer holding a 300 credit pays 300 less; the forecast used to expect the full invoice. The
+  // credit is taken off the EARLIEST-due receipts / payments first, never below zero.
+  const _netAgainst = (list, kind, credit) => {
+    let left = Math.round(credit * 100) / 100;
+    for (const ev of list.filter(e => e.kind === kind).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))) {
+      if (left <= 0.005) break;
+      const take = Math.min(ev.amount, left); ev.amount = Math.round((ev.amount - take) * 100) / 100; left -= take;
+    }
+  };
+  const _cr = (rows) => rows.filter(r => ['open', 'applied'].includes(String(r.status || '').toLowerCase())
+      && String(r.date || r.created_at || '').slice(0, 10) <= today)
+    .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  _netAgainst(inflows, 'ar', _cr(creditNotes));
+  _netAgainst(outflows, 'ap', _cr(vendorCredits));
+
   // Expand a recurring row's occurrences within the horizon using the app's own nextRunDate().
   const expand = (row, kind, bucket) => {
     if (String(row.status || '').toLowerCase() !== 'active') return;
@@ -4108,12 +4128,19 @@ app.get('/api/cashflow-forecast', requireAuth, wrap(async (req, res) => {
   for (const r of recInv) expand(r, 'recurring_in', inflows);
   for (const r of recBill) expand(r, 'recurring_out', outflows);
 
-  // Estimated operating-expense run-rate (directly-logged expenses only — bills are counted above).
+  // Estimated operating-expense run-rate: directly-logged expenses AND payments made with no bill (an orphan payment
+  // is a direct disbursement — computeBooks counts it as opex; M43 — it was left out). Bill-linked payments are
+  // settlements of bills already counted above.
   const since = cfAddDays(today, -90);
   let recentOpex = 0;
   for (const e of expenses) {
-    const d = e.expense_date ? String(e.expense_date).slice(0, 10) : null;
+    const d = String(e.expense_date || e.date || e.created_at || '').slice(0, 10) || null;
     if (d && d >= since && d <= today) recentOpex += parseFloat(e.amount) || 0;
+  }
+  for (const pm of paymentsMade) {
+    if (pm.bill_id != null && pm.bill_id !== '') continue;
+    const d = String(pm.date || pm.created_at || '').slice(0, 10) || null;
+    if (d && d >= since && d <= today) recentOpex += parseFloat(pm.amount) || 0;
   }
   const weeklyOpex = recentOpex > 0 ? (recentOpex / 90) * 7 : 0;
   if (weeklyOpex > 0) {

@@ -41,7 +41,7 @@ Status (C = Cowork item; each fix is one commit with its harness, RED on the old
 | C2 | 5.4c | Choosing a TTD business flipped Personal to TTD | **Fixed** `ed2e528` |
 | C3 | 4.4a | Island Traders' amounts show "$" instead of "TT$" after a reload | **Fixed** `739f364` |
 | C4 | 3.4 | Income-tax rate (20 %) not saved; estimate and accountant Tax Summary blank | **Partly fixed** `7fbd4e8`: the rate is now saved with taxable ≤ 0 (the proven cause). The report reopening at 0 % with taxable > 0 did NOT reproduce — re-test in the next Cowork run |
-| C5 | 4.6 | FX page "No rates yet"; consolidated P&L shows the TTD business as $0 and total "—" | open |
+| C5 | 4.6 | FX page "No rates yet"; consolidated P&L shows the TTD business as $0 and total "—" | **Owner decision needed** — the app has no rate feed; every rate is typed in on the FX page. Gold standard (QuickBooks / Xero) fetches daily rates automatically. Needs: a provider covering ~50 currencies incl. TTD (e.g. open.er-api.com free tier, or a paid feed), and the date rule (each transaction at its own date's rate — the app already converts per transaction). Until then: enter the USD↔TTD rate on the FX page. Also: the consolidated view should show an unconvertible business as "—" with "add a rate", not $0 |
 | C6 | 6.4, 6.5a | New accountant link sees every business by default; accountant's personal view has no income/spending totals, PAYPAL REFUND missing | **Fixed** `f849833` (PAYPAL REFUND was past the 25-row list; the list now says "latest 25 of N") |
 | C7 | (confusing list) | Inventory value card $75 vs Balance Sheet $90 (card = units × item cost field; BS = FIFO layers) | **Fixed** `0982e0b` |
 | C8 | 3.2a | Bank Rec "3 unmatched" after all four lines handled; debits shown as +$ with no date | **Fixed** `4c97f62` |
@@ -50,7 +50,7 @@ Status (C = Cowork item; each fix is one commit with its harness, RED on the old
 
 | # | Cowork | Problem | Status |
 |---|---|---|---|
-| C9 | 2.4a | Edit expense opens with the date blank; amount-only edit refused "Enter a valid date" | open |
+| C9 | 2.4a | Edit expense opens with the date blank; amount-only edit refused "Enter a valid date" | **Fixed** `812e728` |
 | C10 | 7.4 | Transaction lock can't be turned off | open |
 | C11 | 6.3 | Accountant invite can't reach an existing client (only a referral sign-up link) | open |
 | C12 | 1.3a | Onboarding lets Country* be empty | open |

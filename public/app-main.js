@@ -2727,10 +2727,13 @@ function updateCashflow(d=getPeriodData()){
   // Income sources bars
   // Income sources — built from real invoice data grouped by client
   const _src_colors = ['var(--green)','#7db87d','#7db87d99','#7db87d66'];
-  const _srcList = _topClients.length ? _topClients.slice(0,4) : [];
+  // M28: this period's sources, each as a share of this period's sales (same basis) — it was the all-time ranking
+  // divided by the period's revenue, which could exceed 100%.
+  const _srcTc = _periodTopClients(currentPeriod);
+  const _srcList = _srcTc.list.slice(0,4);
   const _maxSrc = _srcList.length ? _srcList[0].total : 1;
   document.getElementById('cf-sources').innerHTML = _srcList.length
-    ? _srcList.map((s,i)=>{const pct=d.rev>0?Math.round(s.total/d.rev*100):0;return`<div class="bar-row"><span class="bar-label">${esc(s.label)}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${_src_colors[i]||'var(--green)'}"></div></div><span class="bar-val">${S(s.total)}</span></div>`;}).join('')
+    ? _srcList.map((s,i)=>{const pct=_srcTc.total>0?Math.round(s.total/_srcTc.total*100):0;return`<div class="bar-row"><span class="bar-label">${esc(s.label)}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${_src_colors[i]||'var(--green)'}"></div></div><span class="bar-val">${S(s.total)}</span></div>`;}).join('')
     : '<div style="color:var(--t3);font-size:12px;padding:8px 0">No revenue data yet</div>';
   // Change indicators. F57: these read d.rev/d.prevRev — ACCRUAL deltas. With the cells above
   // them now showing CASH, a delta computed on a different basis sitting under a cash figure is
@@ -4985,6 +4988,20 @@ function _periodPayrollWithheld(){
   return (window.payrollRuns||[]).filter(r=>['approved','paid'].includes(String(r.status||'').toLowerCase()) && _w.inWin(window.FinFlowDates.payrollPeriodYmd(r.period, r.run_date)))
     .reduce((s,r)=>s+(r.lines||[]).filter(Boolean).reduce((a,l)=>a+((parseFloat(l.gross)||0)+(parseFloat(l.bonus)||0)+(parseFloat(l.overtime)||0)-(parseFloat(l.net_pay)||0)),0),0);
 }
+// M28 (money audit 2026-10-09): period-true labels and rankings.
+//  · the quarter insight names the CURRENT fiscal quarter (it hard-coded fiscal months 9–11, Oct–Dec) and compares
+//    with the quarter before it (it hard-coded fiscal months 6–8);
+//  · "top client this month / quarter" ranks THAT period's sales (it was the all-time ranking), and its share is of
+//    the same period's sales, so it can never exceed 100% (all-time ÷ period revenue could).
+function _curQuarterStart(){ const i=_periodIntentIdx('quarter'); return Math.floor((Number.isInteger(i)?i:0)/3)*3; }
+function _periodTopClients(period=currentPeriod){
+  const _w=_periodWindow(period, period==='year'?null:_periodIntentIdx(period));
+  const tot={}, ISSUED=['pending','overdue','partial','paid'];
+  (window._realInvoices||[]).forEach(i=>{ if(!ISSUED.includes(String(i.status||'').toLowerCase())) return; if(!_w.inWin(i.issue_date||i.created_at||i.date)) return; const k=i.client||'Unknown'; tot[k]=(tot[k]||0)+(parseFloat(i.amount)||0); });
+  (window.receipts||[]).forEach(r=>{ if(!_w.inWin(r.date||r.created_at)) return; const k=r.customer||'Walk-in'; tot[k]=(tot[k]||0)+(parseFloat(r.amount)||0); });
+  const list=Object.entries(tot).map(([label,total])=>({label,total})).filter(c=>c.total>0).sort((a,b)=>b.total-a.total);
+  return { list, total: list.reduce((s,c)=>s+c.total,0) };
+}
 function updateAI(d=getPeriodData()){
   document.getElementById('ai-period-label').textContent=d.label;
   // Revenue, expenses, profit & margin ALL use the canonical helpers
@@ -5003,16 +5020,16 @@ function updateAI(d=getPeriodData()){
     _rev > 0 ? `Payroll-to-revenue: ${Math.round(((_bd&&_bd.payroll)||0)/_rev*100)}%.` : `Add paid invoices to calculate your payroll-to-revenue ratio.`,
     (()=>{ const _low=(inventory||[]).filter(i=>i.low); return _low.length?`${_low.length} item${_low.length>1?'s':''} low on stock: ${_low.slice(0,3).map(i=>i.name).join(', ')}${_low.length>3?'…':''}.`:`No low-stock items.`; })(),
   ]:currentPeriod==='quarter'?[
-    `${MONTH_FULL[9]}–${MONTH_FULL[11]} revenue: ${S(_rev)}. Net profit: ${S(_profit)} (${margin}% margin).`,
-    (()=>{ const _em=_bd?Math.max(_bd.months,1):3; const _cur=Math.round(_profit/_em), _prev=Math.round(sum(PROFIT,6,9)/3); return `Monthly average profit this quarter: ${S(_cur)} — ${_cur>=_prev?'up from':'down from'} ${S(_prev)} in the prior quarter (operating).`; })(),
-    _topClients.length ? `Top client this quarter: ${_topClients[0].label} at ${S(_topClients[0].total)} (${_rev>0?Math.round(_topClients[0].total/_rev*100):0}% of revenue).` : `Add invoices to see client revenue breakdown.`,
+    (()=>{ const _q0=_curQuarterStart(); return `${MONTH_FULL[_q0]}–${MONTH_FULL[_q0+2]} revenue: ${S(_rev)}. Net profit: ${S(_profit)} (${margin}% margin).`; })(),
+    (()=>{ const _q0=_curQuarterStart(); const _em=_bd?Math.max(_bd.months,1):3; const _cur=Math.round(_profit/_em); if(_q0<3) return `Monthly average profit this quarter: ${S(_cur)} — first quarter of the fiscal year, no prior quarter to compare.`; const _prev=Math.round(sum(PROFIT,_q0-3,_q0)/3); return `Monthly average profit this quarter: ${S(_cur)} — ${_cur>=_prev?'up from':'down from'} ${S(_prev)} in the prior quarter (operating).`; })(),
+    (()=>{ const _tc=_periodTopClients(); return _tc.list.length ? `Top client this quarter: ${_tc.list[0].label} at ${S(_tc.list[0].total)} (${_tc.total>0?Math.round(_tc.list[0].total/_tc.total*100):0}% of this quarter's sales).` : `Add invoices to see client revenue breakdown.`; })(),
     `Payroll cost this quarter: ${S((_bd&&_bd.payroll)||0)}${_rev>0?` — ${Math.round(((_bd&&_bd.payroll)||0)/_rev*100)}% of revenue`:''}.`,
     `Cash trend: ${_profit >= 0 ? 'Net positive' : 'Net negative'} at ${S(_profit)} this quarter.`,
   ]:[
     `${MONTH_FULL[currentMonthIdx]} revenue: ${S(_rev)} — ${margin}% profit margin.`,
     (()=>{ const _cats=_bd?_expenseCategoryRows(_bd).filter(c=>c[1]>0):[]; const _top=_cats[0]; return `Expenses this month: ${S(_exp)}.${(_top&&_exp>0)?` Largest cost: ${_top[0]} at ${S(_top[1])} (${Math.round(_top[1]/_exp*100)}%).`:''}`; })(),
     `Net profit: ${S(_profit)} — ${currentMonthIdx>0?`${pct(d.profit,PROFIT[currentMonthIdx-1])>0?'up':'down'} ${Math.abs(pct(d.profit,PROFIT[currentMonthIdx-1]))}% vs last month (operating)`:'first month on record'}.`,
-    _topClients.length ? `Top client this month: ${_topClients[0].label} at ${S(_topClients[0].total)} (${_rev>0?Math.round(_topClients[0].total/_rev*100):0}% of revenue).` : `Add invoices to track client revenue.`,
+    (()=>{ const _tc=_periodTopClients(); return _tc.list.length ? `Top client this month: ${_tc.list[0].label} at ${S(_tc.list[0].total)} (${_tc.total>0?Math.round(_tc.list[0].total/_tc.total*100):0}% of this month's sales).` : `Add invoices to track client revenue.`; })(),
     (()=>{ const _wh=_periodPayrollWithheld(); return _wh>0?`Payroll deductions this month: ${S(Math.round(_wh))}, from this month's approved payroll runs.`:`No payroll run with deductions this month yet.`; })(),
     (()=>{ const _low=(inventory||[]).filter(i=>i.low); return _low.length?`Inventory alert: ${_low.length} item${_low.length>1?'s':''} low on stock — ${_low.slice(0,3).map(i=>i.name).join(', ')}${_low.length>3?'…':''}.`:`No low-stock items — inventory healthy.`; })(),
   ];

@@ -9205,16 +9205,15 @@ app.get('/api/invoice-payments', requireAuth, wrap(async (req, res) => {
     );
     return res.json(rows);
   }
-  // F95 step 2: no invoice_id -> every settlement for this user (the Payments Received page's
-  // list). Deliberately NOT sourced from /api/bank-reconciliation's unmatchedPayments — that
-  // filters out anything already reconciled against a bank transaction, which is correct for
-  // reconciliation but would make a real, still-real settlement silently vanish from a page
-  // whose whole purpose is to keep showing it. Same scoping as the invoice_id branch above
-  // (user_id only) — this route has never been entity-scoped; unchanged here, not this step's
-  // job to fix.
+  // F95 step 2: no invoice_id -> the settlements for the Payments Received page's list. Deliberately NOT
+  // sourced from /api/bank-reconciliation's unmatchedPayments — that filters out anything already reconciled
+  // against a bank transaction, which would make a real settlement silently vanish from this page.
+  // M9 (money audit 2026-10-09): ENTITY-SCOPED like every other money list (null-inclusive: legacy
+  // entity-less rows still show). It was user-scoped, so each business's page listed — and its "Received ·
+  // This month" card summed — every business's payments, in mixed currencies.
   const { rows } = await pool.query(
-    `SELECT * FROM invoice_payments WHERE user_id = $1 ORDER BY payment_date DESC`,
-    [scopeId(req)]
+    `SELECT * FROM invoice_payments WHERE user_id = $1 AND (entity_id IS NULL OR entity_id = $2) ORDER BY payment_date DESC`,
+    [scopeId(req), req.entityId != null ? req.entityId : null]
   );
   res.json(rows);
 }));

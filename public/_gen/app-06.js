@@ -769,6 +769,15 @@ window.ffPersBankRender = async function(){
     d = await r.json().catch(()=>({}));
   }catch(e){ return; }
   sel.value = d.country || '';
+  // M62: the bank's currency — every personal bank line books in it (defaults to the bank country's currency).
+  const curSel = document.getElementById('pers-bank-currency');
+  if(curSel){
+    const codes = Object.keys(window.CURRENCIES || {});
+    if(d.currency && codes.indexOf(d.currency) < 0) codes.unshift(d.currency);
+    if(curSel.options.length <= 1) codes.forEach(function(c){ curSel.appendChild(new Option(c, c)); });
+    else if(d.currency && !Array.prototype.some.call(curSel.options, function(o){ return o.value === d.currency; })) curSel.appendChild(new Option(d.currency, d.currency));
+    curSel.value = d.currency || '';
+  }
   const esc = v => String(v==null?'':v).replace(/[<>&"']/g, '');
   const plaid = (d.plaid && d.plaid.items) || [], belvo = (d.belvo && d.belvo.institutions) || [];
   const rows = plaid.map(it => `
@@ -794,6 +803,16 @@ window.ffPersBankCountry = async function(country){
     const j = await r.json().catch(()=>({}));
     if(!r.ok){ if(typeof notify==='function') notify(j.error||'Could not save your bank country.', true); return; }
     if(typeof notify==='function') notify('Bank country saved.');
+    window.ffPersBankRender();   // M62: the currency follows the country unless one was chosen
+  }catch(e){ if(typeof notify==='function') notify('Network error.', true); }
+};
+window.ffPersBankCurrency = async function(currency){
+  try{
+    const r = await fetch('/api/personal-bank?scope=personal', {method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({currency: currency||null})});
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok){ if(typeof notify==='function') notify(j.error||'Could not save your bank currency.', true); return; }
+    if(typeof notify==='function') notify('Bank currency saved' + (j.currency ? ' (' + j.currency + ')' : '') + '. New bank lines book in it.');
+    window.ffPersBankRender();
   }catch(e){ if(typeof notify==='function') notify('Network error.', true); }
 };
 window.ffPersBankLink = async function(){

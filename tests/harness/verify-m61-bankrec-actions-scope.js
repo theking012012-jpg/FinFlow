@@ -29,6 +29,7 @@ run('M61 — bank-reconcile actions stay inside the business in view', async ({ 
   const lineB3 = await o.J('POST', '/api/banking' + qb, { desc: 'B FEE', amount: 170, type: 'debit', date: '2026-07-10' });
   const billB = await o.J('POST', '/api/bills' + qb, { vendor: 'B Supplier', amount: 155, status: 'unpaid', issue_date: '2026-07-01', due_date: '2026-07-30', idempotency_key: 'm61-bill' });
   const lineA = await o.J('POST', '/api/banking' + qa, { desc: 'A STATIONERY', amount: 90, type: 'debit', date: '2026-07-11' });
+  await o.J('PUT', '/api/personal-bank?scope=personal', { country: 'US' });   // M62: personal bank lines need a currency
   const pers = await o.J('POST', '/api/banking?scope=personal', { desc: 'PERSONAL CAFE', amount: 65, type: 'debit', date: '2026-07-12' });
   const invB = await o.J('POST', '/api/invoices' + qb, { client: 'B Cust', amount: 220, status: 'pending', issue_date: '2026-07-01', due_date: '2026-07-30', idempotency_key: 'm61-inv' });
   const payB = await o.J('POST', '/api/invoice-payments' + qb, { invoice_id: invB.id, amount: 220, payment_date: '2026-07-05', idempotency_key: 'm61-pay' });

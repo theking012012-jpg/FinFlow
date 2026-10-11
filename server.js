@@ -6338,6 +6338,9 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   if (type != null && !TX_TYPES.includes(type)) return res.status(400).json({ error: "tx_type must be 'credit' or 'debit'." });
   // B8/C1: dedupe guard — personal_transactions is a JSONB table, so the JSONB matcher applies.
   const _bc = _bankCtx(req);   // M60
+  // M62: a line that lands in Personal books in the person's bank currency; none known → refused, never read as USD.
+  const _pCur = _bc.eid == null ? await _persBankCurrency(_bc.uid) : null;
+  if (_bc.eid == null && !_pCur) return res.status(400).json({ error: "Set your bank's currency (or its country) on the Your bank card first.", code: 'NO_BANK_CURRENCY' });
   const _bDup = await findRecentDuplicate('personal_transactions', _bc.uid, _bc.eid,
     { textMatch: { description: String(desc) }, numMatch: { amount: parseFloat(amount) || 0 } });
   if (_bDup) return res.status(201).json(_bDup);
@@ -6349,6 +6352,7 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
     // (legacy rows written as type/date are still read via fallback below and on GET).
     ..._bankTx(_bc.personal, (type || 'debit') === 'debit'), tx_date: date || (_bc.personal ? new Date().toISOString().slice(0, 10) : await entityTodayYmd(req.entityId)),
     category: cat || 'Other', source: 'banking',
+    ...(_pCur ? { currency: _pCur } : {}),
   });
   res.status(201).json(row);
 }));
@@ -6598,6 +6602,9 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
   if (!txns.length) return res.status(400).json({ error: 'No transactions found in the statement.' });
 
   const { uid, eid, personal } = _bankCtx(req);   // M60
+  // M62: a statement that lands in Personal books in the person's bank currency; none known → refused before any row.
+  const _pCur = eid == null ? await _persBankCurrency(uid) : null;
+  if (eid == null && !_pCur) return res.status(400).json({ error: "Set your bank's currency (or its country) on the Your bank card first.", code: 'NO_BANK_CURRENCY' });
   let imported = 0, skipped = 0;
   // M33 (money audit 2026-10-09): two GENUINE identical same-day transactions (two 4.50 coffees) have the same
   // date|amount|description, so the content hash collapsed them into one and the second was dropped as a
@@ -6624,6 +6631,7 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
       user_id: uid, entity_id: eid,
       description: t.description, amount: t.amount, ..._bankTx(personal, t.tx_type === 'debit'), tx_date: t.tx_date,
       category: 'Uncategorized', source: 'banking', import_key: key,
+      ...(_pCur ? { currency: _pCur } : {}),
     });
     imported++;
   }
@@ -7352,6 +7360,8 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
   const { uid, eid, personal } = _bankCtx(req);   // M60
+  const _pCur = eid == null ? await _persBankCurrency(uid) : null;   // M62: fallback when Plaid sends no currency
+  const _plCur = t => (t.iso_currency_code ? String(t.iso_currency_code).toUpperCase() : _pCur);
   const { items } = await _getPlaidItemsE(uid, eid);
   if (!items.length) return res.status(400).json({ error: 'No linked bank. Link a bank first.' });
   let added = 0, modified = 0, removed = 0, flagged = 0;
@@ -7366,7 +7376,7 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
     amount: Math.abs(Number(t.amount) || 0),
     ..._bankTx(personal, Number(t.amount) >= 0),
     tx_date: t.date || null,
-    currency: t.iso_currency_code ? String(t.iso_currency_code).toUpperCase() : null,
+    currency: _plCur(t),
     pending: !!t.pending,
   });
   for (const it of items) {
@@ -7398,7 +7408,7 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
             tx_date: t.date || new Date().toISOString().slice(0, 10),
             category: (t.personal_finance_category && t.personal_finance_category.primary) || 'Other',
             source: 'banking', plaid_txn_id: t.transaction_id,
-            currency: t.iso_currency_code ? String(t.iso_currency_code).toUpperCase() : null, pending: !!t.pending,
+            currency: _plCur(t), pending: !!t.pending,
           });
           added++;
         }
@@ -7417,26 +7427,45 @@ app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
 // M60: the Personal page's bank card — the person's OWN bank country (it picks the aggregator that serves it and the
 // day/month order of an imported CSV) and the person's own linked banks. Personal by WHAT IT IS: keyed to the session
 // user with no business; nothing here reads or writes a business's connections.
+// M62: the currency a personal bank line books in — the card's explicit choice, else the bank country's currency
+// (FinFlowDates.currencyForCountry, the one table the card also shows), else null (the caller refuses, never guesses).
+async function _persBankCurrency(uid) {
+  const set = (await _providerBlobE(uid, 'pers_bank_currency', null)).value || null;
+  if (set) return set;
+  return FinFlowDates.currencyForCountry((await _providerBlobE(uid, 'pers_bank_country', null)).value);
+}
 app.get('/api/personal-bank', requireAuth, wrap(async (req, res) => {
   const uid = req.session.userId;
   const country = (await _providerBlobE(uid, 'pers_bank_country', null)).value || null;
+  const currency = await _persBankCurrency(uid);   // M62
   const { items } = await _getPlaidItemsE(uid, null);
   const belvo = (await _providerBlobE(uid, 'belvo_conn', null)).value;
   const { rows: [{ n }] } = await pool.query(
     `SELECT COUNT(*)::int AS n FROM personal_transactions WHERE user_id = $1 AND entity_id IS NULL AND data->>'source' = 'banking'`, [uid]);
   res.json({
-    country,
+    country, currency,
     plaid: { configured: plaidConfigured(), env: PLAID_ENV_NAME, items: items.map(_publicItem) },
     belvo: { configured: belvoConfigured(), institutions: ((belvo && belvo.links) || []).map(l => l.institution).filter(Boolean) },
     lines: n,
   });
 }));
 app.put('/api/personal-bank', requireAuth, wrap(async (req, res) => {
-  const raw = req.body && req.body.country;
-  const country = raw == null || raw === '' ? null : String(raw).trim().toUpperCase();
-  if (country != null && !/^[A-Z]{2}$/.test(country)) return res.status(400).json({ error: 'country must be a 2-letter country code.' });
-  await _mutateSettingsBlob(req.session.userId, 'pers_bank_country', null, () => country);
-  res.json({ ok: true, country });
+  const b = req.body || {};
+  const uid = req.session.userId;
+  // M62: country and currency are set independently — only the fields sent change. An explicit currency is kept when
+  // the country changes (a bank account has its own currency); with none set, the country's currency applies.
+  const _norm = v => (v == null || v === '' ? null : String(v).trim().toUpperCase());
+  if ('country' in b) {
+    const country = _norm(b.country);
+    if (country != null && !/^[A-Z]{2}$/.test(country)) return res.status(400).json({ error: 'country must be a 2-letter country code.' });
+    await _mutateSettingsBlob(uid, 'pers_bank_country', null, () => country);
+  }
+  if ('currency' in b) {
+    const currency = _norm(b.currency);
+    if (currency != null && !/^[A-Z]{3}$/.test(currency)) return res.status(400).json({ error: 'currency must be a 3-letter currency code.' });
+    await _mutateSettingsBlob(uid, 'pers_bank_currency', null, () => currency);
+  }
+  res.json({ ok: true, country: (await _providerBlobE(uid, 'pers_bank_country', null)).value || null, currency: await _persBankCurrency(uid) });
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -8604,7 +8633,7 @@ async function belvoCall(pathname, opts = {}) {
 // in) / 'OUTFLOW' (money out) and `amount` is positive - mirror Plaid's convention (debit = money out,
 // credit = money in). Idempotent on Belvo's stable transaction `id` (belvo_txn_id). Pure + exported so
 // the mapping is unit-tested without a live Belvo call.
-function belvoTxnToRow(t, uid, entityId, personal = false) {
+function belvoTxnToRow(t, uid, entityId, personal = false, fallbackCurrency = null) {
   const typ = String((t && t.type) || '').toUpperCase();
   const _d = (t && (t.value_date || t.accounting_date)) || new Date().toISOString().slice(0, 10);
   return {
@@ -8615,6 +8644,8 @@ function belvoTxnToRow(t, uid, entityId, personal = false) {
     tx_date: String(_d).slice(0, 10),
     category: (t && t.category) || 'Other',
     source: 'banking', belvo_txn_id: t && t.id,
+    // M62: a line in Personal carries a currency — the bank's own, else the person's bank currency.
+    ...(entityId == null && ((t && t.currency) || fallbackCurrency) ? { currency: String((t && t.currency) || fallbackCurrency).toUpperCase() } : {}),
   };
 }
 
@@ -8684,6 +8715,7 @@ app.post('/api/belvo/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
   const { uid, eid, personal } = _bankCtx(req);   // M60
+  const _pCur = eid == null ? await _persBankCurrency(uid) : null;   // M62
   const { value } = await _providerBlobE(uid, 'belvo_conn', eid);
   const links = (value && value.links) || [];
   if (!links.length) return res.status(400).json({ error: 'No linked LatAm bank. Link one first.' });
@@ -8705,7 +8737,7 @@ app.post('/api/belvo/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
           if (!t || !t.id) continue;
           const { rows: [dup] } = await pool.query(`SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'belvo_txn_id'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`, [uid, String(t.id), eid]);   // M60: this scope only
           if (dup) continue;
-          await db.insert('personal_transactions', belvoTxnToRow(t, uid, eid, personal));
+          await db.insert('personal_transactions', belvoTxnToRow(t, uid, eid, personal, _pCur));
           added++;
         }
         hasMore = !Array.isArray(j) && !!j.next;

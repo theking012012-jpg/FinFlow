@@ -37,6 +37,9 @@ run('M56 — bank lines stay in their own scope', async ({ newOwner, c, eq, A })
 
   // Control: an account with no business — the bank feed IS the personal feed (by design).
   const n = await newOwner('M56N', []);
+  // M62: a line that lands in Personal must know its currency — refused until the bank's country or currency is set.
+  eq('no business, no bank currency yet: refused (M62)', (await n.http.post('/api/banking', { desc: 'NO CURRENCY', amount: 9, type: 'debit', date: '2026-07-10' })).status, 400);
+  await n.J('PUT', '/api/personal-bank?scope=personal', { country: 'US' });
   const r = await n.http.post('/api/banking', { desc: 'COFFEE', amount: 12, type: 'debit', date: '2026-07-10' });
   eq('no business: bank line accepted into the personal feed', r.status, 201);
   eq('…and listed in Personal', (await n.J('GET', '/api/personal-transactions')).map(t => t.description), ['COFFEE']);

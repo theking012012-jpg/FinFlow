@@ -220,8 +220,22 @@
     return v === 'credit' || v === 'income' ? 'income' : 'expense';
   };
 
+  // M62: the currency a bank in this country books in — the default for the Personal "Your bank" card (the person can
+  // change it: a bank account has its own currency). One table for the server and the card; it covers every country the
+  // app offers. Unknown → null (the caller asks, never guesses).
+  var BANK_COUNTRY_CURRENCY = {
+    CA: 'CAD', US: 'USD', MX: 'MXN', GT: 'GTQ', BZ: 'BZD', SV: 'USD', HN: 'HNL', NI: 'NIO', CR: 'CRC', PA: 'PAB',
+    BR: 'BRL', AR: 'ARS', CO: 'COP', CL: 'CLP', PE: 'PEN', VE: 'VES', EC: 'USD', BO: 'BOB', PY: 'PYG', UY: 'UYU',
+    GY: 'GYD', SR: 'SRD', TT: 'TTD', JM: 'JMD', BB: 'BBD', BS: 'BSD', DO: 'DOP', HT: 'HTG', GD: 'XCD', LC: 'XCD',
+    VC: 'XCD', AG: 'XCD', DM: 'XCD', KN: 'XCD', CU: 'CUP', PR: 'USD', GB: 'GBP', IE: 'EUR', FR: 'EUR', DE: 'EUR',
+    ES: 'EUR', PT: 'EUR', IT: 'EUR', NL: 'EUR', BE: 'EUR', SE: 'SEK', NO: 'NOK', DK: 'DKK', FI: 'EUR', PL: 'PLN',
+    CH: 'CHF', AT: 'EUR', GR: 'EUR',
+  };
+  var currencyForCountry = function (iso) { return BANK_COUNTRY_CURRENCY[String(iso || '').toUpperCase()] || null; };
+
   return {
     personalTxType: personalTxType,
+    currencyForCountry: currencyForCountry,
     deductibleFactor: deductibleFactor,
     normalizeDeductible: normalizeDeductible,
     RECOGNIZED_BILL_STATUSES: RECOGNIZED_BILL_STATUSES,

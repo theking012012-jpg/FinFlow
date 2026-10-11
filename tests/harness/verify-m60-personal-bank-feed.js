@@ -90,6 +90,10 @@ run('M60 — Personal has its own bank feed, walled from every business', async 
 
     // ── Statement import: the same file into A, then into Personal (bank country GB = day-first) ──
     eq('personal bank country saved', ((await o.http.put('/api/personal-bank' + P, { country: 'gb' })).json || {}).country, 'GB');
+    // M62: a personal bank line carries its bank's currency, which defaults to the bank country's (GB → GBP). This person
+    // holds a USD account at a UK bank, so every personal figure below stays in one currency (USD). The date order
+    // still follows the bank country (GB, day-first).
+    eq('personal bank currency set to USD', ((await o.http.put('/api/personal-bank' + P, { currency: 'USD' })).json || {}).currency, 'USD');
     const CSV = 'Date,Description,Amount\n03/04/2026,COFFEE,-22.40\n03/04/2026,REFUND,300.00\n';
     const impA = (await o.http.post('/api/banking/import?entity_id=' + eA, { format: 'csv', content: CSV })).json || {};
     eq('A imports the statement', [impA.imported, impA.skipped], [2, 0]);

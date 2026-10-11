@@ -775,3 +775,14 @@ behaviour harnesses).
 
 Data: matches or reconcile stamps already made across scopes are not changed (Rule 8). Once the owner wipes the
 database, there are none.
+
+### Found while preparing the Cowork end-to-end test (2026-10-11), not fixed
+
+| # | Defect | Where | Evidence |
+|---|---|---|---|
+| M62 | Personal bank lines from a **statement import** or a **manual bank line** are stored with **no currency**. The Personal page reads a missing currency as USD, so a person whose bank is in TT$, € etc. would see those lines counted as US$ in every personal total. Plaid-synced lines do carry the bank's currency (`iso_currency_code`). The personal bank country is already stored (`pers_bank_country`), so the currency could follow it, or be asked once on import. | `server.js` `POST /api/banking/import` and `POST /api/banking` with `scope=personal` (M60) | EXECUTED (scratch, dry run of the Cowork plan): the personal import rows came back with `currency: null`; every other personal row carried `USD`. |
+
+The same dry run executed the whole Cowork plan (two businesses, payroll paid / remitted / voided, FIFO stock, bank
+import and reconcile, personal feed, accountant portal) against hand-computed values: every figure matched. The one
+apparent mismatch, overdue 1,200 vs a narrow hand value of 1,500, is by design. Unapplied credit notes net against
+the past-due total, as in an aged-receivables report.

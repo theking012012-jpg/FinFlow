@@ -2701,8 +2701,17 @@ function updateCashflow(d=getPeriodData()){
   // cf-avg and cf-runway derive from the NET, so they move to cash with it — leaving them on
   // d.profit would reintroduce the accrual/cash mix inside a single card.
   const _cashNet = _cash ? _cash.net : null;
-  document.getElementById('cf-avg').textContent = (_cashNet!=null && d.months>0) ? S(Math.round(_cashNet/d.months)) : '…';
-  document.getElementById('cf-avg-lbl').textContent=d.months===1?'Net this month':'Avg monthly net';
+  // M46 (money audit 2026-10-09): the average is over the months that have HAPPENED in the period (the window's
+  // elapsedMonths — the same divisor the expense engine uses), not its nominal length: on 25 July the Year view
+  // divided seven months of cash by 12.
+  const _cfMonths = (()=>{ try{
+    const _c=_fyContext().curFyIdx;
+    if(currentPeriod==='month') return 1;
+    if(currentPeriod==='quarter') return Math.max(1, Math.min(3, _c - Math.floor(_c/3)*3 + 1));   // months of this quarter so far
+    return Math.max(1, _c + 1);                                                                 // fiscal months so far (incl. this one)
+  }catch(_){ return d.months||1; } })();
+  document.getElementById('cf-avg').textContent = (_cashNet!=null && _cfMonths>0) ? S(Math.round(_cashNet/_cfMonths)) : '…';
+  document.getElementById('cf-avg-lbl').textContent=_cfMonths===1?'Net this month':'Avg monthly net';
   // Fixed vs variable from REAL categorised expense rows (no fabricated ratio).
   // Fixed = recurring-overhead categories; variable = everything else. Honest
   // empty state when there are no expense rows.
@@ -2722,7 +2731,7 @@ function updateCashflow(d=getPeriodData()){
   // True runway = cash balance ÷ monthly burn. We don't track a cash balance,
   // so don't fabricate a number: report cash-flow status honestly instead.
   // F57: runway is a CASH statement, so it reads the cash net, not the accrual profit.
-  const _monthlyNet = (_cashNet==null) ? null : (d.months>0 ? _cashNet/d.months : _cashNet);
+  const _monthlyNet = (_cashNet==null) ? null : (_cfMonths>0 ? _cashNet/_cfMonths : _cashNet);   // M46
   document.getElementById('cf-runway').textContent = _monthlyNet==null ? '…' : (_monthlyNet>=0 ? 'Cash-flow positive' : '—');
   // Income sources bars
   // Income sources — built from real invoice data grouped by client

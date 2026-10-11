@@ -16,7 +16,8 @@
  *     1099 / W-2       FY2026 recognised runs = 550 (approved 300 + paid 250)   BUG: 1637
  *     Tax-Deductible   FY2026: Office 8 × 'half' = 4                   BUG ('yes' only, all time): 10
  *     Expense Report  FY2026 recorded expense rows: Office 8 (the 2025 Software 10 excluded)
- *     Income Tax Estimate taxable = revenue 745 − deductible 4 = 741 (control — already canonical)
+ *     Income Tax Estimate taxable = revenue 745 − (all costs 614 − non-deductible half of Office 8 = 4) = 135
+ *                      (M6 owner decision: every ordinary cost is deducted). OLD RULE / BUG: 745 − 4 = 741
  *     Cash Flow BUG (all time): out 292 + 888 (2025 paid run) + 10 (2025 expense) = 1190
  *
  *   node -r ./tests/harness/clock.js tests/harness/verify-reports-parity.js
@@ -85,7 +86,7 @@ async function seed({ http, client }) {
     const er = await gen('Expense Report');
     A('Expense Report: FY2026 recorded expenses = Office 8 only (prior-year Software 10 excluded)', /Office/.test(er) && !/Software/.test(er), er.slice(0, 300));
     const it = await gen('Income Tax Estimate');
-    A('Income Tax Estimate: taxable 741 = 745 − 4 (control)', near(after(it, 'Taxable Income'), 741), it.slice(0, 260));
+    A('Income Tax Estimate: taxable 135 = 745 − (614 − 4) (M6; old rule gave 741)', near(after(it, 'Taxable Income'), 135), it.slice(0, 260));
   } catch (e) {
     fail++; console.log('  FATAL: ' + (e && e.stack || e));
   } finally {

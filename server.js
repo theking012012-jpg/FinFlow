@@ -6810,8 +6810,9 @@ app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
     const fyStartIdx = Number.isInteger(_fy) && _fy >= 0 && _fy <= 11 ? _fy : 0;
     const books = await computeBooks(uid, eid, 'year', null, fyStartIdx);
     const revenue = books.revenue;
-    const deductible = books.tax.deductible;
-    const taxableIncome = Math.max(0, revenue - deductible);
+    // M6: deductions = every ordinary cost (COGS + opex) less non-deductible expense rows; one computeBooks figure.
+    const deductible = books.tax.deductions;
+    const taxableIncome = books.tax.taxableIncome;
     // F76 defect #1 / D1 — use the OWNER'S saved rate (Settings → tax_rate, a 0–100 %), never a
     // hardcoded guess. FinFlow holds no tax knowledge (D1); the rate is the user's own number. The
     // richer Income Tax Estimate worksheet already computes client-side from the user's tax lines —
@@ -6828,6 +6829,7 @@ app.get('/api/tax-filing', requireAuth, wrap(async (req, res) => {
 
     res.json({
       revenue, deductible, taxableIncome,
+      deductions: deductible, nonDeductibleExpenses: books.tax.nonDeductibleExpenses, netProfit: books.netProfit,
       estimatedTax, quarterly,
       rate,
     });
@@ -11361,6 +11363,15 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   const _bdRest = _bdSorted.slice(_bdKeep).reduce((s, [, v]) => s + v, 0);
   if (Math.abs(_bdRest) > 0.005) _bdRows.push({ category: 'Other', amount: r2(_bdRest) });
   const expenseBreakdown = { rows: _bdRows, total: r2(opex), complete: breakdownComplete };
+  // ── M6 (money audit 2026-10-09; owner decision) — TAXABLE INCOME = revenue − every ordinary cost ──
+  // Was revenue − (flagged expense rows only): payroll, COGS, bills, orphan payments and journal expenses were
+  // never deducted, so the estimate taxed money already spent. Now: deductions = COGS + opex (all of it), less
+  // the NON-deductible part of the expense rows (each row keeps its own yes / half / no flag via _dedFactor).
+  // taxable = max(0, revenue − deductions) = net profit + non-deductible expense rows. One definition, read by
+  // /api/tax-filing (owner worksheet) and the accountant Tax Summary. Native currency (as the deductible leg).
+  const _nonDeductible = r2(sum(_dedRows, e => num(e.amount) * (1 - _dedFactor(e))));
+  const _taxDeductions = r2(num(cogs) + num(opex) - _nonDeductible);
+  const _taxableIncome = r2(Math.max(0, num(revenue) - _taxDeductions));
 
   // ── F34 B (surface 3) — CONVERTED recent business transactions (mirrors the client
   // updateTransactions preview: recent recognized invoices + expenses). Each row's amount converts at
@@ -11384,7 +11395,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
     fxCoverage,   // F34: { display, complete, unconvertible[], convertedRows, totalRows } — complete=false ⇒ partial P&L
     // F139: single-source income-tax deductible — period+entity scoped, native. Read by both the
     // client worksheet (GET /api/tax-filing) and the accountant Tax Summary so taxable reconciles.
-    tax: { deductible, deductibleFull, deductibleHalf },
+    tax: { deductible, deductibleFull, deductibleHalf, deductions: _taxDeductions, nonDeductibleExpenses: _nonDeductible, taxableIncome: _taxableIncome },
     parts: {
       issuedInvoices: r2(issuedInvoices), salesReceipts: r2(salesReceipts),
       expenses: r2(expensesTotal), issuedBills: r2(issuedBillsTotal), paymentsMade: r2(paymentsMadeTotal), payroll: payrollTotal,

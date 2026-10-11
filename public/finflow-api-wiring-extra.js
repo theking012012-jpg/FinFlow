@@ -1176,7 +1176,7 @@
             + tiles([
               tile('Estimated Tax', `<span id="tl-total">${m(total)}</span>`, 'sum of all lines', 'var(--red)'),
               tile('Per Quarter', `<span id="tl-quarter">${m(q)}</span>`, 'set aside each Q', 'var(--red)'),
-              tile('Taxable Income', m(window._taxTaxable || 0), 'revenue − deductibles'),
+              tile('Taxable Income', m(window._taxTaxable || 0), 'revenue − costs (non-deductible expenses added back)'),
               tile('Revenue', m(window._taxRevenue || 0), 'gross income'),
             ])
             + hdr('Tax lines')

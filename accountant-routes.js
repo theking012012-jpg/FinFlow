@@ -869,7 +869,7 @@ If you cannot find a field, use null. Be concise.`;
     // total never leaks a hidden entity and reconciles with the owner's dashboard by construction.
     const _aggregateBooks = (arr) => {
       const agg = { revenue:0, cogs:0, grossProfit:0, opex:0, netProfit:0, outstanding:0,
-                    tax:{ deductible:0, deductibleFull:0, deductibleHalf:0 }, parts:{ payroll:0 } };
+                    tax:{ deductible:0, deductibleFull:0, deductibleHalf:0, deductions:0, nonDeductibleExpenses:0, taxableIncome:0 }, parts:{ payroll:0 } };
       for (const b of (arr || []).filter(Boolean)) {
         agg.revenue     += (+b.revenue     || 0);
         agg.cogs        += (+b.cogs        || 0);
@@ -881,6 +881,9 @@ If you cannot find a field, use null. Be concise.`;
           agg.tax.deductible     += (+b.tax.deductible     || 0);
           agg.tax.deductibleFull += (+b.tax.deductibleFull || 0);
           agg.tax.deductibleHalf += (+b.tax.deductibleHalf || 0);
+          agg.tax.deductions            += (+b.tax.deductions            || 0);   // M6
+          agg.tax.nonDeductibleExpenses += (+b.tax.nonDeductibleExpenses || 0);
+          agg.tax.taxableIncome         += (+b.tax.taxableIncome         || 0);
         }
         if (b.parts && typeof b.parts === 'object') {
           for (const [k, v] of Object.entries(b.parts)) {
@@ -996,6 +999,10 @@ If you cannot find a field, use null. Be concise.`;
         deductible:     books.tax.deductible.toFixed(2),
         deductibleFull: books.tax.deductibleFull.toFixed(2),
         deductibleHalf: books.tax.deductibleHalf.toFixed(2),
+        // M6: taxable income = revenue − every ordinary cost (COGS + opex) + the non-deductible expense rows —
+        // the SAME computeBooks figure the owner's Income Tax worksheet reads from /api/tax-filing.
+        taxDeductions:  Number(books.tax.deductions || 0).toFixed(2),
+        taxableIncome:  Number(books.tax.taxableIncome || 0).toFixed(2),
         totalIncome:   books.revenue.toFixed(2),  // legacy alias → canonical accrual (issue-based) revenue
         totalExpenses: books.opex.toFixed(2),      // legacy alias → now canonical OpEx
         parts:         books.parts,

@@ -59,17 +59,19 @@ Status (C = Cowork item; each fix is one commit with its harness, RED on the old
 | C15 | 8.1 | No real P&L export (CSV "Nothing to export", PDF = print dialog) | open |
 | C16 | 2.5a | Overdue bill row says "unpaid" | **Fixed** `315e42f` |
 | C17 | (confusing) | Match-bill dropdown defaults to the wrong bill | open |
-| C18 | (confusing) | False "exceeds remaining balance" when amount == balance | open |
+| C18 | (confusing) | False "exceeds remaining balance" when amount == balance | **Not reproduced** — the only such warning (Record Payment, index.html `_rpCheckOverpay`) allows 0.005 tolerance and passes an exact balance. Need the invoice, its payments and the amount typed to reproduce |
 | C19 | (confusing) | Vendors / Customers / Items pages stay at 0 with data | open |
 
 ### Group 3 — layout and wording
 
 C20 onboarding window cut off at ~700 px tall · C21 inventory + In / − Out hidden at ~656 px · C22 business switcher
-shows "undefined" · C23 `/accountant-register` shows the home page (form is at `/join`) · C24 connection screens show
+shows "undefined" (**fixed** `037cb8a`) · C23 `/accountant-register` shows the home page (form is at `/join`) · C24 connection screens show
 server setting names (e.g. PAYPAL_CLIENT_ID) and "Available" for unconfigured providers; Finch raw "customer_id: 1"
 error · C25 phone-width squeezing (Invoices header, Personal title) · C26 "Start free trial" opens Sign-in · C27 plan
-badge flips Pro/Business · C28 two contradicting commission tables · C29 audit "Payroll" filter empty · C30 native
+badge flips Pro/Business (**fixed** `037cb8a`) · C28 two contradicting commission tables · C29 audit "Payroll" filter empty · C30 native
 browser pop-ups (accountant sign-up step 2, Shopify connect).
+
+**Group 3 status:** C22 and C27 **fixed** `037cb8a`. The rest are open.
 
 Script errors to correct in `COWORK_TEST_SCRIPT.md` before the next run: 2.6b (1,920 + 1,050 = 2,970, not 3,970); 2.1 I3
 assumes a Draft status the UI doesn't offer; 4.6a assumes an all-businesses view the app doesn't have.

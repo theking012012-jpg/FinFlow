@@ -2620,6 +2620,7 @@ function updateDashboard(d=getPeriodData()){
   document.getElementById('d-exp').textContent    = _fxPending ? '…' : _fmtMoneyAbbr(_ddExp);
   document.getElementById('d-profit').textContent = _fxPending ? '…' : _fmtMoneyAbbr(_ddProfit);
   if(_fxPending) _applyConvertedKPIs(window._displayCurrency);
+  else _applyServerBooks();   // money audit 2026-10-09 (M10/M29/M37/M38/M39): the native path reads the server books too
   document.getElementById('d-chart-title').textContent='Revenue vs Expenses — '+d.label;
   // Prior-period baseline from the SAME windowed compute (same basis, payroll included) — NOT
   // the old getPeriodData REV[]/EXP[] arrays, which used a different (payroll-excluded) basis
@@ -5359,6 +5360,59 @@ async function _applyConvertedKPIs(ccy){
     _FX_CARDS.forEach(id=>dash(id,hint));
   }
 }
+// Money audit 2026-10-09 — ONE source for the native dashboard. The display-currency path above already paints
+// from /api/reports (computeBooks); the NATIVE path recomputed the same books in the browser — a second
+// implementation that drifted: payroll dropped from the monthly arrays (M10), future-dated rows in the chart
+// (M38), expense rows dated by expense_date only (M39), a profit delta comparing net-with-COGS to a prior period
+// without COGS (M29), and the river's third profit figure (M37). The browser's figures stay as the instant first
+// paint; this overlay then replaces the headline cards, their "vs prior period" deltas, and the monthly REV[]/EXP[]
+// arrays (which the overview chart, cash chart, river, AI insights and health score all read) with the server's.
+// A stale response (entity switch, period change, currency change mid-flight) is dropped. On a failed fetch the
+// provisional figures stay (same basis); nothing is fabricated.
+let _serverBooksSeq = 0;
+async function _applyServerBooks(){
+  const seq = ++_serverBooksSeq;
+  const period = (typeof currentPeriod!=='undefined') ? currentPeriod : 'year';
+  const _fyNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const fyStart = Math.max(0,_fyNames.indexOf((document.getElementById('s-fy')||{}).value||'January'));
+  const ent = (typeof ENTITIES!=='undefined'?ENTITIES:(window.ENTITIES||[])).find(e=>e.active);
+  const eid = ent && ent._dbId;
+  const q = (p, mi) => { const qs=new URLSearchParams({period:p, fyStart:String(fyStart)}); if(mi!=null) qs.set('monthIdx', String(mi)); if(eid) qs.set('entity_id', String(eid)); return '/api/reports?'+qs.toString(); };
+  const mi = _periodIntentIdx(period);
+  let priorIdx = null;
+  if(period==='month') priorIdx = (typeof currentMonthIdx!=='undefined' ? currentMonthIdx : _fyContext().curFyIdx) - 1;
+  else if(period==='quarter') priorIdx = _fyContext().curFyIdx - 3;
+  const stale = () => seq!==_serverBooksSeq || !!window._displayCurrency || ((typeof currentPeriod!=='undefined'?currentPeriod:'year')!==period);
+  try{
+    const [cur, prior, year] = await Promise.all([
+      fetch(q(period, mi), {credentials:'include'}).then(r=>r.ok?r.json():null),
+      (priorIdx!=null && priorIdx>=0) ? fetch(q(period, priorIdx), {credentials:'include'}).then(r=>r.ok?r.json():null) : Promise.resolve(null),
+      period==='year' ? Promise.resolve(null) : fetch(q('year', null), {credentials:'include'}).then(r=>r.ok?r.json():null),
+    ]);
+    if(stale() || !cur) return;
+    const _set=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=_fmtMoneyAbbr(v);};
+    _set('d-rev', cur.revenue||0);
+    _set('d-exp', cur.expenses||0);
+    _set('d-profit', cur.netProfit||0);
+    // Outstanding stays EXACT, as the native card shows it (money(), not abbreviated) — it is the AR balance.
+    { const _el=document.getElementById('d-outstanding'); if(_el) _el.textContent=S(cur.outstanding||0); }
+    window._serverBooks = { period, monthIdx: mi, revenue: cur.revenue||0, cogs: cur.totalCOGS!=null?cur.totalCOGS:(cur.cogs||0), expenses: cur.expenses||0, netProfit: cur.netProfit||0, outstanding: cur.outstanding||0, overdue: cur.overdue||0 };
+    // M29: the delta compares like with like — both periods from the server, both net of COGS.
+    if(prior){
+      const rc=chg(cur.revenue||0, prior.revenue||0), ec=chg(cur.expenses||0, prior.expenses||0, true), pc=chg(cur.netProfit||0, prior.netProfit||0);
+      set('d-rev-chg',rc.txt,rc.cls); set('d-exp-chg',ec.txt,ec.cls); set('d-profit-chg',pc.txt,pc.cls);
+    }
+    // M10/M38/M39: the monthly arrays are the server's fiscal-year buckets (same for every period view).
+    const mon = (cur.monthly && cur.monthly.revByMonth) ? cur.monthly : (year && year.monthly);
+    if(mon && Array.isArray(mon.revByMonth) && mon.revByMonth.length===12 && typeof window._setMonthlyArrays==='function'){
+      window._setMonthlyArrays(mon.revByMonth, mon.expByMonth);
+      if(typeof updateCharts==='function'){ try{ updateCharts(); }catch(_){} }
+      if(typeof buildRiver==='function'){ try{ buildRiver(getPeriodData()); }catch(_){} }
+    }
+  }catch(e){ console.warn('[dashboard] server books overlay failed — provisional figures kept:', e && e.message); }
+}
+window._applyServerBooks = _applyServerBooks;
+
 // F34 B surface 1 — overlay the overview chart with the server's CONVERTED monthly buckets. Updates
 // the Chart.js datasets ONLY (never REV/EXP/MONTHS globals, so native period surfaces stay native and
 // there's no double-conversion). No rate for the pair (monthly.complete false) ⇒ leave the native
@@ -6651,6 +6705,14 @@ function buildRiver(d){
   const wrap=document.getElementById('river-wrap');
   if(!wrap)return;
   if(wrap.offsetWidth===0||wrap.offsetParent===null)return;
+  // M37 (money audit 2026-10-09): the river is NOT a third profit figure. Its totals are the dashboard's own
+  // server books for the same period (revenue · COGS + operating expenses · net profit) — it used the monthly
+  // arrays alone, with no COGS and (pre-M10) no payroll. Category ribbons keep their split; "Other" carries the
+  // rest (payroll runs, COGS, bills), so the ribbons always sum to the costs shown.
+  const _sb = window._serverBooks;
+  if (d && _sb && _sb.period === ((typeof currentPeriod!=='undefined')?currentPeriod:'year') && (_sb.monthIdx == null || _sb.monthIdx === _periodIntentIdx(_sb.period))) {
+    d = Object.assign({}, d, { rev: _sb.revenue, exp: (_sb.cogs||0) + (_sb.expenses||0), profit: _sb.netProfit });
+  }
   // Guard: skip render if any required input is NaN/undefined/non-finite.
   // Otherwise SVG path math produces NaN coords which Chrome logs as
   // "<path> attribute d: Expected number, ..." spam in the console.

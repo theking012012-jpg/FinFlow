@@ -58,7 +58,7 @@ Status (C = Cowork item; each fix is one commit with its harness, RED on the old
 | C14 | 3.4 | P&L has no monthly table; Year chart starts in May (March missing) | open |
 | C15 | 8.1 | No real P&L export (CSV "Nothing to export", PDF = print dialog) | open |
 | C16 | 2.5a | Overdue bill row says "unpaid" | **Fixed** `315e42f` |
-| C17 | (confusing) | Match-bill dropdown defaults to the wrong bill | open |
+| C17 | (confusing) | Match-bill dropdown defaults to the wrong bill | **Fixed** `2c4f7a2` |
 | C18 | (confusing) | False "exceeds remaining balance" when amount == balance | **Not reproduced** — the only such warning (Record Payment, index.html `_rpCheckOverpay`) allows 0.005 tolerance and passes an exact balance. Need the invoice, its payments and the amount typed to reproduce |
 | C19 | (confusing) | Vendors / Customers / Items pages stay at 0 with data | open |
 

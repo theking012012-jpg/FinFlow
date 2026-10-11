@@ -10261,6 +10261,17 @@ async function _purchaseLayers(pool, inventoryId) {
   return rows;
 }
 
+// C7: the value of the stock still on hand — the purchase layers FIFO has not consumed yet, at their own cost. The
+// same layers the Balance Sheet's Inventory line carries (Dr 1200 on purchase, Cr 1200 by COGS on sale).
+async function fifoRemainingValue(pool, inventoryId) {
+  const purchases = await _purchaseLayers(pool, inventoryId);
+  const { rows: [{ sold }] } = await pool.query(
+    `SELECT COALESCE(SUM(quantity),0) AS sold FROM inventory_movements WHERE inventory_id=$1 AND type IN ('sale','adjustment')`, [inventoryId]);
+  const bought = purchases.reduce((a, b) => a + (parseFloat(b.quantity) || 0) * (parseFloat(b.unit_cost) || 0), 0);
+  const used = fifoConsume(purchases, 0, parseFloat(sold) || 0).cogs;
+  return Math.max(0, Math.round((bought - used) * 100) / 100);
+}
+
 // Point-of-sale FIFO: cost the NEW quantity, skipping layers consumed by prior sales.
 async function calculateFIFOCOGS(pool, inventoryId, quantitySold) {
   const purchases = await _purchaseLayers(pool, inventoryId);
@@ -12109,9 +12120,16 @@ app.get('/api/cogs', requireAuth, wrap(async (req, res) => {
   // page's Gross Profit mixed two bases and two scopes.
   const _books = await computeBooks(uid, eid, _bkPeriod, null, _bkFy, _bkMi);
   const revenue = Math.round((Number(_books.revenue) || 0) * 100) / 100;
+  // C7: stock on hand at FIFO cost, for the Inventory page's value card (it multiplied units by the item's CURRENT cost
+  // field: 5 units at 15 = 75, while the Balance Sheet carried the layers actually left, 5 at 18 = 90).
+  const { rows: invItems } = await pool.query(
+    `SELECT id FROM inventory WHERE user_id = $1 AND ($2::int IS NULL OR entity_id IS NULL OR entity_id = $2)`, [uid, eid]);
+  let inventoryValue = 0;
+  for (const it of invItems) inventoryValue += await fifoRemainingValue(pool, it.id);
+  inventoryValue = Math.round(inventoryValue * 100) / 100;
   res.json({
     totalCOGS, grossProfit: Math.round((revenue - totalCOGS) * 100) / 100, revenue,
-    breakdown, uncoveredItems, cogsMethod: 'fifo',
+    breakdown, uncoveredItems, cogsMethod: 'fifo', inventoryValue,
   });
 }));
 

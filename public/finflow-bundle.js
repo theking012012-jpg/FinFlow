@@ -1207,7 +1207,10 @@
       // KPI cards: Total SKUs · Inventory value (units × cost) · Low stock · COGS
       const _invKpi = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
       _invKpi('inv-skus', window.inventory.length);
-      _invKpi('inv-value', S(window.inventory.reduce((s, i) => s + (parseFloat(i.units) || 0) * (parseFloat(i.cost) || 0), 0)));
+      // C7: stock on hand at FIFO cost from the server (/api/cogs inventoryValue) — the Balance Sheet's figure. It was
+      // units × the item's current cost field (75 vs the Balance Sheet's 90). "—" until loaded, never a different number.
+      _invKpi('inv-value', window._inventoryValue != null ? S(window._inventoryValue) : '—');
+      if (window._inventoryValue == null && typeof window.loadCOGS === 'function') { try { window.loadCOGS(); } catch (e) {} }
       _invKpi('inv-lowstock', lowCount);
       // F-K1: COGS is cost of goods SOLD (FIFO, server /api/cogs), NOT inventory value (units×cost).
       // The old units×cost duplicated the Inventory-value KPI and contradicted the FIFO COGS Summary.

@@ -570,6 +570,7 @@ window.switchEntity=async function(idx){
   // this gap; this is the belt to its suspenders, closing the window for any surface that paints before settle.
   try {
     window._realInvoices = []; window.userInvoices = []; window._realExpenses = [];
+    window._inventoryValue = null;   // C7: the previous business's stock value
     window.receipts = []; window.bizExpenses = [];
     if (typeof updateDashboard === 'function') updateDashboard();
   } catch(_clrE){}

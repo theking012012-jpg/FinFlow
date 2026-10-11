@@ -688,6 +688,9 @@ async function loadCOGS(){
     // Stash the entity-scoped FIFO total for the canonical Net (Revenue − COGS − OpEx) used by
     // the dashboard / AI / health score, then re-render them so COGS flows through immediately.
     window._cogsTotal=parseFloat(data.totalCOGS)||0;
+    // C7: stock on hand at FIFO cost — the Inventory value card shows this (one figure with the Balance Sheet).
+    window._inventoryValue=(data.inventoryValue!=null)?(parseFloat(data.inventoryValue)||0):null;
+    { const _iv=document.getElementById('inv-value'); if(_iv && window._inventoryValue!=null) _iv.textContent=S(window._inventoryValue); }
     ['updateDashboard','updateAI','updateHealthScore'].forEach(fn=>{if(typeof window[fn]==='function'){try{window[fn]();}catch(e){}}});
     const totalEl=document.getElementById('cogs-total');
     const revEl=document.getElementById('cogs-revenue');

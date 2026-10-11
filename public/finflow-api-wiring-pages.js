@@ -755,11 +755,11 @@
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(b.amount)}</span>
             <span style="color:${b.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.due_date,{year:true}):(b.due_date||''))||'—')}</span>
-            <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${cls[b.status?.toLowerCase()] || 'b-amber'}">${esc(b.status)}</span></span>
+            <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}${window.FinFlowDates.isInventoryBill(b) ? '<span class="badge b-blue" title="Stock bought on credit — the cost is inventory, reaching the P&amp;L as COGS when sold">Stock</span> ' : ''}<span class="badge ${cls[b.status?.toLowerCase()] || 'b-amber'}">${esc(b.status)}</span></span>
             <div style="display:flex;gap:4px">
               <button class="btn btn-ghost btn-sm" onclick="viewBill(${b.id})">View</button>
               ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
-              <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>
+              ${window.FinFlowDates.isInventoryBill(b) ? '' : `<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>`}
             </div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No bills yet</div>';

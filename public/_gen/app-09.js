@@ -565,7 +565,8 @@ function openStockInModal(idx){
   if(sub&&item)sub.textContent='Stock in for '+esc(item.name||'');
   const idxEl=document.getElementById('si-item-idx');
   if(idxEl)idxEl.value=idx;
-  ['si-qty','si-cost','si-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['si-qty','si-cost','si-notes','si-vendor','si-due'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  { const _f=document.getElementById('si-funding'); if(_f) _f.value='cash'; _siFundingChange(); }   // M34
   { const _d=document.getElementById('si-date'); if(_d) _d.value=(window.todayLocal?window.todayLocal():new Date().toISOString().slice(0,10)); }   // M32: the business day, editable
   window._stockInIdemKey=null;   // C1 Wave 1b: fresh submit-intent → never reuses the last token
   openModal('stock-in-modal');
@@ -584,6 +585,10 @@ function openStockOutModal(idx){
   window._stockOutIdemKey=null;   // C1 Wave 1b: fresh submit-intent → never reuses the last token
   openModal('stock-out-modal');
 }
+function _siFundingChange(){   // M34: supplier + due date only for a purchase on credit
+  const on=(document.getElementById('si-funding')||{}).value==='bill';
+  const g=document.getElementById('si-bill-fields'); if(g) g.classList.toggle('hidden',!on);
+}
 async function submitStockIn(){
   const idx=parseInt(document.getElementById('si-item-idx')?.value);
   const qty=parseFloat(document.getElementById('si-qty')?.value||0);
@@ -592,6 +597,10 @@ async function submitStockIn(){
   if(isNaN(idx)||idx<0){notify('Invalid item',true);return;}
   if(!qty||qty<=0){notify('Enter a valid quantity',true);return;}
   if(!cost||cost<0){notify('Enter a valid unit cost',true);return;}
+  const funding=(document.getElementById('si-funding')||{}).value==='bill'?'bill':'cash';   // M34
+  const vendor=(document.getElementById('si-vendor')?.value||'').trim();
+  const due_date=document.getElementById('si-due')?.value||undefined;
+  if(funding==='bill'&&!vendor){notify('Enter the supplier for a purchase on credit',true);return;}
   const item=(window.inventory||[])[idx];
   if(!item){notify('Item not found',true);return;}
   // N110: the item's DATABASE id. This sent item.dbId||idx — items carry _dbId, so the array INDEX went
@@ -606,7 +615,7 @@ async function submitStockIn(){
     const res=await fetch('/api/inventory-movements',{
       method:'POST',credentials:'include',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({inventory_id:item._dbId,type:'purchase',quantity:qty,unit_cost:cost,notes,date:(document.getElementById('si-date')?.value||undefined),idempotency_key:window._stockInIdemKey}),
+      body:JSON.stringify({inventory_id:item._dbId,type:'purchase',quantity:qty,unit_cost:cost,notes,date:(document.getElementById('si-date')?.value||undefined),funding,vendor:funding==='bill'?vendor:undefined,due_date:funding==='bill'?due_date:undefined,idempotency_key:window._stockInIdemKey}),
     });
     const data=await res.json();
     if(data.error){notify('⚠ '+data.error,true);return;}
@@ -615,9 +624,10 @@ async function submitStockIn(){
     item.cost=cost;
     item.low=item.units<(item.max||0)*.1;
     closeModal('stock-in-modal');
-    notify(`✓ +${qty} units at ${S(cost)} each`);
+    notify(funding==='bill'?`✓ +${qty} units on credit — bill from ${vendor} added`:`✓ +${qty} units at ${S(cost)} each`);
     if(typeof renderInventory==='function')renderInventory();
     loadCOGS();
+    if(funding==='bill'&&typeof window.refreshFinancials==='function') window.refreshFinancials('expenses');   // M34: the new bill / AP
   }catch(e){notify('Could not record stock in',true);}   // keep _stockInIdemKey for idempotent retry
   finally{window._savingStockIn=false;if(_siBtn)_siBtn.disabled=false;}
 }

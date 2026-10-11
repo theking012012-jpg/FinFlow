@@ -4533,6 +4533,15 @@ app.put('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (
   if (!row) return res.status(404).json({ error: 'not found' });
   const patch = {};
   const b = req.body || {};
+  // M34: a bill created by a stock purchase on credit takes its amount, date and status from that purchase (the
+  // inventory and AP were booked by the movement). Vendor, due date and notes stay editable.
+  if (FinFlowDates.isInventoryBill(row)) {
+    const _num = v => Math.round((parseFloat(v) || 0) * 100);
+    const _changes = (b.amount != null && _num(b.amount) !== _num(row.amount)) || b.line_items != null
+      || (b.issue_date != null && String(b.issue_date).slice(0, 10) !== String(FinFlowDates._toYmd(row.issue_date) || ''))
+      || (b.status != null && String(b.status).toLowerCase() !== String(row.status || '').toLowerCase());
+    if (_changes) return res.status(409).json({ error: 'This bill records a stock purchase, so its amount and date come from the purchase. Correct it with a stock adjustment or a vendor credit.', code: 'INVENTORY_BILL' });
+  }
   // F194 Phase 2b: line_items present ⇒ amount = derived Σ qty×rate (Rule 2). The derived amount
   // is what the F135 paid-flip block below reads (patch.amount), so that path is unaffected.
   const _li = normalizeLineItems(b.line_items);
@@ -4575,7 +4584,7 @@ app.put('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (
       userId: scopeId(req), entityId: row.entity_id, sourceType: 'bill', sourceId: Number(req.params.id),
       date: _bIssue || FinFlowDates._toYmd(row.created_at),
       description: 'Bill - ' + String(patch.vendor != null ? patch.vendor : row.vendor || '').slice(0, 80),
-      recognized: RECOGNIZED_BILL.has(_bStatus),
+      recognized: FinFlowDates.isOpexBill({ ...row, status: _bStatus }),   // M34: a stock purchase's bill never carries an expense entry
       lines: [{ code: '6000', debit: _bAmt, credit: 0 }, { code: '2000', debit: 0, credit: _bAmt }],
     });
   } catch (glErr) { console.error('[GL] bill resync failed (shadow, non-fatal):', glErr && glErr.message); }
@@ -4584,6 +4593,7 @@ app.put('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (
 app.delete('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req, res) => {
   const { rows: [_bold] } = await pool.query('SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   if (!_bold) return res.status(404).json({ error: 'Not found.' });   // cross-tenant / nonexistent id → 404, not fake-success 200
+  if (FinFlowDates.isInventoryBill(rowToObj(_bold))) return res.status(409).json({ error: 'This bill records a stock purchase (the stock is in your inventory). Correct it with a stock adjustment or a vendor credit.', code: 'INVENTORY_BILL' });   // M34
   const _blk = await settlementsBlockingDelete('bill', scopeId(req), req.params.id);   // M2
   if (_blk) return res.status(409).json(_blk);
   await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
@@ -10398,7 +10408,7 @@ async function postSourceLedger(client, { userId, sourceType, row }) {
       lines = [{ code: '1100', debit: amt, credit: 0 }, { code: '4000', debit: 0, credit: amt }];
       break;
     case 'bill':
-      if (!RECOGNIZED_BILL.has(String(row.status || '').toLowerCase()) || !amt) return null;
+      if (!FinFlowDates.isOpexBill(row) || !amt) return null;   // M34: a stock purchase's bill has no expense entry (its movement posts Dr 1200 / Cr 2000)
       date = d10(row.issue_date) || d10(row.created_at);
       description = 'Bill - ' + String(row.vendor || '').slice(0, 80);
       key = 'bill:' + row.id;
@@ -10571,7 +10581,7 @@ async function backfillLedgerForUser(userId, opts = {}) {
   }
   // 4) bills — RECOGNIZED_BILL → Dr Opex / Cr AP at issue_date
   for (const b of await db.allByUser('bills', userId, keep)) {
-    if (!RECOGNIZED_BILL.has(String(b.status || '').toLowerCase())) continue;
+    if (!FinFlowDates.isOpexBill(b)) continue;   // M34: a stock purchase's bill is rebuilt by its movement (Dr 1200 / Cr 2000)
     const amt = parseFloat(b.amount) || 0;
     await post({ entityId: b.entity_id, date: b.issue_date || slice10(b.created_at), description: 'Bill — ' + String(b.vendor || '').slice(0, 80), sourceType: 'bill', sourceId: b.id, idempotencyKey: 'bill:' + b.id, lines: [{ code: '6000', debit: amt, credit: 0 }, { code: '2000', debit: 0, credit: amt }] });
   }
@@ -10852,7 +10862,7 @@ async function glConsolidated(userId, opts = {}) {
       const _bil = await db.allByUser('bills', userId, () => true);
       for (const bl of _bil) {
         const vid = names.get(String(bl.vendor || '').trim().toLowerCase());
-        if (vid != null && vid !== bl.entity_id && RECOGNIZED_BILL.has(String(bl.status || '').toLowerCase())) {
+        if (vid != null && vid !== bl.entity_id && FinFlowDates.isOpexBill(bl)) {   // M34: only an opex bill carries expense to eliminate
           const from = entCur[bl.entity_id] || baseCur;
           const rate = (from === displayCur) ? 1 : pickRate(fxRows, from, displayCur, FinFlowDates._toYmd(bl.issue_date || bl.created_at));
           if (rate != null) { intercompany.expense += (parseFloat(bl.amount) || 0) * rate; intercompany.matches.push({ kind: 'bill', fromEntity: bl.entity_id, toEntity: vid }); }
@@ -11408,7 +11418,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // (mirrors the revenue RECOGNIZED allowlist). issue_date so server == client at every period.
   const _billDate = b => b.issue_date || b.created_at || b.due_date;
   const issuedBillsTotal  = sumFX((bills || []).filter(b =>
-    RECOGNIZED_BILL.has((b.status || '').toLowerCase()) && inPeriod(_billDate(b))
+    FinFlowDates.isOpexBill(b) && inPeriod(_billDate(b))   // M34: a stock purchase's bill is inventory, not opex
   ), b => b.amount, _billDate, 'bills');
   // payments_made: a payment LINKED to a bill (bill_id set) is a SETTLEMENT (Dr AP / Cr Cash),
   // NEVER a fresh expense — counting it would double-count against the issued-bill leg above.
@@ -11661,7 +11671,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   issuedInv.forEach(i => addBucket(revByMonth, i.amount, _invDate(i), _fromOf(i)));
   receipts.forEach(x => addBucket(revByMonth, x.amount, _rcptDate(x), _fromOf(x)));
   expenses.forEach(e => addBucket(expByMonth, e.amount, _expDate(e), _fromOf(e)));
-  (bills || []).filter(b => RECOGNIZED_BILL.has((b.status || '').toLowerCase())).forEach(b => addBucket(expByMonth, b.amount, _billDate(b), _fromOf(b)));
+  (bills || []).filter(b => FinFlowDates.isOpexBill(b)).forEach(b => addBucket(expByMonth, b.amount, _billDate(b), _fromOf(b)));   // M34
   paymentsMade.filter(p => p.bill_id == null).forEach(p => addBucket(expByMonth, p.amount, _pmDate(p), _fromOf(p)));
   // N104: the credit-note / vendor-credit contras and payroll, each on its own date and converted from its own
   // entity's currency — exactly what the native overview chart (finflow-api-wiring-dashboard.js
@@ -11846,10 +11856,47 @@ app.post('/api/inventory-movements', requireAuth, lockGuard(LOCK_SPECS.inventory
     // FIFO layers, and re-reporting the original's COGS would double-count it in a summing caller.
     if (_imDup) return res.status(201).json({ ..._imDup, cogs: null });
   }
+  // M34 (fix pass round 2): a PURCHASE can be on credit (funding 'bill'): the supplier's bill is created with it,
+  // linked by inventory_movement_id, and the movement books Dr 1200 Inventory / Cr 2000 AP — the bill posts nothing
+  // itself and is never an operating expense (FinFlowDates.isOpexBill); paying it settles AP like any bill. Default
+  // 'cash' is unchanged: Dr 1200 / Cr 1000. The bill is created FIRST (it has no ledger entry), then the movement;
+  // if the movement fails the bill is removed, so neither exists without the other.
+  const funding = req.body && req.body.funding === 'bill' ? 'bill' : 'cash';
+  let _stockBill = null;
+  const _mvDate = /^\d{4}-\d{2}-\d{2}$/.test(String((req.body && req.body.date) || '')) ? String(req.body.date)
+    : await entityTodayYmd(item.entity_id != null ? item.entity_id : (req.entityId || null));   // the same rule recordStockMovement applies (M32)
+  if (funding === 'bill') {
+    if (type !== 'purchase') return res.status(400).json({ error: 'Only a purchase can be bought on credit.' });
+    const vendor = String((req.body && req.body.vendor) || '').trim().slice(0, 200);
+    if (!vendor) return res.status(400).json({ error: 'Enter the supplier for a purchase on credit.' });
+    const cap = Math.round(qty * (parseFloat(unit_cost) || 0) * 100) / 100;
+    if (!(cap > 0)) return res.status(400).json({ error: 'A purchase on credit needs a unit cost.' });
+    const dueRaw = req.body && req.body.due_date;
+    const due = dueRaw ? String(dueRaw).slice(0, 10) : String(_mvDate).slice(0, 10);
+    if (due < String(_mvDate).slice(0, 10)) return res.status(400).json({ error: 'The due date cannot be before the purchase date.' });
+    const bIdem = idem ? ('stock-bill:' + idem).slice(0, 64) : null;
+    if (bIdem) {   // a replay of a credit purchase that already landed returns it (one bill, one movement)
+      const { rows: [_mv0] } = await pool.query(`SELECT * FROM inventory_movements WHERE user_id=$1 AND idempotency_key=$2 ORDER BY id ASC LIMIT 1`, [scopeId(req), idem]);
+      if (_mv0) return res.status(200).json({ ..._mv0, cogs: null });
+    }
+    try {
+      ({ row: _stockBill } = await db.insert('bills', {
+        user_id: scopeId(req), entity_id: item.entity_id != null ? item.entity_id : (req.entityId || null),
+        vendor, amount: cap, amount_paid: 0, status: 'unpaid', num: 'BILL-' + String(Date.now()).slice(-4),
+        issue_date: String(_mvDate).slice(0, 10), due_date: due,
+        notes: ('Stock purchase — ' + String(item.name || '') + ' × ' + qty + ' @ ' + (parseFloat(unit_cost) || 0)).slice(0, 500),
+        idempotency_key: bIdem,
+      }));
+    } catch (e) {
+      if (e.code === '23505' && bIdem) return res.status(409).json({ error: 'This purchase is already being recorded — refresh in a moment.' });
+      throw e;
+    }
+  }
   let out;
   try {
-    out = await recordStockMovement({ userId: scopeId(req), item, entityId: req.entityId || null, type, qty, unitCost: parseFloat(unit_cost) || 0, reference, notes, idem, date: (req.body && req.body.date) || null });
+    out = await recordStockMovement({ userId: scopeId(req), item, entityId: req.entityId || null, type, qty, unitCost: parseFloat(unit_cost) || 0, reference, notes, idem, date: _mvDate, contraCode: funding === 'bill' ? '2000' : '1000' });
   } catch (e) {
+    if (_stockBill) { try { await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2', [_stockBill.id, scopeId(req)]); } catch (_) {} }   // M34: no bill without its purchase
     if (e.code === '23505' && idem) {
       // Duplicate submit lost the race at the DB → the movement already landed and the units were
       // already decremented on the first insert. Return the ORIGINAL in the success shape, cogs null
@@ -11860,7 +11907,11 @@ app.post('/api/inventory-movements', requireAuth, lockGuard(LOCK_SPECS.inventory
     throw e;
   }
   const { movement, cogs } = out;
-  res.status(201).json({ ...movement, cogs });
+  if (_stockBill) {
+    await db.updateById('bills', _stockBill.id, { inventory_movement_id: movement.id });
+    await recordAudit(pool, { userId: scopeId(req), entityId: _stockBill.entity_id || null, table: 'bills', recordId: _stockBill.id, action: 'CREATE', newData: { ..._stockBill, inventory_movement_id: movement.id }, req });
+  }
+  res.status(201).json({ ...movement, cogs, bill_id: _stockBill ? _stockBill.id : undefined });
 }));
 
 app.get('/api/cogs', requireAuth, wrap(async (req, res) => {

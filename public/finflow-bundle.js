@@ -3261,11 +3261,11 @@ function clearAIChat(){
             <span style="font-size:11px;color:var(--t3);font-family:var(--font-mono)">${esc(b.num || '')}</span>
             <span style="font-family:var(--font-mono)">${S(b.amount)}</span>
             <span style="color:${b.status?.toLowerCase() === 'overdue' ? 'var(--red)' : 'var(--t2)'}">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.due_date,{year:true}):(b.due_date||''))||'—')}</span>
-            <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}<span class="badge ${cls[b.status?.toLowerCase()] || 'b-amber'}">${esc(b.status)}</span></span>
+            <span>${window._isScheduled(b.issue_date||b.created_at||b.due_date) ? '<span class="badge b-blue" title="Future-dated — scheduled, not yet counted in your books">Scheduled</span> ' : ''}${window.FinFlowDates.isInventoryBill(b) ? '<span class="badge b-blue" title="Stock bought on credit — the cost is inventory, reaching the P&amp;L as COGS when sold">Stock</span> ' : ''}<span class="badge ${cls[b.status?.toLowerCase()] || 'b-amber'}">${esc(b.status)}</span></span>
             <div style="display:flex;gap:4px">
               <button class="btn btn-ghost btn-sm" onclick="viewBill(${b.id})">View</button>
               ${b.status?.toLowerCase() !== 'paid' ? `<button class="btn btn-ghost btn-sm" onclick="markBillPaid(${b.id})">Pay</button>` : ''}
-              <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>
+              ${window.FinFlowDates.isInventoryBill(b) ? '' : `<button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7" onclick="deleteBill(${b.id})">✕</button>`}
             </div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No bills yet</div>';
@@ -5428,9 +5428,9 @@ function clearAIChat(){
     // Cash sales receipts count as revenue; payments_received is NOT revenue (F32).
     (window.receipts || []).forEach(r => { const idx = _idxOf(r.date || r.created_at); if (idx >= 0) revByMonth[idx] += parseFloat(r.amount) || 0; });
     expenses.forEach(exp => { const idx = _idxOf(exp.expense_date || exp.date || exp.created_at); if (idx >= 0) expByMonth[idx] += parseFloat(exp.amount) || 0; });   // M39
-    // F38 Step 4: issued bills accrue as expense in their ISSUE month — RECOGNIZED_BILL, FULL amount.
-    const _RECBILL = ['unpaid','due_soon','overdue','partial','paid'];
-    (window.bills || []).forEach(b => { if (!_RECBILL.includes((b.status || '').toLowerCase())) return; const idx = _idxOf(b.issue_date || b.created_at || b.due_date); if (idx >= 0) expByMonth[idx] += parseFloat(b.amount) || 0; });
+    // F38 Step 4: issued bills accrue as expense in their ISSUE month, FULL amount — M34: FinFlowDates.isOpexBill (a stock
+    // purchase's bill is inventory, reaching the P&L as COGS when sold).
+    (window.bills || []).forEach(b => { if (!window.FinFlowDates.isOpexBill(b)) return; const idx = _idxOf(b.issue_date || b.created_at || b.due_date); if (idx >= 0) expByMonth[idx] += parseFloat(b.amount) || 0; });
     // ONLY orphan payments (bill_id IS NULL) — a linked payment settles AP, not a fresh expense.
     (window.paymentsMade || []).filter(p => p.bill_id == null).forEach(p => { const idx = _idxOf(p.date || p.created_at); if (idx >= 0) expByMonth[idx] += parseFloat(p.amount) || 0; });
     // F58: contra legs, bucketed on their OWN date. Mirror of the server's monthly buckets in
@@ -5512,9 +5512,8 @@ function clearAIChat(){
     rev  = invoices.filter(i => isIssued(i) && inP(i.issue_date || i.created_at || i.date)).reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
     rev += receipts.filter(r => inP(r.date)).reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
     exp  = expenses.filter(e => inP(e.expense_date || e.date || e.created_at)).reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
-    // F38 Step 4: issued bills accrue as expense by ISSUE date — RECOGNIZED_BILL, FULL amount.
-    const _RECBILL = ['unpaid','due_soon','overdue','partial','paid'];
-    exp += (window.bills || []).filter(b => _RECBILL.includes((b.status||'').toLowerCase()) && inP(b.issue_date || b.created_at || b.due_date)).reduce((s,b)=>s+(parseFloat(b.amount)||0),0);
+    // F38 Step 4: issued bills accrue as expense by ISSUE date, FULL amount — M34: FinFlowDates.isOpexBill.
+    exp += (window.bills || []).filter(b => window.FinFlowDates.isOpexBill(b) && inP(b.issue_date || b.created_at || b.due_date)).reduce((s,b)=>s+(parseFloat(b.amount)||0),0);
     // Only ORPHAN payments (bill_id IS NULL) stay expense — a linked payment settles AP, not a
     // fresh expense (would double-count the issued-bill leg). Sole double-count guard.
     exp += paymentsMade.filter(p => p.bill_id == null && inP(p.date || p.created_at)).reduce((s,p)=>s+(parseFloat(p.amount)||0),0);

@@ -203,9 +203,20 @@
   };
   var normalizeDeductible = function (v) { var f = deductibleFactor(v); return f === 1 ? 'yes' : f === 0.5 ? 'half' : 'no'; };
 
+  // M34 (fix pass round 2): ONE rule for "this bill is an operating expense", server and client. A recognised bill
+  // (issued: unpaid / due_soon / overdue / partial / paid) is opex at its full amount by issue date — EXCEPT a bill
+  // created by a stock purchase on credit (inventory_movement_id): that cost is inventory (Dr 1200 / Cr 2000, posted
+  // by the movement) and reaches the P&L once, as COGS when sold. Every bill still counts in accounts payable.
+  var RECOGNIZED_BILL_STATUSES = ['unpaid', 'due_soon', 'overdue', 'partial', 'paid'];
+  var isInventoryBill = function (b) { return !!(b && b.inventory_movement_id != null && b.inventory_movement_id !== ''); };
+  var isOpexBill = function (b) { return !!b && RECOGNIZED_BILL_STATUSES.indexOf(String(b.status || '').toLowerCase()) !== -1 && !isInventoryBill(b); };
+
   return {
     deductibleFactor: deductibleFactor,
     normalizeDeductible: normalizeDeductible,
+    RECOGNIZED_BILL_STATUSES: RECOGNIZED_BILL_STATUSES,
+    isInventoryBill: isInventoryBill,
+    isOpexBill: isOpexBill,
     resolvedToday: resolvedToday,
     payrollPeriodYmd: payrollPeriodYmd,
     resolvePeriod: resolvePeriod,

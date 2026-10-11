@@ -2054,9 +2054,9 @@ function computeExpenseBreakdown(period, monthIdx){
   // RECOGNIZED bill at its FULL amount, keyed on its issue_date (created_at fallback — the same
   // time-boxed transition as invoices), in the window. window.bills is entity-scoped by its
   // loader (GET /api/bills). Uses the SAME _periodWindow as revenue so server == client.
-  const RECOGNIZED_BILL = ['unpaid','due_soon','overdue','partial','paid'];
+  // M34: the shared opex-bill rule (recognised, and not a stock purchase's bill — that cost is inventory / COGS).
   const issuedBills = (window.bills || [])
-    .filter(b=>RECOGNIZED_BILL.includes((b.status||'').toLowerCase()) && inPeriod(b.issue_date||b.created_at||b.due_date))
+    .filter(b=>window.FinFlowDates.isOpexBill(b) && inPeriod(b.issue_date||b.created_at||b.due_date))
     .reduce((s,b)=>s+(parseFloat(b.amount)||0),0);
   // Only ORPHAN payments (bill_id IS NULL) stay expense — a bill-linked payment is a settlement
   // (Dr AP / Cr Cash), not a fresh expense; counting it double-counts the issued-bill leg.

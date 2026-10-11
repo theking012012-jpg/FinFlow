@@ -10,6 +10,12 @@
  */
 require('../../tests/harness/clock-oct.js');
 const { bootSpaInJsdom } = require('../../tests/harness/jsdomBoot.js');
+// jsdomBoot loads clock.js, which re-pins the PROCESS clock (the server's) to 2026-07-25 and overrides clock-oct.
+// The browser is forced to 9 Oct below, so the server and the browser disagreed on "today": the server excluded
+// every Sept/Oct document as future-dated while the old client recomputed on the browser's clock. Re-pin the
+// process to the same October instant so the server and the browser share one day, as they do in production.
+delete require.cache[require.resolve('../../tests/harness/clock-oct.js')];
+require('../../tests/harness/clock-oct.js');
 
 const num = (s) => { if (s == null) return null; let str = String(s).replace(/−/g, '-'); const mult = /k/i.test(str) ? 1000 : /m/i.test(str) ? 1e6 : 1; const m = str.replace(/[^0-9.\-]/g, ''); const n = parseFloat(m); return Number.isFinite(n) ? n * mult : null; };
 // Abbreviated KPI cards ($2.1K) carry ~1-decimal precision, so compare magnitude within a K-rounding band.

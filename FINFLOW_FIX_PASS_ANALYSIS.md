@@ -216,5 +216,5 @@ The rule is now in `CLAUDE.md`. M53, M55, M56, M57, M58 and M59 are fixed, each 
 ## 9. Personal bank feed (2026-10-11)
 
 M60 is fixed, RED → GREEN. Personal now links, syncs, imports and enters its own bank (Plaid, Belvo, statement,
-manual), separate from every business. M61 is logged (bank-reconcile actions not limited to the business in view);
-it is not fixed. See `MONEY_AUDIT_2026-10-09.md` §9.
+manual), separate from every business. M61 is fixed as well: every bank-reconcile action (book-expense, match-bill,
+ignore, unmatch) acts only on a bank line of the business in view. See `MONEY_AUDIT_2026-10-09.md` §9.

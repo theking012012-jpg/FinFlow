@@ -756,8 +756,22 @@ Limits (stated, not assumed):
 - The Personal card's file picker (Import) is not driven in jsdom. The import route it calls is executed with
   `scope=personal` in the server harness, and the client's `scope` is executed for Link and Plaid.
 
-### Found during M60, not fixed (logged, outside this task)
+### M61, found during M60, then fixed (owner: "fix it")
 
-| # | Defect | Where | Severity |
-|---|---|---|---|
-| M61 | Bank-reconcile **book-expense / match-bill / ignore** look up the bank line by user only, never by the business in view. From business A, B's bank line can be booked as an expense, or matched to a bill, into **B's** books (the expense takes the line's own business). **ignore** has no scope check at all: from any business it stamps `reconcile_state: 'ignored'` on a **personal** bank line (business → personal write) or on another business's line. book-expense / match-bill already refuse a personal line (`PERSONAL_TXN`). This is the M57 class (match / match-batch were fixed there); these three routes were not in M57's scope. | `server.js` `_bankDebitForAction`, `POST /api/bank-reconciliation/ignore` | Wall breach (ignore → personal); cross-business write. CODE-READ, not executed. |
+| # | Defect | Fix | Harness | GREEN | RED (before) |
+|---|---|---|---|---|---|
+| M61 | Bank-reconcile actions looked the bank line up by user only. From business A: **book-expense** booked B's bank line as an expense in B's books; **match-bill** paid B's bill from B's line; **ignore** (no scope check at all) stamped `reconcile_state: 'ignored'` on a **personal** bank line (business → personal write) or on B's line; **unmatch** (`DELETE /api/bank-reconciliation/:id`) deleted B's match. The M57 class: match / match-batch were limited in M57, and these four routes were not. | One rule, `_bankLineInView`, used by every one of these actions: the line must belong to the business in view. A personal line is refused as personal (`PERSONAL_TXN`, as book-expense already did); another business's line is not found (404). The check runs before the "already actioned" short-cut, so another scope's line is not even reported. Unmatch deletes only a match whose bank line belongs to the business in view. | `verify-m61-bankrec-actions-scope` | 19 | 15 of 19 (the 4 that pass are controls) |
+
+Seed (Rule 4): each wrong action has its own B line (140 / 155 / 170), so one wrong action cannot mask the next. The
+first run used one shared B line, and two checks were masked by it; the seed was corrected before the fix was written.
+A control makes the browser's call (no `entity_id`; the server resolves the active business) and checks that it still
+works for the business's own line and still refuses B's.
+
+Re-run GREEN: every harness that calls these routes (`bank-money-out` 20, `gl-bankrec` 11, `m17-bank-line-release`,
+`f101` ×2, `f117`, `bill-payment-check`, `lock-external-dates`, `m52-expense-edit-server`, `plaid-sync-changes`,
+`f54-team-scope`, `bankrec-render`), plus `m56`, `m57`, `m60`, `tenant-isolation` 47/47 and `entity-leakage-sweep`
+"ALL SCOPED". Not run: `f86-payments-source-instrument` and `step3-gate` (an instrument and a sweep gate, not
+behaviour harnesses).
+
+Data: matches or reconcile stamps already made across scopes are not changed (Rule 8). Once the owner wipes the
+database, there are none.

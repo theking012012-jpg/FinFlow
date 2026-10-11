@@ -45,8 +45,10 @@ const LOGIN = { email: 'f101@finflow.test', password: 'harness-password-not-a-se
     const bankIds = [], payIds = [];
     for (let i = 0; i < 3; i++) {
       bankIds.push((await c.query(
-        `INSERT INTO personal_transactions (user_id, entity_id, data, created_at, updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`,
-        [uid, { description: 'Tx' + i, amount: 100, date: '2026-07-10', account_name: 'Chk', source: 'banking' }]
+        // M57: a business bank line carries its business (as every bank-feed writer stamps it). These were seeded with NO
+        // business — i.e. personal transactions — and matched to the business's payments: the wall breach M57 closes.
+        `INSERT INTO personal_transactions (user_id, entity_id, data, created_at, updated_at) VALUES ($1,$3,$2,NOW(),NOW()) RETURNING id`,
+        [uid, { description: 'Tx' + i, amount: 100, date: '2026-07-10', account_name: 'Chk', source: 'banking' }, eid]
       )).rows[0].id);
       payIds.push((await c.query(
         `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date) VALUES ($1,NULL,$2,100,'2026-07-10') RETURNING id`,
@@ -82,7 +84,7 @@ const LOGIN = { email: 'f101@finflow.test', password: 'harness-password-not-a-se
     A('malformed pair → 400', r4.status === 400, `status ${r4.status}`);
 
     // control: single /match still works (backward compat) — needs a fresh unmatched pair
-    const b2 = (await c.query(`INSERT INTO personal_transactions (user_id,entity_id,data,created_at,updated_at) VALUES ($1,NULL,$2,NOW(),NOW()) RETURNING id`, [uid, { source: 'banking' }])).rows[0].id;
+    const b2 = (await c.query(`INSERT INTO personal_transactions (user_id,entity_id,data,created_at,updated_at) VALUES ($1,$3,$2,NOW(),NOW()) RETURNING id`, [uid, { source: 'banking' }, eid])).rows[0].id;   // M57: business-stamped
     const p2 = (await c.query(`INSERT INTO invoice_payments (user_id,entity_id,invoice_id,amount,payment_date) VALUES ($1,NULL,$2,100,'2026-07-10') RETURNING id`, [uid, invId])).rows[0].id;
     const r5 = await http.post('/api/bank-reconciliation/match', { banking_id: b2, invoice_payment_id: p2 });
     A('single /match endpoint still works (backward compat)', r5.status === 201);

@@ -9544,8 +9544,9 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
      FROM bank_reconciliation br
      JOIN invoice_payments ip ON ip.id = br.invoice_payment_id
      JOIN personal_transactions pt ON pt.id = br.banking_id
-     WHERE br.user_id = $1 ORDER BY br.matched_at DESC`,
-    [scopeId(req)]
+     WHERE br.user_id = $1 AND pt.entity_id = $2   -- M57: this business's bank lines only (never personal, never another business)
+     ORDER BY br.matched_at DESC`,
+    [scopeId(req), req.entityId == null ? -1 : req.entityId]
   );
   // MONEY-OUT side: business debits not yet actioned + open bills to match them against.
   const _debits = banking.filter(r => String(r.tx_type || 'debit') === 'debit' && !r.reconcile_state && r.entity_id != null);
@@ -9558,8 +9559,10 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
 app.post('/api/bank-reconciliation/match', requireAuth, wrap(async (req, res) => {
   const { banking_id, invoice_payment_id } = req.body || {};
   if (!banking_id || !invoice_payment_id) return res.status(400).json({ error: 'banking_id and invoice_payment_id required' });
-  const bankRow = await pool.query('SELECT id FROM personal_transactions WHERE id=$1 AND user_id=$2', [banking_id, scopeId(req)]);
-  const payRow = await pool.query('SELECT id FROM invoice_payments WHERE id=$1 AND user_id=$2', [invoice_payment_id, scopeId(req)]);
+  // M57 (personal/business wall): a bank line of THE BUSINESS IN VIEW (never a personal transaction, never another
+  // business's line) matched to that business's payment.
+  const bankRow = await pool.query(`SELECT id FROM personal_transactions WHERE id=$1 AND user_id=$2 AND entity_id IS NOT NULL AND entity_id=$3`, [banking_id, scopeId(req), req.entityId == null ? -1 : req.entityId]);
+  const payRow = await pool.query('SELECT id FROM invoice_payments WHERE id=$1 AND user_id=$2 AND (entity_id IS NULL OR entity_id=$3)', [invoice_payment_id, scopeId(req), req.entityId == null ? -1 : req.entityId]);
   if (!bankRow.rows[0] || !payRow.rows[0]) return res.status(404).json({ error: 'Not found.' });
   // C1/F117: idempotent by natural key — mirror /match-batch. A bank tx or payment ALREADY
   // reconciled (a double-submit or retry) returns the existing link instead of inserting a
@@ -9723,8 +9726,10 @@ app.post('/api/bank-reconciliation/match-batch', requireAuth, wrap(async (req, r
     // invoice_payment_id the user's invoice_payments row. Two set queries, not 2N.
     const bankIds = [...new Set(pairs.map(p => p.banking_id))];
     const payIds  = [...new Set(pairs.map(p => p.invoice_payment_id))];
-    const okBank = new Set((await client.query('SELECT id FROM personal_transactions WHERE user_id=$1 AND id = ANY($2::int[])', [sid, bankIds])).rows.map(r => r.id));
-    const okPay  = new Set((await client.query('SELECT id FROM invoice_payments WHERE user_id=$1 AND id = ANY($2::int[])', [sid, payIds])).rows.map(r => r.id));
+    // M57: the same scope as /match — bank lines of the business in view, payments of that business.
+    const _eidM = eid == null ? -1 : eid;
+    const okBank = new Set((await client.query(`SELECT id FROM personal_transactions WHERE user_id=$1 AND id = ANY($2::int[]) AND entity_id IS NOT NULL AND entity_id=$3`, [sid, bankIds, _eidM])).rows.map(r => r.id));
+    const okPay  = new Set((await client.query('SELECT id FROM invoice_payments WHERE user_id=$1 AND id = ANY($2::int[]) AND (entity_id IS NULL OR entity_id=$3)', [sid, payIds, _eidM])).rows.map(r => r.id));
     const notFound = pairs.filter(p => !okBank.has(p.banking_id) || !okPay.has(p.invoice_payment_id));
     if (notFound.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Some ids not found or not owned', notFound }); }
     // idempotent skip: drop any pair whose bank tx or payment is already reconciled, and de-dupe

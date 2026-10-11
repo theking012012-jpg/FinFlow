@@ -2723,15 +2723,22 @@ app.delete('/api/personal-accounts/:id', requireAuth, wrap(async (req, res) => {
 // (net worth monthly, portfolio daily) — idempotent, so repeated captures on
 // page load never create duplicates.
 app.get('/api/snapshots', requireAuth, wrap(async (req, res) => {
+  // M53 (personal/business wall): personal history is the person's — read every one of their snapshots whatever business
+  // the old capture filed it under, ONE per period: the personal (entity-less) row if there is one, else the most
+  // recently saved. The series is identical from every business in view.
   const kind = req.query.kind;
-  const eid  = req.entityId || null;
-  res.json(await db.allByUser('snapshots', req.session.userId,
-    r => (!kind || r.kind === kind) && (r.entity_id == null || (eid != null && r.entity_id === eid)),
-    (a, b) => String(a.date || '').localeCompare(String(b.date || ''))));
+  const rows = await db.allByUser('snapshots', req.session.userId, r => !kind || r.kind === kind);
+  const best = new Map();
+  const _t = r => new Date(r.updated_at || r.created_at || 0).getTime();
+  for (const r of rows) {
+    const k = r.period_key || (r.kind + ':' + r.date);
+    const cur = best.get(k);
+    if (!cur || (cur.entity_id != null && r.entity_id == null) || ((cur.entity_id == null) === (r.entity_id == null) && _t(r) > _t(cur))) best.set(k, r);
+  }
+  res.json([...best.values()].sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))));
 }));
 app.post('/api/snapshots/capture', requireAuth, wrap(async (req, res) => {
   const uid  = req.session.userId;
-  const eid  = req.entityId || null;
   const kind = req.body?.kind === 'portfolio' ? 'portfolio' : (req.body?.kind === 'networth' ? 'networth' : null);
   if (!kind) return res.status(400).json({ error: 'kind must be networth or portfolio.' });
   const dateStr   = new Date().toISOString().slice(0, 10);
@@ -2758,12 +2765,14 @@ app.post('/api/snapshots/capture', requireAuth, wrap(async (req, res) => {
   }
 
   // Upsert by period_key within this user + entity.
-  const existing = await db.allByUser('snapshots', uid, r => r.period_key === periodKey && (r.entity_id || null) === eid);
+  // M53: ONE personal (entity-less) row per period, whichever business is in view — it used to be filed under the
+  // active business, one row per business. Rows the old capture filed under a business are kept (Rule 8).
+  const existing = await db.allByUser('snapshots', uid, r => r.period_key === periodKey && r.entity_id == null);
   if (existing[0]) {
     await db.updateById('snapshots', existing[0].id, { value, date: dateStr });
     return res.json({ ok: true, kind, value, date: dateStr, updated: true });
   }
-  const { row } = await db.insert('snapshots', { user_id: uid, entity_id: eid, kind, value, date: dateStr, period_key: periodKey });
+  const { row } = await db.insert('snapshots', { user_id: uid, entity_id: null, kind, value, date: dateStr, period_key: periodKey });
   res.status(201).json({ ok: true, kind, value, date: dateStr, row });
 }));
 

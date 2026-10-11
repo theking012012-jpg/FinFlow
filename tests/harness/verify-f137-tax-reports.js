@@ -99,8 +99,10 @@ process.on('uncaughtException', (e) => {
       `tax_lines=${JSON.stringify(after.tax_lines)} rate=${after.tax_rate}`);
     // Derived rate is exact for %-of-taxable lines when taxable>0; with a fixed line or taxable=0 it
     // cannot be represented as one rate (the accountant-portal coupling limitation — see ledger).
-    A('Income Tax: derived tax_rate reproduces the total when taxable>0 (else 0, honest)',
-      taxable > 0 ? Math.abs(Number(after.tax_rate) / 100 * taxable - expTotal) < 1 : Number(after.tax_rate) === 0,
+    // C4 (Cowork 2026-10-11): with taxable <= 0 the saved rate is the %-of-taxable rate the owner typed (30), not 0 —
+    // 0 made the accountant portal claim "Client has not set a tax rate". The estimate on 0 taxable is 0 either way.
+    A('Income Tax: derived tax_rate reproduces the total when taxable>0 (else the %-of-taxable rate entered, C4)',
+      taxable > 0 ? Math.abs(Number(after.tax_rate) / 100 * taxable - expTotal) < 1 : Number(after.tax_rate) === 30,
       `rate=${after.tax_rate} taxable=${taxable} expTotal=${expTotal}`);
 
     // F137-l VAT Return

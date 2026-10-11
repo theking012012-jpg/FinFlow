@@ -4979,7 +4979,11 @@ function clearAIChat(){
         const totalTax = () => r2(window._taxLines.reduce((s, l) => s + lineAmt(l), 0));
         const persistTax = () => {
           const total = totalTax(), tx = window._taxTaxable || 0;
-          const eff = tx > 0 ? r2(total / tx * 100) : 0;   // derived effective rate → accountant portal
+          // C4: the effective rate the accountant portal reads. With no taxable income yet (0 or a loss) total/taxable is
+          // undefined — it used to save 0, so the rate the owner typed was lost ("Client has not set a tax rate"). Then the
+          // rate IS the sum of the %-of-taxable lines the owner entered.
+          const eff = tx > 0 ? r2(total / tx * 100)
+            : r2(window._taxLines.filter(l => l.type === 'taxable').reduce((a, l) => a + (parseFloat(l.value) || 0), 0));
           clearTimeout(window._taxSave);
           window._taxSave = setTimeout(() => { try { api('PUT', '/api/settings', { tax_lines: window._taxLines, tax_rate: eff }); } catch (_) { /* ignore */ } }, 500);
         };

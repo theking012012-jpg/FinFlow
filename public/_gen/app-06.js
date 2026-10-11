@@ -631,7 +631,7 @@ window.ffImportCsv = function(type){
         var pj = await pr.json().catch(function(){return {};});
         if(!pr.ok){ if(typeof notify==='function') notify(pj.error || 'Could not read the CSV.', true); return; }
         if(!pj.added){ if(typeof notify==='function') notify('No importable ' + type + ' rows found in that file.', true); return; }
-        var okc = (typeof window._confirmModal === 'function') ? await window._confirmModal('Import ' + pj.added + ' ' + type + ' from this file?' + (pj.skipped ? (' (' + pj.skipped + ' rows skipped)') : '')) : true;
+        var okc = (typeof window._confirmModal === 'function') ? await window._confirmModal('Import ' + pj.added + ' ' + type + ' from this file?' + (pj.skipped ? (' (' + pj.skipped + ' rows skipped)') : '') + (pj.failed ? (' ' + pj.failed + ' row(s) cannot be imported' + (pj.badPaid ? (' — ' + pj.badPaid + ' marked Partial need an "Amount Paid" or "Balance" column') : '') + (pj.badDates ? (' — ' + pj.badDates + ' with an unreadable date') : '') + '.') : '')) : true;
         if(!okc) return;
         var cr = await fetch('/api/import/csv', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ type: type, content: content })});
         var cj = await cr.json().catch(function(){return {};});

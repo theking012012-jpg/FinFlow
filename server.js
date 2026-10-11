@@ -6230,19 +6230,42 @@ const _CSV_BILL_ALIASES = { unpaid: 'unpaid', paid: 'paid', partial: 'partial', 
 const _CSV_VOID = new Set(['void', 'voided', 'cancelled', 'canceled', 'deleted']);
 // → the mapped status, def for blank/unknown, or null for a void document (the row is skipped).
 const _csvStatus = (v, def, aliases) => { const t = String(v || '').trim().toLowerCase(); if (_CSV_VOID.has(t)) return null; return aliases[t] || def; };
+// M5 (money audit 2026-10-09): a migrated "Paid" / "Partial" document was stored with its status only — no
+// amount_paid, no payment row — so it counted as fully owed in AR / AP forever (the removed N90 boot backfill
+// used to paper over this with a bare amount_paid stamp, which never reached cash or the ledger). The paid part
+// is now SETTLED through the real payment writers after insert (settleInvoiceRemaining / settleBillRemaining:
+// a payment row + its GL cash leg, then the status recalc). The paid amount comes from an "Amount Paid" column,
+// or amount − "Balance"; a "Paid" row with neither is paid in full. A "Partial" row with neither is REJECTED —
+// guessing the paid part would invent money. Payment date: a "Paid Date" column, else the issue date.
+const _CSV_PAID_COLS = { amount_paid: ['amount paid', 'paid amount', 'amount_paid', 'total paid', 'payments'], balance: ['balance', 'balance due', 'open balance', 'amount outstanding', 'outstanding balance'], paid_date: ['paid date', 'payment date', 'date paid'] };
+function _csvPaidPart(g, amount, status, issue, unpaidStatus) {
+  const _blank = v => v == null || String(v).trim() === '';
+  let paid = null;
+  if (!_blank(g.amount_paid)) paid = g.__amt(g.amount_paid);
+  else if (!_blank(g.balance)) { const b = g.__amt(g.balance); paid = Number.isFinite(b) ? Math.round((amount - b) * 100) / 100 : NaN; }
+  else if (status === 'paid') paid = amount;
+  else if (status === 'partial') { const e = new Error('partial without amount paid'); e.badPaid = true; throw e; }
+  if (paid == null || paid === 0) return { status: (status === 'paid' || status === 'partial') && paid === 0 ? unpaidStatus : status, settle: null };
+  if (!Number.isFinite(paid) || paid < 0 || paid > amount + 0.005) { const e = new Error('amount paid out of range'); e.badPaid = true; throw e; }
+  // Stored at the unpaid status; the settlement's recalc derives 'partial' / 'paid' from the payment itself.
+  const keep = (status === 'paid' || status === 'partial') ? unpaidStatus : status;
+  return { status: keep, settle: { amount: Math.round(paid * 100) / 100, date: g.__date(g.paid_date) || issue } };
+}
 const CSV_IMPORT_SPECS = {
-  invoices: { table: 'invoices', money: true,
-    cols: { client: ['client', 'customer', 'customer name', 'name', 'bill to', 'company'], amount: ['amount', 'total', 'amount due', 'invoice total', 'grand total'], status: ['status'], issue_date: ['issue date', 'date', 'invoice date', 'created'], due_date: ['due date', 'due'], number: ['invoice number', 'invoice no', 'number', 'ref', 'invoice #'] },
+  invoices: { table: 'invoices', money: true, settleKind: 'invoice',
+    cols: { client: ['client', 'customer', 'customer name', 'name', 'bill to', 'company'], amount: ['amount', 'total', 'amount due', 'invoice total', 'grand total'], status: ['status'], issue_date: ['issue date', 'date', 'invoice date', 'created'], due_date: ['due date', 'due'], number: ['invoice number', 'invoice no', 'number', 'ref', 'invoice #'], ..._CSV_PAID_COLS },
     build: g => { const amount = g.__amt(g.amount); const issue = g.__date(g.issue_date) || g.__today; if (!(amount > 0)) return null; const dd = g.__date(g.due_date); const _st = _csvStatus(g.status, 'pending', _CSV_INV_ALIASES); if (_st == null) return null;
-      return { key: (g.number && String(g.number).trim()) || [g.client, amount, issue].join('|'), date: issue, data: Object.assign({ client: (g.client || 'Customer').slice(0, 120), amount, status: _st, issue_date: issue }, dd ? { due_date: dd } : {}, g.number ? { number: String(g.number).slice(0, 60) } : {}) }; } },
+      const _pd = _csvPaidPart(g, amount, _st, issue, 'pending');
+      return { key: (g.number && String(g.number).trim()) || [g.client, amount, issue].join('|'), date: issue, settle: _pd.settle, data: Object.assign({ client: (g.client || 'Customer').slice(0, 120), amount, status: _pd.status, issue_date: issue }, dd ? { due_date: dd } : {}, g.number ? { number: String(g.number).slice(0, 60) } : {}) }; } },
   expenses: { table: 'expenses', money: true,
     cols: { description: ['description', 'memo', 'details', 'name', 'payee', 'item'], amount: ['amount', 'total', 'value'], category: ['category', 'account', 'type'], expense_date: ['date', 'expense date', 'posted'] },
     build: g => { const amount = g.__amt(g.amount); const dt = g.__date(g.expense_date) || g.__today; if (!(amount > 0)) return null;
       return { key: [g.description, amount, dt].join('|'), date: dt, data: { description: (g.description || 'Expense').slice(0, 160), amount, category: (g.category || 'Uncategorized').slice(0, 60), expense_date: dt } }; } },
-  bills: { table: 'bills', money: true,
-    cols: { vendor: ['vendor', 'supplier', 'payee', 'name', 'company'], amount: ['amount', 'total', 'amount due', 'bill total'], status: ['status'], issue_date: ['issue date', 'date', 'bill date'], due_date: ['due date', 'due'], number: ['bill number', 'bill no', 'number', 'ref', 'bill #'] },
+  bills: { table: 'bills', money: true, settleKind: 'bill',
+    cols: { vendor: ['vendor', 'supplier', 'payee', 'name', 'company'], amount: ['amount', 'total', 'amount due', 'bill total'], status: ['status'], issue_date: ['issue date', 'date', 'bill date'], due_date: ['due date', 'due'], number: ['bill number', 'bill no', 'number', 'ref', 'bill #'], ..._CSV_PAID_COLS },
     build: g => { const amount = g.__amt(g.amount); const issue = g.__date(g.issue_date) || g.__today; if (!(amount > 0)) return null; const dd = g.__date(g.due_date); const _st = _csvStatus(g.status, 'unpaid', _CSV_BILL_ALIASES); if (_st == null) return null;
-      return { key: (g.number && String(g.number).trim()) || [g.vendor, amount, issue].join('|'), date: issue, data: Object.assign({ vendor: (g.vendor || 'Vendor').slice(0, 120), amount, amount_paid: 0, status: _st, issue_date: issue }, dd ? { due_date: dd } : {}) }; } },
+      const _pd = _csvPaidPart(g, amount, _st, issue, 'unpaid');
+      return { key: (g.number && String(g.number).trim()) || [g.vendor, amount, issue].join('|'), date: issue, settle: _pd.settle, data: Object.assign({ vendor: (g.vendor || 'Vendor').slice(0, 120), amount, amount_paid: 0, status: _pd.status, issue_date: issue }, dd ? { due_date: dd } : {}) }; } },
   customers: { table: 'customers', money: false,
     cols: { name: ['name', 'customer', 'customer name', 'company', 'client'], email: ['email', 'e-mail'], phone: ['phone', 'telephone', 'tel'] },
     // N112: a customer record has fname / lname / company / status / revenue (what the customer list, invoices
@@ -6298,16 +6321,27 @@ async function _csvImport(uid, entityId, sessionUserId, type, content, mapping, 
     g.__date = v => { if (v == null || String(v).trim() === '') return null; const d = csvRegion.parseDate(v, order || 'dmy'); if (!d) { const e = new Error('bad date'); e.badDate = true; throw e; } return d; };
     g.__amt = v => csvRegion.parseAmount(v, mark);
     g.__today = _today;
-    let m; try { m = spec.build(g); } catch (e) { if (e && e.badDate) tally.badDates++; tally.failed++; continue; }
+    let m; try { m = spec.build(g); } catch (e) { if (e && e.badDate) tally.badDates++; if (e && e.badPaid) tally.badPaid = (tally.badPaid || 0) + 1; tally.failed++; continue; }
     if (!m) { tally.skipped++; continue; }
     const importKey = 'csv:' + type + ':' + crypto.createHash('sha1').update(String(m.key)).digest('hex').slice(0, 24);
     const dup = await pool.query('SELECT 1 FROM ' + spec.table + ' WHERE user_id=$1 AND data->>\'import_key\'=$2 LIMIT 1', [uid, importKey]);
     if (dup.rows.length) { tally.duplicate++; continue; }
     if (spec.money && m.date && await isLocked(sessionUserId, entityId, m.date)) { tally.skipped++; continue; }
-    if (tally.sample.length < 3) tally.sample.push(m.data);
+    if (m.settle && m.settle.date !== m.date && await isLocked(sessionUserId, entityId, m.settle.date)) { tally.skipped++; continue; }
+    if (tally.sample.length < 3) tally.sample.push(m.settle ? Object.assign({}, m.data, { amount_paid: m.settle.amount }) : m.data);
     if (dryRun) { tally.added++; continue; }
-    try { await db.insert(spec.table, Object.assign({ user_id: uid, entity_id: entityId, import_key: importKey, idempotency_key: importKey, source: 'csv' }, m.data)); tally.added++; }
+    let _ins = null;
+    try { _ins = (await db.insert(spec.table, Object.assign({ user_id: uid, entity_id: entityId, import_key: importKey, idempotency_key: importKey, source: 'csv' }, m.data))).row; tally.added++; }
     catch (e) { if (e.code === '23505') tally.duplicate++; else { tally.failed++; console.error('[csv import ' + type + ']', e.message); } }
+    // M5: settle the paid part through the real payment writer (payment row + GL cash leg + status recalc).
+    if (_ins && m.settle && spec.settleKind) {
+      try {
+        const _so = { userId: uid, date: m.settle.date, method: 'Imported', notes: 'Paid before import (CSV)', idemKey: 'csvpay:' + importKey, upTo: m.settle.amount };
+        if (spec.settleKind === 'invoice') await settleInvoiceRemaining(pool, Object.assign({ invoiceId: _ins.id }, _so));
+        else await settleBillRemaining(pool, Object.assign({ billId: _ins.id }, _so));
+        tally.settled = (tally.settled || 0) + 1;
+      } catch (e) { tally.settleFailed = (tally.settleFailed || 0) + 1; console.error('[csv import ' + type + '] settle failed:', e && e.message); }
+    }
   }
   return tally;
 }
@@ -8929,14 +8963,15 @@ async function recordExternalInvoicePayment({ invoiceId, amountMinor, currency, 
 // existing payments), post its GL cash leg (Dr Cash / Cr AR), then let recalcInvoiceStatus derive status
 // and amount_paid. A bare amount_paid stamp was invisible to the cash-flow report (reads
 // invoice_payments) and left AR open in the ledger. Idempotent on idemKey. Returns the payment row or null.
-async function settleInvoiceRemaining(pool, { userId, invoiceId, date, method, notes, idemKey, stateKeyed = false }) {
+async function settleInvoiceRemaining(pool, { userId, invoiceId, date, method, notes, idemKey, stateKeyed = false, upTo = null }) {
   const { rows: [r] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 AND user_id = $2 LIMIT 1`, [invoiceId, userId]);
   const inv = r ? rowToObj(r) : null;
   if (!inv) return null;
   // N57b: read what is still owed and insert the settling payment under the invoice's payment lock.
   const pay = await withPaymentLock('invoice', invoiceId, async (conn) => {
     const paid = await invoicePaidSoFar(conn, invoiceId, userId);
-    const remaining = Math.round(((parseFloat(inv.amount) || 0) - paid) * 100) / 100;
+    let remaining = Math.round(((parseFloat(inv.amount) || 0) - paid) * 100) / 100;
+    if (upTo != null) remaining = Math.min(remaining, Math.round(Number(upTo) * 100) / 100);   // M5: settle a known part
     if (!(remaining > 0.004)) return null;
     const { rows: ins } = await conn.query(
       `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
@@ -9002,7 +9037,7 @@ async function recalcInvoiceStatus(pool, invoiceId, userId) {
 // settlement (Dr AP / Cr Cash), and let recalcBillStatus derive status and amount_paid. A bare
 // amount_paid stamp never reached the cash-flow report (reads payments_made) and left AP open in the
 // ledger. The idempotency key includes what was already paid, so concurrent requests book one payment.
-async function settleBillRemaining(pool, { userId, billId, date, method, notes, idemKey }) {
+async function settleBillRemaining(pool, { userId, billId, date, method, notes, idemKey, upTo = null }) {
   const { rows: [r] } = await pool.query(`SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1`, [billId, userId]);
   const bill = r ? rowToObj(r) : null;
   if (!bill) return null;
@@ -9012,6 +9047,7 @@ async function settleBillRemaining(pool, { userId, billId, date, method, notes, 
     row = await withPaymentLock('bill', billId, async (conn) => {
       const { rows: [p] } = await conn.query(`SELECT COALESCE(SUM((data->>'amount')::numeric),0) AS paid FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2`, [userId, String(billId)]);
       remaining = Math.round(((parseFloat(bill.amount) || 0) - (parseFloat(p.paid) || 0)) * 100) / 100;
+      if (upTo != null) remaining = Math.min(remaining, Math.round(Number(upTo) * 100) / 100);   // M5: settle a known part
       if (!(remaining > 0.004)) return null;
       return (await db.insert('payments_made', {
         user_id: userId, entity_id: bill.entity_id, vendor: String(bill.vendor || '').slice(0, 200), amount: remaining, date,

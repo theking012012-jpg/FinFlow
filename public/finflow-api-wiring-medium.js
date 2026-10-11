@@ -290,19 +290,7 @@
         const _eidExp = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
         const rows = await api('GET', '/api/expenses' + (_eidExp ? '?entity_id=' + _eidExp : ''));
         if (Array.isArray(rows)) {   // C1: an empty answer replaces the list
-          const mapped = rows.map(r => ({
-            _dbId:  r.id,
-            desc:   r.description,
-            cat:    r.category,
-            amount: r.amount,
-            ded:    r.deductible,
-            expense_date: r.expense_date ? String(r.expense_date).slice(0, 10) : '',   // M52: the editable calendar date
-            class:  r.class || '',
-            location: r.location || '',
-            date:   r.expense_date
-                      ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.expense_date) : r.expense_date)   // F195: TZ-safe calendar date
-                      : 'Today',
-          }));
+          const mapped = rows.map(window.mapBizExpenseRow);   // C9: the one mapper (app-main.js) — date, class, location
           if (!window.bizExpenses) window.bizExpenses = [];
           window.bizExpenses = [...mapped, ...window.bizExpenses.filter(e => !e._dbId)];
           if (typeof renderExpenses === 'function') renderExpenses();

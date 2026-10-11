@@ -1666,11 +1666,7 @@ async function loadEntityData(idx){
     }));
 
     // Replace bizExpenses
-    bizExpenses = expenses.map(r=>({
-      _dbId:r.id, desc:r.description, cat:r.category,
-      amount:r.amount, ded:r.deductible,
-      date: r.expense_date ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.expense_date) : r.expense_date) : 'Today',   // F195: TZ-safe calendar date
-    }));
+    bizExpenses = expenses.map(mapBizExpenseRow);   // C9: the one mapper
 
     // Replace customers
     customers = custs.map(c=>({...c, _dbId:c.id}));
@@ -1901,6 +1897,18 @@ const INVOICES_BASE = []; // populated from DB via loadEntityData
 
 // Start with empty arrays — loadEntityData fills these from the real API
 let bizExpenses = [];
+// C9: ONE mapper for a business expense row → the Expenses page's shape. Three loaders built this list (this file's
+// loadEntityData, finflow-api-wiring-medium.js and finflow-api-wiring-postgres.js); only one carried the editable
+// date, class and location, so after a reload or business switch "Edit" opened with the date blank and refused to save.
+function mapBizExpenseRow(r){
+  return {
+    _dbId: r.id, desc: r.description, cat: r.category, amount: r.amount, ded: r.deductible,
+    expense_date: r.expense_date ? String(r.expense_date).slice(0, 10) : '',
+    class: r.class || '', location: r.location || '',
+    date: r.expense_date ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.expense_date) : r.expense_date) : 'Today',   // F195: TZ-safe calendar date
+  };
+}
+window.mapBizExpenseRow = mapBizExpenseRow;
 // Inventory
 let inventory = [];
 // Customers

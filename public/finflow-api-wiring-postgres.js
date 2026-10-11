@@ -179,16 +179,7 @@
       }
 
       if (fetchExp && expenses) {
-        window.bizExpenses = expenses.map(r => ({
-          _dbId:  r.id,
-          desc:   r.description,
-          cat:    r.category,
-          amount: r.amount,
-          ded:    r.deductible,
-          date:   r.expense_date
-            ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.expense_date) : r.expense_date)   // F195: TZ-safe calendar date
-            : 'Today',
-        }));
+        window.bizExpenses = expenses.map(window.mapBizExpenseRow);   // C9: the one mapper (app-main.js)
         window._realExpenses = expenses;
       }
 

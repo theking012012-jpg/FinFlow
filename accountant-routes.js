@@ -927,8 +927,10 @@ If you cannot find a field, use null. Be concise.`;
         pool.query(`SELECT data     FROM holdings              WHERE user_id = $1 AND entity_id IS NULL`, [userId]),   // N16: the PERSONAL portfolio, as the owner's net worth counts it (business holdings are business assets)
       ]);
       const _n = v => parseFloat(v) || 0;
-      const _assets = pacc.rows.filter(r => r.data?.kind === 'asset')    .reduce((a,r)=>a+_n(r.data?.value),0);
-      const _liabs  = pacc.rows.filter(r => r.data?.kind === 'liability').reduce((a,r)=>a+_n(r.data?.value),0);
+      // M13: each account's USD equivalent (value_usd), as the owner's net worth adds them; pre-currency rows are USD.
+      const _usdOf = r => (r.data && r.data.value_usd != null && r.data.value_usd !== '') ? _n(r.data.value_usd) : _n(r.data?.value);
+      const _assets = pacc.rows.filter(r => r.data?.kind === 'asset')    .reduce((a,r)=>a+_usdOf(r),0);
+      const _liabs  = pacc.rows.filter(r => r.data?.kind === 'liability').reduce((a,r)=>a+_usdOf(r),0);
       const _port   = phold.rows.reduce((a,r)=>a+_n(r.data?.price)*_n(r.data?.shares),0);
       // M26: income / spending for the CALENDAR YEAR TO DATE (the owner's Personal "Year" view), summed in SQL over
       // every personal row (the list above is capped at 200; the sums were too), and kept PER CURRENCY — personal

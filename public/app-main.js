@@ -4381,7 +4381,7 @@ async function loadPersonalFinance(){
     // Real assets/liabilities + net-worth snapshots.
     try{
       const aRes=await fetch('/api/personal-accounts',{credentials:'include'});
-      window._persAccounts = aRes.ok ? ((await aRes.json())||[]).map(a=>({_dbId:a.id,kind:a.kind||'asset',name:a.name||'',type:a.type||'other',value:parseFloat(a.value)||0})) : (window._persAccounts||[]);
+      window._persAccounts = aRes.ok ? ((await aRes.json())||[]).map(_mapPersAccount) : (window._persAccounts||[]);
     }catch(_){ window._persAccounts=window._persAccounts||[]; }
     // Capture this month's net-worth snapshot — throttled (render path), never blocks render.
     _ffCaptureSnap('networth');
@@ -4408,8 +4408,8 @@ window.loadPersonalFinance=loadPersonalFinance;
 function personalPortfolioValue(){ return (typeof holdings!=='undefined'?holdings:[]).reduce((a,h)=>a+((parseFloat(h.price)||0)*(parseFloat(h.shares)||0)),0); }
 function computePersNetWorth(){
   const accts=window._persAccounts||[];
-  const assets=accts.filter(a=>a.kind==='asset').reduce((s,a)=>s+(parseFloat(a.value)||0),0);
-  const liabs =accts.filter(a=>a.kind==='liability').reduce((s,a)=>s+(parseFloat(a.value)||0),0);
+  const assets=accts.filter(a=>a.kind==='asset').reduce((s,a)=>s+_acctUsd(a),0);       // M13: per-row USD
+  const liabs =accts.filter(a=>a.kind==='liability').reduce((s,a)=>s+_acctUsd(a),0);
   const portfolio=personalPortfolioValue();
   return { assets, liabs, portfolio, netWorth: assets + portfolio - liabs };
 }
@@ -4425,12 +4425,21 @@ function personalNetWorthChange(){
 async function loadPersonalAccounts(){
   try{
     const r=await fetch('/api/personal-accounts',{credentials:'include'});
-    window._persAccounts = r.ok ? ((await r.json())||[]).map(a=>({_dbId:a.id,kind:a.kind||'asset',name:a.name||'',type:a.type||'other',value:parseFloat(a.value)||0})) : (window._persAccounts||[]);
+    window._persAccounts = r.ok ? ((await r.json())||[]).map(_mapPersAccount) : (window._persAccounts||[]);
   }catch(_){ window._persAccounts=window._persAccounts||[]; }
   renderPersAccounts();
 }
 window.loadPersonalAccounts=loadPersonalAccounts;
 
+// M13 (money audit 2026-10-09): a personal asset / liability carries the CURRENCY it was entered in. Its value is
+// normalised to USD per row (the personal side's basis, like transactions — _safeFX) and SP() shows it in the
+// personal display currency. It had no currency and SP() multiplied the raw number by the display rate as if it
+// were USD: a TT$ owner's 1,000,000 house showed as TT$6.8M (while the edit box said 1,000,000). Rows saved before
+// currencies existed read as USD — exactly how they have always been shown.
+// ONE row mapper for both loaders (loadPersonalFinance and loadPersonalAccounts) — two copies meant one dropped
+// the currency and the page-load net worth read every row as USD.
+function _mapPersAccount(a){ return {_dbId:a.id,kind:a.kind||'asset',name:a.name||'',type:a.type||'other',value:parseFloat(a.value)||0,currency:a.currency||'USD'}; }
+function _acctUsd(a){ return _safeFX(parseFloat(a && a.value)||0, (a && a.currency)||'USD', 'USD'); }
 function renderPersAccounts(){
   const el=document.getElementById('pers-accounts-list');
   if(!el) return;
@@ -4440,7 +4449,7 @@ function renderPersAccounts(){
   const liabs =accts.filter(a=>a.kind==='liability');
   const row=(a)=>`<div class="bar-row" style="gap:8px">
       <span class="bar-label" style="flex:1">${esc(a.name)} <span style="font-size:10px;color:var(--t3)">· ${esc(a.type)}</span></span>
-      <span class="bar-val" style="color:${a.kind==='asset'?'var(--green)':'var(--red)'}">${a.kind==='asset'?'':'-'}${SP(parseFloat(a.value)||0)}</span>
+      <span class="bar-val" style="color:${a.kind==='asset'?'var(--green)':'var(--red)'}">${a.kind==='asset'?'':'-'}${SP(_acctUsd(a))}</span>
       <button class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="openAccountModal('${a.kind}',${a._dbId})" title="Edit">✏</button>
       <button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--red);opacity:.7" onclick="deletePersAccount(${a._dbId})" title="Delete">✕</button>
     </div>`;
@@ -4466,6 +4475,8 @@ window.openAccountModal=function(kind,id){
   document.getElementById('acct-name').value=a?a.name:'';
   document.getElementById('acct-value').value=a?a.value:'';
   if(a) typeSel.value=a.type;
+  const curSel=document.getElementById('acct-currency');
+  if(curSel){ if(!curSel.options || !curSel.options.length) curSel.innerHTML=_persCurrencyOptionsHtml(); curSel.value=a ? (a.currency||'USD') : persCurrency; }   // M13
   openModal('account-modal');
 };
 window.saveAccount=async function(){
@@ -4474,13 +4485,15 @@ window.saveAccount=async function(){
   const name=(document.getElementById('acct-name').value||'').trim();
   const type=document.getElementById('acct-type').value||'other';
   const value=parseFloat(document.getElementById('acct-value').value)||0;
+  const currency=(document.getElementById('acct-currency')||{}).value||persCurrency||'USD';   // M13
+  const value_usd=Math.round(_safeFX(value, currency, 'USD')*100)/100;
   if(!name){ notify('Name is required',true); return; }
   try{
     if(id){
-      const r=await fetch('/api/personal-accounts/'+id,{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,type,kind,value})});
+      const r=await fetch('/api/personal-accounts/'+id,{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,type,kind,value,currency,value_usd})});
       if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||'Failed');
     }else{
-      const r=await fetch('/api/personal-accounts',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,type,kind,value})});
+      const r=await fetch('/api/personal-accounts',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,type,kind,value,currency,value_usd})});
       if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||'Failed');
     }
     closeModal('account-modal');
@@ -4564,11 +4577,11 @@ function renderPersonalSections(){
     }else{
       const _line=(label,val,color)=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span style="color:var(--t2)">${esc(label)}</span><span style="color:${color};font-family:var(--font-mono)">${val<0?'-':''}${SP(Math.abs(val))}</span></div>`;
       let _h='<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Assets</div>';
-      _assetRows.forEach(a=>{ _h+=_line(a.name,parseFloat(a.value)||0,'var(--green)'); });
+      _assetRows.forEach(a=>{ _h+=_line(a.name,_acctUsd(a),'var(--green)'); });   // M13: per-row USD
       if(_nwb.portfolio>0) _h+=_line('Investment portfolio',_nwb.portfolio,'var(--green)');
       if(_assetRows.length===0&&_nwb.portfolio===0) _h+='<div style="font-size:12px;color:var(--t3);padding:3px 0">$0</div>';
       _h+='<div style="height:1px;background:var(--bd);margin:6px 0"></div><div style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Liabilities</div>';
-      if(_liabRows.length){ _liabRows.forEach(l=>{ _h+=_line(l.name,-(parseFloat(l.value)||0),'var(--red)'); }); }
+      if(_liabRows.length){ _liabRows.forEach(l=>{ _h+=_line(l.name,-_acctUsd(l),'var(--red)'); }); }
       else _h+='<div style="font-size:12px;color:var(--t3);padding:3px 0">$0</div>';
       _h+='<div style="height:1px;background:var(--bd);margin:6px 0"></div><div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span style="color:var(--t1);font-weight:600">Net worth</span><span style="font-family:var(--font-mono);font-weight:700;color:'+(netWorth>=0?'var(--acc)':'var(--red)')+'">'+(netWorth<0?'-':'')+SP(Math.abs(Math.round(netWorth)))+'</span></div></div>';
       nwEl.innerHTML=_h;
@@ -4865,9 +4878,10 @@ function updateNetWorthPanel(portValue){
   // cash+savings assets; Other = every other asset; total = assets + live
   // portfolio − liabilities (same net-worth definition renderPersonal uses).
   const accts=window._persAccounts||[];
-  const cash = accts.filter(a=>a.kind==='asset' && (a.type==='cash'||a.type==='savings')).reduce((s,a)=>s+(parseFloat(a.value)||0),0);
-  const other= accts.filter(a=>a.kind==='asset' && !(a.type==='cash'||a.type==='savings')).reduce((s,a)=>s+(parseFloat(a.value)||0),0);
-  const liab = accts.filter(a=>a.kind==='liability').reduce((s,a)=>s+(parseFloat(a.value)||0),0);
+  // M13: each account's USD equivalent (_acctUsd) — this panel shows USD ('$', S2).
+  const cash = accts.filter(a=>a.kind==='asset' && (a.type==='cash'||a.type==='savings')).reduce((s,a)=>s+_acctUsd(a),0);
+  const other= accts.filter(a=>a.kind==='asset' && !(a.type==='cash'||a.type==='savings')).reduce((s,a)=>s+_acctUsd(a),0);
+  const liab = accts.filter(a=>a.kind==='liability').reduce((s,a)=>s+_acctUsd(a),0);
   const total=cash+portValue+other-liab;
   const max=Math.max(cash,portValue,other,1);
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};

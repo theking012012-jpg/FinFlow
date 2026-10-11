@@ -2649,11 +2649,17 @@ app.post('/api/personal-accounts', requireAuth, wrap(async (req, res) => {
   // net worth) as soon as another business was selected. Existing tagged rows are left as they are (Rule 8).
   const eid = null;
   const value = parseFloat(b.value) || 0;
+  // M13: the value's CURRENCY, and its USD equivalent at the personal side's own rates (sent by the client, which owns
+  // that table) — so net-worth sums (snapshot, accountant portal) add like with like. USD ⇒ value_usd = value.
+  const currency = b.currency == null || b.currency === '' ? 'USD' : String(b.currency).toUpperCase();
+  if (_badCurrency(currency)) return res.status(400).json({ error: 'Invalid currency code.' });
+  const value_usd = currency === 'USD' ? value : (Number.isFinite(parseFloat(b.value_usd)) ? Math.round(parseFloat(b.value_usd) * 100) / 100 : null);
+  if (value_usd == null) return res.status(400).json({ error: 'value_usd is required for a non-USD value.' });
   const _dup = await findRecentDuplicate('personal_accounts', req.session.userId, eid, { textMatch: { name, kind }, numMatch: { value } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('personal_accounts', {
     user_id: req.session.userId, entity_id: eid,
-    kind, name: name.slice(0, 120), type: (b.type || 'other').slice(0, 40), value,
+    kind, name: name.slice(0, 120), type: (b.type || 'other').slice(0, 40), value, currency, value_usd,
   });
   res.status(201).json(row);
 }));
@@ -2666,6 +2672,13 @@ app.put('/api/personal-accounts/:id', requireAuth, wrap(async (req, res) => {
   if (b.type  != null) patch.type  = String(b.type).slice(0, 40);
   if (b.kind  != null) patch.kind  = b.kind === 'liability' ? 'liability' : 'asset';
   if (b.value != null) patch.value = parseFloat(b.value) || 0;
+  if (b.currency != null) { const _c = String(b.currency).toUpperCase(); if (_badCurrency(_c)) return res.status(400).json({ error: 'Invalid currency code.' }); patch.currency = _c; }
+  // M13: keep value_usd in step with value / currency.
+  if (b.value != null || b.currency != null) {
+    const _cur = patch.currency || row.currency || 'USD', _val = patch.value != null ? patch.value : (parseFloat(row.value) || 0);
+    patch.value_usd = _cur === 'USD' ? _val : (Number.isFinite(parseFloat(b.value_usd)) ? Math.round(parseFloat(b.value_usd) * 100) / 100 : null);
+    if (patch.value_usd == null) return res.status(400).json({ error: 'value_usd is required for a non-USD value.' });
+  }
   await db.updateById('personal_accounts', row.id, patch);
   const { rows: [_par] } = await pool.query(`SELECT * FROM personal_accounts WHERE id = $1 LIMIT 1`, [row.id]);
   res.json(_par ? rowToObj(_par) : {});
@@ -2704,8 +2717,10 @@ app.post('/api/snapshots/capture', requireAuth, wrap(async (req, res) => {
     // and the personal portfolio GET /api/holdings?scope=personal. The snapshot used exact-entity accounts
     // and personal+business holdings, so the stored series never matched the net worth on screen.
     const accts  = await db.allByUser('personal_accounts', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
-    const assets = accts.filter(a => a.kind === 'asset').reduce((s, a) => s + (parseFloat(a.value) || 0), 0);
-    const liabs  = accts.filter(a => a.kind === 'liability').reduce((s, a) => s + (parseFloat(a.value) || 0), 0);
+    // M13: each account's USD equivalent (value_usd); rows from before currencies existed are USD by definition.
+    const _usdOf = a => (a.value_usd != null && a.value_usd !== '' ? parseFloat(a.value_usd) : parseFloat(a.value)) || 0;
+    const assets = accts.filter(a => a.kind === 'asset').reduce((s, a) => s + _usdOf(a), 0);
+    const liabs  = accts.filter(a => a.kind === 'liability').reduce((s, a) => s + _usdOf(a), 0);
     const holds  = await db.allByUser('holdings', uid, r => r.entity_id == null);
     const portfolio = holds.reduce((s, h) => s + ((parseFloat(h.shares) || 0) * (parseFloat(h.price) || 0)), 0);
     value = assets + portfolio - liabs;

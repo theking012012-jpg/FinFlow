@@ -195,3 +195,15 @@ Full per-finding evidence: `MONEY_AUDIT_2026-10-09.md` §6.
   - M52: business expenses cannot be edited (dead edit path). CODE-READ.
 - **Existing data:** reported, not changed (§6.5). New read-only checks [M14] and [M13] are in
   `prod-readonly-counts.js`.
+
+## 7. Round 2 (2026-10-10): M34, M41, M51, M52 fixed, plus M54; M53 logged
+
+See `MONEY_AUDIT_2026-10-09.md` §7.
+- **M34:** stock on credit → linked supplier bill, Dr Inventory / Cr AP, never opex.
+- **M41:** net pay at mark-paid; withholdings owed until Remit.
+- **M51:** re-scoped by execution; the accounts list repaints on a currency switch; one writer.
+- **M52:** expense edit, with shared validation and the bank-match guard.
+- **M54:** a rebuild keeps opening stock in equity.
+
+Each is RED → GREEN on targeted harnesses. Full sweep: owner. **M53** (personal net-worth history keyed on the
+active business) is logged for round 3.

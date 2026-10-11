@@ -92,14 +92,14 @@ Severity:
 | M31 | S3 | Recurring Bills "YTD" is a fabricated monthly × month-number; Recurring Invoices "YTD" is all-time | EXECUTED → FIXED, RED→GREEN (§6.1) |
 | M32 | S3 | COGS is dated by the UTC instant of the click, not the business's date (Rule 10) | CODE-READ → FIXED, RED→GREEN (§6.1) |
 | M33 | S3 | Bank CSV import collapses two genuine identical same-day transactions into one | EXECUTED → FIXED, RED→GREEN (§6.1) |
-| M34 | S3 | Inventory purchases credit Cash directly with no link to a bill: recording the supplier bill too double-counts | CODE-READ → HELD (owner decision, §6.2) |
+| M34 | S3 | Inventory purchases credit Cash directly with no link to a bill: recording the supplier bill too double-counts | CODE-READ → FIXED in round 2, RED→GREEN (§7) |
 | M35 | S3 | Fake in-memory "Salary — X (April)" rows dated "Apr 30" are injected into the personal list | EXECUTED → FIXED, RED→GREEN (§6.1) |
 | M36 | S3 | Business Investments card shows USD-priced holdings under a non-USD entity's symbol, unconverted | CODE-READ → FIXED, RED→GREEN (§6.1) |
 | M37 | S3 | River (Sankey) diagram is a third profit number: no COGS, payroll missing | EXECUTED → FIXED, RED→GREEN (§6.1) |
 | M38 | S4 | Monthly buckets include future-dated rows while the KPIs exclude them (server and client) | CODE-READ → FIXED, RED→GREEN (§6.1) |
 | M39 | S4 | `buildMonthlyArrays` buckets expenses by `expense_date` only (KPIs fall back to `date`/`created_at`) | CODE-READ (latent) → FIXED by code-read; no dedicated RED→GREEN assertion (§6.1) |
 | M40 | S4 | Backfill has no date fallback for expenses, payments or receipts: a legacy dateless row aborts a `reset` part-way | CODE-READ (latent) → FIXED, RED→GREEN (§6.1) |
-| M41 | S4 | Payroll cash-out is booked at gross, so withholdings are never a liability (design) | CODE-READ → HELD (owner decision, §6.2) |
+| M41 | S4 | Payroll cash-out is booked at gross, so withholdings are never a liability (design) | CODE-READ → FIXED in round 2, RED→GREEN (§7) |
 | M42 | S4 | Run Payroll modal asks for a run date that the server ignores | CODE-READ → FIXED, RED→GREEN (§6.1) |
 | M43 | S4 | Forecast AR/AP are not net of credit notes / vendor credits; opex run-rate skips orphan payments | CODE-READ → FIXED, RED→GREEN (§6.1) |
 | M44 | S4 | API v1 summary uses a January fiscal year; entity keys hide NULL-entity rows the summary counts | CODE-READ → FIXED, RED→GREEN (§6.1) |
@@ -578,7 +578,12 @@ scratch with one planted case each plus a control each. Each found exactly the p
   the browser's clock and matched by accident. The tool now pins both to 9 Oct; the unfixed tree still passes
   it, 4 / 4.
 
-### 6.2 Held for an owner decision (design; not built)
+### 6.1c Full sweep re-run after patch 27b
+
+`tests/harness/run-verification-sweep.js` on the final round-1 tree (with 27b and the tool fixes):
+**494 / 494 GREEN, 0 RED.**
+
+### 6.2 Held for an owner decision (design; not built) — SUPERSEDED: both built in round 2 (section 7)
 
 **M34 — inventory purchase vs supplier bill.** Stock-in posts Dr 1200 Inventory / Cr 1000 Cash. A user who also
 enters the supplier's bill gets the cost twice (bill opex now, COGS when sold) and cash out twice in the GL.
@@ -601,7 +606,7 @@ are missing. Options:
 FinFlow is estimates-only and has no remittance flow today, so (b) is the small honest step and (a) is a
 feature.
 
-### 6.3 Found during the fix pass — post-freeze list (round 2; not fixed in this round)
+### 6.3 Found during the fix pass — post-freeze list (fixed in round 2, section 7; M51 corrected there)
 
 | # | Sev | Finding | Evidence |
 |---|---|---|---|
@@ -637,3 +642,39 @@ feature.
   `moved_at`).
 - **M5:** imported Paid / Partial rows from before the fix have no payment rows. Production check M5a found
   none in the owner's real businesses (section 5).
+
+---
+
+## 7. Fix pass round 2, 2026-10-10 (M34, M41, M51, M52 + M54; held for owner approval)
+
+Owner instruction: fix M34, M41, M51 and M52 to the industry standard (the QuickBooks / Xero model), same rules.
+Each fix was RED on the round-1 tree and GREEN on the fix, run as targeted harnesses only. **The owner runs full
+sweeps** (PowerShell). One fix per patch.
+
+| # | Fix | Harness | GREEN | RED on the round-1 tree |
+|---|---|---|---|---|
+| M51 | **Corrected by execution.** The visible defect is that the personal assets / liabilities list kept the OLD currency after a display-currency switch. The fabricated net worth logged in round 1 is overwritten in the same tick and never reaches the screen: it was a latent second writer, seen only when a test called the internal function directly. Fix: one writer. `setPersCurrency` repaints through `renderPersonal` + `renderPersAccounts`; `_updatePersCurrencyValues` and `baseNetWorth` are deleted (asserted STRUCTURALLY, labelled) | `verify-m51-personal-currency-switch` | 10 | 2 of 10 (Car row `$1.0K`, correct `TT$6.8K`; structural) |
+| M52 | Business expenses are editable. The Edit button is rendered by `renderExpenses` itself. Edit uses the Add modal's real `bexp-*` fields (incl. the M49 date) and saves by PUT, then the list refetches. Server: one rule set for create and edit (`_expenseRuleError`: a description, an amount above 0). The amount of an expense booked from a bank line cannot be changed (409: delete and re-book; M17 releases the line). | `verify-m52-expense-edit-server`, `verify-m52-expense-edit-ui` | 14 + 9 | 5 of 14 (an edit to 0 or a blank description stored; a create of 0 booked; a bank-matched amount changed) · no Edit button. Negative amounts and impossible dates were already refused by body-shape (kept as controls). |
+| M41 | Withholdings are a liability until remitted. Mark-paid takes **net** pay out of cash; the withholdings stay in Payroll liabilities (2200). New **Remit** action (`PUT /api/payroll-runs/:id/remit`, date, lock- and idempotency-safe): Dr 2200 / Cr 1000. The same legs apply in the ledger rebuild, the cash-flow report (net on the paid date, withholdings on the remit date), the 13-week forecast (unremitted withholdings, estimated due date labelled) and void. The payroll page shows "Withholdings owed" with Remit. Runs paid **before** the fix (`paid_basis` NULL) keep their gross cash-out on every path, including a rebuild (Rule 8). | `verify-m41-payroll-withholdings`, `verify-m41-payroll-withholdings-ui` | 21 + 7 | 8 + FATAL (cash −2,000 vs −1,750; liabilities 0 vs 250; no remit route) · 2 of 7 |
+| M34 | Stock bought **on credit**. Stock In → "Paid by: Supplier bill" creates the supplier's bill linked to the purchase (`inventory_movement_id`); the movement books Dr 1200 / Cr 2000. The bill posts nothing itself and is never opex. One shared rule, `FinFlowDates.isOpexBill`, is used by computeBooks opex and monthly buckets, the edit re-sync, the ledger rebuild, the consolidation elimination and the three client legs. Every bill still counts in AP. A purchase bill's amount, date and status come from the purchase (409 on edit / delete); vendor and due date stay editable. Bills page tags it "Stock". | `verify-m34-inventory-on-credit`, `verify-m34-client-opex-legs`, `verify-m34-stock-in-on-credit-ui` | 19 + 3 + 7 | 14 of 19 (cash −200 vs 0, AP 0 vs 200, opex 200, tax deductions 280 vs 80) · 3 of 3 (600 / $3.1K / "down 960%") · no "Paid by" |
+| M54 | *(found in round 2; same contra mechanism, its own patch)* A ledger rebuild posted EVERY stock purchase Cr Cash, so opening stock (live: Cr 3100 Equity) became cash spent after a reset. Each purchase now stores its contra (`contra_code`); the rebuild uses it. Rows from before the column: reference "Opening stock" → 3100, else 1000 (no data change). | `verify-m54-opening-stock-rebuild` | 4 | 2 of 4 (rebuild cash −71 vs −21, equity 0 vs −50) |
+
+Existing harnesses re-run on the round-2 tree, all GREEN:
+- **Personal:** the round-1 personal-figures test.
+- **Expense:** M4, M15, M48/M49, `c1-client-lock`, `dashboard-render`, `no-new-shadowing`.
+- **Payroll (7):** M7, M14, M22, `payroll-paid-date`, `gl-payroll-cashout`, `payroll-state-guards`, `b4-4`.
+- **Runs paid with deductions (13):** including `e2e-full-lifecycle`, `full-leg-parity`, `reports-parity` and `gl-backfill-full-leg`.
+- **Bill / AP / inventory / GL (31):** including `gl-post-bill`, `consolidated-ap`, `stock-single-writer`, `gl-backfill` and `gl-statements`.
+
+**Not run by me (owner's sweep):** the full sweep, and the A1–A21 tools. `sweep-businessA.js` pays a September run
+with 10% tax, so after M41 its cash and balance sheet carry 200 of withholdings owed. Its P&L headline (2,140 /
+5,060 / −2,960 / 2,047) is unaffected.
+
+**Found in round 2, NOT fixed (logged for round 3):**
+
+| # | Sev | Finding | Evidence |
+|---|---|---|---|
+| M53 | S3 | Personal net-worth history is keyed on the ACTIVE BUSINESS. `POST /api/snapshots/capture` stores a personal net-worth snapshot under `req.entityId`. `GET /api/snapshots` returns the unscoped rows plus the active business's rows. An owner with several businesses gets a personal "change this month" that depends on which business is selected, and a month can hold two rows. | EXECUTED (jsdom): seeding June/July snapshots with no business beside the app's own July capture under the active business gave `+$0 this month` instead of `+$300`. Read from `server.js` `/api/snapshots` (GET filter, capture upsert key). |
+
+Commit-time note: index.html changes (M41 payroll UI, M34 stock-in, M49) need `npm run gen` output (`public/_gen`)
+staged with them, as earlier client commits did.

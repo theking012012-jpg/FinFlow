@@ -53,7 +53,7 @@ Status (C = Cowork item; each fix is one commit with its harness, RED on the old
 | C9 | 2.4a | Edit expense opens with the date blank; amount-only edit refused "Enter a valid date" | **Fixed** `812e728` |
 | C10 | 7.4 | Transaction lock can't be turned off | **Fixed** `cb7c85b` |
 | C11 | 6.3 | Accountant invite can't reach an existing client (only a referral sign-up link) | open |
-| C12 | 1.3a | Onboarding lets Country* be empty | open |
+| C12 | 1.3a | Onboarding lets Country* be empty | **Fixed** `064c2a8` |
 | C13 | 1.3c | Entities shows 0 businesses until a reload; country not shown anywhere | open |
 | C14 | 3.4 | P&L has no monthly table; Year chart starts in May (March missing) | open |
 | C15 | 8.1 | No real P&L export (CSV "Nothing to export", PDF = print dialog) | open |

@@ -4176,7 +4176,7 @@ async function loadPersonalFinance(){
       console.warn('[PersFinance] /api/personal-transactions returned',r.status,'— continuing without transactions');
     } else {
       const txs=await r.json();
-      window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,currency:t.currency||'USD',type:t.tx_type||'expense',date:(t.tx_date||t.created_at||'').slice(0,10),recurringProfileId:(t.recurring_profile_id!=null?Number(t.recurring_profile_id):null)}));
+      window._allPersTxs=txs.map(t=>({_dbId:t.id,desc:t.description||'',cat:t.category||'Other',amount:parseFloat(t.amount)||0,currency:t.currency||'USD',type:window.FinFlowDates.personalTxType(t),date:(t.tx_date||t.created_at||'').slice(0,10),recurringProfileId:(t.recurring_profile_id!=null?Number(t.recurring_profile_id):null)}));
     }
     // Active recurring profiles feed the period-KPI projection (base × months).
     try{
@@ -4208,6 +4208,7 @@ async function loadPersonalFinance(){
       }
     }catch(_){}
     if(typeof renderPersAccounts==='function'){ try{ renderPersAccounts(); }catch(_){}}
+    if(typeof window.ffPersBankRender==='function'){ try{ window.ffPersBankRender(); }catch(_){}}   // M60: the person's own bank card
     _applyPersFilter();
   }catch(e){console.warn('[Personal] Load failed:',e.message);}
 }

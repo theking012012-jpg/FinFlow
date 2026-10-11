@@ -3,7 +3,8 @@
  * verify-plaid-entity-scope.js — per-scope Plaid bank links. Each business links its OWN banks:
  * business A's linked banks show only on A, B's only on B (no cross-entity bleed). FULL INDEPENDENCE:
  * a business with no list of its own sees an EMPTY list — it never falls back to the personal/account-level
- * (entity_id NULL) banks. The personal (NULL) scope keeps its own list, reachable via ?entity_id=all. Unlink
+ * (entity_id NULL) banks. The personal (NULL) scope keeps its own list, reachable via ?scope=personal (M60: the
+ * "all businesses" view is a business surface and lists no bank). Unlink
  * is per-scope and EXACT: unlinking a bank on A prunes only A's own list and never mutates another scope's
  * (so Plaid's global /item/remove can't strand other scopes); a business with no own list cannot unlink
  * anything (404), because the write path never touches another scope's row.
@@ -37,14 +38,15 @@ const OWNER = { email: 'plaid-ent-owner@finflow.test', password: 'harness-passwo
 
     const http = new HarnessHttp(server.baseUrl);
     A('login 200', (await http.post('/api/auth/login', OWNER)).status === 200);
-    const insts = async eid => ((await http.get('/api/plaid/items?entity_id=' + eid)).json || {}).items || [];
+    const insts = async eid => ((await http.get('/api/plaid/items?' + (eid === 'personal' ? 'scope=personal' : 'entity_id=' + eid))).json || {}).items || [];
     const names = arr => arr.map(i => i.institution_name);
 
     A('A sees its OWN bank', names(await insts(eidA)).includes('Chase_A'));
     A('B sees its OWN bank', names(await insts(eidB)).includes('BofA_B'));
     A('A does NOT see B\'s bank (no bleed)', !names(await insts(eidA)).includes('BofA_B'));
     A('[DISCRIMINATING] C (no own list) sees an EMPTY list — no fallback to personal/legacy banks', names(await insts(eidC)).length === 0, JSON.stringify(names(await insts(eidC))));
-    A('personal (NULL, via ?entity_id=all) keeps its own bank', names(await insts('all')).includes('Republic_LEGACY'));
+    A('personal (NULL, via ?scope=personal) keeps its own bank', names(await insts('personal')).includes('Republic_LEGACY'));
+    A('[M60] the "all businesses" view lists no bank', names(await insts('all')).length === 0, JSON.stringify(names(await insts('all'))));
     A('A does NOT see the personal/legacy bank', !names(await insts(eidA)).includes('Republic_LEGACY'));
 
     // ── unlink is per-entity + exact ──
@@ -52,12 +54,12 @@ const OWNER = { email: 'plaid-ent-owner@finflow.test', password: 'harness-passwo
     A('unlink A\'s own bank → 200', un.status === 200, 'status ' + un.status);
     A('after unlink, A\'s list is empty', names(await insts(eidA)).length === 0, JSON.stringify(names(await insts(eidA))));
     A('after unlink A, B still has its bank', names(await insts(eidB)).includes('BofA_B'));
-    A('after unlink A, personal/legacy list (via ?entity_id=all) is untouched', names(await insts('all')).includes('Republic_LEGACY'));
+    A('after unlink A, personal/legacy list (via ?scope=personal) is untouched', names(await insts('personal')).includes('Republic_LEGACY'));
 
     // C has no own list (no fallback), so it cannot unlink the personal/legacy bank — the write path is per-scope
     const unC = await http.post('/api/plaid/unlink?entity_id=' + eidC, { item_id: 'itm_LEG' });
     A('C cannot unlink a bank it does not own → 404', unC.status === 404, 'status ' + unC.status);
-    A('personal/legacy bank still intact after the refused unlink', names(await insts('all')).includes('Republic_LEGACY'));
+    A('personal/legacy bank still intact after the refused unlink', names(await insts('personal')).includes('Republic_LEGACY'));
 
     console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (plaid per-entity)\n`);
   } catch (e) { console.error('\n  FATAL:', e && e.stack || e); fail++; }

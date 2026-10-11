@@ -65,7 +65,10 @@ const OWNER = { email: 'conns-owner@finflow.test', password: 'harness-password-n
     A('Belvo: B sees its OWN institutions', ((await get('/api/belvo/status', eidB)).institutions || []).includes('Banco_B'));
     A('Belvo: A does NOT see B (no bleed)', !((await get('/api/belvo/status', eidA)).institutions || []).includes('Banco_B'));
     A('[DISCRIMINATING] Belvo: C (no own) is NOT connected — no fallback to personal/legacy', !((await get('/api/belvo/status', eidC)).institutions || []).includes('Banco_LEGACY'));
-    A('Belvo: personal (NULL, via ?entity_id=all) keeps its own institutions', ((await get('/api/belvo/status', 'all')).institutions || []).includes('Banco_LEGACY'));
+    // M60: Personal's bank is read through its own scope (scope=personal); the "all businesses" view lists no bank.
+    const _persBelvo = async () => ((await http.get('/api/belvo/status?scope=personal')).json || {}).institutions || [];
+    A('Belvo: personal (NULL, via ?scope=personal) keeps its own institutions', (await _persBelvo()).includes('Banco_LEGACY'));
+    A('[M60] Belvo: the "all businesses" view lists no bank', !((await get('/api/belvo/status', 'all')).institutions || []).length);
 
     // ── WIPAY ──
     A('WiPay: A sees its OWN account', (await get('/api/wipay/status', eidA)).account === 'acct_A');
@@ -77,7 +80,7 @@ const OWNER = { email: 'conns-owner@finflow.test', password: 'harness-password-n
     A('after A disconnect, A is cleared', !(await get('/api/wipay/status', eidA)).account);
     A('after A disconnect, B still linked', (await get('/api/wipay/status', eidB)).account === 'acct_B');
     A('Belvo disconnect A 200', (await http.post('/api/belvo/disconnect?entity_id=' + eidA, {})).status === 200);
-    A('after A disconnect, personal/legacy Belvo (via ?entity_id=all) is untouched', ((await get('/api/belvo/status', 'all')).institutions || []).includes('Banco_LEGACY'));
+    A('after A disconnect, personal/legacy Belvo (via ?scope=personal) is untouched', (await _persBelvo()).includes('Banco_LEGACY'));
 
     // ── WIPAY CALLBACK: verify hash against the INVOICE's own business's key ──
     // NB: WiPay stores api_key ENCRYPTED (encTok); the callback decTok's it before hashing. The harness

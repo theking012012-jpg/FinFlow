@@ -75,7 +75,10 @@ const LOGIN = { email: 'conn-iso@finflow.test', password: 'harness-password-not-
 
     // ── Plaid linked items: per-scope ──────────────────────────────────────────────────
     await seedBlob(null, 'plaid_items', [{ item_id: 'itm_personal', institution_name: 'Personal Bank', linked_at: '2026-01-01' }]);
-    const pPersonal = (await http.get('/api/plaid/items' + q(PERSONAL))).json || {};
+    // M60: Personal's bank is reached by its own scope (scope=personal); the "all businesses" view is a business
+    // surface and lists no bank.
+    const pPersonal = (await http.get('/api/plaid/items?scope=personal')).json || {};
+    A('[M60] the "all businesses" view lists no bank', (((await http.get('/api/plaid/items' + q(PERSONAL))).json || {}).items || []).length === 0);
     A('personal has its own linked bank', Array.isArray(pPersonal.items) && pPersonal.items.length === 1 && pPersonal.items[0].item_id === 'itm_personal', JSON.stringify(pPersonal.items));
     const pA = (await http.get('/api/plaid/items' + q(entA))).json || {};
     A('[DISCRIMINATING] business A has ZERO linked banks (no fallback to personal\'s bank)', Array.isArray(pA.items) && pA.items.length === 0, JSON.stringify(pA.items));

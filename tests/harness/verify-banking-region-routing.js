@@ -36,9 +36,14 @@ const ROOT = path.join(__dirname, '..', '..');
     A('key banking IDs are unique', (html.match(/id="bank-total-bal"/g)||[]).length === 1 && (html.match(/id="plaid-linked-strip"/g)||[]).length === 1);
 
     // ── 2. Region routing (behaviour) ──
-    const mFn = html.match(/window\.ffBankLinkFromPage = async function\(\)\{[\s\S]*?\n\};/);
-    A('ffBankLinkFromPage is country-aware + region-strict (BELVO_MARKETS + PLAID_MARKETS)',
-      !!mFn && /country/.test(mFn[0]) && /BELVO_MARKETS/.test(mFn[0]) && /PLAID_MARKETS/.test(mFn[0]), 'routing not region-strict');
+    // M60: the region rule is ffBankRegion, shared by the business Banking page and the Personal bank card; the page's
+    // ffBankLinkFromPage routes through ffBankLinkForCountry. All three are installed and executed below.
+    const mRegion = html.match(/window\.ffBankRegion = function\(country\)\{[\s\S]*?\n\};/);
+    const mFor = html.match(/window\.ffBankLinkForCountry = async function\(country, scope, onDone\)\{[\s\S]*?\n\};/);
+    const mPage = html.match(/window\.ffBankLinkFromPage = async function\(\)\{[\s\S]*?\n\};/);
+    const mFn = mRegion && mFor && mPage ? [mRegion[0] + '\n' + mFor[0] + '\n' + mPage[0]] : null;
+    A('[STRUCTURAL] bank linking is country-aware + region-strict (BELVO_MARKETS + PLAID_MARKETS in ffBankRegion)',
+      !!mFn && /country/.test(mPage[0]) && /BELVO_MARKETS/.test(mRegion[0]) && /PLAID_MARKETS/.test(mRegion[0]), 'routing not region-strict');
     if (!mFn) { console.log('\n  RED — ' + pass + ' passed, ' + fail + ' failed'); process.exit(1); }
 
     const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'https://x.test/app' });

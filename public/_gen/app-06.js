@@ -1,10 +1,11 @@
 
 // ── Belvo (Latin America bank data) — Plaid-style widget: token → widget → link → exchange. ──
-window.ffLinkBelvo = async function(onLinked, onError){
+window.ffLinkBelvo = async function(onLinked, onError, scope){
   const fail = (m) => { if(typeof notify==='function') notify(m, true); if(typeof onError==='function') onError(m); };
+  const _q = scope === 'personal' ? '?scope=personal' : '';   // M60: Personal links its own bank
   let d;
   try{
-    const r = await fetch('/api/belvo/widget-token', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:'{}'});
+    const r = await fetch('/api/belvo/widget-token' + _q, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:'{}'});
     d = await r.json().catch(()=>({}));
     if(!r.ok){
       if(r.status===401) return fail('Please finish creating your account first.');
@@ -17,7 +18,7 @@ window.ffLinkBelvo = async function(onLinked, onError){
   window.belvoSDK.createWidget(d.access, {
     callback: async (link) => {
       try{
-        const ex = await fetch('/api/belvo/exchange', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({link})});
+        const ex = await fetch('/api/belvo/exchange' + _q, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({link})});
         const j = await ex.json().catch(()=>({}));
         if(!ex.ok) return fail(j.error || 'Could not finish linking your bank.');
         if(typeof notify==='function') notify('Bank linked: ' + (j.institution || 'your bank') + ' ✓');
@@ -96,11 +97,12 @@ window.ffConnectCreds = function(key, onConnected){
   };
 };
 
-window.ffLinkBank = async function(onLinked, onError){
+window.ffLinkBank = async function(onLinked, onError, scope){
   const fail = (m) => { if(typeof notify==='function') notify(m, true); if(typeof onError==='function') onError(m); };
+  const _q = scope === 'personal' ? '?scope=personal' : '';   // M60: Personal links its own bank
   let tok;
   try{
-    const r = await fetch('/api/plaid/link-token', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:'{}'});
+    const r = await fetch('/api/plaid/link-token' + _q, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:'{}'});
     tok = await r.json().catch(()=>({}));
     if(!r.ok){
       if(r.status===401) return fail('Please finish creating your account first, then link your bank.');
@@ -113,7 +115,7 @@ window.ffLinkBank = async function(onLinked, onError){
     token: tok.link_token,
     onSuccess: async (public_token) => {
       try{
-        const ex = await fetch('/api/plaid/exchange', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({public_token})});
+        const ex = await fetch('/api/plaid/exchange' + _q, {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({public_token})});
         const j = await ex.json().catch(()=>({}));
         if(!ex.ok) return fail(j.error || 'Could not finish linking your bank.');
         if(typeof notify==='function') notify('Bank linked: ' + (j.institution_name || 'your bank') + ' ✓');
@@ -594,7 +596,8 @@ document.addEventListener('keydown',function(e){ if((e.metaKey||e.ctrlKey)&&!e.a
 // ffHelp getting-started overlay retired — superseded by the full Help Center (page-help / renderHelpCenter).
 
 // ── Bank statement import: upload an OFX/QFX/CSV file from any bank (incl. local banks). ──
-window.ffImportStatement = function(){
+window.ffImportStatement = function(scope){
+  var personal = scope === 'personal';   // M60: a statement imported from Personal lands in Personal
   var inp = document.createElement('input');
   inp.type = 'file'; inp.accept = '.ofx,.qfx,.csv,.txt';
   inp.onchange = function(){
@@ -604,11 +607,12 @@ window.ffImportStatement = function(){
     var reader = new FileReader();
     reader.onload = async function(){
       try{
-        var r = await fetch('/api/banking/import', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ format: format, content: String(reader.result || '') })});
+        var r = await fetch('/api/banking/import' + (personal ? '?scope=personal' : ''), {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ format: format, content: String(reader.result || '') })});
         var j = await r.json().catch(function(){return {};});
         if(!r.ok){ if(typeof notify==='function') notify(j.error || 'Could not import the statement.', true); return; }
         if(typeof notify==='function') notify('Imported ' + j.imported + ' transaction' + (j.imported===1?'':'s') + (j.skipped ? ' (' + j.skipped + ' already there)' : '') + '.');
-        if(typeof loadBankingFromDB==='function') loadBankingFromDB();
+        if(personal){ if(typeof window.loadPersonalFinance==='function') window.loadPersonalFinance(); }
+        else if(typeof loadBankingFromDB==='function') loadBankingFromDB();
       }catch(e){ if(typeof notify==='function') notify('Network error importing the statement.', true); }
     };
     reader.readAsText(file);
@@ -718,32 +722,115 @@ window.renderPlaidLinked = async function(){
 // back to whichever aggregator is actually configured, and finally to manual statement import (always
 // available via the ⬆ Import button). No dishonest "coming soon" — an unserved region is told plainly
 // to use Import. Belvo covers Latin America; Plaid covers US/CA/UK/EU.
-window.ffBankLinkFromPage = async function(){
-  const ent = (window.ENTITIES||[]).find(e=>e.active) || (window.ENTITIES||[])[0] || {};
-  const country = String(ent.country||'').toUpperCase();
-  // Region markets. BELVO = LatAm; PLAID = US/CA/UK + EU open-banking (per Plaid's supported-country
-  // list). A country outside BOTH (e.g. TT and most of the Caribbean) has no aggregator → manual only.
+// Region markets. BELVO = LatAm; PLAID = US/CA/UK + EU open-banking (per Plaid's supported-country
+// list). A country outside BOTH (e.g. TT and most of the Caribbean) has no aggregator → manual only.
+// REGION-STRICT: a country uses ONLY its own region's aggregator. Never the wrong-region provider —
+// pointing a Belvo-market bank at Plaid (or a Plaid-market bank at Belvo) simply can't find the
+// institution, so a cross-region "fallback" is a dead end, not a help. Uncovered → manual import.
+// M60: ONE rule for the business Banking page and the Personal bank card.
+window.ffBankRegion = function(country){
   const BELVO_MARKETS = ['MX','BR','CO','AR','CL','PE','EC','BO','PY','UY','VE','GT','CR','PA','DO'];
   const PLAID_MARKETS = ['US','CA','GB','AT','BE','DK','EE','FI','FR','DE','IE','IT','LV','LT','NL','NO','PL','PT','ES','SE'];
-  const onDone = ()=>{ try{ renderPlaidLinked(); }catch(e){} if(typeof loadBankingFromDB==='function') loadBankingFromDB(); };
-  const cfg = async (path, key) => { try{ return !!(await (await fetch(path,{credentials:'include'})).json())[key]; }catch(e){ return false; } };
+  country = String(country||'').toUpperCase();
+  return BELVO_MARKETS.indexOf(country) >= 0 ? 'belvo' : PLAID_MARKETS.indexOf(country) >= 0 ? 'plaid' : null;
+};
+// Opens the aggregator that serves `country` for the given scope (null = the business in view, 'personal' = Personal).
+window.ffBankLinkForCountry = async function(country, scope, onDone){
+  country = String(country||'').toUpperCase();
+  const _q = scope === 'personal' ? '?scope=personal' : '';
+  const cfg = async (path, key) => { try{ return !!(await (await fetch(path + _q,{credentials:'include'})).json())[key]; }catch(e){ return false; } };
   const manual = (why) => { if(typeof notify==='function') notify(why, true); };
   const IMPORT = ' — use “⬆ Import” to add an OFX/QFX/CSV statement from any bank.';
-  // REGION-STRICT: a country uses ONLY its own region's aggregator. Never the wrong-region provider —
-  // pointing a Belvo-market bank at Plaid (or a Plaid-market bank at Belvo) simply can't find the
-  // institution, so a cross-region "fallback" is a dead end, not a help. Uncovered → manual import.
-  const region = BELVO_MARKETS.indexOf(country) >= 0 ? 'belvo'
-               : PLAID_MARKETS.indexOf(country) >= 0 ? 'plaid'
-               : null;
+  const region = window.ffBankRegion(country);
   if (region === 'belvo') {
-    if (await cfg('/api/belvo/status','configured')) return window.ffLinkBelvo(onDone);
+    if (await cfg('/api/belvo/status','configured')) return window.ffLinkBelvo(onDone, null, scope);
     return manual('Automatic bank linking for '+country+' (via Belvo) isn’t enabled yet'+IMPORT);
   }
   if (region === 'plaid') {
-    if (await cfg('/api/plaid/items','configured')) return window.ffLinkBank(onDone);
+    if (await cfg('/api/plaid/items','configured')) return window.ffLinkBank(onDone, null, scope);
     return manual('Automatic bank linking for '+country+' (via Plaid) isn’t enabled yet'+IMPORT);
   }
   return manual('Automatic bank linking isn’t available'+(country?(' for '+country):'')+' yet'+IMPORT);
+};
+window.ffBankLinkFromPage = async function(){
+  const ent = (window.ENTITIES||[]).find(e=>e.active) || (window.ENTITIES||[])[0] || {};
+  const onDone = ()=>{ try{ renderPlaidLinked(); }catch(e){} if(typeof loadBankingFromDB==='function') loadBankingFromDB(); };
+  return window.ffBankLinkForCountry(ent.country, null, onDone);
+};
+
+// ── M60: Personal bank card — the person's own bank (country, linked banks, sync, unlink), never a business's. ──
+window.ffPersBankRender = async function(){
+  const sel = document.getElementById('pers-bank-country'), box = document.getElementById('pers-bank-linked');
+  if(!sel || !box) return;
+  let d = {};
+  try{
+    const r = await fetch('/api/personal-bank?scope=personal', {credentials:'include'});
+    if(!r.ok) return;
+    d = await r.json().catch(()=>({}));
+  }catch(e){ return; }
+  sel.value = d.country || '';
+  const esc = v => String(v==null?'':v).replace(/[<>&"']/g, '');
+  const plaid = (d.plaid && d.plaid.items) || [], belvo = (d.belvo && d.belvo.institutions) || [];
+  const rows = plaid.map(it => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);margin-bottom:6px">
+      <span class="badge b-green" style="font-size:10px">Linked ✓</span>
+      <div style="flex:1;font-size:12.5px;color:var(--t1)">${esc(it.institution_name||'Bank')}</div>
+      <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--red)" onclick="ffPersBankUnlink('plaid','${esc(it.item_id)}')">Unlink</button>
+    </div>`).concat(belvo.length ? [`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--radius);margin-bottom:6px">
+      <span class="badge b-green" style="font-size:10px">Linked ✓</span>
+      <div style="flex:1;font-size:12.5px;color:var(--t1)">${belvo.map(esc).join(', ')}</div>
+      <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--red)" onclick="ffPersBankUnlink('belvo')">Disconnect</button>
+    </div>`] : []);
+  const syncBtn = document.getElementById('pers-bank-sync-btn');
+  if(syncBtn) syncBtn.style.display = rows.length ? '' : 'none';
+  const lines = Number(d.lines) || 0;
+  box.innerHTML = (rows.length ? rows.join('') : '<div style="font-size:12px;color:var(--t3);padding:.25rem 0">No bank linked yet. Link one, or import a statement from any bank.</div>')
+    + (lines ? `<div style="font-size:11px;color:var(--t3);margin-top:4px">${lines} bank transaction${lines===1?'':'s'} in your personal feed — they appear in your transactions below.</div>` : '');
+};
+window.ffPersBankCountry = async function(country){
+  try{
+    const r = await fetch('/api/personal-bank?scope=personal', {method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({country: country||null})});
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok){ if(typeof notify==='function') notify(j.error||'Could not save your bank country.', true); return; }
+    if(typeof notify==='function') notify('Bank country saved.');
+  }catch(e){ if(typeof notify==='function') notify('Network error.', true); }
+};
+window.ffPersBankLink = async function(){
+  const sel = document.getElementById('pers-bank-country');
+  const country = sel ? sel.value : '';
+  if(!country){ if(typeof notify==='function') notify('Choose your bank’s country first.', true); return; }
+  const onDone = ()=>{ window.ffPersBankRender(); window.ffPersBankSync(); };
+  return window.ffBankLinkForCountry(country, 'personal', onDone);
+};
+window.ffPersBankSync = async function(){
+  if(typeof notify==='function') notify('Syncing your bank…');
+  let d = {};
+  try{ d = await (await fetch('/api/personal-bank?scope=personal', {credentials:'include'})).json(); }catch(e){}
+  let added = 0, err = null;
+  const run = async (path) => {
+    try{
+      const r = await fetch(path + '?scope=personal', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:'{}'});
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok) err = j.error || 'Sync failed.'; else added += Number(j.added)||0;
+    }catch(e){ err = 'Network error during sync.'; }
+  };
+  if(d.plaid && (d.plaid.items||[]).length) await run('/api/plaid/sync');
+  if(d.belvo && (d.belvo.institutions||[]).length) await run('/api/belvo/sync');
+  if(err){ if(typeof notify==='function') notify(err, true); }
+  else if(typeof notify==='function') notify('Synced — '+added+' new transaction'+(added===1?'':'s')+'.');
+  if(typeof window.loadPersonalFinance==='function') window.loadPersonalFinance();
+  else window.ffPersBankRender();
+};
+window.ffPersBankUnlink = async function(provider, itemId){
+  const path = provider === 'belvo' ? '/api/belvo/disconnect' : '/api/plaid/unlink';
+  try{
+    const r = await fetch(path + '?scope=personal', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify(provider === 'belvo' ? {} : {item_id:itemId})});
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok){ if(typeof notify==='function') notify(j.error||'Could not unlink.', true); return; }
+    if(typeof notify==='function') notify('Bank unlinked. Transactions already imported stay in your feed.');
+    window.ffPersBankRender();
+  }catch(e){ if(typeof notify==='function') notify('Network error.', true); }
 };
 window.ffBankSync = async function(){
   if(typeof notify==='function') notify('Syncing bank transactions…');

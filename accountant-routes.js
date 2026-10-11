@@ -939,7 +939,8 @@ If you cannot find a field, use null. Be concise.`;
       // figures are the answer.
       const _ytdTo = new Date().toISOString().slice(0, 10), _ytdFrom = _ytdTo.slice(0, 4) + '-01-01';   // calendar strings (Rule 10)
       const { rows: _pSums } = await pool.query(
-        `SELECT COALESCE(NULLIF(data->>'currency',''),'USD') AS cur, (data->>'tx_type') = 'income' AS is_inc,
+        // M60: mirrors FinFlowDates.personalTxType — a pre-M60 personal bank-feed 'credit' is income, not spending.
+        `SELECT COALESCE(NULLIF(data->>'currency',''),'USD') AS cur, COALESCE(lower(data->>'tx_type'), '') IN ('income', 'credit') AS is_inc,
                 COALESCE(SUM(CASE WHEN (data->>'amount') ~ '^\s*-?[0-9]+(\.[0-9]+)?\s*$' THEN (data->>'amount')::numeric END),0)::float AS amt
            FROM personal_transactions
           WHERE user_id = $1 AND entity_id IS NULL AND COALESCE(NULLIF(data->>'tx_date',''), to_char(created_at,'YYYY-MM-DD')) >= $2
@@ -961,7 +962,7 @@ If you cannot find a field, use null. Be concise.`;
         expense:      _exp == null ? null : _exp.toFixed(2),
         currency:     _single ? ([..._curs][0] || null) : null,
         incomeByCurrency: _incByCur, expenseByCurrency: _expByCur, window: { from: _ytdFrom, to: _ytdTo },
-        transactions: ptx.rows.map(r => ({ ...r.data, id: r.id })),
+        transactions: ptx.rows.map(r => ({ ...r.data, id: r.id, tx_type: require('./public/finflow-dates.js').personalTxType(r.data) })),   // M60
         accounts:     pacc.rows.map(r => ({ ...r.data, id: r.id })),
       };
     }

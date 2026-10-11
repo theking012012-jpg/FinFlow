@@ -211,7 +211,17 @@
   var isInventoryBill = function (b) { return !!(b && b.inventory_movement_id != null && b.inventory_movement_id !== ''); };
   var isOpexBill = function (b) { return !!b && RECOGNIZED_BILL_STATUSES.indexOf(String(b.status || '').toLowerCase()) !== -1 && !isInventoryBill(b); };
 
+  // M60 (personal bank feed): a personal transaction is income or an expense. Bank-feed rows written before M60 (an
+  // account with no business, whose bank feed is its personal feed) say the bank's direction instead — credit (money
+  // in) / debit (money out) — and every Personal total that reads only 'income' / 'expense' dropped them. ONE reading,
+  // used by the Personal page and the accountant portal (whose SQL sum mirrors it: income = 'income' or 'credit').
+  var personalTxType = function (t) {
+    var v = String((t && t.tx_type) || '').toLowerCase();
+    return v === 'credit' || v === 'income' ? 'income' : 'expense';
+  };
+
   return {
+    personalTxType: personalTxType,
     deductibleFactor: deductibleFactor,
     normalizeDeductible: normalizeDeductible,
     RECOGNIZED_BILL_STATUSES: RECOGNIZED_BILL_STATUSES,

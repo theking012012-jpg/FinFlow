@@ -2603,10 +2603,29 @@ const isPersonalTxnRow = r => !!r && r.entity_id == null;
 // A bank-feed write lands in the scope it was made from: the business in view, or Personal for an account with no
 // business. It must never land in Personal from a BUSINESS context — the consolidated "all businesses" view
 // (?entity_id=all) resolves no business, and a line written there was stored entity-less, i.e. in Personal.
-const _bankScopeRefused = async (req, res) => {
-  if (req.entityId != null) return false;
+// M60 (personal bank feed): Personal links and imports its OWN bank, whether or not the person has a business. A bank
+// request is PERSONAL only when it says so (scope=personal, query or body) — never inferred from which business is
+// active (the request middleware always resolves one). Personal bank data is the session user's own: user_id is the
+// person, entity_id NULL. A business request keeps the business's scope (scopeId + the business in view).
+const _isPersonalBank = req => (req.query && req.query.scope === 'personal') || (req.body && req.body.scope === 'personal');
+const _bankCtx = req => _isPersonalBank(req)
+  ? { personal: true, uid: req.session.userId, eid: null }
+  : { personal: false, uid: scopeId(req), eid: req.entityId == null ? null : req.entityId };
+// Linking one's OWN personal bank is not a business permission; a business bank still needs bank:manage.
+const _bankPerm = (req, res, next) => (_isPersonalBank(req) ? next() : requirePerm('bank:manage')(req, res, next));
+// Personal rows speak the Personal vocabulary (income / expense, which every Personal total reads); the bank's own
+// direction is kept as bank_direction. Business bank lines keep debit / credit (reconciliation reads those).
+const _bankTx = (personal, isOut) => personal
+  ? { tx_type: isOut ? 'expense' : 'income', bank_direction: isOut ? 'debit' : 'credit' }
+  : { tx_type: isOut ? 'debit' : 'credit' };
+// A BUSINESS bank request with no business in view, on an account that has businesses (the "all businesses" view).
+const _bankBizUnscoped = async req => {
+  if (_isPersonalBank(req) || req.entityId != null) return false;
   const { rows: [e] } = await pool.query(`SELECT 1 FROM entities WHERE user_id = $1 LIMIT 1`, [scopeId(req)]);
-  if (!e) return false;   // no business at all: the bank feed is the personal feed
+  return !!e;   // no business at all: the bank feed is the personal feed
+};
+const _bankScopeRefused = async (req, res) => {
+  if (!(await _bankBizUnscoped(req))) return false;
   res.status(400).json({ error: 'Choose a business first — bank lines belong to the business they were made in.', code: 'NO_BUSINESS_IN_VIEW' });
   return true;
 };
@@ -6318,25 +6337,27 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   const TX_TYPES = ['credit', 'debit'];
   if (type != null && !TX_TYPES.includes(type)) return res.status(400).json({ error: "tx_type must be 'credit' or 'debit'." });
   // B8/C1: dedupe guard — personal_transactions is a JSONB table, so the JSONB matcher applies.
-  const _bDup = await findRecentDuplicate('personal_transactions', scopeId(req), req.entityId || null,
+  const _bc = _bankCtx(req);   // M60
+  const _bDup = await findRecentDuplicate('personal_transactions', _bc.uid, _bc.eid,
     { textMatch: { description: String(desc) }, numMatch: { amount: parseFloat(amount) || 0 } });
   if (_bDup) return res.status(201).json(_bDup);
   const { row } = await db.insert('personal_transactions', {
-    user_id: scopeId(req),
-    entity_id: req.entityId || null,
+    user_id: _bc.uid,
+    entity_id: _bc.eid,
     description: desc, amount: parseFloat(amount) || 0,
     // F23: standardize on tx_type/tx_date to match the rest of personal_transactions
     // (legacy rows written as type/date are still read via fallback below and on GET).
-    tx_type: type || 'debit', tx_date: date || await entityTodayYmd(req.entityId),
+    ..._bankTx(_bc.personal, (type || 'debit') === 'debit'), tx_date: date || (_bc.personal ? new Date().toISOString().slice(0, 10) : await entityTodayYmd(req.entityId)),
     category: cat || 'Other', source: 'banking',
   });
   res.status(201).json(row);
 }));
 app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
-  const _bl = await ownedBy('personal_transactions', req.params.id, scopeId(req));
+  const _bc = _bankCtx(req);   // M60: scope=personal deletes the person's own personal-feed line
+  const _bl = await ownedBy('personal_transactions', req.params.id, _bc.uid);
   // M56: only a bank line of the scope in view — a business's own line from that business; a personal-feed line only
   // when no business is in view. Never a personal transaction from a business, never another business's line.
-  if (!_bl || _bl.source !== 'banking' || (_bl.entity_id == null ? null : _bl.entity_id) !== (req.entityId == null ? null : req.entityId)) return res.status(404).json({ error: 'Not found.' });
+  if (!_bl || _bl.source !== 'banking' || (_bl.entity_id == null ? null : _bl.entity_id) !== _bc.eid) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('personal_transactions', parseInt(req.params.id));
   res.json({ ok: true });
 }));
@@ -6566,14 +6587,17 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
     if (fmt === 'ofx' || fmt === 'qfx' || /<STMTTRN>/i.test(content)) txns = parseOFX(content);
     else if (fmt === 'csv') {
       let _country = null;   // N40: ambiguous day/month dates follow the business's country convention
-      try { if (req.entityId) _country = (await pool.query(`SELECT data->>'country' AS c FROM entities WHERE id = $1`, [req.entityId])).rows[0]?.c || null; } catch (_) {}
+      try {
+        if (_isPersonalBank(req)) _country = (await _providerBlobE(req.session.userId, 'pers_bank_country', null)).value || null;   // M60
+        else if (req.entityId) _country = (await pool.query(`SELECT data->>'country' AS c FROM entities WHERE id = $1`, [req.entityId])).rows[0]?.c || null;
+      } catch (_) {}
       txns = parseCSV(content, Object.assign({}, mapping || {}, { country: (mapping && mapping.country) || _country }));
     }
     else return res.status(400).json({ error: "format must be 'ofx', 'qfx', or 'csv'." });
   } catch (e) { return res.status(400).json({ error: e.message }); }
   if (!txns.length) return res.status(400).json({ error: 'No transactions found in the statement.' });
 
-  const uid = scopeId(req);
+  const { uid, eid, personal } = _bankCtx(req);   // M60
   let imported = 0, skipped = 0;
   // M33 (money audit 2026-10-09): two GENUINE identical same-day transactions (two 4.50 coffees) have the same
   // date|amount|description, so the content hash collapsed them into one and the second was dropped as a
@@ -6591,12 +6615,14 @@ app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
       const n = (_seenInFile.get(base) || 0) + 1; _seenInFile.set(base, n);
       key = 'csv:' + crypto.createHash('sha1').update(n === 1 ? base : base + '|#' + n).digest('hex');
     }
+    // M60: a duplicate is one already in THIS scope — a statement imported into a business never blocks the same
+    // statement in Personal (or another business).
     const { rows: [dup] } = await pool.query(
-      `SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'import_key'=$2 LIMIT 1`, [uid, key]);
+      `SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'import_key'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`, [uid, key, eid]);
     if (dup) { skipped++; continue; }
     await db.insert('personal_transactions', {
-      user_id: uid, entity_id: req.entityId || null,
-      description: t.description, amount: t.amount, tx_type: t.tx_type, tx_date: t.tx_date,
+      user_id: uid, entity_id: eid,
+      description: t.description, amount: t.amount, ..._bankTx(personal, t.tx_type === 'debit'), tx_date: t.tx_date,
       category: 'Uncategorized', source: 'banking', import_key: key,
     });
     imported++;
@@ -7253,17 +7279,18 @@ const _publicItem = i => ({ item_id: i.item_id, institution_name: i.institution_
 // GET the real linked-bank state (tokens NEVER leave the server). `configured` lets the UI show
 // an honest "needs setup" state instead of a Link button that would 502.
 app.get('/api/plaid/items', requireAuth, wrap(async (req, res) => {
-  const { items } = await _getPlaidItemsE(scopeId(req), req.entityId);
+  const _bc = _bankCtx(req);   // M60
+  const { items } = (await _bankBizUnscoped(req)) ? { items: [] } : await _getPlaidItemsE(_bc.uid, _bc.eid);
   res.json({ configured: plaidConfigured(), env: PLAID_ENV_NAME, items: items.map(_publicItem) });
 }));
 
 // Step 1 of Link: create a link_token the browser hands to Plaid Link.
-app.post('/api/plaid/link-token', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+app.post('/api/plaid/link-token', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
   try {
     const j = await plaidCall('/link/token/create', {
-      user: { client_user_id: String(scopeId(req)) },
+      user: { client_user_id: String(_bankCtx(req).uid) },
       client_name: 'FinFlow',
       products: ['transactions'],
       country_codes: PLAID_COUNTRIES,
@@ -7278,7 +7305,7 @@ app.post('/api/plaid/link-token', requireAuth, requirePerm('bank:manage'), wrap(
 
 // Step 2 of Link: exchange the public_token for a long-lived access_token; persist (encrypted)
 // with the institution name so the UI can show a REAL linked state.
-app.post('/api/plaid/exchange', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+app.post('/api/plaid/exchange', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
   const publicToken = (req.body && req.body.public_token) || '';
@@ -7294,9 +7321,9 @@ app.post('/api/plaid/exchange', requireAuth, requirePerm('bank:manage'), wrap(as
         institution = (inst.institution && inst.institution.name) || institution;
       }
     } catch (_) { /* institution name is best-effort; the link still succeeds */ }
-    const uid = scopeId(req);
+    const { uid, eid } = _bankCtx(req);   // M60
     const _newItem = { item_id: ex.item_id, access_token: encTok(ex.access_token), institution_name: institution, linked_at: new Date().toISOString(), cursor: null };
-    const next = await _mutatePlaidItemsE(uid, req.entityId, cur => cur.filter(it => it.item_id !== ex.item_id).concat([_newItem]));   // N45: idempotent re-link, atomic
+    const next = await _mutatePlaidItemsE(uid, eid, cur => cur.filter(it => it.item_id !== ex.item_id).concat([_newItem]));   // N45: idempotent re-link, atomic
     res.status(201).json({ ok: true, institution_name: institution, item_id: ex.item_id, items: next.map(_publicItem) });
   } catch (e) {
     console.error('[plaid exchange]', e.message, e.plaid || '');
@@ -7305,37 +7332,39 @@ app.post('/api/plaid/exchange', requireAuth, requirePerm('bank:manage'), wrap(as
 }));
 
 // Unlink (owner-only). Removes the stored item locally and best-effort tells Plaid to invalidate it.
-app.post('/api/plaid/unlink', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  const uid = scopeId(req);
+app.post('/api/plaid/unlink', requireAuth, _bankPerm, wrap(async (req, res) => {
+  if (await _bankScopeRefused(req, res)) return;   // M60: the "all businesses" view never unlinks Personal's bank
+  const { uid, eid } = _bankCtx(req);   // M60
   const itemId = (req.body && req.body.item_id) || '';
   if (!itemId) return res.status(400).json({ error: 'item_id is required.' });
-  const { items } = await _getPlaidItemsE(uid, req.entityId, false);
+  const { items } = await _getPlaidItemsE(uid, eid, false);
   const target = items.find(it => it.item_id === itemId);
   if (!target) return res.status(404).json({ error: 'No such linked bank.' });
   if (plaidConfigured()) { try { await plaidCall('/item/remove', { access_token: decTok(target.access_token) }); } catch (_) {} }
-  const _left = await _mutatePlaidItemsE(uid, req.entityId, cur => cur.filter(it => it.item_id !== itemId));   // N45: atomic
+  const _left = await _mutatePlaidItemsE(uid, eid, cur => cur.filter(it => it.item_id !== itemId));   // N45: atomic
   res.json({ ok: true, items: _left.map(_publicItem) });
 }));
 
 // Pull transactions from every linked item into personal_transactions (source:'banking'), so the
 // linked bank actually FEEDS the books. Idempotent on Plaid's stable transaction_id (NOT the weak
 // 5-second dedupe window — Rule 9) and cursor-based so re-runs only fetch new activity.
-app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
-  const uid = scopeId(req);
-  const { items } = await _getPlaidItemsE(uid, req.entityId);
+  const { uid, eid, personal } = _bankCtx(req);   // M60
+  const { items } = await _getPlaidItemsE(uid, eid);
   if (!items.length) return res.status(400).json({ error: 'No linked bank. Link a bank first.' });
   let added = 0, modified = 0, removed = 0, flagged = 0;
   // N44: Plaid's sync delivers added, MODIFIED and REMOVED transactions. Only `added` was processed, so a pending
   // transaction stayed in the feed after Plaid replaced it with the posted one (a duplicate bank line) and
   // corrections never arrived. A row already reconciled into the books is never silently changed or deleted —
   // it is flagged (plaid_changed / plaid_removed) for the owner to review.
-  const _txRow = async (id) => { const { rows: [r] } = await pool.query(`SELECT * FROM personal_transactions WHERE user_id=$1 AND data->>'plaid_txn_id'=$2 LIMIT 1`, [uid, id]); return r ? rowToObj(r) : null; };
+  // M60: a feed row is looked up in THIS scope only — a sync never modifies, deletes or skips a row of another scope.
+  const _txRow = async (id) => { const { rows: [r] } = await pool.query(`SELECT * FROM personal_transactions WHERE user_id=$1 AND data->>'plaid_txn_id'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`, [uid, id, eid]); return r ? rowToObj(r) : null; };
   const _fields = t => ({
     description: t.name || t.merchant_name || 'Bank transaction',
     amount: Math.abs(Number(t.amount) || 0),
-    tx_type: (Number(t.amount) >= 0 ? 'debit' : 'credit'),
+    ..._bankTx(personal, Number(t.amount) >= 0),
     tx_date: t.date || null,
     currency: t.iso_currency_code ? String(t.iso_currency_code).toUpperCase() : null,
     pending: !!t.pending,
@@ -7359,15 +7388,13 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
         }
         for (const t of (sync.added || [])) {
           // Idempotency on Plaid's transaction_id (stable), not a time window.
-          const { rows: [dup] } = await pool.query(
-            `SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'plaid_txn_id'=$2 LIMIT 1`, [uid, t.transaction_id]);
-          if (dup) continue;
+          if (await _txRow(t.transaction_id)) continue;
           await db.insert('personal_transactions', {
-            user_id: uid, entity_id: req.entityId || null,
+            user_id: uid, entity_id: eid,
             description: t.name || t.merchant_name || 'Bank transaction',
             amount: Math.abs(Number(t.amount) || 0),
             // Plaid: positive amount = money OUT of the account (debit); negative = money IN (credit).
-            tx_type: (Number(t.amount) >= 0 ? 'debit' : 'credit'),
+            ..._bankTx(personal, Number(t.amount) >= 0),
             tx_date: t.date || new Date().toISOString().slice(0, 10),
             category: (t.personal_finance_category && t.personal_finance_category.primary) || 'Other',
             source: 'banking', plaid_txn_id: t.transaction_id,
@@ -7383,8 +7410,33 @@ app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
   // N45: write back ONLY the cursors this sync advanced, onto the list as it is now — a bank linked or unlinked
   // while the sync ran is kept / stays removed.
   const _cursors = new Map(items.map(it => [it.item_id, it.cursor]));
-  await _mutatePlaidItemsE(uid, req.entityId, cur => cur.map(it => (_cursors.has(it.item_id) ? Object.assign({}, it, { cursor: _cursors.get(it.item_id) }) : it)));
+  await _mutatePlaidItemsE(uid, eid, cur => cur.map(it => (_cursors.has(it.item_id) ? Object.assign({}, it, { cursor: _cursors.get(it.item_id) }) : it)));
   res.json({ ok: true, added, modified, removed, flagged });
+}));
+
+// M60: the Personal page's bank card — the person's OWN bank country (it picks the aggregator that serves it and the
+// day/month order of an imported CSV) and the person's own linked banks. Personal by WHAT IT IS: keyed to the session
+// user with no business; nothing here reads or writes a business's connections.
+app.get('/api/personal-bank', requireAuth, wrap(async (req, res) => {
+  const uid = req.session.userId;
+  const country = (await _providerBlobE(uid, 'pers_bank_country', null)).value || null;
+  const { items } = await _getPlaidItemsE(uid, null);
+  const belvo = (await _providerBlobE(uid, 'belvo_conn', null)).value;
+  const { rows: [{ n }] } = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM personal_transactions WHERE user_id = $1 AND entity_id IS NULL AND data->>'source' = 'banking'`, [uid]);
+  res.json({
+    country,
+    plaid: { configured: plaidConfigured(), env: PLAID_ENV_NAME, items: items.map(_publicItem) },
+    belvo: { configured: belvoConfigured(), institutions: ((belvo && belvo.links) || []).map(l => l.institution).filter(Boolean) },
+    lines: n,
+  });
+}));
+app.put('/api/personal-bank', requireAuth, wrap(async (req, res) => {
+  const raw = req.body && req.body.country;
+  const country = raw == null || raw === '' ? null : String(raw).trim().toUpperCase();
+  if (country != null && !/^[A-Z]{2}$/.test(country)) return res.status(400).json({ error: 'country must be a 2-letter country code.' });
+  await _mutateSettingsBlob(req.session.userId, 'pers_bank_country', null, () => country);
+  res.json({ ok: true, country });
 }));
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -8552,14 +8604,14 @@ async function belvoCall(pathname, opts = {}) {
 // in) / 'OUTFLOW' (money out) and `amount` is positive - mirror Plaid's convention (debit = money out,
 // credit = money in). Idempotent on Belvo's stable transaction `id` (belvo_txn_id). Pure + exported so
 // the mapping is unit-tested without a live Belvo call.
-function belvoTxnToRow(t, uid, entityId) {
+function belvoTxnToRow(t, uid, entityId, personal = false) {
   const typ = String((t && t.type) || '').toUpperCase();
   const _d = (t && (t.value_date || t.accounting_date)) || new Date().toISOString().slice(0, 10);
   return {
     user_id: uid, entity_id: entityId || null,
     description: (t && (t.description || (t.merchant && t.merchant.name))) || 'Bank transaction',
     amount: Math.abs(Number(t && t.amount) || 0),
-    tx_type: typ === 'OUTFLOW' ? 'debit' : 'credit',
+    ..._bankTx(personal, typ === 'OUTFLOW'),   // M60: Personal rows speak income / expense
     tx_date: String(_d).slice(0, 10),
     category: (t && t.category) || 'Other',
     source: 'banking', belvo_txn_id: t && t.id,
@@ -8567,22 +8619,23 @@ function belvoTxnToRow(t, uid, entityId) {
 }
 
 app.get('/api/belvo/status', requireAuth, wrap(async (req, res) => {
-  const { value } = await _providerBlobE(scopeId(req), 'belvo_conn', req.entityId);
+  const _bc = _bankCtx(req);   // M60
+  const { value } = (await _bankBizUnscoped(req)) ? { value: null } : await _providerBlobE(_bc.uid, 'belvo_conn', _bc.eid);
   const links = (value && value.links) || [];
   res.json({ configured: belvoConfigured(), connected: links.length > 0, institutions: links.map(l => l.institution).filter(Boolean) });
 }));
 
-app.post('/api/belvo/widget-token', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+app.post('/api/belvo/widget-token', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO_SECRET_ID and BELVO_SECRET_PASSWORD to enable it.', code: 'BELVO_NOT_CONFIGURED' });
   try {
     const j = await belvoCall('/api/token/', { method: 'POST', body: { id: process.env.BELVO_SECRET_ID, password: process.env.BELVO_SECRET_PASSWORD, scopes: 'read_institutions,write_links' } });
-    await _oauthStateIssue(req, 'belvo');   // N56: /exchange only accepts a link created in THIS widget session
+    await _oauthStateIssue(req, _isPersonalBank(req) ? 'belvo:personal' : 'belvo');   // N56 (M60: a personal widget session is its own): /exchange only accepts a link created in THIS widget session
     res.json({ access: j.access });
   } catch (e) { console.error('[belvo token]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not start LatAm bank linking: ' + e.message }); }
 }));
 
-app.post('/api/belvo/exchange', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+app.post('/api/belvo/exchange', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
   const link = String((req.body && req.body.link) || '');
@@ -8592,7 +8645,7 @@ app.post('/api/belvo/exchange', requireAuth, requirePerm('bank:manage'), wrap(as
   // A link is accepted only if (1) this session opened the widget (pending entry from /widget-token,
   // single use), (2) Belvo says the link was created AFTER that widget session started, and (3) no other
   // FinFlow account has already claimed it.
-  const flow = await _oauthStateConsume(req, 'belvo', false);
+  const flow = await _oauthStateConsume(req, _isPersonalBank(req) ? 'belvo:personal' : 'belvo', false);
   if (!flow) return res.status(409).json({ error: 'Open the bank-linking widget again — this link was not created in the current session.', code: 'BELVO_NO_SESSION' });
   const sessionStart = flow.issuedAt - 60 * 1000;   // small clock-skew allowance
   try {
@@ -8601,13 +8654,13 @@ app.post('/api/belvo/exchange', requireAuth, requirePerm('bank:manage'), wrap(as
     catch (e) { return res.status(400).json({ error: 'That bank link was not found.', code: 'BELVO_LINK_UNKNOWN' }); }
     const created = Date.parse(d && d.created_at);
     if (!(created >= sessionStart)) return res.status(409).json({ error: 'That bank link was not created in the current linking session.', code: 'BELVO_LINK_NOT_FRESH' });
-    const uid = scopeId(req);
+    const _bc = _bankCtx(req), uid = _bc.uid;   // M60
     const { rows: claimed } = await pool.query(
       `SELECT 1 FROM user_settings WHERE data->>'key' = 'belvo_conn' AND user_id <> $1 AND position($2 in COALESCE(data->>'value', '')) > 0 LIMIT 1`,
       [uid, JSON.stringify(link)]);
     if (claimed.length) return res.status(409).json({ error: 'That bank link belongs to another account.', code: 'BELVO_LINK_CLAIMED' });
     const institution = (d && d.institution) || null;
-    const entityId = flow.entityId != null ? flow.entityId : req.entityId;
+    const entityId = _bc.personal ? null : (flow.entityId != null ? flow.entityId : req.entityId);
     const _nb = await _mutateSettingsBlob(uid, 'belvo_conn', entityId, cur => {   // N45: atomic append
       const links = (cur && cur.links) || [];
       return Object.assign({}, cur || {}, { links: links.filter(l => l.link !== link).concat([{ link, institution, linked_at: new Date().toISOString() }]) });
@@ -8617,20 +8670,21 @@ app.post('/api/belvo/exchange', requireAuth, requirePerm('bank:manage'), wrap(as
   } catch (e) { console.error('[belvo exchange]', e.message, e.provider || ''); res.status(502).json({ error: 'Could not link bank: ' + e.message }); }
 }));
 
-app.post('/api/belvo/disconnect', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  const uid = scopeId(req);
-  const { id, value } = await _providerBlobE(uid, 'belvo_conn', req.entityId, false);
+app.post('/api/belvo/disconnect', requireAuth, _bankPerm, wrap(async (req, res) => {
+  if (await _bankScopeRefused(req, res)) return;   // M60: the "all businesses" view never disconnects Personal's bank
+  const { uid, eid } = _bankCtx(req);   // M60
+  const { id, value } = await _providerBlobE(uid, 'belvo_conn', eid, false);
   if (!value || !((value.links || []).length)) return res.status(404).json({ error: 'No linked LatAm bank.' });
   if (belvoConfigured()) { for (const l of value.links) { try { await belvoCall('/api/links/' + encodeURIComponent(l.link) + '/', { method: 'DELETE' }); } catch (_) {} } }
   if (id) await db.updateById('user_settings', id, { value: JSON.stringify({ links: [] }) });
   res.json({ ok: true });
 }));
 
-app.post('/api/belvo/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+app.post('/api/belvo/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
-  const uid = scopeId(req);
-  const { value } = await _providerBlobE(uid, 'belvo_conn', req.entityId);
+  const { uid, eid, personal } = _bankCtx(req);   // M60
+  const { value } = await _providerBlobE(uid, 'belvo_conn', eid);
   const links = (value && value.links) || [];
   if (!links.length) return res.status(400).json({ error: 'No linked LatAm bank. Link one first.' });
   // Pull the last 90 days of transactions from each link into personal_transactions (source:'banking'),
@@ -8649,9 +8703,9 @@ app.post('/api/belvo/sync', requireAuth, requirePerm('bank:manage'), wrap(async 
         const list = Array.isArray(j) ? j : (j.results || []);
         for (const t of list) {
           if (!t || !t.id) continue;
-          const { rows: [dup] } = await pool.query(`SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'belvo_txn_id'=$2 LIMIT 1`, [uid, String(t.id)]);
+          const { rows: [dup] } = await pool.query(`SELECT 1 FROM personal_transactions WHERE user_id=$1 AND data->>'belvo_txn_id'=$2 AND entity_id IS NOT DISTINCT FROM $3 LIMIT 1`, [uid, String(t.id), eid]);   // M60: this scope only
           if (dup) continue;
-          await db.insert('personal_transactions', belvoTxnToRow(t, uid, req.entityId || null));
+          await db.insert('personal_transactions', belvoTxnToRow(t, uid, eid, personal));
           added++;
         }
         hasMore = !Array.isArray(j) && !!j.next;

@@ -295,6 +295,9 @@
             cat:    r.category,
             amount: r.amount,
             ded:    r.deductible,
+            expense_date: r.expense_date ? String(r.expense_date).slice(0, 10) : '',   // M52: the editable calendar date
+            class:  r.class || '',
+            location: r.location || '',
             date:   r.expense_date
                       ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.expense_date) : r.expense_date)   // F195: TZ-safe calendar date
                       : 'Today',
@@ -415,6 +418,8 @@
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <div class="tx-amt dn">-${S(e.amount)}</div>
+            ${e._dbId ? `<button class="btn btn-ghost btn-sm" style="padding:2px 6px" title="Edit"
+              onclick="editExpense(${idx})">✏</button>` : ''}
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:2px 6px"
               onclick="deleteExpense(${idx})">✕</button>
           </div>

@@ -893,6 +893,9 @@
             cat:    r.category,
             amount: r.amount,
             ded:    r.deductible,
+            expense_date: r.expense_date ? String(r.expense_date).slice(0, 10) : '',   // M52: the editable calendar date
+            class:  r.class || '',
+            location: r.location || '',
             date:   r.expense_date
                       ? (window.FinFlowDates ? window.FinFlowDates.fmtLabel(r.expense_date) : r.expense_date)   // F195: TZ-safe calendar date
                       : 'Today',
@@ -1013,6 +1016,8 @@
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <div class="tx-amt dn">-${S(e.amount)}</div>
+            ${e._dbId ? `<button class="btn btn-ghost btn-sm" style="padding:2px 6px" title="Edit"
+              onclick="editExpense(${idx})">✏</button>` : ''}
             <button class="btn btn-ghost btn-sm" style="color:var(--red);opacity:.7;padding:2px 6px"
               onclick="deleteExpense(${idx})">✕</button>
           </div>
@@ -2101,11 +2106,23 @@
     });
 
     // ── EXPENSE EDIT ───────────────────────────────────────────────
-    // The expense modal needs to support edit mode.
-    // We intercept saveExpense() which already exists in the medium
-    // wiring file and upgrade it to PUT when editing.
-
+    // M52 (fix pass round 2): edit a business expense in the SAME modal Add uses (bexp-* fields, incl. the M49 date).
+    // The row's Edit button is rendered by renderExpenses itself (medium wiring) — no DOM patching after the fact.
+    // This block was dead: it patched `#expense-list tr / .expense-row` (rows are `.tx-row`), read `exp-*` ids that do
+    // not exist and looked rows up in `window.expenses` — so no expense could ever be edited.
     const _mediumSaveExpense = window.saveExpense;
+    const _expModalMode = (edit) => {
+      const modal = document.getElementById('expense-modal');
+      if (!modal) return;
+      const title = modal.querySelector('.modal-title');
+      if (title) title.textContent = edit ? 'Edit expense' : 'Add expense';
+      const saveBtn = modal.querySelector('button[onclick*="saveExpense"]');
+      if (saveBtn) saveBtn.textContent = edit ? 'Save changes' : 'Add expense';
+      const eid = document.getElementById('expense-edit-id');
+      if (eid && !edit) eid.value = '';
+    };
+    window._expModalMode = _expModalMode;
+
     window.saveExpense = async function () {
       const editId = document.getElementById('expense-edit-id')?.value;
       if (!editId) {
@@ -2113,32 +2130,32 @@
         if (typeof _mediumSaveExpense === 'function') return _mediumSaveExpense();
         return;
       }
-
-      // Edit mode — find the DB id
-      const description = document.getElementById('exp-desc')?.value?.trim();
-      const category    = document.getElementById('exp-category')?.value;
-      const amount      = parseFloat(document.getElementById('exp-amount')?.value) || 0;
-      const deductible  = document.getElementById('exp-deductible')?.value || 'no';
-      const expense_date = document.getElementById('exp-date')?.value || (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10));  // C3/F37: local date, not UTC
-
-      if (!description || !amount) { notify('Description and amount required.', true); return; }
-
-      const exp   = (window.expenses || []).find(e => e.id === Number(editId));
-      const dbId  = exp?._dbId || editId;
-
+      if (window._savingExpense) return;   // in-flight re-entry lock (PUT is idempotent; this stops a double request)
+      const v = (id) => (document.getElementById(id)?.value ?? '');
+      const description = v('bexp-desc').trim();
+      const amount = parseFloat(v('bexp-amount'));
+      const expense_date = v('bexp-date').trim();
+      if (!description) { notify('Description is required', true); return; }
+      if (!Number.isFinite(amount) || amount <= 0) { notify('A valid positive amount is required', true); return; }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(expense_date)) { notify('Enter a valid date', true); return; }
+      const body = { description, amount, expense_date, category: v('bexp-cat') || 'Other', deductible: v('bexp-ded') || 'no',
+                     class: v('bexp-class').trim(), location: v('bexp-location').trim() };
+      window._savingExpense = true;
+      const _btn = document.querySelector('#expense-modal .btn-primary');
+      if (_btn) _btn.disabled = true;
       try {
-        const updated = await api('PUT', `/api/expenses/${dbId}`, { description, category, amount, deductible, expense_date });
-        const idx = (window.expenses || []).findIndex(e => e.id === Number(editId));
-        if (idx > -1 && window.expenses) {
-          window.expenses[idx] = { ...window.expenses[idx], description, category, amount, deductible, expense_date };
-        }
+        await api('PUT', `/api/expenses/${encodeURIComponent(editId)}`, body);
         if (typeof closeModal === 'function') closeModal('expense-modal');
-        if (typeof renderExpenses === 'function') renderExpenses();
         notify('Expense updated ✦');
-        document.getElementById('expense-edit-id').value = '';
+        if (typeof window._loadExpensesFromDB === 'function') await window._loadExpensesFromDB().catch(() => {});
+        if (typeof renderExpenses === 'function') renderExpenses();
+        window._refreshDashboardUI?.();
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) {
         notify('Could not update expense — ' + e.message, true);
+      } finally {
+        window._savingExpense = false;
+        if (_btn) _btn.disabled = false;
       }
     };
 
@@ -2151,72 +2168,31 @@
       expModal.appendChild(hiddenInput);
     }
 
-    // Patch renderExpenses to add Edit buttons (after medium wiring has set it up)
-    // We hook into the existing render after a tick
-    setTimeout(() => {
-      const origRenderExpenses = window.renderExpenses;
-      if (typeof origRenderExpenses === 'function') {
-        window.renderExpenses = function (...args) {
-          origRenderExpenses(...args);
-          // Add edit buttons to each row that only has a delete button
-          document.querySelectorAll('#expense-list tr, #expense-list .expense-row').forEach(row => {
-            if (row.querySelector('.ff-edit-exp')) return; // already has edit
-            const delBtn = row.querySelector('button[onclick*="deleteExpense"]');
-            if (!delBtn) return;
-            const expId = (delBtn.getAttribute('onclick') || '').match(/\d+/)?.[0];
-            if (!expId) return;
-            const editBtn = document.createElement('button');
-            editBtn.className = 'btn btn-ghost ff-edit-exp';
-            editBtn.style.cssText = 'padding:2px 8px;font-size:11px;margin-right:4px';
-            editBtn.textContent = 'Edit';
-            editBtn.onclick = () => editExpense(Number(expId));
-            delBtn.parentNode.insertBefore(editBtn, delBtn);
-          });
-        };
-      }
-    }, 500);
-
-    // Edit expense — populate modal
-    window.editExpense = function (id) {
-      const exp = (window.expenses || []).find(e => e.id === id);
-      if (!exp) return;
-      const modal = document.getElementById('expense-modal');
-      if (!modal) return;
-
-      // Populate fields
+    // Edit expense — populate the Add modal from the row (bizExpenses index, as Delete uses) and switch it to edit mode.
+    window.editExpense = function (idx) {
+      const exp = (window.bizExpenses || [])[idx];
+      if (!exp || !exp._dbId) return;
       const f = (fieldId, val) => { const el = document.getElementById(fieldId); if (el) el.value = val ?? ''; };
-      f('exp-desc',       exp.description);
-      f('exp-category',   exp.category);
-      f('exp-amount',     exp.amount);
-      f('exp-deductible', exp.deductible);
-      f('exp-date',       exp.expense_date);
-      f('expense-edit-id', id);
-
-      // Update modal title and button if they exist
-      const title = modal.querySelector('.modal-title');
-      if (title) title.textContent = 'Edit Expense';
-      const saveBtn = modal.querySelector('button[onclick*="saveExpense"]');
-      if (saveBtn) saveBtn.textContent = 'Save changes →';
-
+      f('bexp-desc',     exp.desc);
+      f('bexp-amount',   exp.amount);
+      f('bexp-date',     exp.expense_date ? String(exp.expense_date).slice(0, 10) : '');
+      // A category the picker does not list (e.g. one booked from the bank feed) is added, never silently replaced.
+      const cat = document.getElementById('bexp-cat');
+      if (cat && exp.cat && !Array.from(cat.options).some(o => o.value === exp.cat)) { const o = document.createElement('option'); o.value = o.textContent = exp.cat; cat.appendChild(o); }
+      f('bexp-cat',      exp.cat || 'Other');
+      f('bexp-ded',      exp.ded || 'no');
+      f('bexp-class',    exp.class || '');
+      f('bexp-location', exp.location || '');
+      f('expense-edit-id', exp._dbId);
+      _expModalMode(true);
       if (typeof openModal === 'function') openModal('expense-modal');
-      else modal.classList.remove('hidden');
     };
 
     // Reset edit state when expense modal closes
     const origCloseModal = window.closeModal;
     if (typeof origCloseModal === 'function') {
       window.closeModal = function (id) {
-        if (id === 'expense-modal') {
-          const eid = document.getElementById('expense-edit-id');
-          if (eid) eid.value = '';
-          const modal = document.getElementById('expense-modal');
-          if (modal) {
-            const title = modal.querySelector('.modal-title');
-            if (title) title.textContent = 'Add Expense';
-            const saveBtn = modal.querySelector('button[onclick*="saveExpense"]');
-            if (saveBtn) saveBtn.textContent = 'Save expense →';
-          }
-        }
+        if (id === 'expense-modal') _expModalMode(false);
         origCloseModal(id);
       };
     }

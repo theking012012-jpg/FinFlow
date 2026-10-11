@@ -2913,6 +2913,7 @@ function openExpenseModal(){
   _sv('bexp-desc','');
   _sv('bexp-amount','');
   _sv('bexp-date', todayLocal());   // M49: default today (editable), like the invoice issue date (F36)
+  if(typeof window._expModalMode==='function') window._expModalMode(false);   // M52: Add always opens in add mode
   window._expIdemKey = null;   // C1 Wave 1: fresh submit-intent → a genuine new expense never reuses the last token
   openModal('expense-modal');
 }

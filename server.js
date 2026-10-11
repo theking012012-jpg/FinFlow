@@ -2225,10 +2225,24 @@ app.delete('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wra
 
 // ── EXPENSES ──────────────────────────────────────────────────────────────────
 app.get('/api/expenses', requireAuth, wrap(async (req, res) => respondList(req, res, 'expenses')));
+// M52 (fix pass round 2): the expense business rules, ONE copy for create and edit. body-shape.js already refuses a
+// non-numeric / negative amount and an impossible date on every write; these are the rules it leaves to handlers:
+// an expense is a positive amount with a description. `partial` (edit) checks only the fields sent.
+function _expenseRuleError(b, partial) {
+  if (!partial || b.description !== undefined) {
+    if (b.description == null || !String(b.description).trim()) return 'A description is required.';
+  }
+  if (!partial || b.amount !== undefined) {
+    const a = parseFloat(b.amount);
+    if (!Number.isFinite(a) || a <= 0) return 'The amount must be more than 0.';
+  }
+  return null;
+}
 app.post('/api/expenses', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(async (req, res) => {
   const { description, category = 'Other', amount, expense_date, entity_id } = req.body || {};
   const deductible = FinFlowDates.normalizeDeductible(req.body && req.body.deductible);   // M15: stored as yes | half | no
-  if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
+  const _rule = _expenseRuleError(req.body || {}, false);   // M52
+  if (_rule) return res.status(400).json({ error: _rule });
   const eid = entity_id || req.entityId || null;
   const edate = expense_date || await entityTodayYmd(eid);
   const idem = typeof req.body?.idempotency_key === 'string' ? req.body.idempotency_key.slice(0, 64) : null;
@@ -2273,7 +2287,16 @@ app.put('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(a
   if (!row) return res.status(404).json({ error: 'Not found.' });
   const patch = {};
   const b = req.body || {};
-  if (b.description != null) patch.description = b.description;
+  const _rule = _expenseRuleError(b, true);   // M52: an edit obeys the same rules as a create
+  if (_rule) return res.status(400).json({ error: _rule });
+  // M52: an expense booked from a bank line carries that line's amount. Changing it would leave the expense and the
+  // bank line disagreeing while both still read "matched". The bank is the evidence: to correct it, delete the expense
+  // (M17 releases the bank line back to the to-do list) and book the line again — Xero's "remove & redo".
+  if (b.amount !== undefined && Math.round(parseFloat(b.amount) * 100) !== Math.round((parseFloat(row.amount) || 0) * 100)) {
+    const { rows: [_bl] } = await pool.query(`SELECT 1 FROM personal_transactions WHERE user_id = $1 AND data->>'reconcile_state' = 'expense' AND data->>'reconcile_ref' = $2::text LIMIT 1`, [scopeId(req), String(row.id)]);
+    if (_bl) return res.status(409).json({ error: 'This expense was booked from a bank line, so its amount is the bank\'s. To correct it, delete the expense (the bank line returns to your to-do list) and book it again.', code: 'BANK_MATCHED' });
+  }
+  if (b.description != null) patch.description = String(b.description).trim().slice(0, 300);
   if (b.category != null) patch.category = b.category;
   if (b.amount != null) patch.amount = parseFloat(b.amount);
   if (b.deductible != null) patch.deductible = FinFlowDates.normalizeDeductible(b.deductible);   // M15

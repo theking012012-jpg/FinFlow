@@ -6731,7 +6731,7 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   // the P&L recognises at `approved` (decision 2), cash moves only when the run is actually paid.
   // Using IN ('approved','paid') here would book cash for a run that has not been paid.
   // Entity scoping and the JOIN mirror computeBooks' payroll query exactly.
-  const [ipRes, expenses, paymentsMade, receipts, paidRunRes, jeCashRes] = await Promise.all([
+  const [ipRes, expenses, paymentsMade, receipts, paidRunRes, jeCashRes, glCashRes] = await Promise.all([
     pool.query(`SELECT * FROM invoice_payments WHERE user_id = $1`, [uid]),
     db.allByUser('expenses', uid, matchEnt),
     db.allByUser('payments_made', uid, matchEnt),
@@ -6761,6 +6761,22 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
         GROUP BY le.source_id, to_char(le.entry_date, 'YYYY-MM')`,
       [uid, eid, JOURNAL_CASH_LEDGER_CODES]
     ),
+    // M16 (money audit 2026-10-09): cash that moves with NO document this report reads — stock bought for cash
+    // (inventory purchase: Dr Inventory / Cr Cash), realised FX gains/losses on settlement, and the legacy
+    // paid-gap backfill legs — exists only in the LEDGER. The balance sheet's cash counts it; this report did
+    // not, so the two disagreed. Read those source types' Cash (1000) lines, netted per source per month (as L6).
+    pool.query(
+      `SELECT le.source_type, le.source_id, to_char(le.entry_date, 'YYYY-MM') || '-01' AS d,
+              COALESCE(SUM(ll.debit - ll.credit), 0)::float AS net
+         FROM ledger_lines ll
+         JOIN ledger_accounts la ON la.id = ll.account_id
+         JOIN ledger_entries le ON le.id = ll.entry_id AND le.status = 'posted'
+        WHERE ll.user_id = $1 AND la.code = '1000'
+          AND le.source_type IN ('inventory_movement', 'fx_settle', 'invoice_paidgap', 'bill_paidgap')
+          AND ($2::int IS NULL OR le.entity_id IS NULL OR le.entity_id = $2)
+        GROUP BY le.source_type, le.source_id, to_char(le.entry_date, 'YYYY-MM')`,
+      [uid, eid]
+    ),
   ]);
   const invoicePayments = ipRes.rows.filter(matchEnt);
   const _MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -6786,6 +6802,7 @@ app.post('/api/reports/cash-flow', requireAuth, wrap(async (req, res) => {
   // runs paid before the column existed have no paid_date and keep run_date (no row is rewritten, Rule 8).
   (paidRunRes.rows || []).forEach(r => add(r.paid_date || r.run_date, 'outflow', r.run_total));
   (jeCashRes.rows || []).forEach(r => { if (r.net > 0.005) add(r.d, 'inflow', r.net); else if (r.net < -0.005) add(r.d, 'outflow', -r.net); });   // L6
+  (glCashRes.rows || []).forEach(r => { if (r.net > 0.005) add(r.d, 'inflow', r.net); else if (r.net < -0.005) add(r.d, 'outflow', -r.net); });   // M16
   const rows = Object.keys(monthMap).sort().map(k => ({
     month: labelOf(k), key: k, inflow: monthMap[k].inflow, outflow: monthMap[k].outflow,
     net: monthMap[k].inflow - monthMap[k].outflow,

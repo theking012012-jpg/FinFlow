@@ -11481,7 +11481,11 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   let monthlyComplete = true;
   const _bIdx = v => { const ymd = FinFlowDates._toYmd(v); if (ymd == null) return -1; const _k = ymd.slice(0, 7); return _fyMonths.findIndex(x => x.ym === _k); };
   const _fromOf = row => (entCur[row.entity_id] != null ? entCur[row.entity_id] : viewedCur);
+  // M38 (money audit 2026-10-09): the monthly buckets carry the SAME D2 upper bound as every KPI — a row dated after
+  // today is not in the books yet. They included scheduled / future-dated documents, so Σ(chart months) ≠ the
+  // Year KPI whenever one existed.
   const addBucket = (arr, amount, date, from) => {
+    const _bd = FinFlowDates._toYmd(date); if (_bd == null || _bd > _today) return;
     const idx = _bIdx(date); if (idx < 0) return;
     const a = num(amount);
     if (!displayCur) { arr[idx] += a; return; }        // native identity

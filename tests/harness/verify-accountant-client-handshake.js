@@ -76,7 +76,10 @@ const PW = 'harness-password-not-a-secret';
     A('approval froze a referral-months figure', appr.json && typeof appr.json.referralMonths === 'number');
     A('pending list now empty', ((await a1.get('/api/accountants/pending-requests')).json || []).length === 0);
 
-    // ── 4. accountant can now READ the client's real books ──
+    // ── 4. C6 (least privilege): approval alone exposes nothing; the client then grants view → books flow ──
+    const pre = await a1.get(BOOKS_A);
+    A('C6: before the client grants anything, no invoices are visible', !(pre.json && Array.isArray(pre.json.allInvoices) && pre.json.allInvoices.length > 0), 'allInvoices ' + (pre.json && pre.json.allInvoices && pre.json.allInvoices.length));
+    A('client grants view → 200', (await ownerA.put('/api/accountants/my-accountant/access', { access_level: 'view' })).status === 200);
     const books = await a1.get(BOOKS_A);
     A('accountant reads client books → 200', books.status === 200, 'status ' + books.status);
     A('the client\'s seeded invoices flow through the connection', books.json && Array.isArray(books.json.allInvoices) && books.json.allInvoices.length > 0, 'allInvoices ' + (books.json && books.json.allInvoices && books.json.allInvoices.length));

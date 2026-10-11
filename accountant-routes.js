@@ -378,6 +378,8 @@ module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiL
   }
 
   // ── PER-ENTITY + PERSONAL ACCESS MODEL ────────────────────────────────────────────────────
+  // C6 (least privilege): every NEW link is created with entity_access = { entities: {}, personal: 'none' } — the
+  // accountant sees nothing until the owner grants specific businesses (a NULL link showed every business by default).
   // accountant_clients.entity_access JSONB is the owner's fine-grained grant. NULL = legacy: every
   // business entity at the row's account-wide `access_level`, personal finances NOT exposed — so
   // links created before this feature behave byte-for-byte as before. When set:
@@ -2374,8 +2376,8 @@ Respond with exactly 5 lines. No bullets, no numbers, no symbols.`;
     // Create a PENDING record — accountant must approve before getting books access
     // referral_months_total = 0 until approved (then set based on tier at activation time)
     await pool.query(`
-      INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total, requested_by)
-      VALUES ($1, $2, 'pending', 0, 'client')
+      INSERT INTO accountant_clients (accountant_id, user_id, status, referral_months_total, requested_by, entity_access)
+      VALUES ($1, $2, 'pending', 0, 'client', '{"entities":{},"personal":"none"}'::jsonb)   -- C6: nothing until the owner grants it
       ON CONFLICT (accountant_id, user_id) DO UPDATE SET status = 'pending', requested_by = 'client'
     `, [accountantId, req.session.userId]);
 

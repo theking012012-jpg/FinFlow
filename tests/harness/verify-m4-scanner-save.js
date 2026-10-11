@@ -1,6 +1,7 @@
 'use strict';
 /**
- * M4 — Receipt scanner "+ Add to expenses" saves nothing (fake success). S1.
+ * M4 — Receipt scanner "+ Add to expenses" must SAVE the receipt (was: fake success, nothing saved). S1.
+ * FIXED: addScannedExpense POSTs /api/expenses. This harness now asserts the fix (it previously asserted the bug).
  *
  * Runtime winner (Rule 1): window.addScannedExpense = index.html:8463 (no wiring shadow — grep shows
  * the only reassignments are in _gen/ bundle + .fuse_hidden editor swap files, not real wiring source).
@@ -66,22 +67,49 @@ const { bootSpaInJsdom } = require('./jsdomBoot.js');
 
     // THE ACTION under test.
     toastMsg = null;
-    window.addScannedExpense();
+    await window.addScannedExpense();
     await settle(20, 60);
 
-    A('[setup] the scan populated scannedData (Add fired its success toast, so it did not early-return)',
-      !!toastMsg && /Acme Receipts Ltd/.test(toastMsg), 'toast=' + toastMsg);
-    A('[DISCRIMINATING] the success toast claims the expense was added (fake success)',
-      !!toastMsg && /Expense added/i.test(toastMsg), 'toast=' + toastMsg);
-
+    A('the success toast names the receipt', !!toastMsg && /Expense added/i.test(toastMsg) && /Acme Receipts Ltd/.test(toastMsg), 'toast=' + toastMsg);
     const n1 = await countExpenses();
-    A('[DISCRIMINATING] nothing was persisted: GET /api/expenses delta === 0 (correct impl would be +1)',
-      n1 === n0, 'n0=' + n0 + ' n1=' + n1 + ' (delta=' + (n1 - n0) + ')');
-    A('[STRUCTURAL] window.EXPENSES is undefined — the in-memory push path is dead too',
-      typeof window.EXPENSES === 'undefined', 'typeof=' + typeof window.EXPENSES);
+    A('[DISCRIMINATING] the scanned receipt is persisted: GET /api/expenses delta === 1 (bug: 0)', n1 === n0 + 1, 'n0=' + n0 + ' n1=' + n1);
+    const listed = JSON.parse((await http.get('/api/expenses')).text || '[]');
+    const saved = (Array.isArray(listed) ? listed : []).find(e => e.description === 'Acme Receipts Ltd');
+    A('stored amount 123.45, date 2026-07-15, category Office, deductible yes',
+      !!saved && Number(saved.amount) === 123.45 && saved.expense_date === '2026-07-15' && saved.category === 'Office' && saved.deductible === 'yes',
+      JSON.stringify(saved));
 
-    console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (M4 scanner saves nothing)\n`);
-    console.log(`  MEASURED: scan→Add left expenses at ${n1} (was ${n0}); toast="${toastMsg}"; window.EXPENSES=${typeof window.EXPENSES}`);
+    // Failure path (Rule 14): the save fails → error toast, no success toast, nothing stored.
+    const scanAgain = async (data) => {
+      Object.assign(SCAN, data);
+      window.handleScannerFile(new window.File([new Uint8Array([137, 80, 78, 71])], 'r2.png', { type: 'image/png' }));
+      await settle(20, 40);
+    };
+    const realFetch2 = window.fetch;
+    window.fetch = function (url, opts) {
+      if (String(url).indexOf('/api/expenses') !== -1 && opts && String(opts.method).toUpperCase() === 'POST') {
+        return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: 'injected failure' }) });
+      }
+      return realFetch2.apply(this, arguments);
+    };
+    await scanAgain({ vendor: 'Fail Shop', amount: '10.00' });
+    toastMsg = null; let errSeen = null;
+    window.notify = function (m, isErr) { toastMsg = String(m); if (isErr) errSeen = String(m); };
+    await window.addScannedExpense();
+    await settle(10, 40);
+    A('[failure path] a failed save shows an error, never "Expense added"', !!errSeen && /Could not add/i.test(errSeen) && !/Expense added/i.test(toastMsg || ''), 'toast=' + toastMsg);
+    A('[failure path] nothing stored', (await countExpenses()) === n0 + 1);
+    window.fetch = realFetch2;
+
+    // A receipt in a different currency is not booked as this business's currency.
+    await scanAgain({ vendor: 'Euro Cafe', amount: '20.00', currency: 'EUR' });
+    errSeen = null;
+    await window.addScannedExpense();
+    await settle(10, 40);
+    A('a EUR receipt in a USD business is refused with an explanation', !!errSeen && /EUR/.test(errSeen), 'toast=' + toastMsg);
+    A('nothing stored for the EUR receipt', (await countExpenses()) === n0 + 1);
+
+    console.log(`\n  ${fail === 0 ? 'ALL GREEN' : fail + ' FAILED'} — ${pass} passed, ${fail} failed  (M4 scanner saves the receipt)\n`);
   } catch (e) { console.error('\n  FATAL:', e && e.stack ? e.stack : String(e)); fail++; }
   finally { try { if (boot && boot.stop) await boot.stop(); } catch {} }
   process.exitCode = fail === 0 ? 0 : 1;

@@ -134,20 +134,44 @@ window.handleScannerDrop=function(e){
   if(file)scanFile(file);
 };
 
-window.addScannedExpense=function(){
-  if(!scannedData)return;
-  notify(`Expense added: ${scannedData.vendor||'Receipt'} · ${scannedData.currency||'$'}${scannedData.amount||'0'} ✦`);
-  // Optionally push into expense list
-  if(window.EXPENSES){
-    window.EXPENSES.unshift({
-      name:scannedData.vendor||'Scanned receipt',
-      cat:scannedData.category||'Other',
-      amt:-(parseFloat(scannedData.amount)||0),
-      date:scannedData.date||'Today',
-      deductible:scannedData.tax_deductible
-    });
-  }
-  resetScanner();
+// M4 (money audit 2026-10-09): "+ Add to expenses" SAVES the scanned receipt through POST /api/expenses — the
+// same server route (and idempotency index) as the Add expense form — and only says "added" once the server has
+// stored it. It used to toast success and push into an undefined window.EXPENSES, saving nothing.
+window.addScannedExpense=async function(){
+  if(!scannedData||window._savingScanned)return;
+  const d=scannedData;
+  const amount=Math.round((parseFloat(String(d.amount==null?'':d.amount).replace(/[^0-9.\-]/g,''))||0)*100)/100;
+  if(!(amount>0)){notify('The scanned amount is not a valid positive number — add this receipt manually.',true);return;}
+  const ent=(window.ENTITIES||[]).find(e=>e.active)||null;
+  const bookCur=String((ent&&ent.currency)||'USD').toUpperCase();
+  const scanCur=String(d.currency||'').trim().toUpperCase();
+  // A receipt in another currency is never booked as if it were this business's currency.
+  if(/^[A-Z]{3}$/.test(scanCur)&&scanCur!==bookCur){notify(`This receipt is in ${scanCur} but this business books in ${bookCur}. Add it manually with the converted amount.`,true);return;}
+  const date=/^\d{4}-\d{2}-\d{2}$/.test(String(d.date||''))?String(d.date):(window.todayLocal?window.todayLocal():undefined);
+  const ded=(d.tax_deductible===true||/^(yes|true|1|full)$/i.test(String(d.tax_deductible||'')))?'yes':'no';
+  window._scanIdemKey=window._scanIdemKey||(window.crypto&&window.crypto.randomUUID?window.crypto.randomUUID():'scan-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+  window._savingScanned=true;
+  try{
+    const res=await fetch('/api/expenses',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      description:String(d.vendor||'Scanned receipt').slice(0,300),
+      category:d.category||'Other',
+      amount,
+      deductible:ded,
+      expense_date:date,
+      entity_id:(ent&&ent._dbId)||null,
+      idempotency_key:window._scanIdemKey,
+    })});
+    if(!res.ok){const j=await res.json().catch(()=>({}));throw new Error(j.error||('API error '+res.status));}
+    window._scanIdemKey=null;
+    notify(`Expense added: ${d.vendor||'Receipt'} · ${amount.toFixed(2)} ✦`);
+    resetScanner();
+    if(typeof window._loadExpensesFromDB==='function')window._loadExpensesFromDB().catch(()=>{});
+    window._refreshDashboardUI?.();
+    if(typeof window.refreshFinancials==='function')window.refreshFinancials('expenses');
+  }catch(e){
+    // Keep the scan and the token so a retry of this same receipt is idempotent.
+    notify('Could not add the expense — '+(e&&e.message||'unknown error'),true);
+  }finally{window._savingScanned=false;}
 };
 
 window.resetScanner=function(){

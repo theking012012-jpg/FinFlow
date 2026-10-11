@@ -883,38 +883,17 @@
       }
     };
 
-    window.markBillPaid = async function (id) {
-      try {
-        // F38 Step 5: "mark paid" must create a REAL linked payments_made (bill_id set) for the
-        // outstanding balance — NOT a bare status flip. A settlement is Dr AP / Cr Cash: the cash
-        // outflow has to be a payments_made row or the cash-basis cash-flow route can't see it,
-        // and recalcBillStatus (server) then sets amount_paid = amount + status = 'paid' from the
-        // payments, so AP drops to 0 arithmetically (matches the Step 4 AP amendment). The issued
-        // bill was already recognized as expense at issue; this linked payment is excluded from
-        // expense by the bill_id-IS-NULL guard, so no double count.
-        const b = _billsData.find(r => r.id === id);
-        const amt  = parseFloat(b && b.amount) || 0;
-        const paid = parseFloat(b && b.amount_paid) || 0;
-        const outstanding = Math.round((amt - paid) * 100) / 100;
-        const _d = new Date();
-        const today = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
-        if (outstanding > 0) {
-          // recalcBillStatus (server) sets amount_paid + status='paid' from the linked payments.
-          await api('POST', '/api/payments-made', {
-            bill_id: id, amount: outstanding, date: today,
-            vendor: (b && b.vendor) || '', method: 'other', notes: 'Bill marked paid',
-          });
-        } else {
-          // Already fully covered (or zero-amount) — just ensure the status reflects it.
-          await api('PUT', `/api/bills/${id}`, { status: 'paid' });
-        }
-        renderBills();
-        notify('Bill marked as paid ✦');
-        loadBills().catch(() => {});
-        if (typeof window._loadPaymentsMadeFromDB === 'function') window._loadPaymentsMadeFromDB().catch(() => {});
-        window._refreshDashboardUI?.();
-        if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
-      } catch (e) { notify('Could not update — ' + e.message, true); }
+    // M48 (money audit 2026-10-09): "Pay" on a bill opens the Make Payment form LINKED to that bill — amount defaults
+    // to the outstanding balance and the date to today, both editable — so a partial payment is just a smaller amount
+    // (server recalcBillStatus → 'partial'; checkBillPayment refuses an overpayment). It used to post the whole
+    // outstanding balance, dated the browser's today, on one click: no partial path, no back-dating, and a second
+    // writer of bill payments beside savePaymentMade (no idempotency token). One writer now: savePaymentMade.
+    window.markBillPaid = function (id) {
+      const b = _billsData.find(r => r.id === id);
+      if (!b) { notify('Bill not found', true); return; }
+      window.openMakePaymentModal();
+      const sel = document.getElementById('pm-bill');
+      if (sel) { sel.value = String(id); window.onPmBillChange(); }
     };
 
     window.deleteBill = async function (id) {
@@ -1039,6 +1018,7 @@
       try {
         const saved = await api('POST', '/api/payments-made', body);
         _paymentsMadeData.unshift(saved.row || saved);
+        if (body.bill_id) { loadBills().catch(() => {}); }   // M48: the bill row flips partial / paid
         window.paymentsMade = _paymentsMadeData;
         window._pmIdemKey = null;   // success → the next payment mints a fresh token
         closeModal('modal-payment-made');

@@ -1817,7 +1817,20 @@ app.put('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(a
 app.delete('/api/entities/:id', requireAuth, requirePerm('entities:manage'), wrap(async (req, res) => {
   const _eold = await ownedBy('entities', req.params.id, scopeId(req));
   if (!_eold) return res.status(404).json({ error: 'Not found.' });
-  await db.deleteById('entities', parseInt(req.params.id));
+  // M50 (money audit 2026-10-09): the entity's documents go with it (ON DELETE CASCADE on every money table), but
+  // the ledger tables carry no such key — its ledger entries, lines and accounts stayed behind, orphaned, still in
+  // every account-wide GL read. They are removed with the entity, in ONE transaction: either the business and its
+  // ledger both go, or neither does.
+  const _eid = parseInt(req.params.id), _uid = scopeId(req);
+  const _ecx = await pool.connect();
+  try {
+    await _ecx.query('BEGIN');
+    await _ecx.query(`DELETE FROM ledger_lines WHERE user_id = $1 AND (entity_id = $2 OR entry_id IN (SELECT id FROM ledger_entries WHERE user_id = $1 AND entity_id = $2))`, [_uid, _eid]);
+    await _ecx.query(`DELETE FROM ledger_entries WHERE user_id = $1 AND entity_id = $2`, [_uid, _eid]);
+    await _ecx.query(`DELETE FROM ledger_accounts WHERE user_id = $1 AND entity_id = $2`, [_uid, _eid]);
+    await _ecx.query(`DELETE FROM entities WHERE id = $1 AND user_id = $2`, [_eid, _uid]);
+    await _ecx.query('COMMIT');
+  } catch (e) { try { await _ecx.query('ROLLBACK'); } catch (_) {} throw e; } finally { _ecx.release(); }
   await recordAudit(pool, { userId: scopeId(req), entityId: parseInt(req.params.id), table: 'entities', recordId: parseInt(req.params.id), action: 'DELETE', oldData: _eold, req });  // F90 Phase B
   res.json({ ok: true });
 }));

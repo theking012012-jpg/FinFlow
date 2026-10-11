@@ -919,7 +919,10 @@ If you cannot find a field, use null. Be concise.`;
     let _personal = null;
     if (_canRead(_personalLvl)) {
       const [ptx, pacc, phold] = await Promise.all([
-        pool.query(`SELECT id, data FROM personal_transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 200`, [userId]),
+        // M26 (money audit 2026-10-09): PERSONAL rows only — entity_id IS NULL, the same wall the owner's own
+        // Personal page uses (GET /api/personal-transactions). Business bank-feed rows carry an entity_id and were
+        // listed (and summed) here as if they were the owner's personal spending.
+        pool.query(`SELECT id, data FROM personal_transactions WHERE user_id = $1 AND entity_id IS NULL ORDER BY created_at DESC LIMIT 200`, [userId]),
         pool.query(`SELECT id, data FROM personal_accounts     WHERE user_id = $1 ORDER BY id`, [userId]),
         pool.query(`SELECT data     FROM holdings              WHERE user_id = $1 AND entity_id IS NULL`, [userId]),   // N16: the PERSONAL portfolio, as the owner's net worth counts it (business holdings are business assets)
       ]);
@@ -927,16 +930,35 @@ If you cannot find a field, use null. Be concise.`;
       const _assets = pacc.rows.filter(r => r.data?.kind === 'asset')    .reduce((a,r)=>a+_n(r.data?.value),0);
       const _liabs  = pacc.rows.filter(r => r.data?.kind === 'liability').reduce((a,r)=>a+_n(r.data?.value),0);
       const _port   = phold.rows.reduce((a,r)=>a+_n(r.data?.price)*_n(r.data?.shares),0);
-      const _inc    = ptx.rows.filter(r => r.data?.tx_type === 'income').reduce((a,r)=>a+_n(r.data?.amount),0);
-      const _exp    = ptx.rows.filter(r => r.data?.tx_type !== 'income').reduce((a,r)=>a+_n(r.data?.amount),0);
+      // M26: income / spending for the CALENDAR YEAR TO DATE (the owner's Personal "Year" view), summed in SQL over
+      // every personal row (the list above is capped at 200; the sums were too), and kept PER CURRENCY — personal
+      // rows each carry their own currency, and adding TT$ to US$ raw is not a number. `income` / `expense` are
+      // given only when every row in the window shares one currency; otherwise they are null and the per-currency
+      // figures are the answer.
+      const _ytdTo = new Date().toISOString().slice(0, 10), _ytdFrom = _ytdTo.slice(0, 4) + '-01-01';   // calendar strings (Rule 10)
+      const { rows: _pSums } = await pool.query(
+        `SELECT COALESCE(NULLIF(data->>'currency',''),'USD') AS cur, (data->>'tx_type') = 'income' AS is_inc,
+                COALESCE(SUM(CASE WHEN (data->>'amount') ~ '^\s*-?[0-9]+(\.[0-9]+)?\s*$' THEN (data->>'amount')::numeric END),0)::float AS amt
+           FROM personal_transactions
+          WHERE user_id = $1 AND entity_id IS NULL AND COALESCE(NULLIF(data->>'tx_date',''), to_char(created_at,'YYYY-MM-DD')) >= $2
+            AND COALESCE(NULLIF(data->>'tx_date',''), to_char(created_at,'YYYY-MM-DD')) <= $3
+          GROUP BY 1, 2`, [userId, _ytdFrom, _ytdTo]);
+      const _incByCur = {}, _expByCur = {};
+      for (const r of _pSums) { const t = r.is_inc ? _incByCur : _expByCur; t[r.cur] = Math.round(((t[r.cur] || 0) + r.amt) * 100) / 100; }
+      const _curs = new Set([...Object.keys(_incByCur), ...Object.keys(_expByCur)]);
+      const _single = _curs.size <= 1;
+      const _inc = _single ? Object.values(_incByCur).reduce((a, v) => a + v, 0) : null;
+      const _exp = _single ? Object.values(_expByCur).reduce((a, v) => a + v, 0) : null;
       _personal = {
         access:       _personalLvl,
         netWorth:     (_assets + _port - _liabs).toFixed(2),
         assets:       _assets.toFixed(2),
         liabilities:  _liabs.toFixed(2),
         portfolio:    _port.toFixed(2),
-        income:       _inc.toFixed(2),
-        expense:      _exp.toFixed(2),
+        income:       _inc == null ? null : _inc.toFixed(2),
+        expense:      _exp == null ? null : _exp.toFixed(2),
+        currency:     _single ? ([..._curs][0] || null) : null,
+        incomeByCurrency: _incByCur, expenseByCurrency: _expByCur, window: { from: _ytdFrom, to: _ytdTo },
         transactions: ptx.rows.map(r => ({ ...r.data, id: r.id })),
         accounts:     pacc.rows.map(r => ({ ...r.data, id: r.id })),
       };

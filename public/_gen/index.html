@@ -4249,6 +4249,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <div class="modal">
     <div class="modal-header"><div><div class="modal-title">Add expense</div><div class="modal-sub">Log a business expense</div></div><button class="modal-close" onclick="closeModal('expense-modal')"><svg viewBox="0 0 14 14"><line x1="1" y1="1" x2="13" y2="13"></line><line x1="13" y1="1" x2="1" y2="13"></line></svg></button></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-desc">Description *</label><input class="finput" id="bexp-desc" placeholder="e.g. Office rent"></div><div class="field-wrap"><label class="field-label" for="bexp-amount">Amount ($) *</label><input class="finput" id="bexp-amount" type="number" placeholder="0.00"></div></div>
+    <!-- M49: the expense's own calendar date (defaults to today, back-/forward-datable) — it files the expense to its period. -->
+    <div class="field-wrap"><label class="field-label" for="bexp-date">Date *</label><input class="finput" id="bexp-date" type="date"></div>
     <div class="field-group"><div class="field-wrap"><label class="field-label" for="bexp-cat">Category</label><!-- Basis C: "Salaries" removed. Payroll expense comes ONLY from a payroll run; a hand-entered
              salary row would rebuild the exact double-count C exists to remove. Non-payroll
              compensation keeps a home under Contractors / Professional Fees, which are general

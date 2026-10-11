@@ -326,6 +326,11 @@
 
       const cat = document.getElementById('bexp-cat')?.value  || 'Other';
       const ded = document.getElementById('bexp-ded')?.value  || 'no';
+      // M49: the date the user picked (default today). An expense used to be stamped "today" always, so a back-dated
+      // receipt filed into the wrong period.
+      const _expDateIn = (document.getElementById('bexp-date')?.value || '').trim();
+      if (_expDateIn && !/^\d{4}-\d{2}-\d{2}$/.test(_expDateIn)) { notify('Enter a valid date', true); return; }
+      const expense_date = _expDateIn || (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10));
 
       // One idempotency token per submit-intent: minted lazily now, reused on any retry of THIS
       // modal, reset to null on modal open (openExpenseModal) and on success below. A double-submit
@@ -347,7 +352,7 @@
           category:    cat,
           amount:      amountRaw,
           deductible:  ded,
-          expense_date: (window.todayLocal ? window.todayLocal() : new Date().toISOString().slice(0, 10)),  // C3/F37: local date, not UTC
+          expense_date,   // M49: the picked date (C3/F37: a calendar date, never a UTC instant)
           entity_id: _entityId2,
           class:    (document.getElementById('bexp-class') && document.getElementById('bexp-class').value.trim()) || undefined,
           location: (document.getElementById('bexp-location') && document.getElementById('bexp-location').value.trim()) || undefined,
@@ -361,7 +366,7 @@
           cat,
           amount: amountRaw,
           ded,
-          date:   'Today',
+          date:   window.FinFlowDates ? window.FinFlowDates.fmtLabel(expense_date) : expense_date,   // M49
         });
 
         window._expIdemKey = null;   // success → the next expense mints a fresh token

@@ -44,7 +44,7 @@ async function seed({ http }) {
   return { ent };
 }
 
-// run(title, body, { extraSeed }) — boots, seeds, hands body({ w, d, ev, all, text, settle, http, A, eq }).
+// run(title, body, { extraSeed, failMap }) — boots, seeds, hands body({ w, d, ev, all, text, settle, http, A, eq }).
 function run(title, body, opts = {}) {
   (async () => {
     let boot, pass = 0, fail = 0;
@@ -55,7 +55,7 @@ function run(title, body, opts = {}) {
     };
     console.log('\n' + title + '\n');
     try {
-      boot = await bootSpaInJsdom({ baseSeed: false, apiSeed: async (ctx) => { const r = await seed(ctx); if (opts.extraSeed) await opts.extraSeed(ctx, r); } });
+      boot = await bootSpaInJsdom({ baseSeed: false, failMap: opts.failMap || {}, apiSeed: async (ctx) => { const r = await seed(ctx); if (opts.extraSeed) await opts.extraSeed(ctx, r); } });
       const { window: w, settle, text, http } = boot;
       const d = w.document;
       const ev = (src) => w.eval(src);

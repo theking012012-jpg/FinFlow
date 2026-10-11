@@ -5520,7 +5520,11 @@ function clearAIChat(){
     const _baseAbs = parseInt(_fyWin.start.slice(0,4),10)*12 + (parseInt(_fyWin.start.slice(5,7),10)-1);
     const months = [];
     for (let i = 0; i < 12; i++) { const _a = _baseAbs + i; months.push({ ym: Math.floor(_a/12)+'-'+String((_a%12)+1).padStart(2,'0'), label: _MN[_a%12] }); }
-    const _idxOf = v => { const y = FD._toYmd(v); if (y == null) return -1; const k = y.slice(0,7); return months.findIndex(m => m.ym === k); };
+    // M38/M39 (money audit 2026-10-09): this is the instant first paint; the server's monthly buckets replace it
+    // (_applyServerBooks). It mirrors the server exactly: a row dated after today is not in the books (D2), and
+    // every leg falls back through the same date fields as computeBooks.
+    const _today = (window._entityToday ? window._entityToday() : FD.resolvedToday(new Date()));
+    const _idxOf = v => { const y = FD._toYmd(v); if (y == null || y > _today) return -1; const k = y.slice(0,7); return months.findIndex(m => m.ym === k); };
 
     const revByMonth  = new Array(12).fill(0);
     const expByMonth  = new Array(12).fill(0);
@@ -5530,13 +5534,13 @@ function clearAIChat(){
       if (idx >= 0 && ['pending','overdue','partial','paid'].includes(inv.status?.toLowerCase())) revByMonth[idx] += parseFloat(inv.amount) || 0;
     });
     // Cash sales receipts count as revenue; payments_received is NOT revenue (F32).
-    (window.receipts || []).forEach(r => { const idx = _idxOf(r.date); if (idx >= 0) revByMonth[idx] += parseFloat(r.amount) || 0; });
-    expenses.forEach(exp => { const idx = _idxOf(exp.expense_date); if (idx >= 0) expByMonth[idx] += parseFloat(exp.amount) || 0; });
+    (window.receipts || []).forEach(r => { const idx = _idxOf(r.date || r.created_at); if (idx >= 0) revByMonth[idx] += parseFloat(r.amount) || 0; });
+    expenses.forEach(exp => { const idx = _idxOf(exp.expense_date || exp.date || exp.created_at); if (idx >= 0) expByMonth[idx] += parseFloat(exp.amount) || 0; });   // M39
     // F38 Step 4: issued bills accrue as expense in their ISSUE month — RECOGNIZED_BILL, FULL amount.
     const _RECBILL = ['unpaid','due_soon','overdue','partial','paid'];
     (window.bills || []).forEach(b => { if (!_RECBILL.includes((b.status || '').toLowerCase())) return; const idx = _idxOf(b.issue_date || b.created_at || b.due_date); if (idx >= 0) expByMonth[idx] += parseFloat(b.amount) || 0; });
     // ONLY orphan payments (bill_id IS NULL) — a linked payment settles AP, not a fresh expense.
-    (window.paymentsMade || []).filter(p => p.bill_id == null).forEach(p => { const idx = _idxOf(p.date); if (idx >= 0) expByMonth[idx] += parseFloat(p.amount) || 0; });
+    (window.paymentsMade || []).filter(p => p.bill_id == null).forEach(p => { const idx = _idxOf(p.date || p.created_at); if (idx >= 0) expByMonth[idx] += parseFloat(p.amount) || 0; });
     // F58: contra legs, bucketed on their OWN date. Mirror of the server's monthly buckets in
     // POST /api/reports/profit-loss, so the client chart and the server chart agree (Rule 6).
     // Credit notes have their OWN vocabulary (Open/Applied/Void, server.js:2307) — Void = 0.
@@ -5550,7 +5554,9 @@ function clearAIChat(){
     // matching the server so chart and KPI agree. COGS is excluded — grossProfit, not opex.
     (window.payrollRuns || []).forEach(r => {
       if (!['approved', 'paid'].includes(String(r.status || '').toLowerCase())) return;
-      const idx = _idxOf(r.period ? String(r.period).slice(0, 7) + '-01' : r.run_date);
+      // M10: the canonical period parser (handles the UI's "July 2026" as well as "2026-07") — the slice(0,7) form
+      // turned "July 2026" into 2001-07-20 and dropped every UI-created run from the chart.
+      const idx = _idxOf(FD.payrollPeriodYmd(r.period, r.run_date));
       if (idx < 0) return;
       (r.lines || []).forEach(l => { expByMonth[idx] += (parseFloat(l.gross) || 0) + (parseFloat(l.bonus) || 0) + (parseFloat(l.overtime) || 0); });
     });

@@ -5767,6 +5767,9 @@ window.obNext = function(){
     const address = (document.getElementById('ob-address')?.value||'').trim();
     if(!industry){ if(typeof notify==='function') notify('Industry is required', true); return; }
     if(!address){ if(typeof notify==='function') notify('Business address is required', true); return; }
+    // C12: Country is required (*) — checked here at step 1 like every other required field, not only at the very end.
+    const country = (document.getElementById('ob-country')?.value||'').trim();
+    if(!country){ if(typeof notify==='function') notify('Country is required \u2014 it sets tax & filing for your business', true); return; }
     if(name && document.getElementById('sb-brand-name')) document.getElementById('sb-brand-name').textContent=name;
     if(user && document.querySelector('.user-name')) document.querySelector('.user-name').textContent=user;
   }

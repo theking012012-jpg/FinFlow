@@ -3392,23 +3392,9 @@ function syncAllPayrollsToPersonal(){
   const entries = Object.entries(ownerPayrollByEntity);
   const totalUSD = calcTotalOwnerNetUSD();   // banner/breakdown display only (not an income term)
 
-  // Replace salary transactions with one per entity
-  persTransactions = persTransactions.filter(t=>!(t.cat==='Income' && t.desc.startsWith('Salary —')));
-  entries.forEach(([idx, ep])=>{
-    const _ents = (typeof ENTITIES!=='undefined'?ENTITIES:null)||window.ENTITIES||[];
-    const entity = _ents[parseInt(idx)];
-    const entCurKey = ep.currency || entity?.currency || 'USD';
-    const cur = ((typeof CURRENCIES!=='undefined'?CURRENCIES:null)||window.CURRENCIES||{})[entCurKey] || {symbol:'$'};
-    const _txCur = ep.currency || entity?.currency || 'USD';
-    const netUSD = Math.round(_safeFX(ep.net, _txCur, 'USD'));
-    persTransactions.unshift({
-      desc:`Salary — ${esc(entity?.name||'Entity')} (April)`,
-      cat:'Income',
-      amount: netUSD,
-      type:'income',
-      date:'Apr 30'
-    });
-  });
+  // M35 (money audit 2026-10-09): NO fabricated rows. This used to unshift an in-memory "Salary — <entity> (April)"
+  // row dated "Apr 30" per entity into the personal list and running balance (a hard-coded month, the ROSTER's net,
+  // not a real transaction). The owner's salary reaches Personal only as real rows from paid payroll runs (M14).
 
   // Update payroll page banner — show entity name + owner name for clarity
   const _bannerEnts = (typeof ENTITIES!=='undefined'?ENTITIES:null)||window.ENTITIES||[];

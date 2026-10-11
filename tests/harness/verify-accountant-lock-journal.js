@@ -46,7 +46,7 @@ async function main() {
     A('owner login', (await O.post('/api/auth/login', { email: 'lj-owner@finflow.test', password: PW })).status === 200);
     A('accountant login', (await ACC.post('/api/accountants/login', { email: 'lj-acc@finflow.test', password: PW })).status === 200);
     const J = (date, lines) => ACC.post(`/api/accountants/clients/${uid}/journal`, { date, description: 'Adj ' + date, lines });
-    const bal = [{ account: 'Rent', debit: 100, credit: 0 }, { account: 'Cash', debit: 0, credit: 100 }];
+    const bal = [{ code: '5100', name: 'Rent', debit: 100, credit: 0 }, { code: '1010', name: 'Checking', debit: 0, credit: 100 }];   // M3: lines carry chart codes
 
     console.log('\n' + '='.repeat(78));
     console.log('  ACCOUNTANT PERIOD LOCK + JOURNAL RULES');
@@ -60,7 +60,7 @@ async function main() {
 
     const j1 = await J('2026-06-20', bal);
     A('accountant journal into the locked June → 403 (bug: 201)', j1.status === 403, `status ${j1.status}`);
-    const j2 = await J('2026-07-05', [{ account: 'Rent', debit: 100, credit: 0 }, { account: 'Cash', debit: 0, credit: 50 }]);
+    const j2 = await J('2026-07-05', [{ code: '5100', debit: 100, credit: 0 }, { code: '1010', debit: 0, credit: 50 }]);
     A('accountant journal 100 Dr / 50 Cr → 400 (bug: 201)', j2.status === 400, `status ${j2.status}`);
     const j3 = await J('2026-07-05', []);
     A('accountant journal with no lines → 400 (bug: 201)', j3.status === 400, `status ${j3.status}`);

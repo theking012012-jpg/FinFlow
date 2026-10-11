@@ -270,7 +270,7 @@ function _openSse(res) {
 // ROUTES — paste these into server.js after the auth section
 // ═══════════════════════════════════════════════════════════════════════════════
 
-module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet) {
+module.exports = function registerAccountantRoutes(app, pool, loginLimiter, apiLimiter, stripe, resendClient, computeBooks, recordAudit, glReconcile, signupLimiter, canonicalAP, accountFyStartIdx, entityTodayYmd, glBalanceSheet, postJournalToLedger) {
   // F90 Phase B: recordAudit is the single audited write path (threaded from server.js). Accountant
   // actions on a client's books log with actor_type='accountant' + actor_id=accountantId (derived
   // inside recordAudit from req.session.accountantId), while user_id stays the CLIENT whose books
@@ -1052,8 +1052,20 @@ If you cannot find a field, use null. Be concise.`;
     }
     // N76: the same rules as the main app's journal (server.js POST /api/journals) — at least one line,
     // debits = credits, and never into a closed period. The accountant path enforced none of them.
-    const _lines = Array.isArray(lines) ? lines : [];
-    if (!_lines.length) return res.status(400).json({ error: 'A journal needs at least one line.' });
+    // M3 (money audit 2026-10-09): every line must carry a chart-of-accounts CODE. The portal sent a free-text
+    // account NAME, which the ledger cannot type (it types a line by its code's first digit), so a "posted"
+    // portal journal could never reach the books. Accept `code`, or an `account` that starts with the code
+    // ("4000 Service Revenue"); refuse anything else rather than store a journal that moves no figure.
+    const _rawLines = Array.isArray(lines) ? lines : [];
+    const _lines = [];
+    for (const l of _rawLines) {
+      const _dr = parseFloat(l && l.debit) || 0, _cr = parseFloat(l && l.credit) || 0;
+      if (!_dr && !_cr) continue;
+      const _m = String((l && (l.code != null && l.code !== '' ? l.code : l.account)) || '').trim().match(/^([1-9][0-9]{2,5})\b/);
+      if (!_m) return res.status(400).json({ error: 'Each journal line needs an account code from the chart of accounts (e.g. 4000 Service Revenue).' });
+      _lines.push({ code: _m[1], name: String((l && (l.name || l.account)) || _m[1]).slice(0, 120), debit: _dr, credit: _cr });
+    }
+    if (_lines.length < 2) return res.status(400).json({ error: 'A journal needs at least two lines with amounts.' });
     const _dr = _lines.reduce((s, l) => s + (parseFloat(l && l.debit) || 0), 0);
     const _cr = _lines.reduce((s, l) => s + (parseFloat(l && l.credit) || 0), 0);
     if (Math.abs(_dr - _cr) > 0.01) return res.status(400).json({ error: 'Journal does not balance — debits must equal credits.' });
@@ -1061,15 +1073,28 @@ If you cannot find a field, use null. Be concise.`;
     const _jDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date)
       : (entityTodayYmd ? await entityTodayYmd(_clientEntityId) : new Date().toISOString().slice(0, 10));
     if (await require('./period-lock').isLocked(pool, parseInt(userId), _clientEntityId, _jDate)) return res.status(403).json({ error: 'Period is locked.' });
+    // M3: stored exactly like the owner's posted journal (server.js POST /api/journals): status 'Posted', ref,
+    // debit/credit totals — and dual-written to the GL, which is where computeBooks reads journals from.
     const { row } = await db.insert('journals', {
       user_id: parseInt(userId),
       entity_id: _clientEntityId,
       description: (description || '').slice(0, 500),
       date: _jDate,
+      ref: 'JE-' + String(Date.now()).slice(-4),
+      debit: Math.round(_dr * 100) / 100, credit: Math.round(_cr * 100) / 100,
       lines: JSON.stringify(_lines),
+      status: 'Posted',
       posted_by: `accountant:${req.session.accountantId}`,
     });
     await _audit(pool, { userId: parseInt(userId), table: 'journals', recordId: row.id, action: 'CREATE', newData: row, req });  // F90 Phase B (accountant on client books)
+    let _gl = { posted: false, reason: 'ledger posting unavailable' };
+    try { if (postJournalToLedger) _gl = await postJournalToLedger(pool, { userId: parseInt(userId), entityId: _clientEntityId, journal: row }); }
+    catch (glErr) { _gl = { posted: false, reason: glErr && glErr.message }; console.error('[GL] accountant journal posting failed:', glErr && glErr.message); }
+    if (!_gl || !_gl.posted) {
+      // Never report "posted" for a journal that did not reach the books: roll the row back and say so.
+      await pool.query('DELETE FROM journals WHERE id = $1 AND user_id = $2', [row.id, parseInt(userId)]);
+      return res.status(500).json({ error: 'The journal could not be posted to the ledger' + (_gl && _gl.reason ? ' (' + _gl.reason + ')' : '') + '. Nothing was saved.' });
+    }
     res.status(201).json(row);
   }));
 

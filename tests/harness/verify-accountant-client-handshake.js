@@ -89,7 +89,7 @@ const PW = 'harness-password-not-a-secret';
     // ── 6. client sees the link + the grant gates real work ──
     const my = await ownerA.get('/api/accountants/my-accountant');
     A('client sees the linked accountant, access_level view', my.json && String(my.json.id) === String(acc1) && my.json.access_level === 'view', JSON.stringify(my.json));
-    const jBody = { date: '2026-07-10', description: 'Adjusting entry', lines: [{ debit: 100 }, { credit: 100 }] };
+    const jBody = { date: '2026-07-10', description: 'Adjusting entry', lines: [{ code: '5100', debit: 100 }, { code: '1010', credit: 100 }] };
     A('view accountant: post journal → 403', (await a1.post(`/api/accountants/clients/${clientA}/journal`, jBody)).status === 403);
     A('client grants filing → 200', (await ownerA.put('/api/accountants/my-accountant/access', { access_level: 'filing' })).status === 200);
     A('filing accountant: post journal → 201 (connection enables real work)', (await a1.post(`/api/accountants/clients/${clientA}/journal`, jBody)).status === 201);

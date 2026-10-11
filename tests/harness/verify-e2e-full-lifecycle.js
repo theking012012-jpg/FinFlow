@@ -258,7 +258,7 @@ async function main() {
     // ═══════════════════════════════════════════════════════════════════════════════════════
     section('8 · ACCOUNTANT → CLIENT — the access grant gates real work (view vs filing)');
     // ═══════════════════════════════════════════════════════════════════════════════════════
-    const jBody = { date: '2026-07-10', description: 'Adjusting entry', lines: [{ debit: 100 }, { credit: 100 }] };
+    const jBody = { date: '2026-07-10', description: 'Adjusting entry', lines: [{ code: '5100', debit: 100 }, { code: '1010', credit: 100 }] };
     A('a "view" accountant CANNOT post a journal → 403', (await a1.post(`/api/accountants/clients/${uid}/journal`, jBody)).status === 403);
     A('the client grants "filing" access → 200', (await client.put('/api/accountants/my-accountant/access', { access_level: 'filing' })).status === 200);
     A('a "filing" accountant CAN post a journal → 201', (await a1.post(`/api/accountants/clients/${uid}/journal`, jBody)).status === 201);

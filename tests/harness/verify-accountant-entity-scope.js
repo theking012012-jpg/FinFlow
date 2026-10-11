@@ -144,9 +144,9 @@ async function main() {
     A('phase2: books?entity_id=B → 403 (RED — hidden even by direct id)', (await getBooks(`?entity_id=${entB}`)).status === 403);
     A('phase2: books?entity_id=A → 200', (await getBooks(`?entity_id=${entA}`)).status === 200);
     // Writes
-    A('phase2: POST journal (default entity=A, filing) → 201', (await acc.post(JOURNAL, { date: '2026-07-10', description: 'adj A', lines: [{ debit: 100 }, { credit: 100 }] })).status === 201);
-    A('phase2: POST journal entity_id=A (filing) → 201', (await acc.post(JOURNAL, { entity_id: entA, date: '2026-07-11', description: 'adj A2', lines: [{ debit: 5 }, { credit: 5 }] })).status === 201);
-    A('phase2: POST journal entity_id=B (none) → 403 (RED — write denied)', (await acc.post(JOURNAL, { entity_id: entB, date: '2026-07-12', description: 'adj B', lines: [{ debit: 9 }, { credit: 9 }] })).status === 403);
+    A('phase2: POST journal (default entity=A, filing) → 201', (await acc.post(JOURNAL, { date: '2026-07-10', description: 'adj A', lines: [{ code: '5100', debit: 100 }, { code: '1010', credit: 100 }] })).status === 201);
+    A('phase2: POST journal entity_id=A (filing) → 201', (await acc.post(JOURNAL, { entity_id: entA, date: '2026-07-11', description: 'adj A2', lines: [{ code: '5100', debit: 5 }, { code: '1010', credit: 5 }] })).status === 201);
+    A('phase2: POST journal entity_id=B (none) → 403 (RED — write denied)', (await acc.post(JOURNAL, { entity_id: entB, date: '2026-07-12', description: 'adj B', lines: [{ code: '5100', debit: 9 }, { code: '1010', credit: 9 }] })).status === 403);
     A('phase2: lock (A is filing) → 200', (await acc.post(LOCK, { period: '2026-06', locked: true })).status === 200);
     A('phase2: personal still exposed (view)', b2.personal != null && b2.personalAccess === 'view');
 
@@ -156,7 +156,7 @@ async function main() {
     let b3 = (await getBooks()).json;
     A('phase3: only A visible (B unlisted ⇒ none)', b3.entities.length === 1 && entNames(b3)[0].startsWith('') && !entNames(b3).includes('Entity B Ltd'));
     A('phase3: personal HIDDEN (null) under personal=none (RED)', b3.personal == null && b3.personalAccess === 'none');
-    A('phase3: POST journal to A (view) → 403 (RED — write denied on view entity)', (await acc.post(JOURNAL, { entity_id: entA, date: '2026-07-13', description: 'no', lines: [{ debit: 1 }, { credit: 1 }] })).status === 403);
+    A('phase3: POST journal to A (view) → 403 (RED — write denied on view entity)', (await acc.post(JOURNAL, { entity_id: entA, date: '2026-07-13', description: 'no', lines: [{ code: '5100', debit: 1 }, { code: '1010', credit: 1 }] })).status === 403);
     A('phase3: lock (no entity filing) → 403 (RED)', (await acc.post(LOCK, { period: '2026-05', locked: true })).status === 403);
 
     // ── PHASE 4 — legacy revert clears the fine-grained map ───────────────────────────────────
@@ -166,7 +166,7 @@ async function main() {
     A('phase4: both entities visible again (map cleared → legacy all-entities)', b4.entities.length === 2 && entNames(b4).includes('Entity B Ltd'));
     A('phase4: B $77,777 present again', hasMarker(b4));
     A('phase4: personal hidden again (legacy null)', b4.personal == null && b4.personalAccess === 'none');
-    A('phase4: POST journal → 201 (account-wide filing)', (await acc.post(JOURNAL, { date: '2026-07-14', description: 'adj legacy', lines: [{ debit: 2 }, { credit: 2 }] })).status === 201);
+    A('phase4: POST journal → 201 (account-wide filing)', (await acc.post(JOURNAL, { date: '2026-07-14', description: 'adj legacy', lines: [{ code: '5100', debit: 2 }, { code: '1010', credit: 2 }] })).status === 201);
 
     // ── validation ──
     console.log('\n-- validation --');

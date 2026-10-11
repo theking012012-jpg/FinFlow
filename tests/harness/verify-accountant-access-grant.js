@@ -53,7 +53,7 @@ async function main() {
     if ((await acc.post('/api/accountants/login', { email: 'grant-acc@finflow.test', password: PW })).status !== 200) throw new Error('accountant login failed');
 
     const JOURNAL = `/api/accountants/clients/${clientId}/journal`;
-    const journalBody = { date: '2026-07-10', description: 'Adjusting entry', lines: [{ debit: 100 }, { credit: 100 }] };
+    const journalBody = { date: '2026-07-10', description: 'Adjusting entry', lines: [{ code: '5100', debit: 100 }, { code: '1010', credit: 100 }] };
     const setLevel = (lvl) => owner.put('/api/accountants/my-accountant/access', { access_level: lvl });
     const postJournal = () => acc.post(JOURNAL, journalBody);
 

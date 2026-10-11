@@ -68,7 +68,7 @@ async function main() {
     const BOOKS   = `/api/accountants/clients/${clientId}/books`;
     const JOURNAL = `/api/accountants/clients/${clientId}/journal`;
     const LOCK    = `/api/accountants/clients/${clientId}/lock`;
-    const journalBody = { date: '2026-07-10', description: 'Adjusting entry', lines: [{ debit: 100 }, { credit: 100 }] };
+    const journalBody = { date: '2026-07-10', description: 'Adjusting entry', lines: [{ code: '5100', debit: 100 }, { code: '1010', credit: 100 }] };
 
     console.log('\n' + '='.repeat(78));
     console.log('  ACCOUNTANT PORTAL ACCESS — view vs filing, executed (separate from team RBAC)');

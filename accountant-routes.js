@@ -869,7 +869,8 @@ If you cannot find a field, use null. Be concise.`;
     // total never leaks a hidden entity and reconciles with the owner's dashboard by construction.
     const _aggregateBooks = (arr) => {
       const agg = { revenue:0, cogs:0, grossProfit:0, opex:0, netProfit:0, outstanding:0,
-                    tax:{ deductible:0, deductibleFull:0, deductibleHalf:0, deductions:0, nonDeductibleExpenses:0, taxableIncome:0 }, parts:{ payroll:0 } };
+                    tax:{ deductible:0, deductibleFull:0, deductibleHalf:0, deductions:0, nonDeductibleExpenses:0, taxableIncome:0 }, parts:{ payroll:0 },
+                    arSummary:{ total:0, openCount:0, overdueTotal:0, overdueCount:0 } };
       for (const b of (arr || []).filter(Boolean)) {
         agg.revenue     += (+b.revenue     || 0);
         agg.cogs        += (+b.cogs        || 0);
@@ -884,6 +885,12 @@ If you cannot find a field, use null. Be concise.`;
           agg.tax.deductions            += (+b.tax.deductions            || 0);   // M6
           agg.tax.nonDeductibleExpenses += (+b.tax.nonDeductibleExpenses || 0);
           agg.tax.taxableIncome         += (+b.tax.taxableIncome         || 0);
+        }
+        if (b.arSummary) {   // M25: overdue counts aggregate like every other figure
+          agg.arSummary.total        += (+b.arSummary.total        || 0);
+          agg.arSummary.openCount    += (+b.arSummary.openCount    || 0);
+          agg.arSummary.overdueTotal += (+b.arSummary.overdueTotal || 0);
+          agg.arSummary.overdueCount += (+b.arSummary.overdueCount || 0);
         }
         if (b.parts && typeof b.parts === 'object') {
           for (const [k, v] of Object.entries(b.parts)) {
@@ -1515,7 +1522,8 @@ If you cannot find a field, use null. Be concise.`;
     const { rows: invRows } = await pool.query(`SELECT entity_id, data->>'status' AS status FROM invoices WHERE user_id = $1`, [userId]);
     const { rows: expCnt } = await pool.query(`SELECT entity_id FROM expenses WHERE user_id = $1`, [userId]);
     const scopedInv = invRows.filter(r => inScope(r.entity_id));
-    const overdueCnt = scopedInv.filter(r => r.status === 'overdue').length;
+    // M25: overdue = computeBooks.arSummary (past due date, balance owing) — the literal status 'overdue' is never set.
+    const overdueCnt = (books.arSummary && books.arSummary.overdueCount) || 0;
     const expCount = expCnt.filter(r => inScope(r.entity_id)).length;
     const ent = entityId != null ? scope.entities.find(e => e.id === entityId) : null;
     const cur = String((ent && ent.currency) || (books.fxCoverage && books.fxCoverage.display) || (scope.entities.length === 1 && scope.entities[0].currency) || 'USD').toUpperCase();

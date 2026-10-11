@@ -5576,7 +5576,10 @@ const COMPLEX_QUERY_RE = /\b(analyze|recommend|explain|forecast|compare|predict|
 async function aiBooksContext(req) {
   const uid = scopeId(req), eid = req.entityId || null;
   const fyStartIdx = await accountFyStartIdx(uid);
-  const pl = await glProfitLoss(uid, eid, { period: 'year', fyStartIdx });
+  // M25: the open / overdue counts come from the same computeBooks call (arSummary: balance-based, past due date),
+  // not a literal status match — nothing ever sets status 'overdue', so the AI was told "0 overdue" regardless.
+  const _books = await computeBooks(uid, eid, 'year', null, fyStartIdx);
+  const pl = await glProfitLoss(uid, eid, { period: 'year', fyStartIdx, books: _books });
   const ent = await activeEntity(req);
   const cur = String((eid != null && ent && ent.currency) || (pl.baseCurrency) || (ent && ent.currency) || 'USD').toUpperCase();
   const inv = await db.allByUser('invoices', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
@@ -5589,8 +5592,8 @@ Revenue (issued invoices + sales receipts − credit notes): ${money(pl.totalRev
 Cost of goods sold: ${money(pl.cogs)}
 Operating expenses (incl. payroll ${money(pl.payroll)}): ${money(pl.totalExpenses)}
 Net profit: ${money(pl.netProfit)}
-Open invoices: ${inv.filter(i => ['pending', 'overdue', 'partial'].includes(st(i))).length}
-Overdue invoices: ${inv.filter(i => st(i) === 'overdue').length}`,
+Open invoices: ${(_books.arSummary && _books.arSummary.openCount) || 0} (${money(_books.outstanding)} owed)
+Overdue invoices: ${(_books.arSummary && _books.arSummary.overdueCount) || 0} (${money(_books.arSummary && _books.arSummary.overdueTotal)} past due)`,
   };
 }
 

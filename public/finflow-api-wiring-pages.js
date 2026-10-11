@@ -765,7 +765,10 @@
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No bills yet</div>';
 
       // badge
-      const overdue = _billsData.filter(b => b.status?.toLowerCase() === 'overdue' || b.status?.toLowerCase() === 'due_soon').length;
+      // M25: the badge counts bills PAST DUE with a balance — the same date-based rule as the Overdue card
+      // (_billsOverdueSum). It counted the literal statuses 'overdue' / 'due_soon', which nothing sets.
+      const _bdToday = window.FinFlowDates ? (window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())) : new Date().toISOString().slice(0, 10);
+      const overdue = _billsData.filter(b => window._billsOverdueSum([b]) > 0 && String(b.due_date || '').slice(0, 10) < _bdToday).length;
       const badge = document.getElementById('badge-bills');
       if (badge) { badge.textContent = overdue; badge.style.display = overdue > 0 ? '' : 'none'; }
       // KPI cards: count · due-this-week sum · overdue sum · paid sum

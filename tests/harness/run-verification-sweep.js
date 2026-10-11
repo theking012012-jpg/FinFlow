@@ -37,7 +37,7 @@ const EXTRA_TESTS = new Set([
 const DENY = new Set([
   'boot.js', 'clock.js', 'guard.js', 'httpClient.js', 'pgScratch.js', 'seed.js', 'seedData.js',
   'vocabulary.js', 'jsdomBoot.js', 'expected.js', 'periods.js', 'query.js', 'substrate.js',
-  'drift.js', 'measure-boot-requests.js', 'verification-sync.js', 'jsdom-spike.js',
+  'drift.js', 'moneyFixKit.js', 'measure-boot-requests.js', 'verification-sync.js', 'jsdom-spike.js',
   'f145-introspect.js', 'run-verification-sweep.js',
 ]);
 

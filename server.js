@@ -2178,9 +2178,26 @@ app.put('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(a
   } catch (glErr) { console.error('[GL] invoice resync failed (shadow, non-fatal):', glErr && glErr.message); }
   res.json(updated);
 }));
+// M1/M2 (money audit 2026-10-09): a document with settlements recorded against it cannot be deleted.
+// Deleting it used to remove its revenue/expense (and reverse its GL entry) while every linked payment
+// stayed: the cash remained in the cash-flow report and the GL, with nothing behind it (AR / AP went
+// negative). One guard for the whole class — invoice ← invoice_payments, bill ← payments_made.bill_id.
+// The supported path is: delete the payments first (each reverses its own cash leg), then the document.
+async function settlementsBlockingDelete(kind, userId, docId) {
+  const q = kind === 'invoice'
+    ? `SELECT count(*)::int AS n, COALESCE(sum(amount),0)::numeric AS total FROM invoice_payments WHERE user_id = $1 AND invoice_id = $2`
+    : `SELECT count(*)::int AS n, COALESCE(sum((data->>'amount')::numeric),0)::numeric AS total FROM payments_made WHERE user_id = $1 AND data->>'bill_id' = $2::text`;
+  const { rows: [r] } = await pool.query(q, [userId, Number(docId)]);
+  if (!r || !r.n) return null;
+  const what = kind === 'invoice' ? 'invoice' : 'bill';
+  return { error: `This ${what} has ${r.n} payment${r.n === 1 ? '' : 's'} recorded against it. Delete the payment${r.n === 1 ? '' : 's'} first, then the ${what}.`, payments: r.n, paid: Number(r.total) };
+}
+
 app.delete('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wrap(async (req, res) => {
   const row = await ownedBy('invoices', req.params.id, scopeId(req));
   if (!row) return res.status(404).json({ error: 'Not found.' });
+  const _blk = await settlementsBlockingDelete('invoice', scopeId(req), req.params.id);
+  if (_blk) return res.status(409).json(_blk);
   await db.deleteById('invoices', parseInt(req.params.id));
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'invoice', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] invoice reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   logAudit(req, 'DELETE', 'invoices', row.id, row, null);
@@ -4408,6 +4425,8 @@ app.put('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (
 app.delete('/api/bills/:id', requireAuth, lockGuard(LOCK_SPECS.bills), wrap(async (req, res) => {
   const { rows: [_bold] } = await pool.query('SELECT * FROM bills WHERE id = $1 AND user_id = $2 LIMIT 1', [Number(req.params.id), scopeId(req)]);
   if (!_bold) return res.status(404).json({ error: 'Not found.' });   // cross-tenant / nonexistent id → 404, not fake-success 200
+  const _blk = await settlementsBlockingDelete('bill', scopeId(req), req.params.id);   // M2
+  if (_blk) return res.status(409).json(_blk);
   await pool.query('DELETE FROM bills WHERE id = $1 AND user_id = $2', [Number(req.params.id), scopeId(req)]);
   try { await reverseLedgerEntry(pool, { userId: scopeId(req), sourceType: 'bill', sourceId: Number(req.params.id) }); } catch (glErr) { console.error('[GL] bill reversal failed (shadow, non-fatal):', glErr && glErr.message); }
   if (_bold) await recordAudit(pool, { userId: scopeId(req), entityId: _bold.entity_id || null, table: 'bills', recordId: Number(req.params.id), action: 'DELETE', oldData: rowToObj(_bold), req });  // F90 Phase B

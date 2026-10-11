@@ -207,3 +207,8 @@ See `MONEY_AUDIT_2026-10-09.md` §7.
 
 Each is RED → GREEN on targeted harnesses. Full sweep: owner. **M53** (personal net-worth history keyed on the
 active business) is logged for round 3.
+
+## 8. Personal / business wall (2026-10-10)
+
+The rule is now in `CLAUDE.md`. M53, M55, M56, M57, M58 and M59 are fixed, each RED → GREEN; see
+`MONEY_AUDIT_2026-10-09.md` §8. One owner decision is open: the legacy roster-made personal salary rows.

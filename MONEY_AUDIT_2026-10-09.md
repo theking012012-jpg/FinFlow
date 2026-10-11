@@ -678,3 +678,52 @@ with 10% tax, so after M41 its cash and balance sheet carry 200 of withholdings 
 
 Commit-time note: index.html changes (M41 payroll UI, M34 stock-in, M49) need `npm run gen` output (`public/_gen`)
 staged with them, as earlier client commits did.
+
+---
+
+## 8. Personal / business wall, 2026-10-10 (owner rule; held for owner approval)
+
+**The rule (now in `CLAUDE.md` → Product facts):**
+- **Business → Personal:** only ONE thing crosses — the owner's salary, as income, when a payroll run is marked PAID.
+- **Personal → Business:** nothing, ever.
+- Personal data is personal by WHAT IT IS, never by which business is active. The request middleware always
+  resolves a business when one exists, so no personal route may take its scope from it.
+
+Enumerated from both directions:
+- **Code side:** every read and write of `personal_transactions`, `personal_accounts`,
+  `recurring_personal_transactions`, `holdings`, `goals` and `snapshots`.
+- **Surface side:** every Personal-page function that reads business globals, and every business surface that reads
+  personal tables (AI context, API v1 and the accountant portal: clean).
+
+| # | Crossing | Fix | Harness | GREEN | RED (before) |
+|---|---|---|---|---|---|
+| M55 | Personal page **wrote the business payroll roster** ("Monthly salary" card → POST/PUT /api/payroll) and showed roster figures: a "Synced from payroll" summary, an "Income from payroll" banner with a per-business breakdown, and an income caption "<business>: <roster net>". | Card, banner, breakdown and roster caption removed. `GET /api/personal-salary` (its only reader) removed. The owner's salary is set on the Payroll page only. | `verify-m55-personal-no-roster` | 5 | 4 of 5 |
+| M56 | A bank line written from the consolidated "all businesses" view was stored entity-less and **landed in Personal**. Personal edit/delete accepted a **business** bank line. Business banking delete accepted a **personal** transaction or another business's line. | Bank-feed writers (manual, statement import, Plaid, Belvo) refuse a business-context request that resolves no business. Personal routes touch entity-less rows only. Banking delete is limited to the scope in view. An account with **no business** keeps its personal bank feed (by design). | `verify-m56-bank-feed-is-business` | 10 | 8 of 10 |
+| M57 | Bank reconcile **match / match-batch** accepted a personal transaction (or another business's line) and matched it to a business invoice payment. The matched list was unfiltered, showing personal and other businesses' matches. | A bank line of the business in view only, matched to that business's payment. The matched list is filtered to that business. | `verify-m57-bankrec-match-scope` | 8 | 6 of 8 |
+| M58 | A holding saved **without a scope** was filed under the active business; an unscoped list **merged** personal and business. | No scope ⇒ personal; business only with `scope=business`. | `verify-m58-holdings-scope` | 5 | 5 of 5 |
+| M59 | Personal accounts tagged with a business by the old POST (kept, Rule 8) showed, and counted in net worth, only while that business was selected. | The list and the net-worth snapshot read all of the person's accounts (as the accountant portal already did). | `verify-m59-personal-accounts-any-business` | 2 | 1 of 2 |
+| M53 | Personal net-worth / portfolio snapshots were stored under the active business; the history read "personal + the active business". The series and "change this month" depended on the business switcher, and a month could hold two rows. | One personal row per period. History reads every snapshot of the person: the personal row per period, else the most recently saved. | `verify-m53-personal-snapshots` | 3 | 3 of 3 |
+
+Corrections made while doing this (Rule 14: execution overruled reasoning):
+- **M56's first version was wrong.** It treated every bank line as business data. `verify-f54-team-scope`
+  (existing) failed: bank connections are per scope by design, and an account with no business uses the bank feed
+  as its personal feed. Re-scoped to the actual crossings above.
+- **`verify-f101-batch-match`'s fixture** seeded bank lines with **no business** and matched them to a business's
+  invoice payments: the M57 breach itself. It now stamps them with the business, as production does. It is green on
+  the old and new code, so the fixture change masks nothing.
+- **`verify-owner-salary-per-entity`** drove the removed Personal salary card. It now drives the Payroll page's
+  owner form with the same seed and guarantee (N60), plus a wall assertion.
+
+Harnesses re-run on the result, all GREEN:
+- Banking, Plaid and Belvo (22, incl. `tenant-isolation` 47/47 and `entity-leakage-sweep` "ALL SCOPED").
+- Personal, net worth and snapshots.
+- Holdings, including `f154-investments-entity-switch-leak` and `team-member-writes`.
+- Reconcile.
+- UI guards: `slim-boot-renders`, `dashboard-render`, `no-new-shadowing`, `boot-failures-gate` 19/19.
+
+The full sweep is the owner's.
+
+**Existing data — reported, not changed (owner decision):** personal salary rows the old roster sync created (not
+from a paid run). Under the wall rule they should not be in Personal, but they may record salary that was really
+taken. `prod-readonly-counts.js` [M14] counts them per account. Legacy rows filed under a business (bank lines from
+the all-view, personal accounts, snapshots) are read by the rules above, without rewriting any row.

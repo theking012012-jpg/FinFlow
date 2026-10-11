@@ -335,8 +335,10 @@
     set('inv-paid-pct',   pctCollected + '% collected');
     set('inv-out',        money(outstanding));
     set('inv-over',       money(overdue));
+    // M27: Billed / Collected / Outstanding are ALL-TIME to date (every recognised invoice issued on or before
+    // today), not the dashboard period — the card said "Jul 2026" over an all-time figure.
     const lblEl = document.getElementById('inv-billed-lbl');
-    if (lblEl) { lblEl.textContent = period.label || 'All time'; lblEl.className = 'mc-change neutral'; }
+    if (lblEl) { lblEl.textContent = 'All time, to date'; lblEl.className = 'mc-change neutral'; }
     const titleEl = document.getElementById('inv-table-title');
     if (titleEl) titleEl.textContent = 'Invoices — ' + (period.label || 'All time');
 

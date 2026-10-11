@@ -342,18 +342,11 @@
 
   // ── Update invoice stats panel ────────────────────────────────────
   function updateInvoiceStats(invoices) {
-    // F56: same canonical AR definition as the dashboard card — Σ max(0, amount − amount_paid)
-    // over recognized statuses. "Collected" is its mirror: Σ amount_paid, so out + collected
-    // equals total billed and the percentage is honest for partially-paid invoices too (which
-    // the old paid-vs-unpaid split counted entirely on one side or the other).
-    const outAmt  = ((typeof window._arOutstanding === 'function') ? window._arOutstanding(invoices).total : 0);
-    const paidAmt = invoices.reduce((s, i) => s + (parseFloat(i.amount_paid) || 0), 0);
-    const total      = paidAmt + outAmt || 1;
-    const pct        = Math.round(paidAmt / total * 100);
-
-    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    set('inv-out',       money(outAmt));
-    set('inv-paid-pct',  pct + '% collected');
+    // M27 (money audit 2026-10-09): ONE writer for the Invoices page cards — window.updateInvoices
+    // (finflow-api-wiring-postgres.js: recognised, non-future invoices; collected ÷ billed). This was a second
+    // writer of inv-out / inv-paid-pct with its own formula (Σ paid over ALL invoices ÷ (paid + net AR)), so the
+    // card showed 29% or 30% depending on which ran last.
+    if (typeof window.updateInvoices === 'function') { try { window.updateInvoices(); } catch (_) {} }
   }
 
   // Status-aware GET for this scoped surface — attaches HTTP status so a genuine

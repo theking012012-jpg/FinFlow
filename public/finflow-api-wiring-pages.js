@@ -439,15 +439,15 @@
             </div>
           </div>`).join('')
         : '<div style="padding:2rem;text-align:center;color:var(--t3)">No recurring invoice profiles yet</div>';
-      // KPI cards: active count · monthly value · next run · YTD generated
+      // KPI cards: active count · monthly value · next run · YTD generated (M31: _recurringYtd)
       // YTD comes from invoices that the recurring scheduler created (server
       // tags them with notes "Auto-generated from recurring schedule").
       const _riActive = _recurringInvData.filter(r => r.status?.toLowerCase() === 'active');
       const _riMonthly = _riActive.reduce((s, r) => s + monthlyEquiv(r.amount, r.frequency), 0);
       const _riNext = _riActive.map(r => r.next_run).filter(Boolean).sort()[0] || '—';
-      const _riYtd = (window._realInvoices || [])
-        .filter(i => (i.notes || '').includes('recurring schedule'))
-        .reduce((s, i) => s + (parseFloat(i.amount) || 0), 0);
+      // M31: fiscal-year-to-date (it was all-time), by the durable recurring_invoice_id lineage (legacy generated
+      // invoices carry only the scheduler's note, so that still counts).
+      const _riYtd = _recurringYtd(window._realInvoices, 'recurring_invoice_id', i => i.issue_date || i.created_at, i => (i.notes || '').includes('recurring schedule'));
       setKpiCards('page-recurring-invoices', [_riActive.length, S(_riMonthly), _riNext, S(_riYtd)]);
       window._refreshDashboardUI?.();
     };
@@ -1111,11 +1111,10 @@
       const _rbActive = _recurringBillsData.filter(r => r.status?.toLowerCase() === 'active');
       const _rbMonthly = _rbActive.reduce((s, r) => s + monthlyEquiv(r.amount, r.frequency), 0);
       const _rbNext = _rbActive.map(r => r.next_run).filter(Boolean).sort()[0] || '—';
-      // F87-class: months-elapsed from the canonical UTC calendar month, not viewer-local
-      // getMonth() (which flips at the month boundary per viewer). YTD basis unchanged
-      // (calendar-year, Jan=1 … current month).
-      const _rbElapsed = parseInt((window._entityToday ? window._entityToday() : window.FinFlowDates.resolvedToday(new Date())).slice(5, 7), 10);
-      const _rbYtd = _rbMonthly * _rbElapsed;
+      // M31 (money audit 2026-10-09): YTD = the bills the schedules ACTUALLY generated (recurring_bill_id lineage)
+      // in this fiscal year to date — it was monthly cost × calendar month number, a projection that showed 700
+      // in July for a profile whose first run is in August.
+      const _rbYtd = _recurringYtd(window.bills, 'recurring_bill_id', b => b.issue_date || b.created_at);
       setKpiCards('page-recurring-bills', [_rbActive.length, S(_rbMonthly), _rbNext, S(_rbYtd)]);
       window._refreshDashboardUI?.();
     };
@@ -1241,6 +1240,14 @@
         if (typeof window.refreshFinancials === 'function') window.refreshFinancials('expenses');
       } catch (e) { notify('Could not delete — ' + e.message, true); }
     };
+
+    // M31: Σ amount of documents a recurring schedule generated (lineage field, or the legacy note) issued in the
+    // current fiscal year up to today — the same window as the dashboard's Year view.
+    function _recurringYtd(rows, lineageField, dateOf, legacyMatch) {
+      const _w = (typeof window._periodWindow === 'function') ? window._periodWindow('year', null) : null;
+      return (rows || []).filter(r => (r[lineageField] != null || (legacyMatch && legacyMatch(r))) && String((r.status || '')).toLowerCase() !== 'draft' && (!_w || _w.inWin(dateOf(r))))
+        .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+    }
 
     // ── Expose load functions so entity-switch + showPage can reload ──
     window._loadVendorsFromDB        = loadVendors;       // overrides stubs.js — pages.js wins

@@ -394,7 +394,9 @@ function setCurrency(code){
   _syncCurrencyControls(code);   // mirror into Settings / mobile-drawer / header-pill flag+label
   // Personal finance display currency stays a SEPARATE path — business figures only go through
   // _displayCurrency; don't cross business/personal FX.
-  if(typeof setPersCurrency === 'function') setPersCurrency(code);
+  // C2 (personal/business wall): this used to call setPersCurrency(code) — so switching to a TTD business (switchBusiness
+  // → setCurrency) flipped the Personal page to TTD. Personal never depends on the business in view; its currency is
+  // changed only from the Personal page.
   notify(`Display currency: ${c.flag} ${code}`);
 }
 

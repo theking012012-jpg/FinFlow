@@ -1155,7 +1155,16 @@
       // client static-rate re-sum (the dashboard consolidated bug), and no extra aggregate fetch.
       if (!window._consolFetching && ents.length) {
         window._consolFetching = true;
-        Promise.all(ents.map(e => {
+        // M23 (money audit 2026-10-09): the CONSOLIDATED column is the server's own consolidation —
+        // /api/reports?entity_id=all = computeBooks(null): every entity once, legacy entity-less rows once,
+        // converted per leg to the consolidation currency. A plain sum of the per-entity figures counted each
+        // entity-less row once PER ENTITY (every entity view includes them by design).
+        const _consolCc = window.consolCurrency;
+        const _consolP = fetch('/api/reports?entity_id=all' + (_consolCc ? '&display=' + encodeURIComponent(_consolCc) : ''), { credentials: 'same-origin' })
+          .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(d => { window._consolBooks = { currency: _consolCc || null, rev: d.revenue || 0, cogs: d.cogs || 0, grossProfit: d.grossProfit || 0, opex: d.expenses || 0, netProfit: d.netProfit || 0, complete: !(d.fxCoverage && d.fxCoverage.complete === false) }; })
+          .catch(() => { window._consolBooks = { currency: _consolCc || null, unavailable: true }; });
+        Promise.all([_consolP].concat(ents.map(e => {
           const _id = e._dbId || e.id;
           if (!_id) return Promise.resolve();
           // Fetch in the CONSOLIDATION currency so columns + total are server-converted & consistent.
@@ -1171,7 +1180,7 @@
             .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(d => { e.data = { rev: d.revenue || 0, cogs: d.cogs || 0, grossProfit: d.grossProfit || 0, opex: d.expenses || 0, netProfit: d.netProfit || 0 }; })
             .catch(() => { e.data = { unavailable: true }; });
-        })).then(() => {
+        }))).then(() => {
           window._consolFetching = false;
           if (typeof _medOrigRenderEntities === 'function') _medOrigRenderEntities(); // recompute KPI cards (getConsolTotal sums e.data)
           if (typeof renderConsolPL === 'function') renderConsolPL();                 // consolidated table from server-converted e.data

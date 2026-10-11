@@ -7618,7 +7618,13 @@ function getConsolTotal(rowKey){
   // engine + double-converted when a display currency was active; verify-fx-client-consolidation). F31:
   // any entity that failed to load ⇒ honest "—", never a fabricated figure from incomplete data.
   if (ENTITIES.some(e => e.data && e.data.unavailable)) return null;
-  return ENTITIES.reduce((sum, e) => sum + ((e.data && e.data[rowKey]) || 0), 0);
+  // M23 (money audit 2026-10-09): the consolidated figure is the SERVER's consolidation (computeBooks(null) via
+  // /api/reports?entity_id=all, loaded with the per-entity figures), never a client sum of entity views — each
+  // entity view includes the legacy entity-less rows, so summing counted them once per entity. Until that
+  // response is in (or if it failed / was for another currency), the honest answer is "—".
+  const cb = window._consolBooks;
+  if (!cb || cb.unavailable || cb.complete === false || (cb.currency || null) !== (consolCurrency || null)) return null;
+  return Number(cb[rowKey]) || 0;
 }
 
 function fmtTotal(val){

@@ -52,7 +52,8 @@ function loadRealClient() {
       getConsolTotal: getConsolTotal,
       setEntities: function(e){ ENTITIES = e; },
       setConsolCurrency: function(v){ consolCurrency = v; },
-      setConsolServer: function(o){ window._consolServer = o; }
+      setConsolServer: function(o){ window._consolServer = o; },
+      setConsolBooks: function(o){ window._consolBooks = o; }
     };
   `);
   return wrapper(win);
@@ -90,9 +91,12 @@ async function main() {
     const ttDisp = await computeBooks(uid, TT, 'year', 'USD');
     A('server consolidated revenue = 150 (100 + 100 TTD@0.50)', near(srv.revenue, 150), 'got ' + srv.revenue);
 
-    // Drive the REAL client exactly as the app does post-fix: e.data is per-entity ALREADY in the
-    // consolidation currency (server per-leg conversion), and getConsolTotal PLAIN-SUMS across entities.
+    // Drive the REAL client exactly as the app does: e.data is per-entity in the consolidation currency, and
+    // (M23, money audit 2026-10-09) the consolidated total is the SERVER consolidation the wiring loads from
+    // /api/reports?entity_id=all&display=<consol> into window._consolBooks — never a client sum of entity views.
     cli.setConsolCurrency('USD');
+    A('no server consolidation loaded yet ⇒ honest "—" (null), never a client sum', cli.getConsolTotal('rev') === null, 'got ' + cli.getConsolTotal('rev'));
+    cli.setConsolBooks({ currency: 'USD', rev: srv.revenue, cogs: srv.cogs, grossProfit: srv.grossProfit, opex: srv.opex, netProfit: srv.netProfit, complete: true });
     cli.setEntities([
       { currency: 'USD', data: { rev: usDisp.revenue, cogs: usDisp.cogs, grossProfit: usDisp.grossProfit, opex: usDisp.opex, netProfit: usDisp.netProfit } },
       { currency: 'TTD', data: { rev: ttDisp.revenue, cogs: ttDisp.cogs, grossProfit: ttDisp.grossProfit, opex: ttDisp.opex, netProfit: ttDisp.netProfit } },
@@ -102,7 +106,7 @@ async function main() {
     const cliNet = cli.getConsolTotal('netProfit');
     console.log('  client getConsolTotal(rev) = ' + money(cliRev) + '   (server = ' + money(srv.revenue) + ')');
     console.log('  client getConsolTotal(netProfit) = ' + money(cliNet) + '   (server = ' + money(srv.netProfit) + ')\n');
-    A('client consolidated revenue == server (sum of server-converted per-entity)', near(cliRev, srv.revenue), 'client=' + money(cliRev) + ' server=' + money(srv.revenue));
+    A('client consolidated revenue == server consolidation', near(cliRev, srv.revenue), 'client=' + money(cliRev) + ' server=' + money(srv.revenue));
     A('client consolidated netProfit == server', near(cliNet, srv.netProfit), 'client=' + money(cliNet) + ' server=' + money(srv.netProfit));
     A('client is NOT a static-rate re-conversion (would be ~107.35)', !near(cliRev, 100 + 50 / 6.80), 'got ' + money(cliRev));
 

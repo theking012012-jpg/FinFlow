@@ -4265,9 +4265,11 @@ async function requireApiKey(req, res, next) {
     return next();
   } catch (e) { console.error('[api] key auth error:', e && e.message); return res.status(500).json({ error: 'Auth error.' }); }
 }
-// Scope filter for the API: an "all entities" key sees every row the user owns; an entity-scoped
-// key sees only that entity's rows (distinct from session scoping, where null means personal-only).
-const _apiScope = (req) => (req.apiEntityId == null) ? (() => true) : ((r) => r.entity_id === req.apiEntityId);
+// Scope filter for the API: an "all entities" key sees every row the user owns.
+// M44 (money audit 2026-10-09): an entity-scoped key sees that entity's rows PLUS the account's legacy entity-less
+// rows — the same null-inclusive scope as computeBooks(userId, entityId), which its /reports/summary reads. The
+// lists excluded those rows while the summary counted them, so the key's lists never added up to its summary.
+const _apiScope = (req) => (req.apiEntityId == null) ? (() => true) : ((r) => r.entity_id == null || r.entity_id === req.apiEntityId);
 const _apiLimit = (req) => { const n = parseInt(req.query.limit, 10); return Number.isInteger(n) && n > 0 ? Math.min(n, 200) : 50; };
 // ?since filters on created_at — a genuine INSTANT (not an accounting date), so it is compared as an
 // instant. It used to compare String(created_at) — a Date's "Sat Jul 25 2026 …" form — to the ISO
@@ -4357,7 +4359,9 @@ app.get('/api/v1/customers', requireApiKey, apiLimiter, wrap(async (req, res) =>
 }));
 app.get('/api/v1/reports/summary', requireApiKey, apiLimiter, wrap(async (req, res) => {
   try {
-    const books = await computeBooks(req.apiUserId, req.apiEntityId, 'year');
+    // M44: the OWNER's fiscal year (accountFyStartIdx), as every in-app surface uses — it was January (0) always.
+    const _fy = await accountFyStartIdx(req.apiUserId);
+    const books = await computeBooks(req.apiUserId, req.apiEntityId, 'year', null, _fy);
     const expenses = Math.round((((books.cogs || 0) + (books.opex || 0)) + Number.EPSILON) * 100) / 100;
     res.json({ object: 'summary', period: 'year', scope: req.apiEntityId == null ? 'all' : req.apiEntityId,
       revenue: books.revenue ?? 0, cogs: books.cogs ?? 0, opex: books.opex ?? 0, expenses,

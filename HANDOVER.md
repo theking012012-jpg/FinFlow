@@ -54,7 +54,7 @@ Status (C = Cowork item; each fix is one commit with its harness, RED on the old
 | C10 | 7.4 | Transaction lock can't be turned off | **Fixed** `cb7c85b` |
 | C11 | 6.3 | Accountant invite can't reach an existing client (only a referral sign-up link) | open |
 | C12 | 1.3a | Onboarding lets Country* be empty | **Fixed** `064c2a8` |
-| C13 | 1.3c | Entities shows 0 businesses until a reload; country not shown anywhere | open |
+| C13 | 1.3c | Entities shows 0 businesses until a reload; country not shown anywhere | **Fixed** `2086cd5` — onboarding now reloads the businesses (force), entity cards show the country. verify-c13-entities-after-onboarding |
 | C14 | 3.4 | P&L has no monthly table; Year chart starts in May (March missing) | open |
 | C15 | 8.1 | No real P&L export (CSV "Nothing to export", PDF = print dialog) | open |
 | C16 | 2.5a | Overdue bill row says "unpaid" | **Fixed** `315e42f` |

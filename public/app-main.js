@@ -1677,6 +1677,9 @@ async function loadEntityData(idx){
 
     // Replace inventory
     inventory = invt.map(r=>({_dbId:r.id, sku:r.sku, name:r.name, units:r.units, max:r.max_units||200, cost:r.cost, low:!!r.low_stock}));
+    // C1: the Inventory page (finflow-api-wiring-medium.js renderInventory, the runtime winner) reads window.inventory,
+    // which only the boot loader set — so after a business switch the page kept the PREVIOUS business's stock.
+    window.inventory = inventory;
 
     // Update payroll — always reset employees per entity (no stale cross-entity rows)
     payrollEmployees = (payroll||[]).filter(r=>!r.is_owner).map(r=>({
@@ -3059,6 +3062,7 @@ function renderPayroll(){
     document.getElementById('pr-owner-label').textContent='Not on payroll';
     document.getElementById('owner-cta').style.display='block';
     document.getElementById('payroll-link-card').style.display='none';
+    document.getElementById('link-net-display').textContent='—';   // C1
   }
   document.getElementById('payroll-list').innerHTML=allEmps.map(e=>{
     const net=netFromDeductions(e.gross, e.deductions);
@@ -3290,7 +3294,7 @@ function saveOwnerPayroll(){
   }
 
   // Sync ownerPayroll compat pointer to currently active entity
-  ownerPayroll = ownerPayrollByEntity[ENTITIES.findIndex(e=>e.active)] || Object.values(ownerPayrollByEntity)[0] || null;
+  ownerPayroll = ownerPayrollByEntity[ENTITIES.findIndex(e=>e.active)] || null;   // C1: this business only — never another's
 
   syncAllPayrollsToPersonal();
   closeModal('owner-modal');
@@ -3305,7 +3309,7 @@ function removeOwnerFromPayroll(){
   delete ownerPayrollByEntity[activeOwnerEntityIdx];
   // Update compat pointer
   const activeIdx = ENTITIES.findIndex(e=>e.active);
-  ownerPayroll = ownerPayrollByEntity[activeIdx] || Object.values(ownerPayrollByEntity)[0] || null;
+  ownerPayroll = ownerPayrollByEntity[activeIdx] || null;   // C1: this business only — never another's
   syncAllPayrollsToPersonal();
   renderOwnerModalTabs();
   updateOwnerEntitySummary();
@@ -3401,18 +3405,9 @@ function syncAllPayrollsToPersonal(){
 
   // M55: no roster banner / per-business breakdown on the Personal page (personal/business wall).
 
-  // Update payroll page link metrics
-  const prNet = document.getElementById('pr-owner-net');
-  const prLabel = document.getElementById('pr-owner-label');
-  const linkNet = document.getElementById('link-net-display');
-  const _dispCurPayroll = ((typeof CURRENCIES!=='undefined'?CURRENCIES:null)||window.CURRENCIES||{})[persCurrency] || {symbol:'$', rate:1};
-  const totalDisp = Math.round(totalUSD * _dispCurPayroll.rate);
-  if(prNet) prNet.textContent = _dispCurPayroll.symbol + totalDisp.toLocaleString();
-  if(prLabel) prLabel.textContent = entries.length > 1
-    ? `${entries.length} entities combined`
-    : entries.length === 1 ? (entries[0][1]?.entityName||'Entity') : 'Not on payroll';
-  if(linkNet) linkNet.textContent = _dispCurPayroll.symbol + totalDisp.toLocaleString() + '/mo';
-
+  // C1 (personal/business wall): this used to write the business Payroll page's "Your net pay" card with the owner's
+  // roster net summed across EVERY business and converted to the PERSONAL currency — so Island Traders showed
+  // Northwind's pay. That card belongs to renderPayroll (this business only, its own currency).
   renderPersonal();
 }
 // openOwnerModal — all call sites now route to the full multi-entity modal

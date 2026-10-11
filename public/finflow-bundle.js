@@ -671,7 +671,8 @@
           try { await api('POST', `/api/entities/${_activeEnt._dbId}/activate`); } catch(e) {}
         }
         const rows = await api('GET', '/api/invoices' + (_activeEnt?._dbId ? '?entity_id=' + _activeEnt._dbId : ''));
-        if (rows && rows.length > 0) {
+        // C1: an EMPTY answer is a real answer — it replaces the list. Skipping it kept the previous business's rows.
+        if (Array.isArray(rows)) {
           // Map DB shape → frontend shape, prepend to seed data or replace
           const mapped = rows.map(r => ({
             _dbId:  r.id,
@@ -886,7 +887,7 @@
       try {
         const _eidExp = (window.ENTITIES||[]).find(e=>e.active)?._dbId;
         const rows = await api('GET', '/api/expenses' + (_eidExp ? '?entity_id=' + _eidExp : ''));
-        if (rows && rows.length > 0) {
+        if (Array.isArray(rows)) {   // C1: an empty answer replaces the list
           const mapped = rows.map(r => ({
             _dbId:  r.id,
             desc:   r.description,
@@ -1038,7 +1039,7 @@
         const rows = await api('GET', '/api/inventory' + (_eidInv ? '?entity_id=' + _eidInv : ''));
         _inventoryFetched = true;
         console.log('[Inventory] API returned', rows ? rows.length : 0, 'rows');
-        if (rows && rows.length > 0) {
+        if (Array.isArray(rows)) {   // C1: an empty answer replaces the list (an empty business kept the previous one's stock)
           const mapped = rows.map(r => ({
             _dbId: r.id,
             sku:   r.sku,
@@ -1294,6 +1295,7 @@
         if (ownerCta)    ownerCta.style.display    = 'block';
         const payrollLink = document.getElementById('payroll-link-card');
         if (payrollLink) payrollLink.style.display  = 'none';
+        set('link-net-display', '—');   // C1: never keep another business's figure, even hidden
       }
 
       const list = document.getElementById('payroll-list');

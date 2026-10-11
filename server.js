@@ -4107,6 +4107,49 @@ app.get('/api/cashflow-forecast', requireAuth, wrap(async (req, res) => {
     }
   }
 
+  // ── M7 (money audit 2026-10-09): PAYROLL. The forecast had no payroll at all — for most businesses the
+  // largest outflow — so runway was overstated. Two legs, never overlapping:
+  //  1. a run that is APPROVED (or still DRAFT) but not yet paid is cash still to go out: its lines' gross + bonus
+  //     + overtime (the amount mark-paid pays), at its period's month end, or today if that has passed;
+  //  2. every month in the horizon with NO run yet (draft / approved / paid) is projected from the roster —
+  //     the same employees a run for this entity would include (N13b: legacy entity-less rows only when the
+  //     account has one entity) — paid at that month's end. The roster is a TEMPLATE: it is used here only to
+  //     PROJECT future cash, never as a booked expense (Rule 12 stands for every P&L figure).
+  try {
+    const _runRows = (await pool.query(
+      `SELECT r.id, r.period, r.run_date, r.status, r.entity_id,
+              COALESCE(SUM(COALESCE(l.gross,0) + COALESCE(l.bonus,0) + COALESCE(l.overtime,0)),0) AS amt
+         FROM payroll_runs r LEFT JOIN payroll_run_lines l ON l.run_id = r.id
+        WHERE r.user_id = $1 GROUP BY r.id`, [uid])).rows.filter(r => scope(r));
+    const _monthEnd = ym => { const [y, m] = ym.split('-').map(Number); const d = new Date(Date.UTC(y, m, 0)); return d.toISOString().slice(0, 10); };
+    const covered = new Set();
+    for (const r of _runRows) {
+      const st = String(r.status || '').toLowerCase();
+      const ym = String(FinFlowDates.payrollPeriodYmd(r.period, r.run_date) || '').slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(ym)) continue;
+      if (st === 'draft' || st === 'approved' || st === 'paid') covered.add(ym);
+      const amt = Math.round((parseFloat(r.amt) || 0) * 100) / 100;
+      if ((st === 'approved' || st === 'draft') && amt > 0) {
+        const due = _monthEnd(ym);
+        outflows.push({ date: due < today ? today : due, amount: amt, kind: 'payroll', label: 'Payroll — ' + (r.period || ym) + (st === 'draft' ? ' (draft run)' : ' (approved, not yet paid)') });
+      }
+    }
+    const { rows: [_ec] } = await pool.query(`SELECT COUNT(*)::int AS n FROM entities WHERE user_id = $1`, [uid]);
+    const _single = (_ec && _ec.n) <= 1;
+    const roster = (await db.allByUser('payroll', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid)))
+      .filter(r => r.entity_id != null || _single);
+    const rosterMonthly = Math.round(roster.reduce((a, r) => a + (parseFloat(r.gross) || 0), 0) * 100) / 100;
+    if (rosterMonthly > 0) {
+      let ym = today.slice(0, 7), guard = 0;
+      while (guard++ < 6) {
+        const due = _monthEnd(ym);
+        if (due > horizonEnd) break;
+        if (!covered.has(ym) && due >= today) outflows.push({ date: due, amount: rosterMonthly, kind: 'payroll_estimate', label: 'Estimated payroll — ' + ym + ' (from your roster; no run yet)' });
+        const [y, m] = ym.split('-').map(Number); ym = (m === 12 ? (y + 1) + '-01' : y + '-' + String(m + 1).padStart(2, '0'));
+      }
+    }
+  } catch (e) { console.error('[forecast] payroll leg failed:', e && e.message); }
+
   // Currency (entity native) for display.
   let currency = '';
   try {

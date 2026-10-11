@@ -105,6 +105,21 @@ const CHECKS = [
             FROM ledger_entries le
            WHERE ${u('le')} AND le.entity_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM entities e WHERE e.id = le.entity_id)
            GROUP BY 1,2 ORDER BY 1,2` },
+  { id: 'M14', title: "Personal salary rows made from the payroll ROSTER (the old owner-salary profile), not a paid run. They stay (Rule 8); a run marked paid for the same month after the fix would sit beside one",
+    sql: `SELECT pt.user_id, count(*)::int AS rows, sum(${N("pt.data->>'amount'")}) AS total,
+                 min(pt.data->>'tx_date') AS first_date, max(pt.data->>'tx_date') AS last_date,
+                 string_agg(DISTINCT COALESCE(pt.data->>'currency','USD'), ',') AS currencies
+            FROM personal_transactions pt
+           WHERE ${u('pt')} AND COALESCE(pt.data->>'source','') <> 'payroll'
+             AND EXISTS (SELECT 1 FROM payroll p WHERE p.user_id = pt.user_id
+                           AND COALESCE(p.data->>'salary_profile_id','') <> ''
+                           AND p.data->>'salary_profile_id' = pt.data->>'recurring_profile_id')
+           GROUP BY 1 ORDER BY 1` },
+  { id: 'M13', title: 'Personal assets / liabilities saved before values had a currency — read as USD. Re-enter any that were typed in another currency',
+    sql: `SELECT pa.user_id, pa.id AS account_id, pa.data->>'kind' AS kind, pa.data->>'name' AS name, pa.data->>'value' AS value
+            FROM personal_accounts pa
+           WHERE ${u('pa')} AND COALESCE(pa.data->>'currency','') = ''
+           ORDER BY 1,2 LIMIT 500` },
   { id: 'M9', title: 'Accounts with invoice payments in more than one business (the Payments Received page mixes them)',
     sql: `SELECT ip.user_id, count(DISTINCT ip.entity_id)::int AS businesses, count(*)::int AS payments
             FROM invoice_payments ip WHERE ${u('ip')}

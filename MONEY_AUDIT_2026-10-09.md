@@ -59,53 +59,53 @@ Severity:
 
 | # | Sev | Finding | Status |
 |---|---|---|---|
-| M1 | S1 | Deleting a **paid invoice** drops its revenue and AR but keeps its cash | EXECUTED |
-| M2 | S1 | Deleting a **paid bill** drops its expense from the P&L though the cash left | EXECUTED |
-| M3 | S1 | Accountant-portal journals say "posted" but never reach the books | EXECUTED |
-| M4 | S1 | Receipt scanner "+ Add to expenses" saves nothing (fake success) | EXECUTED |
-| M5 | S1 | CSV-imported **Paid / Partial** invoices and bills count as fully outstanding (AR / AP) | EXECUTED |
-| M6 | S1 | Income-tax estimate deducts only flagged expense rows, not payroll, COGS or bills | EXECUTED |
-| M7 | S1 | 13-week cash forecast contains **no payroll** | EXECUTED |
-| M8 | S1 | Inventory write-off ("adjustment") is never expensed; ledger keeps phantom stock | EXECUTED |
-| M9 | S2 | Payments Received page shows **every entity's** payments (mixed currencies) | EXECUTED (API) |
-| M10 | S2 | Overview chart and monthly arrays drop payroll for every UI-created run | EXECUTED (parse) |
-| M11 | S2 | "Growth" compares against the last fiscal month, which is in the future: AI says −100%, Health Score Growth = 0 | EXECUTED |
-| M12 | S2 | Personal Finance scales recurring items to the whole period (Year view = ×12 in October) | EXECUTED |
-| M13 | S2 | Personal asset/liability values have no currency and are shown as USD × rate | EXECUTED |
-| M14 | S2 | Owner salary in Personal Finance comes from the roster template, not payroll runs (Rule 12) | EXECUTED |
-| M15 | S2 | Four "deductible" vocabularies (was L42): the same expense counts on one surface and not another | EXECUTED (server) |
-| M16 | S2 | Cash-flow report omits inventory purchases that balance-sheet cash includes | EXECUTED |
-| M17 | S2 | Deleting an expense booked from a bank line strands the bank line forever | EXECUTED |
-| M18 | S2 | Stripe: a charge that paid an invoice via Pay-now can be "added to books" again (double revenue); Pay-now refunds never reverse | CODE-READ |
-| M19 | S3 | Codat-imported journals are typed by the first character of an opaque account id | CODE-READ |
-| M20 | S2 | Client AI insights' payroll figures come from salary-category expense rows and the roster (Rule 12) | EXECUTED |
-| M21 | S3 | Re-dating a posted journal changes the list, not the books | EXECUTED |
-| M22 | S3 | GL backfill `reset` re-dates paid-payroll cash-out to `run_date` (L7 regression path) | EXECUTED |
-| M23 | S3 | Entities-page "Consolidated" plain-sums per-entity figures, so legacy NULL-entity rows count once per entity | EXECUTED |
-| M24 | S3 | Two server "overdue" definitions disagree on the same invoice | EXECUTED |
-| M25 | S3 | Status-literal `'overdue'` remains in 3 places (AI grounding, portal AI, Bills badge) | EXECUTED |
-| M26 | S3 | Portal Personal tab: all-time raw sum, includes **business** bank-feed rows, mixed currencies, capped at 200 rows | CODE-READ |
-| M27 | S3 | Invoices page: two writers of "% collected"; "Billed" is all-time under a period label | EXECUTED |
-| M28 | S3 | AI quarter insight hard-codes Q4; "top client this month" is an all-time figure; cash-card source % uses mismatched bases | EXECUTED |
-| M29 | S3 | Dashboard profit "vs last period" compares net-with-COGS to prior-without-COGS | EXECUTED |
-| M30 | S3 | Health Score receivables = status-'paid' face amounts ÷ all invoices (drafts, partials) | EXECUTED |
-| M31 | S3 | Recurring Bills "YTD" is a fabricated monthly × month-number; Recurring Invoices "YTD" is all-time | EXECUTED |
-| M32 | S3 | COGS is dated by the UTC instant of the click, not the business's date (Rule 10) | CODE-READ |
-| M33 | S3 | Bank CSV import collapses two genuine identical same-day transactions into one | EXECUTED |
-| M34 | S3 | Inventory purchases credit Cash directly with no link to a bill: recording the supplier bill too double-counts | CODE-READ |
-| M35 | S3 | Fake in-memory "Salary — X (April)" rows dated "Apr 30" are injected into the personal list | EXECUTED |
-| M36 | S3 | Business Investments card shows USD-priced holdings under a non-USD entity's symbol, unconverted | CODE-READ |
-| M37 | S3 | River (Sankey) diagram is a third profit number: no COGS, payroll missing | EXECUTED |
-| M38 | S4 | Monthly buckets include future-dated rows while the KPIs exclude them (server and client) | CODE-READ |
-| M39 | S4 | `buildMonthlyArrays` buckets expenses by `expense_date` only (KPIs fall back to `date`/`created_at`) | CODE-READ (latent) |
-| M40 | S4 | Backfill has no date fallback for expenses, payments or receipts: a legacy dateless row aborts a `reset` part-way | CODE-READ (latent) |
-| M41 | S4 | Payroll cash-out is booked at gross, so withholdings are never a liability (design) | CODE-READ |
-| M42 | S4 | Run Payroll modal asks for a run date that the server ignores | CODE-READ |
-| M43 | S4 | Forecast AR/AP are not net of credit notes / vendor credits; opex run-rate skips orphan payments | CODE-READ |
-| M44 | S4 | API v1 summary uses a January fiscal year; entity keys hide NULL-entity rows the summary counts | CODE-READ |
-| M45 | S4 | P&L report "Expenses" tile says "incl. payroll + COGS"; the value excludes COGS | EXECUTED |
-| M46 | S4 | Cash card "avg monthly net" divides by nominal months (12/3), not elapsed | CODE-READ |
-| M47 | S4 | Tax-Deductible report has no D2 bound (future-dated expenses count) | CODE-READ |
+| M1 | S1 | Deleting a **paid invoice** drops its revenue and AR but keeps its cash | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M2 | S1 | Deleting a **paid bill** drops its expense from the P&L though the cash left | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M3 | S1 | Accountant-portal journals say "posted" but never reach the books | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M4 | S1 | Receipt scanner "+ Add to expenses" saves nothing (fake success) | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M5 | S1 | CSV-imported **Paid / Partial** invoices and bills count as fully outstanding (AR / AP) | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M6 | S1 | Income-tax estimate deducts only flagged expense rows, not payroll, COGS or bills | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M7 | S1 | 13-week cash forecast contains **no payroll** | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M8 | S1 | Inventory write-off ("adjustment") is never expensed; ledger keeps phantom stock | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M9 | S2 | Payments Received page shows **every entity's** payments (mixed currencies) | EXECUTED (API) → FIXED, RED→GREEN (§6.1) |
+| M10 | S2 | Overview chart and monthly arrays drop payroll for every UI-created run | EXECUTED (parse) → FIXED, RED→GREEN (§6.1) |
+| M11 | S2 | "Growth" compares against the last fiscal month, which is in the future: AI says −100%, Health Score Growth = 0 | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M12 | S2 | Personal Finance scales recurring items to the whole period (Year view = ×12 in October) | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M13 | S2 | Personal asset/liability values have no currency and are shown as USD × rate | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M14 | S2 | Owner salary in Personal Finance comes from the roster template, not payroll runs (Rule 12) | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M15 | S2 | Four "deductible" vocabularies (was L42): the same expense counts on one surface and not another | EXECUTED (server) → FIXED, RED→GREEN (§6.1) |
+| M16 | S2 | Cash-flow report omits inventory purchases that balance-sheet cash includes | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M17 | S2 | Deleting an expense booked from a bank line strands the bank line forever | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M18 | S2 | Stripe: a charge that paid an invoice via Pay-now can be "added to books" again (double revenue); Pay-now refunds never reverse | CODE-READ → FIXED, RED→GREEN (§6.1) |
+| M19 | S3 | Codat-imported journals are typed by the first character of an opaque account id | CODE-READ → FIXED, RED→GREEN (§6.1) |
+| M20 | S2 | Client AI insights' payroll figures come from salary-category expense rows and the roster (Rule 12) | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M21 | S3 | Re-dating a posted journal changes the list, not the books | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M22 | S3 | GL backfill `reset` re-dates paid-payroll cash-out to `run_date` (L7 regression path) | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M23 | S3 | Entities-page "Consolidated" plain-sums per-entity figures, so legacy NULL-entity rows count once per entity | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M24 | S3 | Two server "overdue" definitions disagree on the same invoice | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M25 | S3 | Status-literal `'overdue'` remains in 3 places (AI grounding, portal AI, Bills badge) | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M26 | S3 | Portal Personal tab: all-time raw sum, includes **business** bank-feed rows, mixed currencies, capped at 200 rows | CODE-READ → FIXED, RED→GREEN (§6.1) |
+| M27 | S3 | Invoices page: two writers of "% collected"; "Billed" is all-time under a period label | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M28 | S3 | AI quarter insight hard-codes Q4; "top client this month" is an all-time figure; cash-card source % uses mismatched bases | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M29 | S3 | Dashboard profit "vs last period" compares net-with-COGS to prior-without-COGS | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M30 | S3 | Health Score receivables = status-'paid' face amounts ÷ all invoices (drafts, partials) | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M31 | S3 | Recurring Bills "YTD" is a fabricated monthly × month-number; Recurring Invoices "YTD" is all-time | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M32 | S3 | COGS is dated by the UTC instant of the click, not the business's date (Rule 10) | CODE-READ → FIXED, RED→GREEN (§6.1) |
+| M33 | S3 | Bank CSV import collapses two genuine identical same-day transactions into one | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M34 | S3 | Inventory purchases credit Cash directly with no link to a bill: recording the supplier bill too double-counts | CODE-READ → HELD (owner decision, §6.2) |
+| M35 | S3 | Fake in-memory "Salary — X (April)" rows dated "Apr 30" are injected into the personal list | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M36 | S3 | Business Investments card shows USD-priced holdings under a non-USD entity's symbol, unconverted | CODE-READ → FIXED, RED→GREEN (§6.1) |
+| M37 | S3 | River (Sankey) diagram is a third profit number: no COGS, payroll missing | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M38 | S4 | Monthly buckets include future-dated rows while the KPIs exclude them (server and client) | CODE-READ → FIXED, RED→GREEN (§6.1) |
+| M39 | S4 | `buildMonthlyArrays` buckets expenses by `expense_date` only (KPIs fall back to `date`/`created_at`) | CODE-READ (latent) → FIXED by code-read; no dedicated RED→GREEN assertion (§6.1) |
+| M40 | S4 | Backfill has no date fallback for expenses, payments or receipts: a legacy dateless row aborts a `reset` part-way | CODE-READ (latent) → FIXED, RED→GREEN (§6.1) |
+| M41 | S4 | Payroll cash-out is booked at gross, so withholdings are never a liability (design) | CODE-READ → HELD (owner decision, §6.2) |
+| M42 | S4 | Run Payroll modal asks for a run date that the server ignores | CODE-READ → FIXED, RED→GREEN (§6.1) |
+| M43 | S4 | Forecast AR/AP are not net of credit notes / vendor credits; opex run-rate skips orphan payments | CODE-READ → FIXED, RED→GREEN (§6.1) |
+| M44 | S4 | API v1 summary uses a January fiscal year; entity keys hide NULL-entity rows the summary counts | CODE-READ → FIXED, RED→GREEN (§6.1) |
+| M45 | S4 | P&L report "Expenses" tile says "incl. payroll + COGS"; the value excludes COGS | EXECUTED → FIXED, RED→GREEN (§6.1) |
+| M46 | S4 | Cash card "avg monthly net" divides by nominal months (12/3), not elapsed | CODE-READ → FIXED, RED→GREEN (§6.1) |
+| M47 | S4 | Tax-Deductible report has no D2 bound (future-dated expenses count) | CODE-READ → CLEARED by execution (§6.1) |
 
 ---
 
@@ -483,3 +483,135 @@ the data-dependent findings have actually touched so far.
 | M50 ledger of deleted businesses | none | The Cowork test "Business A" had not yet been deleted at run time |
 | M9 payments across businesses | users 1 = the owner (2 businesses, 7 payments), 5 = `123test@test.com` (2, 10), 6 = `client2@test.com` (3, 5) | These accounts' Payments Received page mixes businesses today |
 
+
+---
+
+## 6. Fix pass, 2026-10-10 (branch `claude/money-math-audit-bazpjo`, uncommitted, held for owner approval)
+
+Every fix was proved the same way. A harness on a real scratch Postgres, seeded through the real routes, is run
+against the **unfixed** code (it must fail, with the predicted bug value) and against the fix (it must pass).
+Browser items boot the real SPA in jsdom and read rendered text. Every assertion prints the measured value, the
+correct value and the value the bug gives (Rule 4). One fix = one patch = one commit.
+
+### 6.1 Results per finding
+
+| # | Fix | Harness | Checks GREEN on fix | Checks RED on unfixed code |
+|---|---|---|---|---|
+| M1 / M2 | Deleting an invoice or bill that has payments linked is refused (409) until the payments are removed | `verify-m1m2-delete-settled-docs` | 16 | 10 of 16 |
+| M3 | Accountant journals: each line needs an account code; the journal really posts to the ledger (or is rolled back) | `verify-m3-accountant-journal-posts` | 10 | 6 of 10 |
+| M4 | Receipt scanner saves through POST /api/expenses (idempotent, currency- and date-checked) | `verify-m4-scanner-save` | 8 | 6 of 8 |
+| M5 | CSV import: Paid / Partial rows record a real payment for the paid part; a Partial row without a paid amount is refused and counted | `verify-m5-csv-paid-import` | 10 | 7 of 10 |
+| M6 | Taxable income = revenue − every ordinary cost (COGS, opex incl. payroll and bills) + non-deductible rows; owner worksheet and accountant Tax Summary | `verify-m6-taxable-income` | 7 | 5 of 7 (pre-M32 test) |
+| M7 | 13-week forecast includes payroll: approved/draft runs, else a roster estimate for months with no run | `verify-m7-forecast-payroll` | 6 | 5 of 6 |
+| M8 | Inventory write-off is costed FIFO, expensed (Dr 5000 / Cr 1200) and shown on the COGS page | `verify-m8-inventory-writeoff` | 9 | 6 of 9 (pre-M32 test) |
+| M9 | Payments Received list is scoped to the active business | `verify-m9-payments-received-scope` | 3 | 2 of 3 |
+| M10 / M29 / M37 | Dashboard KPIs, deltas, monthly chart and river read the server books (/api/reports); provisional client builder mirrors the server rules | `verify-m-dashboard-server-books, verify-m10-client-monthly-builder` | 6 + 1 | 4 of 6, 1 of 1 |
+| M11 | Growth compares elapsed fiscal months only | `verify-m11-growth-elapsed-months` | 3 | 3 of 3 |
+| M12 | Personal period income = the rows actually in the period (no × nominal months) | `verify-m12-m13-m35-personal-figures` | 15 (shared) | 14 of 15 (shared) |
+| M13 | Personal assets/liabilities carry a currency; every net-worth sum (page, breakdown, investments panel, snapshot, accountant portal) adds USD equivalents; one row mapper | `verify-m12-m13-m35-personal-figures, verify-m13-networth-currency-server` | 15 (shared) + 10 | 14 of 15, 8 of 10 |
+| M14 | Owner's personal salary comes from PAID payroll runs (one row per run line, removed on void); the roster no longer creates personal income | `verify-m14-owner-salary-from-runs (+ the shared personal test)` | 11 | 7 of 11 |
+| M15 | One deductible vocabulary (yes / half / no, FinFlowDates.deductibleFactor) on every surface | `verify-m15-deductible-vocabulary` | 8 | 4 of 8 |
+| M16 | Cash-flow report includes ledger cash from stock purchases, FX settlements and paid-gap rows | `verify-m16-cashflow-ledger-cash` | 3 | 2 of 3 (pre-M32 test) |
+| M17 | Deleting an expense or payment made releases its bank line | `verify-m17-bank-line-release` | 6 | 3 of 6 |
+| M18 | Stripe Pay-now payments carry the payment-intent reference: no second 'add to books', refunds find the payment | `verify-m18-stripe-paynow-dedupe` | 7 | 4 of 7 |
+| M19 | Codat journals map each line through Codat's own account list (unmapped → skipped and counted) | `verify-m19-codat-journal-accounts` | 4 | 4 of 4 |
+| M20 | AI payroll figures come from payroll-run lines | `verify-m20-ai-payroll-runs` | 3 | 3 of 3 |
+| M21 | Re-dating a posted journal re-dates its ledger entry | `verify-m21-journal-redate` | 7 | 4 of 7 |
+| M22 | Backfill keeps the payroll cash-out on the paid date | `verify-m22-backfill-paid-date` | 2 | 1 of 2 |
+| M23 | Entities 'Consolidated' reads the server's consolidated books | `verify-m23-entities-consolidated` | 2 | 1 of 2 |
+| M24 | One overdue definition (computeBooks.arSummary) on /api/reports | `verify-m24-one-overdue-definition` | 4 | 2 of 4 |
+| M25 | No status-literal 'overdue': AI grounding, portal AI and the Bills badge are date-based | `verify-m25-overdue-literals, verify-m25-bills-badge` | 5 + 1 | 2 of 5, 1 of 1 |
+| M26 | Portal Personal tab: personal rows only, calendar YTD, per currency, not capped | `verify-m26-portal-personal` | 6 | 4 of 6 |
+| M27 | Invoices '% collected' has one writer; 'Billed' labelled all-time | `verify-m27-invoices-collected` | 2 | 2 of 2 |
+| M28 | AI quarter and 'top client' use the selected period | `verify-m28-ai-period-labels` | 3 | 3 of 3 |
+| M30 | Health receivables = collected ÷ recognised, non-future billing | `verify-m30-health-receivables` | 1 | 1 of 1 |
+| M31 | Recurring YTD cards = documents actually generated this fiscal year | `verify-m31-recurring-ytd` | 2 | 2 of 2 |
+| M32 | Stock movements carry the business day (movement_date); COGS dated on it | `verify-m32-stock-movement-date` | 3 | 3 of 3 |
+| M33 | Bank CSV import keeps genuine identical same-day rows | `verify-m33-bank-csv-identical-rows` | 4 | 3 of 4 |
+| M35 | No fabricated 'Salary — X (April)' rows | `verify-m12-m13-m35-personal-figures` | 15 (shared) | (shared) |
+| M36 | Business Investments card converts USD holdings to the entity's currency | `verify-m36-business-investments-currency` | 3 | 2 of 3 |
+| M38 / M39 | Monthly buckets exclude future-dated rows (server and client) and use the KPIs' date fallbacks (client) | `verify-m-dashboard-server-books` (M38 server: Σ monthly = Year), `verify-m10-client-monthly-builder` | (in the 6 + 1 above) | (in the RED counts above). **M39's date fallback has no dedicated assertion** — fixed by reading the code, not executed in isolation |
+| M40 | Backfill falls back to created_at for dateless rows (no reset abort); receipts too | `verify-m40-backfill-dateless-rows` | 4 | 4 of 4 |
+| M42 | Run Payroll's run date is used | `verify-m42-payroll-run-date` | 2 | 2 of 2 |
+| M43 | Forecast AR/AP net of credit notes / vendor credits; run-rate includes orphan payments | `verify-m43-forecast-credits` | 3 | 3 of 3 |
+| M44 | API v1 summary uses the account's fiscal start; entity keys include NULL-entity rows | `verify-m44-api-summary-scope` | 2 | 2 of 2 |
+| M45 | P&L 'Expenses' tile label matches its value | `verify-m45-pl-expenses-tile` | 2 | 2 of 2 |
+| M46 | Cash card average over elapsed fiscal months | `verify-m46-cash-avg-monthly` | 2 | 2 of 2 |
+| M47 | CLEARED — the Tax-Deductible report already bounds future dates (kept as a guard) | `verify-m47-tax-deductible-future` | 1 | 0 of 1 (passes on old code) |
+| M48 | Bill 'Pay' opens the payment form: amount + date, partial payments, one writer | `verify-m48-m49-bill-pay-expense-date` | 12 (shared) | 10 of 12 (shared) |
+| M49 | Add expense has a date field (default today) | `verify-m48-m49-bill-pay-expense-date` | 12 (shared) | (shared) |
+| M50 | Deleting a business deletes its ledger in the same transaction | `verify-m50-entity-delete-ledger` | 5 | 1 of 5 |
+| M34, M41 | HELD — owner decision (6.2) | — | — | — |
+
+Every RED run failed with the **predicted bug value** printed beside the correct one (logs: one per harness).
+The four tests whose seeds date stock movements (M6, M8, M16, M32) were re-run in their pre-M32 form against the
+unfixed schema, so they measure the bug value instead of failing on the missing column:
+M6 taxable **900** (correct 160) · M8 year COGS **80** (correct 160) · M16 cash out **30** (correct 100) ·
+M32 sale dated **2026-10-10** (the server's real clock; correct 2026-07-20).
+
+**Full sweep on the fixed tree: 494 / 494 GREEN, 0 RED** (`tests/harness/run-verification-sweep.js`,
+sequential). Baseline before the fix pass: 451 / 452 (only `verify-fc1-overdue-date.js` red, a structural
+regex — see 6.4). The 42 extra harnesses are this pass's.
+
+**Production instrument:** `prod-readonly-counts.js` gains read-only checks [M14] and [M13] (6.5). Executed on
+scratch with one planted case each plus a control each. Each found exactly the planted row and not the control.
+
+### 6.2 Held for an owner decision (design; not built)
+
+**M34 — inventory purchase vs supplier bill.** Stock-in posts Dr 1200 Inventory / Cr 1000 Cash. A user who also
+enters the supplier's bill gets the cost twice (bill opex now, COGS when sold) and cash out twice in the GL.
+Proposal: stock-in asks "Paid by: Cash now / Supplier bill (on credit)". On credit, stock-in creates a bill
+linked to the movement and flagged as an inventory purchase. That bill posts Dr 1200 / Cr 2000 AP, is
+**excluded from operating expense** (the cost reaches the P&L once, as COGS when sold), and paying it settles AP
+as today. Surfaces that must all exclude the flagged bill from opex (Rule 2): `computeBooks` opex,
+GL bill posting, client `buildMonthlyArrays`, the expense breakdown, tax deductions, forecast run-rate.
+Until then the safe workflow is: record the purchase as stock-in only, and pay the supplier as a payment made
+linked to nothing. Do not also enter the supplier's bill.
+
+**M41 — payroll withholdings.** Approve posts Dr 6100 / Cr 2200 at gross. Mark-paid posts Dr 2200 / Cr 1000
+at **gross** (server.js `payroll_paid`). So the books assume the withholdings left the bank the same day as net
+pay, and 2200 never shows tax owed. Totals agree once the tax is remitted; only the timing and the liability
+are missing. Options:
+- (a) Book net at mark-paid. Withholdings stay in a liability (2210 "Payroll withholdings payable") until a new
+  "Remit withholdings" action pays them. This needs new UI, cash-flow report and forecast legs.
+- (b) Keep gross, and label it on the payroll page: "withholdings are treated as paid with net pay".
+
+FinFlow is estimates-only and has no remittance flow today, so (b) is the small honest step and (a) is a
+feature.
+
+### 6.3 Found during the fix pass — post-freeze list (round 2; not fixed in this round)
+
+| # | Sev | Finding | Evidence |
+|---|---|---|---|
+| M51 | S2 | Switching the **personal display currency** replaces the real net worth with a fabricated `baseNetWorth + 2 × period surplus`. `_updatePersCurrencyValues` (app-main.js, the currency-switch fast path, no wiring shadow) is a second writer of `pers-nw`, and of `pers-nw-chg` ("+surplus this month") beside `renderPersonal`'s real `computePersNetWorth` and snapshot delta. | EXECUTED (jsdom, `verify-m12-m13-m35-personal-figures.js` seed): accounts net worth USD 1,147.06 (TT$7.8K). After `setPersCurrency('TTD')` the tile showed **TT$10.9K** = (0 + 2 × 800 surplus) × 6.80. A page reload shows the right figure. |
+| M52 | S3 | **Business expenses cannot be edited.** The edit wrapper (finflow-api-wiring-final.js) adds Edit buttons to `#expense-list tr / .expense-row`, but rows are `.tx-row` divs, so no button ever renders. Its save and populate code also reads `exp-desc` / `exp-date` / `exp-category`, which do not exist (the modal uses `bexp-*`), and it looks the row up in `window.expenses`, not `bizExpenses`. A wrong expense can only be deleted and re-entered. | CODE-READ (selector and id mismatch read from source; not executed). |
+
+### 6.4 Existing harnesses whose expectations changed (each change is the fix, not a loosened test)
+
+- `verify-reports-parity.js`: tax "taxable" 741 → **135**. This is M6: taxable income = net profit 131 + the
+  4 of non-deductible expense rows. The old 741 deducted flagged expense rows only.
+- `verify-gl-backfill.js`: 1800 → **1820** (opex 1,800 + COGS 20). This is M32: the sale is now dated the business's
+  day (2026-07-25 under the pinned clock). The old 1800 held only because the sale was stamped with the server's
+  REAL clock, a future day under the pinned clock, so its COGS fell outside the year.
+- `verify-fc1-overdue-date.js`: its STRUCTURAL regex (the one pre-existing red in the baseline sweep) now
+  points at the single overdue source, `computeBooks.arSummary` (M24).
+- `verify-fx-client-consolidation.js`: the Entities "Consolidated" figure reads the server's consolidated
+  books (`window._consolBooks`, M23). The harness sets them and asserts the null state shows "—".
+- Accountant-journal fixtures in 7 harnesses (`verify-accountant-*`, `verify-e2e-full-lifecycle`,
+  `verify-f90-accountant-audit`) now give each line an account code. M3: a journal line without an
+  account cannot reach the ledger, so the route refuses it rather than saying "posted".
+- Inventory fixtures (`verify-gl-post-inventory`, `verify-gl-statements`, `verify-quarter-intent`,
+  `client-items.js`) set `movement_date` beside `moved_at` (M32).
+
+### 6.5 Existing data — reported, not changed (Rule 8; each is a separate owner decision)
+
+- **M14:** personal salary rows already created from the roster stay. Their recurring profile stops
+  generating new ones. A run marked paid after deploy for a month that already has such a row would show
+  both. `prod-readonly-counts.js` check **[M14]** counts them per account.
+- **M13:** personal assets and liabilities saved before values had a currency are read as USD, which is
+  exactly how they have always been shown. Check **[M13]** lists them. Re-enter any that were typed in
+  another currency.
+- **M32:** stock movements from before `movement_date` existed keep their old dating (the UTC day of
+  `moved_at`).
+- **M5:** imported Paid / Partial rows from before the fix have no payment rows. Production check M5a found
+  none in the owner's real businesses (section 5).

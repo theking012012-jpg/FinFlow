@@ -176,3 +176,22 @@ draft invoice can't be created from that form (drafts are excluded from every fi
    MONEY_AUDIT §0 — fixing the native dashboard to read `/api/reports` kills M10/M23/M29/M37 at once).
 5. **New:** M48, M49.
 6. **After all fixes:** re-run the full harness sweep + the A1–A21 scratch sweep; every row must match.
+
+---
+
+## 6. Fix-pass status (2026-10-10, branch `claude/money-math-audit-bazpjo`, held for owner approval)
+
+Full per-finding evidence: `MONEY_AUDIT_2026-10-09.md` §6.
+- **Fixed, RED on the unfixed code → GREEN on the fix:** M1–M33, M35–M38, M40, M42–M46, M48, M49, M50. Each fix
+  is one patch and one commit.
+- **M39 fixed by reading the code.** The client builder uses the KPIs' date fallbacks, but no assertion isolates
+  it.
+- **M47 cleared:** it passes on the unfixed code. Not a defect; the harness is kept as a guard.
+- **Held for the owner:** M34 (inventory purchase vs supplier bill) and M41 (payroll withholdings). Options are
+  in §6.2.
+- **Full sweep on the fixed tree: 494 / 494 GREEN** (baseline 451 / 452).
+- **Round 2 (found during the pass; list frozen):**
+  - M51: the personal display-currency switch writes a fabricated net worth. EXECUTED.
+  - M52: business expenses cannot be edited (dead edit path). CODE-READ.
+- **Existing data:** reported, not changed (§6.5). New read-only checks [M14] and [M13] are in
+  `prod-readonly-counts.js`.

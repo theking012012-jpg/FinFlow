@@ -125,7 +125,7 @@ async function sendAIMessage(){
     _aiHistory.push({ role: 'assistant', content: data.reply || 'No response.' });
   } catch(e){
     const typing3 = document.getElementById('ai-typing'); if(typing3) typing3.remove();
-    _aiHistory.push({ role: 'assistant', content: 'Error: ' + (e.message || 'Could not reach AI. Make sure ANTHROPIC_API_KEY is set in .env') });
+    _aiHistory.push({ role: 'assistant', content: 'Error: ' + (e.message || 'Could not reach the AI assistant. Please try again, or contact FinFlow support if it keeps happening.') });
   }
   renderAIPage();
 }

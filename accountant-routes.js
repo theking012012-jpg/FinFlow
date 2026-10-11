@@ -1563,7 +1563,7 @@ If you cannot find a field, use null. Be concise.`;
     };
 
     const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-    if (!apiKey) return res.status(503).json({ error: 'AI not configured (ANTHROPIC_API_KEY missing).' });
+    if (!apiKey) return res.status(503).json({ error: 'AI isn\u2019t available yet. Please contact FinFlow support if you need it.' });
 
     // F18 — insights is cheap text → the accountant shared budget. Gate BEFORE the call. Fail-closed.
     const gate = await aiCap.checkAccountantCap(pool, req.session.accountantId, 'shared');

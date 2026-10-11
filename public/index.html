@@ -5336,7 +5336,7 @@ window.renderPlaidLinked = async function(){
   }catch(e){ strip.innerHTML=''; return; }
   const items = (d && d.items) || [];
   if(!d.configured && !items.length){
-    strip.innerHTML = '<div style="font-size:11.5px;color:var(--t3);padding:6px 0 10px">Bank linking isn\'t set up yet. Add your Plaid keys (PLAID_CLIENT_ID, PLAID_SECRET) to enable one-click bank linking.</div>';
+    strip.innerHTML = '<div style="font-size:11.5px;color:var(--t3);padding:6px 0 10px">One-click bank linking isn\'t available yet \u2014 use \u201c\u2b06 Import\u201d to add a statement from any bank.</div>';
     return;
   }
   if(!items.length){ strip.innerHTML=''; return; }

@@ -12,7 +12,13 @@ const { db, initDB, pool, rowToObj, ensureLedgerAccountsForEntity, runMigrations
 const { establishSession } = require('./session-auth');
 const totp = require('./totp');
 const { startAnomalyMonitor } = require('./audit-anomalies');
-const FinFlowDates = require('./public/finflow-dates.js'); // F87 — canonical calendar-date/period resolver (Rule 10)
+const FinFlowDates = require('./public/finflow-dates.js');
+// C24: customer-facing "not set up" message. It used to name the server's environment variables ("Add PLAID_CLIENT_ID
+// and PLAID_SECRET…") to customers. Customers get plain words; the operator gets the setting names in the server log.
+function notSetUp(feature, ...envNames) {
+  if (envNames.length) console.warn('[config] ' + feature + ' needs: ' + envNames.join(', '));
+  return feature + ' isn\u2019t available yet. Please contact FinFlow support if you need it.';
+} // F87 — canonical calendar-date/period resolver (Rule 10)
 const Holidays     = require('date-holidays');            // F88 step 6 — per-country public-holiday calendar (offline, no network)
 const { tierForAccountant } = require('./tier-config');   // F17 — single tier source
 const aiCap = require('./ai-cap');                        // F18 — central AI cost caps
@@ -3773,7 +3779,7 @@ app.post('/api/autocat-rules/ai-suggest', requireAuth, wrap(async (req, res) => 
   // 4) CAP CHECK — before any Claude call. Only unique uncached descriptions
   //    count against the cap (that's what actually gets sent).
   if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(502).json({ error: 'AI categorization unavailable. Add ANTHROPIC_API_KEY to enable.', suggestions, counts: counts() });
+    return res.status(502).json({ error: notSetUp('AI categorization', 'ANTHROPIC_API_KEY'), suggestions, counts: counts() });
   }
   const plan = req.userPlan || 'trial';
   const cap  = aiCap.capFor(plan, 'shared');   // F18 — shared monthly AI budget
@@ -4099,7 +4105,7 @@ app.post('/api/payment-reminders/send', requireAuth, wrap(async (req, res) => {
   if (!to) return res.status(400).json({ error: 'No email on file for this customer. Add one on the customer record first.', code: 'NO_EMAIL' });
 
   if (!resendClient) {
-    return res.status(503).json({ error: 'Email isn’t configured (RESEND_API_KEY not set), so reminders can’t be sent yet.', code: 'EMAIL_NOT_CONFIGURED' });
+    return res.status(503).json({ error: notSetUp('Email reminders', 'RESEND_API_KEY'), code: 'EMAIL_NOT_CONFIGURED' });
   }
 
   const htmlBody = '<div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1a140a;line-height:1.55">'
@@ -5819,7 +5825,7 @@ Customers: ${customers.length}`;
     if (!response.ok) {
       const err = await response.text();
       console.error('Anthropic API error:', err);
-      return res.status(502).json({ error: 'AI service unavailable. Add ANTHROPIC_API_KEY to .env to enable.' });
+      return res.status(502).json({ error: notSetUp('The AI assistant', 'ANTHROPIC_API_KEY') });
     }
 
     const data = await response.json();
@@ -7295,7 +7301,7 @@ app.get('/api/plaid/items', requireAuth, wrap(async (req, res) => {
 // Step 1 of Link: create a link_token the browser hands to Plaid Link.
 app.post('/api/plaid/link-token', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
-  if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
+  if (!plaidConfigured()) return res.status(502).json({ error: notSetUp('Bank linking', 'PLAID_CLIENT_ID', 'PLAID_SECRET'), code: 'PLAID_NOT_CONFIGURED' });
   try {
     const j = await plaidCall('/link/token/create', {
       user: { client_user_id: String(_bankCtx(req).uid) },
@@ -7315,7 +7321,7 @@ app.post('/api/plaid/link-token', requireAuth, _bankPerm, wrap(async (req, res) 
 // with the institution name so the UI can show a REAL linked state.
 app.post('/api/plaid/exchange', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
-  if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
+  if (!plaidConfigured()) return res.status(502).json({ error: notSetUp('Bank linking', 'PLAID_CLIENT_ID', 'PLAID_SECRET'), code: 'PLAID_NOT_CONFIGURED' });
   const publicToken = (req.body && req.body.public_token) || '';
   if (!publicToken) return res.status(400).json({ error: 'public_token is required.' });
   try {
@@ -7358,7 +7364,7 @@ app.post('/api/plaid/unlink', requireAuth, _bankPerm, wrap(async (req, res) => {
 // 5-second dedupe window — Rule 9) and cursor-based so re-runs only fetch new activity.
 app.post('/api/plaid/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
-  if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
+  if (!plaidConfigured()) return res.status(502).json({ error: notSetUp('Bank linking', 'PLAID_CLIENT_ID', 'PLAID_SECRET'), code: 'PLAID_NOT_CONFIGURED' });
   const { uid, eid, personal } = _bankCtx(req);   // M60
   const _pCur = eid == null ? await _persBankCurrency(uid) : null;   // M62: fallback when Plaid sends no currency
   const _plCur = t => (t.iso_currency_code ? String(t.iso_currency_code).toUpperCase() : _pCur);
@@ -7613,7 +7619,7 @@ function registerOAuthConnector(spec) {
   }));
 
   app.post(`/api/${spec.key}/connect-url`, requireAuth, requirePerm(perm), wrap(async (req, res) => {
-    if (!cfg()) return res.status(502).json({ error: spec.label + ' linking is not set up yet. Add ' + spec.clientIdEnv + ' and ' + spec.secretEnv + ' to enable it.', code: CODE });
+    if (!cfg()) return res.status(502).json({ error: notSetUp(spec.label + ' linking', spec.clientIdEnv, spec.secretEnv), code: CODE });
     // Per-shop providers (Shopify) build the authorize host from a validated request param; a bad/missing
     // one is a clean 400, never a request to an arbitrary host.
     const authorizeBase = spec.authorizeUrlFor ? spec.authorizeUrlFor(req) : spec.authorizeUrl;
@@ -7710,7 +7716,7 @@ const _finchRedirectUri = () => process.env.FINCH_REDIRECT_URI || (appUrl() + '/
 // Build the Finch Connect authorize URL the browser opens (popup); Finch redirects back to
 // /finch/callback with a `code`. products default to read-only company/directory/payroll scopes.
 app.post('/api/finch/connect-url', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
-  if (!finchConfigured()) return res.status(502).json({ error: 'Payroll linking is not set up yet. Add FINCH_CLIENT_ID and FINCH_CLIENT_SECRET to enable it.', code: 'FINCH_NOT_CONFIGURED' });
+  if (!finchConfigured()) return res.status(502).json({ error: notSetUp('Payroll linking', 'FINCH_CLIENT_ID', 'FINCH_CLIENT_SECRET'), code: 'FINCH_NOT_CONFIGURED' });
   // Finch RETIRED the direct connect.tryfinch.com/authorize URL (now "legacy-flows"); the current flow is a
   // server-side Connect Session (POST /connect/sessions) that mints a fresh single-use connect_url. This is
   // an APP-CREDENTIAL endpoint: client_id + client_secret go in the BODY (same as /auth/token in the callback
@@ -7736,7 +7742,8 @@ app.post('/api/finch/connect-url', requireAuth, requirePerm('payroll:write'), wr
     let j = {}; try { j = await resp.json(); } catch (_) {}
     if (!resp.ok || !j.connect_url) {
       console.error('[finch connect-url]', resp.status, JSON.stringify(j).slice(0, 300));
-      return res.status(502).json({ error: 'Could not start payroll connection: ' + (j.message || j.error || ('Finch HTTP ' + resp.status)), code: 'FINCH_SESSION_FAILED' });
+      // C24: the provider's raw message (e.g. about "customer_id") stays in the server log, not on the customer's screen.
+      return res.status(502).json({ error: 'Could not start the payroll connection. Please try again, or contact FinFlow support.', code: 'FINCH_SESSION_FAILED' });
     }
     await _oauthStateIssue(req, 'finch');
     res.json({ connect_url: j.connect_url });
@@ -7831,7 +7838,7 @@ app.get('/api/codat/status', requireAuth, wrap(async (req, res) => {
 
 // Create a Codat company + return the hosted Link URL the user completes to connect their platform.
 app.post('/api/codat/link-url', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
-  if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
+  if (!codatConfigured()) return res.status(502).json({ error: notSetUp('Accounting linking', 'CODAT_API_KEY'), code: 'CODAT_NOT_CONFIGURED' });
   try {
     const uid = scopeId(req);
     const { value } = await _providerBlobE(uid, 'codat_conn', req.entityId);
@@ -7861,7 +7868,7 @@ app.post('/api/codat/disconnect', requireAuth, requirePerm('books:write'), wrap(
 // Parity with the other data aggregators: read a display-only summary (chart-of-accounts count)
 // from the connected platform. Does NOT write to the books (Rules 2 & 12).
 app.post('/api/codat/sync', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
-  if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
+  if (!codatConfigured()) return res.status(502).json({ error: notSetUp('Accounting linking', 'CODAT_API_KEY'), code: 'CODAT_NOT_CONFIGURED' });
   const uid = scopeId(req);
   const { value } = await _providerBlobE(uid, 'codat_conn', req.entityId);
   if (!value || !value.company_id) return res.status(400).json({ error: 'No linked accounting platform. Connect one first.' });
@@ -8103,7 +8110,7 @@ async function _codatImportType(uid, entityId, sessionUserId, companyId, platfor
 // PREVIEW (dry-run): read every data type and report what WOULD import — counts, brand-new vs already,
 // a small sample, and the currency mix — so the owner confirms before ANYTHING is written. No writes.
 app.post('/api/codat/import-preview', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
-  if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
+  if (!codatConfigured()) return res.status(502).json({ error: notSetUp('Accounting linking', 'CODAT_API_KEY'), code: 'CODAT_NOT_CONFIGURED' });
   const uid = scopeId(req);
   if (!req.entityId) return res.status(400).json({ error: 'Select a business entity to import into first.', code: 'NO_ACTIVE_ENTITY' });
   let company; try { company = await _codatCompany(uid, req.entityId); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
@@ -8117,7 +8124,7 @@ app.post('/api/codat/import-preview', requireAuth, requirePerm('books:write'), w
 // IMPORT (the write): owner-confirmed. Writes every data type through the canonical db.insert,
 // idempotently. Safe to re-run — already-imported records are skipped, never duplicated.
 app.post('/api/codat/import', requireAuth, requirePerm('books:write'), wrap(async (req, res) => {
-  if (!codatConfigured()) return res.status(502).json({ error: 'Accounting linking is not set up yet. Add CODAT_API_KEY to enable it.', code: 'CODAT_NOT_CONFIGURED' });
+  if (!codatConfigured()) return res.status(502).json({ error: notSetUp('Accounting linking', 'CODAT_API_KEY'), code: 'CODAT_NOT_CONFIGURED' });
   const uid = scopeId(req);
   if (!req.entityId) return res.status(400).json({ error: 'Select a business entity to import into first.', code: 'NO_ACTIVE_ENTITY' });
   let company; try { company = await _codatCompany(uid, req.entityId); } catch (e) { return res.status(e.status || 502).json({ error: e.message }); }
@@ -8658,7 +8665,7 @@ app.get('/api/belvo/status', requireAuth, wrap(async (req, res) => {
 
 app.post('/api/belvo/widget-token', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
-  if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO_SECRET_ID and BELVO_SECRET_PASSWORD to enable it.', code: 'BELVO_NOT_CONFIGURED' });
+  if (!belvoConfigured()) return res.status(502).json({ error: notSetUp('Latin America bank linking', 'BELVO_SECRET_ID', 'BELVO_SECRET_PASSWORD'), code: 'BELVO_NOT_CONFIGURED' });
   try {
     const j = await belvoCall('/api/token/', { method: 'POST', body: { id: process.env.BELVO_SECRET_ID, password: process.env.BELVO_SECRET_PASSWORD, scopes: 'read_institutions,write_links' } });
     await _oauthStateIssue(req, _isPersonalBank(req) ? 'belvo:personal' : 'belvo');   // N56 (M60: a personal widget session is its own): /exchange only accepts a link created in THIS widget session
@@ -8668,7 +8675,7 @@ app.post('/api/belvo/widget-token', requireAuth, _bankPerm, wrap(async (req, res
 
 app.post('/api/belvo/exchange', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
-  if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
+  if (!belvoConfigured()) return res.status(502).json({ error: notSetUp('Latin America bank linking', 'BELVO_SECRET_ID', 'BELVO_SECRET_PASSWORD'), code: 'BELVO_NOT_CONFIGURED' });
   const link = String((req.body && req.body.link) || '');
   if (!link) return res.status(400).json({ error: 'link is required.' });
   // N56: the platform Belvo credentials can read EVERY link on the account, so a client-supplied link id
@@ -8713,7 +8720,7 @@ app.post('/api/belvo/disconnect', requireAuth, _bankPerm, wrap(async (req, res) 
 
 app.post('/api/belvo/sync', requireAuth, _bankPerm, wrap(async (req, res) => {
   if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
-  if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
+  if (!belvoConfigured()) return res.status(502).json({ error: notSetUp('Latin America bank linking', 'BELVO_SECRET_ID', 'BELVO_SECRET_PASSWORD'), code: 'BELVO_NOT_CONFIGURED' });
   const { uid, eid, personal } = _bankCtx(req);   // M60
   const _pCur = eid == null ? await _persBankCurrency(uid) : null;   // M62
   const { value } = await _providerBlobE(uid, 'belvo_conn', eid);
@@ -12650,7 +12657,7 @@ app.get('/api/stock-price', requireAuth, async (req, res) => {
     let out;
     if (isCrypto) {
       const key = process.env.COINGECKO_API_KEY;
-      if (!key) return res.json({ symbol, price: null, error: 'COINGECKO_API_KEY not set' });
+      if (!key) return res.json({ symbol, price: null, error: notSetUp('Live crypto prices', 'COINGECKO_API_KEY') });
       if (now < _provCooldown.coingecko) {
         return res.json(cached ? cached.data : { symbol, price: null, error: 'rate-limited (CoinGecko); retry shortly' });
       }
@@ -12674,7 +12681,7 @@ app.get('/api/stock-price', requireAuth, async (req, res) => {
       out = { symbol, price, prevClose, dayChange, dayChangePct: pct, dividend: 0 };
     } else {
       const key = process.env.FINNHUB_API_KEY;
-      if (!key) return res.json({ symbol, price: null, error: 'FINNHUB_API_KEY not set' });
+      if (!key) return res.json({ symbol, price: null, error: notSetUp('Live stock prices', 'FINNHUB_API_KEY') });
       if (now < _provCooldown.finnhub) {
         return res.json(cached ? cached.data : { symbol, price: null, error: 'rate-limited (Finnhub); retry shortly' });
       }
@@ -12725,7 +12732,7 @@ app.get('/api/symbol-search', requireAuth, async (req, res) => {
     if (type === 'crypto') {
       // CRYPTO branch → CoinGecko search (covers ~15k coins), ranked by market cap.
       const key = process.env.COINGECKO_API_KEY;
-      if (!key) return res.json({ query: q, symbol: null, results: [], error: 'COINGECKO_API_KEY not set' });
+      if (!key) return res.json({ query: q, symbol: null, results: [], error: notSetUp('Live crypto prices', 'COINGECKO_API_KEY') });
       const r = await fetch(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(q)}`, { headers: { 'x-cg-demo-api-key': key, accept: 'application/json' } });
       if (!r.ok) return res.json({ query: q, symbol: null, results: [], error: 'CoinGecko HTTP ' + r.status });
       const d = await r.json();
@@ -12737,7 +12744,7 @@ app.get('/api/symbol-search', requireAuth, async (req, res) => {
     }
     // STOCK/ETF/etc. branch → Finnhub search.
     const key = process.env.FINNHUB_API_KEY;
-    if (!key) return res.json({ query: q, symbol: null, results: [], error: 'FINNHUB_API_KEY not set' });
+    if (!key) return res.json({ query: q, symbol: null, results: [], error: notSetUp('Live stock prices', 'FINNHUB_API_KEY') });
     const r = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${encodeURIComponent(key)}`, { headers: { accept: 'application/json' } });
     if (!r.ok) return res.json({ query: q, symbol: null, results: [], error: 'Finnhub HTTP ' + r.status });
     const d = await r.json();

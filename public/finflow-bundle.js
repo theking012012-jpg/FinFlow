@@ -4931,13 +4931,14 @@ function clearAIChat(){
         const pct = (n, dd) => dd > 0 ? (Math.round((n / dd) * 1000) / 10) + '%' : '—';
         const gold = 'var(--acc, #c8a44a)';
 
-        // Hero KPI tiles.
+        // Hero KPI tiles. M45 (money audit 2026-10-09): "Expenses" is OPERATING expenses (totalExpenses — COGS is
+        // already taken in Gross Profit); its caption said "incl. payroll + COGS" over a value that excludes COGS.
         const tile = (label, val, sub, cls) => `<div style="background:var(--bg2,#1e1a14);border:1px solid var(--bd,#2b2620);border-radius:9px;padding:9px 10px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3)">${e(label)}</div><div style="font-size:17px;font-weight:600;margin-top:4px;color:${cls || 'var(--t1)'};font-family:var(--font-mono)">${val}</div><div style="font-size:10px;color:var(--t3);margin-top:2px">${e(sub)}</div></div>`;
         const kpis = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
           ${tile('Revenue', m(rev), 'issued', 'var(--green)')}
           ${tile('Gross Profit', m(gp), pct(gp, rev) + ' margin')}
           ${tile('Net Profit', m(net), pct(net, rev) + ' net margin', net >= 0 ? 'var(--green)' : 'var(--red)')}
-          ${tile('Expenses', m(exp), 'incl. payroll + COGS', 'var(--red)')}
+          ${tile('Expenses', m(exp), 'operating, incl. payroll', 'var(--red)')}
         </div>`;
 
         // Monthly revenue-vs-expenses chart (last 6 months of dated rows).

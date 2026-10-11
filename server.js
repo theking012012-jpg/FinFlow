@@ -2596,13 +2596,28 @@ app.delete('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(a
 // M55 (personal/business wall): GET /api/personal-salary removed — it served the business payroll roster to the Personal page.
 
 // ── PERSONAL TRANSACTIONS ─────────────────────────────────────────────────────
+// M56 (personal/business wall): a PERSONAL transaction is one with no business (entity_id NULL) — manual entries and the
+// personal bank feed alike (bank connections are per scope: each business and Personal link their own). Personal
+// routes read and write ONLY those rows; a business bank line is never listed, edited or deleted from Personal.
+const isPersonalTxnRow = r => !!r && r.entity_id == null;
+// A bank-feed write lands in the scope it was made from: the business in view, or Personal for an account with no
+// business. It must never land in Personal from a BUSINESS context — the consolidated "all businesses" view
+// (?entity_id=all) resolves no business, and a line written there was stored entity-less, i.e. in Personal.
+const _bankScopeRefused = async (req, res) => {
+  if (req.entityId != null) return false;
+  const { rows: [e] } = await pool.query(`SELECT 1 FROM entities WHERE user_id = $1 LIMIT 1`, [scopeId(req)]);
+  if (!e) return false;   // no business at all: the bank feed is the personal feed
+  res.status(400).json({ error: 'Choose a business first — bank lines belong to the business they were made in.', code: 'NO_BUSINESS_IN_VIEW' });
+  return true;
+};
+
 app.get('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
   try {
     // PERSONAL/BUSINESS WALL: entity_id is the boundary. entity_id == null is PERSONAL (manual
     // entries, personal bank/Zelle imports — any source). entity_id != null belongs to a business
     // entity and NEVER appears here. Actor-scoped (session user) — personal stays per-user, not
     // per-account (see verify-f54-team-scope). The inverse of /api/banking's entity-scoped filter.
-    res.json(await db.allByUser('personal_transactions', req.session.userId, r => r.entity_id == null, (a,b) => b.id - a.id));
+    res.json(await db.allByUser('personal_transactions', req.session.userId, isPersonalTxnRow, (a,b) => b.id - a.id));   // M56
   } catch (e) {
     // F62 (F31 class): a query failure must NOT be disguised as "no transactions" — that
     // silently zeroes personal income/expense and Net Worth. db.allByUser already self-heals a
@@ -2625,7 +2640,7 @@ app.post('/api/personal-transactions', requireAuth, wrap(async (req, res) => {
 }));
 app.put('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => {
   const row = await ownedBy('personal_transactions', req.params.id, req.session.userId);
-  if (!row) return res.status(404).json({ error: 'Not found.' });
+  if (!isPersonalTxnRow(row)) return res.status(404).json({ error: 'Not found.' });   // M56: a business bank line is not personal
   const patch = {};
   const b = req.body || {};
   if (b.description != null) patch.description = b.description.trim().slice(0, 300);
@@ -2641,7 +2656,7 @@ app.put('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => 
   res.json(_ptr ? rowToObj(_ptr) : {});
 }));
 app.delete('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('personal_transactions', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });
+  if (!isPersonalTxnRow(await ownedBy('personal_transactions', req.params.id, req.session.userId))) return res.status(404).json({ error: 'Not found.' });   // M56
   await db.deleteById('personal_transactions', parseInt(req.params.id));
   res.json({ ok: true });
 }));
@@ -6287,6 +6302,7 @@ app.get('/api/banking', requireAuth, wrap(async (req, res) => {
   res.json(await db.allByUser('personal_transactions', scopeId(req), r => r.source === 'banking' && r.entity_id != null && r.entity_id === req.entityId, (a, b) => new Date(b.tx_date || b.date) - new Date(a.tx_date || a.date)));
 }));
 app.post('/api/banking', requireAuth, wrap(async (req, res) => {
+  if (await _bankScopeRefused(req, res)) return;   // M56
   const { desc, amount, type, date, cat } = req.body || {};
   if (!desc || amount == null) return res.status(400).json({ error: 'desc and amount required.' });
   // F46: allowlist tx_type. An EXPLICIT unknown value (e.g. a typo, or a credit sent as anything but
@@ -6310,7 +6326,10 @@ app.post('/api/banking', requireAuth, wrap(async (req, res) => {
   res.status(201).json(row);
 }));
 app.delete('/api/banking/:id', requireAuth, wrap(async (req, res) => {
-  if (!(await ownedBy('personal_transactions', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
+  const _bl = await ownedBy('personal_transactions', req.params.id, scopeId(req));
+  // M56: only a bank line of the scope in view — a business's own line from that business; a personal-feed line only
+  // when no business is in view. Never a personal transaction from a business, never another business's line.
+  if (!_bl || _bl.source !== 'banking' || (_bl.entity_id == null ? null : _bl.entity_id) !== (req.entityId == null ? null : req.entityId)) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('personal_transactions', parseInt(req.params.id));
   res.json({ ok: true });
 }));
@@ -6530,6 +6549,7 @@ app.post('/api/import/csv', requireAuth, requirePerm('books:write'), wrap(async 
 }));
 
 app.post('/api/banking/import', requireAuth, wrap(async (req, res) => {
+  if (await _bankScopeRefused(req, res)) return;   // M56
   const { format, content, mapping } = req.body || {};
   if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content (the statement file text) is required.' });
   if (content.length > 5_000_000) return res.status(400).json({ error: 'Statement too large (max ~5MB).' });
@@ -7232,6 +7252,7 @@ app.get('/api/plaid/items', requireAuth, wrap(async (req, res) => {
 
 // Step 1 of Link: create a link_token the browser hands to Plaid Link.
 app.post('/api/plaid/link-token', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
   try {
     const j = await plaidCall('/link/token/create', {
@@ -7251,6 +7272,7 @@ app.post('/api/plaid/link-token', requireAuth, requirePerm('bank:manage'), wrap(
 // Step 2 of Link: exchange the public_token for a long-lived access_token; persist (encrypted)
 // with the institution name so the UI can show a REAL linked state.
 app.post('/api/plaid/exchange', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
   const publicToken = (req.body && req.body.public_token) || '';
   if (!publicToken) return res.status(400).json({ error: 'public_token is required.' });
@@ -7292,6 +7314,7 @@ app.post('/api/plaid/unlink', requireAuth, requirePerm('bank:manage'), wrap(asyn
 // linked bank actually FEEDS the books. Idempotent on Plaid's stable transaction_id (NOT the weak
 // 5-second dedupe window — Rule 9) and cursor-based so re-runs only fetch new activity.
 app.post('/api/plaid/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!plaidConfigured()) return res.status(502).json({ error: 'Bank linking is not set up yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable it.', code: 'PLAID_NOT_CONFIGURED' });
   const uid = scopeId(req);
   const { items } = await _getPlaidItemsE(uid, req.entityId);
@@ -8543,6 +8566,7 @@ app.get('/api/belvo/status', requireAuth, wrap(async (req, res) => {
 }));
 
 app.post('/api/belvo/widget-token', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO_SECRET_ID and BELVO_SECRET_PASSWORD to enable it.', code: 'BELVO_NOT_CONFIGURED' });
   try {
     const j = await belvoCall('/api/token/', { method: 'POST', body: { id: process.env.BELVO_SECRET_ID, password: process.env.BELVO_SECRET_PASSWORD, scopes: 'read_institutions,write_links' } });
@@ -8552,6 +8576,7 @@ app.post('/api/belvo/widget-token', requireAuth, requirePerm('bank:manage'), wra
 }));
 
 app.post('/api/belvo/exchange', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
   const link = String((req.body && req.body.link) || '');
   if (!link) return res.status(400).json({ error: 'link is required.' });
@@ -8595,6 +8620,7 @@ app.post('/api/belvo/disconnect', requireAuth, requirePerm('bank:manage'), wrap(
 }));
 
 app.post('/api/belvo/sync', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
+  if (await _bankScopeRefused(req, res)) return;   // M56: never write a bank line into Personal from a business context
   if (!belvoConfigured()) return res.status(502).json({ error: 'Latin America bank linking is not set up yet. Add BELVO keys to enable it.', code: 'BELVO_NOT_CONFIGURED' });
   const uid = scopeId(req);
   const { value } = await _providerBlobE(uid, 'belvo_conn', req.entityId);

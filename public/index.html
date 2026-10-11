@@ -7603,6 +7603,7 @@ async function _loadEntitiesFromDBImpl(){
     if(active){
       if(nameEl) nameEl.textContent = active.name;
       if(badgeEl) badgeEl.textContent = active.currency + ' · ' + (typeof _planLabel==='function'?_planLabel():'Pro');
+      if(typeof window._ffApplyEntityCurrency === 'function') window._ffApplyEntityCurrency(active);   // C3
     } else {
       if(nameEl) nameEl.textContent = 'Create a business';
       if(badgeEl) badgeEl.textContent = '';
@@ -7974,6 +7975,21 @@ window.saveEntityProfile = async function(btn){
   } finally { if(btn) btn.disabled=false; }
 };
 
+// C3: ONE place that makes the money formatter speak the active business's currency — used by the business switch AND
+// by boot once the business list arrives. Boot only relabelled the sidebar badge, so after a reload a TT$ business's
+// figures were stamped with the first business's (or the account's) "$".
+window._ffApplyEntityCurrency = function(e){
+  if(!e) return;
+  try {
+    activeCurrency = e.displayCurrency || e.currency || 'USD';
+    currencySymbol = (CURRENCIES[activeCurrency] && CURRENCIES[activeCurrency].symbol) || '$';
+    window.currencySymbol = currencySymbol;
+    var _cflag = document.getElementById('currency-flag'); if(_cflag) _cflag.textContent = (CURRENCIES[activeCurrency] && CURRENCIES[activeCurrency].flag) || '🇺🇸';
+    var _clabel = document.getElementById('currency-code-label'); if(_clabel) _clabel.textContent = activeCurrency;
+    if(e._dbId != null && typeof activeBizId !== 'undefined') activeBizId = 'biz-' + e._dbId;
+    if(typeof _syncCurrencyControls === 'function') _syncCurrencyControls(activeCurrency);
+  } catch(e2){ console.warn('[Entity] currency reset failed:', e2 && e2.message); }
+};
 window.switchEntity=async function(idx){
   ENTITIES.forEach((e,i)=>e.active=i===idx);
   const e=ENTITIES[idx];
@@ -7998,12 +8014,7 @@ window.switchEntity=async function(idx){
   // symbol on the NEW entity's native figures — e.g. Saige/USD rendered as TT$207.7K until a refresh
   // re-ran boot. This is app-wide (dashboard, invoices, reports, every S()-formatted surface), not
   // dashboard-only. The F151 splash only hid the transient; the end-state symbol stayed wrong.
-  try {
-    activeCurrency = e.displayCurrency || e.currency;
-    currencySymbol = (CURRENCIES[activeCurrency] && CURRENCIES[activeCurrency].symbol) || '$';
-    var _cflag = document.getElementById('currency-flag'); if(_cflag) _cflag.textContent = (CURRENCIES[activeCurrency] && CURRENCIES[activeCurrency].flag) || '🇺🇸';
-    var _clabel = document.getElementById('currency-code-label'); if(_clabel) _clabel.textContent = activeCurrency;
-  } catch(e2){ console.warn('[Entity] currency reset failed:', e2 && e2.message); }
+  window._ffApplyEntityCurrency(e);   // C3: the same reset boot applies
 
   // ENTITY-ISOLATION (money leak): clear the money collections SYNCHRONOUSLY at the switch — before the
   // async activate+load below — so no repaint in the gap can show the PREVIOUS entity's figures under the

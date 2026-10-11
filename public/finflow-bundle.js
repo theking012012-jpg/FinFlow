@@ -304,7 +304,11 @@
             sel.value = s.currency;
             // Trigger currency update
             const map = { USD: '$', EUR: '€', GBP: '£', TTD: 'TT$', CAD: 'C$', AUD: 'A$' };
-            window.currencySymbol = map[s.currency] || '$';
+            // C3: a business's figures are in the BUSINESS's currency. The account setting applies only while no
+            // business is active; otherwise this late-arriving setting stamped "$" on a TT$ business after a reload.
+            const _actEnt = (window.ENTITIES || []).find(e => e.active);
+            if (_actEnt && typeof window._ffApplyEntityCurrency === 'function') window._ffApplyEntityCurrency(_actEnt);
+            else if (!_actEnt) window.currencySymbol = map[s.currency] || '$';
           }
         }
         // Apply dark mode

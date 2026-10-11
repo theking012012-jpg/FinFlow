@@ -1913,7 +1913,6 @@ let goals = [];
 let persTransactions = [];
 // (retired) basePersonalIncome — owner salary is now a linked recurring income
 // profile counted through the unified occurrence-driven projection in _applyPersFilter.
-let baseNetWorth = 0;
 // User invoices — populated from DB via loadEntityData
 let userInvoices = [];
 let nextInvId = 100;
@@ -3454,7 +3453,6 @@ function syncAllPayrollsToPersonal(){
     : entries.length === 1 ? (entries[0][1]?.entityName||'Entity') : 'Not on payroll';
   if(linkNet) linkNet.textContent = _dispCurPayroll.symbol + totalDisp.toLocaleString() + '/mo';
 
-  baseNetWorth = 0; // computed from real transactions in loadPersonalFinance()
   renderPersonal();
 }
 // openOwnerModal — all call sites now route to the full multi-entity modal
@@ -3499,8 +3497,12 @@ function setPersCurrency(code){
       ? `1 USD = ${cur.rate.toFixed(cur.rate<1?4:cur.rate>100?0:2)} ${code}`
       : '';
   }
-  // Fast path — only update numeric values, skip full DOM rebuild
-  _updatePersCurrencyValues();
+  // M51 (fix pass round 2): ONE writer of the personal cards. The currency switch repaints through renderPersonal
+  // (the same figures a page load paints) and the assets / liabilities list. A separate "fast path" used to rewrite
+  // the KPI cards itself — with a fabricated Net worth (baseNetWorth + 2 × surplus) and "+surplus this month",
+  // overwritten in the same tick — and never repainted the accounts list, which stayed in the old currency.
+  renderPersonal();
+  renderPersAccounts();
   // Re-render payroll banner & breakdown with new currency
   if(typeof syncAllPayrollsToPersonal === 'function') syncAllPayrollsToPersonal();
 }
@@ -3550,40 +3552,6 @@ function _ensureTxCurrencyOptions(){
   });
 }
 window._ensureTxCurrencyOptions=_ensureTxCurrencyOptions;
-
-// Fast currency-only update — rewrites numbers without rebuilding DOM lists
-function _updatePersCurrencyValues(){
-  const incomeUSD    = window._persPeriodIncome || 0;
-  const totalSpendUSD = spending.reduce((a,s)=>a+s.amount,0);
-  const surplusUSD   = incomeUSD - totalSpendUSD;
-  const target       = parseInt(document.getElementById('s-savings-target')?.value)||40;
-  const savingsRate  = incomeUSD>0 ? Math.round(surplusUSD/incomeUSD*100) : 0;
-  const nwUSD        = Math.round(baseNetWorth+(surplusUSD*2));
-  const nwChgUSD     = Math.round(surplusUSD);
-  const entityCount  = Object.keys(ownerPayrollByEntity).length;
-
-  const set = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-  set('pers-income',  SP(incomeUSD));
-  set('pers-spend',   SP(totalSpendUSD));
-  set('pers-nw',      SP(nwUSD));
-  set('pers-nw-chg',  '+'+SP(nwChgUSD)+' this month');
-  set('pers-spend-total', SP(totalSpendUSD));
-  set('p-cf-income',  '+'+SP(incomeUSD));
-  const _cfIn=document.getElementById('p-cf-income'); if(_cfIn) _cfIn.style.color=incomeUSD>0?'var(--green)':'var(--t2)';
-  set('p-cf-spend',   '-'+SP(totalSpendUSD));
-  const _cfSp=document.getElementById('p-cf-spend');  if(_cfSp) _cfSp.style.color=totalSpendUSD>0?'var(--red)':'var(--t2)';
-  set('p-cf-surplus', SP(surplusUSD));
-  const _cfSu=document.getElementById('p-cf-surplus'); if(_cfSu) _cfSu.style.color=surplusUSD>0?'var(--acc)':surplusUSD<0?'var(--red)':'var(--t2)';
-  set('pers-income-src', entityCount>1?`${entityCount} entities · combined (${persCurrency})`:entityCount===1?`From payroll · after tax (${persCurrency})`:`After tax (${persCurrency})`);
-  // Update bar values only (not widths — those are ratio-based, unchanged)
-  const barVals = document.querySelectorAll('#spending-bars .bar-val');
-  spending.forEach((s,i)=>{ if(barVals[i]) barVals[i].textContent=SP(s.amount); });
-  // Update goal amounts
-  const goalVals = document.querySelectorAll('#goals-list .goal-val');
-  goals.forEach((g,i)=>{ if(goalVals[i]) goalVals[i].textContent=SP(g.current)+(g.target?' / '+SP(g.target):''); });
-  _renderPersTxList();
-  renderPersonalSections();
-}
 
 function renderPersonal(){
   const cur = window.CURRENCIES?.[persCurrency] || {symbol:'$', rate:1};
@@ -4345,9 +4313,6 @@ function _applyPersFilter(){
   window._persPeriodRecurIncome=recurIncome;
   window._persPeriodOneTimeIncome=oneTimeIncome;
   window._persPeriodIncome=oneTimeIncome+recurIncome;
-  const totalInc=window._persPeriodIncome;
-  const totalExp=spending.reduce((a,s)=>a+s.amount,0);
-  baseNetWorth=Math.max(0,totalInc-totalExp);
   renderPersonal();
 }
 

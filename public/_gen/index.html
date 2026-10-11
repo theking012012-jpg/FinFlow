@@ -3541,7 +3541,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
               <div class="field-wrap"><label class="field-label" for="lock-date">Lock date</label><input class="finput" type="date" id="lock-date" value="2026-03-31"></div>
               <div class="field-wrap"><label class="field-label" for="lock-password">Lock password</label><input class="finput" type="password" id="lock-password" placeholder="Set a password to unlock"></div>
             </div>
-            <button class="btn btn-primary" onclick="saveLockSettings()" style="margin-top:.5rem">Save lock settings</button>
+            <button class="btn btn-primary" id="lock-save-btn" onclick="saveLockSettings()" style="margin-top:.5rem">Save lock settings</button>
           </div>
           <div id="lock-status-display" style="margin-top:1.5rem;padding:1rem;background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:var(--radius-lg);display:none">
             <div style="font-size:13px;font-weight:600;color:var(--amber)">🔒 Transactions locked before <span id="lock-date-display">—</span></div>

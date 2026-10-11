@@ -5936,13 +5936,16 @@ async function renderLockHistory(){
     const res=await fetch('/api/lock-settings',{credentials:'include'});
     if(!res.ok){l.innerHTML='';return;}
     const s=await res.json();
+    window._lockServerEnabled=!!(s.enabled&&s.lock_date);   // C10: what is saved now
     if(s.enabled&&s.lock_date){
       document.getElementById('lock-enabled').checked=true;
-      document.getElementById('lock-config').style.display='block';
-      document.getElementById('lock-status-display').style.display='block';
       document.getElementById('lock-date').value=s.lock_date;
       document.getElementById('lock-date-display').textContent=_fmtYmdLong(s.lock_date);   // Rule 10
+    } else {
+      // C10: an unlocked business shows unlocked (this used to keep whatever the page showed before — e.g. another business's lock)
+      document.getElementById('lock-enabled').checked=false;
     }
+    toggleLocking();
     // Show audit log entries related to lock
     const auditRes=await fetch('/api/audit-log?type=lock_settings&limit=10',{credentials:'include'});
     if(!auditRes.ok){l.innerHTML='';return;}
@@ -5965,7 +5968,13 @@ function _fmtYmdLong(ymd){
 window._fmtYmdLong=_fmtYmdLong;
 function toggleLocking(){
   const enabled=document.getElementById('lock-enabled').checked;
-  document.getElementById('lock-config').style.display=enabled?'block':'none';
+  // C10: switching OFF a lock that is saved ON must leave a way to save it off. The Save button lived inside lock-config,
+  // which this hid — so the lock could never be turned off. Off + saved-on → show "Turn off lock" (and the password
+  // field, for a password-protected lock); off + saved-off → nothing to save.
+  const turningOff=!enabled && !!window._lockServerEnabled;
+  document.getElementById('lock-config').style.display=(enabled||turningOff)?'block':'none';
+  const dw=document.getElementById('lock-date'); if(dw&&dw.closest('.field-wrap')) dw.closest('.field-wrap').style.display=enabled?'':'none';
+  const btn=document.getElementById('lock-save-btn'); if(btn) btn.textContent=turningOff?'Turn off lock':'Save lock settings';
   document.getElementById('lock-status-display').style.display=enabled?'block':'none';
   if(enabled){
     const d=document.getElementById('lock-date').value||'2026-03-31';
@@ -5982,7 +5991,7 @@ async function saveLockSettings(){
     if(!res.ok){ const e=await res.json().catch(()=>({})); notify(e.error||'Failed to save lock settings', true); renderLockHistory(); return; }
     if(enabled&&d) document.getElementById('lock-date-display').textContent=_fmtYmdLong(d);   // Rule 10
     const pwEl=document.getElementById('lock-password'); if(pwEl) pwEl.value='';
-    notify('Lock settings saved ✦');
+    notify(enabled?'Lock settings saved ✦':'Lock settings saved — the lock is off ✦');
     renderLockHistory();
   } catch(e){ notify('Failed to save lock settings', true); }
 }

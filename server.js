@@ -9621,7 +9621,10 @@ app.get('/api/bank-reconciliation', requireAuth, wrap(async (req, res) => {
   const matchedPaySet  = new Set(matchedPayIds.rows.map(r => r.invoice_payment_id));
 
   const banking = await db.allByUser('personal_transactions', uid, r => r.source === 'banking' && r.entity_id != null && r.entity_id === req.entityId);
-  const unmatchedBanking = banking.filter(r => !matchedBankSet.has(r.id));
+  // C8: the money-IN side — credits not yet matched to a payment and not otherwise dealt with. Debits belong to the
+  // money-out side (unmatchedDebits below); a line already actioned there (expense / bill / ignored) carries
+  // reconcile_state and is done. This list held every line, so handled debits still counted as "unmatched".
+  const unmatchedBanking = banking.filter(r => !matchedBankSet.has(r.id) && !r.reconcile_state && String(r.tx_type || 'debit') === 'credit');
 
   const { rows: payments } = await pool.query(
     `SELECT ip.*, i.data->>'client' AS client FROM invoice_payments ip

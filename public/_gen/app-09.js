@@ -221,7 +221,8 @@ async function loadBankRec(){
     unbank=unbank.filter(b=>!_stagedBank.has(b.id));
     unpay =unpay.filter(p=>!_stagedPay.has(p.id));
 
-    if(ubEl)ubEl.textContent=unbank.length;
+    // C8: lines still needing attention — credits to match plus debits not yet booked / matched / ignored.
+    if(ubEl)ubEl.textContent=unbank.length+(data.unmatchedDebits||[]).length;
     if(upEl)upEl.textContent=unpay.length;
     if(mcEl)mcEl.textContent=matched.length;
 
@@ -230,8 +231,8 @@ async function loadBankRec(){
         <div class="tx-row" style="cursor:pointer;border-left:2px solid transparent;padding-left:8px;transition:border-color .15s" id="bbtx-${b.id}"
           onclick="selectBankTx(${b.id},this)">
           <div><div class="tx-name">${esc(b.description||b.merchant||'Transaction')}</div>
-          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.date,{year:true}):(b.date||''))||'—')} · ${esc(b.account_name||'')}</div></div>
-          <div class="tx-amt ${parseFloat(b.amount)>=0?'up':'dn'}">${parseFloat(b.amount)>=0?'+':''}${S(Math.abs(parseFloat(b.amount)))}</div>
+          <div class="tx-cat">${esc((window.FinFlowDates?window.FinFlowDates.fmtLabel(b.tx_date||b.date,{year:true}):(b.tx_date||b.date||''))||'—')}${b.account_name?' · '+esc(b.account_name):''}</div></div>
+          <div class="tx-amt up">+${S(Math.abs(parseFloat(b.amount)))}</div>
         </div>`).join('')
         :'<div style="padding:1rem;text-align:center;color:var(--t3);font-size:12px">All bank transactions matched</div>';
     }

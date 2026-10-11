@@ -405,9 +405,8 @@
         <div class="tx-row" style="display:flex;align-items:center;justify-content:space-between">
           <div style="flex:1">
             <div class="tx-name">${esc(e.desc)}</div>
-            <div class="tx-cat">${esc(e.cat)} · ${esc(e.date)}${e.ded !== 'no'
-              ? ' · ' + (e.ded === 'half' ? '50%' : '100%') + ' deductible'
-              : ''}</div>
+            <div class="tx-cat">${esc(e.cat)} · ${esc(e.date)}${(() => { const f = window.FinFlowDates.deductibleFactor(e.ded);   // M15
+              return f === 1 ? ' · 100% deductible' : f === 0.5 ? ' · 50% deductible' : ''; })()}</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <div class="tx-amt dn">-${S(e.amount)}</div>

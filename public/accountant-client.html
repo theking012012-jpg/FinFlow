@@ -780,6 +780,7 @@
   </div>
 </div>
 
+<script src="/finflow-dates.js"></script>
 <script>
 // ── STATE ──────────────────────────────────────────────────────────────────
 let _data = null;
@@ -1059,7 +1060,7 @@ function renderDashboard(invoices, expenses) {
       <td class="primary">${esc(e.description||'—')}</td>
       <td>${esc(e.category||'—')}</td>
       <td class="amount expense">${fmt(e.amount)}</td>
-      <td>${e.deductible==='yes'?'<span class="badge badge-green">✓ Full</span>':e.deductible==='half'?'<span class="badge badge-amber">½</span>':'—'}</td>
+      <td>${(f=>f===1?'<span class="badge badge-green">✓ Full</span>':f===0.5?'<span class="badge badge-amber">½</span>':'—')(window.FinFlowDates.deductibleFactor(e.deductible))}</td>
       <td><button class="flag-btn" onclick="flagTxn('expense','${esc(e.description||'')}')">⚑</button></td>
     </tr>`).join('') || `<tr><td colspan="5" class="empty">No expenses for this period</td></tr>`;
 
@@ -1138,7 +1139,7 @@ function renderExpensesPage(expenses) {
       <td>${esc(e.category||'—')}</td>
       <td>${fmtDate(e.expense_date)}</td>
       <td class="amount expense">${fmt(e.amount)}</td>
-      <td>${e.deductible==='yes'?'<span class="badge badge-green">✓ Full</span>':e.deductible==='half'?'<span class="badge badge-amber">½ deductible</span>':'—'}</td>
+      <td>${(f=>f===1?'<span class="badge badge-green">✓ Full</span>':f===0.5?'<span class="badge badge-amber">½ deductible</span>':'—')(window.FinFlowDates.deductibleFactor(e.deductible))}</td>
       <td><button class="flag-btn" onclick="flagTxn('expense','${esc(e.description||'')}')">⚑</button></td>
     </tr>`).join('') || `<tr><td colspan="6" class="empty">No expenses for this period</td></tr>`;
 }

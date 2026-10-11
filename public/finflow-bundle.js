@@ -1003,9 +1003,8 @@
         <div class="tx-row" style="display:flex;align-items:center;justify-content:space-between">
           <div style="flex:1">
             <div class="tx-name">${esc(e.desc)}</div>
-            <div class="tx-cat">${esc(e.cat)} · ${esc(e.date)}${e.ded !== 'no'
-              ? ' · ' + (e.ded === 'half' ? '50%' : '100%') + ' deductible'
-              : ''}</div>
+            <div class="tx-cat">${esc(e.cat)} · ${esc(e.date)}${(() => { const f = window.FinFlowDates.deductibleFactor(e.ded);   // M15
+              return f === 1 ? ' · 100% deductible' : f === 0.5 ? ' · 50% deductible' : ''; })()}</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <div class="tx-amt dn">-${S(e.amount)}</div>
@@ -5008,8 +5007,7 @@ function clearAIChat(){
         // 'yes' rows, all time — so it disagreed with the Income Tax Estimate on the same page.
         const _tdW = (typeof window._periodWindow === 'function') ? window._periodWindow(_rptPeriod) : null;
         const exps = ((await api('GET', '/api/expenses')) || []).filter(x => !_tdW || _tdW.inWin(x.expense_date || x.date || x.created_at));
-        const dedShare = x => { const d = String(x.deductible == null ? '' : x.deductible).toLowerCase();
-          return (x.deductible === true || /^(yes|true|1|y|100)$/.test(d)) ? 1 : (d === 'half' || d === '50') ? 0.5 : 0; };
+        const dedShare = x => window.FinFlowDates.deductibleFactor(x.deductible);   // M15: one shared vocabulary map
         const byCat = {}; let ded = 0, nonDed = 0, dedCount = 0;
         exps.forEach(x => {
           const amt = parseFloat(x.amount) || 0, sh = dedShare(x);

@@ -1025,8 +1025,8 @@ window.exportAllCSV = function(format){
   } else if (activePage.includes('expense')) {
     const exp = window._realExpenses || window.bizExpenses || bizExpenses || [];
     // L16: 'no' is a truthy STRING — `(ded||deductible) ? 'Yes' : 'No'` exported every expense as deductible.
-    const _dedLabel = e => { const d = String((e.deductible != null ? e.deductible : e.ded) || '').toLowerCase();
-      return (d === 'yes' || d === 'true' || d === '100') ? 'Yes' : (d === 'half' || d === '50') ? 'Half (50%)' : 'No'; };
+    const _dedLabel = e => { const f = window.FinFlowDates.deductibleFactor(e.deductible != null ? e.deductible : e.ded);   // M15
+      return f === 1 ? 'Yes' : f === 0.5 ? 'Half (50%)' : 'No'; };
     rows = [['Description','Category','Amount','Date','Tax Deductible'],
       ...exp.map(e => [e.description||e.desc||'', e.category||e.cat||'', Number(e.amount||0).toFixed(2), _ymd(e.expense_date||e.date), _dedLabel(e)])];
     filename = 'expenses.csv';
@@ -2045,8 +2045,8 @@ function computeExpenseBreakdown(period, monthIdx){
   // Tax-deductible from REAL rows only: yes=100%, half=50%, no=0
   const deductible = rows.reduce((s,e)=>{
     const amt = parseFloat(e.amount)||0;
-    const ded = (e.deductible!=null ? e.deductible : (e.ded||'no'));
-    return s + (ded==='yes' ? amt : ded==='half' ? amt*0.5 : 0);
+    // M15: the shared vocabulary map (finflow-dates.js) — the same reader the server tax leg uses.
+    return s + amt * window.FinFlowDates.deductibleFactor(e.deductible!=null ? e.deductible : e.ded);
   },0);
   // Category breakdown from REAL rows only
   const byCategory = {};

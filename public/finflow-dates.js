@@ -187,7 +187,25 @@
     return _toYmd(runDate) || null;
   };
 
+  // M15 (money audit 2026-10-09): the ONE reader of an expense's `deductible` flag, shared by the server
+  // (computeBooks tax leg) and every client surface (Expenses page, Tax-Deductible report, expense list label,
+  // CSV export). Four readers used to disagree: 'Yes' counted on the server but not the Expenses page, the
+  // scanner's boolean true counted only in the report, and a missing flag (CSV / Codat imports) was labelled
+  // "100% deductible" while counting 0. Stored vocabulary going forward is 'yes' | 'half' | 'no' (writers
+  // normalise with normalizeDeductible); legacy values are read through this map. Anything unknown → 0.
+  var deductibleFactor = function (v) {
+    if (v === true) return 1;
+    if (v === false || v == null) return 0;
+    var d = String(v).trim().toLowerCase();
+    if (d === 'yes' || d === 'y' || d === 'true' || d === '1' || d === '100' || d === '100%' || d === 'full') return 1;
+    if (d === 'half' || d === '50' || d === '50%' || d === '0.5') return 0.5;
+    return 0;
+  };
+  var normalizeDeductible = function (v) { var f = deductibleFactor(v); return f === 1 ? 'yes' : f === 0.5 ? 'half' : 'no'; };
+
   return {
+    deductibleFactor: deductibleFactor,
+    normalizeDeductible: normalizeDeductible,
     resolvedToday: resolvedToday,
     payrollPeriodYmd: payrollPeriodYmd,
     resolvePeriod: resolvePeriod,

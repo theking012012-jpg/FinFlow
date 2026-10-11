@@ -2207,7 +2207,8 @@ app.delete('/api/invoices/:id', requireAuth, lockGuard(LOCK_SPECS.invoices), wra
 // ── EXPENSES ──────────────────────────────────────────────────────────────────
 app.get('/api/expenses', requireAuth, wrap(async (req, res) => respondList(req, res, 'expenses')));
 app.post('/api/expenses', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(async (req, res) => {
-  const { description, category = 'Other', amount, deductible = 'no', expense_date, entity_id } = req.body || {};
+  const { description, category = 'Other', amount, expense_date, entity_id } = req.body || {};
+  const deductible = FinFlowDates.normalizeDeductible(req.body && req.body.deductible);   // M15: stored as yes | half | no
   if (!description || amount == null) return res.status(400).json({ error: 'description and amount required.' });
   const eid = entity_id || req.entityId || null;
   const edate = expense_date || await entityTodayYmd(eid);
@@ -2256,7 +2257,7 @@ app.put('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wrap(a
   if (b.description != null) patch.description = b.description;
   if (b.category != null) patch.category = b.category;
   if (b.amount != null) patch.amount = parseFloat(b.amount);
-  if (b.deductible != null) patch.deductible = b.deductible;
+  if (b.deductible != null) patch.deductible = FinFlowDates.normalizeDeductible(b.deductible);   // M15
   if (b.expense_date != null) patch.expense_date = b.expense_date;
   if (b.class != null) patch.class = _segTag(b.class) || null;
   if (b.location != null) patch.location = _segTag(b.location) || null;
@@ -11087,10 +11088,7 @@ async function computeBooks(userId, entityId = null, period = 'year', display = 
   // display currency to the tax path (both use entity-native), so this leg is not FX-converted here
   // — a labelled limitation, not a silent currency mix. If a display-currency tax view is ever
   // added, this converts per-row at _expDate like expensesTotal.
-  const _dedFactor = e => {
-    const d = String(e.deductible == null ? '' : e.deductible).toLowerCase();
-    return (d === 'yes' || d === '100') ? 1 : (d === 'half' || d === '50') ? 0.5 : 0;
-  };
+  const _dedFactor = e => FinFlowDates.deductibleFactor(e.deductible);   // M15: the one shared vocabulary map
   const _dedRows = expenses.filter(e => inPeriod(_expDate(e)));
   const deductibleFull = r2(sum(_dedRows, e => _dedFactor(e) === 1   ? num(e.amount)       : 0));
   const deductibleHalf = r2(sum(_dedRows, e => _dedFactor(e) === 0.5 ? num(e.amount) * 0.5 : 0));

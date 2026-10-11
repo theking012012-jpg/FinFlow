@@ -3397,50 +3397,7 @@ function syncAllPayrollsToPersonal(){
   // row dated "Apr 30" per entity into the personal list and running balance (a hard-coded month, the ROSTER's net,
   // not a real transaction). The owner's salary reaches Personal only as real rows from paid payroll runs (M14).
 
-  // Update payroll page banner — show entity name + owner name for clarity
-  const _bannerEnts = (typeof ENTITIES!=='undefined'?ENTITIES:null)||window.ENTITIES||[];
-  const banner = document.getElementById('pers-payroll-banner');
-  if(banner){
-    banner.style.display = entries.length > 0 ? 'flex' : 'none';
-    const salaryEl = document.getElementById('pers-salary-source');
-    if(salaryEl){
-      if(entries.length === 1){
-        const [_idx0, _ep0] = entries[0];
-        const _ent0 = _bannerEnts[parseInt(_idx0)];
-        salaryEl.textContent = `${esc(_ent0?.name||'Entity')} — ${esc(_ep0.fname)} ${esc(_ep0.lname)} · ${SP(totalUSD)}/mo net (${persCurrency})`;
-      } else {
-        salaryEl.textContent = `${entries.length} entities · ${SP(totalUSD)}/mo combined net (${persCurrency})`;
-      }
-    }
-  }
-
-  // Per-entity breakdown — always show for 1 or more entities (not just 2+)
-  const breakdownEl = document.getElementById('pers-payroll-breakdown');
-  if(breakdownEl){
-    if(entries.length >= 1){
-      breakdownEl.style.display = 'block';
-      const _dispCur = ((typeof CURRENCIES!=='undefined'?CURRENCIES:null)||window.CURRENCIES||{})[persCurrency] || {symbol:'$', rate:1};
-      breakdownEl.innerHTML = entries.map(([idx,ep])=>{
-        const entity = _bannerEnts[parseInt(idx)];
-        const _fromCur2 = ep.currency || entity?.currency || 'USD';
-        const entCur = ((typeof CURRENCIES!=='undefined'?CURRENCIES:null)||window.CURRENCIES||{})[_fromCur2] || {symbol:'$'};
-        const netDisp = Math.round(_safeFX(ep.net, _fromCur2, persCurrency));
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:11.5px;border-bottom:1px solid var(--bd)">
-          <span style="display:flex;align-items:center;gap:5px">
-            <span style="width:14px;height:14px;border-radius:3px;background:${entity?.color||'var(--acc)'};display:inline-block;flex-shrink:0"></span>
-            <span style="color:var(--t1);font-weight:500">${esc(entity?.name||'Entity')}</span>
-            <span style="color:var(--t3);font-size:10px">${esc(ep.fname)} ${esc(ep.lname)} · ${entity?.currency||'USD'}</span>
-          </span>
-          <span style="font-family:var(--font-mono);color:var(--green)">${entCur.symbol}${ep.net.toLocaleString()}/mo <span style="color:var(--t3);font-size:10px">≈ ${_dispCur.symbol}${netDisp.toLocaleString()}</span></span>
-        </div>`;
-      }).join('') + (entries.length > 1 ? `<div style="display:flex;justify-content:space-between;padding:5px 0 0;font-size:12.5px;font-weight:600">
-        <span style="color:var(--t2)">Total (${persCurrency})</span>
-        <span style="color:var(--acc);font-family:var(--font-mono)">${_dispCur.symbol}${Math.round(totalUSD * _dispCur.rate).toLocaleString()}/mo</span>
-      </div>` : '');
-    } else {
-      breakdownEl.style.display = 'none';
-    }
-  }
+  // M55: no roster banner / per-business breakdown on the Personal page (personal/business wall).
 
   // Update payroll page link metrics
   const prNet = document.getElementById('pr-owner-net');
@@ -3600,24 +3557,10 @@ function renderPersonal(){
     else { _chgEl.textContent='—'; _chgEl.className='mc-change neutral'; }
   }
 
-  const entityCount = Object.keys(ownerPayrollByEntity).length;
+  // M55 (personal/business wall): the income caption names no business and no roster figure — the owner's salary is
+  // in the income only as rows from PAID payroll runs (M14), like any other income row.
   const _incSrcEl = document.getElementById('pers-income-src');
-  if(_incSrcEl){
-    if(entityCount === 0){
-      _incSrcEl.textContent = `After tax (${persCurrency})`;
-    } else {
-      const _pEnts = (typeof ENTITIES!=='undefined'?ENTITIES:null)||window.ENTITIES||[];
-      const _lineItems = Object.entries(ownerPayrollByEntity).map(([idx,ep])=>{
-        const ent = _pEnts[parseInt(idx)];
-        return `${esc(ent?.name||'Entity')}: ${SP(_safeFX(ep.net, ep.currency||ent?.currency||'USD', 'USD'))}`;
-      });
-      _incSrcEl.textContent = _lineItems.join(' · ') + (entityCount>1 ? ' · Total' : ' net');
-    }
-  }
-
-  // Payroll banner
-  const banner = document.getElementById('pers-payroll-banner');
-  if(banner) banner.style.display = entityCount>0 ? 'flex' : 'none';
+  if(_incSrcEl) _incSrcEl.textContent = `After tax (${persCurrency})`;
 
   // Cash flow
   document.getElementById('p-cf-income').textContent  = '+'+SP(incomeUSD);
@@ -3675,7 +3618,6 @@ function renderPersonal(){
 
   renderPersonalSections();
   updateHealthScore(savingsRate, incomeUSD, surplusUSD);
-  if(typeof prefillPersSalaryCard==='function') prefillPersSalaryCard();
 }
 // (Spending inline-edit / budget editor removed — Spending breakdown is now
 // a read-only reflection of real transactions.)
@@ -3998,106 +3940,6 @@ async function _persCommitTx({desc,amount,cat,type,date,editId,recurringProfileI
   window.finflow?.refresh(['dashboard']);
 }
 
-// ── Personal salary card ──────────────────────────────────────────────
-function persPreviewNet(){
-  const gross=parseFloat(document.getElementById('pers-sal-gross')?.value)||0;
-  const net=netFromDeductions(gross, readDedRows('pers-sal-deductions-rows'));
-  const el=document.getElementById('pers-sal-net-preview');
-  if(el) el.textContent=gross>0?SP(net)+'/mo':'—';
-}
-
-// Collapse/expand the salary editor (pure UI). force=true opens, false collapses,
-// undefined toggles. When collapsed, the compact summary line is shown instead.
-function togglePersSalaryEdit(force){
-  const editor=document.getElementById('pers-salary-editor');
-  const summary=document.getElementById('pers-salary-summary');
-  const caret=document.getElementById('pers-salary-caret');
-  const header=document.getElementById('pers-salary-header');
-  if(!editor) return;
-  const open = force!==undefined ? force : editor.style.display==='none';
-  editor.style.display=open?'':'none';
-  if(summary) summary.style.display=open?'none':'';
-  if(caret) caret.style.transform=open?'':'rotate(180deg)';
-  if(header) header.setAttribute('aria-expanded',open?'true':'false');
-}
-
-function prefillPersSalaryCard(){
-  const activeIdx=typeof ENTITIES!=='undefined'?ENTITIES.findIndex(e=>e.active):-1;
-  const ep=activeIdx>=0?(ownerPayrollByEntity[activeIdx]||null):null;
-  const syncLabel=document.getElementById('pers-salary-sync-label');
-  const grossEl=document.getElementById('pers-sal-gross');
-  if(ep&&ep.gross>0){
-    if(grossEl) grossEl.value=ep.gross;
-    setDedRows('pers-sal-deductions-rows','persPreviewNet', ep.deductions);
-    if(syncLabel) syncLabel.style.display='';
-  }else{
-    setDedRows('pers-sal-deductions-rows','persPreviewNet', []);
-    if(syncLabel) syncLabel.style.display='none';
-  }
-  persPreviewNet();
-  // Collapsible state: default collapsed to a summary when a salary is set,
-  // expanded when it's empty so the user knows to fill it in.
-  const grossVal=parseFloat(grossEl?.value)||0;
-  const sg=document.getElementById('pers-salary-summary-gross');
-  const sn=document.getElementById('pers-salary-summary-net');
-  if(sg) sg.textContent=grossVal>0?SP(grossVal):'—';
-  if(sn) sn.textContent=grossVal>0?SP(netFromDeductions(grossVal, readDedRows('pers-sal-deductions-rows')))+'/mo':'—';
-  togglePersSalaryEdit(grossVal<=0);
-}
-
-async function savePersonalSalary(){
-  const gross=parseFloat(document.getElementById('pers-sal-gross')?.value)||0;
-  const deductions=readDedRows('pers-sal-deductions-rows');
-  if(!gross){notify('Please enter a salary amount');return;}
-  const activeIdx=typeof ENTITIES!=='undefined'?ENTITIES.findIndex(e=>e.active):-1;
-  const entity=activeIdx>=0?ENTITIES[activeIdx]:null;
-  const rawName=(document.getElementById('s-name')?.value||'').trim()||'Owner';
-  const parts=rawName.split(' ');
-  const fname=parts[0]||'Owner';
-  const lname=parts.slice(1).join(' ')||'';
-  const payload={fname,lname,gross,deductions,is_owner:true,entity_id:entity?._dbId||null,role:'CEO / Founder',emp_type:'owner',av_class:'av-blue'};
-  try{
-    // Always fetch fresh DB state — in-memory ownerPayrollByEntity may be stale after page load
-    let existingId=null;
-    try{
-      const chk=await fetch('/api/personal-salary',{credentials:'include'});
-      // N60: the owner's salary row is PER BUSINESS — update THIS entity's row only. It used to take
-      // chkRows[0] (any entity), so saving entity B's salary overwrote entity A's owner payroll row.
-      if(chk.ok){const chkRows=await chk.json();const _eid=entity?._dbId??null;const _mine=chkRows.find(r=>(r.entity_id??null)===_eid);if(_mine)existingId=_mine.id;}
-    }catch(_){}
-    let saved;
-    if(existingId){
-      const r=await fetch('/api/payroll/'+existingId,{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(payload)});
-      if(!r.ok) throw new Error((await r.json()).error||'Failed');
-      saved=await r.json();
-    }else{
-      const r=await fetch('/api/payroll',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(payload)});
-      if(!r.ok) throw new Error((await r.json()).error||'Failed');
-      saved=await r.json();
-    }
-    if(activeIdx>=0){
-      ownerPayrollByEntity[activeIdx]={
-        _dbId:saved.id,fname,lname,
-        gross,deductions,
-        net:netFromDeductions(gross, deductions),
-        currency:entity?.currency||'USD',
-        initials:((fname[0]||'')+(lname[0]||'')).toUpperCase(),
-        avClass:'av-blue',
-        entityName:entity?.name||'Entity',
-      };
-      window.ownerPayrollByEntity=ownerPayrollByEntity;
-      if(entity?.active){ownerPayroll=ownerPayrollByEntity[activeIdx];window.ownerPayroll=ownerPayroll;}
-    }
-    // Immediately update UI — don't wait for API round-trip. (Income refreshes once
-    // loadPersonalFinance() reloads the linked salary profile + occurrences below.)
-    if(typeof renderPersonal==='function') renderPersonal();
-    if(typeof syncAllPayrollsToPersonal==='function') syncAllPayrollsToPersonal();
-    if(typeof loadPersonalFinance==='function') await loadPersonalFinance();
-    prefillPersSalaryCard();
-    window.finflow?.refresh(['payroll','dashboard']);
-    notify('Salary saved ✦');
-  }catch(e){notify('Error: '+(e.message||'Failed to save salary'));}
-}
 
 function payrollCardPreviewNet(){
   const gross=parseFloat(document.getElementById('payroll-cta-gross')?.value)||0;

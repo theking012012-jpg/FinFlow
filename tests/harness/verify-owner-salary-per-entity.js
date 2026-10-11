@@ -4,10 +4,12 @@
  * verify-owner-salary-per-entity.js — N60. Saving the owner's salary for business B updates B's owner
  * payroll row — never business A's.
  *
- * Defect: savePersonalSalary (app-main.js — the only definition, so the runtime winner) looked up the
- * owner's existing row via /api/personal-salary, which returns owner rows of ALL entities, and PUT over
- * the first one. A multi-business owner saving B's salary overwrote A's owner payroll row (A's payroll
- * and expense changed; B kept the old figure).
+ * Defect (N60): the owner-salary save looked up the owner's existing row across ALL entities and PUT over the
+ * first one, so a multi-business owner saving B's salary overwrote A's owner payroll row.
+ * M55 (personal/business wall, 2026-10-10): the owner's salary is set ONLY on the Payroll page (business side) —
+ * the Personal page's "Monthly salary" writer (savePersonalSalary) is removed. This harness now drives the
+ * remaining writer, the Payroll page's owner form (openOwnerPayrollModal → saveOwnerPayroll), with the same seed
+ * and the same N60 guarantee, and asserts the Personal page has no roster writer.
  *
  * Executed: the real page code in jsdom against the real server + Postgres. Owner rows: A gross 5000,
  * B gross 7000. With B active, save 8000. Bug value stated:
@@ -40,8 +42,12 @@ const A = (name, ok, d) => { ok ? (pass++, console.log('  PASS  ' + name)) : (fa
     const bIdx = (window.ENTITIES || []).findIndex(e => e && e.name === 'Salary B Co');
     A('entity B present', bIdx >= 0);
     await window.switchEntity(bIdx); await settle(60, 60);
-    window.document.getElementById('pers-sal-gross').value = '8000';
-    await window.savePersonalSalary(); await settle(20, 30);
+    A('M55: no roster writer on the Personal page', typeof window.savePersonalSalary === 'undefined');
+    try { window.showPage('payroll'); } catch (_) {}
+    await settle(20, 30);
+    window.openOwnerPayrollModal(); await settle(10, 30);
+    window.document.getElementById('own-gross').value = '8000';
+    await window.saveOwnerPayroll(); await settle(40, 30);
     const g = async (id) => Number((await c.query(`SELECT (data->>'gross')::numeric g FROM payroll WHERE id=$1`, [id])).rows[0].g);
     A("A's owner row stays 5000 (bug: overwritten to 8000)", (await g(rA)) === 5000, 'A gross=' + await g(rA));
     A("B's owner row becomes 8000 (bug: stays 7000)", (await g(rB)) === 8000, 'B gross=' + await g(rB));

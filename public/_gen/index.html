@@ -3145,41 +3145,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           </div>
         </div>
         
-        <div class="card" id="pers-salary-card" style="margin-bottom:.85rem">
-          <div class="card-header" id="pers-salary-header" style="cursor:pointer;margin-bottom:0" onclick="togglePersSalaryEdit()" role="button" aria-expanded="true" aria-controls="pers-salary-editor" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePersSalaryEdit()}">
-            <h2 class="card-title">Monthly salary</h2>
-            <div style="display:flex;align-items:center;gap:9px;margin-left:auto">
-              <span id="pers-salary-sync-label" style="display:none;font-size:11px;color:var(--green)">Synced from payroll ✓</span>
-              <svg id="pers-salary-caret" width="11" height="11" viewBox="0 0 10 10" style="transition:transform .15s cubic-bezier(.4,0,.2,1);stroke:var(--t2)" aria-hidden="true"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></polyline></svg>
-            </div>
-          </div>
-          
-          <div id="pers-salary-summary" style="display:none;font-size:12.5px;color:var(--t2);margin-top:.5rem">
-            <span style="color:var(--t1);font-weight:600" id="pers-salary-summary-gross">—</span> gross · <span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="pers-salary-summary-net">—</span> net
-          </div>
-          
-          <div id="pers-salary-editor">
-            <div class="field-wrap" style="margin-bottom:.5rem;margin-top:.75rem"><label class="field-label" for="pers-sal-gross">Gross salary (USD / mo)</label><input class="finput" id="pers-sal-gross" type="number" placeholder="e.g. 5000" oninput="persPreviewNet()"></div>
-            <div class="field-wrap" style="margin-bottom:.35rem">
-              <label class="field-label">Deductions</label>
-              <div id="pers-sal-deductions-rows"></div>
-              <button type="button" class="btn btn-ghost btn-sm" onclick="addDedRow('pers-sal-deductions-rows','persPreviewNet')" style="margin-top:2px">+ Add deduction</button>
-            </div>
-            <div class="ded-disclaimer" style="margin-bottom:.6rem">You define these deductions. FinFlow does not calculate, determine, or verify any tax or deduction — it only subtracts the percentages and amounts you enter. You are responsible for confirming every figure with your accountant or the relevant tax authority.</div>
-            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-              <div style="font-size:12.5px;color:var(--t2)">Net take-home: <span style="color:var(--green);font-family:var(--font-mono);font-weight:600" id="pers-sal-net-preview">—</span></div>
-              <button class="btn btn-primary btn-sm" onclick="savePersonalSalary()">Save salary</button>
-            </div>
-          </div>
-        </div>
-        <div id="pers-payroll-banner" style="display:none;background:linear-gradient(135deg,var(--acc-bg),rgba(30,24,8,.5));border:1px solid var(--acc2);border-radius:var(--radius-lg);padding:.75rem 1.1rem;margin-bottom:1rem;flex-direction:column;gap:8px">
-          <div style="display:flex;align-items:center;gap:10px">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--acc)" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="5" r="2.5"></circle><path d="M1 13c0-2.76 2.24-5 5-5"></path><path d="M10 9l1.5 1.5L14 8"></path></svg>
-            <span style="font-size:12px;color:var(--t2)">Income from payroll · <span id="pers-salary-source" style="color:var(--acc-light)">—</span></span>
-            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showPage('payroll',document.getElementById('nav-payroll'))">Edit payroll →</button>
-          </div>
-          <div id="pers-payroll-breakdown" style="display:none;background:rgba(0,0,0,.2);border-radius:var(--radius);padding:.6rem .75rem"></div>
-        </div>
+        
       </template>
 
       <!-- AI INSIGHTS -->

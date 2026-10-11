@@ -2593,17 +2593,7 @@ app.delete('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(a
   res.json({ ok: true });
 }));
 
-// ── PERSONAL SALARY — cross-entity owner payroll (no entity filter) ───────────
-// GET /api/payroll scopes to req.entityId from session, so it only returns rows
-// for the currently-active entity. This endpoint bypasses that and returns ALL
-// is_owner payroll rows for the user — used by Personal Finance income display.
-app.get('/api/personal-salary', requireAuth, wrap(async (req, res) => {
-  const rows = await db.allByUser('payroll', req.session.userId);
-  const ownerRows = rows.filter(r =>
-    r.is_owner === true || r.is_owner === 1 || r.is_owner === '1' || r.is_owner === 'true'
-  );
-  res.json(ownerRows);
-}));
+// M55 (personal/business wall): GET /api/personal-salary removed — it served the business payroll roster to the Personal page.
 
 // ── PERSONAL TRANSACTIONS ─────────────────────────────────────────────────────
 app.get('/api/personal-transactions', requireAuth, wrap(async (req, res) => {

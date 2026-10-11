@@ -5055,9 +5055,14 @@ function updateHealthScore(savingsRate=0,income=0,surplus=0){
   const cfScore = throughput>0 ? _clamp(50 + (_profit/throughput)*50) : null;
   // Profitability — real margin (50 = break-even).
   const prScore = _rev>0 ? _clamp(50 + margin) : null;
-  // Receivables — real % of invoiced value actually collected.
-  const _invoiced=_inv.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
-  const _paid=_inv.filter(i=>i.status?.toLowerCase()==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  // Receivables — real % of invoiced value actually collected. M30 (money audit 2026-10-09): over RECOGNISED
+  // invoices only (issued, dated on or before today — drafts and scheduled invoices are not owed), and collected =
+  // amount_paid, so a part-payment counts. It summed the face value of status-'paid' invoices over EVERY invoice
+  // (a 9,999 draft included), ignoring part-payments (the F56 class).
+  const _today=_entityToday(), _ISSUED=['pending','overdue','partial','paid'];
+  const _recog=_inv.filter(i=>_ISSUED.includes(String(i.status||'').toLowerCase()) && (window.FinFlowDates._toYmd(i.issue_date||i.created_at||i.date)||'') <= _today);
+  const _invoiced=_recog.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+  const _paid=_recog.reduce((s,i)=>s+Math.min(parseFloat(i.amount)||0, parseFloat(i.amount_paid)||0),0);
   const recScore = _invoiced>0 ? _clamp(_paid/_invoiced*100) : null;
   // Growth — real period-over-period revenue (needs a prior period to compare). M11: the same elapsed-month
   // comparison as the AI insight (_fyGrowth), never the last fiscal month, which is in the future all year.

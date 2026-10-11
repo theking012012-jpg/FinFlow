@@ -6739,10 +6739,21 @@ async function loadBankRec(){
     const debEl=document.getElementById('brec-debits-list');
     if(debEl){
       const debits=data.unmatchedDebits||[];
-      const billOpts=(data.openBills||[]).map(function(b){return '<option value="'+b.id+'">'+esc((b.vendor||'Bill')+' - '+S(b.amount))+'</option>';}).join('');
+      // C17: each debit pre-selects the bill it most likely pays — remaining balance == the debit amount, else the bill's
+      // vendor named in the bank description — instead of always the first open bill. Options show what is still owed.
+      const _bills=(data.openBills||[]);
+      const _rem=function(b){return Math.round(((parseFloat(b.amount)||0)-(parseFloat(b.amount_paid)||0))*100)/100;};
+      const _bestBill=function(d){
+        const amt=Math.abs(parseFloat(d.amount)||0), desc=String(d.description||'').toLowerCase();
+        const byAmt=_bills.filter(function(b){return Math.abs(_rem(b)-amt)<0.005;});
+        const byName=function(list){return list.find(function(b){const v=String(b.vendor||'').toLowerCase().trim();return v&&desc.indexOf(v)>=0;});};
+        return (byAmt.length>1&&byName(byAmt))||byAmt[0]||byName(_bills)||_bills[0]||null;
+      };
+      const billOptsFor=function(d){const best=_bestBill(d);return _bills.map(function(b){return '<option value="'+b.id+'"'+(best&&best.id===b.id?' selected':'')+'>'+esc((b.vendor||'Bill')+' - '+S(_rem(b)))+'</option>';}).join('');};
+      const billOpts=_bills.length?'1':'';
       debEl.innerHTML=debits.length?debits.map(function(d){
         const when=(window.FinFlowDates?window.FinFlowDates.fmtLabel(d.tx_date||d.date,{year:true}):(d.tx_date||d.date||''))||'—';
-        const billSel=billOpts?('<select id="brec-bill-'+d.id+'" style="font-size:10px;background:var(--card);color:var(--t2);border:1px solid var(--bd);border-radius:5px;padding:2px 4px">'+billOpts+'</select><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="ffBankMatchBill('+d.id+')">Match bill</button>'):'';
+        const billSel=billOpts?('<select id="brec-bill-'+d.id+'" style="font-size:10px;background:var(--card);color:var(--t2);border:1px solid var(--bd);border-radius:5px;padding:2px 4px">'+billOptsFor(d)+'</select><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="ffBankMatchBill('+d.id+')">Match bill</button>'):'';
         return '<div class="tx-row" style="align-items:center">'+
           '<div><div class="tx-name">'+esc(d.description||'Debit')+'</div><div class="tx-cat">'+esc(when)+' - money out</div></div>'+
           '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end">'+

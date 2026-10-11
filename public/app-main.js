@@ -4314,8 +4314,8 @@ function _applyPersFilter(){
   const{from,to}=_persPeriodRange();
   const CAT_GROUP={'Rent/Mortgage':'Housing','Groceries':'Food','Dining out':'Food','Transport':'Transport','Entertainment':'Entertainment','Healthcare':'Healthcare','Shopping':'Shopping','Subscriptions':'Subscriptions','Other':'Other','Income':'Other'};
   const CAT_COLOR={Housing:'var(--acc)',Food:'var(--green)',Transport:'var(--teal)',Entertainment:'var(--purple)',Healthcare:'var(--red)',Shopping:'var(--amber)',Subscriptions:'var(--acc2)',Other:'var(--t3)'};
-  // Nominal period length (Month=1, Quarter=3, Year=12) — NOT months-elapsed — so
-  // early in a quarter/year the KPIs still reflect the whole period.
+  // Months the window spans (Month=1, Quarter=3, Year=12) — kept for callers that label the period; no figure is
+  // scaled by it any more (M12).
   const monthsInWindow={month:1,quarter:3,year:12}[window._persPeriod]||1;
   window._persPeriodMonths=monthsInWindow;
   // All actual transactions in the window — drives the transaction LIST, running
@@ -4329,41 +4329,18 @@ function _applyPersFilter(){
   const _fxu=(amt,cur)=>_safeFX(amt, cur||'USD', 'USD');
   window._persSideIncome=persTransactions.filter(t=>t.type==='income').reduce((a,t)=>a+_fxu(t.amount,_txCurOf(t)),0);
 
-  // ── SINGLE-REPRESENTATION period rule for income AND spending ───────────────
-  // Every source is counted from the OCCURRENCES actually present in the window —
-  // NEVER from a separate profile projection — so there is only one representation
-  // and a double-count is impossible, whether or not recurring_profile_id is
-  // populated. A recurring occurrence (linked to a known profile) is counted ONCE
-  // per source (deduped by profile id) and scaled to monthlyEquivalent × months;
-  // everything else (genuine one-time rows AND any not-yet-linked recurring row)
-  // counts at its actual in-window amount. recurring_profile_id is the reliable
-  // per-row signal that ENABLES scaling — correctness never depends on it being
-  // perfectly populated, and duplicate profiles are inert (no occurrence → no count).
-  // ACCEPTED SEMANTICS: a profile with ZERO occurrences in the window contributes
-  // nothing until it materialises — intended for a "what actually happened" view.
+  // ── M12 (money audit 2026-10-09): what ACTUALLY happened in the window — every in-window row counts ONCE at its
+  // own amount (USD-normalised per row), recurring or not. A recurring source used to be counted once and then
+  // SCALED to monthlyEquivalent × the period's NOMINAL months (Year = 12): one 1,000 salary occurrence in July
+  // read as 12,000 for the year, and a raise re-priced all twelve months retroactively — the roster × months
+  // pattern basis C removed from the business side. Recurring rows still split out for the income-sources card.
   const profById=new Map((window._persRecurring||[]).map(p=>[p.id,p]));
   const isRecur=t=>t.recurringProfileId!=null && profById.has(t.recurringProfileId);
   const catTotals={};
-  let recurIncome=0;
-  const seenSource=new Set();
-  persTransactions.forEach(t=>{
-    if(!isRecur(t)) return;
-    if(seenSource.has(t.recurringProfileId)) return;   // dedupe: one scaled figure per source
-    seenSource.add(t.recurringProfileId);
-    const p=profById.get(t.recurringProfileId);
-    // Normalize the profile's native amount to USD BEFORE scaling to monthly-equiv.
-    const scaled=_persMonthlyEquiv(_fxu(p.amount,p.currency),p.frequency)*monthsInWindow;
-    if((p.tx_type||'expense')==='income'){ recurIncome+=scaled; }
-    else { const c=CAT_GROUP[p.category]||'Other'; catTotals[c]=(catTotals[c]||0)+scaled; }
-  });
-  // One-time (and any unlinked) rows — actual amounts (USD-normalized), counted once.
-  persTransactions.filter(t=>!isRecur(t)&&t.type==='expense').forEach(t=>{const c=CAT_GROUP[t.cat]||'Other';catTotals[c]=(catTotals[c]||0)+_fxu(t.amount,_txCurOf(t));});
+  persTransactions.filter(t=>t.type==='expense').forEach(t=>{const c=CAT_GROUP[t.cat]||'Other';catTotals[c]=(catTotals[c]||0)+_fxu(t.amount,_txCurOf(t));});
   spending=Object.entries(catTotals).map(([label,amount])=>({label,amount,color:CAT_COLOR[label]||'var(--t3)',budget:0}));
+  const recurIncome=persTransactions.filter(t=>isRecur(t)&&t.type==='income').reduce((a,t)=>a+_fxu(t.amount,_txCurOf(t)),0);
   const oneTimeIncome=persTransactions.filter(t=>!isRecur(t)&&t.type==='income').reduce((a,t)=>a+_fxu(t.amount,_txCurOf(t)),0);
-  // UNIFIED income (USD-normalized): one-time income in-window + scaled recurring
-  // income. Salary is NO LONGER a separate term — it is a recurring income profile
-  // counted here like any other. Expose the split so the income-sources card and the
-  // tax estimate read the SAME figures the KPI does (consistency, no re-derivation).
   window._persPeriodRecurIncome=recurIncome;
   window._persPeriodOneTimeIncome=oneTimeIncome;
   window._persPeriodIncome=oneTimeIncome+recurIncome;

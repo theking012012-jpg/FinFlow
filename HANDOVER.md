@@ -51,7 +51,7 @@ Status (C = Cowork item; each fix is one commit with its harness, RED on the old
 | # | Cowork | Problem | Status |
 |---|---|---|---|
 | C9 | 2.4a | Edit expense opens with the date blank; amount-only edit refused "Enter a valid date" | **Fixed** `812e728` |
-| C10 | 7.4 | Transaction lock can't be turned off | open |
+| C10 | 7.4 | Transaction lock can't be turned off | **Fixed** `cb7c85b` |
 | C11 | 6.3 | Accountant invite can't reach an existing client (only a referral sign-up link) | open |
 | C12 | 1.3a | Onboarding lets Country* be empty | open |
 | C13 | 1.3c | Entities shows 0 businesses until a reload; country not shown anywhere | open |

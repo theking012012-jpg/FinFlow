@@ -4966,6 +4966,16 @@ function openRebalanceModal(){
 // ════════════════════════════════════════════
 // AI INSIGHTS
 // ════════════════════════════════════════════
+// M11 (money audit 2026-10-09): revenue growth over the fiscal year so far — the last COMPLETE fiscal month vs the
+// first fiscal month. It compared REV[11] (the last fiscal month) with REV[0]; for eleven months of the year REV[11]
+// is in the future and 0, so the AI said "−100% growth" and the Health Score's Growth read 0. null when there is no
+// complete month after the first, or the first month has no revenue (nothing to grow from).
+function _fyGrowth(){
+  const _ctx=_fyContext(); const last=(_ctx && Number.isInteger(_ctx.curFyIdx)) ? _ctx.curFyIdx-1 : -1;
+  if(last<1 || !(REV[0]>0)) return null;
+  const ratio=(REV[last]-REV[0])/REV[0];
+  return { from:0, to:last, ratio, pct:Math.round(ratio*100) };
+}
 function updateAI(d=getPeriodData()){
   document.getElementById('ai-period-label').textContent=d.label;
   // Revenue, expenses, profit & margin ALL use the canonical helpers
@@ -4978,7 +4988,7 @@ function updateAI(d=getPeriodData()){
   const _profit = _rev - (parseFloat(window._cogsTotal)||0) - _exp;  // canonical Net (incl COGS)
   const margin = _rev > 0 ? Math.round(_profit/_rev*100) : 0;
   const insights=currentPeriod==='year'?[
-    (()=>{ const _g=REV[0]>0?Math.round((REV[11]-REV[0])/REV[0]*100):null; return _g!==null?`Full year revenue: ${S(_rev)} — ${_g>=0?"+":""}${_g}% growth vs ${MONTH_FULL[0]}.`:`Full year revenue: ${S(_rev)} — First year on record, no prior comparison.`; })(),
+    (()=>{ const _gr=_fyGrowth(); return _gr!==null?`Full year revenue: ${S(_rev)} — ${_gr.pct>=0?"+":""}${_gr.pct}% growth, ${MONTH_FULL[_gr.to]} vs ${MONTH_FULL[_gr.from]}.`:`Full year revenue: ${S(_rev)} — not enough complete months yet to measure growth.`; })(),
     (()=>{ let _mi=0,_xi=0; for(let i=0;i<12;i++){ if(REV[i]>REV[_xi])_xi=i; if(REV[i]<REV[_mi])_mi=i; } return REV.some(v=>v>0)?`Best month: ${MONTH_FULL[_xi]} at ${S(REV[_xi])}. Weakest: ${MONTH_FULL[_mi]} at ${S(REV[_mi])}.`:`Add paid invoices to see your best and weakest months.`; })(),
     `Net profit margin: ${margin}%. Annual profit: ${S(_profit)}. Business is ${_profit<0?'running at a loss':margin>=20?'highly profitable':margin>=10?'profitable':'breaking even'}.`,
     _rev > 0 ? `Payroll-to-revenue: ${Math.round(d.sal/_rev*100)}%.` : `Add paid invoices to calculate your payroll-to-revenue ratio.`,
@@ -5023,8 +5033,10 @@ function updateHealthScore(savingsRate=0,income=0,surplus=0){
   const _invoiced=_inv.reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
   const _paid=_inv.filter(i=>i.status?.toLowerCase()==='paid').reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
   const recScore = _invoiced>0 ? _clamp(_paid/_invoiced*100) : null;
-  // Growth — real period-over-period revenue (needs a prior period to compare).
-  const grScore = REV[0]>0 ? _clamp(50 + (REV[11]-REV[0])/REV[0]*50) : null;
+  // Growth — real period-over-period revenue (needs a prior period to compare). M11: the same elapsed-month
+  // comparison as the AI insight (_fyGrowth), never the last fiscal month, which is in the future all year.
+  const _grw = _fyGrowth();
+  const grScore = _grw!==null ? _clamp(50 + _grw.ratio*50) : null;
   const _scores=[cfScore,prScore,recScore,grScore].filter(s=>s!=null);
   // Composite needs at least 2 real sub-scores — one metric alone (e.g. only
   // Receivables) must not be presented as a whole-business "EXCELLENT" score.

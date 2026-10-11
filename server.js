@@ -326,6 +326,9 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       if (invId) {
         const rec = await recordExternalInvoicePayment({
           invoiceId: invId, amountMinor: session.amount_total, currency: session.currency, method: 'Card (Stripe)', idemKey: 'stripe:' + session.id,
+          // M18: the PaymentIntent is what the charge in the Stripe feed / a refund event carries — recorded so both
+          // can recognise this payment (the session id appears on neither).
+          reference: session.payment_intent ? ('stripe-pi:' + session.payment_intent).slice(0, 64) : null,
         });
         console.log('[Stripe] invoice ' + invId + ' payment → ' + JSON.stringify(rec));
       }
@@ -496,8 +499,11 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     try {
       await cli.query('BEGIN');
       await cli.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['stripe-refund:' + chargeId]);   // serialize refunds per charge
+      // M18: a Pay-now payment is keyed by its checkout session, not the charge — match it by the PaymentIntent the
+      // charge carries, so a refund of a Pay-now payment reverses it too (it used to leave AR settled).
       ({ rows: [orig] } = await cli.query(
-        `SELECT * FROM invoice_payments WHERE idempotency_key = $1 LIMIT 1`, ['stripe-invpay:' + chargeId]));
+        `SELECT * FROM invoice_payments WHERE (idempotency_key = $1 OR ($2::text IS NOT NULL AND reference = $2)) AND amount > 0 ORDER BY id ASC LIMIT 1`,
+        ['stripe-invpay:' + chargeId, ch.payment_intent ? ('stripe-pi:' + ch.payment_intent).slice(0, 64) : null]));
       if (orig && cumulativeMajor > 0) {
         const target = Math.min(cumulativeMajor, parseFloat(orig.amount) || 0);   // never reverse more than was booked
         const { rows: [r] } = await cli.query(
@@ -8080,6 +8086,7 @@ app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
       email: (c.billing_details && c.billing_details.email) || c.receipt_email || '',
       created: c.created ? new Date(c.created * 1000).toISOString() : null,
       livemode: !!c.livemode,
+      payment_intent: c.payment_intent || null,   // M18: how a Pay-now payment is recognised in the feed
     }));
     // Annotate which charges are ALREADY recorded in the books (imported via reconcile), so the UI can
     // offer "Add to books" only for the rest and never invite a double-post. Keyed on the charge id.
@@ -8096,10 +8103,14 @@ app.get('/api/stripe/feed', requireAuth, wrap(async (req, res) => {
     }
     charges.forEach(c => { c.inBooks = _booked.has('stripe-charge:' + c.id); c.refundInBooks = _booked.has('stripe-refund:' + c.id); });
     try {
+      // M18: applied = recorded against an invoice by EITHER scheme — matched from this feed ('stripe-invpay:<charge>')
+      // or paid through a Pay-now link ('stripe-pi:<payment_intent>' reference). A Pay-now charge used to show
+      // "Add to books" and could be booked again as a sales receipt: double revenue and cash.
       const _payKeys = charges.map(c => ('stripe-invpay:' + c.id).slice(0, 64));
-      const { rows: _pr } = await pool.query(`SELECT idempotency_key AS k FROM invoice_payments WHERE user_id=$1 AND idempotency_key = ANY($2)`, [scopeId(req), _payKeys]);
-      const _applied = new Set(_pr.map(r => r.k));
-      charges.forEach(c => { c.appliedToInvoice = _applied.has(('stripe-invpay:' + c.id).slice(0, 64)); });
+      const _piRefs = charges.filter(c => c.payment_intent).map(c => ('stripe-pi:' + c.payment_intent).slice(0, 64));
+      const { rows: _pr } = await pool.query(`SELECT idempotency_key AS k, reference AS r FROM invoice_payments WHERE user_id=$1 AND (idempotency_key = ANY($2) OR reference = ANY($3))`, [scopeId(req), _payKeys, _piRefs]);
+      const _applied = new Set(_pr.flatMap(r => [r.k, r.r]).filter(Boolean));
+      charges.forEach(c => { c.appliedToInvoice = _applied.has(('stripe-invpay:' + c.id).slice(0, 64)) || (!!c.payment_intent && _applied.has(('stripe-pi:' + c.payment_intent).slice(0, 64))); });
     } catch (_) { /* applied-hint best-effort */ }
     try {
       const _mt = _stripeBooksTarget(value, req);
@@ -8179,6 +8190,15 @@ app.post('/api/stripe/import-charge', requireAuth, wrap(async (req, res) => {
     if (!resp.ok) throw new Error((c && c.error && c.error.message) || ('Stripe HTTP ' + resp.status));
   } catch (e) { console.error('[stripe import]', e.message); return res.status(502).json({ error: 'Could not read the Stripe charge: ' + e.message }); }
   if (c.status !== 'succeeded' || c.refunded) return res.status(400).json({ error: 'Only a succeeded, non-refunded charge can be added to the books.' });
+  // M18: a charge that already paid an invoice (matched from the feed, or through a Pay-now link) is ALREADY in the
+  // books as that invoice's revenue and cash. Booking it again as a sales receipt doubled both; refuse, always —
+  // `confirm` does not override this (it only overrides the amount-similarity hint below).
+  {
+    const { rows: [_ap] } = await pool.query(
+      `SELECT invoice_id FROM invoice_payments WHERE user_id=$1 AND (idempotency_key = $2 OR ($3::text IS NOT NULL AND reference = $3)) AND amount > 0 LIMIT 1`,
+      [scopeId(req), ('stripe-invpay:' + chargeId).slice(0, 64), c.payment_intent ? ('stripe-pi:' + c.payment_intent).slice(0, 64) : null]);
+    if (_ap) return res.status(409).json({ error: 'This Stripe payment already paid an invoice, so it is already in your books.', code: 'ALREADY_APPLIED_TO_INVOICE', invoice_id: _ap.invoice_id });
+  }
   const amount = stripeMinorToMajor(c.amount, c.currency);
   const customer = String(c.description || (c.billing_details && c.billing_details.name) || (c.billing_details && c.billing_details.email) || c.receipt_email || 'Stripe payment').slice(0, 200);
   const dateYmd = c.created ? await entityYmdOf(_bookEid, new Date(c.created * 1000)) : await entityTodayYmd(_bookEid);
@@ -9049,7 +9069,7 @@ app.get('/api/audit-trail', requireAuth, requirePerm('audit:read'), wrap(async (
 // processor's event/session id via the idempotency_key unique index (Rule 9: dedupe at the write,
 // so a retried/duplicate webhook can't double-book). Never overbooks past the remaining balance
 // (no refund/credit model). Amount is in MINOR units (cents) as processors send it.
-async function recordExternalInvoicePayment({ invoiceId, amountMinor, currency, method, idemKey, date }) {
+async function recordExternalInvoicePayment({ invoiceId, amountMinor, currency, method, idemKey, date, reference = null }) {
   const { rows: [ir] } = await pool.query(`SELECT * FROM invoices WHERE id = $1 LIMIT 1`, [invoiceId]);
   if (!ir) return { recorded: false, reason: 'invoice_not_found' };
   const inv = rowToObj(ir);
@@ -9069,7 +9089,7 @@ async function recordExternalInvoicePayment({ invoiceId, amountMinor, currency, 
         `INSERT INTO invoice_payments (user_id, entity_id, invoice_id, amount, payment_date, method, reference, notes, idempotency_key)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
         [uid, ir.entity_id || null, invoiceId, bookAmt, _payYmd,
-         method || 'Card', idemKey, 'Auto-recorded from ' + (method || 'processor') + ' payment', idemKey]
+         method || 'Card', reference || idemKey, 'Auto-recorded from ' + (method || 'processor') + ' payment', idemKey]
       )).rows;
     });
     if (!rows) return { recorded: false, reason: 'already_paid' };

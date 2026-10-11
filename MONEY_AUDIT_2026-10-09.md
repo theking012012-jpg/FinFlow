@@ -727,3 +727,37 @@ The full sweep is the owner's.
 from a paid run). Under the wall rule they should not be in Personal, but they may record salary that was really
 taken. `prod-readonly-counts.js` [M14] counts them per account. Legacy rows filed under a business (bank lines from
 the all-view, personal accounts, snapshots) are read by the rules above, without rewriting any row.
+
+## 9. Personal bank feed, 2026-10-11 (owner request; held for owner approval)
+
+Owner: "personal needs its own bank and api regardless".
+
+| # | Defect | Fix | Harness | GREEN | RED (before) |
+|---|---|---|---|---|---|
+| M60 | A person with a business had **no personal bank feed**. Every bank route (Plaid, Belvo, statement import, manual line, delete, unlink) took its scope from the business in view. A bank linked "for Personal" was stored under the active business (personal → business), listed on its Banking page, and absent from Personal. Import / Plaid / Belvo dedupe looked across all of the user's scopes, so a statement already imported into a business was skipped in Personal ("already there"). Personal bank-feed rows saved as `credit` / `debit` (an account with no business) were in **no** Personal total, and the accountant portal counted a personal `credit` as **spending**. The "all businesses" view listed, and could unlink, Personal's bank. | Bank routes take an explicit `scope=personal` (query or body), never inferred from the active business. Personal rows are keyed to the person (`user_id` = session user, no business) and written as `income` / `expense` (bank direction kept as `bank_direction`). Linking one's own personal bank does not need the business `bank:manage` permission. Dedupe is per scope. A personal Belvo widget session is its own (`belvo:personal`). The "all businesses" view lists no bank and cannot unlink or disconnect one. New `GET/PUT /api/personal-bank` (the person's bank country — it picks Belvo / Plaid / manual and the day/month order of an imported CSV). One reading of a personal row's type, `FinFlowDates.personalTxType`, used by the Personal page and the accountant portal (its SQL sum mirrors it). Personal page: new **Your bank** card (country, Link bank, Import, Sync, Unlink). The region rule is one function, `ffBankRegion`, shared with the business Banking page. | `verify-m60-personal-bank-feed` (server, Plaid + Belvo mocked at HTTP only) · `verify-m60-personal-bank-ui` (jsdom) | 39 · 11 | 23 of 39 · 6 of 11 (then FATAL: no card) |
+
+Portal reader isolated (Rule 14): the fixed tree with only the old `accountant-routes.js` put back gives
+`[2130, 371.05]`, exactly the stated bug value, against the correct `[2380, 121.05]`.
+
+Existing harnesses changed. Each change follows the fix; none is a loosened test:
+- `verify-connections-isolation` and `verify-connections-entity-scope` reached Personal's Plaid items and Belvo status
+  through the "all businesses" view (`?entity_id=all`). That view is a business surface: under the wall it lists no
+  bank, which is now asserted. Personal's bank is read through its own scope (`?scope=personal`), with the same
+  guarantee as before (Personal keeps its own connection, and a business disconnect leaves it untouched).
+- `verify-banking-region-routing`: the region rule moved from `ffBankLinkFromPage` to the shared `ffBankRegion`. The
+  harness installs and executes all three functions; the source check is labelled STRUCTURAL.
+
+Data: pre-M60 personal bank-feed rows saved as `credit` / `debit` are read correctly and not rewritten (Rule 8).
+`prod-readonly-counts.js` [M60] counts them.
+
+Limits (stated, not assumed):
+- Plaid and Belvo were exercised against HTTP mocks, not their sandboxes; no live link was made.
+- A team member's personal feed is keyed to that member's own user. That follows from the code; it was not executed.
+- The Personal card's file picker (Import) is not driven in jsdom. The import route it calls is executed with
+  `scope=personal` in the server harness, and the client's `scope` is executed for Link and Plaid.
+
+### Found during M60, not fixed (logged, outside this task)
+
+| # | Defect | Where | Severity |
+|---|---|---|---|
+| M61 | Bank-reconcile **book-expense / match-bill / ignore** look up the bank line by user only, never by the business in view. From business A, B's bank line can be booked as an expense, or matched to a bill, into **B's** books (the expense takes the line's own business). **ignore** has no scope check at all: from any business it stamps `reconcile_state: 'ignored'` on a **personal** bank line (business → personal write) or on another business's line. book-expense / match-bill already refuse a personal line (`PERSONAL_TXN`). This is the M57 class (match / match-batch were fixed there); these three routes were not in M57's scope. | `server.js` `_bankDebitForAction`, `POST /api/bank-reconciliation/ignore` | Wall breach (ignore → personal); cross-business write. CODE-READ, not executed. |

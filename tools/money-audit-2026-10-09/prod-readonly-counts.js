@@ -120,6 +120,11 @@ const CHECKS = [
             FROM personal_accounts pa
            WHERE ${u('pa')} AND COALESCE(pa.data->>'currency','') = ''
            ORDER BY 1,2 LIMIT 500` },
+  { id: 'M60', title: "Personal bank-feed rows saved as credit / debit (before M60). Now read as income / expense on the Personal page and in the accountant portal; rows not changed (Rule 8)",
+    sql: `SELECT pt.user_id, pt.data->>'tx_type' AS tx_type, count(*)::int AS rows, sum(${N("pt.data->>'amount'")}) AS total
+            FROM personal_transactions pt
+           WHERE ${u('pt')} AND pt.entity_id IS NULL AND lower(COALESCE(pt.data->>'tx_type','')) IN ('credit','debit')
+           GROUP BY 1,2 ORDER BY 1,2` },
   { id: 'M9', title: 'Accounts with invoice payments in more than one business (the Payments Received page mixes them)',
     sql: `SELECT ip.user_id, count(DISTINCT ip.entity_id)::int AS businesses, count(*)::int AS payments
             FROM invoice_payments ip WHERE ${u('ip')}

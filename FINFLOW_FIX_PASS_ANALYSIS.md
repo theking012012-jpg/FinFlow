@@ -212,3 +212,9 @@ active business) is logged for round 3.
 
 The rule is now in `CLAUDE.md`. M53, M55, M56, M57, M58 and M59 are fixed, each RED → GREEN; see
 `MONEY_AUDIT_2026-10-09.md` §8. One owner decision is open: the legacy roster-made personal salary rows.
+
+## 9. Personal bank feed (2026-10-11)
+
+M60 is fixed, RED → GREEN. Personal now links, syncs, imports and enters its own bank (Plaid, Belvo, statement,
+manual), separate from every business. M61 is logged (bank-reconcile actions not limited to the business in view);
+it is not fixed. See `MONEY_AUDIT_2026-10-09.md` §9.

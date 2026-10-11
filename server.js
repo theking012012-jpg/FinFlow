@@ -9676,10 +9676,14 @@ app.post('/api/payroll-runs', requireAuth, requirePerm('payroll:write'), lockGua
   const _prc = await pool.connect();
   try {
     await _prc.query('BEGIN');
+    // M42 (money audit 2026-10-09): the run date is the one the owner picked in the Run Payroll modal (a calendar
+    // date, Rule 10), else the ENTITY's today. It was NOW() — the server's UTC day — and the submitted date was
+    // ignored, so a run dated the 31st could be stored as the 1st of the next month (paid-run cash fallback).
+    const _rd = /^\d{4}-\d{2}-\d{2}$/.test(String((req.body && req.body.run_date) || '')) ? String(req.body.run_date) : await entityTodayYmd(eid);
     const { rows } = await _prc.query(
       `INSERT INTO payroll_runs (user_id, entity_id, period, run_date, status, total_gross, total_deductions, total_net, notes, idempotency_key)
-       VALUES ($1,$2,$3,NOW(),$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [uid, eid, period, 'draft', totalGross, totalDeductions, totalNet, notes, idem]
+       VALUES ($1,$2,$3,$10::date,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [uid, eid, period, 'draft', totalGross, totalDeductions, totalNet, notes, idem, _rd]
     );
     run = rows[0];
     for (const l of lines) {

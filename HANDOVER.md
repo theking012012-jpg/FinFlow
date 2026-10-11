@@ -40,7 +40,7 @@ Status (C = Cowork item; each fix is one commit with its harness, RED on the old
 | C1 | 4.1a, 4.5d | After a business switch, pages kept the previous business's data (payroll owner card, inventory) | **Fixed** `b661b57` |
 | C2 | 5.4c | Choosing a TTD business flipped Personal to TTD | **Fixed** `ed2e528` |
 | C3 | 4.4a | Island Traders' amounts show "$" instead of "TT$" after a reload | **Fixed** `739f364` |
-| C4 | 3.4 | Income-tax rate (20 %) not saved; estimate and accountant Tax Summary blank | open |
+| C4 | 3.4 | Income-tax rate (20 %) not saved; estimate and accountant Tax Summary blank | **Partly fixed** `7fbd4e8`: the rate is now saved with taxable ≤ 0 (the proven cause). The report reopening at 0 % with taxable > 0 did NOT reproduce — re-test in the next Cowork run |
 | C5 | 4.6 | FX page "No rates yet"; consolidated P&L shows the TTD business as $0 and total "—" | open |
 | C6 | 6.4, 6.5a | New accountant link sees every business by default; accountant's personal view has no income/spending totals, PAYPAL REFUND missing | open |
 | C7 | (confusing list) | Inventory value card $75 vs Balance Sheet $90 (card = units × item cost field; BS = FIFO layers) | open |

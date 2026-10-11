@@ -2663,9 +2663,9 @@ app.delete('/api/personal-transactions/:id', requireAuth, wrap(async (req, res) 
 
 // ── PERSONAL ACCOUNTS (assets & liabilities → real net worth) ─────────────────
 app.get('/api/personal-accounts', requireAuth, wrap(async (req, res) => {
-  res.json(await db.allByUser('personal_accounts', req.session.userId,
-    r => r.entity_id == null || (req.entityId != null && r.entity_id === req.entityId),
-    (a, b) => b.id - a.id));
+  // M59 (personal/business wall): every personal account is the person's, whichever business is in view — rows the old
+  // POST tagged with a business (kept, Rule 8) included. The accountant portal and net-worth snapshot read the same.
+  res.json(await db.allByUser('personal_accounts', req.session.userId, null, (a, b) => b.id - a.id));
 }));
 app.post('/api/personal-accounts', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
@@ -2744,7 +2744,7 @@ app.post('/api/snapshots/capture', requireAuth, wrap(async (req, res) => {
     // N16: the SAME rows the page adds up — GET /api/personal-accounts (personal + this business's rows)
     // and the personal portfolio GET /api/holdings?scope=personal. The snapshot used exact-entity accounts
     // and personal+business holdings, so the stored series never matched the net worth on screen.
-    const accts  = await db.allByUser('personal_accounts', uid, r => r.entity_id == null || (eid != null && r.entity_id === eid));
+    const accts  = await db.allByUser('personal_accounts', uid, null);   // M59: all of the person's accounts, any business in view
     // M13: each account's USD equivalent (value_usd); rows from before currencies existed are USD by definition.
     const _usdOf = a => (a.value_usd != null && a.value_usd !== '' ? parseFloat(a.value_usd) : parseFloat(a.value)) || 0;
     const assets = accts.filter(a => a.kind === 'asset').reduce((s, a) => s + _usdOf(a), 0);

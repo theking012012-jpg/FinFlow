@@ -5542,9 +5542,11 @@ document.addEventListener('DOMContentLoaded', function(){
 
 <!-- ── ONBOARDING FLOW ─────────────────────────────────────────────────── -->
 <style>
-.ob-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:2000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);animation:obFadeIn .25s ease}
+/* C20: the overlay scrolls, and the window centres with margin:auto — a window taller than the screen starts at the top
+   and scrolls instead of losing its top and its Continue button off-screen (align-items:center clipped both ends). */
+.ob-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:2000;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:16px;box-sizing:border-box;backdrop-filter:blur(6px);animation:obFadeIn .25s ease}
 @keyframes obFadeIn{from{opacity:0}to{opacity:1}}
-.ob-modal{background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:480px;padding:0;box-shadow:var(--shadow-lg);overflow:hidden;animation:obSlideUp .3s cubic-bezier(.34,1.3,.64,1)}
+.ob-modal{margin:auto;flex-shrink:0;background:var(--bg1);border:1px solid var(--bd2);border-radius:var(--radius-xl);width:100%;max-width:480px;padding:0;box-shadow:var(--shadow-lg);overflow:hidden;animation:obSlideUp .3s cubic-bezier(.34,1.3,.64,1)}
 @keyframes obSlideUp{from{opacity:0;transform:translateY(24px) scale(.97)}to{opacity:1;transform:none}}
 .ob-header{padding:1.5rem 1.75rem 1.25rem;border-bottom:1px solid var(--bd)}
 .ob-logo{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:flex;align-items:center;justify-content:center;margin-bottom:1rem;box-shadow:0 4px 16px var(--acc-glow)}

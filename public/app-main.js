@@ -986,7 +986,9 @@ window._ffLoadPdfLib = function(cb){
     });
   });
 };
-window._ffExportPdf = function(rows, filename, title){
+// C15: `more` (optional) = further [{ title, rows }] tables printed below the first — a report with a statement and a
+// month-by-month table exports both.
+window._ffExportPdf = function(rows, filename, title, more){
   window._ffLoadPdfLib(function(){
     try{
       var jsPDF = window.jspdf.jsPDF;
@@ -997,7 +999,14 @@ window._ffExportPdf = function(rows, filename, title){
       doc.setFontSize(16); doc.text(String(ttl), 40, 40);
       doc.setFontSize(9); doc.setTextColor(120);
       doc.text('FinFlow · ' + new Date().toLocaleDateString(), 40, 56);
-      doc.autoTable({ head: head, body: body, startY: 72, styles: { fontSize: 9, cellPadding: 5 }, headStyles: { fillColor: [201,168,76], textColor: 20 }, alternateRowStyles: { fillColor: [245,242,235] }, margin: { left: 40, right: 40 } });
+      var _tblOpts = { styles: { fontSize: 9, cellPadding: 5 }, headStyles: { fillColor: [201,168,76], textColor: 20 }, alternateRowStyles: { fillColor: [245,242,235] }, margin: { left: 40, right: 40 } };
+      doc.autoTable(Object.assign({ head: head, body: body, startY: 72 }, _tblOpts));
+      (more || []).forEach(function(sec){
+        if (!sec || !sec.rows || !sec.rows.length) return;
+        var y = ((doc.lastAutoTable && doc.lastAutoTable.finalY) || 72) + 26;
+        doc.setFontSize(11); doc.setTextColor(40); doc.text(String(sec.title || ''), 40, y);
+        doc.autoTable(Object.assign({ head: [sec.rows[0]], body: sec.rows.slice(1), startY: y + 8 }, _tblOpts));
+      });
       var outName = String(filename || 'export.pdf').replace(/\.(csv|xlsx)$/, '.pdf');
       if (!/\.pdf$/.test(outName)) outName += '.pdf';
       doc.save(outName);
@@ -1006,13 +1015,13 @@ window._ffExportPdf = function(rows, filename, title){
   });
 };
 window.exportAllCSV = function(format){
+  // C15: with a report open, Export exports THAT report (its own figures), not the page behind it.
+  const _rm = document.getElementById('report-gen-modal');
+  if (_rm && !_rm.classList.contains('hidden') && typeof window._rptExport === 'function') return window._rptExport(String(format) === 'pdf' ? 'pdf' : 'csv');
   const activePage = Array.from(document.querySelectorAll('.page'))
     .find(el => el.classList.contains('active') || (el.style.display && el.style.display !== 'none'))?.id || '';
 
   let rows = [], filename = 'finflow-export.csv';
-
-  const q = v => '"' + String(v == null ? '' : v).replace(/"/g,'""') + '"';
-  const toCSV = r => r.map(q).join(',');
 
   // L16: exports read the SERVER rows the pages render (ISO calendar dates, with the year — the old
   // display labels "Aug 5" lost it) and the globals the page loaders actually assign. Several read names
@@ -1078,7 +1087,7 @@ window.exportAllCSV = function(format){
         Array.from(tr.querySelectorAll('th,td')).map(td => td.textContent.trim()));
       filename = (activePage.replace('page-','') || 'export') + '.csv';
     } else {
-      notify('Nothing to export on this page.', true);
+      notify(activePage.includes('report') ? 'Open a report (Generate ↗), then export it with its CSV or PDF button.' : 'Nothing to export on this page.', true);   // C15
       return;
     }
   }
@@ -1086,7 +1095,12 @@ window.exportAllCSV = function(format){
   if (rows.length <= 1) { notify('No data to export.', true); return; }
   if (String(format) === 'xlsx') { return window._ffExportXlsx(rows, filename); }
   if (String(format) === 'pdf')  { var _t = String(filename||'Report').replace(/\.csv$/,''); return window._ffExportPdf(rows, _t + '.pdf', _t.charAt(0).toUpperCase() + _t.slice(1)); }
-  const csv = rows.map(toCSV).join('\r\n');
+  window._ffDownloadCsv(rows, filename);
+};
+// C15: the one CSV writer (page exports and report exports). UTF-8 with a BOM so Excel reads accents/currency signs.
+window._ffDownloadCsv = function(rows, filename){
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g,'""') + '"';
+  const csv = rows.map(r => r.map(q).join(',')).join('\r\n');
   const blob = new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = Object.assign(document.createElement('a'), {href:url, download:filename});
@@ -5620,6 +5634,8 @@ function exportPDF(){
   // Downloadable PDF: data pages render a REAL .pdf via jsPDF (exportAllCSV('pdf') reuses the same
   // page-aware row builder as CSV/XLSX, then doc.save() downloads it). Visual pages with no table
   // (dashboard, reports, charts) fall back to the browser's print-to-PDF.
+  var _rm = document.getElementById('report-gen-modal');   // C15: an open report exports as a real PDF of its figures
+  if (_rm && !_rm.classList.contains('hidden') && typeof window._rptExport === 'function') { window._rptExport('pdf'); return; }
   var ap = (document.querySelector('.page.active') || {}).id || '';
   var visual = /dashboard|report|mrr|budget|cashflow|investment|scenario|segment|connection|setting|help|audit/.test(ap);
   if (!visual && typeof window.exportAllCSV === 'function') {

@@ -601,6 +601,29 @@
   // ══════════════════════════════════════════════════════
   // 8. REPORTS GENERATE — real summary modal
   // ══════════════════════════════════════════════════════
+  // C15: export the report that is open. A report that set window._rptExportData exports its own figures; any other
+  // report exports the label / value lines it shows. CSV via the shared writer, PDF via jsPDF (a real file, not the
+  // print dialog).
+  window._rptExport = function (fmt) {
+    const title = (document.getElementById('rpt-title') || {}).textContent || 'Report';
+    let data = window._rptExportData;
+    if (!data) {
+      const body = document.getElementById('rpt-body');
+      const rows = [['Line', 'Value']];
+      if (body) body.querySelectorAll('div').forEach(el => {
+        const sp = Array.from(el.children).filter(c => c.tagName === 'SPAN');
+        if (el.children.length === 2 && sp.length === 2) rows.push([sp[0].textContent.trim(), sp[1].textContent.trim()]);
+      });
+      data = { title, file: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'report', sections: [{ title, rows }] };
+    }
+    const secs = data.sections.filter(sc => sc.rows && sc.rows.length > 1);
+    if (!secs.length) { if (typeof notify === 'function') notify('Nothing to export in this report yet.', true); return; }
+    if (fmt === 'pdf') return window._ffExportPdf(secs[0].rows, data.file + '.pdf', data.title, secs.slice(1));
+    const rows = [];
+    secs.forEach((sc, i) => { if (i) rows.push([]), rows.push([sc.title]); rows.push(...sc.rows); });
+    return window._ffDownloadCsv(rows, data.file + '.csv');
+  };
+
   window.generateReport = async function (name) {
     let modal = document.getElementById('report-gen-modal');
     if (!modal) {
@@ -624,6 +647,8 @@
         <div id="rpt-body" style="margin-top:12px;font-size:13px;color:var(--t2);overflow-y:auto;flex:1 1 auto;min-height:0">Loading…</div>
         <div class="modal-footer" style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px;flex:0 0 auto">
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('report-gen-modal').classList.add('hidden')">Close</button>
+          <button class="btn btn-ghost btn-sm" id="rpt-csv-btn" onclick="window._rptExport('csv')">CSV</button>
+          <button class="btn btn-ghost btn-sm" id="rpt-pdf-btn" onclick="window._rptExport('pdf')">PDF</button>
           <button class="btn btn-primary btn-sm" onclick="window.print()">Print ↗</button>
         </div>
       </div>`;
@@ -648,6 +673,7 @@
         + '}';
       document.head.appendChild(_pcss);
     }
+    window._rptExportData = null;   // C15: the renderer below sets it (a report's own figures, as plain numbers)
     document.getElementById('rpt-title').textContent = name;
     document.getElementById('rpt-sub').textContent = 'Generated ' + new Date().toLocaleDateString();
     document.getElementById('rpt-body').innerHTML = '<div style="color:var(--t3)">Loading data…</div>';
@@ -1061,6 +1087,26 @@
             + `<tr style="border-top:2px solid var(--bd);font-weight:700"><td style="padding:4px 6px">Total</td>${cell(m(rev))}${cell(m(cogs))}${cell(m(exp))}${cell(m(net), net >= 0 ? 'var(--green)' : 'var(--red)')}</tr>`
             + `</tbody></table>`
             + (off.length ? `<div style="font-size:11px;color:var(--red);margin:-6px 0 10px">The months do not add up to the totals (${off.map(([k]) => k).join(', ')}) — please report this.</div>` : '');
+        }
+
+        // C15: what CSV / PDF export — the statement and the monthly table, as plain numbers (2 dp) in the
+        // business's currency. Same values the screen shows (rev, cogs, catList, exp, net, prows).
+        {
+          const n2 = v => (Math.round((parseFloat(v) || 0) * 100) / 100).toFixed(2);
+          const _cur = ((window.ENTITIES || []).find(x => x && x.active) || {}).currency || '';
+          const _per = prows.length ? (prows[0].month + (prows.length > 1 ? ' to ' + prows[prows.length - 1].month : '')) : ((d.period && d.period.start) || '');
+          window._rptExportData = {
+            title: 'Profit & Loss', file: 'profit-and-loss',
+            sections: [
+              { title: 'Statement', rows: [['Line', 'Amount' + (_cur ? ' (' + _cur + ')' : '')], ['Period', _per],
+                ['Revenue', n2(rev)], ['Cost of goods sold', n2(cogs)], ['Gross profit', n2(gp)]]
+                .concat(catList.map(([c, a]) => ['Operating expense: ' + c, n2(a)]))
+                .concat([['Total operating expenses', n2(exp)], ['Net profit', n2(net)]]) },
+              { title: 'By month', rows: [['Month', 'Revenue', 'Cost of goods', 'Expenses', 'Net']]
+                .concat(prows.map(r => [r.month || '', n2(r.revenue), n2(r.cogs), n2(r.expenses), n2(r.netProfit)]))
+                .concat(prows.length ? [['Total', n2(rev), n2(cogs), n2(exp), n2(net)]] : []) },
+            ],
+          };
         }
 
         _rptBody(

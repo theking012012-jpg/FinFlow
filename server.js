@@ -1077,7 +1077,7 @@ app.post('/api/stripe/checkout', requireAuth, wrap(async (req, res) => {
     return res.status(400).json({ error: 'Invalid plan. Must be "pro" or "business".' });
   }
   const priceId = process.env['STRIPE_PRICE_' + plan.toUpperCase()];   // STRIPE_PRICE_PRO | _BUSINESS | _SCALE
-  if (!priceId) return res.status(500).json({ error: `STRIPE_PRICE_${plan.toUpperCase()} env var not set.` });
+  if (!priceId) return res.status(500).json({ error: notSetUp('Checkout for this plan', 'STRIPE_PRICE_' + plan.toUpperCase()) });   // C24
   const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
@@ -8185,7 +8185,7 @@ app.get('/api/stripe/status', requireAuth, wrap(async (req, res) => {
 }));
 
 app.post('/api/stripe/connect-url', requireAuth, requirePerm('bank:manage'), wrap(async (req, res) => {
-  if (!stripeConnectConfigured()) return res.status(502).json({ error: 'Stripe payments linking is not set up yet. Add STRIPE_SECRET_KEY and STRIPE_CONNECT_CLIENT_ID to enable it.', code: 'STRIPE_NOT_CONFIGURED' });
+  if (!stripeConnectConfigured()) return res.status(502).json({ error: notSetUp('Stripe payments linking', 'STRIPE_SECRET_KEY', 'STRIPE_CONNECT_CLIENT_ID'),   /* C24 */ code: 'STRIPE_NOT_CONFIGURED' });
   const params = new URLSearchParams({
     response_type: 'code', client_id: process.env.STRIPE_CONNECT_CLIENT_ID, scope: 'read_write',
     redirect_uri: _stripeRedirectUri(), state: await _oauthStateIssue(req, 'stripe'),

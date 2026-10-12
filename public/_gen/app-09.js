@@ -52,7 +52,7 @@ async function loadAuditTrail(){
     if(!res.ok)throw new Error(res.status);
     const data=await res.json();
     let events=Array.isArray(data)?data:(data.rows||[]);   // /api/audit-log returns {total, rows}
-    if(act&&act!=='all')events=events.filter(r=>r.action===act);  // action filtered client-side
+    if(act&&act!=='all'){ const _acts=act.split(','); events=events.filter(r=>_acts.includes(r.action)); }  // action filtered client-side; C29: a value may be a group
     if(countEl)countEl.textContent=events.length;
     if(events.length&&lastTimeEl){
       const d=new Date(events[0].created_at);

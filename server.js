@@ -3585,7 +3585,9 @@ app.get('/api/audit-log', requireAuth, requirePerm('audit:read'), wrap(async (re
     const _al = ACCOUNT_LEVEL_TABLES.map(t => `'${t}'`).join(',');
     q += ` AND (entity_id IS NULL OR entity_id = $${params.length} OR table_name IN (${_al}))`;
   }
-  if (type && type !== 'all') { params.push(type); q += ` AND table_name = $${params.length}`; }
+  // C29: a filter is a GROUP of tables (e.g. Payments = invoice_payments,payments_received), comma-separated. It
+  // used to be one exact name, and the page asked for names nothing writes ("payroll" — runs log as payroll_runs).
+  if (type && type !== 'all') { params.push(String(type).split(',').map(t => t.trim()).filter(Boolean)); q += ` AND table_name = ANY($${params.length})`; }
   const lim = Math.min(Math.max(parseInt(limit) || 500, 1), 10000);
   q += ` ORDER BY changed_at DESC LIMIT ${lim}`;
   const { rows } = await pool.query(q, params);

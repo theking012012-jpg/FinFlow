@@ -53,7 +53,8 @@ run('C29 — audit-log filters find what they name', async ({ w, d, settle, eq, 
   const actionOpts = Array.from(d.getElementById('audit-filter-action').options).map(o => o.value);
 
   const pay = await pick(tableOpts.find(v => v.split(',').includes('payroll_runs')) || 'payroll', 'all');
-  eq('Payroll filter shows the payroll run', [...new Set(pay.map(r => r[1]))], ['payroll_runs'], []);
+  A('Payroll filter shows the payroll run (bug: nothing)', pay.some(r => r[1] === 'payroll_runs'), JSON.stringify([...new Set(pay.map(r => r[1]))]));
+  eq('…and only payroll events (runs + roster, C29b)', [...new Set(pay.map(r => r[1]))].filter(t => t !== 'payroll_runs' && t !== 'payroll'), []);
   A('…its CREATE and APPROVE', ['CREATE', 'APPROVE'].every(a => pay.some(r => r[3] === a)), JSON.stringify(pay.map(r => r[3])));
 
   const recv = await pick(tableOpts.find(v => v.split(',').includes('invoice_payments')) || 'invoice_payments', 'all');

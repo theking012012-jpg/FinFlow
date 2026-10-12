@@ -2575,6 +2575,7 @@ app.post('/api/payroll', requireAuth, requirePerm('payroll:write'), wrap(async (
   const _dup = await findRecentDuplicate('payroll', scopeId(req), _peid, { textMatch: { fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100) }, numMatch: { gross: parseFloat(b.gross)||0 } });
   if (_dup) return res.status(200).json(_dup);
   const { row } = await db.insert('payroll', { user_id: scopeId(req), entity_id: _peid, fname: b.fname.trim().slice(0,100), lname: (b.lname||'').trim().slice(0,100), role: (b.role||'').slice(0,100), emp_type: b.emp_type||'Full-time', gross: parseFloat(b.gross)||0, deductions: Array.isArray(b.deductions) ? computeDeductions(parseFloat(b.gross)||0, b.deductions).rows.map(({label,value,type})=>({label,value,type})) : [], av_class: b.av_class||'av-blue', is_owner: b.is_owner ? true : false, salary_profile_id: b.salary_profile_id != null ? Number(b.salary_profile_id) : null });
+  await recordAudit(pool, { userId: scopeId(req), entityId: _peid, table: 'payroll', recordId: row.id, action: 'CREATE', newData: row, req });  // C29b: roster changes are audited
   res.status(201).json(row);
 }));
 app.put('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
@@ -2591,11 +2592,14 @@ app.put('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(asyn
   if (b.salary_profile_id !== undefined) patch.salary_profile_id = b.salary_profile_id != null ? Number(b.salary_profile_id) : null;
   await db.updateById('payroll', row.id, patch);
   const { rows: [_payr] } = await pool.query(`SELECT * FROM payroll WHERE id = $1 LIMIT 1`, [row.id]);
+  await recordAudit(pool, { userId: scopeId(req), entityId: row.entity_id || null, table: 'payroll', recordId: row.id, action: 'UPDATE', oldData: row, newData: _payr ? rowToObj(_payr) : null, req });  // C29b
   res.json(_payr ? rowToObj(_payr) : {});
 }));
 app.delete('/api/payroll/:id', requireAuth, requirePerm('payroll:write'), wrap(async (req, res) => {
-  if (!(await ownedBy('payroll', req.params.id, scopeId(req)))) return res.status(404).json({ error: 'Not found.' });
+  const _pold = await ownedBy('payroll', req.params.id, scopeId(req));
+  if (!_pold) return res.status(404).json({ error: 'Not found.' });
   await db.deleteById('payroll', parseInt(req.params.id));
+  await recordAudit(pool, { userId: scopeId(req), entityId: _pold.entity_id || null, table: 'payroll', recordId: _pold.id, action: 'DELETE', oldData: _pold, req });  // C29b
   res.json({ ok: true });
 }));
 

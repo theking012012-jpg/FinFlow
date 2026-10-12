@@ -4860,8 +4860,9 @@ function clearAIChat(){
           ${tile('Expenses', m(exp), 'operating, incl. payroll', 'var(--red)')}
         </div>`;
 
-        // Monthly revenue-vs-expenses chart (last 6 months of dated rows).
-        const rws = prows.slice(-6);
+        // Monthly revenue-vs-expenses chart. C14: every month of the period (it kept only the last 6, so a year that
+        // began in March showed May onward); capped at the latest 12 only for a period longer than a year.
+        const rws = prows.slice(-12);
         let chart = '';
         if (rws.length) {
           const maxV = Math.max(1, ...rws.map(r => Math.max(parseFloat(r.revenue) || 0, parseFloat(r.expenses) || 0)));
@@ -4900,9 +4901,27 @@ function clearAIChat(){
         const catBar = ([label, amt]) => `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--t2)">${e(label)}</span><span style="font-family:var(--font-mono);color:var(--red)">${m(amt)}</span></div><div style="height:5px;background:var(--bd,#221e18);border-radius:3px;margin-top:5px;overflow:hidden"><i style="display:block;height:100%;background:${gold};opacity:.75;width:${exp > 0 ? Math.max(2, Math.round((amt / exp) * 100)) : 0}%"></i></div></div>`;
         const pill = t => `<span style="font-size:10px;font-weight:600;color:${gold};background:rgba(200,164,74,.14);border-radius:5px;padding:2px 7px;margin-left:6px">${e(t)}</span>`;
 
+        // C14: the month-by-month table (every month of the period). Its total row is the statement's own totals; if
+        // the months ever fail to add up to them the gap is shown, never hidden.
+        let monthly = '';
+        if (prows.length) {
+          const n = v => parseFloat(v) || 0;
+          const cell = (v, c) => `<td style="padding:4px 6px;text-align:right;font-family:var(--font-mono);${c ? 'color:' + c : ''}">${v}</td>`;
+          const sum = k => Math.round(prows.reduce((t, r) => t + n(r[k]), 0) * 100) / 100;
+          const off = [['revenue', rev], ['cogs', cogs], ['expenses', exp], ['netProfit', net]].filter(([k, t]) => Math.abs(sum(k) - t) >= 0.01);
+          monthly = hdr('By month')
+            + `<table id="pl-monthly" style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px"><thead><tr style="color:var(--t3);font-size:10px;text-transform:uppercase;letter-spacing:.06em">`
+            + `<th style="text-align:left;padding:4px 6px">Month</th><th style="text-align:right;padding:4px 6px">Revenue</th><th style="text-align:right;padding:4px 6px">Cost of goods</th><th style="text-align:right;padding:4px 6px">Expenses</th><th style="text-align:right;padding:4px 6px">Net</th></tr></thead><tbody>`
+            + prows.map(r => `<tr style="border-top:1px solid var(--bd)"><td style="padding:4px 6px;color:var(--t2)">${e(r.month || '')}</td>${cell(m(n(r.revenue)))}${cell(m(n(r.cogs)))}${cell(m(n(r.expenses)))}${cell(m(n(r.netProfit)), n(r.netProfit) >= 0 ? 'var(--green)' : 'var(--red)')}</tr>`).join('')
+            + `<tr style="border-top:2px solid var(--bd);font-weight:700"><td style="padding:4px 6px">Total</td>${cell(m(rev))}${cell(m(cogs))}${cell(m(exp))}${cell(m(net), net >= 0 ? 'var(--green)' : 'var(--red)')}</tr>`
+            + `</tbody></table>`
+            + (off.length ? `<div style="font-size:11px;color:var(--red);margin:-6px 0 10px">The months do not add up to the totals (${off.map(([k]) => k).join(', ')}) — please report this.</div>` : '');
+        }
+
         _rptBody(
           kpis
           + chart
+          + monthly
           + hdr('Revenue')
           + row('Total Revenue', m(rev), { bold: true, color: 'var(--green)' })
           + hdr('Cost of Sales')

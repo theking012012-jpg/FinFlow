@@ -240,7 +240,7 @@ html{overflow-x:hidden;background:var(--bg0)}/* PWA: dark root so the notch/stat
   .mc-val{font-size:26px}
   .two-col{grid-template-columns:1fr 1fr;gap:10px}
   .inv-cols{grid-template-columns:1fr 70px 65px 78px 72px}
-  .inv-item-row{grid-template-columns:40px 1fr 65px 80px 60px 44px}
+  /* .inv-item-row columns for this width: see the C21 block after the base .inv-item-row rule */
   .cust-row{grid-template-columns:28px 1fr 90px 75px 60px 70px}
   .inv-holding-row{grid-template-columns:32px 1fr 70px 70px 65px 65px 65px}
   .ai-panel{width:340px}
@@ -289,10 +289,11 @@ html{overflow-x:hidden;background:var(--bg0)}/* PWA: dark root so the notch/stat
   /* overflow wrapper for data tables */
   .table-scroll-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -1rem;padding:0 1rem}
   .inv-cols{grid-template-columns:1fr 70px 60px 74px 72px;font-size:11.5px}
-  .inv-item-row{grid-template-columns:36px 1fr 60px 60px 0 0;font-size:11.5px}
-  /* hide less-critical columns on mobile */
-  .inv-item-row>*:nth-child(5),
-  .inv-item-row>*:nth-child(6){display:none}
+  .inv-item-row{font-size:11.5px}   /* columns: see the C21 block after the base .inv-item-row rule */
+  /* hide less-critical columns on mobile (level bar, value). C21: the ACTIONS (+ In, − Out, Restock, Edit, ✕) are
+     never hidden — they were the 6th child and display:none'd here, so stock could not be moved on a phone. */
+  .inv-item-row>*:nth-child(4),
+  .inv-item-row>*:nth-child(5){display:none}
   .cust-row{grid-template-columns:28px 1fr 70px 0 0 70px}
   .cust-row>*:nth-child(4),
   .cust-row>*:nth-child(5){display:none}
@@ -579,7 +580,19 @@ body.sidebar-open .mob-bottom-nav,body.sidebar-open .mobile-fab{display:none!imp
 .emp-name{font-size:13px;color:var(--t1);font-weight:500}
 .emp-role{font-size:11px;color:var(--t3)}
 /* INVENTORY */
-.inv-item-row{display:grid;grid-template-columns:55px 1fr 75px 90px 65px 65px 100px;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px;color:var(--t1)}
+/* C21: six columns — SKU · product · in stock · level · value · actions (auto: the buttons' own width). It had seven
+   (a "COGS" header no row fills), so the actions sat squeezed in a 65px slot beside an empty column. */
+.inv-item-row{display:grid;grid-template-columns:55px 1fr 75px 90px 80px auto;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd);font-size:12.5px;color:var(--t1)}
+/* C21: narrower widths. These must come AFTER the base rule above (same specificity — the earlier media-query copies
+   lost to it and never applied). The actions get their own full-width line, so they are never squeezed or hidden. */
+@media(min-width:769px) and (max-width:1024px){
+  .inv-item-row{grid-template-columns:40px 1fr 65px 80px 70px}
+  .inv-item-row>.table-actions{grid-column:1/-1}
+}
+@media(max-width:768px){
+  .inv-item-row{grid-template-columns:36px minmax(0,1fr) 60px}
+  .inv-item-row>.table-actions{grid-column:1/-1;justify-content:flex-start}
+}
 .inv-item-row:last-child{border-bottom:none}
 .stock-bar{height:5px;background:var(--bg3);border-radius:3px;overflow:hidden}
 .stock-fill{height:100%;border-radius:3px;transition:width .5s ease}
@@ -2601,7 +2614,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         </div>
         <div class="card">
           <div class="card-header"><h2 class="card-title">Stock levels</h2><button class="btn btn-ghost btn-sm" onclick="openProductModal()">+ Add product</button></div>
-          <div class="inv-item-row" style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>SKU</span><span>Product</span><span>In stock</span><span>Level</span><span>Value</span><span style="text-align:right">COGS</span><span></span></div>
+          <div class="inv-item-row" style="font-size:10px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--bd)"><span>SKU</span><span>Product</span><span>In stock</span><span>Level</span><span>Value</span><span></span></div>
           <div id="inventory-list"><!-- rendered --></div>
         </div>
         <div class="card">

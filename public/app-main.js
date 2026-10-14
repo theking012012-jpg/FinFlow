@@ -2507,37 +2507,10 @@ function animateBarsOnPage(page){
 }
 
 // ── ANIMATED METRIC COUNTERS ──────────────────────────────────────────────
-function animateCounter(el,target,prefix='',suffix='',duration=600){
-  if(!el)return;
-  const start=performance.now();
-  const startVal=0;
-  const isFloat=String(target).includes('.');
-  function tick(now){
-    const elapsed=now-start;
-    const progress=Math.min(elapsed/duration,1);
-    const ease=1-Math.pow(1-progress,3);// ease-out cubic
-    const current=startVal+(target-startVal)*ease;
-    el.textContent=prefix+(isFloat?current.toFixed(1):Math.round(current).toLocaleString())+suffix;
-    if(progress<1)requestAnimationFrame(tick);
-    else el.textContent=prefix+(isFloat?target.toFixed(1):Math.round(target).toLocaleString())+suffix;
-  }
-  requestAnimationFrame(tick);
-}
-
-function animateCounters(page){
-  page.querySelectorAll('.mc-val').forEach(el=>{
-    const text=el.textContent.trim();
-    // Match $1,234 or $1.2M or 52% or 9.5h etc
-    const mDollar=text.match(/^\$?([\d,]+)$/);
-    const mPct=text.match(/^(\d+)%$/);
-    const mHours=text.match(/^([\d.]+)h$/);
-    const mGB=text.match(/^([\d.]+)\s*GB$/);
-    if(mDollar){const v=parseInt(mDollar[1].replace(/,/g,''));animateCounter(el,v,text.startsWith('$')?'$':'','',700);}
-    else if(mPct){const v=parseInt(mPct[1]);animateCounter(el,v,'','%',600);}
-    else if(mHours){const v=parseFloat(mHours[1]);animateCounter(el,v,'','h',500);}
-    else if(mGB){const v=parseFloat(mGB[1]);animateCounter(el,v,'','  GB',500);}
-  });
-}
+// LA1 (live audit 2026-10-13 B1): animateCounter / animateCounters live in finflow-counter.js (loaded
+// before this file). The copy that was here replayed its start-of-animation snapshot over a value
+// painted later — a card showing "$0" when the animation began ended at "$0" after the real figure
+// landed. Do not re-declare them here: a top-level function declaration would shadow the fixed one.
 
 // ════════════════════════════════════════════
 // PERIOD SWITCHER
@@ -6808,7 +6781,12 @@ setTimeout(function(){
   function _hdrain() {
     if (_hi >= _fns.length) return;
     var fn = _fns[_hi++];
-    try { if(typeof fn==='function') fn(); } catch(e){ console.error('[boot] a deferred render hook threw (skipped, boot continues):', e && e.message); }  // C6: surface the failure, don't hide it
+    try { if(typeof fn==='function') fn(); } catch(e){
+      // C6: surface the failure, don't hide it. LA2 (live audit 2026-10-13): name the hook and where it threw —
+      // the live account logged "Cannot set properties of null" with no way to tell which render it was.
+      const _hn = (fn && fn.name) || String(fn).replace(/\s+/g,' ').slice(0,90);
+      console.error('[boot] a deferred render hook threw (skipped, boot continues):', e && e.message, '| hook #'+(_hi-1)+': '+_hn, (e && e.stack) ? '\n'+String(e.stack).split('\n').slice(0,4).join('\n') : '');
+    }
     (window.requestIdleCallback || function(cb){ setTimeout(cb,0); })(function(){ _hdrain(); });
   }
   _hdrain();

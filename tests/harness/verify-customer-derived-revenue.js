@@ -13,7 +13,8 @@
  *   customers  Ada Lovelace @ Acme (typed revenue 999) · Bob Byte @ Acme (typed 555) · Cara Diaz @ Diaz LLC
  *   invoices   "Acme" 700 pending (Jun 5) · "Cara Diaz" 50 paid (Jun 6) · "Acme" 300 DRAFT ·
  *              "Acme" 40 issued 2026-08-10 (future) · "Unknown Co" 20 (no customer)
- *   ⇒ Ada 700 · Bob 0 · Cara 50 · card 750        BUG (typed): Ada 999 · Bob 555 · Cara 0 · card 1554
+ *   ⇒ Ada 700 · Bob 0 · Cara 50 · Unknown Co 20 (not saved) · card 770   BUG (typed): Ada 999 · Bob 555 · Cara 0 · card 1554
+ *   (LA4: the card was 750 — an invoice client with no customer record counted nowhere.)
  *   then the form adds Dan Delta @ "Unknown Co" ⇒ Dan 20 · card 770   (pre-fix save: NaN / not re-derived)
  *
  *   node -r ./tests/harness/clock.js tests/harness/verify-customer-derived-revenue.js
@@ -53,7 +54,9 @@ async function seed({ http }) {
     A('GET /api/customers: Cara 50 — matched by full name (bug: 0)', near(by('Cara'), 50), JSON.stringify(custs.map(c => [c.fname, c.revenue])));
     await settle(60, 100);
     w.showPage('customers'); await settle(25, 100);
-    A('Customers page "Lifetime Revenue" card == 750 (bug: 1554)', near(money(text('cust-revenue')), 750), 'cust-revenue=' + text('cust-revenue'));
+    // LA4 (live audit 2026-10-13 M1): the "Unknown Co" invoice (20) has no customer record. It used to count nowhere —
+    // this assertion was 750, which encoded that defect. It is now listed as "not saved yet" and counted: 750 + 20.
+    A('Customers page "Lifetime Revenue" card == 770 incl. the unsaved "Unknown Co" 20 (bug: 1554; pre-LA4: 750)', near(money(text('cust-revenue')), 770), 'cust-revenue=' + text('cust-revenue'));
     const row = n => { const r = [...w.document.querySelectorAll('#customers-list .cust-row')].find(x => x.textContent.includes(n)); return r ? r.textContent.replace(/\s+/g, ' ') : ''; };
     A('Customers page row: Ada shows $700', /\$700\b/.test(row('Ada Lovelace')), row('Ada Lovelace'));
     A('customer form has no typed "Lifetime revenue" input any more', !w.document.getElementById('cust-revenue-val'), 'input still present');

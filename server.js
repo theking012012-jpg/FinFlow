@@ -2338,15 +2338,17 @@ app.delete('/api/expenses/:id', requireAuth, lockGuard(LOCK_SPECS.expenses), wra
 }));
 
 // ── CUSTOMERS ─────────────────────────────────────────────────────────────────
-app.get('/api/customers', requireAuth, wrap(async (req, res) => {
-  // L17 (N24 class): a customer's lifetime revenue is DERIVED from the books on read — never typed. It was a
-  // free-entry money field on the customer record that agreed with nothing (and the Customers page summed it).
-  // revenue = Σ this customer's RECOGNISED invoices (pending/overdue/partial/paid — Rule 11) issued on or
-  // before today (D2), at full amount (issue-based accrual, F32). Attribution, each invoice ONCE: the invoice's
-  // free-text `client` matches a customer's full name ("First Last") first, else its company; when several
-  // customers share that company the lowest id takes it (so two contacts at one company never double-count).
-  // A stored `revenue` value on old rows is left untouched in the database (Rule 8) and simply not read.
-  const uid = scopeId(req), eid = req.entityId || null;
+// L17 (N24 class): a customer's lifetime revenue is DERIVED from the books on read — never typed. It was a
+// free-entry money field on the customer record that agreed with nothing (and the Customers page summed it).
+// revenue = Σ this customer's RECOGNISED invoices (pending/overdue/partial/paid — Rule 11) issued on or
+// before today (D2), at full amount (issue-based accrual, F32). Attribution, each invoice ONCE: the invoice's
+// free-text `client` matches a customer's full name ("First Last") first, else its company; when several
+// customers share that company the lowest id takes it (so two contacts at one company never double-count).
+// A stored `revenue` value on old rows is left untouched in the database (Rule 8) and simply not read.
+// LA4 (live audit 2026-10-13 M1): an invoice whose client matches NO saved customer was attributed to nobody, so
+// the Customers page read "0 customers · $0 lifetime revenue" beside $23K of invoices. Those names are returned too
+// (`unsaved`), on the SAME basis — one attribution pass, so the saved list and the unsaved list cannot disagree.
+async function customerRevenueBook(uid, eid) {
   const scoped = r => r.entity_id == null || (eid != null && r.entity_id === eid);
   const customers = await db.allByUser('customers', uid, scoped);
   const key = v => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -2357,17 +2359,30 @@ app.get('/api/customers', requireAuth, wrap(async (req, res) => {
   }
   const today = await entityTodayYmd(eid);
   const RECOGNISED = new Set(['pending', 'overdue', 'partial', 'paid']);
-  const rev = {};
+  const rev = {}, unsaved = new Map();
   for (const i of await db.allByUser('invoices', uid, scoped)) {
     if (!RECOGNISED.has(String(i.status || '').toLowerCase())) continue;
     const d = FinFlowDates._toYmd(i.issue_date || i.created_at);
     if (d == null || d > today) continue;
     const k = key(i.client), cid = byName.has(k) ? byName.get(k) : byCompany.get(k);
-    if (cid == null) continue;
-    rev[cid] = (rev[cid] || 0) + (parseFloat(i.amount) || 0);
+    const amt = parseFloat(i.amount) || 0;
+    if (cid != null) { rev[cid] = (rev[cid] || 0) + amt; continue; }
+    if (!k) continue;
+    const u = unsaved.get(k) || { name: String(i.client).trim().replace(/\s+/g, ' '), revenue: 0, invoices: 0 };
+    u.revenue += amt; u.invoices += 1; unsaved.set(k, u);
   }
   const r2 = n => Math.round((n || 0) * 100) / 100;
-  res.json(customers.map(c => ({ ...c, revenue: r2(rev[c.id]) })).sort((a, b) => b.revenue - a.revenue));
+  return {
+    customers: customers.map(c => ({ ...c, revenue: r2(rev[c.id]) })).sort((a, b) => b.revenue - a.revenue),
+    unsaved: [...unsaved.values()].map(u => ({ ...u, revenue: r2(u.revenue) })).sort((a, b) => b.revenue - a.revenue || a.name.localeCompare(b.name)),
+  };
+}
+app.get('/api/customers', requireAuth, wrap(async (req, res) => {
+  res.json((await customerRevenueBook(scopeId(req), req.entityId || null)).customers);
+}));
+// LA4: invoice clients that match no saved customer — { name, revenue, invoices } on the Customers page's basis.
+app.get('/api/customers/unsaved', requireAuth, wrap(async (req, res) => {
+  res.json((await customerRevenueBook(scopeId(req), req.entityId || null)).unsaved);
 }));
 app.post('/api/customers', requireAuth, wrap(async (req, res) => {
   const b = req.body || {};

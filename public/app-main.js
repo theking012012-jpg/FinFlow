@@ -4901,14 +4901,62 @@ function setBar(barId,score,valId){
 // ════════════════════════════════════════════
 // CUSTOMERS
 // ════════════════════════════════════════════
-function renderCustomers(filter=''){
+// LA4 (live audit 2026-10-13 M1): invoices carry a free-text client; one that matches no saved customer was counted
+// nowhere, so this page read "0 customers · $0 lifetime revenue" beside $23K of invoices. Those names now come from
+// GET /api/customers/unsaved (same attribution and basis as the saved list) and are listed as "Not saved yet", with
+// a Save that opens the add form pre-filled. Nothing is written until the person saves (Rule 8).
+// Cache is keyed by business; a response for another business (switch mid-flight) is dropped (C1).
+window._custUnsaved = window._custUnsaved || { eid: null, rows: [], error: false };
+let _custUnsavedSeq = 0;
+function _custActiveEid(){ const e=(typeof ENTITIES!=='undefined'?ENTITIES:(window.ENTITIES||[])).find(x=>x.active); return e?e._dbId:null; }
+async function _loadUnsavedCustomers(){
+  const eid=_custActiveEid(); if(!eid) return;
+  const seq=++_custUnsavedSeq;
+  let next;
+  try{
+    const r=await fetch('/api/customers/unsaved?entity_id='+eid,{credentials:'include'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const rows=await r.json();
+    next={ eid, rows: Array.isArray(rows)?rows:[], error:false };
+  }catch(e){ console.error('[Customers] could not load invoice clients:', e && e.message); next={ eid, rows:[], error:true }; }
+  if(seq!==_custUnsavedSeq || _custActiveEid()!==eid) return;
+  window._custUnsaved=next;
+  renderCustomers((document.getElementById('cust-search')||{}).value||'', true);
+}
+window._loadUnsavedCustomers=_loadUnsavedCustomers;
+function openCustomerModalFromUnsaved(i){
+  const u=((window._custUnsaved||{}).rows||[])[i]; if(!u) return;
+  openCustomerModal();
+  const parts=String(u.name||'').trim().split(/\s+/);
+  document.getElementById('cust-fname').value=parts[0]||'';
+  document.getElementById('cust-lname').value=parts.slice(1).join(' ');
+  document.getElementById('cust-company').value=u.name||'';   // the invoice name — matches by company whatever the person names the contact
+  document.getElementById('cust-modal-sub').textContent='From your invoices to "'+(u.name||'')+'" — add an email to save';
+}
+window.openCustomerModalFromUnsaved=openCustomerModalFromUnsaved;
+function renderCustomers(filter='', _fromUnsaved){
   if(!customers) customers=[];
+  if(!_fromUnsaved && !filter) _loadUnsavedCustomers();
+  const eid=_custActiveEid();
+  const cu=window._custUnsaved||{};
+  const unsaved=(cu.eid===eid)?(cu.rows||[]):[];
   const q=filter.toLowerCase();
   const filtered=customers.filter(c=>(c.fname+' '+c.lname+' '+c.company+' '+c.email).toLowerCase().includes(q));
-  document.getElementById('cust-total').textContent=customers.length;
+  const unsavedShown=unsaved.map((u,i)=>({u,i})).filter(x=>String(x.u.name||'').toLowerCase().includes(q));
+  document.getElementById('cust-total').textContent=customers.length+unsaved.length;
+  const _ts=document.getElementById('cust-total-sub');
+  if(_ts) _ts.textContent=unsaved.length?(customers.length+' saved · '+unsaved.length+' from invoices, not saved yet'):(cu.error&&cu.eid===eid?'Invoice clients could not be loaded':'In your CRM');
   document.getElementById('cust-active').textContent=customers.filter(c=>c.status==='active').length;
-  document.getElementById('cust-revenue').textContent=S(customers.reduce((a,c)=>a+Number(c.revenue),0));
-  if(!filtered.length){document.getElementById('customers-list').innerHTML=`<div class="empty-state"><div class="empty-state-icon"><svg viewBox="0 0 16 16"><circle cx="5.5" cy="5" r="2.5"/><path d="M1 13c0-2.5 2-4.5 4.5-4.5"/><circle cx="11.5" cy="5" r="2.5"/><path d="M15 13c0-2.5-2-4.5-4.5-4.5"/></svg></div><h3>No customers found</h3><p>Try a different search term, or add your first customer to get started.</p><button class="btn btn-primary btn-sm" onclick="openCustomerModal()">+ Add customer</button></div>`;return;}
+  document.getElementById('cust-revenue').textContent=S(customers.reduce((a,c)=>a+Number(c.revenue),0)+unsaved.reduce((a,u)=>a+Number(u.revenue),0));
+  const unsavedHtml=unsavedShown.map(({u,i})=>`<div class="cust-row" onclick="openCustomerModalFromUnsaved(${i})">
+      <div class="cust-avatar av-amber">${esc(getInitials(String(u.name||'').split(/\s+/)[0]||'',String(u.name||'').split(/\s+/)[1]||''))}</div>
+      <div><div class="cust-name">${esc(u.name)}</div><div class="cust-email">${u.invoices} invoice${u.invoices===1?'':'s'} · not saved as a customer yet</div></div>
+      <span style="font-size:12px;color:var(--t2)">—</span>
+      <span style="font-family:var(--font-mono);font-weight:600">${esc(S(u.revenue))}</span>
+      <span><span class="badge b-amber">Not saved</span></span>
+      <span class="table-actions"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openCustomerModalFromUnsaved(${i})">Save</button></span>
+    </div>`).join('');
+  if(!filtered.length && !unsavedShown.length){document.getElementById('customers-list').innerHTML=`<div class="empty-state"><div class="empty-state-icon"><svg viewBox="0 0 16 16"><circle cx="5.5" cy="5" r="2.5"/><path d="M1 13c0-2.5 2-4.5 4.5-4.5"/><circle cx="11.5" cy="5" r="2.5"/><path d="M15 13c0-2.5-2-4.5-4.5-4.5"/></svg></div><h3>No customers found</h3><p>Try a different search term, or add your first customer to get started.</p><button class="btn btn-primary btn-sm" onclick="openCustomerModal()">+ Add customer</button></div>`;return;}
   document.getElementById('customers-list').innerHTML=filtered.map(c=>{
     const av=AVATAR_COLORS[(parseInt(c.id)||0)%AVATAR_COLORS.length];
     const ini=getInitials(c.fname,c.lname);
@@ -4921,7 +4969,7 @@ function renderCustomers(filter=''){
       <span><span class="badge ${esc(badge)}">${esc(c.status)}</span></span>
       <span class="table-actions"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openCustomerModal(${Number(c.id)})">Edit</button></span>
     </div>`;
-  }).join('');
+  }).join('')+unsavedHtml;
 }
 function filterCustomers(){renderCustomers(document.getElementById('cust-search').value)}
 function openCustomerModal(id=null){
